@@ -495,6 +495,10 @@ impl BrowserManager {
             DownloadEvent::Finished { url, path, success } => {
                 let chosen = self.downloads_lock().remove(&key(&url));
                 let path = path.or(chosen).unwrap_or_default();
+                #[cfg(target_os = "macos")]
+                if success {
+                    quarantine(&path);
+                }
                 (
                     url,
                     path,
@@ -952,6 +956,35 @@ pub(crate) fn validate_agent_id(agent_id: &str) -> AppResult<()> {
     Ok(())
 }
 
+/// Marks a download as from the internet, as Safari does, so Gatekeeper
+/// checks it before it first opens.
+#[cfg(target_os = "macos")]
+fn quarantine(path: &Path) {
+    use std::os::unix::ffi::OsStrExt;
+
+    let seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or_default();
+    let value = format!("0083;{seconds:08x};Sikemux;");
+    let (Ok(target), Ok(name)) = (
+        std::ffi::CString::new(path.as_os_str().as_bytes()),
+        std::ffi::CString::new("com.apple.quarantine"),
+    ) else {
+        return;
+    };
+    unsafe {
+        libc::setxattr(
+            target.as_ptr(),
+            name.as_ptr(),
+            value.as_ptr().cast(),
+            value.len(),
+            0,
+            0,
+        );
+    }
+}
+
 fn validate_url(url: &str) -> AppResult<()> {
     if url.is_empty() || url.len() > MAX_URL_LEN {
         return Err(AppError::BadArg("browser url is empty or too long"));
@@ -1392,6 +1425,33 @@ mod tests {
         ] {
             assert!(!loads(refused), "{refused} should be refused");
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_finished_download_is_quarantined() {
+        use std::os::unix::ffi::OsStrExt;
+
+        let folder = tempfile::tempdir().unwrap();
+        let path = folder.path().join("setup.dmg");
+        std::fs::write(&path, b"x").unwrap();
+        quarantine(&path);
+        let target = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+        let name = std::ffi::CString::new("com.apple.quarantine").unwrap();
+        let mut value = [0u8; 64];
+        let read = unsafe {
+            libc::getxattr(
+                target.as_ptr(),
+                name.as_ptr(),
+                value.as_mut_ptr().cast(),
+                value.len(),
+                0,
+                0,
+            )
+        };
+        let value = String::from_utf8_lossy(&value[..usize::try_from(read).unwrap()]);
+        assert!(value.starts_with("0083;"), "{value}");
+        assert!(value.ends_with(";Sikemux;"), "{value}");
     }
 
     #[test]
