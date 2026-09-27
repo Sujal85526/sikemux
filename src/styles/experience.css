@@ -126,10 +126,11 @@
 .welcome-sky {
     position: absolute;
     inset: 0 0 auto;
-    height: 46%;
+    height: 32%;
+    opacity: 0.4;
     pointer-events: none;
-    -webkit-mask-image: linear-gradient(to bottom, black 10%, transparent 100%);
-    mask-image: linear-gradient(to bottom, black 10%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black, transparent);
+    mask-image: linear-gradient(to bottom, black, transparent);
 }
 
 .welcome > :not(.welcome-sky) {
