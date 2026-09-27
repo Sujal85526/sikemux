@@ -1054,6 +1054,19 @@ describe("AgentChatPane", () => {
         expect(screen.getByText("ls").closest("pre")).toBeNull();
     });
 
+    it("titles a fence whose name is not valid percent-encoding with the name as written", async () => {
+        await openTranscript();
+        emit("session_update", {
+            sessionId: "session-1",
+            update: {
+                sessionUpdate: "agent_message_chunk",
+                content: { type: "text", text: "```100%\nfull\n```\n" },
+            },
+        });
+
+        await waitFor(() => expect(document.querySelector(".chat-code-title")).toHaveTextContent("100%"));
+    });
+
     it("watches a working subagent over the composer and settles its card when the turn ends", async () => {
         await openTranscript();
         emit("turn_started", {});

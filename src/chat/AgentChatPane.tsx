@@ -651,10 +651,18 @@ function ChatCode({ className, children }: { className?: string; children?: Reac
     );
 }
 
+function decodedFenceName(info: string): string {
+    try {
+        return decodeURIComponent(info);
+    } catch {
+        return info;
+    }
+}
+
 /* A fence says what file it quotes, when it says anything at all. The name is
    the file itself where the project has one; a bare language name is not. */
 function CodeTitle({ info, text }: { info?: string; text: string }) {
-    const name = info ? decodeURIComponent(info) : "";
+    const name = info ? decodedFenceName(info) : "";
     const file = useFileRef(name || undefined);
     return (
         <span className="chat-code-title">
