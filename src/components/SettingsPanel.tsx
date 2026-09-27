@@ -834,7 +834,7 @@ function AboutPage() {
                             cmd.closeSettings();
                             cmd.openOnboarding();
                         }}>
-                        Replay onboarding
+                        Show welcome
                     </button>
                 </div>
             </SettingsSection>

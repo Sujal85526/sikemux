@@ -77,7 +77,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     section("about", "Updates", "version upgrade release"),
     row("about", "Updates", "Channel", "nightly stable prerelease beta"),
     row("about", "Updates", "Last checked", "check for updates now"),
-    section("about", "Help", "what's new changelog diagnostics onboarding tour"),
+    section("about", "Help", "what's new changelog diagnostics welcome onboarding"),
 
     section("agents", "Launch boundary", "permissions yolo sandbox safety bypass approval"),
     section("agents", "Provider profiles", "claude codex gemini accounts"),
