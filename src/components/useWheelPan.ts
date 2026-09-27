@@ -137,7 +137,7 @@ export function useWheelPan(areaRef: RefObject<HTMLElement | null>, pan: WindowP
             // painted.
             const flick = flicked(done.pushes, until) || pulledOn(done.offset, done.way);
             const thrown = flick * done.offset < 0 ? 0 : flick;
-            const onto = (thrown === 0 ? null : (order[done.slot + thrown] ?? null)) ?? on;
+            const onto = thrown === 0 ? on : (order[done.slot + thrown] ?? on);
             const travel = (onto === on ? 0 : thrown) - done.offset;
             const returning = travel * thrust(done.pushes, until) < 0;
             if (onto !== on) {
