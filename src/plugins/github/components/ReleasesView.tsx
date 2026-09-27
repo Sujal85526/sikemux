@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { notify, openUrl, reportError, swallow } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
-import { EmptyState, IconDownload, Markdown, SkeletonRows } from "../../../plugin-api/ui";
-import { actionsApi, failureMessage, type RepoRef } from "../api";
+import { EmptyState, IconChevron, IconDownload, IconGit, Markdown, SkeletonRows } from "../../../plugin-api/ui";
+import { actionsApi, failureMessage, type Release, type RepoRef } from "../api";
 import { githubReleasesR } from "../resources";
 import { formatAgo } from "../runStatus";
 import { formatBytes } from "./Artifacts";
@@ -10,6 +10,41 @@ import { useNow } from "./hooks";
 
 /** Notes longer than this are worth folding away until somebody asks. */
 const LONG_NOTES = 280;
+
+/**
+ * The newest release that is neither a draft nor a pre-release, which is the
+ * one GitHub marks as latest and the one an updater would take.
+ */
+export function latestOf(releases: readonly Release[]): number | null {
+    return releases.find((release) => !release.draft && !release.prerelease)?.id ?? null;
+}
+
+/** Folded away, the way GitHub keeps them, so the list stays readable. */
+function Assets({ release, saving, onSave }: { release: Release; saving: number | null; onSave: (id: number, name: string) => void }) {
+    if (release.assets.length === 0) return null;
+    return (
+        <details className="gha-assets">
+            <summary className="gha-assets-head">
+                <span className="gha-chevron">
+                    <IconChevron size={11} />
+                </span>
+                <IconDownload size={12} />
+                Assets
+                <span className="gha-count">{release.assets.length}</span>
+            </summary>
+            {release.assets.map((asset) => (
+                <div className="gha-artifact" key={asset.id}>
+                    <span className="gha-artifact-name">{asset.name}</span>
+                    <span className="gha-dim">{formatBytes(asset.sizeBytes)}</span>
+                    <span className="gha-dim">{asset.downloads} downloads</span>
+                    <button type="button" className="gha-link" disabled={saving === asset.id} onClick={() => onSave(asset.id, asset.name)}>
+                        {saving === asset.id ? "Saving…" : "Download"}
+                    </button>
+                </div>
+            ))}
+        </details>
+    );
+}
 
 interface Props {
     repo: RepoRef;
@@ -35,6 +70,7 @@ export function ReleasesView({ repo, active }: Props) {
     }
     const rows = releases.data ?? [];
     if (rows.length === 0) return <EmptyState icon={<IconDownload size={20} />} message="This repository has no releases." />;
+    const latest = latestOf(rows);
 
     const save = (id: number, name: string) => {
         setSaving(id);
@@ -45,13 +81,24 @@ export function ReleasesView({ repo, active }: Props) {
             .finally(() => setSaving(null));
     };
 
+    const toggle = (id: number) =>
+        setOpened((was) => {
+            const next = new Set(was);
+            if (!next.delete(id)) next.add(id);
+            return next;
+        });
+
     return (
         <div className="gha-list">
             {rows.map((release) => (
                 <div className="gha-release" key={release.id}>
                     <div className="gha-release-head">
                         <span className="gha-release-name">{release.name}</span>
-                        <span className="gha-mono gha-dim">{release.tag}</span>
+                        {release.id === latest && (
+                            <span className="gha-state-chip" data-state="open">
+                                Latest
+                            </span>
+                        )}
                         {release.draft && (
                             <span className="gha-state-chip" data-state="draft">
                                 Draft
@@ -62,40 +109,32 @@ export function ReleasesView({ repo, active }: Props) {
                                 Pre-release
                             </span>
                         )}
-                        <span className="gha-dim">{formatAgo(release.publishedAt, now)}</span>
+                        <span className="gha-release-spacer" />
                         <button type="button" className="gha-link" onClick={() => void openUrl(release.url).catch(swallow("open GitHub"))}>
                             On GitHub
                         </button>
+                    </div>
+                    <div className="gha-release-meta">
+                        <IconGit size={11} />
+                        <span className="gha-mono">{release.tag}</span>
+                        {release.author && (
+                            <span>
+                                <span className="gha-release-author">{release.author}</span> released this
+                            </span>
+                        )}
+                        <span>{formatAgo(release.publishedAt, now)}</span>
                     </div>
                     {release.body.trim() && (
                         <>
                             <Markdown className={opened.has(release.id) ? "gha-prose" : "gha-prose clamp"}>{release.body}</Markdown>
                             {release.body.length > LONG_NOTES && (
-                                <button
-                                    type="button"
-                                    className="gha-link"
-                                    onClick={() =>
-                                        setOpened((was) => {
-                                            const next = new Set(was);
-                                            if (!next.delete(release.id)) next.add(release.id);
-                                            return next;
-                                        })
-                                    }>
+                                <button type="button" className="gha-link" onClick={() => toggle(release.id)}>
                                     {opened.has(release.id) ? "Show less" : "Show more"}
                                 </button>
                             )}
                         </>
                     )}
-                    {release.assets.map((asset) => (
-                        <div className="gha-artifact" key={asset.id}>
-                            <span className="gha-artifact-name">{asset.name}</span>
-                            <span className="gha-dim">{formatBytes(asset.sizeBytes)}</span>
-                            <span className="gha-dim">{asset.downloads} downloads</span>
-                            <button type="button" className="gha-link" disabled={saving === asset.id} onClick={() => save(asset.id, asset.name)}>
-                                {saving === asset.id ? "Saving…" : "Download"}
-                            </button>
-                        </div>
-                    ))}
+                    <Assets release={release} saving={saving} onSave={save} />
                 </div>
             ))}
         </div>

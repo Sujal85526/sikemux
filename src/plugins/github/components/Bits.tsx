@@ -1,3 +1,4 @@
+import { IconCheck, IconClose, IconPullRequest } from "../../../plugin-api/ui";
 import type { Label } from "../api";
 
 /** Whether a colour GitHub gave a label needs light or dark text on it. */
@@ -29,16 +30,25 @@ export function Labels({ labels }: { labels: readonly Label[] }) {
     );
 }
 
-const PULL_LABEL: Record<string, string> = { open: "Open", closed: "Closed", merged: "Merged" };
+const PULL_LABEL: Record<string, string> = { open: "Open", closed: "Closed", merged: "Merged", draft: "Draft" };
 const ISSUE_LABEL: Record<string, string> = { open: "Open", closed: "Closed" };
 
-/** The one word that says where a pull request or issue stands. */
-export function StateChip({ kind, state, draft = false }: { kind: "pull" | "issue"; state: string; draft?: boolean }) {
-    const shown = draft && state === "open" ? "Draft" : ((kind === "pull" ? PULL_LABEL : ISSUE_LABEL)[state] ?? state);
-    const tone = draft && state === "open" ? "draft" : state;
+/** A draft is still open, but it reads as its own state the way GitHub shows it. */
+export function stateOf(state: string, draft: boolean): string {
+    return draft && state === "open" ? "draft" : state;
+}
+
+/**
+ * Where a pull request or issue stands, as the one glyph GitHub marks it with
+ * rather than a word, so a long list scans down its left edge.
+ */
+export function StateMark({ kind, state, draft = false }: { kind: "pull" | "issue"; state: string; draft?: boolean }) {
+    const tone = stateOf(state, draft);
+    const label = (kind === "pull" ? PULL_LABEL : ISSUE_LABEL)[tone] ?? tone;
+    const Glyph = tone === "merged" ? IconPullRequest : tone === "closed" ? IconClose : kind === "pull" ? IconPullRequest : IconCheck;
     return (
-        <span className="gha-state-chip" data-state={tone}>
-            {shown}
+        <span className="gha-state-mark" data-state={tone} title={label} aria-label={label} role="img">
+            <Glyph size={13} />
         </span>
     );
 }

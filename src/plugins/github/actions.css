@@ -621,11 +621,11 @@
     color: var(--danger);
     white-space: nowrap;
 }
+/* The glyph points right already, so closed needs no turn and open needs a quarter. */
 .gha-chevron {
     display: inline-flex;
     flex: 0 0 auto;
     color: var(--text-tertiary);
-    transform: rotate(-90deg);
     transition: transform var(--dur-2) var(--ease-out);
 }
 .gha-chevron[data-open="1"] {
@@ -1117,6 +1117,25 @@
     font-size: var(--text-2xs);
     color: var(--text-tertiary);
 }
+.gha-state-mark {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    color: var(--text-tertiary);
+}
+.gha-state-mark[data-state="open"] {
+    color: var(--live);
+}
+.gha-state-mark[data-state="merged"] {
+    color: var(--acc);
+}
+.gha-state-mark[data-state="closed"] {
+    color: var(--danger);
+}
+.gha-state-mark[data-state="draft"] {
+    color: var(--text-tertiary);
+}
+
 .gha-state-chip {
     display: inline-flex;
     align-items: center;
@@ -1437,7 +1456,7 @@
 }
 
 .gha-release {
-    padding: var(--space-3) var(--space-2);
+    padding: var(--space-3) var(--space-2) var(--space-4);
     border-bottom: 1px solid var(--gha-rule);
 }
 .gha-release-head {
@@ -1448,8 +1467,62 @@
     font-size: var(--text-2xs);
     color: var(--text-tertiary);
 }
+.gha-release-spacer {
+    flex: 1 1 auto;
+}
 .gha-release-name {
-    font-size: var(--text-sm);
+    font-size: var(--text-md);
     font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-tight);
     color: var(--text-primary);
+}
+.gha-release-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-1h);
+    padding-top: var(--space-1);
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+}
+.gha-release-author {
+    color: var(--text-secondary);
+}
+
+.gha-assets {
+    margin-top: var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+}
+.gha-assets-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1h);
+    padding: var(--space-1h) var(--space-2);
+    font-size: var(--text-2xs);
+    color: var(--text-secondary);
+    cursor: pointer;
+    list-style: none;
+}
+.gha-assets-head::-webkit-details-marker {
+    display: none;
+}
+.gha-assets-head:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+}
+.gha-assets[open] .gha-assets-head {
+    border-bottom: 1px solid var(--border);
+}
+.gha-assets[open] .gha-chevron {
+    transform: rotate(90deg);
+}
+.gha-assets .gha-artifact {
+    padding: 0 var(--space-2);
+}
+.gha-count {
+    padding: 0 var(--space-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-1);
+    font-variant-numeric: tabular-nums;
 }

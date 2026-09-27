@@ -5,7 +5,7 @@ import { actionsApi, failureMessage, type Issue, type RepoRef } from "../api";
 import { githubIssueR, githubIssuesR } from "../resources";
 import { formatAgo } from "../runStatus";
 import { setListState, showItem } from "../state";
-import { Labels, StateChip } from "./Bits";
+import { Labels, StateMark } from "./Bits";
 import { CommentThread } from "./CommentThread";
 import { useNow } from "./hooks";
 
@@ -14,7 +14,7 @@ const LIST_STATES = ["open", "closed", "all"];
 function IssueRow({ issue, now, onOpen }: { issue: Issue; now: number; onOpen: () => void }) {
     return (
         <button type="button" className="gha-item-row" onClick={onOpen}>
-            <StateChip kind="issue" state={issue.state} />
+            <StateMark kind="issue" state={issue.state} />
             <span className="gha-item-main">
                 <span className="gha-item-title">{issue.title}</span>
                 <span className="gha-item-sub">
@@ -58,7 +58,7 @@ function IssueDetail({ repo, number, active, onBack }: { repo: RepoRef; number: 
             </button>
             <div className="gha-detail-head">
                 <div className="gha-detail-title-row">
-                    <StateChip kind="issue" state={found.state} />
+                    <StateMark kind="issue" state={found.state} />
                     <h2 className="gha-detail-title">{found.title}</h2>
                     <span className="gha-mono gha-dim">#{found.number}</span>
                 </div>
