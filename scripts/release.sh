@@ -62,6 +62,11 @@ if [[ -f "$ROOT/.env" ]]; then
   [[ -n "$existing_password" ]] && TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$saved_password"
   [[ -n "$existing_identity" ]] && APPLE_SIGNING_IDENTITY="$saved_identity"
 fi
+# The updater key goes to the bundling step alone, not to dependency installs
+# or the build tools every step below starts.
+UPDATER_KEY="${TAURI_SIGNING_PRIVATE_KEY:-}"
+UPDATER_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
+unset TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 
 fail() {
   echo "Release preflight failed: $*" >&2
@@ -136,8 +141,7 @@ if TAG_SHA="$(git rev-parse -q --verify "refs/tags/v$VERSION^{commit}")"; then
   [[ "$TAG_SHA" == "$HEAD_SHA" ]] || fail "tag v$VERSION already exists on $TAG_SHA"
 fi
 
-[[ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]] || fail "TAURI_SIGNING_PRIVATE_KEY is not set"
-export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
+[[ -n "$UPDATER_KEY" ]] || fail "TAURI_SIGNING_PRIVATE_KEY is not set"
 if [[ "$NOTARIZED" == "1" ]]; then
   [[ -n "${APPLE_SIGNING_IDENTITY:-}" ]] || fail "APPLE_SIGNING_IDENTITY is not set"
   /usr/bin/security find-identity -v -p codesigning | grep -Fq "\"$APPLE_SIGNING_IDENTITY\"" || \
@@ -250,7 +254,8 @@ APP="$BUNDLE/macos/${APP_NAME}.app"
 # when a bundler updates files in place.
 rm -rf "$APP" "$TAR" "$SIG" "$BUNDLE/dmg"
 echo "→ Building updater-signed v$VERSION"
-REQUIRE_VALID_SIGNATURE=1 REQUIRE_SIGNED_APP="$NOTARIZED" "$ROOT/scripts/build-mac.sh"
+TAURI_SIGNING_PRIVATE_KEY="$UPDATER_KEY" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$UPDATER_KEY_PASSWORD" \
+  REQUIRE_VALID_SIGNATURE=1 REQUIRE_SIGNED_APP="$NOTARIZED" "$ROOT/scripts/build-mac.sh"
 
 [[ -d "$APP" ]] || fail "app bundle was not produced"
 if [[ "$NOTARIZED" == "1" ]]; then

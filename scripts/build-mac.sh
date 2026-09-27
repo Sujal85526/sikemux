@@ -33,6 +33,11 @@ BUILD_ARGS+=(--config "$ROOT/src-tauri/tauri.voice.conf.json")
 if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
   BUILD_ARGS+=(--config '{"bundle":{"createUpdaterArtifacts":false}}')
 fi
+# Only the bundling step signs the updater archive, so the compilers, build
+# scripts and frontend tooling never see the key in their environment.
+UPDATER_KEY="${TAURI_SIGNING_PRIVATE_KEY:-}"
+UPDATER_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
+unset TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 # Community releases and local builds use a complete ad-hoc bundle signature.
 # RELEASE_NOTARIZED=1 supplies a real Developer ID identity instead.
 if [[ "${REQUIRE_SIGNED_APP:-0}" != "1" && -z "${APPLE_SIGNING_IDENTITY:-}" ]]; then
@@ -47,14 +52,18 @@ else
   node "$ROOT/scripts/build-cli-sidecar.mjs"
   node "$ROOT/scripts/build-voice-helper.mjs"
 fi
-printf '→ pnpm tauri build'
-if ((${#BUILD_ARGS[@]})); then
-  printf ' %q' "${BUILD_ARGS[@]}"
-  echo
-  pnpm tauri build "${BUILD_ARGS[@]}"
+printf '→ pnpm tauri build --no-bundle'
+printf ' %q' "${BUILD_ARGS[@]}"
+echo
+pnpm tauri build --no-bundle "${BUILD_ARGS[@]}"
+printf '→ pnpm tauri bundle'
+printf ' %q' "${BUILD_ARGS[@]}"
+echo
+if [[ -n "$UPDATER_KEY" ]]; then
+  TAURI_SIGNING_PRIVATE_KEY="$UPDATER_KEY" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$UPDATER_KEY_PASSWORD" \
+    pnpm tauri bundle "${BUILD_ARGS[@]}"
 else
-  echo
-  pnpm tauri build
+  pnpm tauri bundle "${BUILD_ARGS[@]}"
 fi
 
 TARGET_ROOT="$ROOT/src-tauri/target"
