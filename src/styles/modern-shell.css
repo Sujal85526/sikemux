@@ -790,7 +790,7 @@ textarea:focus,
 /* Panes hold a gutter back from their cell, so the window area reaches out by
    that much to put the outer panes flush with the stage's edges. */
 .window-area {
-    inset: 0 calc(-1 * var(--pane-gutter)) calc(-1 * var(--pane-gutter));
+    inset: calc(-1 * var(--pane-gutter));
 }
 
 .rail-peek {
