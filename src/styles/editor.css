@@ -116,6 +116,7 @@
     padding-right: 8px;
     color: var(--text-secondary);
     font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
     user-select: none;
     -webkit-user-select: none;
     transition:
