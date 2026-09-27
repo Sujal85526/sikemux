@@ -84,7 +84,7 @@ describe("DiffEditor", () => {
         expect(mocks.diffProps?.style["--diffs-addition-color-override"]).toBe("var(--live)");
         expect(mocks.diffProps?.style["--diffs-deletion-color-override"]).toBe("var(--danger)");
 
-        act(() => mocks.diffProps?.editorOptions.onChange({ name: "src/app.ts", contents: "const value = 3;\n" }));
+        act(() => mocks.diffProps?.editorOptions.onChange({ file: { name: "src/app.ts", contents: "const value = 3;\n" } }));
         fireEvent.keyDown(container.querySelector(".diff-editor")!, { key: "s", metaKey: true });
 
         await waitFor(() => expect(mocks.writeFile).toHaveBeenCalledWith("/repo/src/app.ts", "const value = 3;\n"));

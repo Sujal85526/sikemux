@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { preloadHighlighter, type FileContents, type FileDiffOptions } from "@pierre/diffs";
 import { Editor, type EditorOptions } from "@pierre/diffs/edit";
-import { EditProvider, MultiFileDiff } from "@pierre/diffs/react";
+import { EditProvider, MultiFileDiff, type EditorFactory } from "@pierre/diffs/react";
 import { git } from "../api/git";
 import { fsapi } from "../api/fs";
 import type { Theme } from "../themes";
@@ -55,9 +55,7 @@ const DIFF_UNSAFE_CSS = `
 export const DIFF_TOKENIZE_MAX_LINES = 4000;
 export const DIFF_WORD_MAX_LENGTH = 512;
 
-function createEditor(options: EditorOptions<undefined>) {
-    return new Editor(options);
-}
+const createEditor: EditorFactory<undefined, undefined> = (type, options, editStateKey) => new Editor(type, options, editStateKey);
 
 interface CachedDiffRead {
     promise: Promise<string>;
@@ -219,7 +217,7 @@ export function DiffEditor({
         };
     }, [content, repo, path, baseRev, headRev, diffTheme.name, lang]);
 
-    const options = useMemo<FileDiffOptions<undefined>>(
+    const options = useMemo<FileDiffOptions<undefined, undefined>>(
         () => ({
             theme: diffTheme.name,
             themeType: diffTheme.dark ? "dark" : "light",
@@ -238,9 +236,9 @@ export function DiffEditor({
         [diffTheme, editable],
     );
 
-    const editorOptions = useMemo<EditorOptions<undefined>>(
+    const editorOptions = useMemo<EditorOptions<"file-diff", undefined, undefined>>(
         () => ({
-            onChange(file) {
+            onChange({ file }) {
                 latestHeadRef.current = file.contents;
             },
         }),

@@ -64,13 +64,16 @@ export default defineConfig({
           // not a per-language import, so it stays folded into it.
           if (packagePath.startsWith("@shikijs/langs/")) return undefined;
           if (
-            id.includes("@shikijs") ||
-            id.includes("/shiki@") ||
-            id.includes("oniguruma")
+            packagePath.startsWith("@shikijs/") ||
+            packagePath.startsWith("shiki/") ||
+            packagePath.startsWith("oniguruma")
           ) {
             return "highlighter";
           }
-          if (id.includes("@pierre") || id.includes("/diff@")) {
+          if (
+            packagePath.startsWith("@pierre/") ||
+            packagePath.startsWith("diff/")
+          ) {
             return "diffs";
           }
           const codemirrorPackage = packagePath.startsWith("@")
