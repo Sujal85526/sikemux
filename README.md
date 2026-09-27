@@ -12,6 +12,7 @@
 [![Rust](https://img.shields.io/badge/Rust-backend-000?logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![Latest release](https://img.shields.io/github/v/release/nodelike/sikemux?display_name=tag)](https://github.com/nodelike/sikemux/releases/latest)
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/UKfmHpF9kX)
+[![Website](https://img.shields.io/badge/website-sikemux.com-a277ff)](https://sikemux.com)
 
 </div>
 
@@ -20,6 +21,8 @@
 ## What it does
 
 Sikemux puts the tools tied to a terminal project in one window. Open a project once. Its files, shells, Git state, agents, cloud resources, deployments, and API collections stay attached to that project.
+
+The download is about 10 MB. Sikemux draws its interface with the WebView that macOS already ships, so it carries no browser engine of its own.
 
 ### Projects
 
@@ -221,7 +224,7 @@ On Windows, use `Ctrl` for shortcuts marked `⌘` and `Alt` for shortcuts marked
 
 ### Download
 
-Download the latest `.dmg` from [Releases](https://github.com/nodelike/sikemux/releases/latest). Published releases support Apple Silicon and require macOS 11 or later. The updater keeps an installed copy current. The published updater feed does not cover Intel Macs.
+Download the latest `.dmg` from [sikemux.com](https://sikemux.com) or [Releases](https://github.com/nodelike/sikemux/releases/latest). Published releases support Apple Silicon and require macOS 11 or later. The updater keeps an installed copy current. The published updater feed does not cover Intel Macs.
 
 ### Build from source
 

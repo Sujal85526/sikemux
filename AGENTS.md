@@ -28,6 +28,8 @@
   latest release, both at build time and in the visitor's browser. It finds the
   download by the `_aarch64.dmg` suffix, so renaming that asset or leaving it off a
   release breaks every Download button. Nightlies are pre-releases and never show up.
+- The README rounds the download to "about 10 MB" and the site says it is smaller than
+  Ghostty (33.8 MB). Update both if a release moves the DMG past either.
 - Its screenshots come from this repo:
   `pnpm showcase --site ~/projects/personal/sikemux-front/src/assets/shots`.
 - Its copy must stay true of the shipped app and its look follows `DESIGN.md`. When a
