@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
 import { agentIdsOf } from "./state/selectors";
 import { swallow } from "./state/toast";
@@ -71,11 +72,9 @@ export function playBip(): void {
     tone.stop(start + 0.16);
 }
 
-// The notification plugin swaps the webview's Notification for the native macOS one.
 async function post(title: string, body: string): Promise<void> {
-    const allowed = Notification.permission === "granted" || (await Notification.requestPermission()) === "granted";
-    if (!allowed) return;
-    new Notification(title, { body });
+    if ((await invoke<string>("plugin:notification|request_permission")) !== "granted") return;
+    await invoke("plugin:notification|notify", { options: { title, body } });
     playBip();
 }
 

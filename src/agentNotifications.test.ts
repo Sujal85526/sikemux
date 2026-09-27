@@ -5,12 +5,11 @@ import { withAgents } from "./test/agents";
 
 const notification = vi.hoisted(() => {
     const sent = vi.fn();
-    const Notification = Object.assign(
-        function (title: string, options: NotificationOptions) {
-            sent({ title, body: options.body });
-        },
-        { permission: "granted", requestPermission: vi.fn(async () => "granted") },
-    );
+    const state = { permission: "granted" };
+    const invoke = vi.fn(async (command: string, args?: { options: { title: string; body: string } }) => {
+        if (command === "plugin:notification|request_permission") return state.permission;
+        if (command === "plugin:notification|notify") sent(args?.options);
+    });
     const bips = vi.fn();
     const node = () => ({
         frequency: { value: 0 },
@@ -26,9 +25,9 @@ const notification = vi.hoisted(() => {
         createOscillator = node;
         createGain = node;
     }
-    return { sent, bips, Notification, AudioContext };
+    return { sent, bips, state, invoke, AudioContext };
 });
-vi.stubGlobal("Notification", notification.Notification);
+vi.mock("@tauri-apps/api/core", () => ({ invoke: notification.invoke }));
 vi.stubGlobal("AudioContext", notification.AudioContext);
 const appWindow = vi.hoisted(() => ({
     setBadgeCount: vi.fn(async () => {}),
@@ -130,12 +129,13 @@ describe("notifying outside the app", () => {
         expect(notification.sent).not.toHaveBeenCalled();
     });
 
-    it("asks macOS for permission the first time", async () => {
-        notification.Notification.permission = "default";
+    it("asks macOS for permission and stays quiet when it is refused", async () => {
+        notification.state.permission = "denied";
         setState({ agentActivity: { a1: activity("blocked") } });
-        await vi.waitFor(() => expect(notification.sent).toHaveBeenCalled());
-        expect(notification.Notification.requestPermission).toHaveBeenCalledTimes(1);
-        notification.Notification.permission = "granted";
+        await vi.waitFor(() => expect(notification.invoke).toHaveBeenCalledWith("plugin:notification|request_permission"));
+        expect(notification.sent).not.toHaveBeenCalled();
+        expect(notification.bips).not.toHaveBeenCalled();
+        notification.state.permission = "granted";
     });
 });
 

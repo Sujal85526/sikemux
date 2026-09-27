@@ -34,6 +34,7 @@ mod usage;
 mod voice;
 mod wallpaper;
 mod wheel;
+mod without_page_script;
 
 use acp::AcpManager;
 use browser::BrowserManager;
@@ -88,8 +89,12 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_notification::init())
+        .plugin(without_page_script::without_page_script(
+            tauri_plugin_dialog::init(),
+        ))
+        .plugin(without_page_script::without_page_script(
+            tauri_plugin_notification::init(),
+        ))
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .on_window_event(|window, event| {
