@@ -17,15 +17,43 @@ enum State {
     Charset,
 }
 
-#[derive(Default)]
+const MAX_COLUMN: usize = 10_000;
+const MAX_ROWS_OPENED_BY_CURSOR: usize = 10_000;
+const MAX_PADDING_CELLS: usize = 1 << 20;
+
 struct Screen {
     rows: Vec<Vec<char>>,
     ends: Vec<Option<u64>>,
     row: usize,
     col: usize,
+    rows_left_for_cursor: usize,
+    padding_left: usize,
 }
 
 impl Screen {
+    fn new() -> Self {
+        Self {
+            rows: vec![Vec::new()],
+            ends: vec![None],
+            row: 0,
+            col: 0,
+            rows_left_for_cursor: MAX_ROWS_OPENED_BY_CURSOR,
+            padding_left: MAX_PADDING_CELLS,
+        }
+    }
+
+    fn set_col(&mut self, col: usize) {
+        self.col = col.min(MAX_COLUMN);
+    }
+
+    fn move_down(&mut self, count: usize) {
+        let last = self.rows.len() - 1;
+        let reachable = last + self.rows_left_for_cursor;
+        let target = self.row.saturating_add(count).min(reachable);
+        self.rows_left_for_cursor -= target.saturating_sub(last);
+        self.go_to_row(target);
+    }
+
     fn go_to_row(&mut self, row: usize) {
         self.row = row;
         while self.rows.len() <= row {
@@ -37,14 +65,17 @@ impl Screen {
     fn put(&mut self, character: char) {
         let line = &mut self.rows[self.row];
         if line.len() < self.col {
-            line.resize(self.col, ' ');
+            let padding = (self.col - line.len()).min(self.padding_left);
+            self.padding_left -= padding;
+            line.resize(line.len() + padding, ' ');
+            self.col = line.len();
         }
         if self.col < line.len() {
             line[self.col] = character;
         } else {
             line.push(character);
         }
-        self.col += 1;
+        self.set_col(self.col + 1);
     }
 
     fn newline(&mut self, at: u64) {
@@ -60,25 +91,25 @@ impl Screen {
         }
         let numbers: Vec<usize> = parameters
             .split(';')
-            .map(|value| value.parse().unwrap_or(0))
+            .map(|value| value.parse().map_or(0, |number: usize| number.min(MAX_COLUMN)))
             .collect();
         let first = numbers.first().copied().unwrap_or(0);
         let count = first.max(1);
         match command {
             'A' => self.row = self.row.saturating_sub(count),
-            'B' | 'e' => self.go_to_row(self.row + count),
-            'C' | 'a' => self.col += count,
+            'B' | 'e' => self.move_down(count),
+            'C' | 'a' => self.set_col(self.col + count),
             'D' => self.col = self.col.saturating_sub(count),
             'E' => {
-                self.go_to_row(self.row + count);
+                self.move_down(count);
                 self.col = 0;
             }
             'F' => {
                 self.row = self.row.saturating_sub(count);
                 self.col = 0;
             }
-            'G' | '`' => self.col = count - 1,
-            'H' | 'f' => self.col = numbers.get(1).copied().unwrap_or(0).max(1) - 1,
+            'G' | '`' => self.set_col(count - 1),
+            'H' | 'f' => self.set_col(numbers.get(1).copied().unwrap_or(0).max(1) - 1),
             'K' => {
                 let line = &mut self.rows[self.row];
                 match first {
@@ -102,8 +133,7 @@ impl Screen {
 }
 
 pub fn render(bytes: &[u8], first_offset: u64) -> Vec<Line> {
-    let mut screen = Screen::default();
-    screen.go_to_row(0);
+    let mut screen = Screen::new();
     let mut state = State::Ground;
     let mut offset = first_offset;
     for chunk in bytes.utf8_chunks() {
@@ -125,7 +155,7 @@ pub fn render(bytes: &[u8], first_offset: u64) -> Vec<Line> {
                         State::Ground
                     }
                     '\t' => {
-                        screen.col = (screen.col / 8 + 1) * 8;
+                        screen.set_col((screen.col / 8 + 1) * 8);
                         State::Ground
                     }
                     other if other.is_control() => State::Ground,
@@ -307,5 +337,29 @@ mod tests {
         );
         let pair = render(b"a\na\nb\n\n\n\n", 0);
         assert_eq!(texts(&collapse(pair)), ["a", "a", "b", "", "", ""]);
+    }
+
+    #[test]
+    fn huge_cursor_moves_stay_bounded() {
+        let right = render(b"\x1b[18446744073709551615Cx\n", 0);
+        assert_eq!(right[0].text.trim_start(), "x");
+        assert!(right[0].text.chars().count() <= MAX_COLUMN + 1);
+
+        let down = render(b"a\x1b[50000000Bb\n", 0);
+        assert!(down.len() <= MAX_ROWS_OPENED_BY_CURSOR + 2);
+        assert_eq!(down.last().unwrap().text.trim(), "b");
+
+        let repeated = b"\x1b[9999Bx".repeat(1000);
+        assert!(render(&repeated, 0).len() <= MAX_ROWS_OPENED_BY_CURSOR + 2);
+
+        let wide = b"\x1b[9999Cx\n".repeat(1000);
+        let cells: usize = render(&wide, 0)
+            .iter()
+            .map(|line| line.text.chars().count())
+            .sum();
+        assert!(cells <= MAX_PADDING_CELLS + 1000);
+
+        render(&b"\x1b[99999999999999999999999C".repeat(100), 0);
+        render(&b"\t".repeat(100_000), 0);
     }
 }
