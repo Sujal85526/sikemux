@@ -1758,3 +1758,107 @@ button.gha-step:focus-visible {
 .gha-log-line.hit.current {
     background: color-mix(in oklab, var(--warn) 26%, transparent);
 }
+
+/* ---- Checks, reviews, and writing a new pull request or issue ----------- */
+
+.gha-checks,
+.gha-reviews,
+.gha-review {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+.gha-check {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: 32px;
+    padding: 0 var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: var(--gha-tint);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: var(--text-xs);
+    text-align: left;
+    cursor: pointer;
+    transition:
+        background var(--dur-1) linear,
+        border-color var(--dur-1) linear;
+}
+.gha-check:hover {
+    background: var(--surface-hover);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+}
+.gha-check:focus-visible {
+    box-shadow: var(--focus-ring);
+    outline: none;
+}
+.gha-check-name {
+    font-weight: var(--weight-medium);
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.gha-check-spacer {
+    flex: 1 1 auto;
+}
+.gha-review-state {
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+}
+.gha-review-state[data-state="APPROVED"] {
+    color: var(--live);
+}
+.gha-review-state[data-state="CHANGES_REQUESTED"] {
+    color: var(--danger);
+}
+.gha-detail > .gha-warn-note {
+    padding-top: var(--space-2);
+}
+
+.gha-form {
+    gap: var(--space-2);
+    max-width: 860px;
+}
+.gha-form .gha-detail-title {
+    padding: var(--space-2) 0 var(--space-1);
+}
+.gha-form .gha-detail-actions {
+    gap: var(--space-3);
+}
+.gha-form-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+.gha-form-row .gha-input {
+    flex: 0 1 280px;
+    min-width: 160px;
+}
+.gha-form-label {
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+}
+
+.gha-offer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin: var(--space-3) var(--space-5) 0;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: var(--gha-tint);
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+}
+.gha-list-count {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3);
+}

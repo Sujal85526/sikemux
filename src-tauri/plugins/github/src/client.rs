@@ -231,6 +231,17 @@ pub async fn get<T: DeserializeOwned>(
     request(&session, Method::GET, path, query, None).await
 }
 
+/// A write whose answer is the thing it made, such as a new pull request or issue.
+pub async fn send_json<T: DeserializeOwned>(
+    data_dir: &Path,
+    method: Method,
+    path: &str,
+    body: &Value,
+) -> ActionsResult<T> {
+    let session = Session::current(data_dir)?;
+    request(&session, method, path, &[], Some(body)).await
+}
+
 pub async fn post_empty(data_dir: &Path, path: &str, body: Option<&Value>) -> ActionsResult<()> {
     act(data_dir, Method::POST, path, body).await
 }

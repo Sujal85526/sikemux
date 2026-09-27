@@ -4,10 +4,11 @@ import { EmptyState, IconClose, IconInfo, Markdown, SkeletonRows } from "../../.
 import { actionsApi, failureMessage, type Issue, type RepoRef } from "../api";
 import { githubIssueR, githubIssuesR } from "../resources";
 import { formatAgo } from "../runStatus";
-import { setListState, showItem } from "../state";
+import { compose, setListState, showItem } from "../state";
 import { Labels, StateMark } from "./Bits";
 import { CommentThread } from "./CommentThread";
 import { useNow } from "./hooks";
+import { NewIssueForm } from "./NewIssueForm";
 
 const LIST_STATES = ["open", "closed", "all"];
 
@@ -87,13 +88,15 @@ interface Props {
     repo: RepoRef;
     listState: string;
     item: number | null;
+    composing: boolean;
     active: boolean;
 }
 
-export function IssuesView({ paneId, repo, listState, item, active }: Props) {
-    const issues = useResourceEnabled(active && item === null, githubIssuesR, repo, listState);
+export function IssuesView({ paneId, repo, listState, item, composing, active }: Props) {
+    const issues = useResourceEnabled(active && item === null && !composing, githubIssuesR, repo, listState);
     const now = useNow(false);
 
+    if (composing) return <NewIssueForm repo={repo} onCreated={(number) => showItem(paneId, number)} onCancel={() => compose(paneId, null)} />;
     if (item !== null) return <IssueDetail repo={repo} number={item} active={active} onBack={() => showItem(paneId, null)} />;
     if (issues.status === "loading" && !issues.data) return <SkeletonRows rows={8} label="Loading issues" />;
     if (issues.error) {
@@ -123,8 +126,11 @@ export function IssuesView({ paneId, repo, listState, item, active }: Props) {
                         </button>
                     ))}
                 </div>
-                <span className="gha-dim">
+                <span className="gha-dim gha-list-count">
                     {rows.length} issue{rows.length === 1 ? "" : "s"}
+                    <button type="button" className="gha-btn" onClick={() => compose(paneId, "issue")}>
+                        New issue
+                    </button>
                 </span>
             </div>
             {rows.length === 0 ? (

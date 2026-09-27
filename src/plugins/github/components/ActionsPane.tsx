@@ -120,9 +120,25 @@ export function ActionsPane({ paneId, active }: Props) {
                             />
                         )
                     ) : view.section === "pulls" ? (
-                        <PullsView paneId={paneId} repo={repo} listState={view.listState} item={view.item} active={active} />
+                        <PullsView
+                            paneId={paneId}
+                            repo={repo}
+                            listState={view.listState}
+                            item={view.item}
+                            composing={view.composing === "pull"}
+                            projectBranch={project.branch}
+                            login={status.data?.login ?? null}
+                            active={active}
+                        />
                     ) : view.section === "issues" ? (
-                        <IssuesView paneId={paneId} repo={repo} listState={view.listState} item={view.item} active={active} />
+                        <IssuesView
+                            paneId={paneId}
+                            repo={repo}
+                            listState={view.listState}
+                            item={view.item}
+                            composing={view.composing === "issue"}
+                            active={active}
+                        />
                     ) : view.section === "releases" ? (
                         <ReleasesView repo={repo} active={active} />
                     ) : view.run === null ? (

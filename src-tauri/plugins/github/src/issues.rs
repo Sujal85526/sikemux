@@ -169,6 +169,32 @@ pub async fn set_state(data_dir: &Path, input: SetState) -> ActionsResult<()> {
     client::act(data_dir, reqwest::Method::PATCH, &path, Some(&body)).await
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewIssue {
+    #[serde(flatten)]
+    pub repo: RepoRef,
+    pub title: String,
+    #[serde(default)]
+    pub body: String,
+}
+
+pub async fn create(data_dir: &Path, input: NewIssue) -> ActionsResult<Issue> {
+    let title = input.title.trim();
+    if title.is_empty() {
+        return Err(ActionsError::BadArg("an issue needs a title".into()));
+    }
+    let body = json!({ "title": title, "body": input.body });
+    let row: IssueRow = client::send_json(
+        data_dir,
+        reqwest::Method::POST,
+        &input.repo.path("/issues")?,
+        &body,
+    )
+    .await?;
+    Ok(Issue::from(row))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -228,5 +254,15 @@ mod tests {
             state: "archived".into(),
         };
         assert!(set_state(&std::env::temp_dir(), bad).await.is_err());
+
+        let untitled = NewIssue {
+            repo: RepoRef {
+                owner: "a".into(),
+                name: "b".into(),
+            },
+            title: "   ".into(),
+            body: "why".into(),
+        };
+        assert!(create(&std::env::temp_dir(), untitled).await.is_err());
     }
 }
