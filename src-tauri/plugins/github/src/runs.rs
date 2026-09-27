@@ -410,6 +410,56 @@ pub async fn cancel(data_dir: &Path, input: RunRef) -> ActionsResult<()> {
 }
 
 #[derive(Deserialize)]
+struct BillableRow {
+    total_ms: Option<u64>,
+    jobs: Option<u64>,
+}
+
+#[derive(Deserialize)]
+struct TimingRow {
+    run_duration_ms: Option<u64>,
+    #[serde(default)]
+    billable: std::collections::BTreeMap<String, BillableRow>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Billable {
+    /// The runner it ran on: `UBUNTU`, `MACOS`, `WINDOWS`.
+    pub runner: String,
+    pub total_ms: u64,
+    pub jobs: u64,
+}
+
+/// What a run took on the clock, and what it is billed for. A run on a
+/// private repository costs minutes; a public one is free and reports none.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Timing {
+    pub run_duration_ms: Option<u64>,
+    pub billable: Vec<Billable>,
+}
+
+pub async fn timing(data_dir: &Path, input: RunRef) -> ActionsResult<Timing> {
+    let path = input
+        .repo
+        .path(&format!("/actions/runs/{}/timing", input.run_id))?;
+    let row: TimingRow = client::get(data_dir, &path, &[]).await?;
+    Ok(Timing {
+        run_duration_ms: row.run_duration_ms,
+        billable: row
+            .billable
+            .into_iter()
+            .map(|(runner, spent)| Billable {
+                runner,
+                total_ms: spent.total_ms.unwrap_or(0),
+                jobs: spent.jobs.unwrap_or(0),
+            })
+            .collect(),
+    })
+}
+
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JobRef {
     #[serde(flatten)]

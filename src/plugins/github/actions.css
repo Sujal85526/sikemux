@@ -1487,3 +1487,40 @@
     border-radius: var(--radius-1);
     font-variant-numeric: tabular-nums;
 }
+
+/* ---- What a job meant to be read, and what a run cost ------------------- */
+
+.gha-summary {
+    margin-bottom: var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: var(--gha-tint);
+}
+.gha-summary-head {
+    padding: var(--space-1h) var(--space-2);
+    border-bottom: 1px solid var(--border);
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-medium);
+    color: var(--text-primary);
+    cursor: pointer;
+    list-style: none;
+}
+.gha-summary-head::-webkit-details-marker {
+    display: none;
+}
+.gha-summary .gha-prose {
+    padding: 0 var(--space-2) var(--space-2);
+}
+.gha-usage {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+.gha-usage-value {
+    color: var(--text-secondary);
+}
+.gha-workflow-file {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}

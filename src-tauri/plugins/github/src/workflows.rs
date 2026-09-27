@@ -142,6 +142,43 @@ pub async fn dispatch(data_dir: &Path, input: Dispatch) -> ActionsResult<()> {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileRef {
+    #[serde(flatten)]
+    pub repo: RepoRef,
+    pub workflow_id: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowFile {
+    pub path: String,
+    pub text: String,
+}
+
+/// The YAML a run came from, read at the default branch. A workflow's own
+/// record carries the path, so the file is fetched in two steps.
+pub async fn file(data_dir: &Path, input: FileRef) -> ActionsResult<WorkflowFile> {
+    let row: WorkflowRow = client::get(
+        data_dir,
+        &input
+            .repo
+            .path(&format!("/actions/workflows/{}", input.workflow_id))?,
+        &[],
+    )
+    .await?;
+    let contents = input.repo.path(&format!("/contents/{}", row.path))?;
+    let text = String::from_utf8_lossy(
+        &client::download_as(data_dir, &contents, "application/vnd.github.raw").await?,
+    )
+    .into_owned();
+    Ok(WorkflowFile {
+        path: row.path,
+        text,
+    })
+}
+
+#[derive(Deserialize)]
 struct BranchRow {
     name: String,
 }

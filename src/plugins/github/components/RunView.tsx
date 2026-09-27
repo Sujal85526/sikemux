@@ -12,6 +12,9 @@ import { Approvals } from "./Approvals";
 import { Artifacts } from "./Artifacts";
 import { coarse, useNow } from "./hooks";
 import { JobLogView } from "./JobLogView";
+import { JobSummary } from "./JobSummary";
+import { RunUsage } from "./RunUsage";
+import { WorkflowFile } from "./WorkflowFile";
 
 const refreshRuns = () => invalidate((kind) => kind === "gha.runs" || kind === "gha.run");
 
@@ -92,7 +95,12 @@ const JobCard = memo(function JobCard({
                             ))}
                         </div>
                     )}
-                    {job.checkRunId !== null && <Annotations repo={repo} checkRunId={job.checkRunId} active={active} />}
+                    {job.checkRunId !== null && (
+                        <>
+                            <Annotations repo={repo} checkRunId={job.checkRunId} active={active} />
+                            <JobSummary repo={repo} checkRunId={job.checkRunId} active={active} />
+                        </>
+                    )}
                     <JobLogView repo={repo} job={job} active={active} />
                 </div>
             )}
@@ -100,7 +108,21 @@ const JobCard = memo(function JobCard({
     );
 });
 
-function Header({ run, repo, now, canWrite, onRefresh }: { run: Run; repo: RepoRef; now: number; canWrite: boolean; onRefresh: () => void }) {
+function Header({
+    run,
+    repo,
+    now,
+    active,
+    canWrite,
+    onRefresh,
+}: {
+    run: Run;
+    repo: RepoRef;
+    now: number;
+    active: boolean;
+    canWrite: boolean;
+    onRefresh: () => void;
+}) {
     const outcome = outcomeOf(run);
     const live = isRunning(run);
     const act = (what: string, work: Promise<void>) =>
@@ -140,6 +162,7 @@ function Header({ run, repo, now, canWrite, onRefresh }: { run: Run; repo: RepoR
                 {run.actor && <span className="gha-dim">{run.actor}</span>}
                 <span>{formatDuration(elapsedMs(run.startedAt ?? run.createdAt, live ? null : run.updatedAt, now))}</span>
                 <span className="gha-dim">{formatAgo(run.createdAt, now)}</span>
+                {!live && <RunUsage repo={repo} runId={run.id} active={active} />}
             </div>
             <div className="gha-run-head-actions">
                 {canWrite && live && (
@@ -163,6 +186,7 @@ function Header({ run, repo, now, canWrite, onRefresh }: { run: Run; repo: RepoR
                 <button type="button" className="gha-link" onClick={() => void openUrl(run.url).catch(swallow("open GitHub"))}>
                     On GitHub
                 </button>
+                <WorkflowFile repo={repo} workflowId={run.workflowId} active={active} />
                 <Tooltip label="Refresh">
                     <button type="button" className="gha-icon-btn" onClick={onRefresh} aria-label="Refresh run">
                         <IconRefresh size={13} />
@@ -237,7 +261,7 @@ export function RunView({ paneId, repo, runId, openJob, active, canWrite }: Prop
             <button type="button" className="gha-back" onClick={() => closeRun(paneId)}>
                 <IconClose size={11} /> Back to runs
             </button>
-            <Header run={run} repo={repo} now={now} canWrite={canWrite} onRefresh={() => void shown.refresh()} />
+            <Header run={run} repo={repo} now={now} active={active} canWrite={canWrite} onRefresh={() => void shown.refresh()} />
             {run.attempt > 1 && (
                 <div className="gha-attempts">
                     <span className="gha-dim">Attempts</span>
