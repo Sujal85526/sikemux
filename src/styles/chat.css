@@ -656,6 +656,7 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
+    max-width: 100%;
     height: 22px;
     margin-left: -6px;
     padding: 0 6px;
@@ -668,8 +669,26 @@
     color: var(--ink);
 }
 
-.chat-tools-count {
+.chat-tools-label {
+    min-width: 0;
+    overflow: hidden;
     color: var(--ink-dim);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* What Claude said the running command is for reads as a sentence, so it is
+   set a step larger than the count it stands in for. */
+.chat-tools-label.said {
+    font-size: var(--text-xs);
+}
+
+.chat-tools-calls {
+    color: var(--ink-faint);
+}
+
+.chat-tools-sum > :not(.chat-tools-label) {
+    flex: none;
 }
 
 .chat-tools-time,
@@ -714,20 +733,47 @@
     height: 11px;
 }
 
+/* The row takes the pointer across the whole width of the run, while the
+   hover fill hugs what is in it: from just before the icon to just past the
+   time, leaving the tick and the spine outside. */
 .chat-tool {
-    display: grid;
-    grid-template-columns: 9px 16px var(--chat-kind, 46px) minmax(0, max-content) auto;
-    align-items: center;
-    gap: var(--space-2);
+    display: block;
     width: 100%;
-    min-height: 22px;
-    border-radius: var(--radius-1);
     color: var(--ink-dim);
     text-align: left;
 }
 
-button.chat-tool:hover,
-.chat-tool:has(> button.chat-tool-end:hover) {
+/* A row is a button once it has something to open, and buttons take the sans
+   everywhere else; a command stays in the mono the run is set in. */
+button.chat-tool,
+button.chat-tool-end {
+    font-family: inherit;
+}
+
+.chat-tool-line {
+    position: relative;
+    isolation: isolate;
+    display: grid;
+    grid-template-columns: 9px 16px var(--chat-kind, 46px) minmax(0, max-content) auto;
+    align-items: center;
+    gap: var(--space-2);
+    width: max-content;
+    max-width: 100%;
+    min-height: 22px;
+    padding-right: 6px;
+}
+
+.chat-tool-line::after {
+    content: "";
+    position: absolute;
+    inset: 0 0 0 13px;
+    z-index: -1;
+    border-radius: var(--radius-2);
+    transition: background 90ms;
+}
+
+button.chat-tool:hover > .chat-tool-line::after,
+.chat-tool:has(button.chat-tool-end:hover) > .chat-tool-line::after {
     background: color-mix(in oklab, var(--ink) 6%, transparent);
 }
 
@@ -842,21 +888,44 @@ button.chat-tool:hover,
     transition: transform 120ms;
 }
 
+/* A row that only holds output shows it can open once it is pointed at. */
+.chat-tool-chevron.quiet {
+    opacity: 0;
+}
+
+.chat-tool:hover .chat-tool-chevron.quiet {
+    opacity: 0.55;
+}
+
 .chat-tool[aria-expanded="true"] .chat-tool-chevron,
 .chat-tool [aria-expanded="true"] .chat-tool-chevron {
     transform: rotate(90deg);
     opacity: 1;
 }
 
-.chat-tool-spinner {
-    width: 9px;
-    height: 9px;
-    box-sizing: border-box;
-    border: 1.4px solid color-mix(in oklab, var(--acc) 26%, transparent);
-    border-top-color: var(--acc);
-    border-right-color: var(--acc);
-    border-radius: 50%;
-    animation: chat-activity-spin 0.72s linear infinite;
+/* A call still running reads like the Thinking row: the words shimmer, the
+   icon breathes, and the seconds count up where the duration will go. */
+.chat-tool.live .chat-tool-icon {
+    animation: chat-activity-breathe 1.5s ease-in-out infinite;
+}
+
+.chat-tool.live .chat-tool-target,
+.chat-tools-sum.live .chat-tools-label {
+    background: linear-gradient(90deg, var(--ink-faint) 40%, var(--ink) 50%, var(--ink-faint) 60%) 100% 0 / 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: chat-activity-shimmer 2.2s linear infinite;
+}
+
+.chat-tool.live .chat-tool-target * {
+    color: inherit;
+}
+
+.chat-tool-elapsed {
+    color: color-mix(in srgb, var(--ink-faint) 68%, transparent);
+    font-family: var(--mono);
+    font-size: calc(9.5px * var(--chat-text-em, 1));
 }
 
 .chat-tool-detail {
@@ -868,6 +937,106 @@ button.chat-tool:hover,
     font-size: var(--text-2xs);
     line-height: 1.55;
     white-space: pre-wrap;
+}
+
+/* ── a command and what it printed ────────────────────────────────── */
+.chat-tool-terminal {
+    overflow: hidden;
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-2);
+    background: color-mix(in srgb, var(--void) 62%, transparent);
+    font-size: var(--text-2xs);
+    line-height: 17px;
+}
+
+.chat-tool-terminal pre {
+    margin: 0;
+    font: inherit;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    user-select: text;
+}
+
+.chat-tool-terminal > * + :not(.chat-tool-exit) {
+    border-top: 1px solid var(--line-soft);
+}
+
+.chat-tool-command {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) 18px;
+    align-items: start;
+    gap: 7px;
+    padding: 5px 5px 5px 9px;
+}
+
+.chat-tool-prompt {
+    color: color-mix(in oklab, var(--cmd) 70%, var(--ink-dim));
+    line-height: 18px;
+    user-select: none;
+}
+
+.chat-tool-command pre {
+    padding-top: 1px;
+    color: var(--ink);
+}
+
+.chat-tool-output {
+    position: relative;
+}
+
+.chat-tool-output pre {
+    padding: 6px 30px 7px 9px;
+    color: var(--ink-dim);
+}
+
+.chat-tool-output.folded pre {
+    mask-image: linear-gradient(to bottom, #000 60%, transparent);
+}
+
+.chat-tool-output .copy-btn {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+}
+
+.chat-tool-output.empty,
+.chat-tool-note {
+    padding: 5px 9px;
+    color: var(--ink-faint);
+    font-size: var(--text-3xs);
+}
+
+.chat-tool-more {
+    display: block;
+    width: 100%;
+    height: 22px;
+    padding-left: 9px;
+    color: var(--ink-faint);
+    font-family: var(--mono);
+    font-size: var(--text-3xs);
+    text-align: left;
+}
+
+.chat-tool-more:hover {
+    background: color-mix(in oklab, var(--ink) 6%, transparent);
+    color: var(--ink-dim);
+}
+
+.chat-tool-exit {
+    padding: 0 9px 6px;
+    color: var(--danger);
+    font-size: var(--text-3xs);
+}
+
+.chat-tool-picture {
+    padding: 4px;
+}
+
+.chat-tool-picture .chat-image {
+    width: 300px;
+    max-width: 100%;
+    margin: 0;
+    border-radius: var(--radius-1);
 }
 
 /* ── the hunk an edit made ────────────────────────────────────────── */
@@ -2001,7 +2170,9 @@ button.chat-tool:hover,
     .chat-activity-label,
     .chat-activity-loader,
     .chat-activity-mark,
-    .chat-tool-spinner,
+    .chat-tool.live .chat-tool-icon,
+    .chat-tool.live .chat-tool-target,
+    .chat-tools-sum.live .chat-tools-label,
     .chat-subagent-spinner {
         animation: none;
     }

@@ -1,4 +1,5 @@
 import { toolDiff, toolFailure } from "./diff";
+import { toolOutput } from "./toolOutput";
 import type {
     AcpAsyncTask,
     AcpAvailableCommand,
@@ -157,16 +158,18 @@ function withoutPayload(tool: AcpToolCall): AcpToolCall {
 }
 
 /* A call that has ended has said everything it is going to say. The change it
-   made and the message it failed with are worked out here, once, and what they
-   were worked out from is let go of rather than carried for the rest of the
-   session and read again on every redraw. */
+   made, what it printed and the message it failed with are worked out here,
+   once, and what they were worked out from is let go of rather than carried
+   for the rest of the session and read again on every redraw. */
 function settleTool(part: ToolPart): ToolPart {
     const diff = toolDiff(part.tool);
-    const failure = toolFailure(part.tool);
+    const output = toolOutput(part.tool);
+    const failure = output ? null : toolFailure(part.tool);
     return {
         ...part,
         tool: withoutPayload(part.tool),
         ...(diff ? { diff } : {}),
+        ...(output ? { output } : {}),
         ...(failure ? { failure } : {}),
     };
 }

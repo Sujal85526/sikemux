@@ -55,6 +55,7 @@ import {
 } from "../components/Icons";
 import { chatReducer, initialChatState } from "./reducer";
 import { collapseDiff, fencedDiff, type DiffLine, type ToolDiff } from "./diff";
+import { toolDescription, type ToolOutput } from "./toolOutput";
 import { CodeRun, CodeTokens, fenceLanguage, splitAtMark, useCodeTokens, useDiffTokens } from "./codeHighlight";
 import type { CodeLine } from "./types";
 import { localImagePath, localPath, useImagePreview } from "./imagePreview";
@@ -337,18 +338,113 @@ function DiffBody({ diff }: { diff: ToolDiff }) {
     );
 }
 
+/* One observer for every row that asks whether its text still fits, rather
+   than one per row in a transcript that can hold hundreds of them. */
+const fitChecks = new Map<Element, () => void>();
+let fitObserver: ResizeObserver | null = null;
+
+function watchFit(element: Element, check: () => void): () => void {
+    fitObserver ??= new ResizeObserver((entries) => {
+        for (const entry of entries) fitChecks.get(entry.target)?.();
+    });
+    fitChecks.set(element, check);
+    fitObserver.observe(element);
+    return () => {
+        fitChecks.delete(element);
+        fitObserver?.unobserve(element);
+    };
+}
+
+function useCutOff(ref: RefObject<HTMLElement | null>, watching: boolean): boolean {
+    const [cutOff, setCutOff] = useState(false);
+    useLayoutEffect(() => {
+        const element = ref.current;
+        if (!watching || !element) return;
+        const check = () => setCutOff(element.scrollWidth > element.clientWidth + 1);
+        check();
+        return watchFit(element, check);
+    }, [ref, watching]);
+    return watching && cutOff;
+}
+
+/* Counts up in whole seconds like the Thinking row does, on a clock of its own
+   so the tick redraws this label and nothing around it. */
+function LiveSeconds({ since, spent = 0 }: { since?: number; spent?: number }) {
+    const [started] = useState(() => since ?? Date.now());
+    const [now, setNow] = useState(() => Date.now());
+    useEffect(() => {
+        const timer = window.setInterval(() => setNow(Date.now()), 1000);
+        return () => window.clearInterval(timer);
+    }, []);
+    return (
+        <span className="chat-tool-elapsed" aria-hidden="true">
+            {elapsedLabel(Math.max(0, Math.floor((spent + now - started) / 1000)))}
+        </span>
+    );
+}
+
+const OUTPUT_FOLD_LINES = 12;
+
+/* A command and what it printed, the way a terminal would have shown them. */
+function ToolTerminal({ command, output, failed }: { command: string | null; output?: ToolOutput; failed: boolean }) {
+    const [whole, setWhole] = useState(false);
+    const lines = output?.text ? output.text.split("\n") : [];
+    const folds = lines.length > OUTPUT_FOLD_LINES;
+    const folded = folds && !whole;
+    return (
+        <div className="chat-tool-terminal">
+            {command !== null && (
+                <div className="chat-tool-command">
+                    <span className="chat-tool-prompt" aria-hidden="true">
+                        $
+                    </span>
+                    <pre>{command}</pre>
+                    <CopyButton value={command} label="command" size={12} />
+                </div>
+            )}
+            {output?.image && (
+                <div className="chat-tool-picture">
+                    <ChatImage src={`data:${output.image.mimeType};base64,${output.image.data}`} name={attachmentName(output.image.mimeType)} />
+                </div>
+            )}
+            {output &&
+                (output.text ? (
+                    <div className={`chat-tool-output${folded ? " folded" : ""}`}>
+                        <pre>{folded ? lines.slice(0, OUTPUT_FOLD_LINES).join("\n") : output.text}</pre>
+                        <CopyButton value={output.text} label="output" size={12} />
+                    </div>
+                ) : (
+                    !output.image && <div className="chat-tool-output empty">No output</div>
+                ))}
+            {folds && (
+                <button type="button" className="chat-tool-more" onClick={() => setWhole(!whole)}>
+                    {folded ? `Show all ${lines.length} lines` : "Show fewer lines"}
+                </button>
+            )}
+            {output?.cut && (!folds || whole) && <div className="chat-tool-note">The rest of the output was not kept</div>}
+            {failed && output?.exitCode !== undefined && <div className="chat-tool-exit">exit {output.exitCode}</div>}
+        </div>
+    );
+}
+
 function ToolRow({ part }: { part: Extract<ChatPart, { kind: "tool" }> }) {
     const [open, setOpen] = useState(false);
+    const targetRef = useRef<HTMLSpanElement>(null);
     const tool = part.tool;
     // An MCP call is named for the server it went to, whatever kind it claims.
     const rowKind = toolLabel(tool.title).scope !== undefined ? "mcp" : tool.kind;
-    const diff = part.diff;
-    const failure = part.failure;
-    const detail = diff ?? failure;
+    const { diff, output, failure } = part;
     const status = tool.status ?? "pending";
+    const running = toolRunning(tool);
     const file = useFileRef(toolPath(tool));
     const target = toolTarget(tool);
     const linked = !file && toolUrl(target) !== null;
+    const command = tool.kind === "execute" ? tool.title.trim() : null;
+    /* The row holds one line of a command, so the whole of it is worth
+       opening when the line ends in an ellipsis or leaves lines out. */
+    const overflowing = useCutOff(targetRef, command !== null && !running);
+    const cutOff = command !== null && !running && (overflowing || command !== target);
+    const opens = Boolean(diff || output || failure) || cutOff;
     /* A call the turn cut off has a duration, but printing it would read as a
        call that ran that long and then finished. It says why it stopped. */
     const measured = part.startedAt !== undefined && part.endedAt !== undefined ? part.endedAt - part.startedAt : null;
@@ -361,11 +457,13 @@ function ToolRow({ part }: { part: Extract<ChatPart, { kind: "tool" }> }) {
                 <ToolKindIcon tool={tool} kind={rowKind} />
             </span>
             <span className="chat-tool-kind">{toolKind(tool)}</span>
-            <span className="chat-tool-target">
+            <span className="chat-tool-target" ref={targetRef}>
                 {file ? <ChatFileRef refers={file.ref} state={file.state} label={target} size={17} /> : <ToolTarget text={target} />}
             </span>
         </>
     );
+    // Only a change or a failure asks to be opened; a command's output waits to be pointed at.
+    const quiet = !diff && status !== "failed";
     const end = (
         <>
             {diff && (
@@ -374,39 +472,51 @@ function ToolRow({ part }: { part: Extract<ChatPart, { kind: "tool" }> }) {
                     <span className="chat-diff-dels">−{diff.dels}</span>
                 </span>
             )}
-            {elapsed ?? <span className="chat-tool-spinner" aria-hidden="true" />}
-            {detail && <IconChevron size={10} className="chat-tool-chevron" />}
+            {running ? <LiveSeconds since={part.startedAt} /> : elapsed}
+            {opens && <IconChevron size={10} className={`chat-tool-chevron${quiet ? " quiet" : ""}`} />}
         </>
     );
-    const rowProps = { className: `chat-tool status-${status}`, "data-kind": rowKind, title: tool.title };
+    const rowProps = { className: `chat-tool status-${status}${running ? " live" : ""}`, "data-kind": rowKind, title: tool.title };
     return (
         <div className="chat-tool-node">
             {/* A row whose target opens a file or a page cannot itself be a
                 button, so what is left of it opens the detail instead. */}
-            {detail && !file && !linked ? (
+            {opens && !file && !linked ? (
                 <button type="button" {...rowProps} aria-expanded={open} onClick={toggle}>
-                    {lead}
-                    <span className="chat-tool-end">{end}</span>
+                    <span className="chat-tool-line">
+                        {lead}
+                        <span className="chat-tool-end">{end}</span>
+                    </span>
                 </button>
             ) : (
                 <div {...rowProps}>
-                    {lead}
-                    {detail ? (
-                        <button
-                            type="button"
-                            className="chat-tool-end"
-                            aria-expanded={open}
-                            aria-label={open ? "Hide what the call did" : "Show what the call did"}
-                            onClick={toggle}>
-                            {end}
-                        </button>
-                    ) : (
-                        <span className="chat-tool-end">{end}</span>
-                    )}
+                    <span className="chat-tool-line">
+                        {lead}
+                        {opens ? (
+                            <button
+                                type="button"
+                                className="chat-tool-end"
+                                aria-expanded={open}
+                                aria-label={open ? "Hide what the call did" : "Show what the call did"}
+                                onClick={toggle}>
+                                {end}
+                            </button>
+                        ) : (
+                            <span className="chat-tool-end">{end}</span>
+                        )}
+                    </span>
                 </div>
             )}
-            {detail && open && (
-                <div className="chat-tool-detail">{diff ? <DiffBody diff={diff} /> : <div className="chat-tool-out">{failure}</div>}</div>
+            {opens && open && (
+                <div className="chat-tool-detail">
+                    {diff ? (
+                        <DiffBody diff={diff} />
+                    ) : command !== null || output ? (
+                        <ToolTerminal command={command} output={output} failed={status === "failed"} />
+                    ) : (
+                        <div className="chat-tool-out">{failure}</div>
+                    )}
+                </div>
             )}
         </div>
     );
@@ -742,8 +852,8 @@ function toolRunning(tool: AcpToolCall): boolean {
    between calls, and open it again on the next one. */
 function ToolGroup({ tools, live }: { tools: Extract<ChatPart, { kind: "tool" }>[]; live: boolean }) {
     const [reader, setReader] = useState<boolean | null>(null);
-    const running = tools.some((part) => toolRunning(part.tool));
-    const open = reader ?? (live || running);
+    const current = tools.find((part) => toolRunning(part.tool));
+    const open = reader ?? (live || current !== undefined);
     const spent = tools.reduce(
         (total, part) => total + (part.startedAt !== undefined && part.endedAt !== undefined ? part.endedAt - part.startedAt : 0),
         0,
@@ -751,13 +861,26 @@ function ToolGroup({ tools, live }: { tools: Extract<ChatPart, { kind: "tool" }>
     /* One column for every call in the run, as wide as the longest name in it:
        a run of reads stays tight, one that called an MCP server gets the room. */
     const kindWidth = Math.min(16, Math.max(4, ...tools.map((part) => toolKind(part.tool).length)));
+    // While a call runs, the header says what Claude said it is for; a finished run counts its calls.
+    const said = current ? toolDescription(current.tool) : null;
     return (
         <div className="chat-tools">
-            <button type="button" className="chat-tools-sum" aria-expanded={open} onClick={() => setReader(!open)}>
-                <span className="chat-tools-count">
-                    {tools.length} tool {tools.length === 1 ? "call" : "calls"}
-                </span>
-                {spent > 0 && <span className="chat-tools-time">{durationLabel(spent)}</span>}
+            <button type="button" className={`chat-tools-sum${current ? " live" : ""}`} aria-expanded={open} onClick={() => setReader(!open)}>
+                {said ? (
+                    <>
+                        <span className="chat-tools-label said">{said}</span>
+                        {tools.length > 1 && <span className="chat-tools-calls">{tools.length} calls</span>}
+                    </>
+                ) : (
+                    <span className="chat-tools-label">
+                        {tools.length} tool {tools.length === 1 ? "call" : "calls"}
+                    </span>
+                )}
+                {current ? (
+                    <LiveSeconds key={current.id} since={current.startedAt} spent={spent} />
+                ) : (
+                    spent > 0 && <span className="chat-tools-time">{durationLabel(spent)}</span>
+                )}
                 <IconChevron size={10} className="chat-tools-chevron" />
             </button>
             {open && (
