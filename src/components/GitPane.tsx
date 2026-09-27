@@ -29,7 +29,6 @@ import { basename as basenameOf } from "../lib/paths";
 
 const CommitReview = lazy(() => import("./CommitReview").then((module) => ({ default: memo(module.CommitReview) })));
 const MergeReview = lazy(() => import("./MergeReview").then((module) => ({ default: memo(module.MergeReview) })));
-const DiffWorkerProvider = lazy(() => import("./DiffWorkerProvider").then((module) => ({ default: module.DiffWorkerProvider })));
 
 const keepSameRight = (current: RightView, next: RightView): RightView => (sameRightView(current, next) ? current : next);
 
@@ -1629,28 +1628,26 @@ function GitWorkbench({
                 <div className="git-right" ref={rightRef}>
                     <div className="git-right-review">
                         <Suspense fallback={<SkeletonRows rows={6} label="Loading diff preview" />}>
-                            <DiffWorkerProvider>
-                                {right.mode === "merge" ? (
-                                    <MergeReview
-                                        repo={repo}
-                                        files={right.files}
-                                        focusPath={filteredFiles[Math.min(sel.files, filteredFiles.length - 1)]?.path}
-                                        onOpenFile={cmd.requestOpenFile}
-                                        onSaved={onReviewSaved}
-                                    />
-                                ) : right.mode === "commit" ? (
-                                    <CommitReview
-                                        key={right.rev}
-                                        repo={repo}
-                                        rev={right.rev}
-                                        title={right.title}
-                                        subtitle={right.subtitle}
-                                        onOpenFile={cmd.requestOpenFile}
-                                    />
-                                ) : (
-                                    <pre className="git-output">{right.text || "—"}</pre>
-                                )}
-                            </DiffWorkerProvider>
+                            {right.mode === "merge" ? (
+                                <MergeReview
+                                    repo={repo}
+                                    files={right.files}
+                                    focusPath={filteredFiles[Math.min(sel.files, filteredFiles.length - 1)]?.path}
+                                    onOpenFile={cmd.requestOpenFile}
+                                    onSaved={onReviewSaved}
+                                />
+                            ) : right.mode === "commit" ? (
+                                <CommitReview
+                                    key={right.rev}
+                                    repo={repo}
+                                    rev={right.rev}
+                                    title={right.title}
+                                    subtitle={right.subtitle}
+                                    onOpenFile={cmd.requestOpenFile}
+                                />
+                            ) : (
+                                <pre className="git-output">{right.text || "—"}</pre>
+                            )}
                         </Suspense>
                         {busy && (
                             <div className="git-busy-overlay">

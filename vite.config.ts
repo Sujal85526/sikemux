@@ -16,11 +16,8 @@ function pruneBundleOnlyPublicAssets(): PluginOption {
 }
 
 function chunkName(id: string): string | undefined {
-  if (id.endsWith("/src/vendor/pierreThemes.ts")) return "diffs";
-  // The highlighter is reached two ways: through @pierre/diffs for the
-  // diff panes, and on its own for the code fences in a chat. Keeping
-  // it out of the diffs chunk is what lets a fence colour itself
-  // without also downloading a diff renderer it will never call.
+  // The diff panes and the code fences in a chat both colour through
+  // Shiki, and neither should pay for it until it has code to colour.
   if (id.endsWith("/src/vendor/shiki.ts")) return "highlighter";
   if (!id.includes("node_modules")) return undefined;
   const packagePath = id.slice(id.lastIndexOf("/node_modules/") + 14);
@@ -37,9 +34,6 @@ function chunkName(id: string): string | undefined {
     packagePath.startsWith("oniguruma")
   ) {
     return "highlighter";
-  }
-  if (packagePath.startsWith("@pierre/") || packagePath.startsWith("diff/")) {
-    return "diffs";
   }
   const codemirrorPackage = packagePath.startsWith("@")
     ? packagePath.split("/").slice(0, 2).join("/")
@@ -66,6 +60,9 @@ function chunkName(id: string): string | undefined {
   if (codemirrorCorePackages.has(codemirrorPackage)) {
     return "codemirror-core";
   }
+  // Only the editable diff uses the merge view, so it rides in that
+  // lazy chunk rather than in every editor's language pack.
+  if (codemirrorPackage === "@codemirror/merge") return undefined;
   // The bare "codemirror" meta-package (basicSetup) statically pulls
   // in both @codemirror/search (langs) and the core packages above.
   // Grouping it with langs keeps the edge one-directional: langs
@@ -107,10 +104,6 @@ export default defineConfig({
   clearScreen: false,
   resolve: {
     alias: [
-      {
-        find: "@pierre/theming/themes",
-        replacement: resolve("src/vendor/pierreThemes.ts"),
-      },
       { find: /^shiki$/, replacement: resolve("src/vendor/shiki.ts") },
       {
         find: /^shiki\/(wasm|engine\/oniguruma)$/,

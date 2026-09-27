@@ -147,30 +147,18 @@ const budgets = [
     gzip: 47_000,
   },
   {
-    label: "Diffs lazy chunk (pierre/diffs, no highlighter)",
-    pattern: /^diffs-.*\.js$/,
-    raw: 610_000,
-    gzip: 165_000,
-  },
-  {
     label: "Diffs language grammar chunks (one per language, loaded on demand)",
     pattern: diffLanguageChunkPattern,
     raw: 950_000,
     gzip: 130_000,
   },
   {
-    label: "Diffs worker chunks",
-    pattern: /^(?:worker|wasm)-.*\.js$/,
-    raw: 930_000,
-    gzip: 335_000,
-  },
-  {
     // Rolldown reaches CommonJS exports such as React's jsx through
     // `(0, ns.jsx)(...)` at every call site, which Rollup did not. The app's
     // motion (glides, rows opening and closing, overlays fading) lives here too.
-    label: "default-path JavaScript except Diffs and its grammar chunks",
+    label: "default-path JavaScript except the highlighter and its grammar chunks",
     pattern: new RegExp(
-      `^(?!(?:diffs|highlighter|worker|wasm|paper-shaders|xterm-webgl|${diffLanguageChunkNames.join("|")})-).*\\.js$`,
+      `^(?!(?:highlighter|paper-shaders|xterm-webgl|${diffLanguageChunkNames.join("|")})-).*\\.js$`,
     ),
     raw: 3_260_000,
     gzip: 1_050_000,

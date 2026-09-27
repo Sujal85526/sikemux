@@ -1,5 +1,6 @@
 import { describe, test } from "vitest";
-import { parseDiffFromFile, type FileContents } from "@pierre/diffs";
+import type { DiffRow } from "./api/git";
+import { layoutRows } from "./components/DiffView";
 import { UiActivityTracker } from "./lib/activity";
 import { PerformanceTelemetry } from "./lib/performance";
 import { rankBy } from "./lib/fuzzy";
@@ -16,21 +17,14 @@ for (let index = 1; index < 24; index += 1) {
     layout = splitPane(layout, `pane-${index - 1}`, index % 2 === 0 ? "row" : "column", pane(`pane-${index}`));
 }
 
-function pierreInputs(fileCount: number, lineCount: number, changeEvery: number): Array<readonly [FileContents, FileContents]> {
-    return Array.from({ length: fileCount }, (_, fileIndex) => {
-        const base: string[] = [];
-        const head: string[] = [];
-        for (let lineIndex = 0; lineIndex < lineCount; lineIndex += 1) {
-            const line = `export const value_${fileIndex}_${lineIndex} = ${lineIndex};`;
-            base.push(line);
-            head.push(lineIndex % changeEvery === 0 ? `export const value_${fileIndex}_${lineIndex} = ${lineIndex + 1};` : line);
-        }
-        const name = `src/file-${fileIndex}.ts`;
-        return [
-            { name, contents: base.join("\n"), lang: "typescript", cacheKey: `base-${fileIndex}` },
-            { name, contents: head.join("\n"), lang: "typescript", cacheKey: `head-${fileIndex}` },
-        ] as const;
-    });
+function diffRows(fileCount: number, lineCount: number): DiffRow[][] {
+    return Array.from({ length: fileCount }, (_, fileIndex) =>
+        Array.from({ length: lineCount }, (_, lineIndex): DiffRow => [
+            lineIndex % 3 === 0 ? 1 : 0,
+            lineIndex + 1,
+            `export const value_${fileIndex}_${lineIndex} = ${lineIndex};`,
+        ]),
+    );
 }
 
 function measure(name: string, fn: () => unknown) {
@@ -42,8 +36,8 @@ function measure(name: string, fn: () => unknown) {
 const activityTracker = new UiActivityTracker();
 for (let index = 0; index < 24; index += 1) activityTracker.beginCommand(`inflight_${index}`);
 
-const manyPierreDiffs = pierreInputs(1_000, 250, 25);
-const tallPierreDiffs = pierreInputs(25, 2_000, 100);
+const manyDiffs = diffRows(1_000, 90);
+const tallDiffs = diffRows(25, 2_000);
 
 for (const count of [5_000, 50_000, 250_000]) {
     const files = Array.from({ length: count }, (_, index) => `src/project-${index % 97}/component-${index}.tsx`);
@@ -88,12 +82,12 @@ describe("interactive hot paths", () => {
         activityTracker.snapshot();
     });
 
-    measure("parse 1,000 Pierre diffs with 10 changes each", () => {
-        for (const [base, head] of manyPierreDiffs) parseDiffFromFile(base, head);
+    measure("lay out 1,000 diffs of 90 rows each", () => {
+        for (const rows of manyDiffs) layoutRows(rows);
     });
 
-    measure("parse 25 Pierre diffs with 2,000 lines each", () => {
-        for (const [base, head] of tallPierreDiffs) parseDiffFromFile(base, head);
+    measure("lay out 25 diffs of 2,000 rows each", () => {
+        for (const rows of tallDiffs) layoutRows(rows);
     });
 });
 

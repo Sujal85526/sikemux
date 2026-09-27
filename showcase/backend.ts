@@ -182,6 +182,7 @@ export class ShowcaseBackend implements IpcTransport {
     this.on("git_file_at", async ({ repo, path }) =>
       server("read_file", { path: `${repo}/${path}` }).catch(() => ""),
     );
+    this.on("git_file_diff", constant([]));
     this.on("git_blame", constant({ commits: [], lines: [] }));
 
     this.on("git_overview", async ({ repo }) => {
