@@ -78,7 +78,7 @@ fn write_lock_for(path: &Path) -> AppResult<FileWriteLock> {
 }
 
 fn content_version(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    hex::encode(Sha256::digest(bytes))
 }
 
 /// List a directory, directories first then files, both alphabetical.

@@ -137,7 +137,7 @@ fn grammar_text(source: &[u8]) -> AppResult<String> {
 }
 
 fn digest(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    hex::encode(Sha256::digest(bytes))
 }
 
 fn failures() -> &'static Mutex<HashMap<String, Instant>> {
