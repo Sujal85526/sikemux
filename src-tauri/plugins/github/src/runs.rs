@@ -447,16 +447,20 @@ pub struct AttemptRef {
 
 pub async fn attempt(data_dir: &Path, input: AttemptRef) -> ActionsResult<RunDetail> {
     let base = format!("/actions/runs/{}/attempts/{}", input.run_id, input.attempt);
-    let run: RunRow = client::get(data_dir, &input.repo.path(&base)?, &[]).await?;
-    let jobs: JobList = client::get(
-        data_dir,
-        &input.repo.path(&format!("{base}/jobs"))?,
-        &[("per_page", MAX_PER_PAGE.to_string())],
+    // Neither answer needs the other, so they are asked for together the way
+    // the current attempt's are.
+    let (run, jobs): (ActionsResult<RunRow>, ActionsResult<JobList>) = futures::future::join(
+        client::get(data_dir, &input.repo.path(&base)?, &[]),
+        client::get(
+            data_dir,
+            &input.repo.path(&format!("{base}/jobs"))?,
+            &[("per_page", MAX_PER_PAGE.to_string())],
+        ),
     )
-    .await?;
+    .await;
     Ok(RunDetail {
-        run: Run::from(run),
-        jobs: jobs.jobs.into_iter().map(Job::from).collect(),
+        run: Run::from(run?),
+        jobs: jobs?.jobs.into_iter().map(Job::from).collect(),
     })
 }
 

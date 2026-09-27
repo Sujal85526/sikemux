@@ -158,6 +158,7 @@ pub async fn sign_in(data_dir: &Path, input: SignIn) -> ActionsResult<()> {
     if owns_token {
         config::keychain_write(&host, &token)?;
     }
+    config::forget_token();
     config::save(
         data_dir,
         &ActionsConfig {
@@ -171,6 +172,7 @@ pub async fn sign_in(data_dir: &Path, input: SignIn) -> ActionsResult<()> {
 /// Only a token Sikemux saved is deleted. One the shell or `gh` provides is
 /// left where it is, and simply stops being used here.
 pub async fn sign_out(data_dir: &Path) -> ActionsResult<()> {
+    config::forget_token();
     let config = config::load(data_dir);
     if config.owns_token {
         config::keychain_delete(&config.host)?;
