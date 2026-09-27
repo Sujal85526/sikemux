@@ -3394,6 +3394,82 @@ pub async fn git_ai_commit(
 
 // ---- open PR --------------------------------------------------------------
 
+#[derive(Debug, PartialEq)]
+enum PullRequestHost {
+    GitHub,
+    Bitbucket,
+}
+
+fn remote_host_and_path(remote_url: &str) -> Option<(String, String)> {
+    if let Ok(parsed) = url::Url::parse(remote_url) {
+        if !matches!(
+            parsed.scheme(),
+            "https" | "http" | "ssh" | "git" | "git+ssh"
+        ) {
+            return None;
+        }
+        return Some((parsed.host_str()?.to_string(), parsed.path().to_string()));
+    }
+    let (user_host, path) = remote_url.split_once(':')?;
+    if user_host.contains('/') {
+        return None;
+    }
+    let host = user_host
+        .rsplit_once('@')
+        .map_or(user_host, |(_, host)| host);
+    Some((host.to_string(), path.to_string()))
+}
+
+fn is_plain_path_segment(segment: &str) -> bool {
+    !segment.is_empty()
+        && segment != "."
+        && segment != ".."
+        && segment
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+}
+
+fn pull_request_url(remote_url: &str, branch: &str) -> Result<String, String> {
+    let unsupported = || format!("unsupported remote: {remote_url}");
+    let (host, path) = remote_host_and_path(remote_url.trim()).ok_or_else(unsupported)?;
+    let provider = match host.to_ascii_lowercase().as_str() {
+        "github.com" => PullRequestHost::GitHub,
+        "bitbucket.org" => PullRequestHost::Bitbucket,
+        _ => return Err(unsupported()),
+    };
+    let path = path.trim_matches('/');
+    let path = path.strip_suffix(".git").unwrap_or(path);
+    let (owner, name) = path.split_once('/').ok_or_else(unsupported)?;
+    if !is_plain_path_segment(owner) || !is_plain_path_segment(name) {
+        return Err(unsupported());
+    }
+
+    let mut url = url::Url::parse(match provider {
+        PullRequestHost::GitHub => "https://github.com/",
+        PullRequestHost::Bitbucket => "https://bitbucket.org/",
+    })
+    .map_err(|e| e.to_string())?;
+    {
+        let mut segments = url
+            .path_segments_mut()
+            .map_err(|_| "cannot build pull request url".to_string())?;
+        segments.clear().extend([owner, name]);
+        match provider {
+            PullRequestHost::GitHub => {
+                segments.push("compare").extend(branch.split('/'));
+            }
+            PullRequestHost::Bitbucket => {
+                segments.extend(["pull-requests", "new"]);
+            }
+        }
+    }
+    match provider {
+        PullRequestHost::GitHub => url.query_pairs_mut().append_pair("expand", "1"),
+        PullRequestHost::Bitbucket => url.query_pairs_mut().append_pair("source", branch),
+    };
+    Ok(url.into())
+}
+
 #[tauri::command]
 pub async fn pr_open(repo: String) -> Result<String, String> {
     run_blocking(move || -> Result<String, String> {
@@ -3411,23 +3487,7 @@ pub async fn pr_open(repo: String) -> Result<String, String> {
             .and_then(|h| h.shorthand().ok().map(String::from))
             .ok_or("no current branch (detached HEAD?)")?;
 
-        let mut url = if let Some(rest) = remote_url.strip_prefix("git@") {
-            match rest.split_once(':') {
-                Some((host, path)) => format!("https://{host}/{}", path.trim_end_matches(".git")),
-                None => remote_url.clone(),
-            }
-        } else {
-            remote_url.trim_end_matches(".git").to_string()
-        };
-
-        if url.contains("github.com") {
-            url = format!("{url}/compare/{branch}?expand=1");
-        } else if url.contains("bitbucket.org") {
-            url = format!("{url}/pull-requests/new?source={branch}");
-        } else {
-            return Err(format!("unsupported remote host: {url}"));
-        }
-
+        let url = pull_request_url(&remote_url, &branch)?;
         open::that_detached(&url).map_err(|e| e.to_string())?;
         Ok(url)
     })
@@ -4841,6 +4901,39 @@ mod tests {
             .expect("open remote")
             .find_reference("refs/heads/-q")
             .is_err());
+    }
+
+    #[test]
+    fn pull_request_urls_only_point_at_known_hosts() {
+        let github = "https://github.com/nodelike/sikemux/compare/feat/x?expand=1";
+        for remote in [
+            "git@github.com:nodelike/sikemux.git",
+            "https://github.com/nodelike/sikemux.git",
+            "https://token@github.com/nodelike/sikemux",
+            "ssh://git@github.com/nodelike/sikemux.git",
+        ] {
+            assert_eq!(pull_request_url(remote, "feat/x").as_deref(), Ok(github));
+        }
+        assert_eq!(
+            pull_request_url("git@bitbucket.org:team/app.git", "feat/x").as_deref(),
+            Ok("https://bitbucket.org/team/app/pull-requests/new?source=feat%2Fx")
+        );
+        assert_eq!(
+            pull_request_url("git@github.com:o/r.git", "a#b?c d").as_deref(),
+            Ok("https://github.com/o/r/compare/a%23b%3Fc%20d?expand=1")
+        );
+        for remote in [
+            "https://github.com.evil.test/o/r.git",
+            "https://evil.test/github.com/o/r.git",
+            "git@evil.test:github.com/r.git",
+            "file:///tmp/github.com/o/r",
+            "javascript:alert(1)//github.com/o/r",
+            "/tmp/github.com/o/r",
+            "https://github.com/o/r/extra",
+            "https://github.com/../r",
+        ] {
+            assert!(pull_request_url(remote, "main").is_err(), "{remote}");
+        }
     }
 
     #[tokio::test]
