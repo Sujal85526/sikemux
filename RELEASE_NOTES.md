@@ -1,21 +1,19 @@
-# Sikemux v0.4.2-nightly.2
+# Sikemux v0.4.2-nightly.3
 
-The second nightly on the 0.4.2 line. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
+The third nightly on the 0.4.2 line. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
 
-## New since nightly.1
+## New since nightly.2
 
-- Sikemux notifies you when an agent needs you while the app is in the background.
-- The up and down arrows in the chat composer bring back messages you already sent.
-- Astro files get syntax highlighting and an icon.
-- A task's output opens as a terminal tab.
-- A URL in a tool call row opens like any other link.
-- A running subagent's row in the dock holds its icon and name still.
-- The screen no longer drifts left and crops its edge.
-- Browser pages parked out of view no longer swallow files dropped on the window.
-- The agent mark on a browser tab shares the close button's slot.
-- When `sikemux.json` can't be loaded, Sikemux says whether it is missing or invalid, and why.
-- What's New shows contributor credits, and their avatars load even when one GitHub address is unreachable.
+- **Voice.** Hold right Option to dictate into the focused agent, or use the microphone in the chat composer. Speech is transcribed on your Mac, on the Neural Engine.
+- **More agents in the chat.** OpenCode, OMP, Grok and Hermes open in the built-in chat, over their own ACP.
+- **Motion.** Tabs, rails, menus, palettes and toasts open and close with motion. New messages rise in, tool calls unfold in place, send and stop turn into each other, and working agents twinkle instead of spinning.
+- **A new first run.** One welcome screen instead of a four-step tour.
+- **AWS and Rundeck redesigned** around a list and a side panel. AWS also shows queue message counts, and a task's zone and address.
+- **The chat.** Tool calls show what they printed and what is still running. Code blocks have a copy button and a language icon. A new agent tab is named after its first prompt, and Claude sessions are titled by what you typed.
+- **The desk.** An agent's side pane holds its pages, files and task terminals.
+- **Languages.** Grammars that don't ship with the app are downloaded once, when first needed, and files without an extension take their language's icon.
+- **The terminal** colours shell output and spaces its rows the way Ghostty does.
+- Selection shows as a ring instead of a stripe down the left edge.
+- Tauri 2.12, and a round of dependency upgrades.
 
-Thanks to Ankit Patidar for #34 and #35.
-
-For the complete patch history, compare [`v0.4.2-nightly.1...v0.4.2-nightly.2`](https://github.com/nodelike/sikemux/compare/v0.4.2-nightly.1...v0.4.2-nightly.2).
+For the complete patch history, compare [`v0.4.2-nightly.2...v0.4.2-nightly.3`](https://github.com/nodelike/sikemux/compare/v0.4.2-nightly.2...v0.4.2-nightly.3).
