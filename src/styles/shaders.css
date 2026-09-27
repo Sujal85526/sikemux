@@ -115,3 +115,8 @@
 .pane {
     background: transparent;
 }
+
+/* Plugin panes are panels in their own right, so they take the rails' ground. */
+.pane-plugin {
+    background: var(--pane-ground);
+}
