@@ -99,6 +99,7 @@
 
 .tb-center {
     flex: 1 1 0;
+    padding-right: var(--space-3);
     display: flex;
     justify-content: flex-start;
     align-items: center;

@@ -424,6 +424,7 @@ body.is-sorting-tabs * {
 
 /* variant: the session's agent + terminal tabs, in the top bar */
 .tabbar.v-agent {
+    flex: 0 1 auto;
     height: 100%;
     min-width: 0;
 }
