@@ -645,6 +645,63 @@ pub fn cli_executable_path() -> Option<PathBuf> {
     sibling.is_file().then_some(sibling)
 }
 
+static CLI_ON_PATH: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+/// Agents shell out to `sikemux`, but the packaged CLI is named
+/// `sikemux-editor`, so a `sikemux` link to it goes first on PATH for every
+/// process this app launches. Call once at startup, before threads spawn.
+pub fn put_cli_on_path() {
+    let Some(executable) = cli_executable_path() else {
+        return;
+    };
+    let Some(directory) = crate::state::state_path().and_then(|path| {
+        Some(path.parent()?.join(if cfg!(debug_assertions) {
+            "bin-dev"
+        } else {
+            "bin"
+        }))
+    }) else {
+        return;
+    };
+    let Ok(link) = link_cli(&executable, &directory) else {
+        return;
+    };
+    let existing = std::env::var_os("PATH").unwrap_or_default();
+    let paths = std::iter::once(directory.clone())
+        .chain(std::env::split_paths(&existing).filter(|path| *path != directory));
+    if let Ok(joined) = std::env::join_paths(paths) {
+        // SAFETY: called once at startup before any threads spawn.
+        unsafe { std::env::set_var("PATH", joined) };
+        let _ = CLI_ON_PATH.set(link);
+    }
+}
+
+pub fn cli_command_path() -> Option<PathBuf> {
+    CLI_ON_PATH.get().cloned().or_else(cli_executable_path)
+}
+
+fn link_cli(executable: &Path, directory: &Path) -> std::io::Result<PathBuf> {
+    fs::create_dir_all(directory)?;
+    let link = directory.join(if cfg!(windows) {
+        "sikemux.exe"
+    } else {
+        "sikemux"
+    });
+    #[cfg(unix)]
+    {
+        if fs::read_link(&link).is_ok_and(|target| target == executable) {
+            return Ok(link);
+        }
+        let staging = directory.join(format!(".sikemux-{}", std::process::id()));
+        let _ = fs::remove_file(&staging);
+        std::os::unix::fs::symlink(executable, &staging)?;
+        fs::rename(&staging, &link)?;
+    }
+    #[cfg(windows)]
+    fs::copy(executable, &link)?;
+    Ok(link)
+}
+
 #[tauri::command]
 pub fn cli_frontend_ready(state: tauri::State<'_, CliBrokerState>) -> Vec<CliFrontendRequest> {
     state
@@ -768,6 +825,22 @@ mod tests {
             fs::metadata(path).unwrap().permissions().mode() & 0o777,
             0o600
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_cli_is_linked_as_sikemux_and_relinked_when_it_moves() {
+        let root = tempfile::tempdir().unwrap();
+        let first = root.path().join("first/sikemux-editor");
+        let second = root.path().join("second/sikemux-editor");
+        let directory = root.path().join("bin");
+        let link = link_cli(&first, &directory).unwrap();
+        assert_eq!(link, directory.join("sikemux"));
+        assert_eq!(fs::read_link(&link).unwrap(), first);
+        assert_eq!(link_cli(&first, &directory).unwrap(), link);
+        link_cli(&second, &directory).unwrap();
+        assert_eq!(fs::read_link(&link).unwrap(), second);
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
     }
 
     #[test]

@@ -140,12 +140,23 @@ pub fn execute(
         return crate::plugins::agent::execute(app, &request.method, &request.params);
     }
     let id = request.id.clone();
+    let inspecting = request.method == "workspace.inspect";
     let receiver = broker.enqueue(request)?;
     let _ = app.emit_to("main", "harness-request", ());
     let result = receiver.recv_timeout(Duration::from_secs(65))
         .unwrap_or_else(|_| Err("Harness request timed out; task.start may still complete. Retry with the same idempotencyKey.".into()));
     broker.remove(&id);
-    result
+    match result {
+        Ok(mut value) if inspecting => {
+            if let (Some(object), Some(cli)) =
+                (value.as_object_mut(), crate::cli_server::cli_command_path())
+            {
+                object.insert("cli".into(), cli.to_string_lossy().into());
+            }
+            Ok(value)
+        }
+        other => other,
+    }
 }
 
 #[tauri::command]

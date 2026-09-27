@@ -68,6 +68,7 @@ pub fn run() {
     // they do in `make dev`. macOS GUI launches otherwise get a minimal
     // PATH that's missing ~/.local/bin, /opt/homebrew/bin, etc.
     system::fix_path_from_login_shell();
+    cli_server::put_cli_on_path();
 
     // Warm the profile-environment cache here, on the startup thread, while
     // we are already paying for a login shell. It is first *needed* inside

@@ -315,10 +315,15 @@ Every tool here is also a CLI verb, which is useful inside a task or a script:
 sikemux tool workspace.inspect
 sikemux tool task.start '{"taskId":"dev","idempotencyKey":"dev-first-run"}'
 sikemux tool task.read '{"executionId":"ID","cursor":0}'
+sikemux tool task.read '{"taskId":"dev","tail":50,"plain":true}'
 sikemux tool events.wait '{"cursor":"CURSOR","timeoutMs":30000}'
 sikemux tool ui.open '{"kind":"file","path":"src/App.tsx","line":42,"focus":true}'
 sikemux tool task.stop '{"executionId":"ID"}'
 ```
+
+`sikemux` is on PATH for the terminals, tasks and agents Sikemux launches,
+including your own shell tool. Where it is not, `workspace_inspect` returns
+its absolute path as `cli`.
 
 Terminals that Sikemux launches already carry the project and agent context.
 From any other shell, run the CLI inside the open project's Git root or set
