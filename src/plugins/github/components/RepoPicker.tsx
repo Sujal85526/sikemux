@@ -1,11 +1,41 @@
-import { useMemo, useState } from "react";
-import { usePluginOverlay } from "../../../plugin-api/host";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useModalFocus, usePluginOverlay } from "../../../plugin-api/host";
 import { useResource } from "../../../plugin-api/resources";
-import { IconClose, rankBy, SkeletonRows } from "../../../plugin-api/ui";
-import type { RepoRef } from "../api";
+import { IconSearch, rankBy, useMouseActive } from "../../../plugin-api/ui";
+import type { RepoListing, RepoRef } from "../api";
 import { actionsMyReposR } from "../resources";
+import { formatAgo } from "../runStatus";
 import { actionsSettings, refOf, slugOf } from "../state";
 import { GithubMark } from "./ActionsIcon";
+
+interface Entry {
+    slug: string;
+    repo: RepoRef;
+    /** The heading this belongs under, or nothing when it is the typed one. */
+    group: string | null;
+    sub: string;
+}
+
+/**
+ * Pinned repositories first, then the account's own, each listed once. The
+ * order is the order somebody would look in.
+ */
+export function entriesFor(pinned: readonly string[], mine: readonly RepoListing[], now: number): Entry[] {
+    const seen = new Set<string>();
+    const entries: Entry[] = [];
+    const add = (slug: string, group: string, sub: string) => {
+        const repo = refOf(slug);
+        if (!repo || seen.has(slug)) return;
+        seen.add(slug);
+        entries.push({ slug, repo, group, sub });
+    };
+    for (const slug of pinned) add(slug, "Pinned", "pinned");
+    for (const repo of mine) {
+        const age = repo.pushedAt ? formatAgo(repo.pushedAt, now) : "";
+        add(repo.slug, "Your repositories", [repo.private ? "private" : "", repo.archived ? "archived" : "", age].filter(Boolean).join(" · "));
+    }
+    return entries;
+}
 
 interface Props {
     current: RepoRef | null;
@@ -14,85 +44,108 @@ interface Props {
 }
 
 export function RepoPicker({ current, onPick, onClose }: Props) {
-    const [typed, setTyped] = useState("");
-    const mine = useResource(actionsMyReposR);
-    const pinned = actionsSettings.useSelect((settings) => settings.pinned);
+    const modalRef = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
+    const listRef = useRef<HTMLDivElement>(null);
+    useModalFocus(modalRef);
     usePluginOverlay(true);
 
-    const slugs = useMemo(() => {
-        const seen = new Set<string>();
-        const all: { slug: string; pinned: boolean }[] = [];
-        for (const slug of pinned) {
-            seen.add(slug);
-            all.push({ slug, pinned: true });
-        }
-        for (const repo of mine.data ?? []) {
-            if (seen.has(repo.slug)) continue;
-            seen.add(repo.slug);
-            all.push({ slug: repo.slug, pinned: false });
-        }
-        return all;
-    }, [pinned, mine.data]);
+    const mine = useResource(actionsMyReposR);
+    const pinned = actionsSettings.useSelect((settings) => settings.pinned);
+    const [query, setQuery] = useState("");
+    const [selected, setSelected] = useState(0);
+    const mouseActive = useMouseActive();
 
-    const shown = useMemo(() => rankBy(typed.trim(), slugs, (entry) => entry.slug, 60), [slugs, typed]);
+    useEffect(() => {
+        inputRef.current?.focus();
+    }, []);
 
-    const typedRef = refOf(typed.trim());
-    const pick = (repo: RepoRef) => {
-        onPick(repo);
+    const items = useMemo(() => {
+        const typed = query.trim();
+        const all = entriesFor(pinned, mine.data ?? [], Date.now());
+        const ranked = rankBy(typed, all, (entry) => entry.slug, 60);
+        const asSlug = refOf(typed);
+        // Anything shaped like owner/repo opens, listed or not.
+        if (!asSlug || all.some((entry) => entry.slug === typed)) return ranked;
+        return [{ slug: typed, repo: asSlug, group: null, sub: "open it" }, ...ranked];
+    }, [pinned, mine.data, query]);
+
+    useEffect(() => {
+        listRef.current
+            ?.querySelector<HTMLElement>(`.picker-item-wrap:nth-child(${selected + 1}) .picker-item`)
+            ?.scrollIntoView({ block: "nearest" });
+    }, [selected]);
+
+    const activate = (entry: Entry | undefined) => {
+        if (!entry) return;
+        onPick(entry.repo);
         onClose();
     };
 
+    const onKeyDown = (event: React.KeyboardEvent) => {
+        if (event.key === "Escape") onClose();
+        else if (event.key === "ArrowDown" || (event.key === "Tab" && !event.shiftKey)) {
+            event.preventDefault();
+            setSelected((at) => (items.length ? (at + 1) % items.length : 0));
+        } else if (event.key === "ArrowUp" || (event.key === "Tab" && event.shiftKey)) {
+            event.preventDefault();
+            setSelected((at) => (items.length ? (at - 1 + items.length) % items.length : 0));
+        } else if (event.key === "Enter") {
+            event.preventDefault();
+            activate(items[selected]);
+        }
+    };
+
     return (
-        <div className="gha-modal-scrim" role="presentation" onClick={onClose}>
-            <div className="gha-modal picker" role="dialog" aria-label="Choose a repository" onClick={(event) => event.stopPropagation()}>
-                <div className="gha-modal-head">
-                    <h2>Repository</h2>
-                    <button type="button" className="gha-icon-btn" onClick={onClose} aria-label="Close">
-                        <IconClose size={13} />
-                    </button>
+        <div className="picker-backdrop" onMouseDown={onClose}>
+            <div
+                ref={modalRef}
+                tabIndex={-1}
+                className="picker"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Choose a repository"
+                onMouseDown={(event) => event.stopPropagation()}>
+                <div className="picker-input-wrap">
+                    <IconSearch size={15} className="picker-search-icon" />
+                    <input
+                        ref={inputRef}
+                        className="picker-input"
+                        placeholder="Search your repositories, or type owner/repo"
+                        value={query}
+                        onChange={(event) => {
+                            setQuery(event.target.value);
+                            setSelected(0);
+                        }}
+                        onKeyDown={onKeyDown}
+                        spellCheck={false}
+                        autoCapitalize="off"
+                        autoCorrect="off"
+                    />
                 </div>
-                <input
-                    className="gha-input gha-mono"
-                    value={typed}
-                    onChange={(event) => setTyped(event.target.value)}
-                    onKeyDown={(event) => {
-                        if (event.key !== "Enter") return;
-                        const first = shown[0];
-                        if (typedRef) pick(typedRef);
-                        else if (first) {
-                            const ref = refOf(first.slug);
-                            if (ref) pick(ref);
-                        }
-                    }}
-                    placeholder="owner/repo"
-                    autoFocus
-                    spellCheck={false}
-                />
-                {typedRef && (
-                    <button type="button" className="gha-pick-row" onClick={() => pick(typedRef)}>
-                        <GithubMark size={12} />
-                        <span className="gha-pick-name">Open {slugOf(typedRef)}</span>
-                    </button>
-                )}
-                <div className="gha-pick-list">
-                    {mine.status === "loading" && !mine.data && <SkeletonRows rows={6} label="Loading repositories" />}
-                    {shown.map((entry) => {
-                        const ref = refOf(entry.slug);
-                        if (!ref) return null;
+
+                <div className="picker-list" ref={listRef}>
+                    {items.length === 0 && <div className="picker-empty">{mine.status === "loading" ? "loading…" : "no matches"}</div>}
+                    {items.map((entry, index) => {
+                        const heading = entry.group && entry.group !== items[index - 1]?.group ? entry.group : null;
                         return (
-                            <button
+                            <div
                                 key={entry.slug}
-                                type="button"
-                                className="gha-pick-row"
-                                data-on={current && slugOf(current) === entry.slug ? "1" : "0"}
-                                onClick={() => pick(ref)}>
-                                <GithubMark size={12} />
-                                <span className="gha-pick-name">{entry.slug}</span>
-                                {entry.pinned && <span className="gha-dim">pinned</span>}
-                            </button>
+                                className="picker-item-wrap"
+                                onMouseEnter={() => {
+                                    if (mouseActive.current) setSelected(index);
+                                }}>
+                                {heading && <div className="picker-group">{heading}</div>}
+                                <button type="button" className={`picker-item${index === selected ? " sel" : ""}`} onClick={() => activate(entry)}>
+                                    <span className="picker-icon plugin">
+                                        <GithubMark size={14} />
+                                    </span>
+                                    <span className="picker-name">{entry.slug}</span>
+                                    <span className="picker-sub">{current && slugOf(current) === entry.slug ? "open" : entry.sub}</span>
+                                </button>
+                            </div>
                         );
                     })}
-                    {shown.length === 0 && mine.status !== "loading" && <div className="gha-side-empty">Type owner/repo to open one.</div>}
                 </div>
             </div>
         </div>

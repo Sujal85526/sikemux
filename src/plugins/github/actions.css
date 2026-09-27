@@ -846,47 +846,6 @@
     grid-template-columns: 1fr 1fr 28px;
     gap: var(--space-1);
 }
-.gha-pick-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-0);
-    min-height: 0;
-    overflow: auto;
-}
-.gha-pick-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    height: 30px;
-    padding: 0 var(--space-2);
-    border: 1px solid transparent;
-    border-radius: var(--radius-2);
-    background: none;
-    color: var(--text-secondary);
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
-}
-.gha-pick-row:hover {
-    background: var(--surface-hover);
-    color: var(--text-primary);
-}
-.gha-pick-row[data-on="1"] {
-    background: var(--surface-selected);
-    border-color: var(--border-selected);
-    color: var(--text-primary);
-}
-.gha-pick-row:focus-visible {
-    box-shadow: var(--focus-ring);
-    outline: none;
-}
-.gha-pick-name {
-    flex: 1 1 auto;
-    min-width: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
 
 /* ---- Narrow panes ------------------------------------------------------- */
 

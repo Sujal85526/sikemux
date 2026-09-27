@@ -12,6 +12,7 @@ export { copyText } from "../lib/clipboard";
 export { confirmDialog, promptDialog } from "../state/dialog";
 export { gitOverviewR } from "../state/resources.defs";
 export { usePluginOverlay } from "../plugins/overlays";
+export { useModalFocus } from "../hooks/useModalFocus";
 export { notify, reportError, swallow } from "../state/toast";
 
 export function openUrl(url: string): Promise<void> {
