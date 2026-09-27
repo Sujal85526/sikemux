@@ -38,22 +38,48 @@ export const SCENES = [
   {
     name: "agents",
     setup: (page) => openWindow(page, "s-sikemux", "w-agent-replay"),
-    crops: { chat: ".stage", rail: ".workspace-rail" },
+    crops: {
+      chat: ".stage",
+      rail: ".workspace-rail",
+      focus: {
+        selector: ".stage",
+        region: { left: 0.1405, top: 0.4386, width: 0.7189, height: 0.3411 },
+      },
+    },
   },
   {
     name: "files",
     setup: (page) => openWindow(page, "s-sikemux", "w-sikemux-files"),
-    crops: { editor: ".stage", tree: ".ed-tree" },
+    crops: {
+      editor: ".stage",
+      tree: ".ed-tree",
+      focus: {
+        selector: ".stage",
+        region: { left: 0.0017, top: 0.0448, width: 0.6474, height: 0.5010 },
+      },
+    },
   },
   {
     name: "terminals",
     setup: (page) => openWindow(page, "s-sikemux", "w-sikemux-term"),
-    crops: { stage: ".stage" },
+    crops: {
+      stage: ".stage",
+      focus: {
+        selector: ".stage",
+        region: { left: 0.5273, top: 0.0507, width: 0.4659, height: 0.3119 },
+      },
+    },
   },
   {
     name: "git",
     setup: (page) => openWindow(page, "s-sikemux", "w-sikemux-git"),
-    crops: { stage: ".stage" },
+    crops: {
+      stage: ".stage",
+      focus: {
+        selector: ".stage",
+        region: { left: 0.0017, top: 0.0448, width: 0.5562, height: 0.3304 },
+      },
+    },
   },
   {
     name: "command-deck",
