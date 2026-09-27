@@ -12,9 +12,9 @@ use tauri::{AppHandle, Emitter, Manager};
 use uuid::Uuid;
 
 use crate::cli_protocol::{
-    CliClientCommand, CliCloseReason, CliEndpointDescriptor, CliFrontendRequest, CliOpenFailure,
-    CliOpenRequest, CliOpenResult, CliServerResponse, CliTargetKind, CLI_PROTOCOL_VERSION,
-    MAX_CLI_FRAME_BYTES, MAX_CLI_RESPONSE_BYTES, MAX_CLI_TARGETS,
+    CliClientCommand, CliClientHello, CliCloseReason, CliEndpointDescriptor, CliFrontendRequest,
+    CliOpenFailure, CliOpenRequest, CliOpenResult, CliServerResponse, CliTargetKind,
+    CLI_PROTOCOL_VERSION, MAX_CLI_FRAME_BYTES, MAX_CLI_RESPONSE_BYTES, MAX_CLI_TARGETS,
 };
 use crate::error::{AppError, AppResult};
 
@@ -144,36 +144,42 @@ impl CliBroker {
         let mut reader = BufReader::new(DeadlineReader {
             stream: cloned,
             deadline: Instant::now() + REQUEST_READ_DEADLINE,
-        })
-        .take(MAX_CLI_FRAME_BYTES + 1);
-        let mut frame = Vec::new();
-        if reader.read_until(b'\n', &mut frame).is_err() {
-            let _ = write_response(
-                &mut stream,
-                &CliServerResponse::Error {
-                    message: "could not read the CLI request".into(),
-                },
-            );
-            return;
+        });
+        let hello = match read_frame::<CliClientHello>(&mut reader) {
+            Ok(CliClientHello::Hello { protocol, nonce }) => {
+                if protocol != CLI_PROTOCOL_VERSION {
+                    Err(format!(
+                        "CLI protocol mismatch (client {protocol}, app {CLI_PROTOCOL_VERSION}); update or restart Sikemux"
+                    ))
+                } else if nonce.is_empty() || nonce.len() > 256 {
+                    Err("invalid CLI hello".into())
+                } else {
+                    Ok(CliServerResponse::Hello {
+                        proof: crate::cli_auth::server_proof(
+                            &self.inner.descriptor.token,
+                            self.inner.descriptor.port,
+                            &nonce,
+                        ),
+                    })
+                }
+            }
+            Err(message) => Err(message),
+        };
+        match hello {
+            Ok(response) => {
+                if write_response(&mut stream, &response).is_err() {
+                    return;
+                }
+            }
+            Err(message) => {
+                let _ = write_response(&mut stream, &CliServerResponse::Error { message });
+                return;
+            }
         }
-        if frame.len() as u64 > MAX_CLI_FRAME_BYTES {
-            let _ = write_response(
-                &mut stream,
-                &CliServerResponse::Error {
-                    message: "CLI request is too large".into(),
-                },
-            );
-            return;
-        }
-        let command = match serde_json::from_slice::<CliClientCommand>(&frame) {
+        let command = match read_frame::<CliClientCommand>(&mut reader) {
             Ok(value) => value,
-            Err(_) => {
-                let _ = write_response(
-                    &mut stream,
-                    &CliServerResponse::Error {
-                        message: "invalid CLI request".into(),
-                    },
-                );
+            Err(message) => {
+                let _ = write_response(&mut stream, &CliServerResponse::Error { message });
                 return;
             }
         };
@@ -297,7 +303,7 @@ impl CliBroker {
                 "CLI protocol mismatch (client {protocol}, app {CLI_PROTOCOL_VERSION}); update or restart Sikemux"
             ));
         }
-        if token != self.inner.descriptor.token {
+        if !crate::cli_auth::same_secret(token, &self.inner.descriptor.token) {
             return Err("CLI authentication failed".into());
         }
         Ok(())
@@ -521,6 +527,21 @@ impl CliBroker {
         self.inner.harness.shutdown();
         remove_owned_endpoint(&self.inner.endpoint_path, &self.inner.descriptor.token);
     }
+}
+
+fn read_frame<T: serde::de::DeserializeOwned>(
+    reader: &mut BufReader<DeadlineReader>,
+) -> Result<T, String> {
+    let mut frame = Vec::new();
+    reader
+        .by_ref()
+        .take(MAX_CLI_FRAME_BYTES + 1)
+        .read_until(b'\n', &mut frame)
+        .map_err(|_| "could not read the CLI request")?;
+    if frame.len() as u64 > MAX_CLI_FRAME_BYTES {
+        return Err("CLI request is too large".into());
+    }
+    serde_json::from_slice(&frame).map_err(|_| "invalid CLI request".into())
 }
 
 struct ConnectionSlot(Arc<CliBrokerInner>);

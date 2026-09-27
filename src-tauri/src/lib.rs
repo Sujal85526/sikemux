@@ -4,6 +4,7 @@ mod agent_detection;
 mod agents;
 mod autopsy;
 mod browser;
+mod cli_auth;
 pub mod cli_client;
 mod cli_install;
 mod cli_protocol;
