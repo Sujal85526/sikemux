@@ -184,13 +184,14 @@ const budgets = [
   },
   {
     // The chat pane has since grown rows the budget predates: subagent
-    // transcripts, background tasks, queued messages and the reconnect
-    // states. It is one lazily loaded sheet behind an agent pane, so this
-    // buys those rows room without touching what the app loads at startup.
+    // transcripts, background tasks, queued messages, the reconnect states,
+    // code block copy buttons and the composer microphone. It is one lazily
+    // loaded sheet behind an agent pane, so this buys those rows room without
+    // touching what the app loads at startup.
     label: "ACP chat CSS",
     pattern: /^AgentSurface-.*\.css$/,
-    raw: 39_000,
-    gzip: 7_300,
+    raw: 39_500,
+    gzip: 7_400,
   },
   {
     // Includes the JetBrainsMono Nerd Font @font-face rules: a base face per
