@@ -3,9 +3,10 @@ import type { AgentPresentationState } from "../state/types";
 import { IconAgent, IconCommand } from "./Icons";
 
 const BACKGROUND_LABEL = "Shells or monitors still running";
+const TWINKLE_CELLS = [0, 1, 2, 3, 4, 5, 6, 7, 8];
 
 /**
- * A spinner while an agent works, a dot once it has something waiting for you,
+ * A twinkling grid while an agent works, a dot once it has something waiting for you,
  * and nothing while it sits idle — a rail of idle agents would be a column of
  * dots carrying no information, since the row already says the agent exists.
  * Left-over shells get the terminal glyph instead of a dot, so they do not read
@@ -28,7 +29,11 @@ export function AgentStateIndicator({
         const label = AGENT_STATE_META.working.label;
         return (
             <span className={`agent-activity state-working${unread ? " unread" : ""}`} title={label} aria-label={label} role="img">
-                <span className="agent-state-loader" aria-hidden="true" />
+                <span className="agent-state-loader" aria-hidden="true">
+                    {TWINKLE_CELLS.map((cell) => (
+                        <i key={cell} />
+                    ))}
+                </span>
             </span>
         );
     }

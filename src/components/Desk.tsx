@@ -206,7 +206,7 @@ function DeskSession({
                     </span>
                 ) : tab.loading ? (
                     <span className="agent-activity state-working" role="img" aria-label="Loading">
-                        <span className="agent-state-loader" aria-hidden="true" />
+                        <span className="loading-ring" aria-hidden="true" />
                     </span>
                 ) : undefined,
             };

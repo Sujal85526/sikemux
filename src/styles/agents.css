@@ -74,6 +74,63 @@
     display: block;
 }
 .agent-state-loader {
+    display: grid;
+    grid-template-columns: repeat(3, 2.5px);
+    gap: 1.5px;
+}
+.agent-state-loader i {
+    width: 2.5px;
+    height: 2.5px;
+    border-radius: 0.5px;
+    background: currentColor;
+    animation: agent-state-twinkle var(--twinkle-period) ease-in-out var(--twinkle-offset) infinite;
+}
+.agent-state-loader i:nth-child(1) {
+    --twinkle-period: 0.9s;
+    --twinkle-offset: 0s;
+}
+.agent-state-loader i:nth-child(2) {
+    --twinkle-period: 1.24s;
+    --twinkle-offset: -0.52s;
+}
+.agent-state-loader i:nth-child(3) {
+    --twinkle-period: 1.58s;
+    --twinkle-offset: -1.04s;
+}
+.agent-state-loader i:nth-child(4) {
+    --twinkle-period: 1.07s;
+    --twinkle-offset: -0.39s;
+}
+.agent-state-loader i:nth-child(5) {
+    --twinkle-period: 1.41s;
+    --twinkle-offset: -0.91s;
+}
+.agent-state-loader i:nth-child(6) {
+    --twinkle-period: 0.9s;
+    --twinkle-offset: -0.26s;
+}
+.agent-state-loader i:nth-child(7) {
+    --twinkle-period: 1.24s;
+    --twinkle-offset: -0.78s;
+}
+.agent-state-loader i:nth-child(8) {
+    --twinkle-period: 1.58s;
+    --twinkle-offset: -0.13s;
+}
+.agent-state-loader i:nth-child(9) {
+    --twinkle-period: 1.07s;
+    --twinkle-offset: -0.65s;
+}
+@keyframes agent-state-twinkle {
+    0%,
+    100% {
+        opacity: 0.2;
+    }
+    40% {
+        opacity: 1;
+    }
+}
+.loading-ring {
     display: block;
     width: 12px;
     height: 12px;
@@ -676,7 +733,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .agent-state-loader,
+    .agent-state-loader i,
+    .loading-ring,
     .proj-pip.is-working::after,
     .yolo-switch-option.armed.active::before,
     .yolo-switch-option.armed.active .yolo-switch-label,
