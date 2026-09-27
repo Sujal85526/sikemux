@@ -54,8 +54,15 @@
 .agent-glyph.grok {
     color: var(--brand-grok);
 }
-.agent-glyph.term {
+.agent-glyph.term,
+.sess-icon.ssh {
     color: color-mix(in oklab, var(--cmd) 70%, var(--ink-dim));
+}
+.agent-glyph.files {
+    color: color-mix(in oklab, var(--git-modified) 76%, var(--ink-dim));
+}
+.agent-glyph.git {
+    color: color-mix(in oklab, var(--git-added) 76%, var(--ink-dim));
 }
 .agent-title {
     flex: 1;

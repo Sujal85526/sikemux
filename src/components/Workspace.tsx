@@ -393,7 +393,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                 label,
                 title: label,
                 icon: (
-                    <span className="agent-glyph">
+                    <span className={`agent-glyph ${paneRole(pane.kind)}`}>
                         <WindowIcon role={paneRole(pane.kind)} size={13} />
                     </span>
                 ),
@@ -452,7 +452,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                     active: key === activeKey,
                     closable: !win.fixed,
                     icon: (
-                        <span className={`agent-glyph ${win.role === "term" ? "term" : ""}`}>
+                        <span className={`agent-glyph ${win.role}`}>
                             <WindowIcon role={win.role} size={13} />
                         </span>
                     ),
@@ -716,7 +716,7 @@ const WindowLayer = memo(function WindowLayer({
                                 title: stackTitles.get(pane.id) || pane.title,
                                 active: pane.id === stack.activePaneId,
                                 icon: (
-                                    <span className={`agent-glyph ${pane.kind === "terminal" ? "term" : ""}`}>
+                                    <span className={`agent-glyph ${paneRole(pane.kind)}`}>
                                         <WindowIcon role={paneRole(pane.kind)} size={12} />
                                     </span>
                                 ),

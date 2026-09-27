@@ -242,7 +242,11 @@ function DeskSession({
             label: item.terminal.label,
             title: item.terminal.label,
             active: tabActive,
-            icon: <WindowIcon role="term" size={13} />,
+            icon: (
+                <span className="agent-glyph term">
+                    <WindowIcon role="term" size={13} />
+                </span>
+            ),
         };
     });
     const itemFor = (key: string) => items.find((item) => item.key === key);
