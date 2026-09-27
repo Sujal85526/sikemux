@@ -394,7 +394,7 @@ function renderSession(s: Session) {
 }
 
 /** A plugin that is enabled but not open yet: the same row its session will be, opening it on click. */
-function PluginLauncherRow({ plugin }: { plugin: FrontendPlugin }) {
+function PluginLauncherRow({ plugin, name }: { plugin: FrontendPlugin; name: string }) {
     const surface = plugin.surfaces[0];
     if (!surface) return null;
     return (
@@ -403,7 +403,7 @@ function PluginLauncherRow({ plugin }: { plugin: FrontendPlugin }) {
                 <span className={`sess-icon ${surface.kind}`}>
                     <span className="sess-icon-glyph">{kindIcon(surface.kind)}</span>
                 </span>
-                <span className="sess-name">{surface.title}</span>
+                <span className="sess-name">{name}</span>
             </button>
         </div>
     );
@@ -507,7 +507,9 @@ export const SideRail = memo(function SideRail() {
     // Every enabled plugin always has a row; its session is only made on the first click.
     const pluginRows = enabledPlugins.flatMap((plugin) => {
         const opened = plugins.filter((session) => isPluginKind(session.kind) && pluginIdOf(session.kind) === plugin.id);
-        return opened.length > 0 ? opened.map(renderSession) : [<PluginLauncherRow key={plugin.id} plugin={plugin} />];
+        if (opened.length > 0) return opened.map(renderSession);
+        const name = pluginManifests.find((manifest) => manifest.id === plugin.id)?.name ?? plugin.surfaces[0]?.title ?? plugin.id;
+        return [<PluginLauncherRow key={plugin.id} plugin={plugin} name={name} />];
     });
 
     const resolveProjectDrop = useCallback((x: number, y: number) => {
