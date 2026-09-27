@@ -101,12 +101,12 @@ describe("project tree", () => {
     });
 });
 
-const MANIFESTS = ["sikemux.aws", "sikemux.bruno", "sikemux.rundeck", "sikemux.signoz"].map((id) => ({
-    id,
-    name: id,
-    version: "0.1.0",
-    sikemux: ">=0.4",
-}));
+const MANIFESTS = [
+    { id: "sikemux.aws", name: "AWS" },
+    { id: "sikemux.bruno", name: "Bruno" },
+    { id: "sikemux.rundeck", name: "Rundeck" },
+    { id: "sikemux.signoz", name: "SigNoz" },
+].map((plugin) => ({ ...plugin, version: "0.1.0", sikemux: ">=0.4" }));
 
 describe("plugins group", () => {
     it("always lists every enabled plugin, and opens one only when it is clicked", () => {

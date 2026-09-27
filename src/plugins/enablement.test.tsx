@@ -9,12 +9,12 @@ import * as cmd from "../state/commands";
 import { applyHydrate } from "../state/persist";
 import { getState, setState } from "../state/store";
 
-const MANIFESTS = ["sikemux.aws", "sikemux.bruno", "sikemux.rundeck", "sikemux.signoz"].map((id) => ({
-    id,
-    name: id,
-    version: "0.1.0",
-    sikemux: ">=0.4",
-}));
+const MANIFESTS = [
+    { id: "sikemux.aws", name: "AWS" },
+    { id: "sikemux.bruno", name: "Bruno" },
+    { id: "sikemux.rundeck", name: "Rundeck" },
+    { id: "sikemux.signoz", name: "SigNoz" },
+].map((plugin) => ({ ...plugin, version: "0.1.0", sikemux: ">=0.4" }));
 const initial = getState();
 
 beforeEach(() => setState({ ...initial, pluginManifests: MANIFESTS }, true));

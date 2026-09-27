@@ -1528,8 +1528,9 @@ function PluginsPage() {
                 <SettingsRows>
                     {built.length === 0 && <div className="settings-empty">No plugins in this build.</div>}
                     {built.map((plugin) => {
-                        const title = plugin.surfaces[0]?.title ?? plugin.id;
-                        const version = manifests.find((manifest) => manifest.id === plugin.id)?.version;
+                        const manifest = manifests.find((each) => each.id === plugin.id);
+                        const title = manifest?.name ?? plugin.surfaces[0]?.title ?? plugin.id;
+                        const version = manifest?.version;
                         return (
                             <SettingsRow
                                 key={plugin.id}
