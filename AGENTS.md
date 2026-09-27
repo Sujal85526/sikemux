@@ -20,6 +20,20 @@
 - Do not leave random markdown files in the codebase that are meant to be some way to deliver information to me. If you want to write a markdown file write it in a temporary file, and give me the path and chat and I can read it
 - Never write code that is explicitly backwards compatible. Systems should handle backwards compatibility (like migrations), not logic. If there is some logic that needs to be written otherwise it would appear it would break older users, you MUST make the assumption that no users have ran that code yet and its unreleased, so it would not make sense to consider the side effects that code would produce. This is a safe assumption because the maintainers of this codebase always ensure code that gets shipped is compatbile with the systems that allow for us to not have to explicitly hardcode backwards compatibility
 
+## Website
+
+- sikemux.com is a separate Astro repo, `nodelike/sikemux-front`, checked out at
+  `~/projects/personal/sikemux-front`. Pushing its `main` deploys to Vercel.
+- The site reads the version, the download link and the download size from GitHub's
+  latest release, both at build time and in the visitor's browser. It finds the
+  download by the `_aarch64.dmg` suffix, so renaming that asset or leaving it off a
+  release breaks every Download button. Nightlies are pre-releases and never show up.
+- Its screenshots come from this repo:
+  `pnpm showcase --site ~/projects/personal/sikemux-front/src/assets/shots`.
+- Its copy must stay true of the shipped app and its look follows `DESIGN.md`. When a
+  change adds, removes or renames something the site describes, say so, so the site
+  can be updated.
+
 ## UI rules
 
 - Never mark a selected, focused or active item with a coloured bar down its left
