@@ -12,15 +12,15 @@ const openWindow = (page, sessionId, windowId) =>
 
 export const README_SCREENSHOTS = {
   "hero-framed": "sikemux-hero.png",
-  files: "project-editor-view.png",
-  terminals: "project-term-view.png",
-  git: "project-git-view.png",
-  agents: "project-agents-view.png",
-  "aws-billing": "cloud-aws-billing-view.png",
-  "aws-ecs-logs": "cloud-aws-ecs-tasks-logs-view.png",
-  "rundeck-deploy": "cicd-rundeck-deploy-view.png",
-  "signoz-dashboard": "observability-signoz-view.png",
-  bruno: "api-bruno-pane-view.png",
+  "files-focus": "project-editor-view.png",
+  "terminals-focus": "project-term-view.png",
+  "git-focus": "project-git-view.png",
+  "agents-focus": "project-agents-view.png",
+  "aws-billing-card": "cloud-aws-billing-view.png",
+  "aws-ecs-logs-card": "cloud-aws-ecs-tasks-logs-view.png",
+  "rundeck-deploy-card": "cicd-rundeck-deploy-view.png",
+  "signoz-dashboard-card": "observability-signoz-view.png",
+  "bruno-card": "api-bruno-pane-view.png",
 };
 
 export const SCENES = [
@@ -204,7 +204,13 @@ export const SCENES = [
         aws.setAwsService("billing");
         aws.openAwsSession();
       }),
-    crops: { stage: ".stage" },
+    crops: {
+      stage: ".stage",
+      card: {
+        selector: ".stage",
+        region: { left: 0.1458, top: 0.0195, width: 0.8528, height: 0.5585 },
+      },
+    },
   },
   {
     name: "bruno",
