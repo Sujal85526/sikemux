@@ -1483,6 +1483,25 @@ function ChatComposer({
     const blocked = changingConfig || changingPermissions || !permissionApplied;
     const drafted = Boolean(draft.trim()) || attachments.length > 0;
 
+    // Send and stop are one button: when it changes job, the new icon turns in rather than swapping in place.
+    const stopping = running && !drafted;
+    const sendButton = useRef<HTMLButtonElement>(null);
+    const wasStopping = useRef(stopping);
+    useLayoutEffect(() => {
+        if (wasStopping.current === stopping) return;
+        wasStopping.current = stopping;
+        animate(
+            sendButton.current?.firstElementChild,
+            [
+                { opacity: 0, transform: `scale(0.5) rotate(${stopping ? -90 : 90}deg)` },
+                { opacity: 1, transform: "none" },
+            ],
+            {
+                duration: 150,
+            },
+        );
+    }, [stopping]);
+
     /* Steering aborts the turn in flight, so the shortcut only fires when there
        is exactly one message waiting and no doubt about which one it takes. */
     const canSteerQueued = running && steerable && queuedCount === 1;
@@ -1628,12 +1647,13 @@ function ChatComposer({
                 <ContextMeter usage={usage} agent={agent.type} />
                 <span className="chat-composer-spacer" />
                 <DictateButton into={paneRef} />
-                {running && !drafted ? (
-                    <button type="button" className="chat-send stop" aria-label="Stop agent" onClick={onStop}>
+                {stopping ? (
+                    <button ref={sendButton} type="button" className="chat-send stop" aria-label="Stop agent" onClick={onStop}>
                         <span />
                     </button>
                 ) : (
                     <button
+                        ref={sendButton}
                         type="button"
                         className="chat-send"
                         aria-label="Send message"

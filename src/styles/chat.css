@@ -1825,6 +1825,7 @@ button.chat-tool:hover > .chat-tool-line::after,
     border: 1px solid var(--border);
     border-radius: var(--radius-3);
     background: var(--chat-composer-fill);
+    transition: border-color var(--dur-2) var(--ease-out);
 }
 
 .chat-composer:focus-within {
