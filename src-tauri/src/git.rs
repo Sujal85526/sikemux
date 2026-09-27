@@ -93,13 +93,20 @@ fn run_command_with_timeout(
         .map_err(|error| error.to_string())
 }
 
-fn run_git(repo: &str, args: &[&str]) -> Result<(bool, String, String), String> {
+/// Every git process the app starts goes through here. A repo's own config can
+/// name an fsmonitor program, which git would otherwise run on any status read.
+pub(crate) fn git_command(repo: &str) -> Command {
     let mut command = Command::new("git");
     command
         .env("GIT_TERMINAL_PROMPT", "0")
-        .arg("-C")
-        .arg(repo)
-        .args(args);
+        .args(["-c", "core.fsmonitor=false", "-C"])
+        .arg(repo);
+    command
+}
+
+fn run_git(repo: &str, args: &[&str]) -> Result<(bool, String, String), String> {
+    let mut command = git_command(repo);
+    command.args(args);
     let out = run_command_with_timeout(&mut command, None, GIT_COMMAND_TIMEOUT)?;
     Ok((
         out.status.success(),
@@ -1328,19 +1335,19 @@ fn git_diff_sync(repo: String, path: String, staged: bool) -> Result<String, Str
         return Ok(s);
     }
 
-    // Untracked — fall back to git no-index for parity with the old impl.
-    let (_, so, _) = run_git(
-        &repo,
-        &[
-            "diff",
-            "--no-ext-diff",
-            "--no-index",
-            "--",
-            "/dev/null",
-            &path,
-        ],
-    )?;
-    Ok(so)
+    let mut untracked = DiffOptions::new();
+    untracked
+        .pathspec(&path)
+        .context_lines(3)
+        .include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .show_untracked_content(true)
+        .include_ignored(true)
+        .recurse_ignored_dirs(true);
+    let diff = r
+        .diff_index_to_workdir(None, Some(&mut untracked))
+        .map_err(|e| e.message().to_string())?;
+    write_diff_to_string(&diff)
 }
 
 #[tauri::command]
@@ -1559,7 +1566,20 @@ fn revparse_commit<'a>(repo: &'a Repository, rev: &str) -> Result<git2::Commit<'
 pub async fn git_show(repo: String, rev: String) -> Result<String, String> {
     // git2's diff doesn't render the message + stat block the way `git show`
     // does — shelling out here costs us nothing and keeps the UI identical.
-    run_blocking(move || git_ok(&repo, &["show", "--no-ext-diff", "--stat", "-p", &rev])).await
+    run_blocking(move || {
+        git_ok(
+            &repo,
+            &[
+                "show",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--stat",
+                "-p",
+                &rev,
+            ],
+        )
+    })
+    .await
 }
 
 // Content-addressed cache for immutable revs.
@@ -1763,6 +1783,42 @@ fn is_zero_sha(s: &str) -> bool {
     !s.is_empty() && s.bytes().all(|b| b == b'0')
 }
 
+fn blame_commit(
+    sha: String,
+    author: String,
+    author_email: String,
+    timestamp: i64,
+    summary: String,
+) -> BlameCommit {
+    let uncommitted = is_zero_sha(&sha);
+    BlameCommit {
+        short: if uncommitted {
+            String::new()
+        } else {
+            sha[..8.min(sha.len())].to_string()
+        },
+        author: if uncommitted {
+            "You".to_string()
+        } else {
+            author
+        },
+        author_email,
+        time: if uncommitted {
+            String::new()
+        } else {
+            relative_time(timestamp)
+        },
+        timestamp,
+        summary: if uncommitted {
+            "Uncommitted changes".to_string()
+        } else {
+            summary
+        },
+        uncommitted,
+        sha,
+    }
+}
+
 /// Parse `git blame --porcelain`. Commit metadata is emitted only the first
 /// time each commit appears, so we accumulate it keyed by sha and remember
 /// first-seen order for stable indices.
@@ -1847,33 +1903,13 @@ fn parse_blame_porcelain(out: &str) -> GitBlame {
         .iter()
         .map(|sha| {
             let m = &meta[sha];
-            let uncommitted = is_zero_sha(sha);
-            BlameCommit {
-                sha: sha.clone(),
-                short: if uncommitted {
-                    String::new()
-                } else {
-                    sha[..8.min(sha.len())].to_string()
-                },
-                author: if uncommitted {
-                    "You".to_string()
-                } else {
-                    m.author.clone()
-                },
-                author_email: m.author_email.clone(),
-                time: if uncommitted {
-                    String::new()
-                } else {
-                    relative_time(m.timestamp)
-                },
-                timestamp: m.timestamp,
-                summary: if uncommitted {
-                    "Uncommitted changes".to_string()
-                } else {
-                    m.summary.clone()
-                },
-                uncommitted,
-            }
+            blame_commit(
+                sha.clone(),
+                m.author.clone(),
+                m.author_email.clone(),
+                m.timestamp,
+                m.summary.clone(),
+            )
         })
         .collect();
 
@@ -1889,6 +1925,88 @@ fn parse_blame_porcelain(out: &str) -> GitBlame {
     GitBlame { commits, lines }
 }
 
+/// Filter drivers are commands git runs on file contents. Ones from system or
+/// global config are the user's own; any other scope came with the repo.
+fn repo_defines_filters(repo: &str) -> bool {
+    match run_git(
+        repo,
+        &[
+            "config",
+            "--show-scope",
+            "--includes",
+            "--get-regexp",
+            r"^filter\..*\.(clean|smudge|process)$",
+        ],
+    ) {
+        Ok((true, out, _)) => out
+            .lines()
+            .any(|line| !matches!(line.split('\t').next(), Some("system" | "global"))),
+        Ok((false, out, err)) => !out.trim().is_empty() || !err.trim().is_empty(),
+        Err(_) => true,
+    }
+}
+
+fn blame_with_libgit2(
+    repo: &str,
+    path: &str,
+    contents: Option<String>,
+) -> Result<GitBlame, String> {
+    use std::collections::HashMap;
+
+    let r = open_repo(repo)?;
+    let buffer = match contents {
+        Some(text) => text.into_bytes(),
+        None => std::fs::read(Path::new(repo).join(path)).map_err(|e| e.to_string())?,
+    };
+    let committed = r
+        .blame_file(Path::new(path), None)
+        .map_err(|e| e.message().to_string())?;
+    let blame = committed
+        .blame_buffer(&buffer)
+        .map_err(|e| e.message().to_string())?;
+
+    let mut commits = Vec::new();
+    let mut index_of: HashMap<git2::Oid, u32> = HashMap::new();
+    let mut lines: Vec<u32> = Vec::new();
+    for hunk in blame.iter() {
+        let oid = hunk.final_commit_id();
+        let index = *index_of.entry(oid).or_insert_with(|| {
+            let commit = r.find_commit(oid).ok();
+            let author = commit.as_ref().map(|c| c.author());
+            commits.push(blame_commit(
+                oid.to_string(),
+                author
+                    .as_ref()
+                    .map(|a| String::from_utf8_lossy(a.name_bytes()).into_owned())
+                    .unwrap_or_default(),
+                author
+                    .as_ref()
+                    .map(|a| String::from_utf8_lossy(a.email_bytes()).into_owned())
+                    .unwrap_or_default(),
+                author.as_ref().map(|a| a.when().seconds()).unwrap_or(0),
+                commit
+                    .as_ref()
+                    .and_then(|c| c.summary_bytes())
+                    .map(|b| String::from_utf8_lossy(b).into_owned())
+                    .unwrap_or_default(),
+            ));
+            (commits.len() - 1) as u32
+        });
+        let start = hunk.final_start_line();
+        let end = start + hunk.lines_in_hunk();
+        if start == 0 {
+            continue;
+        }
+        if lines.len() < end - 1 {
+            lines.resize(end - 1, 0);
+        }
+        for line in start..end {
+            lines[line - 1] = index;
+        }
+    }
+    Ok(GitBlame { commits, lines })
+}
+
 /// Blame a single file. When `contents` is provided we blame that buffer via
 /// `--contents -` so unsaved editor edits line up correctly (those lines come
 /// back as the zero-sha "uncommitted" commit). Untracked / no-HEAD / binary
@@ -1902,11 +2020,15 @@ pub async fn git_blame(
 ) -> Result<GitBlame, String> {
     let _permit = git_walk_permit().await?;
     run_blocking(move || -> Result<GitBlame, String> {
+        if repo_defines_filters(&repo) {
+            return Ok(blame_with_libgit2(&repo, &path, contents).unwrap_or_default());
+        }
         let out = match contents {
             Some(text) => {
-                let mut command = Command::new("git");
-                command.arg("-C").arg(&repo).args([
+                let mut command = git_command(&repo);
+                command.args([
                     "blame",
+                    "--no-textconv",
                     "--porcelain",
                     "--contents",
                     "-",
@@ -1924,7 +2046,10 @@ pub async fn git_blame(
                 String::from_utf8_lossy(&o.stdout).into_owned()
             }
             None => {
-                let (ok, so, _se) = run_git(&repo, &["blame", "--porcelain", "--", &path])?;
+                let (ok, so, _se) = run_git(
+                    &repo,
+                    &["blame", "--no-textconv", "--porcelain", "--", &path],
+                )?;
                 if !ok {
                     return Ok(GitBlame::default());
                 }
@@ -1939,8 +2064,8 @@ pub async fn git_blame(
 // ---- commit / push / pull -------------------------------------------------
 
 fn commit_with_message(repo: &str, message: &str) -> Result<String, String> {
-    let mut command = Command::new("git");
-    command.arg("-C").arg(repo).args(["commit", "-F", "-"]);
+    let mut command = git_command(repo);
+    command.args(["commit", "-F", "-"]);
     let out =
         run_command_with_timeout(&mut command, Some(message.as_bytes()), GIT_COMMAND_TIMEOUT)?;
     if out.status.success() {
@@ -3124,7 +3249,16 @@ fn compact_stat(stat: &str) -> String {
 fn staged_diff(repo: &str) -> Result<(String, String), String> {
     Ok((
         git_ok(repo, &["diff", "--cached", "--stat"])?,
-        git_ok(repo, &["diff", "--cached", "--no-ext-diff", "--unified=0"])?,
+        git_ok(
+            repo,
+            &[
+                "diff",
+                "--cached",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--unified=0",
+            ],
+        )?,
     ))
 }
 
@@ -3132,12 +3266,24 @@ fn worktree_diff(repo: &str) -> Result<(String, String), String> {
     if git_has_head(repo) {
         Ok((
             git_ok(repo, &["diff", "HEAD", "--stat"])?,
-            git_ok(repo, &["diff", "HEAD", "--no-ext-diff", "--unified=0"])?,
+            git_ok(
+                repo,
+                &[
+                    "diff",
+                    "HEAD",
+                    "--no-ext-diff",
+                    "--no-textconv",
+                    "--unified=0",
+                ],
+            )?,
         ))
     } else {
         Ok((
             git_ok(repo, &["diff", "--stat"])?,
-            git_ok(repo, &["diff", "--no-ext-diff", "--unified=0"])?,
+            git_ok(
+                repo,
+                &["diff", "--no-ext-diff", "--no-textconv", "--unified=0"],
+            )?,
         ))
     }
 }
@@ -4425,6 +4571,20 @@ mod tests {
         assert!(last.uncommitted, "appended line should be uncommitted");
         assert_eq!(last.summary, "Uncommitted changes");
         assert!(!blame.commits[blame.lines[0] as usize].uncommitted);
+
+        let library = blame_with_libgit2(
+            &repo_arg(td.path()),
+            "f.txt",
+            Some("one\ntwo\nthree\nfour\n".into()),
+        )
+        .expect("library blame");
+        let shas = |b: &GitBlame| -> Vec<String> {
+            b.lines
+                .iter()
+                .map(|&i| b.commits[i as usize].sha.clone())
+                .collect()
+        };
+        assert_eq!(shas(&library), shas(&blame));
     }
 
     #[tokio::test]
@@ -4461,6 +4621,104 @@ mod tests {
             .expect("discover");
 
         assert!(found.is_empty(), "{found:?} should be empty");
+    }
+
+    fn arm_hostile_config(repo: &Path, markers: &Path) {
+        for (name, body) in [
+            ("fsmonitor", "exit 1"),
+            ("clean", "cat"),
+            ("textconv", "cat \"$1\""),
+        ] {
+            let script = markers.join(format!("{name}.sh"));
+            let marker = markers.join(format!("{name}.ran"));
+            fs::write(
+                &script,
+                format!("#!/bin/sh\ntouch '{}'\n{body}\n", marker.display()),
+            )
+            .expect("write script");
+            Command::new("chmod")
+                .arg("+x")
+                .arg(&script)
+                .status()
+                .expect("chmod");
+        }
+        let script = |name: &str| markers.join(format!("{name}.sh")).display().to_string();
+        git(repo, &["config", "core.fsmonitor", &script("fsmonitor")]);
+        git(repo, &["config", "filter.evil.clean", &script("clean")]);
+        git(repo, &["config", "filter.evil.smudge", &script("clean")]);
+        git(repo, &["config", "diff.evil.textconv", &script("textconv")]);
+    }
+
+    fn markers_left(markers: &Path) -> Vec<String> {
+        let mut ran: Vec<String> = fs::read_dir(markers)
+            .expect("read markers")
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.ends_with(".ran"))
+            .collect();
+        ran.sort();
+        ran
+    }
+
+    #[tokio::test]
+    async fn reading_files_in_a_hostile_repo_runs_none_of_its_commands() {
+        let td = init_repo();
+        let markers = tempdir().expect("markers");
+        fs::write(
+            td.path().join(".gitattributes"),
+            "*.txt filter=evil diff=evil\n",
+        )
+        .expect("write attributes");
+        fs::write(td.path().join("f.txt"), "one\ntwo\nthree\n").expect("write");
+        git(td.path(), &["add", "."]);
+        git(td.path(), &["commit", "-m", "seed"]);
+        arm_hostile_config(td.path(), markers.path());
+        fs::write(td.path().join("f.txt"), "one\ntwo\nthree\nfour\n").expect("edit");
+        fs::write(td.path().join("new.txt"), "hi\n").expect("write untracked");
+        let repo = repo_arg(td.path());
+
+        assert!(repo_defines_filters(&repo));
+        let on_disk = git_blame(repo.clone(), "f.txt".into(), None)
+            .await
+            .expect("blame disk");
+        assert_eq!(on_disk.lines.len(), 4);
+        let seed = &on_disk.commits[on_disk.lines[0] as usize];
+        assert_eq!(seed.author, "sikemux");
+        assert_eq!(seed.author_email, "sikemux@example.test");
+        assert_eq!(seed.summary, "seed");
+        assert_eq!(seed.short.len(), 8);
+        assert!(!seed.uncommitted);
+        let last = &on_disk.commits[on_disk.lines[3] as usize];
+        assert!(last.uncommitted);
+        assert_eq!(last.summary, "Uncommitted changes");
+
+        let buffer = git_blame(repo.clone(), "f.txt".into(), Some("zero\none\n".into()))
+            .await
+            .expect("blame buffer");
+        assert_eq!(buffer.lines.len(), 2);
+        assert!(buffer.commits[buffer.lines[0] as usize].uncommitted);
+        assert!(!buffer.commits[buffer.lines[1] as usize].uncommitted);
+
+        let diff = git_diff(repo.clone(), "new.txt".into(), false)
+            .await
+            .expect("untracked diff");
+        assert!(diff.contains("+hi"), "{diff}");
+        git_show(repo.clone(), "HEAD".into()).await.expect("show");
+        git_status(repo.clone()).await.expect("status");
+
+        assert_eq!(markers_left(markers.path()), Vec::<String>::new());
+    }
+
+    #[test]
+    fn filter_drivers_the_repo_defines_are_untrusted() {
+        let td = init_repo();
+        let repo = repo_arg(td.path());
+        assert!(!repo_defines_filters(&repo));
+        git(
+            td.path(),
+            &["config", "filter.lfs.clean", "git-lfs clean -- %f"],
+        );
+        assert!(repo_defines_filters(&repo));
     }
 
     #[tokio::test]
