@@ -910,7 +910,9 @@ button.chat-tool:hover > .chat-tool-line::after,
 }
 
 .chat-tool.live .chat-tool-target,
-.chat-tools-sum.live .chat-tools-label {
+.chat-tools-sum.live .chat-tools-label,
+.chat-subagent.state-running .chat-subagent-task,
+.chat-task-agent .chat-task-detail {
     background: linear-gradient(90deg, var(--ink-faint) 40%, var(--ink) 50%, var(--ink-faint) 60%) 100% 0 / 300% 100%;
     -webkit-background-clip: text;
     background-clip: text;
@@ -2173,6 +2175,8 @@ button.chat-tool:hover > .chat-tool-line::after,
     .chat-tool.live .chat-tool-icon,
     .chat-tool.live .chat-tool-target,
     .chat-tools-sum.live .chat-tools-label,
+    .chat-subagent.state-running .chat-subagent-task,
+    .chat-task-agent .chat-task-detail,
     .chat-subagent-spinner {
         animation: none;
     }
