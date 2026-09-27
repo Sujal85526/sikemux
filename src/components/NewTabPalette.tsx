@@ -4,6 +4,7 @@ import { useStore } from "../state/store";
 import { agentIdsOf } from "../state/selectors";
 import { useModalFocus } from "../hooks/useModalFocus";
 import { IconAgent, IconCommand, IconCommit, IconEditor, IconGlobe, IconSearch } from "./Icons";
+import { leavingOverlay } from "../lib/motion";
 
 interface TabChoice {
     id: string;
@@ -116,7 +117,7 @@ export function NewTabPalette() {
         modalRef.current?.querySelector<HTMLElement>(`[data-choice="${selected}"]`)?.focus();
     }, [selected]);
     return (
-        <div className="picker-backdrop" onMouseDown={cmd.closeNewTabPalette}>
+        <div ref={leavingOverlay} className="picker-backdrop" onMouseDown={cmd.closeNewTabPalette}>
             <div
                 ref={modalRef}
                 tabIndex={-1}

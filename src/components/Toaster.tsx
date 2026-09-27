@@ -1,3 +1,5 @@
+import { useLayoutEffect, useRef } from "react";
+import { animate, EASE_LEAVE, leavingRef } from "../lib/motion";
 import { useToasts, type ToastKind } from "../state/toast";
 import { IconCheck, IconClose, IconExclamation, IconInfoMark } from "./Icons";
 
@@ -7,19 +9,63 @@ const KIND_ICON: Record<ToastKind, typeof IconCheck> = {
     info: IconInfoMark,
 };
 
+/* A dismissed toast sinks and fades while its place, gap included, closes, so the ones beside it slide over. */
+const dismissToast = leavingRef<HTMLDivElement>((toast) => {
+    const gap = toast.parentElement ? parseFloat(getComputedStyle(toast.parentElement).rowGap) || 0 : 0;
+    const before = toast.previousElementSibling ? -gap : 0;
+    const after = !toast.previousElementSibling && toast.nextElementSibling ? -gap : 0;
+    toast.style.overflow = "hidden";
+    return animate(
+        toast,
+        [
+            { opacity: 1, transform: "none", height: `${toast.offsetHeight}px`, minHeight: "0px" },
+            {
+                opacity: 0,
+                transform: "translateY(6px) scale(0.98)",
+                height: "0px",
+                minHeight: "0px",
+                paddingTop: "0px",
+                paddingBottom: "0px",
+                marginTop: `${before}px`,
+                marginBottom: `${after}px`,
+                borderWidth: "0px",
+            },
+        ],
+        { duration: 120, easing: EASE_LEAVE },
+    );
+});
+
 export function Toaster() {
     const toasts = useToasts((s) => s.toasts);
     const dismiss = useToasts((s) => s.dismiss);
     const pause = useToasts((s) => s.pause);
     const resume = useToasts((s) => s.resume);
-    if (toasts.length === 0) return null;
+    const island = useRef<HTMLDivElement>(null);
+    const tops = useRef(new Map<string, number>());
+    /* A new toast joins the bottom of the island, so the ones already up
+       slide up to make room instead of jumping. */
+    useLayoutEffect(() => {
+        const next = new Map<string, number>();
+        for (const el of island.current?.querySelectorAll<HTMLElement>(":scope > .toast[data-toast-id]:not(.is-leaving)") ?? []) {
+            const id = el.dataset.toastId ?? "";
+            const top = el.getBoundingClientRect().top;
+            const was = tops.current.get(id);
+            if (was !== undefined && Math.abs(was - top) > 0.5)
+                animate(el, [{ transform: `translateY(${was - top}px)` }, { transform: "none" }], { duration: 200 });
+            next.set(id, top);
+        }
+        tops.current = next;
+    }, [toasts]);
+    // The island stays mounted while empty: a live region has to exist before it is spoken into.
     return (
-        <div className="toaster" aria-live="polite" aria-atomic="false">
+        <div ref={island} className="toaster" aria-live="polite" aria-atomic="false">
             {toasts.map((t) => {
                 const KindIcon = KIND_ICON[t.kind];
                 return (
                     <div
                         key={t.id}
+                        ref={dismissToast}
+                        data-toast-id={t.id}
                         onMouseEnter={() => pause(t.id, "pointer")}
                         onMouseLeave={() => resume(t.id, "pointer")}
                         onFocusCapture={() => pause(t.id, "focus")}

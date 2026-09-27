@@ -144,3 +144,22 @@ export function leavingRef<T extends HTMLElement>(
         };
     };
 }
+
+/**
+ * For a backdrop and the panel it holds, such as a palette: they appear on the
+ * first frame, and close by fading while the panel shrinks a touch. The panel
+ * keeps whatever transform already places it.
+ */
+export const leavingOverlay = leavingRef<HTMLElement>((backdrop) => {
+    const panel = backdrop.firstElementChild as HTMLElement | null;
+    if (panel) {
+        const placed = getComputedStyle(panel).transform;
+        const base = placed === "none" ? "" : `${placed} `;
+        animate(panel, [{ transform: `${base}scale(1)` }, { transform: `${base}scale(0.985)` }], {
+            duration: 100,
+            easing: EASE_IN,
+            fill: "forwards",
+        });
+    }
+    return animate(backdrop, [{ opacity: 1 }, { opacity: 0 }], { duration: 100, easing: EASE_IN, fill: "forwards" });
+});
