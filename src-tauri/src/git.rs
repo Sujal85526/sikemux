@@ -1070,7 +1070,8 @@ pub async fn git_overview(repo: String) -> Result<GitOverview, String> {
 #[tauri::command]
 pub async fn git_checkout(repo: String, branch: String) -> Result<(), String> {
     // git2 checkout is fiddly with working-tree handling — shell out.
-    run_blocking(move || git_ok(&repo, &["checkout", &branch]).map(|_| ())).await
+    run_blocking(move || git_ok(&repo, &["checkout", "--end-of-options", &branch]).map(|_| ()))
+        .await
 }
 
 fn local_branch_exists(repo: &str, branch: &str) -> bool {
@@ -1147,7 +1148,7 @@ pub async fn git_checkout_smart(repo: String, branch: String) -> Result<String, 
     run_blocking(move || -> Result<String, String> {
         let (preferred_remote, local) = normalize_branch_input(&repo, &branch)?;
         if local_branch_exists(&repo, &local) {
-            git_ok(&repo, &["checkout", &local])?;
+            git_ok(&repo, &["checkout", "--end-of-options", &local])?;
             return Ok(format!("checked out {local}"));
         }
 
@@ -1155,7 +1156,7 @@ pub async fn git_checkout_smart(repo: String, branch: String) -> Result<String, 
         if remote.is_none() {
             match preferred_remote.as_deref() {
                 Some(r) => {
-                    let _ = git_ok(&repo, &["fetch", "--prune", r]);
+                    let _ = git_ok(&repo, &["fetch", "--prune", "--end-of-options", r]);
                 }
                 None => {
                     let _ = git_ok(&repo, &["fetch", "--all", "--prune"]);
@@ -1169,7 +1170,17 @@ pub async fn git_checkout_smart(repo: String, branch: String) -> Result<String, 
             ));
         };
         let full_ref = format!("{remote}/{local}");
-        git_ok(&repo, &["checkout", "-b", &local, "--track", &full_ref])?;
+        git_ok(
+            &repo,
+            &[
+                "checkout",
+                "-b",
+                &local,
+                "--track",
+                "--end-of-options",
+                &full_ref,
+            ],
+        )?;
         Ok(format!("checked out {local} tracking {full_ref}"))
     })
     .await
@@ -1192,7 +1203,7 @@ pub async fn git_branch_create(
         let mut args: Vec<&str> = vec!["checkout", "-b", trimmed];
         if let Some(sp) = start_point.as_deref() {
             if !sp.is_empty() {
-                args.push(sp);
+                args.extend(["--end-of-options", sp]);
             }
         }
         git_ok(&repo, &args).map(|_| ())
@@ -1208,7 +1219,7 @@ pub async fn git_branch_delete(repo: String, name: String, force: bool) -> Resul
             return Err("branch name is empty".into());
         }
         let flag = if force { "-D" } else { "-d" };
-        git_ok(&repo, &["branch", flag, trimmed]).map(|_| ())
+        git_ok(&repo, &["branch", flag, "--end-of-options", trimmed]).map(|_| ())
     })
     .await
 }
@@ -1225,7 +1236,11 @@ pub async fn git_branch_rename(
         if old_trimmed.is_empty() || new_trimmed.is_empty() {
             return Err("branch name is empty".into());
         }
-        git_ok(&repo, &["branch", "-m", old_trimmed, new_trimmed]).map(|_| ())
+        git_ok(
+            &repo,
+            &["branch", "-m", "--end-of-options", old_trimmed, new_trimmed],
+        )
+        .map(|_| ())
     })
     .await
 }
@@ -1241,7 +1256,7 @@ pub async fn git_merge(repo: String, branch: String) -> Result<String, String> {
         if trimmed.is_empty() {
             return Err("branch name is empty".into());
         }
-        git_ok(&repo, &["merge", "--no-ff", trimmed])
+        git_ok(&repo, &["merge", "--no-ff", "--end-of-options", trimmed])
     })
     .await
 }
@@ -1253,7 +1268,7 @@ pub async fn git_merge_squash(repo: String, branch: String) -> Result<String, St
         if trimmed.is_empty() {
             return Err("branch name is empty".into());
         }
-        git_ok(&repo, &["merge", "--squash", trimmed])
+        git_ok(&repo, &["merge", "--squash", "--end-of-options", trimmed])
     })
     .await
 }
@@ -1271,7 +1286,7 @@ pub async fn git_reset(repo: String, rev: String, mode: String) -> Result<(), St
             "hard" => "--hard",
             other => return Err(format!("unknown reset mode: {other}")),
         };
-        git_ok(&repo, &["reset", flag, trimmed]).map(|_| ())
+        git_ok(&repo, &["reset", flag, "--end-of-options", trimmed]).map(|_| ())
     })
     .await
 }
@@ -1283,7 +1298,7 @@ pub async fn git_revert(repo: String, rev: String) -> Result<(), String> {
         if trimmed.is_empty() {
             return Err("revision is empty".into());
         }
-        git_ok(&repo, &["revert", "--no-edit", trimmed]).map(|_| ())
+        git_ok(&repo, &["revert", "--no-edit", "--end-of-options", trimmed]).map(|_| ())
     })
     .await
 }
@@ -1575,6 +1590,7 @@ pub async fn git_show(repo: String, rev: String) -> Result<String, String> {
                 "--no-textconv",
                 "--stat",
                 "-p",
+                "--end-of-options",
                 &rev,
             ],
         )
@@ -2087,7 +2103,16 @@ pub async fn git_push(repo: String) -> Result<String, String> {
         let branch = current_branch_name(&repo)?;
         if !has_upstream(&repo) {
             let remote = default_remote(&repo)?;
-            let (ok, so, se) = run_git(&repo, &["push", "--set-upstream", &remote, &branch])?;
+            let (ok, so, se) = run_git(
+                &repo,
+                &[
+                    "push",
+                    "--set-upstream",
+                    "--end-of-options",
+                    &remote,
+                    &branch,
+                ],
+            )?;
             return if ok {
                 let out = format!("{so}{se}").trim().to_string();
                 Ok(if out.is_empty() {
@@ -2108,7 +2133,16 @@ pub async fn git_push(repo: String) -> Result<String, String> {
         // check and push, publish with -u instead of dumping raw Git advice.
         if se.contains("has no upstream branch") || se.contains("--set-upstream") {
             let remote = default_remote(&repo)?;
-            let (ok2, so2, se2) = run_git(&repo, &["push", "--set-upstream", &remote, &branch])?;
+            let (ok2, so2, se2) = run_git(
+                &repo,
+                &[
+                    "push",
+                    "--set-upstream",
+                    "--end-of-options",
+                    &remote,
+                    &branch,
+                ],
+            )?;
             return if ok2 {
                 Ok(format!(
                     "published {branch} → {remote}/{branch}\n{}",
@@ -3506,10 +3540,13 @@ fn parse_stash_branch(message: &str) -> String {
 }
 
 fn resolve_stash_ref(repo: &str, refname: &str, expected_sha: &str) -> Result<String, String> {
-    let cur_sha = git_ok(repo, &["rev-parse", refname])
-        .unwrap_or_default()
-        .trim()
-        .to_string();
+    let cur_sha = git_ok(
+        repo,
+        &["rev-parse", "--verify", "--end-of-options", refname],
+    )
+    .unwrap_or_default()
+    .trim()
+    .to_string();
     if !expected_sha.is_empty() && cur_sha == expected_sha {
         return Ok(refname.to_string());
     }
@@ -3576,7 +3613,7 @@ pub async fn git_stash_push(
 pub async fn git_stash_apply(repo: String, refname: String, sha: String) -> Result<(), String> {
     run_blocking(move || -> Result<(), String> {
         let r = resolve_stash_ref(&repo, &refname, &sha)?;
-        git_ok(&repo, &["stash", "apply", &r])?;
+        git_ok(&repo, &["stash", "apply", "--end-of-options", &r])?;
         Ok(())
     })
     .await
@@ -3586,7 +3623,7 @@ pub async fn git_stash_apply(repo: String, refname: String, sha: String) -> Resu
 pub async fn git_stash_pop(repo: String, refname: String, sha: String) -> Result<(), String> {
     run_blocking(move || -> Result<(), String> {
         let r = resolve_stash_ref(&repo, &refname, &sha)?;
-        git_ok(&repo, &["stash", "pop", &r])?;
+        git_ok(&repo, &["stash", "pop", "--end-of-options", &r])?;
         Ok(())
     })
     .await
@@ -3596,7 +3633,7 @@ pub async fn git_stash_pop(repo: String, refname: String, sha: String) -> Result
 pub async fn git_stash_drop(repo: String, refname: String, sha: String) -> Result<(), String> {
     run_blocking(move || -> Result<(), String> {
         let r = resolve_stash_ref(&repo, &refname, &sha)?;
-        git_ok(&repo, &["stash", "drop", &r])?;
+        git_ok(&repo, &["stash", "drop", "--end-of-options", &r])?;
         Ok(())
     })
     .await
@@ -3611,7 +3648,7 @@ pub async fn git_stash_branch(
 ) -> Result<(), String> {
     run_blocking(move || -> Result<(), String> {
         let r = resolve_stash_ref(&repo, &refname, &sha)?;
-        git_ok(&repo, &["stash", "branch", &name, &r])?;
+        git_ok(&repo, &["stash", "branch", "--end-of-options", &name, &r])?;
         Ok(())
     })
     .await
@@ -3630,11 +3667,11 @@ pub async fn git_stash_rename(
         // can never remove the only ordinary stash reference.
         let r = resolve_stash_ref(&repo, &refname, &sha)?;
         // Grab the underlying commit SHA for the stash so we can re-store.
-        let sha = git_ok(&repo, &["rev-parse", &r])?.trim().to_string();
+        let sha = git_ok(&repo, &["rev-parse", "--verify", "--end-of-options", &r])?.trim().to_string();
         if sha.is_empty() {
             return Err(format!("could not resolve {r}"));
         }
-        git_ok(&repo, &["stash", "store", "-m", &new_message, &sha])?;
+        git_ok(&repo, &["stash", "store", "-m", &new_message, "--", &sha])?;
         let original_index = r
             .strip_prefix("stash@{")
             .and_then(|value| value.strip_suffix('}'))
@@ -3645,7 +3682,10 @@ pub async fn git_stash_rename(
                 )
             })?;
         let shifted_original = format!("stash@{{{}}}", original_index + 1);
-        let shifted_sha = git_ok(&repo, &["rev-parse", &shifted_original])?
+        let shifted_sha = git_ok(
+            &repo,
+            &["rev-parse", "--verify", "--end-of-options", &shifted_original],
+        )?
             .trim()
             .to_string();
         if shifted_sha != sha {
@@ -3654,7 +3694,10 @@ pub async fn git_stash_rename(
                     .to_string(),
             );
         }
-        git_ok(&repo, &["stash", "drop", &shifted_original])?;
+        git_ok(
+            &repo,
+            &["stash", "drop", "--end-of-options", &shifted_original],
+        )?;
         Ok(())
     })
     .await
@@ -3712,7 +3755,7 @@ pub async fn git_remotes(repo: String) -> Result<Vec<GitRemote>, String> {
 #[tauri::command]
 pub async fn git_remote_add(repo: String, name: String, url: String) -> Result<(), String> {
     run_blocking(move || -> Result<(), String> {
-        git_ok(&repo, &["remote", "add", &name, &url])?;
+        git_ok(&repo, &["remote", "add", "--end-of-options", &name, &url])?;
         Ok(())
     })
     .await
@@ -3721,7 +3764,7 @@ pub async fn git_remote_add(repo: String, name: String, url: String) -> Result<(
 #[tauri::command]
 pub async fn git_remote_remove(repo: String, name: String) -> Result<(), String> {
     run_blocking(move || -> Result<(), String> {
-        git_ok(&repo, &["remote", "remove", &name])?;
+        git_ok(&repo, &["remote", "remove", "--end-of-options", &name])?;
         Ok(())
     })
     .await
@@ -3734,7 +3777,10 @@ pub async fn git_remote_rename(
     new_name: String,
 ) -> Result<(), String> {
     run_blocking(move || -> Result<(), String> {
-        git_ok(&repo, &["remote", "rename", &old_name, &new_name])?;
+        git_ok(
+            &repo,
+            &["remote", "rename", "--end-of-options", &old_name, &new_name],
+        )?;
         Ok(())
     })
     .await
@@ -3743,7 +3789,10 @@ pub async fn git_remote_rename(
 #[tauri::command]
 pub async fn git_remote_set_url(repo: String, name: String, url: String) -> Result<(), String> {
     run_blocking(move || -> Result<(), String> {
-        git_ok(&repo, &["remote", "set-url", &name, &url])?;
+        git_ok(
+            &repo,
+            &["remote", "set-url", "--end-of-options", &name, &url],
+        )?;
         Ok(())
     })
     .await
@@ -3757,7 +3806,9 @@ pub async fn git_remote_set_url(repo: String, name: String, url: String) -> Resu
 pub async fn git_fetch(repo: String, remote: Option<String>) -> Result<String, String> {
     run_blocking(move || -> Result<String, String> {
         let out = match remote {
-            Some(r) if !r.is_empty() => git_ok(&repo, &["fetch", "--prune", &r])?,
+            Some(r) if !r.is_empty() => {
+                git_ok(&repo, &["fetch", "--prune", "--end-of-options", &r])?
+            }
             _ => git_ok(&repo, &["fetch", "--all", "--prune"])?,
         };
         Ok(out)
@@ -3883,9 +3934,19 @@ pub async fn git_checkout_remote_branch(
         )
         .is_ok();
         if exists {
-            git_ok(&repo, &["checkout", &local])?;
+            git_ok(&repo, &["checkout", "--end-of-options", &local])?;
         } else {
-            git_ok(&repo, &["checkout", "-b", &local, "--track", &full_ref])?;
+            git_ok(
+                &repo,
+                &[
+                    "checkout",
+                    "-b",
+                    &local,
+                    "--track",
+                    "--end-of-options",
+                    &full_ref,
+                ],
+            )?;
         }
         Ok(())
     })
@@ -3901,7 +3962,10 @@ pub async fn git_delete_remote_branch(
     branch: String,
 ) -> Result<(), String> {
     run_blocking(move || -> Result<(), String> {
-        git_ok(&repo, &["push", &remote, "--delete", &branch])?;
+        git_ok(
+            &repo,
+            &["push", "--delete", "--end-of-options", &remote, &branch],
+        )?;
         Ok(())
     })
     .await
@@ -3921,11 +3985,19 @@ pub async fn git_set_upstream(
             Some(u) if !u.is_empty() => {
                 git_ok(
                     &repo,
-                    &["branch", &format!("--set-upstream-to={u}"), &branch],
+                    &[
+                        "branch",
+                        &format!("--set-upstream-to={u}"),
+                        "--end-of-options",
+                        &branch,
+                    ],
                 )?;
             }
             _ => {
-                git_ok(&repo, &["branch", "--unset-upstream", &branch])?;
+                git_ok(
+                    &repo,
+                    &["branch", "--unset-upstream", "--end-of-options", &branch],
+                )?;
             }
         }
         Ok(())
@@ -4719,6 +4791,56 @@ mod tests {
             &["config", "filter.lfs.clean", "git-lfs clean -- %f"],
         );
         assert!(repo_defines_filters(&repo));
+    }
+
+    #[tokio::test]
+    async fn refs_that_look_like_options_are_only_ever_refs() {
+        let td = init_repo();
+        commit_base(td.path());
+        let repo = repo_arg(td.path());
+        let main = git(td.path(), &["branch", "--show-current"])
+            .trim()
+            .to_string();
+        git(td.path(), &["update-ref", "refs/heads/-q", "HEAD"]);
+
+        git_checkout(repo.clone(), "-q".into())
+            .await
+            .expect("checkout");
+        assert_eq!(git(td.path(), &["branch", "--show-current"]).trim(), "-q");
+        git_checkout(repo.clone(), main)
+            .await
+            .expect("checkout back");
+        git_merge(repo.clone(), "-q".into()).await.expect("merge");
+        git_branch_delete(repo.clone(), "-q".into(), true)
+            .await
+            .expect("delete");
+        assert!(Repository::open(td.path())
+            .expect("open")
+            .find_reference("refs/heads/-q")
+            .is_err());
+
+        let written = td.path().join("written");
+        let flag = format!("--output={}", written.display());
+        assert!(git_show(repo.clone(), flag.clone()).await.is_err());
+        assert!(git_reset(repo.clone(), flag.clone(), "soft".into())
+            .await
+            .is_err());
+        assert!(!written.exists());
+
+        let remote = tempdir().expect("remote");
+        git(remote.path(), &["init", "--bare"]);
+        git(
+            td.path(),
+            &["remote", "add", "origin", &repo_arg(remote.path())],
+        );
+        git(td.path(), &["push", "origin", "HEAD:refs/heads/-q"]);
+        git_delete_remote_branch(repo.clone(), "origin".into(), "-q".into())
+            .await
+            .expect("delete remote branch");
+        assert!(Repository::open(remote.path())
+            .expect("open remote")
+            .find_reference("refs/heads/-q")
+            .is_err());
     }
 
     #[tokio::test]
