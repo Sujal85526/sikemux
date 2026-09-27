@@ -76,3 +76,18 @@ it("reuses the diff preview across repeated warm switches", async () => {
     }
     expect(resources.reviewRender).not.toHaveBeenCalled();
 });
+
+it("keeps the repository picker up while a folder that is not a repository refetches", () => {
+    const overview = resources.overview;
+    try {
+        resources.overview = { status: "error", error: "could not find repository at '/work'", refresh: vi.fn() } as never;
+        const { rerender } = render(<GitPane paneId="git-test" cwd="/work" active />);
+        expect(screen.getByText("Not a repository")).toBeInTheDocument();
+        resources.overview = { status: "loading", refresh: vi.fn() } as never;
+        rerender(<GitPane paneId="git-test" cwd="/work" active />);
+        expect(screen.getByText("Not a repository")).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Stashes" })).toBeNull();
+    } finally {
+        resources.overview = overview;
+    }
+});

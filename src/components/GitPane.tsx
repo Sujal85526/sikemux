@@ -1737,7 +1737,11 @@ function GitRepoPicker({ paneId, root, active }: { paneId: string; root: string;
 export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; active: boolean }) {
     const selectedRepo = useStore((s) => s.gitViews[paneId]?.repo ?? null);
     const rootOverview = useCachedResourceEnabled(active && !!cwd && !selectedRepo, gitOverviewR, cwd || "");
-    const rootMissing = rootOverview.status === "error" && !rootOverview.data && isMissingRepository(rootOverview.error);
+    const settledRoot = useRef<{ cwd: string; missing: boolean } | null>(null);
+    if (rootOverview.status !== "loading") {
+        settledRoot.current = { cwd, missing: rootOverview.status === "error" && !rootOverview.data && isMissingRepository(rootOverview.error) };
+    }
+    const rootMissing = settledRoot.current?.cwd === cwd && settledRoot.current.missing;
 
     if (!selectedRepo && rootMissing) return <GitRepoPicker paneId={paneId} root={cwd} active={active} />;
     return (
