@@ -14,9 +14,17 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::error::{AppError, AppResult};
+use crate::voice_models;
 
 pub const VOICE_EVENT: &str = "voice";
-const READY_MARKER: &str = "parakeet-v3.ready";
+/// The helper would otherwise honour these and fetch models from wherever they point.
+const MODEL_FETCH_VARIABLES: [&str; 5] = [
+    "REGISTRY_URL",
+    "MODEL_REGISTRY_URL",
+    "HF_TOKEN",
+    "HUGGING_FACE_HUB_TOKEN",
+    "HUGGINGFACEHUB_API_TOKEN",
+];
 
 struct Helper {
     child: Child,
@@ -27,6 +35,7 @@ struct Helper {
 #[derive(Clone, Default)]
 pub struct VoiceManager {
     helper: Arc<Mutex<Option<Helper>>>,
+    download: Arc<Mutex<Option<tauri::async_runtime::JoinHandle<()>>>>,
 }
 
 #[derive(Serialize)]
@@ -39,6 +48,9 @@ pub struct VoiceStatus {
 
 impl VoiceManager {
     pub fn drain(&self) {
+        if let Some(download) = self.lock_download().take() {
+            download.abort();
+        }
         if let Some(mut helper) = self.lock().take() {
             helper.stopped_on_purpose.store(true, Ordering::SeqCst);
             let _ = helper.child.kill();
@@ -50,6 +62,52 @@ impl VoiceManager {
         self.helper
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn lock_download(
+        &self,
+    ) -> std::sync::MutexGuard<'_, Option<tauri::async_runtime::JoinHandle<()>>> {
+        self.download
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn prepare(&self, app: &AppHandle, dir: PathBuf) {
+        let mut download = self.lock_download();
+        if download
+            .as_ref()
+            .is_some_and(|task| !task.inner().is_finished())
+        {
+            return;
+        }
+        let manager = self.clone();
+        let app = app.clone();
+        *download = Some(tauri::async_runtime::spawn(async move {
+            let fetched = voice_models::ensure(&dir, |fraction| {
+                let _ = app.emit_to(
+                    "main",
+                    VOICE_EVENT,
+                    json!({ "type": "progress", "stage": "download", "fraction": fraction }),
+                );
+            })
+            .await
+            .map_err(|error| format!("Could not download the speech model: {error}"));
+            let sent = fetched.and_then(|()| {
+                manager
+                    .send(
+                        &app,
+                        json!({ "type": "prepare", "modelsDir": dir.to_string_lossy() }),
+                    )
+                    .map_err(|error| error.to_string())
+            });
+            if let Err(message) = sent {
+                let _ = app.emit_to(
+                    "main",
+                    VOICE_EVENT,
+                    json!({ "type": "error", "reason": "models", "message": message }),
+                );
+            }
+        }));
     }
 
     fn send(&self, app: &AppHandle, command: Value) -> AppResult<()> {
@@ -74,8 +132,11 @@ impl VoiceManager {
     fn spawn(&self, app: &AppHandle) -> AppResult<Helper> {
         let executable = helper_executable()
             .ok_or_else(|| AppError::Other("the voice helper is missing from this build".into()))?;
-        let marker = models_dir(app)?.join(READY_MARKER);
-        let mut child = Command::new(executable)
+        let mut command = Command::new(executable);
+        for variable in MODEL_FETCH_VARIABLES {
+            command.env_remove(variable);
+        }
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -94,9 +155,6 @@ impl VoiceManager {
                 let Ok(event) = serde_json::from_str::<Value>(&line) else {
                     continue;
                 };
-                if event["type"] == "ready" {
-                    let _ = std::fs::write(&marker, b"");
-                }
                 let _ = app.emit_to("main", VOICE_EVENT, event);
             }
             if !stopped.load(Ordering::SeqCst) {
@@ -156,7 +214,7 @@ pub async fn voice_status(app: AppHandle) -> AppResult<VoiceStatus> {
     let reason = unsupported_reason();
     Ok(VoiceStatus {
         supported: reason.is_none(),
-        installed: models_dir(&app)?.join(READY_MARKER).is_file(),
+        installed: voice_models::installed(&models_dir(&app)?),
         reason,
     })
 }
@@ -168,10 +226,8 @@ pub async fn voice_prepare(app: AppHandle, voice: State<'_, VoiceManager>) -> Ap
     }
     let dir = models_dir(&app)?;
     std::fs::create_dir_all(&dir)?;
-    voice.send(
-        &app,
-        json!({ "type": "prepare", "modelsDir": dir.to_string_lossy() }),
-    )
+    voice.prepare(&app, dir);
+    Ok(())
 }
 
 #[tauri::command]

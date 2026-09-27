@@ -1,8 +1,12 @@
+import CoreML
 import FluidAudio
 import Foundation
 
 actor Dictation {
     private static let minimumSeconds = 0.3
+    /// The app downloads and verifies these folders before asking for them; the helper never fetches models.
+    private static let asrFolder = "parakeet-tdt-0.6b-v3"
+    private static let ctcFolder = "parakeet-ctc-110m-coreml"
 
     private var asr: AsrManager?
     private var spotter: CtcKeywordSpotter?
@@ -20,26 +24,14 @@ actor Dictation {
         }
         let root = URL(fileURLWithPath: modelsDir, isDirectory: true)
         do {
-            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-            let asrDirectory = root.appendingPathComponent(
-                AsrModels.defaultCacheDirectory(for: .v3).lastPathComponent, isDirectory: true)
-            let models = try await AsrModels.downloadAndLoad(
-                to: asrDirectory, version: .v3,
-                progressHandler: { progress in
-                    switch progress.phase {
-                    case .compiling:
-                        Output.progress(stage: "compile", fraction: progress.fractionCompleted)
-                    case .listing, .downloading:
-                        Output.progress(stage: "download", fraction: progress.fractionCompleted)
-                    }
-                })
+            let models = try Self.loadAsrModels(
+                from: root.appendingPathComponent(Self.asrFolder, isDirectory: true))
             let manager = AsrManager()
             try await manager.loadModels(models)
 
             Output.progress(stage: "vocabulary", fraction: 0)
-            let ctcDirectory = root.appendingPathComponent(
-                CtcModels.defaultCacheDirectory().lastPathComponent, isDirectory: true)
-            let ctcModels = try await CtcModels.downloadAndLoad(to: ctcDirectory)
+            let ctcDirectory = root.appendingPathComponent(Self.ctcFolder, isDirectory: true)
+            let ctcModels = try await CtcModels.loadDirect(from: ctcDirectory)
             let tokenizer = try await CtcTokenizer.load(from: ctcDirectory)
             Output.progress(stage: "vocabulary", fraction: 1)
 
@@ -53,6 +45,32 @@ actor Dictation {
             Output.failure("models", error.localizedDescription)
             return false
         }
+    }
+
+    private static func loadAsrModels(from directory: URL) throws -> AsrModels {
+        let names = ModelNames.ASR.self
+        let parts: [(file: String, units: MLComputeUnits)] = [
+            (names.preprocessorFile, .cpuOnly),
+            (names.encoderFile, .cpuAndNeuralEngine),
+            (names.decoderFile, .cpuAndNeuralEngine),
+            (names.jointV3File, .cpuAndNeuralEngine),
+        ]
+        var loaded: [MLModel] = []
+        for (index, part) in parts.enumerated() {
+            Output.progress(stage: "compile", fraction: Double(index) / Double(parts.count))
+            let configuration = MLModelConfigurationUtils.defaultConfiguration(computeUnits: part.units)
+            loaded.append(
+                try MLModel(contentsOf: directory.appendingPathComponent(part.file), configuration: configuration))
+        }
+        Output.progress(stage: "compile", fraction: 1)
+        let tokens = try JSONDecoder().decode(
+            [String: String].self,
+            from: Data(contentsOf: directory.appendingPathComponent(names.vocabularyFile)))
+        let vocabulary = Dictionary(
+            uniqueKeysWithValues: tokens.compactMap { key, token in Int(key).map { ($0, token) } })
+        return AsrModels(
+            encoder: loaded[1], preprocessor: loaded[0], decoder: loaded[2], joint: loaded[3],
+            configuration: AsrModels.defaultConfiguration(), vocabulary: vocabulary, version: .v3)
     }
 
     func start(vocabulary: [String]) async {

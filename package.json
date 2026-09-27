@@ -32,6 +32,7 @@
     "agent-tools:check": "node scripts/generate-agent-tools.mjs --check",
     "grammars:generate": "node scripts/generate-grammars.mjs",
     "grammars:check": "node scripts/generate-grammars.mjs --check",
+    "voice-models:generate": "node scripts/generate-voice-models.mjs",
     "agent-tools:report": "node scripts/report-agent-tools.mjs",
     "deps:audit": "node scripts/check-dependency-health.mjs",
     "audit:rust": "cargo audit --file src-tauri/Cargo.lock",
