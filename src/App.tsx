@@ -87,6 +87,7 @@ import { pluginsApi } from "./api/plugins";
 import "./plugins/builtin";
 import { recordAgentTurns } from "./state/activityRecorder";
 import { useInstalledPlugins } from "./plugins/installed";
+import { useRailEntrance } from "./components/railMotion";
 
 const SettingsPanel = lazy(() => import("./components/SettingsPanel").then((module) => ({ default: module.SettingsPanel })));
 
@@ -653,6 +654,8 @@ export default function App() {
     const sideRailVisible = sideRailOpen && !zen;
     const agentRailVisible = agentRailOpen && !zen;
     const activeSessionIsProject = useStore((s) => s.sessions[s.activeSessionId]?.kind === "project");
+    useRailEntrance(sideRailVisible, ".side-rail");
+    useRailEntrance(agentRailVisible && activeSessionIsProject, ".agent-rail");
     const pickerOpen = useStore((s) => s.pickerOpen);
     const agentPaletteOpen = useStore((s) => s.agentPaletteOpen);
     const filePaletteOpen = useStore((s) => s.filePaletteOpen);

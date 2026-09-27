@@ -16,6 +16,7 @@ import { Tooltip } from "./Tooltip";
 import { Panel, PanelHeader } from "./Panel";
 import { animate, type Box, contentBox, EASE_LEAVE, glideSelection, leavingRef } from "../lib/motion";
 import { CountUp } from "./RollingText";
+import { leavingRail } from "./railMotion";
 
 const RECENTS_PAGE = 12;
 const USAGE_REFRESH_MS = 5 * 60_000;
@@ -81,7 +82,7 @@ const sessionKey = (type: AgentType, id: string) => `${type}:${id}`;
 export const AgentRail = memo(function AgentRail() {
     const density = useStore((s) => s.railDensity);
     return (
-        <aside className="workspace-rail agent-rail" aria-label="Agents" data-density={density}>
+        <aside ref={leavingRail} className="workspace-rail agent-rail" aria-label="Agents" data-density={density}>
             <AgentRailBody />
         </aside>
     );
