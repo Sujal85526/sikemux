@@ -255,16 +255,12 @@
 }
 
 .ed-tree-resizer {
-    width: 6px;
-    margin-left: -3px;
-    margin-right: -3px;
+    width: var(--shell-gap);
     flex: 0 0 auto;
     cursor: col-resize;
     background: transparent;
-    position: relative;
-    z-index: 2;
 }
 .ed-tree-resizer:hover,
 .ed-tree-resizer:active {
-    background: var(--acc-line);
+    background: linear-gradient(var(--acc-line), var(--acc-line)) center / 2px 100% no-repeat;
 }

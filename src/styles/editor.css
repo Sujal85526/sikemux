@@ -4,13 +4,25 @@
     width: 100%;
 }
 
+/* With a tree beside it the editor is two panels with the shell's gap between,
+   like the rails, so the pane gives up its own frame and texture. */
+.pane-editor:has(.editor-pane > .ed-tree) {
+    border: 0;
+}
+.pane-editor:has(.editor-pane > .ed-tree) > .pane-field {
+    display: none;
+}
+.ed-tree,
+.ed-tree + .ed-tree-resizer + .ed-main {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-panel);
+    overflow: hidden;
+}
 .ed-tree {
     width: 210px;
     flex: 0 0 auto;
     display: flex;
     flex-direction: column;
-    border-right: 1px solid var(--border);
-    overflow: hidden;
 }
 .ed-tree-head {
     height: 30px;

@@ -876,7 +876,8 @@
 .ed-tree.fill {
     width: 100%;
     min-width: 0;
-    border-right: 0;
+    border: 0;
+    border-radius: 0;
 }
 
 /* Changes tab */
