@@ -27,6 +27,7 @@ import { CopyButton } from "../components/CopyButton";
 import { FileIcon } from "../components/FileIcon";
 import { MarkdownTableHead } from "../lib/markdownTable";
 import { basename } from "../lib/paths";
+import { animate, EASE_IN, foldedFrames, leavingRef } from "../lib/motion";
 import { hasPrimaryModifier, PRIMARY_SHORTCUT } from "../lib/platform";
 import { registerPathDrop } from "../state/dropRegistry";
 import { registerTextInsert } from "../state/textInsertRegistry";
@@ -851,10 +852,62 @@ function toolRunning(tool: AcpToolCall): boolean {
    something else follows it or the turn ends, unless the reader says
    otherwise. Watching each call instead would shut the run in the gaps
    between calls, and open it again on the next one. */
+/* Closing folds the calls away. The transcript measures every row as it
+   changes size, so the rows below follow the fold rather than jumping. */
+const foldToolBody = leavingRef<HTMLDivElement>((body) => {
+    const [open, closed] = foldedFrames(body);
+    body.style.overflow = "hidden";
+    return animate(
+        body,
+        [
+            { ...open, opacity: 1 },
+            { ...closed, opacity: 0 },
+        ],
+        { duration: 140, easing: EASE_IN },
+    );
+});
+
+/* Opening grows the calls in and steps them down one after another. Only a
+   change of state animates: a group the list remounts on scroll just shows. */
+function useToolGroupUnfold(group: RefObject<HTMLDivElement | null>, open: boolean): void {
+    const was = useRef<boolean | null>(null);
+    useLayoutEffect(() => {
+        const before = was.current;
+        was.current = open;
+        const body = group.current?.querySelector<HTMLElement>(":scope > .chat-tools-body");
+        if (before === null || before === open || !open || !body) return;
+        const [rest, flat] = foldedFrames(body);
+        body.style.overflow = "hidden";
+        const run = animate(
+            body,
+            [
+                { ...flat, opacity: 0 },
+                { ...rest, opacity: 1 },
+            ],
+            { duration: 180 },
+        );
+        const settle = () => (body.style.overflow = "");
+        if (run) run.finished.then(settle, settle);
+        else settle();
+        [...body.children].forEach((row, i) =>
+            animate(
+                row,
+                [
+                    { opacity: 0, transform: "translateX(-4px)" },
+                    { opacity: 1, transform: "none" },
+                ],
+                { duration: 160, delay: 30 + i * 20, fill: "backwards" },
+            ),
+        );
+    }, [group, open]);
+}
+
 function ToolGroup({ tools, live }: { tools: Extract<ChatPart, { kind: "tool" }>[]; live: boolean }) {
     const [reader, setReader] = useState<boolean | null>(null);
     const current = tools.find((part) => toolRunning(part.tool));
     const open = reader ?? (live || current !== undefined);
+    const groupRef = useRef<HTMLDivElement>(null);
+    useToolGroupUnfold(groupRef, open);
     const spent = tools.reduce(
         (total, part) => total + (part.startedAt !== undefined && part.endedAt !== undefined ? part.endedAt - part.startedAt : 0),
         0,
@@ -865,7 +918,7 @@ function ToolGroup({ tools, live }: { tools: Extract<ChatPart, { kind: "tool" }>
     // While a call runs, the header says what Claude said it is for; a finished run counts its calls.
     const said = current ? toolDescription(current.tool) : null;
     return (
-        <div className="chat-tools">
+        <div className="chat-tools" ref={groupRef}>
             <button type="button" className={`chat-tools-sum${current ? " live" : ""}`} aria-expanded={open} onClick={() => setReader(!open)}>
                 {said ? (
                     <>
@@ -885,7 +938,7 @@ function ToolGroup({ tools, live }: { tools: Extract<ChatPart, { kind: "tool" }>
                 <IconChevron size={10} className="chat-tools-chevron" />
             </button>
             {open && (
-                <div className="chat-tools-body" style={{ "--chat-kind": `${kindWidth}ch` } as CSSProperties}>
+                <div className="chat-tools-body" ref={foldToolBody} style={{ "--chat-kind": `${kindWidth}ch` } as CSSProperties}>
                     {tools.map((part) => (
                         <ToolRow key={part.id} part={part} />
                     ))}
@@ -1663,6 +1716,32 @@ export function AgentChatPane({
     /* A restored transcript opens on estimated row heights, and every row that
        measures taller or shorter than the estimate moves the bottom. Anchoring
        to the end makes the list hold the bottom still while that settles. */
+    /* A message that has just arrived rises into place. Only new ones: a row
+       the list remounts on scroll, or a transcript restored all at once, just shows. */
+    const shownMessages = useRef<Set<string> | null>(null);
+    useLayoutEffect(() => {
+        const ids = displayState.messages.map((message) => message.id);
+        const shown = shownMessages.current;
+        if (!shown) {
+            shownMessages.current = new Set(ids);
+            return;
+        }
+        const fresh = ids.filter((id) => !shown.has(id));
+        for (const id of fresh) shown.add(id);
+        if (fresh.length === 0 || fresh.length > 2) return;
+        for (const id of fresh) {
+            const row = scrollRef.current?.querySelector<HTMLElement>(`.chat-virtual-row[data-index="${ids.indexOf(id)}"] > *`);
+            animate(
+                row,
+                [
+                    { opacity: 0, transform: "translateY(10px) scale(0.985)" },
+                    { opacity: 1, transform: "none" },
+                ],
+                { duration: 200 },
+            );
+        }
+    }, [displayState.messages]);
+
     const virtualizer = useVirtualizer({
         count: displayState.messages.length,
         getScrollElement: () => scrollRef.current,
@@ -1671,6 +1750,11 @@ export function AgentChatPane({
         anchorTo: "end",
         scrollEndThreshold: BOTTOM_SLACK,
         getItemKey: (index) => displayState.messages[index]?.id ?? index,
+        /* Rows are placed from the resize observer itself, in the frame a row
+           changes size, rather than on the render after. A row that grows or
+           folds by animation then pushes the rest along with it instead of
+           overlapping them for a frame and catching up. */
+        directDomUpdates: true,
     });
 
     useEffect(() => {
@@ -2165,7 +2249,7 @@ export function AgentChatPane({
                                 </div>
                             )}
                             <FoldMemoryContext value={foldMemory}>
-                                <div className="chat-virtual-space" style={{ height: `${virtualizer.getTotalSize()}px` }}>
+                                <div className="chat-virtual-space" ref={virtualizer.containerRef}>
                                     {virtualizer.getVirtualItems().map((item) => {
                                         const message = displayState.messages[item.index];
                                         const meta = rowMeta(displayState.messages, item.index);
@@ -2174,8 +2258,7 @@ export function AgentChatPane({
                                                 key={message.id}
                                                 data-index={item.index}
                                                 ref={virtualizer.measureElement}
-                                                className="chat-virtual-row"
-                                                style={{ transform: `translateY(${item.start}px)` }}>
+                                                className="chat-virtual-row">
                                                 <ChatMessageRow
                                                     message={message}
                                                     live={displayState.running && item.index === displayState.messages.length - 1}
