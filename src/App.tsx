@@ -31,6 +31,7 @@ import { runKeybindingAction, useKeymap } from "./keymap";
 import { usePinchZoom } from "./pinchZoom";
 import { introduceNotifications, useAgentNotifications } from "./agentNotifications";
 import { useVoiceDictation } from "./voice/dictation";
+import { VoiceCaption } from "./voice/VoiceCaption";
 import { useBackdropImage } from "./hooks/useBackdropImage";
 import { useBrowserDownloads } from "./state/browserDownloads";
 import { useBrowserReveal } from "./state/browserReveal";
@@ -1005,6 +1006,7 @@ export default function App() {
             </Suspense>
             <DialogHost />
             <ImageViewer />
+            <VoiceCaption />
             <Toaster />
         </div>
     );

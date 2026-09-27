@@ -4,6 +4,7 @@ import Foundation
 
 actor Dictation {
     private static let minimumSeconds = 0.3
+    private static let previewInterval: Duration = .milliseconds(400)
     /// The app downloads and verifies these folders before asking for them; the helper never fetches models.
     private static let asrFolder = "parakeet-tdt-0.6b-v3"
     private static let ctcFolder = "parakeet-ctc-110m-coreml"
@@ -14,6 +15,7 @@ actor Dictation {
     private var tokenizer: CtcTokenizer?
     private var boosting: (terms: [String], context: CustomVocabularyContext, rescorer: VocabularyRescorer)?
     private var recorder: Recorder?
+    private var preview: Task<Void, Never>?
     private var vocabulary: [String] = []
 
     @discardableResult
@@ -78,10 +80,7 @@ actor Dictation {
             Output.failure("models", "The speech model is not loaded yet.")
             return
         }
-        if let recorder {
-            _ = recorder.stop()
-            self.recorder = nil
-        }
+        endRecording()
         do {
             try await Recorder.ensurePermission()
             let recorder = Recorder()
@@ -89,6 +88,7 @@ actor Dictation {
             self.recorder = recorder
             self.vocabulary = vocabulary
             Output.send(["type": "listening"])
+            preview = Task { await self.streamPreview(of: recorder) }
         } catch RecorderError.microphoneDenied {
             Output.failure("microphone", RecorderError.microphoneDenied.localizedDescription)
         } catch {
@@ -96,21 +96,54 @@ actor Dictation {
         }
     }
 
+    /// Plays a file in as if it were being spoken, so streaming can be checked without a microphone.
+    func stream(file: URL, vocabulary: [String]) async throws {
+        guard asr != nil else { throw ASRError.notInitialized }
+        endRecording()
+        let audio = try AudioConverter().resampleAudioFile(file)
+        let recorder = Recorder()
+        recorder.replay(audio, sampleRate: 16_000)
+        self.recorder = recorder
+        self.vocabulary = vocabulary
+        preview = Task { await self.streamPreview(of: recorder) }
+        try await Task.sleep(for: .seconds(Double(audio.count) / 16_000 + 0.2))
+        await stop()
+    }
+
     func cancel() {
-        if let recorder {
-            _ = recorder.stop()
-            self.recorder = nil
-        }
+        endRecording()
         Output.send(["type": "cancelled"])
     }
 
+    @discardableResult
+    private func endRecording() -> (samples: [Float], sampleRate: Double)? {
+        preview?.cancel()
+        preview = nil
+        guard let recorder else { return nil }
+        self.recorder = nil
+        return recorder.stop()
+    }
+
+    private func streamPreview(of recorder: Recorder) async {
+        var shown = ""
+        while !Task.isCancelled {
+            try? await Task.sleep(for: Self.previewInterval)
+            guard self.recorder === recorder, !Task.isCancelled else { return }
+            let captured = recorder.snapshot()
+            guard Double(captured.samples.count) / captured.sampleRate >= Self.minimumSeconds,
+                let text = try? await transcribe(captured.samples, sampleRate: captured.sampleRate, boost: false),
+                self.recorder === recorder, !Task.isCancelled, text != shown
+            else { continue }
+            shown = text
+            Output.send(["type": "partial", "text": text])
+        }
+    }
+
     func stop() async {
-        guard let recorder, asr != nil else {
+        guard asr != nil, let captured = endRecording() else {
             Output.send(["type": "transcript", "text": ""])
             return
         }
-        self.recorder = nil
-        let captured = recorder.stop()
         guard Double(captured.samples.count) / captured.sampleRate >= Self.minimumSeconds else {
             Output.send(["type": "transcript", "text": ""])
             return
@@ -129,13 +162,13 @@ actor Dictation {
         return try await transcribe(AudioConverter().resampleAudioFile(file), sampleRate: 16_000)
     }
 
-    private func transcribe(_ captured: [Float], sampleRate: Double) async throws -> String {
+    private func transcribe(_ captured: [Float], sampleRate: Double, boost: Bool = true) async throws -> String {
         guard let asr else { throw ASRError.notInitialized }
         let samples =
             sampleRate == 16_000 ? captured : try AudioConverter().resample(captured, from: sampleRate)
         var decoderState = try TdtDecoderState()
         let result = try await asr.transcribe(samples, decoderState: &decoderState)
-        let text = await boosted(result, samples: samples)
+        let text = boost ? await boosted(result, samples: samples) : result.text
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 

@@ -53,6 +53,29 @@ final class Recorder {
         }
     }
 
+    func replay(_ audio: [Float], sampleRate: Double) {
+        lock.lock()
+        samples.removeAll(keepingCapacity: true)
+        self.sampleRate = sampleRate
+        lock.unlock()
+        let step = Int(sampleRate / 10)
+        Thread.detachNewThread { [weak self] in
+            for start in stride(from: 0, to: audio.count, by: step) {
+                guard let self else { return }
+                self.lock.lock()
+                self.samples.append(contentsOf: audio[start..<min(start + step, audio.count)])
+                self.lock.unlock()
+                Thread.sleep(forTimeInterval: 0.1)
+            }
+        }
+    }
+
+    func snapshot() -> (samples: [Float], sampleRate: Double) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (samples, sampleRate)
+    }
+
     func stop() -> (samples: [Float], sampleRate: Double) {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()

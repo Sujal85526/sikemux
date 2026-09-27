@@ -31,7 +31,7 @@ function mountTarget() {
 describe("voice dictation", () => {
     beforeEach(() => {
         vi.useFakeTimers();
-        useVoice.setState({ phase: "ready", reason: null, stage: null, fraction: 0, target: null });
+        useVoice.setState({ phase: "ready", reason: null, stage: null, fraction: 0, target: null, partial: "" });
         setState({ voiceDictation: true });
     });
 
@@ -56,6 +56,37 @@ describe("voice dictation", () => {
         handleVoiceEvent({ type: "transcript", text: "run the tests" });
         expect(inserted).toEqual(["run the tests"]);
         expect(useVoice.getState().phase).toBe("ready");
+    });
+
+    it("shows what is heard while speaking and clears it once the words are typed", () => {
+        const { inserted } = mountTarget();
+        onVoiceKeyDown(key("keydown", "AltRight"));
+        vi.advanceTimersByTime(200);
+        handleVoiceEvent({ type: "listening" });
+        handleVoiceEvent({ type: "partial", text: "run the" });
+        handleVoiceEvent({ type: "partial", text: "run the tests" });
+        expect(useVoice.getState().partial).toBe("run the tests");
+        expect(inserted).toEqual([]);
+
+        onVoiceKeyUp(key("keyup", "AltRight"));
+        handleVoiceEvent({ type: "partial", text: "run the tests now" });
+        expect(useVoice.getState().partial).toBe("run the tests now");
+        handleVoiceEvent({ type: "transcript", text: "Run the tests now." });
+        expect(inserted).toEqual(["Run the tests now."]);
+        expect(useVoice.getState().partial).toBe("");
+    });
+
+    it("drops what was heard when the recording is abandoned", () => {
+        mountTarget();
+        onVoiceKeyDown(key("keydown", "AltRight"));
+        vi.advanceTimersByTime(200);
+        handleVoiceEvent({ type: "listening" });
+        handleVoiceEvent({ type: "partial", text: "open the" });
+        onVoiceKeyDown(key("keydown", "KeyB", { altKey: true }));
+        expect(useVoice.getState().partial).toBe("");
+        handleVoiceEvent({ type: "cancelled" });
+        handleVoiceEvent({ type: "partial", text: "open the settings" });
+        expect(useVoice.getState().partial).toBe("");
     });
 
     it("never opens the microphone for a quick tap", () => {

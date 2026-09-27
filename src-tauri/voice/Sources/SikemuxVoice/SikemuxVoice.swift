@@ -12,6 +12,10 @@ struct SikemuxVoice {
             await transcribe(file: file, with: dictation)
             return
         }
+        if let file = option("--stream") {
+            await stream(file: file, with: dictation)
+            return
+        }
         let lines = AsyncStream<String> { continuation in
             Thread.detachNewThread {
                 while let line = readLine() { continuation.yield(line) }
@@ -43,12 +47,27 @@ struct SikemuxVoice {
         return arguments[index + 1]
     }
 
-    private static func transcribe(file: String, with dictation: Dictation) async {
+    private static func prepareForFile(_ dictation: Dictation) async -> [String] {
         guard let models = option("--models"), await dictation.prepare(modelsDir: models) else {
-            FileHandle.standardError.write(Data("usage: sikemux-voice --transcribe <audio> --models <dir> [--vocabulary a,b]\n".utf8))
+            FileHandle.standardError.write(
+                Data("usage: sikemux-voice --transcribe|--stream <audio> --models <dir> [--vocabulary a,b]\n".utf8))
             exit(2)
         }
-        let vocabulary = option("--vocabulary")?.split(separator: ",").map(String.init) ?? []
+        return option("--vocabulary")?.split(separator: ",").map(String.init) ?? []
+    }
+
+    private static func stream(file: String, with dictation: Dictation) async {
+        let vocabulary = await prepareForFile(dictation)
+        do {
+            try await dictation.stream(file: URL(fileURLWithPath: file), vocabulary: vocabulary)
+        } catch {
+            Output.failure("transcribe", error.localizedDescription)
+            exit(1)
+        }
+    }
+
+    private static func transcribe(file: String, with dictation: Dictation) async {
+        let vocabulary = await prepareForFile(dictation)
         do {
             let started = Date()
             let text = try await dictation.transcribe(file: URL(fileURLWithPath: file), vocabulary: vocabulary)

@@ -154,6 +154,37 @@
     color: var(--ink-dim);
     border-color: var(--line);
 }
+.voice-caption {
+    position: fixed;
+    z-index: var(--layer-menu);
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: 560px;
+    padding: 8px 12px;
+    background: var(--surface-overlay);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-3);
+    box-shadow: var(--shadow-2);
+    color: var(--ink);
+    font-size: var(--text-sm);
+    line-height: 1.4;
+    pointer-events: none;
+}
+/* Anchored to the bottom so the newest words stay in view as the text grows. */
+.voice-caption-lines {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    max-height: 2lh;
+    overflow: hidden;
+}
+.voice-caption p {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+.voice-caption.settling {
+    color: var(--ink-dim);
+}
 
 .tb-clock {
     font-size: var(--text-xs);

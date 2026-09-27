@@ -13,6 +13,7 @@ export type VoiceEvent =
     | { type: "progress"; stage: VoiceStage; fraction: number }
     | { type: "ready" }
     | { type: "listening" }
+    | { type: "partial"; text: string }
     | { type: "transcript"; text: string }
     | { type: "cancelled" }
     | { type: "exited" }

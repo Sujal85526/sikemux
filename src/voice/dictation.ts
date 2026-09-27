@@ -16,9 +16,11 @@ export interface VoiceState {
     fraction: number;
     /** Where the words being spoken now will be typed. */
     target: HTMLElement | null;
+    /** What has been heard so far, while the words are still being spoken. */
+    partial: string;
 }
 
-export const useVoice = create<VoiceState>(() => ({ phase: "off", reason: null, stage: null, fraction: 0, target: null }));
+export const useVoice = create<VoiceState>(() => ({ phase: "off", reason: null, stage: null, fraction: 0, target: null, partial: "" }));
 
 export const HOLD_KEY = "AltRight";
 /* Right Option also starts shortcuts, so the microphone waits to see it held on its own. */
@@ -53,7 +55,7 @@ async function shutdown(): Promise<void> {
 function deliver(text: string): void {
     const { target } = useVoice.getState();
     const destination = target?.isConnected ? target : focusedTextInsertTarget();
-    set({ target: null });
+    set({ target: null, partial: "" });
     if (!text) return;
     if (destination && insertText(destination, text)) return;
     void navigator.clipboard
@@ -71,25 +73,30 @@ export function handleVoiceEvent(event: VoiceEvent): void {
             set({ phase: "ready", reason: null, stage: null, fraction: 0 });
             return;
         case "listening":
-            if (useVoice.getState().phase === "ready") set({ phase: "listening" });
+            if (useVoice.getState().phase === "ready") set({ phase: "listening", partial: "" });
             return;
+        case "partial": {
+            const { phase } = useVoice.getState();
+            if (phase === "listening" || phase === "transcribing") set({ partial: event.text });
+            return;
+        }
         case "transcript":
             set({ phase: "ready" });
             deliver(event.text);
             return;
         case "cancelled":
-            set({ phase: "ready", target: null });
+            set({ phase: "ready", target: null, partial: "" });
             return;
         case "exited":
             recording = false;
-            set({ phase: "off", target: null, reason: "The voice helper stopped. Hold the key again to restart it." });
+            set({ phase: "off", target: null, partial: "", reason: "The voice helper stopped. Hold the key again to restart it." });
             return;
         case "error":
             recording = false;
             if (event.reason === "models") {
-                set({ phase: "off", reason: event.message, stage: null, fraction: 0, target: null });
+                set({ phase: "off", reason: event.message, stage: null, fraction: 0, target: null, partial: "" });
             } else {
-                set({ phase: "ready", target: null });
+                set({ phase: "ready", target: null, partial: "" });
             }
             notify("error", event.message);
             return;
@@ -104,7 +111,7 @@ function abandonHold(): void {
     }
     if (!recording) return;
     recording = false;
-    set({ target: null });
+    set({ target: null, partial: "" });
     void voiceApi.cancel();
 }
 
