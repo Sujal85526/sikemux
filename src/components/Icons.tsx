@@ -228,6 +228,18 @@ export const IconWarning = makeSvgIcon(
         <path d="M8 6.1v3.6M8 11.6v.1" />
     </>,
 );
+export const IconExclamation = makeSvgIcon(
+    <>
+        <path d="M8 4.4v4.4" />
+        <path d="M8 11.4v.1" strokeWidth={1.9} />
+    </>,
+);
+export const IconInfoMark = makeSvgIcon(
+    <>
+        <path d="M8 7.3v4.3" />
+        <path d="M8 4.7v.1" strokeWidth={1.9} />
+    </>,
+);
 export const IconActivity = makeSvgIcon(<path d="M3.2 13V9.4M8 13V3.4M12.8 13V6.6" />);
 export const IconInfo = makeSvgIcon(
     <>
