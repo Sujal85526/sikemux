@@ -15,6 +15,7 @@ import { sortByAttention } from "../state/agentStatus";
 import { Tooltip } from "./Tooltip";
 import { Panel, PanelHeader } from "./Panel";
 import { animate, type Box, contentBox, EASE_LEAVE, glideSelection, leavingRef } from "../lib/motion";
+import { CountUp } from "./RollingText";
 
 const RECENTS_PAGE = 12;
 const USAGE_REFRESH_MS = 5 * 60_000;
@@ -556,7 +557,7 @@ function AgentUsagePanel({ provider, usage, label }: { provider: UsageAgentType;
                                 </div>
                                 <div className="agent-usage-gauge">
                                     <span className="agent-usage-pct">
-                                        {rounded}
+                                        <CountUp value={rounded} />
                                         <i>%</i>
                                     </span>
                                     <span

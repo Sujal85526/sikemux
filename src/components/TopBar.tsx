@@ -27,6 +27,7 @@ import { useVoice } from "../voice/dictation";
 import { PRIMARY_SHORTCUT } from "../lib/platform";
 import { Tooltip } from "./Tooltip";
 import { isUpdateBusy, updateDownloadPercent, updateStatusLabel } from "../api/updater";
+import { RollingText } from "./RollingText";
 
 const time2 = (n: number) => String(n).padStart(2, "0");
 
@@ -84,8 +85,16 @@ function GitChip({ repo }: { repo: string }) {
                         <span className="tb-git-branch">{st.branch}</span>
                         {(ahead > 0 || behind > 0) && (
                             <span className="tb-git-track">
-                                {ahead > 0 && <span className="tb-git-ahead">↑{ahead}</span>}
-                                {behind > 0 && <span className="tb-git-behind">↓{behind}</span>}
+                                {ahead > 0 && (
+                                    <span className="tb-git-ahead">
+                                        ↑<RollingText text={String(ahead)} />
+                                    </span>
+                                )}
+                                {behind > 0 && (
+                                    <span className="tb-git-behind">
+                                        ↓<RollingText text={String(behind)} />
+                                    </span>
+                                )}
                             </span>
                         )}
                     </button>
@@ -207,7 +216,7 @@ function ClockChip() {
     const t = twelveHour(now);
     return (
         <span className="tb-clock">
-            {t.h}:{time2(t.m)}
+            <RollingText text={`${t.h}:${time2(t.m)}`} />
             <span className="tb-ampm">{t.ap}</span>
         </span>
     );

@@ -22,3 +22,8 @@
     box-shadow: 0 0 0 1.5px currentColor;
     pointer-events: none;
 }
+
+/* Each character can roll on its own. */
+.rolling-text > span {
+    display: inline-block;
+}
