@@ -48,9 +48,8 @@ const MAX_URL_LEN: usize = 8192;
 /// A page opening more tabs than this in `POPUP_WINDOW` is in a loop.
 const POPUP_LIMIT: usize = 4;
 const POPUP_WINDOW: Duration = Duration::from_secs(10);
-// Parked pages sit outside the window instead of being hidden. A hidden page
-// runs no animation frames, and React only reveals content it streamed into a
-// page on one, so a page loaded out of sight kept showing its loading state.
+// Parked pages sit outside the window, since a hidden view still takes file
+// drops over the spot it last covered. They are hidden too once they are idle.
 const PARKED_ORIGIN: f64 = -100_000.0;
 const PARKED_BOUNDS: BrowserBounds = BrowserBounds {
     x: PARKED_ORIGIN,
@@ -63,6 +62,9 @@ const PARKED_BOUNDS: BrowserBounds = BrowserBounds {
 };
 
 const ACTING_LINGER: Duration = Duration::from_secs(3);
+/// A hidden page runs no animation frames, and React reveals streamed content
+/// on one, so a parked tab stays shown this long after it finishes loading.
+const LOAD_SETTLE: Duration = Duration::from_secs(2);
 
 /// WebKit's own agent string names no browser at all, and sites answer that
 /// with an "unsupported browser" page, so tabs — and the fetch that goes after
@@ -181,6 +183,8 @@ pub struct TabStrip {
     /// Tabs the agent is working in, each with the mark that put it there, so
     /// only the latest mark may take it away again.
     pub acting: HashMap<String, u64>,
+    /// Tabs that finished loading a moment ago, keyed by mark like `acting`.
+    pub settling: HashMap<String, u64>,
 }
 
 impl TabStrip {
@@ -199,6 +203,7 @@ impl TabStrip {
         self.order.remove(index);
         self.pages.remove(id);
         self.acting.remove(id);
+        self.settling.remove(id);
         if self.active.as_deref() == Some(id) {
             self.active = self
                 .order
@@ -229,6 +234,25 @@ impl TabStrip {
         }
         self.acting.remove(tab);
         true
+    }
+
+    pub fn settle(&mut self, tab: &str, mark: u64) {
+        self.settling.insert(tab.to_owned(), mark);
+    }
+
+    pub fn release_settled(&mut self, tab: &str, mark: u64) -> bool {
+        if self.settling.get(tab) != Some(&mark) {
+            return false;
+        }
+        self.settling.remove(tab);
+        true
+    }
+
+    /// Whether the tab must keep drawing frames while it is out of sight.
+    pub fn awake(&self, id: &str) -> bool {
+        self.pages.get(id).is_some_and(|page| page.loading)
+            || self.acting.contains_key(id)
+            || self.settling.contains_key(id)
     }
 
     pub fn snapshot(&self) -> BrowserSnapshot {
@@ -268,7 +292,7 @@ struct AgentBrowser {
 pub struct BrowserManager {
     agents: Mutex<HashMap<String, AgentBrowser>>,
     next_tab: AtomicU64,
-    next_acting_mark: AtomicU64,
+    next_mark: AtomicU64,
     shortcuts_installed: AtomicBool,
     downloads: Mutex<HashMap<(String, String), PathBuf>>,
     icons: Mutex<favicon::IconCache>,
@@ -590,7 +614,7 @@ impl BrowserManager {
         tab_id: &str,
         update: impl FnOnce(&mut TabPage),
     ) {
-        let changed = {
+        let (changed, loading) = {
             let mut agents = self.lock();
             match agents
                 .get_mut(agent_id)
@@ -599,14 +623,41 @@ impl BrowserManager {
                 Some(page) => {
                     let before = page.clone();
                     update(page);
-                    *page != before
+                    let loading = (before.loading != page.loading).then_some(page.loading);
+                    (*page != before, loading)
                 }
-                None => false,
+                None => (false, None),
             }
         };
         if changed {
             self.announce(app);
         }
+        match loading {
+            Some(true) => self.relayout(agent_id),
+            Some(false) => self.settle(app, agent_id, tab_id),
+            None => {}
+        }
+    }
+
+    fn settle(&self, app: &AppHandle, agent_id: &str, tab_id: &str) {
+        let mark = self.next_mark.fetch_add(1, Ordering::AcqRel);
+        match self.lock().get_mut(agent_id) {
+            Some(agent) => agent.strip.settle(tab_id, mark),
+            None => return,
+        }
+        self.relayout(agent_id);
+        let (app, agent_id, tab_id) = (app.clone(), agent_id.to_owned(), tab_id.to_owned());
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(LOAD_SETTLE).await;
+            let manager = app.state::<BrowserManager>();
+            let released = manager
+                .lock()
+                .get_mut(&agent_id)
+                .is_some_and(|agent| agent.strip.release_settled(&tab_id, mark));
+            if released {
+                manager.relayout(&agent_id);
+            }
+        });
     }
 
     pub fn close_tab(&self, app: &AppHandle, agent_id: &str, tab_id: &str) -> AppResult<()> {
@@ -782,7 +833,12 @@ impl BrowserManager {
 
     /// Show the active tab inside the pane's page area and park the rest.
     fn relayout(&self, agent_id: &str) {
-        let plan: Vec<(Webview, Option<BrowserBounds>, Option<viewport::Viewport>)> = {
+        let plan: Vec<(
+            Webview,
+            Option<BrowserBounds>,
+            Option<viewport::Viewport>,
+            bool,
+        )> = {
             let agents = self.lock();
             let Some(agent) = agents.get(agent_id) else {
                 return;
@@ -796,11 +852,16 @@ impl BrowserManager {
                         view.clone(),
                         agent.bounds.clone().filter(|_| shown),
                         agent.viewports.get(id).copied(),
+                        agent.strip.awake(id),
                     )
                 })
                 .collect()
         };
-        for (view, bounds, fixed) in plan {
+        for (view, bounds, fixed, awake) in plan {
+            #[cfg(target_os = "macos")]
+            let _ = view.with_webview(move |platform| {
+                macos::keep_running_when_covered(platform.inner(), awake)
+            });
             let bounds = match (bounds, fixed) {
                 (Some(area), Some(fixed)) => {
                     let (placed, zoom) = viewport::fit(&area, fixed);
@@ -832,7 +893,7 @@ impl BrowserManager {
                 }
                 None => {
                     let _ = view.set_position(LogicalPosition::new(PARKED_ORIGIN, PARKED_ORIGIN));
-                    let _ = view.show();
+                    let _ = if awake { view.show() } else { view.hide() };
                 }
             }
         }
@@ -846,9 +907,17 @@ impl BrowserManager {
 
     /// Marks the tab the agent's tools are on, so the strip can show it working there.
     pub fn mark_acting(&self, app: &AppHandle, agent_id: &str) -> Option<(String, u64)> {
-        let mark = self.next_acting_mark.fetch_add(1, Ordering::AcqRel);
-        let tab = self.lock().get_mut(agent_id)?.strip.mark_acting(mark)?;
+        let mark = self.next_mark.fetch_add(1, Ordering::AcqRel);
+        let (tab, woke) = {
+            let mut agents = self.lock();
+            let strip = &mut agents.get_mut(agent_id)?.strip;
+            let was_awake = strip.active.as_deref().is_some_and(|id| strip.awake(id));
+            (strip.mark_acting(mark)?, !was_awake)
+        };
         self.announce(app);
+        if woke {
+            self.relayout(agent_id);
+        }
         Some((tab, mark))
     }
 
@@ -871,6 +940,7 @@ impl BrowserManager {
             }
             if released {
                 manager.announce(&app);
+                manager.relayout(&agent_id);
             }
         });
     }
@@ -1340,6 +1410,31 @@ mod tests {
         strip.remove("a");
 
         assert!(strip.acting.is_empty());
+    }
+
+    #[test]
+    fn a_tab_sleeps_only_once_it_is_idle_and_its_latest_load_has_settled() {
+        let mut strip = TabStrip::default();
+        strip.insert("a".into(), page("https://a.test"));
+        assert!(!strip.awake("a"));
+
+        strip.pages.get_mut("a").unwrap().loading = true;
+        assert!(strip.awake("a"));
+
+        strip.pages.get_mut("a").unwrap().loading = false;
+        strip.settle("a", 1);
+        strip.settle("a", 2);
+        assert!(!strip.release_settled("a", 1));
+        assert!(strip.awake("a"));
+        assert!(strip.release_settled("a", 2));
+        assert!(!strip.awake("a"));
+
+        strip.mark_acting(3);
+        assert!(strip.awake("a"));
+        strip.release_acting("a", 3);
+        strip.settle("a", 4);
+        strip.remove("a");
+        assert!(strip.settling.is_empty());
     }
 
     #[test]

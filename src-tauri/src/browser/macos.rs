@@ -122,7 +122,6 @@ pub fn adopt(
         webview.setNavigationDelegate(Some(ProtocolObject::from_ref(&*navigation)));
         webview.setAllowsBackForwardNavigationGestures(true);
         webview.setAllowsMagnification(true);
-        keep_running_behind_other_windows(&webview);
         webview.addObserver_forKeyPath_options_context(
             &address_observer,
             &NSString::from_str(URL_KEY_PATH),
@@ -144,13 +143,16 @@ pub fn adopt(
     });
 }
 
-/// WebKit treats a page in a window covered by another app's as out of sight
-/// and stops its animation frames, but the agent keeps working in its tabs
-/// while the person is in another app.
-fn keep_running_behind_other_windows(webview: &WKWebView) {
+/// WebKit stops a page's animation frames while another app covers the
+/// window. A tab that is loading or being driven must keep them running.
+pub fn keep_running_when_covered(pointer: *mut c_void, keep_running: bool) {
+    let Some(webview) = webview_from(pointer) else {
+        return;
+    };
     let selector = sel!(_setWindowOcclusionDetectionEnabled:);
     if webview.respondsToSelector(selector) {
-        let _: () = unsafe { msg_send![webview, _setWindowOcclusionDetectionEnabled: Bool::NO] };
+        let enabled = Bool::new(!keep_running);
+        let _: () = unsafe { msg_send![&*webview, _setWindowOcclusionDetectionEnabled: enabled] };
     }
 }
 
