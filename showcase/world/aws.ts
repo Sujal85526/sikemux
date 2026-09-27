@@ -24,6 +24,46 @@ const LOG_LINES = [
   "INFO  request completed method=GET path=/v1/invoices status=200 latency_ms=77",
 ];
 
+const EC2 = [
+  ["bastion", "i-0a41f93c2d7e81b05", "running", "t3.micro", "10.0.1.24", "34.242.18.201", 120],
+  ["ci-runner-1", "i-07c2e5b1af3d90c44", "running", "c6i.xlarge", "10.0.2.61", null, 21],
+  ["ci-runner-2", "i-0e61c0b9f2d4a8173", "running", "c6i.xlarge", "10.0.2.62", null, 21],
+  ["metrics-host", "i-0f19d8ce04a6b7231", "running", "m6i.large", "10.0.3.18", null, 64],
+  ["redis-sentinel", "i-09a6e3f1c7d2b8540", "running", "r6g.large", "10.0.5.33", null, 150],
+  ["ml-worker", "i-0c94a1e7b3f5d2860", "stopped", "g5.xlarge", "10.0.14.12", null, 48],
+  ["legacy-api", "i-01b7d4c9e2a6f3875", "stopped", "t2.medium", "10.0.4.90", null, 410],
+] as const;
+
+const LAMBDAS = [
+  ["image-resizer", "nodejs20.x", 1024, 30, 2, "index.handler"],
+  ["auth-authorizer", "nodejs20.x", 256, 5, 19, "authorizer.handler"],
+  ["webhook-ingest", "python3.12", 512, 15, 1, "app.lambda_handler"],
+  ["report-export", "python3.12", 2048, 900, 33, "export.main"],
+  ["email-render", "nodejs18.x", 512, 60, 5, "render.handler"],
+  ["invoice-pdf", "java21", 3008, 120, 12, "com.acme.Invoice::handle"],
+  ["cost-alert", "python3.9", 128, 30, 240, "alert.handler"],
+] as const;
+
+const QUEUES = [
+  ["orders", 142, 18, 0],
+  ["orders-dlq", 7, 0, 0],
+  ["notifications", 0, 3, 0],
+  ["events.fifo", 1204, 64, 12],
+  ["webhooks", 38, 9, 0],
+  ["webhooks-dlq", 0, 0, 0],
+  ["email-send", 5210, 200, 0],
+] as const;
+
+const BUCKETS = [
+  ["acme-assets-prod", 1180],
+  ["acme-assets-staging", 1180],
+  ["acme-user-uploads", 1120],
+  ["acme-db-backups", 1030],
+  ["acme-alb-logs", 900],
+  ["acme-exports", 640],
+  ["terraform-state-acme", 1260],
+] as const;
+
 const month = (offset: number, total: number, current = false) => {
   const start = new Date(2026, 8 - offset, 1);
   const end = new Date(2026, 9 - offset, 1);
@@ -111,6 +151,8 @@ export const AWS: Record<string, (params: Params) => unknown> = {
         memory: "1024",
         started_at: minutesAgo(90 + index * 7),
         last_status_change: minutesAgo(88 + index * 7),
+        availability_zone: `eu-west-1${"abc"[index % 3]}`,
+        private_ip: `10.0.${12 + index}.${40 + index * 7}`,
       };
     }),
   ecsServiceLogConfig: ({ service }) => ({
@@ -131,10 +173,38 @@ export const AWS: Record<string, (params: Params) => unknown> = {
     month(3, 1988.4),
     month(4, 1712.9),
   ],
-  ec2Instances: () => [],
-  lambdaFunctions: () => [],
-  sqsQueues: () => [],
-  s3Buckets: () => [],
+  ec2Instances: () =>
+    EC2.map(([name, id, state, type, privateIp, publicIp, days]) => ({
+      instance_id: id,
+      name,
+      state,
+      instance_type: type,
+      private_ip: privateIp,
+      public_ip: publicIp,
+      launch_time: minutesAgo(days * 1440),
+    })),
+  lambdaFunctions: () =>
+    LAMBDAS.map(([name, runtime, memory, timeout, days, handler]) => ({
+      name,
+      runtime,
+      memory_size: memory,
+      timeout,
+      last_modified: minutesAgo(days * 1440),
+      handler,
+    })),
+  sqsQueues: () =>
+    QUEUES.map(([name, messages, inFlight, delayed]) => ({
+      name,
+      url: `https://sqs.eu-west-1.amazonaws.com/123456789012/${name}`,
+      messages: String(messages),
+      in_flight: String(inFlight),
+      delayed: String(delayed),
+    })),
+  s3Buckets: () =>
+    BUCKETS.map(([name, days]) => ({
+      name,
+      created_at: minutesAgo(days * 1440),
+    })),
 };
 
 export function awsLogLines(): string[] {
