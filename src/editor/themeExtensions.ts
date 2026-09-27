@@ -16,6 +16,7 @@ export function buildEditorThemeExtensions(theme: Theme): Extension {
                 caretColor: theme.editor.caret,
                 fontFamily: '"JetBrainsMono Nerd Font", "JetBrains Mono", monospace',
                 fontSize: EDITOR_FONT_SIZE,
+                paddingLeft: "6px",
             },
             ".cm-cursor, .cm-dropCursor": { borderLeftColor: theme.editor.caret },
             "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": { backgroundColor: theme.editor.selection },
@@ -24,6 +25,7 @@ export function buildEditorThemeExtensions(theme: Theme): Extension {
                 backgroundColor: "transparent",
                 color: theme.editor.gutter,
                 border: "none",
+                borderRight: "1px solid var(--border)",
             },
             ".cm-activeLineGutter": {
                 backgroundColor: "transparent",
