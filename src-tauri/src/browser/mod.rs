@@ -8,6 +8,7 @@
 //! `WebviewWindow` fail. The app reaches the main window with `get_window`.
 
 pub mod agents;
+mod burst;
 mod documents;
 mod favicon;
 #[cfg(target_os = "macos")]
@@ -21,7 +22,7 @@ pub mod tools;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use std::path::{Path, PathBuf};
 
@@ -43,6 +44,9 @@ pub const BLANK_URL: &str = "about:blank";
 /// already recorded by the time an agent asks about them.
 const RECORDER_SCRIPT: &str = include_str!("recorder.js");
 const MAX_URL_LEN: usize = 8192;
+/// A page opening more tabs than this in `POPUP_WINDOW` is in a loop.
+const POPUP_LIMIT: usize = 4;
+const POPUP_WINDOW: Duration = Duration::from_secs(10);
 // Parked pages sit outside the window instead of being hidden. A hidden page
 // runs no animation frames, and React only reveals content it streamed into a
 // page on one, so a page loaded out of sight kept showing its loading state.
@@ -415,6 +419,7 @@ impl BrowserManager {
         let (title_app, title_agent, title_tab) =
             (app.clone(), agent_id.to_owned(), tab_id.to_owned());
         let (popup_app, popup_agent) = (app.clone(), agent_id.to_owned());
+        let popups = Mutex::new(burst::Burst::new(POPUP_LIMIT, POPUP_WINDOW));
         let (download_app, download_agent, download_tab) =
             (app.clone(), agent_id.to_owned(), tab_id.to_owned());
         builder
@@ -452,6 +457,13 @@ impl BrowserManager {
                 });
             })
             .on_new_window(move |url, _| {
+                let admitted = popups
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .admit(Instant::now());
+                if !admitted {
+                    return NewWindowResponse::Deny;
+                }
                 let (app, agent) = (popup_app.clone(), popup_agent.clone());
                 tauri::async_runtime::spawn(async move {
                     let manager = app.state::<BrowserManager>();
