@@ -164,10 +164,14 @@ impl Plugin for GithubActions {
                 "pullFiles" => answer(pulls::files(data_dir, params(input)?)).await,
                 "pullReviews" => answer(pulls::reviews(data_dir, params(input)?)).await,
                 "mergePull" => answer(pulls::merge(data_dir, params(input)?)).await,
+                "createPull" => answer(pulls::create(data_dir, params(input)?)).await,
+                "setPullState" => answer(pulls::set_state(data_dir, params(input)?)).await,
+                "reviewPull" => answer(pulls::review(data_dir, params(input)?)).await,
 
                 "issues" => answer(issues::list(data_dir, params(input)?)).await,
                 "issue" => answer(issues::get(data_dir, params(input)?)).await,
                 "setIssueState" => answer(issues::set_state(data_dir, params(input)?)).await,
+                "createIssue" => answer(issues::create(data_dir, params(input)?)).await,
 
                 "comments" => {
                     let thread: common::Thread = params(input)?;

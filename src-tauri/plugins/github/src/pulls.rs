@@ -18,6 +18,7 @@ const DEFAULT_PER_PAGE: u32 = 30;
 struct BranchSide {
     #[serde(rename = "ref")]
     name: String,
+    sha: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -69,6 +70,8 @@ pub struct Pull {
     pub avatar_url: Option<String>,
     pub head: Option<String>,
     pub base: Option<String>,
+    /// The commit at the tip of the branch, which is what its checks ran on.
+    pub head_sha: Option<String>,
     pub created_at: String,
     pub updated_at: String,
     pub comments: u64,
@@ -94,6 +97,7 @@ impl From<PullRow> for Pull {
             draft: row.draft.unwrap_or(false),
             author: login_of(&row.user),
             avatar_url: avatar_of(&row.user),
+            head_sha: row.head.as_ref().and_then(|side| side.sha.clone()),
             head: row.head.map(|side| side.name),
             base: row.base.map(|side| side.name),
             created_at: row.created_at,
@@ -272,6 +276,106 @@ pub async fn merge(data_dir: &Path, input: Merge) -> ActionsResult<()> {
     client::act(data_dir, reqwest::Method::PUT, &path, Some(&body)).await
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewPull {
+    #[serde(flatten)]
+    pub repo: RepoRef,
+    pub title: String,
+    /// The branch the changes are on.
+    pub head: String,
+    /// The branch they are meant to land in.
+    pub base: String,
+    #[serde(default)]
+    pub body: String,
+    #[serde(default)]
+    pub draft: bool,
+}
+
+pub async fn create(data_dir: &Path, input: NewPull) -> ActionsResult<Pull> {
+    let title = input.title.trim();
+    if title.is_empty() {
+        return Err(ActionsError::BadArg("a pull request needs a title".into()));
+    }
+    if input.head.trim().is_empty() || input.base.trim().is_empty() {
+        return Err(ActionsError::BadArg(
+            "a pull request needs both of its branches".into(),
+        ));
+    }
+    let body = json!({
+        "title": title,
+        "head": input.head.trim(),
+        "base": input.base.trim(),
+        "body": input.body,
+        "draft": input.draft,
+    });
+    let row: PullRow = client::send_json(
+        data_dir,
+        reqwest::Method::POST,
+        &input.repo.path("/pulls")?,
+        &body,
+    )
+    .await?;
+    Ok(Pull::from(row))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetState {
+    #[serde(flatten)]
+    pub pull: PullRef,
+    /// `open` or `closed`.
+    pub state: String,
+}
+
+pub async fn set_state(data_dir: &Path, input: SetState) -> ActionsResult<()> {
+    if !matches!(input.state.as_str(), "open" | "closed") {
+        return Err(ActionsError::BadArg(format!(
+            "`{}` is not open or closed",
+            input.state
+        )));
+    }
+    let path = input
+        .pull
+        .repo
+        .path(&format!("/pulls/{}", input.pull.number))?;
+    let body = json!({ "state": input.state });
+    client::act(data_dir, reqwest::Method::PATCH, &path, Some(&body)).await
+}
+
+const REVIEW_EVENTS: [&str; 3] = ["APPROVE", "REQUEST_CHANGES", "COMMENT"];
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewReview {
+    #[serde(flatten)]
+    pub pull: PullRef,
+    /// `APPROVE`, `REQUEST_CHANGES` or `COMMENT`.
+    pub event: String,
+    #[serde(default)]
+    pub body: String,
+}
+
+pub async fn review(data_dir: &Path, input: NewReview) -> ActionsResult<()> {
+    if !REVIEW_EVENTS.contains(&input.event.as_str()) {
+        return Err(ActionsError::BadArg(format!(
+            "`{}` is not approve, request changes or comment",
+            input.event
+        )));
+    }
+    if input.event != "APPROVE" && input.body.trim().is_empty() {
+        return Err(ActionsError::BadArg(
+            "say what needs changing, or what the comment is".into(),
+        ));
+    }
+    let path = input
+        .pull
+        .repo
+        .path(&format!("/pulls/{}/reviews", input.pull.number))?;
+    let body = json!({ "event": input.event, "body": input.body });
+    client::act(data_dir, reqwest::Method::POST, &path, Some(&body)).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -311,7 +415,7 @@ mod tests {
     #[test]
     fn reads_the_branches_and_the_counts() {
         let mut full = base();
-        full["head"] = json!({ "ref": "feat/thing" });
+        full["head"] = json!({ "ref": "feat/thing", "sha": "abc123" });
         full["base"] = json!({ "ref": "main" });
         full["additions"] = json!(40);
         full["deletions"] = json!(2);
@@ -319,6 +423,7 @@ mod tests {
         full["requested_reviewers"] = json!([{ "login": "nodelike" }]);
         let pull = Pull::from(row(full));
         assert_eq!(pull.head.as_deref(), Some("feat/thing"));
+        assert_eq!(pull.head_sha.as_deref(), Some("abc123"));
         assert_eq!(pull.base.as_deref(), Some("main"));
         assert_eq!(pull.additions, Some(40));
         assert_eq!(pull.labels.first().map(|l| l.name.as_str()), Some("bug"));
@@ -349,5 +454,35 @@ mod tests {
             method: "smash".into(),
         };
         assert!(merge(&dir, bad_method).await.is_err());
+
+        let bad_review = NewReview {
+            pull: PullRef {
+                repo: repo(),
+                number: 1,
+            },
+            event: "LGTM".into(),
+            body: String::new(),
+        };
+        assert!(review(&dir, bad_review).await.is_err());
+
+        let silent_request = NewReview {
+            pull: PullRef {
+                repo: repo(),
+                number: 1,
+            },
+            event: "REQUEST_CHANGES".into(),
+            body: "  ".into(),
+        };
+        assert!(review(&dir, silent_request).await.is_err());
+
+        let untitled = NewPull {
+            repo: repo(),
+            title: " ".into(),
+            head: "feat".into(),
+            base: "main".into(),
+            body: String::new(),
+            draft: false,
+        };
+        assert!(create(&dir, untitled).await.is_err());
     }
 }

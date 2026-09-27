@@ -5,12 +5,23 @@ import { EmptyState, IconClose, IconPullRequest, Markdown, SkeletonRows, Virtual
 import { actionsApi, failureMessage, type MergeMethod, type Pull, type RepoRef } from "../api";
 import { githubPullFilesR, githubPullR, githubPullReviewsR, githubPullsR } from "../resources";
 import { formatAgo } from "../runStatus";
-import { setListState, showItem } from "../state";
+import { needsPull } from "../compose";
+import { compose, openRunFrom, setListState, showItem } from "../state";
 import { CommentThread } from "./CommentThread";
 import { Labels, StateMark } from "./Bits";
 import { useNow } from "./hooks";
+import { NewPullForm } from "./NewPullForm";
+import { PullChecks } from "./PullChecks";
+import { ReviewBox } from "./ReviewBox";
 
 const LIST_STATES = ["open", "closed", "all"];
+
+const REVIEW_WORD: Record<string, string> = {
+    APPROVED: "approved",
+    CHANGES_REQUESTED: "asked for changes",
+    COMMENTED: "commented",
+    DISMISSED: "was dismissed",
+};
 
 /** What a pull request's review state adds up to, in one word. */
 export function reviewVerdict(reviews: readonly { author: string | null; state: string }[]): string | null {
@@ -68,7 +79,16 @@ const Diff = memo(function Diff({ patch }: { patch: string }) {
     );
 });
 
-function PullDetail({ repo, number, active, onBack }: { repo: RepoRef; number: number; active: boolean; onBack: () => void }) {
+interface DetailProps {
+    repo: RepoRef;
+    number: number;
+    active: boolean;
+    login: string | null;
+    onBack: () => void;
+    onOpenRun: (runId: number) => void;
+}
+
+function PullDetail({ repo, number, active, login, onBack, onOpenRun }: DetailProps) {
     const pull = useResourceEnabled(active, githubPullR, repo, number);
     const files = useResourceEnabled(active, githubPullFilesR, repo, number);
     const reviews = useResourceEnabled(active, githubPullReviewsR, repo, number);
@@ -96,6 +116,27 @@ function PullDetail({ repo, number, active, onBack }: { repo: RepoRef; number: n
             reportError(`Could not merge #${found.number}`)(error);
         }
     };
+
+    const closing = found.state === "open";
+    const setState = async () => {
+        if (closing) {
+            const sure = await confirmDialog({
+                title: `Close #${found.number} without merging?`,
+                body: found.title,
+                confirmLabel: "Close pull request",
+                destructive: true,
+            });
+            if (!sure) return;
+        }
+        try {
+            await actionsApi.setPullState(repo, found.number, closing ? "closed" : "open");
+            notify("success", closing ? `Closed #${found.number}` : `Reopened #${found.number}`);
+            invalidate((kind) => kind.startsWith("gha.pull"));
+        } catch (error) {
+            reportError(closing ? "Could not close it" : "Could not reopen it")(error);
+        }
+    };
+    const written = (reviews.data ?? []).filter((review) => review.state !== "COMMENTED" || review.body.trim());
 
     return (
         <div className="gha-detail">
@@ -136,7 +177,15 @@ function PullDetail({ repo, number, active, onBack }: { repo: RepoRef; number: n
                             <button type="button" className="gha-btn" onClick={() => void merge("merge")}>
                                 Merge
                             </button>
+                            <button type="button" className="gha-btn" onClick={() => void merge("rebase")}>
+                                Rebase and merge
+                            </button>
                         </>
+                    )}
+                    {found.state !== "merged" && (
+                        <button type="button" className={closing ? "gha-btn danger" : "gha-btn"} onClick={() => void setState()}>
+                            {closing ? "Close" : "Reopen"}
+                        </button>
                     )}
                     <button type="button" className="gha-link" onClick={() => void openUrl(found.url).catch(swallow("open GitHub"))}>
                         On GitHub
@@ -144,7 +193,34 @@ function PullDetail({ repo, number, active, onBack }: { repo: RepoRef; number: n
                 </div>
             </div>
 
+            {found.mergeState === "dirty" && found.state === "open" && (
+                <div className="gha-warn-note">This branch conflicts with {found.base ?? "its base"}. Resolve the conflicts before merging.</div>
+            )}
+            {found.mergeState === "blocked" && found.state === "open" && (
+                <div className="gha-warn-note">GitHub is holding this back until the required reviews and checks pass.</div>
+            )}
+
             {found.body.trim() && <Markdown className="gha-prose">{found.body}</Markdown>}
+
+            {found.headSha && <PullChecks repo={repo} sha={found.headSha} active={active} now={now} onOpenRun={onOpenRun} />}
+
+            {written.length > 0 && (
+                <div className="gha-reviews">
+                    <div className="gha-section-label">Reviews</div>
+                    {written.map((review, index) => (
+                        <div className="gha-comment" key={`${review.author ?? ""}-${review.submittedAt ?? index}`}>
+                            <div className="gha-comment-head">
+                                <span className="gha-comment-author">{review.author ?? "someone"}</span>
+                                <span className="gha-review-state" data-state={review.state}>
+                                    {REVIEW_WORD[review.state] ?? review.state.toLowerCase()}
+                                </span>
+                                <span className="gha-dim">{formatAgo(review.submittedAt, now)}</span>
+                            </div>
+                            {review.body.trim() && <Markdown className="gha-prose">{review.body}</Markdown>}
+                        </div>
+                    ))}
+                </div>
+            )}
 
             <div className="gha-section-label">
                 {files.data?.length ?? 0} file{(files.data?.length ?? 0) === 1 ? "" : "s"} changed
@@ -162,6 +238,7 @@ function PullDetail({ repo, number, active, onBack }: { repo: RepoRef; number: n
             ))}
 
             <CommentThread repo={repo} number={found.number} active={active} now={now} />
+            {found.state === "open" && <ReviewBox repo={repo} number={found.number} mine={!!login && found.author === login} />}
         </div>
     );
 }
@@ -171,14 +248,41 @@ interface Props {
     repo: RepoRef;
     listState: string;
     item: number | null;
+    composing: boolean;
+    projectBranch: string | null;
+    login: string | null;
     active: boolean;
 }
 
-export function PullsView({ paneId, repo, listState, item, active }: Props) {
-    const pulls = useResourceEnabled(active && item === null, githubPullsR, repo, listState);
+export function PullsView({ paneId, repo, listState, item, composing, projectBranch, login, active }: Props) {
+    const listing = item === null && !composing;
+    const pulls = useResourceEnabled(active && listing, githubPullsR, repo, listState);
+    const open = useResourceEnabled(active && listing && !!projectBranch, githubPullsR, repo, "open");
     const now = useNow(false);
 
-    if (item !== null) return <PullDetail repo={repo} number={item} active={active} onBack={() => showItem(paneId, null)} />;
+    if (composing) {
+        return (
+            <NewPullForm
+                repo={repo}
+                head={projectBranch}
+                active={active}
+                onCreated={(number) => showItem(paneId, number)}
+                onCancel={() => compose(paneId, null)}
+            />
+        );
+    }
+    if (item !== null) {
+        return (
+            <PullDetail
+                repo={repo}
+                number={item}
+                active={active}
+                login={login}
+                onBack={() => showItem(paneId, null)}
+                onOpenRun={(runId) => openRunFrom(paneId, runId)}
+            />
+        );
+    }
     if (pulls.status === "loading" && !pulls.data) return <SkeletonRows rows={8} label="Loading pull requests" />;
     if (pulls.error) {
         return (
@@ -191,9 +295,20 @@ export function PullsView({ paneId, repo, listState, item, active }: Props) {
         );
     }
     const rows = pulls.data ?? [];
+    const offer = !!open.data && needsPull(projectBranch, open.data, []);
 
     return (
         <div className="gha-list">
+            {offer && projectBranch && (
+                <div className="gha-offer">
+                    <span>
+                        <span className="gha-branch">{projectBranch}</span> has no pull request yet.
+                    </span>
+                    <button type="button" className="gha-btn primary" onClick={() => compose(paneId, "pull")}>
+                        Open one
+                    </button>
+                </div>
+            )}
             <div className="gha-list-head">
                 <div className="gha-chips">
                     {LIST_STATES.map((state) => (
@@ -207,8 +322,11 @@ export function PullsView({ paneId, repo, listState, item, active }: Props) {
                         </button>
                     ))}
                 </div>
-                <span className="gha-dim">
+                <span className="gha-dim gha-list-count">
                     {rows.length} pull request{rows.length === 1 ? "" : "s"}
+                    <button type="button" className="gha-btn" onClick={() => compose(paneId, "pull")}>
+                        New pull request
+                    </button>
                 </span>
             </div>
             {rows.length === 0 ? (

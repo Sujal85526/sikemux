@@ -94,6 +94,8 @@ export interface RunsView {
     job: number | null;
     page: number;
     dispatching: number | null;
+    /** A new pull request or issue being written in this pane. */
+    composing: "pull" | "issue" | null;
 }
 
 const FRESH: RunsView = {
@@ -108,6 +110,7 @@ const FRESH: RunsView = {
     job: null,
     page: 1,
     dispatching: null,
+    composing: null,
 };
 
 export const useActions = create<{ views: Record<string, RunsView>; paletteOpen: boolean }>()(() => ({
@@ -155,11 +158,20 @@ export function showRepo(paneId: string, repo: RepoRef): void {
 }
 
 export function showSection(paneId: string, section: Section): void {
-    updateView(paneId, { section, item: null, run: null, job: null, page: 1 });
+    updateView(paneId, { section, item: null, run: null, job: null, page: 1, composing: null });
 }
 
 export function showItem(paneId: string, number: number | null): void {
-    updateView(paneId, { item: number });
+    updateView(paneId, { item: number, composing: null });
+}
+
+export function compose(paneId: string, composing: "pull" | "issue" | null): void {
+    updateView(paneId, { composing, item: null });
+}
+
+/** A run named somewhere else in the pane, such as a pull request's checks, opened in Actions. */
+export function openRunFrom(paneId: string, runId: number): void {
+    updateView(paneId, { section: "actions", item: null, composing: null, run: runId, job: null });
 }
 
 export function setListState(paneId: string, listState: string): void {

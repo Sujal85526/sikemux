@@ -237,6 +237,7 @@ export interface Pull {
     avatarUrl: string | null;
     head: string | null;
     base: string | null;
+    headSha: string | null;
     createdAt: string;
     updatedAt: string;
     comments: number;
@@ -267,6 +268,16 @@ export interface Review {
 }
 
 export type MergeMethod = "merge" | "squash" | "rebase";
+
+export type ReviewEvent = "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
+
+export interface NewPull {
+    title: string;
+    head: string;
+    base: string;
+    body: string;
+    draft: boolean;
+}
 
 export interface Issue {
     number: number;
@@ -367,6 +378,11 @@ export const actionsApi = {
     inbox: (all: boolean) => read<Notification[]>("inbox", { all }),
 
     mergePull: (repo: RepoRef, number: number, method: MergeMethod) => backend.call<void>("mergePull", { ...repo, number, method }),
+    createPull: (repo: RepoRef, pull: NewPull) => backend.call<Pull>("createPull", { ...repo, ...pull }),
+    setPullState: (repo: RepoRef, number: number, state: "open" | "closed") => backend.call<void>("setPullState", { ...repo, number, state }),
+    reviewPull: (repo: RepoRef, number: number, event: ReviewEvent, body: string) =>
+        backend.call<void>("reviewPull", { ...repo, number, event, body }),
+    createIssue: (repo: RepoRef, title: string, body: string) => backend.call<Issue>("createIssue", { ...repo, title, body }),
     setIssueState: (repo: RepoRef, number: number, state: "open" | "closed") => backend.call<void>("setIssueState", { ...repo, number, state }),
     addComment: (repo: RepoRef, number: number, body: string) => backend.call<void>("addComment", { ...repo, number, body }),
     downloadAsset: (repo: RepoRef, assetId: number, name: string) => backend.call<SavedArtifact>("downloadAsset", { ...repo, assetId, name }),
