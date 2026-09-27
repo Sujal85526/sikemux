@@ -120,3 +120,34 @@ lto = "fat"
 codegen-units = 1
 panic = "abort"
 strip = "symbols"
+
+# Crates that never sit on a hot path are built for size. Together they take
+# about 1 MB off the binary; encryption itself stays in `ring` at full speed.
+[profile.release.package.sikemux-plugin-aws]
+opt-level = "s"
+[profile.release.package.sikemux-plugin-bruno]
+opt-level = "s"
+[profile.release.package.sikemux-plugin-rundeck]
+opt-level = "s"
+[profile.release.package.sikemux-plugin-signoz]
+opt-level = "s"
+[profile.release.package.libsqlite3-sys]
+opt-level = "s"
+[profile.release.package.rusqlite]
+opt-level = "s"
+[profile.release.package.tauri-plugin-updater]
+opt-level = "s"
+[profile.release.package.plist]
+opt-level = "s"
+[profile.release.package.muda]
+opt-level = "s"
+[profile.release.package.tao]
+opt-level = "s"
+[profile.release.package.agent-client-protocol-schema]
+opt-level = "s"
+[profile.release.package.reqwest]
+opt-level = "s"
+[profile.release.package.rustls]
+opt-level = "s"
+[profile.release.package.rustls-webpki]
+opt-level = "s"
