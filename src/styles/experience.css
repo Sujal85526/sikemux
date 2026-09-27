@@ -148,6 +148,7 @@
 }
 
 .welcome-mark {
+    margin-left: -15px;
     color: var(--acc);
 }
 

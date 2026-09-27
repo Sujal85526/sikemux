@@ -181,7 +181,7 @@ export function Onboarding() {
             onMouseDown={dragWindow}>
             <ShaderField preset="release" className="welcome-sky" />
             <div className="welcome-body" onMouseDown={dragWindow}>
-                <Logo size={36} className="welcome-mark" />
+                <Logo size={64} className="welcome-mark" />
                 <h1 id="welcome-title">
                     Welcome to <span>Sikemux</span>
                 </h1>
