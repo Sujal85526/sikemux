@@ -11,7 +11,7 @@
     "prepare": "git config core.hooksPath .githooks || true",
     "dev": "vite",
     "dev:desktop": "pnpm sidecar:dev && node scripts/dev-desktop.mjs",
-    "sidecar:dev": "cargo build --manifest-path src-tauri/Cargo.toml --bin sikemux-tools-mcp",
+    "sidecar:dev": "cargo build --manifest-path src-tauri/Cargo.toml --bin sikemux-tools-mcp && node scripts/build-voice-helper.mjs --dev",
     "build": "tsc --noEmit && vite build && pnpm bundle:check",
     "bundle:check": "node scripts/check-bundle-globals.mjs",
     "preview": "vite preview",
@@ -45,6 +45,7 @@
     "check": "pnpm ipc:check && pnpm agent-tools:check && pnpm grammars:check && pnpm deps:audit && pnpm audit:rust && pnpm shell:lint && pnpm dev-launcher:test && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm build && pnpm perf:budget && pnpm release:check && pnpm rust:fmt:check && pnpm rust:clippy && pnpm rust:test",
     "tauri": "tauri",
     "build:sidecar": "node scripts/build-cli-sidecar.mjs",
+    "build:voice": "node scripts/build-voice-helper.mjs",
     "build:mac": "./scripts/build-mac.sh",
     "build:windows": "pnpm build:sidecar && tauri build --bundles nsis --config src-tauri/tauri.sidecar.conf.json",
     "prepush": "./scripts/pre-push.sh"
