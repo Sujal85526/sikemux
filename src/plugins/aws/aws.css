@@ -1016,7 +1016,7 @@
     margin: 0 var(--space-3) var(--space-3);
     border: 1px solid var(--border);
     border-radius: var(--radius-3);
-    background: var(--aws-tint);
+    background: var(--s-sunken);
     overflow: hidden;
 }
 .aws-logs-bar {
