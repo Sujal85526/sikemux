@@ -1084,6 +1084,13 @@ export async function importSessionFromClipboard(): Promise<void> {
     notify("success", "Imported session as a safe, dormant copy");
 }
 
+/** Closes one pane of a split, leaving the rest of the tab open. */
+export function closePane(windowId: string, paneId: string): void {
+    selectWindowId(windowId);
+    focusPane(paneId);
+    guardDiscardDirty(dirtyPathsForPane(getState(), paneId), "close pane", closeActivePane);
+}
+
 function closeActivePane(): void {
     let taskPaneId: string | null = null;
     withActiveWindow((d, w, session) => {

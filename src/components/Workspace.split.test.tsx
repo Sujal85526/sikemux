@@ -152,4 +152,21 @@ describe("a split tab in the strip", () => {
         expect(shown().activePaneId).toBe(secondPane);
         expect(unfocused).toHaveAttribute("aria-selected", "true");
     });
+
+    it("closes only the pane whose tab's close is pressed", () => {
+        cmd.newWindow();
+        const [first, second] = getState().windowsBySession[getState().activeSessionId];
+        const firstPane = collectPanes(getState().windows[first].root)[0].id;
+        cmd.splitWithTab(getState().activeSessionId, { id: first }, "left");
+        const { container } = render(<WorkspaceTabs />);
+
+        const closes = container.querySelectorAll<HTMLButtonElement>(".tab-group .tab-x");
+        expect(closes).toHaveLength(2);
+        fireEvent.click(closes[0]);
+
+        expect(getState().windowsBySession[getState().activeSessionId]).toEqual([second]);
+        expect(collectPanes(shown().root).map((pane) => pane.id)).not.toContain(firstPane);
+        expect(collectPanes(shown().root)).toHaveLength(1);
+        expect(container.querySelector(".tab-group")).toBeNull();
+    });
 });

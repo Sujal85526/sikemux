@@ -476,13 +476,13 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                 if (pane.id === home) {
                     return own.map((tab) => {
                         paneOfTab.set(tab.id, { windowId: win.id, paneId: pane.id });
-                        const kept = pane.id === documentsPane || pane.kind === "agent" ? {} : look(pane);
+                        const kept = pane.id === documentsPane || pane.kind === "agent" ? {} : { ...look(pane), closable: true };
                         return { ...tab, ...kept, active: !!tab.active && win.activePaneId === pane.id, group: win.id };
                     });
                 }
                 const id = `${win.id}/${pane.id}`;
                 paneOfTab.set(id, { windowId: win.id, paneId: pane.id });
-                return [{ id, ...look(pane), active: focused, closable: false, group: win.id }];
+                return [{ id, ...look(pane), active: focused, group: win.id }];
             });
         };
         const byWindow = new Map<string, TabRef[]>();
@@ -550,7 +550,9 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                 }}
                 onClose={(key) => {
                     const ref = refByKey.get(key);
-                    if (ref) cmd.closeTab(ref);
+                    const pane = paneOfTab.get(key);
+                    if (pane && ref?.doc === undefined && windowsById[pane.windowId]?.role !== "agent") cmd.closePane(pane.windowId, pane.paneId);
+                    else if (ref) cmd.closeTab(ref);
                 }}
                 buildMenu={(key) => {
                     const ref = refByKey.get(key);
