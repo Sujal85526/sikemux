@@ -33,6 +33,7 @@ mod transparency;
 mod updates;
 mod usage;
 mod voice;
+mod voice_models;
 mod wallpaper;
 mod wheel;
 mod without_page_script;
@@ -50,6 +51,24 @@ use voice::VoiceManager;
 // client in the app and its plugins uses the one installed here.
 pub(crate) fn install_tls_crypto() {
     let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
+/// The app window only ever shows the app. A link that would load another
+/// page in it would replace the whole workspace and end every running shell.
+fn main_window_may_load(url: &tauri::Url) -> bool {
+    match url.scheme() {
+        "tauri" => url.host_str() == Some("localhost"),
+        "http" if cfg!(debug_assertions) => {
+            url.host_str() == Some("localhost") && url.port() == Some(1420)
+        }
+        _ => false,
+    }
+}
+
+fn main_window_navigation_guard<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    tauri::plugin::Builder::new("main-window-navigation")
+        .on_navigation(|webview, url| webview.label() != "main" || main_window_may_load(url))
+        .build()
 }
 
 pub fn run() {
@@ -97,6 +116,7 @@ pub fn run() {
         .plugin(without_page_script::without_page_script(
             tauri_plugin_notification::init(),
         ))
+        .plugin(main_window_navigation_guard())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .on_window_event(|window, event| {
@@ -413,6 +433,23 @@ pub fn run() {
                 lsp::drain_all();
             }
         });
+}
+
+#[cfg(test)]
+mod main_window_navigation_tests {
+    use super::main_window_may_load;
+
+    #[test]
+    fn keeps_the_app_window_on_the_app() {
+        let allows = |url: &str| main_window_may_load(&url.parse().unwrap());
+        assert!(allows("tauri://localhost/"));
+        assert!(allows("tauri://localhost/index.html#settings"));
+        assert!(allows("http://localhost:1420/"));
+        assert!(!allows("https://example.com/"));
+        assert!(!allows("http://localhost:3000/"));
+        assert!(!allows("tauri://evil.example/"));
+        assert!(!allows("file:///etc/passwd"));
+    }
 }
 
 #[cfg(all(test, feature = "ipc-command-tests"))]
