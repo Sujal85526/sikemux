@@ -47,6 +47,7 @@ import { FileIcon } from "./FileIcon";
 import { TabBar } from "./TabBar";
 import { EditorFindBar } from "./EditorFindBar";
 import { EditorInsights } from "./EditorInsights";
+import { ShaderField } from "./ShaderField";
 import { basename, dirname, isPathWithin, joinPath, normalizePath } from "../lib/paths";
 import { localPath } from "../chat/imagePreview";
 import { safeWebUrl } from "../terminal/interactions";
@@ -337,6 +338,7 @@ export function EditorPane({
 
     const view = useStore((s) => s.editorViews[paneId] ?? DEFAULT_VIEW);
     const keybindingOverrides = useStore((s) => s.keybindingOverrides);
+    const paneShader = useStore((s) => s.paneShader);
     const filePaletteHint = keybindingLabelForAction(keybindingOverrides, "palette.files");
     const pendingCliOpens = useStore((s) => s.pendingEditorOpens[paneId] ?? EMPTY_CLI_OPENS);
     const tabs = view.openTabs;
@@ -1125,6 +1127,7 @@ export function EditorPane({
                 <FileTree width={treeWidth} onResize={setTreeWidth} cwd={cwd} activePath={activePath} onOpenFile={openTreeFile} active={visible} />
             )}
             <div className="ed-main">
+                {!bare && <ShaderField preset="ambient" className="pane-field" enabled={paneShader && visible} />}
                 {/* An ordinary editor's documents are tabs in the session
                     strip, so the only bar left here is the one an SSH config
                     window needs to close itself. */}

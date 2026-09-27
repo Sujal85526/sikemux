@@ -5,12 +5,9 @@
 }
 
 /* With a tree beside it the editor is two panels with the shell's gap between,
-   like the rails, so the pane gives up its own frame and texture. */
+   like the rails, so the pane gives up its own frame. */
 .pane-editor:has(.editor-pane > .ed-tree) {
     border: 0;
-}
-.pane-editor:has(.editor-pane > .ed-tree) > .pane-field {
-    display: none;
 }
 .ed-tree,
 .ed-tree + .ed-tree-resizer + .ed-main {
@@ -244,6 +241,7 @@
     display: flex;
     flex-direction: column;
     position: relative;
+    isolation: isolate;
 }
 /* ---- unified tab strip (editor files, agents, terminals, Bruno requests) ---- */
 .tabbar {

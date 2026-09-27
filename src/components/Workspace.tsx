@@ -680,8 +680,9 @@ const WindowLayer = memo(function WindowLayer({
                             onMouseDown={() => live && cmd.focusPane(p.id)}>
                             {/* The pane is a surface, so it carries its own texture — and only
                                 while it is the one being read, so a screen off stage spends no
-                                WebGL context on a field nobody is looking at. */}
-                            <ShaderField preset="ambient" className="pane-field" enabled={paneShader && live && shown} />
+                                WebGL context on a field nobody is looking at. The editor draws
+                                its own, on the code panel beside its file tree. */}
+                            {p.kind !== "editor" && <ShaderField preset="ambient" className="pane-field" enabled={paneShader && live && shown} />}
                             <ErrorBoundary label={`${p.kind} pane`}>
                                 {renderWorkbenchItem({ pane: p, session, win, active: paneActive, visible: paneVisible, painted: panePainted })}
                             </ErrorBoundary>
