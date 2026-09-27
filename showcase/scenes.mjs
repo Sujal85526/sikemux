@@ -180,7 +180,7 @@ export const SCENES = [
       stage: ".stage",
       card: {
         selector: ".stage",
-        region: { left: 0.145, top: 0.03, width: 0.64, height: 0.37 },
+        region: { left: 0.1458, top: 0.0448, width: 0.8528, height: 0.3645 },
       },
     },
   },
