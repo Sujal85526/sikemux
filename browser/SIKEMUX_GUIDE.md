@@ -282,9 +282,19 @@ recording of a tab the person is not looking at still works.
 `browser_network` lists the fetch and XHR calls the page has made since it
 loaded, oldest first, with each status, duration and a truncated response body.
 It is how you tell a request that failed apart from a button that never asked,
-which the DOM alone cannot show. Narrow a busy page with `filter`, a substring
-of the URL. Only fetch and XHR appear; images, scripts and the document itself
-do not.
+which the DOM alone cannot show. A call that never got an answer carries the
+`error` the page saw, such as `TypeError: Load failed`. Data requests a
+framework makes behind a navigation are named in `framework`: `next rsc`,
+`next server action` or `next data`. Narrow a busy page with `filter`, a
+substring of the URL. Images, scripts and styles do not appear.
+
+`documents` lists the tab's last 20 whole-page loads, oldest first, with each
+`status`, `mimeType`, duration, and the `error` of a load that never reached
+the server, which leaves no page behind to record anything. A load cut short
+by the next one says `cancelled`. `since: "navigation"` keeps only the load
+that produced the page on screen and any tried after it. A web app moving
+between its own screens loads no document, so its calls stay listed with the
+page that made them.
 
 `browser_console` lists what the page logged since it loaded, oldest first:
 each message's `level` (`log`, `info`, `warn`, `error`, `debug`, `uncaught`

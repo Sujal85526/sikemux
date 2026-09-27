@@ -307,7 +307,7 @@
     {
       "name": "browser_network",
       "method": "browser.network",
-      "description": "List the page's fetch and XHR calls with status, timing and body.",
+      "description": "List the tab's page loads and the page's fetch and XHR calls, with status, timing and body.",
       "properties": {
         "limit": {
           "type": "integer",
@@ -317,6 +317,10 @@
         "filter": {
           "type": "string",
           "maxLength": 200
+        },
+        "since": {
+          "type": "string",
+          "enum": ["navigation"]
         }
       },
       "required": []

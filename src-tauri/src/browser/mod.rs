@@ -8,6 +8,7 @@
 //! `WebviewWindow` fail. The app reaches the main window with `get_window`.
 
 pub mod agents;
+mod documents;
 mod favicon;
 #[cfg(target_os = "macos")]
 mod input;
@@ -267,6 +268,7 @@ pub struct BrowserManager {
     icons: Mutex<favicon::IconCache>,
     dialogs: Mutex<HashMap<String, PageDialog>>,
     uploads: Mutex<HashMap<String, Vec<PathBuf>>>,
+    documents: Mutex<HashMap<String, documents::DocumentLog>>,
     #[cfg(target_os = "macos")]
     recordings: Mutex<HashMap<String, recording::Session>>,
 }
@@ -326,6 +328,8 @@ impl BrowserManager {
                 let (moved_agent, moved_tab) = (agent.clone(), tab.clone());
                 let (dialog_app, dialog_tab) = (app_handle.clone(), tab.clone());
                 let (upload_app, upload_tab) = (app_handle.clone(), tab.clone());
+                let (document_app, document_agent, document_tab) =
+                    (app_handle.clone(), agent.clone(), tab.clone());
                 macos::adopt(
                     platform.inner(),
                     agent,
@@ -349,6 +353,24 @@ impl BrowserManager {
                     move || {
                         let manager = upload_app.state::<BrowserManager>();
                         manager.take_upload(&upload_tab)
+                    },
+                    move |event| {
+                        let manager = document_app.state::<BrowserManager>();
+                        let failed = manager
+                            .documents_lock()
+                            .entry(document_tab.clone())
+                            .or_default()
+                            .note(event);
+                        if failed {
+                            manager.note_page(
+                                &document_app,
+                                &document_agent,
+                                &document_tab,
+                                |page| {
+                                    page.loading = false;
+                                },
+                            );
+                        }
                     },
                 );
             });
@@ -521,6 +543,21 @@ impl BrowserManager {
         self.uploads_lock().remove(tab_id)
     }
 
+    fn documents_lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, documents::DocumentLog>> {
+        self.documents
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// The tab's top-level loads, oldest first; with `since_current`, only
+    /// the one that produced the page on screen and any tried after it.
+    pub fn documents(&self, tab_id: &str, since_current: bool) -> Vec<documents::DocumentLoad> {
+        self.documents_lock()
+            .get(tab_id)
+            .map(|log| log.loads(since_current))
+            .unwrap_or_default()
+    }
+
     fn downloads_lock(&self) -> std::sync::MutexGuard<'_, HashMap<(String, String), PathBuf>> {
         self.downloads
             .lock()
@@ -564,6 +601,7 @@ impl BrowserManager {
                 return Err(AppError::BadArg("unknown browser tab"));
             }
             let view = agent.views.remove(tab_id);
+            self.documents_lock().remove(tab_id);
             if agent.strip.order.is_empty() {
                 agents.remove(agent_id);
             }
@@ -584,8 +622,18 @@ impl BrowserManager {
         let views = self
             .lock()
             .remove(agent_id)
-            .map(|agent| agent.views.into_values().collect::<Vec<_>>())
+            .map(|agent| agent.views.into_iter().collect::<Vec<_>>())
             .unwrap_or_default();
+        let views: Vec<Webview> = {
+            let mut documents = self.documents_lock();
+            views
+                .into_iter()
+                .map(|(tab_id, view)| {
+                    documents.remove(&tab_id);
+                    view
+                })
+                .collect()
+        };
         for view in views {
             drop_view(view);
         }

@@ -26,12 +26,14 @@ use objc2_foundation::{
 };
 use objc2_quartz_core::{kCAFillRuleEvenOdd, CALayer, CAShapeLayer, CATransaction};
 use objc2_web_kit::{
-    WKContentWorld, WKFrameInfo, WKMediaCaptureType, WKNavigationAction, WKOpenPanelParameters,
+    WKContentWorld, WKFrameInfo, WKMediaCaptureType, WKNavigation, WKNavigationAction,
+    WKNavigationDelegate, WKNavigationResponse, WKNavigationResponsePolicy, WKOpenPanelParameters,
     WKPDFConfiguration, WKPermissionDecision, WKSecurityOrigin, WKSnapshotConfiguration,
     WKUIDelegate, WKWebView, WKWebViewConfiguration, WKWindowFeatures,
 };
 use tauri::{AppHandle, Emitter};
 
+use super::documents::DocumentEvent;
 use super::{BrowserShortcut, PageDialog, BROWSER_SHORTCUT_EVENT};
 
 /// The property the tab watches to hear about a page that moved on its own.
@@ -41,6 +43,7 @@ struct NativeTab {
     agent_id: String,
     webview: Retained<WKWebView>,
     _delegate: Retained<TabUiDelegate>,
+    _navigation: Retained<TabNavigationDelegate>,
     address_observer: Retained<AddressObserver>,
 }
 
@@ -79,7 +82,9 @@ fn webview_from(pointer: *mut c_void) -> Option<Retained<WKWebView>> {
 /// page says it is, and remember the view so shortcuts can tell which tab has
 /// focus. `moved` hears the new address and whether history can go either way;
 /// `dialog` hears a page dialog open and close; `upload` hands over files the
-/// agent picked for the next file chooser, which then never shows.
+/// agent picked for the next file chooser, which then never shows; `document`
+/// hears each top-level load start, get its answer, and finish or fail.
+#[allow(clippy::too_many_arguments)]
 pub fn adopt(
     pointer: *mut c_void,
     agent_id: String,
@@ -87,6 +92,7 @@ pub fn adopt(
     moved: impl Fn(String, bool, bool) + 'static,
     dialog: impl Fn(Option<PageDialog>) + 'static,
     upload: impl Fn() -> Option<Vec<std::path::PathBuf>> + 'static,
+    document: impl Fn(DocumentEvent) + 'static,
 ) {
     let (Some(webview), Some(mtm)) = (webview_from(pointer), MainThreadMarker::new()) else {
         return;
@@ -99,9 +105,15 @@ pub fn adopt(
         Rc::new(dialog),
         Box::new(upload),
     );
+    let navigation = TabNavigationDelegate::new(
+        mtm,
+        unsafe { webview.navigationDelegate() },
+        Box::new(document),
+    );
     let address_observer = AddressObserver::new(mtm, Box::new(moved));
     unsafe {
         webview.setUIDelegate(Some(ProtocolObject::from_ref(&*delegate)));
+        webview.setNavigationDelegate(Some(ProtocolObject::from_ref(&*navigation)));
         webview.setAllowsBackForwardNavigationGestures(true);
         webview.setAllowsMagnification(true);
         keep_running_behind_other_windows(&webview);
@@ -119,6 +131,7 @@ pub fn adopt(
                 agent_id,
                 webview,
                 _delegate: delegate,
+                _navigation: navigation,
                 address_observer,
             },
         );
@@ -521,6 +534,185 @@ fn jpeg_bytes(image: &[u8]) -> Option<Vec<u8>> {
         bitmap.representationUsingType_properties(NSBitmapImageFileType::JPEG, &properties)
     }?;
     Some(jpeg.to_vec())
+}
+
+struct TabNavigationDelegateIvars {
+    inner: Option<Retained<ProtocolObject<dyn WKNavigationDelegate>>>,
+    document: Box<dyn Fn(DocumentEvent)>,
+}
+
+define_class!(
+    /// Sits in front of the navigation delegate the webview came with, hearing
+    /// how each top-level load goes and passing every call on to it.
+    #[unsafe(super(NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[ivars = TabNavigationDelegateIvars]
+    struct TabNavigationDelegate;
+
+    unsafe impl NSObjectProtocol for TabNavigationDelegate {}
+
+    impl TabNavigationDelegate {
+        #[unsafe(method(respondsToSelector:))]
+        fn responds_to_selector(&self, selector: Sel) -> bool {
+            let own: bool = unsafe { msg_send![super(self), respondsToSelector: selector] };
+            own || self.inner_responds(selector)
+        }
+
+        #[unsafe(method(forwardingTargetForSelector:))]
+        fn forwarding_target(&self, _selector: Sel) -> *mut AnyObject {
+            self.ivars()
+                .inner
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |inner| {
+                    Retained::as_ptr(inner) as *mut AnyObject
+                })
+        }
+    }
+
+    unsafe impl WKNavigationDelegate for TabNavigationDelegate {
+        #[unsafe(method(webView:didStartProvisionalNavigation:))]
+        unsafe fn started(&self, webview: &WKWebView, navigation: Option<&WKNavigation>) {
+            let url = unsafe { webview.URL() }
+                .and_then(|url| url.absoluteString())
+                .map(|url| url.to_string())
+                .unwrap_or_default();
+            (self.ivars().document)(DocumentEvent::Started {
+                navigation: navigation_id(navigation),
+                url,
+            });
+            if let Some(inner) = self.forward_to(sel!(webView:didStartProvisionalNavigation:)) {
+                let _: () = msg_send![inner, webView: webview, didStartProvisionalNavigation: navigation];
+            }
+        }
+
+        #[unsafe(method(webView:decidePolicyForNavigationResponse:decisionHandler:))]
+        unsafe fn responded(
+            &self,
+            webview: &WKWebView,
+            response: &WKNavigationResponse,
+            handler: &block2::DynBlock<dyn Fn(WKNavigationResponsePolicy)>,
+        ) {
+            if unsafe { response.isForMainFrame() } {
+                let answer = unsafe { response.response() };
+                let status = answer
+                    .downcast_ref::<objc2_foundation::NSHTTPURLResponse>()
+                    .and_then(|http| u16::try_from(http.statusCode()).ok());
+                (self.ivars().document)(DocumentEvent::Responded {
+                    url: answer.URL()
+                        .and_then(|url| url.absoluteString())
+                        .map(|url| url.to_string())
+                        .unwrap_or_default(),
+                    status,
+                    mime_type: answer.MIMEType()
+                        .map(|mime| mime.to_string())
+                        .unwrap_or_default(),
+                });
+            }
+            match self.forward_to(sel!(webView:decidePolicyForNavigationResponse:decisionHandler:)) {
+                Some(inner) => {
+                    let _: () = msg_send![
+                        inner,
+                        webView: webview,
+                        decidePolicyForNavigationResponse: response,
+                        decisionHandler: handler
+                    ];
+                }
+                None => handler.call((WKNavigationResponsePolicy::Allow,)),
+            }
+        }
+
+        #[unsafe(method(webView:didFinishNavigation:))]
+        unsafe fn finished(&self, webview: &WKWebView, navigation: Option<&WKNavigation>) {
+            (self.ivars().document)(DocumentEvent::Finished {
+                navigation: navigation_id(navigation),
+            });
+            if let Some(inner) = self.forward_to(sel!(webView:didFinishNavigation:)) {
+                let _: () = msg_send![inner, webView: webview, didFinishNavigation: navigation];
+            }
+        }
+
+        #[unsafe(method(webView:didFailProvisionalNavigation:withError:))]
+        unsafe fn failed_before_commit(
+            &self,
+            webview: &WKWebView,
+            navigation: Option<&WKNavigation>,
+            error: &NSError,
+        ) {
+            (self.ivars().document)(DocumentEvent::Failed {
+                navigation: navigation_id(navigation),
+                error: load_error(error),
+            });
+            if let Some(inner) = self.forward_to(sel!(webView:didFailProvisionalNavigation:withError:)) {
+                let _: () = msg_send![
+                    inner,
+                    webView: webview,
+                    didFailProvisionalNavigation: navigation,
+                    withError: error
+                ];
+            }
+        }
+
+        #[unsafe(method(webView:didFailNavigation:withError:))]
+        unsafe fn failed(
+            &self,
+            webview: &WKWebView,
+            navigation: Option<&WKNavigation>,
+            error: &NSError,
+        ) {
+            (self.ivars().document)(DocumentEvent::Failed {
+                navigation: navigation_id(navigation),
+                error: load_error(error),
+            });
+            if let Some(inner) = self.forward_to(sel!(webView:didFailNavigation:withError:)) {
+                let _: () = msg_send![
+                    inner,
+                    webView: webview,
+                    didFailNavigation: navigation,
+                    withError: error
+                ];
+            }
+        }
+    }
+);
+
+impl TabNavigationDelegate {
+    fn new(
+        mtm: MainThreadMarker,
+        inner: Option<Retained<ProtocolObject<dyn WKNavigationDelegate>>>,
+        document: Box<dyn Fn(DocumentEvent)>,
+    ) -> Retained<Self> {
+        let delegate = mtm
+            .alloc::<TabNavigationDelegate>()
+            .set_ivars(TabNavigationDelegateIvars { inner, document });
+        unsafe { msg_send![super(delegate), init] }
+    }
+
+    fn inner_responds(&self, selector: Sel) -> bool {
+        self.ivars().inner.as_ref().is_some_and(|inner| {
+            let responds: bool = unsafe { msg_send![&**inner, respondsToSelector: selector] };
+            responds
+        })
+    }
+
+    fn forward_to(&self, selector: Sel) -> Option<&ProtocolObject<dyn WKNavigationDelegate>> {
+        self.inner_responds(selector)
+            .then(|| self.ivars().inner.as_deref())
+            .flatten()
+    }
+}
+
+fn navigation_id(navigation: Option<&WKNavigation>) -> usize {
+    navigation.map_or(0, |navigation| navigation as *const WKNavigation as usize)
+}
+
+/// WebKit's description of why a load failed, with its code, since the same
+/// words cover several causes. A load stopped for another is only "cancelled".
+fn load_error(error: &NSError) -> String {
+    let (domain, code) = (error.domain().to_string(), error.code());
+    if domain == "NSURLErrorDomain" && code == -999 {
+        return "cancelled".into();
+    }
+    format!("{} ({domain} {code})", error.localizedDescription())
 }
 
 struct TabUiDelegateIvars {

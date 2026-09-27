@@ -314,8 +314,13 @@ async fn run(
             .await
         }
         "browser.network" => {
-            let (_, view) = active(&manager, agent_id)?;
-            call(
+            let since_current = match text("since").as_deref() {
+                None => false,
+                Some("navigation") => true,
+                Some(_) => return Err("since must be \"navigation\"".into()),
+            };
+            let (tab_id, view) = active(&manager, agent_id)?;
+            let mut result = call(
                 &view,
                 "network",
                 &[
@@ -330,6 +335,21 @@ async fn run(
                 ],
             )
             .await
+            .unwrap_or_else(|error| json!({ "recording": false, "note": error }));
+            let needle = text("filter").map(|filter| filter.to_lowercase());
+            let documents: Vec<_> = manager
+                .documents(&tab_id, since_current)
+                .into_iter()
+                .filter(|load| {
+                    needle
+                        .as_ref()
+                        .is_none_or(|needle| load.url.to_lowercase().contains(needle))
+                })
+                .collect();
+            if let Value::Object(map) = &mut result {
+                map.insert("documents".into(), json!(documents));
+            }
+            Ok(result)
         }
         "browser.evaluate" => {
             let script = text("script").ok_or("script is required")?;
