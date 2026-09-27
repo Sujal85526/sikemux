@@ -1,7 +1,7 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { prefersReducedMotion } from "../lib/motion";
+import { animate, type Box, contentBox, EASE_LEAVE, glideSelection, leavingRef, prefersReducedMotion } from "../lib/motion";
 import { TreeContextMenu, type CtxItem } from "./FileTree";
 import { IconClose } from "./Icons";
 import { Tooltip } from "./Tooltip";
@@ -49,6 +49,48 @@ function reveal(strip: HTMLElement | null, tab: HTMLElement | undefined): void {
     const box = tab.getBoundingClientRect();
     const off = box.left < edge.left ? box.left - edge.left : box.right > edge.right ? box.right - edge.right : 0;
     if (off !== 0) strip.scrollBy({ left: off, behavior: prefersReducedMotion() ? "auto" : "smooth" });
+}
+
+/** The element that paints a strip's selection: the whole tab in most strips, the button alone in some. */
+function selectionSurface(wrap: HTMLElement): HTMLElement {
+    // Read with the tint's own fade stopped, or a just-selected tab still reports its unselected colour.
+    const kept = wrap.style.transition;
+    wrap.style.transition = "none";
+    const style = getComputedStyle(wrap);
+    const paints = style.backgroundColor !== "rgba(0, 0, 0, 0)" || style.boxShadow !== "none";
+    wrap.style.transition = kept;
+    return paints ? wrap : (wrap.querySelector<HTMLElement>(".tab") ?? wrap);
+}
+
+function openTab(wrap: HTMLElement): void {
+    const width = wrap.getBoundingClientRect().width;
+    const overflow = wrap.style.overflow;
+    wrap.style.overflow = "hidden";
+    const run = animate(
+        wrap,
+        [
+            { width: "0px", minWidth: "0px", opacity: 0 },
+            { width: `${width}px`, minWidth: "0px", opacity: 1 },
+        ],
+        { duration: 160 },
+    );
+    const done = () => (wrap.style.overflow = overflow);
+    if (run) run.finished.then(done, done);
+    else done();
+}
+
+function closeTab(wrap: HTMLElement): Animation | null {
+    const width = wrap.getBoundingClientRect().width;
+    wrap.style.overflow = "hidden";
+    for (const part of wrap.children) animate(part, [{ opacity: 1 }, { opacity: 0 }], { duration: 50, easing: "linear", fill: "forwards" });
+    return animate(
+        wrap,
+        [
+            { width: `${width}px`, minWidth: "0px" },
+            { width: "0px", minWidth: "0px", paddingLeft: "0px", paddingRight: "0px", marginLeft: "0px", marginRight: "0px" },
+        ],
+        { duration: 120, easing: EASE_LEAVE },
+    );
 }
 
 interface TabBarProps {
@@ -110,6 +152,37 @@ export function TabBar({
     );
     const activeIndex = tabs.findIndex((tab) => tab.active);
     const activeId = tabs[activeIndex]?.id;
+    const wrapRefs = useRef(new Map<string, HTMLDivElement>());
+    const closedBoxes = useRef(new Map<string, Box>());
+    const virtualizedRef = useRef(virtualized);
+    virtualizedRef.current = virtualized;
+    const measureRef = useRef(tabVirtualizer.measureElement);
+    measureRef.current = tabVirtualizer.measureElement;
+    /*
+     * One stable ref for every tab: it measures for the virtualizer, keeps the
+     * map the selection glide reads, and lets a closed tab narrow away. A
+     * virtualized strip unmounts tabs just by scrolling, so there a removed tab
+     * simply goes.
+     */
+    const wrapRef = useMemo(
+        () =>
+            leavingRef<HTMLDivElement>(closeTab, {
+                onMount: (el) => {
+                    if (virtualizedRef.current) measureRef.current(el);
+                    const id = el.dataset.tabId;
+                    if (id) wrapRefs.current.set(id, el);
+                },
+                onRemove: (el) => {
+                    const id = el.dataset.tabId;
+                    if (id && wrapRefs.current.get(id) === el) wrapRefs.current.delete(id);
+                    const strip = scrollRef.current;
+                    if (id && strip && el.classList.contains("active"))
+                        closedBoxes.current.set(id, contentBox(selectionSurface(el).getBoundingClientRect(), strip));
+                    return !virtualizedRef.current;
+                },
+            }),
+        [],
+    );
 
     useLayoutEffect(() => {
         if (virtualized && activeIndex >= 0) tabVirtualizer.scrollToIndex(activeIndex, { align: "auto" });
@@ -121,6 +194,39 @@ export function TabBar({
         // virtualizer above has it roughly in view.
         reveal(scrollRef.current, tabRefs.current.get(activeId));
     }, [activeId]);
+
+    const shownIds = useRef<Set<string> | null>(null);
+    const previousActive = useRef(activeId);
+    useLayoutEffect(() => {
+        const strip = scrollRef.current;
+        const ids = new Set(tabs.map((tab) => tab.id));
+        const seen = shownIds.current;
+        shownIds.current = ids;
+        const from = previousActive.current;
+        previousActive.current = activeId;
+        if (!strip || !seen || virtualized || reorder.dragging) return;
+
+        // Measure where the selection lands before any new tab starts growing from nothing.
+        if (from !== activeId && activeId !== undefined && from !== undefined) {
+            const toWrap = wrapRefs.current.get(activeId);
+            const fromWrap = wrapRefs.current.get(from);
+            if (toWrap) {
+                const surface = selectionSurface(toWrap);
+                const fromSurface = fromWrap && (surface === toWrap ? fromWrap : fromWrap.querySelector<HTMLElement>(".tab"));
+                const fromBox = fromSurface ? contentBox(fromSurface.getBoundingClientRect(), strip) : closedBoxes.current.get(from);
+                if (fromBox) glideSelection(strip, fromBox, surface, fromSurface);
+            }
+        }
+        closedBoxes.current.clear();
+
+        // A strip that swapped most of its tabs at once is showing a different set, not opening one.
+        const added = tabs.filter((tab) => !seen.has(tab.id));
+        if (added.length === 0 || added.length > 2 || ![...seen].some((id) => ids.has(id))) return;
+        for (const tab of added) {
+            const wrap = wrapRefs.current.get(tab.id);
+            if (wrap) openTab(wrap);
+        }
+    });
 
     const focusTabAt = (index: number) => {
         const tab = tabs[index];
@@ -153,7 +259,8 @@ export function TabBar({
                     <div
                         key={t.id}
                         data-index={index}
-                        ref={virtualized ? tabVirtualizer.measureElement : undefined}
+                        data-tab-id={t.id}
+                        ref={wrapRef}
                         className={`tab-wrap${t.active ? " active" : ""}${t.className ? ` ${t.className}` : ""}${reorder.dragClass(t.id)}`}
                         role="presentation">
                         <Tooltip label={t.title}>

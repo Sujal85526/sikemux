@@ -1,0 +1,12 @@
+/* A copy of a selected item's surface, sliding from the old item to the new one. */
+.selection-glide {
+    position: absolute;
+    z-index: 2;
+    box-sizing: border-box;
+    pointer-events: none;
+}
+
+/* Something React has removed, kept on screen while it animates away. */
+.is-leaving {
+    pointer-events: none;
+}
