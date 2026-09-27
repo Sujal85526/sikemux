@@ -8,7 +8,7 @@ use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use futures::StreamExt;
-use reqwest::header::{HeaderMap, AUTHORIZATION};
+use reqwest::header::HeaderMap;
 use reqwest::{Client, Method, Response, StatusCode};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -268,7 +268,7 @@ pub async fn download_as(data_dir: &Path, path: &str, accept: &str) -> ActionsRe
         .get("location")
         .and_then(|value| value.to_str().ok())
         .ok_or_else(|| ActionsError::Response("the download redirect had no address".into()))?;
-    let response = limited(http()?.get(location).header(AUTHORIZATION, "").send()).await?;
+    let response = limited(http()?.execute(from_storage(location)?)).await?;
     let status = response.status();
     let headers = response.headers().clone();
     let bytes = read_limited(response).await?;
@@ -276,6 +276,13 @@ pub async fn download_as(data_dir: &Path, path: &str, accept: &str) -> ActionsRe
         return Err(classify(status, &headers, &bytes));
     }
     Ok(bytes)
+}
+
+/// Storage answers 400 to any `Authorization` header, an empty one included.
+fn from_storage(location: &str) -> ActionsResult<reqwest::Request> {
+    let url = reqwest::Url::parse(location)
+        .map_err(|_| ActionsError::Response("the download redirect was not an address".into()))?;
+    Ok(reqwest::Request::new(Method::GET, url))
 }
 
 pub async fn download_text(data_dir: &Path, path: &str) -> ActionsResult<String> {
@@ -352,6 +359,15 @@ mod tests {
             Some("Not Found")
         );
         assert_eq!(error_message(b"<html>"), None);
+    }
+
+    #[test]
+    fn a_download_from_storage_carries_no_authorization_header() {
+        let request = from_storage("https://storage.example/log?sig=abc").expect("builds");
+        assert!(request
+            .headers()
+            .get(reqwest::header::AUTHORIZATION)
+            .is_none());
     }
 
     #[test]
