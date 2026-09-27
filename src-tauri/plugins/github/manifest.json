@@ -1,6 +1,6 @@
 {
   "id": "sikemux.github",
-  "name": "GitHub Actions",
+  "name": "GitHub",
   "version": "0.1.0",
   "sikemux": ">=0.4",
   "callTimeoutSecs": 120,
