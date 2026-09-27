@@ -311,7 +311,7 @@ function DiffBody({ diff }: { diff: ToolDiff }) {
     return (
         <div className="chat-diff">
             <div className="chat-diff-head">
-                <IconFile size={10} />
+                <FileIcon name={basename(diff.path)} size={12} />
                 <span className="chat-diff-path" title={diff.path}>
                     {diff.path}
                 </span>

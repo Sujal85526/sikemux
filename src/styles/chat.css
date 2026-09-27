@@ -888,6 +888,11 @@ button.chat-tool:hover,
     font-size: var(--text-3xs);
 }
 
+.chat-diff-head .file-glyph {
+    width: auto;
+    user-select: none;
+}
+
 .chat-diff-path {
     min-width: 0;
     overflow: hidden;
