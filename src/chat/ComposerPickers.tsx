@@ -6,6 +6,7 @@ import { useResource } from "../state/resources";
 import { agentCatalogR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { DEFAULT_PROVIDER_PROFILE_SELECTION, type Agent, type ProviderProfile } from "../state/types";
+import { leavingMenu } from "../lib/motion";
 
 interface Choice {
     value: string;
@@ -172,6 +173,7 @@ function Picker({
             </button>
             {shown && (
                 <div
+                    ref={leavingMenu}
                     className={`chat-picker-menu${compact ? " compact" : ""}`}
                     style={{
                         bottom: window.innerWidth <= 650 ? window.innerHeight - (trigger.current?.getBoundingClientRect().top ?? 0) + 12 : undefined,

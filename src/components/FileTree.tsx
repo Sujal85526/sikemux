@@ -19,6 +19,7 @@ import { Tooltip } from "./Tooltip";
 import { gitFileDecoration } from "./git/gitFileStatus";
 import { basename, dirname, isPathWithin, joinPath, normalizePath, relativePath as pathRelative } from "../lib/paths";
 import { FILE_MANAGER_NAME } from "../lib/platform";
+import { leavingMenu } from "../lib/motion";
 
 interface FileTreeProps {
     cwd: string;
@@ -875,6 +876,7 @@ export function TreeContextMenu({ x, y, items, onClose }: { x: number; y: number
 
     return createPortal(
         <div
+            ref={leavingMenu}
             className="tree-ctx-scrim"
             onClick={onClose}
             onContextMenu={(e) => {

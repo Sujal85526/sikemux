@@ -163,3 +163,20 @@ export const leavingOverlay = leavingRef<HTMLElement>((backdrop) => {
     }
     return animate(backdrop, [{ opacity: 1 }, { opacity: 0 }], { duration: 100, easing: EASE_IN, fill: "forwards" });
 });
+
+/** A menu opens on the first frame and closes with a short fade. */
+export const leavingMenu = leavingRef<HTMLElement>((menu) =>
+    animate(menu, [{ opacity: 1 }, { opacity: 0 }], { duration: 80, easing: EASE_IN, fill: "forwards" }),
+);
+
+/** Shares one element between a component's own ref and a leaving ref. Memoise the result: it must stay one function. */
+export function alsoLeaving<T extends HTMLElement>(own: { current: T | null }, leaving: (el: T | null) => (() => void) | undefined) {
+    return (el: T | null) => {
+        own.current = el;
+        const leave = leaving(el);
+        return () => {
+            own.current = null;
+            leave?.();
+        };
+    };
+}
