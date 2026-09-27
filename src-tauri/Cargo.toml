@@ -53,7 +53,7 @@ portable-pty = "0.9"
 vt100 = "0.16"
 git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
-notify = "6"
+notify = "8"
 dashmap = "6"
 similar = "3"
 ignore = "0.4"
