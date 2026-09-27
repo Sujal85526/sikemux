@@ -107,6 +107,7 @@ export const IconEye = makeSvgIcon(
 );
 export const IconEditor = makeSvgIcon(<path d="M5.5 5 2.5 8l3 3M10.5 5l3 3-3 3M9.3 3.4 6.7 12.6" />);
 export const IconRun = makeSvgIcon(<path d="M4.7 3.4 12.4 8l-7.7 4.6z" stroke="none" />, { fill: "currentColor" });
+export const IconStop = makeSvgIcon(<rect x="4" y="4" width="8" height="8" rx="1.5" stroke="none" />, { fill: "currentColor" });
 export const IconGit = makeSvgIcon(
     <>
         <circle cx="4.6" cy="3.6" r="1.7" />
@@ -232,6 +233,12 @@ export const IconInfo = makeSvgIcon(
     <>
         <circle cx="8" cy="8" r="6.2" />
         <path d="M8 7.2v3.9M8 5v.1" />
+    </>,
+);
+export const IconExternal = makeSvgIcon(
+    <>
+        <path d="M9 2.5h4.5V7M13.5 2.5 7.5 8.5" />
+        <path d="M11.5 9.5v3.5h-9v-9H6" />
     </>,
 );
 export const IconCopy = makeSvgIcon(

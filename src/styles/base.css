@@ -226,8 +226,7 @@ html.is-transparent .crumb,
 html.is-transparent .tabbar,
 html.is-transparent .browser-toolbar,
 html.is-transparent .acc-header,
-html.is-transparent .env-dd-btn,
-html.is-transparent .rnd-tree {
+html.is-transparent .env-dd-btn {
     background: transparent;
 }
 

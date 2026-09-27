@@ -1,32 +1,20 @@
 import { useRef, useState } from "react";
 import { invalidate } from "../../../plugin-api/resources";
-import { Tooltip } from "../../../plugin-api/ui";
-import { errorMessage, rundeckApi } from "../api";
+import { IconChevron } from "../../../plugin-api/ui";
+import { errorMessage, rundeckApi, type RundeckStatus } from "../api";
 import * as cmd from "../state";
 import { DEFAULT_BRANCH_OPTIONS, DEFAULT_PROD_ENVS, splitList } from "../shape";
 import { useMenuKeys } from "./hooks";
+import { hostFromUrl, Status } from "./parts";
 
-export function RundeckSettingsPopover({ onSignedOut }: { onSignedOut: () => void }) {
+/** The server card at the foot of the sidebar; it opens the plugin's settings above itself. */
+export function RundeckConnection({ status, onSignedOut }: { status: RundeckStatus; onSignedOut: () => void }) {
     const [open, setOpen] = useState(false);
     const panelRef = useRef<HTMLDivElement>(null);
     useMenuKeys(open, panelRef, () => setOpen(false), false);
 
     return (
-        <span className="rnd-pop-anchor">
-            <Tooltip label="Rundeck settings">
-                <button
-                    className={`rnd-bar-icon${open ? " on" : ""}`}
-                    aria-label="Rundeck settings"
-                    aria-haspopup="dialog"
-                    aria-expanded={open}
-                    onClick={() => setOpen((v) => !v)}>
-                    <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-                        <path d="M2 4h7M12 4h2M2 12h2M7 12h7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" fill="none" />
-                        <circle cx="10.5" cy="4" r="1.6" stroke="currentColor" strokeWidth="1.3" fill="none" />
-                        <circle cx="5.5" cy="12" r="1.6" stroke="currentColor" strokeWidth="1.3" fill="none" />
-                    </svg>
-                </button>
-            </Tooltip>
+        <div className="rnd-conn-wrap">
             {open && (
                 <>
                     <div className="rnd-pop-scrim" onClick={() => setOpen(false)} />
@@ -40,7 +28,25 @@ export function RundeckSettingsPopover({ onSignedOut }: { onSignedOut: () => voi
                     </div>
                 </>
             )}
-        </span>
+            <button
+                className={`rnd-conn${open ? " open" : ""}`}
+                aria-haspopup="dialog"
+                aria-expanded={open}
+                onClick={() => setOpen((v) => !v)}
+                title="Rundeck settings">
+                <span className="rnd-conn-top">
+                    <span className="rnd-conn-host">{hostFromUrl(status.url)}</span>
+                    <IconChevron size={11} className="rnd-conn-chev" />
+                </span>
+                <span className="rnd-conn-sub">
+                    {[status.user, status.rundeck_version && `Rundeck ${status.rundeck_version}`].filter(Boolean).join(" · ")}
+                </span>
+                <span className="rnd-conn-meta">
+                    <span>{status.token_present ? "API token" : "No token"}</span>
+                    <Status status={status.ok ? "succeeded" : "failed"} label={status.ok ? "Connected" : "Offline"} />
+                </span>
+            </button>
+        </div>
     );
 }
 
@@ -68,15 +74,15 @@ function SettingsForm({ onSignedOut }: { onSignedOut: () => void }) {
         <div className="rnd-pop-body">
             <ListField
                 autoFocus
-                label="production environments"
-                help="A job is production when its top folder or project name contains one of these words."
+                label="Production folders"
+                help="A job counts as production when its top folder or project name contains one of these words."
                 value={prodEnvs}
                 fallback={DEFAULT_PROD_ENVS}
                 onCommit={(list) => cmd.updateRundeckSettings({ prodEnvs: list })}
             />
             <ListField
-                label="branch options"
-                help="Job options that hold the git branch, tried in order, any case."
+                label="Branch options"
+                help="Job options that hold the git branch, tried in order, in any case."
                 value={branchOptions}
                 fallback={DEFAULT_BRANCH_OPTIONS}
                 onCommit={(list) => {
@@ -87,7 +93,7 @@ function SettingsForm({ onSignedOut }: { onSignedOut: () => void }) {
             {error && <div className="rnd-field-error">{error}</div>}
             <div className="rnd-pop-foot">
                 <button className="rnd-btn rnd-btn-danger" onClick={() => void signOut()} disabled={signingOut}>
-                    {signingOut ? "signing out…" : "sign out"}
+                    {signingOut ? "Signing out…" : "Sign out"}
                 </button>
             </div>
         </div>
