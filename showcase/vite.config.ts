@@ -4,8 +4,8 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { mergeConfig, type PluginOption } from "vite";
-import base from "../vite.config";
-import { DEMO_PROJECTS } from "./world/projects";
+import base from "../vite.config.ts";
+import { DEMO_PROJECTS } from "./world/projects.ts";
 
 const LOCAL_ROOTS: Record<string, string> = {
   sikemux: resolve(import.meta.dirname, ".."),

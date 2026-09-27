@@ -132,7 +132,7 @@ const budgets = [
     // Tool calls also carry what they printed now, opened under the row.
     label: "ACP chat lazy chunk",
     pattern: /^AgentSurface-.*\.js$/,
-    raw: 89_000,
+    raw: 91_000,
     gzip: 28_900,
   },
   {
@@ -164,12 +164,14 @@ const budgets = [
     gzip: 335_000,
   },
   {
+    // Rolldown reaches CommonJS exports such as React's jsx through
+    // `(0, ns.jsx)(...)` at every call site, which Rollup did not.
     label: "default-path JavaScript except Diffs and its grammar chunks",
     pattern: new RegExp(
       `^(?!(?:diffs|highlighter|worker|wasm|paper-shaders|xterm-webgl|${diffLanguageChunkNames.join("|")})-).*\\.js$`,
     ),
-    raw: 3_210_000,
-    gzip: 1_027_000,
+    raw: 3_220_000,
+    gzip: 1_030_000,
   },
   {
     label: "opt-in shader renderer",
@@ -189,10 +191,11 @@ const budgets = [
     // code block copy buttons, the composer microphone, and a tool call's
     // output. It is one lazily loaded sheet behind an agent pane, so this buys
     // those rows room without touching what the app loads at startup.
+    // Lightning CSS, Vite's minifier, keeps the spaces inside color-mix().
     label: "ACP chat CSS",
     pattern: /^AgentSurface-.*\.css$/,
-    raw: 42_600,
-    gzip: 7_900,
+    raw: 42_800,
+    gzip: 7_980,
   },
   {
     // Includes the JetBrainsMono Nerd Font @font-face rules: a base face per
