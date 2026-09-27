@@ -55,7 +55,7 @@ git2 = { version = "0.21", default-features = false, features = ["vendored-libgi
 rusqlite = { version = "0.32", features = ["bundled"] }
 notify = "6"
 dashmap = "6"
-similar = "2"
+similar = "3"
 ignore = "0.4"
 grep-matcher = "0.1"
 grep-regex = "0.1"
