@@ -1,5 +1,4 @@
-import { useEffect, useState } from "react";
-import Markdown, { type Components } from "react-markdown";
+import { createElement, useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { installPendingUpdate, isUpdateBusy, updateStatusLabel } from "../api/updater";
 import { openInBrowser, releasesApi, type ReleaseContributor, type ReleaseNotes } from "../api/releases";
@@ -9,6 +8,7 @@ import { errMessage, swallow } from "../state/toast";
 import { useOccludeNativeViews } from "../state/nativeViews";
 import { ExperienceBackdrop } from "./ExperienceOverlays";
 import { ShaderField } from "./ShaderField";
+import { Markdown, MARKDOWN_PLAIN, type MarkdownComponents } from "../markdown/Markdown";
 
 const FEATURED = 3;
 const WALL = 13;
@@ -164,9 +164,9 @@ function Contributors({ people, bundled }: { people: readonly ReleaseContributor
     );
 }
 
-const markdown: Components = {
-    h1: () => null,
-    a: ({ href, children }) => (
+const markdown: MarkdownComponents = {
+    heading: ({ level, children }) => (level === 1 ? null : createElement(`h${level}`, null, children)),
+    link: ({ href, children }) => (
         <a
             href={href}
             onClick={(event) => {
@@ -231,9 +231,7 @@ export function WhatsNewOverlay() {
                 </header>
                 <div className="wn-notes">
                     {release?.notes ? (
-                        <Markdown skipHtml components={markdown}>
-                            {release.notes}
-                        </Markdown>
+                        <Markdown text={release.notes} options={MARKDOWN_PLAIN} components={markdown} />
                     ) : error ? (
                         <p className="wn-status">
                             The notes for v{version} could not be loaded. {error}

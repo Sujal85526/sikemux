@@ -996,6 +996,30 @@ describe("AgentChatPane", () => {
         expect(await screen.findByText(/Done/)).toHaveTextContent(/^Done quietly$/);
     });
 
+    it("draws an answer as it streams: a fence still open, then the table after it", async () => {
+        await openTranscript();
+        const chunk = (text: string) =>
+            emit("session_update", { sessionId: "session-1", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } } });
+
+        chunk("Here is the fix:\n\n```ts\nconst a = 1;\n");
+        const code = await waitFor(() => {
+            const found = document.querySelector(".chat-markdown pre code.language-ts");
+            expect(found).toHaveTextContent("const a = 1;");
+            return found as HTMLElement;
+        });
+        expect(code.closest("pre")!.querySelector(".chat-code-title")).not.toBeNull();
+        const intro = screen.getByText("Here is the fix:");
+
+        chunk("```\n\n| approach | cpu |\n| --- | --- |\n| batch | 12% |\n");
+        expect((await screen.findByText("batch")).tagName).toBe("TD");
+        expect(screen.getByText("Here is the fix:")).toBe(intro);
+
+        emit("turn_completed", { stopReason: "end_turn" });
+        await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
+        expect(screen.getByText("Here is the fix:")).toBe(intro);
+        expect(document.querySelectorAll(".chat-markdown pre")).toHaveLength(1);
+    });
+
     it("leaves out the header band when the table has no column labels", async () => {
         await openTranscript();
         emit("session_update", {

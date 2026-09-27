@@ -1,7 +1,8 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { createInterface } from "node:readline";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { mergeConfig, type PluginOption } from "vite";
 import base from "../vite.config.ts";
@@ -153,6 +154,51 @@ function gitLog(name: string, count: number) {
     });
 }
 
+// Markdown is read by the app's Rust parser, run as a small process that answers one line per request.
+let markdownParser: {
+  write: (line: string) => void;
+  stop: () => void;
+  waiting: ((line: string) => void)[];
+} | null = null;
+
+function parseMarkdown(requests: unknown[]): Promise<unknown[]> {
+  if (!markdownParser) {
+    const child = spawn(
+      "cargo",
+      [
+        "run",
+        "--quiet",
+        "--manifest-path",
+        resolve(import.meta.dirname, "../src-tauri/Cargo.toml"),
+        "-p",
+        "sikemux-markdown",
+        "--example",
+        "stdio",
+      ],
+      { stdio: ["pipe", "pipe", "inherit"] },
+    );
+    const waiting: ((line: string) => void)[] = [];
+    createInterface({ input: child.stdout }).on("line", (line) =>
+      waiting.shift()?.(line),
+    );
+    markdownParser = {
+      write: (line) => child.stdin.write(`${line}\n`),
+      stop: () => child.kill(),
+      waiting,
+    };
+  }
+  const parser = markdownParser;
+  return Promise.all(
+    requests.map(
+      (request) =>
+        new Promise((resolve) => {
+          parser.waiting.push((line) => resolve(JSON.parse(line)));
+          parser.write(JSON.stringify(request));
+        }),
+    ),
+  );
+}
+
 async function body(
   request: IncomingMessage,
 ): Promise<Record<string, unknown>> {
@@ -171,6 +217,7 @@ function demoFileSystem(): PluginOption {
   return {
     name: "sikemux-showcase-fs",
     configureServer(server) {
+      server.httpServer?.on("close", () => markdownParser?.stop());
       server.middlewares.use("/__showcase", async (request, response) => {
         try {
           const input = await body(request);
@@ -202,6 +249,12 @@ function demoFileSystem(): PluginOption {
                 response,
                 200,
                 gitLog(input.project as string, Number(input.count ?? 60)),
+              );
+            case "/markdown":
+              return send(
+                response,
+                200,
+                await parseMarkdown(input.requests as unknown[]),
               );
             default:
               return send(response, 404, {

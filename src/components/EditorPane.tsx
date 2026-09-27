@@ -1,8 +1,6 @@
 import { FileTree } from "./FileTree";
 import { relocatedPath } from "../state/editorPaths";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Markdown, { type Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { invokeCommand as invoke } from "../api/invoke";
 import { Compartment, EditorState, Prec, type Text } from "@codemirror/state";
 import { EditorView, keymap, type ViewUpdate } from "@codemirror/view";
@@ -21,7 +19,7 @@ import {
     type EditorLanguageHint,
 } from "../editor/codemirror";
 import { isImagePath } from "../editor/media";
-import { MarkdownTableHead } from "../lib/markdownTable";
+import { Markdown, MARKDOWN_GFM, type MarkdownComponents } from "../markdown/Markdown";
 import { gitDiffGutter } from "../editor/gitGutter";
 import { gitInlineBlame } from "../editor/gitBlame";
 import { DocumentIO } from "../editor/documentIO";
@@ -214,10 +212,9 @@ function markdownLinkFile(href: string, documentPath: string): string | null {
 }
 
 function MarkdownPreview({ source, path, onOpenFile }: { source: string; path: string; onOpenFile: (path: string) => void }) {
-    const components = useMemo<Components>(
+    const components = useMemo<MarkdownComponents>(
         () => ({
-            thead: MarkdownTableHead,
-            a: ({ href, children }) => (
+            link: ({ href, children }) => (
                 <a
                     href={href}
                     onClick={(event) => {
@@ -240,9 +237,7 @@ function MarkdownPreview({ source, path, onOpenFile }: { source: string; path: s
     return (
         <div className="ed-markdown-preview">
             <article className="ed-markdown-body">
-                <Markdown components={components} remarkPlugins={[remarkGfm]} skipHtml>
-                    {source}
-                </Markdown>
+                <Markdown text={source} options={MARKDOWN_GFM} components={components} />
             </article>
         </div>
     );

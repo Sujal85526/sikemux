@@ -13,8 +13,6 @@ import {
     type ReactNode,
     type RefObject,
 } from "react";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { open } from "@tauri-apps/plugin-dialog";
 import { acpApi, type AcpEvent } from "../api/acp";
@@ -25,7 +23,6 @@ import { ComposerPickers, effortConfig, sessionConfigs, type SessionConfig } fro
 import { rateLabel, rowMeta } from "./messageMeta";
 import { CopyButton } from "../components/CopyButton";
 import { FileIcon } from "../components/FileIcon";
-import { MarkdownTableHead } from "../lib/markdownTable";
 import { basename } from "../lib/paths";
 import { animate, EASE_IN, foldedFrames, leavingRef } from "../lib/motion";
 import { hasPrimaryModifier, PRIMARY_SHORTCUT } from "../lib/platform";
@@ -68,8 +65,9 @@ import { ContextMeter } from "./ContextMeter";
 import { guessClaudeWindow } from "./contextWindow";
 import { agentApi } from "../api/agents";
 import { safeWebUrl } from "../terminal/interactions";
-import { chatUrlTransform, PATH_CLASS, PATH_CODE_CLASS, remarkFilePaths } from "./remarkFilePaths";
-import { remarkHtmlAsText } from "./remarkHtmlAsText";
+import { Markdown, type MarkdownComponents } from "../markdown/Markdown";
+import type { MarkdownOptions } from "../markdown/types";
+import { pathComponents, type PathGuess } from "./markdownPaths";
 import { FoldMemoryContext, newFoldMemory, useLongTextFold } from "./longText";
 import { imagesInClipboard, savePastedClipboard } from "./pasteImage";
 import { caretAtEdge, recallPrompt, sentPrompts, type HistoryPosition } from "./promptHistory";
@@ -572,10 +570,9 @@ function ChatImage({
    A name the message only mentioned in passing arrives here too, marked as a
    guess. It is a file when the project has one by that name, and the words the
    agent wrote when it has not. */
-function ChatLink({ href, className, children }: { href?: string; className?: string; children?: ReactNode }) {
-    const guessed = className?.split(/\s+/) ?? [];
+function ChatLink({ href, guess, children }: { href: string; guess?: PathGuess; children?: ReactNode }) {
     const imagePath = localImagePath(href);
-    const preview = useImagePreview(guessed.includes(PATH_CLASS) ? null : imagePath);
+    const preview = useImagePreview(guess ? null : imagePath);
     const file = useFileRef(href);
     const agentId = useContext(ChatAgentContext).id;
     if (preview && imagePath) return <ChatImage src={preview} path={imagePath} />;
@@ -585,11 +582,11 @@ function ChatLink({ href, className, children }: { href?: string; className?: st
                 refers={file.ref}
                 state={file.state}
                 label={children}
-                className={guessed.includes(PATH_CODE_CLASS) ? "chat-file-ref code" : "chat-file-ref link"}
+                className={guess === "code" ? "chat-file-ref code" : "chat-file-ref link"}
             />
         );
-    if (guessed.includes(PATH_CODE_CLASS)) return <code>{children}</code>;
-    if (guessed.includes(PATH_CLASS)) return <>{children}</>;
+    if (guess === "code") return <code>{children}</code>;
+    if (guess === "text") return <>{children}</>;
     return (
         <a
             href={href}
@@ -602,34 +599,15 @@ function ChatLink({ href, className, children }: { href?: string; className?: st
     );
 }
 
-function codeText(children: ReactNode): string {
-    if (typeof children === "string") return children;
-    if (Array.isArray(children)) return children.map((child) => (typeof child === "string" ? child : "")).join("");
-    return "";
-}
-
-const InFenceContext = createContext(false);
-
-function ChatPre({ children }: { children?: ReactNode }) {
-    return (
-        <pre>
-            <InFenceContext.Provider value={true}>{children}</InFenceContext.Provider>
-        </pre>
-    );
-}
-
-function ChatCode({ className, children }: { className?: string; children?: ReactNode }) {
-    const inFence = useContext(InFenceContext);
-    const info = /language-(\S+)/.exec(className ?? "")?.[1];
-    const text = codeText(children);
+function ChatFence({ lang: info, text }: { lang?: string; text: string }) {
+    const className = info ? `language-${info}` : undefined;
     const patch = useMemo(() => (text ? fencedDiff(text, info) : null), [text, info]);
     const tokens = useCodeTokens(text, patch ? null : fenceLanguage(info));
     // A patch in a fence is coloured the way the one in a tool call is, which
     // only happens at all when the fence says what file it is a patch to.
     const patchColours = useDiffTokens(patch, info);
-    if (!inFence) return <code className={className}>{children}</code>;
     return (
-        <>
+        <pre>
             <CodeTitle info={info} text={text} />
             {patch ? (
                 <code className={`${className ?? ""} chat-code-diff`}>
@@ -645,9 +623,9 @@ function ChatCode({ className, children }: { className?: string; children?: Reac
                     <CodeTokens lines={tokens} />
                 </code>
             ) : (
-                <code className={className}>{children}</code>
+                <code className={className}>{text}</code>
             )}
-        </>
+        </pre>
     );
 }
 
@@ -689,45 +667,13 @@ function ChatTable({ children }: { children?: ReactNode }) {
     );
 }
 
-const markdownComponents = { a: ChatLink, pre: ChatPre, code: ChatCode, table: ChatTable, thead: MarkdownTableHead };
-const remarkPlugins = [remarkGfm, remarkFilePaths];
-const typedRemarkPlugins = [remarkGfm, remarkHtmlAsText, remarkFilePaths];
-
-const MarkdownBody = memo(function MarkdownBody({ text, typed }: { text: string; typed: boolean }) {
-    return (
-        <Markdown remarkPlugins={typed ? typedRemarkPlugins : remarkPlugins} urlTransform={chatUrlTransform} skipHtml components={markdownComponents}>
-            {text}
-        </Markdown>
-    );
-});
-
-/* A message still being written grows by a few characters a frame, and reading
-   all of it again costs more the longer it gets. Ten times a second looks the
-   same to a reader and leaves the frames between it free; the finished message
-   is read once more in full. */
-const LIVE_PARSE_MS = 100;
+const markdownComponents: MarkdownComponents = { link: ChatLink, fence: ChatFence, table: ChatTable, ...pathComponents(ChatLink) };
+const AGENT_MARKDOWN: MarkdownOptions = { gfm: true, htmlAsText: false, fileLinks: true };
+/* What a person typed shows its markup as the characters they typed. */
+const TYPED_MARKDOWN: MarkdownOptions = { gfm: true, htmlAsText: true, fileLinks: true };
 
 function LiveMarkdown({ text, live, typed = false }: { text: string; live: boolean; typed?: boolean }) {
-    const [shown, setShown] = useState(text);
-    const parsedAt = useRef(0);
-    useEffect(() => {
-        if (!live) {
-            setShown(text);
-            return;
-        }
-        const wait = LIVE_PARSE_MS - (Date.now() - parsedAt.current);
-        if (wait <= 0) {
-            parsedAt.current = Date.now();
-            setShown(text);
-            return;
-        }
-        const timer = window.setTimeout(() => {
-            parsedAt.current = Date.now();
-            setShown(text);
-        }, wait);
-        return () => window.clearTimeout(timer);
-    }, [live, text]);
-    return <MarkdownBody text={shown} typed={typed} />;
+    return <Markdown text={text} options={typed ? TYPED_MARKDOWN : AGENT_MARKDOWN} live={live} components={markdownComponents} />;
 }
 
 function ResourceLinkPart({ content }: { content: Extract<ChatPart, { kind: "content" }>["content"] }) {

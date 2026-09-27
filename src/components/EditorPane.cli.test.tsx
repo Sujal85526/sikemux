@@ -77,7 +77,7 @@ describe("EditorPane CLI queue", () => {
         expect(previewButton.querySelector("svg")).toBeInTheDocument();
         fireEvent.click(previewButton);
 
-        expect(editor.getByRole("heading", { name: "Preview heading" })).toBeInTheDocument();
+        expect(await editor.findByRole("heading", { name: "Preview heading" })).toBeInTheDocument();
         expect(editor.getByText("locked", { selector: "strong" })).toBeInTheDocument();
         expect(editor.getByRole("table")).toBeInTheDocument();
         expect(editor.getByRole("columnheader", { name: "Key" })).toBeInTheDocument();
@@ -107,7 +107,7 @@ describe("EditorPane CLI queue", () => {
         const editor = within(container);
         fireEvent.click(await editor.findByRole("button", { name: "Preview README.md" }));
 
-        expect(fireEvent.click(editor.getByRole("link", { name: "site" }))).toBe(false);
+        expect(fireEvent.click(await editor.findByRole("link", { name: "site" }))).toBe(false);
         expect(invoke).toHaveBeenCalledWith("open_url", { url: "https://example.com/docs", app: null, shortcut: null });
 
         expect(fireEvent.click(editor.getByRole("link", { name: "top" }))).toBe(false);

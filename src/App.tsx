@@ -94,11 +94,8 @@ import { useRailEntrance } from "./components/railMotion";
 
 const SettingsPanel = lazy(() => import("./components/SettingsPanel").then((module) => ({ default: module.SettingsPanel })));
 
-/*
- * The welcome, the release notes and the diagnostics panel, none of which exist
- * until someone opens one. They are the only reason react-markdown was in the
- * boot bundle.
- */
+/* The welcome, the release notes and the diagnostics panel, none of which exist
+   until someone opens one. */
 const Onboarding = lazy(() => import("./components/ExperienceOverlays").then((module) => ({ default: module.Onboarding })));
 const DiagnosticsOverlay = lazy(() => import("./components/ExperienceOverlays").then((module) => ({ default: module.DiagnosticsOverlay })));
 const WhatsNewOverlay = lazy(() => import("./components/WhatsNewOverlay").then((module) => ({ default: module.WhatsNewOverlay })));

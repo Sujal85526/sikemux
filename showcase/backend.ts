@@ -158,6 +158,9 @@ export class ShowcaseBackend implements IpcTransport {
     );
 
     this.on("read_dirs", ({ paths }) => server("read_dirs", { paths }));
+    this.on("markdown_parse", ({ requests }) =>
+      server("markdown", { requests }),
+    );
     this.on(
       "read_file",
       ({ path }) =>
