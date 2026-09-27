@@ -104,6 +104,7 @@ pub fn adopt(
         webview.setUIDelegate(Some(ProtocolObject::from_ref(&*delegate)));
         webview.setAllowsBackForwardNavigationGestures(true);
         webview.setAllowsMagnification(true);
+        keep_running_behind_other_windows(&webview);
         webview.addObserver_forKeyPath_options_context(
             &address_observer,
             &NSString::from_str(URL_KEY_PATH),
@@ -122,6 +123,16 @@ pub fn adopt(
             },
         );
     });
+}
+
+/// WebKit treats a page in a window covered by another app's as out of sight
+/// and stops its animation frames, but the agent keeps working in its tabs
+/// while the person is in another app.
+fn keep_running_behind_other_windows(webview: &WKWebView) {
+    let selector = sel!(_setWindowOcclusionDetectionEnabled:);
+    if webview.respondsToSelector(selector) {
+        let _: () = unsafe { msg_send![webview, _setWindowOcclusionDetectionEnabled: Bool::NO] };
+    }
 }
 
 pub fn forget(tab_id: &str) {

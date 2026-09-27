@@ -42,8 +42,9 @@ pub const BLANK_URL: &str = "about:blank";
 /// already recorded by the time an agent asks about them.
 const RECORDER_SCRIPT: &str = include_str!("recorder.js");
 const MAX_URL_LEN: usize = 8192;
-// Hiding a page is not enough on macOS: a hidden view still takes file drops
-// over the spot it last covered, so parked pages also sit outside the window.
+// Parked pages sit outside the window instead of being hidden. A hidden page
+// runs no animation frames, and React only reveals content it streamed into a
+// page on one, so a page loaded out of sight kept showing its loading state.
 const PARKED_ORIGIN: f64 = -100_000.0;
 const PARKED_BOUNDS: BrowserBounds = BrowserBounds {
     x: PARKED_ORIGIN,
@@ -706,8 +707,8 @@ impl BrowserManager {
                     let _ = view.show();
                 }
                 None => {
-                    let _ = view.hide();
                     let _ = view.set_position(LogicalPosition::new(PARKED_ORIGIN, PARKED_ORIGIN));
+                    let _ = view.show();
                 }
             }
         }
