@@ -9,6 +9,7 @@ pub const BROWSER_METHODS: &[&str] = &[
     "browser.drag",
     "browser.upload",
     "browser.dialog",
+    "browser.viewport",
     "browser.scroll",
     "browser.extract",
     "browser.evaluate",

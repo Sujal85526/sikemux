@@ -249,6 +249,19 @@ prefer the other tools for acting, since they send real input.
 `browser_scroll` moves the page by `deltaY` pixels, default 600, negative for
 up. Pass an `index` to scroll inside a scrollable element instead.
 
+A tab's viewport follows the pane, so it changes size when the person resizes
+the pane, and a tab the pane is not showing lays out at the size it last had.
+`browser_viewport` holds the current tab at `width` and `height` in CSS pixels
+(200 to 4000), or a `preset`: `desktop` is 1280×800, `tablet` 820×1180 and
+`mobile` 390×844. `preset: "fit"` lets it follow the pane again. The size
+stays through reloads and navigations in that tab. The page lays out at that
+size and is scaled down to fit the pane, never up, so screenshots and `x`,
+`y` stay in the viewport's CSS pixels. Only the size changes: a mobile preset
+keeps the desktop Safari user agent and a mouse pointer, so sites that sniff
+either still serve their desktop version. The full state reports `viewport`
+with the page's `width` and `height`, and `fixed` holding the size you set or
+`false`. With no arguments it just returns the state.
+
 `browser_wait` sleeps for `ms` (default 1000, max 30000) and then waits for any
 load to finish. Prefer it over repeated state reads when a page is settling.
 

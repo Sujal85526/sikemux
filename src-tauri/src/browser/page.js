@@ -358,6 +358,7 @@
             const cap = fullText ? FULL_TEXT_CAP : TEXT_CAP;
             return {
                 ...page,
+                viewport: { width: innerWidth, height: innerHeight },
                 elements: [...listed.values()].map((listedEntry) => listedEntry.line).join("\n"),
                 text: clip(text, cap),
                 ...(text.length > cap ? { textLength: text.length } : {}),

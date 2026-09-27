@@ -18,6 +18,7 @@ mod macos;
 #[cfg(target_os = "macos")]
 mod recording;
 pub mod tools;
+mod viewport;
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -260,6 +261,7 @@ struct AgentBrowser {
     strip: TabStrip,
     views: HashMap<String, Webview>,
     bounds: Option<BrowserBounds>,
+    viewports: HashMap<String, viewport::Viewport>,
 }
 
 #[derive(Default)]
@@ -618,6 +620,7 @@ impl BrowserManager {
                 return Err(AppError::BadArg("unknown browser tab"));
             }
             let view = agent.views.remove(tab_id);
+            agent.viewports.remove(tab_id);
             self.documents_lock().remove(tab_id);
             if agent.strip.order.is_empty() {
                 agents.remove(agent_id);
@@ -729,6 +732,42 @@ impl BrowserManager {
         }
     }
 
+    /// Holds the tab at `fixed`, or with `None` lets it follow the pane again.
+    pub fn set_viewport(
+        &self,
+        agent_id: &str,
+        tab_id: &str,
+        fixed: Option<viewport::Viewport>,
+    ) -> AppResult<()> {
+        let (view, was_fixed) = {
+            let mut agents = self.lock();
+            let agent = agents
+                .get_mut(agent_id)
+                .ok_or(AppError::BadArg("unknown browser tab"))?;
+            let view = agent
+                .views
+                .get(tab_id)
+                .cloned()
+                .ok_or(AppError::BadArg("unknown browser tab"))?;
+            let was_fixed = match fixed {
+                Some(fixed) => agent.viewports.insert(tab_id.to_owned(), fixed),
+                None => agent.viewports.remove(tab_id),
+            };
+            (view, was_fixed.is_some())
+        };
+        if fixed.is_none() && was_fixed {
+            let _ = view.set_zoom(1.0);
+        }
+        self.relayout(agent_id);
+        Ok(())
+    }
+
+    pub fn viewport(&self, agent_id: &str, tab_id: &str) -> Option<viewport::Viewport> {
+        self.lock()
+            .get(agent_id)
+            .and_then(|agent| agent.viewports.get(tab_id).copied())
+    }
+
     pub fn active_view(&self, agent_id: &str) -> AppResult<(String, Webview)> {
         validate_agent_id(agent_id)?;
         self.lock()
@@ -743,7 +782,7 @@ impl BrowserManager {
 
     /// Show the active tab inside the pane's page area and park the rest.
     fn relayout(&self, agent_id: &str) {
-        let plan: Vec<(Webview, Option<BrowserBounds>)> = {
+        let plan: Vec<(Webview, Option<BrowserBounds>, Option<viewport::Viewport>)> = {
             let agents = self.lock();
             let Some(agent) = agents.get(agent_id) else {
                 return;
@@ -753,11 +792,31 @@ impl BrowserManager {
                 .iter()
                 .map(|(id, view)| {
                     let shown = agent.strip.active.as_deref() == Some(id.as_str());
-                    (view.clone(), agent.bounds.clone().filter(|_| shown))
+                    (
+                        view.clone(),
+                        agent.bounds.clone().filter(|_| shown),
+                        agent.viewports.get(id).copied(),
+                    )
                 })
                 .collect()
         };
-        for (view, bounds) in plan {
+        for (view, bounds, fixed) in plan {
+            let bounds = match (bounds, fixed) {
+                (Some(area), Some(fixed)) => {
+                    let (placed, zoom) = viewport::fit(&area, fixed);
+                    let _ = view.set_zoom(zoom);
+                    Some(placed)
+                }
+                (None, Some(fixed)) => {
+                    let _ = view.set_zoom(1.0);
+                    let _ = view.set_size(LogicalSize::new(
+                        f64::from(fixed.width),
+                        f64::from(fixed.height),
+                    ));
+                    None
+                }
+                (bounds, None) => bounds,
+            };
             match bounds {
                 Some(bounds) => {
                     let _ = view.set_bounds(Rect {

@@ -263,9 +263,31 @@
       ]
     },
     {
+      "name": "browser_viewport",
+      "method": "browser.viewport",
+      "description": "Hold this tab at a set viewport size or preset.",
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 4000
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 4000
+        },
+        "preset": {
+          "type": "string",
+          "enum": ["desktop", "tablet", "mobile", "fit"]
+        }
+      },
+      "required": []
+    },
+    {
       "name": "browser_scroll",
       "method": "browser.scroll",
-      "description": "Scroll the page, or a numbered element, by deltaY pixels; negative is up.",
+      "description": "Scroll the page, or a numbered element, by deltaY pixels.",
       "properties": {
         "deltaY": {
           "type": "number"
@@ -280,7 +302,7 @@
     {
       "name": "browser_extract",
       "method": "browser.extract",
-      "description": "Read the page's visible text, or the parts matching a CSS selector.",
+      "description": "Read the page's text, or the parts matching a CSS selector.",
       "properties": {
         "selector": {
           "type": "string",
@@ -307,7 +329,7 @@
     {
       "name": "browser_network",
       "method": "browser.network",
-      "description": "List the tab's page loads and the page's fetch and XHR calls, with status, timing and body.",
+      "description": "List page loads and fetch/XHR calls with status, timing and body.",
       "properties": {
         "limit": {
           "type": "integer",
