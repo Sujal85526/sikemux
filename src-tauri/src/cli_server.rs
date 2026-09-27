@@ -3,10 +3,10 @@ use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter, Manager};
 use uuid::Uuid;
@@ -20,6 +20,8 @@ use crate::error::{AppError, AppResult};
 
 const CLI_EVENT: &str = "cli-open-available";
 const FRONTEND_ACCEPT_TIMEOUT: Duration = Duration::from_secs(60);
+const REQUEST_READ_DEADLINE: Duration = Duration::from_secs(10);
+const MAX_CONNECTIONS: usize = 128;
 
 #[derive(Clone)]
 pub struct CliBroker {
@@ -38,6 +40,7 @@ struct CliBrokerInner {
     requests: Mutex<HashMap<String, RequestEntry>>,
     harness: crate::harness::HarnessBroker,
     stopping: AtomicBool,
+    connections: AtomicUsize,
 }
 
 struct RequestEntry {
@@ -81,6 +84,7 @@ impl CliBroker {
                 requests: Mutex::new(HashMap::new()),
                 harness: crate::harness::HarnessBroker::default(),
                 stopping: AtomicBool::new(false),
+                connections: AtomicUsize::new(0),
             }),
         };
         let serving = broker.clone();
@@ -112,10 +116,16 @@ impl CliBroker {
                     if self.inner.stopping.load(Ordering::Acquire) {
                         return;
                     }
+                    let Some(slot) = ConnectionSlot::claim(&self.inner) else {
+                        continue;
+                    };
                     let broker = self.clone();
                     let _ = thread::Builder::new()
                         .name("sikemux-cli-client".into())
-                        .spawn(move || broker.serve(stream));
+                        .spawn(move || {
+                            broker.serve(stream);
+                            drop(slot);
+                        });
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
                 Err(_) => thread::sleep(Duration::from_millis(100)),
@@ -131,7 +141,11 @@ impl CliBroker {
             Ok(value) => value,
             Err(_) => return,
         };
-        let mut reader = BufReader::new(cloned).take(MAX_CLI_FRAME_BYTES + 1);
+        let mut reader = BufReader::new(DeadlineReader {
+            stream: cloned,
+            deadline: Instant::now() + REQUEST_READ_DEADLINE,
+        })
+        .take(MAX_CLI_FRAME_BYTES + 1);
         let mut frame = Vec::new();
         if reader.read_until(b'\n', &mut frame).is_err() {
             let _ = write_response(
@@ -509,6 +523,44 @@ impl CliBroker {
     }
 }
 
+struct ConnectionSlot(Arc<CliBrokerInner>);
+
+impl ConnectionSlot {
+    fn claim(inner: &Arc<CliBrokerInner>) -> Option<Self> {
+        inner
+            .connections
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |open| {
+                (open < MAX_CONNECTIONS).then_some(open + 1)
+            })
+            .ok()
+            .map(|_| Self(inner.clone()))
+    }
+}
+
+impl Drop for ConnectionSlot {
+    fn drop(&mut self) {
+        self.0.connections.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+/// Reads until one deadline for the whole request, so a client sending a byte
+/// every few seconds cannot keep its thread forever.
+struct DeadlineReader {
+    stream: TcpStream,
+    deadline: Instant,
+}
+
+impl Read for DeadlineReader {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        let left = self.deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(std::io::ErrorKind::TimedOut.into());
+        }
+        self.stream.set_read_timeout(Some(left))?;
+        self.stream.read(buffer)
+    }
+}
+
 fn configure_client_stream(stream: &TcpStream) -> std::io::Result<()> {
     // The listening socket is nonblocking so the broker thread can observe
     // shutdown promptly. Accepted sockets can inherit that flag on supported
@@ -850,6 +902,36 @@ mod tests {
             fs::metadata(dir.path()).unwrap().permissions().mode() & 0o777,
             0o755
         );
+    }
+
+    #[test]
+    fn a_dripping_client_runs_out_of_time_for_the_whole_request() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let writer = std::thread::spawn(move || {
+            let mut client = TcpStream::connect(address).unwrap();
+            for _ in 0..20 {
+                if client.write_all(b" ").is_err() {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(30));
+            }
+        });
+        let (stream, _) = listener.accept().unwrap();
+        let mut reader = BufReader::new(DeadlineReader {
+            stream,
+            deadline: Instant::now() + Duration::from_millis(150),
+        });
+        let started = Instant::now();
+        let mut frame = Vec::new();
+        let error = reader.read_until(b'\n', &mut frame).unwrap_err();
+        assert!(matches!(
+            error.kind(),
+            std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+        ));
+        assert!(started.elapsed() < Duration::from_millis(400));
+        drop(reader);
+        writer.join().unwrap();
     }
 
     #[cfg(unix)]
