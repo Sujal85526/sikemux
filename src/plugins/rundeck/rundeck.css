@@ -197,45 +197,52 @@
 }
 .rnd-tree-row {
     display: flex;
-    align-items: center;
+    align-items: stretch;
     height: 28px;
     flex: 0 0 auto;
+    cursor: pointer;
+    outline: none;
+}
+.rnd-tree-item {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
     padding: 0 var(--space-2) 0 var(--space-1);
     border: 1px solid transparent;
     border-radius: var(--radius-2);
     color: var(--text-secondary);
-    cursor: pointer;
-    outline: none;
     transition:
         background var(--dur-1) linear,
         color var(--dur-1) linear;
 }
-.rnd-tree-row:hover {
+.rnd-tree-row:hover .rnd-tree-item {
     background: var(--surface-hover);
     color: var(--text-primary);
 }
-.rnd-tree-row.on {
+.rnd-tree-item.on,
+.rnd-tree-row:hover .rnd-tree-item.on {
     background: var(--surface-selected);
     border-color: var(--border-selected);
     color: var(--text-primary);
 }
-.rnd-tree-row:focus-visible {
+.rnd-tree-row:focus-visible .rnd-tree-item {
     box-shadow: var(--focus-ring);
 }
 .rnd-tree-guide {
     position: relative;
     width: 16px;
     flex: 0 0 auto;
-    align-self: stretch;
 }
+/* Sits under the parent row's arrow: its border, its left padding, then half the arrow's slot. */
 .rnd-tree-guide::before {
     content: "";
     position: absolute;
-    left: 9px;
-    top: -1px;
-    bottom: -1px;
+    left: 13px;
+    top: 0;
+    bottom: 0;
     width: 1px;
-    background: var(--border);
+    background: color-mix(in oklab, var(--ink) 9%, transparent);
 }
 .rnd-tree-twist {
     width: 18px;
@@ -267,7 +274,7 @@ button.rnd-tree-twist:hover {
     margin-right: var(--space-2);
     color: var(--text-tertiary);
 }
-.rnd-tree-row.on .rnd-tree-icon {
+.rnd-tree-item.on .rnd-tree-icon {
     color: var(--acc);
 }
 .rnd-tree-name {

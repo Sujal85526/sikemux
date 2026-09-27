@@ -160,7 +160,7 @@ function TreeRow({ paneId, project, path, name, depth, count, expandable, open, 
     };
     return (
         <div
-            className={`rnd-tree-row${selected ? " on" : ""}`}
+            className="rnd-tree-row"
             role="treeitem"
             aria-level={depth + 1}
             aria-selected={selected}
@@ -180,27 +180,29 @@ function TreeRow({ paneId, project, path, name, depth, count, expandable, open, 
             {Array.from({ length: depth }, (_, i) => (
                 <span key={i} className="rnd-tree-guide" />
             ))}
-            {expandable ? (
-                <button
-                    type="button"
-                    className={`rnd-tree-twist${open ? " open" : ""}`}
-                    tabIndex={-1}
-                    aria-label={open ? "Collapse" : "Expand"}
-                    onClick={(event) => {
-                        event.stopPropagation();
-                        cmd.setTreeOpen(paneId, cmd.treeKey(project, path), !open);
-                    }}>
-                    <IconChevron size={10} />
-                </button>
-            ) : (
-                <span className="rnd-tree-twist" />
-            )}
-            <span className="rnd-tree-icon">
-                <IconFolder size={14} />
+            <span className={`rnd-tree-item${selected ? " on" : ""}`}>
+                {expandable ? (
+                    <button
+                        type="button"
+                        className={`rnd-tree-twist${open ? " open" : ""}`}
+                        tabIndex={-1}
+                        aria-label={open ? "Collapse" : "Expand"}
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            cmd.setTreeOpen(paneId, cmd.treeKey(project, path), !open);
+                        }}>
+                        <IconChevron size={10} />
+                    </button>
+                ) : (
+                    <span className="rnd-tree-twist" />
+                )}
+                <span className="rnd-tree-icon">
+                    <IconFolder size={14} />
+                </span>
+                <span className="rnd-tree-name">{name}</span>
+                {live && <span className="rnd-live-dot" title="A job in here is running" />}
+                {error ? <span className="rnd-tree-count err">!</span> : count !== null && <span className="rnd-tree-count">{count}</span>}
             </span>
-            <span className="rnd-tree-name">{name}</span>
-            {live && <span className="rnd-live-dot" title="A job in here is running" />}
-            {error ? <span className="rnd-tree-count err">!</span> : count !== null && <span className="rnd-tree-count">{count}</span>}
         </div>
     );
 }
