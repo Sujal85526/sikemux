@@ -129,10 +129,11 @@ const budgets = [
     // colours are: the grammar table, the token cache, the tokens' own markup
     // and the splitting a diff line's changed span needs. Shiki itself is a
     // chunk of its own, fetched only once a block that can use it settles.
+    // Tool calls also carry what they printed now, opened under the row.
     label: "ACP chat lazy chunk",
     pattern: /^AgentSurface-.*\.js$/,
-    raw: 84_500,
-    gzip: 27_600,
+    raw: 89_000,
+    gzip: 28_900,
   },
   {
     // Shiki, its JavaScript regex engine and vscode-textmate, with no
@@ -141,14 +142,14 @@ const budgets = [
     // shared by both from then on.
     label: "Highlighter lazy chunk (shiki core + JS engine, no grammars)",
     pattern: /^highlighter-.*\.js$/,
-    raw: 680_000,
-    gzip: 190_000,
+    raw: 150_000,
+    gzip: 47_000,
   },
   {
     label: "Diffs lazy chunk (pierre/diffs, no highlighter)",
     pattern: /^diffs-.*\.js$/,
-    raw: 60_000,
-    gzip: 20_000,
+    raw: 610_000,
+    gzip: 165_000,
   },
   {
     label: "Diffs language grammar chunks (one per language, loaded on demand)",
@@ -185,13 +186,13 @@ const budgets = [
   {
     // The chat pane has since grown rows the budget predates: subagent
     // transcripts, background tasks, queued messages, the reconnect states,
-    // code block copy buttons and the composer microphone. It is one lazily
-    // loaded sheet behind an agent pane, so this buys those rows room without
-    // touching what the app loads at startup.
+    // code block copy buttons, the composer microphone, and a tool call's
+    // output. It is one lazily loaded sheet behind an agent pane, so this buys
+    // those rows room without touching what the app loads at startup.
     label: "ACP chat CSS",
     pattern: /^AgentSurface-.*\.css$/,
-    raw: 39_500,
-    gzip: 7_400,
+    raw: 42_400,
+    gzip: 7_900,
   },
   {
     // Includes the JetBrainsMono Nerd Font @font-face rules: a base face per
