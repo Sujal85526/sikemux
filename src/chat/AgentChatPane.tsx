@@ -23,6 +23,7 @@ import { invokeCommand as invoke } from "../api/invoke";
 import { ComposerPickers, sessionConfigs, type SessionConfig } from "./ComposerPickers";
 import { rateLabel, rowMeta } from "./messageMeta";
 import { CopyButton } from "../components/CopyButton";
+import { FileIcon } from "../components/FileIcon";
 import { MarkdownTableHead } from "../lib/markdownTable";
 import { basename } from "../lib/paths";
 import { hasPrimaryModifier, PRIMARY_SHORTCUT } from "../lib/platform";
@@ -495,7 +496,18 @@ function codeText(children: ReactNode): string {
     return "";
 }
 
+const InFenceContext = createContext(false);
+
+function ChatPre({ children }: { children?: ReactNode }) {
+    return (
+        <pre>
+            <InFenceContext.Provider value={true}>{children}</InFenceContext.Provider>
+        </pre>
+    );
+}
+
 function ChatCode({ className, children }: { className?: string; children?: ReactNode }) {
+    const inFence = useContext(InFenceContext);
     const info = /language-(\S+)/.exec(className ?? "")?.[1];
     const text = codeText(children);
     const patch = useMemo(() => (text ? fencedDiff(text, info) : null), [text, info]);
@@ -503,10 +515,10 @@ function ChatCode({ className, children }: { className?: string; children?: Reac
     // A patch in a fence is coloured the way the one in a tool call is, which
     // only happens at all when the fence says what file it is a patch to.
     const patchColours = useDiffTokens(patch, info);
-    if (!info && !patch) return <code className={className}>{children}</code>;
+    if (!inFence) return <code className={className}>{children}</code>;
     return (
         <>
-            {info && <CodeTitle info={info} />}
+            <CodeTitle info={info} text={text} />
             {patch ? (
                 <code className={`${className ?? ""} chat-code-diff`}>
                     {patch.map((line, index) => (
@@ -529,19 +541,22 @@ function ChatCode({ className, children }: { className?: string; children?: Reac
 
 /* A fence says what file it quotes, when it says anything at all. The name is
    the file itself where the project has one; a bare language name is not. */
-function CodeTitle({ info }: { info: string }) {
-    const name = decodeURIComponent(info);
-    const file = useFileRef(name);
+function CodeTitle({ info, text }: { info?: string; text: string }) {
+    const name = info ? decodeURIComponent(info) : "";
+    const file = useFileRef(name || undefined);
     return (
         <span className="chat-code-title">
             {file ? (
                 <ChatFileRef refers={file.ref} state={file.state} label={name} size={16} />
             ) : (
-                <>
-                    <IconFile size={10} />
-                    {name}
-                </>
+                name && (
+                    <span className="chat-code-name">
+                        <FileIcon name={name} size={16} />
+                        {name}
+                    </span>
+                )
             )}
+            <CopyButton className="chat-code-copy" value={text.replace(/\n$/, "")} label="code" size={12} />
         </span>
     );
 }
@@ -554,7 +569,7 @@ function ChatTable({ children }: { children?: ReactNode }) {
     );
 }
 
-const markdownComponents = { a: ChatLink, code: ChatCode, table: ChatTable, thead: MarkdownTableHead };
+const markdownComponents = { a: ChatLink, pre: ChatPre, code: ChatCode, table: ChatTable, thead: MarkdownTableHead };
 const remarkPlugins = [remarkGfm, remarkFilePaths];
 const typedRemarkPlugins = [remarkGfm, remarkHtmlAsText, remarkFilePaths];
 

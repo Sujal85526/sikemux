@@ -201,6 +201,7 @@ const BY_LANGUAGE: Record<string, GlyphInfo> = {
     scheme: { char: "󰘧", color: "#eeeeee" },
     scss: { char: "", color: "#cf649a" },
     shellscript: { char: "", color: "#89e051" },
+    shellsession: { char: "", color: "#89e051" },
     solidity: { char: "", color: "#519aba" },
     sql: { char: "", color: "#dad8d8" },
     stylus: { char: "", color: "#8dc149" },

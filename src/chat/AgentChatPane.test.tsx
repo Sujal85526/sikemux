@@ -955,6 +955,28 @@ describe("AgentChatPane", () => {
         expect(document.querySelectorAll(".chat-code-diff")).toHaveLength(1);
     });
 
+    it("heads a fence with its language's icon and a copy button, and leaves inline code bare", async () => {
+        await openTranscript();
+        emit("session_update", {
+            sessionId: "session-1",
+            update: {
+                sessionUpdate: "agent_message_chunk",
+                content: { type: "text", text: "Run `ls` first.\n\n```sh\nmkdir -p out\n```\n\n```\nplain\n```\n" },
+            },
+        });
+
+        const titles = await waitFor(() => {
+            const found = document.querySelectorAll(".chat-code-title");
+            expect(found).toHaveLength(2);
+            return found;
+        });
+        expect(titles[0].querySelector(".file-glyph")).toHaveStyle({ color: "#89e051" });
+        expect(titles[0]).toHaveTextContent("sh");
+        expect(titles[1].querySelector(".file-glyph")).toBeNull();
+        expect(screen.getAllByRole("button", { name: "Copy code" })).toHaveLength(2);
+        expect(screen.getByText("ls").closest("pre")).toBeNull();
+    });
+
     it("watches a working subagent over the composer and settles its card when the turn ends", async () => {
         await openTranscript();
         emit("turn_started", {});
