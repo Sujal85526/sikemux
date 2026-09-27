@@ -266,4 +266,36 @@ mod tests {
         assert_eq!(kinds(&unified_rows("", "a\nb", false)), "++");
         assert!(unified_rows("same\n", "same\n", false).is_empty());
     }
+
+    #[test]
+    fn deletions_come_before_the_additions_that_replace_them() {
+        let old = include_str!("testdata/diff_order_base.ts.txt");
+        let new = include_str!("testdata/diff_order_head.ts.txt");
+        let rows = unified_rows(old, new, false);
+
+        for run in rows.split(|row| row.0 == ROW_CONTEXT || row.0 == ROW_HIDDEN) {
+            let first_added = run
+                .iter()
+                .position(|row| row.0 == ROW_ADDED)
+                .unwrap_or(run.len());
+            assert!(
+                run[first_added..].iter().all(|row| row.0 == ROW_ADDED),
+                "{run:?}"
+            );
+        }
+        let older = rows
+            .iter()
+            .position(|row| row.2.starts_with("older { AgentIcon"))
+            .unwrap();
+        assert_eq!(rows[older].0, ROW_DELETED);
+        assert_eq!(rows[older].1, 11);
+        assert_eq!((rows[older + 1].0, rows[older + 1].1), (ROW_ADDED, 12));
+        assert!(rows[older + 1].2.starts_with("import { AgentIcon"));
+        let comment = rows
+            .iter()
+            .position(|row| row.2.contains("Aolder open agent's row"))
+            .unwrap();
+        assert_eq!((rows[comment].0, rows[comment].1), (ROW_DELETED, 41));
+        assert_eq!((rows[comment + 1].0, rows[comment + 1].1), (ROW_ADDED, 41));
+    }
 }
