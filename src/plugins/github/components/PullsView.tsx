@@ -6,7 +6,7 @@ import { githubPullFilesR, githubPullR, githubPullReviewsR, githubPullsR } from 
 import { formatAgo } from "../runStatus";
 import { setListState, showItem } from "../state";
 import { CommentThread } from "./CommentThread";
-import { Labels, StateChip } from "./Bits";
+import { Labels, StateMark } from "./Bits";
 import { useNow } from "./hooks";
 
 const LIST_STATES = ["open", "closed", "all"];
@@ -28,7 +28,7 @@ export function reviewVerdict(reviews: readonly { author: string | null; state: 
 function PullRow({ pull, now, onOpen }: { pull: Pull; now: number; onOpen: () => void }) {
     return (
         <button type="button" className="gha-item-row" onClick={onOpen}>
-            <StateChip kind="pull" state={pull.state} draft={pull.draft} />
+            <StateMark kind="pull" state={pull.state} draft={pull.draft} />
             <span className="gha-item-main">
                 <span className="gha-item-title">{pull.title}</span>
                 <span className="gha-item-sub">
@@ -92,7 +92,7 @@ function PullDetail({ repo, number, active, onBack }: { repo: RepoRef; number: n
             </button>
             <div className="gha-detail-head">
                 <div className="gha-detail-title-row">
-                    <StateChip kind="pull" state={found.state} draft={found.draft} />
+                    <StateMark kind="pull" state={found.state} draft={found.draft} />
                     <h2 className="gha-detail-title">{found.title}</h2>
                     <span className="gha-mono gha-dim">#{found.number}</span>
                 </div>

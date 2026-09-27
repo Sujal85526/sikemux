@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { readableOn } from "./Bits";
+import { readableOn, stateOf } from "./Bits";
 import { reasonLabel } from "./InboxView";
 import { reviewVerdict } from "./PullsView";
+import { latestOf } from "./ReleasesView";
+import type { Release } from "../api";
 
 describe("readableOn", () => {
     it("puts dark text on a pale label and light text on a dark one", () => {
@@ -52,5 +54,45 @@ describe("reasonLabel", () => {
 
     it("makes an unknown reason readable rather than dropping it", () => {
         expect(reasonLabel("something_new")).toBe("something new");
+    });
+});
+
+describe("stateOf", () => {
+    it("reads a draft as its own state rather than as open", () => {
+        expect(stateOf("open", true)).toBe("draft");
+        expect(stateOf("open", false)).toBe("open");
+    });
+
+    it("leaves a finished one alone, draft flag or not", () => {
+        expect(stateOf("merged", false)).toBe("merged");
+        expect(stateOf("closed", true)).toBe("closed");
+    });
+});
+
+describe("latestOf", () => {
+    const release = (id: number, draft: boolean, prerelease: boolean): Release => ({
+        id,
+        tag: `v${id}`,
+        name: `v${id}`,
+        body: "",
+        draft,
+        prerelease,
+        publishedAt: null,
+        author: null,
+        assets: [],
+        url: "",
+    });
+
+    it("marks the newest one that is neither a draft nor a pre-release", () => {
+        expect(latestOf([release(3, false, true), release(2, false, false), release(1, false, false)])).toBe(2);
+    });
+
+    it("skips drafts", () => {
+        expect(latestOf([release(3, true, false), release(2, false, false)])).toBe(2);
+    });
+
+    it("marks nothing when every release is a pre-release", () => {
+        expect(latestOf([release(2, false, true), release(1, true, false)])).toBeNull();
+        expect(latestOf([])).toBeNull();
     });
 });
