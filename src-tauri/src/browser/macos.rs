@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::ffi::c_void;
 use std::ptr::NonNull;
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use block2::RcBlock;
 use objc2::rc::Retained;
@@ -33,11 +34,16 @@ use objc2_web_kit::{
 };
 use tauri::{AppHandle, Emitter};
 
+use super::burst::Burst;
 use super::documents::DocumentEvent;
 use super::{BrowserShortcut, PageDialog, BROWSER_SHORTCUT_EVENT};
 
 /// The property the tab watches to hear about a page that moved on its own.
 const URL_KEY_PATH: &str = "URL";
+/// Past this many dialogs in `DIALOG_WINDOW`, a page's dialogs are answered
+/// with Cancel unseen, the way browsers offer to stop a page's dialogs.
+const DIALOG_LIMIT: usize = 3;
+const DIALOG_WINDOW: Duration = Duration::from_secs(10);
 
 struct NativeTab {
     agent_id: String,
@@ -718,6 +724,7 @@ fn load_error(error: &NSError) -> String {
 struct TabUiDelegateIvars {
     inner: Option<Retained<ProtocolObject<dyn WKUIDelegate>>>,
     tab_id: String,
+    dialogs: RefCell<Burst>,
     dialog: Rc<dyn Fn(Option<PageDialog>)>,
     upload: Box<dyn Fn() -> Option<Vec<std::path::PathBuf>>>,
 }
@@ -888,6 +895,7 @@ impl TabUiDelegate {
         let delegate = mtm.alloc::<TabUiDelegate>().set_ivars(TabUiDelegateIvars {
             inner,
             tab_id,
+            dialogs: RefCell::new(Burst::new(DIALOG_LIMIT, DIALOG_WINDOW)),
             dialog,
             upload,
         });
@@ -916,6 +924,10 @@ fn present_sheet(
         answer(false, String::new());
         return;
     };
+    if !tab.dialogs.borrow_mut().admit(Instant::now()) {
+        answer(false, String::new());
+        return;
+    }
     let host = unsafe { frame.securityOrigin().host().to_string() };
     let alert = NSAlert::new(mtm);
     let title = if host.is_empty() {
