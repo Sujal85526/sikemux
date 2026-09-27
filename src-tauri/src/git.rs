@@ -2996,6 +2996,9 @@ fn run_ai_commit_model(
                 "--no-session-persistence",
                 "--tools",
                 "",
+                "--setting-sources",
+                "user",
+                "--strict-mcp-config",
             ]);
             (
                 command,
