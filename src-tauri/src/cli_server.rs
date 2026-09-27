@@ -581,9 +581,11 @@ fn write_endpoint(path: &Path, descriptor: &CliEndpointDescriptor) -> AppResult<
     let parent = path
         .parent()
         .ok_or_else(|| AppError::State("invalid CLI endpoint path".into()))?;
+    let ours = !parent.exists()
+        || default_cli_endpoint_path().is_some_and(|default| default.parent() == Some(parent));
     fs::create_dir_all(parent)?;
     #[cfg(unix)]
-    {
+    if ours {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(parent, fs::Permissions::from_mode(0o700))?;
     }
@@ -620,6 +622,10 @@ pub fn cli_endpoint_path() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("SIKEMUX_CLI_ENDPOINT_PUBLISH") {
         return Some(PathBuf::from(path));
     }
+    default_cli_endpoint_path()
+}
+
+fn default_cli_endpoint_path() -> Option<PathBuf> {
     let parent = crate::state::state_path()?.parent()?.to_path_buf();
     Some(parent.join(if cfg!(debug_assertions) {
         "cli.dev.json"
@@ -824,6 +830,25 @@ mod tests {
         assert_eq!(
             fs::metadata(path).unwrap().permissions().mode() & 0o777,
             0o600
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_existing_endpoint_directory_keeps_its_permissions() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o755)).unwrap();
+        let descriptor = CliEndpointDescriptor {
+            protocol: 1,
+            pid: 1,
+            port: 42,
+            token: "token".into(),
+            version: "test".into(),
+        };
+        write_endpoint(&dir.path().join("cli.json"), &descriptor).unwrap();
+        assert_eq!(
+            fs::metadata(dir.path()).unwrap().permissions().mode() & 0o777,
+            0o755
         );
     }
 
