@@ -132,3 +132,24 @@ describe("moving a pane back to the tab bar", () => {
         expect(screen.queryByRole("button", { name: "Move back to the tab bar" })).toBeNull();
     });
 });
+
+describe("a split tab in the strip", () => {
+    it("shows each pane as a tab, outlined together, and focuses the one clicked", () => {
+        cmd.newWindow();
+        const [first, second] = getState().windowsBySession[getState().activeSessionId];
+        const secondPane = collectPanes(getState().windows[second].root)[0].id;
+        cmd.splitWithTab(getState().activeSessionId, { id: first }, "left");
+        const { container } = render(<WorkspaceTabs />);
+
+        const group = container.querySelector(".tab-group")!;
+        const members = group.querySelectorAll("[role='tab']");
+        expect(members).toHaveLength(2);
+        expect(Array.from(members).filter((tab) => tab.getAttribute("aria-selected") === "true")).toHaveLength(1);
+
+        const unfocused = Array.from(members).find((tab) => tab.getAttribute("aria-selected") === "false")!;
+        fireEvent.click(unfocused);
+
+        expect(shown().activePaneId).toBe(secondPane);
+        expect(unfocused).toHaveAttribute("aria-selected", "true");
+    });
+});

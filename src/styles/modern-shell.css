@@ -594,6 +594,18 @@ textarea:focus,
     align-items: center;
 }
 
+/* The panes of one split, outlined together. Each keeps its own pill inside. */
+.tabbar .tab-group {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 2px;
+    border-radius: calc(var(--radius-2) + 2px);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--acc) 28%, var(--border));
+    background: color-mix(in srgb, var(--acc) 5%, transparent);
+}
+
 /*
  * Every tab is a shape; only the selected one is a surface.
  *
