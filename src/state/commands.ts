@@ -1686,9 +1686,7 @@ export function titleAgentFromPrompt(id: string, text: string): void {
     mutate((d) => {
         const agent = d.agents[id];
         if (!agent) return;
-        const profile = agent.profileId
-            ? d.providerProfiles.find((item) => item.id === agent.profileId && item.provider === agent.type)
-            : undefined;
+        const profile = agent.profileId ? d.providerProfiles.find((item) => item.id === agent.profileId && item.provider === agent.type) : undefined;
         if (agent.title !== (profile?.name || agent.type)) return;
         agent.title = [...title].slice(0, PROMPT_TITLE_MAX).join("");
     });
