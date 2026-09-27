@@ -601,7 +601,7 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, wi
             );
         }
         const e = row.entry;
-        const pad = 10 + row.depth * 13;
+        const pad = 4 + row.depth * 13;
         if (renaming === e.path) {
             return (
                 <RenameRow
@@ -952,7 +952,7 @@ function NewEntryRow({
     onCancel: () => void;
     inputRef: React.RefObject<HTMLInputElement | null>;
 }) {
-    const pad = 10 + depth * 13;
+    const pad = 4 + depth * 13;
     return (
         <div className="tree-row tree-new" style={{ paddingLeft: pad + 13 }}>
             <span className="tree-file">{kind === "folder" ? <IconFolder size={17} /> : <FileIcon name="" size={20} />}</span>
@@ -993,7 +993,7 @@ function RenameRow({
     onCancel: () => void;
     inputRef: React.RefObject<HTMLInputElement | null>;
 }) {
-    const pad = 10 + depth * 13;
+    const pad = 4 + depth * 13;
     return (
         <div className="tree-row tree-new" style={{ paddingLeft: pad }}>
             {kind === "folder" ? (
