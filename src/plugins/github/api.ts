@@ -76,6 +76,7 @@ export interface Run {
     name: string;
     title: string;
     workflowId: number;
+    path: string | null;
     runNumber: number;
     attempt: number;
     event: string;
@@ -99,6 +100,7 @@ export interface RunQuery extends RepoRef {
     status?: RunStatus;
     event?: string;
     actor?: string;
+    headSha?: string;
     page?: number;
     perPage?: number;
 }
@@ -376,6 +378,8 @@ export const actionsApi = {
     rerun: (repo: RepoRef, runId: number, failedOnly: boolean, debug = false) => backend.call<void>("rerun", { ...repo, runId, failedOnly, debug }),
     rerunJob: (repo: RepoRef, jobId: number, debug = false) => backend.call<void>("rerunJob", { ...repo, jobId, debug }),
     cancel: (repo: RepoRef, runId: number) => backend.call<void>("cancel", { ...repo, runId }),
+    deleteRunLogs: (repo: RepoRef, runId: number) => backend.call<void>("deleteRunLogs", { ...repo, runId }),
+    deleteRun: (repo: RepoRef, runId: number) => backend.call<void>("deleteRun", { ...repo, runId }),
     downloadArtifact: (repo: RepoRef, artifactId: number, name: string) =>
         backend.call<SavedArtifact>("downloadArtifact", { ...repo, artifactId, name }),
     reviewDeployment: (repo: RepoRef, runId: number, environmentIds: number[], state: "approved" | "rejected", comment = "") =>

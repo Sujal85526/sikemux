@@ -143,6 +143,8 @@ impl Plugin for GithubActions {
                 "rerun" => answer(runs::rerun(data_dir, params(input)?)).await,
                 "rerunJob" => answer(runs::rerun_job(data_dir, params(input)?)).await,
                 "cancel" => answer(runs::cancel(data_dir, params(input)?)).await,
+                "deleteRunLogs" => answer(runs::delete_logs(data_dir, params(input)?)).await,
+                "deleteRun" => answer(runs::delete(data_dir, params(input)?)).await,
                 "runAttempt" => answer(runs::attempt(data_dir, params(input)?)).await,
 
                 "jobLog" => answer(logs::job(data_dir, params(input)?)).await,
