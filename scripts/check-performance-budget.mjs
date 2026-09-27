@@ -129,11 +129,12 @@ const budgets = [
     // colours are: the grammar table, the token cache, the tokens' own markup
     // and the splitting a diff line's changed span needs. Shiki itself is a
     // chunk of its own, fetched only once a block that can use it settles.
-    // Tool calls also carry what they printed now, opened under the row.
+    // Tool calls also carry what they printed now, opened under the row, and
+    // the transcript animates new messages and tool runs opening and closing.
     label: "ACP chat lazy chunk",
     pattern: /^AgentSurface-.*\.js$/,
-    raw: 91_000,
-    gzip: 28_900,
+    raw: 93_000,
+    gzip: 29_700,
   },
   {
     // Shiki, its JavaScript regex engine and vscode-textmate, with no
@@ -165,13 +166,14 @@ const budgets = [
   },
   {
     // Rolldown reaches CommonJS exports such as React's jsx through
-    // `(0, ns.jsx)(...)` at every call site, which Rollup did not.
+    // `(0, ns.jsx)(...)` at every call site, which Rollup did not. The app's
+    // motion (glides, rows opening and closing, overlays fading) lives here too.
     label: "default-path JavaScript except Diffs and its grammar chunks",
     pattern: new RegExp(
       `^(?!(?:diffs|highlighter|worker|wasm|paper-shaders|xterm-webgl|${diffLanguageChunkNames.join("|")})-).*\\.js$`,
     ),
-    raw: 3_220_000,
-    gzip: 1_030_000,
+    raw: 3_240_000,
+    gzip: 1_040_000,
   },
   {
     label: "opt-in shader renderer",
