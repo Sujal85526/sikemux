@@ -1,5 +1,7 @@
 // Runs inside a browser tab on behalf of the agent. Elements the agent may
 // act on are numbered by `state` and looked up by that number afterwards.
+// It runs in a script world of its own: it shares the page's DOM, but the
+// page's scripts can neither see it nor replace the built-ins it uses.
 (() => {
     if (window.__sikemux) return;
     const INTERACTIVE =
@@ -535,23 +537,6 @@
             if (target) target.scrollBy({ top: deltaY, behavior: "instant" });
             else scrollBy({ top: deltaY, behavior: "instant" });
             return { y: Math.round(target ? target.scrollTop : scrollY) };
-        },
-        network(limit, filter) {
-            const recorder = window.__sikemuxNet;
-            if (!recorder) return { recording: false, note: "this tab has not recorded anything; reload the page and retry the action" };
-            const all = recorder.entries();
-            const needle = filter ? String(filter).toLowerCase() : "";
-            const matched = needle ? all.filter((entry) => entry.url.toLowerCase().includes(needle)) : all;
-            const keep = Math.max(1, Math.min(100, Number(limit) || 20));
-            return { recording: true, url: location.href, recorded: all.length, matched: matched.length, calls: matched.slice(-keep) };
-        },
-        console(limit, errorsOnly) {
-            const recorder = window.__sikemuxConsole;
-            if (!recorder) return { recording: false, note: "this tab has not recorded anything; reload the page and retry the action" };
-            const all = recorder.entries();
-            const matched = errorsOnly ? all.filter((entry) => entry.level !== "log" && entry.level !== "info" && entry.level !== "debug") : all;
-            const keep = Math.max(1, Math.min(200, Number(limit) || 50));
-            return { recording: true, url: location.href, recorded: all.length, matched: matched.length, messages: matched.slice(-keep) };
         },
         extract(selector) {
             const roots = selector ? [...document.querySelectorAll(selector)] : [document.body];

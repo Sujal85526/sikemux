@@ -11,6 +11,7 @@ use super::{BrowserManager, BLANK_URL};
 use crate::harness::HarnessRequest;
 
 const PAGE_SCRIPT: &str = include_str!("page.js");
+const RECORDS_SCRIPT: &str = include_str!("records.js");
 const EVAL_TIMEOUT: Duration = Duration::from_secs(10);
 const LOAD_TIMEOUT: Duration = Duration::from_secs(20);
 const SETTLE: Duration = Duration::from_millis(250);
@@ -322,7 +323,7 @@ async fn run(
                 Some(_) => return Err("since must be \"navigation\"".into()),
             };
             let (tab_id, view) = active(&manager, agent_id)?;
-            let mut result = call(
+            let mut result = read_records(
                 &view,
                 "network",
                 &[
@@ -378,7 +379,7 @@ async fn run(
         }
         "browser.console" => {
             let (_, view) = active(&manager, agent_id)?;
-            call(
+            read_records(
                 &view,
                 "console",
                 &[
@@ -616,6 +617,7 @@ mod native {
     #[cfg(target_os = "macos")]
     mod platform {
         use super::super::super::input;
+        use super::super::super::macos::World;
         use super::super::on_tab;
         use super::Mouse;
         use tauri::Webview;
@@ -662,22 +664,43 @@ mod native {
         }
 
         pub async fn run_script(view: &Webview, body: &str) -> Result<String, String> {
+            match run_in(view, body, World::Page, super::super::SCRIPT_TIMEOUT).await {
+                Err(None) => Err("the script did not finish within 30 seconds".into()),
+                other => other.map_err(Option::unwrap_or_default),
+            }
+        }
+
+        pub async fn run_helper(view: &Webview, body: &str) -> Result<String, String> {
+            match run_in(view, body, World::Helper, super::super::EVAL_TIMEOUT).await {
+                Err(None) => Err("the page took too long to answer".into()),
+                other => other.map_err(Option::unwrap_or_default),
+            }
+        }
+
+        /// `Err(None)` when the script ran out of time.
+        async fn run_in(
+            view: &Webview,
+            body: &str,
+            world: World,
+            limit: std::time::Duration,
+        ) -> Result<String, Option<String>> {
             let (sender, receiver) = tokio::sync::oneshot::channel();
             let body = body.to_owned();
             view.with_webview(move |platform| {
                 super::super::super::macos::call_async(
                     platform.inner(),
                     &body,
+                    world,
                     Box::new(move |result| {
                         let _ = sender.send(result);
                     }),
                 );
             })
-            .map_err(|error| error.to_string())?;
-            match tokio::time::timeout(super::super::SCRIPT_TIMEOUT, receiver).await {
-                Ok(Ok(result)) => result,
-                Ok(Err(_)) => Err("the tab went away".into()),
-                Err(_) => Err("the script did not finish within 30 seconds".into()),
+            .map_err(|error| Some(error.to_string()))?;
+            match tokio::time::timeout(limit, receiver).await {
+                Ok(Ok(result)) => result.map_err(Some),
+                Ok(Err(_)) => Err(Some("the tab went away".into())),
+                Err(_) => Err(None),
             }
         }
 
@@ -715,6 +738,10 @@ mod native {
         }
 
         pub async fn run_script(_: &Webview, _: &str) -> Result<String, String> {
+            Err(UNSUPPORTED.into())
+        }
+
+        pub async fn run_helper(_: &Webview, _: &str) -> Result<String, String> {
             Err(UNSUPPORTED.into())
         }
 
@@ -763,6 +790,11 @@ mod native {
 
     pub async fn run_script(view: &Webview, body: &str) -> Result<String, String> {
         platform::run_script(view, body).await
+    }
+
+    /// Runs `body` where the page's scripts cannot reach it.
+    pub async fn run_helper(view: &Webview, body: &str) -> Result<String, String> {
+        platform::run_helper(view, body).await
     }
 
     pub async fn start_recording(
@@ -956,15 +988,16 @@ async fn settle(manager: &BrowserManager, agent_id: &str, tab_id: &str) {
 /// script always answers with a JSON string, because WebKit refuses to hand
 /// back anything it cannot serialize.
 async fn call(view: &Webview, function: &str, args: &[Value]) -> Result<Value, String> {
-    let args = args
-        .iter()
-        .map(|arg| serde_json::to_string(arg).unwrap_or_else(|_| "null".into()))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let script = format!(
-        "{PAGE_SCRIPT}\nJSON.stringify((() => {{ try {{ return {{ ok: window.__sikemux.{function}({args}) }}; }} catch (error) {{ return {{ error: String((error && error.message) || error) }}; }} }})())"
-    );
-    let raw = eval(view, &script).await?;
+    let answer = answer_of("window.__sikemux", function, args);
+    let raw = native::run_helper(view, &format!("{PAGE_SCRIPT}\nreturn {answer};")).await?;
+    let inner = serde_json::from_str::<Value>(&raw)
+        .map_err(|_| "the page returned an unreadable answer".to_string())?;
+    unwrap_answer(inner)
+}
+
+/// Read what the recorder kept for `function` ("network" or "console").
+async fn read_records(view: &Webview, function: &str, args: &[Value]) -> Result<Value, String> {
+    let raw = eval(view, &answer_of(RECORDS_SCRIPT.trim(), function, args)).await?;
     let outer: Value =
         serde_json::from_str(&raw).map_err(|_| "the page returned no answer".to_string())?;
     let inner = match outer {
@@ -972,6 +1005,21 @@ async fn call(view: &Webview, function: &str, args: &[Value]) -> Result<Value, S
             .map_err(|_| "the page returned an unreadable answer".to_string())?,
         other => other,
     };
+    unwrap_answer(inner)
+}
+
+fn answer_of(target: &str, function: &str, args: &[Value]) -> String {
+    let args = args
+        .iter()
+        .map(|arg| serde_json::to_string(arg).unwrap_or_else(|_| "null".into()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "JSON.stringify((() => {{ try {{ return {{ ok: ({target}).{function}({args}) }}; }} catch (error) {{ return {{ error: String((error && error.message) || error) }}; }} }})())"
+    )
+}
+
+fn unwrap_answer(inner: Value) -> Result<Value, String> {
     if let Some(error) = inner.get("error").and_then(Value::as_str) {
         return Err(error.to_owned());
     }
@@ -1100,6 +1148,18 @@ mod tests {
                 "page.js dispatches {synthetic}"
             );
         }
+    }
+
+    /// The page script runs in a world of its own, which cannot see the
+    /// globals the recorder leaves among the page's scripts.
+    #[test]
+    fn only_the_records_script_reads_the_recorder() {
+        for global in ["__sikemuxNet", "__sikemuxConsole"] {
+            assert!(!PAGE_SCRIPT.contains(global), "page.js reads {global}");
+            assert!(RECORDS_SCRIPT.contains(global), "records.js misses {global}");
+        }
+        assert!(answer_of(RECORDS_SCRIPT.trim(), "network", &[json!(5)])
+            .contains("})).network(5) }"));
     }
 
     #[test]

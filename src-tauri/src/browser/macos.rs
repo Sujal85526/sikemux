@@ -437,11 +437,21 @@ pub fn snapshot_jpeg(pointer: *mut c_void, done: Box<dyn FnOnce(Result<Vec<u8>, 
     };
 }
 
+/// Where a script runs. The page world is the page's own, where scripts see
+/// and can change each other's globals. The helper world shares the page's DOM
+/// but none of its JavaScript, so the page cannot tamper with what runs there.
+#[derive(Clone, Copy)]
+pub enum World {
+    Page,
+    Helper,
+}
+
 /// Runs `body` as the body of an async function in the page, awaiting any
 /// promise it returns. The body must return a string.
 pub fn call_async(
     pointer: *mut c_void,
     body: &str,
+    world: World,
     done: Box<dyn FnOnce(Result<String, String>) + Send>,
 ) {
     let (Some(webview), Some(mtm)) = (webview_from(pointer), MainThreadMarker::new()) else {
@@ -462,12 +472,18 @@ pub fn call_async(
             .map(|text| text.to_string());
         done(text.ok_or_else(|| "the script returned nothing readable".into()));
     });
+    let world = match world {
+        World::Page => unsafe { WKContentWorld::pageWorld(mtm) },
+        World::Helper => unsafe {
+            WKContentWorld::worldWithName(&NSString::from_str("sikemux"), mtm)
+        },
+    };
     unsafe {
         webview.callAsyncJavaScript_arguments_inFrame_inContentWorld_completionHandler(
             &NSString::from_str(body),
             None,
             None,
-            &WKContentWorld::pageWorld(mtm),
+            &world,
             Some(&block),
         );
     }
