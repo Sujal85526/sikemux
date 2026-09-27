@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { notify, openUrl, reportError, swallow } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
-import { EmptyState, IconDownload, SkeletonRows } from "../../../plugin-api/ui";
+import { EmptyState, IconDownload, Markdown, SkeletonRows } from "../../../plugin-api/ui";
 import { actionsApi, failureMessage, type RepoRef } from "../api";
 import { githubReleasesR } from "../resources";
 import { formatAgo } from "../runStatus";
 import { formatBytes } from "./Artifacts";
 import { useNow } from "./hooks";
+
+/** Notes longer than this are worth folding away until somebody asks. */
+const LONG_NOTES = 280;
 
 interface Props {
     repo: RepoRef;
@@ -16,6 +19,7 @@ interface Props {
 export function ReleasesView({ repo, active }: Props) {
     const releases = useResourceEnabled(active, githubReleasesR, repo);
     const [saving, setSaving] = useState<number | null>(null);
+    const [opened, setOpened] = useState<ReadonlySet<number>>(() => new Set());
     const now = useNow(false);
 
     if (releases.status === "loading" && !releases.data) return <SkeletonRows rows={6} label="Loading releases" />;
@@ -63,7 +67,25 @@ export function ReleasesView({ repo, active }: Props) {
                             On GitHub
                         </button>
                     </div>
-                    {release.body.trim() && <div className="gha-body-text clamp">{release.body}</div>}
+                    {release.body.trim() && (
+                        <>
+                            <Markdown className={opened.has(release.id) ? "gha-prose" : "gha-prose clamp"}>{release.body}</Markdown>
+                            {release.body.length > LONG_NOTES && (
+                                <button
+                                    type="button"
+                                    className="gha-link"
+                                    onClick={() =>
+                                        setOpened((was) => {
+                                            const next = new Set(was);
+                                            if (!next.delete(release.id)) next.add(release.id);
+                                            return next;
+                                        })
+                                    }>
+                                    {opened.has(release.id) ? "Show less" : "Show more"}
+                                </button>
+                            )}
+                        </>
+                    )}
                     {release.assets.map((asset) => (
                         <div className="gha-artifact" key={asset.id}>
                             <span className="gha-artifact-name">{asset.name}</span>

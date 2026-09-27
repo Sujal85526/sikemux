@@ -1,6 +1,6 @@
 import { confirmDialog, notify, openUrl, reportError, swallow } from "../../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
-import { EmptyState, IconClose, IconPullRequest, SkeletonRows } from "../../../plugin-api/ui";
+import { EmptyState, IconClose, IconPullRequest, Markdown, SkeletonRows } from "../../../plugin-api/ui";
 import { actionsApi, failureMessage, type MergeMethod, type Pull, type RepoRef } from "../api";
 import { githubPullFilesR, githubPullR, githubPullReviewsR, githubPullsR } from "../resources";
 import { formatAgo } from "../runStatus";
@@ -132,7 +132,7 @@ function PullDetail({ repo, number, active, onBack }: { repo: RepoRef; number: n
                 </div>
             </div>
 
-            {found.body.trim() && <div className="gha-body-text">{found.body}</div>}
+            {found.body.trim() && <Markdown className="gha-prose">{found.body}</Markdown>}
 
             <div className="gha-section-label">
                 {files.data?.length ?? 0} file{(files.data?.length ?? 0) === 1 ? "" : "s"} changed

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { notify, reportError } from "../../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
+import { Markdown } from "../../../plugin-api/ui";
 import { actionsApi, type RepoRef } from "../api";
 import { githubCommentsR } from "../resources";
 import { formatAgo } from "../runStatus";
@@ -46,7 +47,7 @@ export function CommentThread({ repo, number, active, now }: Props) {
                         <span className="gha-comment-author">{comment.author ?? "someone"}</span>
                         <span className="gha-dim">{formatAgo(comment.createdAt, now)}</span>
                     </div>
-                    <div className="gha-body-text">{comment.body}</div>
+                    <Markdown className="gha-prose">{comment.body}</Markdown>
                 </div>
             ))}
             <textarea
