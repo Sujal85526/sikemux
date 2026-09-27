@@ -86,14 +86,14 @@ const cells = ENVS.flatMap((env, envIndex) =>
       enabled: true,
       scheduled: false,
       latest,
-      deployed: failed ? summary(index, env, 600) : latest,
+      deployed: failed
+        ? summary(index, env, 600)
+        : running
+          ? { ...summary(index, env, 1_440), branch: "release/2.13" }
+          : latest,
       error: null,
     };
   }),
-);
-
-const productionCells = cells.filter(
-  (cell) => cell.group === "deploy/production",
 );
 
 const LIVE_EXECUTION = 48_199;
@@ -203,12 +203,12 @@ export const RUNDECK: Record<string, (params: Params) => unknown> = {
   jobs: () => jobs,
   branchesMatrix: () => ({
     project: PROJECT,
-    cells: productionCells,
+    cells,
     error: null,
     partial: false,
     elapsed_ms: 412,
   }),
-  jobCells: () => productionCells,
+  jobCells: () => cells,
   jobDetail: ({ jobId: id }) => {
     const job = jobs.find((candidate) => candidate.id === id) ?? jobs[0];
     return {
@@ -239,8 +239,83 @@ export const RUNDECK: Record<string, (params: Params) => unknown> = {
       steps,
     };
   },
-  executions: () => cells.slice(0, 6).map((cell) => cell.latest),
+  executions: ({ jobId: id }) => history(String(id)),
+  plan: ({ targetBranch }) => ({
+    project: PROJECT,
+    service: "deploy/production/billing-service",
+    target_branch: targetBranch,
+    deployed_branch: "release/2.13",
+    branch_relation: "target-contains-deployed",
+    branch_relation_detail: null,
+    git_root: "/Users/edon/code/billing-service",
+    current_branch: "release/2.14",
+    head_sha: "9c41e2a5d0b7",
+    dirty: true,
+    upstream: "origin/release/2.14",
+    ahead: 2,
+    behind: 0,
+    remote_target_exists: true,
+    push_action: "will-push-current",
+  }),
 };
+
+const HISTORY = [
+  ["succeeded", 0, 26, "edon"],
+  ["succeeded", 1, 1_440, "maya"],
+  ["failed", 2, 2_880, "sam"],
+  ["succeeded", 1, 2_950, "deploy-bot"],
+  ["succeeded", 0, 5_800, "edon"],
+  ["succeeded", 1, 8_700, "maya"],
+  ["succeeded", 0, 10_100, "deploy-bot"],
+  ["failed", 2, 14_400, "sam"],
+  ["succeeded", 1, 15_000, "edon"],
+  ["succeeded", 0, 20_200, "maya"],
+] as const;
+
+/** A job's recent runs, newest first, in the shape Rundeck's execution list returns. */
+function history(id: string) {
+  const cell = cells.find((candidate) => candidate.job_id === id) ?? cells[0];
+  const live = cell.latest?.status === "running";
+  const branches = [
+    cell.latest?.branch ?? "main",
+    cell.deployed?.branch ?? "main",
+    "hotfix/vat",
+  ];
+  return HISTORY.map(([status, branch, minutesAgo, user], index) => {
+    const running = live && index === 0;
+    const minutes = running ? 3 : minutesAgo;
+    const took = 2 + ((index * 7) % 5);
+    return {
+      id: 48_199 - index * 13,
+      status: running ? "running" : status,
+      customStatus: null,
+      user,
+      project: PROJECT,
+      "date-started": {
+        date: iso(minutes),
+        unixtime: Date.now() - minutes * 60_000,
+      },
+      "date-ended": running
+        ? null
+        : {
+            date: iso(minutes - took),
+            unixtime: Date.now() - (minutes - took) * 60_000,
+          },
+      permalink: null,
+      job: {
+        id,
+        name: cell.name,
+        group: cell.group,
+        project: PROJECT,
+        options: {
+          BRANCH: branches[branch],
+          ENV: cell.group?.split("/")[1] ?? "",
+        },
+      },
+      argstring: null,
+    };
+  });
+}
 
 export function rundeckStream(
   method: string,
