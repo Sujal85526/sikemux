@@ -82,6 +82,16 @@ export const SCENES = [
     },
   },
   {
+    name: "activity",
+    settle: 1200,
+    setup: (page) => run(page, () => showcase.cmd.openSettings("activity")),
+    crops: {
+      page: ".settings-page",
+      stats: ".activity-stats",
+      calendar: ".activity-calendar",
+    },
+  },
+  {
     name: "command-deck",
     setup: async (page) => {
       await openWindow(page, "s-sikemux", "w-agent-rail");

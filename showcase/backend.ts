@@ -15,6 +15,7 @@ import { BRANCHES, GIT_STATUS } from "./world/git";
 import { RUNDECK, rundeckStream } from "./world/rundeck";
 import { SIGNOZ, signozTail } from "./world/signoz";
 import { AWS, awsLogLines } from "./world/aws";
+import { demoActivity } from "./world/activity";
 import {
   BRUNO_COLLECTION,
   BRUNO_FILES,
@@ -112,6 +113,7 @@ export class ShowcaseBackend implements IpcTransport {
     this.on("agent_sessions_watch_start", constant(1));
     this.on("lsp_locations", constant([]));
     this.on("lsp_document_symbols", constant([]));
+    this.on("activity_summary", demoActivity);
     for (const quiet of [
       "observability_ui_heartbeat",
       "observability_ui_activity",
