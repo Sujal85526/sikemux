@@ -1298,11 +1298,20 @@ button.chat-tool:hover,
     font-size: var(--text-2xs);
 }
 
-.chat-notice-name {
+.chat-notice > svg {
     flex: none;
+}
+
+/* Named with the command the task ran, like a background task; the name gives
+   way so its state stays on screen. */
+.chat-notice-name {
+    min-width: 0;
+    overflow: hidden;
     color: var(--ink);
     font-family: var(--mono);
     font-size: calc(10.5px * var(--chat-text-em, 1));
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .chat-notice-state {

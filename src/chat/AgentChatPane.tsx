@@ -786,7 +786,9 @@ function NoticePart({ notice }: { notice: AcpTaskNotice }) {
     return (
         <div className={`chat-notice state-${notice.state}`} role="status">
             <IconTimer size={12} />
-            <span className="chat-notice-name">{notice.name}</span>
+            <span className="chat-notice-name" title={notice.name}>
+                {notice.name}
+            </span>
             <span className="chat-notice-state">{notice.state}</span>
             {notice.summary && <span className="chat-notice-summary">{notice.summary}</span>}
         </div>
