@@ -89,7 +89,7 @@
     --surface-sunken: var(--bg-dim, var(--void));
     --surface: var(--gray-base);
     --surface-raised: var(--gray-200);
-    --surface-overlay: var(--gray-300);
+    --surface-overlay: var(--gray-100);
 
     /* The same three surfaces, faded together with the window so the backdrop
        still reads through at low opacity. Anything that paints inside the
