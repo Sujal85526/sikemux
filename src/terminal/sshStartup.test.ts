@@ -68,9 +68,7 @@ describe("sshStartup", () => {
     });
 
     it("quotes SSH aliases before passing them to the shell", () => {
-        expect(loopOf(sshStartup("host'; touch nope; echo '"))).toContain(
-            "'host'\"'\"'; touch nope; echo '\"'\"''",
-        );
+        expect(loopOf(sshStartup("host'; touch nope; echo '"))).toContain("'host'\"'\"'; touch nope; echo '\"'\"''");
     });
 
     it("restores terminal input modes after every SSH exit", () => {

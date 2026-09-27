@@ -133,7 +133,11 @@ describe("browser network recorder", () => {
         await window.fetch("https://app.test/_next/data/build/orders.json");
         await window.fetch("https://app.test/api/orders");
 
-        expect(net().entries().map((entry) => entry.framework)).toEqual(["next rsc", "next server action", "next data", undefined]);
+        expect(
+            net()
+                .entries()
+                .map((entry) => entry.framework),
+        ).toEqual(["next rsc", "next server action", "next data", undefined]);
     });
 
     it("records an xhr once it settles", () => {

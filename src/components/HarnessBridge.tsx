@@ -68,7 +68,8 @@ export function HarnessBridge() {
             }
             if (!service || state.agents === previous.agents) return;
             for (const agentId of Object.keys(previous.agents))
-                if (!state.agents[agentId]) void service.then(({ harnessTasks }) => harnessTasks.closeAgent(agentId)).catch(swallow("harness agent close"));
+                if (!state.agents[agentId])
+                    void service.then(({ harnessTasks }) => harnessTasks.closeAgent(agentId)).catch(swallow("harness agent close"));
         });
         return () => {
             controller.abort();
