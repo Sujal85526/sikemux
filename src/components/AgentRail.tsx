@@ -190,6 +190,7 @@ export function AgentRailBody() {
                     searchOpen={false}
                     onToggleSearch={toggleSearch}
                     usagePeaks={usagePeaks}
+                    plan={selectedUsage?.data?.plan}
                     canOpenPalette={catalogAgents.length > 0}
                 />
                 <div className="agent-empty">agents are project-scoped</div>
@@ -215,6 +216,7 @@ export function AgentRailBody() {
                 searchOpen={searchOpen}
                 onToggleSearch={toggleSearch}
                 usagePeaks={usagePeaks}
+                plan={selectedUsage?.data?.plan}
                 canOpenPalette={catalogAgents.length > 0}
             />
             {searchOpen && (
@@ -484,6 +486,7 @@ function AgentHeader({
     searchOpen,
     onToggleSearch,
     usagePeaks,
+    plan,
     canOpenPalette,
 }: {
     agents: AgentInfo[];
@@ -492,26 +495,33 @@ function AgentHeader({
     searchOpen: boolean;
     onToggleSearch: () => void;
     usagePeaks: Partial<Record<UsageAgentType, number | undefined>>;
+    plan?: string | null;
     canOpenPalette: boolean;
 }) {
     const label = agents.find((a) => a.type === type)?.label ?? type;
     return (
         <div className="agent-header">
             <div className="agent-header-top">
-                <span className="agent-header-label">Agents</span>
+                {type ? (
+                    <span className="agent-header-name">
+                        <span className={`agent-glyph ${type}`}>
+                            <AgentIcon type={type} size={16} />
+                        </span>
+                        <span className="agent-header-label">{label}</span>
+                        {plan && <span className="agent-header-plan">{planLabel(plan)}</span>}
+                    </span>
+                ) : (
+                    <span className="agent-header-label">Agents</span>
+                )}
                 <div className="agent-header-actions">
                     <Tooltip label="Filter recent chats">
-                        <button
-                            className={`agent-header-btn${searchOpen ? " active" : ""}`}
-                            aria-pressed={searchOpen}
-                            aria-label="Filter recent chats"
-                            onClick={onToggleSearch}>
+                        <button className="agent-header-action" aria-pressed={searchOpen} aria-label="Filter recent chats" onClick={onToggleSearch}>
                             <IconSearch size={15} />
                         </button>
                     </Tooltip>
                     <Tooltip label={type ? `new ${label} agent — ⌥N` : canOpenPalette ? "Review agent setup" : "No agent CLI detected"}>
                         <button
-                            className="agent-header-btn"
+                            className="agent-header-action"
                             disabled={!type && !canOpenPalette}
                             aria-label={type ? `New ${label} agent` : canOpenPalette ? "Review agent setup" : "No agent CLI detected"}
                             onClick={() => {
