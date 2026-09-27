@@ -149,6 +149,11 @@ export class HarnessTasks {
         for (const run of this.list(project)) void this.stop(project, run.executionId).catch(() => {});
     }
 
+    closeAgent(agentId: string): void {
+        for (const { run, agentId: owner } of this.entries.values())
+            if (owner === agentId) void this.stop(run.project, run.executionId).catch(() => {});
+    }
+
     private entry(project: string, executionId: string): Entry {
         const entry = this.entries.get(executionId);
         if (!entry || entry.run.project !== project) throw new Error("Task execution does not belong to this project");
