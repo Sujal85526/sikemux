@@ -77,6 +77,8 @@ Open an [issue](https://github.com/nodelike/sikemux/issues) with:
 - Your operating-system version and the Sikemux version (shown in the side rail).
 - Logs or screenshots where relevant.
 
+For questions, or to talk an idea through before opening an issue, ask in the [Sikemux Discord](https://discord.gg/UKfmHpF9kX).
+
 ## License
 
 By contributing, you agree that your contributions are licensed under the [MIT License](LICENSE).

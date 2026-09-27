@@ -11,6 +11,7 @@
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev)
 [![Rust](https://img.shields.io/badge/Rust-backend-000?logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![Latest release](https://img.shields.io/github/v/release/nodelike/sikemux?display_name=tag)](https://github.com/nodelike/sikemux/releases/latest)
+[![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/UKfmHpF9kX)
 
 </div>
 
@@ -311,6 +312,10 @@ A hotfix cut from a release branch claims a version as well. When it claims the 
 ```
 
 If you have an Apple Developer membership, set `RELEASE_NOTARIZED=1` with the Developer ID and notarization environment variables. The release script then requires a successful Gatekeeper assessment and stapled notarization tickets before it publishes anything.
+
+## Community
+
+Join the [Sikemux Discord](https://discord.gg/UKfmHpF9kX) to ask for help, share your setup, and follow releases and nightlies.
 
 ## Contributing
 
