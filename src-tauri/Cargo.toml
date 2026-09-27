@@ -26,10 +26,11 @@ name = "sikemux_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
-default = ["aws", "bruno", "rundeck", "signoz"]
+default = ["aws", "bruno", "github-actions", "rundeck", "signoz"]
 ipc-command-tests = ["tauri/test"]
 aws = ["dep:sikemux-plugin-aws"]
 bruno = ["dep:sikemux-plugin-bruno"]
+github-actions = ["dep:sikemux-plugin-github-actions"]
 rundeck = ["dep:sikemux-plugin-rundeck"]
 signoz = ["dep:sikemux-plugin-signoz"]
 
@@ -72,6 +73,7 @@ semver = "1"
 sikemux-plugin-api = { path = "crates/sikemux-plugin-api" }
 sikemux-plugin-aws = { path = "plugins/aws", optional = true }
 sikemux-plugin-bruno = { path = "plugins/bruno", optional = true }
+sikemux-plugin-github-actions = { path = "plugins/github-actions", optional = true }
 sikemux-plugin-rundeck = { path = "plugins/rundeck", optional = true }
 sikemux-plugin-signoz = { path = "plugins/signoz", optional = true }
 sikemux-process = { path = "crates/sikemux-process" }

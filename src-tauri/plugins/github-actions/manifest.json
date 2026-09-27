@@ -1,0 +1,138 @@
+{
+  "id": "sikemux.github-actions",
+  "name": "GitHub Actions",
+  "version": "0.1.0",
+  "sikemux": ">=0.4",
+  "callTimeoutSecs": 120,
+  "tools": [
+    {
+      "name": "gha_workflows",
+      "method": "workflows",
+      "description": "Every GitHub Actions workflow a repository has, with whether it is active. Get owner and name from the repository's git remote.",
+      "properties": {
+        "owner": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The user or organisation, e.g. nodelike."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The repository, e.g. sikemux."
+        }
+      },
+      "required": ["owner", "name"]
+    },
+    {
+      "name": "gha_runs",
+      "method": "runs",
+      "description": "Recent workflow runs for a repository, newest first, with their status and conclusion. Narrow by workflow, branch, status or event.",
+      "properties": {
+        "owner": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The user or organisation, e.g. nodelike."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The repository, e.g. sikemux."
+        },
+        "workflowId": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Only runs of this workflow. Its id comes from gha_workflows."
+        },
+        "branch": {
+          "type": "string",
+          "description": "Only runs on this branch."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "queued",
+            "in_progress",
+            "completed",
+            "requested",
+            "waiting",
+            "pending",
+            "success",
+            "failure",
+            "neutral",
+            "cancelled",
+            "skipped",
+            "timed_out",
+            "action_required"
+          ],
+          "description": "Only runs in this state, or with this conclusion."
+        },
+        "event": {
+          "type": "string",
+          "description": "Only runs started this way, e.g. push, pull_request, schedule, workflow_dispatch."
+        },
+        "actor": {
+          "type": "string",
+          "description": "Only runs started by this GitHub login."
+        },
+        "perPage": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "How many runs to return. Default 30."
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Which page of results, from 1."
+        }
+      },
+      "required": ["owner", "name"]
+    },
+    {
+      "name": "gha_run",
+      "method": "run",
+      "description": "One workflow run with every job in it and each job's steps, which is how to see exactly which step failed.",
+      "properties": {
+        "owner": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The user or organisation, e.g. nodelike."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The repository, e.g. sikemux."
+        },
+        "runId": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The run's id, from gha_runs."
+        }
+      },
+      "required": ["owner", "name", "runId"]
+    },
+    {
+      "name": "gha_job_log",
+      "method": "jobLog",
+      "description": "The full log of one job, line by line. Use it to read why a job failed. Logs age out of GitHub after a while, which the answer says.",
+      "properties": {
+        "owner": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The user or organisation, e.g. nodelike."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The repository, e.g. sikemux."
+        },
+        "jobId": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The job's id, from gha_run."
+        }
+      },
+      "required": ["owner", "name", "jobId"]
+    }
+  ]
+}

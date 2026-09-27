@@ -1,0 +1,918 @@
+.gha-pane {
+    --gha-tint: color-mix(in oklab, var(--ink) 3%, transparent);
+    --gha-rule: color-mix(in oklab, var(--ink) 7%, transparent);
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    color: var(--text-primary);
+    font-family: var(--ui);
+    font-size: var(--text-sm);
+    container-type: inline-size;
+}
+.gha-cols {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+.gha-body {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+}
+.gha-mono {
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+}
+.gha-dim {
+    color: var(--text-tertiary);
+}
+
+/* ---- Account bar -------------------------------------------------------- */
+
+.gha-top {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex: 0 0 auto;
+    padding: var(--space-2) var(--space-5);
+    border-bottom: 1px solid var(--border);
+}
+.gha-who {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+}
+.gha-who strong {
+    font-weight: var(--weight-medium);
+    color: var(--text-primary);
+}
+.gha-warn-note {
+    font-size: var(--text-2xs);
+    color: var(--warn);
+}
+.gha-top-spacer {
+    flex: 1 1 auto;
+}
+
+/* ---- Sidebar ------------------------------------------------------------ */
+
+.gha-side {
+    width: 216px;
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-0);
+    padding: var(--space-3) var(--gutter-rail) var(--gutter-rail);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+}
+.gha-side-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-0);
+}
+.gha-side-label {
+    padding: var(--space-3) var(--space-2) var(--space-2);
+    font-size: var(--text-3xs);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+}
+.gha-repo-button {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    padding: var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: var(--gha-tint);
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition:
+        background var(--dur-1) linear,
+        border-color var(--dur-1) linear;
+}
+.gha-repo-button:hover {
+    background: var(--surface-hover);
+    border-color: var(--border-strong);
+}
+.gha-repo-button:focus-visible {
+    box-shadow: var(--focus-ring);
+    outline: none;
+}
+.gha-repo-slug {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-weight: var(--weight-medium);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.gha-side-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-2) 0;
+    font-size: var(--text-2xs);
+    color: var(--text-secondary);
+}
+.gha-side-item-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-0);
+}
+.gha-side-item {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: 30px;
+    padding: 0 var(--space-2);
+    border: 1px solid transparent;
+    border-radius: var(--radius-2);
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    transition:
+        background var(--dur-1) linear,
+        color var(--dur-1) linear;
+}
+.gha-side-item:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+}
+.gha-side-item[data-on="1"] {
+    background: var(--surface-selected);
+    border-color: var(--border-selected);
+    color: var(--text-primary);
+}
+.gha-side-item[data-off="1"] {
+    color: var(--text-tertiary);
+}
+.gha-side-item:focus-visible {
+    box-shadow: var(--focus-ring);
+    outline: none;
+}
+.gha-side-empty {
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+}
+.gha-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    padding: 0 var(--space-2);
+}
+.gha-chip {
+    height: 22px;
+    padding: 0 var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-chip);
+    background: var(--gha-tint);
+    color: var(--text-tertiary);
+    font: inherit;
+    font-size: var(--text-2xs);
+    cursor: pointer;
+    transition:
+        background var(--dur-1) linear,
+        border-color var(--dur-1) linear,
+        color var(--dur-1) linear;
+}
+.gha-chip:hover {
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+}
+.gha-chip[data-on="1"] {
+    background: var(--surface-selected);
+    border-color: var(--border-selected);
+    color: var(--text-primary);
+}
+.gha-chip:focus-visible {
+    box-shadow: var(--focus-ring);
+    outline: none;
+}
+
+/* ---- Controls ----------------------------------------------------------- */
+
+.gha-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1h);
+    height: 28px;
+    padding: 0 var(--space-3);
+    flex: 0 0 auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: var(--gha-tint);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: var(--text-xs);
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+        background var(--dur-1) linear,
+        border-color var(--dur-1) linear,
+        color var(--dur-1) linear;
+}
+.gha-btn:hover:not(:disabled) {
+    background: var(--surface-hover);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+}
+.gha-btn:disabled {
+    cursor: default;
+    color: var(--text-disabled);
+}
+.gha-btn:focus-visible {
+    box-shadow: var(--focus-ring);
+    outline: none;
+}
+.gha-btn.primary {
+    background: var(--acc);
+    border-color: var(--acc);
+    color: var(--on-accent);
+    font-weight: var(--weight-medium);
+}
+.gha-btn.primary:hover:not(:disabled) {
+    filter: brightness(1.08);
+}
+.gha-btn.danger {
+    border-color: color-mix(in oklab, var(--danger) 40%, transparent);
+    color: var(--danger);
+}
+.gha-btn.danger:hover:not(:disabled) {
+    border-color: var(--danger);
+    color: var(--danger);
+}
+.gha-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    flex: 0 0 auto;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--radius-2);
+    background: transparent;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    transition:
+        background var(--dur-1) linear,
+        color var(--dur-1) linear;
+}
+.gha-icon-btn:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+}
+.gha-icon-btn:focus-visible {
+    box-shadow: var(--focus-ring);
+    outline: none;
+}
+.gha-link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: var(--text-xs);
+    cursor: pointer;
+}
+.gha-link:hover {
+    color: var(--text-primary);
+    text-decoration: underline;
+    text-decoration-color: var(--border-strong);
+    text-underline-offset: 3px;
+}
+.gha-link:focus-visible {
+    box-shadow: var(--focus-ring);
+    outline: none;
+}
+.gha-input {
+    height: 28px;
+    padding: 0 var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: var(--gha-tint);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: var(--text-xs);
+}
+.gha-input:focus-visible {
+    outline: none;
+    border-color: var(--border-selected);
+    box-shadow: var(--focus-ring);
+}
+
+/* ---- Marks -------------------------------------------------------------- */
+
+.gha-outcome {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    color: var(--text-disabled);
+}
+.gha-outcome[data-outcome="success"] {
+    color: var(--live);
+}
+.gha-outcome[data-outcome="failure"] {
+    color: var(--danger);
+}
+.gha-outcome[data-outcome="running"] {
+    color: var(--warn);
+    animation: gha-pulse 1.6s var(--ease-in-out) infinite;
+}
+.gha-outcome[data-outcome="blocked"] {
+    color: var(--warn);
+}
+.gha-outcome:is([data-outcome="queued"], [data-outcome="skipped"], [data-outcome="cancelled"], [data-outcome="unknown"]) {
+    color: var(--text-tertiary);
+}
+@keyframes gha-pulse {
+    50% {
+        opacity: 0.35;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .gha-outcome[data-outcome="running"] {
+        animation: none;
+    }
+}
+.gha-badge {
+    display: inline-flex;
+    align-items: center;
+    height: 18px;
+    padding: 0 var(--space-1h);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-1);
+    background: var(--gha-tint);
+    font-size: var(--text-2xs);
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+.gha-badge[data-outcome="success"] {
+    border-color: color-mix(in oklab, var(--live) 34%, transparent);
+    background: color-mix(in oklab, var(--live) 8%, transparent);
+    color: var(--live);
+}
+.gha-badge[data-outcome="failure"] {
+    border-color: color-mix(in oklab, var(--danger) 34%, transparent);
+    background: color-mix(in oklab, var(--danger) 8%, transparent);
+    color: var(--danger);
+}
+.gha-badge:is([data-outcome="running"], [data-outcome="blocked"]) {
+    border-color: color-mix(in oklab, var(--warn) 34%, transparent);
+    background: color-mix(in oklab, var(--warn) 8%, transparent);
+    color: var(--warn);
+}
+.gha-branch,
+.gha-pr {
+    display: inline-flex;
+    align-items: center;
+    height: 18px;
+    max-width: 20ch;
+    padding: 0 var(--space-1h);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-1);
+    background: var(--gha-tint);
+    font-size: var(--text-2xs);
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.gha-pr {
+    color: var(--acc);
+    border-color: var(--acc-line);
+    background: var(--acc-soft);
+}
+
+/* ---- Runs list ---------------------------------------------------------- */
+
+.gha-runs {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+.gha-runs-head,
+.gha-jobs-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-5) var(--space-2);
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+}
+.gha-failed-count {
+    color: var(--danger);
+}
+.gha-run-rows {
+    display: flex;
+    flex-direction: column;
+    padding: 0 var(--space-3);
+}
+.gha-run-row {
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr) auto auto auto;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: 44px;
+    padding: var(--space-1h) var(--space-2);
+    border: 1px solid transparent;
+    border-bottom-color: var(--gha-rule);
+    border-radius: var(--radius-2);
+    background: none;
+    color: var(--text-secondary);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition:
+        background var(--dur-1) linear,
+        color var(--dur-1) linear;
+}
+.gha-run-row:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+}
+.gha-run-row[data-selected="1"] {
+    background: var(--surface-selected);
+    border-color: var(--border-selected);
+    color: var(--text-primary);
+}
+.gha-run-row:focus-visible {
+    box-shadow: var(--focus-ring);
+    outline: none;
+}
+.gha-run-title {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    line-height: 1.3;
+}
+.gha-run-name {
+    font-weight: var(--weight-medium);
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.gha-run-sub {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1h);
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+    white-space: nowrap;
+    overflow: hidden;
+}
+.gha-run-workflow {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.gha-run-meta,
+.gha-run-times {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+    white-space: nowrap;
+}
+.gha-run-times {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 1px;
+    min-width: 9ch;
+}
+.gha-run-number {
+    min-width: 6ch;
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-tertiary);
+    text-align: right;
+}
+.gha-pager {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-5) var(--space-5);
+}
+
+/* ---- One run ------------------------------------------------------------ */
+
+.gha-run-view {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+.gha-back {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    align-self: flex-start;
+    margin: var(--space-3) var(--space-5) 0;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--text-tertiary);
+    font: inherit;
+    font-size: var(--text-2xs);
+    cursor: pointer;
+}
+.gha-back:hover {
+    color: var(--text-primary);
+}
+.gha-run-head {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1h);
+    padding: var(--space-2) var(--space-5) var(--space-3);
+    border-bottom: 1px solid var(--border);
+}
+.gha-run-head-main {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+}
+.gha-run-head-title {
+    flex: 0 1 auto;
+    min-width: 0;
+    margin: 0;
+    font-size: var(--text-lg);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-tight);
+    line-height: 1.2;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.gha-run-head-sub {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+}
+.gha-run-head-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.gha-jobs {
+    display: flex;
+    flex-direction: column;
+    padding: 0 var(--space-3) var(--space-5);
+}
+.gha-job {
+    border-bottom: 1px solid var(--gha-rule);
+}
+.gha-job-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    height: 34px;
+    padding: 0 var(--space-2);
+    border: 1px solid transparent;
+    border-radius: var(--radius-2);
+    background: none;
+    color: var(--text-secondary);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition:
+        background var(--dur-1) linear,
+        color var(--dur-1) linear;
+}
+.gha-job-head:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+}
+.gha-job-head:focus-visible {
+    box-shadow: var(--focus-ring);
+    outline: none;
+}
+.gha-job[data-open="1"] > .gha-job-head {
+    color: var(--text-primary);
+}
+.gha-job-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-weight: var(--weight-medium);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.gha-job-stopped {
+    font-size: var(--text-2xs);
+    color: var(--danger);
+    white-space: nowrap;
+}
+.gha-chevron {
+    display: inline-flex;
+    flex: 0 0 auto;
+    color: var(--text-tertiary);
+    transform: rotate(-90deg);
+    transition: transform var(--dur-2) var(--ease-out);
+}
+.gha-chevron[data-open="1"] {
+    transform: rotate(90deg);
+}
+@media (prefers-reduced-motion: reduce) {
+    .gha-chevron {
+        transition: none;
+    }
+}
+.gha-job-body {
+    padding: var(--space-1) var(--space-2) var(--space-3) var(--space-6);
+}
+.gha-job-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding-bottom: var(--space-2);
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+}
+.gha-steps {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: var(--space-2);
+}
+.gha-step {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: 24px;
+    font-size: var(--text-2xs);
+    color: var(--text-secondary);
+}
+.gha-step-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.gha-step[data-outcome="failure"] .gha-step-name {
+    color: var(--danger);
+}
+.gha-step[data-outcome="skipped"] .gha-step-name {
+    color: var(--text-tertiary);
+}
+
+/* ---- Logs --------------------------------------------------------------- */
+
+.gha-log {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    max-height: 60vh;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: var(--surface-sunken);
+}
+.gha-log-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex: 0 0 auto;
+    padding: var(--space-1h) var(--space-2);
+    border-bottom: 1px solid var(--border);
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+}
+.gha-log-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    padding: var(--space-1) 0;
+}
+.gha-log-line {
+    display: flex;
+    gap: var(--space-2);
+    padding: 0 var(--space-2);
+}
+.gha-log-number {
+    flex: 0 0 5ch;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-disabled);
+    text-align: right;
+    user-select: none;
+}
+.gha-log-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* ---- Signed out --------------------------------------------------------- */
+
+.gha-signin {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    height: 100%;
+    padding: var(--space-6) var(--space-4);
+    overflow: auto;
+}
+.gha-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    width: min(460px, 100%);
+    padding: var(--space-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-3);
+    background: var(--surface-raised);
+}
+.gha-card-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+    font-size: var(--text-lg);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-tight);
+    color: var(--text-primary);
+}
+.gha-card-actions,
+.gha-modal-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-2);
+}
+.gha-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+.gha-field > span {
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-medium);
+    color: var(--text-tertiary);
+}
+.gha-hint {
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+}
+.gha-hint code {
+    font-family: var(--mono);
+    color: var(--text-secondary);
+}
+.gha-note {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: var(--gha-tint);
+    font-size: var(--text-2xs);
+    color: var(--text-secondary);
+}
+.gha-error {
+    padding: var(--space-2);
+    border: 1px solid color-mix(in oklab, var(--danger) 40%, transparent);
+    border-radius: var(--radius-2);
+    background: color-mix(in oklab, var(--danger) 8%, transparent);
+    font-size: var(--text-2xs);
+    color: var(--danger);
+}
+
+/* ---- Dialogs ------------------------------------------------------------ */
+
+.gha-modal-scrim {
+    position: absolute;
+    inset: 0;
+    z-index: var(--layer-menu);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 10vh var(--space-4) var(--space-4);
+    background: color-mix(in oklab, var(--void) 62%, transparent);
+    backdrop-filter: blur(2px);
+}
+.gha-modal {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    width: min(520px, 100%);
+    max-height: 70vh;
+    padding: var(--space-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-4);
+    background: var(--surface-overlay);
+    box-shadow: var(--shadow-4);
+    overflow: auto;
+}
+.gha-modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+}
+.gha-modal-head h2 {
+    margin: 0;
+    font-size: var(--text-lg);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-tight);
+    color: var(--text-primary);
+}
+.gha-inputs {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+.gha-input-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 28px;
+    gap: var(--space-1);
+}
+.gha-pick-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-0);
+    min-height: 0;
+    overflow: auto;
+}
+.gha-pick-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: 30px;
+    padding: 0 var(--space-2);
+    border: 1px solid transparent;
+    border-radius: var(--radius-2);
+    background: none;
+    color: var(--text-secondary);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.gha-pick-row:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+}
+.gha-pick-row[data-on="1"] {
+    background: var(--surface-selected);
+    border-color: var(--border-selected);
+    color: var(--text-primary);
+}
+.gha-pick-row:focus-visible {
+    box-shadow: var(--focus-ring);
+    outline: none;
+}
+.gha-pick-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ---- Narrow panes ------------------------------------------------------- */
+
+@container (max-width: 640px) {
+    .gha-side {
+        display: none;
+    }
+    .gha-run-row {
+        grid-template-columns: 16px minmax(0, 1fr) auto;
+    }
+    .gha-run-meta,
+    .gha-run-number {
+        display: none;
+    }
+}

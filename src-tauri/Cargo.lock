@@ -4323,6 +4323,7 @@ dependencies = [
  "sikemux-plugin-api",
  "sikemux-plugin-aws",
  "sikemux-plugin-bruno",
+ "sikemux-plugin-github-actions",
  "sikemux-plugin-rundeck",
  "sikemux-plugin-signoz",
  "sikemux-process",
@@ -4384,6 +4385,20 @@ dependencies = [
  "serde_json",
  "sikemux-plugin-api",
  "tempfile",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "sikemux-plugin-github-actions"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sikemux-plugin-api",
+ "sikemux-process",
  "tokio",
  "url",
 ]
