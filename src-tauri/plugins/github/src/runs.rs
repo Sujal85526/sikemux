@@ -266,6 +266,7 @@ struct JobRow {
     completed_at: Option<String>,
     html_url: Option<String>,
     runner_name: Option<String>,
+    check_run_url: Option<String>,
     #[serde(default)]
     steps: Vec<StepRow>,
 }
@@ -297,6 +298,9 @@ pub struct Job {
     pub completed_at: Option<String>,
     pub runner: Option<String>,
     pub url: Option<String>,
+    /// The check run this job is also recorded as, which is where its
+    /// annotations live.
+    pub check_run_id: Option<u64>,
     pub steps: Vec<Step>,
 }
 
@@ -311,6 +315,10 @@ impl From<JobRow> for Job {
             completed_at: row.completed_at,
             runner: row.runner_name,
             url: row.html_url,
+            check_run_id: row
+                .check_run_url
+                .as_deref()
+                .and_then(crate::annotations::check_run_id),
             steps: row
                 .steps
                 .into_iter()
@@ -375,6 +383,9 @@ pub struct Rerun {
     /// Re-run only the jobs that did not pass, rather than the whole run.
     #[serde(default)]
     pub failed_only: bool,
+    /// Turn on the runner's own debug logging for the new attempt.
+    #[serde(default)]
+    pub debug: bool,
 }
 
 pub async fn rerun(data_dir: &Path, input: Rerun) -> ActionsResult<()> {
@@ -387,7 +398,8 @@ pub async fn rerun(data_dir: &Path, input: Rerun) -> ActionsResult<()> {
         .run
         .repo
         .path(&format!("/actions/runs/{}/{tail}", input.run.run_id))?;
-    client::post_empty(data_dir, &path, None).await
+    let body = json!({ "enable_debug_logging": input.debug });
+    client::post_empty(data_dir, &path, Some(&body)).await
 }
 
 pub async fn cancel(data_dir: &Path, input: RunRef) -> ActionsResult<()> {
@@ -405,16 +417,47 @@ pub struct JobRef {
     pub job_id: u64,
 }
 
-pub async fn rerun_job(data_dir: &Path, input: JobRef) -> ActionsResult<()> {
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RerunJob {
+    #[serde(flatten)]
+    pub job: JobRef,
+    #[serde(default)]
+    pub debug: bool,
+}
+
+pub async fn rerun_job(data_dir: &Path, input: RerunJob) -> ActionsResult<()> {
     let path = input
+        .job
         .repo
-        .path(&format!("/actions/jobs/{}/rerun", input.job_id))?;
-    client::post_empty(
+        .path(&format!("/actions/jobs/{}/rerun", input.job.job_id))?;
+    let body = json!({ "enable_debug_logging": input.debug });
+    client::post_empty(data_dir, &path, Some(&body)).await
+}
+
+/// An earlier try of the same run, which GitHub keeps whole.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttemptRef {
+    #[serde(flatten)]
+    pub repo: RepoRef,
+    pub run_id: u64,
+    pub attempt: u64,
+}
+
+pub async fn attempt(data_dir: &Path, input: AttemptRef) -> ActionsResult<RunDetail> {
+    let base = format!("/actions/runs/{}/attempts/{}", input.run_id, input.attempt);
+    let run: RunRow = client::get(data_dir, &input.repo.path(&base)?, &[]).await?;
+    let jobs: JobList = client::get(
         data_dir,
-        &path,
-        Some(&json!({ "enable_debug_logging": false })),
+        &input.repo.path(&format!("{base}/jobs"))?,
+        &[("per_page", MAX_PER_PAGE.to_string())],
     )
-    .await
+    .await?;
+    Ok(RunDetail {
+        run: Run::from(run),
+        jobs: jobs.jobs.into_iter().map(Job::from).collect(),
+    })
 }
 
 #[cfg(test)]

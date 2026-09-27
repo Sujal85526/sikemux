@@ -1,5 +1,5 @@
 import "./aws";
 import "./bruno";
-import "./github-actions";
+import "./github";
 import "./rundeck";
 import "./signoz";

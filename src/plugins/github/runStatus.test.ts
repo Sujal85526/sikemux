@@ -22,6 +22,7 @@ const job = (status: string, conclusion: string | null, steps: Step[] = []): Job
     completedAt: null,
     runner: null,
     url: null,
+    checkRunId: null,
     steps,
 });
 

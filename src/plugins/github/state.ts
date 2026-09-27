@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { onPaneClosed, openSurface } from "../../plugin-api/host";
 import { definePluginSettings } from "../../plugin-api/settings";
 import type { RepoRef } from "./api";
-import { ACTIONS_PLUGIN_ID, ACTIONS_RUNS } from "./kinds";
+import { GITHUB_PLUGIN_ID, GITHUB_ACTIONS } from "./kinds";
 
 export const STATUS_FILTERS = ["all", "in_progress", "queued", "success", "failure", "cancelled"] as const;
 export type StatusFilter = (typeof STATUS_FILTERS)[number];
@@ -35,7 +35,7 @@ function decodeSettings(saved: unknown): ActionsSettings {
     };
 }
 
-export const actionsSettings = definePluginSettings(ACTIONS_PLUGIN_ID, decodeSettings);
+export const actionsSettings = definePluginSettings(GITHUB_PLUGIN_ID, decodeSettings);
 
 export function togglePinned(slug: string): void {
     actionsSettings.update((settings) => ({
@@ -149,11 +149,11 @@ export function slugOf(repo: RepoRef): string {
 }
 
 export function openActions(): void {
-    openSurface(ACTIONS_RUNS);
+    openSurface(GITHUB_ACTIONS);
 }
 
 /** Brings the runs view forward on one repository, from anywhere that names it. */
 export function openRepo(repo: RepoRef): void {
-    const paneId = openSurface(ACTIONS_RUNS);
+    const paneId = openSurface(GITHUB_ACTIONS);
     if (paneId) showRepo(paneId, repo);
 }

@@ -916,3 +916,144 @@
         display: none;
     }
 }
+
+/* ---- What GitHub flagged ------------------------------------------------ */
+
+.gha-section-label {
+    padding: var(--space-2) 0 var(--space-1);
+    font-size: var(--text-3xs);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+}
+.gha-annotations {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin-bottom: var(--space-2);
+}
+.gha-annotation {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    padding: var(--space-1h) var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: var(--gha-tint);
+}
+.gha-annotation[data-level="failure"] {
+    border-color: color-mix(in oklab, var(--danger) 34%, transparent);
+    background: color-mix(in oklab, var(--danger) 7%, transparent);
+}
+.gha-annotation[data-level="warning"] {
+    border-color: color-mix(in oklab, var(--warn) 30%, transparent);
+    background: color-mix(in oklab, var(--warn) 6%, transparent);
+}
+.gha-annotation-level {
+    flex: 0 0 auto;
+    font-size: var(--text-3xs);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+}
+.gha-annotation[data-level="failure"] .gha-annotation-level {
+    color: var(--danger);
+}
+.gha-annotation[data-level="warning"] .gha-annotation-level {
+    color: var(--warn);
+}
+.gha-annotation-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+.gha-annotation-title {
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-medium);
+    color: var(--text-primary);
+}
+.gha-annotation-message {
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.gha-annotation-place {
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+}
+
+/* ---- Artifacts and approvals -------------------------------------------- */
+
+.gha-artifacts {
+    display: flex;
+    flex-direction: column;
+    padding: 0 var(--space-5);
+}
+.gha-artifact {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    height: 28px;
+    font-size: var(--text-xs);
+}
+.gha-artifact-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.gha-approval {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin: var(--space-3) var(--space-5) 0;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid color-mix(in oklab, var(--warn) 34%, transparent);
+    border-radius: var(--radius-2);
+    background: color-mix(in oklab, var(--warn) 8%, transparent);
+}
+.gha-approval-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    font-size: var(--text-xs);
+}
+.gha-approval-text strong {
+    font-weight: var(--weight-medium);
+    color: var(--warn);
+}
+.gha-approval-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+.gha-log-line.group .gha-log-text {
+    font-weight: var(--weight-medium);
+    color: var(--text-primary);
+}
+.gha-attempts {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-5) 0;
+    font-size: var(--text-2xs);
+}
+.gha-power {
+    width: 8px;
+    height: 8px;
+    border: 1.5px solid currentcolor;
+    border-radius: var(--radius-full);
+    color: var(--text-disabled);
+}
+.gha-power[data-on="1"] {
+    color: var(--live);
+    background: currentcolor;
+}

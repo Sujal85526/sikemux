@@ -1,15 +1,20 @@
+import { useEffect } from "react";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { copyText, notify, swallow } from "../../../plugin-api/host";
 import { EmptyState, SkeletonRows, VirtualLogList } from "../../../plugin-api/ui";
 import { failureMessage, type Job, type RepoRef } from "../api";
 import { actionsJobLogR } from "../resources";
 
-/** Runner logs mark their sections with `##[group]`, which is noise on screen. */
-const MARKUP = /^##\[(?:group|endgroup|section)\]/u;
+/** Runner logs mark their sections with `##[...]`, which is noise on screen. */
+const MARKUP = /^##\[(?:group|endgroup|section|command)\]/u;
+const ENDGROUP = /^##\[endgroup\]/u;
 
 function clean(text: string): string {
     return text.replace(MARKUP, "");
 }
+
+/** A log re-reads itself while its job is still writing to it. */
+const LIVE_REFRESH_MS = 5_000;
 
 interface Props {
     repo: RepoRef;
@@ -20,6 +25,13 @@ interface Props {
 export function JobLogView({ repo, job, active }: Props) {
     const running = job.status !== "completed";
     const log = useResourceEnabled(active, actionsJobLogR, repo, job.id);
+
+    // An open log follows a job that is still going, the way the run does.
+    useEffect(() => {
+        if (!active || !running) return;
+        const timer = setInterval(() => void log.refresh(), LIVE_REFRESH_MS);
+        return () => clearInterval(timer);
+    }, [active, running, log]);
 
     if (log.status === "loading" && !log.data) return <SkeletonRows rows={12} label="Loading log" />;
     if (log.error) {
@@ -62,9 +74,9 @@ export function JobLogView({ repo, job, active }: Props) {
             <VirtualLogList
                 items={lines}
                 className="gha-log-scroll"
-                rowClassName="gha-log-line"
                 follow={running}
                 getItemKey={(line) => line.number}
+                rowClassName={(line) => (MARKUP.test(line.text) && !ENDGROUP.test(line.text) ? "gha-log-line group" : "gha-log-line")}
                 renderRow={(line) => (
                     <>
                         <span className="gha-log-number gha-mono">{line.number}</span>

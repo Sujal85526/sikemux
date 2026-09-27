@@ -38,7 +38,7 @@ fn build(redirects: reqwest::redirect::Policy) -> Option<Client> {
         .pool_idle_timeout(Duration::from_secs(25))
         .timeout(Duration::from_secs(30))
         .redirect(redirects)
-        .user_agent("sikemux-github-actions/0.1")
+        .user_agent("sikemux-github/0.1")
         .build()
         .ok()
 }
@@ -210,24 +210,18 @@ pub async fn get<T: DeserializeOwned>(
     request(&session, Method::GET, path, query, None).await
 }
 
-/// Nothing comes back but the status, which is how GitHub answers the buttons
-/// that start, stop or re-run something.
 pub async fn post_empty(data_dir: &Path, path: &str, body: Option<&Value>) -> ActionsResult<()> {
-    let session = Session::current(data_dir)?;
-    let (status, headers, bytes) = send(&session, Method::POST, path, &[], body).await?;
-    if status.is_success() {
-        return Ok(());
-    }
-    Err(classify(status, &headers, &bytes))
+    act(data_dir, Method::POST, path, body).await
 }
 
-/// Logs are served as a redirect to storage that must be followed without the
-/// token, since the signed URL carries its own permission.
-pub async fn download_text(data_dir: &Path, path: &str) -> ActionsResult<String> {
+/// Logs and artifacts are served as a redirect to storage that must be
+/// followed without the token, since the signed URL carries its own
+/// permission and GitHub rejects a request that sends both.
+pub async fn download(data_dir: &Path, path: &str) -> ActionsResult<Vec<u8>> {
     let session = Session::current(data_dir)?;
     let (status, headers, bytes) = send(&session, Method::GET, path, &[], None).await?;
     if status.is_success() {
-        return Ok(String::from_utf8_lossy(&bytes).into_owned());
+        return Ok(bytes);
     }
     if !status.is_redirection() {
         return Err(classify(status, &headers, &bytes));
@@ -235,17 +229,35 @@ pub async fn download_text(data_dir: &Path, path: &str) -> ActionsResult<String>
     let location = headers
         .get("location")
         .and_then(|value| value.to_str().ok())
-        .ok_or_else(|| ActionsError::Response("the log redirect had no address".into()))?;
-    let mut request = http()?.get(location);
-    request = request.header(AUTHORIZATION, "");
-    let response = limited(request.send()).await?;
+        .ok_or_else(|| ActionsError::Response("the download redirect had no address".into()))?;
+    let response = limited(http()?.get(location).header(AUTHORIZATION, "").send()).await?;
     let status = response.status();
     let headers = response.headers().clone();
     let bytes = read_limited(response).await?;
     if !status.is_success() {
         return Err(classify(status, &headers, &bytes));
     }
-    Ok(String::from_utf8_lossy(&bytes).into_owned())
+    Ok(bytes)
+}
+
+pub async fn download_text(data_dir: &Path, path: &str) -> ActionsResult<String> {
+    Ok(String::from_utf8_lossy(&download(data_dir, path).await?).into_owned())
+}
+
+/// A call whose answer is only its status, which is how GitHub replies to the
+/// buttons that start, stop, approve or switch something off.
+pub async fn act(
+    data_dir: &Path,
+    method: Method,
+    path: &str,
+    body: Option<&Value>,
+) -> ActionsResult<()> {
+    let session = Session::current(data_dir)?;
+    let (status, headers, bytes) = send(&session, method, path, &[], body).await?;
+    if status.is_success() {
+        return Ok(());
+    }
+    Err(classify(status, &headers, &bytes))
 }
 
 #[cfg(test)]
