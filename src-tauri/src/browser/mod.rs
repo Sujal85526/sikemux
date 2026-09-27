@@ -53,6 +53,7 @@ const PARKED_BOUNDS: BrowserBounds = BrowserBounds {
     height: 800.0,
     clip_left: 0.0,
     clip_right: 0.0,
+    holes: Vec::new(),
 };
 
 const ACTING_LINGER: Duration = Duration::from_secs(3);
@@ -86,8 +87,9 @@ pub struct BrowserSnapshot {
 }
 
 /// Where the page area sits, in the main window's CSS pixels. The clips are
-/// how much of either side lies outside the stage and must not be drawn.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
+/// how much of either side lies outside the stage and must not be drawn. The
+/// holes are app elements, like toasts, that must show through the page.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BrowserBounds {
     pub x: f64,
@@ -96,6 +98,18 @@ pub struct BrowserBounds {
     pub height: f64,
     pub clip_left: f64,
     pub clip_right: f64,
+    pub holes: Vec<BrowserHole>,
+}
+
+/// A rounded rectangle in the page's own coordinates.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BrowserHole {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub radius: f64,
 }
 
 /// A command chord pressed while the page had keyboard focus. The app's own
@@ -293,7 +307,7 @@ impl BrowserManager {
         let bounds = self
             .lock()
             .get(agent_id)
-            .and_then(|agent| agent.bounds)
+            .and_then(|agent| agent.bounds.clone())
             .unwrap_or(PARKED_BOUNDS);
 
         let builder = self.tab_builder(app, agent_id, &tab_id, parsed);
@@ -598,8 +612,8 @@ impl BrowserManager {
     /// showing its blank page, or an app overlay needs to paint over it.
     pub fn set_bounds(&self, agent_id: &str, bounds: Option<BrowserBounds>) -> AppResult<()> {
         validate_agent_id(agent_id)?;
-        if let Some(bounds) = bounds {
-            validate_bounds(&bounds)?;
+        if let Some(bounds) = &bounds {
+            validate_bounds(bounds)?;
         }
         {
             let mut agents = self.lock();
@@ -675,7 +689,7 @@ impl BrowserManager {
                 .iter()
                 .map(|(id, view)| {
                     let shown = agent.strip.active.as_deref() == Some(id.as_str());
-                    (view.clone(), agent.bounds.filter(|_| shown))
+                    (view.clone(), agent.bounds.clone().filter(|_| shown))
                 })
                 .collect()
         };
@@ -688,7 +702,8 @@ impl BrowserManager {
                     });
                     #[cfg(target_os = "macos")]
                     let _ = view.with_webview(move |platform| {
-                        macos::clip(platform.inner(), visible_part(&bounds))
+                        let holes = holes(&bounds);
+                        macos::clip(platform.inner(), visible_part(&bounds), holes)
                     });
                     let _ = view.show();
                 }
@@ -910,6 +925,26 @@ fn visible_part(bounds: &BrowserBounds) -> Option<objc2_foundation::NSRect> {
     })
 }
 
+#[cfg(target_os = "macos")]
+fn holes(bounds: &BrowserBounds) -> Vec<(objc2_foundation::NSRect, f64)> {
+    use objc2_foundation::{NSPoint, NSRect, NSSize};
+    bounds
+        .holes
+        .iter()
+        .map(|hole| {
+            (
+                NSRect::new(
+                    NSPoint::new(hole.x, hole.y),
+                    NSSize::new(hole.width, hole.height),
+                ),
+                hole.radius,
+            )
+        })
+        .collect()
+}
+
+const MAX_HOLES: usize = 32;
+
 fn validate_bounds(bounds: &BrowserBounds) -> AppResult<()> {
     let finite = [
         bounds.x,
@@ -919,9 +954,20 @@ fn validate_bounds(bounds: &BrowserBounds) -> AppResult<()> {
         bounds.clip_left,
         bounds.clip_right,
     ]
-    .iter()
+    .into_iter()
+    .chain(
+        bounds
+            .holes
+            .iter()
+            .flat_map(|hole| [hole.x, hole.y, hole.width, hole.height, hole.radius]),
+    )
     .all(|value| value.is_finite() && value.abs() < 1.0e6);
     if !finite
+        || bounds.holes.len() > MAX_HOLES
+        || bounds
+            .holes
+            .iter()
+            .any(|hole| hole.width <= 0.0 || hole.height <= 0.0 || hole.radius < 0.0)
         || bounds.width < 1.0
         || bounds.height < 1.0
         || bounds.clip_left < 0.0
@@ -1263,19 +1309,38 @@ mod tests {
             height: 200.0,
             clip_left: 40.0,
             clip_right: 0.0,
+            holes: vec![BrowserHole {
+                x: 0.0,
+                y: 150.0,
+                width: 120.0,
+                height: 34.0,
+                radius: 13.0,
+            }],
         };
         assert!(validate_bounds(&good).is_ok());
         assert!(validate_bounds(&BrowserBounds {
+            holes: vec![BrowserHole {
+                width: 0.0,
+                ..good.holes[0]
+            }],
+            ..good.clone()
+        })
+        .is_err());
+        assert!(validate_bounds(&BrowserBounds {
             clip_left: -1.0,
-            ..good
+            ..good.clone()
         })
         .is_err());
         assert!(validate_bounds(&BrowserBounds {
             clip_right: 261.0,
-            ..good
+            ..good.clone()
         })
         .is_err());
-        assert!(validate_bounds(&BrowserBounds { width: 0.0, ..good }).is_err());
+        assert!(validate_bounds(&BrowserBounds {
+            width: 0.0,
+            ..good.clone()
+        })
+        .is_err());
         assert!(validate_bounds(&BrowserBounds {
             x: f64::NAN,
             ..good

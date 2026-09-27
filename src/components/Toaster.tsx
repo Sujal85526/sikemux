@@ -1,5 +1,6 @@
-import { useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { animate, EASE_LEAVE, leavingRef } from "../lib/motion";
+import { setNativeViewHoles, type NativeViewHole } from "../state/nativeViews";
 import { useToasts, type ToastKind } from "../state/toast";
 import { IconCheck, IconClose, IconExclamation, IconInfoMark } from "./Icons";
 
@@ -35,6 +36,19 @@ const dismissToast = leavingRef<HTMLDivElement>((toast) => {
     );
 });
 
+/* Where each toast rests, leaving aside its own entry and slide motion, so a
+   browser page can leave a hole there instead of covering it. */
+function restingRects(island: HTMLElement): NativeViewHole[] {
+    const origin = island.getBoundingClientRect();
+    return Array.from(island.querySelectorAll<HTMLElement>(":scope > .toast"), (toast) => ({
+        x: Math.round(origin.left + toast.offsetLeft),
+        y: Math.round(origin.top + toast.offsetTop),
+        width: toast.offsetWidth,
+        height: toast.offsetHeight,
+        radius: parseFloat(getComputedStyle(toast).borderTopLeftRadius) || 0,
+    })).filter((rect) => rect.width > 0 && rect.height > 0);
+}
+
 export function Toaster() {
     const toasts = useToasts((s) => s.toasts);
     const dismiss = useToasts((s) => s.dismiss);
@@ -56,6 +70,29 @@ export function Toaster() {
         }
         tops.current = next;
     }, [toasts]);
+    useEffect(() => {
+        const node = island.current;
+        if (!node) return;
+        let frame = 0;
+        const measure = () => {
+            frame = 0;
+            setNativeViewHoles(restingRects(node));
+        };
+        const schedule = () => {
+            if (!frame) frame = requestAnimationFrame(measure);
+        };
+        measure();
+        const observer = new ResizeObserver(schedule);
+        observer.observe(node);
+        window.addEventListener("resize", schedule);
+        return () => {
+            observer.disconnect();
+            window.removeEventListener("resize", schedule);
+            if (frame) cancelAnimationFrame(frame);
+            setNativeViewHoles([]);
+        };
+    }, []);
+    useLayoutEffect(() => setNativeViewHoles(island.current ? restingRects(island.current) : []), [toasts]);
     // The island stays mounted while empty: a live region has to exist before it is spoken into.
     return (
         <div ref={island} className="toaster" aria-live="polite" aria-atomic="false">

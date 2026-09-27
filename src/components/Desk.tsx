@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { browserApi, BLANK_URL, type BrowserBounds, type BrowserSnapshot } from "../api/browser";
-import { onStageFrame, useNativeViewsOccluded, useStageMoving } from "../state/nativeViews";
+import { browserApi, BLANK_URL, type BrowserBounds, type BrowserHole, type BrowserSnapshot } from "../api/browser";
+import { onStageFrame, useNativeViewHoles, useNativeViewsOccluded, useStageMoving, type NativeViewHole } from "../state/nativeViews";
 import type { AgentType, PtyContext, Session, Window as WindowT } from "../state/types";
 import { reportError } from "../state/toast";
 import { AgentIcon, IconChevron, IconGlobe, IconPlus, IconRefresh, WindowIcon } from "./Icons";
@@ -43,7 +43,22 @@ function scrollParents(element: HTMLElement): (HTMLElement | Window)[] {
     return parents;
 }
 
-function sameBounds(a: BrowserBounds | null, b: BrowserBounds): boolean {
+type Placement = Omit<BrowserBounds, "holes">;
+
+/** The holes that fall on the page, moved into its own coordinates. */
+function holesOver(placement: Placement, holes: NativeViewHole[]): BrowserHole[] {
+    return holes
+        .filter(
+            (hole) =>
+                hole.x < placement.x + placement.width &&
+                hole.x + hole.width > placement.x &&
+                hole.y < placement.y + placement.height &&
+                hole.y + hole.height > placement.y,
+        )
+        .map((hole) => ({ ...hole, x: hole.x - placement.x, y: hole.y - placement.y }));
+}
+
+function sameBounds(a: Placement | null, b: Placement): boolean {
     return (
         !!a && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height && a.clipLeft === b.clipLeft && a.clipRight === b.clipRight
     );
@@ -325,8 +340,9 @@ function BrowserPage({
     const viewportRef = useRef<HTMLDivElement>(null);
     const measureRef = useRef<() => void>(() => {});
     const [typed, setTyped] = useState<string | null>(null);
-    const [placement, setPlacement] = useState<BrowserBounds | null>(null);
+    const [placement, setPlacement] = useState<Placement | null>(null);
     const occluded = useNativeViewsOccluded();
+    const appHoles = useNativeViewHoles();
     const moving = useStageMoving();
     const activeTab = useMemo(() => snapshot.tabs.find((tab) => tab.id === snapshot.activeTabId) ?? snapshot.tabs[0], [snapshot]);
     const blank = activeTab?.url === BLANK_URL;
@@ -398,9 +414,11 @@ function BrowserPage({
         return onStageFrame(() => measureRef.current());
     }, [moving]);
 
+    const holesKey = JSON.stringify(placement ? holesOver(placement, appHoles) : []);
+    const holes = useMemo<BrowserHole[]>(() => JSON.parse(holesKey), [holesKey]);
     useEffect(() => {
-        void browserApi.setBounds(agentId, shown && placement ? placement : null).catch(reportError("place browser page"));
-    }, [agentId, placement, shown]);
+        void browserApi.setBounds(agentId, shown && placement ? { ...placement, holes } : null).catch(reportError("place browser page"));
+    }, [agentId, placement, holes, shown]);
 
     useEffect(
         () => () => {

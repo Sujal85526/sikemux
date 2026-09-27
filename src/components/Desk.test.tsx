@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { browserApi, type BrowserSnapshot, type BrowserTab } from "../api/browser";
-import { occludeNativeViews, useStageMotion } from "../state/nativeViews";
+import { occludeNativeViews, setNativeViewHoles, useStageMotion } from "../state/nativeViews";
 import { useToasts } from "../state/toast";
 import { getState, setState } from "../state/store";
 import { deskEditorId } from "../state/desks";
@@ -155,7 +155,7 @@ function announceStrip(strip: BrowserSnapshot) {
 
 const onEmpty = vi.fn();
 
-const placed = { x: 640, y: 96, width: 480, height: 321, clipLeft: 0, clipRight: 0 };
+const placed = { x: 640, y: 96, width: 480, height: 321, clipLeft: 0, clipRight: 0, holes: [] };
 
 /** Stands in for the stage telling the panes on it that it is travelling. */
 function Stage({ moving }: { moving: boolean }) {
@@ -222,6 +222,29 @@ describe("DeskHost", () => {
 
         rerender(<Host visible={false} />);
         await waitFor(() => expect(browserApi.setBounds).toHaveBeenLastCalledWith("agent-one", null));
+    });
+
+    /* A toast is too brief to send the page away for, so the page leaves a hole
+       where it sits, in the page's own coordinates. */
+    it("cuts a hole in the page where a toast sits over it, and only there", async () => {
+        renderPane();
+        await waitFor(() => expect(browserApi.setBounds).toHaveBeenCalledWith("agent-one", placed));
+
+        act(() =>
+            setNativeViewHoles([
+                { x: 600, y: 380, width: 200, height: 34, radius: 13 },
+                { x: 10, y: 380, width: 200, height: 34, radius: 13 },
+            ]),
+        );
+        await waitFor(() =>
+            expect(browserApi.setBounds).toHaveBeenLastCalledWith("agent-one", {
+                ...placed,
+                holes: [{ x: -40, y: 284, width: 200, height: 34, radius: 13 }],
+            }),
+        );
+
+        act(() => setNativeViewHoles([]));
+        await waitFor(() => expect(browserApi.setBounds).toHaveBeenLastCalledWith("agent-one", placed));
     });
 
     it("re-places the page when its area moves and parks it on unmount", async () => {

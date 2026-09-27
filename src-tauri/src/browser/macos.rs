@@ -11,20 +11,20 @@ use std::rc::Rc;
 
 use block2::RcBlock;
 use objc2::rc::Retained;
-use objc2::runtime::{AnyObject, Bool, ProtocolObject};
-use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOnly};
+use objc2::runtime::{AnyObject, Bool, Imp, ProtocolObject, Sel};
+use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSAlertSecondButtonReturn, NSBitmapImageFileType,
     NSBitmapImageRep, NSEvent, NSEventMask, NSEventModifierFlags, NSImage,
     NSImageCompressionFactor, NSModalResponse, NSTextField, NSView,
 };
-use objc2_core_graphics::CGColor;
+use objc2_core_graphics::CGMutablePath;
 use objc2_foundation::{
     NSData, NSDictionary, NSError, NSKeyValueChangeKey, NSKeyValueObservingOptions, NSNumber,
     NSObject, NSObjectNSKeyValueObserverRegistration, NSObjectProtocol, NSPoint, NSRect, NSSize,
     NSString,
 };
-use objc2_quartz_core::{CALayer, CATransaction};
+use objc2_quartz_core::{kCAFillRuleEvenOdd, CALayer, CAShapeLayer, CATransaction};
 use objc2_web_kit::{
     WKContentWorld, WKFrameInfo, WKMediaCaptureType, WKNavigationAction, WKOpenPanelParameters,
     WKPDFConfiguration, WKPermissionDecision, WKSecurityOrigin, WKSnapshotConfiguration,
@@ -61,6 +61,8 @@ thread_local! {
     static TABS: RefCell<HashMap<String, NativeTab>> = RefCell::new(HashMap::new());
     static SHORTCUT_MONITOR: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
     static OPEN_DIALOGS: RefCell<HashMap<String, OpenDialog>> = RefCell::new(HashMap::new());
+    static HOLES: RefCell<HashMap<usize, Vec<NSRect>>> = RefCell::new(HashMap::new());
+    static PAGE_HIT_TEST: std::cell::Cell<Option<Imp>> = const { std::cell::Cell::new(None) };
 }
 
 /// A page dialog showing as a sheet, kept so the agent can answer it too.
@@ -125,7 +127,9 @@ pub fn adopt(
 pub fn forget(tab_id: &str) {
     let _ = answer_dialog(tab_id, false, None);
     TABS.with(|tabs| {
-        tabs.borrow_mut().remove(tab_id);
+        if let Some(tab) = tabs.borrow_mut().remove(tab_id) {
+            HOLES.with(|holes| holes.borrow_mut().remove(&view_key(&tab.webview)));
+        }
     });
 }
 
@@ -198,10 +202,10 @@ pub fn history(pointer: *mut c_void, delta: i32) {
     }
 }
 
-/// Draw only `visible` of the page, in the page's own coordinates. A swipe
-/// carries the page past the edge of the stage, and a native view is not cut
-/// off by the DOM around it, so it would otherwise paint over the rails.
-pub fn clip(pointer: *mut c_void, visible: Option<NSRect>) {
+/// Draw only `visible` of the page, less the `holes`, all in the page's own
+/// top-down coordinates. A native view is not cut off by the DOM around it, so
+/// a swipe would carry the page over the rails and it would cover any toast.
+pub fn clip(pointer: *mut c_void, visible: Option<NSRect>, holes: Vec<(NSRect, f64)>) {
     let Some(webview) = webview_from(pointer) else {
         return;
     };
@@ -209,21 +213,146 @@ pub fn clip(pointer: *mut c_void, visible: Option<NSRect>) {
     let Some(layer): Option<Retained<CALayer>> = (unsafe { msg_send![view, layer] }) else {
         return;
     };
+    let whole = view.bounds();
+    let visible = visible.unwrap_or(whole);
+    let holes: Vec<(NSRect, f64)> = holes
+        .into_iter()
+        .filter_map(|(hole, radius)| {
+            let hole = intersection(hole, visible)?;
+            Some((
+                hole,
+                radius
+                    .min(hole.size.width / 2.0)
+                    .min(hole.size.height / 2.0),
+            ))
+        })
+        .collect();
+    HOLES.with(|all| {
+        let mut all = all.borrow_mut();
+        if holes.is_empty() {
+            all.remove(&view_key(&webview));
+        } else {
+            all.insert(
+                view_key(&webview),
+                holes.iter().map(|(hole, _)| *hole).collect(),
+            );
+        }
+    });
+    if !holes.is_empty() {
+        let _ = pass_clicks_through_holes(view);
+    }
+    let flip = |rect: NSRect| {
+        if layer.isGeometryFlipped() {
+            rect
+        } else {
+            NSRect::new(
+                NSPoint::new(
+                    rect.origin.x,
+                    whole.size.height - rect.origin.y - rect.size.height,
+                ),
+                rect.size,
+            )
+        }
+    };
     CATransaction::begin();
     CATransaction::setDisableActions(true);
-    match visible {
-        None => unsafe { layer.setMask(None) },
-        Some(visible) => {
-            let mask = layer.mask().unwrap_or_else(|| {
-                let mask = CALayer::new();
-                mask.setBackgroundColor(Some(&CGColor::new_generic_gray(0.0, 1.0)));
-                unsafe { layer.setMask(Some(&mask)) };
-                mask
-            });
-            mask.setFrame(visible);
+    if visible == whole && holes.is_empty() {
+        unsafe { layer.setMask(None) };
+    } else {
+        let path = CGMutablePath::new();
+        unsafe {
+            CGMutablePath::add_rect(Some(&path), std::ptr::null(), flip(visible));
+            for (hole, radius) in &holes {
+                CGMutablePath::add_rounded_rect(
+                    Some(&path),
+                    std::ptr::null(),
+                    flip(*hole),
+                    *radius,
+                    *radius,
+                );
+            }
         }
+        let mask = CAShapeLayer::new();
+        mask.setFrame(layer.bounds());
+        mask.setFillRule(unsafe { kCAFillRuleEvenOdd });
+        mask.setPath(Some(&path));
+        unsafe { layer.setMask(Some(&mask)) };
     }
     CATransaction::commit();
+}
+
+fn view_key(view: &NSView) -> usize {
+    view as *const NSView as usize
+}
+
+fn intersection(a: NSRect, b: NSRect) -> Option<NSRect> {
+    let left = a.origin.x.max(b.origin.x);
+    let top = a.origin.y.max(b.origin.y);
+    let right = (a.origin.x + a.size.width).min(b.origin.x + b.size.width);
+    let bottom = (a.origin.y + a.size.height).min(b.origin.y + b.size.height);
+    (right > left && bottom > top).then(|| {
+        NSRect::new(
+            NSPoint::new(left, top),
+            NSSize::new(right - left, bottom - top),
+        )
+    })
+}
+
+/* A mask only changes what the page draws; clicks over a hole still land on the
+page. So the page's class learns to pass a point in a hole on to the app below. */
+fn pass_clicks_through_holes(view: &NSView) -> Option<()> {
+    if PAGE_HIT_TEST.with(|cell| cell.get()).is_some() {
+        return Some(());
+    }
+    let class = view.class();
+    let selector = sel!(hitTest:);
+    let inherited = class.instance_method(selector)?;
+    let types = unsafe { objc2::ffi::method_getTypeEncoding(inherited) };
+    let hit_test: HitTest = hit_test_outside_holes;
+    let added = unsafe {
+        objc2::ffi::class_addMethod(
+            (class as *const objc2::runtime::AnyClass).cast_mut(),
+            selector,
+            std::mem::transmute::<HitTest, Imp>(hit_test),
+            types,
+        )
+    };
+    added
+        .as_bool()
+        .then(|| PAGE_HIT_TEST.with(|cell| cell.set(Some(inherited.implementation()))))
+}
+
+type HitTest = unsafe extern "C-unwind" fn(&NSView, Sel, NSPoint) -> *mut NSView;
+
+unsafe extern "C-unwind" fn hit_test_outside_holes(
+    view: &NSView,
+    selector: Sel,
+    point: NSPoint,
+) -> *mut NSView {
+    let holes = HOLES.with(|all| all.borrow().get(&view_key(view)).cloned());
+    if let Some(holes) = holes {
+        let superview = unsafe { view.superview() };
+        let local = view.convertPoint_fromView(point, superview.as_deref());
+        let local = if view.isFlipped() {
+            local
+        } else {
+            NSPoint::new(local.x, view.bounds().size.height - local.y)
+        };
+        let inside = |hole: &NSRect| {
+            local.x >= hole.origin.x
+                && local.x < hole.origin.x + hole.size.width
+                && local.y >= hole.origin.y
+                && local.y < hole.origin.y + hole.size.height
+        };
+        if holes.iter().any(inside) {
+            return std::ptr::null_mut();
+        }
+    }
+    let Some(inherited) = PAGE_HIT_TEST.with(|cell| cell.get()) else {
+        return std::ptr::null_mut();
+    };
+    let inherited = unsafe { std::mem::transmute::<Imp, HitTest>(inherited) };
+    unsafe { inherited(view, selector, point) }
 }
 
 pub fn history_state(pointer: *mut c_void) -> (bool, bool) {
