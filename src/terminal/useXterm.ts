@@ -80,6 +80,13 @@ const SEARCH_DECORATIONS: NonNullable<ISearchOptions["decorations"]> = {
     activeMatchColorOverviewRuler: "#a277ff",
 };
 
+function openTerminalLink(event: MouseEvent, uri: string) {
+    event.preventDefault();
+    const url = safeWebUrl(uri);
+    if (!url) return;
+    void invoke("open_url", { url, app: null, shortcut: null }).catch((error) => console.warn("open terminal link failed", error));
+}
+
 export function useXterm(opts: {
     hostRef: RefObject<HTMLDivElement | null>;
     ptyController: RefObject<NativePtyController | null>;
@@ -239,6 +246,7 @@ export function useXterm(opts: {
                     scrollback: SCROLLBACK,
                     scrollOnUserInput: true,
                     smoothScrollDuration: 0,
+                    linkHandler: { activate: openTerminalLink },
                 });
             } catch {
                 bootingRef.current = false;
@@ -279,12 +287,7 @@ export function useXterm(opts: {
                 const fit = new FitAddon();
                 const search = new SearchAddon();
                 const serializer = new SerializeAddon();
-                const webLinks = new WebLinksAddon((event, uri) => {
-                    event.preventDefault();
-                    const url = safeWebUrl(uri);
-                    if (!url) return;
-                    void invoke("open_url", { url, app: null, shortcut: null }).catch((error) => console.warn("open terminal link failed", error));
-                });
+                const webLinks = new WebLinksAddon(openTerminalLink);
                 term.loadAddon(fit);
                 term.loadAddon(search);
                 term.loadAddon(serializer);
