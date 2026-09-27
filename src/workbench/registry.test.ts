@@ -166,6 +166,19 @@ describe("workbench item persistence", () => {
         expect(registry.decodePersisted(ref, editorEnvelope({ ...state, single: false }))).toMatchObject({ ok: false });
     });
 
+    it("keeps the preview tab, and drops one that is no longer open", () => {
+        const registry = new WorkbenchItemRegistry();
+        const ref = createWorkbenchItemRef("pane-editor", "editor");
+        const state = { openTabs: ["/project/a.ts", "/project/b.ts"], activePath: "/project/b.ts", preview: "/project/b.ts" };
+
+        expect(registry.decodePersisted(ref, editorEnvelope(state))).toEqual({ ok: true, ref, state });
+        expect(registry.decodePersisted(ref, editorEnvelope({ ...state, preview: "/project/gone.ts" }))).toEqual({
+            ok: true,
+            ref,
+            state: { openTabs: state.openTabs, activePath: state.activePath },
+        });
+    });
+
     it("accepts the tab-count boundary and rejects one tab beyond it", () => {
         const registry = new WorkbenchItemRegistry();
         const ref = createWorkbenchItemRef("pane-editor", "editor");

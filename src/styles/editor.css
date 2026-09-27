@@ -329,6 +329,9 @@ body.is-sorting-tabs * {
     overflow: hidden;
     text-overflow: ellipsis;
 }
+.tab.preview .tab-label {
+    font-style: italic;
+}
 .tab-dot {
     flex: 0 0 auto;
     width: 6px;

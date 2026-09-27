@@ -3,6 +3,8 @@ export interface EditorPaneView {
     activePath: string | null;
     /** A view split beside other work that shows one file, rather than an editor holding the tab's files. */
     single?: true;
+    /** The tab a single click in the file tree opened. The next such click reuses it, until it is kept. */
+    preview?: string;
 }
 
 /** A page the desk can open again, with the title to label it until it loads. */

@@ -350,6 +350,10 @@ export function EditorPane({
     }, [paneId, dirty]);
 
     useEffect(() => {
+        if (view.preview && dirty.has(view.preview)) cmd.keepEditorTab(paneId, view.preview);
+    }, [paneId, dirty, view.preview]);
+
+    useEffect(() => {
         return () => cmd.setEditorDirtyPaths(paneId, []);
     }, [paneId]);
 
@@ -634,8 +638,11 @@ export function EditorPane({
         view.focus();
     };
 
-    const openPathRef = useRef<(path: string) => Promise<void>>(async () => {});
-    const openTreeFile = useCallback((entry: { path: string }) => {
+    const openPathRef = useRef<(path: string, preview?: boolean) => Promise<void>>(async () => {});
+    const previewTreeFile = useCallback((entry: { path: string }) => {
+        void openPathRef.current(entry.path, true).catch(reportError("open file"));
+    }, []);
+    const keepTreeFile = useCallback((entry: { path: string }) => {
         void openPathRef.current(entry.path).catch(reportError("open file"));
     }, []);
 
@@ -643,10 +650,16 @@ export function EditorPane({
         void openPathRef.current(path).catch(reportError("open linked file"));
     }, []);
 
-    const openPath = async (path: string) => {
+    const openTab = (path: string, activate: boolean, preview: boolean) => {
+        const replaced = cmd.openEditorTab(paneId, path, activate, preview);
+        if (replaced && replaced !== path) forgetDocs([replaced]);
+    };
+
+    const openPath = async (path: string, preview = false) => {
         const request = ++openRequestRef.current;
         const liveTabs = useStore.getState().editorViews[paneId]?.openTabs ?? [];
         if (liveTabs.includes(path)) {
+            if (!preview) cmd.keepEditorTab(paneId, path);
             if (isImagePath(path) || states.current.has(path)) {
                 switchTo(path);
                 return;
@@ -655,7 +668,7 @@ export function EditorPane({
         if (isImagePath(path)) {
             const blob = await fsapi.readFileBase64(path);
             cacheImage(path, blob);
-            cmd.openEditorTab(paneId, path);
+            openTab(path, true, preview);
             switchTo(path);
             return;
         }
@@ -665,13 +678,13 @@ export function EditorPane({
         // Two rapid opens of the same path can resolve out of order. Do not
         // replace the state created by the newer request with the stale read.
         if (!latest && states.current.has(path)) {
-            cmd.openEditorTab(paneId, path, false);
+            openTab(path, false, preview);
             return;
         }
         const st = makeState(path, content);
         cacheState(path, st);
         savedRef.current.set(path, content);
-        cmd.openEditorTab(paneId, path, latest);
+        openTab(path, latest, preview);
         if (latest) switchTo(path, st);
     };
     openPathRef.current = openPath;
@@ -1074,8 +1087,9 @@ export function EditorPane({
     };
     closeTabsRef.current = closeTabs;
 
-    const closeTabsNow = (closing: Set<string>) => {
-        for (const p of closing) {
+    const forgetDocs = (paths: Iterable<string>) => {
+        const forgotten = new Set(paths);
+        for (const p of forgotten) {
             states.current.delete(p);
             imagesRef.current.delete(p);
             savedRef.current.delete(p);
@@ -1087,9 +1101,13 @@ export function EditorPane({
         setDirty((d) => {
             let changed = false;
             const next = new Set(d);
-            for (const p of closing) if (next.delete(p)) changed = true;
+            for (const p of forgotten) if (next.delete(p)) changed = true;
             return changed ? next : d;
         });
+    };
+
+    const closeTabsNow = (closing: Set<string>) => {
+        forgetDocs(closing);
         const next = tabs.filter((t) => !closing.has(t));
         let nextActive = activePath;
         if (activePath && closing.has(activePath)) {
@@ -1106,7 +1124,11 @@ export function EditorPane({
                 viewRef.current?.setState(makeState("", ""));
             }
         }
-        cmd.setEditorView(paneId, { openTabs: next, activePath: nextActive });
+        cmd.setEditorView(paneId, {
+            openTabs: next,
+            activePath: nextActive,
+            preview: view.preview && closing.has(view.preview) ? undefined : view.preview,
+        });
     };
 
     const toggleMarkdownPreview = () => {
@@ -1124,7 +1146,15 @@ export function EditorPane({
     return (
         <div className="editor-pane">
             {!onCloseWindow && !bare && (
-                <FileTree width={treeWidth} onResize={setTreeWidth} cwd={cwd} activePath={activePath} onOpenFile={openTreeFile} active={visible} />
+                <FileTree
+                    width={treeWidth}
+                    onResize={setTreeWidth}
+                    cwd={cwd}
+                    activePath={activePath}
+                    onOpenFile={previewTreeFile}
+                    onKeepFile={keepTreeFile}
+                    active={visible}
+                />
             )}
             <div className="ed-main">
                 {!bare && <ShaderField preset="ambient" className="pane-field" enabled={paneShader && visible} />}

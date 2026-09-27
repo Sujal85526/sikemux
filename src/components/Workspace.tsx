@@ -417,6 +417,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                         title: ref.doc,
                         active: key === activeKey,
                         dirty: (dirtyEditorPaths[editorPaneOf(win, editorViews)] ?? []).includes(ref.doc),
+                        preview: editorViews[editorPaneOf(win, editorViews)]?.preview === ref.doc,
                         icon: <FileIcon name={name} size={16} />,
                     },
                 ];
@@ -547,6 +548,11 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                     if (ref) cmd.selectTab(ref);
                     else if (pane) cmd.selectTab({ id: pane.windowId });
                     if (pane) cmd.focusPane(pane.paneId);
+                }}
+                onKeep={(key) => {
+                    const ref = refByKey.get(key);
+                    const win = ref ? windowsById[ref.id] : undefined;
+                    if (win && ref?.doc !== undefined) cmd.keepEditorTab(editorPaneOf(win, getState().editorViews), ref.doc);
                 }}
                 onClose={(key) => {
                     const ref = refByKey.get(key);

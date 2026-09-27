@@ -35,6 +35,8 @@ export interface TabDescriptor {
     className?: string;
     /** Tabs next to each other with the same group are outlined together, like the panes of one split. */
     group?: string;
+    /** A temporary tab the next preview replaces. Drawn in italics until `onKeep` is called for it. */
+    preview?: boolean;
 }
 
 export type TabVariant = "editor" | "agent" | "desk" | "stack";
@@ -100,6 +102,8 @@ interface TabBarProps {
     tabs: TabDescriptor[];
     onSelect: (id: string) => void;
     onClose?: (id: string) => void;
+    /** A preview tab was double-clicked, so it should stay. */
+    onKeep?: (id: string) => void;
     /** Build the right-click menu for a tab. Omit to disable the context menu. */
     buildMenu?: (id: string) => CtxItem[];
     onAdd?: () => void;
@@ -123,6 +127,7 @@ export function TabBar({
     tabs,
     onSelect,
     onClose,
+    onKeep,
     buildMenu,
     onAdd,
     addIcon,
@@ -321,13 +326,14 @@ export function TabBar({
                             }
                         }}
                         aria-label={`${t.label}${t.dirty ? ", unsaved changes" : ""}`}
-                        className={`tab${t.active ? " active" : ""}`}
+                        className={`tab${t.active ? " active" : ""}${t.preview ? " preview" : ""}`}
                         onPointerDown={onReorder ? (event) => reorder.onPointerDown(event, t.id) : undefined}
                         onClick={(event) => {
                             if (reorder.consumeClick()) return;
                             event.currentTarget.focus({ preventScroll: true });
                             onSelect(t.id);
                         }}
+                        onDoubleClick={t.preview && onKeep ? () => onKeep(t.id) : undefined}
                         onContextMenu={
                             buildMenu
                                 ? (e) => {

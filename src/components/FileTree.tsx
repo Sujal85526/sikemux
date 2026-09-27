@@ -24,7 +24,10 @@ import { leavingMenu } from "../lib/motion";
 interface FileTreeProps {
     cwd: string;
     activePath: string | null;
+    /** A single click: the file takes the preview tab. */
     onOpenFile: (entry: DirEntry) => void;
+    /** A double click, or any open that means it: the file gets a tab of its own. */
+    onKeepFile: (entry: DirEntry) => void;
     /** Omit both to let the tree fill its container instead of owning a width. */
     width?: number;
     onResize?: (w: number) => void;
@@ -66,7 +69,7 @@ function validEntryName(raw: string): string | null {
     return name;
 }
 
-export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, width, onResize, active, revealPath }: FileTreeProps) {
+export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, onKeepFile, width, onResize, active, revealPath }: FileTreeProps) {
     const resizable = width !== undefined && onResize !== undefined;
     const [dirs, setDirs] = useState<Record<string, DirEntry[]>>({});
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -288,7 +291,7 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, wi
             await loadDir(newRequest.parent);
             cancelNew();
             if (newRequest.kind === "file") {
-                onOpenFile({
+                onKeepFile({
                     name,
                     path: target,
                     is_dir: false,
@@ -558,7 +561,7 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, wi
                 label: "Open",
                 run: () => {
                     setSelectedDir(null);
-                    onOpenFile(entry);
+                    onKeepFile(entry);
                 },
             },
             { sep: true },
@@ -670,6 +673,7 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, wi
                     setSelectedDir(null);
                     onOpenFile(e);
                 }}
+                onDoubleClick={() => onKeepFile(e)}
                 onContextMenu={(ev) => openMenu(ev, e)}
                 role="treeitem"
                 aria-level={row.depth + 1}

@@ -184,7 +184,7 @@ function isValidPersistedEditorPath(value: unknown): value is string {
 
 function decodeEditorView(encoded: unknown): PersistedCodecResult<EditorPaneView> {
     if (!isRecord(encoded)) return CODEC_FAILURE;
-    const { openTabs, activePath, single } = encoded;
+    const { openTabs, activePath, single, preview } = encoded;
     if (!Array.isArray(openTabs) || openTabs.length > EDITOR_PERSISTENCE_LIMITS.maxOpenTabs) return CODEC_FAILURE;
     const uniquePaths = new Set<string>();
     for (const path of openTabs) {
@@ -193,7 +193,9 @@ function decodeEditorView(encoded: unknown): PersistedCodecResult<EditorPaneView
     }
     if (activePath !== null && (!isValidPersistedEditorPath(activePath) || !uniquePaths.has(activePath))) return CODEC_FAILURE;
     if (single !== undefined && single !== true) return CODEC_FAILURE;
-    return { ok: true, value: { openTabs: openTabs.slice(), activePath, ...(single ? { single } : {}) } };
+    if (preview !== undefined && typeof preview !== "string") return CODEC_FAILURE;
+    const keepsPreview = preview !== undefined && uniquePaths.has(preview);
+    return { ok: true, value: { openTabs: openTabs.slice(), activePath, ...(single ? { single } : {}), ...(keepsPreview ? { preview } : {}) } };
 }
 
 function isValidPersistedBrowserUrl(value: unknown): value is string {
