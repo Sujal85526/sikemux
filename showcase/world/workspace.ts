@@ -4,7 +4,7 @@ import type {
 } from "../../src/state/types/persisted";
 import type { LayoutNode, Window } from "../../src/state/types";
 import { VERSION } from "../../src/state/persist";
-import { DEMO_HOME, FRONT, MOODBOARD, SIKEMUX } from "./projects";
+import { DEMO_HOME, DEMO_PROJECTS, FRONT, MOODBOARD, SIKEMUX } from "./projects";
 
 const pane = (
   id: string,
@@ -292,6 +292,9 @@ export function demoSnapshot(): PersistedSnapshot {
     recent: [],
     prefs: {
       projectRoots: [{ path: `${DEMO_HOME}/code`, depth: 1 }],
+      languageServerTrust: Object.fromEntries(
+        DEMO_PROJECTS.map((project) => [project.path, true]),
+      ),
       themeId: "aura",
       windowOpacity: 0.81,
       paneShader: true,

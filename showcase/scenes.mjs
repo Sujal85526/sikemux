@@ -43,7 +43,7 @@ export const SCENES = [
       rail: ".workspace-rail",
       focus: {
         selector: ".stage",
-        region: { left: 0.1405, top: 0.4386, width: 0.7189, height: 0.3411 },
+        region: { left: 0.1405, top: 0.3957, width: 0.7189, height: 0.3411 },
       },
     },
   },
@@ -55,7 +55,7 @@ export const SCENES = [
       tree: ".ed-tree",
       focus: {
         selector: ".stage",
-        region: { left: 0.0017, top: 0.0448, width: 0.6474, height: 0.5010 },
+        region: { left: 0.0017, top: 0.0019, width: 0.6474, height: 0.5010 },
       },
     },
   },
@@ -66,7 +66,7 @@ export const SCENES = [
       stage: ".stage",
       focus: {
         selector: ".stage",
-        region: { left: 0.5273, top: 0.0507, width: 0.4659, height: 0.3119 },
+        region: { left: 0.5273, top: 0.0078, width: 0.4659, height: 0.3119 },
       },
     },
   },
@@ -77,7 +77,7 @@ export const SCENES = [
       stage: ".stage",
       focus: {
         selector: ".stage",
-        region: { left: 0.0017, top: 0.0448, width: 0.5562, height: 0.3304 },
+        region: { left: 0.0017, top: 0.0019, width: 0.5562, height: 0.3304 },
       },
     },
   },
@@ -134,7 +134,7 @@ export const SCENES = [
       stage: ".stage",
       card: {
         selector: ".stage",
-        region: { left: 0.1549, top: 0.0448, width: 0.8438, height: 0.4620 },
+        region: { left: 0.1549, top: 0.0019, width: 0.8438, height: 0.4620 },
       },
     },
   },
@@ -166,7 +166,7 @@ export const SCENES = [
       stage: ".stage",
       card: {
         selector: ".stage",
-        region: { left: 0.1486, top: 0.0448, width: 0.8500, height: 0.5205 },
+        region: { left: 0.1486, top: 0.0019, width: 0.8500, height: 0.5205 },
       },
     },
   },
@@ -190,7 +190,7 @@ export const SCENES = [
       stage: ".stage",
       card: {
         selector: ".stage",
-        region: { left: 0.1458, top: 0.0448, width: 0.8528, height: 0.3645 },
+        region: { left: 0.1458, top: 0.0019, width: 0.8528, height: 0.3645 },
       },
     },
   },
@@ -208,7 +208,7 @@ export const SCENES = [
       stage: ".stage",
       card: {
         selector: ".stage",
-        region: { left: 0.1458, top: 0.0195, width: 0.8528, height: 0.5585 },
+        region: { left: 0.1458, top: 0.0000, width: 0.8528, height: 0.5585 },
       },
     },
   },
@@ -246,7 +246,7 @@ export const SCENES = [
       stage: ".stage",
       card: {
         selector: ".stage",
-        region: { left: 0.1736, top: 0.0819, width: 0.8250, height: 0.3567 },
+        region: { left: 0.1736, top: 0.0390, width: 0.8250, height: 0.3567 },
       },
     },
   },
