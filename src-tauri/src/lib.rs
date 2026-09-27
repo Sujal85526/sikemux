@@ -20,6 +20,7 @@ mod git;
 mod grammars;
 mod harness;
 mod lsp;
+mod markdown;
 pub mod observability;
 mod plugins;
 mod pty;
@@ -358,6 +359,7 @@ pub fn run() {
             lsp::lsp_locations,
             lsp::lsp_document_symbols,
             diff::diff_hunks,
+            markdown::markdown_parse,
             files::list_project_files,
             files::list_project_files_snapshot,
             settings::scan_project_roots,

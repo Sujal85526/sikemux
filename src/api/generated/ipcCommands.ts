@@ -147,6 +147,7 @@ export const IPC_COMMANDS = [
     "lsp_locations",
     "lsp_document_symbols",
     "diff_hunks",
+    "markdown_parse",
     "list_project_files",
     "list_project_files_snapshot",
     "scan_project_roots",

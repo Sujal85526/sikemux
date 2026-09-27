@@ -163,6 +163,7 @@
     "allow-lsp-locations",
     "allow-lsp-document-symbols",
     "allow-diff-hunks",
+    "allow-markdown-parse",
     "allow-list-project-files",
     "allow-list-project-files-snapshot",
     "allow-scan-project-roots",
