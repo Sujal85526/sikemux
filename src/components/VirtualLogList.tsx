@@ -12,6 +12,8 @@ interface VirtualLogListProps<T> {
     onScroll?: (element: HTMLDivElement) => void;
     allowFollow?: (element: HTMLDivElement) => boolean;
     getItemKey?: (item: T, index: number) => string | number;
+    /** Scrolls to a row each time a new object is passed, so the same row can be asked for twice. */
+    jumpTo?: { index: number } | null;
     renderRow: (item: T, index: number) => ReactNode;
 }
 
@@ -26,6 +28,7 @@ export function VirtualLogList<T>({
     onScroll,
     allowFollow,
     getItemKey,
+    jumpTo,
     renderRow,
 }: VirtualLogListProps<T>) {
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -44,6 +47,13 @@ export function VirtualLogList<T>({
         if (element && allowFollow?.(element) === false) return;
         virtualizer.scrollToIndex(items.length - 1, { align: "end" });
     }, [allowFollow, follow, items.length, virtualizer]);
+
+    const count = useRef(items.length);
+    count.current = items.length;
+    useEffect(() => {
+        if (!jumpTo || jumpTo.index < 0 || jumpTo.index >= count.current) return;
+        virtualizer.scrollToIndex(jumpTo.index, { align: "start" });
+    }, [jumpTo, virtualizer]);
 
     const virtualItems = virtualizer.getVirtualItems();
 

@@ -7,6 +7,7 @@ interface Props {
     repo: RepoRef;
     checkRunId: number;
     active: boolean;
+    jobName: string;
 }
 
 /**
@@ -14,13 +15,13 @@ interface Props {
  * table — which is the part of a run somebody means to read rather than the
  * log it would otherwise be buried in.
  */
-export function JobSummary({ repo, checkRunId, active }: Props) {
+export function JobSummary({ repo, checkRunId, active, jobName }: Props) {
     const found = useResourceEnabled(active, actionsJobSummaryR, repo, checkRunId);
     const summary = found.data;
     if (!summary) return null;
     return (
         <details className="gha-summary" open>
-            <summary className="gha-summary-head">{summary.title || "Summary"}</summary>
+            <summary className="gha-summary-head">{jobName} summary</summary>
             <Markdown className="gha-prose">{summary.body}</Markdown>
         </details>
     );

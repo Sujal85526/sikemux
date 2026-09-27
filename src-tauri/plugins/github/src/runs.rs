@@ -4,6 +4,7 @@
 
 use std::path::Path;
 
+use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -31,6 +32,7 @@ struct RunRow {
     name: Option<String>,
     display_title: Option<String>,
     workflow_id: u64,
+    path: Option<String>,
     run_number: u64,
     run_attempt: Option<u64>,
     event: String,
@@ -61,6 +63,8 @@ pub struct Run {
     pub name: String,
     pub title: String,
     pub workflow_id: u64,
+    /// The workflow file, e.g. `.github/workflows/release.yml`.
+    pub path: Option<String>,
     pub run_number: u64,
     pub attempt: u64,
     pub event: String,
@@ -102,6 +106,9 @@ impl From<RunRow> for Run {
             short_sha: short(&row.head_sha),
             id: row.id,
             workflow_id: row.workflow_id,
+            path: row
+                .path
+                .map(|path| path.split('@').next().unwrap_or_default().to_string()),
             run_number: row.run_number,
             attempt: row.run_attempt.unwrap_or(1),
             event: row.event,
@@ -135,6 +142,8 @@ pub struct RunQuery {
     pub status: Option<String>,
     pub event: Option<String>,
     pub actor: Option<String>,
+    /// Only the runs for one commit, which is how a pull request's checks are found.
+    pub head_sha: Option<String>,
     pub page: Option<u32>,
     pub per_page: Option<u32>,
 }
@@ -215,6 +224,17 @@ pub async fn list(data_dir: &Path, input: RunQuery) -> ActionsResult<RunPage> {
         .filter(|a| !a.is_empty())
     {
         query.push(("actor", actor.to_string()));
+    }
+    if let Some(sha) = input
+        .head_sha
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        if !sha.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(ActionsError::BadArg(format!("`{sha}` is not a commit")));
+        }
+        query.push(("head_sha", sha.to_string()));
     }
     let path = match input.workflow_id {
         Some(id) => input.repo.path(&format!("/actions/workflows/{id}/runs"))?,
@@ -407,6 +427,20 @@ pub async fn cancel(data_dir: &Path, input: RunRef) -> ActionsResult<()> {
         .repo
         .path(&format!("/actions/runs/{}/cancel", input.run_id))?;
     client::post_empty(data_dir, &path, None).await
+}
+
+pub async fn delete_logs(data_dir: &Path, input: RunRef) -> ActionsResult<()> {
+    let path = input
+        .repo
+        .path(&format!("/actions/runs/{}/logs", input.run_id))?;
+    client::act(data_dir, Method::DELETE, &path, None).await
+}
+
+pub async fn delete(data_dir: &Path, input: RunRef) -> ActionsResult<()> {
+    let path = input
+        .repo
+        .path(&format!("/actions/runs/{}", input.run_id))?;
+    client::act(data_dir, Method::DELETE, &path, None).await
 }
 
 #[derive(Deserialize)]

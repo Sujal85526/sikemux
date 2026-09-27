@@ -1,31 +1,33 @@
-import { memo, useEffect, useState } from "react";
-import { confirmDialog, notify, openUrl, reportError, swallow } from "../../../plugin-api/host";
+import { memo, useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { confirmDialog, copyText, notify, openUrl, reportError, swallow } from "../../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
 import { EmptyState, IconChevron, IconClose, IconRefresh, SkeletonRows, Tooltip } from "../../../plugin-api/ui";
 import { actionsApi, failureMessage, type Job, type RepoRef, type Run } from "../api";
-import { actionsRunAttemptR, actionsRunR } from "../resources";
-import { elapsedMs, failedStep, formatAgo, formatDuration, isRunning, jobsSummary, outcomeOf, OUTCOME_LABEL } from "../runStatus";
+import { actionsArtifactsR, actionsRunAttemptR, actionsRunR, actionsTimingR } from "../resources";
+import { elapsedMs, failedStep, formatAgo, formatDuration, isRunning, jobsSummary, outcomeOf, OUTCOME_LABEL, summaryJobs } from "../runStatus";
 import { closeRun, updateView } from "../state";
 import { OutcomeIcon } from "./ActionsIcon";
 import { Annotations } from "./Annotations";
 import { Approvals } from "./Approvals";
 import { Artifacts } from "./Artifacts";
 import { coarse, useNow } from "./hooks";
+import { JobGraph } from "./JobGraph";
 import { JobLogView } from "./JobLogView";
 import { JobSummary } from "./JobSummary";
-import { RunUsage } from "./RunUsage";
+import { RunMenu } from "./RunMenu";
+import { billedMinutes } from "./RunUsage";
 import { WorkflowFile } from "./WorkflowFile";
 
 const refreshRuns = () => invalidate((kind) => kind === "gha.runs" || kind === "gha.run");
 
-const StepRow = memo(function StepRow({ step, now }: { step: Job["steps"][number]; now: number }) {
+const StepRow = memo(function StepRow({ step, now, onPick }: { step: Job["steps"][number]; now: number; onPick: (number: number) => void }) {
     const outcome = outcomeOf(step);
     return (
-        <div className="gha-step" data-outcome={outcome}>
+        <button type="button" className="gha-step" data-outcome={outcome} onClick={() => onPick(step.number)} title="Show this step in the log">
             <OutcomeIcon outcome={outcome} size={11} />
             <span className="gha-step-name">{step.name}</span>
             <span className="gha-dim">{formatDuration(elapsedMs(step.startedAt, step.completedAt, now))}</span>
-        </div>
+        </button>
     );
 });
 
@@ -48,6 +50,7 @@ const JobCard = memo(function JobCard({
 }) {
     const outcome = outcomeOf(job);
     const stopped = failedStep(job);
+    const [step, setStep] = useState<{ number: number } | null>(null);
     const rerun = (debug: boolean) =>
         void actionsApi
             .rerunJob(repo, job.id, debug)
@@ -58,7 +61,7 @@ const JobCard = memo(function JobCard({
             .catch(reportError(`Could not re-run ${job.name}`));
 
     return (
-        <div className="gha-job" data-open={open ? "1" : "0"} data-outcome={outcome}>
+        <div className="gha-job" data-open={open ? "1" : "0"} data-outcome={outcome} data-job-id={job.id}>
             <button type="button" className="gha-job-head" onClick={() => updateView(paneId, { job: open ? null : job.id })} aria-expanded={open}>
                 <span className="gha-chevron" data-open={open ? "1" : "0"}>
                     <IconChevron size={11} />
@@ -90,18 +93,18 @@ const JobCard = memo(function JobCard({
                     </div>
                     {job.steps.length > 0 && (
                         <div className="gha-steps">
-                            {job.steps.map((step) => (
-                                <StepRow key={`${step.number}-${step.name}`} step={step} now={step.completedAt ? coarse(now) : now} />
+                            {job.steps.map((each) => (
+                                <StepRow
+                                    key={`${each.number}-${each.name}`}
+                                    step={each}
+                                    now={each.completedAt ? coarse(now) : now}
+                                    onPick={(number) => setStep({ number })}
+                                />
                             ))}
                         </div>
                     )}
-                    {job.checkRunId !== null && (
-                        <>
-                            <Annotations repo={repo} checkRunId={job.checkRunId} active={active} />
-                            <JobSummary repo={repo} checkRunId={job.checkRunId} active={active} />
-                        </>
-                    )}
-                    <JobLogView repo={repo} job={job} active={active} />
+                    {job.checkRunId !== null && <Annotations repo={repo} checkRunId={job.checkRunId} active={active} />}
+                    <JobLogView repo={repo} job={job} active={active} step={step} />
                 </div>
             )}
         </div>
@@ -111,17 +114,15 @@ const JobCard = memo(function JobCard({
 function Header({
     run,
     repo,
-    now,
-    active,
     canWrite,
     onRefresh,
+    onDeleted,
 }: {
     run: Run;
     repo: RepoRef;
-    now: number;
-    active: boolean;
     canWrite: boolean;
     onRefresh: () => void;
+    onDeleted: () => void;
 }) {
     const outcome = outcomeOf(run);
     const live = isRunning(run);
@@ -148,54 +149,158 @@ function Header({
             <div className="gha-run-head-main">
                 <OutcomeIcon outcome={outcome} size={15} />
                 <span className="gha-run-head-title">{run.title || run.name}</span>
-                <span className="gha-badge" data-outcome={outcome}>
-                    {OUTCOME_LABEL[outcome]}
-                </span>
-            </div>
-            <div className="gha-run-head-sub">
-                <span>{run.name}</span>
-                <span className="gha-mono">#{run.runNumber}</span>
-                {run.attempt > 1 && <span className="gha-dim">attempt {run.attempt}</span>}
-                <span>{run.event}</span>
-                {run.branch && <span className="gha-branch">{run.branch}</span>}
-                <span className="gha-mono gha-dim">{run.shortSha}</span>
-                {run.actor && <span className="gha-dim">{run.actor}</span>}
-                <span>{formatDuration(elapsedMs(run.startedAt ?? run.createdAt, live ? null : run.updatedAt, now))}</span>
-                <span className="gha-dim">{formatAgo(run.createdAt, now)}</span>
-                {!live && <RunUsage repo={repo} runId={run.id} active={active} />}
-            </div>
-            <div className="gha-run-head-actions">
+                <span className="gha-mono gha-dim">#{run.runNumber}</span>
+                <span className="gha-run-head-spacer" />
                 {canWrite && live && (
                     <button type="button" className="gha-btn danger" onClick={() => void cancel()}>
-                        Cancel
+                        Cancel run
+                    </button>
+                )}
+                {canWrite && !live && outcome !== "success" && (
+                    <button type="button" className="gha-btn" onClick={() => act("Re-running the failed jobs", actionsApi.rerun(repo, run.id, true))}>
+                        Re-run failed jobs
                     </button>
                 )}
                 {canWrite && !live && (
-                    <>
-                        <button
-                            type="button"
-                            className="gha-btn"
-                            onClick={() => act("Re-running the failed jobs", actionsApi.rerun(repo, run.id, true))}>
-                            Re-run failed
-                        </button>
-                        <button type="button" className="gha-btn" onClick={() => act("Re-running everything", actionsApi.rerun(repo, run.id, false))}>
-                            Re-run all
-                        </button>
-                    </>
+                    <button type="button" className="gha-btn" onClick={() => act("Re-running every job", actionsApi.rerun(repo, run.id, false))}>
+                        Re-run all jobs
+                    </button>
                 )}
-                <button type="button" className="gha-link" onClick={() => void openUrl(run.url).catch(swallow("open GitHub"))}>
-                    On GitHub
-                </button>
-                <WorkflowFile repo={repo} workflowId={run.workflowId} active={active} />
                 <Tooltip label="Refresh">
                     <button type="button" className="gha-icon-btn" onClick={onRefresh} aria-label="Refresh run">
                         <IconRefresh size={13} />
                     </button>
                 </Tooltip>
+                <RunMenu run={run} repo={repo} canWrite={canWrite} onDeleted={onDeleted} />
+            </div>
+            <div className="gha-run-head-sub">
+                <span>{run.name}</span>
+                {run.attempt > 1 && <span className="gha-dim">attempt {run.attempt}</span>}
             </div>
         </div>
     );
 }
+
+const TRIGGER: Record<string, string> = {
+    push: "push",
+    pull_request: "pull request",
+    pull_request_target: "pull request",
+    workflow_dispatch: "a manual run",
+    schedule: "the schedule",
+    release: "a release",
+    workflow_run: "another workflow",
+    merge_group: "the merge queue",
+};
+
+function SummaryCard({
+    run,
+    repo,
+    now,
+    active,
+    artifactsRef,
+}: {
+    run: Run;
+    repo: RepoRef;
+    now: number;
+    active: boolean;
+    artifactsRef: RefObject<HTMLDivElement | null>;
+}) {
+    const outcome = outcomeOf(run);
+    const live = isRunning(run);
+    const artifacts = useResourceEnabled(active && run.status === "completed", actionsArtifactsR, repo, run.id);
+    const timing = useResourceEnabled(active && !live, actionsTimingR, repo, run.id);
+    const count = artifacts.data?.length ?? 0;
+    const billable = timing.data?.billable ?? [];
+    const minutes = billedMinutes(billable);
+    const took = live ? null : (timing.data?.runDurationMs ?? null);
+    return (
+        <div className="gha-run-card">
+            <div className="gha-run-card-cell gha-run-card-wide">
+                <span className="gha-run-card-label">
+                    Triggered via {TRIGGER[run.event] ?? run.event.replace(/_/gu, " ")} {formatAgo(run.createdAt, now)}
+                </span>
+                <span className="gha-run-card-trigger">
+                    {run.avatarUrl && <img className="gha-avatar" src={run.avatarUrl} alt="" width={16} height={16} />}
+                    {run.actor && <span>{run.actor}</span>}
+                    <button
+                        type="button"
+                        className="gha-link gha-mono"
+                        title="Copy the commit"
+                        onClick={() =>
+                            void copyText(run.sha)
+                                .then(() => notify("success", `Copied ${run.shortSha}`))
+                                .catch(swallow("copy the commit"))
+                        }>
+                        {run.shortSha}
+                    </button>
+                    {run.branch && <span className="gha-branch">{run.branch}</span>}
+                    {run.pullRequests.map((number) => (
+                        <span key={number} className="gha-pr">
+                            #{number}
+                        </span>
+                    ))}
+                </span>
+            </div>
+            <div className="gha-run-card-cell">
+                <span className="gha-run-card-label">Status</span>
+                <span className="gha-run-card-value" data-outcome={outcome}>
+                    {OUTCOME_LABEL[outcome]}
+                </span>
+            </div>
+            <div className="gha-run-card-cell">
+                <span className="gha-run-card-label">Total duration</span>
+                <span className="gha-run-card-value">
+                    {formatDuration(took ?? elapsedMs(run.startedAt ?? run.createdAt, live ? null : run.updatedAt, now))}
+                </span>
+            </div>
+            {minutes > 0 && (
+                <div
+                    className="gha-run-card-cell"
+                    title={billable.map((each) => `${each.runner}: ${formatDuration(each.totalMs)} over ${each.jobs} jobs`).join("\n")}>
+                    <span className="gha-run-card-label">Billed</span>
+                    <span className="gha-run-card-value">{minutes} min</span>
+                </div>
+            )}
+            {run.status === "completed" && (
+                <div className="gha-run-card-cell">
+                    <span className="gha-run-card-label">Artifacts</span>
+                    {count > 0 ? (
+                        <button
+                            type="button"
+                            className="gha-link gha-run-card-value"
+                            onClick={() => artifactsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+                            {count}
+                        </button>
+                    ) : (
+                        <span className="gha-run-card-value">{artifacts.data ? 0 : "—"}</span>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+/** Every job's own summary, one after another, the way GitHub's run page lists them. */
+function RunSummaries({ repo, jobs, finished, active }: { repo: RepoRef; jobs: Job[]; finished: boolean; active: boolean }) {
+    const [everything, setEverything] = useState(false);
+    const shown = summaryJobs(jobs, finished, everything);
+    const rest = summaryJobs(jobs, finished, true).length - shown.length;
+    if (shown.length === 0) return null;
+    return (
+        <div className="gha-run-summaries">
+            {shown.map((job) => (
+                <JobSummary key={job.id} repo={repo} checkRunId={job.checkRunId ?? 0} active={active} jobName={job.name} />
+            ))}
+            {rest > 0 && (
+                <button type="button" className="gha-link" onClick={() => setEverything(true)}>
+                    Look for summaries from {rest} more job{rest === 1 ? "" : "s"}
+                </button>
+            )}
+        </div>
+    );
+}
+
+type JobFilter = "all" | "failed";
 
 interface Props {
     paneId: string;
@@ -208,10 +313,14 @@ interface Props {
 
 export function RunView({ paneId, repo, runId, openJob, active, canWrite }: Props) {
     const [attempt, setAttempt] = useState<number | null>(null);
+    const [jobFilter, setJobFilter] = useState<JobFilter>("all");
     const detail = useResourceEnabled(active && attempt === null, actionsRunR, repo, runId);
     const older = useResourceEnabled(active && attempt !== null, actionsRunAttemptR, repo, runId, attempt ?? 0);
     const shown = attempt === null ? detail : older;
     const [live, setLive] = useState<{ run: Run | null; jobs: Job[] } | null>(null);
+    const [showFile, setShowFile] = useState(false);
+    const viewRef = useRef<HTMLDivElement>(null);
+    const artifactsRef = useRef<HTMLDivElement>(null);
 
     const run = (attempt === null ? live?.run : null) ?? shown.data?.run ?? null;
     const jobs = attempt === null && live?.jobs.length ? live.jobs : (shown.data?.jobs ?? []);
@@ -242,6 +351,18 @@ export function RunView({ paneId, repo, runId, openJob, active, canWrite }: Prop
 
     useEffect(() => setLive(null), [runId]);
 
+    const openFromGraph = useCallback(
+        (jobId: number) => {
+            updateView(paneId, { job: jobId });
+            setJobFilter("all");
+            requestAnimationFrame(() =>
+                viewRef.current?.querySelector(`[data-job-id="${jobId}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" }),
+            );
+        },
+        [paneId],
+    );
+    const toggleFile = useCallback(() => setShowFile((was) => !was), []);
+
     if (shown.status === "loading" && !run) return <SkeletonRows rows={8} label="Loading run" />;
     if (shown.error && !run) {
         return (
@@ -256,12 +377,13 @@ export function RunView({ paneId, repo, runId, openJob, active, canWrite }: Prop
     if (!run) return <EmptyState message="That run is gone." />;
 
     const summary = jobsSummary(jobs);
+    const listed = jobFilter === "failed" ? jobs.filter((job) => outcomeOf(job) === "failure") : jobs;
     return (
-        <div className="gha-run-view">
+        <div className="gha-run-view" ref={viewRef}>
             <button type="button" className="gha-back" onClick={() => closeRun(paneId)}>
                 <IconClose size={11} /> Back to runs
             </button>
-            <Header run={run} repo={repo} now={now} active={active} canWrite={canWrite} onRefresh={() => void shown.refresh()} />
+            <Header run={run} repo={repo} canWrite={canWrite} onRefresh={() => void shown.refresh()} onDeleted={() => closeRun(paneId)} />
             {run.attempt > 1 && (
                 <div className="gha-attempts">
                     <span className="gha-dim">Attempts</span>
@@ -277,8 +399,10 @@ export function RunView({ paneId, repo, runId, openJob, active, canWrite }: Prop
                     ))}
                 </div>
             )}
+            <SummaryCard run={run} repo={repo} now={now} active={active} artifactsRef={artifactsRef} />
             <Approvals repo={repo} runId={runId} status={run.status} conclusion={run.conclusion} active={active} />
-            <Artifacts repo={repo} runId={runId} active={active && run.status === "completed"} />
+            <JobGraph run={run} jobs={jobs} now={now} openJob={openJob} onOpen={openFromGraph} fileShown={showFile} onToggleFile={toggleFile} />
+            {showFile && <WorkflowFile repo={repo} workflowId={run.workflowId} active={active} />}
             <div className="gha-jobs-head">
                 {summary.total > 0 ? (
                     <span>
@@ -288,9 +412,23 @@ export function RunView({ paneId, repo, runId, openJob, active, canWrite }: Prop
                 ) : (
                     <span className="gha-dim">No jobs yet</span>
                 )}
+                {summary.failed > 0 && (
+                    <div className="gha-chips">
+                        {(["all", "failed"] as const).map((filter) => (
+                            <button
+                                key={filter}
+                                type="button"
+                                className="gha-chip"
+                                data-on={jobFilter === filter ? "1" : "0"}
+                                onClick={() => setJobFilter(filter)}>
+                                {filter === "all" ? "All jobs" : "Failed"}
+                            </button>
+                        ))}
+                    </div>
+                )}
             </div>
             <div className="gha-jobs">
-                {jobs.map((job) => (
+                {listed.map((job) => (
                     <JobCard
                         key={job.id}
                         paneId={paneId}
@@ -302,6 +440,10 @@ export function RunView({ paneId, repo, runId, openJob, active, canWrite }: Prop
                         open={openJob === job.id}
                     />
                 ))}
+            </div>
+            <RunSummaries repo={repo} jobs={jobs} finished={!isRunning(run)} active={active} />
+            <div ref={artifactsRef}>
+                <Artifacts repo={repo} runId={runId} active={active && run.status === "completed"} />
             </div>
         </div>
     );

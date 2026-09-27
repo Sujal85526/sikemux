@@ -106,3 +106,16 @@ export function jobsSummary(jobs: Job[]): { done: number; total: number; failed:
     }
     return { done, total: jobs.length, failed };
 }
+
+/** How many job summaries a run page asks GitHub for before somebody asks for the rest. */
+export const SUMMARY_LIMIT = 10;
+
+/**
+ * The jobs whose summaries are worth a request. Each one is its own call, so a
+ * run still going waits until it ends, and a wide matrix only loads the first few.
+ */
+export function summaryJobs(jobs: readonly Job[], runFinished: boolean, everything: boolean): Job[] {
+    if (!runFinished) return [];
+    const done = jobs.filter((job) => job.status === "completed" && job.checkRunId !== null && job.conclusion !== "skipped");
+    return everything ? done : done.slice(0, SUMMARY_LIMIT);
+}
