@@ -1194,7 +1194,9 @@ export function EditorPane({
                         />
                     )}
                     {activeImage && <ImageViewer image={activeImage} onReload={reloadImage} />}
-                    {previewingMarkdown && <MarkdownPreview source={markdownPreview.content} path={markdownPreview.path} onOpenFile={openLinkedFile} />}
+                    {previewingMarkdown && (
+                        <MarkdownPreview source={markdownPreview.content} path={markdownPreview.path} onOpenFile={openLinkedFile} />
+                    )}
                 </div>
                 {showInsights && cwd && (
                     <EditorInsights
