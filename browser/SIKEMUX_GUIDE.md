@@ -156,20 +156,48 @@ does not stop a task started from the command deck.
 ## The browser
 
 `browser_state` returns page state: url, title, numbered interactive elements,
-visible text, and the open tabs. Most browser tools return the same shape after
-acting, so you rarely need a separate read.
+visible text, and the open tabs. The text stops after about 2 KB, and
+`textLength` then gives its full length; `fullText: true` returns up to 40 KB,
+and `browser_extract` reads the text of one part of the page.
 
-**Element numbers expire.** They are only valid until the next state read. Read
-state, act on a number from that read, and treat the numbers in the result as
-the new set. Never reuse a number across two reads.
+Tools that act (navigate, click, type with submit, press, drag, upload,
+dialog, wait, back, forward) report on the page afterwards, and `report`
+chooses how much:
+
+- `"changes"`, the default, returns url, title and loading plus `changes`
+  since the last read of this page: `elements` lists new or changed elements,
+  `removed` the numbers that went away, `textAdded` and `textRemoved` the lines
+  of text that came and went. `changes: "none"` means nothing moved. When the
+  page has not been read before, such as after a navigation, you get the full
+  state instead.
+- `"outcome"` returns only url, title, loading and what the action itself
+  found, such as the clicked `label` and whether it was `covered`. Use it for a
+  run of steps whose effect you will check afterwards.
+- `"full"` returns the whole state, as `browser_state` would.
+
+**Element numbers expire** when their element leaves the page. A number stays
+with the same element for as long as that element is there, so a number from
+an earlier read either reaches the same element or fails with "no element".
+Elements that appear later get new numbers. A page that redraws a list builds
+new elements, so read again after it does.
+
+`browser_find` with a `query` lists the elements whose visible text or
+accessible name contains it, with their numbers, exact matches first. `role`
+narrows it, as in `button`, `link`, `checkbox`, `textbox` or `tab`. When no
+element matches but the words show on the page, it returns `points` with
+their `x`, `y` to click instead.
 
 Clicks, keys and typing arrive as real input, the same as the person's, so
 pages that check for a trusted event and editors that keep their own model of
 the text both respond to them.
 
-`browser_click` takes a number from the latest state, or `x` and `y` in CSS
-pixels from the top left of the viewport, which is where a screenshot's pixels
-sit too. Coordinates reach things that have no number, such as a canvas or a
+`browser_click` takes a number from the latest state, or `text` naming the
+element by its visible text or accessible name, or `x` and `y` in CSS pixels
+from the top left of the viewport, which is where a screenshot's pixels sit
+too. `text` must pick out one element: when several match, nothing is clicked
+and the error lists them, so pass their number or a `role`. With a number,
+`expectLabel` makes the click fail rather than land on an element whose label
+does not contain it. The result names the `index` and `label` it clicked. Coordinates reach things that have no number, such as a canvas or a
 field inside a frame from another site. `double: true` double-clicks.
 `hover: true` only moves the pointer there, to open a hover menu; while
 Sikemux is in the background the page is told about the hover but CSS
@@ -230,8 +258,10 @@ text. Its pixels are CSS pixels, so a point you read off it can go straight to
 `browser_click` as `x` and `y`. `fullPage: true` captures the whole page
 instead, cut at 14,400 pixels tall (`cutAt` says when it was).
 `annotate: true` reads state afresh, draws each element's number on the
-picture, and returns the element list with it, which is the quickest way to
-match what you see to a number.
+picture, and returns the list of the elements it drew, which is the quickest
+way to match what you see to a number. It leaves out elements that are cut
+off, covered, or behind an open modal, and boxes that would cover a large
+share of the view.
 
 While you act, the person sees a pointer move to each click, with a ripple
 where it lands. Screenshots leave the pointer out. `browser_annotate` draws
@@ -264,6 +294,7 @@ messages are kept, and the newest 50 are returned unless you pass `limit`.
 
 Tabs are yours. `browser_list_tabs`, `browser_switch_tab` and
 `browser_close_tab` act on this pane's tabs, not the person's other windows.
+Switching returns the full state of the tab you land on.
 `browser_navigate` reuses the current tab unless you pass `newTab: true`.
 
 ## What does not survive

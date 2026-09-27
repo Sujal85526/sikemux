@@ -107,12 +107,26 @@ async fn run(
             let _ = manager
                 .wait_until_loaded(agent_id, &tab_id, LOAD_TIMEOUT)
                 .await;
-            state(&manager, agent_id).await
+            report(&manager, agent_id, params).await
         }
-        "browser.state" => state(&manager, agent_id).await,
+        "browser.state" => {
+            let full_text = params.get("fullText").and_then(Value::as_bool) == Some(true);
+            read_state(&manager, agent_id, "full", full_text).await
+        }
+        "browser.find" => {
+            let query = text("query").ok_or("query is required")?;
+            let (_, view) = active(&manager, agent_id)?;
+            call(&view, "find", &[json!(query), json!(text("role"))]).await
+        }
         "browser.click" => {
             let (tab_id, view) = active(&manager, agent_id)?;
-            let (x, y, mut result) = target(&view, params, "index", "x", "y").await?;
+            let (x, y, mut result) = match text("text") {
+                Some(label) => {
+                    let index = call(&view, "locate", &[json!(label), json!(text("role"))]).await?;
+                    point(&view, index, Value::Null).await?
+                }
+                None => target(&view, params, "index", "x", "y").await?,
+            };
             let hover = params.get("hover").and_then(Value::as_bool) == Some(true);
             let clicks = if params.get("double").and_then(Value::as_bool) == Some(true) {
                 2
@@ -138,7 +152,7 @@ async fn run(
                 "clicked"
             });
             settle(&manager, agent_id, &tab_id).await;
-            merge(result, state(&manager, agent_id).await?)
+            merge(result, report(&manager, agent_id, params).await?)
         }
         "browser.upload" => {
             let paths = params
@@ -182,7 +196,7 @@ async fn run(
             }
             result["uploaded"] = json!(names);
             settle(&manager, agent_id, &tab_id).await;
-            merge(result, state(&manager, agent_id).await?)
+            merge(result, report(&manager, agent_id, params).await?)
         }
         "browser.drag" => {
             let (tab_id, view) = active(&manager, agent_id)?;
@@ -217,7 +231,7 @@ async fn run(
             settle(&manager, agent_id, &tab_id).await;
             merge(
                 json!({ "from": from, "to": to, "dragged": dragged }),
-                state(&manager, agent_id).await?,
+                report(&manager, agent_id, params).await?,
             )
         }
         "browser.type" => {
@@ -253,7 +267,7 @@ async fn run(
             if submit {
                 native::key(&view, "Enter").await?;
                 settle(&manager, agent_id, &tab_id).await;
-                return merge(typed, state(&manager, agent_id).await?);
+                return merge(typed, report(&manager, agent_id, params).await?);
             }
             Ok(typed)
         }
@@ -262,7 +276,10 @@ async fn run(
             let (tab_id, view) = active(&manager, agent_id)?;
             native::key(&view, &key).await?;
             settle(&manager, agent_id, &tab_id).await;
-            merge(json!({ "pressed": key }), state(&manager, agent_id).await?)
+            merge(
+                json!({ "pressed": key }),
+                report(&manager, agent_id, params).await?,
+            )
         }
         "browser.dialog" => {
             let accept = params
@@ -275,7 +292,7 @@ async fn run(
             }
             native::answer_dialog(&view, &tab_id, accept, text("text")).await?;
             settle(&manager, agent_id, &tab_id).await;
-            state(&manager, agent_id).await
+            report(&manager, agent_id, params).await
         }
         "browser.scroll" => {
             let delta = params
@@ -370,8 +387,8 @@ async fn run(
             let full_page = params.get("fullPage").and_then(Value::as_bool) == Some(true);
             let marked = if annotate {
                 let page = state(&manager, agent_id).await?;
-                call(&view, "showMarks", &[json!(true)]).await?;
-                page.get("elements").cloned()
+                let shown = call(&view, "showMarks", &[json!(true)]).await?;
+                Some(marked_elements(&page, &shown))
             } else {
                 let _ = call(&view, "pointerVisible", &[json!(false)]).await;
                 None
@@ -454,7 +471,7 @@ async fn run(
             let _ = manager
                 .wait_until_loaded(agent_id, &tab_id, LOAD_TIMEOUT)
                 .await;
-            state(&manager, agent_id).await
+            report(&manager, agent_id, params).await
         }
         "browser.back" | "browser.forward" => {
             let (tab_id, _) = active(&manager, agent_id)?;
@@ -462,7 +479,7 @@ async fn run(
                 .history(agent_id, if method == "browser.back" { -1 } else { 1 })
                 .map_err(|error| error.to_string())?;
             settle(&manager, agent_id, &tab_id).await;
-            state(&manager, agent_id).await
+            report(&manager, agent_id, params).await
         }
         _ => Err("unknown browser method".into()),
     }
@@ -508,14 +525,8 @@ async fn target(
     y_key: &str,
 ) -> Result<(f64, f64, Value), String> {
     if let Some(index) = params.get(index_key).and_then(Value::as_u64) {
-        let point = call(view, "point", &[json!(index)]).await?;
-        let coordinate = |key: &str| {
-            point
-                .get(key)
-                .and_then(Value::as_f64)
-                .ok_or_else(|| "the page returned no position".to_string())
-        };
-        return Ok((coordinate("x")?, coordinate("y")?, point));
+        let expected = params.get("expectLabel").cloned().unwrap_or(Value::Null);
+        return point(view, json!(index), expected).await;
     }
     match (
         params.get(x_key).and_then(Value::as_f64),
@@ -524,6 +535,19 @@ async fn target(
         (Some(x), Some(y)) => Ok((x, y, json!({ "x": x, "y": y }))),
         _ => Err(format!("pass {index_key}, or both {x_key} and {y_key}")),
     }
+}
+
+/// The centre of a numbered element, refused when `expected` no longer
+/// matches its label.
+async fn point(view: &Webview, index: Value, expected: Value) -> Result<(f64, f64, Value), String> {
+    let point = call(view, "point", &[index, expected]).await?;
+    let coordinate = |key: &str| {
+        point
+            .get(key)
+            .and_then(Value::as_f64)
+            .ok_or_else(|| "the page returned no position".to_string())
+    };
+    Ok((coordinate("x")?, coordinate("y")?, point))
 }
 
 /// Input that reaches the page the way a person's does, as trusted events.
@@ -772,6 +796,64 @@ fn tabs(manager: &BrowserManager, agent_id: &str) -> Value {
 }
 
 async fn state(manager: &BrowserManager, agent_id: &str) -> Result<Value, String> {
+    read_state(manager, agent_id, "full", false).await
+}
+
+/// What an action hands back about the page, chosen by its `report`: only the
+/// outcome, what changed since the last read (the default), or the full state.
+async fn report(manager: &BrowserManager, agent_id: &str, params: &Value) -> Result<Value, String> {
+    match params.get("report").and_then(Value::as_str) {
+        Some("outcome") => outcome(manager, agent_id),
+        Some("full") => state(manager, agent_id).await,
+        _ => read_state(manager, agent_id, "changes", false).await,
+    }
+}
+
+fn outcome(manager: &BrowserManager, agent_id: &str) -> Result<Value, String> {
+    let (tab_id, _) = active_tab(manager, agent_id)?;
+    let page = manager.page(agent_id, &tab_id).unwrap_or_default();
+    let mut result = json!({
+        "tabId": tab_id,
+        "url": page.url,
+        "title": page.title,
+        "loading": page.loading,
+    });
+    if let Some(dialog) = manager.dialog(&tab_id) {
+        result["dialog"] = json!(dialog);
+    }
+    Ok(result)
+}
+
+/// The element lines that got a box on the picture, in the page's order.
+fn marked_elements(page: &Value, shown: &Value) -> Value {
+    let marked: Vec<String> = shown
+        .get("marked")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_u64)
+        .map(|id| format!("[{id}] "))
+        .collect();
+    let lines = page
+        .get("elements")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .lines()
+        .filter(|line| {
+            marked
+                .iter()
+                .any(|prefix| line.starts_with(prefix.as_str()))
+        })
+        .collect::<Vec<_>>();
+    json!(lines.join("\n"))
+}
+
+async fn read_state(
+    manager: &BrowserManager,
+    agent_id: &str,
+    mode: &str,
+    full_text: bool,
+) -> Result<Value, String> {
     let (tab_id, view) = active_tab(manager, agent_id)?;
     let page = manager.page(agent_id, &tab_id).unwrap_or_default();
     let mut result = if let Some(dialog) = manager.dialog(&tab_id) {
@@ -784,7 +866,7 @@ async fn state(manager: &BrowserManager, agent_id: &str) -> Result<Value, String
     } else if page.url == BLANK_URL {
         json!({ "url": BLANK_URL, "title": "", "elements": "", "text": "" })
     } else {
-        call(&view, "state", &[]).await?
+        call(&view, "state", &[json!(mode), json!(full_text)]).await?
     };
     if let Value::Object(map) = &mut result {
         map.insert("tabId".into(), json!(tab_id));
@@ -941,6 +1023,14 @@ mod tests {
         .unwrap();
         assert_eq!(merged["clicked"], "Sign in");
         assert_eq!(merged["title"], "Next");
+    }
+
+    #[test]
+    fn an_annotated_picture_lists_only_the_elements_it_boxed() {
+        let page =
+            json!({ "elements": "[1] <a> Home (/)\n[12] <button> Save\n[2] <button> Hidden" });
+        let listed = marked_elements(&page, &json!({ "marked": [12, 1] }));
+        assert_eq!(listed, json!("[1] <a> Home (/)\n[12] <button> Save"));
     }
 
     /// A dispatched click is untrusted, and pages that check refuse it.

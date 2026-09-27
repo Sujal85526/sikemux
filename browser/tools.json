@@ -18,6 +18,13 @@
         },
         "newTab": {
           "type": "boolean"
+        },
+        "report": {
+          "enum": [
+            "outcome",
+            "changes",
+            "full"
+          ]
         }
       },
       "required": [
@@ -27,18 +34,57 @@
     {
       "name": "browser_state",
       "method": "browser.state",
-      "description": "Read the tab: url, title, numbered elements, text and tabs. Numbers expire on the next read.",
-      "properties": {},
+      "description": "Read the tab: url, title, numbered elements, text and tabs.",
+      "properties": {
+        "fullText": {
+          "type": "boolean"
+        }
+      },
       "required": []
+    },
+    {
+      "name": "browser_find",
+      "method": "browser.find",
+      "description": "Find elements by visible text or accessible name.",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        }
+      },
+      "required": [
+        "query"
+      ]
     },
     {
       "name": "browser_click",
       "method": "browser.click",
-      "description": "Click a numbered element or an x,y point; double double-clicks, hover only moves there.",
+      "description": "Click a numbered element, a labelled one by text, or an x,y point.",
       "properties": {
         "index": {
           "type": "integer",
           "minimum": 0
+        },
+        "expectLabel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
         },
         "x": {
           "type": "number",
@@ -53,6 +99,13 @@
         },
         "hover": {
           "type": "boolean"
+        },
+        "report": {
+          "enum": [
+            "outcome",
+            "changes",
+            "full"
+          ]
         }
       },
       "required": []
@@ -60,7 +113,7 @@
     {
       "name": "browser_type",
       "method": "browser.type",
-      "description": "Type into a numbered element, replacing its value, or at the caret. submit presses Enter.",
+      "description": "Type into a numbered element, replacing its value, or at the caret.",
       "properties": {
         "index": {
           "type": "integer",
@@ -72,6 +125,13 @@
         },
         "submit": {
           "type": "boolean"
+        },
+        "report": {
+          "enum": [
+            "outcome",
+            "changes",
+            "full"
+          ]
         }
       },
       "required": [
@@ -87,6 +147,13 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 24
+        },
+        "report": {
+          "enum": [
+            "outcome",
+            "changes",
+            "full"
+          ]
         }
       },
       "required": [
@@ -121,6 +188,13 @@
         "toY": {
           "type": "number",
           "minimum": 0
+        },
+        "report": {
+          "enum": [
+            "outcome",
+            "changes",
+            "full"
+          ]
         }
       },
       "required": []
@@ -151,6 +225,13 @@
         "y": {
           "type": "number",
           "minimum": 0
+        },
+        "report": {
+          "enum": [
+            "outcome",
+            "changes",
+            "full"
+          ]
         }
       },
       "required": [
@@ -168,6 +249,13 @@
         "text": {
           "type": "string",
           "maxLength": 2000
+        },
+        "report": {
+          "enum": [
+            "outcome",
+            "changes",
+            "full"
+          ]
         }
       },
       "required": [
@@ -324,6 +412,13 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 30000
+        },
+        "report": {
+          "enum": [
+            "outcome",
+            "changes",
+            "full"
+          ]
         }
       },
       "required": []
@@ -332,14 +427,30 @@
       "name": "browser_back",
       "method": "browser.back",
       "description": "Go back in this tab's history.",
-      "properties": {},
+      "properties": {
+        "report": {
+          "enum": [
+            "outcome",
+            "changes",
+            "full"
+          ]
+        }
+      },
       "required": []
     },
     {
       "name": "browser_forward",
       "method": "browser.forward",
       "description": "Go forward in this tab's history.",
-      "properties": {},
+      "properties": {
+        "report": {
+          "enum": [
+            "outcome",
+            "changes",
+            "full"
+          ]
+        }
+      },
       "required": []
     },
     {
@@ -352,7 +463,7 @@
     {
       "name": "browser_switch_tab",
       "method": "browser.tab.switch",
-      "description": "Make one of this agent's tabs the current one. Returns page state.",
+      "description": "Make one of this agent's tabs the current one.",
       "properties": {
         "tabId": {
           "type": "string",

@@ -2,6 +2,7 @@
 pub const BROWSER_METHODS: &[&str] = &[
     "browser.navigate",
     "browser.state",
+    "browser.find",
     "browser.click",
     "browser.type",
     "browser.press",
