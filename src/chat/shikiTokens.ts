@@ -1,5 +1,5 @@
 import { bundledLanguages, createHighlighter, createJavaScriptRegexEngine } from "../vendor/shiki";
-import type { Grammar, HighlighterCore } from "shiki/core";
+import type { Grammar, GrammarState, HighlighterCore, TokensResult } from "shiki/core";
 import { createCodeTheme } from "../themes/codeTheme";
 import type { Theme } from "../themes";
 import type { CodeLine, CodeToken } from "./types";
@@ -45,7 +45,7 @@ export async function textMateGrammar(lang: string): Promise<Grammar | null> {
     return (await loadGrammar(shiki, lang)) ? shiki.getLanguage(lang) : null;
 }
 
-export async function tokenizeCode(text: string, lang: string, theme: Theme, themeName: string): Promise<CodeLine[]> {
+async function prepare(lang: string, theme: Theme, themeName: string): Promise<HighlighterCore | null> {
     const shiki = await highlighter();
     let loadingTheme = themes.get(themeName);
     if (!loadingTheme) {
@@ -53,8 +53,10 @@ export async function tokenizeCode(text: string, lang: string, theme: Theme, the
         themes.set(themeName, loadingTheme);
     }
     const [, found] = await Promise.all([loadingTheme, loadGrammar(shiki, lang)]);
-    if (!found) return [];
-    const highlighted = shiki.codeToTokens(text, { lang, theme: themeName });
+    return found ? shiki : null;
+}
+
+function codeLines(highlighted: TokensResult): CodeLine[] {
     const plain = highlighted.fg?.toLowerCase();
     return highlighted.tokens.map((line) => {
         const merged: CodeToken[] = [];
@@ -76,6 +78,41 @@ export async function tokenizeCode(text: string, lang: string, theme: Theme, the
         }
         return merged;
     });
+}
+
+export async function tokenizeCode(text: string, lang: string, theme: Theme, themeName: string): Promise<CodeLine[]> {
+    const shiki = await prepare(lang, theme, themeName);
+    return shiki ? codeLines(shiki.codeToTokens(text, { lang, theme: themeName })) : [];
+}
+
+const LINES_PER_SLICE = 200;
+
+/**
+ * Colours a long run of lines a slice at a time, handing the main thread back
+ * between slices so a big diff never holds up a frame for long. Null when
+ * there is no grammar for the language or `stale` says the answer is no
+ * longer wanted.
+ */
+export async function tokenizeLines(
+    lines: readonly string[],
+    lang: string,
+    theme: Theme,
+    themeName: string,
+    { maxLineLength, stale }: { maxLineLength: number; stale: () => boolean },
+): Promise<CodeLine[] | null> {
+    const shiki = await prepare(lang, theme, themeName);
+    if (!shiki) return null;
+    const out: CodeLine[] = [];
+    let grammarState: GrammarState | undefined;
+    for (let from = 0; from < lines.length; from += LINES_PER_SLICE) {
+        if (stale()) return null;
+        const slice = lines.slice(from, from + LINES_PER_SLICE).join("\n");
+        const highlighted = shiki.codeToTokens(slice, { lang, theme: themeName, grammarState, tokenizeMaxLineLength: maxLineLength });
+        grammarState = highlighted.grammarState;
+        out.push(...codeLines(highlighted));
+        if (from + LINES_PER_SLICE < lines.length) await new Promise((resume) => setTimeout(resume));
+    }
+    return stale() ? null : out;
 }
 
 function sameStyle(a: CodeToken, b: CodeToken): boolean {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { tokenizeCode } from "./shikiTokens";
+import { tokenizeCode, tokenizeLines } from "./shikiTokens";
 import { codeThemeName } from "../themes/codeTheme";
 import { DEFAULT_THEME_ID, themeById } from "../themes";
 
@@ -57,5 +57,25 @@ describe("tokenizeCode", () => {
         await expect(tokenizeCode("SELECT 1", "sql", theme, name)).rejects.toThrow("offline");
         const lines = await tokenizeCode("SELECT 1", "sql", theme, name);
         expect(tokens(lines).find((token) => token.text.includes("SELECT"))?.color).toBeDefined();
+    });
+});
+
+describe("tokenizeLines", () => {
+    const never = { maxLineLength: 1000, stale: () => false };
+
+    it("carries the grammar's state from one slice to the next", async () => {
+        const lines = [...Array.from({ length: 199 }, (_, n) => `const v${n} = ${n};`), "/* a comment", "that keeps going", "*/ const after = 1;"];
+        const coloured = await tokenizeLines(lines, "typescript", theme, name, never);
+
+        expect(coloured).toHaveLength(lines.length);
+        expect(coloured?.[200].map((token) => token.text).join("")).toBe("that keeps going");
+        expect(coloured?.[200][0].color?.toLowerCase()).toBe(theme.highlight.comment.toLowerCase());
+    });
+
+    it("gives up once the answer is no longer wanted, and has nothing for a grammar there is not", async () => {
+        const lines = Array.from({ length: 450 }, (_, n) => `const v${n} = ${n};`);
+        let calls = 0;
+        expect(await tokenizeLines(lines, "typescript", theme, name, { maxLineLength: 1000, stale: () => ++calls > 1 })).toBeNull();
+        expect(await tokenizeLines(["+[-]"], "brainfuck", theme, name, never)).toBeNull();
     });
 });
