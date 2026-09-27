@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { git, gitOverviewR, useActiveProjectCwd } from "../../plugin-api/host";
 import { resource, useResourceEnabled } from "../../plugin-api/resources";
 import { actionsApi, type RepoRef } from "./api";
@@ -41,7 +42,7 @@ export interface ProjectRepo {
 export function useProjectRepo(enabled: boolean): ProjectRepo {
     const cwd = useActiveProjectCwd();
     const chosen = actionsSettings.useSelect((settings) => (cwd ? (settings.repoByProject[cwd] ?? null) : null));
-    const overridden = chosen ? refOf(chosen) : null;
+    const overridden = useMemo(() => (chosen ? refOf(chosen) : null), [chosen]);
     const fromRemote = useResourceEnabled(enabled && !!cwd && !overridden, remoteRepoR, cwd ?? "");
     const overview = useResourceEnabled(enabled && !!cwd, gitOverviewR, cwd ?? "");
     return {
