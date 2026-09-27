@@ -319,6 +319,7 @@ pub fn run() {
             git::git_overview,
             git::git_show,
             git::git_file_at,
+            git::git_file_diff,
             git::git_commit_files,
             git::git_blame,
             git::git_commit,

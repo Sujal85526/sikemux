@@ -108,6 +108,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "git_overview",
     "git_show",
     "git_file_at",
+    "git_file_diff",
     "git_commit_files",
     "git_blame",
     "git_commit",

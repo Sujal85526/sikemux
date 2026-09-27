@@ -1670,12 +1670,19 @@ fn looks_binary_bytes(bytes: &[u8]) -> bool {
 }
 
 fn blob_to_inline_text(blob: &git2::Blob<'_>, path: &str) -> Result<String, String> {
-    let bytes = blob.content();
+    bytes_to_inline_text(blob.content(), path)
+}
+
+fn too_large_for_inline_diff(path: &str, bytes: usize) -> String {
+    format!(
+        "{path} is too large for inline diff ({}). Open the file directly or use git diff in the terminal.",
+        human_bytes(bytes)
+    )
+}
+
+fn bytes_to_inline_text(bytes: &[u8], path: &str) -> Result<String, String> {
     if bytes.len() > GIT_FILE_AT_MAX_BYTES {
-        return Err(format!(
-            "{path} is too large for inline diff ({}). Open the file directly or use git diff in the terminal.",
-            human_bytes(bytes.len())
-        ));
+        return Err(too_large_for_inline_diff(path, bytes.len()));
     }
     if looks_binary_bytes(bytes) {
         return Err(format!("{path} is binary; inline diff is disabled."));
@@ -1684,10 +1691,9 @@ fn blob_to_inline_text(blob: &git2::Blob<'_>, path: &str) -> Result<String, Stri
         .map_err(|_| format!("{path} is not UTF-8 text; inline diff is disabled."))
 }
 
-#[tauri::command]
-pub async fn git_file_at(repo: String, rev: String, path: String) -> Result<String, String> {
-    let cacheable = is_immutable_rev(&rev);
-    let key = (repo.clone(), rev.clone(), path.clone());
+fn file_text_at(repo: &str, rev: &str, path: &str) -> Result<String, String> {
+    let cacheable = is_immutable_rev(rev);
+    let key = (repo.to_string(), rev.to_string(), path.to_string());
     if cacheable {
         if let Ok(mut cache) = file_at_cache().lock() {
             if let Some(hit) = cache.get(&key) {
@@ -1695,42 +1701,82 @@ pub async fn git_file_at(repo: String, rev: String, path: String) -> Result<Stri
             }
         }
     }
-    let cache_key = key.clone();
-    run_blocking(move || -> Result<String, String> {
-        let r = open_repo(&repo)?;
-        let content = if rev == ":index" {
-            let idx = r.index().map_err(|e| e.message().to_string())?;
-            match idx.get_path(Path::new(&path), 0) {
-                Some(entry) => {
-                    let blob = r.find_blob(entry.id).map_err(|e| e.message().to_string())?;
-                    blob_to_inline_text(&blob, &path)?
-                }
-                None => String::new(),
+    let r = open_repo(repo)?;
+    let content = if rev == ":index" {
+        let idx = r.index().map_err(|e| e.message().to_string())?;
+        match idx.get_path(Path::new(path), 0) {
+            Some(entry) => {
+                let blob = r.find_blob(entry.id).map_err(|e| e.message().to_string())?;
+                blob_to_inline_text(&blob, path)?
             }
-        } else {
-            match revparse_commit(&r, &rev) {
-                Ok(commit) => {
-                    let tree = commit.tree().map_err(|e| e.message().to_string())?;
-                    match tree.get_path(Path::new(&path)) {
-                        Ok(entry) => {
-                            let blob = r
-                                .find_blob(entry.id())
-                                .map_err(|e| e.message().to_string())?;
-                            blob_to_inline_text(&blob, &path)?
-                        }
-                        Err(e) if e.code() == ErrorCode::NotFound => String::new(),
-                        Err(e) => return Err(e.message().to_string()),
-                    }
-                }
-                Err(_) => String::new(),
-            }
-        };
-        if cacheable {
-            if let Ok(mut cache) = file_at_cache().lock() {
-                cache.insert(cache_key, content.clone());
-            }
+            None => String::new(),
         }
-        Ok(content)
+    } else {
+        match revparse_commit(&r, rev) {
+            Ok(commit) => {
+                let tree = commit.tree().map_err(|e| e.message().to_string())?;
+                match tree.get_path(Path::new(path)) {
+                    Ok(entry) => {
+                        let blob = r
+                            .find_blob(entry.id())
+                            .map_err(|e| e.message().to_string())?;
+                        blob_to_inline_text(&blob, path)?
+                    }
+                    Err(e) if e.code() == ErrorCode::NotFound => String::new(),
+                    Err(e) => return Err(e.message().to_string()),
+                }
+            }
+            Err(_) => String::new(),
+        }
+    };
+    if cacheable {
+        if let Ok(mut cache) = file_at_cache().lock() {
+            cache.insert(key, content.clone());
+        }
+    }
+    Ok(content)
+}
+
+fn worktree_text(repo: &str, path: &str) -> Result<String, String> {
+    let full = Path::new(repo).join(path);
+    match std::fs::metadata(&full) {
+        Ok(meta) if meta.len() as usize > GIT_FILE_AT_MAX_BYTES => {
+            return Err(too_large_for_inline_diff(path, meta.len() as usize));
+        }
+        Ok(meta) if !meta.is_file() => return Ok(String::new()),
+        Ok(_) => {}
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(String::new()),
+        Err(e) => return Err(e.to_string()),
+    }
+    match std::fs::read(&full) {
+        Ok(bytes) => bytes_to_inline_text(&bytes, path),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn git_file_at(repo: String, rev: String, path: String) -> Result<String, String> {
+    run_blocking(move || file_text_at(&repo, &rev, &path)).await
+}
+
+/// The rows of a unified diff of one file between two revisions, or between a
+/// revision and the working tree when `head_rev` is absent.
+#[tauri::command]
+pub async fn git_file_diff(
+    repo: String,
+    path: String,
+    base_rev: String,
+    head_rev: Option<String>,
+    full: bool,
+) -> Result<Vec<crate::diff::DiffRow>, String> {
+    run_blocking(move || -> Result<_, String> {
+        let base = file_text_at(&repo, &base_rev, &path)?;
+        let head = match head_rev {
+            Some(rev) => file_text_at(&repo, &rev, &path)?,
+            None => worktree_text(&repo, &path)?,
+        };
+        Ok(crate::diff::unified_rows(&base, &head, full))
     })
     .await
 }
