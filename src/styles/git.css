@@ -629,7 +629,7 @@
 
 .panel.focused .git-row.sel {
     background: var(--surface-selected);
-    box-shadow: inset 2px 0 0 var(--acc);
+    box-shadow: inset 0 0 0 1px var(--border-selected);
 }
 .gf-x,
 .gf-y {
@@ -920,7 +920,7 @@
     background: color-mix(in srgb, var(--surface) calc(var(--window-opacity, 1) * 96%), transparent);
 }
 .merge-review-item.focused > .merge-file-header {
-    box-shadow: inset 2px 0 0 var(--acc);
+    box-shadow: inset 0 0 0 1px var(--border-selected);
 }
 .merge-file-status {
     display: flex;
