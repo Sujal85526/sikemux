@@ -3,10 +3,13 @@ import { confirmDialog, notify, openUrl, reportError, swallow } from "../../../p
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
 import { EmptyState, IconChevron, IconClose, IconRefresh, SkeletonRows, Tooltip } from "../../../plugin-api/ui";
 import { actionsApi, failureMessage, type Job, type RepoRef, type Run } from "../api";
-import { actionsRunR } from "../resources";
+import { actionsRunAttemptR, actionsRunR } from "../resources";
 import { elapsedMs, failedStep, formatAgo, formatDuration, isRunning, jobsSummary, outcomeOf, OUTCOME_LABEL } from "../runStatus";
 import { closeRun, updateView } from "../state";
 import { OutcomeIcon } from "./ActionsIcon";
+import { Annotations } from "./Annotations";
+import { Approvals } from "./Approvals";
+import { Artifacts } from "./Artifacts";
 import { useNow } from "./hooks";
 import { JobLogView } from "./JobLogView";
 
@@ -42,9 +45,9 @@ function JobCard({
 }) {
     const outcome = outcomeOf(job);
     const stopped = failedStep(job);
-    const rerun = () =>
+    const rerun = (debug: boolean) =>
         void actionsApi
-            .rerunJob(repo, job.id)
+            .rerunJob(repo, job.id, debug)
             .then(() => {
                 notify("success", `Re-running ${job.name}`);
                 refreshRuns();
@@ -67,8 +70,13 @@ function JobCard({
                     <div className="gha-job-actions">
                         {job.runner && <span className="gha-dim">on {job.runner}</span>}
                         {canWrite && job.status === "completed" && (
-                            <button type="button" className="gha-link" onClick={rerun}>
+                            <button type="button" className="gha-link" onClick={() => rerun(false)}>
                                 Re-run this job
+                            </button>
+                        )}
+                        {canWrite && job.status === "completed" && (
+                            <button type="button" className="gha-link" onClick={() => rerun(true)} title="Re-run with the runner's debug logging on">
+                                with debug logs
                             </button>
                         )}
                         {job.url && (
@@ -84,6 +92,7 @@ function JobCard({
                             ))}
                         </div>
                     )}
+                    {job.checkRunId !== null && <Annotations repo={repo} checkRunId={job.checkRunId} active={active} />}
                     <JobLogView repo={repo} job={job} active={active} />
                 </div>
             )}
@@ -174,12 +183,15 @@ interface Props {
 }
 
 export function RunView({ paneId, repo, runId, openJob, active, canWrite }: Props) {
-    const detail = useResourceEnabled(active, actionsRunR, repo, runId);
+    const [attempt, setAttempt] = useState<number | null>(null);
+    const detail = useResourceEnabled(active && attempt === null, actionsRunR, repo, runId);
+    const older = useResourceEnabled(active && attempt !== null, actionsRunAttemptR, repo, runId, attempt ?? 0);
+    const shown = attempt === null ? detail : older;
     const [live, setLive] = useState<{ run: Run | null; jobs: Job[] } | null>(null);
 
-    const run = live?.run ?? detail.data?.run ?? null;
-    const jobs = live?.jobs.length ? live.jobs : (detail.data?.jobs ?? []);
-    const moving = !!run && isRunning(run);
+    const run = (attempt === null ? live?.run : null) ?? shown.data?.run ?? null;
+    const jobs = attempt === null && live?.jobs.length ? live.jobs : (shown.data?.jobs ?? []);
+    const moving = attempt === null && !!run && isRunning(run);
     const now = useNow(active && moving);
 
     // While a run is going, the backend pushes the whole run and its jobs on
@@ -206,14 +218,14 @@ export function RunView({ paneId, repo, runId, openJob, active, canWrite }: Prop
 
     useEffect(() => setLive(null), [runId]);
 
-    if (detail.status === "loading" && !run) return <SkeletonRows rows={8} label="Loading run" />;
-    if (detail.error && !run) {
+    if (shown.status === "loading" && !run) return <SkeletonRows rows={8} label="Loading run" />;
+    if (shown.error && !run) {
         return (
             <EmptyState
                 title="Could not read the run"
-                message={failureMessage(detail.error)}
+                message={failureMessage(shown.error)}
                 tone="error"
-                action={{ label: "Try again", onClick: () => void detail.refresh() }}
+                action={{ label: "Try again", onClick: () => void shown.refresh() }}
             />
         );
     }
@@ -225,7 +237,24 @@ export function RunView({ paneId, repo, runId, openJob, active, canWrite }: Prop
             <button type="button" className="gha-back" onClick={() => closeRun(paneId)}>
                 <IconClose size={11} /> Back to runs
             </button>
-            <Header run={run} repo={repo} now={now} canWrite={canWrite} onRefresh={() => void detail.refresh()} />
+            <Header run={run} repo={repo} now={now} canWrite={canWrite} onRefresh={() => void shown.refresh()} />
+            {run.attempt > 1 && (
+                <div className="gha-attempts">
+                    <span className="gha-dim">Attempts</span>
+                    {Array.from({ length: run.attempt }, (_, index) => index + 1).map((number) => (
+                        <button
+                            key={number}
+                            type="button"
+                            className="gha-chip"
+                            data-on={(attempt ?? run.attempt) === number ? "1" : "0"}
+                            onClick={() => setAttempt(number === run.attempt ? null : number)}>
+                            #{number}
+                        </button>
+                    ))}
+                </div>
+            )}
+            <Approvals repo={repo} runId={runId} active={active} />
+            <Artifacts repo={repo} runId={runId} active={active} />
             <div className="gha-jobs-head">
                 {summary.total > 0 ? (
                     <span>

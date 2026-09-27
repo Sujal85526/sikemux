@@ -3,7 +3,7 @@ import { useActiveSurfacePane } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { IconSearch, rankBy, useMouseActive } from "../../../plugin-api/ui";
 import type { RepoListing, Workflow } from "../api";
-import { ACTIONS_RUNS } from "../kinds";
+import { GITHUB_ACTIONS } from "../kinds";
 import { actionsMyReposR, actionsWorkflowsR } from "../resources";
 import { closePalette, filterBy, refOf, showRepo, STATUS_FILTERS, updateView, useRunsView, type StatusFilter } from "../state";
 import { GithubMark } from "./ActionsIcon";
@@ -58,7 +58,7 @@ export function paletteItems(query: string, repos: readonly RepoListing[], workf
 }
 
 export function Palette() {
-    const paneId = useActiveSurfacePane(ACTIONS_RUNS);
+    const paneId = useActiveSurfacePane(GITHUB_ACTIONS);
     const view = useRunsView(paneId ?? "");
     const repos = useResourceEnabled(true, actionsMyReposR);
     const [query, setQuery] = useState("");

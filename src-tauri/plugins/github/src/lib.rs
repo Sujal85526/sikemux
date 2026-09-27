@@ -6,9 +6,14 @@
 //   repo      — a git remote turned into owner and repository
 //   workflows — the workflows a repository has, and starting one by hand
 //   runs      — runs, the jobs in one, and re-running or stopping them
-//   logs      — a job's log
+//   logs      — a job's log, and what GitHub flagged in it
+//   artifacts — what a run left behind, and putting one on disk
+//   approvals — a run held at an environment until somebody signs it off
 //   watch     — following a run while it is going
 
+mod annotations;
+mod approvals;
+mod artifacts;
 mod auth;
 mod client;
 mod config;
@@ -121,6 +126,9 @@ impl Plugin for GithubActions {
                 "workflows" => answer(workflows::list(data_dir, params(input)?)).await,
                 "branches" => answer(workflows::branches(data_dir, params(input)?)).await,
                 "dispatch" => answer(workflows::dispatch(data_dir, params(input)?)).await,
+                "setWorkflowEnabled" => {
+                    answer(workflows::set_enabled(data_dir, params(input)?)).await
+                }
 
                 "runs" => answer(runs::list(data_dir, params(input)?)).await,
                 "run" => answer(runs::detail(data_dir, params(input)?)).await,
@@ -128,8 +136,16 @@ impl Plugin for GithubActions {
                 "rerun" => answer(runs::rerun(data_dir, params(input)?)).await,
                 "rerunJob" => answer(runs::rerun_job(data_dir, params(input)?)).await,
                 "cancel" => answer(runs::cancel(data_dir, params(input)?)).await,
+                "runAttempt" => answer(runs::attempt(data_dir, params(input)?)).await,
 
                 "jobLog" => answer(logs::job(data_dir, params(input)?)).await,
+                "annotations" => answer(annotations::list(data_dir, params(input)?)).await,
+
+                "artifacts" => answer(artifacts::list(data_dir, params(input)?)).await,
+                "downloadArtifact" => answer(artifacts::download(data_dir, params(input)?)).await,
+
+                "pendingApprovals" => answer(approvals::pending(data_dir, params(input)?)).await,
+                "reviewDeployment" => answer(approvals::review(data_dir, params(input)?)).await,
 
                 _ => Err(PluginError::unknown_method(method)),
             }
@@ -161,7 +177,7 @@ mod tests {
     fn its_manifest_parses() {
         assert_eq!(
             plugin().expect("manifest parses").manifest().id,
-            "sikemux.github-actions"
+            "sikemux.github"
         );
     }
 
@@ -211,7 +227,7 @@ mod tests {
 }
 
 /// Runs against a real GitHub only when asked:
-/// `GHA_LIVE_REPO=owner/repo GHA_LIVE_TOKEN=… cargo test -p sikemux-plugin-github-actions -- --ignored`
+/// `GHA_LIVE_REPO=owner/repo GHA_LIVE_TOKEN=… cargo test -p sikemux-plugin-github -- --ignored`
 #[cfg(test)]
 mod live {
     use super::*;

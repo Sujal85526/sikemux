@@ -1,8 +1,8 @@
 import { createPluginBackend, isPluginFailure } from "../../plugin-api/backend";
 import { invalidate } from "../../plugin-api/resources";
-import { ACTIONS_PLUGIN_ID } from "./kinds";
+import { GITHUB_PLUGIN_ID } from "./kinds";
 
-const backend = createPluginBackend(ACTIONS_PLUGIN_ID);
+const backend = createPluginBackend(GITHUB_PLUGIN_ID);
 
 export type TokenSource = "keychain" | "environment" | "ghCli";
 
@@ -127,6 +127,8 @@ export interface Job {
     completedAt: string | null;
     runner: string | null;
     url: string | null;
+    /** Where this job's annotations live; absent on a job GitHub never checked. */
+    checkRunId: number | null;
     steps: Step[];
 }
 
@@ -144,6 +146,39 @@ export interface LogLine {
 export interface JobLog {
     lines: LogLine[];
     expired: boolean;
+}
+
+export interface Annotation {
+    path: string | null;
+    startLine: number | null;
+    endLine: number | null;
+    /** `failure`, `warning` or `notice`. */
+    level: string;
+    title: string | null;
+    message: string;
+    details: string | null;
+}
+
+export interface Artifact {
+    id: number;
+    name: string;
+    sizeBytes: number;
+    expired: boolean;
+    createdAt: string | null;
+    expiresAt: string | null;
+}
+
+export interface SavedArtifact {
+    path: string;
+    bytes: number;
+}
+
+export interface PendingApproval {
+    environmentId: number;
+    environment: string;
+    waitMinutes: number;
+    canApprove: boolean;
+    reviewers: string[];
 }
 
 export interface RunTick {
@@ -185,12 +220,22 @@ export const actionsApi = {
     runs: (query: RunQuery) => read<RunPage>("runs", query),
     run: (repo: RepoRef, runId: number) => read<RunDetail>("run", { ...repo, runId }),
     jobLog: (repo: RepoRef, jobId: number) => read<JobLog>("jobLog", { ...repo, jobId }),
+    annotations: (repo: RepoRef, checkRunId: number) => read<Annotation[]>("annotations", { ...repo, checkRunId }),
+    artifacts: (repo: RepoRef, runId: number) => read<Artifact[]>("artifacts", { ...repo, runId }),
+    pendingApprovals: (repo: RepoRef, runId: number) => read<PendingApproval[]>("pendingApprovals", { ...repo, runId }),
+    runAttempt: (repo: RepoRef, runId: number, attempt: number) => read<RunDetail>("runAttempt", { ...repo, runId, attempt }),
 
     dispatch: (repo: RepoRef, workflowId: number, gitRef: string, inputs: Record<string, string>) =>
         backend.call<void>("dispatch", { ...repo, workflowId, gitRef, inputs }),
-    rerun: (repo: RepoRef, runId: number, failedOnly: boolean) => backend.call<void>("rerun", { ...repo, runId, failedOnly }),
-    rerunJob: (repo: RepoRef, jobId: number) => backend.call<void>("rerunJob", { ...repo, jobId }),
+    rerun: (repo: RepoRef, runId: number, failedOnly: boolean, debug = false) => backend.call<void>("rerun", { ...repo, runId, failedOnly, debug }),
+    rerunJob: (repo: RepoRef, jobId: number, debug = false) => backend.call<void>("rerunJob", { ...repo, jobId, debug }),
     cancel: (repo: RepoRef, runId: number) => backend.call<void>("cancel", { ...repo, runId }),
+    downloadArtifact: (repo: RepoRef, artifactId: number, name: string) =>
+        backend.call<SavedArtifact>("downloadArtifact", { ...repo, artifactId, name }),
+    reviewDeployment: (repo: RepoRef, runId: number, environmentIds: number[], state: "approved" | "rejected", comment = "") =>
+        backend.call<void>("reviewDeployment", { ...repo, runId, environmentIds, state, comment }),
+    setWorkflowEnabled: (repo: RepoRef, workflowId: number, enabled: boolean) =>
+        backend.call<void>("setWorkflowEnabled", { ...repo, workflowId, enabled }),
 
     watchStart: (repo: RepoRef, runId: number, onTick: (tick: RunTick) => void) =>
         backend.openStream<RunTick>("watchRun", { ...repo, runId }, onTick),

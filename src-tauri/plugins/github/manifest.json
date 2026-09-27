@@ -1,5 +1,5 @@
 {
-  "id": "sikemux.github-actions",
+  "id": "sikemux.github",
   "name": "GitHub Actions",
   "version": "0.1.0",
   "sikemux": ">=0.4",
@@ -21,7 +21,10 @@
           "description": "The repository, e.g. sikemux."
         }
       },
-      "required": ["owner", "name"]
+      "required": [
+        "owner",
+        "name"
+      ]
     },
     {
       "name": "gha_runs",
@@ -86,7 +89,10 @@
           "description": "Which page of results, from 1."
         }
       },
-      "required": ["owner", "name"]
+      "required": [
+        "owner",
+        "name"
+      ]
     },
     {
       "name": "gha_run",
@@ -109,7 +115,11 @@
           "description": "The run's id, from gha_runs."
         }
       },
-      "required": ["owner", "name", "runId"]
+      "required": [
+        "owner",
+        "name",
+        "runId"
+      ]
     },
     {
       "name": "gha_job_log",
@@ -132,7 +142,65 @@
           "description": "The job's id, from gha_run."
         }
       },
-      "required": ["owner", "name", "jobId"]
+      "required": [
+        "owner",
+        "name",
+        "jobId"
+      ]
+    },
+    {
+      "name": "gha_annotations",
+      "method": "annotations",
+      "description": "What GitHub flagged in one job: the file, line and message behind a failure. Faster than reading the whole log. checkRunId comes from a job in gha_run.",
+      "properties": {
+        "owner": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The user or organisation, e.g. nodelike."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The repository, e.g. sikemux."
+        },
+        "checkRunId": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The job's checkRunId, from gha_run."
+        }
+      },
+      "required": [
+        "owner",
+        "name",
+        "checkRunId"
+      ]
+    },
+    {
+      "name": "gha_artifacts",
+      "method": "artifacts",
+      "description": "What a workflow run left behind, with each artifact's size and whether it has expired.",
+      "properties": {
+        "owner": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The user or organisation, e.g. nodelike."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The repository, e.g. sikemux."
+        },
+        "runId": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The run's id, from gha_runs."
+        }
+      },
+      "required": [
+        "owner",
+        "name",
+        "runId"
+      ]
     }
   ]
 }

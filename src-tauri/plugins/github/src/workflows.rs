@@ -141,6 +141,25 @@ pub async fn dispatch(data_dir: &Path, input: Dispatch) -> ActionsResult<()> {
     client::post_empty(data_dir, &path, Some(&body)).await
 }
 
+/// Switching a workflow off stops GitHub running it on its triggers, without
+/// touching the file it is written in.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetEnabled {
+    #[serde(flatten)]
+    pub repo: RepoRef,
+    pub workflow_id: u64,
+    pub enabled: bool,
+}
+
+pub async fn set_enabled(data_dir: &Path, input: SetEnabled) -> ActionsResult<()> {
+    let verb = if input.enabled { "enable" } else { "disable" };
+    let path = input
+        .repo
+        .path(&format!("/actions/workflows/{}/{verb}", input.workflow_id))?;
+    client::act(data_dir, reqwest::Method::PUT, &path, None).await
+}
+
 #[derive(Deserialize)]
 struct BranchRow {
     name: String,

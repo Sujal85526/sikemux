@@ -1,6 +1,7 @@
-import { useResourceEnabled } from "../../../plugin-api/resources";
+import { notify, reportError } from "../../../plugin-api/host";
+import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
 import { Checkbox, IconRun, SkeletonRows, Tooltip } from "../../../plugin-api/ui";
-import type { RepoRef } from "../api";
+import { actionsApi, type RepoRef } from "../api";
 import { actionsWorkflowsR } from "../resources";
 import { actionsSettings, filterBy, setFollowBranch, slugOf, STATUS_FILTERS, togglePinned, type RunsView, type StatusFilter } from "../state";
 import { GithubMark } from "./ActionsIcon";
@@ -30,6 +31,15 @@ export function ActionsSidebar({ paneId, repo, view, projectBranch, active, canW
     const slug = slugOf(repo);
     const pinned = actionsSettings.useSelect((settings) => settings.pinned.includes(slug));
     const followBranch = actionsSettings.useSelect((settings) => settings.followBranch);
+
+    const setEnabled = (workflowId: number, name: string, enabled: boolean) =>
+        void actionsApi
+            .setWorkflowEnabled(repo, workflowId, enabled)
+            .then(() => {
+                notify("success", enabled ? `Switched ${name} on` : `Switched ${name} off`);
+                invalidate((kind) => kind === "gha.workflows");
+            })
+            .catch(reportError(`Could not switch ${name} ${enabled ? "on" : "off"}`));
 
     return (
         <div className="gha-side">
@@ -98,6 +108,17 @@ export function ActionsSidebar({ paneId, repo, view, projectBranch, active, canW
                                     aria-label={`Run ${workflow.name}`}
                                     onClick={() => onDispatch(workflow.id)}>
                                     <IconRun size={11} />
+                                </button>
+                            </Tooltip>
+                        )}
+                        {canWrite && (
+                            <Tooltip label={workflow.active ? `Switch ${workflow.name} off` : `Switch ${workflow.name} on`}>
+                                <button
+                                    type="button"
+                                    className="gha-icon-btn"
+                                    aria-label={workflow.active ? `Switch ${workflow.name} off` : `Switch ${workflow.name} on`}
+                                    onClick={() => setEnabled(workflow.id, workflow.name, !workflow.active)}>
+                                    <span className="gha-power" data-on={workflow.active ? "1" : "0"} />
                                 </button>
                             </Tooltip>
                         )}

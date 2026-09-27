@@ -1,6 +1,9 @@
 import { resource } from "../../plugin-api/resources";
 import {
     actionsApi,
+    type Annotation,
+    type Artifact,
+    type PendingApproval,
     type ActionsStatus,
     type JobLog,
     type RepoListing,
@@ -52,6 +55,30 @@ export const actionsRunR = resource({
     kind: "gha.run",
     fetch: (repo: RepoRef, runId: number): Promise<RunDetail> => actionsApi.run(repo, runId),
     staleAfterMs: 10_000,
+});
+
+export const actionsAnnotationsR = resource({
+    kind: "gha.annotations",
+    fetch: (repo: RepoRef, checkRunId: number): Promise<Annotation[]> => actionsApi.annotations(repo, checkRunId),
+    staleAfterMs: 60_000,
+});
+
+export const actionsArtifactsR = resource({
+    kind: "gha.artifacts",
+    fetch: (repo: RepoRef, runId: number): Promise<Artifact[]> => actionsApi.artifacts(repo, runId),
+    staleAfterMs: 60_000,
+});
+
+export const actionsApprovalsR = resource({
+    kind: "gha.approvals",
+    fetch: (repo: RepoRef, runId: number): Promise<PendingApproval[]> => actionsApi.pendingApprovals(repo, runId),
+    staleAfterMs: 15_000,
+});
+
+export const actionsRunAttemptR = resource({
+    kind: "gha.runAttempt",
+    fetch: (repo: RepoRef, runId: number, attempt: number): Promise<RunDetail> => actionsApi.runAttempt(repo, runId, attempt),
+    staleAfterMs: 5 * 60_000,
 });
 
 export const actionsJobLogR = resource({
