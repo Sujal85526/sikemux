@@ -86,7 +86,18 @@ export function ghosttyTheme(name: string, encoded: string, accent?: string): Th
     return { id: `ghostty-${slugify(name)}`, name, dark, chrome, editor, highlight, terminal };
 }
 
+const nameKey = (name: string) => slugify(name).replace(/-/g, "");
+
+/** Shell output should look as it does in Ghostty, so a curated theme takes its ANSI colours from Ghostty's theme of the same name. */
+export function withGhosttyTerminal(name: string, terminal: readonly string[]): readonly string[] {
+    const match = GHOSTTY_THEMES.find(([other]) => nameKey(other) === nameKey(name));
+    if (!match) return terminal;
+    const [, foreground, cursor, , , ...ansi] = match[1].split(",").map((hex) => (hex ? `#${hex}` : ""));
+    const [background, curatedForeground, curatedCursor, cursorAccent, selection] = terminal;
+    return [background, foreground || curatedForeground, cursor || curatedCursor, cursorAccent, selection, ...ansi];
+}
+
 /** Ghostty's catalogue, minus any theme whose name matches one in `skipNames` once spaces and punctuation are ignored. */
 export function ghosttyThemes(skipNames: ReadonlySet<string>): ThemeColours[] {
-    return GHOSTTY_THEMES.filter(([name]) => !skipNames.has(slugify(name).replace(/-/g, ""))).map(([name, encoded]) => ghosttyTheme(name, encoded));
+    return GHOSTTY_THEMES.filter(([name]) => !skipNames.has(nameKey(name))).map(([name, encoded]) => ghosttyTheme(name, encoded));
 }

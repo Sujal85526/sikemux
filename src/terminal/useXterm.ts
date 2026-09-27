@@ -229,6 +229,7 @@ export function useXterm(opts: {
                     fontSize: currentTerminalFontSize(),
                     fontWeight: FONT_WEIGHT,
                     fontWeightBold: FONT_WEIGHT_BOLD,
+                    drawBoldTextInBrightColors: false,
                     lineHeight: 1.0,
                     theme: currentTerminalTheme(),
                     cursorBlink: true,

@@ -1,4 +1,4 @@
-import { ghosttyThemes, slugify, type ThemeColours } from "./ghostty";
+import { ghosttyThemes, slugify, withGhosttyTerminal, type ThemeColours } from "./ghostty";
 
 export interface ThemeChrome {
     bg: string;
@@ -730,7 +730,9 @@ const AURA_DAY: Theme = {
 };
 
 export const CURATED_THEMES: Theme[] = [
-    ...THEME_DATA.map(([id, name, chrome, editor, highlight, terminal]) => theme(id, name, chrome, editor, highlight, terminal)),
+    ...THEME_DATA.map(([id, name, chrome, editor, highlight, terminal]) =>
+        theme(id, name, chrome, editor, highlight, withGhosttyTerminal(name, terminal)),
+    ),
     AURA_DAY,
 ];
 
