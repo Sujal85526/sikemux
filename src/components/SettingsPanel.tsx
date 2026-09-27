@@ -62,6 +62,8 @@ import { useBuiltPlugins } from "../plugins/enabled";
 import { frontendPlugin, pluginSurface } from "../plugins/registry";
 import { ActivityPage } from "./ActivityPage";
 import { SettingsPage, SettingsSection } from "./SettingsLayout";
+import { useVoice, type VoiceState } from "../voice/dictation";
+import { parseVoiceWords } from "../voice/vocabulary";
 import "../styles/settings.css";
 
 const PAGE_ICONS: Record<SettingsPageId, ReactNode> = {
@@ -686,6 +688,8 @@ function AgentsPage() {
                     Only confirmed native session IDs are written to disk. Startup commands and terminal output never are.
                 </p>
             </SettingsSection>
+
+            {IS_MACOS && <VoiceSection />}
         </SettingsPage>
     );
 }
@@ -1564,6 +1568,71 @@ function CloudPage({ cloudBrowser, cloudBrowserShortcut }: CloudPageProps) {
                 </SettingsRows>
             </SettingsSection>
         </SettingsPage>
+    );
+}
+
+function voiceModelStatus(voice: VoiceState, enabled: boolean): string {
+    if (voice.phase === "unsupported") return voice.reason ?? "Not available on this Mac.";
+    if (voice.reason) return voice.reason;
+    if (!enabled) return "Parakeet by NVIDIA, run on the Neural Engine. About 600 MB, downloaded when you turn dictation on.";
+    switch (voice.phase) {
+        case "preparing":
+            if (voice.stage === "download") return `Downloading… ${Math.round(voice.fraction * 100)}%`;
+            if (voice.stage === "vocabulary") return "Loading the word list model…";
+            return "Preparing for the Neural Engine. The first time takes about half a minute.";
+        case "off":
+            return "Not loaded.";
+        default:
+            return "Ready. Speech never leaves this Mac.";
+    }
+}
+
+function VoiceSection() {
+    const enabled = useStore((s) => s.voiceDictation);
+    const words = useStore((s) => s.voiceWords);
+    const voice = useVoice();
+    const [draft, setDraft] = useState(() => words.join(", "));
+    useEffect(() => setDraft(words.join(", ")), [words]);
+    const commit = () => cmd.setVoiceWords(parseVoiceWords(draft));
+    return (
+        <SettingsSection title="Voice">
+            <SettingsRows>
+                <SettingsRow
+                    label="Dictate with right Option"
+                    desc="Hold right ⌥ and speak. Letting go types what you said into the focused agent or terminal."
+                    asLabel
+                    control={
+                        <Switch
+                            checked={enabled}
+                            onChange={cmd.setVoiceDictation}
+                            label="Dictate with right Option"
+                            disabled={voice.phase === "unsupported"}
+                        />
+                    }
+                />
+                <SettingsRow label="Speech model" desc={voiceModelStatus(voice, enabled)} />
+                <SettingsRow
+                    label="Words to recognise"
+                    desc="Names to spell your way, separated by commas. The project, its open files and agent names are included already."
+                    wide>
+                    <input
+                        className="settings-input mono"
+                        aria-label="Words to recognise"
+                        placeholder="pnpm, Tauri, worktree"
+                        value={draft}
+                        onChange={(event) => setDraft(event.target.value)}
+                        onBlur={commit}
+                        onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                                event.preventDefault();
+                                commit();
+                            }
+                        }}
+                        spellCheck={false}
+                    />
+                </SettingsRow>
+            </SettingsRows>
+        </SettingsSection>
     );
 }
 

@@ -177,4 +177,10 @@ pub const IPC_COMMANDS: &[&str] = &[
     "cli_runtime_info",
     "cli_install_status",
     "cli_install",
+    "voice_status",
+    "voice_prepare",
+    "voice_start",
+    "voice_stop",
+    "voice_cancel",
+    "voice_shutdown",
 ];

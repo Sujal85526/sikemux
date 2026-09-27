@@ -93,6 +93,14 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     row("agents", "Sessions", "Test notification", "notification sound permission send try"),
     row("agents", "Sessions", "Rail density", "compact comfortable sidebar"),
     row("agents", "Sessions", "Idle agents", "sleep memory process"),
+    ...(IS_MACOS
+        ? [
+              section("agents", "Voice", "dictation microphone speech talk transcribe"),
+              row("agents", "Voice", "Dictate with right Option", "dictation microphone speech push to talk hold"),
+              row("agents", "Voice", "Speech model", "parakeet download neural engine"),
+              row("agents", "Voice", "Words to recognise", "vocabulary names spelling"),
+          ]
+        : []),
 
     section("actions", "Your actions", "custom commands command deck scripts"),
     section("actions", "New action", "custom command add create"),

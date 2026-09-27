@@ -177,6 +177,12 @@ export const IPC_COMMANDS = [
     "cli_runtime_info",
     "cli_install_status",
     "cli_install",
+    "voice_status",
+    "voice_prepare",
+    "voice_start",
+    "voice_stop",
+    "voice_cancel",
+    "voice_shutdown",
 ] as const;
 
 export type IpcCommand = (typeof IPC_COMMANDS)[number];

@@ -75,6 +75,8 @@ export interface DomainState {
     disabledPlugins: readonly string[];
     restoreAgentTabs: boolean;
     agentNotifications: boolean;
+    voiceDictation: boolean;
+    voiceWords: readonly string[];
     notificationsIntroduced: boolean;
     railDensity: RailDensity;
     onboardingComplete: boolean;
@@ -225,6 +227,8 @@ export const useStore = create<StoreState>(() => {
         disabledPlugins: [],
         restoreAgentTabs: true,
         agentNotifications: true,
+        voiceDictation: false,
+        voiceWords: [],
         notificationsIntroduced: false,
         railDensity: "comfortable",
         onboardingComplete: false,

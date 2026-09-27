@@ -192,6 +192,12 @@
     "allow-cli-editor-tabs-closed",
     "allow-cli-runtime-info",
     "allow-cli-install-status",
-    "allow-cli-install"
+    "allow-cli-install",
+    "allow-voice-status",
+    "allow-voice-prepare",
+    "allow-voice-start",
+    "allow-voice-stop",
+    "allow-voice-cancel",
+    "allow-voice-shutdown"
   ]
 }

@@ -29,6 +29,7 @@ import { git } from "./api/git";
 import { runKeybindingAction, useKeymap } from "./keymap";
 import { usePinchZoom } from "./pinchZoom";
 import { introduceNotifications, useAgentNotifications } from "./agentNotifications";
+import { useVoiceDictation } from "./voice/dictation";
 import { useBackdropImage } from "./hooks/useBackdropImage";
 import { useBrowserDownloads } from "./state/browserDownloads";
 import { useBrowserReveal } from "./state/browserReveal";
@@ -639,6 +640,7 @@ export default function App() {
     useKeymap();
     usePinchZoom();
     useAgentNotifications();
+    useVoiceDictation();
     useBrowserDownloads();
     useBrowserReveal();
     useBrowserStrips();

@@ -27,6 +27,7 @@ import { MarkdownTableHead } from "../lib/markdownTable";
 import { basename } from "../lib/paths";
 import { hasPrimaryModifier, PRIMARY_SHORTCUT } from "../lib/platform";
 import { registerPathDrop } from "../state/dropRegistry";
+import { registerTextInsert } from "../state/textInsertRegistry";
 import type { Agent, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
 import { swallow } from "../state/toast";
@@ -1222,6 +1223,25 @@ function ChatComposer({
             window.requestAnimationFrame(() => editorRef.current?.focus());
         });
     }, [onError, paneRef]);
+
+    useEffect(() => {
+        const element = paneRef.current;
+        if (!element) return;
+        return registerTextInsert(element, (text) => {
+            const editor = editorRef.current;
+            if (!editor) return;
+            const before = editor.value.slice(0, editor.selectionStart);
+            const after = editor.value.slice(editor.selectionEnd);
+            const inserted = `${before && !/\s$/.test(before) ? " " : ""}${text}`;
+            const at = before.length + inserted.length;
+            setDraft(`${before}${inserted}${after}`);
+            setCaret(at);
+            window.requestAnimationFrame(() => {
+                editor.focus();
+                editor.setSelectionRange(at, at);
+            });
+        });
+    }, [paneRef]);
 
     /* A chat is focused again once its session is ready, not only when its pane
        appears: a pane opened while the agent was still starting would otherwise

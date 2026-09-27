@@ -30,6 +30,7 @@ mod state;
 mod system;
 mod transparency;
 mod updates;
+mod voice;
 mod wallpaper;
 mod wheel;
 
@@ -40,6 +41,7 @@ use plugins::PluginHost;
 use pty::PtyManager;
 use sikemux_process as bounded_process;
 use tauri::Manager;
+use voice::VoiceManager;
 
 // reqwest is built without a TLS crypto backend of its own, so every HTTP
 // client in the app and its plugins uses the one installed here.
@@ -179,6 +181,7 @@ pub fn run() {
         .manage(PtyManager::default())
         .manage(AcpManager::default())
         .manage(BrowserManager::default())
+        .manage(VoiceManager::default())
         .invoke_handler(tauri::generate_handler![
             acp::acp_start,
             acp::acp_prompt,
@@ -357,6 +360,12 @@ pub fn run() {
             cli_server::cli_runtime_info,
             cli_install::cli_install_status,
             cli_install::cli_install,
+            voice::voice_status,
+            voice::voice_prepare,
+            voice::voice_start,
+            voice::voice_stop,
+            voice::voice_cancel,
+            voice::voice_shutdown,
         ])
         .build(tauri::generate_context!())
         .expect("error while building sikemux")
@@ -388,6 +397,9 @@ pub fn run() {
                 }
                 if let Some(plugins) = app_handle.try_state::<PluginHost>() {
                     plugins.drain();
+                }
+                if let Some(voice) = app_handle.try_state::<VoiceManager>() {
+                    voice.drain();
                 }
                 lsp::drain_all();
             }

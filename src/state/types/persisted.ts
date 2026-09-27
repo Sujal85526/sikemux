@@ -76,6 +76,8 @@ export interface PersistedPrefs {
     disabledPlugins?: string[];
     restoreAgentTabs?: boolean;
     agentNotifications?: boolean;
+    voiceDictation?: boolean;
+    voiceWords?: string[];
     notificationsIntroduced?: boolean;
     autoResumeAgents?: boolean;
     railDensity?: RailDensity;

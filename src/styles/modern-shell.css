@@ -104,6 +104,7 @@ textarea:focus,
 .tb-btn,
 .env-dd-btn,
 .zoom-pill,
+.voice-pill,
 .tb-git-chip,
 .tb-deploy-chip,
 .tb-deploy-checkout {
@@ -1136,6 +1137,7 @@ textarea,
         .tb-deploy-chip,
         .tb-aws-chip,
         .zoom-pill,
+        .voice-pill,
         .agent-view-switch button
     ) {
     border-radius: var(--radius-1) !important;
