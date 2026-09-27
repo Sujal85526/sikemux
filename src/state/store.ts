@@ -83,6 +83,7 @@ export interface DomainState {
     lastSeenVersion: string;
     customCommands: CustomCommand[];
     updateChannel: "stable" | "nightly";
+    shareUsageData: boolean;
     lastReleaseNotes: HeldRelease | null;
     recentCommandKeys: string[];
     /** Non-secret launch profiles and the per-agent defaults that reference them. */
@@ -235,6 +236,7 @@ export const useStore = create<StoreState>(() => {
         lastSeenVersion: "",
         customCommands: [],
         updateChannel: "stable",
+        shareUsageData: true,
         lastReleaseNotes: null,
         recentCommandKeys: [],
         providerProfiles: DEFAULT_PROVIDER_PROFILES.map((profile) => ({ ...profile })),

@@ -787,6 +787,7 @@ function AboutPage() {
     const updateChannel = useStore((s) => s.updateChannel);
     const lastUpdateCheck = useStore((s) => s.lastUpdateCheck);
     const pendingUpdate = useStore((s) => s.pendingUpdate);
+    const shareUsageData = useStore((s) => s.shareUsageData);
     return (
         <SettingsPage>
             <SettingsSection title="Updates">
@@ -811,6 +812,17 @@ function AboutPage() {
                             Check now
                         </button>
                     </SettingsRow>
+                </SettingsRows>
+            </SettingsSection>
+
+            <SettingsSection title="Privacy">
+                <SettingsRows>
+                    <SettingsRow
+                        label="Share anonymous usage"
+                        desc="Once a day, sends a random install ID with the app version, update channel and macOS version. Never your files, commands or projects."
+                        asLabel
+                        control={<Switch checked={shareUsageData} onChange={cmd.setShareUsageData} label="Share anonymous usage" />}
+                    />
                 </SettingsRows>
             </SettingsSection>
 

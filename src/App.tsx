@@ -4,6 +4,7 @@ import { invokeCommand as invoke } from "./api/invoke";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { checkForUpdate } from "./api/updater";
+import { reportActive } from "./api/usage";
 import { TopBar } from "./components/TopBar";
 import { SideRail } from "./components/SideRail";
 import { AgentRail } from "./components/AgentRail";
@@ -823,6 +824,16 @@ export default function App() {
         const poll = window.setInterval(() => void checkForUpdate(), 30 * 60_000);
         return () => {
             window.clearTimeout(firstCheck);
+            window.clearInterval(poll);
+        };
+    }, []);
+
+    useEffect(() => {
+        if (import.meta.env.DEV) return;
+        const firstReport = window.setTimeout(() => void reportActive(), 5000);
+        const poll = window.setInterval(() => void reportActive(), 60 * 60_000);
+        return () => {
+            window.clearTimeout(firstReport);
             window.clearInterval(poll);
         };
     }, []);

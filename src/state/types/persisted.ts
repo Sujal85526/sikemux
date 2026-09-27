@@ -85,6 +85,7 @@ export interface PersistedPrefs {
     lastSeenVersion?: string;
     customCommands?: CustomCommand[];
     updateChannel?: "stable" | "nightly";
+    shareUsageData?: boolean;
     lastReleaseNotes?: HeldRelease | null;
     recentCommandKeys?: string[];
     /** Non-secret provider launch profiles. Credential values are never part of this shape. */

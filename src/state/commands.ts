@@ -2565,6 +2565,8 @@ export const setUpdateChannel = (value: "stable" | "nightly"): void => {
     void checkForUpdateNow();
 };
 
+export const setShareUsageData = (value: boolean): void => setState({ shareUsageData: value });
+
 export function setKeybinding(id: import("../keybindings").KeybindingActionId, binding: string | null): void {
     setState((s) => ({ keybindingOverrides: { ...s.keybindingOverrides, [id]: binding } }));
 }

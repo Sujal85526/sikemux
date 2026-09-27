@@ -30,6 +30,7 @@ mod state;
 mod system;
 mod transparency;
 mod updates;
+mod usage;
 mod voice;
 mod wallpaper;
 mod wheel;
@@ -226,6 +227,7 @@ pub fn run() {
             autopsy::hang_reports,
             updates::update_check,
             updates::update_install,
+            usage::usage_report_active,
             release_credits::release_avatars,
             release_credits::release_notes,
             grammars::grammar_load,

@@ -114,6 +114,7 @@ const PERSISTED_KEYS = [
     "lastSeenVersion",
     "customCommands",
     "updateChannel",
+    "shareUsageData",
     "lastReleaseNotes",
     "recentCommandKeys",
     "providerProfiles",
@@ -168,6 +169,7 @@ function packPrefs(s: StoreState): PersistedPrefs {
         lastSeenVersion: s.lastSeenVersion,
         customCommands: s.customCommands,
         updateChannel: s.updateChannel,
+        shareUsageData: s.shareUsageData,
         lastReleaseNotes: s.lastReleaseNotes,
         recentCommandKeys: s.recentCommandKeys,
         providerProfiles,
@@ -979,6 +981,7 @@ export function applyHydrate(raw: string): HydrationResult {
         lastSeenVersion: typeof prefs.lastSeenVersion === "string" ? prefs.lastSeenVersion : cur.lastSeenVersion,
         customCommands: normaliseCustomCommands(prefs.customCommands),
         updateChannel: prefs.updateChannel === "nightly" || prefs.updateChannel === "stable" ? prefs.updateChannel : cur.updateChannel,
+        shareUsageData: typeof prefs.shareUsageData === "boolean" ? prefs.shareUsageData : cur.shareUsageData,
         lastReleaseNotes:
             isRecord(prefs.lastReleaseNotes) && typeof prefs.lastReleaseNotes.version === "string"
                 ? {

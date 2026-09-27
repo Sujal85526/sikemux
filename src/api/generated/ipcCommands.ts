@@ -43,6 +43,7 @@ export const IPC_COMMANDS = [
     "hang_reports",
     "update_check",
     "update_install",
+    "usage_report_active",
     "release_avatars",
     "release_notes",
     "grammar_load",
