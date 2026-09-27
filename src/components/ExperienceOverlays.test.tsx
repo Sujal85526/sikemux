@@ -29,7 +29,7 @@ import { uiActivity } from "../lib/activity";
 import { DiagnosticsOverlay, Onboarding } from "./ExperienceOverlays";
 
 const initial = getState();
-const health = { shell: "/bin/zsh", git: true };
+const health = { git: true };
 
 function openOnboarding(overrides = {}) {
     setState({ onboardingOpen: true, onboardingComplete: false, keybindingOverrides: overrides });
@@ -122,20 +122,22 @@ describe("Onboarding", () => {
         await waitFor(() => expect(trigger).toHaveFocus());
     });
 
-    it("lists detected agents and local tools", async () => {
+    it("lists detected agents", () => {
         openOnboarding();
 
         expect(screen.getByText("Claude")).toBeInTheDocument();
         expect(screen.getByText("Codex").closest("li")).toHaveClass("is-missing");
-        expect(await screen.findByText("zsh · git")).toBeInTheDocument();
-        expect(invoke).toHaveBeenCalledWith("integration_health");
     });
 
-    it("falls back cleanly when integration health rejects", async () => {
-        invoke.mockRejectedValueOnce(new Error("health unavailable"));
+    it("warns only when git is missing", async () => {
         openOnboarding();
+        await waitFor(() => expect(invoke).toHaveBeenCalledWith("integration_health"));
+        expect(screen.queryByText(/git not found/)).not.toBeInTheDocument();
 
-        expect(await screen.findByText("Local tools could not be checked")).toBeInTheDocument();
+        cleanup();
+        invoke.mockImplementation(async (command: string) => (command === "integration_health" ? { git: false } : undefined));
+        openOnboarding();
+        expect(await screen.findByText("git not found: the Git view needs it")).toBeInTheDocument();
     });
 
     it("serializes global experience overlays", () => {

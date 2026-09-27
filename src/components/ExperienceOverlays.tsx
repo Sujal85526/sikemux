@@ -17,7 +17,6 @@ import { useOccludeNativeViews } from "../state/nativeViews";
 import { copyText } from "../lib/clipboard";
 
 interface IntegrationHealth {
-    shell: string;
     git: boolean;
 }
 
@@ -90,8 +89,7 @@ export function Onboarding() {
     const profileSelections = useStore((s) => s.selectedProviderProfileIds);
     const runtimeProfiles = useMemo(() => selectedAgentRuntimeProfiles(profiles, profileSelections), [profiles, profileSelections]);
     const catalog = useResourceEnabled(open, agentCatalogR, runtimeProfiles);
-    const [health, setHealth] = useState<IntegrationHealth | null>(null);
-    const [healthUnavailable, setHealthUnavailable] = useState(false);
+    const [gitMissing, setGitMissing] = useState(false);
     const dialogRef = useRef<HTMLElement>(null);
     const movesRef = useRef<HTMLDivElement>(null);
     const returnFocusRef = useRef<HTMLElement | null>(null);
@@ -99,15 +97,12 @@ export function Onboarding() {
     useEffect(() => {
         if (!open) return;
         let disposed = false;
-        setHealth(null);
-        setHealthUnavailable(false);
+        setGitMissing(false);
         void invoke<IntegrationHealth>("integration_health")
             .then((value) => {
-                if (!disposed) setHealth(value);
+                if (!disposed) setGitMissing(!value.git);
             })
-            .catch(() => {
-                if (!disposed) setHealthUnavailable(true);
-            });
+            .catch(() => {});
         return () => {
             disposed = true;
         };
@@ -159,7 +154,6 @@ export function Onboarding() {
         }
     };
     const agents = [...(catalog.data ?? [])].sort((a, b) => Number(b.available !== false) - Number(a.available !== false));
-    const shell = health?.shell ? health.shell.split("/").at(-1) : null;
     const dragWindow = (event: React.MouseEvent<HTMLElement>) => {
         if (event.button !== 0 || event.target !== event.currentTarget) return;
         event.preventDefault();
@@ -227,13 +221,7 @@ export function Onboarding() {
             </div>
 
             <footer className="welcome-foot" onMouseDown={dragWindow}>
-                <span>
-                    {healthUnavailable
-                        ? "Local tools could not be checked"
-                        : !health
-                          ? "Checking local tools…"
-                          : [shell ?? "no shell", health.git ? "git" : "git missing"].join(" · ")}
-                </span>
+                {gitMissing && <span className="welcome-warn">git not found: the Git view needs it</span>}
                 <button type="button" onClick={() => cmd.closeOnboarding()} aria-label="Close welcome">
                     <Kbd>esc</Kbd> skip
                 </button>
