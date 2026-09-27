@@ -70,6 +70,55 @@ pub async fn list(data_dir: &Path, input: Request) -> ActionsResult<Vec<Annotati
     Ok(rows.into_iter().map(Annotation::from).collect())
 }
 
+#[derive(Deserialize)]
+struct OutputRow {
+    title: Option<String>,
+    summary: Option<String>,
+    text: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct CheckRunRow {
+    output: Option<OutputRow>,
+}
+
+/// What a job wrote to `$GITHUB_STEP_SUMMARY`: the test report, the coverage
+/// table, whatever it wanted read rather than dug out of the log.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Summary {
+    pub title: String,
+    /// Markdown, and usually the whole of it.
+    pub body: String,
+}
+
+pub async fn summary(data_dir: &Path, input: Request) -> ActionsResult<Option<Summary>> {
+    let path = input
+        .repo
+        .path(&format!("/check-runs/{}", input.check_run_id))?;
+    let row: CheckRunRow = client::get(data_dir, &path, &[]).await?;
+    let output = match row.output {
+        Some(output) => output,
+        None => return Ok(None),
+    };
+    // GitHub puts the short line in `summary` and the long one in `text`, and
+    // either may be the only one there is.
+    let body = [output.summary, output.text]
+        .into_iter()
+        .flatten()
+        .map(|part| part.trim().to_string())
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    if body.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(Summary {
+        title: output.title.unwrap_or_default(),
+        body,
+    }))
+}
+
 /// The check run behind a job, which its `check_run_url` names. Only the
 /// trailing number is needed, and only when it looks like one.
 pub fn check_run_id(url: &str) -> Option<u64> {

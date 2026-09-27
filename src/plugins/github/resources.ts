@@ -2,6 +2,9 @@ import { resource } from "../../plugin-api/resources";
 import {
     actionsApi,
     type Annotation,
+    type JobSummary,
+    type RunTiming,
+    type WorkflowFile,
     type ChangedFile,
     type Comment,
     type Issue,
@@ -68,6 +71,24 @@ export const actionsAnnotationsR = resource({
     kind: "gha.annotations",
     fetch: (repo: RepoRef, checkRunId: number): Promise<Annotation[]> => actionsApi.annotations(repo, checkRunId),
     staleAfterMs: 60_000,
+});
+
+export const actionsJobSummaryR = resource({
+    kind: "gha.jobSummary",
+    fetch: (repo: RepoRef, checkRunId: number): Promise<JobSummary | null> => actionsApi.jobSummary(repo, checkRunId),
+    staleAfterMs: 5 * 60_000,
+});
+
+export const actionsTimingR = resource({
+    kind: "gha.timing",
+    fetch: (repo: RepoRef, runId: number): Promise<RunTiming> => actionsApi.runTiming(repo, runId),
+    staleAfterMs: 5 * 60_000,
+});
+
+export const actionsWorkflowFileR = resource({
+    kind: "gha.workflowFile",
+    fetch: (repo: RepoRef, workflowId: number): Promise<WorkflowFile> => actionsApi.workflowFile(repo, workflowId),
+    staleAfterMs: 10 * 60_000,
 });
 
 export const actionsArtifactsR = resource({

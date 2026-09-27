@@ -147,6 +147,9 @@ impl Plugin for GithubActions {
 
                 "jobLog" => answer(logs::job(data_dir, params(input)?)).await,
                 "annotations" => answer(annotations::list(data_dir, params(input)?)).await,
+                "jobSummary" => answer(annotations::summary(data_dir, params(input)?)).await,
+                "runTiming" => answer(runs::timing(data_dir, params(input)?)).await,
+                "workflowFile" => answer(workflows::file(data_dir, params(input)?)).await,
 
                 "artifacts" => answer(artifacts::list(data_dir, params(input)?)).await,
                 "downloadArtifact" => answer(artifacts::download(data_dir, params(input)?)).await,

@@ -159,6 +159,27 @@ export interface Annotation {
     details: string | null;
 }
 
+export interface JobSummary {
+    title: string;
+    body: string;
+}
+
+export interface Billable {
+    runner: string;
+    totalMs: number;
+    jobs: number;
+}
+
+export interface RunTiming {
+    runDurationMs: number | null;
+    billable: Billable[];
+}
+
+export interface WorkflowFile {
+    path: string;
+    text: string;
+}
+
 export interface Artifact {
     id: number;
     name: string;
@@ -326,6 +347,9 @@ export const actionsApi = {
     run: (repo: RepoRef, runId: number) => read<RunDetail>("run", { ...repo, runId }),
     jobLog: (repo: RepoRef, jobId: number) => read<JobLog>("jobLog", { ...repo, jobId }),
     annotations: (repo: RepoRef, checkRunId: number) => read<Annotation[]>("annotations", { ...repo, checkRunId }),
+    jobSummary: (repo: RepoRef, checkRunId: number) => read<JobSummary | null>("jobSummary", { ...repo, checkRunId }),
+    runTiming: (repo: RepoRef, runId: number) => read<RunTiming>("runTiming", { ...repo, runId }),
+    workflowFile: (repo: RepoRef, workflowId: number) => read<WorkflowFile>("workflowFile", { ...repo, workflowId }),
     artifacts: (repo: RepoRef, runId: number) => read<Artifact[]>("artifacts", { ...repo, runId }),
     pendingApprovals: (repo: RepoRef, runId: number) => read<PendingApproval[]>("pendingApprovals", { ...repo, runId }),
     runAttempt: (repo: RepoRef, runId: number, attempt: number) => read<RunDetail>("runAttempt", { ...repo, runId, attempt }),
