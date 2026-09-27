@@ -630,7 +630,6 @@ body.is-sorting-tabs * {
     gap: 14px;
     padding: 0 10px;
     border-bottom: 1px solid var(--border);
-    background: var(--surface);
     min-width: 0;
 }
 .ed-image-title {
