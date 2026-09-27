@@ -109,6 +109,9 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
         case "settings.toggle":
             cmd.toggleSettings();
             return true;
+        case "view.focusMode":
+            cmd.toggleZen();
+            return true;
         case "pane.splitRow":
             cmd.splitActivePane("row");
             return true;

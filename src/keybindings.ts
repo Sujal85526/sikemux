@@ -44,6 +44,13 @@ const coreKeybindingActions = [
         defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+Comma`,
     },
     {
+        id: "view.focusMode",
+        label: "Focus mode",
+        detail: "Hide both rails",
+        category: "Workspace",
+        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+KeyB`,
+    },
+    {
         id: "session.open",
         label: "Open or create session",
         detail: "Show every available session type",
@@ -165,7 +172,7 @@ const coreKeybindingActions = [
     {
         id: "pane.zoom",
         label: "Zoom pane",
-        detail: "Toggle focus mode for the active pane",
+        detail: "Fill the window with the active pane",
         category: "Panes",
         defaultBinding: "Alt+KeyZ",
     },
