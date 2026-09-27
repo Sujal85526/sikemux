@@ -49,7 +49,9 @@ fn split_stamp(line: &str) -> (Option<String>, &str) {
 }
 
 fn parse(text: &str) -> Vec<LogLine> {
-    text.lines()
+    // Storage hands logs over with a byte order mark, which would hide the first line's time.
+    text.trim_start_matches('\u{feff}')
+        .lines()
         .enumerate()
         .map(|(index, line)| {
             let (timestamp, text) = split_stamp(line.trim_end_matches('\r'));
@@ -92,6 +94,16 @@ pub async fn job(data_dir: &Path, input: LogRequest) -> ActionsResult<JobLog> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_first_line_keeps_its_time_behind_a_byte_order_mark() {
+        let lines = parse("\u{feff}2026-09-27T11:40:15.3836220Z Current runner version\n");
+        assert_eq!(
+            lines[0].timestamp.as_deref(),
+            Some("2026-09-27T11:40:15.3836220Z")
+        );
+        assert_eq!(lines[0].text, "Current runner version");
+    }
 
     #[test]
     fn lifts_the_runners_timestamp_off_each_line() {
