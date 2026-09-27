@@ -77,6 +77,10 @@ fail() {
   exit 1
 }
 
+# The README and sikemux.com promise a small download, so a release that grows
+# past this fails here instead of shipping.
+DMG_BUDGET_BYTES=11200000
+
 # Tauri packs the DMG with zlib; LZMA makes it about a fifth smaller. The
 # conversion drops the DMG's signature, so a real identity signs it again.
 shopt -s nullglob
@@ -87,6 +91,8 @@ for DMG in "$BUNDLE"/dmg/*.dmg; do
   if [[ -n "${APPLE_SIGNING_IDENTITY:-}" && "$APPLE_SIGNING_IDENTITY" != "-" ]]; then
     /usr/bin/codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$DMG" || fail "could not sign $DMG"
   fi
+  DMG_BYTES="$(stat -f%z "$DMG")"
+  ((DMG_BYTES <= DMG_BUDGET_BYTES)) || fail "$DMG is $DMG_BYTES bytes, over the $DMG_BUDGET_BYTES byte budget"
 done
 shopt -u nullglob
 
