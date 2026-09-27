@@ -156,7 +156,8 @@ const budgets = [
     // Rolldown reaches CommonJS exports such as React's jsx through
     // `(0, ns.jsx)(...)` at every call site, which Rollup did not. The app's
     // motion (glides, rows opening and closing, overlays fading) lives here too.
-    label: "default-path JavaScript except the highlighter and its grammar chunks",
+    label:
+      "default-path JavaScript except the highlighter and its grammar chunks",
     pattern: new RegExp(
       `^(?!(?:highlighter|paper-shaders|xterm-webgl|${diffLanguageChunkNames.join("|")})-).*\\.js$`,
     ),
