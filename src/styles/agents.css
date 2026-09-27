@@ -54,6 +54,9 @@
 .agent-glyph.grok {
     color: var(--brand-grok);
 }
+.agent-glyph.term {
+    color: color-mix(in oklab, var(--cmd) 70%, var(--ink-dim));
+}
 .agent-title {
     flex: 1;
     font-weight: var(--weight-medium);
