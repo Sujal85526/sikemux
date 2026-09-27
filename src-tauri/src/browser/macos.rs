@@ -18,11 +18,13 @@ use objc2_app_kit::{
     NSBitmapImageRep, NSEvent, NSEventMask, NSEventModifierFlags, NSImage,
     NSImageCompressionFactor, NSModalResponse, NSTextField, NSView,
 };
+use objc2_core_graphics::CGColor;
 use objc2_foundation::{
     NSData, NSDictionary, NSError, NSKeyValueChangeKey, NSKeyValueObservingOptions, NSNumber,
     NSObject, NSObjectNSKeyValueObserverRegistration, NSObjectProtocol, NSPoint, NSRect, NSSize,
     NSString,
 };
+use objc2_quartz_core::{CALayer, CATransaction};
 use objc2_web_kit::{
     WKContentWorld, WKFrameInfo, WKMediaCaptureType, WKNavigationAction, WKOpenPanelParameters,
     WKPDFConfiguration, WKPermissionDecision, WKSecurityOrigin, WKSnapshotConfiguration,
@@ -194,6 +196,34 @@ pub fn history(pointer: *mut c_void, delta: i32) {
             webview.goForward();
         }
     }
+}
+
+/// Draw only `visible` of the page, in the page's own coordinates. A swipe
+/// carries the page past the edge of the stage, and a native view is not cut
+/// off by the DOM around it, so it would otherwise paint over the rails.
+pub fn clip(pointer: *mut c_void, visible: Option<NSRect>) {
+    let Some(webview) = webview_from(pointer) else {
+        return;
+    };
+    let view: &NSView = &webview;
+    let Some(layer): Option<Retained<CALayer>> = (unsafe { msg_send![view, layer] }) else {
+        return;
+    };
+    CATransaction::begin();
+    CATransaction::setDisableActions(true);
+    match visible {
+        None => unsafe { layer.setMask(None) },
+        Some(visible) => {
+            let mask = layer.mask().unwrap_or_else(|| {
+                let mask = CALayer::new();
+                mask.setBackgroundColor(Some(&CGColor::new_generic_gray(0.0, 1.0)));
+                unsafe { layer.setMask(Some(&mask)) };
+                mask
+            });
+            mask.setFrame(visible);
+        }
+    }
+    CATransaction::commit();
 }
 
 pub fn history_state(pointer: *mut c_void) -> (bool, bool) {

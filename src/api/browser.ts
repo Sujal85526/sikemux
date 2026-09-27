@@ -23,12 +23,14 @@ export interface BrowserSnapshot {
     activeTabId: string | null;
 }
 
-/** Where the page area sits, in the window's CSS pixels. */
+/** Where the page area sits, in the window's CSS pixels, and how much of either side lies off stage. */
 export interface BrowserBounds {
     x: number;
     y: number;
     width: number;
     height: number;
+    clipLeft: number;
+    clipRight: number;
 }
 
 /** A command chord pressed while a page had keyboard focus. */

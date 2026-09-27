@@ -51,6 +51,8 @@ const PARKED_BOUNDS: BrowserBounds = BrowserBounds {
     y: PARKED_ORIGIN,
     width: 1200.0,
     height: 800.0,
+    clip_left: 0.0,
+    clip_right: 0.0,
 };
 
 const ACTING_LINGER: Duration = Duration::from_secs(3);
@@ -83,7 +85,8 @@ pub struct BrowserSnapshot {
     pub active_tab_id: Option<String>,
 }
 
-/// Where the page area sits, in the main window's CSS pixels.
+/// Where the page area sits, in the main window's CSS pixels. The clips are
+/// how much of either side lies outside the stage and must not be drawn.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BrowserBounds {
@@ -91,6 +94,8 @@ pub struct BrowserBounds {
     pub y: f64,
     pub width: f64,
     pub height: f64,
+    pub clip_left: f64,
+    pub clip_right: f64,
 }
 
 /// A command chord pressed while the page had keyboard focus. The app's own
@@ -681,6 +686,10 @@ impl BrowserManager {
                         position: Position::Logical(LogicalPosition::new(bounds.x, bounds.y)),
                         size: Size::Logical(LogicalSize::new(bounds.width, bounds.height)),
                     });
+                    #[cfg(target_os = "macos")]
+                    let _ = view.with_webview(move |platform| {
+                        macos::clip(platform.inner(), visible_part(&bounds))
+                    });
                     let _ = view.show();
                 }
                 None => {
@@ -886,11 +895,39 @@ fn validate_url(url: &str) -> AppResult<()> {
     Ok(())
 }
 
+/// The uncut part of the page in its own coordinates, or `None` when all of it shows.
+#[cfg(target_os = "macos")]
+fn visible_part(bounds: &BrowserBounds) -> Option<objc2_foundation::NSRect> {
+    use objc2_foundation::{NSPoint, NSRect, NSSize};
+    (bounds.clip_left > 0.0 || bounds.clip_right > 0.0).then(|| {
+        NSRect::new(
+            NSPoint::new(bounds.clip_left, 0.0),
+            NSSize::new(
+                bounds.width - bounds.clip_left - bounds.clip_right,
+                bounds.height,
+            ),
+        )
+    })
+}
+
 fn validate_bounds(bounds: &BrowserBounds) -> AppResult<()> {
-    let finite = [bounds.x, bounds.y, bounds.width, bounds.height]
-        .iter()
-        .all(|value| value.is_finite() && value.abs() < 1.0e6);
-    if !finite || bounds.width < 1.0 || bounds.height < 1.0 {
+    let finite = [
+        bounds.x,
+        bounds.y,
+        bounds.width,
+        bounds.height,
+        bounds.clip_left,
+        bounds.clip_right,
+    ]
+    .iter()
+    .all(|value| value.is_finite() && value.abs() < 1.0e6);
+    if !finite
+        || bounds.width < 1.0
+        || bounds.height < 1.0
+        || bounds.clip_left < 0.0
+        || bounds.clip_right < 0.0
+        || bounds.clip_left + bounds.clip_right > bounds.width
+    {
         return Err(AppError::BadArg("invalid browser bounds"));
     }
     Ok(())
@@ -1224,8 +1261,20 @@ mod tests {
             y: 20.0,
             width: 300.0,
             height: 200.0,
+            clip_left: 40.0,
+            clip_right: 0.0,
         };
         assert!(validate_bounds(&good).is_ok());
+        assert!(validate_bounds(&BrowserBounds {
+            clip_left: -1.0,
+            ..good
+        })
+        .is_err());
+        assert!(validate_bounds(&BrowserBounds {
+            clip_right: 261.0,
+            ..good
+        })
+        .is_err());
         assert!(validate_bounds(&BrowserBounds { width: 0.0, ..good }).is_err());
         assert!(validate_bounds(&BrowserBounds {
             x: f64::NAN,
