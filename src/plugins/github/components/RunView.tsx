@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { confirmDialog, notify, openUrl, reportError, swallow } from "../../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
 import { EmptyState, IconChevron, IconClose, IconRefresh, SkeletonRows, Tooltip } from "../../../plugin-api/ui";
@@ -10,12 +10,12 @@ import { OutcomeIcon } from "./ActionsIcon";
 import { Annotations } from "./Annotations";
 import { Approvals } from "./Approvals";
 import { Artifacts } from "./Artifacts";
-import { useNow } from "./hooks";
+import { coarse, useNow } from "./hooks";
 import { JobLogView } from "./JobLogView";
 
 const refreshRuns = () => invalidate((kind) => kind === "gha.runs" || kind === "gha.run");
 
-function StepRow({ step, now }: { step: Job["steps"][number]; now: number }) {
+const StepRow = memo(function StepRow({ step, now }: { step: Job["steps"][number]; now: number }) {
     const outcome = outcomeOf(step);
     return (
         <div className="gha-step" data-outcome={outcome}>
@@ -24,23 +24,23 @@ function StepRow({ step, now }: { step: Job["steps"][number]; now: number }) {
             <span className="gha-dim">{formatDuration(elapsedMs(step.startedAt, step.completedAt, now))}</span>
         </div>
     );
-}
+});
 
-function JobCard({
+const JobCard = memo(function JobCard({
+    paneId,
     job,
     repo,
     now,
     open,
     active,
-    onToggle,
     canWrite,
 }: {
+    paneId: string;
     job: Job;
     repo: RepoRef;
     now: number;
     open: boolean;
     active: boolean;
-    onToggle: () => void;
     canWrite: boolean;
 }) {
     const outcome = outcomeOf(job);
@@ -56,7 +56,7 @@ function JobCard({
 
     return (
         <div className="gha-job" data-open={open ? "1" : "0"} data-outcome={outcome}>
-            <button type="button" className="gha-job-head" onClick={onToggle} aria-expanded={open}>
+            <button type="button" className="gha-job-head" onClick={() => updateView(paneId, { job: open ? null : job.id })} aria-expanded={open}>
                 <span className="gha-chevron" data-open={open ? "1" : "0"}>
                     <IconChevron size={11} />
                 </span>
@@ -88,7 +88,7 @@ function JobCard({
                     {job.steps.length > 0 && (
                         <div className="gha-steps">
                             {job.steps.map((step) => (
-                                <StepRow key={`${step.number}-${step.name}`} step={step} now={now} />
+                                <StepRow key={`${step.number}-${step.name}`} step={step} now={step.completedAt ? coarse(now) : now} />
                             ))}
                         </div>
                     )}
@@ -98,7 +98,7 @@ function JobCard({
             )}
         </div>
     );
-}
+});
 
 function Header({ run, repo, now, canWrite, onRefresh }: { run: Run; repo: RepoRef; now: number; canWrite: boolean; onRefresh: () => void }) {
     const outcome = outcomeOf(run);
@@ -269,13 +269,13 @@ export function RunView({ paneId, repo, runId, openJob, active, canWrite }: Prop
                 {jobs.map((job) => (
                     <JobCard
                         key={job.id}
+                        paneId={paneId}
                         job={job}
                         repo={repo}
-                        now={now}
+                        now={job.completedAt ? coarse(now) : now}
                         active={active}
                         canWrite={canWrite}
                         open={openJob === job.id}
-                        onToggle={() => updateView(paneId, { job: openJob === job.id ? null : job.id })}
                     />
                 ))}
             </div>

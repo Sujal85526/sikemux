@@ -33,8 +33,9 @@ export function ActionsPane({ paneId, active }: Props) {
     const [picking, setPicking] = useState(false);
 
     // The pane follows whichever project is in front, unless somebody has
-    // chosen a repository in this pane by hand.
-    const repo = view.repo ?? project.repo ?? (lastRepo ? refOf(lastRepo) : null);
+    // chosen a repository in this pane by hand. Held still between renders so
+    // the rows below it are only redrawn when it really changes.
+    const repo = useMemo(() => view.repo ?? project.repo ?? (lastRepo ? refOf(lastRepo) : null), [view.repo, project.repo, lastRepo]);
 
     const workflows = useResourceEnabled(active && !!repo && view.dispatching !== null, actionsWorkflowsR, repo ?? { owner: "", name: "" });
     const dispatching = useMemo(
