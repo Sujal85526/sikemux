@@ -1,12 +1,14 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { GitPane } from "./GitPane";
 import { gitOverviewR } from "../state/resources.defs";
 import { getState, setState } from "../state/store";
 import { useGitWorkbench } from "../state/gitWorkbench";
+import { useStageMotion } from "../state/nativeViews";
 const resources = vi.hoisted(() => ({
     reviewRender: vi.fn(),
+    overviewEnabled: false,
     overview: {
         status: "ok",
         data: {
@@ -20,7 +22,11 @@ const resources = vi.hoisted(() => ({
 }));
 vi.mock("../state/resources", async (original) => ({
     ...(await original<typeof import("../state/resources")>()),
-    useCachedResourceEnabled: (_enabled: boolean, definition: unknown) => (definition === gitOverviewR ? resources.overview : resources.empty),
+    useCachedResourceEnabled: (enabled: boolean, definition: unknown) => {
+        if (definition !== gitOverviewR) return resources.empty;
+        resources.overviewEnabled = enabled;
+        return resources.overview;
+    },
 }));
 vi.mock("./CommitReview", () => ({ CommitReview: () => <div>Review</div> }));
 vi.mock("./MergeReview", () => ({
@@ -90,4 +96,28 @@ it("keeps the repository picker up while a folder that is not a repository refet
     } finally {
         resources.overview = overview;
     }
+});
+
+function StageSliding() {
+    useStageMotion(true);
+    return null;
+}
+
+const nextFrame = () => act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+
+it("waits for the stage to stop sliding before it refreshes", async () => {
+    const stage = (sliding: boolean, active: boolean) => (
+        <>
+            {sliding && <StageSliding />}
+            <GitPane paneId="git-test" cwd="/repo" active={active} />
+        </>
+    );
+    const { rerender } = render(stage(false, false));
+    rerender(stage(true, true));
+    await nextFrame();
+    await nextFrame();
+    expect(resources.overviewEnabled).toBe(false);
+    rerender(stage(false, true));
+    await nextFrame();
+    expect(resources.overviewEnabled).toBe(true);
 });

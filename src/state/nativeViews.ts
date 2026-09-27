@@ -125,6 +125,26 @@ export function useStageMoving(): boolean {
     return useSyncExternalStore(watch, stageMoving, stageMoving);
 }
 
+/**
+ * Run `still` once the stage is not travelling. It waits a frame first, because
+ * a slide is only announced after the effects of the screen it brings in.
+ */
+export function whenStageStill(still: () => void): () => void {
+    let stop = () => {};
+    const frame = requestAnimationFrame(() => {
+        if (!moving) return still();
+        stop = watch(() => {
+            if (moving) return;
+            stop();
+            still();
+        });
+    });
+    return () => {
+        cancelAnimationFrame(frame);
+        stop();
+    };
+}
+
 /** Say that the stage is travelling for as long as `active` stays true. */
 export function useStageMotion(active: boolean): void {
     useEffect(() => {
