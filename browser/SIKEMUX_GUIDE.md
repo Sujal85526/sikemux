@@ -7,7 +7,10 @@ description: How to drive a Sikemux project and its browser — task launches, o
 
 You are running in a pane of a Sikemux workspace. The tools named `sikemux_*`
 act on the project the person has open. The tools named `browser_*` act on the
-browser tabs in your own pane, which the person can see.
+browser tabs on your desk, the pane beside yours that the person can see.
+
+Your desk holds everything you open for the person: browser pages, files and
+the terminals of tasks you start, as tabs in one strip.
 
 Read this once before your first task launch or browser click. Everything the
 tool descriptions leave out is here.
@@ -61,8 +64,9 @@ Two things can stop a launch:
   first. Starting a task already running through the harness just returns that
   execution.
 
-Task terminals open in the background. To show one to the person, call
-`ui_open` with `kind: "terminal"`, the `executionId`, and `focus: true`.
+A task you start opens its terminal as a tab on your desk, without taking the
+person's focus. To bring the person to it, call `ui_open` with
+`kind: "terminal"`, the `executionId`, and `focus: true`.
 
 ## Reading output
 
@@ -109,11 +113,13 @@ A wait does not schedule you a future turn. It only holds this call open.
 - `terminal` — with an `executionId`
 - `preview` — the project's configured preview
 
-Files open as background tabs. Add `focus: true` to actually reveal one.
+Files and terminals open on your desk, and the tab comes to the front there
+without taking the person's focus. Add `focus: true` to bring the person to
+your session as well. A diff opens in the workspace.
 
 Paths must resolve inside the project; a path that escapes it is refused.
 
-Preview needs an agent session and opens in your own browser. The `previewUrl`
+Preview needs an agent session and opens as a page on your desk. The `previewUrl`
 you get back is configuration, not proof that anything is listening. If you
 need to know the server is up, read the task output or navigate to it.
 

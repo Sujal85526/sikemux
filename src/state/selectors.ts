@@ -81,11 +81,10 @@ export function agentWindowId(state: Pick<StoreState, "windows">, agentId: strin
 }
 
 /** The agent a session is looking at, if its active window is one. */
-/** The agent's browser pane, when one is in a window's layout right now. */
-export function shownBrowserPaneId(state: Pick<StoreState, "browserPanes" | "windows">, agentId: string): string | null {
-    const paneId = Object.keys(state.browserPanes).find(
-        (id) =>
-            state.browserPanes[id] === agentId && Object.values(state.windows).some((win) => collectPanes(win.root).some((pane) => pane.id === id)),
+/** The agent's desk pane, when one is in a window's layout right now. */
+export function shownDeskPaneId(state: Pick<StoreState, "deskPanes" | "windows">, agentId: string): string | null {
+    const paneId = Object.keys(state.deskPanes).find(
+        (id) => state.deskPanes[id] === agentId && Object.values(state.windows).some((win) => collectPanes(win.root).some((pane) => pane.id === id)),
     );
     return paneId ?? null;
 }

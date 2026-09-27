@@ -97,14 +97,14 @@ describe("workspace tab bars", () => {
         expect(container.querySelector(".tabbar.v-agent")).toBeInTheDocument();
     });
 
-    it("keeps the agent's tab in the strip once its browser takes focus", () => {
+    it("keeps the agent's tab in the strip once its desk takes focus", () => {
         projectWithAgent();
         render(<Workspace />);
         expect(screen.getByRole("tab", { name: /only agent/ })).toBeInTheDocument();
 
-        act(() => cmd.openBrowserPane("agent-only"));
+        act(() => cmd.openDesk("agent-only"));
 
-        // The browser is the focused pane now. Reading the agent off the focused
+        // The desk is the focused pane now. Reading the agent off the focused
         // pane finds nothing and drops the tab, stranding the agent.
         expect(screen.getByRole("tab", { name: /only agent/ })).toBeInTheDocument();
     });

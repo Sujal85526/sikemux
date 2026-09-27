@@ -45,7 +45,7 @@ export function NewTabPalette() {
         {
             id: "browser",
             label: "Browser",
-            detail: browserAgent ? `Browse alongside ${browserAgent.title}` : "Start an agent to use its browser",
+            detail: browserAgent ? `Browse on ${browserAgent.title}'s desk` : "Start an agent to use its browser",
             icon: <IconGlobe size={14} />,
             open: () => {
                 void cmd.newBrowserTab();

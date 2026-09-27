@@ -415,7 +415,7 @@ function openLink(href: string, agentId: string, external: boolean) {
     const path = localPath(href);
     const webUrl = safeWebUrl(href);
     if (path) void fsapi.revealInFinder(path).catch(swallow("reveal chat file"));
-    else if (webUrl && agentId && !external) cmd.openUrlInBrowserPane(agentId, webUrl);
+    else if (webUrl && agentId && !external) cmd.openUrlOnDesk(agentId, webUrl);
     else void invoke("open_url", { url: href, app: null, shortcut: null }).catch(swallow("open chat link"));
 }
 
@@ -1230,7 +1230,7 @@ function ChatComposer({
         if (!visible) return;
         const focusIsElsewhere = () => {
             const held = document.activeElement;
-            if (held?.closest('input, textarea, [contenteditable="true"], [data-browser-pane]') && !paneRef.current?.contains(held)) return true;
+            if (held?.closest('input, textarea, [contenteditable="true"], [data-desk]') && !paneRef.current?.contains(held)) return true;
             return Boolean(held?.closest(".chat-picker-menu"));
         };
         if (focusIsElsewhere()) return;
@@ -1942,7 +1942,7 @@ export function AgentChatPane({
                     : "Connecting to agent session…";
 
     return (
-        <PathRootsProvider cwd={cwd} home={home}>
+        <PathRootsProvider cwd={cwd} home={home} agentId={chatAgent.id}>
             <ChatAgentContext.Provider value={chatAgent}>
                 <div className="agent-chat-pane" ref={paneRef}>
                     <div

@@ -24,7 +24,8 @@ const mocks = vi.hoisted(() => ({
     pathKinds: vi.fn(async (paths: string[]): Promise<(string | null)[]> => paths.map(() => null)),
     revealInFinder: vi.fn(async () => {}),
     requestOpenFile: vi.fn(),
-    openUrlInBrowserPane: vi.fn(),
+    openUrlOnDesk: vi.fn(),
+    openFileOnDesk: vi.fn(),
     sessionContext: vi.fn(async (): Promise<{ used: number; size: number | null } | null> => null),
 }));
 
@@ -62,7 +63,8 @@ vi.mock("../api/acp", () => ({
 
 vi.mock("../state/commands", () => ({
     requestOpenFile: mocks.requestOpenFile,
-    openUrlInBrowserPane: mocks.openUrlInBrowserPane,
+    openUrlOnDesk: mocks.openUrlOnDesk,
+    openFileOnDesk: mocks.openFileOnDesk,
     attachAgentSession: mocks.attachAgentSession,
     setAgentPermissionMode: mocks.setAgentPermissionMode,
     setAgentModelPreferences: mocks.setAgentModelPreferences,
@@ -694,7 +696,7 @@ describe("AgentChatPane", () => {
 
         const link = await screen.findByRole("link", { name: "https://docs.livekit.io/home/self-hosting/deployment/" });
         fireEvent.click(link);
-        expect(mocks.openUrlInBrowserPane).toHaveBeenCalledWith(agent.id, "https://docs.livekit.io/home/self-hosting/deployment/");
+        expect(mocks.openUrlOnDesk).toHaveBeenCalledWith(agent.id, "https://docs.livekit.io/home/self-hosting/deployment/");
     });
 
     it("builds a subagent's transcript only once it is opened", async () => {
@@ -768,7 +770,7 @@ describe("AgentChatPane", () => {
         expect(rows[1]).toHaveAttribute("title", "src/components/browser/BrowserPane.tsx");
     });
 
-    it("opens the file a call touched, and still opens what the call did", async () => {
+    it("puts the file a call touched on the desk, opens it in the editor on a double click, and still opens what the call did", async () => {
         mocks.pathKinds.mockImplementation(async (paths: string[]) => paths.map(() => "file"));
         await openTranscript();
         emit("session_update", {
@@ -798,6 +800,9 @@ describe("AgentChatPane", () => {
         });
         expect(file).toHaveTextContent("stage.css");
         fireEvent.click(file);
+        expect(mocks.openFileOnDesk).toHaveBeenCalledWith(agent.id, "/repo/src/styles/stage.css", 1, undefined);
+        expect(mocks.requestOpenFile).not.toHaveBeenCalled();
+        fireEvent.doubleClick(file);
         expect(mocks.requestOpenFile).toHaveBeenCalledWith("/repo/src/styles/stage.css", 1, undefined);
 
         fireEvent.click(screen.getByRole("button", { name: /Show what the call did/ }));

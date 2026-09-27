@@ -35,7 +35,7 @@ export interface TabDescriptor {
     className?: string;
 }
 
-export type TabVariant = "editor" | "agent" | "browser" | "stack";
+export type TabVariant = "editor" | "agent" | "desk" | "stack";
 
 /**
  * Brings a tab into view by scrolling the strip and only the strip.

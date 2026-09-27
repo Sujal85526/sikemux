@@ -95,8 +95,30 @@ describe("harness command service", () => {
             expect.objectContaining({ command: "echo test", cwd: "/one", env: { PRIVATE: "not-in-inspection" } }),
             "new",
             "http://localhost:5173",
+            undefined,
         );
         expect(useStore.getState().sessions[useStore.getState().activeSessionId].cwd).toBe("/two");
+    });
+    it("hands the requesting agent to the task, so its terminal goes on that agent's desk", async () => {
+        const state = useStore.getState();
+        const session = Object.values(state.sessions).find((session) => session.cwd === "/one")!;
+        useStore.setState(withAgents(state, session.id, [{ id: "fixture-agent", type: "codex", title: "Fixture", startup: "" }]));
+        const start = vi.spyOn(harnessTasks, "start").mockResolvedValue({ executionId: "run", taskId: "test", project: "/one", status: "running" });
+        await handleHarnessRequest({ ...request("task.start", { taskId: "test", idempotencyKey: "desk" }), agentId: "fixture-agent" });
+        expect(start).toHaveBeenCalledWith(expect.anything(), "desk", "http://localhost:5173", "fixture-agent");
+    });
+    it("opens a file an agent asks for on that agent's desk, at the line it names", async () => {
+        const state = useStore.getState();
+        const session = Object.values(state.sessions).find((session) => session.cwd === "/one")!;
+        useStore.setState(withAgents(state, session.id, [{ id: "fixture-agent", type: "codex", title: "Fixture", startup: "" }]));
+        transport.register("harness_resolve_path", () => "/one/file.ts");
+        const result = await handleHarnessRequest({ ...request("ui.open", { kind: "file", path: "file.ts", line: 12 }), agentId: "fixture-agent" });
+        expect(result).toEqual({ kind: "file", agentId: "fixture-agent", path: "/one/file.ts" });
+        expect(useStore.getState().desks["fixture-agent"]).toMatchObject({
+            active: "file:/one/file.ts",
+            reveal: { path: "/one/file.ts", line: 11, character: 0 },
+        });
+        expect(useStore.getState().activeSessionId).toBe(state.activeSessionId);
     });
     it("opens the configured preview in the requesting agent's browser", async () => {
         const state = useStore.getState();

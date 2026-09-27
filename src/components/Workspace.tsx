@@ -47,8 +47,8 @@ const CORE_PANE_ROLE: Record<CorePaneKind, WindowRole> = {
     diff: "diff",
     search: "search",
     agent: "agent",
-    /* A browser is a pane, not a window role of its own. */
-    browser: "named",
+    /* A desk is a pane beside its agent, not a window role of its own. */
+    desk: "named",
 };
 
 const paneRole = (kind: PaneKind): WindowRole => (isPluginKind(kind) ? kind : CORE_PANE_ROLE[kind]);

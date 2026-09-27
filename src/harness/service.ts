@@ -43,9 +43,15 @@ function preserveFocus<T>(operation: () => T): T {
     }
 }
 
+/* A task an agent started goes on that agent's desk. One started with no agent
+   behind it, or by one that has since closed, gets a tab in the workspace. */
 export const harnessTasks = new HarnessTasks(
     new NativeTaskExecutionBackend(),
-    new WorkbenchTaskTerminalSurface(taskPtyBindings, (request) => preserveFocus(() => commands.openTaskTerminal(request))),
+    new WorkbenchTaskTerminalSurface(taskPtyBindings, (request) =>
+        request.agentId && useStore.getState().agents[request.agentId]
+            ? commands.openDeskTerminal(request.agentId, request)
+            : preserveFocus(() => commands.openTaskTerminal(request)),
+    ),
     harnessEvents,
 );
 
@@ -146,6 +152,7 @@ export async function handleHarnessRequest(request: HarnessRequest, signal?: Abo
                 },
                 key,
                 config.config.preview?.command === task.command ? config.config.preview.url : undefined,
+                request.agentId ?? undefined,
             );
         }
         case "task.read": {
@@ -184,11 +191,34 @@ export async function handleHarnessRequest(request: HarnessRequest, signal?: Abo
                 const url = config.status === "valid" ? config.config.preview?.url : undefined;
                 if (!url) throw new Error("No preview URL is configured in sikemux.json");
                 const tabId = await browserApi.newTab(request.agentId, url);
+                commands.showDeskBrowser(request.agentId);
                 if (focus) {
                     commands.selectSession(session.id);
                     commands.selectAgent(request.agentId);
                 }
                 return { kind, tabId, url };
+            }
+            if (kind === "file" && request.agentId) {
+                const agentId = request.agentId;
+                const path = await invokeCommand<string>("harness_resolve_path", { project, path: text(params, "path")! });
+                const line = integer(params, "line", 1, 10_000_000, 1) - 1;
+                commands.openFileOnDesk(agentId, path, line, 0, { focus: false });
+                if (focus) {
+                    commands.selectSession(session.id);
+                    commands.selectAgent(agentId);
+                }
+                harnessEvents.publish({ project, kind: "ui.opened" });
+                return { kind, agentId, path };
+            }
+            const onDesk = kind === "terminal" ? commands.deskTerminalFor(harnessTasks.get(project, text(params, "executionId")!).executionId) : null;
+            if (onDesk) {
+                commands.showDeskTerminal(onDesk.agentId, onDesk.id);
+                if (focus) {
+                    commands.selectSession(session.id);
+                    commands.selectAgent(onDesk.agentId);
+                }
+                harnessEvents.publish({ project, kind: "ui.opened" });
+                return { kind, agentId: onDesk.agentId };
             }
             const path = kind === "file" ? await invokeCommand<string>("harness_resolve_path", { project, path: text(params, "path")! }) : undefined;
             const line = integer(params, "line", 1, 10_000_000, 1) - 1;
