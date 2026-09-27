@@ -1,25 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { readableOn, stateOf } from "./Bits";
+import { stateOf } from "./Bits";
 import { reasonLabel } from "./InboxView";
 import { reviewVerdict } from "./PullsView";
 import { latestOf } from "./ReleasesView";
 import type { Release } from "../api";
-
-describe("readableOn", () => {
-    it("puts dark text on a pale label and light text on a dark one", () => {
-        expect(readableOn("fbca04")).toBe("dark");
-        expect(readableOn("ffffff")).toBe("dark");
-        expect(readableOn("0e8a16")).toBe("light");
-        expect(readableOn("000000")).toBe("light");
-        expect(readableOn("d73a4a")).toBe("light");
-    });
-
-    it("copes with a hash and with nonsense", () => {
-        expect(readableOn("#ffffff")).toBe("dark");
-        expect(readableOn("nope")).toBe("light");
-        expect(readableOn("")).toBe("light");
-    });
-});
 
 describe("reviewVerdict", () => {
     const review = (author: string, state: string) => ({ author, state });

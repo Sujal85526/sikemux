@@ -1,6 +1,6 @@
 import { Checkbox, Tooltip } from "../../../plugin-api/ui";
 import type { RepoRef } from "../api";
-import { actionsSettings, SECTION_LABEL, SECTIONS, setFollowBranch, showSection, slugOf, togglePinned, type RunsView } from "../state";
+import { actionsSettings, SECTION_LABEL, SECTIONS, setFollowBranch, showSection, slugOf, type RunsView } from "../state";
 import { GithubMark } from "./ActionsIcon";
 
 interface Props {
@@ -14,7 +14,6 @@ interface Props {
 export function ActionsSidebar({ paneId, repo, view, projectBranch, onPickRepo }: Props) {
     const known = !!repo.owner && !!repo.name;
     const slug = slugOf(repo);
-    const pinned = actionsSettings.useSelect((settings) => settings.pinned.includes(slug));
     const followBranch = actionsSettings.useSelect((settings) => settings.followBranch);
 
     return (
@@ -24,13 +23,8 @@ export function ActionsSidebar({ paneId, repo, view, projectBranch, onPickRepo }
                 <span className="gha-repo-slug">{known ? slug : "Choose a repository"}</span>
             </button>
 
-            <div className="gha-side-row">
-                {known && (
-                    <button type="button" className="gha-link" onClick={() => togglePinned(slug)}>
-                        {pinned ? "Unpin" : "Pin"}
-                    </button>
-                )}
-                {projectBranch && (
+            {projectBranch && (
+                <div className="gha-side-row">
                     <Tooltip label={`Only show runs on ${projectBranch}`}>
                         <span>
                             <Checkbox checked={followBranch} onChange={setFollowBranch}>
@@ -38,8 +32,8 @@ export function ActionsSidebar({ paneId, repo, view, projectBranch, onPickRepo }
                             </Checkbox>
                         </span>
                     </Tooltip>
-                )}
-            </div>
+                </div>
+            )}
 
             <div className="gha-side-section">
                 {SECTIONS.map((section) => (

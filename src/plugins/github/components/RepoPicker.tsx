@@ -5,7 +5,7 @@ import { IconSearch, rankBy, useMouseActive } from "../../../plugin-api/ui";
 import type { RepoListing, RepoRef } from "../api";
 import { actionsMyReposR } from "../resources";
 import { formatAgo } from "../runStatus";
-import { actionsSettings, refOf, slugOf } from "../state";
+import { actionsSettings, refOf, slugOf, togglePinned } from "../state";
 import { GithubMark } from "./ActionsIcon";
 
 interface Entry {
@@ -101,7 +101,7 @@ export function RepoPicker({ current, onPick, onClose }: Props) {
             <div
                 ref={modalRef}
                 tabIndex={-1}
-                className="picker"
+                className="picker gha-picker"
                 role="dialog"
                 aria-modal="true"
                 aria-label="Choose a repository"
@@ -143,6 +143,19 @@ export function RepoPicker({ current, onPick, onClose }: Props) {
                                     <span className="picker-name">{entry.slug}</span>
                                     <span className="picker-sub">{current && slugOf(current) === entry.slug ? "open" : entry.sub}</span>
                                 </button>
+                                {entry.group !== null && index === selected && (
+                                    <button
+                                        type="button"
+                                        className="gha-pick-pin"
+                                        title={
+                                            pinned.includes(entry.slug)
+                                                ? "Stop keeping it at the top of this list"
+                                                : "Keep it at the top of this list"
+                                        }
+                                        onClick={() => togglePinned(entry.slug)}>
+                                        {pinned.includes(entry.slug) ? "Unpin" : "Pin"}
+                                    </button>
+                                )}
                             </div>
                         );
                     })}
