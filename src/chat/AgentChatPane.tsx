@@ -1762,6 +1762,7 @@ export function AgentChatPane({
 
     const promptNow = useCallback(async (text: string, paths: string[]) => {
         dispatch({ type: "local_prompt", text, paths });
+        cmd.titleAgentFromPrompt(agentRef.current.id, text);
         try {
             await acpApi.prompt(agentRef.current.id, text, paths);
         } catch (error) {

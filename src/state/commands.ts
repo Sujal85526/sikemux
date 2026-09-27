@@ -1676,6 +1676,24 @@ export function setAgentTitle(id: string, title: string): void {
     });
 }
 
+const PROMPT_TITLE_MAX = 72;
+
+/* Stands in until the provider titles the conversation, which Claude only does
+   once the first turn ends. */
+export function titleAgentFromPrompt(id: string, text: string): void {
+    const title = text.split(/\s+/).filter(Boolean).join(" ");
+    if (!title || title.startsWith("/") || title.startsWith("<")) return;
+    mutate((d) => {
+        const agent = d.agents[id];
+        if (!agent) return;
+        const profile = agent.profileId
+            ? d.providerProfiles.find((item) => item.id === agent.profileId && item.provider === agent.type)
+            : undefined;
+        if (agent.title !== (profile?.name || agent.type)) return;
+        agent.title = [...title].slice(0, PROMPT_TITLE_MAX).join("");
+    });
+}
+
 export function selectAgent(id: string): void {
     withActiveSession((d, session) => {
         const agent = d.agents[id];
