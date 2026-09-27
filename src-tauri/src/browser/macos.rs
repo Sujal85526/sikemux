@@ -812,7 +812,7 @@ define_class!(
             _kind: WKMediaCaptureType,
             decision: &block2::DynBlock<dyn Fn(WKPermissionDecision)>,
         ) {
-            decision.call((WKPermissionDecision::Grant,));
+            decision.call((WKPermissionDecision::Deny,));
         }
 
         #[unsafe(method(webView:runOpenPanelWithParameters:initiatedByFrame:completionHandler:))]
