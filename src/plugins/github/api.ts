@@ -234,8 +234,6 @@ export const actionsApi = {
         backend.call<SavedArtifact>("downloadArtifact", { ...repo, artifactId, name }),
     reviewDeployment: (repo: RepoRef, runId: number, environmentIds: number[], state: "approved" | "rejected", comment = "") =>
         backend.call<void>("reviewDeployment", { ...repo, runId, environmentIds, state, comment }),
-    setWorkflowEnabled: (repo: RepoRef, workflowId: number, enabled: boolean) =>
-        backend.call<void>("setWorkflowEnabled", { ...repo, workflowId, enabled }),
 
     watchStart: (repo: RepoRef, runId: number, onTick: (tick: RunTick) => void) =>
         backend.openStream<RunTick>("watchRun", { ...repo, runId }, onTick),
