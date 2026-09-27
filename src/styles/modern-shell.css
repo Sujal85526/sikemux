@@ -888,6 +888,13 @@ textarea:focus,
     animation: none;
 }
 
+/* A docked rail lets the wallpaper through a transparent window. A peeked one
+   floats over the stage, where the same tint would let the panes show through. */
+html.is-transparent .rail-peek-panel > .side-rail,
+html.is-transparent .rail-peek-panel > .workspace-rail {
+    background: var(--surface);
+}
+
 .rail-peek-panel--open {
     animation: railPeekIn 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
