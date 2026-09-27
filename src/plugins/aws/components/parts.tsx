@@ -80,17 +80,17 @@ export function Header({
 }) {
     return (
         <header className="aws-head">
-            <div className="aws-head-title">
-                {crumbs}
+            {crumbs}
+            <div className="aws-head-row">
                 <h2 className="aws-title">
                     {title}
                     {count !== undefined && <span className="aws-count">{count}</span>}
                 </h2>
-            </div>
-            {aside}
-            <div className="aws-head-tools">
-                {tools}
-                {handle && <Refresh handle={handle} />}
+                {aside}
+                <div className="aws-head-tools">
+                    {tools}
+                    {handle && <Refresh handle={handle} />}
+                </div>
             </div>
         </header>
     );

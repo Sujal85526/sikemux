@@ -181,17 +181,21 @@
 
 .aws-head {
     display: flex;
-    align-items: flex-end;
-    gap: var(--space-3);
+    flex-direction: column;
+    gap: var(--space-1h);
     padding: var(--space-4) var(--space-5) var(--space-3);
     flex: 0 0 auto;
     min-width: 0;
 }
-.aws-head-title {
-    flex: 0 1 auto;
+.aws-head-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
     min-width: 0;
 }
 .aws-title {
+    flex: 0 1 auto;
+    min-width: 0;
     display: flex;
     align-items: center;
     gap: var(--space-2);
@@ -227,23 +231,26 @@
     align-items: center;
     gap: var(--space-2);
     flex: 0 0 auto;
-    padding-bottom: 3px;
 }
 
 .aws-crumbs {
     display: flex;
     align-items: center;
     gap: var(--space-1);
-    margin-bottom: var(--space-1h);
+    min-width: 0;
     font-size: var(--text-2xs);
     color: var(--text-tertiary);
     white-space: nowrap;
+    overflow: hidden;
 }
 .aws-crumbs svg {
     opacity: 0.6;
     flex: 0 0 auto;
 }
 .aws-crumbs-profile {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     color: var(--text-secondary);
 }
 .aws-crumbs-part {
@@ -1460,7 +1467,7 @@
         justify-content: center;
         padding: 0;
     }
-    .aws-head {
+    .aws-head-row {
         flex-wrap: wrap;
     }
     .aws-bill-hero {
