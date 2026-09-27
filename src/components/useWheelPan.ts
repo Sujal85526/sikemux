@@ -155,7 +155,7 @@ export function useWheelPan(areaRef: RefObject<HTMLElement | null>, pan: WindowP
         };
 
         const onWheel = (event: WheelEvent) => {
-            // The strip sits on the stage and scrolls itself.
+            // A stack's strip sits on the stage and scrolls itself.
             if (event.target instanceof Element && event.target.closest(".tabbar")) return;
             const { order, on } = session();
             // A switch from somewhere else takes the track away, and the pan the

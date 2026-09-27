@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as cmd from "../state/commands";
 import { collectPanes } from "../state/layout";
 import { getState, setState } from "../state/store";
-import { Workspace } from "./Workspace";
+import { Workspace, WorkspaceTabs } from "./Workspace";
 import { TAB_SLIDE_MS } from "./tabDrag";
 
 vi.mock("../terminal/TerminalPane", () => ({ TerminalPane: () => <div /> }));
@@ -27,9 +27,12 @@ describe("dragging a tab onto the screen", () => {
         const [first, second] = getState().windowsBySession[getState().activeSessionId];
         const paneOf = (id: string) => collectPanes(getState().windows[id].root)[0].id;
         const [firstPane, secondPane] = [paneOf(first), paneOf(second)];
-        const { container } = render(<Workspace />);
-        const area = container.querySelector<HTMLElement>(".window-area")!;
-        vi.spyOn(area, "getBoundingClientRect").mockReturnValue({ left: 0, right: 1000, top: 0, bottom: 800, width: 1000, height: 800 } as DOMRect);
+        const { container } = render(
+            <>
+                <WorkspaceTabs />
+                <Workspace />
+            </>,
+        );
         const target = container.querySelector<HTMLElement>(`[data-pane-id="${secondPane}"]`)!;
         vi.spyOn(target, "getBoundingClientRect").mockReturnValue({
             left: 0,
@@ -76,7 +79,12 @@ describe("the divider between split panes", () => {
     });
 
     it("takes focus when grabbed, so the arrow keys carry on moving it", () => {
-        render(<Workspace />);
+        render(
+            <>
+                <WorkspaceTabs />
+                <Workspace />
+            </>,
+        );
 
         fireEvent.pointerDown(divider(), { button: 0, pointerId: 1, clientX: 500, clientY: 100 });
         expect(divider()).toHaveFocus();
@@ -89,7 +97,12 @@ describe("the divider between split panes", () => {
     });
 
     it("evens the panes out on a double-click", () => {
-        render(<Workspace />);
+        render(
+            <>
+                <WorkspaceTabs />
+                <Workspace />
+            </>,
+        );
         const split = shown().root;
         if (split.type === "split") cmd.setSplitSizes(shown().id, split.id, [0.8, 0.2]);
 
@@ -104,7 +117,12 @@ describe("moving a pane back to the tab bar", () => {
         cmd.newWindow();
         const [first, second] = getState().windowsBySession[getState().activeSessionId];
         cmd.splitWithTab(getState().activeSessionId, { id: first }, "left");
-        render(<Workspace />);
+        render(
+            <>
+                <WorkspaceTabs />
+                <Workspace />
+            </>,
+        );
 
         const buttons = screen.getAllByRole("button", { name: "Move back to the tab bar" });
         expect(buttons).toHaveLength(2);

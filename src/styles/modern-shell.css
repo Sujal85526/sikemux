@@ -70,32 +70,6 @@ textarea:focus,
     padding-left: 20px;
 }
 
-.crumb {
-    gap: var(--space-2);
-    max-width: min(420px, 42vw);
-    height: 26px;
-    padding: 0 var(--space-2);
-    border-radius: var(--radius-2);
-}
-
-.crumb-session,
-.crumb-name {
-    font-family: var(--ui);
-    font-size: var(--text-xs);
-}
-
-/* The session is the subject and the path is context, so they differ by
- * colour rather than by weight — 650 next to 400 at 12px was two different
- * typefaces' worth of contrast for one breadcrumb. */
-.crumb-session {
-    font-weight: var(--weight-medium);
-    color: var(--text-primary);
-}
-
-.crumb-name {
-    color: var(--text-tertiary);
-}
-
 .tb-right {
     gap: 8px;
     padding-right: 16px;
@@ -602,14 +576,6 @@ textarea:focus,
     border-radius: 999px;
 }
 
-/* The workspace strip is a surface of its own now (the fill is set with the
- * other panels, below), so it takes an edge the whole way round like the
- * screen under it. A border on the bottom only would read as a lid again. */
-.tabbar.v-agent {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-panel);
-}
-
 /* The editor's strip sits inside a pane that already is the surface, and a
  * second near-identical tint on top of it drew a seam across the window. */
 .tabbar.v-editor {
@@ -804,7 +770,7 @@ textarea:focus,
     gap: var(--shell-gap);
     /* Half gutter under the bar: it is window chrome, not another panel, so it
        sits closer than the panels do to each other. The bar's own slack under
-       the crumb is most of it; this tops it up to match the gap above. */
+       its tabs is most of it; this tops it up to match the gap above. */
     padding: var(--space-1) var(--shell-gap) var(--shell-gap);
 }
 
@@ -989,7 +955,6 @@ textarea,
 .shell
     :where(
         .top-bar,
-        .crumb,
         .tb-btn,
         .env-dd-btn,
         .env-dd-item,
@@ -1257,14 +1222,6 @@ textarea,
     background: transparent;
 }
 
-/* The breadcrumb is the one thing on the bar that needs a surface: it names
- * what the window is looking at, and without one it reads as text drifting
- * past the traffic lights. */
-.crumb {
-    background: var(--surface-hover);
-    box-shadow: inset 0 0 0 1px var(--border);
-}
-
 /* ---- Surface vs gutter ---------------------------------------------------
  * The gutter is the window; the panels sit on top of it, so the panels take
  * the lighter tone and the shell keeps the darkest, and the panels hold more
@@ -1306,8 +1263,7 @@ textarea,
 }
 
 .side-rail,
-.workspace-rail,
-.tabbar.v-agent {
+.workspace-rail {
     background: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
 }
 

@@ -422,18 +422,10 @@ body.is-sorting-tabs * {
     border-bottom: 1px solid var(--border);
 }
 
-/* variant: agent + terminal tabs (a strip of its own along the top of the
-   window area, with the screens starting below the gap under it) */
+/* variant: the session's agent + terminal tabs, in the top bar */
 .tabbar.v-agent {
-    position: absolute;
-    top: 0;
-    /* Held to the same gutter as the panes below, so the bar and the screen
-       under it read as two surfaces on one grid rather than a band across the
-       window with a card beneath it. */
-    left: var(--pane-gutter);
-    right: var(--pane-gutter);
-    z-index: 3;
-    height: var(--window-strip-h);
+    height: 100%;
+    min-width: 0;
 }
 .tabbar.v-agent .tab {
     height: 100%;

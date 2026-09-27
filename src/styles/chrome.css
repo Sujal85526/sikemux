@@ -98,60 +98,12 @@
 }
 
 .tb-center {
-    /* Basis auto (not 0) so a narrow window shrinks the crumb and the right
-       cluster proportionally, instead of starving the crumb. */
-    flex: 1 1 auto;
+    flex: 1 1 0;
     display: flex;
     justify-content: flex-start;
     align-items: center;
     min-width: 0;
     padding-left: 16px;
-}
-
-.crumb {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    height: 24px;
-    max-width: 340px;
-    min-width: 0;
-    padding: 0;
-    border: 0;
-    background: transparent;
-}
-.crumb-kind {
-    color: var(--text-tertiary);
-    display: flex;
-    flex: 0 0 auto;
-}
-.crumb-session {
-    color: var(--text-primary);
-    font-weight: 600;
-    flex: 0 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.crumb-sep {
-    color: var(--text-tertiary);
-    flex: 0 0 auto;
-}
-.crumb-win {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    color: var(--acc);
-    flex: 0 1 auto;
-    min-width: 0;
-}
-.crumb-win > svg {
-    flex: 0 0 auto;
-}
-.crumb-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 .tb-right {
@@ -621,8 +573,6 @@
     position: absolute;
     inset: 0;
     z-index: 1;
-    --window-strip-h: 0px;
-    --window-strip-gap: 0px;
     /* Empty track between one screen and the next, so a swipe shows a channel of
        shell between two cards instead of their two edges meeting as one line.
        Twice the gutter above the card, so it reads as a choice next to it. */
@@ -635,17 +585,11 @@
        and nothing would ever put it back. */
     overflow: clip;
 }
-/* A session whose surfaces all come from the rails shows no strip, and then the
-   screens have nothing to start below. */
-.window-area--strip {
-    --window-strip-h: 34px;
-    --window-strip-gap: calc(var(--shell-gap) - var(--pane-gutter));
-}
 /* One session's screens laid end to end. The track slides sideways to bring a
-   screen to the front, and owns the tab strip inset once for all of them. */
+   screen to the front. */
 .window-track {
     position: absolute;
-    inset: calc(var(--window-strip-h) + var(--window-strip-gap)) 0 0;
+    inset: 0;
     --pan: 0%;
 }
 /* On a pane in a split tab: puts it back as a tab of its own. Top centre,
@@ -684,7 +628,7 @@
 }
 /* The half of a pane a tab pulled down out of the strip will split into. */
 .split-preview {
-    position: absolute;
+    position: fixed;
     z-index: 20;
     pointer-events: none;
     border-radius: var(--radius-panel);

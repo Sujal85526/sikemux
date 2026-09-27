@@ -9,20 +9,8 @@ import { swallow } from "../state/toast";
 import { gitOverviewR } from "../state/resources.defs";
 import { useInstalledPlugins } from "../plugins/installed";
 import { useStore } from "../state/store";
-import { activeAgentId } from "../state/selectors";
-import {
-    IconAgent,
-    IconBattery,
-    IconChevron,
-    IconCommand,
-    IconFocus,
-    IconFolder,
-    IconGit,
-    IconMic,
-    IconPanelLeft,
-    IconZoom,
-    WindowIcon,
-} from "./Icons";
+import { IconAgent, IconBattery, IconFocus, IconGit, IconMic, IconPanelLeft, IconZoom } from "./Icons";
+import { WorkspaceTabs } from "./Workspace";
 import { useVoice } from "../voice/dictation";
 import { PRIMARY_SHORTCUT } from "../lib/platform";
 import { Tooltip } from "./Tooltip";
@@ -224,11 +212,6 @@ function ClockChip() {
 
 export const TopBar = memo(function TopBar() {
     const session = useStore((s) => s.sessions[s.activeSessionId]);
-    const win = useStore((s) => (session ? s.windows[session.activeWindowId] : undefined));
-    const agent = useStore((s) => {
-        const id = activeAgentId(s, session);
-        return id ? s.agents[id] : undefined;
-    });
     const zoomed = useStore((s) => s.zoomedPaneId != null);
     const zen = useStore((s) => s.zenMode);
     const sideRailVisible = useStore((s) => s.sideRailOpen && !s.zenMode);
@@ -237,32 +220,14 @@ export const TopBar = memo(function TopBar() {
     const plugins = useInstalledPlugins();
 
     const isProject = !!session && session.kind === "project";
-    if (!session || !win) return null;
+    if (!session) return null;
 
     return (
         <header className="top-bar" onMouseDown={startWindowDragFromTopBar}>
             <div className="tb-left" />
 
             <div className="tb-center">
-                <div className="crumb">
-                    <span className="crumb-kind">{isProject ? <IconFolder size={12} /> : <IconCommand size={12} />}</span>
-                    <span className="crumb-session">{session.name}</span>
-                    {isProject && (
-                        <>
-                            <IconChevron size={11} className="crumb-sep" />
-                            <span className="crumb-win">
-                                {win.role === "agent" ? (
-                                    <span className="crumb-name">{agent?.title ?? "agent"}</span>
-                                ) : (
-                                    <>
-                                        <WindowIcon role={win.role} size={12} />
-                                        <span className="crumb-name">{win.name}</span>
-                                    </>
-                                )}
-                            </span>
-                        </>
-                    )}
-                </div>
+                <WorkspaceTabs />
             </div>
 
             <div className="tb-right" onPointerEnter={() => setStripHovered(true)}>
