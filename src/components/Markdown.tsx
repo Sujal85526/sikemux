@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { invokeCommand } from "../api/invoke";
@@ -34,8 +34,11 @@ const PLUGINS = [remarkGfm];
  * Prose somebody else wrote — a release's notes, a pull request's description,
  * a comment. Rendered rather than shown as the markdown it arrived as, with
  * embedded HTML skipped and links handed to the browser.
+ *
+ * Parsing the source is the expensive part and the source almost never
+ * changes, so a render caused by something else nearby does not redo it.
  */
-export function Markdown({ children, className = "prose" }: { children: string; className?: string }) {
+export const Markdown = memo(function Markdown({ children, className = "prose" }: { children: string; className?: string }) {
     return (
         <div className={className}>
             <ReactMarkdown remarkPlugins={PLUGINS} components={COMPONENTS} skipHtml>
@@ -43,4 +46,4 @@ export function Markdown({ children, className = "prose" }: { children: string; 
             </ReactMarkdown>
         </div>
     );
-}
+});
