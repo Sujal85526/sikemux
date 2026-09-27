@@ -4,15 +4,25 @@ import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
 import { actionsApi, type RepoRef } from "../api";
 import { actionsApprovalsR } from "../resources";
 
+/**
+ * Only a run GitHub is actually holding has anybody to ask. Every other run
+ * would spend a request to be told nothing is waiting.
+ */
+export function mayBeWaiting(status: string, conclusion: string | null): boolean {
+    return status === "waiting" || status === "action_required" || conclusion === "action_required";
+}
+
 interface Props {
     repo: RepoRef;
     runId: number;
+    status: string;
+    conclusion: string | null;
     active: boolean;
 }
 
 /** A run held at an environment, and the two buttons that let it through or stop it. */
-export function Approvals({ repo, runId, active }: Props) {
-    const found = useResourceEnabled(active, actionsApprovalsR, repo, runId);
+export function Approvals({ repo, runId, status, conclusion, active }: Props) {
+    const found = useResourceEnabled(active && mayBeWaiting(status, conclusion), actionsApprovalsR, repo, runId);
     const [busy, setBusy] = useState(false);
     const pending = found.data ?? [];
     if (pending.length === 0) return null;

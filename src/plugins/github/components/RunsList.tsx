@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { memo, useEffect } from "react";
 import { openUrl, swallow } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { Dropdown, EmptyState, IconRefresh, IconRun, SkeletonRows, Tooltip } from "../../../plugin-api/ui";
@@ -7,7 +7,7 @@ import { actionsRunsR, actionsWorkflowsR } from "../resources";
 import { elapsedMs, formatAgo, formatDuration, isRunning, outcomeOf, statusParam } from "../runStatus";
 import { filterBy, showRun, STATUS_FILTERS, updateView, type RunsView, type StatusFilter } from "../state";
 import { OutcomeIcon } from "./ActionsIcon";
-import { useNow } from "./hooks";
+import { coarse, useNow } from "./hooks";
 
 const LIVE_REFRESH_MS = 10_000;
 
@@ -22,11 +22,16 @@ const FILTER_LABEL: Record<StatusFilter, string> = {
 
 const EVERY_WORKFLOW = "all";
 
-function RunRow({ run, now, selected, onOpen }: { run: Run; now: number; selected: boolean; onOpen: () => void }) {
+const RunRow = memo(function RunRow({ paneId, run, now, selected }: { paneId: string; run: Run; now: number; selected: boolean }) {
     const outcome = outcomeOf(run);
     const finished = isRunning(run) ? null : run.updatedAt;
     return (
-        <button type="button" className="gha-run-row" data-selected={selected ? "1" : "0"} data-outcome={outcome} onClick={onOpen}>
+        <button
+            type="button"
+            className="gha-run-row"
+            data-selected={selected ? "1" : "0"}
+            data-outcome={outcome}
+            onClick={() => showRun(paneId, run.id)}>
             <OutcomeIcon outcome={outcome} />
             <span className="gha-run-title">
                 <span className="gha-run-name">{run.title || run.name || `Run #${run.runNumber}`}</span>
@@ -52,7 +57,7 @@ function RunRow({ run, now, selected, onOpen }: { run: Run; now: number; selecte
             <span className="gha-run-number">#{run.runNumber}</span>
         </button>
     );
-}
+});
 
 interface Props {
     paneId: string;
@@ -148,7 +153,7 @@ export function RunsList({ paneId, repo, view, branch, active, canWrite, onDispa
             )}
             <div className="gha-run-rows">
                 {runs.map((run) => (
-                    <RunRow key={run.id} run={run} now={now} selected={view.run === run.id} onOpen={() => showRun(paneId, run.id)} />
+                    <RunRow key={run.id} paneId={paneId} run={run} now={isRunning(run) ? now : coarse(now)} selected={view.run === run.id} />
                 ))}
             </div>
             {runs.length > 0 && (

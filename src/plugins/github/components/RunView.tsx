@@ -253,8 +253,8 @@ export function RunView({ paneId, repo, runId, openJob, active, canWrite }: Prop
                     ))}
                 </div>
             )}
-            <Approvals repo={repo} runId={runId} active={active} />
-            <Artifacts repo={repo} runId={runId} active={active} />
+            <Approvals repo={repo} runId={runId} status={run.status} conclusion={run.conclusion} active={active} />
+            <Artifacts repo={repo} runId={runId} active={active && run.status === "completed"} />
             <div className="gha-jobs-head">
                 {summary.total > 0 ? (
                     <span>
