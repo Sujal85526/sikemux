@@ -158,6 +158,24 @@ pub fn classify(status: StatusCode, headers: &HeaderMap, bytes: &[u8]) -> Action
     }
 }
 
+async fn send_accepting(
+    session: &Session,
+    path: &str,
+    accept: &str,
+) -> ActionsResult<(StatusCode, HeaderMap, Vec<u8>)> {
+    let url = format!("{}{path}", config::api_base(&session.host));
+    let request = http()?
+        .get(url)
+        .bearer_auth(&session.token)
+        .header("Accept", accept)
+        .header("X-GitHub-Api-Version", API_VERSION);
+    let response = limited(request.send()).await?;
+    let status = response.status();
+    let headers = response.headers().clone();
+    let bytes = read_limited(response).await?;
+    Ok((status, headers, bytes))
+}
+
 pub async fn send(
     session: &Session,
     method: Method,
@@ -218,8 +236,14 @@ pub async fn post_empty(data_dir: &Path, path: &str, body: Option<&Value>) -> Ac
 /// followed without the token, since the signed URL carries its own
 /// permission and GitHub rejects a request that sends both.
 pub async fn download(data_dir: &Path, path: &str) -> ActionsResult<Vec<u8>> {
+    download_as(data_dir, path, "application/vnd.github+json").await
+}
+
+/// The same, for an endpoint that only hands over the bytes when asked for
+/// them by content type rather than as JSON.
+pub async fn download_as(data_dir: &Path, path: &str, accept: &str) -> ActionsResult<Vec<u8>> {
     let session = Session::current(data_dir)?;
-    let (status, headers, bytes) = send(&session, Method::GET, path, &[], None).await?;
+    let (status, headers, bytes) = send_accepting(&session, path, accept).await?;
     if status.is_success() {
         return Ok(bytes);
     }

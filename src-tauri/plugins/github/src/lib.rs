@@ -9,6 +9,11 @@
 //   logs      — a job's log, and what GitHub flagged in it
 //   artifacts — what a run left behind, and putting one on disk
 //   approvals — a run held at an environment until somebody signs it off
+//   pulls     — pull requests, the files they touch, and merging one
+//   issues    — issues, and closing or reopening one
+//   releases  — releases, their notes and the files hung off them
+//   inbox     — the notifications GitHub would otherwise email
+//   common    — the shapes every part of the API repeats
 //   watch     — following a run while it is going
 
 mod annotations;
@@ -16,9 +21,14 @@ mod approvals;
 mod artifacts;
 mod auth;
 mod client;
+mod common;
 mod config;
 mod error;
+mod inbox;
+mod issues;
 mod logs;
+mod pulls;
+mod releases;
 mod repo;
 mod runs;
 mod watch;
@@ -143,6 +153,29 @@ impl Plugin for GithubActions {
 
                 "pendingApprovals" => answer(approvals::pending(data_dir, params(input)?)).await,
                 "reviewDeployment" => answer(approvals::review(data_dir, params(input)?)).await,
+
+                "pulls" => answer(pulls::list(data_dir, params(input)?)).await,
+                "pull" => answer(pulls::get(data_dir, params(input)?)).await,
+                "pullFiles" => answer(pulls::files(data_dir, params(input)?)).await,
+                "pullReviews" => answer(pulls::reviews(data_dir, params(input)?)).await,
+                "mergePull" => answer(pulls::merge(data_dir, params(input)?)).await,
+
+                "issues" => answer(issues::list(data_dir, params(input)?)).await,
+                "issue" => answer(issues::get(data_dir, params(input)?)).await,
+                "setIssueState" => answer(issues::set_state(data_dir, params(input)?)).await,
+
+                "comments" => {
+                    let thread: common::Thread = params(input)?;
+                    answer(common::comments(data_dir, &thread.repo, thread.number)).await
+                }
+                "addComment" => answer(common::add_comment(data_dir, params(input)?)).await,
+
+                "releases" => answer(releases::list(data_dir, params(input)?)).await,
+                "downloadAsset" => answer(releases::download(data_dir, params(input)?)).await,
+
+                "inbox" => answer(inbox::list(data_dir, params(input)?)).await,
+                "markRead" => answer(inbox::mark_read(data_dir, params(input)?)).await,
+                "markAllRead" => answer(inbox::mark_all_read(data_dir)).await,
 
                 _ => Err(PluginError::unknown_method(method)),
             }

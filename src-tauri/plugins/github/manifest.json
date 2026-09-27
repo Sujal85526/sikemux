@@ -201,6 +201,146 @@
         "name",
         "runId"
       ]
+    },
+    {
+      "name": "github_pulls",
+      "method": "pulls",
+      "description": "Pull requests in a repository, most recently updated first, with their state, branches, review state and size.",
+      "properties": {
+        "owner": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The user or organisation, e.g. nodelike."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The repository, e.g. sikemux."
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "open",
+            "closed",
+            "all"
+          ],
+          "description": "Default open."
+        },
+        "perPage": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "How many to return. Default 30."
+        }
+      },
+      "required": [
+        "owner",
+        "name"
+      ]
+    },
+    {
+      "name": "github_pull_files",
+      "method": "pullFiles",
+      "description": "Every file a pull request touches, with its unified diff. Use it to review a change without checking it out.",
+      "properties": {
+        "owner": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The user or organisation, e.g. nodelike."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The repository, e.g. sikemux."
+        },
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The pull request number."
+        }
+      },
+      "required": [
+        "owner",
+        "name",
+        "number"
+      ]
+    },
+    {
+      "name": "github_issues",
+      "method": "issues",
+      "description": "Issues in a repository, most recently updated first. Pull requests are left out.",
+      "properties": {
+        "owner": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The user or organisation, e.g. nodelike."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The repository, e.g. sikemux."
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "open",
+            "closed",
+            "all"
+          ],
+          "description": "Default open."
+        },
+        "assignee": {
+          "type": "string",
+          "description": "A GitHub login, or @me for the signed-in account."
+        },
+        "labels": {
+          "type": "string",
+          "description": "Comma-separated label names."
+        }
+      },
+      "required": [
+        "owner",
+        "name"
+      ]
+    },
+    {
+      "name": "github_comments",
+      "method": "comments",
+      "description": "What people wrote under a pull request or an issue, oldest first.",
+      "properties": {
+        "owner": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The user or organisation, e.g. nodelike."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The repository, e.g. sikemux."
+        },
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The pull request or issue number."
+        }
+      },
+      "required": [
+        "owner",
+        "name",
+        "number"
+      ]
+    },
+    {
+      "name": "github_inbox",
+      "method": "inbox",
+      "description": "The signed-in account's GitHub notifications: review requests, mentions and assignments, newest first.",
+      "properties": {
+        "all": {
+          "type": "boolean",
+          "description": "Include ones already read. Default false."
+        }
+      },
+      "required": []
     }
   ]
 }
