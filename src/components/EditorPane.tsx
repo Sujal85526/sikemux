@@ -1,7 +1,7 @@
 import { FileTree } from "./FileTree";
 import { relocatedPath } from "../state/editorPaths";
-import { useCallback, useEffect, useRef, useState } from "react";
-import Markdown from "react-markdown";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { invokeCommand as invoke } from "../api/invoke";
 import { Compartment, EditorState, Prec, type Text } from "@codemirror/state";
@@ -49,7 +49,9 @@ import { FileIcon } from "./FileIcon";
 import { TabBar } from "./TabBar";
 import { EditorFindBar } from "./EditorFindBar";
 import { EditorInsights } from "./EditorInsights";
-import { basename, isPathWithin, joinPath } from "../lib/paths";
+import { basename, dirname, isPathWithin, joinPath, normalizePath } from "../lib/paths";
+import { localPath } from "../chat/imagePreview";
+import { safeWebUrl } from "../terminal/interactions";
 import { keybindingLabelForAction } from "../keybindings";
 
 const DEFAULT_VIEW = { openTabs: [], activePath: null };
@@ -202,13 +204,43 @@ function ImageViewer({ image, onReload }: { image: ImageState; onReload: (path: 
     );
 }
 
-const markdownComponents = { thead: MarkdownTableHead };
+function markdownLinkFile(href: string, documentPath: string): string | null {
+    if (href.startsWith("#")) return null;
+    try {
+        return localPath(new URL(href, `file://${normalizePath(dirname(documentPath)).split("/").map(encodeURIComponent).join("/")}/`).href);
+    } catch {
+        return null;
+    }
+}
 
-function MarkdownPreview({ source }: { source: string }) {
+function MarkdownPreview({ source, path, onOpenFile }: { source: string; path: string; onOpenFile: (path: string) => void }) {
+    const components = useMemo<Components>(
+        () => ({
+            thead: MarkdownTableHead,
+            a: ({ href, children }) => (
+                <a
+                    href={href}
+                    onClick={(event) => {
+                        event.preventDefault();
+                        if (!href) return;
+                        const webUrl = safeWebUrl(href);
+                        if (webUrl) {
+                            void invoke("open_url", { url: webUrl, app: null, shortcut: null }).catch(swallow("open markdown link"));
+                            return;
+                        }
+                        const file = markdownLinkFile(href, path);
+                        if (file) onOpenFile(file);
+                    }}>
+                    {children}
+                </a>
+            ),
+        }),
+        [path, onOpenFile],
+    );
     return (
         <div className="ed-markdown-preview">
             <article className="ed-markdown-body">
-                <Markdown components={markdownComponents} remarkPlugins={[remarkGfm]} skipHtml>
+                <Markdown components={components} remarkPlugins={[remarkGfm]} skipHtml>
                     {source}
                 </Markdown>
             </article>
@@ -608,6 +640,10 @@ export function EditorPane({
     const openPathRef = useRef<(path: string) => Promise<void>>(async () => {});
     const openTreeFile = useCallback((entry: { path: string }) => {
         void openPathRef.current(entry.path).catch(reportError("open file"));
+    }, []);
+
+    const openLinkedFile = useCallback((path: string) => {
+        void openPathRef.current(path).catch(reportError("open linked file"));
     }, []);
 
     const openPath = async (path: string) => {
@@ -1158,7 +1194,7 @@ export function EditorPane({
                         />
                     )}
                     {activeImage && <ImageViewer image={activeImage} onReload={reloadImage} />}
-                    {previewingMarkdown && <MarkdownPreview source={markdownPreview.content} />}
+                    {previewingMarkdown && <MarkdownPreview source={markdownPreview.content} path={markdownPreview.path} onOpenFile={openLinkedFile} />}
                 </div>
                 {showInsights && cwd && (
                     <EditorInsights
