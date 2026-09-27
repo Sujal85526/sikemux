@@ -78,6 +78,13 @@ copyFileSync(built, destination);
 chmodSync(destination, 0o755);
 run("strip", ["-x", destination]);
 
+const loadCommands = run("otool", ["-l", destination], { capture: true });
+const toolchainPaths = [
+  ...loadCommands.matchAll(/^\s+path (\/Applications\/\S+) \(offset \d+\)$/gm),
+].map((match) => match[1]);
+for (const path of new Set(toolchainPaths))
+  run("install_name_tool", ["-delete_rpath", path, destination]);
+
 if (target === hostTriple() || target === "universal-apple-darwin") {
   const version = run(destination, ["--version"], { capture: true });
   if (!version.startsWith(name))
