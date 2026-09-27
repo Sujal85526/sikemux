@@ -602,8 +602,12 @@ textarea:focus,
     gap: var(--space-1);
     padding: 2px;
     border-radius: calc(var(--radius-2) + 2px);
+    box-shadow: inset 0 0 0 1px var(--border);
+    transition: box-shadow var(--dur-1) linear;
+}
+
+.tabbar .tab-group.active {
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--acc) 28%, var(--border));
-    background: color-mix(in srgb, var(--acc) 5%, transparent);
 }
 
 /*
