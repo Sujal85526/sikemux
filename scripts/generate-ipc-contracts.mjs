@@ -42,7 +42,7 @@ const capability = {
   $schema: "../gen/schemas/desktop-schema.json",
   identifier: "default",
   description: "Generated explicit capability for the main application window",
-  windows: ["main"],
+  webviews: ["main"],
   permissions: [
     "core:default",
     "core:window:allow-start-dragging",
