@@ -1,6 +1,6 @@
 import { notify, openUrl, reportError, swallow } from "../../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
-import { EmptyState, IconClose, IconInfo, SkeletonRows } from "../../../plugin-api/ui";
+import { EmptyState, IconClose, IconInfo, Markdown, SkeletonRows } from "../../../plugin-api/ui";
 import { actionsApi, failureMessage, type Issue, type RepoRef } from "../api";
 import { githubIssueR, githubIssuesR } from "../resources";
 import { formatAgo } from "../runStatus";
@@ -76,7 +76,7 @@ function IssueDetail({ repo, number, active, onBack }: { repo: RepoRef; number: 
                     </button>
                 </div>
             </div>
-            {found.body.trim() && <div className="gha-body-text">{found.body}</div>}
+            {found.body.trim() && <Markdown className="gha-prose">{found.body}</Markdown>}
             <CommentThread repo={repo} number={found.number} active={active} now={now} />
         </div>
     );
