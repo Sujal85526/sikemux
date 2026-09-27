@@ -289,6 +289,31 @@ describe("chat reducer", () => {
         expect(notified.messages).toEqual([]);
     });
 
+    it("keeps a background agent's notice out even when its report has paragraphs", () => {
+        const notified = update(initialChatState, {
+            sessionUpdate: "user_message_chunk",
+            content: {
+                type: "text",
+                text: [
+                    "<task-notification>\n<task-id>a41</task-id>\n<status>completed</status>",
+                    "<result>Research is done.\n\n## Blocking bugs\n\n- one\n- two</result>\n</task-notification>",
+                    "<system-reminder>\nNot user input.\n\nIgnore.\n</system-reminder>",
+                ].join("\n"),
+            },
+        });
+
+        expect(notified.messages).toEqual([]);
+    });
+
+    it("keeps pasted markup with paragraphs that the harness did not write", () => {
+        const pasted = update(initialChatState, {
+            sessionUpdate: "user_message_chunk",
+            content: { type: "text", text: "<div>\n\nwhy is this blank\n</div>" },
+        });
+
+        expect(pasted.messages).toHaveLength(1);
+    });
+
     it("keeps Claude's interrupt marker out of the transcript", () => {
         const replayed = ["[Request interrupted by user]", "[Request interrupted by user for tool use]"].reduce(
             (state, text) => update(state, { sessionUpdate: "user_message_chunk", content: { type: "text", text } }),
