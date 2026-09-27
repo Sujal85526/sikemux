@@ -162,6 +162,7 @@ if [[ "$PUBLISH" == "1" ]]; then
   fi
   gh release view "v$VERSION" >/dev/null 2>&1 && fail "GitHub release v$VERSION already exists"
   gh api "repos/nodelike/sikemux/commits/$HEAD_SHA" >/dev/null 2>&1 || fail "HEAD is not on the remote; push before publishing"
+  export SIKEMUX_USAGE_REPORTING=1
 fi
 
 if [[ "${RELEASE_PREFLIGHT_ONLY:-0}" == "1" ]]; then

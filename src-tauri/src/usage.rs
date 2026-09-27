@@ -15,6 +15,8 @@ const CAPTURE_ENDPOINT: &str = "https://eu.i.posthog.com/i/v0/e/";
 const PROJECT_TOKEN: &str = "phc_yGaffnPw38wHvQKgusATcKtYmkyDCbNNGpTo3sK9pQoD";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const SECONDS_PER_DAY: u64 = 86_400;
+const REPORTING_BUILD: bool =
+    !cfg!(debug_assertions) && option_env!("SIKEMUX_USAGE_REPORTING").is_some();
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,11 +40,11 @@ struct Platform {
     arch: &'static str,
 }
 
-/// Sends one anonymous `app_active` event per install per UTC day. Development
-/// builds never send anything.
+/// Sends one anonymous `app_active` event per install per UTC day. Only builds
+/// published by the release workflow send anything; local builds stay silent.
 #[tauri::command]
 pub async fn usage_report_active(app: AppHandle, channel: String) -> AppResult<()> {
-    if cfg!(debug_assertions) {
+    if !REPORTING_BUILD {
         return Ok(());
     }
     if channel != "stable" && channel != "nightly" {
