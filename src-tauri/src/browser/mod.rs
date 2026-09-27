@@ -405,7 +405,8 @@ impl BrowserManager {
             .accept_first_mouse(true)
             .focused(false)
             .zoom_hotkeys_enabled(true)
-            .initialization_script(RECORDER_SCRIPT);
+            .initialization_script(RECORDER_SCRIPT)
+            .on_navigation(tab_may_load);
         #[cfg(target_os = "macos")]
         let builder = builder.user_agent(USER_AGENT);
 
@@ -943,18 +944,25 @@ fn validate_url(url: &str) -> AppResult<()> {
     if url.is_empty() || url.len() > MAX_URL_LEN {
         return Err(AppError::BadArg("browser url is empty or too long"));
     }
-    let scheme = url
-        .split(':')
-        .next()
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    if matches!(
-        scheme.as_str(),
-        "javascript" | "data" | "tauri" | "asset" | "ipc"
-    ) {
+    let parsed = Url::parse(url).map_err(|_| AppError::BadArg("invalid browser url"))?;
+    let opens = matches!(parsed.scheme(), "http" | "https") || parsed.as_str() == BLANK_URL;
+    if !opens {
         return Err(AppError::BadArg("browser url scheme is not allowed"));
     }
     Ok(())
+}
+
+/// What a tab's page or any frame inside it may load. Frames also build
+/// `about:srcdoc`, `blob:` and `data:` documents, which take the page's origin
+/// or none at all, never the app's.
+fn tab_may_load(url: &Url) -> bool {
+    match url.scheme() {
+        "http" | "https" | "data" => true,
+        "about" => matches!(url.path(), "blank" | "srcdoc"),
+        "blob" => Url::parse(url.path())
+            .is_ok_and(|inner| matches!(inner.scheme(), "http" | "https")),
+        _ => false,
+    }
 }
 
 /// The uncut part of the page in its own coordinates, or `None` when all of it shows.
@@ -1302,7 +1310,12 @@ mod tests {
         assert!(validate_url("javascript:alert(1)").is_err());
         assert!(validate_url("DATA:text/html,hi").is_err());
         assert!(validate_url("tauri://localhost").is_err());
+        assert!(validate_url("file:///etc/passwd").is_err());
+        assert!(validate_url("asset://localhost/x").is_err());
+        assert!(validate_url("mailto:a@b.test").is_err());
         assert!(validate_url("https://example.com").is_ok());
+        assert!(validate_url("HTTP://localhost:3000").is_ok());
+        assert!(validate_url(BLANK_URL).is_ok());
         assert!(validate_url(&"x".repeat(MAX_URL_LEN + 1)).is_err());
     }
 
@@ -1341,6 +1354,32 @@ mod tests {
             unique_download_path(folder.path(), "notes"),
             folder.path().join("notes (2)")
         );
+    }
+
+    #[test]
+    fn a_page_cannot_move_itself_or_a_frame_onto_an_app_origin() {
+        let loads = |url: &str| tab_may_load(&Url::parse(url).unwrap());
+        for allowed in [
+            "https://example.com/",
+            "http://localhost:1420/",
+            "about:blank",
+            "about:srcdoc",
+            "data:text/html,hi",
+            "blob:https://example.com/0b7e",
+        ] {
+            assert!(loads(allowed), "{allowed} should load");
+        }
+        for refused in [
+            "tauri://localhost/",
+            "ipc://localhost/",
+            "asset://localhost/x",
+            "file:///etc/passwd",
+            "blob:tauri://localhost/0b7e",
+            "about:config",
+            "javascript:alert(1)",
+        ] {
+            assert!(!loads(refused), "{refused} should be refused");
+        }
     }
 
     #[test]
