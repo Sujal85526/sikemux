@@ -120,6 +120,7 @@ const PERSISTED_KEYS = [
     "providerProfiles",
     "selectedProviderProfileIds",
     "defaultAgentPermissionMode",
+    "languageServerTrust",
 ] as const satisfies readonly (keyof StoreState)[];
 type PersistedKey = (typeof PERSISTED_KEYS)[number];
 type SliceShot = { [K in PersistedKey]: StoreState[K] };
@@ -175,6 +176,7 @@ function packPrefs(s: StoreState): PersistedPrefs {
         providerProfiles,
         selectedProviderProfileIds: normaliseProviderProfileSelection(s.selectedProviderProfileIds, providerProfiles, {}),
         defaultAgentPermissionMode: s.defaultAgentPermissionMode === "bypass" ? "bypass" : "workspace-write",
+        languageServerTrust: s.languageServerTrust,
     };
 }
 
@@ -721,6 +723,11 @@ function mergeBrunoSessions(decoded: Record<string, unknown>): void {
     if (closed.has(decoded.activeSessionId)) decoded.activeSessionId = kept.id;
 }
 
+function normaliseLanguageServerTrust(value: unknown): Record<string, boolean> {
+    if (!isRecord(value)) return {};
+    return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, boolean] => typeof entry[1] === "boolean"));
+}
+
 function normalisePluginSettings(value: unknown): Record<string, unknown> {
     if (!isRecord(value)) return {};
     return Object.fromEntries(Object.entries(value).filter(([id]) => isPluginId(id)));
@@ -1008,6 +1015,7 @@ export function applyHydrate(raw: string): HydrationResult {
                 : prefs.defaultAgentPermissionMode === "bypass"
                   ? "bypass"
                   : "workspace-write",
+        languageServerTrust: normaliseLanguageServerTrust(prefs.languageServerTrust),
     });
     pruneOnDemandWindows();
     registerCustomThemes(getState().customThemes);

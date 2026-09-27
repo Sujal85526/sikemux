@@ -92,4 +92,5 @@ export interface PersistedPrefs {
     providerProfiles?: ProviderProfile[];
     selectedProviderProfileIds?: ProviderProfileSelection;
     defaultAgentPermissionMode?: AgentPermissionMode;
+    languageServerTrust?: Record<string, boolean>;
 }

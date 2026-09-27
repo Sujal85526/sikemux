@@ -90,6 +90,8 @@ export interface DomainState {
     providerProfiles: ProviderProfile[];
     selectedProviderProfileIds: ProviderProfileSelection;
     defaultAgentPermissionMode: AgentPermissionMode;
+    /** Whether each project, by root path, may start its language servers. A project absent here has not been asked. */
+    languageServerTrust: Record<string, boolean>;
 }
 
 export type UpdateOperationState = "available" | "preparing" | "downloading" | "installing" | "restarting" | "error";
@@ -242,6 +244,7 @@ export const useStore = create<StoreState>(() => {
         providerProfiles: DEFAULT_PROVIDER_PROFILES.map((profile) => ({ ...profile })),
         selectedProviderProfileIds: { ...DEFAULT_PROVIDER_PROFILE_SELECTION },
         defaultAgentPermissionMode: "bypass",
+        languageServerTrust: {},
 
         home: "",
         pluginManifests: [],

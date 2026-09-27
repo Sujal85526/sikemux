@@ -60,6 +60,7 @@ import { dirname } from "./lib/paths";
 import type { StandaloneCommand } from "./commands/registry";
 import type { ProjectConfigLoadResult } from "./projectConfig";
 import { agentDetectionApi } from "./api/agentDetection";
+import { lsp } from "./api/lsp";
 import { projectActionCommand, trustProjectConfig } from "./projectConfigRuntime";
 import { worktreeHasLiveOwners } from "./worktreeLifecycle";
 import { performanceTelemetry } from "./lib/performance";
@@ -359,6 +360,7 @@ function ApplicationCommandPalette() {
     const recentCommandKeys = useStore((s) => s.recentCommandKeys);
     const activeKind = useStore((s) => s.sessions[s.activeSessionId]?.kind ?? null);
     const activeProjectCwd = useStore(activeProjectCwdOf);
+    const languageServersAllowedHere = useStore((s) => (activeProjectCwd ? s.languageServerTrust[activeProjectCwd] === true : false));
     const activeTerminalWindowId = useStore((s) => {
         const id = s.sessions[s.activeSessionId]?.activeWindowId;
         return id && s.windows[id]?.role === "term" ? id : null;
@@ -549,6 +551,28 @@ function ApplicationCommandPalette() {
                       category: "Agents",
                       execute: runStandalone("agents.launch", cmd.openAgentPalette),
                   } satisfies StandaloneCommand,
+              ]
+            : []),
+        ...(activeKind === "project" && activeProjectCwd
+            ? [
+                  languageServersAllowedHere
+                      ? ({
+                            id: "project.language-servers.stop",
+                            title: "Stop language servers for this project",
+                            detail: "Stop them now and do not start them again",
+                            category: "Project · Language servers",
+                            execute: runStandalone("project.language-servers.stop", () => {
+                                cmd.setLanguageServerTrust(activeProjectCwd, false);
+                                void lsp.stop(activeProjectCwd).catch(reportError("stop language servers"));
+                            }),
+                        } satisfies StandaloneCommand)
+                      : ({
+                            id: "project.language-servers.allow",
+                            title: "Allow language servers for this project",
+                            detail: "Start them when you open a file here",
+                            category: "Project · Language servers",
+                            execute: runStandalone("project.language-servers.allow", () => cmd.setLanguageServerTrust(activeProjectCwd, true)),
+                        } satisfies StandaloneCommand),
               ]
             : []),
         {

@@ -191,6 +191,20 @@ describe("frontend persistence", () => {
         expect(getState()).toMatchObject({ sideRailOpen: false, agentRailOpen: true });
     });
 
+    it("remembers which projects may start language servers", async () => {
+        setState({ languageServerTrust: { "/trusted": true, "/refused": false } });
+        invoke.mockResolvedValue(undefined);
+
+        await expect(flushPersist()).resolves.toBe(true);
+        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
+        expect(saved.prefs.languageServerTrust).toEqual({ "/trusted": true, "/refused": false });
+
+        setState({ languageServerTrust: {} });
+        saved.prefs.languageServerTrust["/odd"] = "yes";
+        applyHydrate(JSON.stringify(saved));
+        expect(getState().languageServerTrust).toEqual({ "/trusted": true, "/refused": false });
+    });
+
     it("persists rail widths and pulls stored ones back inside their bounds", async () => {
         setState({ sideRailWidth: 320, agentRailWidth: 400 });
         invoke.mockResolvedValue(undefined);

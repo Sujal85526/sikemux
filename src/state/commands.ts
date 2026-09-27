@@ -2567,6 +2567,9 @@ export const setUpdateChannel = (value: "stable" | "nightly"): void => {
 
 export const setShareUsageData = (value: boolean): void => setState({ shareUsageData: value });
 
+export const setLanguageServerTrust = (project: string, allowed: boolean): void =>
+    setState((s) => ({ languageServerTrust: { ...s.languageServerTrust, [project]: allowed } }));
+
 export function setKeybinding(id: import("../keybindings").KeybindingActionId, binding: string | null): void {
     setState((s) => ({ keybindingOverrides: { ...s.keybindingOverrides, [id]: binding } }));
 }
