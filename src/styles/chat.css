@@ -1732,6 +1732,17 @@ button.chat-tool:hover,
     color: var(--ink);
 }
 
+.chat-dictate.listening,
+.chat-dictate.listening:hover {
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 14%, transparent);
+    animation: tb-update-pulse 1.4s ease-in-out infinite;
+}
+
+.chat-dictate:disabled {
+    opacity: 0.5;
+}
+
 /* Beside the borderless pickers the toggle is text too: the rainbow word
    carries YOLO, and the ring and key hint stay in the pane header. */
 .chat-composer-bar .yolo-toggle {

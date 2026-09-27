@@ -59,6 +59,7 @@ import type { CodeLine } from "./types";
 import { localImagePath, localPath, useImagePreview } from "./imagePreview";
 import { ChatFileRef, PathRootsProvider, useFileRef } from "./FileRef";
 import { YoloToggle } from "./YoloToggle";
+import { DictateButton } from "./DictateButton";
 import { ContextMeter } from "./ContextMeter";
 import { guessClaudeWindow } from "./contextWindow";
 import { agentApi } from "../api/agents";
@@ -1428,6 +1429,7 @@ function ChatComposer({
                 />
                 <ContextMeter usage={usage} agent={agent.type} />
                 <span className="chat-composer-spacer" />
+                <DictateButton into={paneRef} />
                 {running && !drafted ? (
                     <button type="button" className="chat-send stop" aria-label="Stop agent" onClick={onStop}>
                         <span />

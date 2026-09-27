@@ -12,7 +12,8 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock("../api/voice", () => ({ voiceApi: api }));
 
-const { handleVoiceEvent, onVoiceKeyDown, onVoiceKeyUp, useVoice } = await import("./dictation");
+const { handleVoiceEvent, onVoiceKeyDown, onVoiceKeyUp, toggleDictation, useVoice } = await import("./dictation");
+const { getState, setState } = await import("../state/store");
 
 const key = (type: "keydown" | "keyup", code: string, init: KeyboardEventInit = {}) => new KeyboardEvent(type, { code, ...init });
 
@@ -30,7 +31,8 @@ function mountTarget() {
 describe("voice dictation", () => {
     beforeEach(() => {
         vi.useFakeTimers();
-        useVoice.setState({ phase: "ready", reason: null, stage: null, fraction: 0 });
+        useVoice.setState({ phase: "ready", reason: null, stage: null, fraction: 0, target: null });
+        setState({ voiceDictation: true });
     });
 
     afterEach(() => {
@@ -79,6 +81,28 @@ describe("voice dictation", () => {
         useVoice.setState({ phase: "preparing", stage: "download", fraction: 0.4 });
         onVoiceKeyDown(key("keydown", "AltRight"));
         vi.advanceTimersByTime(200);
+        expect(api.start).not.toHaveBeenCalled();
+    });
+
+    it("dictates into the composer whose microphone was clicked, even after focus moves", () => {
+        const composer = mountTarget();
+        const terminal = mountTarget();
+        toggleDictation(composer.host);
+        expect(api.start).toHaveBeenCalledOnce();
+        expect(useVoice.getState().target).toBe(composer.host);
+
+        toggleDictation(composer.host);
+        expect(api.stop).toHaveBeenCalledOnce();
+        handleVoiceEvent({ type: "transcript", text: "summarise the diff" });
+        expect(composer.inserted).toEqual(["summarise the diff"]);
+        expect(terminal.inserted).toEqual([]);
+        expect(useVoice.getState().target).toBeNull();
+    });
+
+    it("turns dictation on from the microphone when it was off", () => {
+        setState({ voiceDictation: false });
+        toggleDictation(mountTarget().host);
+        expect(getState().voiceDictation).toBe(true);
         expect(api.start).not.toHaveBeenCalled();
     });
 

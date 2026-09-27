@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { create } from "zustand";
 import { voiceApi, type VoiceEvent, type VoiceStage } from "../api/voice";
+import { setVoiceDictation } from "../state/commands";
 import { useStore } from "../state/store";
 import { focusedTextInsertTarget, insertText } from "../state/textInsertRegistry";
 import { notify } from "../state/toast";
@@ -13,16 +14,17 @@ export interface VoiceState {
     reason: string | null;
     stage: VoiceStage | null;
     fraction: number;
+    /** Where the words being spoken now will be typed. */
+    target: HTMLElement | null;
 }
 
-export const useVoice = create<VoiceState>(() => ({ phase: "off", reason: null, stage: null, fraction: 0 }));
+export const useVoice = create<VoiceState>(() => ({ phase: "off", reason: null, stage: null, fraction: 0, target: null }));
 
 export const HOLD_KEY = "AltRight";
 /* Right Option also starts shortcuts, so the microphone waits to see it held on its own. */
 const START_DELAY_MS = 150;
 
 let lifecycle: Promise<void> = Promise.resolve();
-let target: HTMLElement | null = null;
 let pendingStart: number | null = null;
 let recording = false;
 
@@ -49,8 +51,9 @@ async function shutdown(): Promise<void> {
 }
 
 function deliver(text: string): void {
+    const { target } = useVoice.getState();
     const destination = target?.isConnected ? target : focusedTextInsertTarget();
-    target = null;
+    set({ target: null });
     if (!text) return;
     if (destination && insertText(destination, text)) return;
     void navigator.clipboard
@@ -75,19 +78,18 @@ export function handleVoiceEvent(event: VoiceEvent): void {
             deliver(event.text);
             return;
         case "cancelled":
-            set({ phase: "ready" });
+            set({ phase: "ready", target: null });
             return;
         case "exited":
-            target = null;
             recording = false;
-            set({ phase: "off", reason: "The voice helper stopped. Hold the key again to restart it." });
+            set({ phase: "off", target: null, reason: "The voice helper stopped. Hold the key again to restart it." });
             return;
         case "error":
             recording = false;
             if (event.reason === "models") {
-                set({ phase: "off", reason: event.message, stage: null, fraction: 0 });
+                set({ phase: "off", reason: event.message, stage: null, fraction: 0, target: null });
             } else {
-                set({ phase: "ready" });
+                set({ phase: "ready", target: null });
             }
             notify("error", event.message);
             return;
@@ -98,11 +100,11 @@ function abandonHold(): void {
     if (pendingStart !== null) {
         window.clearTimeout(pendingStart);
         pendingStart = null;
-        target = null;
+        set({ target: null });
     }
     if (!recording) return;
     recording = false;
-    target = null;
+    set({ target: null });
     void voiceApi.cancel();
 }
 
@@ -113,7 +115,7 @@ function startWhenReady(): void {
         void voiceApi.start(voiceVocabulary(useStore.getState()));
         return;
     }
-    target = null;
+    set({ target: null });
     if (phase === "off") {
         notify("info", "Loading the speech model. Try again in a moment.");
         inOrder(prepare);
@@ -125,11 +127,17 @@ function startWhenReady(): void {
 
 function beginHold(): void {
     if (pendingStart !== null || recording) return;
-    target = focusedTextInsertTarget();
+    set({ target: focusedTextInsertTarget() });
     pendingStart = window.setTimeout(() => {
         pendingStart = null;
         startWhenReady();
     }, START_DELAY_MS);
+}
+
+function finishRecording(): void {
+    recording = false;
+    set({ phase: "transcribing" });
+    void voiceApi.stop();
 }
 
 function endHold(): void {
@@ -137,10 +145,23 @@ function endHold(): void {
         abandonHold();
         return;
     }
-    if (!recording) return;
-    recording = false;
-    set({ phase: "transcribing" });
-    void voiceApi.stop();
+    if (recording) finishRecording();
+}
+
+/** Click once to start dictating into `into`, and again to type what was said. */
+export function toggleDictation(into: HTMLElement): void {
+    if (!useStore.getState().voiceDictation) {
+        setVoiceDictation(true);
+        notify("info", "Dictation is on. The speech model downloads once, about 600 MB, then click the microphone again.");
+        return;
+    }
+    if (recording) {
+        finishRecording();
+        return;
+    }
+    if (pendingStart !== null) return;
+    set({ target: into });
+    startWhenReady();
 }
 
 export function onVoiceKeyDown(event: KeyboardEvent): void {
