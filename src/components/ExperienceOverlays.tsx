@@ -215,7 +215,9 @@ export function Onboarding() {
                                     key={agent.profileId ?? agent.type}
                                     className={agent.available === false ? "is-missing" : ""}
                                     title={agent.available === false ? `${agent.command} is not installed` : agent.command}>
-                                    <AgentIcon type={agent.type} size={18} />
+                                    <span className={`agent-glyph ${agent.type}`}>
+                                        <AgentIcon type={agent.type} size={18} />
+                                    </span>
                                     <span>{agent.label}</span>
                                 </li>
                             ))}

@@ -273,7 +273,7 @@
     color: var(--text-tertiary);
 }
 
-.welcome-agents li.is-missing svg {
+.welcome-agents li.is-missing .agent-glyph {
     opacity: 0.4;
     filter: grayscale(1);
 }
