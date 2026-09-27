@@ -20,7 +20,7 @@ import {
 import { alternateScreenWheelFallbackSequence } from "./wheelNavigation";
 import { needsTerminalRedraw } from "./redraw";
 import { terminalWebglRequested, type TerminalRenderer } from "./renderer";
-import { cellWidthCorrection, measureCharWidth } from "./cellMetrics";
+import { cellWidthCorrection, lineHeightCorrection, measureChar } from "./cellMetrics";
 import { isTerminalFindShortcut, safeWebUrl, sanitizeTerminalTitle, terminalBufferText, type TerminalSearchOptions } from "./interactions";
 import { scheduleNextFrame } from "../lib/instrumentation";
 import { performanceTelemetry } from "../lib/performance";
@@ -306,11 +306,12 @@ export function useXterm(opts: {
                 let contextLossSub: { dispose(): void } | null = null;
                 resourceDisposers.push(() => contextLossSub?.dispose());
                 const applyCellCorrection = () => {
-                    const next =
-                        renderer === "webgl"
-                            ? cellWidthCorrection(measureCharWidth(FONT, term.options.fontSize ?? FONT_SIZE), window.devicePixelRatio)
-                            : 0;
-                    if (term.options.letterSpacing !== next) term.options.letterSpacing = next;
+                    const fontSize = term.options.fontSize ?? FONT_SIZE;
+                    const char = measureChar(FONT, fontSize);
+                    const letterSpacing = renderer === "webgl" ? cellWidthCorrection(char.width, window.devicePixelRatio) : 0;
+                    if (term.options.letterSpacing !== letterSpacing) term.options.letterSpacing = letterSpacing;
+                    const lineHeight = lineHeightCorrection(fontSize, char.height, window.devicePixelRatio);
+                    if (term.options.lineHeight !== lineHeight) term.options.lineHeight = lineHeight;
                 };
                 const setRenderer = (next: TerminalRenderer) => {
                     renderer = next;
