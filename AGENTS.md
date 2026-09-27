@@ -19,3 +19,14 @@
 - Do not proactively write comments in code. We prefer code to be self explanatory. When we write comments its because there is something locally unintuitive that a future reader should know. But as we write code our goal is to make all code locally intuitive, removing the need for comments. If we ever do need to write comments, we never introduce jargon. Comments should be understandable to someone who was just dropped into the codebase for the first time. Comments should attempt to be concise, on average 1-2 lines. If you are writing a longer comment its likely there is a lot of useless information, which is bad because the information may become stale as the code changes
 - Do not leave random markdown files in the codebase that are meant to be some way to deliver information to me. If you want to write a markdown file write it in a temporary file, and give me the path and chat and I can read it
 - Never write code that is explicitly backwards compatible. Systems should handle backwards compatibility (like migrations), not logic. If there is some logic that needs to be written otherwise it would appear it would break older users, you MUST make the assumption that no users have ran that code yet and its unreleased, so it would not make sense to consider the side effects that code would produce. This is a safe assumption because the maintainers of this codebase always ensure code that gets shipped is compatbile with the systems that allow for us to not have to explicitly hardcode backwards compatibility
+
+## UI rules
+
+- Never mark a selected, focused or active item with a coloured bar down its left
+  edge (an inset `box-shadow`, `border-left` or pseudo-element stripe). On a rounded
+  row the bar bends around the corner and looks broken. Show selection with a tinted
+  border and background on the whole item instead.
+- Do not mix rounded and square shapes in one group. Every `<button>` gets
+  `--radius-2` from `modern-shell.css`, so never put buttons inside a square box
+  with dividers between them. Give each item its own border and corner, with a gap
+  between items.

@@ -173,8 +173,7 @@
 
 .welcome-moves {
     display: grid;
-    border: 1px solid var(--border);
-    background: color-mix(in srgb, var(--surface) 80%, transparent);
+    gap: var(--space-1);
 }
 
 .welcome-moves button {
@@ -183,23 +182,22 @@
     align-items: center;
     gap: 14px;
     padding: 14px 16px;
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) 80%, transparent);
     color: var(--text-tertiary);
     text-align: left;
 }
 
-.welcome-moves button + button {
-    border-top: 1px solid var(--border);
+.welcome-moves button:hover {
+    background: var(--surface-raised);
 }
 
-.welcome-moves button:hover,
 .welcome-moves button:focus {
     outline: none;
-    background: var(--surface-raised);
+    box-shadow: none;
+    border-color: color-mix(in srgb, var(--acc) 55%, var(--border));
+    background: color-mix(in srgb, var(--acc) 8%, var(--surface-raised));
     color: var(--acc);
-}
-
-.welcome-moves button:focus {
-    box-shadow: inset 2px 0 0 var(--acc);
 }
 
 .welcome-moves span {
@@ -225,6 +223,7 @@
 .welcome-moves .kbd {
     padding: 3px 7px;
     border: 1px solid var(--border);
+    border-radius: var(--radius-1);
     background: var(--surface-sunken);
     font-size: var(--text-xs);
 }
@@ -262,6 +261,7 @@
     gap: 8px;
     padding: 7px 11px 7px 9px;
     border: 1px solid var(--border);
+    border-radius: var(--radius-2);
     background: color-mix(in srgb, var(--surface) 80%, transparent);
     color: var(--text-primary);
     font-size: var(--text-xs);
@@ -309,6 +309,7 @@
 .welcome-foot .kbd {
     padding: 2px 5px;
     border: 1px solid var(--border);
+    border-radius: var(--radius-1);
 }
 
 .experience-frame button:focus-visible {
