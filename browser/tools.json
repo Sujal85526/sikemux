@@ -395,6 +395,11 @@
         "idempotencyKey": {
           "type": "string",
           "maxLength": 128
+        },
+        "readyWhen": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
         }
       },
       "required": [
@@ -403,11 +408,27 @@
       ]
     },
     {
+      "name": "task_restart",
+      "method": "task.restart",
+      "description": "Stop a task's latest execution and start a new one.",
+      "properties": {
+        "taskId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "taskId"
+      ]
+    },
+    {
       "name": "task_read",
       "method": "task.read",
-      "description": "Read task status and new terminal output by byte cursor.",
+      "description": "Read task status and output by byte cursor, tail, or search.",
       "properties": {
         "executionId": {
+          "type": "string"
+        },
+        "taskId": {
           "type": "string"
         },
         "cursor": {
@@ -418,24 +439,41 @@
           "type": "integer",
           "minimum": 4,
           "maximum": 8192
+        },
+        "tail": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "search": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "context": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20
+        },
+        "plain": {
+          "type": "boolean"
         }
       },
-      "required": [
-        "executionId"
-      ]
+      "required": []
     },
     {
       "name": "task_stop",
       "method": "task.stop",
-      "description": "Stop the exact managed task execution and its process tree.",
+      "description": "Stop a managed task execution and its process tree.",
       "properties": {
         "executionId": {
           "type": "string"
+        },
+        "taskId": {
+          "type": "string"
         }
       },
-      "required": [
-        "executionId"
-      ]
+      "required": []
     },
     {
       "name": "ui_open",

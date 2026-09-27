@@ -39,6 +39,11 @@ export class HarnessTasks {
         return { ...this.entry(project, executionId).run };
     }
 
+    latest(project: string, taskId: string): HarnessRun | undefined {
+        const runs = this.list(project).filter((run) => run.taskId === taskId);
+        return runs.at(-1);
+    }
+
     existing(project: string, taskId: string, key: string): Promise<HarnessRun> | undefined {
         const previous = this.keys.get(JSON.stringify([project, key]));
         if (previous) {

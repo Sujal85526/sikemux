@@ -5403,8 +5403,7 @@ pub async fn pty_kill(manager: State<'_, PtyManager>, id: u32) -> AppResult<()> 
 pub async fn harness_task_output(
     manager: State<'_, PtyManager>,
     id: u32,
-    cursor: u64,
-    limit: usize,
+    query: crate::harness::OutputQuery,
 ) -> Result<crate::harness::OutputPage, String> {
     let pty = manager
         .ptys
@@ -5418,7 +5417,7 @@ pub async fn harness_task_output(
         pty.harness_output
             .lock()
             .map_err(|_| "output lock poisoned".to_string())?
-            .read(cursor, limit)
+            .query(&query)
     })
     .await
     .map_err(|e| format!("harness_task_output join: {e}"))?

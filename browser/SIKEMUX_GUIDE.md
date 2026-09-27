@@ -64,24 +64,48 @@ Two things can stop a launch:
   first. Starting a task already running through the harness just returns that
   execution.
 
+`readyWhen` makes `task_start` wait, up to 45 seconds, until that text
+appears in the output, such as `Ready in` for a dev server. The result then
+carries `ready`: `true` once it appeared, `false` if the task stopped or the
+wait ran out first.
+
+`task_restart` takes a `taskId`, stops that task's latest execution, starts a
+new one, and returns it. Use it instead of a stop followed by a start with a
+new key.
+
 A task you start opens its terminal as a tab on your desk, without taking the
 person's focus. To bring the person to it, call `ui_open` with
 `kind: "terminal"`, the `executionId`, and `focus: true`.
 
 ## Reading output
 
-`task_read` pages through a task's output by byte cursor.
+`task_read` pages through a task's output by byte cursor. Name the run with
+its `executionId`, or pass a `taskId` to read that task's latest execution.
 
 Start at cursor `0`. Pass the returned `cursor` into the next call. Keep
-reading while `hasMore` is true. Pages are 8 KiB by default; `limit` accepts
-4 to 8192 bytes.
+reading while `hasMore` is true. Every page reports `end`, the length of the
+output so far. Pages are 8 KiB by default; `limit` accepts 4 to 8192 bytes.
 
-Two things to expect in the bytes:
+Output is raw terminal data and may contain escape sequences. Three options
+change what comes back:
 
-- Output is raw terminal data and may contain escape sequences.
-- A task retains about 1 MiB. If your cursor is older than the retained bytes,
-  `truncated` comes back true — you have lost the gap and should read on from
-  the cursor you were given rather than trying to recover it.
+- `plain: true` strips escape sequences and replays carriage returns and
+  cursor moves, so a progress bar or build screen that redraws itself shows
+  each line once, in its final state. Runs of an identical line or block of
+  lines keep one copy and a note such as `[repeated 40 more times]`. The
+  cursor still counts raw bytes, so plain pages chain like raw ones.
+- `tail: N` returns the last N lines instead of paging from the cursor, which
+  answers "what did the server just say". Its `cursor` is `end`, ready for the
+  next read of new output.
+- `search: "text"` returns only the lines containing that text, ignoring case,
+  each with `context` lines around it (3 by default, at most 20), and groups
+  separated by `--`. It reads plain text and reports `matches`. It pages
+  forward from `cursor` like a normal read; with `tail: N` it returns the last
+  N matches instead, such as the latest stack trace.
+
+A task retains about 1 MiB. If your cursor is older than the retained bytes,
+`truncated` comes back true — you have lost the gap and should read on from
+the cursor you were given rather than trying to recover it.
 
 Finished terminals are kept for roughly ten minutes, and can be dropped sooner
 when the app is under pressure. Read output you care about promptly.
@@ -126,7 +150,8 @@ need to know the server is up, read the task output or navigate to it.
 ## Stopping
 
 `task_stop` takes an `executionId` and stops that exact execution and
-its process tree. It does not stop a task started from the command deck.
+its process tree. A `taskId` instead stops that task's latest execution. It
+does not stop a task started from the command deck.
 
 ## The browser
 

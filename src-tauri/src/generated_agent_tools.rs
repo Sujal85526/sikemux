@@ -27,6 +27,7 @@ pub const BROWSER_METHODS: &[&str] = &[
 pub const HARNESS_METHODS: &[&str] = &[
     "workspace.inspect",
     "task.start",
+    "task.restart",
     "task.read",
     "task.stop",
     "ui.open",
