@@ -91,7 +91,11 @@ impl Screen {
         }
         let numbers: Vec<usize> = parameters
             .split(';')
-            .map(|value| value.parse().map_or(0, |number: usize| number.min(MAX_COLUMN)))
+            .map(|value| {
+                value
+                    .parse()
+                    .map_or(0, |number: usize| number.min(MAX_COLUMN))
+            })
             .collect();
         let first = numbers.first().copied().unwrap_or(0);
         let count = first.max(1);
