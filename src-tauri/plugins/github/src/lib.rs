@@ -126,9 +126,6 @@ impl Plugin for GithubActions {
                 "workflows" => answer(workflows::list(data_dir, params(input)?)).await,
                 "branches" => answer(workflows::branches(data_dir, params(input)?)).await,
                 "dispatch" => answer(workflows::dispatch(data_dir, params(input)?)).await,
-                "setWorkflowEnabled" => {
-                    answer(workflows::set_enabled(data_dir, params(input)?)).await
-                }
 
                 "runs" => answer(runs::list(data_dir, params(input)?)).await,
                 "run" => answer(runs::detail(data_dir, params(input)?)).await,
