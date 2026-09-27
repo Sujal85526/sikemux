@@ -1,0 +1,108 @@
+import type { Job, Run, RunStatus, Step } from "./api";
+import type { StatusFilter } from "./state";
+
+/** What a run looks like at a glance, once its status and conclusion are read together. */
+export type Outcome = "running" | "queued" | "success" | "failure" | "cancelled" | "skipped" | "blocked" | "unknown";
+
+const BY_CONCLUSION: Record<string, Outcome> = {
+    success: "success",
+    failure: "failure",
+    timed_out: "failure",
+    startup_failure: "failure",
+    cancelled: "cancelled",
+    stale: "cancelled",
+    skipped: "skipped",
+    neutral: "skipped",
+    action_required: "blocked",
+};
+
+const BY_STATUS: Record<string, Outcome> = {
+    in_progress: "running",
+    queued: "queued",
+    requested: "queued",
+    pending: "queued",
+    waiting: "blocked",
+    action_required: "blocked",
+};
+
+/** A run that is over is described by its conclusion; one still going, by its status. */
+export function outcomeOf(thing: Pick<Run, "status" | "conclusion">): Outcome {
+    if (thing.status === "completed") return BY_CONCLUSION[thing.conclusion ?? ""] ?? "unknown";
+    return BY_STATUS[thing.status] ?? "unknown";
+}
+
+export function isRunning(thing: Pick<Run, "status" | "conclusion">): boolean {
+    const outcome = outcomeOf(thing);
+    return outcome === "running" || outcome === "queued";
+}
+
+export const OUTCOME_LABEL: Record<Outcome, string> = {
+    running: "Running",
+    queued: "Queued",
+    success: "Passed",
+    failure: "Failed",
+    cancelled: "Cancelled",
+    skipped: "Skipped",
+    blocked: "Waiting for approval",
+    unknown: "Unknown",
+};
+
+/** What the status filter sends to GitHub; "all" narrows by nothing. */
+export function statusParam(filter: StatusFilter): RunStatus | undefined {
+    return filter === "all" ? undefined : filter;
+}
+
+/** How long something took, or how long it has been going when it has not finished. */
+export function elapsedMs(started: string | null, finished: string | null, now: number): number | null {
+    if (!started) return null;
+    const from = Date.parse(started);
+    if (Number.isNaN(from)) return null;
+    const to = finished ? Date.parse(finished) : now;
+    if (Number.isNaN(to)) return null;
+    return Math.max(0, to - from);
+}
+
+/** A short duration the way a build log writes one: 4s, 1m 12s, 1h 3m. */
+export function formatDuration(ms: number | null): string {
+    if (ms === null) return "—";
+    const seconds = Math.round(ms / 1000);
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+    return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+const AGO: [limit: number, unit: string, per: number][] = [
+    [60, "s", 1],
+    [3600, "m", 60],
+    [86_400, "h", 3600],
+    [2_592_000, "d", 86_400],
+];
+
+/** How long ago something happened, in the one unit that fits. */
+export function formatAgo(timestamp: string | null, now: number): string {
+    if (!timestamp) return "—";
+    const at = Date.parse(timestamp);
+    if (Number.isNaN(at)) return "—";
+    const seconds = Math.max(0, Math.round((now - at) / 1000));
+    for (const [limit, unit, per] of AGO) {
+        if (seconds < limit) return `${Math.floor(seconds / per)}${unit} ago`;
+    }
+    return `${Math.floor(seconds / 2_592_000)}mo ago`;
+}
+
+/** The step a job stopped at, which is the one worth showing beside a failure. */
+export function failedStep(job: Job): Step | undefined {
+    return job.steps.find((step) => outcomeOf(step) === "failure");
+}
+
+/** How a whole run reads while its jobs are still landing one by one. */
+export function jobsSummary(jobs: Job[]): { done: number; total: number; failed: number } {
+    let done = 0;
+    let failed = 0;
+    for (const job of jobs) {
+        if (job.status === "completed") done += 1;
+        if (outcomeOf(job) === "failure") failed += 1;
+    }
+    return { done, total: jobs.length, failed };
+}
