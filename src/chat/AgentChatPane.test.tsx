@@ -29,7 +29,7 @@ const mocks = vi.hoisted(() => ({
     sessionContext: vi.fn(async (): Promise<{ used: number; size: number | null } | null> => null),
 }));
 
-vi.mock("../api/agents", () => ({ agentApi: { sessionContext: mocks.sessionContext } }));
+vi.mock("../api/agents", () => ({ agentApi: { sessionContext: mocks.sessionContext, available: async () => [] } }));
 
 vi.mock("../api/fs", () => ({
     fsapi: {

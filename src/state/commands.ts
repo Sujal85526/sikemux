@@ -12,7 +12,7 @@ import { sshApi } from "../api/ssh";
 import { checkForUpdateNow } from "../api/updater";
 import { basename, dirname, isPathWithin } from "../lib/paths";
 import { clampRailWidth, type RailEdge } from "../lib/railWidths";
-import { MAX_AGENT_MODEL_LENGTH, normalizePermissionMode } from "../agentLaunch";
+import { MAX_AGENT_MODEL_LENGTH, normalizePermissionMode, type ChatAgentType } from "../agentLaunch";
 import { cloneTheme, DEFAULT_THEME_ID, type Theme } from "../themes";
 import { sshStartup } from "../terminal/sshStartup";
 import { taskPtyBindings, type TaskTerminalPresentationRequest } from "../tasks/nativeRuntime";
@@ -1409,7 +1409,7 @@ export function agentSessionMetadataPending(agent: Agent): boolean {
     return title.length <= FALLBACK_AGENT_TITLE_MAX && agent.resumeId.startsWith(title);
 }
 
-export function configureEmptyAgent(id: string, type: "codex" | "claude", profileId?: string): void {
+export function configureEmptyAgent(id: string, type: ChatAgentType, profileId?: string): void {
     mutate((d) => {
         const agent = d.agents[id];
         const activity = d.agentActivity[id];

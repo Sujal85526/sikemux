@@ -20,7 +20,8 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { acpApi, type AcpEvent } from "../api/acp";
 import { fsapi } from "../api/fs";
 import { invokeCommand as invoke } from "../api/invoke";
-import { ComposerPickers, sessionConfigs, type SessionConfig } from "./ComposerPickers";
+import { agentSupportsSkipPermissions } from "../state/commands/agentLogic";
+import { ComposerPickers, effortConfig, sessionConfigs, type SessionConfig } from "./ComposerPickers";
 import { rateLabel, rowMeta } from "./messageMeta";
 import { CopyButton } from "../components/CopyButton";
 import { FileIcon } from "../components/FileIcon";
@@ -1550,11 +1551,15 @@ function ChatComposer({
                 <button type="button" className="chat-composer-icon" aria-label="Add files" onClick={() => void chooseFiles()}>
                     <IconPlus size={17} />
                 </button>
-                <YoloToggle
-                    agent={agent}
-                    relaunches={false}
-                    disabled={connection !== "ready" || changingConfig || running || awaitingPermission || changingPermissions || !permissionApplied}
-                />
+                {agentSupportsSkipPermissions(agent.type) && (
+                    <YoloToggle
+                        agent={agent}
+                        relaunches={false}
+                        disabled={
+                            connection !== "ready" || changingConfig || running || awaitingPermission || changingPermissions || !permissionApplied
+                        }
+                    />
+                )}
                 <ComposerPickers
                     agent={agent}
                     profile={profile}
@@ -2044,8 +2049,7 @@ export function AgentChatPane({
             dispatch({ type: "config", options: response.configOptions });
             const options = sessionConfigs({ configOptions: response.configOptions });
             const model = options.find((option) => option.id === "model")?.currentValue ?? agent.model;
-            const effort =
-                options.find((option) => option.id === (agent.type === "claude" ? "effort" : "reasoning_effort"))?.currentValue ?? agent.effort;
+            const effort = effortConfig(options, agent.type)?.currentValue ?? agent.effort;
             const knownEffort = ["off", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"].includes(effort ?? "")
                 ? (effort as Agent["effort"])
                 : undefined;

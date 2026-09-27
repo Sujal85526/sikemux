@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import type { Agent, ProviderProfile, Session } from "../state/types";
 import { acpApi } from "../api/acp";
+import { agentSupportsChat } from "../agentLaunch";
 import { TerminalPane } from "../terminal/TerminalPane";
 import { IconAgent, IconCommand, IconPanelRight } from "../components/Icons";
 import { useStore } from "../state/store";
@@ -29,7 +30,7 @@ function DeskButton({ agent }: { agent: Agent }) {
 }
 
 export function AgentSurface({ agent, session, profile, visible }: { agent: Agent; session: Session; profile?: ProviderProfile; visible: boolean }) {
-    const supportsGui = agent.type === "claude" || agent.type === "codex";
+    const supportsGui = agentSupportsChat(agent.type);
     const [view, setView] = useState<AgentView>(supportsGui ? "gui" : "tui");
     const [switching, setSwitching] = useState(false);
     const [chatBusy, setChatBusy] = useState(false);
