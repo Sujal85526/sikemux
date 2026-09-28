@@ -69,7 +69,13 @@ pub fn from_remote(url: &str) -> Option<Repo> {
         (host.to_string(), path.to_string())
     } else if trimmed.contains("://") {
         let parsed = url::Url::parse(trimmed).ok()?;
-        let host = parsed.host_str()?.to_string();
+        let host = parsed.host_str()?;
+        // A port on an https remote is where that GitHub serves its API too;
+        // one on an ssh remote is only for git.
+        let host = match parsed.port() {
+            Some(port) if matches!(parsed.scheme(), "https" | "http") => format!("{host}:{port}"),
+            _ => host.to_string(),
+        };
         (host, parsed.path().to_string())
     } else {
         // `host:owner/repo`, the scp-like form without a user.
@@ -180,6 +186,22 @@ mod tests {
         assert_eq!(
             from_remote("git@git.Example.COM:team/service.git"),
             repo("git.example.com", "team", "service")
+        );
+    }
+
+    #[test]
+    fn keeps_the_port_of_a_company_github_served_over_https() {
+        assert_eq!(
+            from_remote("https://ghe.corp:8443/team/service.git"),
+            repo("ghe.corp:8443", "team", "service")
+        );
+        assert_eq!(
+            from_remote("https://ghe.corp:443/team/service.git"),
+            repo("ghe.corp", "team", "service")
+        );
+        assert_eq!(
+            from_remote("ssh://git@ghe.corp:2222/team/service.git"),
+            repo("ghe.corp", "team", "service")
         );
     }
 

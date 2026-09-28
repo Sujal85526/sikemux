@@ -162,6 +162,20 @@ pub fn is_in_repository(path: &str) -> bool {
     path.starts_with(".github/")
 }
 
+/// A file's path as it goes into an address: `#`, `?` and spaces would
+/// otherwise end or break it, so each piece between slashes is escaped.
+fn encode_path(path: &str) -> String {
+    let mut encoded = String::with_capacity(path.len());
+    for byte in path.bytes() {
+        if byte.is_ascii_alphanumeric() || b"-._~/".contains(&byte) {
+            encoded.push(char::from(byte));
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    encoded
+}
+
 /// The YAML a run came from, read at the default branch. A workflow's own
 /// record carries the path, so the file is fetched in two steps.
 pub async fn file(data_dir: &Path, input: FileRef) -> GithubResult<WorkflowFile> {
@@ -178,7 +192,9 @@ pub async fn file(data_dir: &Path, input: FileRef) -> GithubResult<WorkflowFile>
             "GitHub runs this workflow itself, so the repository has no file for it".into(),
         ));
     }
-    let contents = input.repo.path(&format!("/contents/{}", row.path))?;
+    let contents = input
+        .repo
+        .path(&format!("/contents/{}", encode_path(&row.path)))?;
     let (bytes, _) =
         client::download_as(data_dir, &contents, "application/vnd.github.raw", false).await?;
     let text = String::from_utf8_lossy(&bytes).into_owned();
@@ -245,6 +261,19 @@ mod tests {
         assert_eq!(sent.get("count"), Some(&json!("3")));
         assert_eq!(sent.get("dry"), Some(&json!("true")));
         assert_eq!(sent.get("none"), Some(&json!("")));
+    }
+
+    #[test]
+    fn a_workflow_path_cannot_end_the_address_early() {
+        assert_eq!(
+            encode_path(".github/workflows/ci.yml"),
+            ".github/workflows/ci.yml"
+        );
+        assert_eq!(
+            encode_path(".github/workflows/a #1?.yml"),
+            ".github/workflows/a%20%231%3F.yml"
+        );
+        assert_eq!(encode_path("é"), "%C3%A9");
     }
 
     #[test]
