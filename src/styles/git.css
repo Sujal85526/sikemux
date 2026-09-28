@@ -64,32 +64,23 @@
 .git-tb-grow {
     flex: 1 1 auto;
 }
-.git-tb-sync {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+.git-tb-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    flex: none;
+    height: 18px;
+    padding: 0 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-1);
     color: var(--text-tertiary);
-    font-size: var(--text-xs);
-}
-.git-tb-sync .mono {
     font-family: var(--mono);
     font-size: var(--text-2xs);
+    white-space: nowrap;
 }
-.git-tb-sync b {
-    font-family: var(--mono);
-    font-size: var(--text-2xs);
-    font-weight: var(--weight-medium);
-    margin-right: var(--space-0);
-}
-.git-tb-ahead {
-    color: var(--warn);
-}
-.git-tb-behind {
-    color: var(--git-renamed);
-}
-.git-tb-error {
+.git-tb-chip.error {
     color: var(--danger);
+    border-color: color-mix(in oklab, var(--danger) 32%, transparent);
 }
 .git-tb-busy {
     display: inline-flex;
@@ -219,8 +210,16 @@
     font-variant-numeric: tabular-nums;
 }
 .git-toolbar .git-switch {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 280px;
     padding: 0 6px 0 8px;
     color: var(--text-primary);
+}
+.git-switch .mono {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .git-switch .mono {
     font-family: var(--mono);

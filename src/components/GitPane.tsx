@@ -938,21 +938,6 @@ function GitWorkbench({
     const ahead = status?.ahead ?? 0;
     const behind = status?.behind ?? 0;
     const upstream = status?.upstream ?? null;
-    const syncText = overviewLoading ? (
-        "loading…"
-    ) : overviewError ? (
-        <span className="git-tb-error">git error</span>
-    ) : !upstream ? (
-        "no upstream"
-    ) : (
-        <>
-            {ahead > 0 && <b className="git-tb-ahead">↑{ahead}</b>}
-            {behind > 0 && <b className="git-tb-behind">↓{behind}</b>}
-            {ahead > 0 && behind === 0 ? " ahead of " : behind > 0 && ahead === 0 ? " behind " : ahead > 0 ? " with " : "up to date with "}
-            <span className="mono">{upstream}</span>
-        </>
-    );
-
     const fileRowRange =
         rangeAnchor === null ? null : ([Math.min(rangeAnchor, selectedFileIndex), Math.max(rangeAnchor, selectedFileIndex)] as [number, number]);
 
@@ -1512,7 +1497,7 @@ function GitWorkbench({
                         <IconChevron size={9} className="git-switch-chev" />
                     </button>
                 </Tooltip>
-                <span className="git-tb-sync">{syncText}</span>
+                {overviewError && <span className="git-tb-chip error">git error</span>}
                 {busy && (
                     <span className={`git-tb-busy${busy.startsWith("✗") ? " error" : ""}`}>
                         {!busy.startsWith("✗") && <span className="git-panel-spinner" />}
