@@ -131,14 +131,16 @@ pub async fn list(data_dir: &Path, input: Query) -> ActionsResult<Vec<Notificati
         ],
     )
     .await?;
-    let pages = futures::future::join_all(rows.iter().map(|row| async {
-        match (row.subject.kind.as_deref(), row.subject.url.as_deref()) {
-            (Some("Release"), Some(url)) => release_page(data_dir, url).await,
-            (_, Some(url)) => web_url(&host, url),
-            _ => None,
-        }
-    }))
-    .await;
+    let mut pages = Vec::with_capacity(rows.len());
+    for row in &rows {
+        pages.push(
+            match (row.subject.kind.as_deref(), row.subject.url.as_deref()) {
+                (Some("Release"), Some(url)) => release_page(data_dir, url).await,
+                (_, Some(url)) => web_url(&host, url),
+                _ => None,
+            },
+        );
+    }
     Ok(rows
         .into_iter()
         .zip(pages)
