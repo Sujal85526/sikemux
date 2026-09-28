@@ -54,10 +54,17 @@ struct GithubActions {
     manifest: Manifest,
 }
 
-async fn answer<T: Serialize>(
-    result: impl std::future::Future<Output = ActionsResult<T>>,
-) -> Result<Value, PluginError> {
-    reply(result.await?)
+/// Reads a method's input, runs it, and hands back its answer.
+fn answer<'a, I, T, F>(
+    input: Value,
+    work: impl FnOnce(I) -> F + Send + 'a,
+) -> PluginFuture<'a, Value>
+where
+    I: serde::de::DeserializeOwned + Send + 'a,
+    T: Serialize,
+    F: std::future::Future<Output = ActionsResult<T>> + Send + 'a,
+{
+    Box::pin(async move { reply(work(params(input)?).await?) })
 }
 
 #[derive(Deserialize)]
@@ -118,77 +125,73 @@ impl Plugin for GithubActions {
         method: &'a str,
         input: Value,
     ) -> PluginFuture<'a, Value> {
-        Box::pin(async move {
-            let data_dir = ctx.data_dir();
-            match method {
-                "status" => reply(auth::status(data_dir).await),
-                "signIn" => {
-                    signed_in(data_dir, auth::sign_in(data_dir, params(input)?).await).await
-                }
-                "signOut" => answer(auth::sign_out(data_dir)).await,
+        let data_dir = ctx.data_dir();
+        // Each method is its own boxed future. Folded into one, every method's
+        // state lived in a single machine several times the size of all of them.
+        match method {
+            "status" => Box::pin(async move { reply(auth::status(data_dir).await) }),
+            "signIn" => Box::pin(async move {
+                signed_in(data_dir, auth::sign_in(data_dir, params(input)?).await).await
+            }),
+            "signOut" => Box::pin(async move { reply(auth::sign_out(data_dir).await?) }),
 
-                "resolveRemote" => reply(resolve(data_dir, params(input)?)),
-                "myRepos" => {
-                    let query: MineQuery = params(input)?;
-                    answer(repo::mine(data_dir, query.limit)).await
-                }
+            "resolveRemote" => Box::pin(async move { reply(resolve(data_dir, params(input)?)) }),
+            "myRepos" => answer(input, move |query: MineQuery| {
+                repo::mine(data_dir, query.limit)
+            }),
+            "workflows" => answer(input, move |q| workflows::list(data_dir, q)),
+            "branches" => answer(input, move |q| workflows::branches(data_dir, q)),
+            "dispatch" => answer(input, move |q| workflows::dispatch(data_dir, q)),
 
-                "workflows" => answer(workflows::list(data_dir, params(input)?)).await,
-                "branches" => answer(workflows::branches(data_dir, params(input)?)).await,
-                "dispatch" => answer(workflows::dispatch(data_dir, params(input)?)).await,
+            "runs" => answer(input, move |q| runs::list(data_dir, q)),
+            "run" => answer(input, move |q| runs::detail(data_dir, q)),
+            "rerun" => answer(input, move |q| runs::rerun(data_dir, q)),
+            "rerunJob" => answer(input, move |q| runs::rerun_job(data_dir, q)),
+            "cancel" => answer(input, move |q| runs::cancel(data_dir, q)),
+            "deleteRunLogs" => answer(input, move |q| runs::delete_logs(data_dir, q)),
+            "deleteRun" => answer(input, move |q| runs::delete(data_dir, q)),
+            "runAttempt" => answer(input, move |q| runs::attempt(data_dir, q)),
 
-                "runs" => answer(runs::list(data_dir, params(input)?)).await,
-                "run" => answer(runs::detail(data_dir, params(input)?)).await,
-                "jobs" => answer(runs::jobs(data_dir, params(input)?)).await,
-                "rerun" => answer(runs::rerun(data_dir, params(input)?)).await,
-                "rerunJob" => answer(runs::rerun_job(data_dir, params(input)?)).await,
-                "cancel" => answer(runs::cancel(data_dir, params(input)?)).await,
-                "deleteRunLogs" => answer(runs::delete_logs(data_dir, params(input)?)).await,
-                "deleteRun" => answer(runs::delete(data_dir, params(input)?)).await,
-                "runAttempt" => answer(runs::attempt(data_dir, params(input)?)).await,
+            "jobLog" => answer(input, move |q| logs::job(data_dir, q)),
+            "annotations" => answer(input, move |q| annotations::list(data_dir, q)),
+            "jobSummary" => answer(input, move |q| annotations::summary(data_dir, q)),
+            "runTiming" => answer(input, move |q| runs::timing(data_dir, q)),
+            "workflowFile" => answer(input, move |q| workflows::file(data_dir, q)),
 
-                "jobLog" => answer(logs::job(data_dir, params(input)?)).await,
-                "annotations" => answer(annotations::list(data_dir, params(input)?)).await,
-                "jobSummary" => answer(annotations::summary(data_dir, params(input)?)).await,
-                "runTiming" => answer(runs::timing(data_dir, params(input)?)).await,
-                "workflowFile" => answer(workflows::file(data_dir, params(input)?)).await,
+            "artifacts" => answer(input, move |q| artifacts::list(data_dir, q)),
+            "downloadArtifact" => answer(input, move |q| artifacts::download(data_dir, q)),
 
-                "artifacts" => answer(artifacts::list(data_dir, params(input)?)).await,
-                "downloadArtifact" => answer(artifacts::download(data_dir, params(input)?)).await,
+            "pendingApprovals" => answer(input, move |q| approvals::pending(data_dir, q)),
+            "reviewDeployment" => answer(input, move |q| approvals::review(data_dir, q)),
 
-                "pendingApprovals" => answer(approvals::pending(data_dir, params(input)?)).await,
-                "reviewDeployment" => answer(approvals::review(data_dir, params(input)?)).await,
+            "pulls" => answer(input, move |q| pulls::list(data_dir, q)),
+            "pull" => answer(input, move |q| pulls::get(data_dir, q)),
+            "pullFiles" => answer(input, move |q| pulls::files(data_dir, q)),
+            "pullReviews" => answer(input, move |q| pulls::reviews(data_dir, q)),
+            "mergePull" => answer(input, move |q| pulls::merge(data_dir, q)),
+            "createPull" => answer(input, move |q| pulls::create(data_dir, q)),
+            "setPullState" => answer(input, move |q| pulls::set_state(data_dir, q)),
+            "reviewPull" => answer(input, move |q| pulls::review(data_dir, q)),
 
-                "pulls" => answer(pulls::list(data_dir, params(input)?)).await,
-                "pull" => answer(pulls::get(data_dir, params(input)?)).await,
-                "pullFiles" => answer(pulls::files(data_dir, params(input)?)).await,
-                "pullReviews" => answer(pulls::reviews(data_dir, params(input)?)).await,
-                "mergePull" => answer(pulls::merge(data_dir, params(input)?)).await,
-                "createPull" => answer(pulls::create(data_dir, params(input)?)).await,
-                "setPullState" => answer(pulls::set_state(data_dir, params(input)?)).await,
-                "reviewPull" => answer(pulls::review(data_dir, params(input)?)).await,
+            "issues" => answer(input, move |q| issues::list(data_dir, q)),
+            "issue" => answer(input, move |q| issues::get(data_dir, q)),
+            "setIssueState" => answer(input, move |q| issues::set_state(data_dir, q)),
+            "createIssue" => answer(input, move |q| issues::create(data_dir, q)),
 
-                "issues" => answer(issues::list(data_dir, params(input)?)).await,
-                "issue" => answer(issues::get(data_dir, params(input)?)).await,
-                "setIssueState" => answer(issues::set_state(data_dir, params(input)?)).await,
-                "createIssue" => answer(issues::create(data_dir, params(input)?)).await,
+            "addComment" => answer(input, move |q| common::add_comment(data_dir, q)),
 
-                "comments" => {
-                    let thread: common::Thread = params(input)?;
-                    answer(common::comments(data_dir, &thread.repo, thread.number)).await
-                }
-                "addComment" => answer(common::add_comment(data_dir, params(input)?)).await,
+            "releases" => answer(input, move |q| releases::list(data_dir, q)),
+            "downloadAsset" => answer(input, move |q| releases::download(data_dir, q)),
 
-                "releases" => answer(releases::list(data_dir, params(input)?)).await,
-                "downloadAsset" => answer(releases::download(data_dir, params(input)?)).await,
+            "inbox" => answer(input, move |q| inbox::list(data_dir, q)),
+            "markRead" => answer(input, move |q| inbox::mark_read(data_dir, q)),
+            "comments" => answer(input, move |thread: common::Thread| async move {
+                common::comments(data_dir, &thread.repo, thread.number).await
+            }),
+            "markAllRead" => Box::pin(async move { reply(inbox::mark_all_read(data_dir).await?) }),
 
-                "inbox" => answer(inbox::list(data_dir, params(input)?)).await,
-                "markRead" => answer(inbox::mark_read(data_dir, params(input)?)).await,
-                "markAllRead" => answer(inbox::mark_all_read(data_dir)).await,
-
-                _ => Err(PluginError::unknown_method(method)),
-            }
-        })
+            _ => Box::pin(async move { Err(PluginError::unknown_method(method)) }),
+        }
     }
 
     fn stream<'a>(

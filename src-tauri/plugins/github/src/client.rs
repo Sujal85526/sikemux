@@ -223,21 +223,39 @@ pub async fn send(
     Ok((status, headers, bytes))
 }
 
-pub async fn request<T: DeserializeOwned>(
+/// The body of a successful answer. The network half of every call lives in
+/// these functions, which are not generic, so each shape of answer only adds
+/// its own parsing to the app rather than another copy of the request.
+async fn body_of(
     session: &Session,
     method: Method,
     path: &str,
     query: &[(&str, String)],
     body: Option<&Value>,
-) -> ActionsResult<T> {
+) -> ActionsResult<Vec<u8>> {
     let (status, headers, bytes) = send(session, method, path, query, body).await?;
     if !status.is_success() {
         return Err(classify(status, &headers, &bytes));
     }
+    Ok(bytes)
+}
+
+async fn fetch(
+    data_dir: &Path,
+    method: Method,
+    path: &str,
+    query: &[(&str, String)],
+    body: Option<&Value>,
+) -> ActionsResult<Vec<u8>> {
+    let session = Session::current(data_dir)?;
+    body_of(&session, method, path, query, body).await
+}
+
+fn parse<T: DeserializeOwned>(bytes: &[u8]) -> ActionsResult<T> {
     if bytes.iter().all(u8::is_ascii_whitespace) {
-        return Ok(serde_json::from_value(Value::Null)?);
+        return Ok(serde_json::from_slice(b"null")?);
     }
-    Ok(serde_json::from_slice(&bytes)?)
+    Ok(serde_json::from_slice(bytes)?)
 }
 
 pub async fn get<T: DeserializeOwned>(
@@ -245,8 +263,7 @@ pub async fn get<T: DeserializeOwned>(
     path: &str,
     query: &[(&str, String)],
 ) -> ActionsResult<T> {
-    let session = Session::current(data_dir)?;
-    request(&session, Method::GET, path, query, None).await
+    parse(&fetch(data_dir, Method::GET, path, query, None).await?)
 }
 
 /// A write whose answer is the thing it made, such as a new pull request or issue.
@@ -256,8 +273,7 @@ pub async fn send_json<T: DeserializeOwned>(
     path: &str,
     body: &Value,
 ) -> ActionsResult<T> {
-    let session = Session::current(data_dir)?;
-    request(&session, method, path, &[], Some(body)).await
+    parse(&fetch(data_dir, method, path, &[], Some(body)).await?)
 }
 
 /// Every page of a list GitHub splits into pages of a hundred, up to
@@ -302,6 +318,20 @@ pub async fn get_if_changed<T: DeserializeOwned>(
     query: &[(&str, String)],
     etag: Option<&str>,
 ) -> ActionsResult<Conditional<T>> {
+    let (bytes, etag, remaining) = fetch_if_changed(data_dir, path, query, etag).await?;
+    Ok(Conditional {
+        value: bytes.as_deref().map(parse).transpose()?,
+        etag,
+        remaining,
+    })
+}
+
+async fn fetch_if_changed(
+    data_dir: &Path,
+    path: &str,
+    query: &[(&str, String)],
+    etag: Option<&str>,
+) -> ActionsResult<(Option<Vec<u8>>, Option<String>, Option<u64>)> {
     let session = Session::current(data_dir)?;
     let url = format!("{}{path}", config::api_base(&session.host));
     let mut request = http()?
@@ -320,11 +350,7 @@ pub async fn get_if_changed<T: DeserializeOwned>(
     let header = |name: &str| headers.get(name).and_then(|value| value.to_str().ok());
     let remaining = header("x-ratelimit-remaining").and_then(|value| value.trim().parse().ok());
     if status == StatusCode::NOT_MODIFIED {
-        return Ok(Conditional {
-            value: None,
-            etag: etag.map(str::to_string),
-            remaining,
-        });
+        return Ok((None, etag.map(str::to_string), remaining));
     }
     if !status.is_success() {
         if status == StatusCode::UNAUTHORIZED {
@@ -332,11 +358,7 @@ pub async fn get_if_changed<T: DeserializeOwned>(
         }
         return Err(classify(status, &headers, &bytes));
     }
-    Ok(Conditional {
-        etag: header("etag").map(str::to_string),
-        value: Some(serde_json::from_slice(&bytes)?),
-        remaining,
-    })
+    Ok((Some(bytes), header("etag").map(str::to_string), remaining))
 }
 
 pub async fn post_empty(data_dir: &Path, path: &str, body: Option<&Value>) -> ActionsResult<()> {
@@ -418,32 +440,31 @@ pub async fn download_to(
 }
 
 async fn write_stream(response: Response, target: &Path) -> ActionsResult<u64> {
-    use tokio::io::AsyncWriteExt;
+    use std::io::Write;
     let failed =
         |error: std::io::Error| ActionsError::Transport(format!("saving the download: {error}"));
     let partial = target.with_extension(match target.extension() {
         Some(extension) => format!("{}.part", extension.to_string_lossy()),
         None => "part".to_string(),
     });
-    let mut file = tokio::fs::File::create(&partial).await.map_err(failed)?;
+    let mut file = std::fs::File::create(&partial).map_err(failed)?;
     let mut stream = response.bytes_stream();
     let mut written: u64 = 0;
     let outcome: ActionsResult<()> = async {
         while let Some(chunk) = stream.next().await {
             let chunk = chunk?;
-            file.write_all(&chunk).await.map_err(failed)?;
+            file.write_all(&chunk).map_err(failed)?;
             written += chunk.len() as u64;
         }
-        file.flush().await.map_err(failed)?;
-        Ok(())
+        file.flush().map_err(failed)
     }
     .await;
     drop(file);
     if let Err(error) = outcome {
-        tokio::fs::remove_file(&partial).await.ok();
+        std::fs::remove_file(&partial).ok();
         return Err(error);
     }
-    tokio::fs::rename(&partial, target).await.map_err(failed)?;
+    std::fs::rename(&partial, target).map_err(failed)?;
     Ok(written)
 }
 
