@@ -89,7 +89,15 @@ pub async fn status(data_dir: &Path) -> Status {
     };
     let session = match Session::current(data_dir) {
         Ok(session) => session,
-        Err(_) => return base(false, false, String::new(), None, Vec::new(), None),
+        // Not signed in, but a token the shell or `gh` holds can be offered.
+        Err(_) => {
+            let waiting = config::env_token()
+                .map(|_| TokenSource::Environment)
+                .or_else(|| config::gh_cli_token(&config.host).map(|_| TokenSource::GhCli));
+            let mut status = base(false, false, String::new(), waiting, Vec::new(), None);
+            status.configured = false;
+            return status;
+        }
     };
     let source = session.source;
     match identify(&session).await {
@@ -127,36 +135,35 @@ pub struct SignIn {
 }
 
 pub async fn sign_in(data_dir: &Path, input: SignIn) -> ActionsResult<()> {
+    let before = config::load(data_dir);
     let host = match input.host.as_deref() {
         Some(host) => config::validate_host(host)?,
-        None => config::load(data_dir).host,
+        None => before.host.clone(),
     };
     let token = input.token.map(|token| token.trim().to_string());
-    let (token, owns_token) = match token.filter(|token| !token.is_empty()) {
-        Some(token) => (token, true),
-        None => {
-            let existing = config::env_token()
-                .or_else(|| config::gh_cli_token(&host))
-                .ok_or_else(|| {
-                    ActionsError::Auth(
-                        "no token was given, and none is in the environment or the gh CLI".into(),
-                    )
-                })?;
-            (existing, false)
-        }
+    let (token, source) = match token.filter(|token| !token.is_empty()) {
+        Some(token) => (token, TokenSource::Keychain),
+        None => config::env_token()
+            .map(|token| (token, TokenSource::Environment))
+            .or_else(|| config::gh_cli_token(&host).map(|token| (token, TokenSource::GhCli)))
+            .ok_or_else(|| {
+                ActionsError::Auth(
+                    "no token was given, and none is in the environment or the gh CLI".into(),
+                )
+            })?,
     };
+    let owns_token = source == TokenSource::Keychain;
     let probe = Session {
         host: host.clone(),
         token: token.clone(),
-        source: if owns_token {
-            TokenSource::Keychain
-        } else {
-            TokenSource::Environment
-        },
+        source,
     };
     let identity = identify(&probe).await?;
     if owns_token {
         config::keychain_write(&host, &token)?;
+    }
+    if leaves_a_token_behind(&before, &host, owns_token) {
+        config::keychain_delete(&before.host)?;
     }
     config::forget_token();
     config::save(
@@ -164,20 +171,35 @@ pub async fn sign_in(data_dir: &Path, input: SignIn) -> ActionsResult<()> {
         &ActionsConfig {
             host,
             login: identity.login,
+            source: Some(source),
             owns_token,
+            signed_out: false,
         },
     )
 }
 
+/// A token Sikemux saved earlier is deleted once a sign-in stops using it,
+/// rather than left in the Keychain where nothing will ever clear it.
+fn leaves_a_token_behind(before: &ActionsConfig, host: &str, owns_token: bool) -> bool {
+    before.owns_token && !(owns_token && before.host == host)
+}
+
 /// Only a token Sikemux saved is deleted. One the shell or `gh` provides is
-/// left where it is, and simply stops being used here.
+/// left where it is, and is not used here again until somebody signs in.
 pub async fn sign_out(data_dir: &Path) -> ActionsResult<()> {
     config::forget_token();
     let config = config::load(data_dir);
     if config.owns_token {
         config::keychain_delete(&config.host)?;
     }
-    config::forget(data_dir)
+    config::save(
+        data_dir,
+        &ActionsConfig {
+            host: config.host,
+            signed_out: true,
+            ..ActionsConfig::default()
+        },
+    )
 }
 
 #[cfg(test)]
@@ -190,5 +212,22 @@ mod tests {
         assert!(can_write(&["repo".into(), "workflow".into()]));
         assert!(!can_write(&["repo".into()]));
         assert!(!can_write(&["read:org".into()]));
+    }
+
+    #[test]
+    fn a_saved_token_goes_once_nothing_uses_it() {
+        let owned = ActionsConfig {
+            host: "github.com".into(),
+            owns_token: true,
+            ..ActionsConfig::default()
+        };
+        assert!(leaves_a_token_behind(&owned, "github.com", false));
+        assert!(leaves_a_token_behind(&owned, "ghe.corp", true));
+        assert!(!leaves_a_token_behind(&owned, "github.com", true));
+        assert!(!leaves_a_token_behind(
+            &ActionsConfig::default(),
+            "github.com",
+            false
+        ));
     }
 }
