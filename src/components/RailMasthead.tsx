@@ -29,6 +29,25 @@ function ProgressRing({ percent }: { percent: number | null }) {
     );
 }
 
+function splitVersion(version: string): { release: string; channel: string | null } {
+    const match = /^(\d+\.\d+\.\d+)-([a-z]+)(?:\.(\d+))?$/i.exec(version);
+    if (!match) return { release: version, channel: null };
+    const [, release, name, build] = match;
+    return { release, channel: build ? `${name} ${build}` : name };
+}
+
+function VersionLabel({ version }: { version: string }) {
+    const { release, channel } = splitVersion(version);
+    return (
+        <Tooltip label={`Sikemux ${version}`}>
+            <span className="rail-masthead-version">
+                v{release}
+                {channel && <span className="rail-masthead-channel">{channel}</span>}
+            </span>
+        </Tooltip>
+    );
+}
+
 export function UpdateButton() {
     const pending = useStore((s) => s.pendingUpdate);
     if (!pending) return null;
@@ -60,7 +79,7 @@ export function RailMasthead() {
         <div className="rail-masthead">
             <Logo size={14} className="rail-masthead-logo" />
             <span className="rail-masthead-name">Sikemux</span>
-            {version && <span className="rail-masthead-version">v{version}</span>}
+            {version && <VersionLabel version={version} />}
             <span className="rail-masthead-actions">
                 <UpdateButton />
                 <RailToggle edge="start" />

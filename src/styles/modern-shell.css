@@ -138,15 +138,28 @@ textarea:focus,
 }
 
 .rail-masthead-version {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
     padding-top: 1px;
     font-family: var(--mono);
     font-size: var(--text-3xs);
     font-variant-numeric: tabular-nums;
     color: var(--ink-faint);
-    min-width: 0;
+    white-space: nowrap;
+}
+
+.rail-masthead-channel {
+    padding: 1px var(--space-1);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-1);
+    font-family: var(--ui);
+    font-size: var(--text-3xs);
+    font-weight: var(--weight-medium);
+    line-height: 1.2;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 .rail-masthead-actions {
