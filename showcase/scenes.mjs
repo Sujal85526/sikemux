@@ -175,12 +175,13 @@ export const SCENES = [
     name: "github-run",
     settle: 1600,
     setup: async (page) => {
-      await openWindow(page, "s-github", "w-github");
+      await openWindow(page, "s-sikemux", "w-sikemux-git");
       await page.waitForTimeout(500);
       await run(page, async () => {
-        const github = await import("/src/plugins/github/state.ts");
-        github.showRepo("p-github", { owner: "nodelike", name: "sikemux" });
-        github.showRun("p-github", 36316473434);
+        const commands = await import("/src/state/commands.ts");
+        const host = await import("/src/codehost/state.ts");
+        commands.setGitView("p-git", { area: "actions" });
+        host.showRun("p-git", 36316473434);
       });
     },
     crops: {

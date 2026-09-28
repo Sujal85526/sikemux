@@ -33,6 +33,7 @@ import { whenStageStill } from "../state/nativeViews";
 import { errMessage, notify } from "../state/toast";
 import { DEFAULT_GIT_VIEW, type GitPanel } from "../state/types";
 import { copyText } from "../lib/clipboard";
+import { GitHostShell } from "../codehost/components/GitHostShell";
 import { FileIcon } from "./FileIcon";
 import { TreeContextMenu, type CtxItem } from "./FileTree";
 import {
@@ -791,6 +792,7 @@ function GitWorkbench({
             return;
         if (ae.closest('input, textarea, [contenteditable="true"]')) return;
         if (ae.closest(".cm-editor")) return;
+        if (view.area !== "local") return;
         const k = e.key;
         if (e.ctrlKey) {
             if (k === "p" || k === "P") {
@@ -1527,41 +1529,43 @@ function GitWorkbench({
                 </Tooltip>
                 <MoreButton label="Remotes, stashes and more" onOpen={openMoreMenu} className="git-btn icon" />
             </div>
-            <div className="git-body">
-                <div className="git-left" ref={leftRef} style={view.leftWidth ? { width: view.leftWidth } : undefined}>
-                    <div className="git-tabs" role="tablist" aria-label="Git views">
-                        {tabs.map(([id, label, icon, count]) => (
-                            <button
-                                key={id}
-                                type="button"
-                                role="tab"
-                                aria-selected={tabOf(panel) === id}
-                                className={tabOf(panel) === id ? "on" : ""}
-                                onClick={() => setPanel(id === "files" && historyOpen && panel === "commits" ? "commits" : id)}>
-                                {icon}
-                                {label}
-                                {count ? <span className="git-tab-count">{count}</span> : null}
-                            </button>
-                        ))}
+            <GitHostShell paneId={paneId} cwd={repo} area={view.area} active={active} onArea={(area) => cmd.setGitView(paneId, { area })}>
+                <div className="git-body">
+                    <div className="git-left" ref={leftRef} style={view.leftWidth ? { width: view.leftWidth } : undefined}>
+                        <div className="git-tabs" role="tablist" aria-label="Git views">
+                            {tabs.map(([id, label, icon, count]) => (
+                                <button
+                                    key={id}
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={tabOf(panel) === id}
+                                    className={tabOf(panel) === id ? "on" : ""}
+                                    onClick={() => setPanel(id === "files" && historyOpen && panel === "commits" ? "commits" : id)}>
+                                    {icon}
+                                    {label}
+                                    {count ? <span className="git-tab-count">{count}</span> : null}
+                                </button>
+                            ))}
+                        </div>
+                        {left}
+                        {cmdLogOpen && <GitCmdLogBar />}
                     </div>
-                    {left}
-                    {cmdLogOpen && <GitCmdLogBar />}
-                </div>
-                <SplitHandle leftRef={leftRef} width={view.leftWidth} onResize={(width) => cmd.setGitView(paneId, { leftWidth: width })} />
-                <div className="git-right">
-                    <div className="git-right-review">
-                        <Suspense fallback={<SkeletonRows rows={6} label="Loading diff preview" />}>{right}</Suspense>
-                        {busy && !busy.startsWith("✗") && (
-                            <div className="git-busy-overlay">
-                                <div className="git-busy-card">
-                                    <span className="git-busy-spinner" />
-                                    <span className="git-busy-label">{busy}</span>
+                    <SplitHandle leftRef={leftRef} width={view.leftWidth} onResize={(width) => cmd.setGitView(paneId, { leftWidth: width })} />
+                    <div className="git-right">
+                        <div className="git-right-review">
+                            <Suspense fallback={<SkeletonRows rows={6} label="Loading diff preview" />}>{right}</Suspense>
+                            {busy && !busy.startsWith("✗") && (
+                                <div className="git-busy-overlay">
+                                    <div className="git-busy-card">
+                                        <span className="git-busy-spinner" />
+                                        <span className="git-busy-label">{busy}</span>
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            )}
+                        </div>
                     </div>
                 </div>
-            </div>
+            </GitHostShell>
             {menu && <TreeContextMenu x={menu.x} y={menu.y} items={menu.items} alignRight={menu.alignRight} onClose={() => setMenu(null)} />}
             <GitModalRenderer paneId={paneId} active={active} />
         </div>

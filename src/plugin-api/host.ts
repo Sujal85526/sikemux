@@ -4,6 +4,7 @@ import { subscribe } from "../state/bus";
 import * as cmd from "../state/commands";
 import { getState, setState, useStore, type StoreState } from "../state/store";
 import type { PluginKind } from "../plugins/kinds";
+import type { GitArea } from "../state/types";
 
 export { fsapi as files, type DirEntry } from "../api/fs";
 export { git } from "../api/git";
@@ -66,6 +67,11 @@ export async function pickFolder(title: string): Promise<string | null> {
 export function openSurface(kind: PluginKind): string | null {
     cmd.openPluginSession(kind);
     return surfacePane(getState(), kind, false);
+}
+
+/** Opens the git pane at its local workbench or at one of the code host's sections. */
+export function openGitArea(area: GitArea): string | null {
+    return cmd.openGitArea(area);
 }
 
 export function onPaneClosed(listener: (paneId: string) => void): () => void {

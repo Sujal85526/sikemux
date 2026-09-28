@@ -1,26 +1,41 @@
-import { lazy } from "react";
 import { registerFrontendPlugin } from "../../plugin-api";
-import { ActionsOverlay } from "./components/ActionsOverlay";
-import { ActionsTopBarItem } from "./components/ActionsTopBarItem";
-import { GithubMark } from "./components/ActionsIcon";
-import { GITHUB_PLUGIN_ID, GITHUB_HUB } from "./kinds";
-import { openActions, togglePalette } from "./state";
+import { hostCiGlyph, registerCodeHost } from "../../plugin-api/codehost";
+import { openGitArea } from "../../plugin-api/host";
+import { githubHostApi } from "./api";
+import { GithubSignIn } from "./components/ActionsSignIn";
+import { GithubMark } from "./components/GithubMark";
+import { GITHUB_PLUGIN_ID } from "./kinds";
 
-const ActionsPane = lazy(() => import("./components/ActionsPane").then((module) => ({ default: module.ActionsPane })));
+registerCodeHost({
+    id: GITHUB_PLUGIN_ID,
+    name: "GitHub",
+    ciName: "Actions",
+    icon: (size) => <GithubMark size={size} className="icon-github" />,
+    capabilities: {
+        ci: {
+            graph: true,
+            attempts: true,
+            approvals: true,
+            dispatch: true,
+            annotations: true,
+            summaries: true,
+            artifacts: true,
+            billing: true,
+            workflowFile: true,
+        },
+        pulls: { draft: true, mergeMethods: ["squash", "merge", "rebase"], requestChanges: true },
+        issues: true,
+        releases: true,
+        inbox: true,
+    },
+    api: githubHostApi,
+    SignIn: GithubSignIn,
+});
 
 registerFrontendPlugin({
     id: GITHUB_PLUGIN_ID,
-    surfaces: [
-        {
-            kind: GITHUB_HUB,
-            title: "GitHub",
-            icon: (size) => <GithubMark size={size} className="icon-github" />,
-            render: ({ paneId, visible }) => <ActionsPane paneId={paneId} active={visible} />,
-            quickOpen: togglePalette,
-        },
-    ],
-    open: openActions,
+    surfaces: [],
+    open: () => void openGitArea("pulls"),
     openTitle: "Open GitHub",
-    Overlay: ActionsOverlay,
-    TopBarItem: ActionsTopBarItem,
+    TopBarItem: hostCiGlyph(GITHUB_PLUGIN_ID),
 });

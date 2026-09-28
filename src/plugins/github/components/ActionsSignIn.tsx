@@ -1,7 +1,22 @@
 import { useRef, useState } from "react";
 import { openUrl, swallow } from "../../../plugin-api/host";
+import { resource, useResource } from "../../../plugin-api/resources";
+import { SkeletonRows } from "../../../plugin-api/ui";
 import { actionsApi, failureMessage, type ActionsStatus } from "../api";
-import { GithubMark } from "./ActionsIcon";
+import { GithubMark } from "./GithubMark";
+
+/** The sign-in form wants to know where a borrowed token came from, which only GitHub's own status says. */
+const githubStatusR = resource({
+    kind: "host.githubStatus",
+    fetch: (): Promise<ActionsStatus> => actionsApi.status(),
+    staleAfterMs: 60_000,
+});
+
+export function GithubSignIn({ onSignedIn }: { onSignedIn: () => void }) {
+    const status = useResource(githubStatusR);
+    if (!status.data) return <SkeletonRows rows={4} label="Connecting to GitHub" />;
+    return <ActionsSignIn status={status.data} onSignedIn={onSignedIn} />;
+}
 
 function sourceNote(status: ActionsStatus): string {
     if (status.tokenSource === "ghCli") return "The gh CLI is signed in here, so Sikemux uses its token.";

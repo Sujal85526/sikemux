@@ -52,7 +52,7 @@ function deriveRole(w: Window): WindowRole {
     return "named";
 }
 
-export const VERSION = 16;
+export const VERSION = 17;
 const MIN_SUPPORTED_VERSION = 3;
 const ONBOARDING_MIGRATION_VERSION = 6;
 const AGENT_PERMISSION_DEFAULT_MIGRATION_VERSION = 9;
@@ -63,6 +63,7 @@ const AWS_PLUGIN_MIGRATION_VERSION = 13;
 const BRUNO_PLUGIN_MIGRATION_VERSION = 14;
 const RUNDECK_GROUPS_MIGRATION_VERSION = 15;
 const DESK_MIGRATION_VERSION = 16;
+const GITHUB_IN_GIT_PANE_MIGRATION_VERSION = 17;
 const RETRY_MS = 1500;
 let lastSaved = "";
 let activeSnapshot: string | null = null;
@@ -551,6 +552,16 @@ export function flushPersist(): Promise<boolean> {
 }
 
 /** Before v16 an agent's side pane held only its browser, as a "browser" pane whose saved state had no files. */
+/** Before v17 GitHub had a session of its own. It lives in each project's git pane now, so that session has nothing left to show. */
+function closeGithubSessions(decoded: Record<string, unknown>): void {
+    const sessions = Array.isArray(decoded.sessions) ? decoded.sessions : [];
+    const closed = new Set(sessions.flatMap((row) => (isRecord(row) && row.kind === "sikemux.github:hub" ? [row.id] : [])));
+    if (closed.size === 0) return;
+    decoded.sessions = sessions.filter((row) => !isRecord(row) || !closed.has(row.id));
+    if (Array.isArray(decoded.sessionOrder)) decoded.sessionOrder = decoded.sessionOrder.filter((id) => !closed.has(id));
+    if (isRecord(decoded.windowsBySession)) for (const id of closed) if (typeof id === "string") delete decoded.windowsBySession[id];
+}
+
 function moveBrowserPanesOntoDesks(decoded: Record<string, unknown>): void {
     const windowsBySession = isRecord(decoded.windowsBySession) ? decoded.windowsBySession : {};
     for (const rows of Object.values(windowsBySession)) {
@@ -756,6 +767,7 @@ export function applyHydrate(raw: string): HydrationResult {
     if (decoded.version < BRUNO_PLUGIN_MIGRATION_VERSION) moveBrunoIntoItsPlugin(decoded);
     if (decoded.version < RUNDECK_GROUPS_MIGRATION_VERSION) reshapeRundeckSettings(decoded);
     if (decoded.version < DESK_MIGRATION_VERSION) moveBrowserPanesOntoDesks(decoded);
+    if (decoded.version < GITHUB_IN_GIT_PANE_MIGRATION_VERSION) closeGithubSessions(decoded);
 
     const sessions: Record<string, Session> = {};
     for (const row of decoded.sessions) {

@@ -1,0 +1,108 @@
+import { describe, expect, it } from "vitest";
+import {
+    closeRun,
+    compose,
+    filterBy,
+    hostSettings,
+    refOf,
+    resetView,
+    setFollowBranch,
+    setProjectRepo,
+    showRun,
+    slugOf,
+    togglePinned,
+    updateView,
+    viewOf,
+    type HostSettings,
+} from "./state";
+
+const HOST = "test.host";
+const settings = hostSettings(HOST);
+
+describe("hostSettings", () => {
+    it("falls back to usable settings whatever was saved", () => {
+        settings.update(
+            () =>
+                ({
+                    pinned: ["nodelike/sikemux", "not a repo", 7, "nodelike/sikemux"],
+                    repoByProject: { "/repo": "owner/name", "/bad": 3, "/alsobad": "owner" },
+                }) as unknown as HostSettings,
+        );
+        expect(settings.get()).toEqual({
+            pinned: ["nodelike/sikemux"],
+            repoByProject: { "/repo": "owner/name" },
+            followBranch: true,
+        });
+    });
+
+    it("keeps following the branch unless it was turned off on purpose", () => {
+        setFollowBranch(HOST, false);
+        expect(settings.get().followBranch).toBe(false);
+        settings.update(() => ({}) as unknown as HostSettings);
+        expect(settings.get().followBranch).toBe(true);
+    });
+
+    it("pins and unpins the same repository with one call", () => {
+        settings.update(() => ({}) as unknown as HostSettings);
+        togglePinned(HOST, "a/b");
+        expect(settings.get().pinned).toEqual(["a/b"]);
+        togglePinned(HOST, "a/b");
+        expect(settings.get().pinned).toEqual([]);
+    });
+
+    it("forgets a project's repository when it is cleared", () => {
+        settings.update(() => ({}) as unknown as HostSettings);
+        setProjectRepo(HOST, "/work", "a/b");
+        expect(settings.get().repoByProject).toEqual({ "/work": "a/b" });
+        setProjectRepo(HOST, "/work", null);
+        expect(settings.get().repoByProject).toEqual({});
+    });
+
+    it("keeps each host's settings apart", () => {
+        togglePinned(HOST, "a/b");
+        expect(hostSettings("other.host").get().pinned).toEqual([]);
+    });
+});
+
+describe("refOf", () => {
+    it("reads owner and repo out of a slug, on the host it was asked for", () => {
+        expect(refOf(HOST, "nodelike/sikemux")).toEqual({ provider: HOST, owner: "nodelike", name: "sikemux" });
+    });
+
+    it("refuses anything that is not exactly one slug", () => {
+        for (const bad of ["", "nodelike", "a/b/c", "/b", "a/"]) {
+            expect(refOf(HOST, bad)).toBeNull();
+        }
+    });
+
+    it("round-trips through slugOf", () => {
+        expect(slugOf({ owner: "a", name: "b" })).toBe("a/b");
+        expect(refOf(HOST, slugOf({ owner: "a", name: "b" }))).toEqual({ provider: HOST, owner: "a", name: "b" });
+    });
+});
+
+describe("the view of one pane", () => {
+    it("clears the open run and goes back to the first page when a filter changes", () => {
+        updateView("pane-2", { page: 4 });
+        showRun("pane-2", 99);
+        expect(viewOf("pane-2").run).toBe(99);
+
+        filterBy("pane-2", { statusFilter: "failure" });
+        expect(viewOf("pane-2")).toMatchObject({ statusFilter: "failure", page: 1, run: null, job: null });
+    });
+
+    it("closes a run without touching the filters", () => {
+        updateView("pane-3", { statusFilter: "failure" });
+        showRun("pane-3", 7);
+        updateView("pane-3", { job: 3 });
+        closeRun("pane-3");
+        expect(viewOf("pane-3")).toMatchObject({ statusFilter: "failure", run: null, job: null });
+    });
+
+    it("starts over when told the repository changed", () => {
+        updateView("pane-4", { statusFilter: "failure", page: 3, workflowId: 12 });
+        compose("pane-4", "pull");
+        resetView("pane-4");
+        expect(viewOf("pane-4")).toMatchObject({ statusFilter: "all", page: 1, workflowId: null, composing: null });
+    });
+});

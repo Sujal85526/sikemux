@@ -31,6 +31,8 @@ import type {
     TimelineItem,
     Workflow,
     WorkflowFile,
+    CodeHostApi,
+    HostAccount,
 } from "../../plugin-api/codehost";
 import { GITHUB_PLUGIN_ID } from "./kinds";
 
@@ -65,7 +67,7 @@ function isSignedOut(error: unknown): boolean {
 
 /** A token GitHub has stopped accepting makes every cached answer stale, whichever call found out, so the next read lands on the sign-in form. */
 function forgetSignedOut(): void {
-    invalidate((kind) => kind.startsWith("gha."));
+    invalidate((kind) => kind.startsWith("host."));
 }
 
 async function call<T>(method: string, params?: unknown): Promise<T> {
@@ -189,4 +191,26 @@ export const actionsApi = {
                 throw error;
             }),
     watchStop: (streamId: number) => backend.closeStream(streamId),
+};
+
+/** GitHub serves every avatar from one place, and a company's own GitHub serves its users' from itself. */
+function avatarOf(login: string, host: string): string {
+    return host === "github.com" ? `https://avatars.githubusercontent.com/${login}?s=64` : `https://${host}/${login}.png?size=64`;
+}
+
+function accountOf(status: ActionsStatus): HostAccount {
+    return {
+        ok: status.ok,
+        login: status.login,
+        avatarUrl: status.login ? avatarOf(status.login, status.host) : null,
+        host: status.host,
+        canWriteCi: status.canWriteWorkflows,
+        warning: status.ok && !status.canWriteWorkflows ? "This token cannot start or re-run workflows. It is missing the workflow scope." : null,
+    };
+}
+
+/** GitHub as the git pane reads any code host. */
+export const githubHostApi: CodeHostApi = {
+    ...actionsApi,
+    status: () => actionsApi.status().then(accountOf),
 };

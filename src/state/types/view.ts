@@ -1,3 +1,4 @@
+import type { Section } from "../../codehost/state";
 export interface EditorPaneView {
     openTabs: string[];
     activePath: string | null;
@@ -88,7 +89,11 @@ export interface CliOpenResult {
 /** Which list the git pane is on: the changed files or the history under them (both in Changes), or Branches. */
 export type GitPanel = "files" | "commits" | "branches";
 
+/** The local workbench, or one of the code host's sections. */
+export type GitArea = "local" | Section;
+
 export interface GitPaneView {
+    area: GitArea;
     panel: GitPanel;
     selected: Record<GitPanel, number>;
     /** The remote whose branches are listed under the local ones in the Branches tab. */
@@ -102,6 +107,7 @@ export interface GitPaneView {
 }
 
 export const DEFAULT_GIT_VIEW: GitPaneView = {
+    area: "local",
     panel: "files",
     selected: { files: 0, commits: 0, branches: 0 },
     openRemote: "origin",

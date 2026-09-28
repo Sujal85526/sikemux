@@ -29,6 +29,8 @@ export interface RepoListing {
 
 /** Which repository a call is about. Every read and write carries one. */
 export interface RepoRef {
+    /** The code host's id, which picks the plugin that answers. */
+    provider: string;
     owner: string;
     name: string;
 }

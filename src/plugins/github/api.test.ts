@@ -17,13 +17,13 @@ vi.mock("../../plugin-api/resources", () => ({ invalidate: fake.invalidate }));
 
 import { actionsApi, type RunTick } from "./api";
 
-const repo = { owner: "nodelike", name: "sikemux" };
+const repo = { provider: "sikemux.github", owner: "nodelike", name: "sikemux" };
 const refused = { category: "auth", message: "github: sign-in failed: Bad credentials" };
 const conflict = { category: "http", message: "github: http 409: the branch moved", status: 409 };
 
 const clearedGithub = () =>
     fake.invalidate.mock.calls.some(
-        ([matches]) => (matches as (kind: string) => boolean)("gha.pulls") && !(matches as (kind: string) => boolean)("other.kind"),
+        ([matches]) => (matches as (kind: string) => boolean)("host.pulls") && !(matches as (kind: string) => boolean)("other.kind"),
     );
 
 beforeEach(() => {
