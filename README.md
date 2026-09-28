@@ -2,7 +2,9 @@
 
 # Sikemux
 
-**A desktop workspace for terminals, code, Git, coding agents, cloud tools, deployments, and API collections. Built with Tauri, Rust, and React.**
+**A terminal workspace for you and your coding agents.**
+
+Bring Claude Code, Codex or OpenCode. Sikemux gives them your shell, browser, logs and deploys, in one 10 MB native app.
 
 ![Sikemux with a Claude Code agent and its browser tab](public/screenshots/sikemux-hero.png)
 
