@@ -19,12 +19,21 @@ function isTerminalKeyTarget(e: KeyboardEvent): boolean {
 
 const TEXT_SCALE_STEP = 0.1;
 
-function isChatKeyTarget(e: KeyboardEvent): boolean {
-    return keyTargetIn(e, ".agent-chat-pane");
-}
+type TextSurface = "chat" | "editor" | "terminal";
 
-function isEditorKeyTarget(e: KeyboardEvent): boolean {
-    return keyTargetIn(e, ".cm-editor");
+/**
+ * Which text a size key resizes. Clicking a chat transcript or a button that
+ * then disables drops focus to the page, so the active pane stands in for it.
+ */
+function textSurfaceFor(e: KeyboardEvent, st: StoreState): TextSurface {
+    if (keyTargetIn(e, ".agent-chat-pane")) return "chat";
+    if (keyTargetIn(e, ".cm-editor")) return "editor";
+    if (keyTargetIn(e, ".xterm")) return "terminal";
+    const paneId = st.windows[st.sessions[st.activeSessionId]?.activeWindowId ?? ""]?.activePaneId;
+    const pane = paneId ? document.querySelector(`[data-pane-id="${CSS.escape(paneId)}"]`) : null;
+    if (pane?.querySelector(".agent-chat-pane")) return "chat";
+    if (pane?.querySelector(".cm-editor")) return "editor";
+    return "terminal";
 }
 
 // The command deck sends a synthetic event with no target, so the focused element stands in.
@@ -156,21 +165,27 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
         case "pane.close":
             cmd.closeActiveFocusTarget();
             return true;
-        case "text.sizeIncrease":
-            if (isChatKeyTarget(event)) cmd.adjustChatTextScale(TEXT_SCALE_STEP);
-            else if (isEditorKeyTarget(event)) cmd.adjustEditorTextScale(TEXT_SCALE_STEP);
+        case "text.sizeIncrease": {
+            const surface = textSurfaceFor(event, st);
+            if (surface === "chat") cmd.adjustChatTextScale(TEXT_SCALE_STEP);
+            else if (surface === "editor") cmd.adjustEditorTextScale(TEXT_SCALE_STEP);
             else cmd.adjustTerminalFontSize(1);
             return true;
-        case "text.sizeDecrease":
-            if (isChatKeyTarget(event)) cmd.adjustChatTextScale(-TEXT_SCALE_STEP);
-            else if (isEditorKeyTarget(event)) cmd.adjustEditorTextScale(-TEXT_SCALE_STEP);
+        }
+        case "text.sizeDecrease": {
+            const surface = textSurfaceFor(event, st);
+            if (surface === "chat") cmd.adjustChatTextScale(-TEXT_SCALE_STEP);
+            else if (surface === "editor") cmd.adjustEditorTextScale(-TEXT_SCALE_STEP);
             else cmd.adjustTerminalFontSize(-1);
             return true;
-        case "text.sizeReset":
-            if (isChatKeyTarget(event)) cmd.resetChatTextScale();
-            else if (isEditorKeyTarget(event)) cmd.resetEditorTextScale();
+        }
+        case "text.sizeReset": {
+            const surface = textSurfaceFor(event, st);
+            if (surface === "chat") cmd.resetChatTextScale();
+            else if (surface === "editor") cmd.resetEditorTextScale();
             else cmd.resetTerminalFontSize();
             return true;
+        }
         case "session.newContextual":
             if (active?.kind === "project" && activeAgentId(st, active)) cmd.openAgentPalette();
             else if (active?.kind === "project") cmd.newWindow();

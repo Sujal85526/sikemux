@@ -342,6 +342,26 @@ describe("text size shortcuts", () => {
         expect(getState().chatTextScale).toBe(1);
     });
 
+    it("resizes the active pane's transcript when focus has fallen to the page", () => {
+        setState((state) => ({
+            windows: { ...state.windows, "one-window": { ...state.windows["one-window"], id: "one-window", activePaneId: "chat-pane" } },
+        }));
+        function PaneHarness() {
+            useKeymap();
+            return (
+                <div data-pane-id="chat-pane">
+                    <div className="agent-chat-pane" />
+                </div>
+            );
+        }
+        render(<PaneHarness />);
+
+        press("Equal", document.body);
+
+        expect(getState().chatTextScale).toBe(1.1);
+        expect(getState().terminalFontSize).toBe(13);
+    });
+
     it("accepts the shifted + as well as a bare =", () => {
         render(<KeymapHarness />);
 
