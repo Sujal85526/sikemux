@@ -1,7 +1,9 @@
-import { memo, type ReactNode } from "react";
-import { invokeCommand } from "../api/invoke";
+import { createContext, memo, useContext, useEffect, useState, type ReactNode } from "react";
 import { Markdown as MarkdownText, MARKDOWN_GFM, type MarkdownComponents } from "../markdown/Markdown";
-import { swallow } from "../state/toast";
+import { openUrl, swallow } from "./host";
+
+/** Turns a picture's address into one the window may show, such as a `data:` address. */
+export type ProseImageLoader = (src: string) => Promise<string>;
 
 /** Only addresses a browser can open; anything stranger is shown as plain text. */
 function safeHref(href: string): string | null {
@@ -18,24 +20,60 @@ function ProseLink({ href, children }: { href: string; children: ReactNode }) {
             onClick={(event) => {
                 // The webview must not navigate away from the app.
                 event.preventDefault();
-                void invokeCommand<void>("open_url", { url: target, app: null, shortcut: null }).catch(swallow("open the link"));
+                void openUrl(target).catch(swallow("open the link"));
             }}>
             {children}
         </a>
     );
 }
 
+const ImageLoaderContext = createContext<ProseImageLoader | null>(null);
+
+function ProseImage({ src, alt, title, inLink }: { src: string; alt: string; title?: string; inLink: boolean }) {
+    const load = useContext(ImageLoaderContext);
+    const [loaded, setLoaded] = useState<{ src: string; url: string } | null>(null);
+    useEffect(() => {
+        if (!load) return;
+        let alive = true;
+        load(src)
+            .then((url) => {
+                if (alive) setLoaded({ src, url });
+            })
+            .catch(swallow("load a picture"));
+        return () => {
+            alive = false;
+        };
+    }, [load, src]);
+
+    if (loaded?.src === src) return <img src={loaded.url} alt={alt} title={title} />;
+    const label = alt || src;
+    return inLink ? <>{label}</> : <ProseLink href={src}>{label}</ProseLink>;
+}
+
 const COMPONENTS: MarkdownComponents = { link: ProseLink };
+const WITH_IMAGES: MarkdownComponents = { link: ProseLink, img: ProseImage };
 
 /**
  * Prose somebody else wrote, such as a release's notes or a comment, drawn by
  * the app's own markdown reader with embedded HTML left out and links handed
- * to the browser.
+ * to the browser. Pictures are drawn only through `loadImage`, since the
+ * window cannot load them from the web itself; until one arrives, its
+ * description stands in as a link to it.
  */
-export const Markdown = memo(function Markdown({ children, className = "prose" }: { children: string; className?: string }) {
+export const Markdown = memo(function Markdown({
+    children,
+    className = "prose",
+    loadImage,
+}: {
+    children: string;
+    className?: string;
+    loadImage?: ProseImageLoader;
+}) {
     return (
         <div className={className}>
-            <MarkdownText text={children} options={MARKDOWN_GFM} components={COMPONENTS} />
+            <ImageLoaderContext.Provider value={loadImage ?? null}>
+                <MarkdownText text={children} options={MARKDOWN_GFM} components={loadImage ? WITH_IMAGES : COMPONENTS} />
+            </ImageLoaderContext.Provider>
         </div>
     );
 });

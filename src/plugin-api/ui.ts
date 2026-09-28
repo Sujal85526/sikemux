@@ -2,7 +2,7 @@ export * from "../components/Icons";
 export { Checkbox, Switch } from "../components/Controls";
 export { Dropdown, type DropdownOption } from "../components/Dropdown";
 export { EmptyState } from "../components/Panel";
-export { Markdown } from "./Prose";
+export { Markdown, type ProseImageLoader } from "./Prose";
 export { SkeletonRows } from "../components/Skeleton";
 export { Tooltip } from "../components/Tooltip";
 export { VirtualLogList } from "../components/VirtualLogList";

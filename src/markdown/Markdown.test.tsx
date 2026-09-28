@@ -106,6 +106,23 @@ describe("drawing a read message", () => {
                 '<figure data-lang="ts">z\n</figure>',
         );
     });
+
+    it("lets a surface draw pictures, and tells it which ones sit inside a link", () => {
+        const blocks: MdElement[] = [
+            {
+                t: "p",
+                c: [
+                    { t: "img", src: "https://a.dev/1.png", alt: "one" },
+                    { t: "a", href: "https://a.dev", c: [{ t: "img", src: "https://a.dev/2.png", alt: "two" }] },
+                ],
+            },
+        ];
+        expect(html(blocks)).toBe(
+            '<p><img alt="one" src="https://a.dev/1.png"><a href="https://a.dev"><img alt="two" src="https://a.dev/2.png"></a></p>',
+        );
+        const components: MarkdownComponents = { img: ({ alt, inLink }) => <i data-linked={String(inLink)}>{alt}</i> };
+        expect(html(blocks, components)).toBe('<p><i data-linked="false">one</i><a href="https://a.dev"><i data-linked="true">two</i></a></p>');
+    });
 });
 
 describe("reading text into blocks", () => {
