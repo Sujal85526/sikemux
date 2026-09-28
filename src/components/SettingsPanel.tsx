@@ -1517,7 +1517,6 @@ interface CloudPageProps {
 
 function PluginsPage() {
     const built = useBuiltPlugins();
-    const manifests = useStore((s) => s.pluginManifests);
     const disabled = useStore((s) => s.disabledPlugins);
     return (
         <SettingsPage>
@@ -1527,9 +1526,8 @@ function PluginsPage() {
                 <SettingsRows>
                     {built.length === 0 && <div className="settings-empty">No plugins in this build.</div>}
                     {built.map((plugin) => {
-                        const manifest = manifests.find((each) => each.id === plugin.id);
-                        const title = manifest?.name ?? plugin.surfaces[0]?.title ?? plugin.id;
-                        const version = manifest?.version;
+                        const title = plugin.manifest.name;
+                        const version = plugin.manifest.version;
                         return (
                             <SettingsRow
                                 key={plugin.id}

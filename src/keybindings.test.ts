@@ -13,6 +13,7 @@ import {
     keybindingCategories,
     resolvedKeybinding,
 } from "./keybindings";
+import { getState, setState } from "./state/store";
 
 function key(code: string, modifiers: Partial<Pick<KeyboardEvent, "metaKey" | "ctrlKey" | "altKey" | "shiftKey">> = {}) {
     return {
@@ -111,6 +112,8 @@ describe("plugin shortcuts", () => {
 describe("a plugin's own shortcuts", () => {
     it("are listed under the plugin's name and run only when they apply", async () => {
         const { registerFrontendPlugin } = await import("./plugins/registry");
+        const manifests = getState().pluginManifests;
+        setState({ pluginManifests: [...manifests, { id: "test.shortcuts", name: "Test kit", version: "0.1.0", sikemux: ">=0.4" }] });
         let applies = true;
         const run = vi.fn(() => applies);
         registerFrontendPlugin({
@@ -121,10 +124,11 @@ describe("a plugin's own shortcuts", () => {
             shortcuts: [{ name: "go", label: "Go", detail: "Run the test", defaultBinding: "Alt+Shift+KeyG", run }],
         });
 
-        expect(keybindingCategories()).toContain("Tester");
+        expect(keybindingCategories()).toContain("Test kit");
+        expect(keybindingCategories()).not.toContain("Tester");
         expect(keybindingActions().find((action) => action.id === "plugin.run:test.shortcuts/go")).toMatchObject({
             label: "Go",
-            category: "Tester",
+            category: "Test kit",
             defaultBinding: "Alt+Shift+KeyG",
         });
         expect(actionForEvent(key("KeyG", { altKey: true, shiftKey: true }), {})).toBe("plugin.run:test.shortcuts/go");
@@ -132,5 +136,6 @@ describe("a plugin's own shortcuts", () => {
         applies = false;
         expect(pluginShortcutFor("plugin.run:test.shortcuts/go")?.run()).toBe(false);
         expect(pluginShortcutFor("plugin.run:test.shortcuts/missing")).toBeNull();
+        setState({ pluginManifests: manifests });
     });
 });

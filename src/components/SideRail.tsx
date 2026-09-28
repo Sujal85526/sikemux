@@ -508,8 +508,7 @@ export const SideRail = memo(function SideRail() {
     const pluginRows = enabledPlugins.flatMap((plugin) => {
         const opened = plugins.filter((session) => isPluginKind(session.kind) && pluginIdOf(session.kind) === plugin.id);
         if (opened.length > 0) return opened.map(renderSession);
-        const name = pluginManifests.find((manifest) => manifest.id === plugin.id)?.name ?? plugin.surfaces[0]?.title ?? plugin.id;
-        return [<PluginLauncherRow key={plugin.id} plugin={plugin} name={name} />];
+        return [<PluginLauncherRow key={plugin.id} plugin={plugin} name={plugin.manifest.name} />];
     });
 
     const resolveProjectDrop = useCallback((x: number, y: number) => {

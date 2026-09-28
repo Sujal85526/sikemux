@@ -1,5 +1,6 @@
 import { IS_MACOS } from "./lib/platform";
 import { enabledFrontendPlugins } from "./plugins/enabled";
+import { getState } from "./state/store";
 import { frontendPlugin, frontendPlugins, type FrontendPlugin, type PluginShortcut } from "./plugins/registry";
 
 type CoreKeybindingCategory = "Workspace" | "Panes" | "Navigation" | "Browser";
@@ -391,7 +392,7 @@ const PLUGIN_OPEN = "plugin.open:";
 const PLUGIN_RUN = "plugin.run:";
 
 function pluginCategory(plugin: FrontendPlugin): KeybindingCategory {
-    return plugin.surfaces[0]?.title ?? plugin.id;
+    return getState().pluginManifests.find((manifest) => manifest.id === plugin.id)?.name ?? plugin.id;
 }
 
 export function pluginRunAction(pluginId: string, name: string): PluginRunActionId {
