@@ -8,7 +8,7 @@ import {
     EmptyState,
     IconCheck,
     IconCheckout,
-    IconClose,
+    IconChevron,
     IconExternal,
     IconPlus,
     IconPullRequest,
@@ -31,7 +31,7 @@ import { needsPull } from "../compose";
 import { compose, openRunFrom, setListState, showItem } from "../state";
 import { CommentThread } from "./CommentThread";
 import { OutcomeIcon } from "./ActionsIcon";
-import { Branch, Comments, Labels, StateMark } from "./Bits";
+import { Branch, Comments, Labels, StateMark, Who } from "./Bits";
 import { useBusy, useNow } from "./hooks";
 import { NewPullForm } from "./NewPullForm";
 import { PullFiles } from "./PullFiles";
@@ -293,17 +293,14 @@ function PullCard({
     onOpenRun: (runId: number) => void;
 }) {
     const host = useHost();
-    const now = useNow(false);
-    const merged = pull.state === "merged";
-    const actor = merged ? (pull.mergedBy ?? pull.author) : pull.author;
-    const from = pull.head ?? pull.headLabel;
     return (
         <div className="pr-card">
             <div className="pr-card-top">
-                <StateMark kind="pull" state={pull.state} draft={pull.draft} size={14} />
-                <h2 className="pr-title">
-                    {pull.title} <span className="pr-number">#{pull.number}</span>
-                </h2>
+                <button type="button" className="pr-back" onClick={onClose}>
+                    <IconChevron size={11} /> Pull requests
+                </button>
+                <span className="gha-page-spacer" />
+                {cwd && pull.state === "open" && <CheckoutButton cwd={cwd} repo={repo} pull={pull} current={projectBranch} />}
                 <Tooltip label={`Open on ${host.name}`}>
                     <button
                         type="button"
@@ -313,24 +310,6 @@ function PullCard({
                         <IconExternal size={12} />
                     </button>
                 </Tooltip>
-                <Tooltip label="Back to pull requests">
-                    <button type="button" className="gha-icon-btn" aria-label="Back to pull requests" onClick={onClose}>
-                        <IconClose size={12} />
-                    </button>
-                </Tooltip>
-            </div>
-            <div className="pr-sub">
-                {from && <Branch name={from} />}
-                {pull.base && (
-                    <>
-                        <span>→</span>
-                        <Branch name={pull.base} />
-                    </>
-                )}
-                <span>·</span>
-                <span>{actor ?? "someone"}</span>
-                <span>{formatAgo(merged ? pull.mergedAt : pull.createdAt, now)}</span>
-                {cwd && pull.state === "open" && <CheckoutButton cwd={cwd} repo={repo} pull={pull} current={projectBranch} />}
             </div>
             <MergeBox repo={repo} pull={pull} verdict={verdict} reviewed={reviewed} active={active} onOpenRun={onOpenRun} />
         </div>
@@ -398,69 +377,133 @@ function PullFileRows({
     );
 }
 
-/** The pull request's conversation, as a folding panel under its files: the whole timeline and the reply box. */
-function PullThread({
-    paneId,
+type PullTab = "conversation" | "files";
+
+/**
+ * The right column of an open pull request: a header like a commit's in Changes, with a toggle where a commit's
+ * actions sit, between the conversation and every changed file's diff.
+ */
+function PullRight({
     repo,
-    pull,
-    verdict,
+    cwd,
+    number,
+    tab,
+    commit,
+    focus,
     login,
     active,
+    onTab,
+    onLeaveCommit,
 }: {
-    paneId: string;
     repo: RepoRef;
-    pull: Pull;
-    verdict: string | null;
+    cwd: string | null;
+    number: number;
+    tab: PullTab;
+    commit: string | null;
+    focus: string | null;
     login: string | null;
     active: boolean;
+    onTab: (tab: PullTab) => void;
+    onLeaveCommit: () => void;
 }) {
-    const open = useStore((s) => s.gitViews[paneId]?.threadOpen ?? true);
-    const height = useStore((s) => s.gitViews[paneId]?.threadHeight ?? null);
-    const timeline = useResourceEnabled(active, timelineR, repo, pull.number);
+    const pull = useResourceEnabled(active, pullR, repo, number);
+    const timeline = useResourceEnabled(active, timelineR, repo, number);
     const now = useNow(false);
-    const said = (timeline.data ?? []).filter((item) => item.kind === "commented" || item.kind === "reviewed");
-    const last = said.at(-1);
+    if (!pull.data) return <SkeletonRows rows={6} label="Loading pull request" />;
+    const found = pull.data;
+    const merged = found.state === "merged";
+    const actor = merged ? (found.mergedBy ?? found.author) : found.author;
+    const said =
+        (timeline.data ?? []).filter((item) => item.kind === "commented" || (item.kind === "reviewed" && (item.body ?? "").trim())).length + 1;
+    const tabs: { id: PullTab; label: string; count: number | null }[] = [
+        { id: "conversation", label: "Conversation", count: said },
+        { id: "files", label: "Files changed", count: found.changedFiles },
+    ];
     return (
-        <FoldPanel
-            label="Conversation"
-            count={said.length + 1}
-            summary={last ? `${last.actor ?? "someone"}: ${(last.body ?? "").split("\n")[0]}` : null}
-            badge={
-                verdict === "Changes requested" ? (
-                    <span className="pr-verdict" data-tone="danger">
-                        changes requested
-                    </span>
-                ) : verdict === "Approved" ? (
-                    <span className="pr-verdict" data-tone="live">
-                        approved
-                    </span>
-                ) : null
-            }
-            open={open}
-            height={height}
-            onToggle={() => setGitView(paneId, { threadOpen: !open })}
-            onResize={(next) => setGitView(paneId, { threadHeight: next })}>
-            <div className="pr-thread">
-                <CommentThread
-                    repo={repo}
-                    number={pull.number}
-                    active={active}
-                    now={now}
-                    withoutCommits
-                    opening={{
-                        key: "opening",
-                        author: pull.author,
-                        avatarUrl: pull.avatarUrl,
-                        association: pull.authorAssociation,
-                        at: pull.createdAt,
-                        body: pull.body,
-                        review: null,
-                    }}
-                    base={pull.base}
-                    review={pull.state === "open" ? { mine: !!login && pull.author === login } : null}
-                />
+        <div className="pr-right">
+            <div className="git-detail">
+                <h2 className="git-detail-title">
+                    {found.title} <span className="pr-number">#{found.number}</span>
+                </h2>
+                <div className="git-detail-meta">
+                    <Who login={actor} avatarUrl={actor === found.author ? found.avatarUrl : (found.avatars[actor ?? ""] ?? null)} />
+                    <span>{merged ? "merged" : "opened"}</span>
+                    <span>{formatAgo(merged ? found.mergedAt : found.createdAt, now)}</span>
+                    {found.head && <Branch name={found.head} />}
+                    {found.base && (
+                        <>
+                            <span>→</span>
+                            <Branch name={found.base} />
+                        </>
+                    )}
+                    <Labels labels={found.labels} />
+                </div>
+                <div className="git-detail-actions" role="tablist" aria-label="Pull request">
+                    {tabs.map((each) => (
+                        <button
+                            key={each.id}
+                            type="button"
+                            role="tab"
+                            aria-selected={tab === each.id}
+                            className="gha-chip pr-tab"
+                            data-on={tab === each.id ? "1" : "0"}
+                            onClick={() => onTab(each.id)}>
+                            {each.label}
+                            {each.count !== null && <span className="gha-tab-count">{each.count.toLocaleString()}</span>}
+                        </button>
+                    ))}
+                    {tab === "files" && commit && (
+                        <>
+                            <span className="gha-page-spacer" />
+                            <span className="gha-dim">
+                                Commit <span className="gha-mono">{commit.slice(0, 7)}</span>
+                            </span>
+                            <button type="button" className="gha-chip" onClick={onLeaveCommit}>
+                                All changes
+                            </button>
+                        </>
+                    )}
+                </div>
             </div>
-        </FoldPanel>
+            {tab === "conversation" ? (
+                <div className="pr-conversation">
+                    <CommentThread
+                        repo={repo}
+                        number={found.number}
+                        active={active}
+                        now={now}
+                        withoutCommits
+                        opening={{
+                            key: "opening",
+                            author: found.author,
+                            avatarUrl: found.avatarUrl,
+                            association: found.authorAssociation,
+                            at: found.createdAt,
+                            body: found.body,
+                            review: null,
+                        }}
+                        base={found.base}
+                        review={found.state === "open" ? { mine: !!login && found.author === login } : null}
+                    />
+                </div>
+            ) : commit ? (
+                cwd ? (
+                    <CommitReview
+                        key={commit}
+                        repo={cwd}
+                        rev={commit}
+                        title={commit.slice(0, 7)}
+                        subtitle=""
+                        head={<></>}
+                        onOpenFile={requestOpenFile}
+                    />
+                ) : (
+                    <EmptyState message="This repository is not checked out here, so its commits cannot be opened." />
+                )
+            ) : (
+                <PullFiles repo={repo} number={found.number} cwd={cwd} active={active} focusPath={focus ?? undefined} />
+            )}
+        </div>
     );
 }
 
@@ -537,7 +580,6 @@ function PullColumn({
     projectBranch,
     number,
     active,
-    login,
     focus,
     commit,
     onFocus,
@@ -577,7 +619,6 @@ function PullColumn({
                 onOpenRun={onOpenRun}
             />
             <PullFileRows repo={repo} number={number} active={active} focus={focus} onFocus={onFocus} />
-            <PullThread paneId={paneId} repo={repo} pull={found} verdict={verdict} login={login} active={active} />
             <PullHistory paneId={paneId} repo={repo} number={number} active={active} selected={commit} onSelect={onCommit} />
         </>
     );
@@ -605,6 +646,8 @@ export function PullsView({ paneId, repo, listState, item, composing, projectBra
     const [focus, setFocus] = useState<{ pull: number; path: string } | null>(null);
     const shownCommit = commit && commit.pull === item ? commit.sha : null;
     const focusPath = focus && focus.pull === item ? focus.path : null;
+    const [tabOf, setTabOf] = useState<{ pull: number; tab: PullTab } | null>(null);
+    const tab: PullTab = tabOf && tabOf.pull === item ? tabOf.tab : "conversation";
 
     if (composing) {
         return (
@@ -687,8 +730,12 @@ export function PullsView({ paneId, repo, listState, item, composing, projectBra
                 onFocus={(path) => {
                     setCommit(null);
                     setFocus({ pull: item, path });
+                    setTabOf({ pull: item, tab: "files" });
                 }}
-                onCommit={(sha) => setCommit(sha ? { pull: item, sha } : null)}
+                onCommit={(sha) => {
+                    setCommit(sha ? { pull: item, sha } : null);
+                    if (sha) setTabOf({ pull: item, tab: "files" });
+                }}
                 onClose={() => showItem(paneId, null)}
                 onBack={() => showItem(paneId, null)}
                 onOpenRun={(runId) => openRunFrom(paneId, runId)}
@@ -698,32 +745,19 @@ export function PullsView({ paneId, repo, listState, item, composing, projectBra
     const right =
         item === null ? (
             <EmptyState icon={<IconPullRequest size={20} />} message="Pick a pull request to see what it changes." />
-        ) : shownCommit ? (
-            <div className="pr-commit-review">
-                <div className="pr-commit-bar">
-                    <span className="gha-dim">Commit</span>
-                    <span className="gha-mono">{shownCommit.slice(0, 7)}</span>
-                    <span className="gha-page-spacer" />
-                    <button type="button" className="gha-btn" onClick={() => setCommit(null)}>
-                        All changes
-                    </button>
-                </div>
-                {cwd ? (
-                    <CommitReview
-                        key={shownCommit}
-                        repo={cwd}
-                        rev={shownCommit}
-                        title={shownCommit.slice(0, 7)}
-                        subtitle=""
-                        head={<></>}
-                        onOpenFile={requestOpenFile}
-                    />
-                ) : (
-                    <EmptyState message="This repository is not checked out here, so its commits cannot be opened." />
-                )}
-            </div>
         ) : (
-            <PullFiles repo={repo} number={item} cwd={cwd} active={active} focusPath={focusPath ?? undefined} />
+            <PullRight
+                repo={repo}
+                cwd={cwd}
+                number={item}
+                tab={tab}
+                commit={shownCommit}
+                focus={focusPath}
+                login={login}
+                active={active}
+                onTab={(next) => setTabOf({ pull: item, tab: next })}
+                onLeaveCommit={() => setCommit(null)}
+            />
         );
 
     return <GitColumns paneId={paneId} left={left} right={<div className="git-right-review">{right}</div>} />;

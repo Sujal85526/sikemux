@@ -1234,6 +1234,8 @@
     min-width: 0;
 }
 .gha-who {
+    display: inline-flex;
+    align-items: center;
     gap: var(--space-1h);
 }
 .gha-who-name {
@@ -2235,41 +2237,36 @@ button.gha-step:focus-visible {
 }
 .pr-card-top {
     display: flex;
-    align-items: flex-start;
-    gap: var(--space-2);
-    padding: 9px 6px 2px 11px;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 6px 6px 6px 8px;
 }
-.pr-card-top > svg,
-.pr-card-top > .gha-state-mark {
-    flex: none;
-    margin-top: 2px;
+.pr-card-top .gha-btn {
+    height: 24px;
+    font-size: var(--text-2xs);
 }
-.pr-title {
-    flex: 1;
-    min-width: 0;
-    margin: 0;
-    font-size: var(--text-sm);
-    font-weight: var(--weight-medium);
-    line-height: 1.4;
+.pr-back {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    height: 24px;
+    padding: 0 var(--space-1h);
+    border: 0;
+    background: none;
+    color: var(--text-tertiary);
+    font: inherit;
+    font-size: var(--text-xs);
+    cursor: pointer;
+}
+.pr-back:hover {
     color: var(--text-primary);
+}
+.pr-back > svg {
+    transform: rotate(180deg);
 }
 .pr-number {
     color: var(--text-tertiary);
     font-weight: var(--weight-normal);
-}
-.pr-sub {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--space-1h);
-    padding: 2px 10px 8px 11px;
-    font-size: var(--text-2xs);
-    color: var(--text-tertiary);
-}
-.pr-sub .gha-btn {
-    height: 22px;
-    margin-left: auto;
-    font-size: var(--text-2xs);
 }
 /* The merge box sits inside the card, so it drops its own frame and keeps only the rules between its parts. */
 .pr-card .gha-merge-box {
@@ -2326,69 +2323,39 @@ button.git-file-row {
     border-color: color-mix(in oklab, var(--live) 40%, transparent);
     color: var(--live);
 }
-/* The conversation inside its panel: the same thread, set small enough to read in the column. */
-.pr-thread {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow: hidden;
-    padding: var(--space-1) 10px var(--space-2);
-}
-.pr-thread .gha-thread {
-    gap: var(--space-2);
-}
-.pr-thread .gha-timeline {
-    --tl-gap: var(--space-2);
-    --tl-x: 19px;
-}
-.pr-thread .gha-comment .prose {
-    padding: 6px 10px 8px;
-    font-size: var(--text-xs);
-}
-.pr-thread .gha-comment-head {
-    padding: 5px 10px;
-}
-/* The timeline scrolls; the reply box is its own row at the panel's foot. */
-.pr-thread .gha-thread {
-    height: 100%;
-    min-height: 0;
-}
-.pr-thread .gha-timeline {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-    padding-bottom: var(--space-2);
-}
-.pr-thread .gha-thread > .gha-tl-tail {
-    flex: 0 0 auto;
-}
-.pr-thread .gha-composer-box {
-    min-height: 56px;
-    font-size: var(--text-xs);
-}
-.pr-thread .gha-composer-foot {
-    flex-wrap: wrap;
-}
-.pr-commit-review {
+/* An open pull request's right column: its header, then the conversation or the files, whichever is toggled on. */
+.pr-right {
     display: flex;
     flex-direction: column;
     height: 100%;
+    min-height: 0;
 }
-.pr-commit-bar {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    flex: 0 0 auto;
-    height: 34px;
-    padding: 0 10px 0 14px;
-    border-bottom: 1px solid var(--border);
+.pr-right > .git-detail .pr-number {
+    color: var(--text-tertiary);
+    font-weight: var(--weight-normal);
 }
-.pr-commit-bar .gha-btn {
-    height: 22px;
+.pr-right > .git-detail .gha-branch > span {
     font-size: var(--text-2xs);
 }
-.pr-commit-review > .commit-review {
-    flex: 1;
+.pr-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1h);
+}
+.pr-right > .merge-review,
+.pr-right > .commit-review {
+    flex: 1 1 auto;
     min-height: 0;
+}
+.pr-conversation {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--space-4) 16px var(--space-6);
+}
+.pr-conversation > .gha-thread {
+    max-width: 880px;
+    margin: 0 auto;
 }
 /* An issue reads on the right, where a pull request's files would be. */
 .issue-page {

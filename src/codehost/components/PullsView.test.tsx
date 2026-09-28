@@ -81,15 +81,18 @@ const view = (item: number | null) => (
     </InHost>
 );
 
-it("reads a pull request in the git pane's columns: the conversation on the left, its files on the right", async () => {
+it("reads a pull request in the git pane's columns: its card and files on the left, the conversation on the right", async () => {
+    const user = userEvent.setup();
     render(view(31));
-    expect(await screen.findByRole("heading", { name: /the run page/ })).toBeInTheDocument();
-    expect(await screen.findByText("Brings the run page up to what GitHub shows.")).toBeInTheDocument();
+    expect((await screen.findAllByRole("heading", { name: /the run page/ })).length).toBeGreaterThan(0);
     const left = document.querySelector(".git-left") as HTMLElement;
     const right = document.querySelector(".git-right") as HTMLElement;
     expect(within(left).getByRole("button", { name: "Merge pull request" })).toBeInTheDocument();
-    expect(await within(left).findByRole("button", { name: /run\.ts/ })).toBeInTheDocument();
-    expect(within(left).getByRole("button", { name: /Conversation/ })).toHaveAttribute("aria-expanded", "true");
+    expect(await within(right).findByText("Brings the run page up to what GitHub shows.")).toBeInTheDocument();
+    expect(within(right).getByRole("tab", { name: /Conversation/ })).toHaveAttribute("aria-selected", "true");
+
+    await user.click(await within(left).findByRole("button", { name: /run\.ts/ }));
+    expect(within(right).getByRole("tab", { name: /Files changed/ })).toHaveAttribute("aria-selected", "true");
     expect(await within(right).findByText("1 file")).toBeInTheDocument();
 });
 
