@@ -26,9 +26,10 @@ name = "sikemux_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
-default = ["aws", "bruno", "github", "rundeck", "signoz"]
+default = ["aws", "bitbucket", "bruno", "github", "rundeck", "signoz"]
 ipc-command-tests = ["tauri/test"]
 aws = ["dep:sikemux-plugin-aws"]
+bitbucket = ["dep:sikemux-plugin-bitbucket"]
 bruno = ["dep:sikemux-plugin-bruno"]
 github = ["dep:sikemux-plugin-github"]
 rundeck = ["dep:sikemux-plugin-rundeck"]
@@ -72,6 +73,7 @@ futures = "0.3"
 semver = "1"
 sikemux-plugin-api = { path = "crates/sikemux-plugin-api" }
 sikemux-plugin-aws = { path = "plugins/aws", optional = true }
+sikemux-plugin-bitbucket = { path = "plugins/bitbucket", optional = true }
 sikemux-plugin-bruno = { path = "plugins/bruno", optional = true }
 sikemux-plugin-github = { path = "plugins/github", optional = true }
 sikemux-plugin-rundeck = { path = "plugins/rundeck", optional = true }
@@ -127,6 +129,8 @@ strip = "symbols"
 # Crates that never sit on a hot path are built for size. Together they take
 # well over 1 MB off the binary; encryption itself stays in `ring` at full speed.
 [profile.release.package.sikemux-plugin-aws]
+opt-level = "z"
+[profile.release.package.sikemux-plugin-bitbucket]
 opt-level = "z"
 [profile.release.package.sikemux-plugin-bruno]
 opt-level = "z"

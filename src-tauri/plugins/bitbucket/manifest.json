@@ -1,0 +1,85 @@
+{
+  "id": "sikemux.bitbucket",
+  "name": "Bitbucket",
+  "version": "0.1.0",
+  "sikemux": ">=0.4",
+  "callTimeoutSecs": 120,
+  "tools": [
+    {
+      "name": "bitbucket_pulls",
+      "method": "pulls",
+      "description": "Pull requests in a Bitbucket repository, most recently updated first, with their state, branches and reviewers. Get the workspace and repository from the git remote.",
+      "properties": {
+        "owner": { "type": "string", "minLength": 1, "description": "The Bitbucket workspace, e.g. swishx." },
+        "name": { "type": "string", "minLength": 1, "description": "The repository slug, e.g. api-docs." },
+        "state": { "type": "string", "enum": ["open", "closed", "all"], "description": "Default open. closed covers merged, declined and superseded." }
+      },
+      "required": ["owner", "name"]
+    },
+    {
+      "name": "bitbucket_pull_files",
+      "method": "pullFiles",
+      "description": "Every file a Bitbucket pull request touches, with its unified diff. Use it to review a change without checking it out.",
+      "properties": {
+        "owner": { "type": "string", "minLength": 1, "description": "The Bitbucket workspace." },
+        "name": { "type": "string", "minLength": 1, "description": "The repository slug." },
+        "number": { "type": "integer", "minimum": 1, "description": "The pull request's id." }
+      },
+      "required": ["owner", "name", "number"]
+    },
+    {
+      "name": "bitbucket_comments",
+      "method": "comments",
+      "description": "What people wrote on a Bitbucket pull request, oldest first.",
+      "properties": {
+        "owner": { "type": "string", "minLength": 1, "description": "The Bitbucket workspace." },
+        "name": { "type": "string", "minLength": 1, "description": "The repository slug." },
+        "number": { "type": "integer", "minimum": 1, "description": "The pull request's id." }
+      },
+      "required": ["owner", "name", "number"]
+    },
+    {
+      "name": "bitbucket_pipelines",
+      "method": "runs",
+      "description": "Recent Bitbucket Pipelines runs for a repository, newest first, with status and conclusion. Narrow by branch, status or commit.",
+      "properties": {
+        "owner": { "type": "string", "minLength": 1, "description": "The Bitbucket workspace." },
+        "name": { "type": "string", "minLength": 1, "description": "The repository slug." },
+        "branch": { "type": "string", "description": "Only pipelines on this branch." },
+        "status": {
+          "type": "string",
+          "enum": ["queued", "in_progress", "waiting", "completed", "success", "failure", "cancelled", "skipped"],
+          "description": "Only pipelines in this state, or with this conclusion."
+        },
+        "headSha": { "type": "string", "description": "Only pipelines for this commit." },
+        "perPage": { "type": "integer", "minimum": 1, "maximum": 100, "description": "How many to return. Default 30." },
+        "page": { "type": "integer", "minimum": 1, "description": "Which page of results, from 1." }
+      },
+      "required": ["owner", "name"]
+    },
+    {
+      "name": "bitbucket_pipeline",
+      "method": "run",
+      "description": "One Bitbucket pipeline with each of its steps and their status, which is how to see which step failed.",
+      "properties": {
+        "owner": { "type": "string", "minLength": 1, "description": "The Bitbucket workspace." },
+        "name": { "type": "string", "minLength": 1, "description": "The repository slug." },
+        "runId": { "type": "string", "minLength": 1, "description": "The pipeline's id, the {uuid} from bitbucket_pipelines." }
+      },
+      "required": ["owner", "name", "runId"]
+    },
+    {
+      "name": "bitbucket_step_log",
+      "method": "jobLogExcerpt",
+      "description": "The end of one pipeline step's log, line by line. Use it to read why a step failed: start with the default tail, or grep for the error. truncated means earlier lines were left out.",
+      "properties": {
+        "owner": { "type": "string", "minLength": 1, "description": "The Bitbucket workspace." },
+        "name": { "type": "string", "minLength": 1, "description": "The repository slug." },
+        "jobId": { "type": "string", "minLength": 1, "description": "The step's id from bitbucket_pipeline, which names the pipeline and the step." },
+        "tail": { "type": "integer", "minimum": 1, "maximum": 2000, "description": "How many lines from the end to return, after any grep. Default 200." },
+        "grep": { "type": "string", "description": "Only lines containing this text, ignoring case." }
+      },
+      "required": ["owner", "name", "jobId"]
+    }
+  ]
+}
