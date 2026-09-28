@@ -944,8 +944,14 @@ export function TreeContextMenu({
                                 onClose();
                                 it.run?.();
                             }}>
-                            <span className="tree-ctx-label">{it.label}</span>
-                            {it.hint && <span className="tree-ctx-hint">{it.hint}</span>}
+                            <span className="tree-ctx-label" title={it.label}>
+                                {it.label}
+                            </span>
+                            {it.hint && (
+                                <span className="tree-ctx-hint" title={it.hint}>
+                                    {it.hint}
+                                </span>
+                            )}
                         </button>
                     ),
                 )}

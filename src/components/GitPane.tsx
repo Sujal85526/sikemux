@@ -749,16 +749,16 @@ function GitWorkbench({
 
     const openBranchPicker = (anchor: HTMLElement) =>
         openMenuAt(anchor, [
+            { label: "New branch…", hint: "N", run: () => openNewBranchPrompt() },
+            { label: "Check out by name…", hint: "c", run: openCheckoutPrompt },
+            { label: "Show all branches", hint: "3", run: () => setPanel("branches") },
+            { sep: true },
             ...branches.map((b) => ({
                 label: b.name,
                 hint: b.current ? "current" : (b.upstream ?? undefined),
                 disabled: b.current,
                 run: () => checkoutBranch(b.name),
             })),
-            { sep: true },
-            { label: "New branch…", hint: "N", run: () => openNewBranchPrompt() },
-            { label: "Check out by name…", hint: "c", run: openCheckoutPrompt },
-            { label: "Show all branches", hint: "3", run: () => setPanel("branches") },
         ]);
 
     const openHelpCheatsheet = () => openGitCheatsheet("Git pane keybindings", GIT_HELP);
