@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useModalFocus, usePluginOverlay } from "../../../plugin-api/host";
 import { useResource } from "../../../plugin-api/resources";
-import { IconSearch, rankBy, useMouseActive } from "../../../plugin-api/ui";
+import { IconPin, IconSearch, rankBy, useMouseActive } from "../../../plugin-api/ui";
 import type { RepoListing, RepoRef } from "../api";
 import { actionsMyReposR } from "../resources";
 import { formatAgo } from "../runStatus";
@@ -142,13 +142,15 @@ export function RepoPicker({ current, onPick, onClose }: Props) {
                                     <button
                                         type="button"
                                         className="gha-pick-pin"
+                                        aria-label={pinned.includes(entry.slug) ? `Unpin ${entry.slug}` : `Pin ${entry.slug}`}
+                                        aria-pressed={pinned.includes(entry.slug)}
                                         title={
                                             pinned.includes(entry.slug)
                                                 ? "Stop keeping it at the top of this list"
                                                 : "Keep it at the top of this list"
                                         }
                                         onClick={() => togglePinned(entry.slug)}>
-                                        {pinned.includes(entry.slug) ? "Unpin" : "Pin"}
+                                        <IconPin size={14} filled={pinned.includes(entry.slug)} />
                                     </button>
                                 )}
                             </div>

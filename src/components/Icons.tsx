@@ -72,6 +72,18 @@ export function Logo({ size = 16, className }: IconProps) {
     );
 }
 
+const PIN_HEAD = "M6.5 2.5h3v4l2 2.5v1h-7V9l2-2.5z";
+
+export function IconPin({ size, className, filled = false }: IconProps & { filled?: boolean }) {
+    return (
+        <Svg size={size} className={className}>
+            <path d="M5.5 2.5h5" />
+            <path d={PIN_HEAD} fill={filled ? "currentColor" : "none"} />
+            <path d="M8 10v3.5" />
+        </Svg>
+    );
+}
+
 export const IconMore = makeSvgIcon(
     <>
         <circle cx="3.5" cy="8" r="1" fill="currentColor" stroke="none" />
