@@ -83,24 +83,6 @@ export interface TaskTerminalSurface {
     open(request: TaskTerminalOpenRequest): void | PromiseLike<void>;
 }
 
-/** Structurally compatible with the command palette's StandaloneCommand. */
-export interface TaskRuntimeCommand {
-    readonly id: string;
-    readonly title: string;
-    readonly detail: string;
-    readonly category: "Tasks";
-    readonly execute: () => void;
-}
-
-export interface ProjectTaskRuntime {
-    readonly project: string;
-    run(taskId: string): Promise<void>;
-    restart(taskId?: string): Promise<void>;
-    stop(): Promise<void>;
-    getSnapshot(): TaskControllerSnapshot | null;
-    commands(): readonly TaskRuntimeCommand[];
-}
-
 export interface HeadlessPtyTaskRunnerOptions {
     readonly backend: TaskExecutionBackend;
     readonly surface: TaskTerminalSurface;
@@ -167,20 +149,6 @@ export class TaskRuntimeDisposedError extends Error {
     constructor() {
         super("Task runtime has been disposed");
         this.name = "TaskRuntimeDisposedError";
-    }
-}
-
-export class TaskRuntimeNotInstalledError extends Error {
-    constructor() {
-        super("Application task runtime has not been installed");
-        this.name = "TaskRuntimeNotInstalledError";
-    }
-}
-
-export class TaskRuntimeAlreadyInstalledError extends Error {
-    constructor() {
-        super("Application task runtime is already installed");
-        this.name = "TaskRuntimeAlreadyInstalledError";
     }
 }
 
@@ -307,10 +275,6 @@ function copyEnvironment(environment: Readonly<Record<string, string>>): Readonl
 
 function terminalKey(task: ResolvedTaskDefinition): string {
     return JSON.stringify(["task", task.project, task.id]);
-}
-
-function commandId(task: ResolvedTaskDefinition): string {
-    return JSON.stringify(["task.run", task.project, task.id]);
 }
 
 /**
@@ -595,37 +559,6 @@ export class TaskRuntime {
         return controller.getSnapshot();
     }
 
-    commandsForProject(projectInput: string): readonly TaskRuntimeCommand[] {
-        this.assertActive();
-        const project = requireProject(projectInput);
-        return Object.freeze(
-            this.registry.list(project).map((task) =>
-                Object.freeze({
-                    id: commandId(task),
-                    title: task.label,
-                    detail: `${task.source} task · ${task.cwd}`,
-                    category: "Tasks" as const,
-                    execute: () => {
-                        void this.run(project, task.id);
-                    },
-                }),
-            ),
-        );
-    }
-
-    forProject(projectInput: string): ProjectTaskRuntime {
-        this.assertActive();
-        const project = requireProject(projectInput);
-        return Object.freeze({
-            project,
-            run: (taskId: string) => this.run(project, taskId),
-            restart: (taskId?: string) => this.restart(project, taskId),
-            stop: () => this.stop(project),
-            getSnapshot: () => this.getSnapshot(project),
-            commands: () => this.commandsForProject(project),
-        });
-    }
-
     disposeProject(projectInput: string): Promise<void> {
         if (this.disposed) return rejected(new TaskRuntimeDisposedError());
         let project: string;
@@ -693,32 +626,4 @@ export class TaskRuntime {
     private assertActive(): void {
         if (this.disposed) throw new TaskRuntimeDisposedError();
     }
-}
-
-let appTaskRuntime: TaskRuntime | null = null;
-
-/** Install once at app bootstrap. The returned cleanup only removes the binding. */
-export function installAppTaskRuntime(runtime: TaskRuntime): () => void {
-    if (!(runtime instanceof TaskRuntime)) throw new TypeError("application task runtime must be a TaskRuntime");
-    if (appTaskRuntime !== null) throw new TaskRuntimeAlreadyInstalledError();
-    appTaskRuntime = runtime;
-    let installed = true;
-    return () => {
-        if (!installed) return;
-        installed = false;
-        if (appTaskRuntime === runtime) appTaskRuntime = null;
-    };
-}
-
-export function getAppTaskRuntime(): TaskRuntime {
-    if (!appTaskRuntime) throw new TaskRuntimeNotInstalledError();
-    return appTaskRuntime;
-}
-
-export function appTasksForProject(project: string): ProjectTaskRuntime {
-    return getAppTaskRuntime().forProject(project);
-}
-
-export function runAppTask(project: string, taskId: string): Promise<void> {
-    return getAppTaskRuntime().run(project, taskId);
 }

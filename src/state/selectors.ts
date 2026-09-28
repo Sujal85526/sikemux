@@ -1,5 +1,5 @@
 import { pluginDocuments } from "../plugins/documents";
-import type { PaneKind, PaneNode, Session, TabRef, Window, WindowRole } from "./types";
+import type { PaneNode, Session, TabRef, Window, WindowRole } from "./types";
 import type { StoreState } from "./store";
 import { collectPanes, openSides } from "./layout";
 
@@ -275,31 +275,6 @@ export function nextInCycle(order: StripOrder, delta: number): string | null {
     const index = activeId ? ids.indexOf(activeId) : -1;
     const base = index < 0 ? 0 : index;
     return ids[(base + delta + ids.length) % ids.length] ?? null;
-}
-
-export const selectActiveWindow = (state: StoreState): Window | undefined => {
-    const session = selectActiveSession(state);
-    return session ? state.windows[session.activeWindowId] : undefined;
-};
-
-export type WorkbenchItemState =
-    StoreState["editorViews"][string] | StoreState["gitViews"][string] | StoreState["globalSearchBySession"][string] | undefined;
-
-/** Migration adapter until every item owns its runtime state in a controller. */
-export function selectItemState(state: StoreState, kind: PaneKind, itemId: string, sessionId?: string): WorkbenchItemState {
-    switch (kind) {
-        case "editor":
-            return state.editorViews[itemId];
-        case "git":
-            return state.gitViews[itemId];
-        case "search":
-            return sessionId ? state.globalSearchBySession[sessionId] : undefined;
-        case "terminal":
-        case "agent":
-            return undefined;
-        default:
-            return undefined;
-    }
 }
 
 const EMPTY_IDS: readonly string[] = Object.freeze([]);

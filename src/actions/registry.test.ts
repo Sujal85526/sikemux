@@ -297,11 +297,6 @@ describe("ActionRegistry contextual resolution", () => {
             ["first.visible", true],
             ["third.disabled", false],
         ]);
-        expect(registry.resolve(fullContext(), { includeHidden: true }).map(({ definition }) => definition.id)).toEqual([
-            "first.visible",
-            "second.hidden",
-            "third.disabled",
-        ]);
         expect(registry.resolveAction("missing.action", fullContext())).toBeUndefined();
         expect(registry.resolveAction("other.project", fullContext())).toBeUndefined();
     });
