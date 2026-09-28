@@ -659,11 +659,9 @@
     width: 42px;
     flex: 0 0 auto;
     margin-right: -6px;
-    visibility: hidden;
 }
-.git-row:hover .git-row-actions,
-.git-row.sel .git-row-actions {
-    visibility: visible;
+.git-row:not(:hover, .sel) .git-row-actions {
+    visibility: hidden;
 }
 .git-row-act {
     display: grid;
