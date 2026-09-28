@@ -21,7 +21,7 @@ import { OutcomeIcon } from "./ActionsIcon";
 import { Annotations } from "./Annotations";
 import { Approvals } from "./Approvals";
 import { Artifacts } from "./Artifacts";
-import { coarse, useNow } from "./hooks";
+import { coarse, useBusy, useNow } from "./hooks";
 import { JobGraph } from "./JobGraph";
 import { JobLogView } from "./JobLogView";
 import { JobSummary } from "./JobSummary";
@@ -30,6 +30,7 @@ import { billedMinutes } from "./RunUsage";
 import { WorkflowFile } from "./WorkflowFile";
 
 const WATCH_RETRY_MS = 30_000;
+const WATCH_RETRY_MAX_MS = 5 * 60_000;
 
 const refreshRuns = () => invalidate((kind) => kind === "gha.runs" || kind === "gha.run");
 
@@ -64,14 +65,17 @@ const JobCard = memo(function JobCard({
     const outcome = outcomeOf(job);
     const stopped = failedStep(job);
     const [step, setStep] = useState<{ number: number } | null>(null);
+    const [busy, runBusy] = useBusy();
     const rerun = (debug: boolean) =>
-        void actionsApi
-            .rerunJob(repo, job.id, debug)
-            .then(() => {
-                notify("success", `Re-running ${job.name}`);
-                refreshRuns();
-            })
-            .catch(reportError(`Could not re-run ${job.name}`));
+        runBusy(() =>
+            actionsApi
+                .rerunJob(repo, job.id, debug)
+                .then(() => {
+                    notify("success", `Re-running ${job.name}`);
+                    refreshRuns();
+                })
+                .catch(reportError(`Could not re-run ${job.name}`)),
+        );
 
     return (
         <div className="gha-job" data-open={open ? "1" : "0"} data-outcome={outcome} data-job-id={job.id}>
@@ -89,12 +93,17 @@ const JobCard = memo(function JobCard({
                     <div className="gha-job-actions">
                         {job.runner && <span className="gha-dim">on {job.runner}</span>}
                         {canWrite && job.status === "completed" && (
-                            <button type="button" className="gha-link" onClick={() => rerun(false)}>
+                            <button type="button" className="gha-link" disabled={busy} onClick={() => rerun(false)}>
                                 Re-run this job
                             </button>
                         )}
                         {canWrite && job.status === "completed" && (
-                            <button type="button" className="gha-link" onClick={() => rerun(true)} title="Re-run with the runner's debug logging on">
+                            <button
+                                type="button"
+                                className="gha-link"
+                                disabled={busy}
+                                onClick={() => rerun(true)}
+                                title="Re-run with the runner's debug logging on">
                                 with debug logs
                             </button>
                         )}
@@ -139,8 +148,9 @@ function Header({
 }) {
     const outcome = outcomeOf(run);
     const live = isUnfinished(run);
-    const act = (what: string, work: Promise<void>) =>
-        void work
+    const [busy, runBusy] = useBusy();
+    const act = (what: string, work: () => Promise<void>) =>
+        work()
             .then(() => {
                 notify("success", what);
                 refreshRuns();
@@ -154,7 +164,7 @@ function Header({
             confirmLabel: "Cancel run",
             destructive: true,
         });
-        if (sure) act("Cancelled the run", actionsApi.cancel(repo, run.id));
+        if (sure) await act("Cancelled the run", () => actionsApi.cancel(repo, run.id));
     };
 
     return (
@@ -165,17 +175,25 @@ function Header({
                 <span className="gha-mono gha-dim">#{run.runNumber}</span>
                 <span className="gha-run-head-spacer" />
                 {canWrite && live && (
-                    <button type="button" className="gha-btn danger" onClick={() => void cancel()}>
+                    <button type="button" className="gha-btn danger" disabled={busy} onClick={() => runBusy(cancel)}>
                         Cancel run
                     </button>
                 )}
                 {canWrite && !live && outcome !== "success" && (
-                    <button type="button" className="gha-btn" onClick={() => act("Re-running the failed jobs", actionsApi.rerun(repo, run.id, true))}>
+                    <button
+                        type="button"
+                        className="gha-btn"
+                        disabled={busy}
+                        onClick={() => runBusy(() => act("Re-running the failed jobs", () => actionsApi.rerun(repo, run.id, true)))}>
                         Re-run failed jobs
                     </button>
                 )}
                 {canWrite && !live && (
-                    <button type="button" className="gha-btn" onClick={() => act("Re-running every job", actionsApi.rerun(repo, run.id, false))}>
+                    <button
+                        type="button"
+                        className="gha-btn"
+                        disabled={busy}
+                        onClick={() => runBusy(() => act("Re-running every job", () => actionsApi.rerun(repo, run.id, false)))}>
                         Re-run all jobs
                     </button>
                 )}
@@ -324,19 +342,24 @@ interface Props {
     canWrite: boolean;
 }
 
-export function RunView({ paneId, repo, runId, openJob, active, canWrite }: Props) {
+/** Everything picked while looking at one run starts over for the next. */
+export function RunView(props: Props) {
+    return <RunDetailView key={props.runId} {...props} />;
+}
+
+function RunDetailView({ paneId, repo, runId, openJob, active, canWrite }: Props) {
     const [attempt, setAttempt] = useState<number | null>(null);
     const [jobFilter, setJobFilter] = useState<JobFilter>("all");
     const detail = useResourceEnabled(active && attempt === null, actionsRunR, repo, runId);
     const older = useResourceEnabled(active && attempt !== null, actionsRunAttemptR, repo, runId, attempt ?? 0);
     const shown = attempt === null ? detail : older;
-    const [live, setLive] = useState<{ runId: number; run: Run; jobs: Job[] } | null>(null);
-    const [watchRound, setWatchRound] = useState(0);
+    const [live, setLive] = useState<{ run: Run; jobs: Job[] } | null>(null);
+    const [watchError, setWatchError] = useState<string | null>(null);
     const [showFile, setShowFile] = useState(false);
     const viewRef = useRef<HTMLDivElement>(null);
     const artifactsRef = useRef<HTMLDivElement>(null);
 
-    const watched = attempt === null && live?.runId === runId ? live : null;
+    const watched = attempt === null ? live : null;
     const useWatched = watchIsNewer(watched?.run ?? null, shown.data?.run ?? null);
     const run = (useWatched ? watched?.run : shown.data?.run) ?? null;
     const jobs = useWatched && watched?.jobs.length ? watched.jobs : (shown.data?.jobs ?? []);
@@ -344,33 +367,75 @@ export function RunView({ paneId, repo, runId, openJob, active, canWrite }: Prop
     const latestAttempt = Math.max(detail.data?.run.attempt ?? 0, watched?.run.attempt ?? 0, run?.attempt ?? 0);
     const now = useNow(active && moving);
 
+    const latestRun = useRef(run);
+    latestRun.current = run;
+
     // While a run is going, the backend pushes the whole run and its jobs on
     // every tick, and the list behind this view is re-read once it ends.
     useEffect(() => {
         if (!active || !moving) return;
+        let alive = true;
+        let generation = 0;
         let streamId: number | null = null;
-        let stopped = false;
-        void actionsApi
-            .watchStart(repo, runId, (tick) => {
-                if (stopped) return;
-                if (tick.run) setLive({ runId, run: tick.run, jobs: tick.jobs });
-                if (!tick.finished) return;
-                refreshRuns();
-                // A watch that gave up on a run still going is started again a little later.
-                if (tick.run && isUnfinished(tick.run)) setTimeout(() => setWatchRound((round) => round + 1), WATCH_RETRY_MS);
-            })
-            .then((id) => {
-                if (stopped) void actionsApi.watchStop(id);
-                else streamId = id;
-            })
-            .catch(swallow("watch the run"));
-        return () => {
-            stopped = true;
-            if (streamId !== null) void actionsApi.watchStop(streamId).catch(swallow("stop watching the run"));
-        };
-    }, [active, moving, repo, runId, watchRound]);
+        let starting = false;
+        let retry: number | undefined;
+        let giveUps = 0;
 
-    useEffect(() => setAttempt(null), [runId]);
+        const stop = () => {
+            generation += 1;
+            window.clearTimeout(retry);
+            retry = undefined;
+            if (streamId !== null) void actionsApi.watchStop(streamId).catch(swallow("stop watching the run"));
+            streamId = null;
+        };
+
+        const start = () => {
+            if (!alive || document.hidden || starting || streamId !== null) return;
+            const startedIn = generation;
+            let ended = false;
+            starting = true;
+            actionsApi
+                .watchStart(repo, runId, (tick) => {
+                    if (!alive || startedIn !== generation) return;
+                    if (tick.run) setLive({ run: tick.run, jobs: tick.jobs });
+                    setWatchError(tick.error);
+                    if (!tick.finished) {
+                        giveUps = 0;
+                        return;
+                    }
+                    ended = true;
+                    streamId = null;
+                    refreshRuns();
+                    const last = tick.run ?? latestRun.current;
+                    if (!last || !isUnfinished(last)) return;
+                    retry = window.setTimeout(start, Math.min(WATCH_RETRY_MS * 2 ** giveUps, WATCH_RETRY_MAX_MS));
+                    giveUps += 1;
+                })
+                .then((id) => {
+                    if (!alive || startedIn !== generation) void actionsApi.watchStop(id).catch(swallow("stop watching the run"));
+                    else if (!ended) streamId = id;
+                })
+                .catch((error: unknown) => {
+                    if (alive && startedIn === generation) setWatchError(failureMessage(error));
+                })
+                .finally(() => {
+                    starting = false;
+                    if (startedIn !== generation) start();
+                });
+        };
+
+        const onVisibility = () => {
+            if (document.hidden) stop();
+            else start();
+        };
+        start();
+        document.addEventListener("visibilitychange", onVisibility);
+        return () => {
+            alive = false;
+            document.removeEventListener("visibilitychange", onVisibility);
+            stop();
+        };
+    }, [active, moving, repo, runId]);
 
     const openFromGraph = useCallback(
         (jobId: number) => {
@@ -405,6 +470,7 @@ export function RunView({ paneId, repo, runId, openJob, active, canWrite }: Prop
                 <IconClose size={11} /> Back to runs
             </button>
             <Header run={run} repo={repo} canWrite={canWrite} onRefresh={() => void shown.refresh()} onDeleted={() => closeRun(paneId)} />
+            {moving && watchError && <div className="gha-error">{watchError}</div>}
             {latestAttempt > 1 && (
                 <div className="gha-attempts">
                     <span className="gha-dim">Attempts</span>

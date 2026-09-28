@@ -19,6 +19,17 @@ describe("useEvery", () => {
         expect(work).toHaveBeenLastCalledWith(9);
     });
 
+    it("skips ticks while the window is hidden and reads once when it is shown", () => {
+        const work = vi.fn();
+        renderHook(() => useEvery(true, 5_000, work));
+        Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+        vi.advanceTimersByTime(20_000);
+        expect(work).not.toHaveBeenCalled();
+        Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
+        document.dispatchEvent(new Event("visibilitychange"));
+        expect(work).toHaveBeenCalledTimes(1);
+    });
+
     it("does nothing while nothing is live", () => {
         const work = vi.fn();
         renderHook(() => useEvery(false, 5_000, work));
