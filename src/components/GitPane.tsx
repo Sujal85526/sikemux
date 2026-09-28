@@ -1493,7 +1493,7 @@ function GitWorkbench({
                 <Tooltip label="Switch branch">
                     <button type="button" className="git-btn git-switch" onClick={(event) => openBranchPicker(event.currentTarget)}>
                         <IconGit size={13} />
-                        <span className="mono">{overviewLoading ? "…" : currentBranch || "detached"}</span>
+                        <span className="git-switch-name">{overviewLoading ? "…" : currentBranch || "detached"}</span>
                         <IconChevron size={9} className="git-switch-chev" />
                     </button>
                 </Tooltip>

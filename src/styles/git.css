@@ -216,14 +216,13 @@
     padding: 0 6px 0 8px;
     color: var(--text-primary);
 }
-.git-switch .mono {
+.git-switch-name {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-}
-.git-switch .mono {
-    font-family: var(--mono);
+    font-family: var(--ui);
     font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
 }
 .git-switch > svg:first-child {
     color: var(--acc);
