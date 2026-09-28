@@ -652,6 +652,34 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+.git-row-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 2px;
+    width: 42px;
+    flex: 0 0 auto;
+    margin-right: -6px;
+    visibility: hidden;
+}
+.git-row:hover .git-row-actions,
+.git-row.sel .git-row-actions {
+    visibility: visible;
+}
+.git-row-act {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--text-tertiary);
+    cursor: pointer;
+}
+.git-row-act:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+}
 .gb-dot {
     width: 6px;
     height: 6px;

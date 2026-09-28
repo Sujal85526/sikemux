@@ -11,7 +11,19 @@ import { errMessage, reportError } from "../state/toast";
 import { DEFAULT_GIT_VIEW, type GitPanel } from "../state/types";
 import { FileIcon } from "./FileIcon";
 import { CopyButton } from "./CopyButton";
-import { IconFetch, IconGit, IconPull, IconPullRequest, IconPush, IconRefresh, IconSparkle, IconWarning, IconChevron } from "./Icons";
+import {
+    IconFetch,
+    IconGit,
+    IconMinus,
+    IconPlus,
+    IconPull,
+    IconPullRequest,
+    IconPush,
+    IconRefresh,
+    IconSparkle,
+    IconWarning,
+    IconChevron,
+} from "./Icons";
 import { GitCmdLogBar } from "./git/GitCmdLogBar";
 import { GitCommitBox } from "./git/GitCommitBox";
 import { GitGraph } from "./git/GitGraph";
@@ -1348,6 +1360,36 @@ function GitWorkbench({
                                     <span className={`gf-y${hasUnstaged(f) ? " on" : ""}`}>{f.worktree.trim()}</span>
                                     <FileIcon name={basenameOf(f.path)} size={14} />
                                     <span className="git-path">{f.path}</span>
+                                    <span className="git-row-actions">
+                                        {isStaged(f) && (
+                                            <button
+                                                type="button"
+                                                tabIndex={-1}
+                                                className="git-row-act"
+                                                title="Unstage"
+                                                aria-label={`Unstage ${f.path}`}
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    void run("", () => git.unstage(repo, f.path));
+                                                }}>
+                                                <IconMinus size={12} />
+                                            </button>
+                                        )}
+                                        {hasUnstaged(f) && (
+                                            <button
+                                                type="button"
+                                                tabIndex={-1}
+                                                className="git-row-act"
+                                                title="Stage"
+                                                aria-label={`Stage ${f.path}`}
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    void run("", () => git.stage(repo, f.path));
+                                                }}>
+                                                <IconPlus size={12} />
+                                            </button>
+                                        )}
+                                    </span>
                                 </div>
                             )}
                         />

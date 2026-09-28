@@ -72,6 +72,7 @@ export function Logo({ size = 16, className }: IconProps) {
     );
 }
 
+export const IconMinus = makeSvgIcon(<path d="M3 8h10" />);
 export const IconPlus = makeSvgIcon(<path d="M8 3v10M3 8h10" />);
 export const IconRefresh = makeSvgIcon(
     <>

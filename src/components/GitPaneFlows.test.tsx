@@ -121,3 +121,27 @@ it("waits for the stage to stop sliding before it refreshes", async () => {
     await nextFrame();
     expect(resources.overviewEnabled).toBe(true);
 });
+
+it("stages and unstages one file from the buttons on its row", async () => {
+    const { git } = await import("../api/git");
+    const stage = vi.spyOn(git, "stage").mockResolvedValue(undefined as never);
+    const unstage = vi.spyOn(git, "unstage").mockResolvedValue(undefined as never);
+    const files = resources.overview.data.status.files;
+    resources.overview.data.status.files = [{ path: "file.ts", index: "M", worktree: "M" }];
+    resources.overview.refresh.mockResolvedValue(undefined);
+    resources.empty.refresh.mockResolvedValue(undefined);
+    try {
+        const user = userEvent.setup();
+        render(<GitPane paneId="git-test" cwd="/repo" active />);
+        await user.click(screen.getByRole("button", { name: "Stage file.ts" }));
+        expect(stage).toHaveBeenCalledWith(expect.any(String), "file.ts");
+        await user.click(screen.getByRole("button", { name: "Unstage file.ts" }));
+        expect(unstage).toHaveBeenCalledWith(expect.any(String), "file.ts");
+    } finally {
+        resources.overview.data.status.files = files;
+        resources.overview.refresh.mockReset();
+        resources.empty.refresh.mockReset();
+        stage.mockRestore();
+        unstage.mockRestore();
+    }
+});
