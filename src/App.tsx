@@ -126,12 +126,26 @@ export function activeTaskControls(snapshot: TaskControllerSnapshot | null, curr
     });
 }
 
+/** The part of `path` below `folder`, with forward slashes, or null when it is not below it. */
+function below(folder: string, path: unknown): string | null {
+    if (typeof path !== "string" || !(path.startsWith(`${folder}/`) || path.startsWith(`${folder}\\`))) return null;
+    return path.slice(folder.length + 1).replaceAll("\\", "/");
+}
+
 export function gitChangeInvalidates(kind: string, args: unknown[], repo: string, paths: readonly string[] | null): boolean {
+    // A project folder that holds repositories is watched as one tree, so a
+    // change inside one of them arrives for the folder, not for that repository.
+    const nested = repo ? below(repo, args[0]) : null;
+    if (nested !== null) {
+        const touched = !paths?.length || paths.some((path) => path === nested || path.startsWith(`${nested}/`));
+        if (!touched || !kind.startsWith("git.")) return false;
+        return !paths?.length || kind === "git.overview" || kind === "git.status";
+    }
     if (repo && args[0] !== repo) return false;
     if (kind === "files.list") return true;
     if (!kind.startsWith("git.")) return false;
     if (!paths?.length) return true;
-    return kind === "git.overview" || kind === "git.status";
+    return kind === "git.overview" || kind === "git.status" || kind === "git.discoveredRepos";
 }
 
 export function subscribeGitChanged(signal?: AbortSignal): Promise<IpcUnsubscribe> {
