@@ -52,6 +52,7 @@ function ProseImage({ src, alt, title, inLink }: { src: string; alt: string; tit
 }
 
 const COMPONENTS: MarkdownComponents = { link: ProseLink };
+const WITH_HTML_IMAGES = { ...MARKDOWN_GFM, htmlImages: true };
 const WITH_IMAGES: MarkdownComponents = { link: ProseLink, img: ProseImage };
 
 /**
@@ -73,7 +74,11 @@ export const Markdown = memo(function Markdown({
     return (
         <div className={className}>
             <ImageLoaderContext.Provider value={loadImage ?? null}>
-                <MarkdownText text={children} options={MARKDOWN_GFM} components={loadImage ? WITH_IMAGES : COMPONENTS} />
+                <MarkdownText
+                    text={children}
+                    options={loadImage ? WITH_HTML_IMAGES : MARKDOWN_GFM}
+                    components={loadImage ? WITH_IMAGES : COMPONENTS}
+                />
             </ImageLoaderContext.Provider>
         </div>
     );
