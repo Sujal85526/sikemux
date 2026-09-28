@@ -1,4 +1,6 @@
-import { lazy, Suspense, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { invalidate } from "../../plugin-api/resources";
+import { subscribe } from "../../state/bus";
 import { SkeletonRows } from "../../plugin-api/ui";
 import type { GitArea } from "../../state/types";
 import { useHostRepo } from "../project";
@@ -28,6 +30,25 @@ export function GitHostShell({ paneId, cwd, area, active, onArea, children }: Pr
     const found = useHostRepo(cwd, active);
     const host = found.repo ? codeHost(found.repo.provider) : undefined;
     const [picking, setPicking] = useState(false);
+    const hosted = !!host;
+
+    // A push, pull or commit changes what the host has to say about this repository's branches and pull requests.
+    useEffect(() => {
+        if (!hosted) return;
+        return subscribe("git-refresh", (event) => {
+            if (event.repo !== cwd) return;
+            invalidate(
+                (kind) =>
+                    kind === "host.runs" ||
+                    kind === "host.pulls" ||
+                    kind === "host.pull" ||
+                    kind === "host.timeline" ||
+                    kind === "host.pullCommits" ||
+                    kind === "host.pullFiles",
+            );
+        });
+    }, [cwd, hosted]);
+
     if (!host || !found.repo) return <>{children}</>;
     const repo = found.repo;
 

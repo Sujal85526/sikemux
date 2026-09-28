@@ -34,6 +34,8 @@ import { errMessage, notify } from "../state/toast";
 import { DEFAULT_GIT_VIEW, type GitPanel } from "../state/types";
 import { copyText } from "../lib/clipboard";
 import { GitHostShell } from "../codehost/components/GitHostShell";
+import { useHostRepo } from "../codehost/project";
+import { compose } from "../codehost/state";
 import { FileIcon } from "./FileIcon";
 import { TreeContextMenu, type CtxItem } from "./FileTree";
 import {
@@ -132,6 +134,7 @@ function GitWorkbench({
     const cmdLogOpen = useStore((s) => s.gitCmdLogOpen);
 
     const overview = useCachedResourceEnabled(fetching && !!repo, gitOverviewR, repo || "");
+    const hostRepo = useHostRepo(repo || null, fetching && !!repo);
     const remotesRes = useCachedResourceEnabled(fetching && !!repo, gitRemotesR, repo || "");
     const stashesRes = useCachedResourceEnabled(fetching && !!repo, gitStashesR, repo || "");
     const remoteBranchesRes = useCachedResourceEnabled(fetching && !!repo && !!openRemote, gitRemoteBranchesR, repo || "", openRemote ?? "");
@@ -725,11 +728,17 @@ function GitWorkbench({
 
     const pushRepo = () => void run("pushing…", async () => `Pushed · ${firstLine(await git.push(repo))}`);
     const pullRepo = () => void run("pulling…", async () => `Pulled · ${firstLine(await git.pull(repo))}`);
-    const openPullRequest = () =>
+    const openPullRequest = () => {
+        if (hostRepo.repo) {
+            cmd.setGitView(paneId, { area: "pulls" });
+            compose(paneId, "pull");
+            return;
+        }
         void run("opening PR…", async () => {
             const url = await git.prOpen(repo);
             return `Opened the pull request page · ${url}`;
         });
+    };
 
     const openBranchPicker = (anchor: HTMLElement) =>
         openMenuAt(anchor, [
