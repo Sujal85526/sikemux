@@ -1,7 +1,14 @@
 import { Checkbox, Tooltip } from "../../../plugin-api/ui";
 import type { ActionsStatus, RepoRef } from "../api";
 import { actionsSettings, SECTION_LABEL, SECTIONS, setFollowBranch, showSection, type RunsView } from "../state";
-import { GithubMark, SectionIcon, UpDown } from "./ActionsIcon";
+import { GithubMark, SectionIcon, SignOutIcon, UpDown } from "./ActionsIcon";
+import { Avatar } from "./Pictures";
+
+function avatarOf(account: ActionsStatus): string {
+    return account.host === "github.com"
+        ? `https://avatars.githubusercontent.com/${account.login}?s=64`
+        : `https://${account.host}/${account.login}.png?size=64`;
+}
 
 interface Props {
     paneId: string;
@@ -67,15 +74,20 @@ export function ActionsSidebar({ paneId, repo, view, projectBranch, onPickRepo, 
                 {account && !account.canWriteWorkflows && (
                     <p className="gha-warn-note">This token cannot start or re-run workflows. It is missing the workflow scope.</p>
                 )}
-                <div className="gha-side-foot-row">
-                    <div className="gha-side-who" title={account ? `${account.login} on ${account.host}` : undefined}>
-                        <span className="gha-side-host">{account?.host}</span>
-                        <span className="gha-side-account">{account?.login}</span>
+                {account && (
+                    <div className="gha-account">
+                        <Avatar url={avatarOf(account)} />
+                        <span className="gha-account-who">
+                            <span className="gha-account-login">{account.login}</span>
+                            <span className="gha-account-host">{account.host}</span>
+                        </span>
+                        <Tooltip label="Sign out">
+                            <button type="button" className="gha-icon-btn" disabled={signingOut} onClick={onSignOut} aria-label="Sign out">
+                                <SignOutIcon />
+                            </button>
+                        </Tooltip>
                     </div>
-                    <button type="button" className="gha-foot-button" disabled={signingOut} onClick={onSignOut}>
-                        Sign out
-                    </button>
-                </div>
+                )}
             </footer>
         </div>
     );
