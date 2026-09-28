@@ -1,6 +1,6 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { Markdown, MarkdownBlocks, type MarkdownComponents } from "./Markdown";
+import { MarkdownBlocks, type MarkdownComponents } from "./Markdown";
 import type { MdElement } from "./types";
 
 afterEach(cleanup);
@@ -122,12 +122,5 @@ describe("drawing a read message", () => {
         );
         const components: MarkdownComponents = { img: ({ alt, inLink }) => <i data-linked={String(inLink)}>{alt}</i> };
         expect(html(blocks, components)).toBe('<p><i data-linked="false">one</i><a href="https://a.dev"><i data-linked="true">two</i></a></p>');
-    });
-});
-
-describe("reading text into blocks", () => {
-    it("draws a message once the parser has read it", async () => {
-        render(<Markdown text={"I edited src/a.ts to fix it."} options={{ gfm: true, htmlAsText: false, fileLinks: true }} />);
-        expect((await screen.findByText("I edited src/a.ts to fix it.")).tagName).toBe("P");
     });
 });

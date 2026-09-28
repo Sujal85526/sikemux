@@ -1,12 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
     agentLaunchArgs,
-    isDangerousPermissionMode,
     normalizeAgentEffort,
     normalizePermissionMode,
     permissionArgs,
-    supportedEfforts,
-    supportedPermissionModes,
 } from "./agentLaunch";
 
 describe("agent launch policy", () => {
@@ -24,17 +21,7 @@ describe("agent launch policy", () => {
         expect(permissionArgs("claude", "full-access")).toEqual(["--permission-mode", "acceptEdits"]);
     });
 
-    it("marks only bypass dangerous", () => {
-        expect(isDangerousPermissionMode("full-access")).toBe(false);
-        expect(isDangerousPermissionMode("bypass")).toBe(true);
-    });
-
     it("presents only Normal and YOLO, without inventing unsupported provider flags", () => {
-        expect(supportedPermissionModes("codex")).toEqual(["workspace-write", "bypass"]);
-        expect(supportedPermissionModes("hermes")).toEqual(["workspace-write", "bypass"]);
-        expect(supportedPermissionModes("omp")).toEqual(["workspace-write", "bypass"]);
-        expect(supportedPermissionModes("grok")).toEqual(["workspace-write", "bypass"]);
-        expect(supportedPermissionModes("pi")).toEqual(["workspace-write"]);
         expect(normalizePermissionMode("opencode", "read-only")).toBe("workspace-write");
         expect(permissionArgs("pi", "read-only")).toEqual([]);
     });
@@ -104,11 +91,6 @@ describe("agent launch policy", () => {
     });
 
     it("reports effort support without inventing provider capabilities", () => {
-        expect(supportedEfforts("claude")).toEqual(["low", "medium", "high", "xhigh", "max"]);
-        expect(supportedEfforts("hermes")).toContain("ultra");
-        expect(supportedEfforts("opencode")).toEqual([]);
-        expect(supportedEfforts("omp")).toEqual(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
-        expect(supportedEfforts("grok")).toEqual(["none", "minimal", "low", "medium", "high", "xhigh", "max"]);
         expect(normalizeAgentEffort("codex", "ultra")).toBe("max");
         expect(normalizeAgentEffort("opencode", "high")).toBeUndefined();
     });

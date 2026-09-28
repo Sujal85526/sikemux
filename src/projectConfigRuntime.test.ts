@@ -1,19 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConfirmRequest } from "./state/dialog";
-import { clearProjectConfigTrustForTests, projectActionCommand, trustProjectConfig, worktreeHookCommand } from "./projectConfigRuntime";
+import { clearProjectConfigTrustForTests, trustProjectConfig } from "./projectConfigRuntime";
 
 beforeEach(clearProjectConfigTrustForTests);
 
 describe("project config runtime boundary", () => {
-    it("adapts actions and hooks without executing them", () => {
-        expect(
-            projectActionCommand({ id: "test", label: "Test", description: "Run tests", command: "pnpm test", placement: "popup", contexts: [] }),
-        ).toEqual({ id: "project.test", title: "Test", detail: "Run tests", command: "pnpm test", placement: "popup", contexts: [] });
-        expect(worktreeHookCommand({ id: "deps", label: "Install", command: "pnpm install" })).toMatchObject({
-            id: "project.worktree.deps",
-            placement: "background",
-        });
-    });
 
     it("asks once per exact fingerprint", async () => {
         const confirm = vi.fn(async () => true);

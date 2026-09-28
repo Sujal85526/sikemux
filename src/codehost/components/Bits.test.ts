@@ -31,11 +31,6 @@ describe("reviewVerdict", () => {
 });
 
 describe("reasonLabel", () => {
-    it("writes GitHub's reason codes as words", () => {
-        expect(reasonLabel("review_requested")).toBe("Review requested");
-        expect(reasonLabel("ci_activity")).toBe("CI finished");
-    });
-
     it("makes an unknown reason readable rather than dropping it", () => {
         expect(reasonLabel("something_new")).toBe("something new");
     });

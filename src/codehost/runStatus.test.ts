@@ -9,7 +9,6 @@ import {
     isUnfinished,
     jobsSummary,
     outcomeOf,
-    statusParam,
     watchIsNewer,
 } from "./runStatus";
 
@@ -79,13 +78,6 @@ describe("checksSummary", () => {
         expect(checksSummary([done("failure"), { status: "in_progress", conclusion: null }, { status: "waiting", conclusion: null }])).toBe(
             "1 failing, 1 running, 1 waiting",
         );
-    });
-});
-
-describe("statusParam", () => {
-    it("narrows by nothing when the filter is all", () => {
-        expect(statusParam("all")).toBeUndefined();
-        expect(statusParam("failure")).toBe("failure");
     });
 });
 

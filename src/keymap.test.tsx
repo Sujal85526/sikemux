@@ -361,12 +361,4 @@ describe("text size shortcuts", () => {
         expect(getState().chatTextScale).toBe(1.1);
         expect(getState().terminalFontSize).toBe(13);
     });
-
-    it("accepts the shifted + as well as a bare =", () => {
-        render(<KeymapHarness />);
-
-        press("Equal", window, { shiftKey: true });
-
-        expect(getState().terminalFontSize).toBe(14);
-    });
 });

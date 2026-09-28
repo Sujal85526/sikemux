@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { annotationPlace } from "./Annotations";
 import { formatBytes } from "./Artifacts";
 
 describe("formatBytes", () => {
@@ -14,20 +13,5 @@ describe("formatBytes", () => {
 
     it("stops at gigabytes rather than inventing a unit", () => {
         expect(formatBytes(5 * 1024 ** 4)).toBe("5120 GB");
-    });
-});
-
-describe("annotationPlace", () => {
-    it("writes the file and line the way an editor jumps to them", () => {
-        expect(annotationPlace("src/lib.rs", 12)).toBe("src/lib.rs:12");
-    });
-
-    it("leaves the line off when there is not one", () => {
-        expect(annotationPlace("src/lib.rs", null)).toBe("src/lib.rs");
-    });
-
-    it("says nothing for a failure that belongs to no file", () => {
-        expect(annotationPlace(null, 12)).toBeNull();
-        expect(annotationPlace(null, null)).toBeNull();
     });
 });

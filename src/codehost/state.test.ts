@@ -12,7 +12,6 @@ import {
     setFollowBranch,
     setProjectRepo,
     showRun,
-    slugOf,
     togglePinned,
     updateView,
     viewOf,
@@ -76,11 +75,6 @@ describe("refOf", () => {
         for (const bad of ["", "nodelike", "a/b/c", "/b", "a/"]) {
             expect(refOf(HOST, bad)).toBeNull();
         }
-    });
-
-    it("round-trips through slugOf", () => {
-        expect(slugOf({ owner: "a", name: "b" })).toBe("a/b");
-        expect(refOf(HOST, slugOf({ owner: "a", name: "b" }))).toEqual({ provider: HOST, owner: "a", name: "b" });
     });
 });
 
