@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
     actionsSettings,
     closeRun,
+    compose,
     filterBy,
     refOf,
     setProjectRepo,
     showRepo,
     showRun,
+    showSection,
     slugOf,
     togglePinned,
     updateView,
@@ -104,5 +106,19 @@ describe("the view of one pane", () => {
         updateView("pane-4", { statusFilter: "failure", page: 3, workflowId: 12 });
         showRepo("pane-4", { owner: "c", name: "d" });
         expect(viewOf("pane-4")).toMatchObject({ repo: { owner: "c", name: "d" }, statusFilter: "all", page: 1, workflowId: null });
+    });
+
+    it("stays in the section it was on when the repository changes", () => {
+        showRepo("pane-5", { owner: "a", name: "b" });
+        showSection("pane-5", "issues");
+        showRepo("pane-5", { owner: "c", name: "d" });
+        expect(viewOf("pane-5")).toMatchObject({ section: "issues", repo: { owner: "c", name: "d" } });
+    });
+
+    it("keeps a half-written pull request when the repository on screen is the same one", () => {
+        showSection("pane-6", "pulls");
+        compose("pane-6", "pull");
+        showRepo("pane-6", { owner: "a", name: "b" }, { owner: "a", name: "b" });
+        expect(viewOf("pane-6")).toMatchObject({ section: "pulls", composing: "pull", repo: { owner: "a", name: "b" } });
     });
 });

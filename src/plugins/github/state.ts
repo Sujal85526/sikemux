@@ -152,9 +152,15 @@ export function filterBy(paneId: string, patch: Pick<Partial<RunsView>, "workflo
     updateView(paneId, { ...patch, page: 1, run: null, job: null });
 }
 
-export function showRepo(paneId: string, repo: RepoRef): void {
-    updateView(paneId, { ...FRESH, repo });
-    rememberRepo(`${repo.owner}/${repo.name}`);
+/**
+ * Points a pane at a repository, staying in the section it was on. What was
+ * open or half written there is only let go when the repository is a
+ * different one from `shown`, the one on screen until now.
+ */
+export function showRepo(paneId: string, repo: RepoRef, shown: RepoRef | null = viewOf(paneId).repo): void {
+    const same = !!shown && slugOf(shown) === slugOf(repo);
+    updateView(paneId, same ? { repo } : { ...FRESH, section: viewOf(paneId).section, repo });
+    rememberRepo(slugOf(repo));
 }
 
 export function showSection(paneId: string, section: Section): void {
@@ -204,5 +210,7 @@ export function openActions(): void {
 /** Brings the runs view forward on one repository, from anywhere that names it. */
 export function openRepo(repo: RepoRef): void {
     const paneId = openSurface(GITHUB_HUB);
-    if (paneId) showRepo(paneId, repo);
+    if (!paneId) return;
+    showRepo(paneId, repo);
+    if (viewOf(paneId).section !== "actions") showSection(paneId, "actions");
 }

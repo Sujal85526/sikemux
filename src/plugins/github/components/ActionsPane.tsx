@@ -47,11 +47,12 @@ export function ActionsPane({ paneId, active }: Props) {
     // hand is remembered for its project, so it comes back with it.
     const projectSlug = project.repo ? slugOf(project.repo) : null;
     useEffect(() => {
-        if (!projectSlug) return;
+        const next = projectSlug ? refOf(projectSlug) : null;
+        if (!next) return;
         const current = viewOf(paneId).repo;
         if (current && slugOf(current) === projectSlug) return;
-        const next = refOf(projectSlug);
-        if (next) showRepo(paneId, next);
+        const remembered = actionsSettings.get().lastRepo;
+        showRepo(paneId, next, current ?? (remembered ? refOf(remembered) : null));
     }, [paneId, projectSlug]);
 
     const signOut = () =>
