@@ -18,6 +18,8 @@ export interface PaneNode {
     kind: PaneKind;
     title: string;
     startup?: string;
+    /** The tab this pane had before it was split into another, which it takes back when it moves out. */
+    tab?: { name: string; role: WindowRole };
     /** Runtime-only marker: this pane borrows a process owned outside its renderer. */
     externalPty?: true;
     /** Runtime-only stable task identity used to reuse its presentation window. */
