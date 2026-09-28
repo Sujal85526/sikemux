@@ -2077,7 +2077,18 @@ button.gha-step:focus-visible {
 .pr-card .gha-merge-box > .gha-merge-actions {
     padding: 6px;
 }
+/* The files take the rows they need; whatever is left goes to the open panels beneath. */
+.pr-files {
+    flex: 0 1 auto;
+    min-height: 64px;
+    overflow-y: auto;
+}
+.pr-files:last-of-type,
+.pr-files:has(+ .git-history:not(.open) + .git-history:not(.open)) {
+    flex-grow: 1;
+}
 .pr-files-stat {
+    margin-left: auto;
     padding-right: var(--space-1h);
 }
 button.git-file-row {

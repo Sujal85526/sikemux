@@ -367,44 +367,39 @@ function PullFileRows({
     const list = files.data ?? [];
     const added = list.reduce((sum, file) => sum + file.additions, 0);
     const removed = list.reduce((sum, file) => sum + file.deletions, 0);
-    const [open, setOpen] = useState(true);
     return (
-        <FoldPanel
-            label="Files"
-            count={list.length}
-            open={open}
-            onToggle={() => setOpen((was) => !was)}
-            badge={
-                list.length > 0 && (
+        <div className="git-list pr-files">
+            <div className="git-group git-file-group">
+                <span className="git-label">Files</span>
+                {list.length > 0 && <span className="git-count">{list.length}</span>}
+                {list.length > 0 && (
                     <span className="gha-diffstat pr-files-stat">
                         <span className="gha-add">+{added.toLocaleString()}</span>
                         <span className="gha-del">−{removed.toLocaleString()}</span>
                     </span>
-                )
-            }>
-            <div className="git-list">
-                {files.status === "loading" && !files.data && <SkeletonRows rows={3} label="Loading files" />}
-                {list.map((file) => {
-                    const badge = FILE_STATUS[file.status] ?? { letter: "M", cls: "modified" };
-                    const dir = dirname(file.path);
-                    return (
-                        <button
-                            key={file.path}
-                            type="button"
-                            className={`git-row git-file-row${focus === file.path ? " sel" : ""}`}
-                            title={file.path}
-                            onClick={() => onFocus(file.path)}>
-                            <FileIcon name={basename(file.path)} size={14} />
-                            <span className="git-row-name">
-                                {basename(file.path)}
-                                {dir && <span className="git-row-dir">{dir}</span>}
-                            </span>
-                            <span className={`git-status ${badge.cls}`}>{badge.letter}</span>
-                        </button>
-                    );
-                })}
+                )}
             </div>
-        </FoldPanel>
+            {files.status === "loading" && !files.data && <SkeletonRows rows={3} label="Loading files" />}
+            {list.map((file) => {
+                const badge = FILE_STATUS[file.status] ?? { letter: "M", cls: "modified" };
+                const dir = dirname(file.path);
+                return (
+                    <button
+                        key={file.path}
+                        type="button"
+                        className={`git-row git-file-row${focus === file.path ? " sel" : ""}`}
+                        title={file.path}
+                        onClick={() => onFocus(file.path)}>
+                        <FileIcon name={basename(file.path)} size={14} />
+                        <span className="git-row-name">
+                            {basename(file.path)}
+                            {dir && <span className="git-row-dir">{dir}</span>}
+                        </span>
+                        <span className={`git-status ${badge.cls}`}>{badge.letter}</span>
+                    </button>
+                );
+            })}
+        </div>
     );
 }
 

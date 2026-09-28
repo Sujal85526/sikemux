@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { GitColumns } from "../../components/git/GitColumns";
 import { FoldPanel } from "../../components/git/FoldPanel";
 import { confirmDialog, copyText, notify, openUrl, reportError, swallow } from "../../plugin-api/host";
@@ -266,37 +266,38 @@ function RunCard({
 }
 
 /** The run's jobs as rows, like a pull request lists its files. */
-function JobRows({ paneId, jobs, openJob, now }: { paneId: string; jobs: Job[]; openJob: number | null; now: number }) {
-    const [open, setOpen] = useState(true);
+const JobRows = memo(function JobRows({ paneId, jobs, openJob, now }: { paneId: string; jobs: Job[]; openJob: number | null; now: number }) {
     return (
-        <FoldPanel label="Jobs" count={jobs.length} open={open} onToggle={() => setOpen((was) => !was)}>
-            <div className="git-list">
-                {jobs.length === 0 && <div className="gha-side-empty">No jobs yet</div>}
-                {jobs.map((job) => {
-                    const outcome = outcomeOf(job);
-                    const stopped = failedStep(job);
-                    return (
-                        <button
-                            key={job.id}
-                            type="button"
-                            className={`git-row git-file-row${openJob === job.id ? " sel" : ""}`}
-                            title={job.name}
-                            onClick={() => showJob(paneId, job.id)}>
-                            <OutcomeIcon outcome={outcome} size={12} />
-                            <span className="git-row-name">{job.name}</span>
-                            {stopped && <span className="gha-job-stopped">at {stopped.name}</span>}
-                            <span className="run-job-took">
-                                {outcome === "skipped"
-                                    ? "skipped"
-                                    : formatDuration(elapsedMs(job.startedAt, job.completedAt, job.completedAt ? coarse(now) : now))}
-                            </span>
-                        </button>
-                    );
-                })}
+        <div className="git-list pr-files">
+            <div className="git-group git-file-group">
+                <span className="git-label">Jobs</span>
+                {jobs.length > 0 && <span className="git-count">{jobs.length}</span>}
             </div>
-        </FoldPanel>
+            {jobs.length === 0 && <div className="gha-side-empty">No jobs yet</div>}
+            {jobs.map((job) => {
+                const outcome = outcomeOf(job);
+                const stopped = failedStep(job);
+                return (
+                    <button
+                        key={job.id}
+                        type="button"
+                        className={`git-row git-file-row${openJob === job.id ? " sel" : ""}`}
+                        title={job.name}
+                        onClick={() => showJob(paneId, job.id)}>
+                        <OutcomeIcon outcome={outcome} size={12} />
+                        <span className="git-row-name">{job.name}</span>
+                        {stopped && <span className="gha-job-stopped">at {stopped.name}</span>}
+                        <span className="run-job-took">
+                            {outcome === "skipped"
+                                ? "skipped"
+                                : formatDuration(elapsedMs(job.startedAt, job.completedAt, job.completedAt ? coarse(now) : now))}
+                        </span>
+                    </button>
+                );
+            })}
+        </div>
     );
-}
+});
 
 /** The run's artifacts, folding at the foot of the left column. */
 function ArtifactsFold({ repo, run, active }: { repo: RepoRef; run: Run; active: boolean }) {
