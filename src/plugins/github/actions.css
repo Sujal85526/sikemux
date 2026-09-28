@@ -1120,17 +1120,16 @@
     overflow: hidden;
 }
 .gha-label {
-    --label: var(--text-tertiary);
     display: inline-flex;
     align-items: center;
     flex: 0 0 auto;
     height: 17px;
     max-width: 18ch;
     padding: 0 var(--space-1h);
-    border: 1px solid color-mix(in oklab, var(--label) 45%, transparent);
+    border: 1px solid var(--border);
     border-radius: var(--radius-full);
-    background: color-mix(in oklab, var(--label) 16%, transparent);
-    color: color-mix(in oklab, var(--label) 55%, var(--ink));
+    background: var(--gha-tint);
+    color: var(--text-secondary);
     font-size: var(--text-3xs);
     font-weight: var(--weight-medium);
     line-height: 1;
@@ -1434,12 +1433,287 @@
     font-weight: var(--weight-medium);
     color: var(--text-primary);
 }
-.gha-event {
+.gha-comment[data-review="CHANGES_REQUESTED"] > .gha-comment-head {
+    background: color-mix(in oklab, var(--danger) 7%, transparent);
+}
+.gha-comment[data-review="APPROVED"] > .gha-comment-head {
+    background: color-mix(in oklab, var(--live) 7%, transparent);
+}
+.gha-comment-head {
+    border-radius: var(--radius-2) var(--radius-2) 0 0;
+}
+.gha-comment-empty {
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-xs);
+    font-style: italic;
+    color: var(--text-tertiary);
+}
+.gha-role {
+    display: inline-flex;
+    align-items: center;
+    height: 18px;
+    padding: 0 var(--space-1h);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    font-size: var(--text-3xs);
+    color: var(--text-tertiary);
+}
+
+/* The timeline: avatars and event marks sit on one line down the left. */
+.gha-timeline {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+.gha-timeline::before {
+    content: "";
+    position: absolute;
+    top: var(--space-2);
+    bottom: var(--space-2);
+    left: 13px;
+    width: 1px;
+    background: var(--border);
+}
+.gha-tl-post {
+    position: relative;
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: var(--space-3);
+    align-items: start;
+}
+.gha-tl-face {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    margin-top: var(--space-1);
+    border-radius: var(--radius-full);
+    background: var(--surface-raised);
+}
+.gha-tl-face > .gha-avatar {
+    width: 28px;
+    height: 28px;
+}
+.gha-tl-event {
+    position: relative;
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: var(--space-3);
+    align-items: center;
+    font-size: var(--text-2xs);
+}
+.gha-tl-badge {
+    --tone: var(--text-tertiary);
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    margin-left: 2px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    background: color-mix(in oklab, var(--tone) 14%, var(--surface-raised));
+    color: var(--tone);
+}
+.gha-tl-badge[data-tone="live"] {
+    --tone: var(--live);
+}
+.gha-tl-badge[data-tone="danger"] {
+    --tone: var(--danger);
+}
+.gha-tl-badge[data-tone="acc"] {
+    --tone: var(--acc);
+}
+.gha-tl-text {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0 var(--space-1);
+    min-width: 0;
+}
+.gha-tl-quote {
+    color: var(--text-secondary);
+    font-weight: var(--weight-medium);
+}
+.gha-tl-commits {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+.gha-tl-commit {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+    gap: var(--space-3);
+    align-items: center;
+    min-height: 24px;
+    font-size: var(--text-2xs);
+}
+.gha-tl-commit-dot {
+    position: relative;
+    display: grid;
+    place-items: center;
+    color: var(--text-tertiary);
+}
+.gha-tl-commit-message {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-secondary);
+}
+.gha-tl-sha {
+    padding: 0 var(--space-1);
+    border: 0;
+    background: none;
+    color: var(--text-tertiary);
+    font-family: var(--mono);
+    font-size: var(--text-3xs);
+    cursor: pointer;
+}
+.gha-tl-sha:hover {
+    color: var(--text-primary);
+}
+.gha-tl-tail {
+    padding-left: calc(28px + var(--space-3));
+}
+
+/* Tabs, and the column GitHub keeps down the right of a pull request. */
+.gha-tabs {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin-top: calc(-1 * var(--space-2));
+}
+.gha-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1h);
+    height: 28px;
+    padding: 0 var(--space-2);
+    border: 1px solid transparent;
+    background: none;
+    color: var(--text-tertiary);
+    font: inherit;
+    font-size: var(--text-xs);
+    cursor: pointer;
+    transition:
+        background var(--dur-1) linear,
+        color var(--dur-1) linear;
+}
+.gha-tab:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+}
+.gha-tab[data-on="1"] {
+    border-color: var(--border-selected);
+    background: var(--surface-selected);
+    color: var(--text-primary);
+}
+.gha-tab-count {
+    min-width: 18px;
+    padding: 0 var(--space-1);
+    border-radius: var(--radius-full);
+    background: var(--gha-tint);
+    font-size: var(--text-3xs);
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    color: var(--text-secondary);
+}
+.gha-pull-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 220px;
+    gap: var(--space-6);
+    align-items: start;
+}
+@container (max-width: 900px) {
+    .gha-pull-body {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .gha-pull-side {
+        order: -1;
+    }
+}
+.gha-pull-side {
+    display: flex;
+    flex-direction: column;
+}
+.gha-side-part {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1h);
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--gha-rule);
+    font-size: var(--text-2xs);
+    color: var(--text-secondary);
+}
+.gha-side-part:first-child {
+    padding-top: 0;
+}
+.gha-side-title {
+    font-weight: var(--weight-medium);
+    color: var(--text-tertiary);
+}
+.gha-side-none {
+    color: var(--text-tertiary);
+}
+.gha-side-person {
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    padding: 0 var(--space-3);
+    color: var(--text-primary);
+}
+.gha-side-faces {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+}
+.gha-side-faces .gha-avatar {
+    width: 22px;
+    height: 22px;
+}
+.gha-page-sentence {
+    gap: var(--space-1h);
+    flex-wrap: wrap;
+}
+.gha-copy-branch {
+    width: 22px;
+    height: 22px;
+}
+.gha-commits {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+.gha-commit {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: var(--gha-tint);
+}
+.gha-commit-main {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.gha-commit-message {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: var(--weight-medium);
+    color: var(--text-primary);
+}
+.gha-commit-sub {
     font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+}
+.gha-commit-sha {
+    font-family: var(--mono);
+    font-size: var(--text-3xs);
 }
 .gha-comment-box {
     height: auto;

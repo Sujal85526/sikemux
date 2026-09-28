@@ -262,6 +262,8 @@ export interface Comment {
     id: number;
     author: string | null;
     avatarUrl: string | null;
+    /** `OWNER`, `MEMBER`, `COLLABORATOR`, `CONTRIBUTOR` and the rest. */
+    authorAssociation: string | null;
     body: string;
     createdAt: string;
     url: string | null;
@@ -277,7 +279,10 @@ export interface Pull {
     draft: boolean;
     author: string | null;
     avatarUrl: string | null;
+    authorAssociation: string | null;
     head: string | null;
+    /** `owner:branch`, which names the fork a branch lives on. */
+    headLabel: string | null;
     base: string | null;
     headSha: string | null;
     createdAt: string;
@@ -291,7 +296,39 @@ export interface Pull {
     mergeState: string | null;
     labels: Label[];
     reviewers: string[];
+    assignees: string[];
+    milestone: string | null;
+    commits: number | null;
+    mergedAt: string | null;
+    mergedBy: string | null;
+    mergeCommitSha: string | null;
     url: string;
+}
+
+/** One thing in a pull request's or issue's history, in the one shape the backend gives every event. */
+export interface TimelineItem {
+    /** GitHub's event name, such as `commented`, `reviewed` or `committed`. */
+    kind: string;
+    id: number | null;
+    actor: string | null;
+    avatarUrl: string | null;
+    association: string | null;
+    at: string | null;
+    body: string | null;
+    /** A review's verdict, in lower case, or why an issue was closed. */
+    state: string | null;
+    sha: string | null;
+    message: string | null;
+    /** Who or what it was about: a requested reviewer, a label, a new title. */
+    subject: string | null;
+}
+
+export interface PullCommit {
+    sha: string;
+    message: string;
+    author: string | null;
+    avatarUrl: string | null;
+    date: string | null;
 }
 
 export interface ChangedFile {
@@ -446,6 +483,8 @@ export const actionsApi = {
     pulls: (repo: RepoRef, state: string) => call<Pull[]>("pulls", { ...repo, state }),
     pull: (repo: RepoRef, number: number) => call<Pull>("pull", { ...repo, number }),
     pullFiles: (repo: RepoRef, number: number) => call<ChangedFile[]>("pullFiles", { ...repo, number }),
+    pullCommits: (repo: RepoRef, number: number) => call<PullCommit[]>("pullCommits", { ...repo, number }),
+    timeline: (repo: RepoRef, number: number) => call<TimelineItem[]>("timeline", { ...repo, number }),
     pullReviews: (repo: RepoRef, number: number) => call<Review[]>("pullReviews", { ...repo, number }),
     issues: (repo: RepoRef, state: string, page: number) => call<IssuePage>("issues", { ...repo, state, page }),
     issue: (repo: RepoRef, number: number) => call<Issue>("issue", { ...repo, number }),

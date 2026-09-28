@@ -1,19 +1,28 @@
-import { memo, useMemo, useState } from "react";
-import { confirmDialog, notify, reportError } from "../../../plugin-api/host";
+import { memo, useMemo, useState, type ReactNode } from "react";
+import { confirmDialog, copyText, notify, reportError, swallow } from "../../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
-import { Dropdown, EmptyState, IconChevron, IconPullRequest, SkeletonRows, VirtualLogList } from "../../../plugin-api/ui";
-import { actionsApi, failureMessage, type MergeMethod, type Pull, type RepoRef } from "../api";
-import { githubPullFilesR, githubPullR, githubPullReviewsR, githubPullsR } from "../resources";
+import {
+    Dropdown,
+    EmptyState,
+    IconChevron,
+    IconClock,
+    IconCopy,
+    IconPullRequest,
+    SkeletonRows,
+    Tooltip,
+    VirtualLogList,
+} from "../../../plugin-api/ui";
+import { actionsApi, failureMessage, type MergeMethod, type Pull, type RepoRef, type Review } from "../api";
+import { githubPullCommitsR, githubTimelineR, githubPullFilesR, githubPullR, githubPullReviewsR, githubPullsR } from "../resources";
 import { formatAgo, type Outcome } from "../runStatus";
 import { needsPull } from "../compose";
 import { compose, openRunFrom, setListState, showItem } from "../state";
-import { CommentThread } from "./CommentThread";
+import { CommentThread, Face } from "./CommentThread";
 import { OutcomeIcon } from "./ActionsIcon";
 import { Branch, Comments, Labels, PageHead, StateMark, stateLabel, stateOf, Who } from "./Bits";
 import { useBusy, useNow } from "./hooks";
 import { NewPullForm } from "./NewPullForm";
 import { PullChecks } from "./PullChecks";
-import { Prose } from "./Pictures";
 
 const LIST_STATES = ["open", "closed", "all"];
 
@@ -234,10 +243,165 @@ function MergeBox({
     );
 }
 
-function PullDetail({ repo, number, active, login, onBack, onOpenRun }: DetailProps) {
-    const pull = useResourceEnabled(active, githubPullR, repo, number);
+type PullTab = "conversation" | "commits" | "files";
+
+function plural(count: number, word: string): string {
+    return `${count.toLocaleString()} ${word}${count === 1 ? "" : "s"}`;
+}
+
+function latestReviews(reviews: readonly Review[]): Map<string, Review> {
+    const latest = new Map<string, Review>();
+    for (const review of reviews) {
+        if (!review.author) continue;
+        const before = latest.get(review.author);
+        if (review.state === "COMMENTED" && before && before.state !== "COMMENTED") continue;
+        latest.set(review.author, review);
+    }
+    return latest;
+}
+
+const REVIEW_OUTCOME: Record<string, Outcome> = {
+    APPROVED: "success",
+    CHANGES_REQUESTED: "failure",
+    COMMENTED: "skipped",
+    DISMISSED: "cancelled",
+};
+
+function SideSection({ title, children }: { title: string; children: ReactNode }) {
+    return (
+        <section className="gha-side-part">
+            <div className="gha-side-title">{title}</div>
+            {children}
+        </section>
+    );
+}
+
+function PullSide({
+    pull,
+    reviews,
+    participants,
+}: {
+    pull: Pull;
+    reviews: readonly Review[];
+    participants: readonly { login: string; avatarUrl: string | null }[];
+}) {
+    const latest = latestReviews(reviews);
+    const waiting = pull.reviewers.filter((login) => !latest.has(login));
+    return (
+        <aside className="gha-pull-side">
+            <SideSection title="Reviewers">
+                {latest.size === 0 && waiting.length === 0 && <span className="gha-side-none">No reviews</span>}
+                {[...latest.values()].map((review) => (
+                    <div className="gha-side-person" key={review.author}>
+                        <Face login={review.author} url={review.avatarUrl} />
+                        <span>{review.author}</span>
+                        <span className="gha-page-spacer" />
+                        <OutcomeIcon outcome={REVIEW_OUTCOME[review.state] ?? "unknown"} size={12} />
+                    </div>
+                ))}
+                {waiting.map((login) => (
+                    <div className="gha-side-person" key={login}>
+                        <Face login={login} url={null} />
+                        <span>{login}</span>
+                        <span className="gha-page-spacer" />
+                        <span className="gha-side-none" title="Awaiting review">
+                            <IconClock size={12} />
+                        </span>
+                    </div>
+                ))}
+            </SideSection>
+            <SideSection title="Assignees">
+                {pull.assignees.length === 0 ? (
+                    <span className="gha-side-none">No one assigned</span>
+                ) : (
+                    pull.assignees.map((login) => (
+                        <div className="gha-side-person" key={login}>
+                            <Face login={login} url={null} />
+                            <span>{login}</span>
+                        </div>
+                    ))
+                )}
+            </SideSection>
+            <SideSection title="Labels">
+                {pull.labels.length === 0 ? <span className="gha-side-none">None yet</span> : <Labels labels={pull.labels} />}
+            </SideSection>
+            <SideSection title="Milestone">
+                <span className={pull.milestone ? undefined : "gha-side-none"}>{pull.milestone ?? "No milestone"}</span>
+            </SideSection>
+            <SideSection title={plural(participants.length, "participant")}>
+                <div className="gha-side-faces">
+                    {participants.map((person) => (
+                        <span key={person.login} title={person.login}>
+                            <Face login={person.login} url={person.avatarUrl} />
+                        </span>
+                    ))}
+                </div>
+            </SideSection>
+        </aside>
+    );
+}
+
+function CommitsTab({ repo, number, active, now }: { repo: RepoRef; number: number; active: boolean; now: number }) {
+    const commits = useResourceEnabled(active, githubPullCommitsR, repo, number);
+    if (commits.status === "loading" && !commits.data) return <SkeletonRows rows={6} label="Loading commits" />;
+    if (commits.error && !commits.data) return <EmptyState title="Could not read the commits" message={failureMessage(commits.error)} tone="error" />;
+    return (
+        <div className="gha-commits">
+            {(commits.data ?? []).map((commit) => (
+                <div className="gha-commit" key={commit.sha}>
+                    <Face login={commit.author} url={commit.avatarUrl} />
+                    <span className="gha-commit-main">
+                        <span className="gha-commit-message">{commit.message.split("\n")[0]}</span>
+                        <span className="gha-commit-sub">
+                            {commit.author ?? "someone"} committed {formatAgo(commit.date, now)}
+                        </span>
+                    </span>
+                    <button
+                        type="button"
+                        className="gha-btn gha-commit-sha"
+                        title="Copy the full commit"
+                        onClick={() =>
+                            void copyText(commit.sha)
+                                .then(() => notify("success", `Copied ${commit.sha.slice(0, 7)}`))
+                                .catch(swallow("copy the commit"))
+                        }>
+                        {commit.sha.slice(0, 7)}
+                    </button>
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function FilesTab({ repo, number, active }: { repo: RepoRef; number: number; active: boolean }) {
     const files = useResourceEnabled(active, githubPullFilesR, repo, number);
+    if (files.status === "loading" && !files.data) return <SkeletonRows rows={6} label="Loading files" />;
+    if (files.error && !files.data) return <EmptyState title="Could not read the files" message={failureMessage(files.error)} tone="error" />;
+    return (
+        <section className="gha-files">
+            {(files.data ?? []).map((file) => (
+                <details className="gha-file" key={file.path}>
+                    <summary className="gha-file-head">
+                        <span className="gha-chevron">
+                            <IconChevron size={11} />
+                        </span>
+                        <span className="gha-file-path">{file.path}</span>
+                        <span className="gha-diffstat">
+                            <span className="gha-add">+{file.additions}</span> <span className="gha-del">−{file.deletions}</span>
+                        </span>
+                    </summary>
+                    {file.patch ? <Diff patch={file.patch} /> : <div className="gha-side-empty">GitHub did not send a diff for this file.</div>}
+                </details>
+            ))}
+        </section>
+    );
+}
+
+function PullDetail({ repo, number, active, login, onBack, onOpenRun }: DetailProps) {
+    const [tab, setTab] = useState<PullTab>("conversation");
+    const pull = useResourceEnabled(active, githubPullR, repo, number);
     const reviews = useResourceEnabled(active, githubPullReviewsR, repo, number);
+    const timeline = useResourceEnabled(active && tab === "conversation", githubTimelineR, repo, number);
     const now = useNow(false);
 
     if (pull.status === "loading" && !pull.data) return <SkeletonRows rows={8} label="Loading pull request" />;
@@ -245,9 +409,27 @@ function PullDetail({ repo, number, active, login, onBack, onOpenRun }: DetailPr
         return <EmptyState title="Could not read it" message={failureMessage(pull.error)} tone="error" action={{ label: "Back", onClick: onBack }} />;
     }
     const found = pull.data;
-    const verdict = reviewVerdict(reviews.data ?? []);
-    const changed = files.data ?? [];
+    const reviewList = reviews.data ?? [];
+    const verdict = reviewVerdict(reviewList);
     const merged = found.state === "merged";
+    const actor = merged ? (found.mergedBy ?? found.author) : found.author;
+    const verb = merged ? "merged" : found.state === "open" ? "wants to merge" : "wanted to merge";
+    const from = found.headLabel ?? found.head;
+
+    const people = new Map<string, string | null>();
+    const meet = (who: string | null, avatarUrl: string | null) => {
+        if (who && !people.get(who)) people.set(who, avatarUrl);
+    };
+    meet(found.author, found.avatarUrl);
+    for (const review of reviewList) meet(review.author, review.avatarUrl);
+    for (const item of timeline.data ?? []) if (item.kind === "commented" || item.kind === "reviewed") meet(item.actor, item.avatarUrl);
+    const participants = [...people].map(([who, avatarUrl]) => ({ login: who, avatarUrl }));
+
+    const tabs: { id: PullTab; label: string; count: number | null }[] = [
+        { id: "conversation", label: "Conversation", count: null },
+        { id: "commits", label: "Commits", count: found.commits },
+        { id: "files", label: "Files changed", count: found.changedFiles },
+    ];
 
     return (
         <div className="gha-detail">
@@ -261,55 +443,83 @@ function PullDetail({ repo, number, active, login, onBack, onOpenRun }: DetailPr
                 <span className="gha-state-word" data-kind="pull" data-state={stateOf(found.state, found.draft)}>
                     {stateLabel("pull", found.state, found.draft)}
                 </span>
-                <Who login={found.author} avatarUrl={found.avatarUrl} />
-                {found.head && found.base && (
-                    <span className="gha-page-branches" title={`${merged ? "Merged" : "Merging"} ${found.head} into ${found.base}`}>
-                        <Branch name={found.head} />
-                        <span className="gha-page-arrow">→</span>
-                        <Branch name={found.base} />
+                <span className="gha-page-sentence">
+                    <Who login={actor} avatarUrl={merged ? null : found.avatarUrl} />
+                    <span>
+                        {verb} {found.commits !== null ? plural(found.commits, "commit") + " " : ""}into
                     </span>
-                )}
+                    {found.base && <Branch name={found.base} />}
+                    {from && (
+                        <>
+                            <span>from</span>
+                            <Branch name={from} />
+                            <Tooltip label="Copy the branch name">
+                                <button
+                                    type="button"
+                                    className="gha-icon-btn gha-copy-branch"
+                                    aria-label="Copy the branch name"
+                                    onClick={() =>
+                                        void copyText(found.head ?? from)
+                                            .then(() => notify("success", `Copied ${found.head ?? from}`))
+                                            .catch(swallow("copy the branch name"))
+                                    }>
+                                    <IconCopy size={12} />
+                                </button>
+                            </Tooltip>
+                        </>
+                    )}
+                </span>
+                <span>{formatAgo(merged ? found.mergedAt : found.createdAt, now)}</span>
+            </PageHead>
+
+            <div className="gha-tabs" role="tablist">
+                {tabs.map((each) => (
+                    <button
+                        key={each.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={tab === each.id}
+                        className="gha-tab"
+                        data-on={tab === each.id ? "1" : "0"}
+                        onClick={() => setTab(each.id)}>
+                        {each.label}
+                        {each.count !== null && <span className="gha-tab-count">{each.count.toLocaleString()}</span>}
+                    </button>
+                ))}
+                <span className="gha-page-spacer" />
                 {found.additions !== null && (
                     <span className="gha-diffstat">
-                        <span className="gha-add">+{found.additions.toLocaleString()}</span>{" "}
+                        <span className="gha-add">+{found.additions.toLocaleString()}</span>
                         <span className="gha-del">−{(found.deletions ?? 0).toLocaleString()}</span>
                     </span>
                 )}
-                <Labels labels={found.labels} />
-            </PageHead>
+            </div>
 
-            {found.body.trim() && <Prose>{found.body}</Prose>}
-
-            <MergeBox repo={repo} pull={found} verdict={verdict} reviewed={(reviews.data ?? []).length > 0} active={active} onOpenRun={onOpenRun} />
-
-            <section className="gha-files">
-                <div className="gha-section-label">
-                    {changed.length} file{changed.length === 1 ? "" : "s"} changed
+            {tab === "conversation" && (
+                <div className="gha-pull-body">
+                    <CommentThread
+                        repo={repo}
+                        number={found.number}
+                        active={active}
+                        now={now}
+                        opening={{
+                            key: "opening",
+                            author: found.author,
+                            avatarUrl: found.avatarUrl,
+                            association: found.authorAssociation,
+                            at: found.createdAt,
+                            body: found.body,
+                            review: null,
+                        }}
+                        base={found.base}
+                        review={found.state === "open" ? { mine: !!login && found.author === login } : null}>
+                        <MergeBox repo={repo} pull={found} verdict={verdict} reviewed={reviewList.length > 0} active={active} onOpenRun={onOpenRun} />
+                    </CommentThread>
+                    <PullSide pull={found} reviews={reviewList} participants={participants} />
                 </div>
-                {changed.map((file) => (
-                    <details className="gha-file" key={file.path}>
-                        <summary className="gha-file-head">
-                            <span className="gha-chevron">
-                                <IconChevron size={11} />
-                            </span>
-                            <span className="gha-file-path">{file.path}</span>
-                            <span className="gha-diffstat">
-                                <span className="gha-add">+{file.additions}</span> <span className="gha-del">−{file.deletions}</span>
-                            </span>
-                        </summary>
-                        {file.patch ? <Diff patch={file.patch} /> : <div className="gha-side-empty">GitHub did not send a diff for this file.</div>}
-                    </details>
-                ))}
-            </section>
-
-            <CommentThread
-                repo={repo}
-                number={found.number}
-                active={active}
-                now={now}
-                reviews={reviews.data ?? []}
-                review={found.state === "open" ? { mine: !!login && found.author === login } : null}
-            />
+            )}
+            {tab === "commits" && <CommitsTab repo={repo} number={found.number} active={active} now={now} />}
+            {tab === "files" && <FilesTab repo={repo} number={found.number} active={active} />}
         </div>
     );
 }

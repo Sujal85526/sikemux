@@ -1,22 +1,16 @@
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { openUrl, swallow } from "../../../plugin-api/host";
 import { IconCheck, IconChevron, IconExternal, IconGit, IconMerge, IconPullRequest } from "../../../plugin-api/ui";
 import type { Label } from "../api";
 import { CommentIcon, NotPlannedIcon, SectionIcon } from "./ActionsIcon";
 import { Avatar } from "./Pictures";
 
-const HEX = /^[0-9a-f]{6}$/iu;
-
 export function Labels({ labels }: { labels: readonly Label[] }) {
     if (labels.length === 0) return null;
     return (
         <span className="gha-labels">
             {labels.map((label) => (
-                <span
-                    key={label.name}
-                    className="gha-label"
-                    title={label.name}
-                    style={HEX.test(label.color) ? ({ "--label": `#${label.color}` } as CSSProperties) : undefined}>
+                <span key={label.name} className="gha-label" title={label.name}>
                     {label.name}
                 </span>
             ))}

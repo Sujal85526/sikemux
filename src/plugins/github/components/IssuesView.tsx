@@ -9,7 +9,6 @@ import { Comments, Labels, PageHead, StateMark, stateLabel, Who } from "./Bits";
 import { CommentThread } from "./CommentThread";
 import { useBusy, useNow } from "./hooks";
 import { NewIssueForm } from "./NewIssueForm";
-import { Prose } from "./Pictures";
 
 const LIST_STATES = ["open", "closed", "all"];
 
@@ -76,14 +75,26 @@ function IssueDetail({ repo, number, active, onBack }: { repo: RepoRef; number: 
                 {found.assignees.length > 0 && <span>→ {found.assignees.join(", ")}</span>}
                 <Labels labels={found.labels} />
             </PageHead>
-            {found.body.trim() && <Prose>{found.body}</Prose>}
-            <CommentThread repo={repo} number={found.number} active={active} now={now} />
-            <div className="gha-merge-actions">
-                <span className="gha-page-spacer" />
-                <button type="button" className="gha-btn" disabled={busy} onClick={setState}>
-                    {closing ? "Close issue" : "Reopen issue"}
-                </button>
-            </div>
+            <CommentThread
+                repo={repo}
+                number={found.number}
+                active={active}
+                now={now}
+                opening={{
+                    key: "opening",
+                    author: found.author,
+                    avatarUrl: found.avatarUrl,
+                    association: null,
+                    at: found.createdAt,
+                    body: found.body,
+                    review: null,
+                }}
+                extraActions={
+                    <button type="button" className="gha-btn" disabled={busy} onClick={setState}>
+                        {closing ? "Close issue" : "Reopen issue"}
+                    </button>
+                }
+            />
         </div>
     );
 }

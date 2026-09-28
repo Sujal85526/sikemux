@@ -11,6 +11,8 @@ import {
     type IssuePage,
     type Notification,
     type Pull,
+    type PullCommit,
+    type TimelineItem,
     type Release,
     type Review,
     type Artifact,
@@ -126,6 +128,18 @@ export const githubPullFilesR = resource({
     kind: "gha.pullFiles",
     fetch: (repo: RepoRef, number: number): Promise<ChangedFile[]> => actionsApi.pullFiles(repo, number),
     staleAfterMs: 5 * 60_000,
+});
+
+export const githubTimelineR = resource({
+    kind: "gha.timeline",
+    fetch: (repo: RepoRef, number: number): Promise<TimelineItem[]> => actionsApi.timeline(repo, number),
+    staleAfterMs: 30_000,
+});
+
+export const githubPullCommitsR = resource({
+    kind: "gha.pullCommits",
+    fetch: (repo: RepoRef, number: number): Promise<PullCommit[]> => actionsApi.pullCommits(repo, number),
+    staleAfterMs: 60_000,
 });
 
 export const githubPullReviewsR = resource({
