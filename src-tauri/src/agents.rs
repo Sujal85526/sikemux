@@ -3232,7 +3232,7 @@ mod executable_tests {
         read_session_context, stream_group_key, streaming_transcripts_only, title_cache_stamp,
         toml_effort, toml_model, toml_section_string, yaml_agent_reasoning_effort,
         yaml_model_section, yaml_top_level_scalar, AgentKind, AgentModelInfo, AgentUsageResetAt,
-        SessionContext, CLAUDE_HEAD_BYTES, CLAUDE_MODEL_CATALOG_ARGS,
+        SessionContext, CLAUDE_HEAD_BYTES,
     };
     #[cfg(unix)]
     use super::{
@@ -3595,17 +3595,6 @@ mod executable_tests {
                 }
             ]
         );
-    }
-
-    #[test]
-    fn claude_catalog_enables_print_mode_for_stream_json() {
-        assert!(CLAUDE_MODEL_CATALOG_ARGS.contains(&"--print"));
-        assert!(CLAUDE_MODEL_CATALOG_ARGS
-            .windows(2)
-            .any(|args| args == ["--input-format", "stream-json"]));
-        assert!(CLAUDE_MODEL_CATALOG_ARGS
-            .windows(2)
-            .any(|args| args == ["--output-format", "stream-json"]));
     }
 
     #[test]

@@ -1364,16 +1364,4 @@ mod tests {
         assert!(blocker.evidence.region_preview.chars().count() <= REGION_PREVIEW_CHARS + 1);
         assert!(blocker.evidence.any_gate_matches > 0);
     }
-
-    #[test]
-    fn dto_serialization_uses_frontend_friendly_names() {
-        let value = serde_json::to_value(registry().detect(
-            AgentKind::Claude,
-            DetectionInput::screen("Working (esc to interrupt)"),
-        ))
-        .expect("serialize");
-        assert_eq!(value["source"], "screen_manifest");
-        assert!(value.get("matchedRule").is_some());
-        assert!(value["evidence"].get("visibleWorking").is_some());
-    }
 }

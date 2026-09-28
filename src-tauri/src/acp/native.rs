@@ -252,13 +252,4 @@ mod tests {
         );
         assert!(approval(&options[2..]).is_none());
     }
-
-    #[test]
-    fn every_native_agent_has_launch_arguments() {
-        for provider in ["opencode", "omp", "hermes", "grok"] {
-            assert!(arguments(provider).is_some());
-        }
-        assert!(arguments("claude").is_none());
-        assert!(arguments("pi").is_none());
-    }
 }

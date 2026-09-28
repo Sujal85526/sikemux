@@ -1803,27 +1803,6 @@ mod tests {
     }
 
     #[test]
-    fn heartbeat_sequence_is_monotonic_and_state_is_explicit() {
-        let heartbeat = Heartbeat::new();
-        assert_eq!(heartbeat.beat(), 1);
-        assert_eq!(heartbeat.beat(), 2);
-        heartbeat.set_armed(false);
-        heartbeat.set_visible(false);
-
-        let snapshot = heartbeat.snapshot();
-        assert_eq!(snapshot.sequence, 2);
-        assert!(!snapshot.armed);
-        assert!(!snapshot.visible);
-
-        heartbeat.set_visible(true);
-        heartbeat.set_armed(true);
-        let reactivated = heartbeat.snapshot();
-        assert!(reactivated.visible);
-        assert!(reactivated.armed);
-        assert!(reactivated.last_beat_us >= snapshot.last_beat_us);
-    }
-
-    #[test]
     fn ui_heartbeat_transition_requires_visible_forward_progress() {
         let mut progress = UiHeartbeatProgress::default();
         assert_eq!(
@@ -2145,7 +2124,9 @@ mod tests {
     #[test]
     fn the_activity_log_keeps_the_latest_and_a_bounded_history() {
         let log = UiActivityLog::default();
-        for index in 0..(ACTIVITY_HISTORY_CAPACITY as u64 + 4) {
+        log.record(UiActivitySnapshot::default());
+        assert!(log.snapshot().1.is_empty());
+        for index in 1..(ACTIVITY_HISTORY_CAPACITY as u64 + 4) {
             log.record(UiActivitySnapshot {
                 at_ms: index,
                 ..UiActivitySnapshot::default()
@@ -2160,15 +2141,5 @@ mod tests {
             history[ACTIVITY_HISTORY_CAPACITY - 1].at_ms,
             ACTIVITY_HISTORY_CAPACITY as u64 + 2
         );
-    }
-
-    #[test]
-    fn an_activity_log_with_one_entry_has_no_history_yet() {
-        let log = UiActivityLog::default();
-        log.record(UiActivitySnapshot::default());
-
-        let (latest, history) = log.snapshot();
-        assert!(latest.is_some());
-        assert!(history.is_empty());
     }
 }

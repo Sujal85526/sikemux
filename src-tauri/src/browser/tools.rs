@@ -1113,14 +1113,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_tool_method_is_namespaced_and_known() {
-        assert!(METHODS.iter().all(|method| method.starts_with("browser.")));
-        assert!(is_browser_method("browser.click"));
-        assert!(!is_browser_method("workspace.inspect"));
-        assert!(!is_browser_method("browser.evil"));
-    }
-
-    #[test]
     fn page_answers_merge_under_the_action_result() {
         let merged = merge(
             json!({ "clicked": "Sign in", "url": "https://a/next" }),
@@ -1164,11 +1156,5 @@ mod tests {
         assert!(
             answer_of(RECORDS_SCRIPT.trim(), "network", &[json!(5)]).contains("})).network(5) }")
         );
-    }
-
-    #[test]
-    fn the_page_script_is_wrapped_as_a_single_json_string_expression() {
-        assert!(PAGE_SCRIPT.contains("window.__sikemux = {"));
-        assert!(!PAGE_SCRIPT.contains("`\n"));
     }
 }

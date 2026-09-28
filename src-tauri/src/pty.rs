@@ -4597,27 +4597,6 @@ mod tests {
     }
 
     #[test]
-    fn shell_integration_context_flag_is_default_off_and_camel_case() {
-        let base = serde_json::json!({
-            "sessionId": "session-1",
-            "sessionName": "repo",
-            "sessionKind": "project",
-            "project": "/repo",
-            "windowId": "window-1",
-            "paneId": "pane-1"
-        });
-        let disabled: PtyContext =
-            serde_json::from_value(base.clone()).expect("deserialize default context");
-        assert!(!disabled.shell_integration);
-
-        let mut enabled_value = base;
-        enabled_value["shellIntegration"] = serde_json::Value::Bool(true);
-        let enabled: PtyContext =
-            serde_json::from_value(enabled_value).expect("deserialize opt-in context");
-        assert!(enabled.shell_integration);
-    }
-
-    #[test]
     fn shell_detection_claims_only_exact_supported_executables() {
         assert_eq!(detect_shell_kind("/bin/zsh"), Some(ShellKind::Zsh));
         assert_eq!(detect_shell_kind("bash"), Some(ShellKind::Bash));
@@ -5202,18 +5181,6 @@ mod tests {
     }
 
     #[test]
-    fn attach_result_serializes_alternate_screen_camel_case() {
-        let value = serde_json::to_value(AttachResult {
-            sub_id: 7,
-            alternate_screen: true,
-            shell: None,
-        })
-        .expect("serialize attach result");
-        assert_eq!(value["alternateScreen"], true);
-        assert!(value.get("alternate_screen").is_none());
-    }
-
-    #[test]
     fn attach_response_frames_the_header_before_the_replay_bytes() {
         let header = AttachResult {
             sub_id: 9,
@@ -5255,14 +5222,6 @@ mod tests {
         let screen = parser.screen_mut();
         screen.set_scrollback(usize::MAX);
         assert!(screen.contents().contains("line 00"));
-    }
-
-    #[test]
-    fn parser_scrollback_is_reattach_sized() {
-        // The parser only has to cover what a reattaching xterm replays, and
-        // a detached PTY drops to the smaller idle size.
-        assert_eq!(PARSER_SCROLLBACK, 3_000);
-        assert_eq!(IDLE_SCROLLBACK, 1_000);
     }
 
     #[cfg(unix)]

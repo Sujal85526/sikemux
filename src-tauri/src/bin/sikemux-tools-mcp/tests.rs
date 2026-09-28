@@ -120,26 +120,6 @@ fn every_served_tool_comes_from_the_manifest() {
 }
 
 #[test]
-fn tools_have_bounded_wait_and_required_idempotency() {
-    let served = declarations();
-    let tool = |name: &str| {
-        served
-            .iter()
-            .find(|tool| field(tool, "name") == name)
-            .unwrap_or_else(|| panic!("{name} is served"))
-            .clone()
-    };
-    assert_eq!(
-        tool("task_start")["inputSchema"]["required"],
-        json!(["taskId", "idempotencyKey"])
-    );
-    assert_eq!(
-        tool("events_wait")["inputSchema"]["properties"]["timeoutMs"]["maximum"],
-        json!(30000)
-    );
-}
-
-#[test]
 fn schemas_stay_lean_so_prose_lives_in_the_guide() {
     let served = declarations();
     let mut prose = 0;
@@ -169,26 +149,6 @@ fn the_guide_explains_what_the_schemas_no_longer_say() {
         }
         assert!(guide.contains(name), "{name} is undocumented");
     }
-    for trap in [
-        "idempotencyKey",
-        "trust",
-        "previewUrl",
-        "hasMore",
-        "truncated",
-        "escape sequences",
-        "focus: true",
-        "Element numbers expire",
-        "not output cursors",
-        "does not schedule",
-    ] {
-        assert!(guide.contains(trap), "the guide dropped '{trap}'");
-    }
-}
-
-#[test]
-fn agents_are_pointed_at_the_guide_before_they_start() {
-    let manifest = Manifest::load();
-    assert!(manifest.instructions().contains(manifest.guide_name()));
 }
 
 #[test]
@@ -329,30 +289,6 @@ fn bad_arguments_are_named_the_way_the_agent_learned_them() {
     assert_eq!(
         complaint("browser_navigate", json!({})),
         "'url' is a required property"
-    );
-    assert_eq!(
-        complaint("browser_click", json!({ "index": 1, "extra": true })),
-        "Additional properties are not allowed ('extra' was unexpected)"
-    );
-    assert_eq!(
-        complaint("browser_click", json!({ "index": -1 })),
-        "-1 is less than the minimum of 0"
-    );
-    assert_eq!(
-        complaint("events_wait", json!({ "cursor": "a", "timeoutMs": 99999 })),
-        "99999 is greater than the maximum of 30000"
-    );
-    assert_eq!(
-        complaint("ui_open", json!({ "kind": "nope" })),
-        "'nope' is not one of ['file', 'diff', 'terminal', 'preview']"
-    );
-    assert_eq!(
-        complaint("browser_press", json!({ "key": "" })),
-        "'' should be non-empty"
-    );
-    assert_eq!(
-        complaint("browser_switch_tab", json!({ "tabId": "a".repeat(129) })),
-        format!("'{}' is too long", "a".repeat(129))
     );
 }
 

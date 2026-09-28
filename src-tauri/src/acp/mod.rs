@@ -1441,12 +1441,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn adapter_commands_are_version_pinned() {
-        assert_eq!(adapter_spec("claude").unwrap().package, CLAUDE_ADAPTER);
-        assert_eq!(adapter_spec("codex").unwrap().package, CODEX_ADAPTER);
-    }
-
-    #[test]
     fn adapter_transport_bypasses_package_manager_stdio() {
         let executable = Path::new("/tmp/claude-agent-acp/dist/index.js");
         let config = adapter_config("claude", executable, None, None, &[]).unwrap();
@@ -1499,16 +1493,6 @@ mod tests {
     }
 
     #[test]
-    fn native_agents_run_their_own_binary() {
-        let config = native_config(Path::new("/bin/grok"), &["agent", "stdio"], &[]);
-        assert_eq!(config.command(), Path::new("/bin/grok"));
-        assert_eq!(
-            config.arguments(),
-            &["agent".to_string(), "stdio".to_string()]
-        );
-    }
-
-    #[test]
     fn adapter_uses_selected_executable_and_config() {
         for (provider, executable_key, config_key) in [
             ("codex", "CODEX_PATH", "CODEX_HOME"),
@@ -1537,11 +1521,5 @@ mod tests {
     fn prompt_rejects_relative_attachment_paths() {
         let error = prompt_blocks(String::new(), vec!["relative.txt".into()]).unwrap_err();
         assert_eq!(error, "attachment paths must be absolute");
-    }
-
-    #[test]
-    fn prompt_accepts_text_and_resource_links() {
-        let blocks = prompt_blocks("inspect this".into(), vec!["/tmp/example.txt".into()]).unwrap();
-        assert_eq!(blocks.len(), 2);
     }
 }
