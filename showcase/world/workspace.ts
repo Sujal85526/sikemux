@@ -151,6 +151,14 @@ export function demoSnapshot(): PersistedSnapshot {
         pinned: false,
         activeWindowId: "w-signoz",
       },
+      {
+        id: "s-github",
+        name: "GitHub",
+        kind: "sikemux.github:hub",
+        cwd: "",
+        pinned: false,
+        activeWindowId: "w-github",
+      },
     ],
     windowsBySession: {
       "s-sikemux": [
@@ -276,6 +284,22 @@ export function demoSnapshot(): PersistedSnapshot {
           activePaneId: "p-signoz",
         },
       ],
+      "s-github": [
+        {
+          id: "w-github",
+          name: "GitHub",
+          role: "sikemux.github:hub",
+          fixed: true,
+          root: {
+            type: "pane",
+            id: "p-github",
+            cwd: "",
+            kind: "sikemux.github:hub",
+            title: "GitHub",
+          },
+          activePaneId: "p-github",
+        },
+      ],
     },
     agents,
     sessionOrder: [
@@ -287,6 +311,7 @@ export function demoSnapshot(): PersistedSnapshot {
       "s-shell",
       "s-rundeck",
       "s-signoz",
+      "s-github",
     ],
     activeSessionId: "s-sikemux",
     recent: [],
@@ -314,6 +339,7 @@ export function demoSnapshot(): PersistedSnapshot {
       pluginSettings: {
         "sikemux.rundeck": { activeProject: "platform", activeGroup: null },
         "sikemux.signoz": { minutes: 60, environment: "production" },
+        "sikemux.github": { lastRepo: "nodelike/sikemux", pinned: [] },
       },
     },
     itemStates: {

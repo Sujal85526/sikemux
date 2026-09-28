@@ -21,6 +21,7 @@ export const README_SCREENSHOTS = {
   "rundeck-deploy-card": "cicd-rundeck-deploy-view.png",
   "signoz-dashboard-card": "observability-signoz-view.png",
   "bruno-card": "api-bruno-pane-view.png",
+  "github-run-stage": "cicd-github-run-view.png",
 };
 
 export const SCENES = [
@@ -169,6 +170,20 @@ export const SCENES = [
         region: { left: 0.1486, top: 0.0019, width: 0.8500, height: 0.5205 },
       },
     },
+  },
+  {
+    name: "github-run",
+    settle: 1600,
+    setup: async (page) => {
+      await openWindow(page, "s-github", "w-github");
+      await page.waitForTimeout(500);
+      await run(page, async () => {
+        const github = await import("/src/plugins/github/state.ts");
+        github.showRepo("p-github", { owner: "nodelike", name: "sikemux" });
+        github.showRun("p-github", 36316473434);
+      });
+    },
+    crops: { stage: ".stage" },
   },
   {
     name: "aws-ecs-logs",
