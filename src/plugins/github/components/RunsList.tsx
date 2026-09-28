@@ -4,7 +4,7 @@ import { useResourceEnabled } from "../../../plugin-api/resources";
 import { Dropdown, EmptyState, IconRefresh, IconRun, SkeletonRows, Tooltip } from "../../../plugin-api/ui";
 import { failureMessage, type RepoRef, type Run, type Workflow } from "../api";
 import { actionsRunsR, actionsWorkflowsR } from "../resources";
-import { elapsedMs, formatAgo, formatDuration, isUnfinished, outcomeOf, statusParam } from "../runStatus";
+import { elapsedMs, eventLabel, formatAgo, formatDuration, isUnfinished, outcomeOf, statusParam } from "../runStatus";
 import { filterBy, showRun, STATUS_FILTERS, updateView, type RunsView, type StatusFilter } from "../state";
 import { OutcomeIcon } from "./ActionsIcon";
 import { Branch } from "./Bits";
@@ -23,22 +23,6 @@ const FILTER_LABEL: Record<StatusFilter, string> = {
 };
 
 const EVERY_WORKFLOW = "all";
-
-const EVENT_LABEL: Record<string, string> = {
-    push: "Push",
-    pull_request: "Pull request",
-    pull_request_target: "Pull request",
-    workflow_dispatch: "Manual",
-    schedule: "Scheduled",
-    release: "Release",
-    workflow_run: "Workflow run",
-    merge_group: "Merge queue",
-};
-
-function eventLabel(event: string): string {
-    const words = event.replace(/_/gu, " ");
-    return EVENT_LABEL[event] ?? words.charAt(0).toUpperCase() + words.slice(1);
-}
 
 const RunRow = memo(function RunRow({
     paneId,

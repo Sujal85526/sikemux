@@ -1,11 +1,11 @@
-import { notify, openUrl, reportError, swallow } from "../../../plugin-api/host";
+import { notify, reportError } from "../../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
-import { EmptyState, IconClose, IconInfo, SkeletonRows } from "../../../plugin-api/ui";
+import { EmptyState, IconInfo, SkeletonRows } from "../../../plugin-api/ui";
 import { actionsApi, failureMessage, type Issue, type RepoRef } from "../api";
 import { githubIssueR, githubIssuesR } from "../resources";
 import { formatAgo } from "../runStatus";
 import { compose, setListState, showItem, updateView } from "../state";
-import { Comments, Labels, StateMark } from "./Bits";
+import { Comments, Labels, PageHead, StateMark, stateLabel } from "./Bits";
 import { CommentThread } from "./CommentThread";
 import { useBusy, useNow } from "./hooks";
 import { NewIssueForm } from "./NewIssueForm";
@@ -58,31 +58,33 @@ function IssueDetail({ repo, number, active, onBack }: { repo: RepoRef; number: 
 
     return (
         <div className="gha-detail">
-            <button type="button" className="gha-back" onClick={onBack}>
-                <IconClose size={11} /> Back to issues
-            </button>
-            <div className="gha-detail-head">
-                <div className="gha-detail-title-row">
-                    <StateMark kind="issue" state={found.state} reason={found.stateReason} />
-                    <h2 className="gha-title">{found.title}</h2>
-                    <span className="gha-mono gha-dim">#{found.number}</span>
-                </div>
-                <div className="gha-detail-sub">
-                    {found.author && <span>{found.author}</span>}
-                    <span className="gha-dim">opened {formatAgo(found.createdAt, now)}</span>
-                    <Labels labels={found.labels} />
-                </div>
-                <div className="gha-detail-actions">
-                    <button type="button" className="gha-btn" disabled={busy} onClick={setState}>
-                        {closing ? "Close issue" : "Reopen issue"}
-                    </button>
-                    <button type="button" className="gha-link" onClick={() => void openUrl(found.url).catch(swallow("open GitHub"))}>
-                        On GitHub
-                    </button>
-                </div>
-            </div>
+            <PageHead
+                mark={<StateMark kind="issue" state={found.state} reason={found.stateReason} size={14} />}
+                title={found.title}
+                number={found.number}
+                url={found.url}
+                backLabel="Back to issues"
+                onBack={onBack}>
+                <span
+                    className="gha-state-word"
+                    data-kind="issue"
+                    data-state={found.state === "closed" && found.stateReason === "not_planned" ? "not_planned" : found.state}>
+                    {stateLabel("issue", found.state, false, found.stateReason)}
+                </span>
+                <span>
+                    {found.author ?? "Someone"} opened this {formatAgo(found.createdAt, now)}
+                </span>
+                {found.assignees.length > 0 && <span>→ {found.assignees.join(", ")}</span>}
+                <Labels labels={found.labels} />
+            </PageHead>
             {found.body.trim() && <Prose>{found.body}</Prose>}
             <CommentThread repo={repo} number={found.number} active={active} now={now} />
+            <div className="gha-merge-actions">
+                <span className="gha-page-spacer" />
+                <button type="button" className="gha-btn" disabled={busy} onClick={setState}>
+                    {closing ? "Close issue" : "Reopen issue"}
+                </button>
+            </div>
         </div>
     );
 }

@@ -1174,31 +1174,87 @@
 .gha-detail {
     display: flex;
     flex-direction: column;
-    padding: 0 var(--space-5) var(--space-5);
+    gap: var(--space-4);
+    padding: 0 var(--space-5) var(--space-6);
 }
 .gha-detail .gha-back {
-    margin: var(--space-3) 0 0;
+    margin: var(--space-3) 0 calc(-1 * var(--space-2));
 }
-.gha-detail-head {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1h);
-    padding: var(--space-2) 0 var(--space-3);
+.gha-page-head {
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr);
+    align-items: center;
+    column-gap: var(--space-3);
+    row-gap: var(--space-1);
+    padding-bottom: var(--space-4);
     border-bottom: 1px solid var(--border);
 }
-.gha-detail-title-row {
+.gha-page-head > .gha-state-mark {
+    grid-row: 1 / span 2;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: var(--radius-full);
+    background: color-mix(in oklab, currentColor 12%, transparent);
+}
+.gha-page-title {
     display: flex;
     align-items: center;
     gap: var(--space-2);
     min-width: 0;
 }
-.gha-detail-sub {
+.gha-page-number {
+    flex: 0 0 auto;
+    font-size: var(--text-lg);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-tertiary);
+}
+.gha-page-spacer {
+    flex: 1 1 auto;
+}
+.gha-page-sub {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: var(--space-2);
-    font-size: var(--text-2xs);
+    gap: var(--space-1) var(--space-2);
+    min-width: 0;
+    font-size: var(--text-xs);
     color: var(--text-tertiary);
+}
+.gha-page-merge {
+    display: inline-flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0 var(--space-1);
+    min-width: 0;
+}
+.gha-page-merge .gha-branch > span {
+    font-size: var(--text-2xs);
+}
+.gha-state-word {
+    --state: var(--text-tertiary);
+    display: inline-flex;
+    align-items: center;
+    height: 20px;
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-full);
+    background: color-mix(in oklab, var(--state) 16%, transparent);
+    color: var(--state);
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-medium);
+}
+.gha-state-word[data-state="open"] {
+    --state: var(--live);
+}
+.gha-state-word:is([data-state="merged"], [data-state="closed"]) {
+    --state: var(--acc);
+}
+.gha-state-word[data-kind="pull"][data-state="closed"] {
+    --state: var(--danger);
+}
+.gha-diffstat {
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
 }
 .gha-detail-actions {
     display: flex;
@@ -1206,6 +1262,54 @@
     gap: var(--space-2);
     padding-top: var(--space-1);
 }
+
+.gha-merge-box {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: var(--gha-tint);
+}
+.gha-merge-part {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-3);
+}
+.gha-merge-part + .gha-merge-part,
+.gha-merge-box > .gha-merge-actions {
+    border-top: 1px solid var(--gha-rule);
+}
+.gha-merge-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 26px;
+}
+.gha-merge-row > :is(.gha-outcome, .gha-state-mark) {
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--radius-full);
+    background: color-mix(in oklab, currentColor 12%, transparent);
+}
+.gha-merge-title {
+    font-weight: var(--weight-medium);
+    color: var(--text-primary);
+}
+.gha-merge-detail {
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+}
+.gha-merge-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+.gha-merge-box > .gha-merge-actions {
+    padding: var(--space-2) var(--space-3);
+}
+
 .gha-pane .prose {
     padding: var(--space-2) 0;
 }
@@ -1224,14 +1328,20 @@
 .gha-file {
     border: 1px solid var(--border);
     border-radius: var(--radius-2);
-    margin-bottom: var(--space-1);
     overflow: hidden;
+}
+.gha-files {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+.gha-file[open] .gha-chevron {
+    transform: rotate(90deg);
 }
 .gha-file-head {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
+    gap: var(--space-2);
     padding: var(--space-1h) var(--space-2);
     font-size: var(--text-2xs);
     cursor: pointer;
@@ -1244,7 +1354,9 @@
     background: var(--surface-hover);
 }
 .gha-file-path {
+    flex: 1 1 auto;
     min-width: 0;
+    font-family: var(--mono);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1281,10 +1393,9 @@
 .gha-thread {
     display: flex;
     flex-direction: column;
-    gap: var(--space-1);
+    gap: var(--space-2);
 }
 .gha-comment {
-    padding: var(--space-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-2);
     background: var(--gha-tint);
@@ -1293,17 +1404,58 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--gha-rule);
     font-size: var(--text-2xs);
+}
+.gha-comment .prose {
+    padding: var(--space-2) var(--space-3);
 }
 .gha-comment-author {
     font-weight: var(--weight-medium);
     color: var(--text-primary);
+}
+.gha-event {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 0 var(--space-3);
+    font-size: var(--text-2xs);
 }
 .gha-comment-box {
     height: auto;
     padding: var(--space-2);
     resize: vertical;
     font-family: inherit;
+}
+.gha-composer {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: var(--gha-tint);
+    transition: border-color var(--dur-1) linear;
+}
+.gha-composer:focus-within {
+    border-color: var(--border-selected);
+}
+.gha-composer-box {
+    display: block;
+    width: 100%;
+    min-height: 76px;
+    padding: var(--space-2) var(--space-3);
+    border: 0;
+    background: none;
+    color: var(--text-primary);
+    font: inherit;
+    resize: vertical;
+    outline: none;
+}
+.gha-composer-foot {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2);
+    border-top: 1px solid var(--gha-rule);
+    font-size: var(--text-2xs);
 }
 
 .gha-release {
@@ -1653,12 +1805,9 @@ button.gha-step:focus-visible {
 
 /* ---- Checks, reviews, and writing a new pull request or issue ----------- */
 
-.gha-checks,
-.gha-reviews,
-.gha-review {
+.gha-checks {
     display: flex;
     flex-direction: column;
-    gap: var(--space-1);
 }
 .gha-check {
     display: flex;
@@ -1666,9 +1815,9 @@ button.gha-step:focus-visible {
     gap: var(--space-2);
     height: 28px;
     padding: 0 var(--space-2);
-    border: 1px solid var(--border);
+    border: 0;
     border-radius: var(--radius-2);
-    background: var(--gha-tint);
+    background: none;
     color: var(--text-secondary);
     font: inherit;
     font-size: var(--text-xs);
@@ -1676,11 +1825,19 @@ button.gha-step:focus-visible {
     cursor: pointer;
     transition:
         background var(--dur-1) linear,
-        border-color var(--dur-1) linear;
+        color var(--dur-1) linear;
+}
+.gha-merge-part > .gha-checks {
+    margin-left: 22px;
+}
+.gha-check-took {
+    min-width: 7ch;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-tertiary);
+    text-align: right;
 }
 .gha-check:hover {
     background: var(--surface-hover);
-    border-color: var(--border-strong);
     color: var(--text-primary);
 }
 .gha-check:focus-visible {

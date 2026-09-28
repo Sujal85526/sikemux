@@ -305,6 +305,7 @@ export interface ChangedFile {
 
 export interface Review {
     author: string | null;
+    avatarUrl: string | null;
     state: string;
     body: string;
     submittedAt: string | null;

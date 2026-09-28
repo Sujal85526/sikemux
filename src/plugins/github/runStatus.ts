@@ -144,3 +144,19 @@ export function watchIsNewer(watched: Pick<Run, "attempt" | "updatedAt"> | null,
     if (watched.attempt !== read.attempt) return watched.attempt > read.attempt;
     return Date.parse(watched.updatedAt) > Date.parse(read.updatedAt);
 }
+
+const EVENT_LABEL: Record<string, string> = {
+    push: "Push",
+    pull_request: "Pull request",
+    pull_request_target: "Pull request",
+    workflow_dispatch: "Manual",
+    schedule: "Scheduled",
+    release: "Release",
+    workflow_run: "Workflow run",
+    merge_group: "Merge queue",
+};
+
+export function eventLabel(event: string): string {
+    const words = event.replace(/_/gu, " ");
+    return EVENT_LABEL[event] ?? words.charAt(0).toUpperCase() + words.slice(1);
+}

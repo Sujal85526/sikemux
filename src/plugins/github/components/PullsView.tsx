@@ -1,28 +1,21 @@
-import { memo, useMemo } from "react";
-import { confirmDialog, notify, openUrl, reportError, swallow } from "../../../plugin-api/host";
+import { memo, useMemo, useState } from "react";
+import { confirmDialog, notify, reportError } from "../../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
-import { EmptyState, IconClose, IconPullRequest, SkeletonRows, VirtualLogList } from "../../../plugin-api/ui";
+import { Dropdown, EmptyState, IconChevron, IconPullRequest, SkeletonRows, VirtualLogList } from "../../../plugin-api/ui";
 import { actionsApi, failureMessage, type MergeMethod, type Pull, type RepoRef } from "../api";
 import { githubPullFilesR, githubPullR, githubPullReviewsR, githubPullsR } from "../resources";
-import { formatAgo } from "../runStatus";
+import { formatAgo, type Outcome } from "../runStatus";
 import { needsPull } from "../compose";
 import { compose, openRunFrom, setListState, showItem } from "../state";
 import { CommentThread } from "./CommentThread";
-import { Branch, Comments, Labels, StateMark } from "./Bits";
+import { OutcomeIcon } from "./ActionsIcon";
+import { Branch, Comments, Labels, PageHead, StateMark, stateLabel, stateOf } from "./Bits";
 import { useBusy, useNow } from "./hooks";
 import { NewPullForm } from "./NewPullForm";
 import { PullChecks } from "./PullChecks";
-import { ReviewBox } from "./ReviewBox";
 import { Prose } from "./Pictures";
 
 const LIST_STATES = ["open", "closed", "all"];
-
-const REVIEW_WORD: Record<string, string> = {
-    APPROVED: "approved",
-    CHANGES_REQUESTED: "asked for changes",
-    COMMENTED: "commented",
-    DISMISSED: "was dismissed",
-};
 
 export function reviewVerdict(reviews: readonly { author: string | null; state: string }[]): string | null {
     // Only a person's latest review counts, which is how GitHub scores it too.
@@ -84,12 +77,168 @@ interface DetailProps {
     onOpenRun: (runId: number) => void;
 }
 
+const MERGE_METHODS: { value: MergeMethod; label: string }[] = [
+    { value: "squash", label: "Squash" },
+    { value: "merge", label: "Merge commit" },
+    { value: "rebase", label: "Rebase" },
+];
+
+function mergeability(mergeState: string | null, base: string): { outcome: Outcome; title: string; detail: string | null } {
+    switch (mergeState) {
+        case "dirty":
+            return { outcome: "failure", title: `Conflicts with ${base}`, detail: "Resolve the conflicts before merging." };
+        case "blocked":
+            return { outcome: "blocked", title: "Merging is blocked", detail: "GitHub is waiting on the required reviews and checks." };
+        case "behind":
+            return { outcome: "blocked", title: `Behind ${base}`, detail: "Bring the branch up to date before merging." };
+        case "clean":
+        case "unstable":
+        case "has_hooks":
+            return { outcome: "success", title: "Ready to merge", detail: null };
+        default:
+            return { outcome: "queued", title: "Checking whether it can merge", detail: null };
+    }
+}
+
+function MergePart({ outcome, title, detail }: { outcome: Outcome; title: string; detail?: string | null }) {
+    return (
+        <div className="gha-merge-part">
+            <div className="gha-merge-row">
+                <OutcomeIcon outcome={outcome} size={12} />
+                <span className="gha-merge-title">{title}</span>
+                {detail && <span className="gha-merge-detail">{detail}</span>}
+            </div>
+        </div>
+    );
+}
+
+function MergeBox({
+    repo,
+    pull,
+    verdict,
+    reviewed,
+    active,
+    onOpenRun,
+}: {
+    repo: RepoRef;
+    pull: Pull;
+    verdict: string | null;
+    reviewed: boolean;
+    active: boolean;
+    onOpenRun: (runId: number) => void;
+}) {
+    const [method, setMethod] = useState<MergeMethod>("squash");
+    const [busy, runBusy] = useBusy();
+    const base = pull.base ?? "the base branch";
+
+    const merge = async () => {
+        const sure = await confirmDialog({
+            title: `Merge #${pull.number} into ${base}?`,
+            body: pull.title,
+            confirmLabel: "Merge",
+        });
+        if (!sure) return;
+        try {
+            await actionsApi.mergePull(repo, pull.number, method, pull.headSha ?? "");
+            notify("success", `Merged #${pull.number}`);
+            invalidate((kind) => kind.startsWith("gha.pull"));
+        } catch (error) {
+            reportError(`Could not merge #${pull.number}`)(error);
+        }
+    };
+
+    const open = pull.state === "open";
+    const setState = async () => {
+        if (open) {
+            const sure = await confirmDialog({
+                title: `Close #${pull.number} without merging?`,
+                body: pull.title,
+                confirmLabel: "Close pull request",
+                destructive: true,
+            });
+            if (!sure) return;
+        }
+        try {
+            await actionsApi.setPullState(repo, pull.number, open ? "closed" : "open");
+            notify("success", open ? `Closed #${pull.number}` : `Reopened #${pull.number}`);
+            invalidate((kind) => kind.startsWith("gha.pull"));
+        } catch (error) {
+            reportError(open ? "Could not close it" : "Could not reopen it")(error);
+        }
+    };
+
+    if (pull.state === "merged") {
+        return (
+            <div className="gha-merge-box" data-state="merged">
+                <div className="gha-merge-part">
+                    <div className="gha-merge-row">
+                        <StateMark kind="pull" state="merged" />
+                        <span className="gha-merge-title">Merged into {base}</span>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+    if (!open) {
+        return (
+            <div className="gha-merge-box">
+                <div className="gha-merge-part">
+                    <div className="gha-merge-row">
+                        <StateMark kind="pull" state="closed" />
+                        <span className="gha-merge-title">Closed without merging</span>
+                        <span className="gha-page-spacer" />
+                        <button type="button" className="gha-btn" disabled={busy} onClick={() => runBusy(setState)}>
+                            Reopen
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    const verdictPart =
+        verdict === "Approved"
+            ? { outcome: "success" as const, title: "Approved" }
+            : verdict === "Changes requested"
+              ? { outcome: "failure" as const, title: "Changes requested" }
+              : { outcome: "queued" as const, title: reviewed ? "No approving review yet" : "No reviews yet" };
+    const merging = mergeability(pull.mergeState, base);
+    return (
+        <div className="gha-merge-box">
+            <MergePart outcome={verdictPart.outcome} title={verdictPart.title} />
+            {pull.headSha && <PullChecks repo={repo} sha={pull.headSha} active={active} onOpenRun={onOpenRun} />}
+            {pull.draft ? (
+                <MergePart outcome="queued" title="This is a draft" detail="Mark it ready for review on GitHub before merging." />
+            ) : (
+                <MergePart outcome={merging.outcome} title={merging.title} detail={merging.detail} />
+            )}
+            <div className="gha-merge-actions">
+                {!pull.draft && (
+                    <>
+                        <Dropdown value={method} options={MERGE_METHODS} onChange={(value) => setMethod(value as MergeMethod)} title="How to merge" />
+                        <button
+                            type="button"
+                            className="gha-btn primary"
+                            disabled={busy || pull.mergeState === "dirty"}
+                            onClick={() => runBusy(merge)}>
+                            Merge pull request
+                        </button>
+                    </>
+                )}
+                <span className="gha-page-spacer" />
+                <button type="button" className="gha-btn danger" disabled={busy} onClick={() => runBusy(setState)}>
+                    Close pull request
+                </button>
+            </div>
+        </div>
+    );
+}
+
 function PullDetail({ repo, number, active, login, onBack, onOpenRun }: DetailProps) {
     const pull = useResourceEnabled(active, githubPullR, repo, number);
     const files = useResourceEnabled(active, githubPullFilesR, repo, number);
     const reviews = useResourceEnabled(active, githubPullReviewsR, repo, number);
     const now = useNow(false);
-    const [busy, runBusy] = useBusy();
 
     if (pull.status === "loading" && !pull.data) return <SkeletonRows rows={8} label="Loading pull request" />;
     if (!pull.data) {
@@ -97,145 +246,69 @@ function PullDetail({ repo, number, active, login, onBack, onOpenRun }: DetailPr
     }
     const found = pull.data;
     const verdict = reviewVerdict(reviews.data ?? []);
-
-    const merge = async (method: MergeMethod) => {
-        const sure = await confirmDialog({
-            title: `${method === "merge" ? "Merge" : method === "squash" ? "Squash and merge" : "Rebase and merge"} #${found.number}?`,
-            body: found.title,
-            confirmLabel: "Merge",
-        });
-        if (!sure) return;
-        try {
-            await actionsApi.mergePull(repo, found.number, method, found.headSha ?? "");
-            notify("success", `Merged #${found.number}`);
-            invalidate((kind) => kind.startsWith("gha.pull"));
-        } catch (error) {
-            reportError(`Could not merge #${found.number}`)(error);
-        }
-    };
-
-    const closing = found.state === "open";
-    const setState = async () => {
-        if (closing) {
-            const sure = await confirmDialog({
-                title: `Close #${found.number} without merging?`,
-                body: found.title,
-                confirmLabel: "Close pull request",
-                destructive: true,
-            });
-            if (!sure) return;
-        }
-        try {
-            await actionsApi.setPullState(repo, found.number, closing ? "closed" : "open");
-            notify("success", closing ? `Closed #${found.number}` : `Reopened #${found.number}`);
-            invalidate((kind) => kind.startsWith("gha.pull"));
-        } catch (error) {
-            reportError(closing ? "Could not close it" : "Could not reopen it")(error);
-        }
-    };
-    const written = (reviews.data ?? []).filter((review) => review.state !== "COMMENTED" || review.body.trim());
+    const changed = files.data ?? [];
+    const merged = found.state === "merged";
 
     return (
         <div className="gha-detail">
-            <button type="button" className="gha-back" onClick={onBack}>
-                <IconClose size={11} /> Back to pull requests
-            </button>
-            <div className="gha-detail-head">
-                <div className="gha-detail-title-row">
-                    <StateMark kind="pull" state={found.state} draft={found.draft} />
-                    <h2 className="gha-title">{found.title}</h2>
-                    <span className="gha-mono gha-dim">#{found.number}</span>
-                </div>
-                <div className="gha-detail-sub">
-                    {found.author && <span>{found.author}</span>}
-                    {found.head && found.base && (
-                        <span className="gha-dim">
-                            <span className="gha-tag">{found.head}</span> into <span className="gha-tag">{found.base}</span>
-                        </span>
-                    )}
-                    {found.additions !== null && (
-                        <span className="gha-mono">
-                            <span className="gha-add">+{found.additions}</span> <span className="gha-del">−{found.deletions ?? 0}</span>
-                        </span>
-                    )}
-                    {verdict && (
-                        <span className="gha-tag" data-tone={verdict === "Approved" ? "live" : "danger"}>
-                            {verdict}
-                        </span>
-                    )}
-                    <Labels labels={found.labels} />
-                </div>
-                <div className="gha-detail-actions">
-                    {found.state === "open" && !found.draft && (
-                        <>
-                            <button type="button" className="gha-btn primary" disabled={busy} onClick={() => runBusy(() => merge("squash"))}>
-                                Squash and merge
-                            </button>
-                            <button type="button" className="gha-btn" disabled={busy} onClick={() => runBusy(() => merge("merge"))}>
-                                Merge
-                            </button>
-                            <button type="button" className="gha-btn" disabled={busy} onClick={() => runBusy(() => merge("rebase"))}>
-                                Rebase and merge
-                            </button>
-                        </>
-                    )}
-                    {found.state !== "merged" && (
-                        <button type="button" className={closing ? "gha-btn danger" : "gha-btn"} disabled={busy} onClick={() => runBusy(setState)}>
-                            {closing ? "Close" : "Reopen"}
-                        </button>
-                    )}
-                    <button type="button" className="gha-link" onClick={() => void openUrl(found.url).catch(swallow("open GitHub"))}>
-                        On GitHub
-                    </button>
-                </div>
-            </div>
-
-            {found.mergeState === "dirty" && found.state === "open" && (
-                <div className="gha-warn-note">This branch conflicts with {found.base ?? "its base"}. Resolve the conflicts before merging.</div>
-            )}
-            {found.mergeState === "blocked" && found.state === "open" && (
-                <div className="gha-warn-note">GitHub is holding this back until the required reviews and checks pass.</div>
-            )}
+            <PageHead
+                mark={<StateMark kind="pull" state={found.state} draft={found.draft} size={14} />}
+                title={found.title}
+                number={found.number}
+                url={found.url}
+                backLabel="Back to pull requests"
+                onBack={onBack}>
+                <span className="gha-state-word" data-kind="pull" data-state={stateOf(found.state, found.draft)}>
+                    {stateLabel("pull", found.state, found.draft)}
+                </span>
+                {found.head && found.base ? (
+                    <span className="gha-page-merge">
+                        {found.author ?? "Someone"} {merged ? "merged" : found.state === "open" ? "wants to merge" : "wanted to merge"}{" "}
+                        <Branch name={found.head} /> into <Branch name={found.base} />
+                    </span>
+                ) : (
+                    found.author && <span>{found.author}</span>
+                )}
+                {found.additions !== null && (
+                    <span className="gha-diffstat">
+                        <span className="gha-add">+{found.additions}</span> <span className="gha-del">−{found.deletions ?? 0}</span>
+                    </span>
+                )}
+                <Labels labels={found.labels} />
+            </PageHead>
 
             {found.body.trim() && <Prose>{found.body}</Prose>}
 
-            {found.headSha && <PullChecks repo={repo} sha={found.headSha} active={active} onOpenRun={onOpenRun} />}
+            <MergeBox repo={repo} pull={found} verdict={verdict} reviewed={(reviews.data ?? []).length > 0} active={active} onOpenRun={onOpenRun} />
 
-            {written.length > 0 && (
-                <div className="gha-reviews">
-                    <div className="gha-section-label">Reviews</div>
-                    {written.map((review, index) => (
-                        <div className="gha-comment" key={`${review.author ?? ""}-${review.submittedAt ?? index}`}>
-                            <div className="gha-comment-head">
-                                <span className="gha-comment-author">{review.author ?? "someone"}</span>
-                                <span className="gha-review-state" data-state={review.state}>
-                                    {REVIEW_WORD[review.state] ?? review.state.toLowerCase()}
-                                </span>
-                                <span className="gha-dim">{formatAgo(review.submittedAt, now)}</span>
-                            </div>
-                            {review.body.trim() && <Prose>{review.body}</Prose>}
-                        </div>
-                    ))}
+            <section className="gha-files">
+                <div className="gha-section-label">
+                    {changed.length} file{changed.length === 1 ? "" : "s"} changed
                 </div>
-            )}
+                {changed.map((file) => (
+                    <details className="gha-file" key={file.path}>
+                        <summary className="gha-file-head">
+                            <span className="gha-chevron">
+                                <IconChevron size={11} />
+                            </span>
+                            <span className="gha-file-path">{file.path}</span>
+                            <span className="gha-diffstat">
+                                <span className="gha-add">+{file.additions}</span> <span className="gha-del">−{file.deletions}</span>
+                            </span>
+                        </summary>
+                        {file.patch ? <Diff patch={file.patch} /> : <div className="gha-side-empty">GitHub did not send a diff for this file.</div>}
+                    </details>
+                ))}
+            </section>
 
-            <div className="gha-section-label">
-                {files.data?.length ?? 0} file{(files.data?.length ?? 0) === 1 ? "" : "s"} changed
-            </div>
-            {(files.data ?? []).map((file) => (
-                <details className="gha-file" key={file.path}>
-                    <summary className="gha-file-head">
-                        <span className="gha-mono gha-file-path">{file.path}</span>
-                        <span className="gha-mono">
-                            <span className="gha-add">+{file.additions}</span> <span className="gha-del">−{file.deletions}</span>
-                        </span>
-                    </summary>
-                    {file.patch ? <Diff patch={file.patch} /> : <div className="gha-side-empty">GitHub did not send a diff for this file.</div>}
-                </details>
-            ))}
-
-            <CommentThread repo={repo} number={found.number} active={active} now={now} />
-            {found.state === "open" && <ReviewBox repo={repo} number={found.number} mine={!!login && found.author === login} />}
+            <CommentThread
+                repo={repo}
+                number={found.number}
+                active={active}
+                now={now}
+                reviews={reviews.data ?? []}
+                review={found.state === "open" ? { mine: !!login && found.author === login } : null}
+            />
         </div>
     );
 }
