@@ -775,7 +775,7 @@ export function PullsView({ paneId, repo, listState, item, composing, projectBra
                 }}
                 onClose={() => showItem(paneId, null)}
                 onBack={() => showItem(paneId, null)}
-                onOpenRun={(runId) => openRunFrom(paneId, runId)}
+                onOpenRun={(runId) => openRunFrom(paneId, runId, item)}
             />
         );
 

@@ -45,7 +45,9 @@ export function PullChecks({ repo, sha, active, onOpenRun }: Props) {
                     return (
                         <button key={run.id} type="button" className="gha-check" data-outcome={outcome} onClick={() => onOpenRun(run.id)}>
                             <OutcomeIcon outcome={outcome} size={11} />
-                            <span className="gha-check-name">{run.name}</span>
+                            <span className="gha-check-name">
+                                {run.name} <span className="gha-item-number gha-dim">#{run.runNumber}</span>
+                            </span>
                             <span className="gha-dim">{eventLabel(run.event)}</span>
                             <span className="gha-check-spacer" />
                             <span className="gha-dim">{OUTCOME_LABEL[outcome]}</span>

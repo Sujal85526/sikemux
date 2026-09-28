@@ -5,7 +5,7 @@ import { EmptyState, IconChevron, IconRefresh, SkeletonRows, Tooltip } from "../
 import { hostApi, failureMessage, type Job, type RepoRef, type Run } from "../api";
 import { artifactsR, runAttemptR, runR, timingR } from "../resources";
 import { elapsedMs, failedStep, formatAgo, formatDuration, isUnfinished, outcomeOf, OUTCOME_LABEL, summaryJobs, watchIsNewer } from "../runStatus";
-import { closeRun, updateView } from "../state";
+import { closeRun, leaveRun, updateView, useHostView } from "../state";
 import { OutcomeIcon } from "./ActionsIcon";
 import { Branch } from "./Bits";
 import { Annotations } from "./Annotations";
@@ -437,6 +437,14 @@ function RunDetailView({ paneId, repo, runId, openJob, active, canWrite }: Props
     );
     const toggleFile = useCallback(() => setShowFile((was) => !was), []);
 
+    // A run opened from a pull request's check lands on the job that failed, once its jobs are known.
+    const { runFrom, pickFailed } = useHostView(paneId);
+    useEffect(() => {
+        if (!pickFailed || jobs.length === 0) return;
+        const failed = jobs.find((job) => outcomeOf(job) === "failure");
+        updateView(paneId, openJob === null && failed ? { pickFailed: false, job: failed.id } : { pickFailed: false });
+    }, [pickFailed, jobs, openJob, paneId]);
+
     if (shown.status === "loading" && !run) return <SkeletonRows rows={8} label="Loading run" />;
     if (shown.error && !run) {
         return (
@@ -453,8 +461,8 @@ function RunDetailView({ paneId, repo, runId, openJob, active, canWrite }: Props
     const picked = jobs.find((job) => job.id === openJob) ?? null;
     return (
         <div className="gha-run-view" ref={viewRef}>
-            <button type="button" className="gha-back" onClick={() => closeRun(paneId)}>
-                <IconChevron size={11} /> Back to runs
+            <button type="button" className="gha-back" onClick={() => leaveRun(paneId)}>
+                <IconChevron size={11} /> {runFrom === null ? "Back to runs" : `Back to #${runFrom}`}
             </button>
             <Header run={run} repo={repo} canWrite={canWrite} onRefresh={() => void shown.refresh()} onDeleted={() => closeRun(paneId)} />
             {moving && watchError && (

@@ -88,6 +88,10 @@ export interface HostView {
     page: number;
     dispatching: number | null;
     composing: "pull" | "issue" | null;
+    /** The pull request a run was opened from, which its Back returns to. */
+    runFrom: number | null;
+    /** Open the run's first failed job once its jobs are read, as a check does. */
+    pickFailed: boolean;
 }
 
 const FRESH: HostView = {
@@ -101,6 +105,8 @@ const FRESH: HostView = {
     page: 1,
     dispatching: null,
     composing: null,
+    runFrom: null,
+    pickFailed: false,
 };
 
 export const useHostViews = create<{ views: Record<string, HostView>; paletteOpen: boolean }>()(() => ({
@@ -163,18 +169,29 @@ export function setListState(paneId: string, listState: string): void {
     updateView(paneId, { listState, item: null, page: 1 });
 }
 
-/** A check on a pull request opens its run, in the same pane. */
-export function openRunFrom(paneId: string, runId: number): void {
+/** A check on a pull request opens its run in the same pane, at its first failed job, with Back leading to the pull request. */
+export function openRunFrom(paneId: string, runId: number, pull: number | null = null): void {
     setGitView(paneId, { area: "actions" });
-    updateView(paneId, { item: null, composing: null, run: runId, job: null });
+    updateView(paneId, { item: null, composing: null, run: runId, job: null, runFrom: pull, pickFailed: true });
+}
+
+/** Leaves a run for wherever it was opened from: the pull request whose check it was, or the runs list. */
+export function leaveRun(paneId: string): void {
+    const from = viewOf(paneId).runFrom;
+    if (from === null) {
+        closeRun(paneId);
+        return;
+    }
+    setGitView(paneId, { area: "pulls" });
+    updateView(paneId, { run: null, job: null, runFrom: null, item: from });
 }
 
 export function showRun(paneId: string, runId: number): void {
-    updateView(paneId, { run: runId, job: null });
+    updateView(paneId, { run: runId, job: null, runFrom: null, pickFailed: false });
 }
 
 export function closeRun(paneId: string): void {
-    updateView(paneId, { run: null, job: null });
+    updateView(paneId, { run: null, job: null, runFrom: null });
 }
 
 export function refOf(provider: string, slug: string): RepoRef | null {

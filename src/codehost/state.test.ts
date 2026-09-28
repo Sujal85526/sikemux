@@ -4,6 +4,8 @@ import {
     compose,
     filterBy,
     hostSettings,
+    leaveRun,
+    openRunFrom,
     refOf,
     resetView,
     setFollowBranch,
@@ -104,5 +106,20 @@ describe("the view of one pane", () => {
         compose("pane-4", "pull");
         resetView("pane-4");
         expect(viewOf("pane-4")).toMatchObject({ statusFilter: "all", page: 1, workflowId: null, composing: null });
+    });
+});
+
+describe("a run opened from a pull request's check", () => {
+    it("asks for the failed job and goes back to the pull request", () => {
+        openRunFrom("pane-5", 412, 31);
+        expect(viewOf("pane-5")).toMatchObject({ run: 412, item: null, runFrom: 31, pickFailed: true });
+        leaveRun("pane-5");
+        expect(viewOf("pane-5")).toMatchObject({ run: null, item: 31, runFrom: null });
+    });
+
+    it("goes back to the runs list when it was opened from there", () => {
+        showRun("pane-6", 7);
+        leaveRun("pane-6");
+        expect(viewOf("pane-6")).toMatchObject({ run: null, item: null, runFrom: null });
     });
 });
