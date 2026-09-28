@@ -5,7 +5,7 @@ import { EmptyState, SkeletonRows } from "../../../plugin-api/ui";
 import { actionsApi } from "../api";
 import { useProjectRepo } from "../project";
 import { actionsStatusR, actionsWorkflowsR } from "../resources";
-import { actionsSettings, needsRepo, refOf, setProjectRepo, showRepo, slugOf, updateView, useRunsView } from "../state";
+import { actionsSettings, needsRepo, refOf, setProjectRepo, showRepo, slugOf, updateView, useRunsView, viewOf } from "../state";
 import { GithubMark } from "./ActionsIcon";
 import { ActionsSidebar } from "./ActionsSidebar";
 import { ActionsSignIn } from "./ActionsSignIn";
@@ -32,9 +32,8 @@ export function ActionsPane({ paneId, active }: Props) {
     const followBranch = actionsSettings.useSelect((settings) => settings.followBranch);
     const [picking, setPicking] = useState(false);
 
-    // The pane follows whichever project is in front, unless somebody has
-    // chosen a repository in this pane by hand. Held still between renders so
-    // the rows below it are only redrawn when it really changes.
+    // Held still between renders so the rows below it are only redrawn when
+    // it really changes.
     const repo = useMemo(() => view.repo ?? project.repo ?? (lastRepo ? refOf(lastRepo) : null), [view.repo, project.repo, lastRepo]);
 
     const workflows = useResourceEnabled(active && !!repo && view.dispatching !== null, actionsWorkflowsR, repo ?? { owner: "", name: "" });
@@ -43,11 +42,17 @@ export function ActionsPane({ paneId, active }: Props) {
         [view.dispatching, workflows.data],
     );
 
+    // The pane follows the project in front: opening it, or switching to
+    // another project, shows that project's repository. A repository picked by
+    // hand is remembered for its project, so it comes back with it.
+    const projectSlug = project.repo ? slugOf(project.repo) : null;
     useEffect(() => {
-        if (view.repo || !project.repo) return;
-        // Following a project means its runs, not those of whatever was open before.
-        showRepo(paneId, project.repo);
-    }, [paneId, project.repo, view.repo]);
+        if (!projectSlug) return;
+        const current = viewOf(paneId).repo;
+        if (current && slugOf(current) === projectSlug) return;
+        const next = refOf(projectSlug);
+        if (next) showRepo(paneId, next);
+    }, [paneId, projectSlug]);
 
     const signOut = () =>
         void actionsApi
@@ -137,6 +142,7 @@ export function ActionsPane({ paneId, active }: Props) {
                             listState={view.listState}
                             item={view.item}
                             composing={view.composing === "issue"}
+                            page={view.page}
                             active={active}
                         />
                     ) : view.section === "releases" ? (

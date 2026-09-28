@@ -175,7 +175,7 @@ export function openRunFrom(paneId: string, runId: number): void {
 }
 
 export function setListState(paneId: string, listState: string): void {
-    updateView(paneId, { listState, item: null });
+    updateView(paneId, { listState, item: null, page: 1 });
 }
 
 export function showRun(paneId: string, runId: number): void {

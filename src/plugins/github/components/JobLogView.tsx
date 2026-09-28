@@ -5,6 +5,7 @@ import { EmptyState, SkeletonRows, VirtualLogList } from "../../../plugin-api/ui
 import { failureMessage, type Job, type RepoRef } from "../api";
 import { stepStarts } from "../jobGraph";
 import { actionsJobLogR } from "../resources";
+import { useEvery } from "./hooks";
 
 /** Runner logs mark their sections with `##[...]`, which is noise on screen. */
 const MARKUP = /^##\[(?:group|endgroup|section|command)\]/u;
@@ -34,11 +35,7 @@ export function JobLogView({ repo, job, active, step }: Props) {
     const [stepLine, setStepLine] = useState<number | null>(null);
 
     // An open log follows a job that is still going, the way the run does.
-    useEffect(() => {
-        if (!active || !running) return;
-        const timer = setInterval(() => void log.refresh(), LIVE_REFRESH_MS);
-        return () => clearInterval(timer);
-    }, [active, running, log]);
+    useEvery(active && running, LIVE_REFRESH_MS, () => void log.refresh());
 
     const lines = useMemo(() => log.data?.lines ?? [], [log.data]);
     const starts = useMemo(() => stepStarts(lines, job.steps), [lines, job.steps]);

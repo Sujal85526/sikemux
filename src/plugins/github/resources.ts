@@ -8,6 +8,7 @@ import {
     type ChangedFile,
     type Comment,
     type Issue,
+    type IssuePage,
     type Notification,
     type Pull,
     type Release,
@@ -135,7 +136,7 @@ export const githubPullReviewsR = resource({
 
 export const githubIssuesR = resource({
     kind: "gha.issues",
-    fetch: (repo: RepoRef, state: string): Promise<Issue[]> => actionsApi.issues(repo, state),
+    fetch: (repo: RepoRef, state: string, page: number): Promise<IssuePage> => actionsApi.issues(repo, state, page),
     staleAfterMs: 60_000,
 });
 

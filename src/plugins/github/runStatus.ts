@@ -119,3 +119,15 @@ export function summaryJobs(jobs: readonly Job[], runFinished: boolean, everythi
     const done = jobs.filter((job) => job.status === "completed" && job.checkRunId !== null && job.conclusion !== "skipped");
     return everything ? done : done.slice(0, SUMMARY_LIMIT);
 }
+
+/**
+ * Whether what a watch last pushed is newer than what was just read. A re-run
+ * is a later attempt, and a refresh reads the same attempt again, so the read
+ * wins unless the watch has seen something since.
+ */
+export function watchIsNewer(watched: Pick<Run, "attempt" | "updatedAt"> | null, read: Pick<Run, "attempt" | "updatedAt"> | null): boolean {
+    if (!watched) return false;
+    if (!read) return true;
+    if (watched.attempt !== read.attempt) return watched.attempt > read.attempt;
+    return Date.parse(watched.updatedAt) > Date.parse(read.updatedAt);
+}

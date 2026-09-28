@@ -240,7 +240,8 @@ export interface Pull {
     headSha: string | null;
     createdAt: string;
     updatedAt: string;
-    comments: number;
+    /** Unknown when GitHub did not say. */
+    comments: number | null;
     additions: number | null;
     deletions: number | null;
     changedFiles: number | null;
@@ -293,6 +294,12 @@ export interface Issue {
     labels: Label[];
     assignees: string[];
     url: string;
+}
+
+export interface IssuePage {
+    issues: Issue[];
+    total: number;
+    nextPage: number | null;
 }
 
 export interface ReleaseAsset {
@@ -371,7 +378,7 @@ export const actionsApi = {
     pull: (repo: RepoRef, number: number) => read<Pull>("pull", { ...repo, number }),
     pullFiles: (repo: RepoRef, number: number) => read<ChangedFile[]>("pullFiles", { ...repo, number }),
     pullReviews: (repo: RepoRef, number: number) => read<Review[]>("pullReviews", { ...repo, number }),
-    issues: (repo: RepoRef, state: string) => read<Issue[]>("issues", { ...repo, state }),
+    issues: (repo: RepoRef, state: string, page: number) => read<IssuePage>("issues", { ...repo, state, page }),
     issue: (repo: RepoRef, number: number) => read<Issue>("issue", { ...repo, number }),
     comments: (repo: RepoRef, number: number) => read<Comment[]>("comments", { ...repo, number }),
     releases: (repo: RepoRef) => read<Release[]>("releases", repo),
@@ -385,7 +392,8 @@ export const actionsApi = {
     createIssue: (repo: RepoRef, title: string, body: string) => backend.call<Issue>("createIssue", { ...repo, title, body }),
     setIssueState: (repo: RepoRef, number: number, state: "open" | "closed") => backend.call<void>("setIssueState", { ...repo, number, state }),
     addComment: (repo: RepoRef, number: number, body: string) => backend.call<void>("addComment", { ...repo, number, body }),
-    downloadAsset: (repo: RepoRef, assetId: number, name: string) => backend.call<SavedArtifact>("downloadAsset", { ...repo, assetId, name }),
+    downloadAsset: (repo: RepoRef, assetId: number, name: string) =>
+        backend.call<SavedArtifact>("downloadAsset", { ...repo, assetId, fileName: name }),
     markRead: (id: string) => backend.call<void>("markRead", { id }),
     markAllRead: () => backend.call<void>("markAllRead"),
 
@@ -397,7 +405,7 @@ export const actionsApi = {
     deleteRunLogs: (repo: RepoRef, runId: number) => backend.call<void>("deleteRunLogs", { ...repo, runId }),
     deleteRun: (repo: RepoRef, runId: number) => backend.call<void>("deleteRun", { ...repo, runId }),
     downloadArtifact: (repo: RepoRef, artifactId: number, name: string) =>
-        backend.call<SavedArtifact>("downloadArtifact", { ...repo, artifactId, name }),
+        backend.call<SavedArtifact>("downloadArtifact", { ...repo, artifactId, fileName: name }),
     reviewDeployment: (repo: RepoRef, runId: number, environmentIds: number[], state: "approved" | "rejected", comment = "") =>
         backend.call<void>("reviewDeployment", { ...repo, runId, environmentIds, state, comment }),
 
