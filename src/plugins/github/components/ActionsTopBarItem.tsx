@@ -1,30 +1,32 @@
 import type { PluginTopBarProps } from "../../../plugin-api";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { Tooltip } from "../../../plugin-api/ui";
-import { remoteRepoR } from "../project";
+import { useRepoOf } from "../project";
 import { actionsRunsR, actionsStatusR } from "../resources";
 import { formatAgo, isUnfinished, outcomeOf, OUTCOME_LABEL } from "../runStatus";
-import { actionsSettings, openRepo, refOf } from "../state";
+import { openRepo } from "../state";
 import { OutcomeIcon } from "./ActionsIcon";
 import { useEvery } from "./hooks";
 import "../topbar.css";
 
-const LIVE_REFRESH_MS = 15_000;
+const LIVE_REFRESH_MS = 10_000;
+const IDLE_REFRESH_MS = 20_000;
 
 /** How the branch in front is doing on CI, in the space of one glyph. */
 export function ActionsTopBarItem({ projectCwd }: PluginTopBarProps) {
     const status = useResourceEnabled(!!projectCwd, actionsStatusR);
     const signedIn = !!status.data?.ok;
-    const chosen = actionsSettings.useSelect((settings) => (projectCwd ? (settings.repoByProject[projectCwd] ?? null) : null));
-    const overridden = chosen ? refOf(chosen) : null;
-    const fromRemote = useResourceEnabled(signedIn && !!projectCwd && !overridden, remoteRepoR, projectCwd ?? "");
-    const repo = overridden ?? fromRemote.data ?? null;
+    const { repo, branch } = useRepoOf(projectCwd, signedIn);
 
-    const runs = useResourceEnabled(signedIn && !!repo, actionsRunsR, { ...(repo ?? { owner: "", name: "" }), perPage: 1 });
+    const runs = useResourceEnabled(signedIn && !!repo, actionsRunsR, {
+        ...(repo ?? { owner: "", name: "" }),
+        branch: branch ?? undefined,
+        perPage: 1,
+    });
     const latest = runs.data?.runs[0] ?? null;
     const live = !!latest && isUnfinished(latest);
 
-    useEvery(live, LIVE_REFRESH_MS, () => void runs.refresh());
+    useEvery(signedIn && !!repo, live ? LIVE_REFRESH_MS : IDLE_REFRESH_MS, () => void runs.refresh());
 
     if (!repo || !latest) return null;
 

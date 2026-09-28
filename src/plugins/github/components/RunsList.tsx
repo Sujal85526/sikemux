@@ -10,6 +10,7 @@ import { OutcomeIcon } from "./ActionsIcon";
 import { coarse, useEvery, useNow } from "./hooks";
 
 const LIVE_REFRESH_MS = 10_000;
+const IDLE_REFRESH_MS = 20_000;
 
 const FILTER_LABEL: Record<StatusFilter, string> = {
     all: "All",
@@ -84,9 +85,7 @@ export function RunsList({ paneId, repo, view, branch, active, canWrite, onDispa
     const anyRunning = runs.some(isUnfinished);
     const now = useNow(active && anyRunning);
 
-    // A list with something still going is re-read on its own, so a run that
-    // finishes stops saying it is running without anybody pressing anything.
-    useEvery(active && anyRunning, LIVE_REFRESH_MS, () => void page.refresh());
+    useEvery(active, anyRunning ? LIVE_REFRESH_MS : IDLE_REFRESH_MS, () => void page.refresh());
 
     // A different branch is a different list, so it starts from its first page.
     const shownBranch = useRef(branch);

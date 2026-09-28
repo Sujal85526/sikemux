@@ -40,7 +40,10 @@ export interface ProjectRepo {
  * repository chosen by hand for that folder wins over whatever its remote says.
  */
 export function useProjectRepo(enabled: boolean): ProjectRepo {
-    const cwd = useActiveProjectCwd();
+    return useRepoOf(useActiveProjectCwd(), enabled);
+}
+
+export function useRepoOf(cwd: string | null, enabled: boolean): ProjectRepo {
     const chosen = actionsSettings.useSelect((settings) => (cwd ? (settings.repoByProject[cwd] ?? null) : null));
     const overridden = useMemo(() => (chosen ? refOf(chosen) : null), [chosen]);
     const fromRemote = useResourceEnabled(enabled && !!cwd && !overridden, remoteRepoR, cwd ?? "");
