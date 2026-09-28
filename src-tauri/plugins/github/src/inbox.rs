@@ -131,16 +131,16 @@ pub async fn list(data_dir: &Path, input: Query) -> GithubResult<Vec<Notificatio
         ],
     )
     .await?;
-    let mut pages = Vec::with_capacity(rows.len());
-    for row in &rows {
-        pages.push(
-            match (row.subject.kind.as_deref(), row.subject.url.as_deref()) {
-                (Some("Release"), Some(url)) => release_page(data_dir, url).await,
-                (_, Some(url)) => web_url(&host, url),
-                _ => None,
-            },
-        );
-    }
+    // Every request waits for one of the plugin's few request slots, so these
+    // go out together without flooding GitHub.
+    let pages = futures::future::join_all(rows.iter().map(|row| async {
+        match (row.subject.kind.as_deref(), row.subject.url.as_deref()) {
+            (Some("Release"), Some(url)) => release_page(data_dir, url).await,
+            (_, Some(url)) => web_url(&host, url),
+            _ => None,
+        }
+    }))
+    .await;
     Ok(rows
         .into_iter()
         .zip(pages)
