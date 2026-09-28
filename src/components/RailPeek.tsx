@@ -9,11 +9,22 @@ interface RailPeekProps {
 }
 
 const CLOSE_DURATION_MS = 180;
+const EDGE_REACH_PX = 28;
+
+function withinEdgeReach(root: HTMLElement, edge: PeekEdge, event: PointerEvent) {
+    const rect = root.getBoundingClientRect();
+    if (event.clientY < rect.top || event.clientY > rect.bottom) return false;
+    return edge === "start"
+        ? event.clientX <= rect.left + EDGE_REACH_PX
+        : event.clientX >= rect.right - EDGE_REACH_PX;
+}
 
 export function RailPeek({ edge, children }: RailPeekProps) {
     const [phase, setPhase] = useState<PeekPhase>("closed");
     const rootRef = useRef<HTMLDivElement>(null);
     const closeTimer = useRef<number | null>(null);
+    const phaseRef = useRef<PeekPhase>("closed");
+    phaseRef.current = phase;
 
     const clearCloseTimer = () => {
         if (closeTimer.current === null) return;
@@ -36,12 +47,23 @@ export function RailPeek({ edge, children }: RailPeekProps) {
         }, CLOSE_DURATION_MS);
     };
 
-    useEffect(
-        () => () => {
+    useEffect(() => {
+        const onPointerMove = (event: PointerEvent) => {
+            const root = rootRef.current;
+            if (!root || event.buttons !== 0) return;
+            const overPeek = event.target instanceof Node && root.contains(event.target);
+            if (overPeek || withinEdgeReach(root, edge, event)) {
+                if (phaseRef.current !== "open") open();
+            } else if (phaseRef.current === "open") {
+                close();
+            }
+        };
+        window.addEventListener("pointermove", onPointerMove);
+        return () => {
+            window.removeEventListener("pointermove", onPointerMove);
             clearCloseTimer();
-        },
-        [],
-    );
+        };
+    }, [edge]);
 
     return (
         <div

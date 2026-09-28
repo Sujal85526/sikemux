@@ -68,4 +68,26 @@ describe("RailPeek", () => {
         act(() => vi.advanceTimersByTime(180));
         expect(screen.queryByRole("button", { name: "search agents" })).not.toBeInTheDocument();
     });
+
+    it("opens a little way in from the edge, not only on the gap", () => {
+        vi.useFakeTimers();
+        render(
+            <RailPeek edge="start">
+                <aside>sessions</aside>
+            </RailPeek>,
+        );
+
+        const peek = screen.getByTestId("rail-peek-start");
+        vi.spyOn(peek, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 250, 600));
+
+        fireEvent.pointerMove(window, { clientX: 20, clientY: 300 });
+        expect(screen.getByText("sessions")).toBeInTheDocument();
+
+        fireEvent.pointerMove(document.body, { clientX: 400, clientY: 300 });
+        act(() => vi.advanceTimersByTime(180));
+        expect(screen.queryByText("sessions")).not.toBeInTheDocument();
+
+        fireEvent.pointerMove(window, { clientX: 20, clientY: 300, buttons: 1 });
+        expect(screen.queryByText("sessions")).not.toBeInTheDocument();
+    });
 });
