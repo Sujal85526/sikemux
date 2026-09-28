@@ -84,7 +84,7 @@ function IssueDetail({ repo, number, active, onBack }: { repo: RepoRef; number: 
                     </button>
                 </div>
             </div>
-            {found.body.trim() && <Markdown className="gha-prose">{found.body}</Markdown>}
+            {found.body.trim() && <Markdown>{found.body}</Markdown>}
             <CommentThread repo={repo} number={found.number} active={active} now={now} />
         </div>
     );

@@ -1,6 +1,7 @@
 import { createContext, memo, useContext, useEffect, useState, type ReactNode } from "react";
 import { Markdown as MarkdownText, MARKDOWN_GFM, type MarkdownComponents } from "../markdown/Markdown";
 import { openUrl, swallow } from "./host";
+import "./prose.css";
 
 /** Turns a picture's address into one the window may show, such as a `data:` address. */
 export type ProseImageLoader = (src: string) => Promise<string>;

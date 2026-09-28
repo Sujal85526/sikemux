@@ -131,7 +131,7 @@ export function ReleasesView({ repo, active }: Props) {
                     </div>
                     {release.body.trim() && (
                         <>
-                            <Markdown className={opened.has(release.id) ? "gha-prose" : "gha-prose clamp"}>{release.body}</Markdown>
+                            <Markdown className={opened.has(release.id) ? "prose" : "prose gha-clamp"}>{release.body}</Markdown>
                             {release.body.length > LONG_NOTES && (
                                 <button type="button" className="gha-link" onClick={() => toggle(release.id)}>
                                     {opened.has(release.id) ? "Show less" : "Show more"}

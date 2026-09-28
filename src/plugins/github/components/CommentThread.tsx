@@ -46,7 +46,7 @@ export function CommentThread({ repo, number, active, now }: Props) {
                         <span className="gha-comment-author">{comment.author ?? "someone"}</span>
                         <span className="gha-dim">{formatAgo(comment.createdAt, now)}</span>
                     </div>
-                    <Markdown className="gha-prose">{comment.body}</Markdown>
+                    <Markdown>{comment.body}</Markdown>
                 </div>
             ))}
             <textarea

@@ -200,7 +200,7 @@ function PullDetail({ repo, number, active, login, onBack, onOpenRun }: DetailPr
                 <div className="gha-warn-note">GitHub is holding this back until the required reviews and checks pass.</div>
             )}
 
-            {found.body.trim() && <Markdown className="gha-prose">{found.body}</Markdown>}
+            {found.body.trim() && <Markdown>{found.body}</Markdown>}
 
             {found.headSha && <PullChecks repo={repo} sha={found.headSha} active={active} onOpenRun={onOpenRun} />}
 
@@ -216,7 +216,7 @@ function PullDetail({ repo, number, active, login, onBack, onOpenRun }: DetailPr
                                 </span>
                                 <span className="gha-dim">{formatAgo(review.submittedAt, now)}</span>
                             </div>
-                            {review.body.trim() && <Markdown className="gha-prose">{review.body}</Markdown>}
+                            {review.body.trim() && <Markdown>{review.body}</Markdown>}
                         </div>
                     ))}
                 </div>

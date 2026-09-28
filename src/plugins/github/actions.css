@@ -1173,113 +1173,12 @@
     border-color: color-mix(in oklab, var(--danger) 34%, transparent);
     color: var(--danger);
 }
-.gha-prose {
+.gha-pane .prose {
     padding: var(--space-2) 0;
-    font-size: var(--text-xs);
-    line-height: 1.6;
-    color: var(--text-secondary);
-    word-break: break-word;
 }
-.gha-prose > :first-child {
-    margin-top: 0;
-}
-.gha-prose > :last-child {
-    margin-bottom: 0;
-}
-.gha-prose :is(h1, h2, h3, h4, h5, h6) {
-    margin: var(--space-3) 0 var(--space-1);
-    font-weight: var(--weight-semibold);
-    letter-spacing: var(--tracking-tight);
-    color: var(--text-primary);
-}
-.gha-prose h1 {
-    font-size: var(--text-md);
-}
-.gha-prose h2 {
-    font-size: var(--text-sm);
-}
-.gha-prose :is(h3, h4, h5, h6) {
-    font-size: var(--text-xs);
-}
-.gha-prose h1,
-.gha-prose h2 {
-    padding-bottom: var(--space-1);
-    border-bottom: 1px solid var(--gha-rule);
-}
-.gha-prose p {
-    margin: var(--space-2) 0;
-}
-.gha-prose :is(ul, ol) {
-    margin: var(--space-2) 0;
-    padding-left: var(--space-4);
-}
-.gha-prose li {
-    margin: var(--space-0) 0;
-}
-.gha-prose li::marker {
-    color: var(--text-tertiary);
-}
-.gha-prose a {
-    color: var(--acc);
-    text-decoration: none;
-    cursor: pointer;
-}
-.gha-prose a:hover {
-    text-decoration: underline;
-}
-.gha-prose code {
-    padding: 1px var(--space-1);
-    border-radius: var(--radius-1);
-    background: var(--surface-hover);
-    font-family: var(--mono);
-    font-size: var(--text-2xs);
-    color: var(--text-primary);
-}
-.gha-prose pre {
-    margin: var(--space-2) 0;
-    padding: var(--space-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    background: var(--surface-sunken);
-    overflow-x: auto;
-}
-.gha-prose pre code {
-    padding: 0;
-    background: none;
-    color: var(--text-secondary);
-}
-.gha-prose blockquote {
-    margin: var(--space-2) 0;
-    padding-left: var(--space-3);
-    border-left: 2px solid var(--border);
-    color: var(--text-tertiary);
-}
-.gha-prose hr {
-    margin: var(--space-3) 0;
-    border: none;
-    border-top: 1px solid var(--gha-rule);
-}
-.gha-prose table {
-    margin: var(--space-2) 0;
-    border-collapse: collapse;
-}
-.gha-prose :is(th, td) {
-    padding: var(--space-1) var(--space-2);
-    border: 1px solid var(--border);
-    text-align: left;
-}
-.gha-prose th {
-    color: var(--text-primary);
-    font-weight: var(--weight-medium);
-}
-.gha-prose img {
-    max-width: 100%;
-    border-radius: var(--radius-2);
-}
-.gha-prose.clamp {
+.gha-pane .prose.gha-clamp {
     max-height: 190px;
     overflow: hidden;
-    /* Long release notes fade out rather than stopping mid-letter. */
     mask-image: linear-gradient(to bottom, #000 70%, transparent);
 }
 .gha-add {
@@ -1466,7 +1365,7 @@
 .gha-summary-head::-webkit-details-marker {
     display: none;
 }
-.gha-summary .gha-prose {
+.gha-summary .prose {
     padding: 0 var(--space-2) var(--space-2);
 }
 .gha-workflow-file {

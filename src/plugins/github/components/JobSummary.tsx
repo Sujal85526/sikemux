@@ -17,7 +17,7 @@ export function JobSummary({ repo, checkRunId, active, jobName }: Props) {
     return (
         <details className="gha-summary" open>
             <summary className="gha-summary-head">{jobName} summary</summary>
-            <Markdown className="gha-prose">{summary.body}</Markdown>
+            <Markdown>{summary.body}</Markdown>
         </details>
     );
 }
