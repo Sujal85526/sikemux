@@ -284,6 +284,27 @@ function GitWorkbench({
             onConfirm: () => run(`discarding ${file.path}`, () => git.discardFiles(repo, [file.path], "unstaged")).then(() => {}),
         });
 
+    const discardAllUnstaged = () => {
+        const targets = unstagedFiles;
+        if (targets.length === 0) return;
+        const added = targets.filter((f) => f.worktree === "?").length;
+        const count = `${targets.length} file${targets.length === 1 ? "" : "s"}`;
+        openGitConfirm({
+            title: `Discard unstaged changes in ${count}?`,
+            body: `${added ? `${added} new file${added === 1 ? " is" : "s are"} deleted and the rest go back to what is staged or committed. ` : "Every file goes back to what is staged or committed. "}Staged changes are kept. This can't be undone.`,
+            destructive: true,
+            confirmLabel: "discard all",
+            onConfirm: () =>
+                run(`discarding ${count}`, () =>
+                    git.discardFiles(
+                        repo,
+                        targets.map((f) => f.path),
+                        "unstaged",
+                    ),
+                ).then(() => {}),
+        });
+    };
+
     const fileRange = (): FileEntry[] | null => {
         if (rangeAnchor === null) return null;
         const a = Math.min(rangeAnchor, selectedFileIndex);
@@ -769,6 +790,7 @@ function GitWorkbench({
             { label: "Add remote…", run: openAddRemotePrompt },
             { sep: true },
             { label: "Stash changes…", hint: "s", disabled: files.length === 0, run: openFilesStashMenu },
+            { label: "Discard unstaged changes…", danger: true, disabled: unstagedFiles.length === 0, run: discardAllUnstaged },
             { label: stashes.length ? `Stashes (${stashes.length})…` : "No stashes", disabled: stashes.length === 0, run: openStashesMenu },
             { sep: true },
             { label: "Refresh", hint: "r", run: refreshRepoState },
@@ -952,6 +974,11 @@ function GitWorkbench({
                         {i === 0 && (
                             <button type="button" className="git-text-btn" onClick={openFilesStashMenu}>
                                 Stash
+                            </button>
+                        )}
+                        {!staged && (
+                            <button type="button" className="git-text-btn danger" onClick={discardAllUnstaged}>
+                                Discard all
                             </button>
                         )}
                         <button type="button" className="git-text-btn" onClick={staged ? unstageAll : stageAll}>

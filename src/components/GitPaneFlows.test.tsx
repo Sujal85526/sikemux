@@ -194,3 +194,33 @@ it("resizes the lists against the review from the divider, and double-click puts
         clientWidth.mockRestore();
     }
 });
+
+it("discards every unstaged change after asking, and says which files are new", async () => {
+    const discardFiles = vi.spyOn((await import("../api/git")).git, "discardFiles").mockResolvedValue(undefined as never);
+    const files = resources.overview.data.status.files;
+    resources.overview.data.status.files = [
+        { path: "file.ts", index: " ", worktree: "M" },
+        { path: "new.ts", index: "?", worktree: "?" },
+        { path: "kept.ts", index: "M", worktree: " " },
+    ];
+    resources.overview.refresh.mockResolvedValue(undefined);
+    resources.empty.refresh.mockResolvedValue(undefined);
+    try {
+        const user = userEvent.setup();
+        render(<GitPane paneId="git-test" cwd="/repo" active visible />);
+        await user.click(screen.getByRole("button", { name: "Discard all" }));
+        const modal = getState().gitModal;
+        expect(modal).toMatchObject({ kind: "confirm", title: "Discard unstaged changes in 2 files?", destructive: true });
+        expect(modal && "body" in modal ? modal.body : "").toContain("1 new file is deleted");
+        expect(discardFiles).not.toHaveBeenCalled();
+        await act(async () => {
+            if (modal?.kind === "confirm") await modal.onConfirm();
+        });
+        expect(discardFiles).toHaveBeenCalledWith(expect.any(String), ["file.ts", "new.ts"], "unstaged");
+    } finally {
+        resources.overview.data.status.files = files;
+        resources.overview.refresh.mockReset();
+        resources.empty.refresh.mockReset();
+        discardFiles.mockRestore();
+    }
+});

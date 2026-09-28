@@ -444,6 +444,10 @@
     background: var(--surface-hover);
     color: var(--text-primary);
 }
+.git-text-btn.danger:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--danger) 12%, transparent);
+    color: var(--danger);
+}
 .git-text-btn:disabled {
     color: var(--text-disabled);
     cursor: default;
