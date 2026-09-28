@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as cmd from "../state/commands";
 import { collectPanes } from "../state/layout";
 import { getState, setState } from "../state/store";
+import type { LayoutNode, PaneNode } from "../state/types";
 import { Workspace, WorkspaceTabs } from "./Workspace";
 import { TAB_SLIDE_MS } from "./tabDrag";
 
@@ -168,5 +169,39 @@ describe("a split tab in the strip", () => {
         expect(collectPanes(shown().root).map((pane) => pane.id)).not.toContain(firstPane);
         expect(collectPanes(shown().root)).toHaveLength(1);
         expect(container.querySelector(".tab-group")).toBeNull();
+    });
+});
+
+describe("an agent's button back to the tab bar", () => {
+    const showAgent = (...others: PaneNode[]) => {
+        const sessionId = getState().activeSessionId;
+        const agent: PaneNode = { type: "pane", id: "a1", cwd: "/code", kind: "agent", title: "codex" };
+        const children = [agent, ...others];
+        const root: LayoutNode =
+            children.length > 1 ? { type: "split", id: "split", dir: "row", children, sizes: children.map(() => 1 / children.length) } : agent;
+        setState(
+            (state) =>
+                ({
+                    windows: { agent: { id: "agent", name: "codex", role: "agent", root, activePaneId: "a1" } },
+                    windowsBySession: { [sessionId]: ["agent"] },
+                    agents: { a1: { id: "a1", type: "codex", title: "codex" } },
+                    sessions: { ...state.sessions, [sessionId]: { ...state.sessions[sessionId], activeWindowId: "agent" } },
+                }) as never,
+        );
+        cmd.openDesk("a1");
+        render(<Workspace />);
+    };
+
+    it("stays off while the agent only has its desk beside it", () => {
+        showAgent();
+
+        expect(collectPanes(shown().root).map((pane) => pane.kind)).toEqual(["agent", "desk"]);
+        expect(screen.queryByRole("button", { name: "Move back to the tab bar" })).toBeNull();
+    });
+
+    it("shows on the agent and on the tab grouped with it", () => {
+        showAgent({ type: "pane", id: "p1", cwd: "/code", kind: "terminal", title: "zsh" });
+
+        expect(screen.getAllByRole("button", { name: "Move back to the tab bar" })).toHaveLength(2);
     });
 });

@@ -668,6 +668,8 @@ const WindowLayer = memo(function WindowLayer({
                 const paneVisible = live && shown;
                 const paneActive = paneVisible && isActive;
                 const panePainted = painted && shown;
+                const canUnsplit =
+                    paneToSeparate(win, splitState, p.id) || (p.kind === "agent" && leaves.some((leaf) => paneToSeparate(win, splitState, leaf.id)));
                 return (
                     <div
                         key={p.id}
@@ -692,7 +694,7 @@ const WindowLayer = memo(function WindowLayer({
                             <ErrorBoundary label={`${p.kind} pane`}>
                                 {renderWorkbenchItem({ pane: p, session, win, active: paneActive, visible: paneVisible, painted: panePainted })}
                             </ErrorBoundary>
-                            {live && (paneToSeparate(win, splitState, p.id) || (p.kind === "agent" && collectPanes(win.root).length > 1)) && (
+                            {live && canUnsplit && (
                                 <button
                                     type="button"
                                     className="pane-unsplit"
