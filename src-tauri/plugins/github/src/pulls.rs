@@ -20,7 +20,14 @@ const DEFAULT_PER_PAGE: u32 = 30;
 struct BranchSide {
     #[serde(rename = "ref")]
     name: String,
+    /// `owner:branch`, which names the fork a branch lives on.
+    label: Option<String>,
     sha: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct MilestoneRow {
+    title: String,
 }
 
 #[derive(Deserialize)]
@@ -32,7 +39,11 @@ struct PullRow {
     draft: Option<bool>,
     merged: Option<bool>,
     merged_at: Option<String>,
+    merged_by: Option<ActorRow>,
+    merge_commit_sha: Option<String>,
+    commits: Option<u64>,
     user: Option<ActorRow>,
+    author_association: Option<String>,
     head: Option<BranchSide>,
     base: Option<BranchSide>,
     created_at: String,
@@ -48,6 +59,9 @@ struct PullRow {
     labels: Vec<LabelRow>,
     #[serde(default)]
     requested_reviewers: Vec<ActorRow>,
+    #[serde(default)]
+    assignees: Vec<ActorRow>,
+    milestone: Option<MilestoneRow>,
 }
 
 /// `open`, `merged` or `closed`. GitHub reports a merged pull request as
@@ -70,7 +84,10 @@ pub struct Pull {
     pub draft: bool,
     pub author: Option<String>,
     pub avatar_url: Option<String>,
+    /// `OWNER`, `MEMBER`, `COLLABORATOR`, `CONTRIBUTOR` and the rest.
+    pub author_association: Option<String>,
     pub head: Option<String>,
+    pub head_label: Option<String>,
     pub base: Option<String>,
     /// The commit at the tip of the branch, which is what its checks ran on.
     pub head_sha: Option<String>,
@@ -87,6 +104,13 @@ pub struct Pull {
     pub merge_state: Option<String>,
     pub labels: Vec<Label>,
     pub reviewers: Vec<String>,
+    pub assignees: Vec<String>,
+    pub milestone: Option<String>,
+    /// Absent from GitHub's list of pull requests, like the counts above.
+    pub commits: Option<u64>,
+    pub merged_at: Option<String>,
+    pub merged_by: Option<String>,
+    pub merge_commit_sha: Option<String>,
     pub url: String,
 }
 
@@ -100,7 +124,9 @@ impl From<PullRow> for Pull {
             draft: row.draft.unwrap_or(false),
             author: login_of(&row.user),
             avatar_url: avatar_of(&row.user),
+            author_association: row.author_association,
             head_sha: row.head.as_ref().and_then(|side| side.sha.clone()),
+            head_label: row.head.as_ref().and_then(|side| side.label.clone()),
             head: row.head.map(|side| side.name),
             base: row.base.map(|side| side.name),
             created_at: row.created_at,
@@ -117,6 +143,12 @@ impl From<PullRow> for Pull {
                 .into_iter()
                 .map(|actor| actor.login)
                 .collect(),
+            assignees: row.assignees.into_iter().map(|actor| actor.login).collect(),
+            milestone: row.milestone.map(|milestone| milestone.title),
+            commits: row.commits,
+            merged_at: row.merged_at,
+            merged_by: login_of(&row.merged_by),
+            merge_commit_sha: row.merge_commit_sha,
             url: row.html_url,
         }
     }
@@ -264,6 +296,61 @@ pub async fn files(data_dir: &Path, input: PullRef) -> GithubResult<Vec<ChangedF
             deletions: row.deletions,
             previous_path: row.previous_filename,
             patch: row.patch,
+        })
+        .collect())
+}
+
+#[derive(Deserialize)]
+struct GitAuthor {
+    name: Option<String>,
+    date: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct GitCommit {
+    message: String,
+    author: Option<GitAuthor>,
+}
+
+#[derive(Deserialize)]
+struct CommitRow {
+    sha: String,
+    commit: GitCommit,
+    author: Option<ActorRow>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PullCommit {
+    pub sha: String,
+    pub message: String,
+    /// The GitHub login, or the name in the commit when no account matches it.
+    pub author: Option<String>,
+    pub avatar_url: Option<String>,
+    pub date: Option<String>,
+}
+
+/// GitHub lists at most 250 of a pull request's commits.
+const COMMIT_PAGES: u32 = 3;
+
+pub async fn commits(data_dir: &Path, input: PullRef) -> GithubResult<Vec<PullCommit>> {
+    let path = input
+        .repo
+        .path(&format!("/pulls/{}/commits", input.number))?;
+    let rows: Vec<CommitRow> =
+        client::get_all(data_dir, &path, &[], COMMIT_PAGES, |rows| rows).await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let git = row.commit.author;
+            PullCommit {
+                sha: row.sha,
+                message: row.commit.message,
+                avatar_url: avatar_of(&row.author),
+                author: login_of(&row.author)
+                    .or_else(|| git.as_ref().and_then(|author| author.name.clone())),
+                date: git.and_then(|author| author.date),
+            }
         })
         .collect())
 }

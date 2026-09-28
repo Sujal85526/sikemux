@@ -169,6 +169,7 @@ impl Plugin for Github {
             "pulls" => answer(input, move |q| pulls::list(data_dir, q)),
             "pull" => answer(input, move |q| pulls::get(data_dir, q)),
             "pullFiles" => answer(input, move |q| pulls::files(data_dir, q)),
+            "pullCommits" => answer(input, move |q| pulls::commits(data_dir, q)),
             "pullReviews" => answer(input, move |q| pulls::reviews(data_dir, q)),
             "mergePull" => answer(input, move |q| pulls::merge(data_dir, q)),
             "createPull" => answer(input, move |q| pulls::create(data_dir, q)),
@@ -188,6 +189,9 @@ impl Plugin for Github {
             "markRead" => answer(input, move |q| inbox::mark_read(data_dir, q)),
             "comments" => answer(input, move |thread: common::Thread| async move {
                 common::comments(data_dir, &thread.repo, thread.number).await
+            }),
+            "timeline" => answer(input, move |thread: common::Thread| async move {
+                common::timeline(data_dir, &thread.repo, thread.number).await
             }),
             "image" => answer(input, move |q| images::image(data_dir, q)),
             "markAllRead" => Box::pin(async move { reply(inbox::mark_all_read(data_dir).await?) }),

@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::client;
 use crate::error::GithubResult;
@@ -59,6 +59,7 @@ pub fn avatar_of(actor: &Option<ActorRow>) -> Option<String> {
 struct CommentRow {
     id: u64,
     user: Option<ActorRow>,
+    author_association: Option<String>,
     body: Option<String>,
     created_at: String,
     html_url: Option<String>,
@@ -70,6 +71,8 @@ pub struct Comment {
     pub id: u64,
     pub author: Option<String>,
     pub avatar_url: Option<String>,
+    /// `OWNER`, `MEMBER`, `COLLABORATOR`, `CONTRIBUTOR` and the rest.
+    pub author_association: Option<String>,
     pub body: String,
     pub created_at: String,
     pub url: Option<String>,
@@ -95,11 +98,93 @@ pub async fn comments(data_dir: &Path, repo: &RepoRef, number: u64) -> GithubRes
             id: row.id,
             author: login_of(&row.user),
             avatar_url: avatar_of(&row.user),
+            author_association: row.author_association,
             body: row.body.unwrap_or_default(),
             created_at: row.created_at,
             url: row.html_url,
         })
         .collect())
+}
+
+/// One thing in a pull request's or issue's history: a comment, a review, a
+/// commit, a merge or anything else GitHub's timeline records, in one shape.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineItem {
+    /// GitHub's event name, such as `commented`, `reviewed` or `committed`.
+    pub kind: String,
+    pub id: Option<u64>,
+    pub actor: Option<String>,
+    pub avatar_url: Option<String>,
+    pub association: Option<String>,
+    pub at: Option<String>,
+    pub body: Option<String>,
+    /// A review's verdict, or why an issue was closed.
+    pub state: Option<String>,
+    pub sha: Option<String>,
+    pub message: Option<String>,
+    /// Who or what the event was about: a requested reviewer, a label, a new title.
+    pub subject: Option<String>,
+}
+
+fn text(value: &Value, path: &[&str]) -> Option<String> {
+    let mut at = value;
+    for key in path {
+        at = at.get(key)?;
+    }
+    match at {
+        Value::String(text) => Some(text.clone()),
+        Value::Number(number) => Some(number.to_string()),
+        _ => None,
+    }
+}
+
+fn first(value: &Value, paths: &[&[&str]]) -> Option<String> {
+    paths.iter().find_map(|path| text(value, path))
+}
+
+impl From<Value> for TimelineItem {
+    fn from(row: Value) -> Self {
+        Self {
+            kind: text(&row, &["event"]).unwrap_or_default(),
+            id: row.get("id").and_then(Value::as_u64),
+            actor: first(
+                &row,
+                &[&["actor", "login"], &["user", "login"], &["author", "name"]],
+            ),
+            avatar_url: first(&row, &[&["actor", "avatar_url"], &["user", "avatar_url"]]),
+            association: text(&row, &["author_association"]),
+            at: first(
+                &row,
+                &[&["created_at"], &["submitted_at"], &["author", "date"]],
+            ),
+            body: text(&row, &["body"]),
+            state: first(&row, &[&["state"], &["state_reason"]]),
+            sha: first(&row, &[&["sha"], &["commit_id"]]),
+            message: text(&row, &["message"]),
+            subject: first(
+                &row,
+                &[
+                    &["requested_reviewer", "login"],
+                    &["requested_team", "name"],
+                    &["label", "name"],
+                    &["assignee", "login"],
+                    &["rename", "to"],
+                    &["source", "issue", "title"],
+                ],
+            ),
+        }
+    }
+}
+
+pub async fn timeline(
+    data_dir: &Path,
+    repo: &RepoRef,
+    number: u64,
+) -> GithubResult<Vec<TimelineItem>> {
+    let path = repo.path(&format!("/issues/{number}/timeline"))?;
+    let rows: Vec<Value> = client::get_all(data_dir, &path, &[], LIST_PAGES, |rows| rows).await?;
+    Ok(rows.into_iter().map(TimelineItem::from).collect())
 }
 
 #[derive(Deserialize)]
@@ -165,5 +250,39 @@ mod tests {
             body: "   ".into(),
         };
         assert!(add_comment(&std::env::temp_dir(), input).await.is_err());
+    }
+
+    #[test]
+    fn a_timeline_reads_each_event_into_one_shape() {
+        let commit = TimelineItem::from(json!({
+            "event": "committed",
+            "sha": "c1f2023",
+            "message": "feat: a thing",
+            "author": { "name": "Sujal", "date": "2026-09-27T10:44:50Z" },
+        }));
+        assert_eq!(commit.actor.as_deref(), Some("Sujal"));
+        assert_eq!(commit.at.as_deref(), Some("2026-09-27T10:44:50Z"));
+        assert_eq!(commit.sha.as_deref(), Some("c1f2023"));
+
+        let review = TimelineItem::from(json!({
+            "event": "reviewed",
+            "id": 7,
+            "user": { "login": "nodelike", "avatar_url": "https://a/1" },
+            "author_association": "OWNER",
+            "state": "changes_requested",
+            "body": "Please fix",
+            "submitted_at": "2026-09-28T01:00:00Z",
+        }));
+        assert_eq!(review.actor.as_deref(), Some("nodelike"));
+        assert_eq!(review.state.as_deref(), Some("changes_requested"));
+        assert_eq!(review.at.as_deref(), Some("2026-09-28T01:00:00Z"));
+
+        let asked = TimelineItem::from(json!({
+            "event": "review_requested",
+            "actor": { "login": "Sujal" },
+            "requested_reviewer": { "login": "nodelike" },
+            "created_at": "2026-09-27T11:00:00Z",
+        }));
+        assert_eq!(asked.subject.as_deref(), Some("nodelike"));
     }
 }
