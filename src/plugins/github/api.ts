@@ -231,6 +231,12 @@ export interface PendingApproval {
     reviewers: string[];
 }
 
+/**
+ * One read of a watched run. `run` and `jobs` are the last ones read, so a tick whose read failed still carries them
+ * (both are empty only if no read has worked yet). `error` says why this read failed. `finished` is the last tick:
+ * with no error the run is over; with one the watch gave up, at once when signed out or the run is gone, or after
+ * repeated failures.
+ */
 export interface RunTick {
     run: Run | null;
     jobs: Job[];

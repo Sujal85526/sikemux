@@ -294,6 +294,8 @@ struct JobRow {
 
 #[derive(Deserialize)]
 struct JobList {
+    #[serde(default)]
+    total_count: u64,
     jobs: Vec<JobRow>,
 }
 
@@ -356,19 +358,21 @@ impl From<JobRow> for Job {
     }
 }
 
+async fn job_rows(data_dir: &Path, path: &str, query: &[(&str, String)]) -> GithubResult<Vec<Job>> {
+    let rows =
+        client::get_all(data_dir, path, query, LIST_PAGES, |list: JobList| list.jobs).await?;
+    Ok(rows.into_iter().map(Job::from).collect())
+}
+
+fn latest() -> [(&'static str, String); 1] {
+    [("filter", "latest".to_string())]
+}
+
 pub async fn jobs(data_dir: &Path, input: RunRef) -> GithubResult<Vec<Job>> {
     let path = input
         .repo
         .path(&format!("/actions/runs/{}/jobs", input.run_id))?;
-    let jobs = client::get_all(
-        data_dir,
-        &path,
-        &[("filter", "latest".to_string())],
-        LIST_PAGES,
-        |list: JobList| list.jobs,
-    )
-    .await?;
-    Ok(jobs.into_iter().map(Job::from).collect())
+    job_rows(data_dir, &path, &latest()).await
 }
 
 #[derive(Serialize, Clone)]
@@ -402,6 +406,18 @@ pub struct Followed {
     jobs: Option<(Vec<Job>, Option<String>)>,
 }
 
+impl Followed {
+    pub fn last(&self) -> (Option<Run>, Vec<Job>) {
+        (
+            self.run.as_ref().map(|(run, _)| run.clone()),
+            self.jobs
+                .as_ref()
+                .map(|(jobs, _)| jobs.clone())
+                .unwrap_or_default(),
+        )
+    }
+}
+
 /// The run and its jobs as they are now, and how many requests GitHub will
 /// still take this hour.
 pub async fn follow(
@@ -416,6 +432,10 @@ pub async fn follow(
         ("per_page", MAX_PER_PAGE.to_string()),
         ("filter", "latest".to_string()),
     ];
+    let paged = held
+        .jobs
+        .as_ref()
+        .is_some_and(|(jobs, _)| jobs.len() >= MAX_PER_PAGE as usize);
     let run_path = input.repo.path(&base)?;
     let jobs_path = input.repo.path(&format!("{base}/jobs"))?;
     let (run, jobs) = futures::future::join(
@@ -427,29 +447,28 @@ pub async fn follow(
     if let Some(row) = run.value {
         held.run = Some((Run::from(row), run.etag));
     }
-    if let Some(list) = jobs.value {
-        held.jobs = Some((list.jobs.into_iter().map(Job::from).collect(), jobs.etag));
+    // Past a hundred jobs the first page no longer shows every change, so
+    // the whole list is read again.
+    match jobs.value {
+        Some(list) if list.total_count <= list.jobs.len() as u64 => {
+            held.jobs = Some((list.jobs.into_iter().map(Job::from).collect(), jobs.etag));
+        }
+        Some(_) => held.jobs = Some((job_rows(data_dir, &jobs_path, &latest()).await?, jobs.etag)),
+        None if paged => {
+            let all = job_rows(data_dir, &jobs_path, &latest()).await?;
+            if let Some(held) = held.jobs.as_mut() {
+                held.0 = all;
+            }
+        }
+        None => {}
     }
     let remaining = match (run.remaining, jobs.remaining) {
         (Some(a), Some(b)) => Some(a.min(b)),
         (a, b) => a.or(b),
     };
-    let current = held
-        .run
-        .as_ref()
-        .map(|(run, _)| run.clone())
-        .ok_or_else(|| GithubError::Response("GitHub sent no run".into()))?;
-    Ok((
-        RunDetail {
-            run: current,
-            jobs: held
-                .jobs
-                .as_ref()
-                .map(|(jobs, _)| jobs.clone())
-                .unwrap_or_default(),
-        },
-        remaining,
-    ))
+    let (run, jobs) = held.last();
+    let run = run.ok_or_else(|| GithubError::Response("GitHub sent no run".into()))?;
+    Ok((RunDetail { run, jobs }, remaining))
 }
 
 #[derive(Deserialize)]
@@ -598,18 +617,15 @@ pub async fn attempt(data_dir: &Path, input: AttemptRef) -> GithubResult<RunDeta
     let base = format!("/actions/runs/{}/attempts/{}", input.run_id, input.attempt);
     // Neither answer needs the other, so they are asked for together the way
     // the current attempt's are.
-    let (run, jobs): (GithubResult<RunRow>, GithubResult<JobList>) = futures::future::join(
+    let jobs_path = input.repo.path(&format!("{base}/jobs"))?;
+    let (run, jobs): (GithubResult<RunRow>, _) = futures::future::join(
         client::get(data_dir, &input.repo.path(&base)?, &[]),
-        client::get(
-            data_dir,
-            &input.repo.path(&format!("{base}/jobs"))?,
-            &[("per_page", MAX_PER_PAGE.to_string())],
-        ),
+        job_rows(data_dir, &jobs_path, &[]),
     )
     .await;
     Ok(RunDetail {
         run: Run::from(run?),
-        jobs: jobs?.jobs.into_iter().map(Job::from).collect(),
+        jobs: jobs?,
     })
 }
 

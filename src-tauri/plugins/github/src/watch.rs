@@ -25,6 +25,9 @@ const ERROR_GIVEUP: u32 = 6;
 /// arrive rather than the view stopping on a half-finished picture.
 const SETTLE_POLLS: u32 = 1;
 
+/// One read of the run. `run` and `jobs` are the last ones read, so a tick
+/// that failed still carries them. A finished tick with an error is the
+/// watch giving up.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Tick {
@@ -32,6 +35,18 @@ struct Tick {
     jobs: Vec<Job>,
     error: Option<String>,
     finished: bool,
+}
+
+/// Signed out, a run that is gone, or a request GitHub cannot take: asking
+/// again will not help.
+fn is_final(error: &GithubError) -> bool {
+    matches!(
+        error,
+        GithubError::Auth(_)
+            | GithubError::Unconfigured
+            | GithubError::NotFound(_)
+            | GithubError::BadArg(_)
+    )
 }
 
 #[derive(Deserialize)]
@@ -74,17 +89,27 @@ pub async fn run(data_dir: &Path, input: Watch, sink: StreamSink) -> PluginResul
         run_id: input.run_id,
     };
     loop {
-        let (run, jobs, error, rate_reset, remaining) =
+        let (run, jobs, error, rate_reset, remaining, gave_up) =
             match runs::follow(data_dir, &reference, &mut held).await {
-                Ok((detail, remaining)) => (Some(detail.run), detail.jobs, None, None, remaining),
-                Err(GithubError::RateLimited { resets_in_secs }) => (
-                    None,
-                    Vec::new(),
-                    Some(GithubError::RateLimited { resets_in_secs }.to_string()),
-                    Some(resets_in_secs),
-                    None,
-                ),
-                Err(error) => (None, Vec::new(), Some(error.to_string()), None, None),
+                Ok((detail, remaining)) => {
+                    (Some(detail.run), detail.jobs, None, None, remaining, false)
+                }
+                Err(error) => {
+                    let (run, jobs) = held.last();
+                    let rate_reset = match error {
+                        GithubError::RateLimited { resets_in_secs } => Some(resets_in_secs),
+                        _ => None,
+                    };
+                    let gave_up = is_final(&error);
+                    (
+                        run,
+                        jobs,
+                        Some(error.to_string()),
+                        rate_reset,
+                        None,
+                        gave_up,
+                    )
+                }
             };
         failures = if error.is_some() && rate_reset.is_none() {
             failures.saturating_add(1)
@@ -92,17 +117,19 @@ pub async fn run(data_dir: &Path, input: Watch, sink: StreamSink) -> PluginResul
             0
         };
 
-        let run_over = run
-            .as_ref()
-            .is_some_and(|run| runs::is_finished(&run.status));
+        let run_over = error.is_none()
+            && run
+                .as_ref()
+                .is_some_and(|run| runs::is_finished(&run.status));
         let jobs_over = !jobs.is_empty() && jobs.iter().all(|job| runs::is_finished(&job.status));
         if run_over {
             settled = settled.saturating_add(1);
         } else {
             settled = 0;
         }
-        let finished =
-            (run_over && (jobs_over || settled > SETTLE_POLLS)) || failures >= ERROR_GIVEUP;
+        let finished = gave_up
+            || (run_over && (jobs_over || settled > SETTLE_POLLS))
+            || failures >= ERROR_GIVEUP;
 
         sink.send(reply(Tick {
             run,
@@ -120,6 +147,20 @@ pub async fn run(data_dir: &Path, input: Watch, sink: StreamSink) -> PluginResul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stops_at_once_when_asking_again_cannot_help() {
+        assert!(is_final(&GithubError::Unconfigured));
+        assert!(is_final(&GithubError::Auth("bad token".into())));
+        assert!(is_final(&GithubError::NotFound("gone".into())));
+        assert!(is_final(&GithubError::BadArg("bad".into())));
+        assert!(!is_final(&GithubError::Transport("offline".into())));
+        assert!(!is_final(&GithubError::RateLimited { resets_in_secs: 5 }));
+        assert!(!is_final(&GithubError::Http {
+            status: 502,
+            message: "Bad Gateway".into()
+        }));
+    }
 
     #[test]
     fn a_healthy_watch_polls_at_a_steady_pace() {
