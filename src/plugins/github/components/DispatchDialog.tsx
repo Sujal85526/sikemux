@@ -1,10 +1,10 @@
-import { useState } from "react";
-import { notify, reportError } from "../../../plugin-api/host";
+import { useEffect, useId, useRef, useState } from "react";
+import { notify, reportError, useModalFocus, usePluginOverlay } from "../../../plugin-api/host";
 import { invalidate, useResource } from "../../../plugin-api/resources";
-import { usePluginOverlay } from "../../../plugin-api/host";
-import { IconClose, IconPlus } from "../../../plugin-api/ui";
+import { IconClose, IconPlus, IconRun } from "../../../plugin-api/ui";
 import { actionsApi, type RepoRef, type Workflow } from "../api";
 import { actionsBranchesR } from "../resources";
+import { useBusy } from "./hooks";
 
 interface Input {
     key: string;
@@ -30,11 +30,27 @@ export function DispatchDialog({ repo, workflow, defaultBranch, onClose }: Props
     const branches = useResource(actionsBranchesR, repo);
     const [gitRef, setGitRef] = useState(defaultBranch ?? "");
     const [inputs, setInputs] = useState<Input[]>([]);
-    const [busy, setBusy] = useState(false);
+    const [busy, runBusy] = useBusy();
+    const modalRef = useRef<HTMLDivElement>(null);
+    const refId = useId();
+    const branchListId = useId();
     usePluginOverlay(true);
+    useModalFocus(modalRef);
+
+    // Caught before the panes behind the scrim can act on it.
+    useEffect(() => {
+        const onKey = (event: KeyboardEvent) => {
+            if (event.key !== "Escape") return;
+            event.preventDefault();
+            event.stopPropagation();
+            onClose();
+        };
+        window.addEventListener("keydown", onKey, true);
+        return () => window.removeEventListener("keydown", onKey, true);
+    }, [onClose]);
 
     const submit = async () => {
-        setBusy(true);
+        if (!gitRef.trim()) return;
         const values: Record<string, string> = {};
         for (const input of inputs) {
             const name = input.name.trim();
@@ -49,55 +65,68 @@ export function DispatchDialog({ repo, workflow, defaultBranch, onClose }: Props
             onClose();
         } catch (error) {
             reportError(`Could not start ${workflow.name}`)(error);
-        } finally {
-            setBusy(false);
         }
     };
 
     return (
-        <div className="gha-modal-scrim" role="presentation" onClick={onClose}>
-            <div className="gha-modal" role="dialog" aria-label={`Run ${workflow.name}`} onClick={(event) => event.stopPropagation()}>
-                <div className="gha-modal-head">
-                    <h2>Run {workflow.name}</h2>
-                    <button type="button" className="gha-icon-btn" onClick={onClose} aria-label="Close">
-                        <IconClose size={13} />
-                    </button>
+        <div className="dlg-scrim" onMouseDown={onClose}>
+            <div
+                ref={modalRef}
+                tabIndex={-1}
+                className="dlg"
+                role="dialog"
+                aria-modal="true"
+                aria-label={`Run ${workflow.name}`}
+                onMouseDown={(event) => event.stopPropagation()}>
+                <div className="dlg-head">
+                    <span className="dlg-glyph" aria-hidden="true">
+                        <IconRun size={15} />
+                    </span>
+                    <h2 className="dlg-title">Run {workflow.name}</h2>
                 </div>
 
-                <label className="gha-field">
-                    <span>Branch or tag</span>
+                <form
+                    className="dlg-field"
+                    onSubmit={(event) => {
+                        event.preventDefault();
+                        runBusy(submit);
+                    }}>
+                    <label htmlFor={refId}>Branch or tag</label>
                     <input
-                        className="gha-input gha-mono"
-                        list="gha-branches"
+                        id={refId}
+                        className="dlg-input gha-mono"
+                        list={branchListId}
                         value={gitRef}
                         onChange={(event) => setGitRef(event.target.value)}
                         placeholder="main"
                         autoFocus
                         spellCheck={false}
                     />
-                    <datalist id="gha-branches">
+                    <datalist id={branchListId}>
                         {(branches.data ?? []).map((branch) => (
                             <option key={branch} value={branch} />
                         ))}
                     </datalist>
-                </label>
+                </form>
 
-                <div className="gha-inputs">
+                <div className="dlg-field gha-inputs">
                     {inputs.map((input, index) => (
                         <div className="gha-input-row" key={input.key}>
                             <input
-                                className="gha-input gha-mono"
+                                className="dlg-input gha-mono"
                                 value={input.name}
                                 placeholder="input"
+                                aria-label="Input name"
                                 spellCheck={false}
                                 onChange={(event) =>
                                     setInputs((all) => all.map((each, at) => (at === index ? { ...each, name: event.target.value } : each)))
                                 }
                             />
                             <input
-                                className="gha-input gha-mono"
+                                className="dlg-input gha-mono"
                                 value={input.value}
                                 placeholder="value"
+                                aria-label={`Value of ${input.name || "input"}`}
                                 spellCheck={false}
                                 onChange={(event) =>
                                     setInputs((all) => all.map((each, at) => (at === index ? { ...each, value: event.target.value } : each)))
@@ -120,11 +149,11 @@ export function DispatchDialog({ repo, workflow, defaultBranch, onClose }: Props
                     </button>
                 </div>
 
-                <div className="gha-modal-actions">
-                    <button type="button" className="gha-btn" onClick={onClose}>
+                <div className="dlg-foot">
+                    <button type="button" className="dlg-btn" onClick={onClose}>
                         Cancel
                     </button>
-                    <button type="button" className="gha-btn primary" disabled={busy || !gitRef.trim()} onClick={() => void submit()}>
+                    <button type="button" className="dlg-btn primary" disabled={busy || !gitRef.trim()} onClick={() => runBusy(submit)}>
                         {busy ? "Starting…" : "Run workflow"}
                     </button>
                 </div>
