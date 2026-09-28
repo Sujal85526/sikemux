@@ -2,6 +2,7 @@
 // merging it. A pull request is also an issue in GitHub's API, so its comments
 // come from there.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -111,12 +112,22 @@ pub struct Pull {
     pub merged_at: Option<String>,
     pub merged_by: Option<String>,
     pub merge_commit_sha: Option<String>,
+    /// The picture of each person named above by login alone.
+    pub avatars: BTreeMap<String, String>,
     pub url: String,
 }
 
 impl From<PullRow> for Pull {
     fn from(row: PullRow) -> Self {
+        let avatars = row
+            .requested_reviewers
+            .iter()
+            .chain(&row.assignees)
+            .chain(&row.merged_by)
+            .filter_map(|actor| Some((actor.login.clone(), actor.avatar_url.clone()?)))
+            .collect();
         Self {
+            avatars,
             state: state_of(&row),
             number: row.number,
             title: row.title,
