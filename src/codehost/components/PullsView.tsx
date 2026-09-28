@@ -1,7 +1,9 @@
 import { useState, type ReactNode } from "react";
 import { confirmDialog, copyText, notify, reportError, swallow } from "../../plugin-api/host";
+import { checkoutPull, isOwnBranch, localBranchOf } from "../checkout";
+import { useHost } from "../registry";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
-import { Dropdown, EmptyState, IconClock, IconCopy, IconPullRequest, SkeletonRows, Tooltip } from "../../plugin-api/ui";
+import { Dropdown, EmptyState, IconCheck, IconCheckout, IconClock, IconCopy, IconPullRequest, SkeletonRows, Tooltip } from "../../plugin-api/ui";
 import { hostApi, failureMessage, type MergeMethod, type Pull, type RepoRef, type Review } from "../api";
 import { pullCommitsR, timelineR, pullR, pullReviewsR, pullsR } from "../resources";
 import { formatAgo, type Outcome } from "../runStatus";
@@ -52,6 +54,7 @@ function PullRow({ pull, now, onOpen }: { pull: Pull; now: number; onOpen: () =>
 interface DetailProps {
     repo: RepoRef;
     cwd: string | null;
+    projectBranch: string | null;
     number: number;
     active: boolean;
     login: string | null;
@@ -346,7 +349,38 @@ function CommitsTab({ repo, number, active, now }: { repo: RepoRef; number: numb
     );
 }
 
-function PullDetail({ repo, cwd, number, active, login, onBack, onOpenRun }: DetailProps) {
+function CheckoutButton({ cwd, repo, pull, current }: { cwd: string; repo: RepoRef; pull: Pull; current: string | null }) {
+    const host = useHost();
+    const [busy, runBusy] = useBusy();
+    const local = localBranchOf(pull, repo);
+    if (local && local === current) {
+        return (
+            <span className="gha-checked-out" title={`${local} is checked out in this project`}>
+                <IconCheck size={12} /> Checked out
+            </span>
+        );
+    }
+    if (!isOwnBranch(pull, repo) && !host.pullHeadRef) return null;
+    return (
+        <Tooltip label={`Check out ${local ?? "the branch"} in this project`}>
+            <button
+                type="button"
+                className="gha-btn"
+                disabled={busy}
+                onClick={() =>
+                    runBusy(() =>
+                        checkoutPull(cwd, host, repo, pull)
+                            .then(() => notify("success", `Checked out #${pull.number}`))
+                            .catch(swallow("check out the pull request")),
+                    )
+                }>
+                <IconCheckout size={12} /> {busy ? "Checking out…" : "Check out"}
+            </button>
+        </Tooltip>
+    );
+}
+
+function PullDetail({ repo, cwd, projectBranch, number, active, login, onBack, onOpenRun }: DetailProps) {
     const [tab, setTab] = useState<PullTab>("conversation");
     const pull = useResourceEnabled(active, pullR, repo, number);
     const reviews = useResourceEnabled(active, pullReviewsR, repo, number);
@@ -388,7 +422,8 @@ function PullDetail({ repo, cwd, number, active, login, onBack, onOpenRun }: Det
                 number={found.number}
                 url={found.url}
                 backLabel="Back to pull requests"
-                onBack={onBack}>
+                onBack={onBack}
+                actions={cwd && found.state === "open" ? <CheckoutButton cwd={cwd} repo={repo} pull={found} current={projectBranch} /> : null}>
                 <span className="gha-state-word" data-kind="pull" data-state={stateOf(found.state, found.draft)}>
                     {stateLabel("pull", found.state, found.draft)}
                 </span>
@@ -508,6 +543,7 @@ export function PullsView({ paneId, repo, listState, item, composing, projectBra
             <PullDetail
                 repo={repo}
                 cwd={cwd}
+                projectBranch={projectBranch}
                 number={item}
                 active={active}
                 login={login}

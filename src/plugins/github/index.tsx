@@ -29,6 +29,7 @@ registerCodeHost({
         inbox: true,
     },
     api: githubHostApi,
+    pullHeadRef: (number) => `pull/${number}/head`,
     SignIn: GithubSignIn,
 });
 

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { openUrl, swallow } from "../../plugin-api/host";
 import { IconCheck, IconChevron, IconExternal, IconGit, IconMerge, IconPullRequest } from "../../plugin-api/ui";
 import type { Label } from "../api";
+import { useHost } from "../registry";
 import { CommentIcon, NotPlannedIcon, SectionIcon } from "./ActionsIcon";
 import { Face } from "./CommentThread";
 
@@ -98,6 +99,7 @@ export function PageHead({
     url,
     backLabel,
     onBack,
+    actions,
     children,
 }: {
     mark: ReactNode;
@@ -106,8 +108,11 @@ export function PageHead({
     url: string;
     backLabel: string;
     onBack: () => void;
+    /** Buttons before the link to the host, such as checking a pull request out. */
+    actions?: ReactNode;
     children: ReactNode;
 }) {
+    const host = useHost();
     return (
         <>
             <button type="button" className="gha-back" onClick={onBack}>
@@ -119,8 +124,9 @@ export function PageHead({
                     <h2 className="gha-title">{title}</h2>
                     <span className="gha-page-number">#{number}</span>
                     <span className="gha-page-spacer" />
-                    <button type="button" className="gha-btn" onClick={() => void openUrl(url).catch(swallow("open GitHub"))}>
-                        <IconExternal size={12} /> On GitHub
+                    {actions}
+                    <button type="button" className="gha-btn" onClick={() => void openUrl(url).catch(swallow(`open ${host.name}`))}>
+                        <IconExternal size={12} /> On {host.name}
                     </button>
                 </div>
                 <div className="gha-page-sub">{children}</div>

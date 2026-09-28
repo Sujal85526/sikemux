@@ -134,6 +134,8 @@ export interface CodeHost {
     readonly icon: (size: number) => ReactNode;
     readonly capabilities: HostCapabilities;
     readonly api: CodeHostApi;
+    /** The ref a pull request from a fork can be fetched by, such as GitHub's `pull/N/head`. */
+    readonly pullHeadRef?: (number: number) => string;
     /** Shown in the Git pane while nobody is signed in to this host. */
     readonly SignIn: ComponentType<{ onSignedIn: () => void }>;
 }
