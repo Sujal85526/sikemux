@@ -202,7 +202,10 @@
     white-space: nowrap;
     cursor: pointer;
 }
-.tree-ctx-item:hover {
+/* A menu shows its current item the way a native one does, with the row's tint rather than the focus ring. */
+.tree-ctx-item:hover,
+.tree-ctx-item:focus-visible {
+    box-shadow: none;
     background: var(--surface-selected);
     color: var(--text-primary);
 }
@@ -217,7 +220,8 @@
 .tree-ctx-item.danger {
     color: color-mix(in srgb, var(--danger) 85%, var(--text-secondary));
 }
-.tree-ctx-item.danger:hover {
+.tree-ctx-item.danger:hover,
+.tree-ctx-item.danger:focus-visible {
     background: color-mix(in srgb, var(--danger) 12%, transparent);
     color: var(--danger);
 }

@@ -936,6 +936,9 @@ export function TreeContextMenu({
                             role="menuitem"
                             tabIndex={-1}
                             className={`tree-ctx-item${it.danger ? " danger" : ""}${it.disabled ? " disabled" : ""}`}
+                            onPointerMove={(event) => {
+                                if (!it.disabled && document.activeElement !== event.currentTarget) event.currentTarget.focus();
+                            }}
                             onClick={() => {
                                 if (it.disabled) return;
                                 onClose();
