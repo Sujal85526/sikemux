@@ -39,7 +39,6 @@ export function Artifacts({ repo, runId, active }: Props) {
 
     return (
         <div className="gha-artifacts">
-            <div className="gha-section-label">Artifacts</div>
             {artifacts.map((artifact) => (
                 <div className="gha-artifact" key={artifact.id}>
                     <span className="gha-artifact-name">{artifact.name}</span>

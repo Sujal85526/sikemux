@@ -93,7 +93,11 @@ export interface HostView {
     runFrom: number | null;
     /** Open the run's first failed job once its jobs are read, as a check does. */
     pickFailed: boolean;
+    /** What the right column shows of an open run. */
+    runTab: RunTab;
 }
+
+export type RunTab = "summary" | "logs";
 
 const FRESH: HostView = {
     item: null,
@@ -109,6 +113,7 @@ const FRESH: HostView = {
     composing: null,
     runFrom: null,
     pickFailed: false,
+    runTab: "summary",
 };
 
 export const useHostViews = create<{ views: Record<string, HostView>; paletteOpen: boolean }>()(() => ({
@@ -174,7 +179,7 @@ export function setListState(paneId: string, list: "pulls" | "issues", state: st
 /** A check on a pull request opens its run in the same pane, at its first failed job, with Back leading to the pull request. */
 export function openRunFrom(paneId: string, runId: number, pull: number | null = null): void {
     setGitView(paneId, { area: "actions" });
-    updateView(paneId, { item: null, composing: null, run: runId, job: null, runFrom: pull, pickFailed: true });
+    updateView(paneId, { item: null, composing: null, run: runId, job: null, runFrom: pull, pickFailed: true, runTab: "summary" });
 }
 
 /** Leaves a run for wherever it was opened from: the pull request whose check it was, or the runs list. */
@@ -189,7 +194,12 @@ export function leaveRun(paneId: string): void {
 }
 
 export function showRun(paneId: string, runId: number): void {
-    updateView(paneId, { run: runId, job: null, runFrom: null, pickFailed: false });
+    updateView(paneId, { run: runId, job: null, runFrom: null, pickFailed: false, runTab: "summary" });
+}
+
+/** Opens a job of the open run on the right, at its log. */
+export function showJob(paneId: string, jobId: number): void {
+    updateView(paneId, { job: jobId, runTab: "logs" });
 }
 
 export function closeRun(paneId: string): void {
