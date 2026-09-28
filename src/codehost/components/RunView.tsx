@@ -439,11 +439,12 @@ function RunDetailView({ paneId, repo, runId, openJob, active, canWrite }: Props
 
     // A run opened from a pull request's check lands on the job that failed, once its jobs are known.
     const { runFrom, pickFailed } = useHostView(paneId);
+    const jobsRead = jobs.length > 0;
+    const failedJob = jobs.find((job) => outcomeOf(job) === "failure")?.id ?? null;
     useEffect(() => {
-        if (!pickFailed || jobs.length === 0) return;
-        const failed = jobs.find((job) => outcomeOf(job) === "failure");
-        updateView(paneId, openJob === null && failed ? { pickFailed: false, job: failed.id } : { pickFailed: false });
-    }, [pickFailed, jobs, openJob, paneId]);
+        if (!pickFailed || !jobsRead) return;
+        updateView(paneId, openJob === null && failedJob !== null ? { pickFailed: false, job: failedJob } : { pickFailed: false });
+    }, [pickFailed, jobsRead, failedJob, openJob, paneId]);
 
     if (shown.status === "loading" && !run) return <SkeletonRows rows={8} label="Loading run" />;
     if (shown.error && !run) {
