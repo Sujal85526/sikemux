@@ -6,10 +6,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
 use crate::client;
+use crate::common::LIST_PAGES;
 use crate::error::{ActionsError, ActionsResult};
 use crate::repo::{self, Repo};
-
-const MAX_PER_PAGE: u32 = 100;
 
 #[derive(Deserialize)]
 struct WorkflowRow {
@@ -66,14 +65,15 @@ impl From<&Repo> for RepoRef {
 }
 
 pub async fn list(data_dir: &Path, repo: RepoRef) -> ActionsResult<Vec<Workflow>> {
-    let list: WorkflowList = client::get(
+    let workflows = client::get_all(
         data_dir,
         &repo.path("/actions/workflows")?,
-        &[("per_page", MAX_PER_PAGE.to_string())],
+        &[],
+        LIST_PAGES,
+        |list: WorkflowList| list.workflows,
     )
     .await?;
-    Ok(list
-        .workflows
+    Ok(workflows
         .into_iter()
         .map(|row| Workflow {
             active: row.state == "active",
@@ -156,6 +156,12 @@ pub struct WorkflowFile {
     pub text: String,
 }
 
+/// A workflow somebody wrote lives under `.github`. GitHub's own, such as code
+/// scanning, has a path like `dynamic/github-code-scanning/codeql` instead.
+pub fn is_in_repository(path: &str) -> bool {
+    path.starts_with(".github/")
+}
+
 /// The YAML a run came from, read at the default branch. A workflow's own
 /// record carries the path, so the file is fetched in two steps.
 pub async fn file(data_dir: &Path, input: FileRef) -> ActionsResult<WorkflowFile> {
@@ -167,6 +173,11 @@ pub async fn file(data_dir: &Path, input: FileRef) -> ActionsResult<WorkflowFile
         &[],
     )
     .await?;
+    if !is_in_repository(&row.path) {
+        return Err(ActionsError::NotFound(
+            "GitHub runs this workflow itself, so the repository has no file for it".into(),
+        ));
+    }
     let contents = input.repo.path(&format!("/contents/{}", row.path))?;
     let text = String::from_utf8_lossy(
         &client::download_as(data_dir, &contents, "application/vnd.github.raw").await?,
@@ -184,10 +195,12 @@ struct BranchRow {
 }
 
 pub async fn branches(data_dir: &Path, repo: RepoRef) -> ActionsResult<Vec<String>> {
-    let rows: Vec<BranchRow> = client::get(
+    let rows: Vec<BranchRow> = client::get_all(
         data_dir,
         &repo.path("/branches")?,
-        &[("per_page", MAX_PER_PAGE.to_string())],
+        &[],
+        LIST_PAGES,
+        |rows| rows,
     )
     .await?;
     Ok(rows.into_iter().map(|row| row.name).collect())
@@ -233,6 +246,12 @@ mod tests {
         assert_eq!(sent.get("count"), Some(&json!("3")));
         assert_eq!(sent.get("dry"), Some(&json!("true")));
         assert_eq!(sent.get("none"), Some(&json!("")));
+    }
+
+    #[test]
+    fn only_a_workflow_under_github_has_a_file() {
+        assert!(is_in_repository(".github/workflows/ci.yml"));
+        assert!(!is_in_repository("dynamic/github-code-scanning/codeql"));
     }
 
     #[test]

@@ -7,10 +7,9 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::client;
+use crate::common::LIST_PAGES;
 use crate::error::ActionsResult;
 use crate::workflows::RepoRef;
-
-const MAX_PER_PAGE: u32 = 100;
 
 #[derive(Deserialize)]
 struct AnnotationRow {
@@ -66,7 +65,7 @@ pub async fn list(data_dir: &Path, input: Request) -> ActionsResult<Vec<Annotati
         .repo
         .path(&format!("/check-runs/{}/annotations", input.check_run_id))?;
     let rows: Vec<AnnotationRow> =
-        client::get(data_dir, &path, &[("per_page", MAX_PER_PAGE.to_string())]).await?;
+        client::get_all(data_dir, &path, &[], LIST_PAGES, |rows| rows).await?;
     Ok(rows.into_iter().map(Annotation::from).collect())
 }
 

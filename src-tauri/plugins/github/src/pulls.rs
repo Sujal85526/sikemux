@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::client;
-use crate::common::{avatar_of, login_of, ActorRow, Label, LabelRow, MAX_PER_PAGE};
+use crate::common::{
+    avatar_of, login_of, ActorRow, Label, LabelRow, FILE_PAGES, LIST_PAGES, MAX_PER_PAGE,
+};
 use crate::error::{ActionsError, ActionsResult};
 use crate::workflows::RepoRef;
 
@@ -74,7 +76,8 @@ pub struct Pull {
     pub head_sha: Option<String>,
     pub created_at: String,
     pub updated_at: String,
-    pub comments: u64,
+    /// Absent when GitHub did not say, which its list of pull requests never does.
+    pub comments: Option<u64>,
     pub additions: Option<u64>,
     pub deletions: Option<u64>,
     pub changed_files: Option<u64>,
@@ -102,7 +105,7 @@ impl From<PullRow> for Pull {
             base: row.base.map(|side| side.name),
             created_at: row.created_at,
             updated_at: row.updated_at,
-            comments: row.comments.unwrap_or(0),
+            comments: row.comments,
             additions: row.additions,
             deletions: row.deletions,
             changed_files: row.changed_files,
@@ -138,26 +141,78 @@ pub async fn list(data_dir: &Path, input: Query) -> ActionsResult<Vec<Pull>> {
             "`{state}` is not open, closed or all"
         )));
     }
+    let per_page = input
+        .per_page
+        .unwrap_or(DEFAULT_PER_PAGE)
+        .clamp(1, MAX_PER_PAGE);
+    let page = input.page.unwrap_or(1).max(1);
     let rows: Vec<PullRow> = client::get(
         data_dir,
         &input.repo.path("/pulls")?,
         &[
-            ("state", state),
+            ("state", state.clone()),
             ("sort", "updated".to_string()),
             ("direction", "desc".to_string()),
-            (
-                "per_page",
-                input
-                    .per_page
-                    .unwrap_or(DEFAULT_PER_PAGE)
-                    .clamp(1, MAX_PER_PAGE)
-                    .to_string(),
-            ),
-            ("page", input.page.unwrap_or(1).max(1).to_string()),
+            ("per_page", per_page.to_string()),
+            ("page", page.to_string()),
         ],
     )
     .await?;
-    Ok(rows.into_iter().map(Pull::from).collect())
+    let counts = comment_counts(data_dir, &input.repo, &state, per_page, page)
+        .await
+        .unwrap_or_default();
+    Ok(rows
+        .into_iter()
+        .map(Pull::from)
+        .map(|mut pull| {
+            pull.comments = pull.comments.or_else(|| counts.get(&pull.number).copied());
+            pull
+        })
+        .collect())
+}
+
+#[derive(Deserialize)]
+struct CountRow {
+    number: u64,
+    comments: u64,
+}
+
+#[derive(Deserialize)]
+struct CountPage {
+    items: Vec<CountRow>,
+}
+
+/// The list of pull requests leaves out how many comments each has, and a
+/// search for the same page, newest first, carries them.
+async fn comment_counts(
+    data_dir: &Path,
+    repo: &RepoRef,
+    state: &str,
+    per_page: u32,
+    page: u32,
+) -> ActionsResult<std::collections::HashMap<u64, u64>> {
+    repo.checked()?;
+    let mut terms = format!("repo:{}/{} is:pr", repo.owner, repo.name);
+    if state != "all" {
+        terms.push_str(&format!(" is:{state}"));
+    }
+    let found: CountPage = client::get(
+        data_dir,
+        "/search/issues",
+        &[
+            ("q", terms),
+            ("sort", "updated".to_string()),
+            ("order", "desc".to_string()),
+            ("per_page", per_page.to_string()),
+            ("page", page.to_string()),
+        ],
+    )
+    .await?;
+    Ok(found
+        .items
+        .into_iter()
+        .map(|row| (row.number, row.comments))
+        .collect())
 }
 
 #[derive(Deserialize)]
@@ -199,8 +254,7 @@ pub struct ChangedFile {
 
 pub async fn files(data_dir: &Path, input: PullRef) -> ActionsResult<Vec<ChangedFile>> {
     let path = input.repo.path(&format!("/pulls/{}/files", input.number))?;
-    let rows: Vec<FileRow> =
-        client::get(data_dir, &path, &[("per_page", MAX_PER_PAGE.to_string())]).await?;
+    let rows: Vec<FileRow> = client::get_all(data_dir, &path, &[], FILE_PAGES, |rows| rows).await?;
     Ok(rows
         .into_iter()
         .map(|row| ChangedFile {
@@ -237,7 +291,7 @@ pub async fn reviews(data_dir: &Path, input: PullRef) -> ActionsResult<Vec<Revie
         .repo
         .path(&format!("/pulls/{}/reviews", input.number))?;
     let rows: Vec<ReviewRow> =
-        client::get(data_dir, &path, &[("per_page", MAX_PER_PAGE.to_string())]).await?;
+        client::get_all(data_dir, &path, &[], LIST_PAGES, |rows| rows).await?;
     Ok(rows
         .into_iter()
         .filter(|row| row.state.as_deref() != Some("PENDING"))

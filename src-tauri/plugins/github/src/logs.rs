@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::client;
 use crate::error::{ActionsError, ActionsResult};
-use crate::runs::JobRef;
+use crate::runs::{self, JobRef};
 
 /// Every log line carries the time the runner wrote it, ahead of a space.
 /// Fractional seconds are usually there but not always, so only the part
@@ -81,14 +81,31 @@ pub async fn job(data_dir: &Path, input: LogRequest) -> ActionsResult<JobLog> {
             lines: parse(&text),
             expired: false,
         }),
-        Err(ActionsError::NotFound(_)) | Err(ActionsError::Http { status: 410, .. }) => {
-            Ok(JobLog {
-                lines: Vec::new(),
-                expired: true,
-            })
-        }
+        Err(ActionsError::Http { status: 410, .. }) => Ok(JobLog {
+            lines: Vec::new(),
+            expired: true,
+        }),
+        Err(ActionsError::NotFound(_)) => missing(data_dir, input.job).await,
         Err(error) => Err(error),
     }
+}
+
+/// GitHub answers "not found" for a log that aged out, for one a job has not
+/// written yet, and for a repository the token cannot see. Asking about the
+/// job itself tells them apart.
+async fn missing(data_dir: &Path, job: JobRef) -> ActionsResult<JobLog> {
+    let state = runs::job_status(data_dir, job)
+        .await
+        .map_err(|error| match error {
+            ActionsError::NotFound(_) => ActionsError::NotFound(
+                "GitHub will not show this job to the signed-in account".into(),
+            ),
+            other => other,
+        })?;
+    Ok(JobLog {
+        lines: Vec::new(),
+        expired: runs::is_finished(&state),
+    })
 }
 
 #[cfg(test)]

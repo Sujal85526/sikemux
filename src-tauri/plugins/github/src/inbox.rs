@@ -77,8 +77,30 @@ fn web_url(host: &str, api_url: &str) -> Option<String> {
     })
 }
 
+/// Only a pull request or an issue is known by its number. A release's
+/// address ends in an internal id nobody would recognise.
 fn number_of(api_url: &str) -> Option<u64> {
-    api_url.rsplit('/').next()?.parse().ok()
+    let (rest, last) = api_url.rsplit_once('/')?;
+    let section = rest.rsplit('/').next()?;
+    if !matches!(section, "pulls" | "issues") {
+        return None;
+    }
+    last.parse().ok()
+}
+
+#[derive(Deserialize)]
+struct ReleasePage {
+    html_url: String,
+}
+
+/// A release notification points at the release by id, and its web page is
+/// by tag, so the release is looked up once to find where it lives.
+async fn release_page(data_dir: &Path, api_url: &str) -> Option<String> {
+    let (_, tail) = api_url.split_once("/repos/")?;
+    let release: ReleasePage = client::get(data_dir, &format!("/repos/{tail}"), &[])
+        .await
+        .ok()?;
+    Some(release.html_url)
 }
 
 #[derive(Deserialize)]
@@ -109,14 +131,19 @@ pub async fn list(data_dir: &Path, input: Query) -> ActionsResult<Vec<Notificati
         ],
     )
     .await?;
+    let pages = futures::future::join_all(rows.iter().map(|row| async {
+        match (row.subject.kind.as_deref(), row.subject.url.as_deref()) {
+            (Some("Release"), Some(url)) => release_page(data_dir, url).await,
+            (_, Some(url)) => web_url(&host, url),
+            _ => None,
+        }
+    }))
+    .await;
     Ok(rows
         .into_iter()
-        .map(|row| Notification {
-            url: row
-                .subject
-                .url
-                .as_deref()
-                .and_then(|url| web_url(&host, url)),
+        .zip(pages)
+        .map(|(row, url)| Notification {
+            url,
             number: row.subject.url.as_deref().and_then(number_of),
             id: row.id,
             title: row.subject.title,
@@ -209,6 +236,14 @@ mod tests {
             Some(12)
         );
         assert_eq!(number_of("https://api.github.com/repos/a/b/releases"), None);
+        assert_eq!(
+            number_of("https://api.github.com/repos/a/b/releases/254930215"),
+            None
+        );
+        assert_eq!(
+            number_of("https://api.github.com/repos/a/b/issues/7"),
+            Some(7)
+        );
     }
 
     #[test]

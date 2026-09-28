@@ -6,11 +6,10 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::client;
+use crate::common::LIST_PAGES;
 use crate::error::{ActionsError, ActionsResult};
 use crate::runs::RunRef;
 use crate::workflows::RepoRef;
-
-const MAX_PER_PAGE: u32 = 100;
 
 #[derive(Deserialize)]
 struct ArtifactRow {
@@ -43,10 +42,11 @@ pub async fn list(data_dir: &Path, input: RunRef) -> ActionsResult<Vec<Artifact>
     let path = input
         .repo
         .path(&format!("/actions/runs/{}/artifacts", input.run_id))?;
-    let list: ArtifactList =
-        client::get(data_dir, &path, &[("per_page", MAX_PER_PAGE.to_string())]).await?;
-    Ok(list
-        .artifacts
+    let artifacts = client::get_all(data_dir, &path, &[], LIST_PAGES, |list: ArtifactList| {
+        list.artifacts
+    })
+    .await?;
+    Ok(artifacts
         .into_iter()
         .map(|row| Artifact {
             id: row.id,
@@ -102,29 +102,23 @@ fn free_path(dir: &Path, stem: &str, extension: &str) -> PathBuf {
     named(format!("-{}", std::process::id()))
 }
 
-/// Puts downloaded bytes in the downloads folder under a name that cannot
-/// escape it. `extension` is added when the source name does not carry one,
-/// which is how an artifact becomes a zip.
-pub fn save_download(
+/// Where a download goes: the downloads folder, under a name that cannot
+/// escape it and never replaces a file already there. `extension` is added
+/// when the source name does not carry one, which is how an artifact becomes
+/// a zip.
+pub fn download_target(
     data_dir: &Path,
     name: &str,
     extension: Option<&str>,
-    bytes: &[u8],
-) -> ActionsResult<Saved> {
+) -> ActionsResult<PathBuf> {
     let dir = download_dir(data_dir);
     std::fs::create_dir_all(&dir)
         .map_err(|error| ActionsError::Transport(format!("saving the download: {error}")))?;
-    let target = free_path(
+    Ok(free_path(
         &dir,
         &safe_file_name(name),
         &extension.map_or(String::new(), |ext| format!(".{ext}")),
-    );
-    std::fs::write(&target, bytes)
-        .map_err(|error| ActionsError::Transport(format!("saving the download: {error}")))?;
-    Ok(Saved {
-        path: target.to_string_lossy().into_owned(),
-        bytes: bytes.len() as u64,
-    })
+    ))
 }
 
 #[derive(Deserialize)]
@@ -133,7 +127,8 @@ pub struct Download {
     #[serde(flatten)]
     pub repo: RepoRef,
     pub artifact_id: u64,
-    pub name: String,
+    /// What to call the file, which is not the repository's `name`.
+    pub file_name: String,
 }
 
 #[derive(Serialize)]
@@ -147,13 +142,28 @@ pub async fn download(data_dir: &Path, input: Download) -> ActionsResult<Saved> 
     let path = input
         .repo
         .path(&format!("/actions/artifacts/{}/zip", input.artifact_id))?;
-    let bytes = client::download(data_dir, &path).await?;
-    save_download(data_dir, &input.name, Some("zip"), &bytes)
+    let target = download_target(data_dir, &input.file_name, Some("zip"))?;
+    let bytes =
+        client::download_to(data_dir, &path, "application/vnd.github+json", &target).await?;
+    Ok(Saved {
+        path: target.to_string_lossy().into_owned(),
+        bytes,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_file_name_and_the_repository_name_arrive_apart() {
+        let input: Download = serde_json::from_value(serde_json::json!({
+            "owner": "nodelike", "name": "sikemux", "artifactId": 7, "fileName": "build",
+        }))
+        .expect("parses");
+        assert_eq!(input.repo.name, "sikemux");
+        assert_eq!(input.file_name, "build");
+    }
 
     #[test]
     fn a_name_can_never_become_a_path() {

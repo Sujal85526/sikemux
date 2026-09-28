@@ -11,6 +11,12 @@ use crate::error::ActionsResult;
 use crate::workflows::RepoRef;
 
 pub const MAX_PER_PAGE: u32 = 100;
+/// How many pages of a hundred a list is read to before it stops.
+pub const LIST_PAGES: u32 = 10;
+/// GitHub lists at most 3,000 of a pull request's files, so every one it will give.
+pub const FILE_PAGES: u32 = 30;
+/// Releases carry their notes, so only the newest few hundred are read.
+pub const RELEASE_PAGES: u32 = 3;
 
 #[derive(Deserialize)]
 pub struct ActorRow {
@@ -82,7 +88,7 @@ pub struct Thread {
 pub async fn comments(data_dir: &Path, repo: &RepoRef, number: u64) -> ActionsResult<Vec<Comment>> {
     let path = repo.path(&format!("/issues/{number}/comments"))?;
     let rows: Vec<CommentRow> =
-        client::get(data_dir, &path, &[("per_page", MAX_PER_PAGE.to_string())]).await?;
+        client::get_all(data_dir, &path, &[], LIST_PAGES, |rows| rows).await?;
     Ok(rows
         .into_iter()
         .map(|row| Comment {

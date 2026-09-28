@@ -130,6 +130,8 @@ strip = "symbols"
 opt-level = "s"
 [profile.release.package.sikemux-plugin-bruno]
 opt-level = "s"
+[profile.release.package.sikemux-plugin-github]
+opt-level = "s"
 [profile.release.package.sikemux-plugin-rundeck]
 opt-level = "s"
 [profile.release.package.sikemux-plugin-signoz]

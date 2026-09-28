@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::json;
 
 use crate::client;
 use crate::common::{avatar_of, login_of, ActorRow, Label, LabelRow, MAX_PER_PAGE};
@@ -31,8 +31,6 @@ struct IssueRow {
     labels: Vec<LabelRow>,
     #[serde(default)]
     assignees: Vec<ActorRow>,
-    /// Present only when the row is really a pull request.
-    pull_request: Option<Value>,
 }
 
 #[derive(Serialize, Clone)]
@@ -86,49 +84,92 @@ pub struct Query {
     pub per_page: Option<u32>,
 }
 
-pub async fn list(data_dir: &Path, input: Query) -> ActionsResult<Vec<Issue>> {
-    let state = input.state.unwrap_or_else(|| "open".into());
-    if !STATES.contains(&state.as_str()) {
-        return Err(ActionsError::BadArg(format!(
-            "`{state}` is not open, closed or all"
-        )));
-    }
-    let mut query = vec![
-        ("state", state),
-        ("sort", "updated".to_string()),
-        ("direction", "desc".to_string()),
-        (
-            "per_page",
-            input
-                .per_page
-                .unwrap_or(DEFAULT_PER_PAGE)
-                .clamp(1, MAX_PER_PAGE)
-                .to_string(),
-        ),
-        ("page", input.page.unwrap_or(1).max(1).to_string()),
+#[derive(Deserialize)]
+struct SearchPage {
+    total_count: u64,
+    items: Vec<IssueRow>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssuePage {
+    pub issues: Vec<Issue>,
+    pub total: u64,
+    pub next_page: Option<u32>,
+}
+
+/// A label or login goes into a search as one quoted term, so nothing in it
+/// can add a qualifier of its own.
+fn quoted(value: &str) -> String {
+    format!("\"{}\"", value.replace('"', ""))
+}
+
+/// Search, because the issues endpoint mixes pull requests into its pages and
+/// a page can come back with few issues or none.
+fn search_terms(input: &Query, state: &str) -> ActionsResult<String> {
+    input.repo.checked()?;
+    let mut terms = vec![
+        format!("repo:{}/{}", input.repo.owner, input.repo.name),
+        "is:issue".to_string(),
     ];
+    if state != "all" {
+        terms.push(format!("is:{state}"));
+    }
     if let Some(assignee) = input
         .assignee
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        query.push(("assignee", assignee.to_string()));
+        terms.push(if assignee == "@me" {
+            "assignee:@me".to_string()
+        } else {
+            format!("assignee:{}", quoted(assignee))
+        });
     }
-    if let Some(labels) = input
+    for label in input
         .labels
         .as_deref()
+        .unwrap_or_default()
+        .split(',')
         .map(str::trim)
-        .filter(|value| !value.is_empty())
+        .filter(|label| !label.is_empty())
     {
-        query.push(("labels", labels.to_string()));
+        terms.push(format!("label:{}", quoted(label)));
     }
-    let rows: Vec<IssueRow> = client::get(data_dir, &input.repo.path("/issues")?, &query).await?;
-    Ok(rows
-        .into_iter()
-        .filter(|row| row.pull_request.is_none())
-        .map(Issue::from)
-        .collect())
+    Ok(terms.join(" "))
+}
+
+pub async fn list(data_dir: &Path, input: Query) -> ActionsResult<IssuePage> {
+    let state = input.state.clone().unwrap_or_else(|| "open".into());
+    if !STATES.contains(&state.as_str()) {
+        return Err(ActionsError::BadArg(format!(
+            "`{state}` is not open, closed or all"
+        )));
+    }
+    let per_page = input
+        .per_page
+        .unwrap_or(DEFAULT_PER_PAGE)
+        .clamp(1, MAX_PER_PAGE);
+    let page = input.page.unwrap_or(1).max(1);
+    let found: SearchPage = client::get(
+        data_dir,
+        "/search/issues",
+        &[
+            ("q", search_terms(&input, &state)?),
+            ("sort", "updated".to_string()),
+            ("order", "desc".to_string()),
+            ("per_page", per_page.to_string()),
+            ("page", page.to_string()),
+        ],
+    )
+    .await?;
+    let seen = u64::from(page - 1) * u64::from(per_page) + found.items.len() as u64;
+    Ok(IssuePage {
+        next_page: (seen < found.total_count && !found.items.is_empty()).then_some(page + 1),
+        total: found.total_count,
+        issues: found.items.into_iter().map(Issue::from).collect(),
+    })
 }
 
 #[derive(Deserialize)]
@@ -199,33 +240,6 @@ pub async fn create(data_dir: &Path, input: NewIssue) -> ActionsResult<Issue> {
 mod tests {
     use super::*;
 
-    fn rows() -> Vec<IssueRow> {
-        serde_json::from_value(json!([
-            {
-                "number": 1, "title": "A real issue", "state": "open",
-                "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z",
-                "html_url": "https://github.com/a/b/issues/1",
-            },
-            {
-                "number": 2, "title": "Actually a pull request", "state": "open",
-                "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z",
-                "html_url": "https://github.com/a/b/pull/2",
-                "pull_request": { "url": "https://api.github.com/repos/a/b/pulls/2" },
-            },
-        ]))
-        .expect("parses")
-    }
-
-    #[test]
-    fn the_issues_list_leaves_out_the_pull_requests_github_mixes_in() {
-        let kept: Vec<u64> = rows()
-            .into_iter()
-            .filter(|row| row.pull_request.is_none())
-            .map(|row| row.number)
-            .collect();
-        assert_eq!(kept, [1]);
-    }
-
     #[test]
     fn reads_labels_and_assignees() {
         let row: IssueRow = serde_json::from_value(json!({
@@ -241,6 +255,35 @@ mod tests {
         assert_eq!(issue.labels.first().map(|l| l.name.as_str()), Some("bug"));
         assert_eq!(issue.assignees, ["nodelike"]);
         assert_eq!(issue.comments, 4);
+    }
+
+    #[test]
+    fn searches_one_repository_for_issues_only() -> ActionsResult<()> {
+        let query = Query {
+            repo: RepoRef {
+                owner: "nodelike".into(),
+                name: "sikemux".into(),
+            },
+            state: None,
+            assignee: Some("@me".into()),
+            labels: Some("bug, good first issue".into()),
+            page: None,
+            per_page: None,
+        };
+        assert_eq!(
+            search_terms(&query, "open")?,
+            "repo:nodelike/sikemux is:issue is:open assignee:@me label:\"bug\" label:\"good first issue\""
+        );
+        assert_eq!(
+            search_terms(&query, "all")?,
+            "repo:nodelike/sikemux is:issue assignee:@me label:\"bug\" label:\"good first issue\""
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_label_cannot_smuggle_in_a_qualifier() {
+        assert_eq!(quoted("x\" repo:evil/x"), "\"x repo:evil/x\"");
     }
 
     #[tokio::test]
