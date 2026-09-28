@@ -51,7 +51,7 @@ export function NewPullForm({ repo, head: startingHead, active, onCreated, onCan
             <button type="button" className="gha-back" onClick={onCancel}>
                 <IconClose size={11} /> Back to pull requests
             </button>
-            <h2 className="gha-detail-title">New pull request</h2>
+            <h2 className="gha-title">New pull request</h2>
             <div className="gha-form-row">
                 <span className="gha-form-label">From</span>
                 <Dropdown

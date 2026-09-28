@@ -6,7 +6,7 @@ export function Labels({ labels }: { labels: readonly Label[] }) {
     return (
         <>
             {labels.map((label) => (
-                <span key={label.name} className="gha-label" title={label.name}>
+                <span key={label.name} className="gha-tag" data-size="small" title={label.name}>
                     {label.name}
                 </span>
             ))}

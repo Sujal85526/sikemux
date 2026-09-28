@@ -172,7 +172,7 @@ function Header({
         <div className="gha-run-head">
             <div className="gha-run-head-main">
                 <OutcomeIcon outcome={outcome} size={15} />
-                <span className="gha-run-head-title">{run.title || run.name}</span>
+                <span className="gha-title">{run.title || run.name}</span>
                 <span className="gha-mono gha-dim">#{run.runNumber}</span>
                 <span className="gha-run-head-spacer" />
                 {canWrite && live && (
@@ -265,9 +265,9 @@ function SummaryCard({
                         }>
                         {run.shortSha}
                     </button>
-                    {run.branch && <span className="gha-branch">{run.branch}</span>}
+                    {run.branch && <span className="gha-tag">{run.branch}</span>}
                     {run.pullRequests.map((number) => (
-                        <span key={number} className="gha-pr">
+                        <span key={number} className="gha-tag">
                             #{number}
                         </span>
                     ))}
@@ -472,7 +472,11 @@ function RunDetailView({ paneId, repo, runId, openJob, active, canWrite }: Props
                 <IconClose size={11} /> Back to runs
             </button>
             <Header run={run} repo={repo} canWrite={canWrite} onRefresh={() => void shown.refresh()} onDeleted={() => closeRun(paneId)} />
-            {moving && watchError && <div className="gha-error">{watchError}</div>}
+            {moving && watchError && (
+                <div className="gha-callout" data-tone="danger">
+                    {watchError}
+                </div>
+            )}
             {latestAttempt > 1 && (
                 <div className="gha-attempts">
                     <span className="gha-dim">Attempts</span>

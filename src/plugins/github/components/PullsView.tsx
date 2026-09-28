@@ -46,7 +46,7 @@ function PullRow({ pull, now, onOpen }: { pull: Pull; now: number; onOpen: () =>
                 <span className="gha-item-sub">
                     <span className="gha-mono">#{pull.number}</span>
                     {pull.author && <span>{pull.author}</span>}
-                    {pull.head && <span className="gha-branch">{pull.head}</span>}
+                    {pull.head && <span className="gha-tag">{pull.head}</span>}
                     <span>{formatAgo(pull.updatedAt, now)}</span>
                     <Labels labels={pull.labels} />
                 </span>
@@ -147,14 +147,14 @@ function PullDetail({ repo, number, active, login, onBack, onOpenRun }: DetailPr
             <div className="gha-detail-head">
                 <div className="gha-detail-title-row">
                     <StateMark kind="pull" state={found.state} draft={found.draft} />
-                    <h2 className="gha-detail-title">{found.title}</h2>
+                    <h2 className="gha-title">{found.title}</h2>
                     <span className="gha-mono gha-dim">#{found.number}</span>
                 </div>
                 <div className="gha-detail-sub">
                     {found.author && <span>{found.author}</span>}
                     {found.head && found.base && (
                         <span className="gha-dim">
-                            <span className="gha-branch">{found.head}</span> into <span className="gha-branch">{found.base}</span>
+                            <span className="gha-tag">{found.head}</span> into <span className="gha-tag">{found.base}</span>
                         </span>
                     )}
                     {found.additions !== null && (
@@ -163,7 +163,7 @@ function PullDetail({ repo, number, active, login, onBack, onOpenRun }: DetailPr
                         </span>
                     )}
                     {verdict && (
-                        <span className="gha-badge" data-verdict={verdict === "Approved" ? "ok" : "block"}>
+                        <span className="gha-tag" data-tone={verdict === "Approved" ? "live" : "danger"}>
                             {verdict}
                         </span>
                     )}
@@ -301,9 +301,9 @@ export function PullsView({ paneId, repo, listState, item, composing, projectBra
     return (
         <div className="gha-list">
             {offer && projectBranch && (
-                <div className="gha-offer">
+                <div className="gha-callout">
                     <span>
-                        <span className="gha-branch">{projectBranch}</span> has no pull request yet.
+                        <span className="gha-tag">{projectBranch}</span> has no pull request yet.
                     </span>
                     <button type="button" className="gha-btn primary" onClick={() => compose(paneId, "pull")}>
                         Open one

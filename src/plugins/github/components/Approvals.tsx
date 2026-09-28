@@ -57,7 +57,7 @@ export function Approvals({ repo, runId, status, conclusion, active }: Props) {
 
     const mine = pending.some((each) => each.canApprove);
     return (
-        <div className="gha-approval">
+        <div className="gha-callout" data-tone="warn">
             <div className="gha-approval-text">
                 <strong>Waiting for approval</strong>
                 <span className="gha-dim">

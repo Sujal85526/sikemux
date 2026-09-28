@@ -29,7 +29,7 @@ function Assets({ release, saving, onSave }: { release: Release; saving: Readonl
                 </span>
                 <IconDownload size={12} />
                 Assets
-                <span className="gha-count">{release.assets.length}</span>
+                <span className="gha-tag">{release.assets.length}</span>
             </summary>
             {release.assets.map((asset) => (
                 <div className="gha-artifact" key={asset.id}>
@@ -101,17 +101,17 @@ export function ReleasesView({ repo, active }: Props) {
                     <div className="gha-release-head">
                         <span className="gha-release-name">{release.name}</span>
                         {release.id === latest && (
-                            <span className="gha-state-chip" data-state="open">
+                            <span className="gha-tag" data-tone="latest">
                                 Latest
                             </span>
                         )}
                         {release.draft && (
-                            <span className="gha-state-chip" data-state="draft">
+                            <span className="gha-tag" data-tone="quiet">
                                 Draft
                             </span>
                         )}
                         {release.prerelease && (
-                            <span className="gha-state-chip" data-state="pre">
+                            <span className="gha-tag" data-tone="quiet">
                                 Pre-release
                             </span>
                         )}

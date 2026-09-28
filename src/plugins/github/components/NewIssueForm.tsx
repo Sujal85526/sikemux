@@ -34,7 +34,7 @@ export function NewIssueForm({ repo, onCreated, onCancel }: Props) {
             <button type="button" className="gha-back" onClick={onCancel}>
                 <IconClose size={11} /> Back to issues
             </button>
-            <h2 className="gha-detail-title">New issue</h2>
+            <h2 className="gha-title">New issue</h2>
             <input className="gha-input" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Title" aria-label="Title" />
             <textarea
                 className="gha-input gha-comment-box"

@@ -326,35 +326,7 @@
         animation: none;
     }
 }
-.gha-badge {
-    display: inline-flex;
-    align-items: center;
-    height: 18px;
-    padding: 0 var(--space-1h);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-1);
-    background: var(--gha-tint);
-    font-size: var(--text-2xs);
-    color: var(--text-secondary);
-    white-space: nowrap;
-}
-.gha-badge[data-outcome="success"] {
-    border-color: color-mix(in oklab, var(--live) 34%, transparent);
-    background: color-mix(in oklab, var(--live) 8%, transparent);
-    color: var(--live);
-}
-.gha-badge[data-outcome="failure"] {
-    border-color: color-mix(in oklab, var(--danger) 34%, transparent);
-    background: color-mix(in oklab, var(--danger) 8%, transparent);
-    color: var(--danger);
-}
-.gha-badge:is([data-outcome="running"], [data-outcome="blocked"]) {
-    border-color: color-mix(in oklab, var(--warn) 34%, transparent);
-    background: color-mix(in oklab, var(--warn) 8%, transparent);
-    color: var(--warn);
-}
-.gha-branch,
-.gha-pr {
+.gha-tag {
     display: inline-flex;
     align-items: center;
     height: 18px;
@@ -364,10 +336,36 @@
     border-radius: var(--radius-1);
     background: var(--gha-tint);
     font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+.gha-tag[data-size="small"] {
+    height: 16px;
+    max-width: 16ch;
+    padding: 0 var(--space-1);
+    font-size: var(--text-3xs);
+}
+.gha-tag[data-tone="live"] {
+    border-color: color-mix(in oklab, var(--live) 34%, transparent);
+    background: color-mix(in oklab, var(--live) 8%, transparent);
+    color: var(--live);
+}
+.gha-tag[data-tone="danger"] {
+    border-color: color-mix(in oklab, var(--danger) 34%, transparent);
+    background: color-mix(in oklab, var(--danger) 8%, transparent);
+    color: var(--danger);
+}
+.gha-tag[data-tone="latest"] {
+    border-color: color-mix(in oklab, var(--live) 50%, transparent);
+    background: transparent;
+    color: var(--live);
+}
+.gha-tag[data-tone="quiet"] {
+    background: transparent;
+    color: var(--text-tertiary);
 }
 
 /* ---- Runs list ---------------------------------------------------------- */
@@ -520,7 +518,7 @@
     gap: var(--space-2);
     min-width: 0;
 }
-.gha-run-head-title {
+.gha-title {
     flex: 0 1 auto;
     min-width: 0;
     margin: 0;
@@ -705,16 +703,6 @@
     border-radius: var(--radius-3);
     background: var(--gha-tint);
 }
-.gha-card-title {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    margin: 0;
-    font-size: var(--text-lg);
-    font-weight: var(--weight-semibold);
-    letter-spacing: var(--tracking-tight);
-    color: var(--text-primary);
-}
 .gha-card-actions {
     display: flex;
     align-items: center;
@@ -739,25 +727,37 @@
     font-family: var(--mono);
     color: var(--text-secondary);
 }
-.gha-note {
+.gha-callout {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--space-3);
-    padding: var(--space-2);
+    padding: var(--space-2) var(--space-3);
     border: 1px solid var(--border);
     border-radius: var(--radius-2);
     background: var(--gha-tint);
-    font-size: var(--text-2xs);
+    font-size: var(--text-xs);
     color: var(--text-secondary);
 }
-.gha-error {
-    padding: var(--space-2);
-    border: 1px solid color-mix(in oklab, var(--danger) 40%, transparent);
-    border-radius: var(--radius-2);
+.gha-callout[data-tone="warn"] {
+    border-color: color-mix(in oklab, var(--warn) 34%, transparent);
+    background: color-mix(in oklab, var(--warn) 8%, transparent);
+}
+.gha-callout[data-tone="danger"] {
+    border-color: color-mix(in oklab, var(--danger) 34%, transparent);
     background: color-mix(in oklab, var(--danger) 8%, transparent);
-    font-size: var(--text-2xs);
     color: var(--danger);
+}
+.gha-run-view > .gha-callout {
+    margin: var(--space-3) var(--space-5) 0;
+}
+.gha-list > .gha-callout {
+    margin: var(--space-3) var(--space-2) 0;
+}
+.gha-card > .gha-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
 }
 
 /* ---- Dialogs ------------------------------------------------------------ */
@@ -803,22 +803,11 @@
     gap: var(--space-1);
     margin-bottom: var(--space-2);
 }
-.gha-annotation {
-    display: flex;
+.gha-annotations > .gha-callout {
     align-items: flex-start;
+    justify-content: flex-start;
     gap: var(--space-2);
     padding: var(--space-1h) var(--space-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    background: var(--gha-tint);
-}
-.gha-annotation[data-level="failure"] {
-    border-color: color-mix(in oklab, var(--danger) 34%, transparent);
-    background: color-mix(in oklab, var(--danger) 7%, transparent);
-}
-.gha-annotation[data-level="warning"] {
-    border-color: color-mix(in oklab, var(--warn) 30%, transparent);
-    background: color-mix(in oklab, var(--warn) 6%, transparent);
 }
 .gha-annotation-level {
     flex: 0 0 auto;
@@ -828,10 +817,10 @@
     text-transform: uppercase;
     color: var(--text-tertiary);
 }
-.gha-annotation[data-level="failure"] .gha-annotation-level {
+.gha-callout[data-tone="danger"] .gha-annotation-level {
     color: var(--danger);
 }
-.gha-annotation[data-level="warning"] .gha-annotation-level {
+.gha-callout[data-tone="warn"] .gha-annotation-level {
     color: var(--warn);
 }
 .gha-annotation-body {
@@ -877,16 +866,6 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-}
-.gha-approval {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    margin: var(--space-3) var(--space-5) 0;
-    padding: var(--space-2) var(--space-3);
-    border: 1px solid color-mix(in oklab, var(--warn) 34%, transparent);
-    border-radius: var(--radius-2);
-    background: color-mix(in oklab, var(--warn) 8%, transparent);
 }
 .gha-approval-text {
     flex: 1 1 auto;
@@ -1016,55 +995,7 @@
 .gha-state-mark[data-state="closed"] {
     color: var(--danger);
 }
-.gha-state-mark[data-state="draft"] {
-    color: var(--text-tertiary);
-}
 
-.gha-state-chip {
-    display: inline-flex;
-    align-items: center;
-    height: 18px;
-    flex: 0 0 auto;
-    padding: 0 var(--space-1h);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-1);
-    font-size: var(--text-2xs);
-    color: var(--text-secondary);
-    white-space: nowrap;
-}
-.gha-state-chip[data-state="open"] {
-    border-color: color-mix(in oklab, var(--live) 34%, transparent);
-    background: color-mix(in oklab, var(--live) 8%, transparent);
-    color: var(--live);
-}
-.gha-state-chip[data-state="merged"] {
-    border-color: color-mix(in oklab, var(--cmd) 34%, transparent);
-    background: color-mix(in oklab, var(--cmd) 8%, transparent);
-    color: var(--cmd);
-}
-.gha-state-chip[data-state="closed"] {
-    border-color: color-mix(in oklab, var(--danger) 30%, transparent);
-    background: color-mix(in oklab, var(--danger) 7%, transparent);
-    color: var(--danger);
-}
-.gha-state-chip:is([data-state="draft"], [data-state="pre"]) {
-    color: var(--text-tertiary);
-}
-.gha-label {
-    display: inline-flex;
-    align-items: center;
-    height: 16px;
-    max-width: 16ch;
-    padding: 0 var(--space-1);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-1);
-    background: var(--gha-tint);
-    color: var(--text-secondary);
-    font-size: var(--text-3xs);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
 .gha-unread-dot {
     width: 7px;
     height: 7px;
@@ -1103,18 +1034,6 @@
     gap: var(--space-2);
     min-width: 0;
 }
-.gha-detail-title {
-    flex: 0 1 auto;
-    min-width: 0;
-    margin: 0;
-    font-size: var(--text-lg);
-    font-weight: var(--weight-semibold);
-    letter-spacing: var(--tracking-tight);
-    color: var(--text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
 .gha-detail-sub {
     display: flex;
     align-items: center;
@@ -1128,14 +1047,6 @@
     align-items: center;
     gap: var(--space-2);
     padding-top: var(--space-1);
-}
-.gha-badge[data-verdict="ok"] {
-    border-color: color-mix(in oklab, var(--live) 34%, transparent);
-    color: var(--live);
-}
-.gha-badge[data-verdict="block"] {
-    border-color: color-mix(in oklab, var(--danger) 34%, transparent);
-    color: var(--danger);
 }
 .gha-pane .prose {
     padding: var(--space-2) 0;
@@ -1302,12 +1213,6 @@
 }
 .gha-assets .gha-artifact {
     padding: 0 var(--space-2);
-}
-.gha-count {
-    padding: 0 var(--space-1);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-1);
-    font-variant-numeric: tabular-nums;
 }
 
 /* ---- What a job meant to be read, and what a run cost ------------------- */
@@ -1647,7 +1552,7 @@ button.gha-step:focus-visible {
     gap: var(--space-2);
     max-width: 860px;
 }
-.gha-form .gha-detail-title {
+.gha-form .gha-title {
     padding: var(--space-2) 0 var(--space-1);
 }
 .gha-form .gha-detail-actions {
@@ -1668,19 +1573,6 @@ button.gha-step:focus-visible {
     color: var(--text-tertiary);
 }
 
-.gha-offer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
-    margin: var(--space-3) var(--space-5) 0;
-    padding: var(--space-2) var(--space-3);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    background: var(--gha-tint);
-    font-size: var(--text-xs);
-    color: var(--text-secondary);
-}
 .gha-list-count {
     display: inline-flex;
     align-items: center;

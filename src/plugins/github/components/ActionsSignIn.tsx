@@ -52,7 +52,7 @@ export function ActionsSignIn({ status, onSignedIn }: Props) {
     return (
         <div className="gha-signin">
             <div className="gha-card">
-                <h2 className="gha-card-title">
+                <h2 className="gha-title">
                     <GithubMark size={18} />
                     Connect to GitHub
                 </h2>
@@ -71,7 +71,7 @@ export function ActionsSignIn({ status, onSignedIn }: Props) {
                 </label>
 
                 {borrowed && (
-                    <div className="gha-note">
+                    <div className="gha-callout">
                         {SOURCE_NOTE[status.tokenSource ?? ""]}
                         <button type="button" className="gha-btn primary" disabled={busy} onClick={() => void submit(undefined)}>
                             Use it
@@ -99,7 +99,11 @@ export function ActionsSignIn({ status, onSignedIn }: Props) {
                     </small>
                 </label>
 
-                {error && <div className="gha-error">{error}</div>}
+                {error && (
+                    <div className="gha-callout" data-tone="danger">
+                        {error}
+                    </div>
+                )}
 
                 <div className="gha-card-actions">
                     <button

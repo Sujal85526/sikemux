@@ -39,9 +39,9 @@ const RunRow = memo(function RunRow({ paneId, run, now, selected }: { paneId: st
                 <span className="gha-run-sub">
                     <span className="gha-run-workflow">{run.name}</span>
                     <span>{run.event}</span>
-                    {run.branch && <span className="gha-branch">{run.branch}</span>}
+                    {run.branch && <span className="gha-tag">{run.branch}</span>}
                     {run.pullRequests.map((number) => (
-                        <span key={number} className="gha-pr">
+                        <span key={number} className="gha-tag">
                             #{number}
                         </span>
                     ))}

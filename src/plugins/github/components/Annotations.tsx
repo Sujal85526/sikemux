@@ -2,6 +2,8 @@ import { useResourceEnabled } from "../../../plugin-api/resources";
 import type { RepoRef } from "../api";
 import { actionsAnnotationsR } from "../resources";
 
+const TONE: Record<string, string | undefined> = { failure: "danger", warning: "warn" };
+
 export function annotationPlace(path: string | null, startLine: number | null): string | null {
     if (!path) return null;
     return startLine ? `${path}:${startLine}` : path;
@@ -23,7 +25,7 @@ export function Annotations({ repo, checkRunId, active }: Props) {
             {annotations.map((annotation, index) => {
                 const place = annotationPlace(annotation.path, annotation.startLine);
                 return (
-                    <div className="gha-annotation" key={`${annotation.path}-${annotation.startLine}-${index}`} data-level={annotation.level}>
+                    <div className="gha-callout" key={`${annotation.path}-${annotation.startLine}-${index}`} data-tone={TONE[annotation.level]}>
                         <span className="gha-annotation-level">{annotation.level}</span>
                         <div className="gha-annotation-body">
                             {annotation.title && <span className="gha-annotation-title">{annotation.title}</span>}

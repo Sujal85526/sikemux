@@ -68,7 +68,7 @@ function IssueDetail({ repo, number, active, onBack }: { repo: RepoRef; number: 
             <div className="gha-detail-head">
                 <div className="gha-detail-title-row">
                     <StateMark kind="issue" state={found.state} />
-                    <h2 className="gha-detail-title">{found.title}</h2>
+                    <h2 className="gha-title">{found.title}</h2>
                     <span className="gha-mono gha-dim">#{found.number}</span>
                 </div>
                 <div className="gha-detail-sub">
