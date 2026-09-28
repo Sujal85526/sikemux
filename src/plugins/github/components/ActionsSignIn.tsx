@@ -3,10 +3,10 @@ import { openUrl, swallow } from "../../../plugin-api/host";
 import { actionsApi, failureMessage, type ActionsStatus } from "../api";
 import { GithubMark } from "./ActionsIcon";
 
-const SOURCE_NOTE: Record<string, string> = {
-    environment: "GH_TOKEN is set in your shell, so Sikemux uses that token.",
-    ghCli: "The gh CLI is signed in here, so Sikemux uses its token.",
-};
+function sourceNote(status: ActionsStatus): string {
+    if (status.tokenSource === "ghCli") return "The gh CLI is signed in here, so Sikemux uses its token.";
+    return `${status.tokenVariable ?? "A token variable"} is set in your shell, so Sikemux uses that token.`;
+}
 
 function tokenPage(host: string): string {
     return `https://${host}/settings/tokens/new?scopes=repo,workflow&description=Sikemux`;
@@ -72,7 +72,7 @@ export function ActionsSignIn({ status, onSignedIn }: Props) {
 
                 {borrowed && (
                     <div className="gha-callout">
-                        {SOURCE_NOTE[status.tokenSource ?? ""]}
+                        {sourceNote(status)}
                         <button type="button" className="gha-btn primary" disabled={busy} onClick={() => void submit(undefined)}>
                             Use it
                         </button>

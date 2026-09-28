@@ -254,12 +254,20 @@ fn token_vars(host: &str) -> [&'static str; 2] {
     }
 }
 
+fn env_entry(host: &str) -> Option<(&'static str, String)> {
+    token_vars(host).into_iter().find_map(|name| {
+        let token = std::env::var(name).ok()?.trim().to_string();
+        (!token.is_empty()).then_some((name, token))
+    })
+}
+
 pub fn env_token(host: &str) -> Option<String> {
-    token_vars(host)
-        .into_iter()
-        .filter_map(|name| std::env::var(name).ok())
-        .map(|token| token.trim().to_string())
-        .find(|token| !token.is_empty())
+    env_entry(host).map(|(_, token)| token)
+}
+
+/// Which variable the environment's token is read from, for telling the person.
+pub fn env_variable(host: &str) -> Option<&'static str> {
+    env_entry(host).map(|(name, _)| name)
 }
 
 /// The token the `gh` CLI is already signed in with, so somebody who has run

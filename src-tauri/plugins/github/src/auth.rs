@@ -54,6 +54,7 @@ pub struct Status {
     pub host: String,
     pub login: String,
     pub token_source: Option<TokenSource>,
+    pub token_variable: Option<&'static str>,
     pub scopes: Vec<String>,
     /// Whether the token may read and start workflow runs, not only read code.
     pub can_write_workflows: bool,
@@ -80,6 +81,9 @@ pub async fn status(data_dir: &Path) -> Status {
         configured: token_source.is_some(),
         host: config.host.clone(),
         can_write_workflows: ok && can_write(&scopes),
+        token_variable: (token_source == Some(TokenSource::Environment))
+            .then(|| config::env_variable(&config.host))
+            .flatten(),
         login,
         token_source,
         scopes,

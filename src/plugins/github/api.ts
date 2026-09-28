@@ -11,6 +11,8 @@ export interface ActionsStatus {
     host: string;
     login: string;
     tokenSource: TokenSource | null;
+    /** The variable an environment token was read from. */
+    tokenVariable: string | null;
     scopes: string[];
     canWriteWorkflows: boolean;
     ok: boolean;

@@ -12,6 +12,7 @@ const status: ActionsStatus = {
     host: "github.com",
     login: "",
     tokenSource: null,
+    tokenVariable: null,
     scopes: [],
     canWriteWorkflows: false,
     ok: false,
@@ -33,6 +34,16 @@ describe("ActionsSignIn", () => {
         });
         expect(signIn).toHaveBeenCalledTimes(1);
         expect(signIn).toHaveBeenCalledWith("github.com", "ghp_secret");
+    });
+
+    it("names the variable an environment token came from", () => {
+        render(
+            <ActionsSignIn
+                status={{ ...status, host: "ghe.corp", tokenSource: "environment", tokenVariable: "GH_ENTERPRISE_TOKEN" }}
+                onSignedIn={() => {}}
+            />,
+        );
+        expect(screen.getByText(/GH_ENTERPRISE_TOKEN is set in your shell/)).toBeTruthy();
     });
 
     it("does not sign in with an empty token", () => {

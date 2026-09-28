@@ -200,6 +200,7 @@ export const GITHUB: Record<string, (params: Params) => unknown> = {
     host: "github.com",
     login: "Sujalxcode",
     tokenSource: "ghCli",
+    tokenVariable: null,
     scopes: ["repo", "workflow"],
     canWriteWorkflows: true,
     ok: true,
