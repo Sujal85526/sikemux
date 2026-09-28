@@ -524,11 +524,11 @@
     background: var(--acc-line);
     box-shadow: 0 0 0 1px var(--acc-line);
 }
-/* A long file list above grows to fit its rows, so an open panel starting from nothing would be squeezed out and its
-   header would land on the next one's. It keeps the height its handle can drag it down to. */
+/* A long file list above grows to fit its rows and would squeeze an open panel out, so an open panel keeps a usable
+   share of the column. One dragged to a height of its own keeps only the handle's floor. */
 .git-history.open {
     flex: 1 1 0;
-    min-height: 96px;
+    min-height: min(280px, 45%);
 }
 .git-history-head {
     display: flex;

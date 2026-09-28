@@ -45,7 +45,10 @@ export function FoldPanel({
                     onResize={onResize}
                 />
             )}
-            <div ref={panelRef} className={`git-history${open ? " open" : ""}`} style={open && height ? { flex: `0 0 ${height}px` } : undefined}>
+            <div
+                ref={panelRef}
+                className={`git-history${open ? " open" : ""}`}
+                style={open && height ? { flex: `0 0 ${height}px`, minHeight: HISTORY_MIN } : undefined}>
                 <div className="git-history-head">
                     <button type="button" className="git-history-toggle" aria-expanded={open} onClick={onToggle}>
                         <span className="git-history-chev">

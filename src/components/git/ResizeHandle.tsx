@@ -37,7 +37,10 @@ export function ResizeHandle({
         const el = targetRef.current;
         if (!el) return;
         if (axis === "x") el.style.width = `${next}px`;
-        else el.style.flex = `0 0 ${next}px`;
+        else {
+            el.style.flex = `0 0 ${next}px`;
+            el.style.minHeight = `${min}px`;
+        }
     };
 
     const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -82,7 +85,10 @@ export function ResizeHandle({
             title="Drag to resize · double-click to reset"
             onPointerDown={onPointerDown}
             onDoubleClick={() => {
-                if (targetRef.current) targetRef.current.style.flex = "";
+                if (targetRef.current) {
+                    targetRef.current.style.flex = "";
+                    targetRef.current.style.minHeight = "";
+                }
                 onResize(null);
             }}
             onKeyDown={(event) => {
