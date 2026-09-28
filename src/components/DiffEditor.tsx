@@ -89,6 +89,9 @@ export function invalidateDiffContentCache(repo?: string): void {
 subscribe("fs-changed", (event) => {
     invalidateDiffContentCache(event.repo || undefined);
 });
+subscribe("git-refresh", (event) => {
+    invalidateDiffContentCache(event.repo || undefined);
+});
 
 export function DiffEditor({
     repo,
@@ -118,6 +121,27 @@ export function DiffEditor({
     const absPath = joinPath(repo, path);
     const diffKey = `${repo}\0${path}\0${baseRev}\0${headRev ?? ""}`;
     const full = expanded === diffKey;
+    const filesRef = useRef(files);
+    filesRef.current = files;
+    // Bumped when the working tree or the index may have moved under this diff, so it reads again.
+    const [changes, setChanges] = useState(0);
+    const moving = !headRev || headRev === ":index";
+
+    useEffect(() => {
+        if (!moving) return;
+        const reread = () => setChanges((n) => n + 1);
+        const stopFs = subscribe("fs-changed", (event) => {
+            if (event.repo && event.repo !== repo) return;
+            if (!event.paths || event.paths.includes(path)) reread();
+        });
+        const stopGit = subscribe("git-refresh", (event) => {
+            if (!event.repo || event.repo === repo) reread();
+        });
+        return () => {
+            stopFs();
+            stopGit();
+        };
+    }, [repo, path, moving]);
 
     useEffect(() => subscribeTheme((theme) => setDark(theme.dark)), []);
 
@@ -140,10 +164,12 @@ export function DiffEditor({
         return () => {
             cancelled = true;
         };
-    }, [repo, path, baseRev, headRev, full, editable]);
+    }, [repo, path, baseRev, headRev, full, editable, changes]);
 
     useEffect(() => {
         if (!editable) return;
+        // Typing that has not been saved yet wins over a change from outside.
+        if (filesRef.current && latestHeadRef.current !== filesRef.current.head) return;
         let cancelled = false;
         setError(null);
         void Promise.all([readRevision(repo, baseRev, path), headRev ? readRevision(repo, headRev, path) : readWorkingFile(repo, path, absPath)])
@@ -163,7 +189,7 @@ export function DiffEditor({
         return () => {
             cancelled = true;
         };
-    }, [repo, path, baseRev, headRev, absPath, editable]);
+    }, [repo, path, baseRev, headRev, absPath, editable, changes]);
 
     const save = useCallback(() => {
         void fsapi

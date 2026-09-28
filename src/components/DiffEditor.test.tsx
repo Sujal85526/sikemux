@@ -38,6 +38,7 @@ vi.mock("./DiffMergeEditor", () => ({
 }));
 
 import { DiffEditor, invalidateDiffContentCache } from "./DiffEditor";
+import { emit } from "../state/bus";
 
 const ROWS: DiffRow[] = [
     [0, 1, "import { a } from './a';"],
@@ -161,5 +162,44 @@ describe("DiffEditor", () => {
         const third = render(<DiffEditor repo="/repo" path="src/revisit.ts" baseRev="HEAD" headRev=":index" editable={false} />);
         await waitFor(() => expect(third.container.querySelector(".diff-view")).toBeInTheDocument());
         expect(mocks.fileDiff).toHaveBeenCalledTimes(2);
+    });
+
+    it("reads the diff again when its file changes on disk, and not for other files", async () => {
+        const { container } = render(<DiffEditor repo="/repo" path="src/app.ts" baseRev="HEAD" editable={false} />);
+        await waitFor(() => expect(container.querySelector(".diff-view")).toBeInTheDocument());
+        expect(mocks.fileDiff).toHaveBeenCalledTimes(1);
+
+        act(() => emit({ type: "fs-changed", repo: "/repo", paths: ["src/other.ts"] }));
+        act(() => emit({ type: "fs-changed", repo: "/elsewhere", paths: ["src/app.ts"] }));
+        expect(mocks.fileDiff).toHaveBeenCalledTimes(1);
+
+        act(() => emit({ type: "fs-changed", repo: "/repo", paths: ["src/app.ts"] }));
+        await waitFor(() => expect(mocks.fileDiff).toHaveBeenCalledTimes(2));
+
+        act(() => emit({ type: "git-refresh", repo: "/repo" }));
+        await waitFor(() => expect(mocks.fileDiff).toHaveBeenCalledTimes(3));
+    });
+
+    it("keeps a committed diff as it is when the working tree changes", async () => {
+        const { container } = render(<DiffEditor repo="/repo" path="src/app.ts" baseRev="abc~1" headRev="abc" editable={false} />);
+        await waitFor(() => expect(container.querySelector(".diff-view")).toBeInTheDocument());
+        act(() => emit({ type: "fs-changed", repo: "/repo", paths: ["src/app.ts"] }));
+        act(() => emit({ type: "git-refresh", repo: "/repo" }));
+        expect(mocks.fileDiff).toHaveBeenCalledTimes(1);
+    });
+
+    it("picks up an outside edit in the editable diff unless there is unsaved typing", async () => {
+        const { findByTestId } = render(<DiffEditor repo="/repo" path="src/app.ts" baseRev="HEAD" editable />);
+        await findByTestId("merge-editor");
+
+        mocks.readTextFileLimited.mockResolvedValue("const value = 4;\n");
+        act(() => emit({ type: "fs-changed", repo: "/repo", paths: ["src/app.ts"] }));
+        await waitFor(() => expect(mocks.mergeProps?.head).toBe("const value = 4;\n"));
+
+        act(() => mocks.mergeProps?.onChange("const value = 5;\n"));
+        mocks.readTextFileLimited.mockResolvedValue("const value = 6;\n");
+        act(() => emit({ type: "fs-changed", repo: "/repo", paths: ["src/app.ts"] }));
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(mocks.mergeProps?.head).toBe("const value = 4;\n");
     });
 });
