@@ -148,6 +148,18 @@ Use the refresh action to load changes made in the AWS console.
 </tr>
 </table>
 
+### GitHub
+
+The GitHub panel shows the project's repository without a trip to github.com:
+
+- Actions runs, each with its job graph, steps, annotations, searchable logs, step summaries, and artifacts. Re-run, cancel, approve a waiting deployment, or start a workflow with its inputs.
+- Pull requests with their diffs, reviews, comments, and checks. Review, merge, close, or open one from a branch picker.
+- Issues, releases with their notes and assets, and GitHub's notifications.
+
+Sikemux signs in with a token from `GH_TOKEN`, `GITHUB_TOKEN`, or the `gh` CLI, and never copies it. A token you paste goes to the Keychain. GitHub Enterprise hosts use `GH_ENTERPRISE_TOKEN` instead. Agents can read the same data through the `github_*` tools.
+
+![GitHub](public/screenshots/cicd-github-run-view.png)
+
 ### Rundeck
 
 The Rundeck panel lets you browse projects, start jobs from a palette, and follow each deployment step and its output as it runs.

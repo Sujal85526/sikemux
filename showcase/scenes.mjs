@@ -21,7 +21,7 @@ export const README_SCREENSHOTS = {
   "rundeck-deploy-card": "cicd-rundeck-deploy-view.png",
   "signoz-dashboard-card": "observability-signoz-view.png",
   "bruno-card": "api-bruno-pane-view.png",
-  "github-run-stage": "cicd-github-run-view.png",
+  "github-run-card": "cicd-github-run-view.png",
 };
 
 export const SCENES = [
@@ -183,7 +183,13 @@ export const SCENES = [
         github.showRun("p-github", 36316473434);
       });
     },
-    crops: { stage: ".stage" },
+    crops: {
+      stage: ".stage",
+      card: {
+        selector: ".stage",
+        region: { left: 0, top: 0, width: 1, height: 0.8 },
+      },
+    },
   },
   {
     name: "aws-ecs-logs",
