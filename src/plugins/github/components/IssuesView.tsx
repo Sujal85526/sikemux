@@ -5,7 +5,7 @@ import { actionsApi, failureMessage, type Issue, type RepoRef } from "../api";
 import { githubIssueR, githubIssuesR } from "../resources";
 import { formatAgo } from "../runStatus";
 import { compose, setListState, showItem, updateView } from "../state";
-import { Labels, StateMark } from "./Bits";
+import { Comments, Labels, StateMark } from "./Bits";
 import { CommentThread } from "./CommentThread";
 import { useBusy, useNow } from "./hooks";
 import { NewIssueForm } from "./NewIssueForm";
@@ -16,22 +16,18 @@ const LIST_STATES = ["open", "closed", "all"];
 function IssueRow({ issue, now, onOpen }: { issue: Issue; now: number; onOpen: () => void }) {
     return (
         <button type="button" className="gha-item-row" onClick={onOpen}>
-            <StateMark kind="issue" state={issue.state} />
-            <span className="gha-item-main">
+            <StateMark kind="issue" state={issue.state} reason={issue.stateReason} />
+            <span className="gha-item-head">
                 <span className="gha-item-title">{issue.title}</span>
-                <span className="gha-item-sub">
-                    <span className="gha-mono">#{issue.number}</span>
-                    {issue.author && <span>{issue.author}</span>}
-                    <span>{formatAgo(issue.updatedAt, now)}</span>
-                    {issue.assignees.length > 0 && <span className="gha-dim">→ {issue.assignees.join(", ")}</span>}
-                    <Labels labels={issue.labels} />
-                </span>
+                <Labels labels={issue.labels} />
             </span>
-            {issue.comments > 0 && (
-                <span className="gha-dim">
-                    {issue.comments} comment{issue.comments === 1 ? "" : "s"}
-                </span>
-            )}
+            <Comments count={issue.comments} />
+            <span className="gha-item-sub">
+                <span className="gha-item-number">#{issue.number}</span>
+                {issue.author && <span>{issue.author}</span>}
+                {issue.assignees.length > 0 && <span>→ {issue.assignees.join(", ")}</span>}
+            </span>
+            <span className="gha-item-when">{formatAgo(issue.updatedAt, now)}</span>
         </button>
     );
 }
@@ -67,7 +63,7 @@ function IssueDetail({ repo, number, active, onBack }: { repo: RepoRef; number: 
             </button>
             <div className="gha-detail-head">
                 <div className="gha-detail-title-row">
-                    <StateMark kind="issue" state={found.state} />
+                    <StateMark kind="issue" state={found.state} reason={found.stateReason} />
                     <h2 className="gha-title">{found.title}</h2>
                     <span className="gha-mono gha-dim">#{found.number}</span>
                 </div>

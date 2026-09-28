@@ -1,12 +1,13 @@
-import { memo, useEffect, useRef } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import { openUrl, swallow } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
-import { Dropdown, EmptyState, IconGit, IconRefresh, IconRun, SkeletonRows, Tooltip } from "../../../plugin-api/ui";
+import { Dropdown, EmptyState, IconRefresh, IconRun, SkeletonRows, Tooltip } from "../../../plugin-api/ui";
 import { failureMessage, type RepoRef, type Run, type Workflow } from "../api";
 import { actionsRunsR, actionsWorkflowsR } from "../resources";
 import { elapsedMs, formatAgo, formatDuration, isUnfinished, outcomeOf, statusParam } from "../runStatus";
 import { filterBy, showRun, STATUS_FILTERS, updateView, type RunsView, type StatusFilter } from "../state";
 import { OutcomeIcon } from "./ActionsIcon";
+import { Branch } from "./Bits";
 import { coarse, useEvery, useNow } from "./hooks";
 
 const LIVE_REFRESH_MS = 10_000;
@@ -39,7 +40,19 @@ function eventLabel(event: string): string {
     return EVENT_LABEL[event] ?? words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-const RunRow = memo(function RunRow({ paneId, run, now, selected }: { paneId: string; run: Run; now: number; selected: boolean }) {
+const RunRow = memo(function RunRow({
+    paneId,
+    run,
+    workflow,
+    now,
+    selected,
+}: {
+    paneId: string;
+    run: Run;
+    workflow: string | null;
+    now: number;
+    selected: boolean;
+}) {
     const outcome = outcomeOf(run);
     const finished = isUnfinished(run) ? null : run.updatedAt;
     return (
@@ -54,17 +67,13 @@ const RunRow = memo(function RunRow({ paneId, run, now, selected }: { paneId: st
             <span className="gha-run-duration">{formatDuration(elapsedMs(run.startedAt ?? run.createdAt, finished, now))}</span>
             <span className="gha-run-sub">
                 <span className="gha-run-workflow">
-                    {run.name} <span className="gha-run-number">#{run.runNumber}</span>
+                    {workflow && `${workflow} `}
+                    <span className="gha-item-number">#{run.runNumber}</span>
                 </span>
                 <span>{eventLabel(run.event)}</span>
-                {run.branch && (
-                    <span className="gha-run-branch">
-                        <IconGit size={11} />
-                        <span>{run.branch}</span>
-                    </span>
-                )}
+                {run.branch && <Branch name={run.branch} />}
                 {run.pullRequests.map((number) => (
-                    <span key={number} className="gha-run-pull">
+                    <span key={number} className="gha-item-number">
                         #{number}
                     </span>
                 ))}
@@ -96,6 +105,7 @@ interface Props {
 export function RunsList({ paneId, repo, view, branch, active, canWrite, onDispatch }: Props) {
     const workflows = useResourceEnabled(active, actionsWorkflowsR, repo);
     const chosen = (workflows.data ?? []).find((workflow) => workflow.id === view.workflowId) ?? null;
+    const workflowNames = useMemo(() => new Map((workflows.data ?? []).map((workflow) => [workflow.id, workflow.name])), [workflows.data]);
     const page = useResourceEnabled(active, actionsRunsR, {
         ...repo,
         workflowId: view.workflowId ?? undefined,
@@ -179,18 +189,37 @@ export function RunsList({ paneId, repo, view, branch, active, canWrite, onDispa
             )}
             <div className="gha-run-rows">
                 {runs.map((run) => (
-                    <RunRow key={run.id} paneId={paneId} run={run} now={isUnfinished(run) ? now : coarse(now)} selected={view.run === run.id} />
+                    <RunRow
+                        key={run.id}
+                        paneId={paneId}
+                        run={run}
+                        workflow={chosen ? null : (workflowNames.get(run.workflowId) ?? null)}
+                        now={isUnfinished(run) ? now : coarse(now)}
+                        selected={view.run === run.id}
+                    />
                 ))}
             </div>
             {runs.length > 0 && (
                 <div className="gha-pager">
-                    <button type="button" className="gha-btn" disabled={view.page <= 1} onClick={() => updateView(paneId, { page: view.page - 1 })}>
-                        Newer
-                    </button>
-                    <span className="gha-dim">Page {view.page}</span>
-                    <button type="button" className="gha-btn" disabled={!nextPage} onClick={() => updateView(paneId, { page: view.page + 1 })}>
-                        Older
-                    </button>
+                    {(view.page > 1 || nextPage) && (
+                        <>
+                            <button
+                                type="button"
+                                className="gha-btn"
+                                disabled={view.page <= 1}
+                                onClick={() => updateView(paneId, { page: view.page - 1 })}>
+                                Newer
+                            </button>
+                            <span className="gha-dim">Page {view.page}</span>
+                            <button
+                                type="button"
+                                className="gha-btn"
+                                disabled={!nextPage}
+                                onClick={() => updateView(paneId, { page: view.page + 1 })}>
+                                Older
+                            </button>
+                        </>
+                    )}
                     {runs[0] && (
                         <button
                             type="button"

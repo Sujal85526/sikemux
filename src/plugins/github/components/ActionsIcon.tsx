@@ -108,3 +108,20 @@ export function SignOutIcon({ size = 14 }: { size?: number }) {
         </Stroke>
     );
 }
+
+export function NotPlannedIcon({ size = 14 }: { size?: number }) {
+    return (
+        <Stroke size={size}>
+            <circle cx="8" cy="8" r="6" />
+            <path d="M3.8 12.2 12.2 3.8" />
+        </Stroke>
+    );
+}
+
+export function CommentIcon({ size = 12 }: { size?: number }) {
+    return (
+        <Stroke size={size}>
+            <path d="M3 3.5h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5v-2.5H3a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1Z" />
+        </Stroke>
+    );
+}

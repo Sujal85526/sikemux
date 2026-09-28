@@ -28,15 +28,15 @@ function Row({ item, now, onOpen }: { item: Notification; now: number; onOpen: (
     return (
         <button type="button" className="gha-item-row" data-unread={item.unread ? "1" : "0"} onClick={onOpen}>
             <span className="gha-unread-dot" data-on={item.unread ? "1" : "0"} />
-            <span className="gha-item-main">
+            <span className="gha-item-head">
                 <span className="gha-item-title">{item.title}</span>
-                <span className="gha-item-sub">
-                    <span>{item.repo}</span>
-                    <span className="gha-dim">{reasonLabel(item.reason)}</span>
-                    {item.number !== null && <span className="gha-mono">#{item.number}</span>}
-                    <span>{formatAgo(item.updatedAt, now)}</span>
-                </span>
             </span>
+            <span className="gha-item-sub">
+                <span>{item.repo}</span>
+                {item.number !== null && <span className="gha-item-number">#{item.number}</span>}
+                <span>{reasonLabel(item.reason)}</span>
+            </span>
+            <span className="gha-item-when">{formatAgo(item.updatedAt, now)}</span>
         </button>
     );
 }

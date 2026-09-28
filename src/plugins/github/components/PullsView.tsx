@@ -8,7 +8,7 @@ import { formatAgo } from "../runStatus";
 import { needsPull } from "../compose";
 import { compose, openRunFrom, setListState, showItem } from "../state";
 import { CommentThread } from "./CommentThread";
-import { Labels, StateMark } from "./Bits";
+import { Branch, Comments, Labels, StateMark } from "./Bits";
 import { useBusy, useNow } from "./hooks";
 import { NewPullForm } from "./NewPullForm";
 import { PullChecks } from "./PullChecks";
@@ -41,21 +41,17 @@ function PullRow({ pull, now, onOpen }: { pull: Pull; now: number; onOpen: () =>
     return (
         <button type="button" className="gha-item-row" onClick={onOpen}>
             <StateMark kind="pull" state={pull.state} draft={pull.draft} />
-            <span className="gha-item-main">
+            <span className="gha-item-head">
                 <span className="gha-item-title">{pull.title}</span>
-                <span className="gha-item-sub">
-                    <span className="gha-mono">#{pull.number}</span>
-                    {pull.author && <span>{pull.author}</span>}
-                    {pull.head && <span className="gha-tag">{pull.head}</span>}
-                    <span>{formatAgo(pull.updatedAt, now)}</span>
-                    <Labels labels={pull.labels} />
-                </span>
+                <Labels labels={pull.labels} />
             </span>
-            {!!pull.comments && (
-                <span className="gha-dim">
-                    {pull.comments} comment{pull.comments === 1 ? "" : "s"}
-                </span>
-            )}
+            <Comments count={pull.comments ?? 0} />
+            <span className="gha-item-sub">
+                <span className="gha-item-number">#{pull.number}</span>
+                {pull.author && <span>{pull.author}</span>}
+                {pull.head && <Branch name={pull.head} />}
+            </span>
+            <span className="gha-item-when">{formatAgo(pull.updatedAt, now)}</span>
         </button>
     );
 }

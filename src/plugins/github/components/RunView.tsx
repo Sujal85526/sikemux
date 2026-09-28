@@ -1,12 +1,13 @@
 import { memo, useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { confirmDialog, copyText, notify, openUrl, reportError, swallow } from "../../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
-import { EmptyState, IconChevron, IconGit, IconRefresh, SkeletonRows, Tooltip } from "../../../plugin-api/ui";
+import { EmptyState, IconChevron, IconRefresh, SkeletonRows, Tooltip } from "../../../plugin-api/ui";
 import { actionsApi, failureMessage, type Job, type RepoRef, type Run } from "../api";
 import { actionsArtifactsR, actionsRunAttemptR, actionsRunR, actionsTimingR } from "../resources";
 import { elapsedMs, failedStep, formatAgo, formatDuration, isUnfinished, outcomeOf, OUTCOME_LABEL, summaryJobs, watchIsNewer } from "../runStatus";
 import { closeRun, updateView } from "../state";
 import { OutcomeIcon } from "./ActionsIcon";
+import { Branch } from "./Bits";
 import { Annotations } from "./Annotations";
 import { Approvals } from "./Approvals";
 import { Artifacts } from "./Artifacts";
@@ -195,7 +196,7 @@ function Header({
                 <RunMenu run={run} repo={repo} canWrite={canWrite} onDeleted={onDeleted} />
             </div>
             <div className="gha-run-head-sub">
-                <span>{run.name}</span>
+                {run.name !== run.title && <span>{run.name}</span>}
                 {run.attempt > 1 && <span className="gha-dim">attempt {run.attempt}</span>}
             </div>
         </div>
@@ -254,14 +255,9 @@ function SummaryCard({
                         }>
                         {run.shortSha}
                     </button>
-                    {run.branch && (
-                        <span className="gha-run-branch">
-                            <IconGit size={12} />
-                            <span>{run.branch}</span>
-                        </span>
-                    )}
+                    {run.branch && <Branch name={run.branch} />}
                     {run.pullRequests.map((number) => (
-                        <span key={number} className="gha-run-pull">
+                        <span key={number} className="gha-item-number">
                             #{number}
                         </span>
                     ))}
