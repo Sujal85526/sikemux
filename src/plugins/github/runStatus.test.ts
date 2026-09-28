@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Job, Step } from "./api";
-import { elapsedMs, failedStep, formatAgo, formatDuration, isRunning, jobsSummary, outcomeOf, statusParam } from "./runStatus";
+import { elapsedMs, failedStep, formatAgo, formatDuration, isRunning, jobsSummary, outcomeOf, statusParam, watchIsNewer } from "./runStatus";
 
 const NOW = Date.parse("2026-01-01T12:00:00Z");
 
@@ -132,5 +132,24 @@ describe("jobsSummary", () => {
 
     it("has nothing to count before any job exists", () => {
         expect(jobsSummary([])).toEqual({ done: 0, total: 0, failed: 0 });
+    });
+});
+
+describe("watchIsNewer", () => {
+    const at = (attempt: number, minute: number) => ({ attempt, updatedAt: `2026-09-28T10:${String(minute).padStart(2, "0")}:00Z` });
+
+    it("lets a re-run replace the finished run a watch last saw", () => {
+        expect(watchIsNewer(at(1, 30), at(2, 31))).toBe(false);
+        expect(watchIsNewer(at(2, 31), at(1, 30))).toBe(true);
+    });
+
+    it("lets a refresh of the same attempt win unless the watch saw something later", () => {
+        expect(watchIsNewer(at(1, 30), at(1, 30))).toBe(false);
+        expect(watchIsNewer(at(1, 32), at(1, 30))).toBe(true);
+    });
+
+    it("uses whichever there is", () => {
+        expect(watchIsNewer(null, at(1, 30))).toBe(false);
+        expect(watchIsNewer(at(1, 30), null)).toBe(true);
     });
 });

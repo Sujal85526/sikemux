@@ -30,9 +30,11 @@ export const JobGraph = memo(function JobGraph({ run, jobs, now, openJob, onOpen
                 <span className="gha-graph-file">{name ?? run.name}</span>
                 <span className="gha-dim">on: {run.event}</span>
                 <span className="gha-graph-spacer" />
-                <button type="button" className="gha-link" onClick={onToggleFile}>
-                    {fileShown ? "Hide workflow file" : "Workflow file"}
-                </button>
+                {run.path?.startsWith(".github/") && (
+                    <button type="button" className="gha-link" onClick={onToggleFile}>
+                        {fileShown ? "Hide workflow file" : "Workflow file"}
+                    </button>
+                )}
             </div>
             {stages.length === 0 ? (
                 <div className="gha-dim gha-graph-empty">No jobs yet</div>

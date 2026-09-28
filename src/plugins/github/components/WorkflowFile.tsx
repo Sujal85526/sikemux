@@ -1,6 +1,6 @@
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { SkeletonRows, VirtualLogList } from "../../../plugin-api/ui";
-import type { RepoRef } from "../api";
+import { failureMessage, type RepoRef } from "../api";
 import { actionsWorkflowFileR } from "../resources";
 
 interface Props {
@@ -17,6 +17,7 @@ export function WorkflowFile({ repo, workflowId, active }: Props) {
     return (
         <div className="gha-workflow-file">
             {file.status === "loading" && !file.data && <SkeletonRows rows={6} label="Loading the workflow file" />}
+            {file.error && !file.data && <div className="gha-side-empty">{failureMessage(file.error)}</div>}
             {file.data && (
                 <>
                     <div className="gha-section-label gha-mono">{file.data.path}</div>

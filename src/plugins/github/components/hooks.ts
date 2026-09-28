@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /** How coarse a reading has to be before it stops changing every second. */
 const MINUTE = 60_000;
@@ -23,4 +23,19 @@ export function useNow(live: boolean): number {
  */
 export function coarse(now: number): number {
     return Math.floor(now / MINUTE) * MINUTE;
+}
+
+/**
+ * Calls `work` every `ms` while `live`. The latest `work` is always the one
+ * called, and a render in between does not start the wait over, so a view
+ * that redraws every second still refreshes on time.
+ */
+export function useEvery(live: boolean, ms: number, work: () => void): void {
+    const latest = useRef(work);
+    latest.current = work;
+    useEffect(() => {
+        if (!live) return;
+        const timer = setInterval(() => latest.current(), ms);
+        return () => clearInterval(timer);
+    }, [live, ms]);
 }

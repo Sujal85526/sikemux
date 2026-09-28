@@ -1,4 +1,4 @@
-import { memo, useEffect } from "react";
+import { memo, useEffect, useRef } from "react";
 import { openUrl, swallow } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { Dropdown, EmptyState, IconRefresh, IconRun, SkeletonRows, Tooltip } from "../../../plugin-api/ui";
@@ -7,7 +7,7 @@ import { actionsRunsR, actionsWorkflowsR } from "../resources";
 import { elapsedMs, formatAgo, formatDuration, isRunning, outcomeOf, statusParam } from "../runStatus";
 import { filterBy, showRun, STATUS_FILTERS, updateView, type RunsView, type StatusFilter } from "../state";
 import { OutcomeIcon } from "./ActionsIcon";
-import { coarse, useNow } from "./hooks";
+import { coarse, useEvery, useNow } from "./hooks";
 
 const LIVE_REFRESH_MS = 10_000;
 
@@ -86,11 +86,15 @@ export function RunsList({ paneId, repo, view, branch, active, canWrite, onDispa
 
     // A list with something still going is re-read on its own, so a run that
     // finishes stops saying it is running without anybody pressing anything.
+    useEvery(active && anyRunning, LIVE_REFRESH_MS, () => void page.refresh());
+
+    // A different branch is a different list, so it starts from its first page.
+    const shownBranch = useRef(branch);
     useEffect(() => {
-        if (!active || !anyRunning) return;
-        const timer = setInterval(() => void page.refresh(), LIVE_REFRESH_MS);
-        return () => clearInterval(timer);
-    }, [active, anyRunning, page]);
+        if (shownBranch.current === branch) return;
+        shownBranch.current = branch;
+        if (view.page !== 1) updateView(paneId, { page: 1, run: null, job: null });
+    }, [branch, paneId, view.page]);
 
     const nextPage = page.data?.nextPage ?? null;
     const loading = page.status === "loading" && !page.data;

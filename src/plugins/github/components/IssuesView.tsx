@@ -4,7 +4,7 @@ import { EmptyState, IconClose, IconInfo, Markdown, SkeletonRows } from "../../.
 import { actionsApi, failureMessage, type Issue, type RepoRef } from "../api";
 import { githubIssueR, githubIssuesR } from "../resources";
 import { formatAgo } from "../runStatus";
-import { compose, setListState, showItem } from "../state";
+import { compose, setListState, showItem, updateView } from "../state";
 import { Labels, StateMark } from "./Bits";
 import { CommentThread } from "./CommentThread";
 import { useNow } from "./hooks";
@@ -89,11 +89,12 @@ interface Props {
     listState: string;
     item: number | null;
     composing: boolean;
+    page: number;
     active: boolean;
 }
 
-export function IssuesView({ paneId, repo, listState, item, composing, active }: Props) {
-    const issues = useResourceEnabled(active && item === null && !composing, githubIssuesR, repo, listState);
+export function IssuesView({ paneId, repo, listState, item, composing, page, active }: Props) {
+    const issues = useResourceEnabled(active && item === null && !composing, githubIssuesR, repo, listState, page);
     const now = useNow(false);
 
     if (composing) return <NewIssueForm repo={repo} onCreated={(number) => showItem(paneId, number)} onCancel={() => compose(paneId, null)} />;
@@ -109,7 +110,9 @@ export function IssuesView({ paneId, repo, listState, item, composing, active }:
             />
         );
     }
-    const rows = issues.data ?? [];
+    const rows = issues.data?.issues ?? [];
+    const total = issues.data?.total ?? rows.length;
+    const nextPage = issues.data?.nextPage ?? null;
 
     return (
         <div className="gha-list">
@@ -127,7 +130,7 @@ export function IssuesView({ paneId, repo, listState, item, composing, active }:
                     ))}
                 </div>
                 <span className="gha-dim gha-list-count">
-                    {rows.length} issue{rows.length === 1 ? "" : "s"}
+                    {total} issue{total === 1 ? "" : "s"}
                     <button type="button" className="gha-btn" onClick={() => compose(paneId, "issue")}>
                         New issue
                     </button>
@@ -137,6 +140,17 @@ export function IssuesView({ paneId, repo, listState, item, composing, active }:
                 <EmptyState icon={<IconInfo size={20} />} message={`No ${listState === "all" ? "" : listState} issues.`} />
             ) : (
                 rows.map((issue) => <IssueRow key={issue.number} issue={issue} now={now} onOpen={() => showItem(paneId, issue.number)} />)
+            )}
+            {(page > 1 || nextPage) && (
+                <div className="gha-pager">
+                    <button type="button" className="gha-btn" disabled={page <= 1} onClick={() => updateView(paneId, { page: page - 1 })}>
+                        Newer
+                    </button>
+                    <span className="gha-dim">Page {page}</span>
+                    <button type="button" className="gha-btn" disabled={!nextPage} onClick={() => updateView(paneId, { page: page + 1 })}>
+                        Older
+                    </button>
+                </div>
             )}
         </div>
     );

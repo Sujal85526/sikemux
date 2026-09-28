@@ -15,6 +15,9 @@ const LONG_NOTES = 280;
  * The newest release that is neither a draft nor a pre-release, which is the
  * one GitHub marks as latest and the one an updater would take.
  */
+/** How many releases the backend reads, newest first. */
+const RELEASES_READ = 300;
+
 export function latestOf(releases: readonly Release[]): number | null {
     return releases.find((release) => !release.draft && !release.prerelease)?.id ?? null;
 }
@@ -137,6 +140,17 @@ export function ReleasesView({ repo, active }: Props) {
                     <Assets release={release} saving={saving} onSave={save} />
                 </div>
             ))}
+            {rows.length >= RELEASES_READ && (
+                <div className="gha-pager">
+                    <span className="gha-dim">These are the newest {RELEASES_READ}.</span>
+                    <button
+                        type="button"
+                        className="gha-link"
+                        onClick={() => void openUrl(rows[0].url.replace(/\/tag\/.*$/u, "")).catch(swallow("open GitHub"))}>
+                        Older releases on GitHub
+                    </button>
+                </div>
+            )}
         </div>
     );
 }

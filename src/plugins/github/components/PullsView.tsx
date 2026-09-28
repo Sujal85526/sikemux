@@ -51,7 +51,11 @@ function PullRow({ pull, now, onOpen }: { pull: Pull; now: number; onOpen: () =>
                     <Labels labels={pull.labels} />
                 </span>
             </span>
-            {pull.comments > 0 && <span className="gha-dim">{pull.comments} comments</span>}
+            {!!pull.comments && (
+                <span className="gha-dim">
+                    {pull.comments} comment{pull.comments === 1 ? "" : "s"}
+                </span>
+            )}
         </button>
     );
 }

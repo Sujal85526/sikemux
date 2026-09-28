@@ -4,7 +4,18 @@ import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
 import { EmptyState, IconChevron, IconClose, IconRefresh, SkeletonRows, Tooltip } from "../../../plugin-api/ui";
 import { actionsApi, failureMessage, type Job, type RepoRef, type Run } from "../api";
 import { actionsArtifactsR, actionsRunAttemptR, actionsRunR, actionsTimingR } from "../resources";
-import { elapsedMs, failedStep, formatAgo, formatDuration, isRunning, jobsSummary, outcomeOf, OUTCOME_LABEL, summaryJobs } from "../runStatus";
+import {
+    elapsedMs,
+    failedStep,
+    formatAgo,
+    formatDuration,
+    isRunning,
+    jobsSummary,
+    outcomeOf,
+    OUTCOME_LABEL,
+    summaryJobs,
+    watchIsNewer,
+} from "../runStatus";
 import { closeRun, updateView } from "../state";
 import { OutcomeIcon } from "./ActionsIcon";
 import { Annotations } from "./Annotations";
@@ -17,6 +28,8 @@ import { JobSummary } from "./JobSummary";
 import { RunMenu } from "./RunMenu";
 import { billedMinutes } from "./RunUsage";
 import { WorkflowFile } from "./WorkflowFile";
+
+const WATCH_RETRY_MS = 30_000;
 
 const refreshRuns = () => invalidate((kind) => kind === "gha.runs" || kind === "gha.run");
 
@@ -317,14 +330,18 @@ export function RunView({ paneId, repo, runId, openJob, active, canWrite }: Prop
     const detail = useResourceEnabled(active && attempt === null, actionsRunR, repo, runId);
     const older = useResourceEnabled(active && attempt !== null, actionsRunAttemptR, repo, runId, attempt ?? 0);
     const shown = attempt === null ? detail : older;
-    const [live, setLive] = useState<{ run: Run | null; jobs: Job[] } | null>(null);
+    const [live, setLive] = useState<{ runId: number; run: Run; jobs: Job[] } | null>(null);
+    const [watchRound, setWatchRound] = useState(0);
     const [showFile, setShowFile] = useState(false);
     const viewRef = useRef<HTMLDivElement>(null);
     const artifactsRef = useRef<HTMLDivElement>(null);
 
-    const run = (attempt === null ? live?.run : null) ?? shown.data?.run ?? null;
-    const jobs = attempt === null && live?.jobs.length ? live.jobs : (shown.data?.jobs ?? []);
+    const watched = attempt === null && live?.runId === runId ? live : null;
+    const useWatched = watchIsNewer(watched?.run ?? null, shown.data?.run ?? null);
+    const run = (useWatched ? watched?.run : shown.data?.run) ?? null;
+    const jobs = useWatched && watched?.jobs.length ? watched.jobs : (shown.data?.jobs ?? []);
     const moving = attempt === null && !!run && isRunning(run);
+    const latestAttempt = Math.max(detail.data?.run.attempt ?? 0, watched?.run.attempt ?? 0, run?.attempt ?? 0);
     const now = useNow(active && moving);
 
     // While a run is going, the backend pushes the whole run and its jobs on
@@ -335,8 +352,12 @@ export function RunView({ paneId, repo, runId, openJob, active, canWrite }: Prop
         let stopped = false;
         void actionsApi
             .watchStart(repo, runId, (tick) => {
-                if (tick.run) setLive({ run: tick.run, jobs: tick.jobs });
-                if (tick.finished) refreshRuns();
+                if (stopped) return;
+                if (tick.run) setLive({ runId, run: tick.run, jobs: tick.jobs });
+                if (!tick.finished) return;
+                refreshRuns();
+                // A watch that gave up on a run still going is started again a little later.
+                if (tick.run && isRunning(tick.run)) setTimeout(() => setWatchRound((round) => round + 1), WATCH_RETRY_MS);
             })
             .then((id) => {
                 if (stopped) void actionsApi.watchStop(id);
@@ -347,9 +368,9 @@ export function RunView({ paneId, repo, runId, openJob, active, canWrite }: Prop
             stopped = true;
             if (streamId !== null) void actionsApi.watchStop(streamId).catch(swallow("stop watching the run"));
         };
-    }, [active, moving, repo, runId]);
+    }, [active, moving, repo, runId, watchRound]);
 
-    useEffect(() => setLive(null), [runId]);
+    useEffect(() => setAttempt(null), [runId]);
 
     const openFromGraph = useCallback(
         (jobId: number) => {
@@ -384,16 +405,16 @@ export function RunView({ paneId, repo, runId, openJob, active, canWrite }: Prop
                 <IconClose size={11} /> Back to runs
             </button>
             <Header run={run} repo={repo} canWrite={canWrite} onRefresh={() => void shown.refresh()} onDeleted={() => closeRun(paneId)} />
-            {run.attempt > 1 && (
+            {latestAttempt > 1 && (
                 <div className="gha-attempts">
                     <span className="gha-dim">Attempts</span>
-                    {Array.from({ length: run.attempt }, (_, index) => index + 1).map((number) => (
+                    {Array.from({ length: latestAttempt }, (_, index) => index + 1).map((number) => (
                         <button
                             key={number}
                             type="button"
                             className="gha-chip"
-                            data-on={(attempt ?? run.attempt) === number ? "1" : "0"}
-                            onClick={() => setAttempt(number === run.attempt ? null : number)}>
+                            data-on={(attempt ?? latestAttempt) === number ? "1" : "0"}
+                            onClick={() => setAttempt(number === latestAttempt ? null : number)}>
                             #{number}
                         </button>
                     ))}

@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import type { PluginTopBarProps } from "../../../plugin-api";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { Tooltip } from "../../../plugin-api/ui";
@@ -7,6 +6,7 @@ import { actionsRunsR, actionsStatusR } from "../resources";
 import { formatAgo, isRunning, outcomeOf, OUTCOME_LABEL } from "../runStatus";
 import { actionsSettings, openRepo, refOf } from "../state";
 import { OutcomeIcon } from "./ActionsIcon";
+import { useEvery } from "./hooks";
 import "../topbar.css";
 
 const LIVE_REFRESH_MS = 15_000;
@@ -24,11 +24,7 @@ export function ActionsTopBarItem({ projectCwd }: PluginTopBarProps) {
     const latest = runs.data?.runs[0] ?? null;
     const live = !!latest && isRunning(latest);
 
-    useEffect(() => {
-        if (!live) return;
-        const timer = setInterval(() => void runs.refresh(), LIVE_REFRESH_MS);
-        return () => clearInterval(timer);
-    }, [live, runs]);
+    useEvery(live, LIVE_REFRESH_MS, () => void runs.refresh());
 
     if (!repo || !latest) return null;
 
