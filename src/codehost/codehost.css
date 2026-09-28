@@ -2181,16 +2181,12 @@ button.gha-step:focus-visible {
     outline: none;
 }
 
-/* The Files tab fills the pane below the page head, and its list scrolls on its own. */
-.gha-detail[data-tab="files"] {
-    height: 100%;
-}
+/* Reviewed like Changes: the list fills the column, with no frame of its own. */
 .gha-pull-files {
+    display: flex;
     flex: 1 1 auto;
-    min-height: 320px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    overflow: hidden;
+    flex-direction: column;
+    min-height: 0;
 }
 .gha-pull-files .merge-file-status {
     display: inline-flex;
