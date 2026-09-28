@@ -127,15 +127,15 @@ strip = "symbols"
 # Crates that never sit on a hot path are built for size. Together they take
 # about 1 MB off the binary; encryption itself stays in `ring` at full speed.
 [profile.release.package.sikemux-plugin-aws]
-opt-level = "s"
+opt-level = "z"
 [profile.release.package.sikemux-plugin-bruno]
-opt-level = "s"
+opt-level = "z"
 [profile.release.package.sikemux-plugin-github]
 opt-level = "z"
 [profile.release.package.sikemux-plugin-rundeck]
-opt-level = "s"
+opt-level = "z"
 [profile.release.package.sikemux-plugin-signoz]
-opt-level = "s"
+opt-level = "z"
 [profile.release.package.libsqlite3-sys]
 opt-level = "s"
 [profile.release.package.rusqlite]
