@@ -14,7 +14,7 @@ const diffSurface = Prec.highest(
         "&": { backgroundColor: "transparent", fontSize: "12px" },
         ".cm-scroller": { fontFamily: "var(--mono)", lineHeight: "19px" },
         ".cm-content": { fontFamily: "var(--mono)", fontSize: "12px", padding: "8px 0" },
-        ".cm-gutters": { backgroundColor: "transparent", color: "var(--ink-faint)", border: "none" },
+        ".cm-gutters": { backgroundColor: "var(--surface-gutter)", color: "var(--ink-faint)", border: "none" },
     }),
 );
 
