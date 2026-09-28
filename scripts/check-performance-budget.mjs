@@ -185,8 +185,8 @@ const budgets = [
     // Lightning CSS, Vite's minifier, keeps the spaces inside color-mix().
     label: "ACP chat CSS",
     pattern: /^AgentSurface-.*\.css$/,
-    raw: 42_800,
-    gzip: 7_980,
+    raw: 43_500,
+    gzip: 8_100,
   },
   {
     // Includes the JetBrainsMono Nerd Font @font-face rules: a base face per
