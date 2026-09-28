@@ -5,6 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
+base64 = "0.23"
 sikemux-plugin-api = { path = "../../crates/sikemux-plugin-api" }
 sikemux-process = { path = "../../crates/sikemux-process" }
 serde = { version = "1", features = ["derive"] }

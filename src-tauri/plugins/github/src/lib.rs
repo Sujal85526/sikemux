@@ -15,6 +15,7 @@
 //   releases  — releases, their notes and the files hung off them
 //   inbox     — the notifications GitHub would otherwise email
 //   common    — the shapes every part of the API repeats
+//   images    — avatars and pictures, handed to the window as data: addresses
 //   watch     — following a run while it is going
 
 mod annotations;
@@ -25,6 +26,7 @@ mod client;
 mod common;
 mod config;
 mod error;
+mod images;
 mod inbox;
 mod issues;
 mod logs;
@@ -187,6 +189,7 @@ impl Plugin for Github {
             "comments" => answer(input, move |thread: common::Thread| async move {
                 common::comments(data_dir, &thread.repo, thread.number).await
             }),
+            "image" => answer(input, move |q| images::image(data_dir, q)),
             "markAllRead" => Box::pin(async move { reply(inbox::mark_all_read(data_dir).await?) }),
 
             _ => Box::pin(async move { Err(PluginError::unknown_method(method)) }),

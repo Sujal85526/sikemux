@@ -386,6 +386,26 @@ async function read<T>(method: string, params?: unknown): Promise<T> {
     }
 }
 
+const IMAGES_KEPT = 400;
+const images = new Map<string, Promise<string>>();
+
+/**
+ * An avatar or a picture from GitHub as a `data:` address, since the window cannot load GitHub's images itself. Each
+ * address is fetched once; one that failed is tried again next time.
+ */
+function image(url: string): Promise<string> {
+    const known = images.get(url);
+    if (known) return known;
+    const fetched = backend.call<string>("image", { url });
+    images.set(url, fetched);
+    fetched.catch(() => images.delete(url));
+    if (images.size > IMAGES_KEPT) {
+        const oldest = images.keys().next().value;
+        if (oldest !== undefined) images.delete(oldest);
+    }
+    return fetched;
+}
+
 export const actionsApi = {
     status: () => backend.call<ActionsStatus>("status"),
     signIn: (host: string, token?: string) => backend.call<ActionsStatus>("signIn", { host, token }),
@@ -416,10 +436,10 @@ export const actionsApi = {
     comments: (repo: RepoRef, number: number) => read<Comment[]>("comments", { ...repo, number }),
     releases: (repo: RepoRef) => read<Release[]>("releases", repo),
     inbox: (all: boolean) => read<Notification[]>("inbox", { all }),
+    image,
 
     /** `sha` is the head commit the person saw; GitHub refuses the merge if the branch has moved since. */
-    mergePull: (repo: RepoRef, number: number, method: MergeMethod, sha: string) =>
-        backend.call<void>("mergePull", { ...repo, number, method, sha }),
+    mergePull: (repo: RepoRef, number: number, method: MergeMethod, sha: string) => backend.call<void>("mergePull", { ...repo, number, method, sha }),
     createPull: (repo: RepoRef, pull: NewPull) => backend.call<Pull>("createPull", { ...repo, ...pull }),
     setPullState: (repo: RepoRef, number: number, state: "open" | "closed") => backend.call<void>("setPullState", { ...repo, number, state }),
     reviewPull: (repo: RepoRef, number: number, event: ReviewEvent, body: string) =>
