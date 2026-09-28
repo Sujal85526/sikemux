@@ -1,5 +1,6 @@
-import { IconCheck, IconClock, IconClose, IconRun, IconStop, IconWarning } from "../../../plugin-api/ui";
+import { IconCheck, IconClock, IconClose, IconPullRequest, IconRun, IconStop, IconWarning } from "../../../plugin-api/ui";
 import { OUTCOME_LABEL, type Outcome } from "../runStatus";
+import type { Section } from "../state";
 
 export function GithubMark({ size = 16, className }: { size?: number; className?: string }) {
     return (
@@ -36,5 +37,65 @@ export function MoreDots({ size = 13 }: { size?: number }) {
             <circle cx="8" cy="8" r="1.4" />
             <circle cx="13" cy="8" r="1.4" />
         </svg>
+    );
+}
+
+function Stroke({ size, children }: { size: number; children: React.ReactNode }) {
+    return (
+        <svg
+            width={size}
+            height={size}
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.4}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true">
+            {children}
+        </svg>
+    );
+}
+
+export function SectionIcon({ section, size = 14 }: { section: Section; size?: number }) {
+    switch (section) {
+        case "actions":
+            return (
+                <Stroke size={size}>
+                    <circle cx="8" cy="8" r="6" />
+                    <path d="M6.7 5.6 10.3 8l-3.6 2.4z" />
+                </Stroke>
+            );
+        case "pulls":
+            return <IconPullRequest size={size} />;
+        case "issues":
+            return (
+                <Stroke size={size}>
+                    <circle cx="8" cy="8" r="6" />
+                    <circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none" />
+                </Stroke>
+            );
+        case "releases":
+            return (
+                <Stroke size={size}>
+                    <path d="M2.5 3.5v3.4c0 .4.2.8.4 1l5.2 5.2a1.2 1.2 0 0 0 1.7 0l3.3-3.3a1.2 1.2 0 0 0 0-1.7L7.9 2.9a1.4 1.4 0 0 0-1-.4H3.5a1 1 0 0 0-1 1Z" />
+                    <circle cx="5.3" cy="5.3" r=".8" fill="currentColor" stroke="none" />
+                </Stroke>
+            );
+        case "inbox":
+            return (
+                <Stroke size={size}>
+                    <path d="M2.2 8.8 4 3.4c.2-.5.6-.9 1.2-.9h5.6c.6 0 1 .4 1.2.9l1.8 5.4" />
+                    <path d="M2.2 8.8v3.4c0 .7.6 1.3 1.3 1.3h9c.7 0 1.3-.6 1.3-1.3V8.8h-3.2L9.6 10.4H6.4L5.4 8.8Z" />
+                </Stroke>
+            );
+    }
+}
+
+export function UpDown({ size = 12 }: { size?: number }) {
+    return (
+        <Stroke size={size}>
+            <path d="M5 6l3-3 3 3M5 10l3 3 3-3" />
+        </Stroke>
     );
 }

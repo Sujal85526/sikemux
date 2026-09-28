@@ -6,7 +6,6 @@ import { actionsApi } from "../api";
 import { useProjectRepo, useShownRepo } from "../project";
 import { actionsStatusR, actionsWorkflowsR } from "../resources";
 import { actionsSettings, needsRepo, pickRepo, refOf, showRepo, slugOf, updateView, useRunsView, viewOf } from "../state";
-import { GithubMark } from "./ActionsIcon";
 import { useBusy } from "./hooks";
 import { ActionsSidebar } from "./ActionsSidebar";
 import { ActionsSignIn } from "./ActionsSignIn";
@@ -86,21 +85,6 @@ export function ActionsPane({ paneId, active }: Props) {
 
     return (
         <div className="gha-pane" data-active={active ? "1" : "0"}>
-            <div className="gha-top">
-                <span className="gha-who">
-                    <GithubMark size={13} />
-                    <strong>{status.data?.login}</strong>
-                    <span className="gha-dim">on {status.data?.host}</span>
-                </span>
-                {status.data && !status.data.canWriteWorkflows && (
-                    <span className="gha-warn-note">This token cannot start or re-run workflows — it is missing the workflow scope.</span>
-                )}
-                <span className="gha-top-spacer" />
-                <button type="button" className="gha-link" disabled={signingOut} onClick={signOut}>
-                    Sign out
-                </button>
-            </div>
-
             <div className="gha-cols">
                 <ActionsSidebar
                     paneId={paneId}
@@ -108,6 +92,9 @@ export function ActionsPane({ paneId, active }: Props) {
                     view={view}
                     projectBranch={projectBranch}
                     onPickRepo={() => setPicking(true)}
+                    account={status.data}
+                    signingOut={signingOut}
+                    onSignOut={signOut}
                 />
                 <div className="gha-body">
                     {!needsRepo(view.section) ? (

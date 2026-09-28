@@ -30,33 +30,9 @@
     color: var(--text-tertiary);
 }
 
-/* ---- Account bar -------------------------------------------------------- */
-
-.gha-top {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    flex: 0 0 auto;
-    padding: var(--space-2) var(--space-5);
-    border-bottom: 1px solid var(--border);
-}
-.gha-who {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    font-size: var(--text-xs);
-    color: var(--text-secondary);
-}
-.gha-who strong {
-    font-weight: var(--weight-medium);
-    color: var(--text-primary);
-}
 .gha-warn-note {
     font-size: var(--text-2xs);
     color: var(--warn);
-}
-.gha-top-spacer {
-    flex: 1 1 auto;
 }
 
 /* ---- Sidebar ------------------------------------------------------------ */
@@ -66,7 +42,7 @@
     flex: 0 0 auto;
     display: flex;
     flex-direction: column;
-    gap: var(--space-0);
+    gap: var(--space-3);
     padding: var(--space-3) var(--gutter-rail) var(--gutter-rail);
     border-right: 1px solid var(--border);
     overflow-y: auto;
@@ -81,7 +57,7 @@
     align-items: center;
     gap: var(--space-2);
     width: 100%;
-    padding: var(--space-2);
+    padding: var(--space-1h) var(--space-2) var(--space-1h) var(--space-1h);
     border: 1px solid var(--border);
     border-radius: var(--radius-2);
     background: var(--gha-tint);
@@ -101,13 +77,104 @@
     box-shadow: var(--focus-ring);
     outline: none;
 }
+.gha-repo-mark {
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
+    border-radius: var(--radius-1);
+    background: color-mix(in oklab, var(--ink) 8%, transparent);
+    color: var(--text-primary);
+}
 .gha-repo-slug {
+    display: flex;
+    flex-direction: column;
     flex: 1 1 auto;
     min-width: 0;
+    line-height: 1.25;
     font-weight: var(--weight-medium);
     white-space: nowrap;
+}
+.gha-repo-owner,
+.gha-repo-name {
     overflow: hidden;
     text-overflow: ellipsis;
+}
+.gha-repo-owner {
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-normal);
+    color: var(--text-tertiary);
+}
+.gha-repo-name {
+    color: var(--text-primary);
+}
+.gha-repo-chevron {
+    display: inline-flex;
+    flex: 0 0 auto;
+    color: var(--text-tertiary);
+}
+.gha-repo-button:hover .gha-repo-chevron {
+    color: var(--text-secondary);
+}
+.gha-side-foot {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin: auto calc(-1 * var(--space-2)) 0;
+    padding: var(--space-2) var(--space-2) 0;
+    border-top: 1px solid var(--border);
+}
+.gha-side-foot > .gha-warn-note {
+    margin: 0;
+    line-height: 1.35;
+}
+.gha-side-foot-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+}
+.gha-side-who {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.3;
+}
+.gha-side-host,
+.gha-side-account {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.gha-side-host {
+    color: var(--text-secondary);
+    font-family: var(--mono);
+    font-size: var(--text-2xs);
+}
+.gha-side-account {
+    color: var(--text-tertiary);
+    font-size: var(--text-2xs);
+}
+.gha-foot-button {
+    flex: none;
+    height: 24px;
+    padding: 0 var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: none;
+    color: var(--text-tertiary);
+    font: inherit;
+    font-size: var(--text-2xs);
+    cursor: pointer;
+}
+.gha-foot-button:hover {
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+}
+.gha-foot-button:focus-visible {
+    outline: 0;
+    box-shadow: var(--focus-ring);
 }
 .gha-side-row {
     display: flex;
@@ -119,7 +186,7 @@
     color: var(--text-secondary);
 }
 .gha-side-item {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     min-width: 0;
     gap: var(--space-2);
     font: inherit;
@@ -128,6 +195,20 @@
     overflow: hidden;
     text-overflow: ellipsis;
     cursor: pointer;
+}
+.gha-side-item > svg {
+    flex: 0 0 auto;
+    color: var(--text-tertiary);
+    transition: color var(--dur-1) linear;
+}
+.gha-side-item:hover > svg,
+.gha-side-item[data-on="1"] > svg {
+    color: var(--text-primary);
+}
+.gha-side-item > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .gha-side-item:focus-visible {
     box-shadow: var(--focus-ring);
