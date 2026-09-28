@@ -34,8 +34,10 @@ import { errMessage, notify } from "../state/toast";
 import { DEFAULT_GIT_VIEW, type GitPanel } from "../state/types";
 import { copyText } from "../lib/clipboard";
 import { GitHostShell } from "../codehost/components/GitHostShell";
-import { useHostRepo } from "../codehost/project";
-import { compose } from "../codehost/state";
+import { BranchPullChip } from "../codehost/components/BranchPullChip";
+import { useBranchPulls, useHostRepo } from "../codehost/project";
+import { compose, showItem } from "../codehost/state";
+import type { Pull } from "../codehost/types";
 import { FileIcon } from "./FileIcon";
 import { TreeContextMenu, type CtxItem } from "./FileTree";
 import {
@@ -135,6 +137,11 @@ function GitWorkbench({
 
     const overview = useCachedResourceEnabled(fetching && !!repo, gitOverviewR, repo || "");
     const hostRepo = useHostRepo(repo || null, fetching && !!repo);
+    const branchPulls = useBranchPulls(hostRepo.repo, fetching && panel === "branches");
+    const openBranchPull = (pull: Pull) => {
+        cmd.setGitView(paneId, { area: "pulls" });
+        showItem(paneId, pull.number);
+    };
     const remotesRes = useCachedResourceEnabled(fetching && !!repo, gitRemotesR, repo || "");
     const stashesRes = useCachedResourceEnabled(fetching && !!repo, gitStashesR, repo || "");
     const remoteBranchesRes = useCachedResourceEnabled(fetching && !!repo && !!openRemote, gitRemoteBranchesR, repo || "", openRemote ?? "");
@@ -1051,6 +1058,9 @@ function GitWorkbench({
                     <span className="git-dot remote" />
                     <span className="git-row-name">{rb.name}</span>
                     {rb.tracked_by && <span className="git-row-hint">tracked</span>}
+                    {entry.remote === "origin" && branchPulls.get(rb.name) && (
+                        <BranchPullChip pull={branchPulls.get(rb.name)!} onOpen={() => openBranchPull(branchPulls.get(rb.name)!)} />
+                    )}
                     <span className="git-row-actions">
                         <RowButton
                             label={rb.tracked_by ? `Check out ${rb.tracked_by}` : "Check out as a local branch"}
@@ -1070,6 +1080,9 @@ function GitWorkbench({
                 title={b.upstream ? `tracks ${b.upstream}` : b.name}>
                 <span className={`git-dot${b.current ? " current" : ""}`} />
                 <span className="git-row-name">{b.name}</span>
+                {branchPulls.get(b.name) && (
+                    <BranchPullChip pull={branchPulls.get(b.name)!} onOpen={() => openBranchPull(branchPulls.get(b.name)!)} />
+                )}
                 {b.current && ahead > 0 && (
                     <Tooltip label={`Push ${ahead} commit${ahead > 1 ? "s" : ""}`}>
                         <button

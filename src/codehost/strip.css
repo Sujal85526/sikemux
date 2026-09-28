@@ -116,3 +116,27 @@
     height: auto;
     min-height: 0;
 }
+.git-pull-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex: 0 0 auto;
+    height: 18px;
+    padding: 0 var(--space-1h);
+    border: 1px solid color-mix(in oklab, var(--live) 34%, transparent);
+    border-radius: var(--radius-full);
+    background: color-mix(in oklab, var(--live) 10%, transparent);
+    color: var(--live);
+    font: inherit;
+    font-size: var(--text-3xs);
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+}
+.git-pull-chip[data-state="draft"] {
+    border-color: var(--border);
+    background: none;
+    color: var(--text-tertiary);
+}
+.git-pull-chip:hover {
+    border-color: color-mix(in oklab, var(--live) 60%, transparent);
+}

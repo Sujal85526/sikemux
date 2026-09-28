@@ -1,9 +1,11 @@
 import { useMemo } from "react";
 import { git, gitOverviewR } from "../plugin-api/host";
 import { resource, useResourceEnabled } from "../plugin-api/resources";
+import { isOwnBranch } from "./checkout";
 import { enabledCodeHosts } from "./registry";
+import { hostStatusR, pullsR } from "./resources";
 import { hostSettings, refOf } from "./state";
-import type { RepoRef } from "./types";
+import type { Pull, RepoRef } from "./types";
 
 /** `origin` is what people push to, so it is the remote that names the repository. */
 export function pickRemote(remotes: readonly { name: string; url: string }[]): string | null {
@@ -49,4 +51,22 @@ export function useHostRepo(cwd: string | null, enabled: boolean): HostRepo {
         branch: overview.data?.status.branch ?? null,
         loading: !!cwd && fromRemote.status === "loading" && !fromRemote.data,
     };
+}
+
+const NO_PULLS: ReadonlyMap<string, Pull> = new Map();
+
+/** The open pull request of each of the repository's own branches, by branch name, once someone is signed in to its host. */
+export function useBranchPulls(repo: RepoRef | null, enabled: boolean): ReadonlyMap<string, Pull> {
+    const status = useResourceEnabled(enabled && !!repo, hostStatusR, repo?.provider ?? "");
+    const pulls = useResourceEnabled(enabled && !!repo && !!status.data?.ok, pullsR, repo ?? { provider: "", owner: "", name: "" }, "open");
+    return useMemo(() => (repo && pulls.data ? pullsByBranch(pulls.data, repo) : NO_PULLS), [repo, pulls.data]);
+}
+
+/** A fork's pull request is left out: its branch of the same name is not the one in this repository. */
+export function pullsByBranch(pulls: readonly Pull[], repo: RepoRef): ReadonlyMap<string, Pull> {
+    const byBranch = new Map<string, Pull>();
+    for (const pull of pulls) {
+        if (pull.head && isOwnBranch(pull, repo)) byBranch.set(pull.head, pull);
+    }
+    return byBranch;
 }
