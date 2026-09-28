@@ -14,7 +14,7 @@ registerFrontendPlugin({
         {
             kind: GITHUB_HUB,
             title: "GitHub",
-            icon: (size) => <GithubMark size={size} />,
+            icon: (size) => <GithubMark size={size} className="icon-github" />,
             render: ({ paneId, visible }) => <ActionsPane paneId={paneId} active={visible} />,
             quickOpen: togglePalette,
         },

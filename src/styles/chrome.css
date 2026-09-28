@@ -419,6 +419,9 @@
 .icon-aws {
     color: var(--brand-aws);
 }
+.icon-github {
+    color: var(--text-primary);
+}
 
 .sess-name {
     flex: 1;
