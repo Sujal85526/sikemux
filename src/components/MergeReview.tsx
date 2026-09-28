@@ -1,16 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { useMemo, useRef, type ReactNode } from "react";
 import { DiffEditor } from "./DiffEditor";
-import { FileIcon } from "./FileIcon";
-import { IconChevron } from "./Icons";
-import { Tooltip } from "./Tooltip";
+import { FileReviewList } from "./FileReviewList";
 import { hasUnstaged, isStaged, type GitFile } from "../api/git";
-import { basename, dirname, joinPath } from "../lib/paths";
+import { joinPath } from "../lib/paths";
 import { gitFileBadges, gitStatusBadge, type GitStatusBadge } from "./git/gitFileStatus";
 
 const REVIEW_ROW_ESTIMATE = 250;
 const REVIEW_DOUBLE_ROW_ESTIMATE = 470;
-const REVIEW_HEADER_HEIGHT = 29;
 
 function sameFileList(a: readonly GitFile[], b: readonly GitFile[]): boolean {
     if (a === b) return true;
@@ -46,155 +42,35 @@ export function MergeReview({
     fileActions?: (file: GitFile) => ReactNode;
 }) {
     const files = useStableFileList(incomingFiles);
-    const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-    const itemRefs = useRef(new Map<string, HTMLDivElement>());
-    const listRef = useRef<HTMLDivElement>(null);
+    const byPath = useMemo(() => new Map(files.map((file) => [file.path, file])), [files]);
     const paths = useMemo(() => files.map((file) => file.path), [files]);
-    const pathSet = useMemo(() => new Set(paths), [paths]);
-    const pathIndex = useMemo(() => new Map(paths.map((path, index) => [path, index])), [paths]);
-    const virtualizer = useVirtualizer({
-        count: files.length,
-        getScrollElement: () => listRef.current,
-        estimateSize: (index) => {
-            const file = files[index];
-            if (!file || collapsed.has(file.path)) return REVIEW_HEADER_HEIGHT;
-            return isStaged(file) && hasUnstaged(file) ? REVIEW_DOUBLE_ROW_ESTIMATE : REVIEW_ROW_ESTIMATE;
-        },
-        getItemKey: (index) => files[index]?.path ?? index,
-        overscan: 2,
-        initialRect: { width: 1000, height: 800 },
-    });
-
-    useEffect(() => {
-        setCollapsed((current) => {
-            const next = new Set([...current].filter((path) => pathSet.has(path)));
-            return next.size === current.size ? current : next;
-        });
-    }, [pathSet]);
-
-    useEffect(() => {
-        virtualizer.measure();
-    }, [collapsed, files, virtualizer]);
-
-    const scrollTargets = useRef({ pathIndex, virtualizer });
-    scrollTargets.current = { pathIndex, virtualizer };
-    const focusListed = !!focusPath && pathSet.has(focusPath);
-
-    // Only a new focus (or one that has just appeared in the list) scrolls. A
-    // status refresh must leave the reader where they were.
-    useEffect(() => {
-        if (!focusPath || !focusListed) return;
-        setCollapsed((current) => {
-            if (!current.has(focusPath)) return current;
-            const next = new Set(current);
-            next.delete(focusPath);
-            return next;
-        });
-        const { pathIndex: index, virtualizer: list } = scrollTargets.current;
-        const row = index.get(focusPath) ?? -1;
-        window.requestAnimationFrame(() => {
-            if (row >= 0) list.scrollToIndex(row, { align: "start" });
-            else itemRefs.current.get(focusPath)?.scrollIntoView?.({ block: "start" });
-        });
-    }, [focusPath, focusListed]);
-
-    const toggle = (path: string) => {
-        setCollapsed((current) => {
-            const next = new Set(current);
-            next.has(path) ? next.delete(path) : next.add(path);
-            return next;
-        });
-    };
-
-    const expandedCount = paths.filter((path) => !collapsed.has(path)).length;
-
     return (
-        <div className="merge-review">
-            <div className="merge-review-toolbar">
-                <span className="merge-review-count">
-                    {files.length} {files.length === 1 ? "file" : "files"}
-                </span>
-                <button
-                    type="button"
-                    className="merge-review-action"
-                    onClick={() => setCollapsed(new Set())}
-                    disabled={expandedCount === files.length}>
-                    Expand all
-                </button>
-                <button type="button" className="merge-review-action" onClick={() => setCollapsed(new Set(paths))} disabled={expandedCount === 0}>
-                    Collapse all
-                </button>
-            </div>
-            <div className="merge-review-list" ref={listRef}>
-                <div className="merge-review-virtual" style={{ height: virtualizer.getTotalSize() }}>
-                    {virtualizer.getVirtualItems().map((row) => {
-                        const file = files[row.index];
-                        if (!file) return null;
-                        // Placed by `top`, not a transform: WebKit draws a sticky file header inside a transformed box at the box's bottom and leaves it there as the list scrolls.
-                        const style: CSSProperties = {
-                            top: row.start,
-                            height: row.size,
-                            overflow: "clip",
-                        };
-                        return (
-                            <div key={row.key} className="merge-review-virtual-item" style={style}>
-                                <div ref={virtualizer.measureElement} data-index={row.index}>
-                                    {renderFile(file)}
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
-        </div>
+        <FileReviewList
+            paths={paths}
+            focusPath={focusPath}
+            estimate={(path) => {
+                const file = byPath.get(path);
+                return file && isStaged(file) && hasUnstaged(file) ? REVIEW_DOUBLE_ROW_ESTIMATE : REVIEW_ROW_ESTIMATE;
+            }}
+            onOpenFile={(path) => onOpenFile(joinPath(repo, path))}
+            status={(path) => {
+                const file = byPath.get(path);
+                return file ? gitFileBadges(file).map((badge) => <GitStatusSymbol key={badge.source} badge={badge} />) : null;
+            }}
+            actions={
+                fileActions
+                    ? (path) => {
+                          const file = byPath.get(path);
+                          return file ? fileActions(file) : null;
+                      }
+                    : undefined
+            }
+            body={(path, focused) => {
+                const file = byPath.get(path);
+                return file ? <MergeFileDiff repo={repo} file={file} editable={focused && hasUnstaged(file)} onSaved={onSaved} /> : null;
+            }}
+        />
     );
-
-    function renderFile(file: GitFile) {
-        const path = file.path;
-        const open = !collapsed.has(path);
-        const focused = path === focusPath;
-        const unstaged = hasUnstaged(file);
-        return (
-            <div
-                className={`acc-item merge-review-item${open ? " open" : ""}${focused ? " focused" : ""}`}
-                key={path}
-                ref={(node) => {
-                    if (node) itemRefs.current.set(path, node);
-                    else itemRefs.current.delete(path);
-                }}>
-                <div className="acc-header merge-file-header" onClick={() => toggle(path)}>
-                    <Tooltip label={open ? "Collapse" : "Expand"}>
-                        <button type="button" className="acc-toggle" aria-label={`${open ? "Collapse" : "Expand"} ${path}`}>
-                            <span className={`acc-chev${open ? " open" : ""}`}>
-                                <IconChevron size={11} />
-                            </span>
-                        </button>
-                    </Tooltip>
-                    <FileIcon name={basename(path)} size={15} />
-                    <Tooltip label="Open in editor">
-                        <button
-                            type="button"
-                            className="acc-name"
-                            onClick={(event) => {
-                                event.stopPropagation();
-                                onOpenFile(joinPath(repo, path));
-                            }}>
-                            {dirname(path) && <span className="merge-file-dir">{dirname(path)}/</span>}
-                            <span className="merge-file-base">{basename(path)}</span>
-                        </button>
-                    </Tooltip>
-                    <span className="acc-grow" />
-                    {fileActions && <span className="merge-file-actions">{fileActions(file)}</span>}
-                    <span className="merge-file-status">
-                        {gitFileBadges(file).map((badge) => (
-                            <GitStatusSymbol key={badge.source} badge={badge} />
-                        ))}
-                    </span>
-                </div>
-                {open && <MergeFileDiff repo={repo} file={file} editable={focused && unstaged} onSaved={onSaved} />}
-            </div>
-        );
-    }
 }
 
 function GitStatusSymbol({ badge }: { badge: GitStatusBadge | null }) {
