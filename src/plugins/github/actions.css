@@ -762,15 +762,14 @@
 
 /* ---- Dialogs ------------------------------------------------------------ */
 
-.gha-inputs {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
+.gha-inputs > .gha-link {
+    align-self: flex-start;
 }
 .gha-input-row {
     display: grid;
-    grid-template-columns: 1fr 1fr 28px;
-    gap: var(--space-1);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 28px;
+    align-items: center;
+    gap: var(--space-1h);
 }
 
 /* ---- Narrow panes ------------------------------------------------------- */
