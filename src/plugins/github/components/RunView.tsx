@@ -1,21 +1,10 @@
 import { memo, useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { confirmDialog, copyText, notify, openUrl, reportError, swallow } from "../../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
-import { EmptyState, IconChevron, IconClose, IconGit, IconRefresh, SkeletonRows, Tooltip } from "../../../plugin-api/ui";
+import { EmptyState, IconChevron, IconGit, IconRefresh, SkeletonRows, Tooltip } from "../../../plugin-api/ui";
 import { actionsApi, failureMessage, type Job, type RepoRef, type Run } from "../api";
 import { actionsArtifactsR, actionsRunAttemptR, actionsRunR, actionsTimingR } from "../resources";
-import {
-    elapsedMs,
-    failedStep,
-    formatAgo,
-    formatDuration,
-    isUnfinished,
-    jobsSummary,
-    outcomeOf,
-    OUTCOME_LABEL,
-    summaryJobs,
-    watchIsNewer,
-} from "../runStatus";
+import { elapsedMs, failedStep, formatAgo, formatDuration, isUnfinished, outcomeOf, OUTCOME_LABEL, summaryJobs, watchIsNewer } from "../runStatus";
 import { closeRun, updateView } from "../state";
 import { OutcomeIcon } from "./ActionsIcon";
 import { Annotations } from "./Annotations";
@@ -336,8 +325,6 @@ function RunSummaries({ repo, jobs, finished, active }: { repo: RepoRef; jobs: J
     );
 }
 
-type JobFilter = "all" | "failed";
-
 interface Props {
     paneId: string;
     repo: RepoRef;
@@ -354,7 +341,6 @@ export function RunView(props: Props) {
 
 function RunDetailView({ paneId, repo, runId, openJob, active, canWrite }: Props) {
     const [attempt, setAttempt] = useState<number | null>(null);
-    const [jobFilter, setJobFilter] = useState<JobFilter>("all");
     const detail = useResourceEnabled(active && attempt === null, actionsRunR, repo, runId);
     const older = useResourceEnabled(active && attempt !== null, actionsRunAttemptR, repo, runId, attempt ?? 0);
     const shown = attempt === null ? detail : older;
@@ -447,7 +433,6 @@ function RunDetailView({ paneId, repo, runId, openJob, active, canWrite }: Props
     const openFromGraph = useCallback(
         (jobId: number) => {
             updateView(paneId, { job: jobId });
-            setJobFilter("all");
             requestAnimationFrame(() =>
                 viewRef.current?.querySelector(`[data-job-id="${jobId}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" }),
             );
@@ -469,12 +454,11 @@ function RunDetailView({ paneId, repo, runId, openJob, active, canWrite }: Props
     }
     if (!run) return <EmptyState message="That run is gone." />;
 
-    const summary = jobsSummary(jobs);
-    const listed = jobFilter === "failed" ? jobs.filter((job) => outcomeOf(job) === "failure") : jobs;
+    const picked = jobs.find((job) => job.id === openJob) ?? null;
     return (
         <div className="gha-run-view" ref={viewRef}>
             <button type="button" className="gha-back" onClick={() => closeRun(paneId)}>
-                <IconClose size={11} /> Back to runs
+                <IconChevron size={11} /> Back to runs
             </button>
             <Header run={run} repo={repo} canWrite={canWrite} onRefresh={() => void shown.refresh()} onDeleted={() => closeRun(paneId)} />
             {moving && watchError && (
@@ -501,44 +485,20 @@ function RunDetailView({ paneId, repo, runId, openJob, active, canWrite }: Props
             <Approvals repo={repo} runId={runId} status={run.status} conclusion={run.conclusion} active={active} />
             <JobGraph run={run} jobs={jobs} now={now} openJob={openJob} onOpen={openFromGraph} fileShown={showFile} onToggleFile={toggleFile} />
             {showFile && <WorkflowFile repo={repo} workflowId={run.workflowId} active={active} />}
-            <div className="gha-jobs-head">
-                {summary.total > 0 ? (
-                    <span>
-                        {summary.done} of {summary.total} job{summary.total === 1 ? "" : "s"} done
-                        {summary.failed > 0 && <span className="gha-failed-count"> · {summary.failed} failed</span>}
-                    </span>
-                ) : (
-                    <span className="gha-dim">No jobs yet</span>
-                )}
-                {summary.failed > 0 && (
-                    <div className="gha-chips">
-                        {(["all", "failed"] as const).map((filter) => (
-                            <button
-                                key={filter}
-                                type="button"
-                                className="gha-chip"
-                                data-on={jobFilter === filter ? "1" : "0"}
-                                onClick={() => setJobFilter(filter)}>
-                                {filter === "all" ? "All jobs" : "Failed"}
-                            </button>
-                        ))}
-                    </div>
-                )}
-            </div>
-            <div className="gha-jobs">
-                {listed.map((job) => (
+            {picked && (
+                <div className="gha-jobs">
                     <JobCard
-                        key={job.id}
+                        key={picked.id}
                         paneId={paneId}
-                        job={job}
+                        job={picked}
                         repo={repo}
-                        now={job.completedAt ? coarse(now) : now}
+                        now={picked.completedAt ? coarse(now) : now}
                         active={active}
                         canWrite={canWrite}
-                        open={openJob === job.id}
+                        open
                     />
-                ))}
-            </div>
+                </div>
+            )}
             <RunSummaries repo={repo} jobs={jobs} finished={!isUnfinished(run)} active={active} />
             <div ref={artifactsRef}>
                 <Artifacts repo={repo} runId={runId} active={active && run.status === "completed"} />

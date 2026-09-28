@@ -1,7 +1,7 @@
 import { memo, useMemo } from "react";
 import type { Job, Run } from "../api";
 import { stagesOf } from "../jobGraph";
-import { elapsedMs, formatDuration, outcomeOf } from "../runStatus";
+import { elapsedMs, formatDuration, jobsSummary, outcomeOf } from "../runStatus";
 import { OutcomeIcon } from "./ActionsIcon";
 import { coarse } from "./hooks";
 
@@ -23,12 +23,18 @@ function fileName(path: string | null): string | null {
 export const JobGraph = memo(function JobGraph({ run, jobs, now, openJob, onOpen, fileShown, onToggleFile }: Props) {
     const stages = useMemo(() => stagesOf(jobs), [jobs]);
     const name = fileName(run.path);
+    const summary = jobsSummary(jobs);
 
     return (
         <section className="gha-graph">
             <div className="gha-graph-head">
                 <span className="gha-graph-file">{name ?? run.name}</span>
-                <span className="gha-dim">on: {run.event}</span>
+                {summary.total > 0 && (
+                    <span className="gha-dim">
+                        {summary.done} of {summary.total} job{summary.total === 1 ? "" : "s"} done
+                        {summary.failed > 0 && <span className="gha-failed-count"> · {summary.failed} failed</span>}
+                    </span>
+                )}
                 <span className="gha-graph-spacer" />
                 {run.path?.startsWith(".github/") && (
                     <button type="button" className="gha-link" onClick={onToggleFile}>
@@ -60,7 +66,7 @@ export const JobGraph = memo(function JobGraph({ run, jobs, now, openJob, onOpen
                                                 <OutcomeIcon outcome={outcome} size={12} />
                                                 <span className="gha-graph-job-name">{label}</span>
                                                 {took !== null && outcome !== "skipped" && (
-                                                    <span className="gha-dim gha-mono">{formatDuration(took)}</span>
+                                                    <span className="gha-graph-job-took">{formatDuration(took)}</span>
                                                 )}
                                             </button>
                                         );

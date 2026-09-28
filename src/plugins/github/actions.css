@@ -375,15 +375,6 @@
     flex-direction: column;
     min-height: 0;
 }
-.gha-jobs-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
-    padding: var(--space-3) var(--space-5) var(--space-2);
-    font-size: var(--text-2xs);
-    color: var(--text-tertiary);
-}
 .gha-failed-count {
     color: var(--danger);
 }
@@ -541,6 +532,9 @@
 .gha-back:hover {
     color: var(--text-primary);
 }
+.gha-back > svg {
+    transform: rotate(180deg);
+}
 .gha-run-head {
     display: grid;
     grid-template-columns: 30px minmax(0, 1fr);
@@ -581,8 +575,7 @@
 .gha-jobs {
     display: flex;
     flex-direction: column;
-    gap: var(--space-0);
-    padding: 0 var(--space-3) var(--space-5);
+    padding: var(--space-3) var(--space-3) 0;
 }
 .gha-job-head {
     display: flex;
@@ -1448,8 +1441,10 @@
     box-shadow: var(--focus-ring);
     outline: none;
 }
-.gha-graph-job > .gha-mono {
+.gha-graph-job-took {
     flex: 0 0 auto;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-tertiary);
     white-space: nowrap;
 }
 .gha-graph-job-name {
@@ -1466,7 +1461,7 @@
 .gha-run-summaries {
     display: flex;
     flex-direction: column;
-    padding: 0 var(--space-5) var(--space-2);
+    padding: var(--space-3) var(--space-5) var(--space-2);
 }
 
 .gha-menu-anchor {
