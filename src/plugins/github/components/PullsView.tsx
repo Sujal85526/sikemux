@@ -9,7 +9,7 @@ import { needsPull } from "../compose";
 import { compose, openRunFrom, setListState, showItem } from "../state";
 import { CommentThread } from "./CommentThread";
 import { Labels, StateMark } from "./Bits";
-import { useNow } from "./hooks";
+import { useBusy, useNow } from "./hooks";
 import { NewPullForm } from "./NewPullForm";
 import { PullChecks } from "./PullChecks";
 import { ReviewBox } from "./ReviewBox";
@@ -97,6 +97,7 @@ function PullDetail({ repo, number, active, login, onBack, onOpenRun }: DetailPr
     const files = useResourceEnabled(active, githubPullFilesR, repo, number);
     const reviews = useResourceEnabled(active, githubPullReviewsR, repo, number);
     const now = useNow(false);
+    const [busy, runBusy] = useBusy();
 
     if (pull.status === "loading" && !pull.data) return <SkeletonRows rows={8} label="Loading pull request" />;
     if (!pull.data) {
@@ -175,19 +176,19 @@ function PullDetail({ repo, number, active, login, onBack, onOpenRun }: DetailPr
                 <div className="gha-detail-actions">
                     {found.state === "open" && !found.draft && (
                         <>
-                            <button type="button" className="gha-btn primary" onClick={() => void merge("squash")}>
+                            <button type="button" className="gha-btn primary" disabled={busy} onClick={() => runBusy(() => merge("squash"))}>
                                 Squash and merge
                             </button>
-                            <button type="button" className="gha-btn" onClick={() => void merge("merge")}>
+                            <button type="button" className="gha-btn" disabled={busy} onClick={() => runBusy(() => merge("merge"))}>
                                 Merge
                             </button>
-                            <button type="button" className="gha-btn" onClick={() => void merge("rebase")}>
+                            <button type="button" className="gha-btn" disabled={busy} onClick={() => runBusy(() => merge("rebase"))}>
                                 Rebase and merge
                             </button>
                         </>
                     )}
                     {found.state !== "merged" && (
-                        <button type="button" className={closing ? "gha-btn danger" : "gha-btn"} onClick={() => void setState()}>
+                        <button type="button" className={closing ? "gha-btn danger" : "gha-btn"} disabled={busy} onClick={() => runBusy(setState)}>
                             {closing ? "Close" : "Reopen"}
                         </button>
                     )}

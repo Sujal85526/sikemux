@@ -7,6 +7,7 @@ import { useProjectRepo, useShownRepo } from "../project";
 import { actionsStatusR, actionsWorkflowsR } from "../resources";
 import { actionsSettings, needsRepo, pickRepo, refOf, showRepo, slugOf, updateView, useRunsView, viewOf } from "../state";
 import { GithubMark } from "./ActionsIcon";
+import { useBusy } from "./hooks";
 import { ActionsSidebar } from "./ActionsSidebar";
 import { ActionsSignIn } from "./ActionsSignIn";
 import { DispatchDialog } from "./DispatchDialog";
@@ -30,6 +31,7 @@ export function ActionsPane({ paneId, active }: Props) {
     const project = useProjectRepo(active && !!status.data?.ok);
     const followBranch = actionsSettings.useSelect((settings) => settings.followBranch);
     const [picking, setPicking] = useState(false);
+    const [signingOut, runSignOut] = useBusy();
 
     const repo = useShownRepo(view.repo, project.repo);
 
@@ -53,13 +55,15 @@ export function ActionsPane({ paneId, active }: Props) {
     }, [paneId, projectSlug]);
 
     const signOut = () =>
-        void actionsApi
-            .signOut()
-            .then(() => {
-                notify("success", "Signed out of GitHub");
-                invalidate((kind) => kind.startsWith("gha."));
-            })
-            .catch(reportError("Could not sign out"));
+        runSignOut(() =>
+            actionsApi
+                .signOut()
+                .then(() => {
+                    notify("success", "Signed out of GitHub");
+                    invalidate((kind) => kind.startsWith("gha."));
+                })
+                .catch(reportError("Could not sign out")),
+        );
 
     if (status.status === "loading" && !status.data) {
         return (
@@ -94,7 +98,7 @@ export function ActionsPane({ paneId, active }: Props) {
                     <span className="gha-warn-note">This token cannot start or re-run workflows — it is missing the workflow scope.</span>
                 )}
                 <span className="gha-top-spacer" />
-                <button type="button" className="gha-link" onClick={signOut}>
+                <button type="button" className="gha-link" disabled={signingOut} onClick={signOut}>
                     Sign out
                 </button>
             </div>

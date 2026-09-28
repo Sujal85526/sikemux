@@ -5,7 +5,7 @@ import { Checkbox, EmptyState, IconCheck, SkeletonRows } from "../../../plugin-a
 import { actionsApi, failureMessage, type Notification } from "../api";
 import { githubInboxR } from "../resources";
 import { formatAgo } from "../runStatus";
-import { useNow } from "./hooks";
+import { useBusy, useNow } from "./hooks";
 
 /** GitHub's reason codes, in words. */
 const REASON: Record<string, string> = {
@@ -46,6 +46,7 @@ export function InboxView({ active }: { active: boolean }) {
     const [all, setAll] = useState(false);
     const inbox = useResourceEnabled(active, githubInboxR, all);
     const now = useNow(false);
+    const [busy, runBusy] = useBusy();
 
     if (inbox.status === "loading" && !inbox.data) return <SkeletonRows rows={8} label="Loading notifications" />;
     if (inbox.error) {
@@ -67,13 +68,15 @@ export function InboxView({ active }: { active: boolean }) {
         void actionsApi.markRead(item.id).then(refresh).catch(swallow("mark it read"));
     };
     const readEverything = () =>
-        void actionsApi
-            .markAllRead()
-            .then(() => {
-                notify("success", "Inbox cleared");
-                refresh();
-            })
-            .catch(reportError("Could not clear the inbox"));
+        runBusy(() =>
+            actionsApi
+                .markAllRead()
+                .then(() => {
+                    notify("success", "Inbox cleared");
+                    refresh();
+                })
+                .catch(reportError("Could not clear the inbox")),
+        );
 
     return (
         <div className="gha-list">
@@ -84,7 +87,7 @@ export function InboxView({ active }: { active: boolean }) {
                 <span className="gha-dim">
                     {rows.filter((row) => row.unread).length} unread
                     {rows.length > 0 && (
-                        <button type="button" className="gha-link" onClick={readEverything}>
+                        <button type="button" className="gha-link" disabled={busy} onClick={readEverything}>
                             Mark all read
                         </button>
                     )}

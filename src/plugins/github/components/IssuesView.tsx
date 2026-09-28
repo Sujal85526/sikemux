@@ -7,7 +7,7 @@ import { formatAgo } from "../runStatus";
 import { compose, setListState, showItem, updateView } from "../state";
 import { Labels, StateMark } from "./Bits";
 import { CommentThread } from "./CommentThread";
-import { useNow } from "./hooks";
+import { useBusy, useNow } from "./hooks";
 import { NewIssueForm } from "./NewIssueForm";
 
 const LIST_STATES = ["open", "closed", "all"];
@@ -34,6 +34,7 @@ function IssueRow({ issue, now, onOpen }: { issue: Issue; now: number; onOpen: (
 function IssueDetail({ repo, number, active, onBack }: { repo: RepoRef; number: number; active: boolean; onBack: () => void }) {
     const issue = useResourceEnabled(active, githubIssueR, repo, number);
     const now = useNow(false);
+    const [busy, runBusy] = useBusy();
     if (issue.status === "loading" && !issue.data) return <SkeletonRows rows={6} label="Loading issue" />;
     if (!issue.data) {
         return (
@@ -44,13 +45,15 @@ function IssueDetail({ repo, number, active, onBack }: { repo: RepoRef; number: 
     const closing = found.state === "open";
 
     const setState = () =>
-        void actionsApi
-            .setIssueState(repo, found.number, closing ? "closed" : "open")
-            .then(() => {
-                notify("success", closing ? `Closed #${found.number}` : `Reopened #${found.number}`);
-                invalidate((kind) => kind === "gha.issue" || kind === "gha.issues");
-            })
-            .catch(reportError(closing ? "Could not close it" : "Could not reopen it"));
+        runBusy(() =>
+            actionsApi
+                .setIssueState(repo, found.number, closing ? "closed" : "open")
+                .then(() => {
+                    notify("success", closing ? `Closed #${found.number}` : `Reopened #${found.number}`);
+                    invalidate((kind) => kind === "gha.issue" || kind === "gha.issues");
+                })
+                .catch(reportError(closing ? "Could not close it" : "Could not reopen it")),
+        );
 
     return (
         <div className="gha-detail">
@@ -69,7 +72,7 @@ function IssueDetail({ repo, number, active, onBack }: { repo: RepoRef; number: 
                     <Labels labels={found.labels} />
                 </div>
                 <div className="gha-detail-actions">
-                    <button type="button" className="gha-btn" onClick={setState}>
+                    <button type="button" className="gha-btn" disabled={busy} onClick={setState}>
                         {closing ? "Close issue" : "Reopen issue"}
                     </button>
                     <button type="button" className="gha-link" onClick={() => void openUrl(found.url).catch(swallow("open GitHub"))}>
