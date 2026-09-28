@@ -17,6 +17,7 @@ import { Panel, PanelHeader } from "./Panel";
 import { animate, type Box, contentBox, EASE_LEAVE, glideSelection, leavingRef } from "../lib/motion";
 import { CountUp } from "./RollingText";
 import { leavingRail } from "./railMotion";
+import { RailToggle } from "./RailToggle";
 
 const RECENTS_PAGE = 12;
 const USAGE_REFRESH_MS = 5 * 60_000;
@@ -635,6 +636,7 @@ function AgentHeader({
                             <IconPlus size={15} />
                         </button>
                     </Tooltip>
+                    <RailToggle edge="end" />
                 </div>
             </div>
             <div className="agent-header-types" role="tablist" aria-label="Agent provider">

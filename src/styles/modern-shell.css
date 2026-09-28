@@ -111,6 +111,16 @@ textarea:focus,
     padding: var(--gutter-rail) var(--gutter-rail) var(--space-4);
 }
 
+.side-rail-head {
+    display: flex;
+    flex: 0 0 auto;
+    padding: var(--space-1h) var(--space-2) 0;
+}
+
+.side-rail-head + .rail-scroll {
+    padding-top: 0;
+}
+
 .side-rail .panel-group,
 .workspace-rail .panel-group {
     margin-top: var(--space-4);

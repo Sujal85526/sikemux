@@ -22,6 +22,7 @@ import { AgentIcon, IconAgent, IconClose, IconCommand, IconFolder, IconPencil, I
 import { Tooltip } from "./Tooltip";
 import { EmptyState, Panel, PanelHeader } from "./Panel";
 import { UpdateChip, VersionChip } from "./TopBar";
+import { RailToggle } from "./RailToggle";
 import { AgentStateIndicator, showsAgentState } from "./AgentStateIndicator";
 import { agentIdsOf } from "../state/selectors";
 import { pluginSurface, type FrontendPlugin } from "../plugins/registry";
@@ -718,6 +719,9 @@ export const SideRail = memo(function SideRail() {
     return (
         <RailContext.Provider value={rail}>
             <aside ref={leavingRail} className="side-rail" onClickCapture={settingsOpen ? cmd.closeSettings : undefined}>
+                <div className="side-rail-head">
+                    <RailToggle edge="start" />
+                </div>
                 <div className="rail-scroll">
                     <Group
                         label="Projects"

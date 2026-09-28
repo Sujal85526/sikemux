@@ -9,7 +9,7 @@ import { swallow } from "../state/toast";
 import { gitOverviewR } from "../state/resources.defs";
 import { useInstalledPlugins } from "../plugins/installed";
 import { useStore } from "../state/store";
-import { IconAgent, IconBattery, IconFocus, IconGit, IconMic, IconPanelLeft, IconZoom } from "./Icons";
+import { IconBattery, IconFocus, IconGit, IconMic, IconZoom } from "./Icons";
 import { WorkspaceTabs } from "./Workspace";
 import { useVoice } from "../voice/dictation";
 import { PRIMARY_SHORTCUT } from "../lib/platform";
@@ -214,8 +214,6 @@ export const TopBar = memo(function TopBar() {
     const session = useStore((s) => s.sessions[s.activeSessionId]);
     const zoomed = useStore((s) => s.zoomedPaneId != null);
     const zen = useStore((s) => s.zenMode);
-    const sideRailVisible = useStore((s) => s.sideRailOpen && !s.zenMode);
-    const agentRailVisible = useStore((s) => s.agentRailOpen && !s.zenMode);
     const [stripHovered, setStripHovered] = useState(false);
     const plugins = useInstalledPlugins();
 
@@ -248,24 +246,6 @@ export const TopBar = memo(function TopBar() {
                     <Tooltip label="Focus mode — hide rails">
                         <button className={`tb-btn${zen ? " on" : ""}`} onClick={cmd.toggleZen} aria-pressed={zen} aria-label="Focus mode">
                             <IconFocus size={15} />
-                        </button>
-                    </Tooltip>
-                    <Tooltip label="Toggle sessions rail">
-                        <button
-                            className={`tb-btn${sideRailVisible ? " on" : ""}`}
-                            onClick={cmd.toggleSideRail}
-                            aria-pressed={sideRailVisible}
-                            aria-label="Toggle sessions rail">
-                            <IconPanelLeft size={15} />
-                        </button>
-                    </Tooltip>
-                    <Tooltip label="Toggle agents rail">
-                        <button
-                            className={`tb-btn${agentRailVisible ? " on" : ""}`}
-                            onClick={cmd.toggleAgentRail}
-                            aria-pressed={agentRailVisible}
-                            aria-label="Toggle agents rail">
-                            <IconAgent size={15} />
                         </button>
                     </Tooltip>
                     <Tooltip label={`Settings — ${PRIMARY_SHORTCUT},`}>
