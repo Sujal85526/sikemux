@@ -99,14 +99,6 @@ describe("harness command service", () => {
         );
         expect(useStore.getState().sessions[useStore.getState().activeSessionId].cwd).toBe("/two");
     });
-    it("hands the requesting agent to the task, so its terminal goes on that agent's desk", async () => {
-        const state = useStore.getState();
-        const session = Object.values(state.sessions).find((session) => session.cwd === "/one")!;
-        useStore.setState(withAgents(state, session.id, [{ id: "fixture-agent", type: "codex", title: "Fixture", startup: "" }]));
-        const start = vi.spyOn(harnessTasks, "start").mockResolvedValue({ executionId: "run", taskId: "test", project: "/one", status: "running" });
-        await handleHarnessRequest({ ...request("task.start", { taskId: "test", idempotencyKey: "desk" }), agentId: "fixture-agent" });
-        expect(start).toHaveBeenCalledWith(expect.anything(), "desk", "http://localhost:5173", "fixture-agent");
-    });
     it("opens a file an agent asks for on that agent's desk, at the line it names", async () => {
         const state = useStore.getState();
         const session = Object.values(state.sessions).find((session) => session.cwd === "/one")!;

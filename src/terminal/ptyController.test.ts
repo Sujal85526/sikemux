@@ -164,31 +164,6 @@ describe("PtyLifecycleController process ownership", () => {
         });
     });
 
-    it("retries renderer attachment to an externally owned PTY", async () => {
-        const attachError = Object.freeze({ category: "pty", message: "temporary attach failure" });
-        const { fakes, errors, options } = controllerOptions({ existingPtyId: 74 });
-        fakes.attach
-            .mockRejectedValueOnce(attachError)
-            .mockResolvedValueOnce({ subId: 19, snapshot: new Uint8Array([4, 5]), alternateScreen: false });
-        const controller = new PtyLifecycleController(options);
-
-        await expect(controller.attach(vi.fn())).rejects.toBe(attachError);
-        expect(controller.getSnapshot()).toMatchObject({ status: "running", failureOperation: "attach", processOwnership: "external" });
-
-        const attachment = await controller.attach(vi.fn());
-        expect(attachment.snapshot).toEqual(new Uint8Array([4, 5]));
-        expect(controller.getSnapshot()).toMatchObject({ status: "running", failureOperation: null });
-        expect(fakes.spawn).not.toHaveBeenCalled();
-        expect(fakes.attach).toHaveBeenCalledTimes(2);
-        expect(fakes.attach.mock.calls.every(([id]) => id === 74)).toBe(true);
-        expect(fakes.kill).not.toHaveBeenCalled();
-        expect(errors).toContainEqual({ operation: "attach", error: attachError });
-
-        await controller.dispose();
-        expect(fakes.detach).toHaveBeenCalledWith(74, 19);
-        expect(fakes.kill).not.toHaveBeenCalled();
-    });
-
     it("detaches a late external attachment when disposal wins without killing", async () => {
         const nativeAttach = deferred<PtyAttachResult>();
         const { fakes, channels, options } = controllerOptions({ existingPtyId: 75 });

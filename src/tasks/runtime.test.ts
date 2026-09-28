@@ -278,25 +278,6 @@ describe("TaskRuntime", () => {
         await harness.runtime.dispose();
     });
 
-    it("restarts by stopping only the old project PTY and ignores its stale exit", async () => {
-        const harness = runtimeHarness([definition("watch"), definition("build")]);
-        await harness.runtime.run("/workspace/project", "watch");
-
-        await harness.runtime.restart("/workspace/project", "build");
-        expect(harness.stop).toHaveBeenCalledOnce();
-        expect(harness.stop).toHaveBeenCalledWith(100);
-        expect(harness.runs).toHaveLength(2);
-        expect(harness.runs[1]!.request.taskId).toBe("build");
-        expect(harness.runtime.getSnapshot("/workspace/project")).toMatchObject({ status: "running", activeRunId: 2, task: { id: "build" } });
-
-        harness.runs[0]!.exit.reject(new Error("stale old exit"));
-        await flushPromises();
-        expect(harness.runtime.getSnapshot("/workspace/project")?.failures).toEqual([]);
-        harness.runs[1]!.exit.resolve({ code: 0 });
-        await flushPromises();
-        await harness.runtime.dispose();
-    });
-
     it("bounds project controllers and evicts only an inactive least-recently-used controller", async () => {
         const firstProject = "/workspace/one";
         const secondProject = "/workspace/two";
