@@ -794,12 +794,11 @@
     flex: none;
     margin-left: auto;
 }
-.git-row:hover .git-row-actions,
-.git-row.sel .git-row-actions {
+/* Only the pointer reveals a row's buttons; each one has a key, so the keyboard never needs them. */
+.git-row:hover .git-row-actions {
     display: flex;
 }
-.git-row:hover .git-row-hint,
-.git-row.sel .git-row-hint {
+.git-row:hover .git-row-hint {
     display: none;
 }
 .git-row-act {

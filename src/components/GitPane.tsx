@@ -856,7 +856,7 @@ function GitWorkbench({
     useEffect(() => {
         const root = paneRootRef.current;
         if (!active || !root || root.contains(document.activeElement)) return;
-        (root.querySelector<HTMLElement>(".git-list .git-row.sel, .git-list .gg-row.sel") ?? root).focus({ preventScroll: true });
+        root.focus({ preventScroll: true });
     }, [active]);
 
     const focusKey = `${panel}:${sel[panel]}`;
