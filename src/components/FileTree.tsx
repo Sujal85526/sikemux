@@ -853,7 +853,20 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
     );
 });
 
-export function TreeContextMenu({ x, y, items, onClose }: { x: number; y: number; items: CtxItem[]; onClose: () => void }) {
+export function TreeContextMenu({
+    x,
+    y,
+    items,
+    onClose,
+    alignRight = false,
+}: {
+    x: number;
+    y: number;
+    items: CtxItem[];
+    onClose: () => void;
+    /** Hang the menu left of `x` instead of right of it, for buttons at a right edge. */
+    alignRight?: boolean;
+}) {
     const ref = useRef<HTMLDivElement>(null);
     useOccludeNativeViews(true);
     const [pos, setPos] = useState({ left: x, top: y });
@@ -863,12 +876,12 @@ export function TreeContextMenu({ x, y, items, onClose }: { x: number; y: number
         if (!el) return;
         const r = el.getBoundingClientRect();
         const pad = 6;
-        let left = x;
+        let left = alignRight ? x - r.width : x;
         let top = y;
         if (left + r.width > window.innerWidth - pad) left = Math.max(pad, window.innerWidth - r.width - pad);
         if (top + r.height > window.innerHeight - pad) top = Math.max(pad, window.innerHeight - r.height - pad);
         setPos({ left, top });
-    }, [x, y]);
+    }, [x, y, alignRight]);
 
     useLayoutEffect(() => {
         const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;

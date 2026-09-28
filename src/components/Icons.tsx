@@ -72,6 +72,33 @@ export function Logo({ size = 16, className }: IconProps) {
     );
 }
 
+export const IconMore = makeSvgIcon(
+    <>
+        <circle cx="3.5" cy="8" r="1" fill="currentColor" stroke="none" />
+        <circle cx="8" cy="8" r="1" fill="currentColor" stroke="none" />
+        <circle cx="12.5" cy="8" r="1" fill="currentColor" stroke="none" />
+    </>,
+);
+export const IconDiscard = makeSvgIcon(
+    <>
+        <path d="M5.5 3.5 2.5 6.5l3 3" />
+        <path d="M2.5 6.5h7a4 4 0 0 1 0 8h-2" />
+    </>,
+);
+export const IconMerge = makeSvgIcon(
+    <>
+        <circle cx="4.5" cy="3.5" r="1.6" />
+        <circle cx="4.5" cy="12.5" r="1.6" />
+        <circle cx="11.5" cy="8" r="1.6" />
+        <path d="M4.5 5.1v5.8M4.5 5.5c0 2 2.5 2.5 5.4 2.5" />
+    </>,
+);
+export const IconCheckout = makeSvgIcon(
+    <>
+        <path d="M2.5 8h8M7.5 5l3 3-3 3" />
+        <path d="M13.5 3v10" />
+    </>,
+);
 export const IconMinus = makeSvgIcon(<path d="M3 8h10" />);
 export const IconPlus = makeSvgIcon(<path d="M8 3v10M3 8h10" />);
 export const IconRefresh = makeSvgIcon(

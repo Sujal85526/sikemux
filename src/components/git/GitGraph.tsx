@@ -120,14 +120,19 @@ export function computeGraph(commits: GitCommit[]): { rows: RowLayout[]; maxLane
     return { rows, maxLanes: Math.max(1, maxLanes) };
 }
 
-function initials(name: string): string {
+/** A conventional-commit prefix such as `feat(git): ` repeats down the whole list; the row shows what follows it. */
+export function withoutScope(subject: string): string {
+    return subject.replace(/^[a-z]+(\([^)]*\))?!?:\s+/i, "") || subject;
+}
+
+export function initials(name: string): string {
     const parts = name.trim().split(/\s+/).filter(Boolean);
     if (parts.length === 0) return "?";
     if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-function authorColor(key: string): string {
+export function authorColor(key: string): string {
     let h = 0;
     for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
     return `hsl(${h % 360} 62% 64%)`;
@@ -332,9 +337,8 @@ export const GitGraph = memo(function GitGraph({
             {commits.map((c, i) => {
                 const sel = focused && selectedIndex === i;
                 const inRange = range !== null && i >= range[0] && i <= range[1];
-                const row = rows[i];
-                const palette = colors?.palette ?? FALLBACK_PALETTE;
-                const hashColor = row?.unpushed ? (colors?.unpushed ?? FALLBACK_WARN) : palette[(row?.colorIdx ?? 0) % palette.length];
+                // The lane's ringed node already marks HEAD; the branch it points at is the ref worth reading.
+                const refs = c.refs.filter((r) => r !== "HEAD").map((r) => r.replace(/^HEAD -> /, ""));
                 return (
                     <div
                         key={c.full_hash || c.hash}
@@ -367,25 +371,23 @@ export const GitGraph = memo(function GitGraph({
                         onClick={() => onSelect(i)}
                         onDoubleClick={onActivate}
                         title={`${c.subject} — ${c.hash} · ${c.author}${c.refs.length ? ` · ${c.refs.join(", ")}` : ""}`}>
-                        <span className="gg-hash" style={{ color: hashColor }}>
-                            {c.hash}
+                        <span className="gg-avatar" style={{ background: authorColor(c.author_email || c.author) }} aria-hidden>
+                            {initials(c.author)}
                         </span>
-                        {c.refs.length > 0 && (
+                        {refs.length > 0 && (
                             <span className="gg-refs">
-                                {c.refs.slice(0, MAX_ROW_REFS).map((r) => (
+                                {refs.slice(0, MAX_ROW_REFS).map((r) => (
                                     <RefBadge key={r} label={r} />
                                 ))}
-                                {c.refs.length > MAX_ROW_REFS && (
-                                    <span className="gg-ref more" title={c.refs.slice(MAX_ROW_REFS).join(", ")}>
-                                        +{c.refs.length - MAX_ROW_REFS}
+                                {refs.length > MAX_ROW_REFS && (
+                                    <span className="gg-ref more" title={refs.slice(MAX_ROW_REFS).join(", ")}>
+                                        +{refs.length - MAX_ROW_REFS}
                                     </span>
                                 )}
                             </span>
                         )}
-                        <span className="gg-subj">{c.subject}</span>
-                        <span className="gg-author" style={{ color: authorColor(c.author_email || c.author) }}>
-                            {initials(c.author)}
-                        </span>
+                        <span className="gg-subj">{withoutScope(c.subject)}</span>
+                        <span className="gg-hash">{c.hash}</span>
                         <span className="gg-when">{c.date}</span>
                     </div>
                 );

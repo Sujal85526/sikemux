@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { git } from "../api/git";
 import { DiffEditor } from "./DiffEditor";
 import { IconChevron } from "./Icons";
@@ -11,12 +11,15 @@ export function CommitReview({
     rev,
     title,
     subtitle,
+    head,
     onOpenFile,
 }: {
     repo: string;
     rev: string;
     title: string;
     subtitle: string;
+    /** Replaces the hash-and-subject line at the top. */
+    head?: ReactNode;
     onOpenFile: (abs: string) => void;
 }) {
     const [files, setFiles] = useState<string[]>([]);
@@ -51,10 +54,12 @@ export function CommitReview({
 
     return (
         <div className="commit-review">
-            <div className="commit-head">
-                <span className="commit-hash">{title}</span>
-                <span className="commit-subject">{subtitle}</span>
-            </div>
+            {head ?? (
+                <div className="commit-head">
+                    <span className="commit-hash">{title}</span>
+                    <span className="commit-subject">{subtitle}</span>
+                </div>
+            )}
             <div className="commit-stack">
                 {files.length === 0 && <div className="commit-empty">no files</div>}
                 {files.map((f) => {

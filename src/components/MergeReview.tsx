@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { DiffEditor } from "./DiffEditor";
 import { FileIcon } from "./FileIcon";
 import { IconChevron } from "./Icons";
 import { Tooltip } from "./Tooltip";
 import { hasUnstaged, isStaged, type GitFile } from "../api/git";
-import { basename, joinPath } from "../lib/paths";
+import { basename, dirname, joinPath } from "../lib/paths";
 import { gitFileBadges, gitStatusBadge, type GitStatusBadge } from "./git/gitFileStatus";
 
 const REVIEW_ROW_ESTIMATE = 250;
@@ -35,12 +35,15 @@ export function MergeReview({
     focusPath,
     onOpenFile,
     onSaved,
+    fileActions,
 }: {
     repo: string;
     files: GitFile[];
     focusPath?: string;
     onOpenFile: (abs: string) => void;
     onSaved: () => void;
+    /** Buttons shown in a file's header while the pointer is on it. */
+    fileActions?: (file: GitFile) => ReactNode;
 }) {
     const files = useStableFileList(incomingFiles);
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -109,17 +112,17 @@ export function MergeReview({
         <div className="merge-review">
             <div className="merge-review-toolbar">
                 <span className="merge-review-count">
-                    {files.length} {files.length === 1 ? "file" : "files"} · {expandedCount} expanded
+                    {files.length} {files.length === 1 ? "file" : "files"}
                 </span>
                 <button
                     type="button"
                     className="merge-review-action"
                     onClick={() => setCollapsed(new Set())}
                     disabled={expandedCount === files.length}>
-                    expand all
+                    Expand all
                 </button>
                 <button type="button" className="merge-review-action" onClick={() => setCollapsed(new Set(paths))} disabled={expandedCount === 0}>
-                    collapse all
+                    Collapse all
                 </button>
             </div>
             <div className="merge-review-list" ref={listRef}>
@@ -173,9 +176,13 @@ export function MergeReview({
                     <Tooltip label="Open in editor">
                         <button type="button" className="acc-name" onClick={() => onOpenFile(joinPath(repo, path))}>
                             <FileIcon name={basename(path)} size={15} />
-                            <span>{path}</span>
+                            <span className="merge-file-path">
+                                {dirname(path) && <span className="merge-file-dir">{dirname(path)}/</span>}
+                                <span className="merge-file-base">{basename(path)}</span>
+                            </span>
                         </button>
                     </Tooltip>
+                    {fileActions && <span className="merge-file-actions">{fileActions(file)}</span>}
                     <span className="merge-file-status">
                         {gitFileBadges(file).map((badge) => (
                             <GitStatusSymbol key={badge.source} badge={badge} />

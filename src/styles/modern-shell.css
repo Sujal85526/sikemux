@@ -985,11 +985,6 @@ textarea,
         .agent-header-btn,
         .rail-search,
         .agent-row,
-        .git-tbtn,
-        .git-dd-btn,
-        .git-cp-commit,
-        .git-cp-input,
-        .git-commit-input,
         .dlg-input,
         .dlg-btn,
         .tip,
@@ -1028,7 +1023,7 @@ textarea,
 /* Rows that are not buttons. A settings row or a keymap row is a div, so the
  * bare `button` rule above never reaches it and it sat square beside rows that
  * happened to be clickable. */
-.shell :where(.git-dd-item, .git-modal-suggestion, .git-modal-suggestions) {
+.shell :where(.git-modal-suggestion, .git-modal-suggestions) {
     border-radius: var(--radius-2) !important;
 }
 
@@ -1077,7 +1072,6 @@ textarea,
     .command-popup,
     .session-switcher,
     .env-dd-menu,
-    .git-dd-menu,
     .dd-menu,
     .tree-ctx-menu,
     .terminal-menu,
@@ -1118,8 +1112,9 @@ textarea,
  * smaller corner to nest inside the one around it. */
 .shell
     :where(
-        .git-kbd,
         .git-menu-key,
+        .git-chip,
+        .git-tabs button,
         .panel-akbd,
         .picker-tag,
         .bruno-tab-count,

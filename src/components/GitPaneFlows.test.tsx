@@ -40,13 +40,25 @@ beforeEach(() => {
     useGitWorkbench.setState({ drafts: {}, operations: {} });
 });
 afterEach(cleanup);
-it("keeps the empty Stashes panel open and offers a next action", async () => {
+it("offers to stash from the toolbar menu when there are no stashes yet", async () => {
     const user = userEvent.setup();
     render(<GitPane paneId="git-test" cwd="/repo" active visible />);
-    await user.click(screen.getByRole("button", { name: "Stashes" }));
-    expect(getState().gitViews["git-test"].panel).toBe("stashes");
-    expect(screen.getByText("No stashed changes.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Stash working changes" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Remotes, stashes and more" }));
+    expect(screen.getByRole("menuitem", { name: "No stashes" })).toBeDisabled();
+    await user.click(screen.getByRole("menuitem", { name: /Stash changes/ }));
+    expect(getState().gitModal).toMatchObject({ kind: "menu", title: "Stash" });
+});
+
+it("switches between Changes, History and Branches", async () => {
+    const user = userEvent.setup();
+    render(<GitPane paneId="git-test" cwd="/repo" active visible />);
+    expect(screen.getByRole("tab", { name: /Changes/ })).toHaveAttribute("aria-selected", "true");
+    await user.click(screen.getByRole("tab", { name: /History/ }));
+    expect(getState().gitViews["git-test"].panel).toBe("commits");
+    expect(screen.getByPlaceholderText("Filter commits")).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: /Branches/ }));
+    expect(getState().gitViews["git-test"].panel).toBe("branches");
+    expect(screen.getByRole("button", { name: /New branch/ })).toBeInTheDocument();
 });
 it("does not consume text or Tab intended for controls outside the Git pane", () => {
     render(

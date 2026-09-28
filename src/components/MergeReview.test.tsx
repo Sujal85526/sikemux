@@ -31,7 +31,7 @@ describe("MergeReview", () => {
     it("renders every changed file in one collapsible stream", () => {
         render(<MergeReview repo="/repo" files={files} onOpenFile={() => {}} onSaved={() => {}} />);
 
-        expect(screen.getByText("3 files · 3 expanded")).toBeInTheDocument();
+        expect(screen.getByText("3 files")).toBeInTheDocument();
         expect(screen.getByTestId("diff:staged.ts:HEAD::index")).toBeInTheDocument();
         expect(screen.getByTestId("diff:both.ts:HEAD::index")).toBeInTheDocument();
         expect(screen.getByTestId("diff:both.ts::index:working")).toBeInTheDocument();
@@ -42,17 +42,17 @@ describe("MergeReview", () => {
         expect(screen.getAllByLabelText("unstaged: modified")).toHaveLength(3);
 
         fireEvent.click(screen.getByRole("button", { name: "Collapse both.ts" }));
-        expect(screen.getByText("3 files · 2 expanded")).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Expand both.ts" })).toBeInTheDocument();
         expect(screen.queryByTestId("diff:both.ts:HEAD::index")).not.toBeInTheDocument();
         expect(screen.queryByTestId("diff:both.ts::index:working")).not.toBeInTheDocument();
         expect(screen.getByTestId("diff:staged.ts:HEAD::index")).toBeInTheDocument();
 
-        fireEvent.click(screen.getByRole("button", { name: "collapse all" }));
-        expect(screen.getByText("3 files · 0 expanded")).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Collapse all" }));
+        expect(screen.getByRole("button", { name: "Collapse all" })).toBeDisabled();
         expect(screen.queryByTestId("diff:staged.ts:HEAD::index")).not.toBeInTheDocument();
 
-        fireEvent.click(screen.getByRole("button", { name: "expand all" }));
-        expect(screen.getByText("3 files · 3 expanded")).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Expand all" }));
+        expect(screen.getByRole("button", { name: "Expand all" })).toBeDisabled();
         expect(screen.getByTestId("diff:working.ts:HEAD:working")).toBeInTheDocument();
     });
 
@@ -97,15 +97,15 @@ describe("MergeReview", () => {
 
         const { container } = render(<MergeReview repo="/repo" files={manyFiles} onOpenFile={() => {}} onSaved={() => {}} />);
 
-        expect(screen.getByText("1000 files · 1000 expanded")).toBeInTheDocument();
+        expect(screen.getByText("1000 files")).toBeInTheDocument();
         expect(container.querySelector(".merge-review-virtual")).toBeInTheDocument();
         expect(container.querySelectorAll(".merge-review-item").length).toBeLessThan(12);
         expect(container.querySelectorAll('[data-testid^="diff:"]').length).toBeLessThan(12);
         expect(screen.getByRole("button", { name: "src/file-0.ts" })).toBeInTheDocument();
         expect(screen.queryByRole("button", { name: "src/file-999.ts" })).not.toBeInTheDocument();
 
-        fireEvent.click(screen.getByRole("button", { name: "collapse all" }));
-        expect(screen.getByText("1000 files · 0 expanded")).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Collapse all" }));
+        expect(screen.getByRole("button", { name: "Collapse all" })).toBeDisabled();
         expect(container.querySelectorAll('[data-testid^="diff:"]')).toHaveLength(0);
         expect(container.querySelectorAll(".merge-review-item").length).toBeLessThan(40);
     });

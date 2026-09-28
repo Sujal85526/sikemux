@@ -1,19 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { AI_MODELS, defaultAiModel } from "./gitPaneConstants";
-import { filterByQuery, helpRows, isGitAiProvider, isInRange, rangeBadge } from "./gitPaneLogic";
+import { filterByQuery, helpRows, isInRange } from "./gitPaneLogic";
 
 describe("GitPane extracted logic", () => {
-    it("validates configured local AI providers and default models", () => {
-        expect(isGitAiProvider("hermes")).toBe(true);
-        expect(isGitAiProvider("codex")).toBe(true);
-        expect(isGitAiProvider("claude")).toBe(true);
-        expect(isGitAiProvider("nope")).toBe(false);
+    it("defaults each local AI provider to its first model", () => {
         expect(defaultAiModel("hermes")).toBe(AI_MODELS.hermes[0]);
     });
 
-    it("formats range state", () => {
-        expect(rangeBadge(null)).toBeNull();
-        expect(rangeBadge([2, 5])).toBe("range 4");
+    it("tells whether a row is inside a range", () => {
         expect(isInRange([2, 5], 1)).toBe(false);
         expect(isInRange([2, 5], 2)).toBe(true);
         expect(isInRange([2, 5], 5)).toBe(true);

@@ -24,30 +24,30 @@ export const AI_MODEL_STORAGE = "sikemux.git.ai.model";
 
 export const defaultAiModel = (provider: GitAiProvider): string => AI_MODELS[provider][0];
 
-export const GIT_PANEL_ORDER: GitPanel[] = ["files", "branches", "commits", "remotes", "stashes"];
-export const GIT_PANEL_BY_KEY: Partial<Record<string, GitPanel>> = { "2": "files", "3": "branches", "4": "commits", "5": "remotes", "6": "stashes" };
+export const GIT_PANEL_BY_KEY: Partial<Record<string, GitPanel>> = { "1": "files", "2": "commits", "3": "branches" };
 
 export const GIT_HELP: GitCheatsheetSection[] = [
     {
         title: "Global",
         rows: helpRows(
-            ["2..6", "switch panel"],
+            ["1 2 3", "Changes, History, Branches"],
             ["?", "open this cheatsheet"],
             ["@", "toggle command log"],
-            ["/", "filter current panel"],
-            ["v", "toggle range select"],
+            ["/", "filter the list"],
             ["r", "refresh repo state"],
+            ["F", "fetch all remotes"],
             ["P / p", "push / pull"],
             ["^P", "open pull-request page"],
             ["esc", "close modal / clear filter or range"],
         ),
     },
     {
-        title: "Files",
+        title: "Changes",
         rows: helpRows(
             ["space", "stage / unstage selected (or range)"],
+            ["v", "toggle range select"],
             ["a", "toggle stage all"],
-            ["c", "focus commit message box"],
+            ["c", "focus commit message"],
             ["C", "commit the typed message"],
             ["g", "generate commit message (AI)"],
             [`${PRIMARY_SHORTCUT}⏎`, "commit (from message box)"],
@@ -56,53 +56,20 @@ export const GIT_HELP: GitCheatsheetSection[] = [
         ),
     },
     {
+        title: "History",
+        rows: helpRows(["enter / space", "actions menu"], ["b", "create branch from commit"], ["r", "reset to commit menu"], ["v", "revert commit"]),
+    },
+    {
         title: "Branches",
         rows: helpRows(
-            ["enter / space", "checkout"],
+            ["enter / space", "checkout (a remote branch gets a local one)"],
             ["n / N", "new branch (from selected / from HEAD)"],
             ["M", "merge menu"],
             ["d", "delete menu"],
             ["R", "rename branch"],
             ["c", "checkout by name"],
-        ),
-    },
-    {
-        title: "Remotes (list)",
-        rows: helpRows(
-            ["enter", "drill into remote's branches"],
-            ["n", "add remote"],
-            ["f", "fetch this remote"],
-            ["F", "fetch all remotes"],
-            ["e", "edit url"],
-            ["r", "rename"],
-            ["d", "delete"],
-            ["...", "any of the above also openable via menu"],
-        ),
-    },
-    {
-        title: "Remotes (drilled)",
-        rows: helpRows(
-            ["esc", "back to remotes list"],
-            ["space / enter", "checkout (creates tracking branch)"],
-            ["M", "merge into HEAD"],
-            ["u", "set as upstream of current branch"],
-            ["d", "delete remote branch"],
-            ["f / F", "fetch (this remote / all)"],
-        ),
-    },
-    {
-        title: "Commits",
-        rows: helpRows(["enter / space", "actions menu"], ["b", "create branch from commit"], ["r", "reset to commit menu"], ["v", "revert commit"]),
-    },
-    {
-        title: "Stashes",
-        rows: helpRows(
-            ["enter", "actions menu"],
-            ["space / a", "apply stash"],
-            ["p", "pop stash"],
-            ["b", "branch from stash"],
-            ["r", "rename stash"],
-            ["d", "drop stash"],
+            ["f", "fetch the selected remote"],
+            ["u", "set remote branch as upstream"],
         ),
     },
 ];

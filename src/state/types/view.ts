@@ -85,22 +85,22 @@ export interface CliOpenResult {
     error: string | null;
 }
 
-export type GitPanel = "status" | "files" | "branches" | "remotes" | "commits" | "stashes";
+/** The git pane's three tabs: Changes, History and Branches. */
+export type GitPanel = "files" | "commits" | "branches";
 
 export interface GitPaneView {
     panel: GitPanel;
     selected: Record<GitPanel, number>;
-    remoteDrill: string | null;
-    remoteBranchSelected: Record<string, number>;
+    /** The remote whose branches are listed under the local ones in the Branches tab. */
+    openRemote: string | null;
     /** A repository found inside the project folder, when the folder is not one itself. */
     repo: string | null;
 }
 
 export const DEFAULT_GIT_VIEW: GitPaneView = {
     panel: "files",
-    selected: { status: 0, files: 0, branches: 0, remotes: 0, commits: 0, stashes: 0 },
-    remoteDrill: null,
-    remoteBranchSelected: {},
+    selected: { files: 0, commits: 0, branches: 0 },
+    openRemote: "origin",
     repo: null,
 };
 
