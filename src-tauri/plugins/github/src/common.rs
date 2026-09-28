@@ -15,8 +15,8 @@ pub const MAX_PER_PAGE: u32 = 100;
 pub const LIST_PAGES: u32 = 10;
 /// GitHub lists at most 3,000 of a pull request's files, so every one it will give.
 pub const FILE_PAGES: u32 = 30;
-/// Releases carry their notes, so only the newest few hundred are read.
-pub const RELEASE_PAGES: u32 = 3;
+/// Releases carry their notes, so only the newest hundred are read, in one request.
+pub const RELEASE_PAGES: u32 = 1;
 
 #[derive(Deserialize)]
 pub struct ActorRow {

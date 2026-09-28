@@ -16,7 +16,7 @@ const LONG_NOTES = 280;
  * one GitHub marks as latest and the one an updater would take.
  */
 /** How many releases the backend reads, newest first. */
-const RELEASES_READ = 300;
+const RELEASES_READ = 100;
 
 export function latestOf(releases: readonly Release[]): number | null {
     return releases.find((release) => !release.draft && !release.prerelease)?.id ?? null;
