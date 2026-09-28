@@ -2218,3 +2218,212 @@ button.gha-step:focus-visible {
     font-size: var(--text-xs);
     color: var(--live);
 }
+
+/* ---- In the git pane's two columns -------------------------------------- */
+
+/* A list, or an open pull request's conversation, fills the left column; the commits fold beneath it. */
+.git-left .pr-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+.git-left .pr-list {
+    padding: 0 6px var(--space-3);
+}
+.git-left .pr-list .gha-list-head {
+    padding: var(--space-2) 4px var(--space-1);
+}
+.git-left .gha-item-row {
+    padding: 7px 8px 7px 6px;
+    column-gap: var(--space-2);
+}
+.gha-item-row[data-on="1"] {
+    border-color: var(--border-selected);
+    background: var(--surface-selected);
+}
+/* An open pull request's column: its card where Changes has the commit box, then its files, then the folding panels. */
+.pr-card {
+    flex: 0 0 auto;
+    margin: var(--space-2) 10px var(--space-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: var(--s-sunken);
+}
+.pr-card-top {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    padding: 9px 6px 2px 11px;
+}
+.pr-card-top > svg,
+.pr-card-top > .gha-state-mark {
+    flex: none;
+    margin-top: 2px;
+}
+.pr-title {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+    line-height: 1.4;
+    color: var(--text-primary);
+}
+.pr-number {
+    color: var(--text-tertiary);
+    font-weight: var(--weight-normal);
+}
+.pr-sub {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-1h);
+    padding: 2px 10px 8px 11px;
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+}
+.pr-sub .gha-btn {
+    height: 22px;
+    margin-left: auto;
+    font-size: var(--text-2xs);
+}
+/* The merge box sits inside the card, so it drops its own frame and keeps only the rules between its parts. */
+.pr-card .gha-merge-box {
+    border: 0;
+    border-top: 1px solid var(--border);
+    border-radius: 0;
+    background: none;
+}
+.pr-card .gha-merge-part {
+    padding: 6px 10px;
+}
+.pr-card .gha-merge-title {
+    font-size: var(--text-xs);
+}
+.pr-card .gha-merge-actions {
+    flex-wrap: wrap;
+    gap: var(--space-1h);
+}
+.pr-card .gha-merge-box > .gha-merge-actions {
+    padding: 6px;
+}
+/* The files take the rows they need; whatever is left goes to the open panels beneath. */
+.pr-files {
+    flex: 0 1 auto;
+    min-height: 64px;
+    overflow-y: auto;
+}
+.pr-files:last-of-type,
+.pr-files:has(+ .git-history:not(.open) + .git-history:not(.open)) {
+    flex-grow: 1;
+}
+.pr-files-stat {
+    margin-left: auto;
+    padding-right: var(--space-1h);
+}
+button.git-file-row {
+    width: 100%;
+    text-align: left;
+    font: inherit;
+    font-size: var(--text-sm);
+}
+.pr-verdict {
+    flex: none;
+    height: 16px;
+    margin-right: var(--space-2);
+    padding: 0 6px;
+    border-radius: var(--radius-full);
+    border: 1px solid color-mix(in oklab, var(--danger) 40%, transparent);
+    color: var(--danger);
+    font-size: var(--text-3xs);
+    line-height: 14px;
+}
+.pr-verdict[data-tone="live"] {
+    border-color: color-mix(in oklab, var(--live) 40%, transparent);
+    color: var(--live);
+}
+/* The conversation inside its panel: the same thread, set small enough to read in the column. */
+.pr-thread {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    padding: var(--space-1) 10px var(--space-2);
+}
+.pr-thread .gha-thread {
+    gap: var(--space-2);
+}
+.pr-thread .gha-timeline {
+    gap: var(--space-2);
+}
+.pr-thread .gha-comment .prose {
+    padding: 6px 10px 8px;
+    font-size: var(--text-xs);
+}
+.pr-thread .gha-comment-head {
+    padding: 5px 10px;
+}
+/* The timeline scrolls; the reply box is its own row at the panel's foot. */
+.pr-thread .gha-thread {
+    height: 100%;
+    min-height: 0;
+}
+.pr-thread .gha-timeline {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding-bottom: var(--space-2);
+}
+.pr-thread .gha-thread > .gha-tl-tail {
+    flex: 0 0 auto;
+}
+.pr-thread .gha-composer-box {
+    min-height: 56px;
+    font-size: var(--text-xs);
+}
+.pr-thread .gha-composer-foot {
+    flex-wrap: wrap;
+}
+.pr-commit-review {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+.pr-commit-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex: 0 0 auto;
+    height: 34px;
+    padding: 0 10px 0 14px;
+    border-bottom: 1px solid var(--border);
+}
+.pr-commit-bar .gha-btn {
+    height: 22px;
+    font-size: var(--text-2xs);
+}
+.pr-commit-review > .commit-review {
+    flex: 1;
+    min-height: 0;
+}
+/* An issue reads on the right, where a pull request's files would be. */
+.issue-page {
+    height: 100%;
+    overflow-y: auto;
+}
+.issue-page > .gha-detail {
+    padding-top: var(--space-3);
+}
+.git-right > .gha-empty,
+.git-right > .empty-state {
+    margin: auto;
+}
+.gha-body > .git-body {
+    height: 100%;
+}
+/* The columns scroll themselves, so bringing a commit into view never slides the whole pane. */
+.gha-body:has(> .git-body) {
+    overflow: hidden;
+}
+.git-right-review > .empty-state {
+    margin: auto;
+}

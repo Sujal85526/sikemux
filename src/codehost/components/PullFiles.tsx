@@ -47,10 +47,12 @@ interface Props {
     /** The project folder, when the pull request is on its own repository, so a file can open in the editor. */
     cwd: string | null;
     active: boolean;
+    /** The file picked in the list beside it, which the review scrolls to. */
+    focusPath?: string;
 }
 
 /** A pull request's changed files, reviewed the way the git pane reviews local changes. */
-export function PullFiles({ repo, number, cwd, active }: Props) {
+export function PullFiles({ repo, number, cwd, active, focusPath }: Props) {
     const files = useResourceEnabled(active, pullFilesR, repo, number);
     const dark = useDarkTheme();
     const byPath = useMemo(() => new Map((files.data ?? []).map((file) => [file.path, file])), [files.data]);
@@ -63,6 +65,7 @@ export function PullFiles({ repo, number, cwd, active }: Props) {
         <section className="gha-pull-files">
             <FileReviewList
                 paths={paths}
+                focusPath={focusPath}
                 estimate={(path) => {
                     const file = byPath.get(path);
                     return file?.patch ? Math.min(600, file.patch.split("\n").length * LINE_HEIGHT + DIFF_PADDING) : 60;

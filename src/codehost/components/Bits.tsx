@@ -106,8 +106,9 @@ export function PageHead({
     title: string;
     number: number;
     url: string;
-    backLabel: string;
-    onBack: () => void;
+    /** Leave both out where the list stays on screen beside the page. */
+    backLabel?: string;
+    onBack?: () => void;
     /** Buttons before the link to the host, such as checking a pull request out. */
     actions?: ReactNode;
     children: ReactNode;
@@ -115,9 +116,11 @@ export function PageHead({
     const host = useHost();
     return (
         <>
-            <button type="button" className="gha-back" onClick={onBack}>
-                <IconChevron size={11} /> {backLabel}
-            </button>
+            {backLabel && onBack && (
+                <button type="button" className="gha-back" onClick={onBack}>
+                    <IconChevron size={11} /> {backLabel}
+                </button>
+            )}
             <div className="gha-page-head">
                 {mark}
                 <div className="gha-page-title">

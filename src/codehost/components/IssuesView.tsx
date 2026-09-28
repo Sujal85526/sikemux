@@ -1,6 +1,7 @@
 import { notify, reportError } from "../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
-import { EmptyState, IconInfo, SkeletonRows } from "../../plugin-api/ui";
+import { EmptyState, IconInfo, IconPlus, SkeletonRows, Tooltip } from "../../plugin-api/ui";
+import { GitColumns } from "../../components/git/GitColumns";
 import { hostApi, failureMessage, type Issue, type RepoRef } from "../api";
 import { issueR, issuesR } from "../resources";
 import { formatAgo } from "../runStatus";
@@ -12,9 +13,9 @@ import { NewIssueForm } from "./NewIssueForm";
 
 const LIST_STATES = ["open", "closed", "all"];
 
-function IssueRow({ issue, now, onOpen }: { issue: Issue; now: number; onOpen: () => void }) {
+function IssueRow({ issue, now, selected, onOpen }: { issue: Issue; now: number; selected: boolean; onOpen: () => void }) {
     return (
-        <button type="button" className="gha-item-row" onClick={onOpen}>
+        <button type="button" className="gha-item-row" data-on={selected ? "1" : "0"} onClick={onOpen}>
             <StateMark kind="issue" state={issue.state} reason={issue.stateReason} />
             <span className="gha-item-head">
                 <span className="gha-item-title">{issue.title}</span>
@@ -31,15 +32,13 @@ function IssueRow({ issue, now, onOpen }: { issue: Issue; now: number; onOpen: (
     );
 }
 
-function IssueDetail({ repo, number, active, onBack }: { repo: RepoRef; number: number; active: boolean; onBack: () => void }) {
+function IssueDetail({ repo, number, active }: { repo: RepoRef; number: number; active: boolean }) {
     const issue = useResourceEnabled(active, issueR, repo, number);
     const now = useNow(false);
     const [busy, runBusy] = useBusy();
     if (issue.status === "loading" && !issue.data) return <SkeletonRows rows={6} label="Loading issue" />;
     if (!issue.data) {
-        return (
-            <EmptyState title="Could not read it" message={failureMessage(issue.error)} tone="error" action={{ label: "Back", onClick: onBack }} />
-        );
+        return <EmptyState title="Could not read it" message={failureMessage(issue.error)} tone="error" />;
     }
     const found = issue.data;
     const closing = found.state === "open";
@@ -61,9 +60,7 @@ function IssueDetail({ repo, number, active, onBack }: { repo: RepoRef; number: 
                 mark={<StateMark kind="issue" state={found.state} reason={found.stateReason} size={14} />}
                 title={found.title}
                 number={found.number}
-                url={found.url}
-                backLabel="Back to issues"
-                onBack={onBack}>
+                url={found.url}>
                 <span
                     className="gha-state-word"
                     data-kind="issue"
@@ -110,64 +107,81 @@ interface Props {
 }
 
 export function IssuesView({ paneId, repo, listState, item, composing, page, active }: Props) {
-    const issues = useResourceEnabled(active && item === null && !composing, issuesR, repo, listState, page);
+    const issues = useResourceEnabled(active && !composing, issuesR, repo, listState, page);
     const now = useNow(false);
 
     if (composing) return <NewIssueForm repo={repo} onCreated={(number) => showItem(paneId, number)} onCancel={() => compose(paneId, null)} />;
-    if (item !== null) return <IssueDetail repo={repo} number={item} active={active} onBack={() => showItem(paneId, null)} />;
-    if (issues.status === "loading" && !issues.data) return <SkeletonRows rows={8} label="Loading issues" />;
-    if (issues.error) {
-        return (
+
+    const rows = issues.data?.issues ?? [];
+    const total = issues.data?.total ?? rows.length;
+    const nextPage = issues.data?.nextPage ?? null;
+    const list =
+        issues.status === "loading" && !issues.data ? (
+            <SkeletonRows rows={8} label="Loading issues" />
+        ) : issues.error ? (
             <EmptyState
                 title="Could not read issues"
                 message={failureMessage(issues.error)}
                 tone="error"
                 action={{ label: "Try again", onClick: () => void issues.refresh() }}
             />
-        );
-    }
-    const rows = issues.data?.issues ?? [];
-    const total = issues.data?.total ?? rows.length;
-    const nextPage = issues.data?.nextPage ?? null;
-
-    return (
-        <div className="gha-list">
-            <div className="gha-list-head">
-                <div className="gha-chips">
-                    {LIST_STATES.map((state) => (
-                        <button
-                            key={state}
-                            type="button"
-                            className="gha-chip"
-                            data-on={listState === state ? "1" : "0"}
-                            onClick={() => setListState(paneId, state)}>
-                            {state === "all" ? "All" : state === "open" ? "Open" : "Closed"}
+        ) : (
+            <div className="gha-list pr-list">
+                <div className="gha-list-head">
+                    <div className="gha-chips">
+                        {LIST_STATES.map((state) => (
+                            <button
+                                key={state}
+                                type="button"
+                                className="gha-chip"
+                                data-on={listState === state ? "1" : "0"}
+                                onClick={() => setListState(paneId, state)}>
+                                {state === "all" ? "All" : state === "open" ? "Open" : "Closed"}
+                            </button>
+                        ))}
+                    </div>
+                    <span className="gha-page-spacer" />
+                    <span className="gha-dim">{total}</span>
+                    <Tooltip label="New issue">
+                        <button type="button" className="gha-icon-btn" aria-label="New issue" onClick={() => compose(paneId, "issue")}>
+                            <IconPlus size={13} />
                         </button>
-                    ))}
+                    </Tooltip>
                 </div>
-                <span className="gha-dim gha-list-count">
-                    {total} issue{total === 1 ? "" : "s"}
-                    <button type="button" className="gha-btn" onClick={() => compose(paneId, "issue")}>
-                        New issue
-                    </button>
-                </span>
+                {rows.length === 0 ? (
+                    <EmptyState icon={<IconInfo size={20} />} message={`No ${listState === "all" ? "" : listState} issues.`} />
+                ) : (
+                    rows.map((issue) => (
+                        <IssueRow
+                            key={issue.number}
+                            issue={issue}
+                            now={now}
+                            selected={issue.number === item}
+                            onOpen={() => showItem(paneId, issue.number)}
+                        />
+                    ))
+                )}
+                {(page > 1 || nextPage) && (
+                    <div className="gha-pager">
+                        <button type="button" className="gha-btn" disabled={page <= 1} onClick={() => updateView(paneId, { page: page - 1 })}>
+                            Newer
+                        </button>
+                        <span className="gha-dim">Page {page}</span>
+                        <button type="button" className="gha-btn" disabled={!nextPage} onClick={() => updateView(paneId, { page: page + 1 })}>
+                            Older
+                        </button>
+                    </div>
+                )}
             </div>
-            {rows.length === 0 ? (
-                <EmptyState icon={<IconInfo size={20} />} message={`No ${listState === "all" ? "" : listState} issues.`} />
-            ) : (
-                rows.map((issue) => <IssueRow key={issue.number} issue={issue} now={now} onOpen={() => showItem(paneId, issue.number)} />)
-            )}
-            {(page > 1 || nextPage) && (
-                <div className="gha-pager">
-                    <button type="button" className="gha-btn" disabled={page <= 1} onClick={() => updateView(paneId, { page: page - 1 })}>
-                        Newer
-                    </button>
-                    <span className="gha-dim">Page {page}</span>
-                    <button type="button" className="gha-btn" disabled={!nextPage} onClick={() => updateView(paneId, { page: page + 1 })}>
-                        Older
-                    </button>
-                </div>
-            )}
-        </div>
-    );
+        );
+
+    const right =
+        item === null ? (
+            <EmptyState icon={<IconInfo size={20} />} message="Pick an issue to read it." />
+        ) : (
+            <div className="issue-page">
+                <IssueDetail repo={repo} number={item} active={active} />
+            </div>
+        );
+    return <GitColumns paneId={paneId} left={list} right={right} />;
 }

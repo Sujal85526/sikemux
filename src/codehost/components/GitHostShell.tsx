@@ -9,7 +9,7 @@ import { useHostRepo } from "../project";
 import { commitAuthorsR, hostStatusR } from "../resources";
 import { codeHost, HostProvider, type CodeHost } from "../registry";
 import { sameRepo, setProjectRepo, slugOf } from "../state";
-import { HostStrip } from "./HostStrip";
+import { GitRail, HostRailItems, type RailItem } from "./HostRail";
 
 const HostArea = lazy(() => import("./HostArea").then((module) => ({ default: module.HostArea })));
 const RepoPicker = lazy(() => import("./RepoPicker").then((module) => ({ default: module.RepoPicker })));
@@ -21,15 +21,17 @@ interface Props {
     area: GitArea;
     active: boolean;
     onArea: (area: GitArea) => void;
+    /** The local workbench's screens, which head the rail. */
+    local: readonly RailItem[];
     /** The local workbench, shown while the area is `local` or the folder is on no known host. */
     children: ReactNode;
 }
 
 /**
- * Puts the code host the folder's remote lives on beside the local workbench. A folder on no known host, or on one
- * whose plugin is switched off, gets the workbench alone.
+ * The git pane's rail and whatever it has open. The code host the folder's remote lives on adds its sections to the
+ * rail; a folder on no known host, or on one whose plugin is switched off, gets the local screens alone.
  */
-export function GitHostShell({ paneId, cwd, area, active, onArea, children }: Props) {
+export function GitHostShell({ paneId, cwd, area, active, onArea, local, children }: Props) {
     const found = useHostRepo(cwd, active);
     const host = found.repo ? codeHost(found.repo.provider) : undefined;
     const [picking, setPicking] = useState(false);
@@ -53,26 +55,40 @@ export function GitHostShell({ paneId, cwd, area, active, onArea, children }: Pr
         });
     }, [cwd, hosted]);
 
-    if (!host || !found.repo) return <>{children}</>;
+    if (!host || !found.repo) {
+        return (
+            <div className="git-shell">
+                <GitRail local={local} host={null} />
+                <div className="git-shell-main">{children}</div>
+            </div>
+        );
+    }
     const repo = found.repo;
 
     return (
         <HostProvider value={host}>
-            <HostStrip area={area} slug={slugOf(repo)} active={active} onArea={onArea} onPickRepo={() => setPicking(true)} />
-            {area === "local" ? (
-                <AuthorPicturesProvider value={pictures}>{children}</AuthorPicturesProvider>
-            ) : (
-                <Suspense fallback={<SkeletonRows rows={8} label={`Loading ${host.name}`} />}>
-                    <HostArea
-                        paneId={paneId}
-                        section={area}
-                        repo={repo}
-                        branch={found.branch}
-                        cwd={sameRepo(found.remote, repo) ? cwd : null}
-                        active={active}
-                    />
-                </Suspense>
-            )}
+            <div className="git-shell">
+                <GitRail
+                    local={local}
+                    host={<HostRailItems area={area} slug={slugOf(repo)} active={active} onArea={onArea} onPickRepo={() => setPicking(true)} />}
+                />
+                <div className="git-shell-main">
+                    {area === "local" ? (
+                        <AuthorPicturesProvider value={pictures}>{children}</AuthorPicturesProvider>
+                    ) : (
+                        <Suspense fallback={<SkeletonRows rows={8} label={`Loading ${host.name}`} />}>
+                            <HostArea
+                                paneId={paneId}
+                                section={area}
+                                repo={repo}
+                                branch={found.branch}
+                                cwd={sameRepo(found.remote, repo) ? cwd : null}
+                                active={active}
+                            />
+                        </Suspense>
+                    )}
+                </div>
+            </div>
             {picking && (
                 <Suspense fallback={null}>
                     <RepoPicker

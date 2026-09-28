@@ -1,17 +1,37 @@
-import { useState, type ReactNode } from "react";
-import { confirmDialog, copyText, notify, reportError, swallow } from "../../plugin-api/host";
+import { useMemo, useState } from "react";
+import { confirmDialog, notify, openUrl, reportError, swallow } from "../../plugin-api/host";
 import { checkoutPull, isOwnBranch, localBranchOf } from "../checkout";
 import { useHost } from "../registry";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
-import { Dropdown, EmptyState, IconCheck, IconCheckout, IconClock, IconCopy, IconPullRequest, SkeletonRows, Tooltip } from "../../plugin-api/ui";
-import { hostApi, failureMessage, type MergeMethod, type Pull, type RepoRef, type Review } from "../api";
-import { pullCommitsR, timelineR, pullR, pullReviewsR, pullsR } from "../resources";
+import {
+    Dropdown,
+    EmptyState,
+    IconCheck,
+    IconCheckout,
+    IconClose,
+    IconExternal,
+    IconPlus,
+    IconPullRequest,
+    SkeletonRows,
+    Tooltip,
+} from "../../plugin-api/ui";
+import type { GitCommit } from "../../api/git";
+import { CommitReview } from "../../components/CommitReview";
+import { GitColumns } from "../../components/git/GitColumns";
+import { GitGraph } from "../../components/git/GitGraph";
+import { FoldPanel } from "../../components/git/FoldPanel";
+import { FileIcon } from "../../components/FileIcon";
+import { basename, dirname } from "../../lib/paths";
+import { requestOpenFile, setGitView } from "../../state/commands";
+import { useStore } from "../../state/store";
+import { hostApi, failureMessage, type MergeMethod, type Pull, type RepoRef } from "../api";
+import { pullCommitsR, pullFilesR, pullR, pullReviewsR, pullsR, timelineR } from "../resources";
 import { formatAgo, type Outcome } from "../runStatus";
 import { needsPull } from "../compose";
 import { compose, openRunFrom, setListState, showItem } from "../state";
-import { CommentThread, Face } from "./CommentThread";
+import { CommentThread } from "./CommentThread";
 import { OutcomeIcon } from "./ActionsIcon";
-import { Branch, Comments, Labels, PageHead, StateMark, stateLabel, stateOf, Who } from "./Bits";
+import { Branch, Comments, Labels, StateMark } from "./Bits";
 import { useBusy, useNow } from "./hooks";
 import { NewPullForm } from "./NewPullForm";
 import { PullFiles } from "./PullFiles";
@@ -212,139 +232,9 @@ function MergeBox({
                 )}
                 <span className="gha-page-spacer" />
                 <button type="button" className="gha-btn danger" disabled={busy} onClick={() => runBusy(setState)}>
-                    Close pull request
+                    Close
                 </button>
             </div>
-        </div>
-    );
-}
-
-type PullTab = "conversation" | "commits" | "files";
-
-function plural(count: number, word: string): string {
-    return `${count.toLocaleString()} ${word}${count === 1 ? "" : "s"}`;
-}
-
-function latestReviews(reviews: readonly Review[]): Map<string, Review> {
-    const latest = new Map<string, Review>();
-    for (const review of reviews) {
-        if (!review.author) continue;
-        const before = latest.get(review.author);
-        if (review.state === "COMMENTED" && before && before.state !== "COMMENTED") continue;
-        latest.set(review.author, review);
-    }
-    return latest;
-}
-
-const REVIEW_OUTCOME: Record<string, Outcome> = {
-    APPROVED: "success",
-    CHANGES_REQUESTED: "failure",
-    COMMENTED: "skipped",
-    DISMISSED: "cancelled",
-};
-
-function SideSection({ title, children }: { title: string; children: ReactNode }) {
-    return (
-        <section className="gha-side-part">
-            <div className="gha-side-title">{title}</div>
-            {children}
-        </section>
-    );
-}
-
-function PullSide({
-    pull,
-    reviews,
-    participants,
-}: {
-    pull: Pull;
-    reviews: readonly Review[];
-    participants: readonly { login: string; avatarUrl: string | null }[];
-}) {
-    const latest = latestReviews(reviews);
-    const waiting = pull.reviewers.filter((login) => !latest.has(login));
-    return (
-        <aside className="gha-pull-side">
-            <SideSection title="Reviewers">
-                {latest.size === 0 && waiting.length === 0 && <span className="gha-side-none">No reviews</span>}
-                {[...latest.values()].map((review) => (
-                    <div className="gha-side-person" key={review.author}>
-                        <Face login={review.author} url={review.avatarUrl} />
-                        <span>{review.author}</span>
-                        <span className="gha-page-spacer" />
-                        <OutcomeIcon outcome={REVIEW_OUTCOME[review.state] ?? "unknown"} size={12} />
-                    </div>
-                ))}
-                {waiting.map((login) => (
-                    <div className="gha-side-person" key={login}>
-                        <Face login={login} url={pull.avatars[login] ?? null} />
-                        <span>{login}</span>
-                        <span className="gha-page-spacer" />
-                        <span className="gha-side-none" title="Awaiting review">
-                            <IconClock size={12} />
-                        </span>
-                    </div>
-                ))}
-            </SideSection>
-            <SideSection title="Assignees">
-                {pull.assignees.length === 0 ? (
-                    <span className="gha-side-none">No one assigned</span>
-                ) : (
-                    pull.assignees.map((login) => (
-                        <div className="gha-side-person" key={login}>
-                            <Face login={login} url={pull.avatars[login] ?? null} />
-                            <span>{login}</span>
-                        </div>
-                    ))
-                )}
-            </SideSection>
-            <SideSection title="Labels">
-                {pull.labels.length === 0 ? <span className="gha-side-none">None yet</span> : <Labels labels={pull.labels} />}
-            </SideSection>
-            <SideSection title="Milestone">
-                <span className={pull.milestone ? undefined : "gha-side-none"}>{pull.milestone ?? "No milestone"}</span>
-            </SideSection>
-            <SideSection title={plural(participants.length, "participant")}>
-                <div className="gha-side-faces">
-                    {participants.map((person) => (
-                        <span key={person.login} title={person.login}>
-                            <Face login={person.login} url={person.avatarUrl} />
-                        </span>
-                    ))}
-                </div>
-            </SideSection>
-        </aside>
-    );
-}
-
-function CommitsTab({ repo, number, active, now }: { repo: RepoRef; number: number; active: boolean; now: number }) {
-    const commits = useResourceEnabled(active, pullCommitsR, repo, number);
-    if (commits.status === "loading" && !commits.data) return <SkeletonRows rows={6} label="Loading commits" />;
-    if (commits.error && !commits.data) return <EmptyState title="Could not read the commits" message={failureMessage(commits.error)} tone="error" />;
-    return (
-        <div className="gha-commits">
-            {(commits.data ?? []).map((commit) => (
-                <div className="gha-commit" key={commit.sha}>
-                    <Face login={commit.author} url={commit.avatarUrl} />
-                    <span className="gha-commit-main">
-                        <span className="gha-commit-message">{commit.message.split("\n")[0]}</span>
-                        <span className="gha-commit-sub">
-                            {commit.author ?? "someone"} committed {formatAgo(commit.date, now)}
-                        </span>
-                    </span>
-                    <button
-                        type="button"
-                        className="gha-btn gha-commit-sha"
-                        title="Copy the full commit"
-                        onClick={() =>
-                            void copyText(commit.sha)
-                                .then(() => notify("success", `Copied ${commit.sha.slice(0, 7)}`))
-                                .catch(swallow("copy the commit"))
-                        }>
-                        {commit.sha.slice(0, 7)}
-                    </button>
-                </div>
-            ))}
         </div>
     );
 }
@@ -380,131 +270,316 @@ function CheckoutButton({ cwd, repo, pull, current }: { cwd: string; repo: RepoR
     );
 }
 
-function PullDetail({ repo, cwd, projectBranch, number, active, login, onBack, onOpenRun }: DetailProps) {
-    const [tab, setTab] = useState<PullTab>("conversation");
+/** The top of an open pull request's column, where Changes has its commit box: what it is and what stands between it and merged. */
+function PullCard({
+    repo,
+    cwd,
+    projectBranch,
+    pull,
+    verdict,
+    reviewed,
+    active,
+    onClose,
+    onOpenRun,
+}: {
+    repo: RepoRef;
+    cwd: string | null;
+    projectBranch: string | null;
+    pull: Pull;
+    verdict: string | null;
+    reviewed: boolean;
+    active: boolean;
+    onClose: () => void;
+    onOpenRun: (runId: number) => void;
+}) {
+    const host = useHost();
+    const now = useNow(false);
+    const merged = pull.state === "merged";
+    const actor = merged ? (pull.mergedBy ?? pull.author) : pull.author;
+    const from = pull.head ?? pull.headLabel;
+    return (
+        <div className="pr-card">
+            <div className="pr-card-top">
+                <StateMark kind="pull" state={pull.state} draft={pull.draft} size={14} />
+                <h2 className="pr-title">
+                    {pull.title} <span className="pr-number">#{pull.number}</span>
+                </h2>
+                <Tooltip label={`Open on ${host.name}`}>
+                    <button
+                        type="button"
+                        className="gha-icon-btn"
+                        aria-label={`Open on ${host.name}`}
+                        onClick={() => void openUrl(pull.url).catch(swallow(`open ${host.name}`))}>
+                        <IconExternal size={12} />
+                    </button>
+                </Tooltip>
+                <Tooltip label="Back to pull requests">
+                    <button type="button" className="gha-icon-btn" aria-label="Back to pull requests" onClick={onClose}>
+                        <IconClose size={12} />
+                    </button>
+                </Tooltip>
+            </div>
+            <div className="pr-sub">
+                {from && <Branch name={from} />}
+                {pull.base && (
+                    <>
+                        <span>→</span>
+                        <Branch name={pull.base} />
+                    </>
+                )}
+                <span>·</span>
+                <span>{actor ?? "someone"}</span>
+                <span>{formatAgo(merged ? pull.mergedAt : pull.createdAt, now)}</span>
+                {cwd && pull.state === "open" && <CheckoutButton cwd={cwd} repo={repo} pull={pull} current={projectBranch} />}
+            </div>
+            <MergeBox repo={repo} pull={pull} verdict={verdict} reviewed={reviewed} active={active} onOpenRun={onOpenRun} />
+        </div>
+    );
+}
+
+const FILE_STATUS: Record<string, { letter: string; cls: string }> = {
+    added: { letter: "A", cls: "added" },
+    removed: { letter: "D", cls: "deleted" },
+    renamed: { letter: "R", cls: "renamed" },
+    copied: { letter: "C", cls: "renamed" },
+};
+
+/** The pull request's changed files as rows, like Changes lists staged and unstaged ones. */
+function PullFileRows({
+    repo,
+    number,
+    active,
+    focus,
+    onFocus,
+}: {
+    repo: RepoRef;
+    number: number;
+    active: boolean;
+    focus: string | null;
+    onFocus: (path: string) => void;
+}) {
+    const files = useResourceEnabled(active, pullFilesR, repo, number);
+    const list = files.data ?? [];
+    const added = list.reduce((sum, file) => sum + file.additions, 0);
+    const removed = list.reduce((sum, file) => sum + file.deletions, 0);
+    return (
+        <div className="git-list pr-files">
+            <div className="git-group git-file-group">
+                <span className="git-label">Files</span>
+                {list.length > 0 && <span className="git-count">{list.length}</span>}
+                {list.length > 0 && (
+                    <span className="gha-diffstat pr-files-stat">
+                        <span className="gha-add">+{added.toLocaleString()}</span>
+                        <span className="gha-del">−{removed.toLocaleString()}</span>
+                    </span>
+                )}
+            </div>
+            {files.status === "loading" && !files.data && <SkeletonRows rows={3} label="Loading files" />}
+            {list.map((file) => {
+                const badge = FILE_STATUS[file.status] ?? { letter: "M", cls: "modified" };
+                const dir = dirname(file.path);
+                return (
+                    <button
+                        key={file.path}
+                        type="button"
+                        className={`git-row git-file-row${focus === file.path ? " sel" : ""}`}
+                        title={file.path}
+                        onClick={() => onFocus(file.path)}>
+                        <FileIcon name={basename(file.path)} size={14} />
+                        <span className="git-row-name">
+                            {basename(file.path)}
+                            {dir && <span className="git-row-dir">{dir}</span>}
+                        </span>
+                        <span className={`git-status ${badge.cls}`}>{badge.letter}</span>
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
+
+/** The pull request's conversation, as a folding panel under its files: the whole timeline and the reply box. */
+function PullThread({
+    paneId,
+    repo,
+    pull,
+    verdict,
+    login,
+    active,
+}: {
+    paneId: string;
+    repo: RepoRef;
+    pull: Pull;
+    verdict: string | null;
+    login: string | null;
+    active: boolean;
+}) {
+    const open = useStore((s) => s.gitViews[paneId]?.threadOpen ?? true);
+    const height = useStore((s) => s.gitViews[paneId]?.threadHeight ?? null);
+    const timeline = useResourceEnabled(active, timelineR, repo, pull.number);
+    const now = useNow(false);
+    const said = (timeline.data ?? []).filter((item) => item.kind === "commented" || item.kind === "reviewed");
+    const last = said.at(-1);
+    return (
+        <FoldPanel
+            label="Conversation"
+            count={said.length + 1}
+            summary={last ? `${last.actor ?? "someone"}: ${(last.body ?? "").split("\n")[0]}` : null}
+            badge={
+                verdict === "Changes requested" ? (
+                    <span className="pr-verdict" data-tone="danger">
+                        changes requested
+                    </span>
+                ) : verdict === "Approved" ? (
+                    <span className="pr-verdict" data-tone="live">
+                        approved
+                    </span>
+                ) : null
+            }
+            open={open}
+            height={height}
+            onToggle={() => setGitView(paneId, { threadOpen: !open })}
+            onResize={(next) => setGitView(paneId, { threadHeight: next })}>
+            <div className="pr-thread">
+                <CommentThread
+                    repo={repo}
+                    number={pull.number}
+                    active={active}
+                    now={now}
+                    withoutCommits
+                    opening={{
+                        key: "opening",
+                        author: pull.author,
+                        avatarUrl: pull.avatarUrl,
+                        association: pull.authorAssociation,
+                        at: pull.createdAt,
+                        body: pull.body,
+                        review: null,
+                    }}
+                    base={pull.base}
+                    review={pull.state === "open" ? { mine: !!login && pull.author === login } : null}
+                />
+            </div>
+        </FoldPanel>
+    );
+}
+
+/** A pull request's commits, as the git pane's own history: newest first, one lane, the same rows. */
+function PullHistory({
+    paneId,
+    repo,
+    number,
+    active,
+    selected,
+    onSelect,
+}: {
+    paneId: string;
+    repo: RepoRef;
+    number: number;
+    active: boolean;
+    selected: string | null;
+    onSelect: (sha: string | null) => void;
+}) {
+    const open = useStore((s) => s.gitViews[paneId]?.historyOpen ?? false);
+    const height = useStore((s) => s.gitViews[paneId]?.historyHeight ?? null);
+    const commits = useResourceEnabled(active, pullCommitsR, repo, number);
+    const now = useNow(false);
+    const rows = useMemo<GitCommit[]>(() => {
+        const list = [...(commits.data ?? [])].reverse();
+        return list.map((commit, index) => ({
+            hash: commit.sha.slice(0, 7),
+            full_hash: commit.sha,
+            parents: list[index + 1] ? [list[index + 1].sha] : [],
+            author: commit.author ?? "someone",
+            author_email: "",
+            date: formatAgo(commit.date, now),
+            subject: commit.message.split("\n")[0],
+            refs: [],
+            unpushed: false,
+        }));
+    }, [commits.data, now]);
+    const index = selected ? rows.findIndex((row) => row.full_hash === selected) : -1;
+    return (
+        <FoldPanel
+            label="Commits"
+            count={rows.length}
+            summary={rows[0]?.subject ?? null}
+            open={open}
+            height={height}
+            onToggle={() => {
+                if (open) onSelect(null);
+                setGitView(paneId, { historyOpen: !open });
+            }}
+            onResize={(next) => setGitView(paneId, { historyHeight: next })}>
+            <div className="git-list">
+                {commits.status === "loading" && !commits.data ? (
+                    <SkeletonRows rows={4} label="Loading commits" />
+                ) : (
+                    <GitGraph
+                        commits={rows}
+                        selectedIndex={index}
+                        focused={index >= 0}
+                        range={null}
+                        onSelect={(i) => onSelect(rows[i]?.full_hash ?? null)}
+                        onActivate={() => {}}
+                    />
+                )}
+            </div>
+        </FoldPanel>
+    );
+}
+
+/** An open pull request, laid out like Changes: its card, its files, then its conversation and commits folding beneath. */
+function PullColumn({
+    paneId,
+    repo,
+    cwd,
+    projectBranch,
+    number,
+    active,
+    login,
+    focus,
+    commit,
+    onFocus,
+    onCommit,
+    onClose,
+    onOpenRun,
+}: DetailProps & {
+    paneId: string;
+    focus: string | null;
+    commit: string | null;
+    onFocus: (path: string) => void;
+    onCommit: (sha: string | null) => void;
+    onClose: () => void;
+}) {
     const pull = useResourceEnabled(active, pullR, repo, number);
     const reviews = useResourceEnabled(active, pullReviewsR, repo, number);
-    const timeline = useResourceEnabled(active && tab === "conversation", timelineR, repo, number);
-    const now = useNow(false);
-
     if (pull.status === "loading" && !pull.data) return <SkeletonRows rows={8} label="Loading pull request" />;
     if (!pull.data) {
-        return <EmptyState title="Could not read it" message={failureMessage(pull.error)} tone="error" action={{ label: "Back", onClick: onBack }} />;
+        return (
+            <EmptyState title="Could not read it" message={failureMessage(pull.error)} tone="error" action={{ label: "Back", onClick: onClose }} />
+        );
     }
     const found = pull.data;
     const reviewList = reviews.data ?? [];
     const verdict = reviewVerdict(reviewList);
-    const merged = found.state === "merged";
-    const actor = merged ? (found.mergedBy ?? found.author) : found.author;
-    const verb = merged ? "merged" : found.state === "open" ? "wants to merge" : "wanted to merge";
-    const from = found.headLabel ?? found.head;
-
-    const people = new Map<string, string | null>();
-    const meet = (who: string | null, avatarUrl: string | null) => {
-        if (who && !people.get(who)) people.set(who, avatarUrl);
-    };
-    meet(found.author, found.avatarUrl);
-    for (const review of reviewList) meet(review.author, review.avatarUrl);
-    for (const item of timeline.data ?? []) if (item.kind === "commented" || item.kind === "reviewed") meet(item.actor, item.avatarUrl);
-    const participants = [...people].map(([who, avatarUrl]) => ({ login: who, avatarUrl }));
-
-    const tabs: { id: PullTab; label: string; count: number | null }[] = [
-        { id: "conversation", label: "Conversation", count: null },
-        { id: "commits", label: "Commits", count: found.commits },
-        { id: "files", label: "Files changed", count: found.changedFiles },
-    ];
-
     return (
-        <div className="gha-detail" data-tab={tab}>
-            <PageHead
-                mark={<StateMark kind="pull" state={found.state} draft={found.draft} size={14} />}
-                title={found.title}
-                number={found.number}
-                url={found.url}
-                backLabel="Back to pull requests"
-                onBack={onBack}
-                actions={cwd && found.state === "open" ? <CheckoutButton cwd={cwd} repo={repo} pull={found} current={projectBranch} /> : null}>
-                <span className="gha-state-word" data-kind="pull" data-state={stateOf(found.state, found.draft)}>
-                    {stateLabel("pull", found.state, found.draft)}
-                </span>
-                <span className="gha-page-sentence">
-                    <Who login={actor} avatarUrl={actor === found.author ? found.avatarUrl : (found.avatars[actor ?? ""] ?? null)} />
-                    <span>
-                        {verb} {found.commits !== null ? plural(found.commits, "commit") + " " : ""}into
-                    </span>
-                    {found.base && <Branch name={found.base} />}
-                    {from && (
-                        <>
-                            <span>from</span>
-                            <Branch name={from} />
-                            <Tooltip label="Copy the branch name">
-                                <button
-                                    type="button"
-                                    className="gha-icon-btn gha-copy-branch"
-                                    aria-label="Copy the branch name"
-                                    onClick={() =>
-                                        void copyText(found.head ?? from)
-                                            .then(() => notify("success", `Copied ${found.head ?? from}`))
-                                            .catch(swallow("copy the branch name"))
-                                    }>
-                                    <IconCopy size={12} />
-                                </button>
-                            </Tooltip>
-                        </>
-                    )}
-                </span>
-                <span>{formatAgo(merged ? found.mergedAt : found.createdAt, now)}</span>
-            </PageHead>
-
-            <div className="gha-tabs" role="tablist">
-                {tabs.map((each) => (
-                    <button
-                        key={each.id}
-                        type="button"
-                        role="tab"
-                        aria-selected={tab === each.id}
-                        className="gha-tab"
-                        data-on={tab === each.id ? "1" : "0"}
-                        onClick={() => setTab(each.id)}>
-                        {each.label}
-                        {each.count !== null && <span className="gha-tab-count">{each.count.toLocaleString()}</span>}
-                    </button>
-                ))}
-                <span className="gha-page-spacer" />
-                {found.additions !== null && (
-                    <span className="gha-diffstat">
-                        <span className="gha-add">+{found.additions.toLocaleString()}</span>
-                        <span className="gha-del">−{(found.deletions ?? 0).toLocaleString()}</span>
-                    </span>
-                )}
-            </div>
-
-            {tab === "conversation" && (
-                <div className="gha-pull-body">
-                    <CommentThread
-                        repo={repo}
-                        number={found.number}
-                        active={active}
-                        now={now}
-                        opening={{
-                            key: "opening",
-                            author: found.author,
-                            avatarUrl: found.avatarUrl,
-                            association: found.authorAssociation,
-                            at: found.createdAt,
-                            body: found.body,
-                            review: null,
-                        }}
-                        base={found.base}
-                        review={found.state === "open" ? { mine: !!login && found.author === login } : null}>
-                        <MergeBox repo={repo} pull={found} verdict={verdict} reviewed={reviewList.length > 0} active={active} onOpenRun={onOpenRun} />
-                    </CommentThread>
-                    <PullSide pull={found} reviews={reviewList} participants={participants} />
-                </div>
-            )}
-            {tab === "commits" && <CommitsTab repo={repo} number={found.number} active={active} now={now} />}
-            {tab === "files" && <PullFiles repo={repo} number={found.number} cwd={cwd} active={active} />}
-        </div>
+        <>
+            <PullCard
+                repo={repo}
+                cwd={cwd}
+                projectBranch={projectBranch}
+                pull={found}
+                verdict={verdict}
+                reviewed={reviewList.length > 0}
+                active={active}
+                onClose={onClose}
+                onOpenRun={onOpenRun}
+            />
+            <PullFileRows repo={repo} number={number} active={active} focus={focus} onFocus={onFocus} />
+            <PullThread paneId={paneId} repo={repo} pull={found} verdict={verdict} login={login} active={active} />
+            <PullHistory paneId={paneId} repo={repo} number={number} active={active} selected={commit} onSelect={onCommit} />
+        </>
     );
 }
 
@@ -523,9 +598,13 @@ interface Props {
 
 export function PullsView({ paneId, repo, listState, item, composing, projectBranch, cwd, login, active }: Props) {
     const listing = item === null && !composing;
-    const pulls = useResourceEnabled(active && listing, pullsR, repo, listState);
+    const pulls = useResourceEnabled(active, pullsR, repo, listState);
     const open = useResourceEnabled(active && listing && !!projectBranch, pullsR, repo, "open");
     const now = useNow(false);
+    const [commit, setCommit] = useState<{ pull: number; sha: string } | null>(null);
+    const [focus, setFocus] = useState<{ pull: number; path: string } | null>(null);
+    const shownCommit = commit && commit.pull === item ? commit.sha : null;
+    const focusPath = focus && focus.pull === item ? focus.path : null;
 
     if (composing) {
         return (
@@ -538,71 +617,114 @@ export function PullsView({ paneId, repo, listState, item, composing, projectBra
             />
         );
     }
-    if (item !== null) {
-        return (
-            <PullDetail
-                repo={repo}
-                cwd={cwd}
-                projectBranch={projectBranch}
-                number={item}
-                active={active}
-                login={login}
-                onBack={() => showItem(paneId, null)}
-                onOpenRun={(runId) => openRunFrom(paneId, runId)}
-            />
-        );
-    }
-    if (pulls.status === "loading" && !pulls.data) return <SkeletonRows rows={8} label="Loading pull requests" />;
-    if (pulls.error) {
-        return (
+
+    const rows = pulls.data ?? [];
+    const offer = !!open.data && needsPull(projectBranch, open.data, []);
+    const list =
+        pulls.status === "loading" && !pulls.data ? (
+            <SkeletonRows rows={8} label="Loading pull requests" />
+        ) : pulls.error ? (
             <EmptyState
                 title="Could not read pull requests"
                 message={failureMessage(pulls.error)}
                 tone="error"
                 action={{ label: "Try again", onClick: () => void pulls.refresh() }}
             />
-        );
-    }
-    const rows = pulls.data ?? [];
-    const offer = !!open.data && needsPull(projectBranch, open.data, []);
-
-    return (
-        <div className="gha-list">
-            {offer && projectBranch && (
-                <div className="gha-callout">
-                    <span>
-                        <span className="gha-tag">{projectBranch}</span> has no pull request yet.
-                    </span>
-                    <button type="button" className="gha-btn primary" onClick={() => compose(paneId, "pull")}>
-                        Open one
-                    </button>
-                </div>
-            )}
-            <div className="gha-list-head">
-                <div className="gha-chips">
-                    {LIST_STATES.map((state) => (
-                        <button
-                            key={state}
-                            type="button"
-                            className="gha-chip"
-                            data-on={listState === state ? "1" : "0"}
-                            onClick={() => setListState(paneId, state)}>
-                            {state === "all" ? "All" : state === "open" ? "Open" : "Closed"}
+        ) : (
+            <div className="gha-list pr-list">
+                <div className="gha-list-head">
+                    <div className="gha-chips">
+                        {LIST_STATES.map((state) => (
+                            <button
+                                key={state}
+                                type="button"
+                                className="gha-chip"
+                                data-on={listState === state ? "1" : "0"}
+                                onClick={() => setListState(paneId, state)}>
+                                {state === "all" ? "All" : state === "open" ? "Open" : "Closed"}
+                            </button>
+                        ))}
+                    </div>
+                    <span className="gha-page-spacer" />
+                    <Tooltip label="New pull request">
+                        <button type="button" className="gha-icon-btn" aria-label="New pull request" onClick={() => compose(paneId, "pull")}>
+                            <IconPlus size={13} />
                         </button>
-                    ))}
+                    </Tooltip>
                 </div>
-                <span className="gha-dim gha-list-count">
-                    {rows.length} pull request{rows.length === 1 ? "" : "s"}
-                    <button type="button" className="gha-btn" onClick={() => compose(paneId, "pull")}>
-                        New pull request
-                    </button>
-                </span>
+                {offer && projectBranch && (
+                    <div className="gha-callout">
+                        <span>
+                            <span className="gha-tag">{projectBranch}</span> has no pull request yet.
+                        </span>
+                        <button type="button" className="gha-btn primary" onClick={() => compose(paneId, "pull")}>
+                            Open one
+                        </button>
+                    </div>
+                )}
+                {rows.length === 0 ? (
+                    <EmptyState icon={<IconPullRequest size={20} />} message={`No ${listState === "all" ? "" : listState} pull requests.`} />
+                ) : (
+                    rows.map((pull) => <PullRow key={pull.number} pull={pull} now={now} onOpen={() => showItem(paneId, pull.number)} />)
+                )}
             </div>
-            {rows.length === 0 ? (
-                <EmptyState icon={<IconPullRequest size={20} />} message={`No ${listState === "all" ? "" : listState} pull requests.`} />
-            ) : (
-                rows.map((pull) => <PullRow key={pull.number} pull={pull} now={now} onOpen={() => showItem(paneId, pull.number)} />)
-            )}
-        </div>
-    );
+        );
+
+    const left =
+        item === null ? (
+            list
+        ) : (
+            <PullColumn
+                paneId={paneId}
+                repo={repo}
+                cwd={cwd}
+                projectBranch={projectBranch}
+                number={item}
+                active={active}
+                login={login}
+                focus={focusPath}
+                commit={shownCommit}
+                onFocus={(path) => {
+                    setCommit(null);
+                    setFocus({ pull: item, path });
+                }}
+                onCommit={(sha) => setCommit(sha ? { pull: item, sha } : null)}
+                onClose={() => showItem(paneId, null)}
+                onBack={() => showItem(paneId, null)}
+                onOpenRun={(runId) => openRunFrom(paneId, runId)}
+            />
+        );
+
+    const right =
+        item === null ? (
+            <EmptyState icon={<IconPullRequest size={20} />} message="Pick a pull request to see what it changes." />
+        ) : shownCommit ? (
+            <div className="pr-commit-review">
+                <div className="pr-commit-bar">
+                    <span className="gha-dim">Commit</span>
+                    <span className="gha-mono">{shownCommit.slice(0, 7)}</span>
+                    <span className="gha-page-spacer" />
+                    <button type="button" className="gha-btn" onClick={() => setCommit(null)}>
+                        All changes
+                    </button>
+                </div>
+                {cwd ? (
+                    <CommitReview
+                        key={shownCommit}
+                        repo={cwd}
+                        rev={shownCommit}
+                        title={shownCommit.slice(0, 7)}
+                        subtitle=""
+                        head={<></>}
+                        onOpenFile={requestOpenFile}
+                    />
+                ) : (
+                    <EmptyState message="This repository is not checked out here, so its commits cannot be opened." />
+                )}
+            </div>
+        ) : (
+            <PullFiles repo={repo} number={item} cwd={cwd} active={active} focusPath={focusPath ?? undefined} />
+        );
+
+    return <GitColumns paneId={paneId} left={left} right={<div className="git-right-review">{right}</div>} />;
 }

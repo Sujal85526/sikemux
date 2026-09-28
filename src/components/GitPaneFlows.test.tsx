@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { GitPane } from "./GitPane";
@@ -49,29 +49,24 @@ it("offers to stash from the toolbar menu when there are no stashes yet", async 
     expect(getState().gitModal).toMatchObject({ kind: "menu", title: "Stash" });
 });
 
-it("switches between Changes and Branches, with History folded under the changes", async () => {
+it("switches between Changes and Branches from the rail, with History folded under the changes", async () => {
     const user = userEvent.setup();
     render(<GitPane paneId="git-test" cwd="/repo" active visible />);
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent?.replace(/\d+$/, ""))).toEqual(["Changes", "Branches"]);
-    expect(screen.getByRole("tab", { name: /Changes/ })).toHaveAttribute("aria-selected", "true");
+    const rail = screen.getByRole("navigation", { name: "Git" });
+    const changes = within(rail).getByRole("button", { name: "Changes (1)" });
+    expect(changes).toHaveAttribute("aria-current", "page");
 
     const history = screen.getByRole("button", { name: /History/ });
     expect(history).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByRole("button", { name: "Search commits" })).not.toBeInTheDocument();
 
     await user.click(history);
     expect(getState().gitViews["git-test"]).toMatchObject({ historyOpen: true, panel: "commits" });
-    expect(screen.queryByRole("textbox", { name: "Search commits" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Search commits" }));
-    expect(screen.getByRole("textbox", { name: "Search commits" })).toHaveFocus();
-    await user.keyboard("{Escape}");
-    expect(screen.queryByRole("textbox", { name: "Search commits" })).not.toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /Changes/ })).toHaveAttribute("aria-selected", "true");
+    expect(changes).toHaveAttribute("aria-current", "page");
 
     await user.click(screen.getByRole("button", { name: /History/ }));
     expect(getState().gitViews["git-test"]).toMatchObject({ historyOpen: false, panel: "files" });
 
-    await user.click(screen.getByRole("tab", { name: /Branches/ }));
+    await user.click(within(rail).getByRole("button", { name: "Branches (2)" }));
     expect(getState().gitViews["git-test"].panel).toBe("branches");
     expect(screen.getByRole("button", { name: /New branch/ })).toBeInTheDocument();
 });

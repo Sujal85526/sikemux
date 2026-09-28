@@ -104,6 +104,9 @@ export interface GitPaneView {
     historyOpen: boolean;
     /** The open history's height in pixels once someone has dragged it; null shares the column evenly. */
     historyHeight: number | null;
+    /** Whether an open pull request's conversation is unfolded, and its height once dragged. */
+    threadOpen: boolean;
+    threadHeight: number | null;
     /** A repository found inside the project folder, when the folder is not one itself. */
     repo: string | null;
 }
@@ -116,6 +119,8 @@ export const DEFAULT_GIT_VIEW: GitPaneView = {
     leftWidth: null,
     historyOpen: false,
     historyHeight: null,
+    threadOpen: true,
+    threadHeight: null,
     repo: null,
 };
 

@@ -1,17 +1,4 @@
-import {
-    lazy,
-    memo,
-    Suspense,
-    useCallback,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
-    type MouseEvent,
-    type PointerEvent as ReactPointerEvent,
-    type ReactNode,
-    type RefObject,
-} from "react";
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import {
     git,
     hasUnstaged,
@@ -67,6 +54,8 @@ import { AuthorAvatar } from "./git/AuthorAvatar";
 import { GitGraph } from "./git/GitGraph";
 import { GitModalRenderer } from "./git/GitModalRenderer";
 import { VirtualPanelRows } from "./git/VirtualPanelRows";
+import { GitColumns } from "./git/GitColumns";
+import { HISTORY_CLEARANCE, HISTORY_MIN, ResizeHandle } from "./git/ResizeHandle";
 import { SkeletonRows } from "./Skeleton";
 import { EmptyState } from "./Panel";
 import { AI_MODELS, AI_PROVIDER_LABEL, GIT_HELP, GIT_PANEL_BY_KEY, defaultAiModel } from "./git/gitPaneConstants";
@@ -123,7 +112,6 @@ function GitWorkbench({
     onLeaveRepo: (() => void) | null;
 }) {
     const paneRootRef = useRef<HTMLDivElement>(null);
-    const leftRef = useRef<HTMLDivElement>(null);
     const historyRef = useRef<HTMLDivElement>(null);
     const storedView = useStore((s) => s.gitViews[paneId]);
     const view = {
@@ -1384,7 +1372,7 @@ function GitWorkbench({
                         axis="y"
                         grows={-1}
                         min={HISTORY_MIN}
-                        max={() => (leftRef.current?.clientHeight ?? HISTORY_MIN + HISTORY_CLEARANCE) - HISTORY_CLEARANCE}
+                        max={() => (historyRef.current?.parentElement?.clientHeight ?? HISTORY_MIN + HISTORY_CLEARANCE) - HISTORY_CLEARANCE}
                         size={view.historyHeight}
                         label="Resize the history"
                         className="git-history-split"
@@ -1576,102 +1564,99 @@ function GitWorkbench({
         );
     }
 
-    const tabs: [GitPanel, string, ReactNode, number | null][] = [
-        ["files", "Changes", <IconFile key="i" size={13} />, files.length],
-        ["branches", "Branches", <IconGit key="i" size={13} />, branches.length],
-    ];
-    const tabOf = (p: GitPanel): GitPanel => (p === "branches" ? "branches" : "files");
-
     return (
         <div ref={paneRootRef} className="git-pane" tabIndex={-1}>
-            <div className="git-toolbar">
-                {onLeaveRepo && (
-                    <Tooltip label="Back to the repositories in this folder">
-                        <button type="button" className="git-btn git-back" onClick={onLeaveRepo}>
-                            <IconChevron size={11} className="git-back-icon" />
-                            {basenameOf(repo)}
+            <GitHostShell
+                paneId={paneId}
+                cwd={repo}
+                area={view.area}
+                active={active}
+                onArea={(area) => cmd.setGitView(paneId, { area })}
+                local={[
+                    {
+                        id: "changes",
+                        label: "Changes (1)",
+                        icon: <IconFile size={16} />,
+                        count: files.length,
+                        on: view.area === "local" && panel !== "branches",
+                        onSelect: () => cmd.setGitView(paneId, { area: "local", panel: panel === "branches" ? "files" : panel }),
+                    },
+                    {
+                        id: "branches",
+                        label: "Branches (2)",
+                        icon: <IconGit size={16} />,
+                        on: view.area === "local" && panel === "branches",
+                        onSelect: () => cmd.setGitView(paneId, { area: "local", panel: "branches" }),
+                    },
+                ]}>
+                <div className="git-toolbar">
+                    {onLeaveRepo && (
+                        <Tooltip label="Back to the repositories in this folder">
+                            <button type="button" className="git-btn git-back" onClick={onLeaveRepo}>
+                                <IconChevron size={11} className="git-back-icon" />
+                                {basenameOf(repo)}
+                            </button>
+                        </Tooltip>
+                    )}
+                    <Tooltip label="Switch branch">
+                        <button type="button" className="git-btn git-switch" onClick={(event) => openBranchPicker(event.currentTarget)}>
+                            <IconGit size={13} />
+                            <span className="git-switch-name">{overviewLoading ? "…" : currentBranch || "detached"}</span>
+                            <IconChevron size={9} className="git-switch-chev" />
                         </button>
                     </Tooltip>
-                )}
-                <Tooltip label="Switch branch">
-                    <button type="button" className="git-btn git-switch" onClick={(event) => openBranchPicker(event.currentTarget)}>
-                        <IconGit size={13} />
-                        <span className="git-switch-name">{overviewLoading ? "…" : currentBranch || "detached"}</span>
-                        <IconChevron size={9} className="git-switch-chev" />
-                    </button>
-                </Tooltip>
-                {overviewError && <span className="git-tb-chip error">git error</span>}
-                {busy && (
-                    <span className={`git-tb-busy${busy.startsWith("✗") ? " error" : ""}`}>
-                        {!busy.startsWith("✗") && <span className="git-panel-spinner" />}
-                        <span>{busy}</span>
-                    </span>
-                )}
-                <span className="git-tb-grow" />
-                <Tooltip label="Fetch all remotes (F)">
-                    <button type="button" className="git-btn" onClick={() => doFetch(null)}>
-                        <IconFetch size={13} />
-                        Fetch
-                    </button>
-                </Tooltip>
-                <Tooltip label={behind > 0 ? `Pull ${behind} commit${behind > 1 ? "s" : ""} (p)` : "Pull (p)"}>
-                    <button type="button" className="git-btn" onClick={pullRepo}>
-                        <IconPull size={13} />
-                        Pull
-                        {behind > 0 && <span className="git-btn-count">{behind}</span>}
-                    </button>
-                </Tooltip>
-                <Tooltip
-                    label={
-                        !upstream ? "Publish branch and set upstream (P)" : ahead > 0 ? `Push ${ahead} commit${ahead > 1 ? "s" : ""} (P)` : "Push (P)"
-                    }>
-                    <button type="button" className={`git-btn${ahead > 0 || !upstream ? " primary" : ""}`} onClick={pushRepo}>
-                        <IconPush size={13} />
-                        {upstream ? "Push" : "Publish"}
-                        {ahead > 0 && <span className="git-btn-count">{ahead}</span>}
-                    </button>
-                </Tooltip>
-                <Tooltip label="Open pull request (⌃P)">
-                    <button type="button" className="git-btn" onClick={openPullRequest}>
-                        <IconPullRequest size={13} />
-                        Pull request
-                    </button>
-                </Tooltip>
-                <MoreButton label="Remotes, stashes and more" onOpen={openMoreMenu} className="git-btn icon" />
-            </div>
-            <GitHostShell paneId={paneId} cwd={repo} area={view.area} active={active} onArea={(area) => cmd.setGitView(paneId, { area })}>
-                <div className="git-body">
-                    <div className="git-left" ref={leftRef} style={view.leftWidth ? { width: view.leftWidth } : undefined}>
-                        <div className="git-tabs" role="tablist" aria-label="Git views">
-                            {tabs.map(([id, label, icon, count]) => (
-                                <button
-                                    key={id}
-                                    type="button"
-                                    role="tab"
-                                    aria-selected={tabOf(panel) === id}
-                                    className={tabOf(panel) === id ? "on" : ""}
-                                    onClick={() => setPanel(id === "files" && historyOpen && panel === "commits" ? "commits" : id)}>
-                                    {icon}
-                                    {label}
-                                    {count ? <span className="git-tab-count">{count}</span> : null}
-                                </button>
-                            ))}
-                        </div>
-                        {left}
-                        {cmdLogOpen && <GitCmdLogBar />}
-                    </div>
-                    <ResizeHandle
-                        targetRef={leftRef}
-                        axis="x"
-                        grows={1}
-                        min={LEFT_MIN}
-                        max={() => (leftRef.current?.parentElement?.clientWidth ?? LEFT_MIN + RIGHT_MIN) - RIGHT_MIN}
-                        size={view.leftWidth}
-                        label="Resize the lists and the review"
-                        className="git-split"
-                        onResize={(width) => cmd.setGitView(paneId, { leftWidth: width })}
-                    />
-                    <div className="git-right">
+                    {overviewError && <span className="git-tb-chip error">git error</span>}
+                    {busy && (
+                        <span className={`git-tb-busy${busy.startsWith("✗") ? " error" : ""}`}>
+                            {!busy.startsWith("✗") && <span className="git-panel-spinner" />}
+                            <span>{busy}</span>
+                        </span>
+                    )}
+                    <span className="git-tb-grow" />
+                    <Tooltip label="Fetch all remotes (F)">
+                        <button type="button" className="git-btn" onClick={() => doFetch(null)}>
+                            <IconFetch size={13} />
+                            Fetch
+                        </button>
+                    </Tooltip>
+                    <Tooltip label={behind > 0 ? `Pull ${behind} commit${behind > 1 ? "s" : ""} (p)` : "Pull (p)"}>
+                        <button type="button" className="git-btn" onClick={pullRepo}>
+                            <IconPull size={13} />
+                            Pull
+                            {behind > 0 && <span className="git-btn-count">{behind}</span>}
+                        </button>
+                    </Tooltip>
+                    <Tooltip
+                        label={
+                            !upstream
+                                ? "Publish branch and set upstream (P)"
+                                : ahead > 0
+                                  ? `Push ${ahead} commit${ahead > 1 ? "s" : ""} (P)`
+                                  : "Push (P)"
+                        }>
+                        <button type="button" className={`git-btn${ahead > 0 || !upstream ? " primary" : ""}`} onClick={pushRepo}>
+                            <IconPush size={13} />
+                            {upstream ? "Push" : "Publish"}
+                            {ahead > 0 && <span className="git-btn-count">{ahead}</span>}
+                        </button>
+                    </Tooltip>
+                    <Tooltip label="Open pull request (⌃P)">
+                        <button type="button" className="git-btn" onClick={openPullRequest}>
+                            <IconPullRequest size={13} />
+                            Pull request
+                        </button>
+                    </Tooltip>
+                    <MoreButton label="Remotes, stashes and more" onOpen={openMoreMenu} className="git-btn icon" />
+                </div>
+                <GitColumns
+                    paneId={paneId}
+                    left={
+                        <>
+                            {left}
+                            {cmdLogOpen && <GitCmdLogBar />}
+                        </>
+                    }
+                    right={
                         <div className="git-right-review">
                             <Suspense fallback={<SkeletonRows rows={6} label="Loading diff preview" />}>{right}</Suspense>
                             {busy && !busy.startsWith("✗") && (
@@ -1683,8 +1668,8 @@ function GitWorkbench({
                                 </div>
                             )}
                         </div>
-                    </div>
-                </div>
+                    }
+                />
             </GitHostShell>
             {menu && <TreeContextMenu x={menu.x} y={menu.y} items={menu.items} alignRight={menu.alignRight} onClose={() => setMenu(null)} />}
             <GitModalRenderer paneId={paneId} active={active} />
@@ -1722,102 +1707,6 @@ function MoreButton({
                 <IconMore size={13} />
             </button>
         </Tooltip>
-    );
-}
-
-const LEFT_MIN = 260;
-const RIGHT_MIN = 360;
-const HISTORY_MIN = 96;
-/** Room kept above an open history for the tabs, the commit box and a few file rows. */
-const HISTORY_CLEARANCE = 280;
-
-/**
- * A hairline that resizes the box beside it. Dragging sizes the box directly and saves on release;
- * `grows` says which way along the axis makes the box bigger.
- */
-function ResizeHandle({
-    targetRef,
-    axis,
-    grows,
-    min,
-    max,
-    size,
-    label,
-    className,
-    onResize,
-}: {
-    targetRef: RefObject<HTMLDivElement | null>;
-    axis: "x" | "y";
-    grows: 1 | -1;
-    min: number;
-    max: () => number;
-    size: number | null;
-    label: string;
-    className: string;
-    onResize: (size: number | null) => void;
-}) {
-    const clamp = (next: number) => Math.round(Math.min(Math.max(min, max()), Math.max(min, next)));
-    const measure = () => (axis === "x" ? targetRef.current?.offsetWidth : targetRef.current?.offsetHeight) ?? size ?? min;
-    const apply = (next: number) => {
-        const el = targetRef.current;
-        if (!el) return;
-        if (axis === "x") el.style.width = `${next}px`;
-        else el.style.flex = `0 0 ${next}px`;
-    };
-
-    const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-        if (event.button !== 0) return;
-        event.preventDefault();
-        const handle = event.currentTarget;
-        handle.setPointerCapture(event.pointerId);
-        const start = axis === "x" ? event.clientX : event.clientY;
-        const startSize = measure();
-        let latest = startSize;
-        let frame: number | null = null;
-        const move = (ev: PointerEvent) => {
-            latest = clamp(startSize + grows * ((axis === "x" ? ev.clientX : ev.clientY) - start));
-            if (frame !== null) return;
-            frame = window.requestAnimationFrame(() => {
-                frame = null;
-                apply(latest);
-            });
-        };
-        const up = () => {
-            if (frame !== null) window.cancelAnimationFrame(frame);
-            handle.removeEventListener("pointermove", move);
-            handle.removeEventListener("pointerup", up);
-            handle.removeEventListener("pointercancel", up);
-            if (latest !== startSize) onResize(latest);
-        };
-        handle.addEventListener("pointermove", move);
-        handle.addEventListener("pointerup", up);
-        handle.addEventListener("pointercancel", up);
-    };
-
-    const [less, more] = axis === "x" ? ["ArrowLeft", "ArrowRight"] : grows > 0 ? ["ArrowUp", "ArrowDown"] : ["ArrowDown", "ArrowUp"];
-    return (
-        <div
-            className={className}
-            role="separator"
-            aria-orientation={axis === "x" ? "vertical" : "horizontal"}
-            aria-label={label}
-            aria-valuemin={min}
-            aria-valuenow={size ?? undefined}
-            tabIndex={0}
-            title="Drag to resize · double-click to reset"
-            onPointerDown={onPointerDown}
-            onDoubleClick={() => {
-                if (targetRef.current) targetRef.current.style.flex = "";
-                onResize(null);
-            }}
-            onKeyDown={(event) => {
-                if (event.key !== less && event.key !== more) return;
-                event.preventDefault();
-                event.stopPropagation();
-                const step = event.shiftKey ? 64 : 16;
-                onResize(clamp(measure() + (event.key === more ? step : -step)));
-            }}
-        />
     );
 }
 

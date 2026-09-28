@@ -308,13 +308,26 @@ interface Props {
     children?: ReactNode;
     /** Sits beside the composer's own buttons, such as closing the issue. */
     extraActions?: ReactNode;
+    /** Leaves pushed commits out, for a pull request whose commits are listed beside the thread. */
+    withoutCommits?: boolean;
 }
 
-export function CommentThread({ repo, number, active, now, opening = null, base = null, review = null, children, extraActions }: Props) {
+export function CommentThread({
+    repo,
+    number,
+    active,
+    now,
+    opening = null,
+    base = null,
+    review = null,
+    children,
+    extraActions,
+    withoutCommits = false,
+}: Props) {
     const timeline = useResourceEnabled(active, timelineR, repo, number);
     const [draft, setDraft] = useState("");
     const [busy, setBusy] = useState<ReviewEvent | "comment" | null>(null);
-    const blocks = blocksOf(timeline.data ?? []);
+    const blocks = blocksOf(timeline.data ?? []).filter((block) => !withoutCommits || block.kind !== "commits");
     const written = draft.trim().length > 0;
     const refreshThread = (also?: string) => invalidate((kind) => kind === "host.timeline" || kind === "host.comments" || kind === also);
 
