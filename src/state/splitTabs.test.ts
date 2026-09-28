@@ -272,6 +272,16 @@ describe("splitting Git and search", () => {
         expect(remaining).toMatchObject({ role: "term", root: { id: "p1" } });
         expect(getState().windows[tabs()[1]]).toMatchObject({ role: "search", root: { id: "s1" } });
     });
+
+    it("turns a terminal tab left holding Git into a Git tab", () => {
+        place("t", win("t", "term", pane("p1")), win("git", "git", pane("g1", "git")));
+        splitWithTab(sessionId(), { id: "git" }, "right");
+
+        separatePane("t", "p1");
+
+        expect(getState().windows.t).toMatchObject({ role: "git", name: "g1", root: { id: "g1" } });
+        expect(getState().windows[tabs()[1]]).toMatchObject({ role: "term", root: { id: "p1" } });
+    });
 });
 
 describe("an editor split in without being marked a single view", () => {

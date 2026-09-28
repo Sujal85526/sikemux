@@ -803,8 +803,9 @@ export function separatePane(windowId: string, paneId?: string): void {
         if (!rest) return;
         host.root = rest;
         if (!collectPanes(rest).some((candidate) => candidate.id === host.activePaneId)) host.activePaneId = collectPanes(rest)[0].id;
-        // A Git or search tab left holding something else is that thing's tab now.
-        if (rest.type === "pane" && (host.role === "git" || host.role === "search") && rest.kind !== host.role) {
+        // A tab left holding one pane becomes that pane's tab when either of them is Git or search.
+        const toolInvolved = rest.type === "pane" && (SPLITTABLE_TOOLS.has(rest.kind) || SPLITTABLE_TOOLS.has(host.role as PaneKind));
+        if (rest.type === "pane" && toolInvolved && roleOfPane(rest) !== host.role) {
             host.role = roleOfPane(rest);
             host.name = rest.title;
         }
