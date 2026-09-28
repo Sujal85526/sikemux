@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
 import { EmptyState, SkeletonRows } from "../../plugin-api/ui";
 import { failureMessage } from "../api";
+import { LocalRepoProvider } from "../localRepo";
 import { useHost } from "../registry";
 import { hostStatusR, workflowsR } from "../resources";
 import { hostSettings, resetView, slugOf, updateView, useHostView, type Section } from "../state";
@@ -79,57 +80,59 @@ export function HostArea({ paneId, section, repo, branch, cwd, active }: Props) 
     const canWrite = !!status.data?.canWriteCi;
     const runBranch = followBranch && !view.branch ? branch : view.branch;
     return (
-        <div className="gha-pane" data-active={active ? "1" : "0"}>
-            <div className="gha-body">
-                {section === "inbox" ? (
-                    <InboxView active={active} />
-                ) : section === "pulls" ? (
-                    <PullsView
-                        paneId={paneId}
+        <LocalRepoProvider value={cwd}>
+            <div className="gha-pane" data-active={active ? "1" : "0"}>
+                <div className="gha-body">
+                    {section === "inbox" ? (
+                        <InboxView active={active} />
+                    ) : section === "pulls" ? (
+                        <PullsView
+                            paneId={paneId}
+                            repo={repo}
+                            listState={view.listState}
+                            item={view.item}
+                            composing={view.composing === "pull"}
+                            projectBranch={branch}
+                            cwd={cwd}
+                            login={status.data?.login ?? null}
+                            active={active}
+                        />
+                    ) : section === "issues" ? (
+                        <IssuesView
+                            paneId={paneId}
+                            repo={repo}
+                            listState={view.listState}
+                            item={view.item}
+                            composing={view.composing === "issue"}
+                            page={view.page}
+                            active={active}
+                        />
+                    ) : section === "releases" ? (
+                        <ReleasesView repo={repo} active={active} />
+                    ) : view.run === null ? (
+                        <RunsList
+                            paneId={paneId}
+                            repo={repo}
+                            view={view}
+                            branch={runBranch}
+                            projectBranch={branch}
+                            active={active}
+                            canWrite={canWrite}
+                            onDispatch={(workflowId) => updateView(paneId, { dispatching: workflowId })}
+                        />
+                    ) : (
+                        <RunView paneId={paneId} repo={repo} runId={view.run} openJob={view.job} active={active} canWrite={canWrite} />
+                    )}
+                </div>
+                {dispatching && (
+                    <DispatchDialog
                         repo={repo}
-                        listState={view.listState}
-                        item={view.item}
-                        composing={view.composing === "pull"}
-                        projectBranch={branch}
-                        cwd={cwd}
-                        login={status.data?.login ?? null}
-                        active={active}
+                        workflow={dispatching}
+                        defaultBranch={runBranch ?? branch}
+                        onClose={() => updateView(paneId, { dispatching: null })}
                     />
-                ) : section === "issues" ? (
-                    <IssuesView
-                        paneId={paneId}
-                        repo={repo}
-                        listState={view.listState}
-                        item={view.item}
-                        composing={view.composing === "issue"}
-                        page={view.page}
-                        active={active}
-                    />
-                ) : section === "releases" ? (
-                    <ReleasesView repo={repo} active={active} />
-                ) : view.run === null ? (
-                    <RunsList
-                        paneId={paneId}
-                        repo={repo}
-                        view={view}
-                        branch={runBranch}
-                        projectBranch={branch}
-                        active={active}
-                        canWrite={canWrite}
-                        onDispatch={(workflowId) => updateView(paneId, { dispatching: workflowId })}
-                    />
-                ) : (
-                    <RunView paneId={paneId} repo={repo} runId={view.run} openJob={view.job} active={active} canWrite={canWrite} />
                 )}
             </div>
-            {dispatching && (
-                <DispatchDialog
-                    repo={repo}
-                    workflow={dispatching}
-                    defaultBranch={runBranch ?? branch}
-                    onClose={() => updateView(paneId, { dispatching: null })}
-                />
-            )}
-        </div>
+        </LocalRepoProvider>
     );
 }

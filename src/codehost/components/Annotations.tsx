@@ -1,5 +1,6 @@
 import { useResourceEnabled } from "../../plugin-api/resources";
 import type { RepoRef } from "../api";
+import { useOpenLocalFile } from "../localRepo";
 import { annotationsR } from "../resources";
 
 const TONE: Record<string, string | undefined> = { failure: "danger", warning: "warn" };
@@ -17,6 +18,7 @@ interface Props {
 
 export function Annotations({ repo, checkRunId, active }: Props) {
     const found = useResourceEnabled(active, annotationsR, repo, checkRunId);
+    const openFile = useOpenLocalFile();
     const annotations = found.data ?? [];
     if (annotations.length === 0) return null;
 
@@ -30,7 +32,17 @@ export function Annotations({ repo, checkRunId, active }: Props) {
                         <div className="gha-annotation-body">
                             {annotation.title && <span className="gha-annotation-title">{annotation.title}</span>}
                             <span className="gha-annotation-message">{annotation.message}</span>
-                            {place && <span className="gha-annotation-place gha-mono">{place}</span>}
+                            {place && annotation.path && openFile ? (
+                                <button
+                                    type="button"
+                                    className="gha-link gha-annotation-place gha-mono"
+                                    title="Open it in the editor"
+                                    onClick={() => openFile(annotation.path ?? "", annotation.startLine)}>
+                                    {place}
+                                </button>
+                            ) : (
+                                place && <span className="gha-annotation-place gha-mono">{place}</span>
+                            )}
                         </div>
                     </div>
                 );
