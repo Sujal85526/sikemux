@@ -62,6 +62,19 @@ describe("MergeReview", () => {
 
         fireEvent.click(screen.getByRole("button", { name: "staged.ts" }));
         expect(onOpenFile).toHaveBeenCalledWith("/repo/staged.ts");
+        expect(screen.getByTestId("diff:staged.ts:HEAD::index")).toBeInTheDocument();
+    });
+
+    it("folds a file from anywhere on its header except the name", () => {
+        const onOpenFile = vi.fn();
+        const { container } = render(<MergeReview repo="/repo" files={files} onOpenFile={onOpenFile} onSaved={() => {}} />);
+
+        fireEvent.click(container.querySelector(".merge-file-header .acc-grow")!);
+        expect(screen.queryByTestId("diff:staged.ts:HEAD::index")).not.toBeInTheDocument();
+        expect(onOpenFile).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole("button", { name: "Expand staged.ts" }));
+        expect(screen.getByTestId("diff:staged.ts:HEAD::index")).toBeInTheDocument();
     });
 
     it("only scrolls when the focused file changes, not on every status refresh", () => {

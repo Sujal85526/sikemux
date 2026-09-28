@@ -66,20 +66,26 @@ export function CommitReview({
                     const open = !collapsed.has(f);
                     return (
                         <div className="acc-item" key={f}>
-                            <div className="acc-header">
+                            <div className="acc-header" onClick={() => toggle(f)}>
                                 <Tooltip label={open ? "Collapse" : "Expand"}>
-                                    <button className="acc-toggle" onClick={() => toggle(f)} aria-label={open ? "Collapse" : "Expand"}>
+                                    <button className="acc-toggle" aria-label={open ? "Collapse" : "Expand"}>
                                         <span className={`acc-chev${open ? " open" : ""}`}>
                                             <IconChevron size={11} />
                                         </span>
                                     </button>
                                 </Tooltip>
+                                <FileIcon name={basename(f)} size={15} />
                                 <Tooltip label="Open in editor">
-                                    <button className="acc-name" onClick={() => onOpenFile(joinPath(repo, f))}>
-                                        <FileIcon name={basename(f)} size={15} />
-                                        <span>{f}</span>
+                                    <button
+                                        className="acc-name"
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            onOpenFile(joinPath(repo, f));
+                                        }}>
+                                        {f}
                                     </button>
                                 </Tooltip>
+                                <span className="acc-grow" />
                             </div>
                             {open && <DiffEditor repo={repo} path={f} baseRev={`${rev}~1`} headRev={rev} editable={false} autoHeight />}
                         </div>

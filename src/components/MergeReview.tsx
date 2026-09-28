@@ -10,7 +10,7 @@ import { gitFileBadges, gitStatusBadge, type GitStatusBadge } from "./git/gitFil
 
 const REVIEW_ROW_ESTIMATE = 250;
 const REVIEW_DOUBLE_ROW_ESTIMATE = 470;
-const REVIEW_HEADER_HEIGHT = 31;
+const REVIEW_HEADER_HEIGHT = 29;
 
 function sameFileList(a: readonly GitFile[], b: readonly GitFile[]): boolean {
     if (a === b) return true;
@@ -161,27 +161,28 @@ export function MergeReview({
                     if (node) itemRefs.current.set(path, node);
                     else itemRefs.current.delete(path);
                 }}>
-                <div className="acc-header merge-file-header">
+                <div className="acc-header merge-file-header" onClick={() => toggle(path)}>
                     <Tooltip label={open ? "Collapse" : "Expand"}>
-                        <button
-                            type="button"
-                            className="acc-toggle"
-                            onClick={() => toggle(path)}
-                            aria-label={`${open ? "Collapse" : "Expand"} ${path}`}>
+                        <button type="button" className="acc-toggle" aria-label={`${open ? "Collapse" : "Expand"} ${path}`}>
                             <span className={`acc-chev${open ? " open" : ""}`}>
                                 <IconChevron size={11} />
                             </span>
                         </button>
                     </Tooltip>
+                    <FileIcon name={basename(path)} size={15} />
                     <Tooltip label="Open in editor">
-                        <button type="button" className="acc-name" onClick={() => onOpenFile(joinPath(repo, path))}>
-                            <FileIcon name={basename(path)} size={15} />
-                            <span className="merge-file-path">
-                                {dirname(path) && <span className="merge-file-dir">{dirname(path)}/</span>}
-                                <span className="merge-file-base">{basename(path)}</span>
-                            </span>
+                        <button
+                            type="button"
+                            className="acc-name"
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                onOpenFile(joinPath(repo, path));
+                            }}>
+                            {dirname(path) && <span className="merge-file-dir">{dirname(path)}/</span>}
+                            <span className="merge-file-base">{basename(path)}</span>
                         </button>
                     </Tooltip>
+                    <span className="acc-grow" />
                     {fileActions && <span className="merge-file-actions">{fileActions(file)}</span>}
                     <span className="merge-file-status">
                         {gitFileBadges(file).map((badge) => (
