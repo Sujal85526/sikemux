@@ -3,7 +3,7 @@ import { SkeletonRows } from "../../plugin-api/ui";
 import type { GitArea } from "../../state/types";
 import { useHostRepo } from "../project";
 import { codeHost, HostProvider } from "../registry";
-import { setProjectRepo, slugOf } from "../state";
+import { sameRepo, setProjectRepo, slugOf } from "../state";
 import { HostStrip } from "./HostStrip";
 
 const HostArea = lazy(() => import("./HostArea").then((module) => ({ default: module.HostArea })));
@@ -38,7 +38,14 @@ export function GitHostShell({ paneId, cwd, area, active, onArea, children }: Pr
                 children
             ) : (
                 <Suspense fallback={<SkeletonRows rows={8} label={`Loading ${host.name}`} />}>
-                    <HostArea paneId={paneId} section={area} repo={repo} branch={found.branch} active={active} />
+                    <HostArea
+                        paneId={paneId}
+                        section={area}
+                        repo={repo}
+                        branch={found.branch}
+                        cwd={sameRepo(found.remote, repo) ? cwd : null}
+                        active={active}
+                    />
                 </Suspense>
             )}
             {picking && (

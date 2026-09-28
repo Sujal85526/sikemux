@@ -1,9 +1,9 @@
-import { memo, useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { confirmDialog, copyText, notify, reportError, swallow } from "../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
-import { Dropdown, EmptyState, IconChevron, IconClock, IconCopy, IconPullRequest, SkeletonRows, Tooltip, VirtualLogList } from "../../plugin-api/ui";
+import { Dropdown, EmptyState, IconClock, IconCopy, IconPullRequest, SkeletonRows, Tooltip } from "../../plugin-api/ui";
 import { hostApi, failureMessage, type MergeMethod, type Pull, type RepoRef, type Review } from "../api";
-import { pullCommitsR, timelineR, pullFilesR, pullR, pullReviewsR, pullsR } from "../resources";
+import { pullCommitsR, timelineR, pullR, pullReviewsR, pullsR } from "../resources";
 import { formatAgo, type Outcome } from "../runStatus";
 import { needsPull } from "../compose";
 import { compose, openRunFrom, setListState, showItem } from "../state";
@@ -12,6 +12,7 @@ import { OutcomeIcon } from "./ActionsIcon";
 import { Branch, Comments, Labels, PageHead, StateMark, stateLabel, stateOf, Who } from "./Bits";
 import { useBusy, useNow } from "./hooks";
 import { NewPullForm } from "./NewPullForm";
+import { PullFiles } from "./PullFiles";
 import { PullChecks } from "./PullChecks";
 
 const LIST_STATES = ["open", "closed", "all"];
@@ -48,27 +49,9 @@ function PullRow({ pull, now, onOpen }: { pull: Pull; now: number; onOpen: () =>
     );
 }
 
-function kindOf(line: string): "add" | "del" | "ctx" {
-    return line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : "ctx";
-}
-
-/** Rendered a screenful at a time, since a large diff runs to tens of thousands of lines. */
-const Diff = memo(function Diff({ patch }: { patch: string }) {
-    const lines = useMemo(() => patch.split("\n"), [patch]);
-    return (
-        <VirtualLogList
-            items={lines}
-            className="gha-patch gha-mono"
-            rowClassName={(line) => `gha-patch-line ${kindOf(line)}`}
-            estimateSize={18}
-            getItemKey={(_, index) => index}
-            renderRow={(line) => line || " "}
-        />
-    );
-});
-
 interface DetailProps {
     repo: RepoRef;
+    cwd: string | null;
     number: number;
     active: boolean;
     login: string | null;
@@ -363,31 +346,7 @@ function CommitsTab({ repo, number, active, now }: { repo: RepoRef; number: numb
     );
 }
 
-function FilesTab({ repo, number, active }: { repo: RepoRef; number: number; active: boolean }) {
-    const files = useResourceEnabled(active, pullFilesR, repo, number);
-    if (files.status === "loading" && !files.data) return <SkeletonRows rows={6} label="Loading files" />;
-    if (files.error && !files.data) return <EmptyState title="Could not read the files" message={failureMessage(files.error)} tone="error" />;
-    return (
-        <section className="gha-files">
-            {(files.data ?? []).map((file) => (
-                <details className="gha-file" key={file.path}>
-                    <summary className="gha-file-head">
-                        <span className="gha-chevron">
-                            <IconChevron size={11} />
-                        </span>
-                        <span className="gha-file-path">{file.path}</span>
-                        <span className="gha-diffstat">
-                            <span className="gha-add">+{file.additions}</span> <span className="gha-del">−{file.deletions}</span>
-                        </span>
-                    </summary>
-                    {file.patch ? <Diff patch={file.patch} /> : <div className="gha-side-empty">GitHub did not send a diff for this file.</div>}
-                </details>
-            ))}
-        </section>
-    );
-}
-
-function PullDetail({ repo, number, active, login, onBack, onOpenRun }: DetailProps) {
+function PullDetail({ repo, cwd, number, active, login, onBack, onOpenRun }: DetailProps) {
     const [tab, setTab] = useState<PullTab>("conversation");
     const pull = useResourceEnabled(active, pullR, repo, number);
     const reviews = useResourceEnabled(active, pullReviewsR, repo, number);
@@ -422,7 +381,7 @@ function PullDetail({ repo, number, active, login, onBack, onOpenRun }: DetailPr
     ];
 
     return (
-        <div className="gha-detail">
+        <div className="gha-detail" data-tab={tab}>
             <PageHead
                 mark={<StateMark kind="pull" state={found.state} draft={found.draft} size={14} />}
                 title={found.title}
@@ -509,7 +468,7 @@ function PullDetail({ repo, number, active, login, onBack, onOpenRun }: DetailPr
                 </div>
             )}
             {tab === "commits" && <CommitsTab repo={repo} number={found.number} active={active} now={now} />}
-            {tab === "files" && <FilesTab repo={repo} number={found.number} active={active} />}
+            {tab === "files" && <PullFiles repo={repo} number={found.number} cwd={cwd} active={active} />}
         </div>
     );
 }
@@ -521,11 +480,13 @@ interface Props {
     item: number | null;
     composing: boolean;
     projectBranch: string | null;
+    /** The project folder, when this is its own repository. */
+    cwd: string | null;
     login: string | null;
     active: boolean;
 }
 
-export function PullsView({ paneId, repo, listState, item, composing, projectBranch, login, active }: Props) {
+export function PullsView({ paneId, repo, listState, item, composing, projectBranch, cwd, login, active }: Props) {
     const listing = item === null && !composing;
     const pulls = useResourceEnabled(active && listing, pullsR, repo, listState);
     const open = useResourceEnabled(active && listing && !!projectBranch, pullsR, repo, "open");
@@ -546,6 +507,7 @@ export function PullsView({ paneId, repo, listState, item, composing, projectBra
         return (
             <PullDetail
                 repo={repo}
+                cwd={cwd}
                 number={item}
                 active={active}
                 login={login}

@@ -21,11 +21,13 @@ interface Props {
     repo: RepoRef;
     /** The branch checked out in the git pane. */
     branch: string | null;
+    /** The project folder, when the repository shown is its own. */
+    cwd: string | null;
     active: boolean;
 }
 
 /** One of the code host's sections, drawn in the git pane in place of the local workbench. */
-export function HostArea({ paneId, section, repo, branch, active }: Props) {
+export function HostArea({ paneId, section, repo, branch, cwd, active }: Props) {
     const host = useHost();
     const view = useHostView(paneId);
     const status = useResourceEnabled(active, hostStatusR, host.id);
@@ -89,6 +91,7 @@ export function HostArea({ paneId, section, repo, branch, active }: Props) {
                         item={view.item}
                         composing={view.composing === "pull"}
                         projectBranch={branch}
+                        cwd={cwd}
                         login={status.data?.login ?? null}
                         active={active}
                     />
