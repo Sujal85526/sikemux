@@ -1,4 +1,4 @@
-import { IconCheck, IconClock, IconClose, IconRun, IconWarning } from "../../../plugin-api/ui";
+import { IconCheck, IconClock, IconClose, IconRun, IconStop, IconWarning } from "../../../plugin-api/ui";
 import { OUTCOME_LABEL, type Outcome } from "../runStatus";
 
 export function GithubMark({ size = 16, className }: { size?: number; className?: string }) {
@@ -14,7 +14,7 @@ const GLYPH: Record<Outcome, typeof IconCheck> = {
     queued: IconClock,
     success: IconCheck,
     failure: IconClose,
-    cancelled: IconClose,
+    cancelled: IconStop,
     skipped: IconClock,
     blocked: IconWarning,
     unknown: IconWarning,
