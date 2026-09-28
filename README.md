@@ -162,6 +162,15 @@ Sikemux signs in with a token from `GH_TOKEN`, `GITHUB_TOKEN`, or the `gh` CLI, 
 
 ![GitHub](public/screenshots/cicd-github-run-view.png)
 
+### Bitbucket
+
+A project whose remote is on bitbucket.org gets the same Git panel, filled from Bitbucket Cloud:
+
+- Pipelines with their steps and logs. Stop one, run it again, or start any pipeline in `bitbucket-pipelines.yml` with variables.
+- Pull requests with their diffs, commits, activity, and checks. Approve, request changes, comment, merge or squash, decline, or open one from a branch picker.
+
+Sign in through the browser and Sikemux keeps the refresh token in the Keychain. Where a workspace turns outside apps away, paste an Atlassian API token with its email, or a repository or workspace access token. Agents can read the same data through the `bitbucket_*` tools.
+
 ### Rundeck
 
 The Rundeck panel lets you browse projects, start jobs from a palette, and follow each deployment step and its output as it runs.
