@@ -369,11 +369,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.gha-pr {
-    color: var(--acc);
-    border-color: var(--acc-line);
-    background: var(--acc-soft);
-}
 
 /* ---- Runs list ---------------------------------------------------------- */
 
@@ -605,11 +600,6 @@
 .gha-chevron[data-open="1"] {
     transform: rotate(90deg);
 }
-@media (prefers-reduced-motion: reduce) {
-    .gha-chevron {
-        transition: none;
-    }
-}
 .gha-job-body {
     padding: var(--space-1) var(--space-2) var(--space-3) var(--space-6);
 }
@@ -657,7 +647,7 @@
     max-height: 60vh;
     border: 1px solid var(--border);
     border-radius: var(--radius-2);
-    background: var(--surface-sunken);
+    background: var(--gha-tint);
 }
 .gha-log-head {
     display: flex;
@@ -713,7 +703,7 @@
     padding: var(--space-4);
     border: 1px solid var(--border);
     border-radius: var(--radius-3);
-    background: var(--surface-raised);
+    background: var(--gha-tint);
 }
 .gha-card-title {
     display: flex;
@@ -1022,7 +1012,7 @@
     color: var(--live);
 }
 .gha-state-mark[data-state="merged"] {
-    color: var(--acc);
+    color: var(--cmd);
 }
 .gha-state-mark[data-state="closed"] {
     color: var(--danger);
@@ -1049,9 +1039,9 @@
     color: var(--live);
 }
 .gha-state-chip[data-state="merged"] {
-    border-color: var(--acc-line);
-    background: var(--acc-soft);
-    color: var(--acc);
+    border-color: color-mix(in oklab, var(--cmd) 34%, transparent);
+    background: color-mix(in oklab, var(--cmd) 8%, transparent);
+    color: var(--cmd);
 }
 .gha-state-chip[data-state="closed"] {
     border-color: color-mix(in oklab, var(--danger) 30%, transparent);
@@ -1084,7 +1074,7 @@
     background: transparent;
 }
 .gha-unread-dot[data-on="1"] {
-    background: var(--acc);
+    background: var(--text-primary);
 }
 .gha-item-row[data-unread="0"] .gha-item-title {
     color: var(--text-secondary);
@@ -1198,7 +1188,7 @@
     margin: 0;
     padding: var(--space-1) 0;
     border-top: 1px solid var(--border);
-    background: var(--surface-sunken);
+    background: var(--gha-tint);
     overflow-x: auto;
     font-size: var(--text-2xs);
     line-height: 1.5;
@@ -1286,6 +1276,7 @@
     margin-top: var(--space-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-2);
+    overflow: hidden;
 }
 .gha-assets-head {
     display: flex;
@@ -1330,7 +1321,6 @@
 }
 .gha-summary-head {
     padding: var(--space-1h) var(--space-2);
-    border-bottom: 1px solid var(--border);
     font-size: var(--text-2xs);
     font-weight: var(--weight-medium);
     color: var(--text-primary);
@@ -1339,6 +1329,9 @@
 }
 .gha-summary-head::-webkit-details-marker {
     display: none;
+}
+.gha-summary[open] > .gha-summary-head {
+    border-bottom: 1px solid var(--border);
 }
 .gha-summary .prose {
     padding: 0 var(--space-2) var(--space-2);
@@ -1470,7 +1463,7 @@
     padding: var(--space-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-2);
-    background: var(--surface);
+    background: var(--gha-tint);
 }
 .gha-graph-group-title {
     padding: 0 var(--space-1) var(--space-1);
@@ -1488,7 +1481,7 @@
     padding: 0 var(--space-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-2);
-    background: var(--surface);
+    background: var(--gha-tint);
     color: var(--text-secondary);
     font: inherit;
     font-size: var(--text-xs);
@@ -1541,7 +1534,7 @@
 .gha-menu {
     min-width: 200px;
 }
-.env-dd-item.danger {
+.gha-menu .env-dd-item.danger {
     color: var(--danger);
 }
 
@@ -1571,7 +1564,7 @@ button.gha-step:focus-visible {
     padding: 0 var(--space-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-2);
-    background: var(--surface);
+    background: var(--gha-tint);
     color: var(--text-primary);
     font: inherit;
     font-size: var(--text-2xs);
@@ -1706,7 +1699,7 @@ button.gha-step:focus-visible {
 .gha-pick-pin {
     position: absolute;
     right: var(--space-3);
-    bottom: 6px;
+    bottom: var(--space-1h);
     height: 22px;
     padding: 0 var(--space-2);
     border: 1px solid var(--border);
