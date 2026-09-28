@@ -20,7 +20,6 @@ const GLYPH: Record<Outcome, typeof IconCheck> = {
     unknown: IconWarning,
 };
 
-/** One glyph that says how a run, job or step went, coloured by the outcome. */
 export function OutcomeIcon({ outcome, size = 13 }: { outcome: Outcome; size?: number }) {
     const Glyph = GLYPH[outcome];
     return (

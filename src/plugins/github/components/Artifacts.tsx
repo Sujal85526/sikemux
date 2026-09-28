@@ -4,7 +4,6 @@ import { useResourceEnabled } from "../../../plugin-api/resources";
 import { actionsApi, type RepoRef } from "../api";
 import { actionsArtifactsR } from "../resources";
 
-/** A size the way a download shelf writes one. */
 export function formatBytes(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
     const units = ["KB", "MB", "GB"];

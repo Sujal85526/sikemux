@@ -16,10 +16,6 @@ interface Entry {
     sub: string;
 }
 
-/**
- * Pinned repositories first, then the account's own, each listed once. The
- * order is the order somebody would look in.
- */
 export function entriesFor(pinned: readonly string[], mine: readonly RepoListing[], now: number): Entry[] {
     const seen = new Set<string>();
     const entries: Entry[] = [];
@@ -65,7 +61,6 @@ export function RepoPicker({ current, onPick, onClose }: Props) {
         const all = entriesFor(pinned, mine.data ?? [], Date.now());
         const ranked = rankBy(typed, all, (entry) => entry.slug, 60);
         const asSlug = refOf(typed);
-        // Anything shaped like owner/repo opens, listed or not.
         if (!asSlug || all.some((entry) => entry.slug === typed)) return ranked;
         return [{ slug: typed, repo: asSlug, group: null, sub: "open it" }, ...ranked];
     }, [pinned, mine.data, query]);

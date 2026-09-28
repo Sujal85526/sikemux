@@ -7,7 +7,6 @@ import { GITHUB_PLUGIN_ID, GITHUB_HUB } from "./kinds";
 export const STATUS_FILTERS = ["all", "in_progress", "queued", "success", "failure", "cancelled"] as const;
 export type StatusFilter = (typeof STATUS_FILTERS)[number];
 
-/** The parts of GitHub the pane can show, in the order the sidebar lists them. */
 export const SECTIONS = ["actions", "pulls", "issues", "releases", "inbox"] as const;
 export type Section = (typeof SECTIONS)[number];
 
@@ -19,19 +18,14 @@ export const SECTION_LABEL: Record<Section, string> = {
     inbox: "Inbox",
 };
 
-/** Whether a section is about one repository, or about the whole account. */
 export function needsRepo(section: Section): boolean {
     return section !== "inbox";
 }
 
 export interface ActionsSettings {
-    /** Repositories kept in the sidebar, as `owner/repo`. */
     pinned: string[];
-    /** The repository each project folder shows, when its git remote is not the one to use. */
     repoByProject: Record<string, string>;
-    /** The repository to open when no project is in front. */
     lastRepo: string | null;
-    /** Only show runs on the branch the project is checked out at. */
     followBranch: boolean;
 }
 
@@ -94,7 +88,6 @@ export interface RunsView {
     job: number | null;
     page: number;
     dispatching: number | null;
-    /** A new pull request or issue being written in this pane. */
     composing: "pull" | "issue" | null;
 }
 
@@ -147,16 +140,11 @@ export function updateView(paneId: string, patch: Partial<RunsView>): void {
     useActions.setState((state) => ({ views: { ...state.views, [paneId]: { ...(state.views[paneId] ?? FRESH), ...patch } } }));
 }
 
-/** Changing what the runs list is of always starts it again from the first page. */
 export function filterBy(paneId: string, patch: Pick<Partial<RunsView>, "workflowId" | "statusFilter" | "branch">): void {
     updateView(paneId, { ...patch, section: "actions", item: null, composing: null, page: 1, run: null, job: null });
 }
 
-/**
- * Points a pane at a repository, staying in the section it was on. What was
- * open or half written there is only let go when the repository is a
- * different one from `shown`, the one on screen until now.
- */
+/** What was open or half written in the pane is only let go when `repo` differs from `shown`, the one on screen until now. */
 export function showRepo(paneId: string, repo: RepoRef, shown: RepoRef | null = viewOf(paneId).repo): void {
     const same = !!shown && slugOf(shown) === slugOf(repo);
     updateView(paneId, same ? { repo } : { ...FRESH, section: viewOf(paneId).section, repo });
@@ -181,7 +169,6 @@ export function compose(paneId: string, composing: "pull" | "issue" | null): voi
     updateView(paneId, { composing, item: null });
 }
 
-/** A run named somewhere else in the pane, such as a pull request's checks, opened in Actions. */
 export function openRunFrom(paneId: string, runId: number): void {
     updateView(paneId, { section: "actions", item: null, composing: null, run: runId, job: null });
 }
@@ -198,7 +185,6 @@ export function closeRun(paneId: string): void {
     updateView(paneId, { run: null, job: null });
 }
 
-/** `owner/repo` split back into the pair every call wants. */
 export function refOf(slug: string): RepoRef | null {
     const [owner, name, ...rest] = slug.split("/");
     if (!owner || !name || rest.length > 0) return null;
@@ -213,7 +199,6 @@ export function openActions(): void {
     openSurface(GITHUB_HUB);
 }
 
-/** Brings the runs view forward on one repository, from anywhere that names it. */
 export function openRepo(repo: RepoRef): void {
     const paneId = openSurface(GITHUB_HUB);
     if (!paneId) return;

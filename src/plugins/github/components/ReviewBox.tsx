@@ -15,7 +15,6 @@ interface Props {
     mine: boolean;
 }
 
-/** Approving, asking for changes, or leaving a review, without opening GitHub. */
 export function ReviewBox({ repo, number, mine }: Props) {
     const [draft, setDraft] = useState("");
     const [busy, setBusy] = useState<ReviewEvent | null>(null);

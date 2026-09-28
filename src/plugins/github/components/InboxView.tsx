@@ -7,7 +7,6 @@ import { githubInboxR } from "../resources";
 import { formatAgo } from "../runStatus";
 import { useBusy, useNow } from "./hooks";
 
-/** GitHub's reason codes, in words. */
 const REASON: Record<string, string> = {
     review_requested: "Review requested",
     mention: "Mentioned",

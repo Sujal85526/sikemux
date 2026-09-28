@@ -1,7 +1,6 @@
 import type { Job, Run, RunStatus, Step } from "./api";
 import type { StatusFilter } from "./state";
 
-/** What a run looks like at a glance, once its status and conclusion are read together. */
 export type Outcome = "running" | "queued" | "success" | "failure" | "cancelled" | "skipped" | "blocked" | "unknown";
 
 const BY_CONCLUSION: Record<string, Outcome> = {
@@ -25,7 +24,6 @@ const BY_STATUS: Record<string, Outcome> = {
     action_required: "blocked",
 };
 
-/** A run that is over is described by its conclusion; one still going, by its status. */
 export function outcomeOf(thing: Pick<Run, "status" | "conclusion">): Outcome {
     if (thing.status === "completed") return BY_CONCLUSION[thing.conclusion ?? ""] ?? "unknown";
     return BY_STATUS[thing.status] ?? "unknown";
@@ -38,10 +36,7 @@ export function isUnfinished(thing: Pick<Run, "status" | "conclusion">): boolean
     return outcome === "running" || outcome === "queued" || outcome === "blocked";
 }
 
-/**
- * One line for a set of checks. Only checks that all succeeded read as passed;
- * skipped and neutral ones count as passing, the way GitHub counts them.
- */
+/** Skipped and neutral checks count as passing, the way GitHub counts them. */
 export function checksSummary(runs: readonly Pick<Run, "status" | "conclusion">[]): string {
     const tally: Record<Outcome, number> = { running: 0, queued: 0, success: 0, failure: 0, cancelled: 0, skipped: 0, blocked: 0, unknown: 0 };
     for (const run of runs) tally[outcomeOf(run)] += 1;
@@ -72,12 +67,10 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
     unknown: "Unknown",
 };
 
-/** What the status filter sends to GitHub; "all" narrows by nothing. */
 export function statusParam(filter: StatusFilter): RunStatus | undefined {
     return filter === "all" ? undefined : filter;
 }
 
-/** How long something took, or how long it has been going when it has not finished. */
 export function elapsedMs(started: string | null, finished: string | null, now: number): number | null {
     if (!started) return null;
     const from = Date.parse(started);
@@ -87,7 +80,6 @@ export function elapsedMs(started: string | null, finished: string | null, now: 
     return Math.max(0, to - from);
 }
 
-/** A short duration the way a build log writes one: 4s, 1m 12s, 1h 3m. */
 export function formatDuration(ms: number | null): string {
     if (ms === null) return "—";
     const seconds = Math.round(ms / 1000);
@@ -104,7 +96,6 @@ const AGO: [limit: number, unit: string, per: number][] = [
     [2_592_000, "d", 86_400],
 ];
 
-/** How long ago something happened, in the one unit that fits. */
 export function formatAgo(timestamp: string | null, now: number): string {
     if (!timestamp) return "—";
     const at = Date.parse(timestamp);
@@ -116,12 +107,10 @@ export function formatAgo(timestamp: string | null, now: number): string {
     return `${Math.floor(seconds / 2_592_000)}mo ago`;
 }
 
-/** The step a job stopped at, which is the one worth showing beside a failure. */
 export function failedStep(job: Job): Step | undefined {
     return job.steps.find((step) => outcomeOf(step) === "failure");
 }
 
-/** How a whole run reads while its jobs are still landing one by one. */
 export function jobsSummary(jobs: Job[]): { done: number; total: number; failed: number } {
     let done = 0;
     let failed = 0;
@@ -132,7 +121,6 @@ export function jobsSummary(jobs: Job[]): { done: number; total: number; failed:
     return { done, total: jobs.length, failed };
 }
 
-/** How many job summaries a run page asks GitHub for before somebody asks for the rest. */
 export const SUMMARY_LIMIT = 10;
 
 /**

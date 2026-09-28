@@ -41,9 +41,7 @@ export function ActionsPane({ paneId, active }: Props) {
         [view.dispatching, workflows.data],
     );
 
-    // The pane follows the project in front: opening it, or switching to
-    // another project, shows that project's repository. A repository picked by
-    // hand is remembered for its project, so it comes back with it.
+    // The pane follows the project in front, and shows that project's repository.
     const projectSlug = project.repo ? slugOf(project.repo) : null;
     useEffect(() => {
         const next = projectSlug ? refOf(projectSlug) : null;

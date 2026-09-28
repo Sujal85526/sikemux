@@ -23,7 +23,6 @@ const REVIEW_WORD: Record<string, string> = {
     DISMISSED: "was dismissed",
 };
 
-/** What a pull request's review state adds up to, in one word. */
 export function reviewVerdict(reviews: readonly { author: string | null; state: string }[]): string | null {
     // Only a person's latest review counts, which is how GitHub scores it too.
     const latest = new Map<string, string>();
@@ -64,11 +63,7 @@ function kindOf(line: string): "add" | "del" | "ctx" {
     return line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : "ctx";
 }
 
-/**
- * A diff is rendered a screenful at a time. A large one runs to tens of
- * thousands of lines, and putting every one of them in the document costs far
- * more than the handful anybody looks at.
- */
+/** Rendered a screenful at a time, since a large diff runs to tens of thousands of lines. */
 const Diff = memo(function Diff({ patch }: { patch: string }) {
     const lines = useMemo(() => patch.split("\n"), [patch]);
     return (

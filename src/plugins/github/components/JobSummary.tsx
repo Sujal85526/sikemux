@@ -10,11 +10,6 @@ interface Props {
     jobName: string;
 }
 
-/**
- * What a job wrote to `$GITHUB_STEP_SUMMARY` — a test report, a coverage
- * table — which is the part of a run somebody means to read rather than the
- * log it would otherwise be buried in.
- */
 export function JobSummary({ repo, checkRunId, active, jobName }: Props) {
     const found = useResourceEnabled(active, actionsJobSummaryR, repo, checkRunId);
     const summary = found.data;

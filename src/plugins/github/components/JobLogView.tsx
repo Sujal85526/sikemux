@@ -32,7 +32,6 @@ interface Props {
     repo: RepoRef;
     job: Job;
     active: boolean;
-    /** The step somebody picked, whose part of the log to scroll to. */
     step: { number: number } | null;
 }
 

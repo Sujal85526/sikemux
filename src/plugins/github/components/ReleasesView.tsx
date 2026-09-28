@@ -8,21 +8,16 @@ import { formatAgo } from "../runStatus";
 import { formatBytes } from "./Artifacts";
 import { useNow } from "./hooks";
 
-/** Notes longer than this are worth folding away until somebody asks. */
 const LONG_NOTES = 280;
 
-/**
- * The newest release that is neither a draft nor a pre-release, which is the
- * one GitHub marks as latest and the one an updater would take.
- */
 /** How many releases the backend reads, newest first. */
 const RELEASES_READ = 100;
 
+/** The newest release that is neither a draft nor a pre-release, which is the one GitHub marks as latest. */
 export function latestOf(releases: readonly Release[]): number | null {
     return releases.find((release) => !release.draft && !release.prerelease)?.id ?? null;
 }
 
-/** Folded away, the way GitHub keeps them, so the list stays readable. */
 function Assets({ release, saving, onSave }: { release: Release; saving: ReadonlySet<number>; onSave: (id: number, name: string) => void }) {
     if (release.assets.length === 0) return null;
     return (

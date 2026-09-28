@@ -7,7 +7,6 @@ export interface JobGroup {
     jobs: { job: Job; label: string }[];
 }
 
-/** Groups that ran side by side, left to right in the order the run reached them. */
 export type Stage = JobGroup[];
 
 /** A matrix job's values are in parentheses and may hold " / " themselves, so only a split outside them counts. */

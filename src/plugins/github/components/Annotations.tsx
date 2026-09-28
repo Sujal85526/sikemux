@@ -2,7 +2,6 @@ import { useResourceEnabled } from "../../../plugin-api/resources";
 import type { RepoRef } from "../api";
 import { actionsAnnotationsR } from "../resources";
 
-/** Where an annotation points, written the way an editor jumps to it. */
 export function annotationPlace(path: string | null, startLine: number | null): string | null {
     if (!path) return null;
     return startLine ? `${path}:${startLine}` : path;
@@ -14,10 +13,6 @@ interface Props {
     active: boolean;
 }
 
-/**
- * What GitHub flagged in a job, which is the answer to "why did this fail"
- * without reading the log.
- */
 export function Annotations({ repo, checkRunId, active }: Props) {
     const found = useResourceEnabled(active, actionsAnnotationsR, repo, checkRunId);
     const annotations = found.data ?? [];

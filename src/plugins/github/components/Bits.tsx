@@ -22,10 +22,6 @@ export function stateOf(state: string, draft: boolean): string {
     return draft && state === "open" ? "draft" : state;
 }
 
-/**
- * Where a pull request or issue stands, as the one glyph GitHub marks it with
- * rather than a word, so a long list scans down its left edge.
- */
 export function StateMark({ kind, state, draft = false }: { kind: "pull" | "issue"; state: string; draft?: boolean }) {
     const tone = stateOf(state, draft);
     const label = (kind === "pull" ? PULL_LABEL : ISSUE_LABEL)[tone] ?? tone;

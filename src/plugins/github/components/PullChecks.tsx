@@ -14,7 +14,6 @@ interface Props {
     onOpenRun: (runId: number) => void;
 }
 
-/** The workflow runs on a pull request's latest commit, each one a click from its jobs and logs. */
 export function PullChecks({ repo, sha, active, onOpenRun }: Props) {
     const found = useResourceEnabled(active, actionsRunsR, { ...repo, headSha: sha, perPage: 30 });
     const runs = found.data?.runs ?? [];

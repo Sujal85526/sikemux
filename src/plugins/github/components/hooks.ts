@@ -1,12 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-/** How coarse a reading has to be before it stops changing every second. */
 const MINUTE = 60_000;
 
-/**
- * A clock that only ticks while something on screen is still moving, so a
- * finished run costs nothing and a running one counts up on its own.
- */
+/** A clock that only ticks while something on screen is still moving. */
 export function useNow(live: boolean): number {
     const [now, setNow] = useState(() => Date.now());
     useEffect(() => {

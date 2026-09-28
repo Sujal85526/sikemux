@@ -20,7 +20,6 @@ interface Props {
     active: boolean;
 }
 
-/** A run held at an environment, and the two buttons that let it through or stop it. */
 export function Approvals({ repo, runId, status, conclusion, active }: Props) {
     const found = useResourceEnabled(active && mayBeWaiting(status, conclusion), actionsApprovalsR, repo, runId);
     const [busy, setBusy] = useState(false);

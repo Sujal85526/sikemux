@@ -13,7 +13,6 @@ interface Props {
     now: number;
 }
 
-/** What people wrote under a pull request or an issue, and a box to add to it. */
 export function CommentThread({ repo, number, active, now }: Props) {
     const thread = useResourceEnabled(active, githubCommentsR, repo, number);
     const [draft, setDraft] = useState("");

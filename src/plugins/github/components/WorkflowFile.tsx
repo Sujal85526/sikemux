@@ -9,7 +9,6 @@ interface Props {
     active: boolean;
 }
 
-/** The YAML a run came from, read only, and only once somebody asks for it. */
 export function WorkflowFile({ repo, workflowId, active }: Props) {
     const file = useResourceEnabled(active, actionsWorkflowFileR, repo, workflowId);
     const lines = file.data?.text.split("\n") ?? [];

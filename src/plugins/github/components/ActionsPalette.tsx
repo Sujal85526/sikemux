@@ -25,7 +25,6 @@ export interface PaletteItem {
     run: (paneId: string) => void;
 }
 
-/** Everything the palette can do for a pane, before the query narrows it. */
 export function paletteItems(
     query: string,
     repos: readonly RepoListing[],
@@ -60,8 +59,6 @@ export function paletteItems(
     const everything = [...workflowItems, ...repoItems, ...filters, back];
     const ranked = typed ? rankBy(typed, everything, (item) => item.label) : [...filters, back, ...workflowItems, ...repoItems];
 
-    // Anything shaped like owner/repo is offered even when it is not a
-    // repository this account has listed.
     const typedRepo = refOf(typed);
     if (!typedRepo || repos.some((repo) => repo.slug === typed)) return ranked;
     return [{ id: `open:${typed}`, label: `Open ${typed}`, hint: "repo", run: (paneId) => pickRepo(paneId, typedRepo, place) }, ...ranked];

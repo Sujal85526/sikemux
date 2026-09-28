@@ -35,10 +35,7 @@ export interface ProjectRepo {
     loading: boolean;
 }
 
-/**
- * The repository behind the project in front, and the branch it is on. A
- * repository chosen by hand for that folder wins over whatever its remote says.
- */
+/** A repository chosen by hand for a folder wins over whatever its remote says. */
 export function useProjectRepo(enabled: boolean): ProjectRepo {
     return useRepoOf(useActiveProjectCwd(), enabled);
 }
@@ -56,7 +53,6 @@ export function useRepoOf(cwd: string | null, enabled: boolean): ProjectRepo {
     };
 }
 
-/** The repository a pane is showing: its own choice, else the project's, else the last one opened anywhere. */
 export function useShownRepo(chosen: RepoRef | null, project: RepoRef | null): RepoRef | null {
     const lastRepo = actionsSettings.useSelect((settings) => settings.lastRepo);
     return useMemo(() => chosen ?? project ?? (lastRepo ? refOf(lastRepo) : null), [chosen, project, lastRepo]);

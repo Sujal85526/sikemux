@@ -311,7 +311,6 @@ function SummaryCard({
     );
 }
 
-/** Every job's own summary, one after another, the way GitHub's run page lists them. */
 function RunSummaries({ repo, jobs, finished, active }: { repo: RepoRef; jobs: Job[]; finished: boolean; active: boolean }) {
     const [everything, setEverything] = useState(false);
     const shown = summaryJobs(jobs, finished, everything);
