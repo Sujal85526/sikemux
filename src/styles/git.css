@@ -1178,11 +1178,16 @@
     opacity: 0.35;
     cursor: default;
 }
+/* The diffs run to the pane's edge: a scrollbar column here left a strip beside every file, and pinned headers drew over it. */
 .merge-review-list {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    scrollbar-gutter: stable;
+    scrollbar-width: none;
+}
+.merge-review-list::-webkit-scrollbar {
+    display: none;
+    width: 0;
 }
 .merge-review-virtual {
     position: relative;
