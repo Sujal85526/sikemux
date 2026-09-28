@@ -2523,7 +2523,6 @@ export function focusBrowserAddress(): boolean {
 export const setRestoreAgentTabs = (value: boolean): void => setState({ restoreAgentTabs: value });
 export const setAgentNotifications = (value: boolean): void => setState({ agentNotifications: value });
 export const setVoiceDictation = (value: boolean): void => setState({ voiceDictation: value });
-export const setVoiceWords = (words: readonly string[]): void => setState({ voiceWords: [...new Set(words)] });
 export const setPaneShader = (value: boolean): void => setState({ paneShader: value });
 export const setUiTextScale = (value: number): void => setState({ uiTextScale: [1, 1.1, 1.25].includes(value) ? value : 1 });
 

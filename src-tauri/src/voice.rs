@@ -231,12 +231,8 @@ pub async fn voice_prepare(app: AppHandle, voice: State<'_, VoiceManager>) -> Ap
 }
 
 #[tauri::command]
-pub async fn voice_start(
-    app: AppHandle,
-    voice: State<'_, VoiceManager>,
-    vocabulary: Vec<String>,
-) -> AppResult<()> {
-    voice.send(&app, json!({ "type": "start", "vocabulary": vocabulary }))
+pub async fn voice_start(app: AppHandle, voice: State<'_, VoiceManager>) -> AppResult<()> {
+    voice.send(&app, json!({ "type": "start" }))
 }
 
 #[tauri::command]

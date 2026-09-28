@@ -100,7 +100,6 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
               section("agents", "Voice", "dictation microphone speech talk transcribe"),
               row("agents", "Voice", "Dictate with right Option", "dictation microphone speech push to talk hold"),
               row("agents", "Voice", "Speech model", "parakeet download neural engine"),
-              row("agents", "Voice", "Words to recognise", "vocabulary names spelling"),
           ]
         : []),
 
