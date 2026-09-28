@@ -3,6 +3,7 @@ import { confirmDialog, copyText, notify, openUrl, reportError, swallow } from "
 import { invalidate } from "../../plugin-api/resources";
 import { Tooltip } from "../../plugin-api/ui";
 import { hostApi, type RepoRef, type Run } from "../api";
+import { useHost } from "../registry";
 import { isUnfinished } from "../runStatus";
 import { MoreDots } from "./ActionsIcon";
 
@@ -14,6 +15,8 @@ interface Props {
 }
 
 export function RunMenu({ run, repo, canWrite, onDeleted }: Props) {
+    const host = useHost();
+    const { ci } = host.capabilities;
     const [open, setOpen] = useState(false);
     const finished = !isUnfinished(run);
 
@@ -87,7 +90,7 @@ export function RunMenu({ run, repo, canWrite, onDeleted }: Props) {
                         role="menu"
                         aria-label="Run actions"
                         onKeyDown={(event) => event.key === "Escape" && setOpen(false)}>
-                        {canWrite && finished && (
+                        {canWrite && ci.debugLogs && finished && (
                             <button type="button" className="env-dd-item" role="menuitem" onClick={() => act(rerunWithDebug)}>
                                 Re-run all with debug logs
                             </button>
@@ -109,10 +112,10 @@ export function RunMenu({ run, repo, canWrite, onDeleted }: Props) {
                             type="button"
                             className="env-dd-item"
                             role="menuitem"
-                            onClick={() => act(() => openUrl(run.url).catch(swallow("open GitHub")))}>
-                            Open on GitHub
+                            onClick={() => act(() => openUrl(run.url).catch(swallow(`open ${host.name}`)))}>
+                            Open on {host.name}
                         </button>
-                        {canWrite && finished && (
+                        {canWrite && ci.deleteRuns && finished && (
                             <>
                                 <button type="button" className="env-dd-item danger" role="menuitem" onClick={() => act(deleteLogs)}>
                                     Delete all logs

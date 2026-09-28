@@ -3,7 +3,7 @@ import { copyText, notify, reportError, swallow } from "../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
 import { IconCheck, IconClose, IconCommit, IconEye, IconGit, IconMerge, IconPencil, IconPush, IconUser } from "../../plugin-api/ui";
 import { hostApi, type RepoRef, type ReviewEvent, type TimelineItem } from "../api";
-import { usePictureOf } from "../registry";
+import { useHost, usePictureOf } from "../registry";
 import { timelineR } from "../resources";
 import { formatAgo } from "../runStatus";
 import { SectionIcon } from "./ActionsIcon";
@@ -308,7 +308,7 @@ interface Props {
     opening?: Post | null;
     /** The branch a merge went into, which the timeline's merge event leaves out. */
     base?: string | null;
-    /** Offers approving and asking for changes; GitHub refuses both on your own pull request. */
+    /** Offers approving and asking for changes, which hosts refuse on your own pull request. */
     review?: { mine: boolean } | null;
     /** Sits between the timeline and the composer, where GitHub puts its merge box. */
     children?: ReactNode;
@@ -331,6 +331,7 @@ export function CommentThread({
     withoutCommits = false,
 }: Props) {
     const timeline = useResourceEnabled(active, timelineR, repo, number);
+    const host = useHost();
     const [draft, setDraft] = useState("");
     const [busy, setBusy] = useState<ReviewEvent | "comment" | null>(null);
     const blocks = blocksOf(timeline.data ?? []).filter((block) => !withoutCommits || block.kind !== "commits");
@@ -389,10 +390,10 @@ export function CommentThread({
                         rows={3}
                     />
                     <div className="gha-composer-foot">
-                        {review?.mine && <span className="gha-dim">GitHub does not let you approve your own pull request.</span>}
+                        {review?.mine && <span className="gha-dim">{host.name} does not let you approve your own pull request.</span>}
                         <span className="gha-page-spacer" />
                         {extraActions}
-                        {review && !review.mine && (
+                        {review && !review.mine && host.capabilities.pulls.requestChanges && (
                             <button
                                 type="button"
                                 className="gha-btn"

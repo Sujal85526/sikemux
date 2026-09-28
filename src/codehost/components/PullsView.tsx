@@ -136,7 +136,10 @@ function MergeBox({
     /** Checking the branch out here, beside Close. */
     checkout?: ReactNode;
 }) {
-    const [method, setMethod] = useState<MergeMethod>("squash");
+    const host = useHost();
+    const { pulls } = host.capabilities;
+    const methods = MERGE_METHODS.filter((each) => pulls.mergeMethods.includes(each.value));
+    const [method, setMethod] = useState<MergeMethod>(methods[0]?.value ?? "merge");
     const now = useNow(false);
     const [busy, runBusy] = useBusy();
     const base = pull.base ?? "the base branch";
@@ -220,9 +223,11 @@ function MergeBox({
                         <StateMark kind="pull" state="closed" />
                         <span className="gha-merge-title">Closed without merging</span>
                         <span className="gha-page-spacer" />
-                        <button type="button" className="gha-btn" disabled={busy} onClick={() => runBusy(setState)}>
-                            Reopen
-                        </button>
+                        {pulls.reopen && (
+                            <button type="button" className="gha-btn" disabled={busy} onClick={() => runBusy(setState)}>
+                                Reopen
+                            </button>
+                        )}
                     </div>
                 </div>
                 {checks}
@@ -236,20 +241,20 @@ function MergeBox({
             : verdict === "Changes requested"
               ? { outcome: "failure" as const, title: "Changes requested" }
               : { outcome: "queued" as const, title: reviewed ? "No approving review yet" : "No reviews yet" };
-    const merging = mergeability(pull.mergeState, base);
+    const merging = pulls.mergeability ? mergeability(pull.mergeState, base) : null;
     return (
         <div className="gha-merge-box">
             <MergePart outcome={verdictPart.outcome} title={verdictPart.title} />
             {checks}
             {pull.draft ? (
-                <MergePart outcome="queued" title="This is a draft" detail="Mark it ready for review on GitHub before merging." />
+                <MergePart outcome="queued" title="This is a draft" detail={`Mark it ready for review on ${host.name} before merging.`} />
             ) : (
-                <MergePart outcome={merging.outcome} title={merging.title} detail={merging.detail} />
+                merging && <MergePart outcome={merging.outcome} title={merging.title} detail={merging.detail} />
             )}
             <div className="gha-merge-actions">
                 {!pull.draft && (
                     <>
-                        <Dropdown value={method} options={MERGE_METHODS} onChange={(value) => setMethod(value as MergeMethod)} title="How to merge" />
+                        <Dropdown value={method} options={methods} onChange={(value) => setMethod(value as MergeMethod)} title="How to merge" />
                         <button
                             type="button"
                             className="gha-btn primary"

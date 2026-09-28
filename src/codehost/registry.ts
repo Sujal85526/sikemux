@@ -60,8 +60,19 @@ export interface HostCapabilities {
         artifacts: boolean;
         billing: boolean;
         workflowFile: boolean;
+        rerunFailed: boolean;
+        rerunJob: boolean;
+        debugLogs: boolean;
+        deleteRuns: boolean;
     };
-    pulls: { draft: boolean; mergeMethods: readonly MergeMethod[]; requestChanges: boolean };
+    pulls: {
+        draft: boolean;
+        mergeMethods: readonly MergeMethod[];
+        requestChanges: boolean;
+        reopen: boolean;
+        /** Whether the host says up front if a pull request would merge cleanly. */
+        mergeability: boolean;
+    };
     issues: boolean;
     releases: boolean;
     inbox: boolean;

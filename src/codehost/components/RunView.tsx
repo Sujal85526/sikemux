@@ -172,6 +172,7 @@ function RunCard({
     active: boolean;
     onDeleted: () => void;
 }) {
+    const { ci } = useHost().capabilities;
     const run = open.run as Run;
     const outcome = outcomeOf(run);
     const live = isUnfinished(run);
@@ -211,7 +212,7 @@ function RunCard({
                         {open.watchError}
                     </div>
                 )}
-                {open.latestAttempt > 1 && (
+                {ci.attempts && open.latestAttempt > 1 && (
                     <div className="gha-attempts">
                         <span className="gha-dim">Attempts</span>
                         {Array.from({ length: open.latestAttempt }, (_, index) => index + 1).map((number) => (
@@ -227,14 +228,14 @@ function RunCard({
                     </div>
                 )}
             </div>
-            <Approvals repo={repo} runId={run.id} status={run.status} conclusion={run.conclusion} active={active} />
+            {ci.approvals && <Approvals repo={repo} runId={run.id} status={run.status} conclusion={run.conclusion} active={active} />}
             <div className="gha-merge-actions">
                 {canWrite && live && (
                     <button type="button" className="gha-btn danger" disabled={busy} onClick={() => runBusy(cancel)}>
                         Cancel run
                     </button>
                 )}
-                {canWrite && !live && outcome !== "success" && (
+                {canWrite && ci.rerunFailed && !live && outcome !== "success" && (
                     <button
                         type="button"
                         className="gha-btn primary"
@@ -301,10 +302,11 @@ const JobRows = memo(function JobRows({ paneId, jobs, openJob, now }: { paneId: 
 
 /** The run's artifacts, folding at the foot of the left column. */
 function ArtifactsFold({ repo, run, active }: { repo: RepoRef; run: Run; active: boolean }) {
+    const { ci } = useHost().capabilities;
     const [open, setOpen] = useState(false);
     const [height, setHeight] = useState<number | null>(null);
     const finished = run.status === "completed";
-    const artifacts = useResourceEnabled(active && finished, artifactsR, repo, run.id);
+    const artifacts = useResourceEnabled(active && ci.artifacts && finished, artifactsR, repo, run.id);
     const count = artifacts.data?.length ?? 0;
     if (count === 0) return null;
     return (
@@ -347,12 +349,12 @@ function JobLogs({ repo, job, now, active, canWrite }: { repo: RepoRef; job: Job
                 <span className="gha-comment-author">{job.name}</span>
                 {job.runner && <span className="gha-dim">on {job.runner}</span>}
                 <span className="gha-page-spacer" />
-                {canWrite && job.status === "completed" && (
+                {canWrite && host.capabilities.ci.rerunJob && job.status === "completed" && (
                     <button type="button" className="gha-link" disabled={busy} onClick={() => rerun(false)}>
                         Re-run this job
                     </button>
                 )}
-                {canWrite && job.status === "completed" && (
+                {canWrite && host.capabilities.ci.rerunJob && host.capabilities.ci.debugLogs && job.status === "completed" && (
                     <button
                         type="button"
                         className="gha-link"
@@ -380,7 +382,7 @@ function JobLogs({ repo, job, now, active, canWrite }: { repo: RepoRef; job: Job
                     ))}
                 </div>
             )}
-            {job.checkRunId !== null && <Annotations repo={repo} checkRunId={job.checkRunId} active={active} />}
+            {host.capabilities.ci.annotations && job.checkRunId !== null && <Annotations repo={repo} checkRunId={job.checkRunId} active={active} />}
             <JobLogView repo={repo} job={job} active={active} step={step} />
         </div>
     );
@@ -419,10 +421,11 @@ function RunSummary({
     openJob: string | null;
     active: boolean;
 }) {
+    const { ci } = useHost().capabilities;
     const run = open.run as Run;
     const [showFile, setShowFile] = useState(false);
     const live = isUnfinished(run);
-    const timing = useResourceEnabled(active && !live, timingR, repo, run.id);
+    const timing = useResourceEnabled(active && ci.billing && !live, timingR, repo, run.id);
     const billable = timing.data?.billable ?? [];
     const minutes = billedMinutes(billable);
     const pick = useCallback((jobId: string) => showJob(paneId, jobId), [paneId]);
@@ -436,9 +439,17 @@ function RunSummary({
                     Billed {minutes} min
                 </div>
             )}
-            <JobGraph run={run} jobs={open.jobs} now={open.now} openJob={openJob} onOpen={pick} fileShown={showFile} onToggleFile={toggleFile} />
-            {showFile && <WorkflowFile repo={repo} workflowId={run.workflowId} active={active} />}
-            <RunSummaries repo={repo} jobs={open.jobs} finished={!live} active={active} />
+            <JobGraph
+                run={run}
+                jobs={open.jobs}
+                now={open.now}
+                openJob={openJob}
+                onOpen={pick}
+                fileShown={showFile}
+                onToggleFile={ci.workflowFile ? toggleFile : null}
+            />
+            {ci.workflowFile && showFile && <WorkflowFile repo={repo} workflowId={run.workflowId} active={active} />}
+            {ci.summaries && <RunSummaries repo={repo} jobs={open.jobs} finished={!live} active={active} />}
         </div>
     );
 }

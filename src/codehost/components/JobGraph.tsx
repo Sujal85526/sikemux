@@ -12,7 +12,8 @@ interface Props {
     openJob: string | null;
     onOpen: (jobId: string) => void;
     fileShown: boolean;
-    onToggleFile: () => void;
+    /** Left out when the host cannot show the file a run came from. */
+    onToggleFile: (() => void) | null;
 }
 
 function fileName(path: string | null): string | null {
@@ -36,7 +37,7 @@ export const JobGraph = memo(function JobGraph({ run, jobs, now, openJob, onOpen
                     </span>
                 )}
                 <span className="gha-graph-spacer" />
-                {run.path?.startsWith(".github/") && (
+                {onToggleFile && run.path && !run.path.startsWith("dynamic/") && (
                     <button type="button" className="gha-link" onClick={onToggleFile}>
                         {fileShown ? "Hide workflow file" : "Workflow file"}
                     </button>

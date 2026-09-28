@@ -4,6 +4,7 @@ import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
 import { Checkbox, Dropdown, IconClose } from "../../plugin-api/ui";
 import { hostApi, type RepoRef } from "../api";
 import { defaultBase, isUsualBase } from "../compose";
+import { useHost } from "../registry";
 import { hostBranchesR } from "../resources";
 
 interface Props {
@@ -15,6 +16,7 @@ interface Props {
 }
 
 export function NewPullForm({ repo, head: startingHead, active, onCreated, onCancel }: Props) {
+    const host = useHost();
     const branches = useResourceEnabled(active, hostBranchesR, repo);
     const names = useMemo(() => branches.data ?? [], [branches.data]);
     const [head, setHead] = useState(startingHead && !isUsualBase(startingHead) ? startingHead : "");
@@ -72,7 +74,11 @@ export function NewPullForm({ repo, head: startingHead, active, onCreated, onCan
                     title="The branch the changes land in"
                 />
             </div>
-            {!pushed && <div className="gha-warn-note">{head} is not on GitHub yet. Push it first, then open the pull request.</div>}
+            {!pushed && (
+                <div className="gha-warn-note">
+                    {head} is not on {host.name} yet. Push it first, then open the pull request.
+                </div>
+            )}
             <input className="gha-input" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Title" aria-label="Title" />
             <textarea
                 className="gha-input gha-comment-box"
@@ -86,9 +92,11 @@ export function NewPullForm({ repo, head: startingHead, active, onCreated, onCan
                 <button type="button" className="gha-btn primary" disabled={!ready || !pushed} onClick={() => void create()}>
                     {busy ? "Opening…" : draft ? "Open as a draft" : "Open pull request"}
                 </button>
-                <Checkbox checked={draft} onChange={setDraft}>
-                    Draft
-                </Checkbox>
+                {host.capabilities.pulls.draft && (
+                    <Checkbox checked={draft} onChange={setDraft}>
+                        Draft
+                    </Checkbox>
+                )}
                 <button type="button" className="gha-link" onClick={onCancel}>
                     Cancel
                 </button>
