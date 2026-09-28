@@ -23,13 +23,17 @@ const resources = vi.hoisted(() => ({
         refresh: vi.fn(),
     },
     empty: { status: "ok", data: [], refresh: vi.fn() },
+    listing: vi.fn(),
 }));
 
 vi.mock("../state/resources", async (original) => ({
     ...(await original<typeof import("../state/resources")>()),
-    useCachedResourceEnabled: (_enabled: boolean, definition: unknown) => {
+    useCachedResourceEnabled: (enabled: boolean, definition: unknown) => {
         if (definition === gitOverviewR) return resources.overview;
-        if (definition === gitDiscoveredReposR) return resources.discovered;
+        if (definition === gitDiscoveredReposR) {
+            resources.listing(enabled);
+            return resources.discovered;
+        }
         return resources.empty;
     },
 }));
@@ -37,13 +41,14 @@ vi.mock("./CommitReview", () => ({ CommitReview: () => <div>Review</div> }));
 vi.mock("./MergeReview", () => ({ MergeReview: () => <div>Merge review</div> }));
 
 beforeEach(() => {
+    resources.listing.mockClear();
     setState({ gitViews: {}, gitModal: null, pickerOpen: false });
     useGitWorkbench.setState({ drafts: {}, operations: {} });
 });
 afterEach(cleanup);
 
 it("lists the repositories inside a folder that is not one itself", () => {
-    render(<GitPane paneId="git-test" cwd="/container" active />);
+    render(<GitPane paneId="git-test" cwd="/container" active visible />);
 
     expect(screen.getByText("2 repositories inside")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /docs/ })).toBeInTheDocument();
@@ -52,7 +57,7 @@ it("lists the repositories inside a folder that is not one itself", () => {
 
 it("opens the repository that was clicked", async () => {
     const user = userEvent.setup();
-    render(<GitPane paneId="git-test" cwd="/container" active />);
+    render(<GitPane paneId="git-test" cwd="/container" active visible />);
 
     await user.click(screen.getByRole("button", { name: /docs/ }));
 
@@ -62,10 +67,22 @@ it("opens the repository that was clicked", async () => {
 it("shows the chosen repository with a way back to the list", async () => {
     const user = userEvent.setup();
     setState({ gitViews: { "git-test": { ...DEFAULT_GIT_VIEW, repo: "/container/docs" } } });
-    render(<GitPane paneId="git-test" cwd="/container" active />);
+    render(<GitPane paneId="git-test" cwd="/container" active visible />);
 
     expect(screen.queryByText("2 repositories inside")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /docs/ }));
 
     expect(getState().gitViews["git-test"].repo).toBeNull();
+});
+
+it("keeps the list live while it is on screen beside the pane being worked in", () => {
+    render(<GitPane paneId="git-test" cwd="/container" active={false} visible />);
+
+    expect(resources.listing).toHaveBeenLastCalledWith(true);
+});
+
+it("stops keeping it live once it is off screen", () => {
+    render(<GitPane paneId="git-test" cwd="/container" active={false} visible={false} />);
+
+    expect(resources.listing).not.toHaveBeenCalledWith(true);
 });

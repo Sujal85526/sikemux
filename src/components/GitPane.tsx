@@ -157,7 +157,7 @@ function GitWorkbench({
     };
 
     useEffect(() => {
-        if (!active) return;
+        if (!fetching) return;
         if (overviewLoading) {
             setRight({ mode: "output", text: "loading git state..." });
             return;
@@ -261,7 +261,7 @@ function GitWorkbench({
         remotes.length,
         overviewLoading,
         overviewError,
-        active,
+        fetching,
     ]);
 
     const errorTimerRef = useRef<number | undefined>(undefined);
@@ -1745,8 +1745,12 @@ function useSettled(active: boolean): boolean {
     return active && settled;
 }
 
-export function GitPane({ paneId, cwd, active }: { paneId: string; cwd: string; active: boolean }) {
-    const fetching = useSettled(active);
+/**
+ * `visible` keeps Git's state fresh while it is on screen, split beside the
+ * pane being worked in included; `active` is only for taking the keyboard.
+ */
+export function GitPane({ paneId, cwd, active, visible }: { paneId: string; cwd: string; active: boolean; visible: boolean }) {
+    const fetching = useSettled(visible);
     const selectedRepo = useStore((s) => s.gitViews[paneId]?.repo ?? null);
     const rootOverview = useCachedResourceEnabled(fetching && !!cwd && !selectedRepo, gitOverviewR, cwd || "");
     const settledRoot = useRef<{ cwd: string; missing: boolean } | null>(null);

@@ -51,9 +51,9 @@ export const BUILTIN_ITEM_RENDERERS: Readonly<Record<CorePaneKind, (props: Workb
             />
         </Suspense>
     ),
-    git: ({ pane, session, active }) => (
+    git: ({ pane, session, active, visible }) => (
         <Suspense fallback={<ItemFallback />}>
-            <GitPane paneId={pane.id} cwd={paneCwd(pane, session)} active={active} />
+            <GitPane paneId={pane.id} cwd={paneCwd(pane, session)} active={active} visible={visible} />
         </Suspense>
     ),
     diff: ({ pane, session, active }) => (
