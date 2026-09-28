@@ -1194,11 +1194,8 @@
     left: 0;
     right: 0;
 }
-.merge-file-header {
-    background: color-mix(in srgb, var(--surface) calc(var(--window-opacity, 1) * 96%), transparent);
-}
 .merge-review-item.focused > .merge-file-header {
-    background: color-mix(in srgb, var(--surface) calc(var(--window-opacity, 1) * 96%), transparent)
+    background: color-mix(in srgb, var(--surface) var(--surface-solidity, 100%), transparent)
         linear-gradient(var(--surface-selected), var(--surface-selected));
     box-shadow: inset 0 0 0 1px var(--border-selected);
 }
@@ -1410,6 +1407,9 @@
 .acc-item {
     border-bottom: 1px solid var(--border);
 }
+.acc-item.open > .acc-header {
+    box-shadow: 0 1px 0 var(--border);
+}
 .acc-header {
     display: flex;
     align-items: center;
@@ -1419,7 +1419,8 @@
     position: sticky;
     top: 0;
     z-index: 2;
-    background: var(--surface);
+    /* A pinned header covers the code scrolling under it, so it keeps a near-solid ground even in a transparent window. */
+    background: color-mix(in srgb, var(--surface) var(--surface-solidity, 100%), transparent);
     cursor: pointer;
     user-select: none;
 }

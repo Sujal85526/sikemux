@@ -156,7 +156,7 @@ export function MergeReview({
         const unstaged = hasUnstaged(file);
         return (
             <div
-                className={`acc-item merge-review-item${focused ? " focused" : ""}`}
+                className={`acc-item merge-review-item${open ? " open" : ""}${focused ? " focused" : ""}`}
                 key={path}
                 ref={(node) => {
                     if (node) itemRefs.current.set(path, node);

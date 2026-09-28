@@ -65,7 +65,7 @@ export function CommitReview({
                 {files.map((f) => {
                     const open = !collapsed.has(f);
                     return (
-                        <div className="acc-item" key={f}>
+                        <div className={`acc-item${open ? " open" : ""}`} key={f}>
                             <div className="acc-header" onClick={() => toggle(f)}>
                                 <Tooltip label={open ? "Collapse" : "Expand"}>
                                     <button className="acc-toggle" aria-label={open ? "Collapse" : "Expand"}>
