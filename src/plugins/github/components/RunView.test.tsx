@@ -124,12 +124,26 @@ describe("RunView", () => {
         vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
         await renderRun(makeRun({ status: "in_progress", conclusion: null }));
         const onTick = api.watchStart.mock.calls[0][2] as (tick: RunTick) => void;
-        act(() => onTick({ run: null, jobs: [], error: "GitHub is rate limiting this token", finished: true }));
+        act(() => onTick({ run: null, jobs: [], error: "GitHub is rate limiting this token", finished: true, fatal: false, signedOut: false }));
         expect(screen.getByText("GitHub is rate limiting this token")).toBeTruthy();
         await act(async () => {
             vi.advanceTimersByTime(60_000);
         });
         expect(api.watchStart).toHaveBeenCalledTimes(2);
+    });
+
+    it("stops for good, still saying why, when watching again cannot help", async () => {
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+        await renderRun(makeRun({ status: "in_progress", conclusion: null }));
+        const onTick = api.watchStart.mock.calls[0][2] as (tick: RunTick) => void;
+        act(() => onTick({ run: null, jobs: [], error: "github: not signed in", finished: true, fatal: true, signedOut: true }));
+        expect(screen.getByText("github: not signed in")).toBeTruthy();
+        await act(async () => {
+            vi.advanceTimersByTime(10 * 60_000);
+        });
+        await act(async () => setHidden(true));
+        await act(async () => setHidden(false));
+        expect(api.watchStart).toHaveBeenCalledTimes(1);
     });
 
     it("stops watching while the window is hidden and picks up again when it is shown", async () => {

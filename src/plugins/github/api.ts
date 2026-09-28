@@ -242,6 +242,10 @@ export interface RunTick {
     jobs: Job[];
     error: string | null;
     finished: boolean;
+    /** On the finished tick: signed out, or the run is gone, so starting the watch again will not help. */
+    fatal: boolean;
+    /** The token was refused or is missing. */
+    signedOut: boolean;
 }
 
 export interface Label {

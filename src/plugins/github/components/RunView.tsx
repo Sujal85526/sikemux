@@ -379,6 +379,7 @@ function RunDetailView({ paneId, repo, runId, openJob, active, canWrite }: Props
         let starting = false;
         let retry: number | undefined;
         let giveUps = 0;
+        let hopeless = false;
 
         const stop = () => {
             generation += 1;
@@ -389,7 +390,7 @@ function RunDetailView({ paneId, repo, runId, openJob, active, canWrite }: Props
         };
 
         const start = () => {
-            if (!alive || document.hidden || starting || streamId !== null) return;
+            if (!alive || hopeless || document.hidden || starting || streamId !== null) return;
             const startedIn = generation;
             let ended = false;
             starting = true;
@@ -405,8 +406,9 @@ function RunDetailView({ paneId, repo, runId, openJob, active, canWrite }: Props
                     ended = true;
                     streamId = null;
                     refreshRuns();
+                    hopeless = tick.fatal;
                     const last = tick.run ?? latestRun.current;
-                    if (!last || !isUnfinished(last)) return;
+                    if (hopeless || !last || !isUnfinished(last)) return;
                     retry = window.setTimeout(start, Math.min(WATCH_RETRY_MS * 2 ** giveUps, WATCH_RETRY_MAX_MS));
                     giveUps += 1;
                 })

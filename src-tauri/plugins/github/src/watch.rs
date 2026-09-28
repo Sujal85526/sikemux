@@ -27,7 +27,7 @@ const SETTLE_POLLS: u32 = 1;
 
 /// One read of the run. `run` and `jobs` are the last ones read, so a tick
 /// that failed still carries them. A finished tick with an error is the
-/// watch giving up.
+/// watch giving up; `fatal` says starting it again will not help.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Tick {
@@ -35,6 +35,8 @@ struct Tick {
     jobs: Vec<Job>,
     error: Option<String>,
     finished: bool,
+    fatal: bool,
+    signed_out: bool,
 }
 
 /// Signed out, a run that is gone, or a request GitHub cannot take: asking
@@ -89,11 +91,17 @@ pub async fn run(data_dir: &Path, input: Watch, sink: StreamSink) -> PluginResul
         run_id: input.run_id,
     };
     loop {
-        let (run, jobs, error, rate_reset, remaining, gave_up) =
+        let (run, jobs, error, rate_reset, remaining, gave_up, signed_out) =
             match runs::follow(data_dir, &reference, &mut held).await {
-                Ok((detail, remaining)) => {
-                    (Some(detail.run), detail.jobs, None, None, remaining, false)
-                }
+                Ok((detail, remaining)) => (
+                    Some(detail.run),
+                    detail.jobs,
+                    None,
+                    None,
+                    remaining,
+                    false,
+                    false,
+                ),
                 Err(error) => {
                     let (run, jobs) = held.last();
                     let rate_reset = match error {
@@ -101,6 +109,8 @@ pub async fn run(data_dir: &Path, input: Watch, sink: StreamSink) -> PluginResul
                         _ => None,
                     };
                     let gave_up = is_final(&error);
+                    let signed_out =
+                        matches!(error, GithubError::Auth(_) | GithubError::Unconfigured);
                     (
                         run,
                         jobs,
@@ -108,6 +118,7 @@ pub async fn run(data_dir: &Path, input: Watch, sink: StreamSink) -> PluginResul
                         rate_reset,
                         None,
                         gave_up,
+                        signed_out,
                     )
                 }
             };
@@ -136,6 +147,8 @@ pub async fn run(data_dir: &Path, input: Watch, sink: StreamSink) -> PluginResul
             jobs,
             error,
             finished,
+            fatal: gave_up,
+            signed_out,
         })?)?;
         if finished {
             return Ok(());
