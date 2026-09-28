@@ -55,23 +55,32 @@ function metricText(metric: Metric, value: number): string {
     return value > 0 ? plural(value, "commit") : "No commits";
 }
 
-export function ActivityPage() {
+export function useActivitySummary(project?: string): { summary: ActivitySummary | null; failed: boolean } {
     const [summary, setSummary] = useState<ActivitySummary | null>(null);
     const [failed, setFailed] = useState(false);
 
     useEffect(() => {
         let live = true;
         activityApi
-            .summary()
+            .summary(project)
             .then((next) => live && setSummary(next))
             .catch(() => live && setFailed(true));
         return () => {
             live = false;
         };
-    }, []);
+    }, [project]);
 
+    return { summary, failed };
+}
+
+export function isEmptyActivity(totals?: ActivityTotals): boolean {
+    return !!totals && totals.sessions === 0 && totals.turns === 0 && totals.commits === 0;
+}
+
+export function ActivityPage() {
+    const { summary, failed } = useActivitySummary();
     const totals = summary?.totals;
-    const empty = !!totals && totals.sessions === 0 && totals.turns === 0 && totals.commits === 0;
+    const empty = isEmptyActivity(totals);
     return (
         <SettingsPage>
             <SettingsSection
@@ -99,7 +108,7 @@ export function ActivityPage() {
     );
 }
 
-function Overview({ totals }: { totals?: ActivityTotals }) {
+export function Overview({ totals }: { totals?: ActivityTotals }) {
     if (!totals) {
         return (
             <div className="activity-stats" aria-busy="true">
@@ -140,7 +149,7 @@ function Stat({ label, value, detail, title }: { label: string; value: string; d
     );
 }
 
-function Calendar({ days, loaded }: { days: ActivityDay[]; loaded: boolean }) {
+export function Calendar({ days, loaded }: { days: ActivityDay[]; loaded: boolean }) {
     const [metric, setMetric] = useState<Metric>(METRICS[0].id);
     const [hovered, setHovered] = useState<number | null>(null);
     const today = localDay();

@@ -1598,6 +1598,62 @@ button.chat-tool:hover > .chat-tool-line::after,
     text-align: center;
 }
 
+.chat-welcome {
+    container-type: inline-size;
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+    width: min(calc(100% - 44px), 756px);
+    margin-inline: auto;
+    padding-top: clamp(16px, 8vh, 80px);
+}
+
+.chat-welcome-head {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    text-align: center;
+}
+
+.chat-welcome-mark {
+    display: flex;
+    margin-bottom: 4px;
+    color: var(--ink-dim);
+}
+
+.chat-welcome-title {
+    color: var(--ink);
+    font-size: var(--text-lg);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-display);
+}
+
+.chat-welcome-sub {
+    color: var(--ink-faint);
+    font-size: var(--text-xs);
+}
+
+.chat-welcome-activity {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+@container (max-width: 560px) {
+    .chat-welcome .activity-stats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        row-gap: var(--space-3);
+    }
+    .chat-welcome .activity-stat:nth-child(3) {
+        padding-left: 0;
+        border-left: 0;
+    }
+    .chat-welcome .activity-metrics {
+        display: none;
+    }
+}
+
 /* Lines up with the text in a message: the transcript is 800px wide with 22px
    of padding either side. */
 .chat-activity,

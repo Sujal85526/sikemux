@@ -62,6 +62,7 @@ import { ChatFileRef, PathRootsProvider, useFileRef } from "./FileRef";
 import { YoloToggle } from "./YoloToggle";
 import { DictateButton } from "./DictateButton";
 import { ContextMeter } from "./ContextMeter";
+import { ChatWelcome } from "./ChatWelcome";
 import { guessClaudeWindow } from "./contextWindow";
 import { agentApi } from "../api/agents";
 import { safeWebUrl } from "../terminal/interactions";
@@ -2188,6 +2189,7 @@ export function AgentChatPane({
                 : null;
     const disconnected = displayState.connection === "error" || displayState.connection === "stopped";
     const reconnecting = disconnected && reconnectAttempt < RECONNECT_DELAYS.length;
+    const welcoming = displayState.messages.length === 0 && displayState.connection === "ready";
     const startNewChat = () =>
         cmd.addAgent(agent.type, undefined, undefined, {
             permissionMode: agent.permissionMode,
@@ -2240,18 +2242,15 @@ export function AgentChatPane({
                             setAtBottom(next);
                         }}>
                         <div className="chat-scroll-content" ref={scrollContentRef}>
-                            {displayState.messages.length === 0 && (
+                            {welcoming && <ChatWelcome cwd={cwd} agentType={agent.type} />}
+                            {displayState.messages.length === 0 && !welcoming && (
                                 <div className={`chat-connection-state ${displayState.connection}`} role="status">
                                     {(connecting || reconnecting) && <span className="chat-activity-loader" aria-hidden="true" />}
                                     <span>
                                         {reconnecting
                                             ? "Reconnecting…"
                                             : (connecting ??
-                                              (displayState.connection === "ready"
-                                                  ? "Start a session with this project."
-                                                  : displayState.connection === "error"
-                                                    ? "Structured session unavailable."
-                                                    : "Agent session stopped."))}
+                                              (displayState.connection === "error" ? "Structured session unavailable." : "Agent session stopped."))}
                                     </span>
                                     {disconnected && !reconnecting && (
                                         <div className="chat-connection-actions">
