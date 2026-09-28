@@ -417,7 +417,9 @@ export const actionsApi = {
     releases: (repo: RepoRef) => read<Release[]>("releases", repo),
     inbox: (all: boolean) => read<Notification[]>("inbox", { all }),
 
-    mergePull: (repo: RepoRef, number: number, method: MergeMethod) => backend.call<void>("mergePull", { ...repo, number, method }),
+    /** `sha` is the head commit the person saw; GitHub refuses the merge if the branch has moved since. */
+    mergePull: (repo: RepoRef, number: number, method: MergeMethod, sha: string) =>
+        backend.call<void>("mergePull", { ...repo, number, method, sha }),
     createPull: (repo: RepoRef, pull: NewPull) => backend.call<Pull>("createPull", { ...repo, ...pull }),
     setPullState: (repo: RepoRef, number: number, state: "open" | "closed") => backend.call<void>("setPullState", { ...repo, number, state }),
     reviewPull: (repo: RepoRef, number: number, event: ReviewEvent, body: string) =>

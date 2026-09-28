@@ -313,6 +313,13 @@ pub struct Merge {
     pub pull: PullRef,
     /// `merge`, `squash` or `rebase`.
     pub method: String,
+    /// The head commit the person was looking at. GitHub refuses the merge if
+    /// the branch has moved since, so nothing unseen lands.
+    pub sha: String,
+}
+
+fn is_commit(sha: &str) -> bool {
+    (40..=64).contains(&sha.len()) && sha.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 pub async fn merge(data_dir: &Path, input: Merge) -> GithubResult<()> {
@@ -322,12 +329,24 @@ pub async fn merge(data_dir: &Path, input: Merge) -> GithubResult<()> {
             input.method
         )));
     }
+    if !is_commit(&input.sha) {
+        return Err(GithubError::BadArg(
+            "a merge needs the full head commit it was checked against".into(),
+        ));
+    }
     let path = input
         .pull
         .repo
         .path(&format!("/pulls/{}/merge", input.pull.number))?;
-    let body = json!({ "merge_method": input.method });
-    client::act(data_dir, reqwest::Method::PUT, &path, Some(&body)).await
+    let body = json!({ "merge_method": input.method, "sha": input.sha });
+    match client::act(data_dir, reqwest::Method::PUT, &path, Some(&body)).await {
+        Err(GithubError::Http { status: 409, .. }) => Err(GithubError::Http {
+            status: 409,
+            message: "the branch moved since you looked; reload the pull request and try again"
+                .into(),
+        }),
+        outcome => outcome,
+    }
 }
 
 #[derive(Deserialize)]
@@ -467,6 +486,14 @@ mod tests {
     }
 
     #[test]
+    fn only_a_full_commit_can_pin_a_merge() {
+        assert!(is_commit("0123456789abcdef0123456789abcdef01234567"));
+        assert!(is_commit(&"a".repeat(64)));
+        assert!(!is_commit("abc123"));
+        assert!(!is_commit(&"g".repeat(40)));
+    }
+
+    #[test]
     fn reads_the_branches_and_the_counts() {
         let mut full = base();
         full["head"] = json!({ "ref": "feat/thing", "sha": "abc123" });
@@ -506,8 +533,22 @@ mod tests {
                 number: 1,
             },
             method: "smash".into(),
+            sha: "a".repeat(40),
         };
         assert!(merge(&dir, bad_method).await.is_err());
+
+        let unseen_head = Merge {
+            pull: PullRef {
+                repo: repo(),
+                number: 1,
+            },
+            method: "squash".into(),
+            sha: String::new(),
+        };
+        assert!(matches!(
+            merge(&dir, unseen_head).await,
+            Err(GithubError::BadArg(_))
+        ));
 
         let bad_review = NewReview {
             pull: PullRef {

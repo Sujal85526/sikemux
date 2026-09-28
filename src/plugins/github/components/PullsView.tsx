@@ -114,7 +114,7 @@ function PullDetail({ repo, number, active, login, onBack, onOpenRun }: DetailPr
         });
         if (!sure) return;
         try {
-            await actionsApi.mergePull(repo, found.number, method);
+            await actionsApi.mergePull(repo, found.number, method, found.headSha ?? "");
             notify("success", `Merged #${found.number}`);
             invalidate((kind) => kind.startsWith("gha.pull"));
         } catch (error) {
