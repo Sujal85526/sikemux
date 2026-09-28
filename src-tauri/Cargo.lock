@@ -4394,6 +4394,7 @@ name = "sikemux-plugin-github"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "http",
  "reqwest",
  "rustls",
  "serde",

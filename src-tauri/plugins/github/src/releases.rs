@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use sikemux_plugin_api::{PluginResult, StreamSink};
 
 use crate::artifacts;
 use crate::client;
@@ -112,16 +113,16 @@ pub struct DownloadAsset {
 
 /// A release asset is whatever was uploaded, so it keeps its own name rather
 /// than becoming a zip the way an artifact does.
-pub async fn download(data_dir: &Path, input: DownloadAsset) -> GithubResult<artifacts::Saved> {
+pub async fn download(
+    data_dir: &Path,
+    input: DownloadAsset,
+    sink: &StreamSink,
+) -> PluginResult<()> {
     let path = input
         .repo
         .path(&format!("/releases/assets/{}", input.asset_id))?;
-    let target = artifacts::download_target(data_dir, &input.file_name, None)?;
-    let bytes = client::download_to(data_dir, &path, "application/octet-stream", &target).await?;
-    Ok(artifacts::Saved {
-        path: target.to_string_lossy().into_owned(),
-        bytes,
-    })
+    let name = artifacts::file_name(&input.file_name, None);
+    artifacts::save(data_dir, &path, "application/octet-stream", &name, sink).await
 }
 
 #[cfg(test)]

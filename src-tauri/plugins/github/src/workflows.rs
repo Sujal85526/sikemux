@@ -179,10 +179,9 @@ pub async fn file(data_dir: &Path, input: FileRef) -> GithubResult<WorkflowFile>
         ));
     }
     let contents = input.repo.path(&format!("/contents/{}", row.path))?;
-    let text = String::from_utf8_lossy(
-        &client::download_as(data_dir, &contents, "application/vnd.github.raw").await?,
-    )
-    .into_owned();
+    let (bytes, _) =
+        client::download_as(data_dir, &contents, "application/vnd.github.raw", false).await?;
+    let text = String::from_utf8_lossy(&bytes).into_owned();
     Ok(WorkflowFile {
         path: row.path,
         text,

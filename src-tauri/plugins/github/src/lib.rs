@@ -159,7 +159,6 @@ impl Plugin for Github {
             "workflowFile" => answer(input, move |q| workflows::file(data_dir, q)),
 
             "artifacts" => answer(input, move |q| artifacts::list(data_dir, q)),
-            "downloadArtifact" => answer(input, move |q| artifacts::download(data_dir, q)),
 
             "pendingApprovals" => answer(input, move |q| approvals::pending(data_dir, q)),
             "reviewDeployment" => answer(input, move |q| approvals::review(data_dir, q)),
@@ -181,7 +180,6 @@ impl Plugin for Github {
             "addComment" => answer(input, move |q| common::add_comment(data_dir, q)),
 
             "releases" => answer(input, move |q| releases::list(data_dir, q)),
-            "downloadAsset" => answer(input, move |q| releases::download(data_dir, q)),
 
             "inbox" => answer(input, move |q| inbox::list(data_dir, q)),
             "markRead" => answer(input, move |q| inbox::mark_read(data_dir, q)),
@@ -201,12 +199,17 @@ impl Plugin for Github {
         input: Value,
         sink: StreamSink,
     ) -> PluginFuture<'a, ()> {
-        Box::pin(async move {
-            match method {
-                "watchRun" => watch::run(ctx.data_dir(), params(input)?, sink).await,
-                _ => Err(PluginError::unknown_method(method)),
+        let data_dir = ctx.data_dir();
+        match method {
+            "watchRun" => Box::pin(async move { watch::run(data_dir, params(input)?, sink).await }),
+            "downloadArtifact" => {
+                Box::pin(async move { artifacts::download(data_dir, params(input)?, &sink).await })
             }
-        })
+            "downloadAsset" => {
+                Box::pin(async move { releases::download(data_dir, params(input)?, &sink).await })
+            }
+            _ => Box::pin(async move { Err(PluginError::unknown_method(method)) }),
+        }
     }
 }
 
@@ -376,14 +379,25 @@ mod live {
             .call(&ctx, "signIn", json!({ "host": "github.com" }))
             .await
             .expect("sign in with the environment's token");
-        let saved = plugin
-            .call(
+        let ticks = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let kept = Arc::clone(&ticks);
+        let sink = StreamSink::new(move |tick| kept.lock().map(|mut all| all.push(tick)).is_ok());
+        plugin
+            .stream(
                 &ctx,
                 "downloadArtifact",
                 json!({ "owner": owner, "name": name, "artifactId": id.parse::<u64>().expect("id"), "fileName": "live" }),
+                sink,
             )
             .await
             .expect("download");
+        let last = ticks
+            .lock()
+            .expect("ticks")
+            .last()
+            .cloned()
+            .expect("a tick");
+        let saved = &last["saved"];
         let bytes = saved["bytes"].as_u64().expect("bytes");
         assert!(bytes > 16 * 1024 * 1024, "{bytes}");
         let path = saved["path"].as_str().expect("path");

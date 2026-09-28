@@ -260,6 +260,7 @@ export const GITHUB: Record<string, (params: Params) => unknown> = {
     const start = Date.parse(found?.startedAt ?? iso(10));
     return {
       expired: false,
+      truncated: false,
       lines: LOG_LINES.map((text, index) => ({
         number: index + 1,
         timestamp: new Date(start + index * 800 + 500).toISOString(),

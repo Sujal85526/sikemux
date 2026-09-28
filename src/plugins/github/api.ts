@@ -148,6 +148,8 @@ export interface LogLine {
 export interface JobLog {
     lines: LogLine[];
     expired: boolean;
+    /** The log was longer than 16 MiB, so `lines` holds only its last 16 MiB. */
+    truncated: boolean;
 }
 
 export interface Annotation {
@@ -194,6 +196,31 @@ export interface Artifact {
 export interface SavedArtifact {
     path: string;
     bytes: number;
+}
+
+/** How far a download has got. `total` is unknown when GitHub did not say. */
+export interface DownloadProgress {
+    received: number;
+    total: number | null;
+}
+
+interface DownloadTick extends DownloadProgress {
+    saved: SavedArtifact | null;
+}
+
+/** Files can take longer than any single call may, so they arrive as a stream of progress that ends where the file was saved. */
+function download(method: string, params: unknown, onProgress?: (progress: DownloadProgress) => void): Promise<SavedArtifact> {
+    return new Promise((resolve, reject) => {
+        let saved: SavedArtifact | null = null;
+        backend.stream<DownloadTick>(method, params, {
+            onItem: (tick) => {
+                if (tick.saved) saved = tick.saved;
+                else onProgress?.(tick);
+            },
+            onEnd: () => (saved ? resolve(saved) : reject(new Error("the download ended without saving anything"))),
+            onError: reject,
+        });
+    });
 }
 
 export interface PendingApproval {
@@ -392,8 +419,8 @@ export const actionsApi = {
     createIssue: (repo: RepoRef, title: string, body: string) => backend.call<Issue>("createIssue", { ...repo, title, body }),
     setIssueState: (repo: RepoRef, number: number, state: "open" | "closed") => backend.call<void>("setIssueState", { ...repo, number, state }),
     addComment: (repo: RepoRef, number: number, body: string) => backend.call<void>("addComment", { ...repo, number, body }),
-    downloadAsset: (repo: RepoRef, assetId: number, name: string) =>
-        backend.call<SavedArtifact>("downloadAsset", { ...repo, assetId, fileName: name }),
+    downloadAsset: (repo: RepoRef, assetId: number, name: string, onProgress?: (progress: DownloadProgress) => void) =>
+        download("downloadAsset", { ...repo, assetId, fileName: name }, onProgress),
     markRead: (id: string) => backend.call<void>("markRead", { id }),
     markAllRead: () => backend.call<void>("markAllRead"),
 
@@ -404,8 +431,8 @@ export const actionsApi = {
     cancel: (repo: RepoRef, runId: number) => backend.call<void>("cancel", { ...repo, runId }),
     deleteRunLogs: (repo: RepoRef, runId: number) => backend.call<void>("deleteRunLogs", { ...repo, runId }),
     deleteRun: (repo: RepoRef, runId: number) => backend.call<void>("deleteRun", { ...repo, runId }),
-    downloadArtifact: (repo: RepoRef, artifactId: number, name: string) =>
-        backend.call<SavedArtifact>("downloadArtifact", { ...repo, artifactId, fileName: name }),
+    downloadArtifact: (repo: RepoRef, artifactId: number, name: string, onProgress?: (progress: DownloadProgress) => void) =>
+        download("downloadArtifact", { ...repo, artifactId, fileName: name }, onProgress),
     reviewDeployment: (repo: RepoRef, runId: number, environmentIds: number[], state: "approved" | "rejected", comment = "") =>
         backend.call<void>("reviewDeployment", { ...repo, runId, environmentIds, state, comment }),
 

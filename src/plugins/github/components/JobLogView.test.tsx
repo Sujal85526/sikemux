@@ -39,7 +39,7 @@ const makeJob = (status: string): Job => ({
     ],
 });
 
-const log = (lines: LogLine[]): JobLog => ({ lines, expired: false });
+const log = (lines: LogLine[]): JobLog => ({ lines, expired: false, truncated: false });
 
 const lastJump = () => jumps.filter(Boolean).at(-1);
 

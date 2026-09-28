@@ -29,6 +29,8 @@ pub struct JobLog {
     pub lines: Vec<LogLine>,
     /// True once a log has aged out of GitHub's retention, so nothing is coming.
     pub expired: bool,
+    /// True when the log was too long to read whole, so only its end is here.
+    pub truncated: bool,
 }
 
 /// Runner logs start every line with a timestamp. Splitting it off lets the
@@ -46,6 +48,19 @@ fn split_stamp(line: &str) -> (Option<String>, &str) {
     } else {
         (None, line)
     }
+}
+
+/// A log cut to its end starts part-way through a line, which is dropped.
+fn text_of(bytes: &[u8], truncated: bool) -> String {
+    let start = if truncated {
+        bytes
+            .iter()
+            .position(|&byte| byte == b'\n')
+            .map_or(bytes.len(), |at| at + 1)
+    } else {
+        0
+    };
+    String::from_utf8_lossy(bytes.get(start..).unwrap_or_default()).into_owned()
 }
 
 fn parse(text: &str) -> Vec<LogLine> {
@@ -76,14 +91,16 @@ pub async fn job(data_dir: &Path, input: LogRequest) -> GithubResult<JobLog> {
         .job
         .repo
         .path(&format!("/actions/jobs/{}/logs", input.job.job_id))?;
-    match client::download_text(data_dir, &path).await {
-        Ok(text) => Ok(JobLog {
-            lines: parse(&text),
+    match client::download_as(data_dir, &path, "application/vnd.github+json", true).await {
+        Ok((bytes, truncated)) => Ok(JobLog {
+            lines: parse(&text_of(&bytes, truncated)),
             expired: false,
+            truncated,
         }),
         Err(GithubError::Http { status: 410, .. }) => Ok(JobLog {
             lines: Vec::new(),
             expired: true,
+            truncated: false,
         }),
         Err(GithubError::NotFound(_)) => missing(data_dir, input.job).await,
         Err(error) => Err(error),
@@ -105,6 +122,7 @@ async fn missing(data_dir: &Path, job: JobRef) -> GithubResult<JobLog> {
     Ok(JobLog {
         lines: Vec::new(),
         expired: runs::is_finished(&state),
+        truncated: false,
     })
 }
 
@@ -120,6 +138,13 @@ mod tests {
             Some("2026-09-27T11:40:15.3836220Z")
         );
         assert_eq!(lines[0].text, "Current runner version");
+    }
+
+    #[test]
+    fn a_log_cut_to_its_end_drops_the_half_line_it_starts_in() {
+        assert_eq!(text_of(b"tail of one\nsecond\n", true), "second\n");
+        assert_eq!(text_of(b"no break at all", true), "");
+        assert_eq!(text_of(b"whole\nlog\n", false), "whole\nlog\n");
     }
 
     #[test]

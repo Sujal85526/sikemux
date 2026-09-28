@@ -15,6 +15,7 @@ tokio = { version = "1", features = ["macros", "rt", "time", "sync"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider", "gzip", "stream", "query"] }
 
 [dev-dependencies]
+http = "1"
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 
 [lints]
