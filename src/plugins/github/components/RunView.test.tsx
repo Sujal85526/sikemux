@@ -56,9 +56,9 @@ beforeEach(() => {
     invalidate(() => true);
     for (const mock of Object.values(api)) mock.mockClear();
     api.watchStart.mockReset().mockResolvedValue(1);
-    api.runAttempt.mockReset().mockImplementation((_repo, runId: number, attempt: number) =>
-        Promise.resolve({ run: makeRun({ id: runId, attempt }), jobs: [] }),
-    );
+    api.runAttempt
+        .mockReset()
+        .mockImplementation((_repo, runId: number, attempt: number) => Promise.resolve({ run: makeRun({ id: runId, attempt }), jobs: [] }));
 });
 
 afterEach(() => {
