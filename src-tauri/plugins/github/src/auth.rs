@@ -87,16 +87,30 @@ pub async fn status(data_dir: &Path) -> Status {
         auth_failed,
         message,
     };
-    let session = match Session::current(data_dir) {
+    let session = match Session::current(data_dir).await {
         Ok(session) => session,
         // Not signed in, but a token the shell or `gh` holds can be offered.
-        Err(_) => {
-            let waiting = config::env_token()
-                .map(|_| TokenSource::Environment)
-                .or_else(|| config::gh_cli_token(&config.host).map(|_| TokenSource::GhCli));
+        Err(GithubError::Unconfigured) => {
+            let host = config.host.clone();
+            let waiting = config::blocking(Box::new(move || Ok(config::offered_token(&host))))
+                .await
+                .ok()
+                .flatten()
+                .map(|(_, source)| source);
             let mut status = base(false, false, String::new(), waiting, Vec::new(), None);
             status.configured = false;
             return status;
+        }
+        // A locked or unanswering Keychain is not the same as being signed out.
+        Err(error) => {
+            return base(
+                false,
+                false,
+                config.login.clone(),
+                config.source,
+                Vec::new(),
+                Some(error.to_string()),
+            )
         }
     };
     let source = session.source;
@@ -143,14 +157,16 @@ pub async fn sign_in(data_dir: &Path, input: SignIn) -> GithubResult<()> {
     let token = input.token.map(|token| token.trim().to_string());
     let (token, source) = match token.filter(|token| !token.is_empty()) {
         Some(token) => (token, TokenSource::Keychain),
-        None => config::env_token()
-            .map(|token| (token, TokenSource::Environment))
-            .or_else(|| config::gh_cli_token(&host).map(|token| (token, TokenSource::GhCli)))
-            .ok_or_else(|| {
-                GithubError::Auth(
-                    "no token was given, and none is in the environment or the gh CLI".into(),
-                )
-            })?,
+        None => {
+            let host = host.clone();
+            config::blocking(Box::new(move || Ok(config::offered_token(&host))))
+                .await?
+                .ok_or_else(|| {
+                    GithubError::Auth(
+                        "no token was given, and none is in the environment or the gh CLI".into(),
+                    )
+                })?
+        }
     };
     let owns_token = source == TokenSource::Keychain;
     let probe = Session {
@@ -159,23 +175,27 @@ pub async fn sign_in(data_dir: &Path, input: SignIn) -> GithubResult<()> {
         source,
     };
     let identity = identify(&probe).await?;
-    if owns_token {
-        config::keychain_write(&host, &token)?;
-    }
-    if leaves_a_token_behind(&before, &host, owns_token) {
-        config::keychain_delete(&before.host)?;
-    }
-    config::forget_token();
-    config::save(
-        data_dir,
-        &GithubConfig {
-            host,
-            login: identity.login,
-            source: Some(source),
-            owns_token,
-            signed_out: false,
-        },
-    )
+    let data_dir = data_dir.to_path_buf();
+    config::blocking(Box::new(move || {
+        if owns_token {
+            config::keychain_write(&host, &token)?;
+        }
+        if leaves_a_token_behind(&before, &host, owns_token) {
+            config::keychain_delete(&before.host)?;
+        }
+        config::forget_token();
+        config::save(
+            &data_dir,
+            &GithubConfig {
+                host,
+                login: identity.login,
+                source: Some(source),
+                owns_token,
+                signed_out: false,
+            },
+        )
+    }))
+    .await
 }
 
 /// A token Sikemux saved earlier is deleted once a sign-in stops using it,
@@ -187,19 +207,23 @@ fn leaves_a_token_behind(before: &GithubConfig, host: &str, owns_token: bool) ->
 /// Only a token Sikemux saved is deleted. One the shell or `gh` provides is
 /// left where it is, and is not used here again until somebody signs in.
 pub async fn sign_out(data_dir: &Path) -> GithubResult<()> {
-    config::forget_token();
-    let config = config::load(data_dir);
-    if config.owns_token {
-        config::keychain_delete(&config.host)?;
-    }
-    config::save(
-        data_dir,
-        &GithubConfig {
-            host: config.host,
-            signed_out: true,
-            ..GithubConfig::default()
-        },
-    )
+    let data_dir = data_dir.to_path_buf();
+    config::blocking(Box::new(move || {
+        config::forget_token();
+        let config = config::load(&data_dir);
+        if config.owns_token {
+            config::keychain_delete(&config.host)?;
+        }
+        config::save(
+            &data_dir,
+            &GithubConfig {
+                host: config.host,
+                signed_out: true,
+                ..GithubConfig::default()
+            },
+        )
+    }))
+    .await
 }
 
 #[cfg(test)]

@@ -78,14 +78,19 @@ pub struct Session {
 impl Session {
     /// Read fresh every time, so a `gh auth login` in a terminal is picked up
     /// without restarting the app.
-    pub fn current(data_dir: &Path) -> GithubResult<Session> {
-        let config = config::load(data_dir);
-        let (token, source) = config::resolve_token(&config).ok_or(GithubError::Unconfigured)?;
-        Ok(Session {
-            host: config.host,
-            token,
-            source,
-        })
+    pub async fn current(data_dir: &Path) -> GithubResult<Session> {
+        let data_dir = data_dir.to_path_buf();
+        config::blocking(Box::new(move || {
+            let config = config::load(&data_dir);
+            let (token, source) =
+                config::resolve_token(&config)?.ok_or(GithubError::Unconfigured)?;
+            Ok(Session {
+                host: config.host,
+                token,
+                source,
+            })
+        }))
+        .await
     }
 }
 
@@ -246,7 +251,7 @@ async fn fetch(
     query: &[(&str, String)],
     body: Option<&Value>,
 ) -> GithubResult<Vec<u8>> {
-    let session = Session::current(data_dir)?;
+    let session = Session::current(data_dir).await?;
     body_of(&session, method, path, query, body).await
 }
 
@@ -331,7 +336,7 @@ async fn fetch_if_changed(
     query: &[(&str, String)],
     etag: Option<&str>,
 ) -> GithubResult<(Option<Vec<u8>>, Option<String>, Option<u64>)> {
-    let session = Session::current(data_dir)?;
+    let session = Session::current(data_dir).await?;
     let url = format!("{}{path}", config::api_base(&session.host));
     let mut request = http()?
         .get(url)
@@ -374,7 +379,7 @@ pub async fn download(data_dir: &Path, path: &str) -> GithubResult<Vec<u8>> {
 /// The same, for an endpoint that only hands over the bytes when asked for
 /// them by content type rather than as JSON.
 pub async fn download_as(data_dir: &Path, path: &str, accept: &str) -> GithubResult<Vec<u8>> {
-    let session = Session::current(data_dir)?;
+    let session = Session::current(data_dir).await?;
     let (status, headers, bytes) = send_accepting(&session, path, accept).await?;
     if status.is_success() {
         return Ok(bytes);
@@ -412,7 +417,7 @@ pub async fn download_to(
     accept: &str,
     target: &Path,
 ) -> GithubResult<u64> {
-    let session = Session::current(data_dir)?;
+    let session = Session::current(data_dir).await?;
     let url = format!("{}{path}", config::api_base(&session.host));
     let request = transfers()?
         .get(url)
@@ -479,7 +484,7 @@ pub async fn act(
     path: &str,
     body: Option<&Value>,
 ) -> GithubResult<()> {
-    let session = Session::current(data_dir)?;
+    let session = Session::current(data_dir).await?;
     let (status, headers, bytes) = send(&session, method, path, &[], body).await?;
     if status.is_success() {
         return Ok(());

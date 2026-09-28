@@ -11,11 +11,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{GithubError, GithubResult};
 
+#[cfg(not(test))]
 pub const TOKEN_SERVICE: &str = "sikemux-github-token";
+/// Tests keep to an entry of their own, so they never replace or delete a real token.
+#[cfg(test)]
+pub const TOKEN_SERVICE: &str = "sikemux-github-token-test";
 pub const DEFAULT_HOST: &str = "github.com";
 const KEYCHAIN_TIMEOUT: Duration = Duration::from_secs(10);
 const GH_TIMEOUT: Duration = Duration::from_secs(10);
 const OUTPUT_LIMIT: usize = 64 * 1024;
+/// What `security` exits with when there is simply no such entry.
+const KEYCHAIN_NOT_FOUND: i32 = 44;
 /// Reading the Keychain means starting `security`, and asking the `gh` CLI
 /// means starting that. Doing either on every request costs more than the
 /// request. A token is held for long enough to serve a screenful of calls and
@@ -191,8 +197,14 @@ pub fn keychain_read(account: &str) -> GithubResult<Option<String>> {
         None,
         KEYCHAIN_TIMEOUT,
     )?;
-    if !output.status.success() {
+    if output.status.code() == Some(KEYCHAIN_NOT_FOUND) {
         return Ok(None);
+    }
+    if !output.status.success() {
+        return Err(GithubError::Keychain(format!(
+            "could not read the saved token: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
     }
     let secret = String::from_utf8_lossy(&output.stdout).trim().to_string();
     Ok((!secret.is_empty()).then_some(secret))
@@ -232,8 +244,18 @@ pub fn keychain_delete(account: &str) -> GithubResult<()> {
     Ok(())
 }
 
-pub fn env_token() -> Option<String> {
-    ["GH_TOKEN", "GITHUB_TOKEN"]
+/// The variables the `gh` CLI reads a token from. A github.com token is never
+/// sent to a company GitHub, nor the other way round.
+fn token_vars(host: &str) -> [&'static str; 2] {
+    if host == DEFAULT_HOST {
+        ["GH_TOKEN", "GITHUB_TOKEN"]
+    } else {
+        ["GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"]
+    }
+}
+
+pub fn env_token(host: &str) -> Option<String> {
+    token_vars(host)
         .into_iter()
         .filter_map(|name| std::env::var(name).ok())
         .map(|token| token.trim().to_string())
@@ -254,6 +276,14 @@ pub fn gh_cli_token(host: &str) -> Option<String> {
     }
     let token = String::from_utf8_lossy(&output.stdout).trim().to_string();
     (!token.is_empty()).then_some(token)
+}
+
+/// A token already in the environment or held by `gh`, which can be used
+/// without anybody typing one. Starts a process, so it belongs inside `blocking`.
+pub fn offered_token(host: &str) -> Option<(String, TokenSource)> {
+    env_token(host)
+        .map(|token| (token, TokenSource::Environment))
+        .or_else(|| gh_cli_token(host).map(|token| (token, TokenSource::GhCli)))
 }
 
 struct Cached {
@@ -294,24 +324,32 @@ pub fn sources_for(config: &GithubConfig) -> Vec<TokenSource> {
     }
 }
 
-fn read_token(source: TokenSource, host: &str) -> Option<String> {
-    match source {
-        TokenSource::Keychain => keychain_read(host).ok().flatten(),
-        TokenSource::Environment => env_token(),
+fn read_token(source: TokenSource, host: &str) -> GithubResult<Option<String>> {
+    Ok(match source {
+        TokenSource::Keychain => keychain_read(host)?,
+        TokenSource::Environment => env_token(host),
         TokenSource::GhCli => gh_cli_token(host),
-    }
+    })
 }
 
-pub fn resolve_token(config: &GithubConfig) -> Option<(String, TokenSource)> {
+/// Starts a process or waits on the Keychain, so it belongs inside `blocking`.
+pub fn resolve_token(config: &GithubConfig) -> GithubResult<Option<(String, TokenSource)>> {
     if config.signed_out {
-        return None;
+        return Ok(None);
     }
     if let Some(found) = cached_for(&config.host) {
-        return Some(found);
+        return Ok(Some(found));
     }
-    let (token, source) = sources_for(config)
-        .into_iter()
-        .find_map(|source| read_token(source, &config.host).map(|token| (token, source)))?;
+    let mut found = None;
+    for source in sources_for(config) {
+        if let Some(token) = read_token(source, &config.host)? {
+            found = Some((token, source));
+            break;
+        }
+    }
+    let Some((token, source)) = found else {
+        return Ok(None);
+    };
     if let Ok(mut held) = TOKEN.lock() {
         *held = Some(Cached {
             host: config.host.clone(),
@@ -320,7 +358,17 @@ pub fn resolve_token(config: &GithubConfig) -> Option<(String, TokenSource)> {
             at: Instant::now(),
         });
     }
-    Some((token, source))
+    Ok(Some((token, source)))
+}
+
+/// Runs work that starts a process or touches the Keychain on a thread meant
+/// for blocking, away from the few threads every plugin shares.
+pub async fn blocking<T: Send + 'static>(
+    work: Box<dyn FnOnce() -> GithubResult<T> + Send>,
+) -> GithubResult<T> {
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|error| GithubError::Keychain(error.to_string()))?
 }
 
 #[cfg(test)]
@@ -475,6 +523,18 @@ mod tests {
             ..GithubConfig::default()
         };
         assert!(sources_for(&out).is_empty());
-        assert_eq!(resolve_token(&out), None);
+        assert!(matches!(resolve_token(&out), Ok(None)));
+    }
+
+    #[test]
+    fn a_github_dot_com_token_only_goes_to_github_dot_com() {
+        assert_eq!(token_vars("github.com"), ["GH_TOKEN", "GITHUB_TOKEN"]);
+        for host in ["ghe.corp", "ghe.corp:8443", "git.example.com"] {
+            assert_eq!(
+                token_vars(host),
+                ["GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"],
+                "{host}"
+            );
+        }
     }
 }
