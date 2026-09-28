@@ -327,6 +327,8 @@ export interface Issue {
     title: string;
     body: string;
     state: string;
+    /** Why it was closed: `completed`, `not_planned` or `reopened`. */
+    stateReason: string | null;
     author: string | null;
     avatarUrl: string | null;
     createdAt: string;
