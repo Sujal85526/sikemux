@@ -38,6 +38,29 @@ export function isUnfinished(thing: Pick<Run, "status" | "conclusion">): boolean
     return outcome === "running" || outcome === "queued" || outcome === "blocked";
 }
 
+/**
+ * One line for a set of checks. Only checks that all succeeded read as passed;
+ * skipped and neutral ones count as passing, the way GitHub counts them.
+ */
+export function checksSummary(runs: readonly Pick<Run, "status" | "conclusion">[]): string {
+    const tally: Record<Outcome, number> = { running: 0, queued: 0, success: 0, failure: 0, cancelled: 0, skipped: 0, blocked: 0, unknown: 0 };
+    for (const run of runs) tally[outcomeOf(run)] += 1;
+    const passed = tally.success + tally.skipped;
+    if (passed === runs.length) return "all passed";
+    const parts: [number, string][] = [
+        [tally.failure, "failing"],
+        [tally.running + tally.queued, "running"],
+        [tally.blocked, "waiting"],
+        [tally.cancelled, "cancelled"],
+        [tally.unknown, "unknown"],
+        [passed, "passed"],
+    ];
+    return parts
+        .filter(([count]) => count > 0)
+        .map(([count, word]) => `${count} ${word}`)
+        .join(", ");
+}
+
 export const OUTCOME_LABEL: Record<Outcome, string> = {
     running: "Running",
     queued: "Queued",

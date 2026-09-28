@@ -206,7 +206,7 @@ function PullDetail({ repo, number, active, login, onBack, onOpenRun }: DetailPr
 
             {found.body.trim() && <Markdown className="gha-prose">{found.body}</Markdown>}
 
-            {found.headSha && <PullChecks repo={repo} sha={found.headSha} active={active} now={now} onOpenRun={onOpenRun} />}
+            {found.headSha && <PullChecks repo={repo} sha={found.headSha} active={active} onOpenRun={onOpenRun} />}
 
             {written.length > 0 && (
                 <div className="gha-reviews">

@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { Job, Step } from "./api";
-import { elapsedMs, failedStep, formatAgo, formatDuration, isUnfinished, jobsSummary, outcomeOf, statusParam, watchIsNewer } from "./runStatus";
+import {
+    elapsedMs,
+    failedStep,
+    formatAgo,
+    formatDuration,
+    checksSummary,
+    isUnfinished,
+    jobsSummary,
+    outcomeOf,
+    statusParam,
+    watchIsNewer,
+} from "./runStatus";
 
 const NOW = Date.parse("2026-01-01T12:00:00Z");
 
@@ -53,6 +64,21 @@ describe("outcomeOf", () => {
         expect(isUnfinished({ status: "waiting", conclusion: null })).toBe(true);
         expect(isUnfinished({ status: "completed", conclusion: "success" })).toBe(false);
         expect(isUnfinished({ status: "completed", conclusion: "action_required" })).toBe(false);
+    });
+});
+
+describe("checksSummary", () => {
+    const done = (conclusion: string) => ({ status: "completed", conclusion });
+
+    it("only says all passed when every check succeeded, counting skipped and neutral as passing", () => {
+        expect(checksSummary([done("success"), done("skipped"), done("neutral")])).toBe("all passed");
+    });
+
+    it("names what did not pass instead of calling it a pass", () => {
+        expect(checksSummary([done("success"), done("cancelled")])).toBe("1 cancelled, 1 passed");
+        expect(checksSummary([done("failure"), { status: "in_progress", conclusion: null }, { status: "waiting", conclusion: null }])).toBe(
+            "1 failing, 1 running, 1 waiting",
+        );
     });
 });
 
