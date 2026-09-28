@@ -1439,6 +1439,12 @@ button.chat-tool:hover > .chat-tool-line::after,
     background: color-mix(in srgb, var(--live) 18%, transparent);
 }
 
+.chat-queued-steer-all {
+    margin-left: auto;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
 .chat-queued-steer-key {
     padding-left: 6px;
     border-left: 1px solid var(--line);

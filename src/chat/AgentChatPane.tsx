@@ -1078,13 +1078,26 @@ function RunningSubagents({ subagents }: { subagents: AcpSubagent[] }) {
 /* One kind of running work, under a label that counts it. The label is what
    makes a stack of eight rows readable, so it stays even for a group of one.
    `plural` is for the kinds that are not a noun with an s on the end. */
-function Group({ label, plural, count, children }: { label: string; plural?: string; count: number; children: ReactNode }) {
+function Group({
+    label,
+    plural,
+    count,
+    action,
+    children,
+}: {
+    label: string;
+    plural?: string;
+    count: number;
+    action?: ReactNode;
+    children: ReactNode;
+}) {
     const word = count === 1 ? label : (plural ?? `${label}s`);
     return (
         <div className="chat-group" aria-label={`${count} ${word}`}>
             <div className="chat-group-label">
                 <span>{word}</span>
                 <span className="chat-group-count">{count}</span>
+                {action}
             </div>
             {children}
         </div>
@@ -1109,6 +1122,26 @@ type QueuedMessage = { id: string; text: string; paths: string[] };
 
 const queuedLabel = (message: QueuedMessage): string => message.text || message.paths.map(basename).join(", ");
 
+const isCommand = (message: QueuedMessage) => message.text.startsWith("/");
+
+/* A slash command only works as the whole prompt, so it goes out on its own. */
+function nextBatch(queued: QueuedMessage[]): QueuedMessage[] {
+    if (queued.length === 0 || isCommand(queued[0])) return queued.slice(0, 1);
+    const command = queued.findIndex(isCommand);
+    return command === -1 ? queued : queued.slice(0, command);
+}
+
+function combineQueued(messages: QueuedMessage[]): QueuedMessage {
+    return {
+        id: messages[0].id,
+        text: messages
+            .map((message) => message.text)
+            .filter(Boolean)
+            .join("\n\n"),
+        paths: [...new Set(messages.flatMap((message) => message.paths))],
+    };
+}
+
 function QueuedMessages({
     messages,
     steerable,
@@ -1117,12 +1150,22 @@ function QueuedMessages({
 }: {
     messages: QueuedMessage[];
     steerable: boolean;
-    onSteer: (message: QueuedMessage) => void;
+    onSteer: (messages: QueuedMessage[]) => void;
     onDrop: (id: string) => void;
 }) {
     if (messages.length === 0) return null;
+    const steerAll = steerable && messages.length > 1 && (
+        <button
+            type="button"
+            className="chat-queued-steer chat-queued-steer-all"
+            aria-label="Steer the running turn with every queued message"
+            onClick={() => onSteer(messages)}>
+            Steer all
+            <kbd className="chat-queued-steer-key">{PRIMARY_SHORTCUT}↵</kbd>
+        </button>
+    );
     return (
-        <Group label="queued" plural="queued" count={messages.length}>
+        <Group label="queued" plural="queued" count={messages.length} action={steerAll}>
             {messages.map((message) => {
                 const label = queuedLabel(message);
                 return (
@@ -1134,7 +1177,7 @@ function QueuedMessages({
                                 type="button"
                                 className="chat-queued-steer"
                                 aria-label={`Steer the running turn with ${label}`}
-                                onClick={() => onSteer(message)}>
+                                onClick={() => onSteer([message])}>
                                 Steer
                                 {messages.length === 1 && <kbd className="chat-queued-steer-key">{PRIMARY_SHORTCUT}↵</kbd>}
                             </button>
@@ -1456,9 +1499,7 @@ function ChatComposer({
         );
     }, [stopping]);
 
-    /* Steering aborts the turn in flight, so the shortcut only fires when there
-       is exactly one message waiting and no doubt about which one it takes. */
-    const canSteerQueued = running && steerable && queuedCount === 1;
+    const canSteerQueued = running && steerable && queuedCount > 0;
 
     const send = (steerNow = false) => {
         const text = draft.trim();
@@ -1613,7 +1654,7 @@ function ChatComposer({
                         aria-label="Send message"
                         title={
                             canSteerQueued
-                                ? `${PRIMARY_SHORTCUT}↵ steers the queued message into this turn`
+                                ? `${PRIMARY_SHORTCUT}↵ steers ${queuedCount === 1 ? "the queued message" : "every queued message"} into this turn`
                                 : running && steerable
                                   ? `Queues behind this turn — ${PRIMARY_SHORTCUT}↵ steers into it`
                                   : undefined
@@ -1973,12 +2014,14 @@ export function AgentChatPane({
         }
     }, []);
 
-    /* A message written mid-turn waits: it goes out as a prompt of its own once
+    /* Messages written mid-turn wait, then go out together as one prompt once
        the running turn ends, so nothing in flight is cut short. */
     useEffect(() => {
         if (state.connection !== "ready" || state.running || queued.length === 0) return;
-        const next = queued[0];
-        setQueued((current) => current.filter((message) => message.id !== next.id));
+        const batch = nextBatch(queued);
+        const sent = new Set(batch.map((message) => message.id));
+        setQueued((current) => current.filter((message) => !sent.has(message.id)));
+        const next = combineQueued(batch);
         void promptNow(next.text, next.paths);
     }, [promptNow, queued, state.connection, state.running]);
 
@@ -2036,8 +2079,10 @@ export function AgentChatPane({
 
     /* Steering stops whatever the agent has in flight so it reads this message
        now, so a message only goes this way when it is asked to. */
-    const steer = async (message: QueuedMessage) => {
-        setQueued((current) => current.filter((candidate) => candidate.id !== message.id));
+    const steer = async (messages: QueuedMessage[]) => {
+        const steered = new Set(messages.map((message) => message.id));
+        setQueued((current) => current.filter((candidate) => !steered.has(candidate.id)));
+        const message = combineQueued(messages);
         dispatch({ type: "local_prompt", text: message.text, paths: message.paths });
         try {
             if ((await acpApi.steer(agent.id, message.text, message.paths)) !== "promptRequired") return;
@@ -2061,11 +2106,11 @@ export function AgentChatPane({
         }
 
         /* Written mid-turn, or while the session is still coming up: it waits
-           in the queue and goes out as its own prompt once the session is free. */
+           in the queue and goes out with the rest of it once the session is free. */
         queuedCount.current += 1;
         const message: QueuedMessage = { id: `queued-${queuedCount.current}`, text, paths };
         if (steerNow && steerable && state.running) {
-            void steer(message);
+            void steer([...queued, message]);
             return true;
         }
         setQueued((current) => [...current, message]);
@@ -2307,7 +2352,7 @@ export function AgentChatPane({
                                 <QueuedMessages
                                     messages={queued}
                                     steerable={steerable && state.running}
-                                    onSteer={(message) => void steer(message)}
+                                    onSteer={(messages) => void steer(messages)}
                                     onDrop={(id) => setQueued((current) => current.filter((message) => message.id !== id))}
                                 />
                             </div>
@@ -2332,8 +2377,7 @@ export function AgentChatPane({
                             onError={setComposerError}
                             onSend={send}
                             onSteerQueued={() => {
-                                const head = queued[0];
-                                if (head) void steer(head);
+                                if (queued.length > 0) void steer(queued);
                             }}
                             onStop={stop}
                             queuedCount={queued.length}
