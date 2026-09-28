@@ -1417,47 +1417,34 @@
     color: var(--text-tertiary);
 }
 
-/* The timeline: avatars and event marks sit on one line down the left. */
+/* The timeline: full-width cards, with the thread line drawn in the gaps between them, under the avatars in their
+   headers. Event marks and commit dots sit on the same line. */
 .gha-timeline {
+    --tl-gap: var(--space-3);
+    --tl-x: 21px;
     position: relative;
     display: flex;
     flex-direction: column;
-    gap: var(--space-3);
+    gap: var(--tl-gap);
 }
-.gha-timeline::before {
+.gha-timeline > * {
+    position: relative;
+}
+.gha-timeline > * + *::before {
     content: "";
     position: absolute;
-    top: var(--space-2);
-    bottom: var(--space-2);
-    left: 13px;
+    bottom: 100%;
+    left: calc(var(--tl-x) - 0.5px);
     width: 1px;
+    height: var(--tl-gap);
     background: var(--border);
-}
-.gha-tl-post {
-    position: relative;
-    display: grid;
-    grid-template-columns: 28px minmax(0, 1fr);
-    gap: var(--space-3);
-    align-items: start;
-}
-.gha-tl-face {
-    display: grid;
-    place-items: center;
-    width: 28px;
-    height: 28px;
-    margin-top: var(--space-1);
-    border-radius: var(--radius-full);
-    background: var(--surface-raised);
-}
-.gha-tl-face > .gha-avatar {
-    width: 28px;
-    height: 28px;
 }
 .gha-tl-event {
     position: relative;
     display: grid;
-    grid-template-columns: 28px minmax(0, 1fr);
-    gap: var(--space-3);
+    grid-template-columns: 24px minmax(0, 1fr);
+    gap: var(--space-2);
+    padding-left: calc(var(--tl-x) - 12px);
     align-items: center;
     font-size: var(--text-2xs);
 }
@@ -1467,7 +1454,6 @@
     place-items: center;
     width: 24px;
     height: 24px;
-    margin-left: 2px;
     border: 1px solid var(--border);
     border-radius: var(--radius-full);
     background: color-mix(in oklab, var(--tone) 14%, var(--surface-raised));
@@ -1500,8 +1486,9 @@
 }
 .gha-tl-commit {
     display: grid;
-    grid-template-columns: 28px minmax(0, 1fr) auto;
-    gap: var(--space-3);
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+    gap: var(--space-2);
+    padding-left: calc(var(--tl-x) - 12px);
     align-items: center;
     min-height: 24px;
     font-size: var(--text-2xs);
@@ -1531,8 +1518,8 @@
 .gha-tl-sha:hover {
     color: var(--text-primary);
 }
-.gha-tl-tail {
-    padding-left: calc(28px + var(--space-3));
+.gha-comment-head > .gha-avatar {
+    flex: 0 0 auto;
 }
 
 /* Tabs, and the column GitHub keeps down the right of a pull request. */
@@ -1879,9 +1866,6 @@
     font-size: var(--text-3xs);
     font-weight: var(--weight-semibold);
     line-height: 1;
-}
-.gha-tl-face > .gha-avatar-letter {
-    font-size: var(--text-2xs);
 }
 
 .gha-graph {
@@ -2353,7 +2337,8 @@ button.git-file-row {
     gap: var(--space-2);
 }
 .pr-thread .gha-timeline {
-    gap: var(--space-2);
+    --tl-gap: var(--space-2);
+    --tl-x: 19px;
 }
 .pr-thread .gha-comment .prose {
     padding: 6px 10px 8px;

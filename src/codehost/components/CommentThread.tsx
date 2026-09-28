@@ -59,11 +59,9 @@ function PostCard({ post, now }: { post: Post; now: number }) {
     const role = post.association ? ROLE[post.association] : undefined;
     return (
         <div className="gha-tl-post">
-            <span className="gha-tl-face">
-                <Face login={post.author} url={post.avatarUrl} />
-            </span>
             <div className="gha-comment" data-review={post.review ?? undefined}>
                 <div className="gha-comment-head">
+                    <Face login={post.author} url={post.avatarUrl} />
                     <Name login={post.author} />
                     {post.review ? (
                         <span className="gha-review-state" data-state={post.review}>
