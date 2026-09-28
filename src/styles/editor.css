@@ -298,7 +298,7 @@
     position: relative;
     z-index: 2;
     transition: none;
-    background: var(--surface-selected);
+    background-image: linear-gradient(var(--surface-selected), var(--surface-selected));
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
 }
 .tabbar.is-reordering .tab-wrap.tab-lifted.tab-settling {

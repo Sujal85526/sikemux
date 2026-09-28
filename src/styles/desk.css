@@ -88,7 +88,7 @@
 }
 
 .desk .tabbar.v-desk .tab-wrap.acting {
-    background: color-mix(in srgb, var(--desk-agent) 14%, transparent);
+    background-image: linear-gradient(color-mix(in srgb, var(--desk-agent) 14%, transparent), color-mix(in srgb, var(--desk-agent) 14%, transparent));
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--desk-agent) 70%, transparent);
     color: var(--text-primary);
 }

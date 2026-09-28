@@ -736,13 +736,10 @@ textarea:focus,
 }
 
 /*
- * Every tab is a shape; only the selected one is a surface.
+ * Every tab sits on the same ground as the rails; only the selected one is tinted.
  *
- * The edge says where a tab starts and ends, which a bare label leaves the eye
- * to guess. It stays well under the active tab's: a muted hairline and no
- * fill, so a strip of eight reads as a row rather than eight boxes competing
- * with the one that matters. Fill and the accent edge remain the selected
- * tab's alone.
+ * Hover and selection lay their translucent tint over that ground rather than
+ * replacing it, so a tab never turns see-through when you touch it.
  */
 .tabbar.v-agent .tab-wrap,
 .tabbar.v-editor .tab-wrap,
@@ -751,7 +748,7 @@ textarea:focus,
     height: 26px;
     border-right: 0;
     border-radius: var(--radius-2);
-    background: transparent;
+    background: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
     /* Full strength rather than 62%: the strip used to sit against the screen
        card's lit top edge, and now it sits against the wallpaper, where a
        hairline at two thirds of --border stopped reading as an edge at all. */
@@ -768,7 +765,7 @@ textarea:focus,
 .tabbar.v-editor .tab-wrap:hover,
 .tabbar.v-desk .tab-wrap:hover,
 .tabbar.v-stack .tab-wrap:hover {
-    background: var(--surface-hover);
+    background-image: linear-gradient(var(--surface-hover), var(--surface-hover));
     box-shadow: inset 0 0 0 1px var(--border);
     color: var(--text-secondary);
 }
@@ -777,7 +774,7 @@ textarea:focus,
 .tabbar.v-editor .tab-wrap.active,
 .tabbar.v-desk .tab-wrap.active,
 .tabbar.v-stack .tab-wrap.active {
-    background: var(--surface-selected);
+    background-image: linear-gradient(var(--surface-selected), var(--surface-selected));
     box-shadow: inset 0 0 0 1px var(--border-selected);
     color: var(--text-primary);
 }
