@@ -15,7 +15,7 @@ use serde_json::Value;
 use tokio::sync::Semaphore;
 
 use crate::config::{self, TokenSource};
-use crate::error::{ActionsError, ActionsResult};
+use crate::error::{GithubError, GithubResult};
 
 const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 const MAX_REQUESTS_IN_FLIGHT: usize = 8;
@@ -45,7 +45,7 @@ fn build(redirects: reqwest::redirect::Policy) -> Option<Client> {
 
 /// Files can be large and slow, so a transfer has no overall deadline, only
 /// one on connecting and one on going quiet.
-fn transfers() -> ActionsResult<&'static Client> {
+fn transfers() -> GithubResult<&'static Client> {
     static CLIENT: OnceLock<Option<Client>> = OnceLock::new();
     CLIENT
         .get_or_init(|| {
@@ -58,18 +58,17 @@ fn transfers() -> ActionsResult<&'static Client> {
                 .ok()
         })
         .as_ref()
-        .ok_or_else(|| ActionsError::Transport("could not start the HTTP client".into()))
+        .ok_or_else(|| GithubError::Transport("could not start the HTTP client".into()))
 }
 
-fn http() -> ActionsResult<&'static Client> {
+fn http() -> GithubResult<&'static Client> {
     static CLIENT: OnceLock<Option<Client>> = OnceLock::new();
     CLIENT
         .get_or_init(|| build(reqwest::redirect::Policy::none()))
         .as_ref()
-        .ok_or_else(|| ActionsError::Transport("could not start the HTTP client".into()))
+        .ok_or_else(|| GithubError::Transport("could not start the HTTP client".into()))
 }
 
-/// Where a request goes and which token it carries.
 pub struct Session {
     pub host: String,
     pub token: String,
@@ -79,9 +78,9 @@ pub struct Session {
 impl Session {
     /// Read fresh every time, so a `gh auth login` in a terminal is picked up
     /// without restarting the app.
-    pub fn current(data_dir: &Path) -> ActionsResult<Session> {
+    pub fn current(data_dir: &Path) -> GithubResult<Session> {
         let config = config::load(data_dir);
-        let (token, source) = config::resolve_token(&config).ok_or(ActionsError::Unconfigured)?;
+        let (token, source) = config::resolve_token(&config).ok_or(GithubError::Unconfigured)?;
         Ok(Session {
             host: config.host,
             token,
@@ -90,12 +89,12 @@ impl Session {
     }
 }
 
-async fn read_limited(response: Response) -> ActionsResult<Vec<u8>> {
+async fn read_limited(response: Response) -> GithubResult<Vec<u8>> {
     if response
         .content_length()
         .is_some_and(|size| size > MAX_RESPONSE_BYTES as u64)
     {
-        return Err(ActionsError::Response(
+        return Err(GithubError::Response(
             "more than 16 MiB came back; narrow the request".into(),
         ));
     }
@@ -104,7 +103,7 @@ async fn read_limited(response: Response) -> ActionsResult<Vec<u8>> {
     while let Some(chunk) = stream.next().await {
         let chunk = chunk?;
         if bytes.len() + chunk.len() > MAX_RESPONSE_BYTES {
-            return Err(ActionsError::Response(
+            return Err(GithubError::Response(
                 "more than 16 MiB came back; narrow the request".into(),
             ));
         }
@@ -158,7 +157,7 @@ fn error_message(bytes: &[u8]) -> Option<String> {
     })
 }
 
-pub fn classify(status: StatusCode, headers: &HeaderMap, bytes: &[u8]) -> ActionsError {
+pub fn classify(status: StatusCode, headers: &HeaderMap, bytes: &[u8]) -> GithubError {
     let message = error_message(bytes).unwrap_or_else(|| {
         status
             .canonical_reason()
@@ -166,13 +165,13 @@ pub fn classify(status: StatusCode, headers: &HeaderMap, bytes: &[u8]) -> Action
             .to_string()
     });
     match status.as_u16() {
-        401 => ActionsError::Auth(message),
+        401 => GithubError::Auth(message),
         403 | 429 => match rate_limited_for(headers) {
-            Some(resets_in_secs) => ActionsError::RateLimited { resets_in_secs },
-            None => ActionsError::Forbidden(message),
+            Some(resets_in_secs) => GithubError::RateLimited { resets_in_secs },
+            None => GithubError::Forbidden(message),
         },
-        404 => ActionsError::NotFound(message),
-        status => ActionsError::Http { status, message },
+        404 => GithubError::NotFound(message),
+        status => GithubError::Http { status, message },
     }
 }
 
@@ -180,7 +179,7 @@ async fn send_accepting(
     session: &Session,
     path: &str,
     accept: &str,
-) -> ActionsResult<(StatusCode, HeaderMap, Vec<u8>)> {
+) -> GithubResult<(StatusCode, HeaderMap, Vec<u8>)> {
     let url = format!("{}{path}", config::api_base(&session.host));
     let request = http()?
         .get(url)
@@ -200,7 +199,7 @@ pub async fn send(
     path: &str,
     query: &[(&str, String)],
     body: Option<&Value>,
-) -> ActionsResult<(StatusCode, HeaderMap, Vec<u8>)> {
+) -> GithubResult<(StatusCode, HeaderMap, Vec<u8>)> {
     let url = format!("{}{path}", config::api_base(&session.host));
     let mut request = http()?
         .request(method, url)
@@ -232,7 +231,7 @@ async fn body_of(
     path: &str,
     query: &[(&str, String)],
     body: Option<&Value>,
-) -> ActionsResult<Vec<u8>> {
+) -> GithubResult<Vec<u8>> {
     let (status, headers, bytes) = send(session, method, path, query, body).await?;
     if !status.is_success() {
         return Err(classify(status, &headers, &bytes));
@@ -246,12 +245,12 @@ async fn fetch(
     path: &str,
     query: &[(&str, String)],
     body: Option<&Value>,
-) -> ActionsResult<Vec<u8>> {
+) -> GithubResult<Vec<u8>> {
     let session = Session::current(data_dir)?;
     body_of(&session, method, path, query, body).await
 }
 
-fn parse<T: DeserializeOwned>(bytes: &[u8]) -> ActionsResult<T> {
+fn parse<T: DeserializeOwned>(bytes: &[u8]) -> GithubResult<T> {
     if bytes.iter().all(u8::is_ascii_whitespace) {
         return Ok(serde_json::from_slice(b"null")?);
     }
@@ -262,7 +261,7 @@ pub async fn get<T: DeserializeOwned>(
     data_dir: &Path,
     path: &str,
     query: &[(&str, String)],
-) -> ActionsResult<T> {
+) -> GithubResult<T> {
     parse(&fetch(data_dir, Method::GET, path, query, None).await?)
 }
 
@@ -272,7 +271,7 @@ pub async fn send_json<T: DeserializeOwned>(
     method: Method,
     path: &str,
     body: &Value,
-) -> ActionsResult<T> {
+) -> GithubResult<T> {
     parse(&fetch(data_dir, method, path, &[], Some(body)).await?)
 }
 
@@ -285,7 +284,7 @@ pub async fn get_all<P: DeserializeOwned, T>(
     query: &[(&str, String)],
     max_pages: u32,
     items: impl Fn(P) -> Vec<T>,
-) -> ActionsResult<Vec<T>> {
+) -> GithubResult<Vec<T>> {
     const PAGE: usize = 100;
     let mut all = Vec::new();
     for page in 1..=max_pages.max(1) {
@@ -317,7 +316,7 @@ pub async fn get_if_changed<T: DeserializeOwned>(
     path: &str,
     query: &[(&str, String)],
     etag: Option<&str>,
-) -> ActionsResult<Conditional<T>> {
+) -> GithubResult<Conditional<T>> {
     let (bytes, etag, remaining) = fetch_if_changed(data_dir, path, query, etag).await?;
     Ok(Conditional {
         value: bytes.as_deref().map(parse).transpose()?,
@@ -331,7 +330,7 @@ async fn fetch_if_changed(
     path: &str,
     query: &[(&str, String)],
     etag: Option<&str>,
-) -> ActionsResult<(Option<Vec<u8>>, Option<String>, Option<u64>)> {
+) -> GithubResult<(Option<Vec<u8>>, Option<String>, Option<u64>)> {
     let session = Session::current(data_dir)?;
     let url = format!("{}{path}", config::api_base(&session.host));
     let mut request = http()?
@@ -361,20 +360,20 @@ async fn fetch_if_changed(
     Ok((Some(bytes), header("etag").map(str::to_string), remaining))
 }
 
-pub async fn post_empty(data_dir: &Path, path: &str, body: Option<&Value>) -> ActionsResult<()> {
+pub async fn post_empty(data_dir: &Path, path: &str, body: Option<&Value>) -> GithubResult<()> {
     act(data_dir, Method::POST, path, body).await
 }
 
 /// Logs and artifacts are served as a redirect to storage that must be
 /// followed without the token, since the signed URL carries its own
 /// permission and GitHub rejects a request that sends both.
-pub async fn download(data_dir: &Path, path: &str) -> ActionsResult<Vec<u8>> {
+pub async fn download(data_dir: &Path, path: &str) -> GithubResult<Vec<u8>> {
     download_as(data_dir, path, "application/vnd.github+json").await
 }
 
 /// The same, for an endpoint that only hands over the bytes when asked for
 /// them by content type rather than as JSON.
-pub async fn download_as(data_dir: &Path, path: &str, accept: &str) -> ActionsResult<Vec<u8>> {
+pub async fn download_as(data_dir: &Path, path: &str, accept: &str) -> GithubResult<Vec<u8>> {
     let session = Session::current(data_dir)?;
     let (status, headers, bytes) = send_accepting(&session, path, accept).await?;
     if status.is_success() {
@@ -386,7 +385,7 @@ pub async fn download_as(data_dir: &Path, path: &str, accept: &str) -> ActionsRe
     let location = headers
         .get("location")
         .and_then(|value| value.to_str().ok())
-        .ok_or_else(|| ActionsError::Response("the download redirect had no address".into()))?;
+        .ok_or_else(|| GithubError::Response("the download redirect had no address".into()))?;
     let response = limited(http()?.execute(from_storage(location)?)).await?;
     let status = response.status();
     let headers = response.headers().clone();
@@ -398,9 +397,9 @@ pub async fn download_as(data_dir: &Path, path: &str, accept: &str) -> ActionsRe
 }
 
 /// Storage answers 400 to any `Authorization` header, an empty one included.
-fn from_storage(location: &str) -> ActionsResult<reqwest::Request> {
+fn from_storage(location: &str) -> GithubResult<reqwest::Request> {
     let url = reqwest::Url::parse(location)
-        .map_err(|_| ActionsError::Response("the download redirect was not an address".into()))?;
+        .map_err(|_| GithubError::Response("the download redirect was not an address".into()))?;
     Ok(reqwest::Request::new(Method::GET, url))
 }
 
@@ -412,7 +411,7 @@ pub async fn download_to(
     path: &str,
     accept: &str,
     target: &Path,
-) -> ActionsResult<u64> {
+) -> GithubResult<u64> {
     let session = Session::current(data_dir)?;
     let url = format!("{}{path}", config::api_base(&session.host));
     let request = transfers()?
@@ -426,7 +425,7 @@ pub async fn download_to(
             .headers()
             .get("location")
             .and_then(|value| value.to_str().ok())
-            .ok_or_else(|| ActionsError::Response("the download redirect had no address".into()))?
+            .ok_or_else(|| GithubError::Response("the download redirect had no address".into()))?
             .to_string();
         response = limited(transfers()?.execute(from_storage(&location)?)).await?;
     }
@@ -439,10 +438,10 @@ pub async fn download_to(
     write_stream(response, target).await
 }
 
-async fn write_stream(response: Response, target: &Path) -> ActionsResult<u64> {
+async fn write_stream(response: Response, target: &Path) -> GithubResult<u64> {
     use std::io::Write;
     let failed =
-        |error: std::io::Error| ActionsError::Transport(format!("saving the download: {error}"));
+        |error: std::io::Error| GithubError::Transport(format!("saving the download: {error}"));
     let partial = target.with_extension(match target.extension() {
         Some(extension) => format!("{}.part", extension.to_string_lossy()),
         None => "part".to_string(),
@@ -450,7 +449,7 @@ async fn write_stream(response: Response, target: &Path) -> ActionsResult<u64> {
     let mut file = std::fs::File::create(&partial).map_err(failed)?;
     let mut stream = response.bytes_stream();
     let mut written: u64 = 0;
-    let outcome: ActionsResult<()> = async {
+    let outcome: GithubResult<()> = async {
         while let Some(chunk) = stream.next().await {
             let chunk = chunk?;
             file.write_all(&chunk).map_err(failed)?;
@@ -468,7 +467,7 @@ async fn write_stream(response: Response, target: &Path) -> ActionsResult<u64> {
     Ok(written)
 }
 
-pub async fn download_text(data_dir: &Path, path: &str) -> ActionsResult<String> {
+pub async fn download_text(data_dir: &Path, path: &str) -> GithubResult<String> {
     Ok(String::from_utf8_lossy(&download(data_dir, path).await?).into_owned())
 }
 
@@ -479,7 +478,7 @@ pub async fn act(
     method: Method,
     path: &str,
     body: Option<&Value>,
-) -> ActionsResult<()> {
+) -> GithubResult<()> {
     let session = Session::current(data_dir)?;
     let (status, headers, bytes) = send(&session, method, path, &[], body).await?;
     if status.is_success() {

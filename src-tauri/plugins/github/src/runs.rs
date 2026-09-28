@@ -10,7 +10,7 @@ use serde_json::json;
 
 use crate::client;
 use crate::common::LIST_PAGES;
-use crate::error::{ActionsError, ActionsResult};
+use crate::error::{GithubError, GithubResult};
 use crate::workflows::RepoRef;
 
 const DEFAULT_PER_PAGE: u32 = 30;
@@ -179,7 +179,7 @@ fn known_status(value: &str) -> bool {
     STATUSES.contains(&value)
 }
 
-pub async fn list(data_dir: &Path, input: RunQuery) -> ActionsResult<RunPage> {
+pub async fn list(data_dir: &Path, input: RunQuery) -> GithubResult<RunPage> {
     let per_page = input
         .per_page
         .unwrap_or(DEFAULT_PER_PAGE)
@@ -204,7 +204,7 @@ pub async fn list(data_dir: &Path, input: RunQuery) -> ActionsResult<RunPage> {
         .filter(|s| !s.is_empty())
     {
         if !known_status(status) {
-            return Err(ActionsError::BadArg(format!(
+            return Err(GithubError::BadArg(format!(
                 "`{status}` is not a run status"
             )));
         }
@@ -233,7 +233,7 @@ pub async fn list(data_dir: &Path, input: RunQuery) -> ActionsResult<RunPage> {
         .filter(|s| !s.is_empty())
     {
         if !sha.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(ActionsError::BadArg(format!("`{sha}` is not a commit")));
+            return Err(GithubError::BadArg(format!("`{sha}` is not a commit")));
         }
         query.push(("head_sha", sha.to_string()));
     }
@@ -259,7 +259,7 @@ pub struct RunRef {
     pub run_id: u64,
 }
 
-pub async fn get(data_dir: &Path, input: RunRef) -> ActionsResult<Run> {
+pub async fn get(data_dir: &Path, input: RunRef) -> GithubResult<Run> {
     let path = input
         .repo
         .path(&format!("/actions/runs/{}", input.run_id))?;
@@ -356,7 +356,7 @@ impl From<JobRow> for Job {
     }
 }
 
-pub async fn jobs(data_dir: &Path, input: RunRef) -> ActionsResult<Vec<Job>> {
+pub async fn jobs(data_dir: &Path, input: RunRef) -> GithubResult<Vec<Job>> {
     let path = input
         .repo
         .path(&format!("/actions/runs/{}/jobs", input.run_id))?;
@@ -378,7 +378,7 @@ pub struct RunDetail {
     pub jobs: Vec<Job>,
 }
 
-pub async fn detail(data_dir: &Path, input: RunRef) -> ActionsResult<RunDetail> {
+pub async fn detail(data_dir: &Path, input: RunRef) -> GithubResult<RunDetail> {
     let repo = RepoRef {
         owner: input.repo.owner.clone(),
         name: input.repo.name.clone(),
@@ -408,7 +408,7 @@ pub async fn follow(
     data_dir: &Path,
     input: &RunRef,
     held: &mut Followed,
-) -> ActionsResult<(RunDetail, Option<u64>)> {
+) -> GithubResult<(RunDetail, Option<u64>)> {
     let base = format!("/actions/runs/{}", input.run_id);
     let run_etag = held.run.as_ref().and_then(|(_, etag)| etag.clone());
     let jobs_etag = held.jobs.as_ref().and_then(|(_, etag)| etag.clone());
@@ -438,7 +438,7 @@ pub async fn follow(
         .run
         .as_ref()
         .map(|(run, _)| run.clone())
-        .ok_or_else(|| ActionsError::Response("GitHub sent no run".into()))?;
+        .ok_or_else(|| GithubError::Response("GitHub sent no run".into()))?;
     Ok((
         RunDetail {
             run: current,
@@ -465,7 +465,7 @@ pub struct Rerun {
     pub debug: bool,
 }
 
-pub async fn rerun(data_dir: &Path, input: Rerun) -> ActionsResult<()> {
+pub async fn rerun(data_dir: &Path, input: Rerun) -> GithubResult<()> {
     let tail = if input.failed_only {
         "rerun-failed-jobs"
     } else {
@@ -479,21 +479,21 @@ pub async fn rerun(data_dir: &Path, input: Rerun) -> ActionsResult<()> {
     client::post_empty(data_dir, &path, Some(&body)).await
 }
 
-pub async fn cancel(data_dir: &Path, input: RunRef) -> ActionsResult<()> {
+pub async fn cancel(data_dir: &Path, input: RunRef) -> GithubResult<()> {
     let path = input
         .repo
         .path(&format!("/actions/runs/{}/cancel", input.run_id))?;
     client::post_empty(data_dir, &path, None).await
 }
 
-pub async fn delete_logs(data_dir: &Path, input: RunRef) -> ActionsResult<()> {
+pub async fn delete_logs(data_dir: &Path, input: RunRef) -> GithubResult<()> {
     let path = input
         .repo
         .path(&format!("/actions/runs/{}/logs", input.run_id))?;
     client::act(data_dir, Method::DELETE, &path, None).await
 }
 
-pub async fn delete(data_dir: &Path, input: RunRef) -> ActionsResult<()> {
+pub async fn delete(data_dir: &Path, input: RunRef) -> GithubResult<()> {
     let path = input
         .repo
         .path(&format!("/actions/runs/{}", input.run_id))?;
@@ -531,7 +531,7 @@ pub struct Timing {
     pub billable: Vec<Billable>,
 }
 
-pub async fn timing(data_dir: &Path, input: RunRef) -> ActionsResult<Timing> {
+pub async fn timing(data_dir: &Path, input: RunRef) -> GithubResult<Timing> {
     let path = input
         .repo
         .path(&format!("/actions/runs/{}/timing", input.run_id))?;
@@ -558,7 +558,7 @@ pub struct JobRef {
     pub job_id: u64,
 }
 
-pub async fn job_status(data_dir: &Path, input: JobRef) -> ActionsResult<String> {
+pub async fn job_status(data_dir: &Path, input: JobRef) -> GithubResult<String> {
     let path = input
         .repo
         .path(&format!("/actions/jobs/{}", input.job_id))?;
@@ -575,7 +575,7 @@ pub struct RerunJob {
     pub debug: bool,
 }
 
-pub async fn rerun_job(data_dir: &Path, input: RerunJob) -> ActionsResult<()> {
+pub async fn rerun_job(data_dir: &Path, input: RerunJob) -> GithubResult<()> {
     let path = input
         .job
         .repo
@@ -594,11 +594,11 @@ pub struct AttemptRef {
     pub attempt: u64,
 }
 
-pub async fn attempt(data_dir: &Path, input: AttemptRef) -> ActionsResult<RunDetail> {
+pub async fn attempt(data_dir: &Path, input: AttemptRef) -> GithubResult<RunDetail> {
     let base = format!("/actions/runs/{}/attempts/{}", input.run_id, input.attempt);
     // Neither answer needs the other, so they are asked for together the way
     // the current attempt's are.
-    let (run, jobs): (ActionsResult<RunRow>, ActionsResult<JobList>) = futures::future::join(
+    let (run, jobs): (GithubResult<RunRow>, GithubResult<JobList>) = futures::future::join(
         client::get(data_dir, &input.repo.path(&base)?, &[]),
         client::get(
             data_dir,

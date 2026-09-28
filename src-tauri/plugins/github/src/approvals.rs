@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::client;
-use crate::error::{ActionsError, ActionsResult};
+use crate::error::{GithubError, GithubResult};
 use crate::runs::RunRef;
 use crate::workflows::RepoRef;
 
@@ -66,7 +66,7 @@ fn reviewer_name(row: &ReviewerRow) -> Option<String> {
     })
 }
 
-pub async fn pending(data_dir: &Path, input: RunRef) -> ActionsResult<Vec<Pending>> {
+pub async fn pending(data_dir: &Path, input: RunRef) -> GithubResult<Vec<Pending>> {
     let path = input.repo.path(&format!(
         "/actions/runs/{}/pending_deployments",
         input.run_id
@@ -97,15 +97,15 @@ pub struct Review {
     pub comment: String,
 }
 
-pub async fn review(data_dir: &Path, input: Review) -> ActionsResult<()> {
+pub async fn review(data_dir: &Path, input: Review) -> GithubResult<()> {
     if !matches!(input.state.as_str(), "approved" | "rejected") {
-        return Err(ActionsError::BadArg(format!(
+        return Err(GithubError::BadArg(format!(
             "`{}` is not approved or rejected",
             input.state
         )));
     }
     if input.environment_ids.is_empty() {
-        return Err(ActionsError::BadArg(
+        return Err(GithubError::BadArg(
             "no environment was named to sign off".into(),
         ));
     }

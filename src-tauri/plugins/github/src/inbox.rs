@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::client;
 use crate::common::MAX_PER_PAGE;
-use crate::error::ActionsResult;
+use crate::error::GithubResult;
 
 #[derive(Deserialize)]
 struct SubjectRow {
@@ -113,7 +113,7 @@ pub struct Query {
     pub per_page: Option<u32>,
 }
 
-pub async fn list(data_dir: &Path, input: Query) -> ActionsResult<Vec<Notification>> {
+pub async fn list(data_dir: &Path, input: Query) -> GithubResult<Vec<Notification>> {
     let host = crate::config::load(data_dir).host;
     let rows: Vec<NotificationRow> = client::get(
         data_dir,
@@ -170,9 +170,9 @@ fn valid_thread(id: &str) -> bool {
     !id.is_empty() && id.len() <= 32 && id.chars().all(|c| c.is_ascii_digit())
 }
 
-pub async fn mark_read(data_dir: &Path, input: ThreadRef) -> ActionsResult<()> {
+pub async fn mark_read(data_dir: &Path, input: ThreadRef) -> GithubResult<()> {
     if !valid_thread(&input.id) {
-        return Err(crate::error::ActionsError::BadArg(
+        return Err(crate::error::GithubError::BadArg(
             "that is not a notification".into(),
         ));
     }
@@ -180,7 +180,7 @@ pub async fn mark_read(data_dir: &Path, input: ThreadRef) -> ActionsResult<()> {
     client::act(data_dir, reqwest::Method::PATCH, &path, None).await
 }
 
-pub async fn mark_all_read(data_dir: &Path) -> ActionsResult<()> {
+pub async fn mark_all_read(data_dir: &Path) -> GithubResult<()> {
     client::act(data_dir, reqwest::Method::PUT, "/notifications", None).await
 }
 

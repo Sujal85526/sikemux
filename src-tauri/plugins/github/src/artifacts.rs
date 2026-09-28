@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::client;
 use crate::common::LIST_PAGES;
-use crate::error::{ActionsError, ActionsResult};
+use crate::error::{GithubError, GithubResult};
 use crate::runs::RunRef;
 use crate::workflows::RepoRef;
 
@@ -38,7 +38,7 @@ pub struct Artifact {
     pub expires_at: Option<String>,
 }
 
-pub async fn list(data_dir: &Path, input: RunRef) -> ActionsResult<Vec<Artifact>> {
+pub async fn list(data_dir: &Path, input: RunRef) -> GithubResult<Vec<Artifact>> {
     let path = input
         .repo
         .path(&format!("/actions/runs/{}/artifacts", input.run_id))?;
@@ -110,10 +110,10 @@ pub fn download_target(
     data_dir: &Path,
     name: &str,
     extension: Option<&str>,
-) -> ActionsResult<PathBuf> {
+) -> GithubResult<PathBuf> {
     let dir = download_dir(data_dir);
     std::fs::create_dir_all(&dir)
-        .map_err(|error| ActionsError::Transport(format!("saving the download: {error}")))?;
+        .map_err(|error| GithubError::Transport(format!("saving the download: {error}")))?;
     Ok(free_path(
         &dir,
         &safe_file_name(name),
@@ -138,7 +138,7 @@ pub struct Saved {
     pub bytes: u64,
 }
 
-pub async fn download(data_dir: &Path, input: Download) -> ActionsResult<Saved> {
+pub async fn download(data_dir: &Path, input: Download) -> GithubResult<Saved> {
     let path = input
         .repo
         .path(&format!("/actions/artifacts/{}/zip", input.artifact_id))?;

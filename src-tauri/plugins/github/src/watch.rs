@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use sikemux_plugin_api::{reply, PluginResult, StreamSink};
 use tokio::time::sleep;
 
-use crate::error::ActionsError;
+use crate::error::GithubError;
 use crate::runs::{self, Followed, Job, Run, RunRef};
 use crate::workflows::RepoRef;
 
@@ -77,10 +77,10 @@ pub async fn run(data_dir: &Path, input: Watch, sink: StreamSink) -> PluginResul
         let (run, jobs, error, rate_reset, remaining) =
             match runs::follow(data_dir, &reference, &mut held).await {
                 Ok((detail, remaining)) => (Some(detail.run), detail.jobs, None, None, remaining),
-                Err(ActionsError::RateLimited { resets_in_secs }) => (
+                Err(GithubError::RateLimited { resets_in_secs }) => (
                     None,
                     Vec::new(),
-                    Some(ActionsError::RateLimited { resets_in_secs }.to_string()),
+                    Some(GithubError::RateLimited { resets_in_secs }.to_string()),
                     Some(resets_in_secs),
                     None,
                 ),

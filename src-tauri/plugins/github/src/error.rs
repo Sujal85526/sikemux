@@ -3,7 +3,7 @@ use std::fmt;
 use sikemux_plugin_api::PluginError;
 
 #[derive(Debug)]
-pub enum ActionsError {
+pub enum GithubError {
     Unconfigured,
     Auth(String),
     Forbidden(String),
@@ -16,7 +16,7 @@ pub enum ActionsError {
     Response(String),
 }
 
-impl fmt::Display for ActionsError {
+impl fmt::Display for GithubError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Unconfigured => formatter.write_str("github: not signed in"),
@@ -36,31 +36,31 @@ impl fmt::Display for ActionsError {
     }
 }
 
-impl From<reqwest::Error> for ActionsError {
+impl From<reqwest::Error> for GithubError {
     fn from(error: reqwest::Error) -> Self {
         Self::Transport(error.to_string())
     }
 }
 
-impl From<serde_json::Error> for ActionsError {
+impl From<serde_json::Error> for GithubError {
     fn from(error: serde_json::Error) -> Self {
         Self::Response(error.to_string())
     }
 }
 
-impl From<ActionsError> for PluginError {
-    fn from(error: ActionsError) -> Self {
+impl From<GithubError> for PluginError {
+    fn from(error: GithubError) -> Self {
         let (category, status) = match &error {
-            ActionsError::Unconfigured => ("unconfigured", None),
-            ActionsError::Auth(_) => ("auth", None),
-            ActionsError::Forbidden(_) => ("forbidden", Some(403)),
-            ActionsError::RateLimited { .. } => ("rate-limited", Some(429)),
-            ActionsError::Http { status, .. } => ("http", Some(*status)),
-            ActionsError::BadArg(_) => ("bad-params", None),
-            ActionsError::NotFound(_) => ("not-found", Some(404)),
-            ActionsError::Keychain(_) => ("keychain", None),
-            ActionsError::Transport(_) => ("github", None),
-            ActionsError::Response(_) => ("response", None),
+            GithubError::Unconfigured => ("unconfigured", None),
+            GithubError::Auth(_) => ("auth", None),
+            GithubError::Forbidden(_) => ("forbidden", Some(403)),
+            GithubError::RateLimited { .. } => ("rate-limited", Some(429)),
+            GithubError::Http { status, .. } => ("http", Some(*status)),
+            GithubError::BadArg(_) => ("bad-params", None),
+            GithubError::NotFound(_) => ("not-found", Some(404)),
+            GithubError::Keychain(_) => ("keychain", None),
+            GithubError::Transport(_) => ("github", None),
+            GithubError::Response(_) => ("response", None),
         };
         let plugin_error = PluginError::new(category, error.to_string());
         match status {
@@ -70,4 +70,4 @@ impl From<ActionsError> for PluginError {
     }
 }
 
-pub type ActionsResult<T> = Result<T, ActionsError>;
+pub type GithubResult<T> = Result<T, GithubError>;

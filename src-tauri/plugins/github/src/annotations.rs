@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::client;
 use crate::common::LIST_PAGES;
-use crate::error::ActionsResult;
+use crate::error::GithubResult;
 use crate::workflows::RepoRef;
 
 #[derive(Deserialize)]
@@ -60,7 +60,7 @@ pub struct Request {
     pub check_run_id: u64,
 }
 
-pub async fn list(data_dir: &Path, input: Request) -> ActionsResult<Vec<Annotation>> {
+pub async fn list(data_dir: &Path, input: Request) -> GithubResult<Vec<Annotation>> {
     let path = input
         .repo
         .path(&format!("/check-runs/{}/annotations", input.check_run_id))?;
@@ -91,7 +91,7 @@ pub struct Summary {
     pub body: String,
 }
 
-pub async fn summary(data_dir: &Path, input: Request) -> ActionsResult<Option<Summary>> {
+pub async fn summary(data_dir: &Path, input: Request) -> GithubResult<Option<Summary>> {
     let path = input
         .repo
         .path(&format!("/check-runs/{}", input.check_run_id))?;

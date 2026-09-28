@@ -7,7 +7,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::client;
-use crate::error::{ActionsError, ActionsResult};
+use crate::error::{GithubError, GithubResult};
 use crate::runs::{self, JobRef};
 
 /// Every log line carries the time the runner wrote it, ahead of a space.
@@ -71,7 +71,7 @@ pub struct LogRequest {
     pub job: JobRef,
 }
 
-pub async fn job(data_dir: &Path, input: LogRequest) -> ActionsResult<JobLog> {
+pub async fn job(data_dir: &Path, input: LogRequest) -> GithubResult<JobLog> {
     let path = input
         .job
         .repo
@@ -81,11 +81,11 @@ pub async fn job(data_dir: &Path, input: LogRequest) -> ActionsResult<JobLog> {
             lines: parse(&text),
             expired: false,
         }),
-        Err(ActionsError::Http { status: 410, .. }) => Ok(JobLog {
+        Err(GithubError::Http { status: 410, .. }) => Ok(JobLog {
             lines: Vec::new(),
             expired: true,
         }),
-        Err(ActionsError::NotFound(_)) => missing(data_dir, input.job).await,
+        Err(GithubError::NotFound(_)) => missing(data_dir, input.job).await,
         Err(error) => Err(error),
     }
 }
@@ -93,11 +93,11 @@ pub async fn job(data_dir: &Path, input: LogRequest) -> ActionsResult<JobLog> {
 /// GitHub answers "not found" for a log that aged out, for one a job has not
 /// written yet, and for a repository the token cannot see. Asking about the
 /// job itself tells them apart.
-async fn missing(data_dir: &Path, job: JobRef) -> ActionsResult<JobLog> {
+async fn missing(data_dir: &Path, job: JobRef) -> GithubResult<JobLog> {
     let state = runs::job_status(data_dir, job)
         .await
         .map_err(|error| match error {
-            ActionsError::NotFound(_) => ActionsError::NotFound(
+            GithubError::NotFound(_) => GithubError::NotFound(
                 "GitHub will not show this job to the signed-in account".into(),
             ),
             other => other,

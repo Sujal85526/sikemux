@@ -7,7 +7,7 @@ use serde_json::{json, Map, Value};
 
 use crate::client;
 use crate::common::LIST_PAGES;
-use crate::error::{ActionsError, ActionsResult};
+use crate::error::{GithubError, GithubResult};
 use crate::repo::{self, Repo};
 
 #[derive(Deserialize)]
@@ -44,12 +44,12 @@ pub struct RepoRef {
 }
 
 impl RepoRef {
-    pub fn checked(&self) -> ActionsResult<&Self> {
+    pub fn checked(&self) -> GithubResult<&Self> {
         repo::validate(&self.owner, &self.name)?;
         Ok(self)
     }
 
-    pub fn path(&self, rest: &str) -> ActionsResult<String> {
+    pub fn path(&self, rest: &str) -> GithubResult<String> {
         let checked = self.checked()?;
         Ok(format!("/repos/{}/{}{rest}", checked.owner, checked.name))
     }
@@ -64,7 +64,7 @@ impl From<&Repo> for RepoRef {
     }
 }
 
-pub async fn list(data_dir: &Path, repo: RepoRef) -> ActionsResult<Vec<Workflow>> {
+pub async fn list(data_dir: &Path, repo: RepoRef) -> GithubResult<Vec<Workflow>> {
     let workflows = client::get_all(
         data_dir,
         &repo.path("/actions/workflows")?,
@@ -126,10 +126,10 @@ fn valid_ref(value: &str) -> bool {
         })
 }
 
-pub async fn dispatch(data_dir: &Path, input: Dispatch) -> ActionsResult<()> {
+pub async fn dispatch(data_dir: &Path, input: Dispatch) -> GithubResult<()> {
     let git_ref = input.git_ref.trim();
     if !valid_ref(git_ref) {
-        return Err(ActionsError::BadArg(format!(
+        return Err(GithubError::BadArg(format!(
             "`{git_ref}` is not a branch or tag name"
         )));
     }
@@ -164,7 +164,7 @@ pub fn is_in_repository(path: &str) -> bool {
 
 /// The YAML a run came from, read at the default branch. A workflow's own
 /// record carries the path, so the file is fetched in two steps.
-pub async fn file(data_dir: &Path, input: FileRef) -> ActionsResult<WorkflowFile> {
+pub async fn file(data_dir: &Path, input: FileRef) -> GithubResult<WorkflowFile> {
     let row: WorkflowRow = client::get(
         data_dir,
         &input
@@ -174,7 +174,7 @@ pub async fn file(data_dir: &Path, input: FileRef) -> ActionsResult<WorkflowFile
     )
     .await?;
     if !is_in_repository(&row.path) {
-        return Err(ActionsError::NotFound(
+        return Err(GithubError::NotFound(
             "GitHub runs this workflow itself, so the repository has no file for it".into(),
         ));
     }
@@ -194,7 +194,7 @@ struct BranchRow {
     name: String,
 }
 
-pub async fn branches(data_dir: &Path, repo: RepoRef) -> ActionsResult<Vec<String>> {
+pub async fn branches(data_dir: &Path, repo: RepoRef) -> GithubResult<Vec<String>> {
     let rows: Vec<BranchRow> = client::get_all(
         data_dir,
         &repo.path("/branches")?,
@@ -218,7 +218,7 @@ mod tests {
     }
 
     #[test]
-    fn builds_a_path_under_the_repository() -> ActionsResult<()> {
+    fn builds_a_path_under_the_repository() -> GithubResult<()> {
         assert_eq!(
             repo().path("/actions/runs")?,
             "/repos/nodelike/sikemux/actions/runs"

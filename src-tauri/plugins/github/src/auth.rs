@@ -8,8 +8,8 @@ use reqwest::Method;
 use serde::{Deserialize, Serialize};
 
 use crate::client::{self, Session};
-use crate::config::{self, ActionsConfig, TokenSource};
-use crate::error::{ActionsError, ActionsResult};
+use crate::config::{self, GithubConfig, TokenSource};
+use crate::error::{GithubError, GithubResult};
 
 #[derive(Deserialize)]
 struct Viewer {
@@ -23,7 +23,7 @@ pub struct Identity {
     pub scopes: Vec<String>,
 }
 
-pub async fn identify(session: &Session) -> ActionsResult<Identity> {
+pub async fn identify(session: &Session) -> GithubResult<Identity> {
     let (status, headers, bytes) = client::send(session, Method::GET, "/user", &[], None).await?;
     if !status.is_success() {
         return Err(client::classify(status, &headers, &bytes));
@@ -112,7 +112,7 @@ pub async fn status(data_dir: &Path) -> Status {
         Err(error) => {
             let auth_failed = matches!(
                 error,
-                ActionsError::Auth(_) | ActionsError::Unconfigured | ActionsError::Forbidden(_)
+                GithubError::Auth(_) | GithubError::Unconfigured | GithubError::Forbidden(_)
             );
             base(
                 false,
@@ -134,7 +134,7 @@ pub struct SignIn {
     pub token: Option<String>,
 }
 
-pub async fn sign_in(data_dir: &Path, input: SignIn) -> ActionsResult<()> {
+pub async fn sign_in(data_dir: &Path, input: SignIn) -> GithubResult<()> {
     let before = config::load(data_dir);
     let host = match input.host.as_deref() {
         Some(host) => config::validate_host(host)?,
@@ -147,7 +147,7 @@ pub async fn sign_in(data_dir: &Path, input: SignIn) -> ActionsResult<()> {
             .map(|token| (token, TokenSource::Environment))
             .or_else(|| config::gh_cli_token(&host).map(|token| (token, TokenSource::GhCli)))
             .ok_or_else(|| {
-                ActionsError::Auth(
+                GithubError::Auth(
                     "no token was given, and none is in the environment or the gh CLI".into(),
                 )
             })?,
@@ -168,7 +168,7 @@ pub async fn sign_in(data_dir: &Path, input: SignIn) -> ActionsResult<()> {
     config::forget_token();
     config::save(
         data_dir,
-        &ActionsConfig {
+        &GithubConfig {
             host,
             login: identity.login,
             source: Some(source),
@@ -180,13 +180,13 @@ pub async fn sign_in(data_dir: &Path, input: SignIn) -> ActionsResult<()> {
 
 /// A token Sikemux saved earlier is deleted once a sign-in stops using it,
 /// rather than left in the Keychain where nothing will ever clear it.
-fn leaves_a_token_behind(before: &ActionsConfig, host: &str, owns_token: bool) -> bool {
+fn leaves_a_token_behind(before: &GithubConfig, host: &str, owns_token: bool) -> bool {
     before.owns_token && !(owns_token && before.host == host)
 }
 
 /// Only a token Sikemux saved is deleted. One the shell or `gh` provides is
 /// left where it is, and is not used here again until somebody signs in.
-pub async fn sign_out(data_dir: &Path) -> ActionsResult<()> {
+pub async fn sign_out(data_dir: &Path) -> GithubResult<()> {
     config::forget_token();
     let config = config::load(data_dir);
     if config.owns_token {
@@ -194,10 +194,10 @@ pub async fn sign_out(data_dir: &Path) -> ActionsResult<()> {
     }
     config::save(
         data_dir,
-        &ActionsConfig {
+        &GithubConfig {
             host: config.host,
             signed_out: true,
-            ..ActionsConfig::default()
+            ..GithubConfig::default()
         },
     )
 }
@@ -216,16 +216,16 @@ mod tests {
 
     #[test]
     fn a_saved_token_goes_once_nothing_uses_it() {
-        let owned = ActionsConfig {
+        let owned = GithubConfig {
             host: "github.com".into(),
             owns_token: true,
-            ..ActionsConfig::default()
+            ..GithubConfig::default()
         };
         assert!(leaves_a_token_behind(&owned, "github.com", false));
         assert!(leaves_a_token_behind(&owned, "ghe.corp", true));
         assert!(!leaves_a_token_behind(&owned, "github.com", true));
         assert!(!leaves_a_token_behind(
-            &ActionsConfig::default(),
+            &GithubConfig::default(),
             "github.com",
             false
         ));

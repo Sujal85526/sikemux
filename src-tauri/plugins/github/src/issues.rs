@@ -9,7 +9,7 @@ use serde_json::json;
 
 use crate::client;
 use crate::common::{avatar_of, login_of, ActorRow, Label, LabelRow, MAX_PER_PAGE};
-use crate::error::{ActionsError, ActionsResult};
+use crate::error::{GithubError, GithubResult};
 use crate::workflows::RepoRef;
 
 const DEFAULT_PER_PAGE: u32 = 30;
@@ -106,7 +106,7 @@ fn quoted(value: &str) -> String {
 
 /// Search, because the issues endpoint mixes pull requests into its pages and
 /// a page can come back with few issues or none.
-fn search_terms(input: &Query, state: &str) -> ActionsResult<String> {
+fn search_terms(input: &Query, state: &str) -> GithubResult<String> {
     input.repo.checked()?;
     let mut terms = vec![
         format!("repo:{}/{}", input.repo.owner, input.repo.name),
@@ -140,10 +140,10 @@ fn search_terms(input: &Query, state: &str) -> ActionsResult<String> {
     Ok(terms.join(" "))
 }
 
-pub async fn list(data_dir: &Path, input: Query) -> ActionsResult<IssuePage> {
+pub async fn list(data_dir: &Path, input: Query) -> GithubResult<IssuePage> {
     let state = input.state.clone().unwrap_or_else(|| "open".into());
     if !STATES.contains(&state.as_str()) {
-        return Err(ActionsError::BadArg(format!(
+        return Err(GithubError::BadArg(format!(
             "`{state}` is not open, closed or all"
         )));
     }
@@ -180,7 +180,7 @@ pub struct IssueRef {
     pub number: u64,
 }
 
-pub async fn get(data_dir: &Path, input: IssueRef) -> ActionsResult<Issue> {
+pub async fn get(data_dir: &Path, input: IssueRef) -> GithubResult<Issue> {
     let path = input.repo.path(&format!("/issues/{}", input.number))?;
     let row: IssueRow = client::get(data_dir, &path, &[]).await?;
     Ok(Issue::from(row))
@@ -195,9 +195,9 @@ pub struct SetState {
     pub state: String,
 }
 
-pub async fn set_state(data_dir: &Path, input: SetState) -> ActionsResult<()> {
+pub async fn set_state(data_dir: &Path, input: SetState) -> GithubResult<()> {
     if !matches!(input.state.as_str(), "open" | "closed") {
-        return Err(ActionsError::BadArg(format!(
+        return Err(GithubError::BadArg(format!(
             "`{}` is not open or closed",
             input.state
         )));
@@ -220,10 +220,10 @@ pub struct NewIssue {
     pub body: String,
 }
 
-pub async fn create(data_dir: &Path, input: NewIssue) -> ActionsResult<Issue> {
+pub async fn create(data_dir: &Path, input: NewIssue) -> GithubResult<Issue> {
     let title = input.title.trim();
     if title.is_empty() {
-        return Err(ActionsError::BadArg("an issue needs a title".into()));
+        return Err(GithubError::BadArg("an issue needs a title".into()));
     }
     let body = json!({ "title": title, "body": input.body });
     let row: IssueRow = client::send_json(
@@ -258,7 +258,7 @@ mod tests {
     }
 
     #[test]
-    fn searches_one_repository_for_issues_only() -> ActionsResult<()> {
+    fn searches_one_repository_for_issues_only() -> GithubResult<()> {
         let query = Query {
             repo: RepoRef {
                 owner: "nodelike".into(),

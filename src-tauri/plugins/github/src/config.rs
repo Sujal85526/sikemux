@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{ActionsError, ActionsResult};
+use crate::error::{GithubError, GithubResult};
 
 pub const TOKEN_SERVICE: &str = "sikemux-github-token";
 pub const DEFAULT_HOST: &str = "github.com";
@@ -32,7 +32,7 @@ pub enum TokenSource {
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct ActionsConfig {
+pub struct GithubConfig {
     pub host: String,
     #[serde(default)]
     pub login: String,
@@ -49,7 +49,7 @@ pub struct ActionsConfig {
     pub signed_out: bool,
 }
 
-impl Default for ActionsConfig {
+impl Default for GithubConfig {
     fn default() -> Self {
         Self {
             host: DEFAULT_HOST.to_string(),
@@ -75,8 +75,8 @@ fn host_for(saved: Option<&str>, gh_host: Option<&str>) -> String {
         .unwrap_or_else(|| DEFAULT_HOST.to_string())
 }
 
-pub fn load(data_dir: &Path) -> ActionsConfig {
-    let saved: Option<ActionsConfig> = std::fs::read(config_path(data_dir))
+pub fn load(data_dir: &Path) -> GithubConfig {
+    let saved: Option<GithubConfig> = std::fs::read(config_path(data_dir))
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok());
     let gh_host = std::env::var("GH_HOST").ok();
@@ -84,17 +84,17 @@ pub fn load(data_dir: &Path) -> ActionsConfig {
         saved.as_ref().map(|config| config.host.as_str()),
         gh_host.as_deref(),
     );
-    ActionsConfig {
+    GithubConfig {
         host,
         ..saved.unwrap_or_default()
     }
 }
 
-fn io_error(error: std::io::Error) -> ActionsError {
-    ActionsError::Transport(format!("saving settings: {error}"))
+fn io_error(error: std::io::Error) -> GithubError {
+    GithubError::Transport(format!("saving settings: {error}"))
 }
 
-pub fn save(data_dir: &Path, config: &ActionsConfig) -> ActionsResult<()> {
+pub fn save(data_dir: &Path, config: &GithubConfig) -> GithubResult<()> {
     std::fs::create_dir_all(data_dir).map_err(io_error)?;
     let path = config_path(data_dir);
     let staged = path.with_extension("json.tmp");
@@ -112,8 +112,8 @@ fn valid_label(label: &str) -> bool {
 
 /// A bare hostname, with a port only when one was given. People paste whole
 /// URLs, so a scheme, a user and a path are trimmed off rather than refused.
-pub fn validate_host(raw: &str) -> ActionsResult<String> {
-    let bad = || ActionsError::BadArg("that is not a GitHub hostname".into());
+pub fn validate_host(raw: &str) -> GithubResult<String> {
+    let bad = || GithubError::BadArg("that is not a GitHub hostname".into());
     let trimmed = raw.trim();
     let after_scheme = trimmed.split_once("://").map_or(trimmed, |(_, rest)| rest);
     let authority = after_scheme.split('/').next().unwrap_or(after_scheme);
@@ -145,11 +145,11 @@ pub fn api_base(host: &str) -> String {
     }
 }
 
-fn validate_account(raw: &str) -> ActionsResult<String> {
+fn validate_account(raw: &str) -> GithubResult<String> {
     let account = raw.trim();
     let allowed = |c: char| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | ':');
     if account.is_empty() || account.len() > 128 || !account.chars().all(allowed) {
-        return Err(ActionsError::BadArg(
+        return Err(GithubError::BadArg(
             "the Keychain account is letters, digits, dots, dashes and underscores".into(),
         ));
     }
@@ -158,11 +158,11 @@ fn validate_account(raw: &str) -> ActionsResult<String> {
 
 /// Secrets reach `security -i` on a command line it splits on spaces, so
 /// anything that could end the value early is refused rather than escaped.
-fn validate_secret(raw: &str) -> ActionsResult<String> {
+fn validate_secret(raw: &str) -> GithubResult<String> {
     let secret = raw.trim();
     let allowed = |c: char| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '~');
     if secret.is_empty() || secret.len() > 1024 || !secret.chars().all(allowed) {
-        return Err(ActionsError::BadArg(
+        return Err(GithubError::BadArg(
             "that does not look like a GitHub token".into(),
         ));
     }
@@ -173,12 +173,12 @@ fn run(
     command: &mut Command,
     input: Option<&[u8]>,
     timeout: Duration,
-) -> ActionsResult<std::process::Output> {
+) -> GithubResult<std::process::Output> {
     sikemux_process::run(command, input, timeout, OUTPUT_LIMIT, None)
-        .map_err(|error| ActionsError::Keychain(error.to_string()))
+        .map_err(|error| GithubError::Keychain(error.to_string()))
 }
 
-pub fn keychain_read(account: &str) -> ActionsResult<Option<String>> {
+pub fn keychain_read(account: &str) -> GithubResult<Option<String>> {
     let output = run(
         Command::new("security").args([
             "find-generic-password",
@@ -200,7 +200,7 @@ pub fn keychain_read(account: &str) -> ActionsResult<Option<String>> {
 
 /// `security -i` reads the command from stdin, so the token never shows up in
 /// the process list the way an argument would.
-pub fn keychain_write(account: &str, secret: &str) -> ActionsResult<()> {
+pub fn keychain_write(account: &str, secret: &str) -> GithubResult<()> {
     let account = validate_account(account)?;
     let secret = validate_secret(secret)?;
     let line = format!("add-generic-password -U -s {TOKEN_SERVICE} -a {account} -w {secret}\n");
@@ -210,14 +210,14 @@ pub fn keychain_write(account: &str, secret: &str) -> ActionsResult<()> {
         KEYCHAIN_TIMEOUT,
     )?;
     if !output.status.success() {
-        return Err(ActionsError::Keychain(
+        return Err(GithubError::Keychain(
             "the Keychain refused to save it".into(),
         ));
     }
     Ok(())
 }
 
-pub fn keychain_delete(account: &str) -> ActionsResult<()> {
+pub fn keychain_delete(account: &str) -> GithubResult<()> {
     run(
         Command::new("security").args([
             "delete-generic-password",
@@ -284,7 +284,7 @@ pub fn forget_token() {
 /// Where to look for a token, in order. Once signed in, only the place signed
 /// in with counts; before anybody has, a token the shell or `gh` already holds
 /// is used without asking. After signing out, nothing is.
-pub fn sources_for(config: &ActionsConfig) -> Vec<TokenSource> {
+pub fn sources_for(config: &GithubConfig) -> Vec<TokenSource> {
     if config.signed_out {
         return Vec::new();
     }
@@ -302,8 +302,7 @@ fn read_token(source: TokenSource, host: &str) -> Option<String> {
     }
 }
 
-/// The token to use, and where it came from.
-pub fn resolve_token(config: &ActionsConfig) -> Option<(String, TokenSource)> {
+pub fn resolve_token(config: &GithubConfig) -> Option<(String, TokenSource)> {
     if config.signed_out {
         return None;
     }
@@ -329,7 +328,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reads_a_hostname_out_of_whatever_was_pasted() -> ActionsResult<()> {
+    fn reads_a_hostname_out_of_whatever_was_pasted() -> GithubResult<()> {
         for raw in [
             "github.com",
             "https://github.com",
@@ -384,9 +383,9 @@ mod tests {
     }
 
     #[test]
-    fn round_trips_the_config_file() -> ActionsResult<()> {
+    fn round_trips_the_config_file() -> GithubResult<()> {
         let dir = std::env::temp_dir().join(format!("sikemux-gha-{}", std::process::id()));
-        let config = ActionsConfig {
+        let config = GithubConfig {
             host: "git.example.com".into(),
             login: "octocat".into(),
             source: Some(TokenSource::Keychain),
@@ -451,9 +450,9 @@ mod tests {
 
     #[test]
     fn only_the_place_signed_in_with_is_read() {
-        let signed_in = |source| ActionsConfig {
+        let signed_in = |source| GithubConfig {
             source: Some(source),
-            ..ActionsConfig::default()
+            ..GithubConfig::default()
         };
         assert_eq!(
             sources_for(&signed_in(TokenSource::GhCli)),
@@ -464,16 +463,16 @@ mod tests {
             [TokenSource::Keychain]
         );
         assert_eq!(
-            sources_for(&ActionsConfig::default()),
+            sources_for(&GithubConfig::default()),
             [TokenSource::Environment, TokenSource::GhCli]
         );
     }
 
     #[test]
     fn nothing_is_read_after_signing_out() {
-        let out = ActionsConfig {
+        let out = GithubConfig {
             signed_out: true,
-            ..ActionsConfig::default()
+            ..GithubConfig::default()
         };
         assert!(sources_for(&out).is_empty());
         assert_eq!(resolve_token(&out), None);

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::artifacts;
 use crate::client;
 use crate::common::{login_of, ActorRow, RELEASE_PAGES};
-use crate::error::ActionsResult;
+use crate::error::GithubResult;
 use crate::workflows::RepoRef;
 
 #[derive(Deserialize)]
@@ -88,7 +88,7 @@ impl From<ReleaseRow> for Release {
     }
 }
 
-pub async fn list(data_dir: &Path, repo: RepoRef) -> ActionsResult<Vec<Release>> {
+pub async fn list(data_dir: &Path, repo: RepoRef) -> GithubResult<Vec<Release>> {
     let rows: Vec<ReleaseRow> = client::get_all(
         data_dir,
         &repo.path("/releases")?,
@@ -112,7 +112,7 @@ pub struct DownloadAsset {
 
 /// A release asset is whatever was uploaded, so it keeps its own name rather
 /// than becoming a zip the way an artifact does.
-pub async fn download(data_dir: &Path, input: DownloadAsset) -> ActionsResult<artifacts::Saved> {
+pub async fn download(data_dir: &Path, input: DownloadAsset) -> GithubResult<artifacts::Saved> {
     let path = input
         .repo
         .path(&format!("/releases/assets/{}", input.asset_id))?;

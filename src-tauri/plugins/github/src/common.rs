@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::client;
-use crate::error::ActionsResult;
+use crate::error::GithubResult;
 use crate::workflows::RepoRef;
 
 pub const MAX_PER_PAGE: u32 = 100;
@@ -85,7 +85,7 @@ pub struct Thread {
 
 /// Pull requests and issues share one comment thread in GitHub's API, which is
 /// why both reach it through the issues path.
-pub async fn comments(data_dir: &Path, repo: &RepoRef, number: u64) -> ActionsResult<Vec<Comment>> {
+pub async fn comments(data_dir: &Path, repo: &RepoRef, number: u64) -> GithubResult<Vec<Comment>> {
     let path = repo.path(&format!("/issues/{number}/comments"))?;
     let rows: Vec<CommentRow> =
         client::get_all(data_dir, &path, &[], LIST_PAGES, |rows| rows).await?;
@@ -111,10 +111,10 @@ pub struct NewComment {
     pub body: String,
 }
 
-pub async fn add_comment(data_dir: &Path, input: NewComment) -> ActionsResult<()> {
+pub async fn add_comment(data_dir: &Path, input: NewComment) -> GithubResult<()> {
     let body = input.body.trim();
     if body.is_empty() {
-        return Err(crate::error::ActionsError::BadArg(
+        return Err(crate::error::GithubError::BadArg(
             "a comment cannot be empty".into(),
         ));
     }

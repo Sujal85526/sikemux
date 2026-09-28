@@ -1,4 +1,5 @@
-// GitHub Actions: the workflow runs of whichever repository Sikemux has open.
+// GitHub: the runs, pull requests, issues, releases and notifications of
+// whichever repository Sikemux has open.
 //
 //   config    — which GitHub this is, and where the token comes from
 //   client    — the HTTP client, size limits, and GitHub's error shapes
@@ -42,19 +43,18 @@ use sikemux_plugin_api::{
     params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture, StreamSink,
 };
 
-use crate::error::ActionsResult;
+use crate::error::GithubResult;
 
 pub fn plugin() -> Result<Arc<dyn Plugin>, PluginError> {
-    Ok(Arc::new(GithubActions {
+    Ok(Arc::new(Github {
         manifest: Manifest::from_json(include_str!("../manifest.json"))?,
     }))
 }
 
-struct GithubActions {
+struct Github {
     manifest: Manifest,
 }
 
-/// Reads a method's input, runs it, and hands back its answer.
 fn answer<'a, I, T, F>(
     input: Value,
     work: impl FnOnce(I) -> F + Send + 'a,
@@ -62,7 +62,7 @@ fn answer<'a, I, T, F>(
 where
     I: serde::de::DeserializeOwned + Send + 'a,
     T: Serialize,
-    F: std::future::Future<Output = ActionsResult<T>> + Send + 'a,
+    F: std::future::Future<Output = GithubResult<T>> + Send + 'a,
 {
     Box::pin(async move { reply(work(params(input)?).await?) })
 }
@@ -108,13 +108,13 @@ fn default_limit() -> u32 {
 /// Everything the sign-in screen needs, after the sign-in went through.
 async fn signed_in(
     data_dir: &std::path::Path,
-    outcome: ActionsResult<()>,
+    outcome: GithubResult<()>,
 ) -> Result<Value, PluginError> {
     outcome?;
     reply(auth::status(data_dir).await)
 }
 
-impl Plugin for GithubActions {
+impl Plugin for Github {
     fn manifest(&self) -> &Manifest {
         &self.manifest
     }

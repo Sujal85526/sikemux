@@ -7,7 +7,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::client;
-use crate::error::{ActionsError, ActionsResult};
+use crate::error::{GithubError, GithubResult};
 
 const MAX_NAME: usize = 100;
 
@@ -37,11 +37,11 @@ fn valid_name(value: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
 }
 
-pub fn validate(owner: &str, name: &str) -> ActionsResult<()> {
+pub fn validate(owner: &str, name: &str) -> GithubResult<()> {
     if valid_name(owner) && valid_name(name) {
         return Ok(());
     }
-    Err(ActionsError::BadArg(format!(
+    Err(GithubError::BadArg(format!(
         "`{owner}/{name}` is not a repository name"
     )))
 }
@@ -115,7 +115,7 @@ pub struct Listing {
 
 /// The repositories the signed-in account can reach, most recently pushed
 /// first, so the ones somebody is actually working on come up.
-pub async fn mine(data_dir: &Path, limit: u32) -> ActionsResult<Vec<Listing>> {
+pub async fn mine(data_dir: &Path, limit: u32) -> GithubResult<Vec<Listing>> {
     let rows: Vec<RepoRow> = client::get(
         data_dir,
         "/user/repos",

@@ -11,7 +11,7 @@ use crate::client;
 use crate::common::{
     avatar_of, login_of, ActorRow, Label, LabelRow, FILE_PAGES, LIST_PAGES, MAX_PER_PAGE,
 };
-use crate::error::{ActionsError, ActionsResult};
+use crate::error::{GithubError, GithubResult};
 use crate::workflows::RepoRef;
 
 const DEFAULT_PER_PAGE: u32 = 30;
@@ -134,10 +134,10 @@ pub struct Query {
     pub per_page: Option<u32>,
 }
 
-pub async fn list(data_dir: &Path, input: Query) -> ActionsResult<Vec<Pull>> {
+pub async fn list(data_dir: &Path, input: Query) -> GithubResult<Vec<Pull>> {
     let state = input.state.unwrap_or_else(|| "open".into());
     if !STATES.contains(&state.as_str()) {
-        return Err(ActionsError::BadArg(format!(
+        return Err(GithubError::BadArg(format!(
             "`{state}` is not open, closed or all"
         )));
     }
@@ -190,7 +190,7 @@ async fn comment_counts(
     state: &str,
     per_page: u32,
     page: u32,
-) -> ActionsResult<std::collections::HashMap<u64, u64>> {
+) -> GithubResult<std::collections::HashMap<u64, u64>> {
     repo.checked()?;
     let mut terms = format!("repo:{}/{} is:pr", repo.owner, repo.name);
     if state != "all" {
@@ -223,7 +223,7 @@ pub struct PullRef {
     pub number: u64,
 }
 
-pub async fn get(data_dir: &Path, input: PullRef) -> ActionsResult<Pull> {
+pub async fn get(data_dir: &Path, input: PullRef) -> GithubResult<Pull> {
     let path = input.repo.path(&format!("/pulls/{}", input.number))?;
     let row: PullRow = client::get(data_dir, &path, &[]).await?;
     Ok(Pull::from(row))
@@ -252,7 +252,7 @@ pub struct ChangedFile {
     pub patch: Option<String>,
 }
 
-pub async fn files(data_dir: &Path, input: PullRef) -> ActionsResult<Vec<ChangedFile>> {
+pub async fn files(data_dir: &Path, input: PullRef) -> GithubResult<Vec<ChangedFile>> {
     let path = input.repo.path(&format!("/pulls/{}/files", input.number))?;
     let rows: Vec<FileRow> = client::get_all(data_dir, &path, &[], FILE_PAGES, |rows| rows).await?;
     Ok(rows
@@ -286,7 +286,7 @@ pub struct Review {
     pub submitted_at: Option<String>,
 }
 
-pub async fn reviews(data_dir: &Path, input: PullRef) -> ActionsResult<Vec<Review>> {
+pub async fn reviews(data_dir: &Path, input: PullRef) -> GithubResult<Vec<Review>> {
     let path = input
         .repo
         .path(&format!("/pulls/{}/reviews", input.number))?;
@@ -315,9 +315,9 @@ pub struct Merge {
     pub method: String,
 }
 
-pub async fn merge(data_dir: &Path, input: Merge) -> ActionsResult<()> {
+pub async fn merge(data_dir: &Path, input: Merge) -> GithubResult<()> {
     if !MERGE_METHODS.contains(&input.method.as_str()) {
-        return Err(ActionsError::BadArg(format!(
+        return Err(GithubError::BadArg(format!(
             "`{}` is not merge, squash or rebase",
             input.method
         )));
@@ -346,13 +346,13 @@ pub struct NewPull {
     pub draft: bool,
 }
 
-pub async fn create(data_dir: &Path, input: NewPull) -> ActionsResult<Pull> {
+pub async fn create(data_dir: &Path, input: NewPull) -> GithubResult<Pull> {
     let title = input.title.trim();
     if title.is_empty() {
-        return Err(ActionsError::BadArg("a pull request needs a title".into()));
+        return Err(GithubError::BadArg("a pull request needs a title".into()));
     }
     if input.head.trim().is_empty() || input.base.trim().is_empty() {
-        return Err(ActionsError::BadArg(
+        return Err(GithubError::BadArg(
             "a pull request needs both of its branches".into(),
         ));
     }
@@ -382,9 +382,9 @@ pub struct SetState {
     pub state: String,
 }
 
-pub async fn set_state(data_dir: &Path, input: SetState) -> ActionsResult<()> {
+pub async fn set_state(data_dir: &Path, input: SetState) -> GithubResult<()> {
     if !matches!(input.state.as_str(), "open" | "closed") {
-        return Err(ActionsError::BadArg(format!(
+        return Err(GithubError::BadArg(format!(
             "`{}` is not open or closed",
             input.state
         )));
@@ -410,15 +410,15 @@ pub struct NewReview {
     pub body: String,
 }
 
-pub async fn review(data_dir: &Path, input: NewReview) -> ActionsResult<()> {
+pub async fn review(data_dir: &Path, input: NewReview) -> GithubResult<()> {
     if !REVIEW_EVENTS.contains(&input.event.as_str()) {
-        return Err(ActionsError::BadArg(format!(
+        return Err(GithubError::BadArg(format!(
             "`{}` is not approve, request changes or comment",
             input.event
         )));
     }
     if input.event != "APPROVE" && input.body.trim().is_empty() {
-        return Err(ActionsError::BadArg(
+        return Err(GithubError::BadArg(
             "say what needs changing, or what the comment is".into(),
         ));
     }
