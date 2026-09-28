@@ -1,4 +1,17 @@
-import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import {
+    lazy,
+    memo,
+    Suspense,
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+    type MouseEvent,
+    type PointerEvent as ReactPointerEvent,
+    type ReactNode,
+    type RefObject,
+} from "react";
 import {
     git,
     hasUnstaged,
@@ -105,6 +118,7 @@ function GitWorkbench({
     onLeaveRepo: (() => void) | null;
 }) {
     const paneRootRef = useRef<HTMLDivElement>(null);
+    const leftRef = useRef<HTMLDivElement>(null);
     const storedView = useStore((s) => s.gitViews[paneId]);
     const view = {
         ...DEFAULT_GIT_VIEW,
@@ -1495,7 +1509,7 @@ function GitWorkbench({
                 <MoreButton label="Remotes, stashes and more" onOpen={openMoreMenu} className="git-btn icon" />
             </div>
             <div className="git-body">
-                <div className="git-left">
+                <div className="git-left" ref={leftRef} style={view.leftWidth ? { width: view.leftWidth } : undefined}>
                     <div className="git-tabs" role="tablist" aria-label="Git views">
                         {tabs.map(([id, label, icon, count]) => (
                             <button
@@ -1514,6 +1528,7 @@ function GitWorkbench({
                     {left}
                     {cmdLogOpen && <GitCmdLogBar />}
                 </div>
+                <SplitHandle leftRef={leftRef} width={view.leftWidth} onResize={(width) => cmd.setGitView(paneId, { leftWidth: width })} />
                 <div className="git-right">
                     <div className="git-right-review">
                         <Suspense fallback={<SkeletonRows rows={6} label="Loading diff preview" />}>{right}</Suspense>
@@ -1564,6 +1579,77 @@ function MoreButton({
                 <IconMore size={13} />
             </button>
         </Tooltip>
+    );
+}
+
+const LEFT_MIN = 260;
+const RIGHT_MIN = 360;
+
+/** The divider between the lists and the review. Dragging moves the column itself and saves the width on release. */
+function SplitHandle({
+    leftRef,
+    width,
+    onResize,
+}: {
+    leftRef: RefObject<HTMLDivElement | null>;
+    width: number | null;
+    onResize: (width: number | null) => void;
+}) {
+    const clamp = (next: number) => {
+        const room = leftRef.current?.parentElement?.clientWidth ?? next + RIGHT_MIN;
+        return Math.round(Math.min(Math.max(LEFT_MIN, room - RIGHT_MIN), Math.max(LEFT_MIN, next)));
+    };
+    const current = () => leftRef.current?.offsetWidth ?? width ?? LEFT_MIN;
+
+    const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        const handle = event.currentTarget;
+        handle.setPointerCapture(event.pointerId);
+        const startX = event.clientX;
+        const startWidth = current();
+        let latest = startWidth;
+        let frame: number | null = null;
+        const move = (ev: PointerEvent) => {
+            latest = clamp(startWidth + ev.clientX - startX);
+            if (frame !== null) return;
+            frame = window.requestAnimationFrame(() => {
+                frame = null;
+                if (leftRef.current) leftRef.current.style.width = `${latest}px`;
+            });
+        };
+        const up = () => {
+            if (frame !== null) window.cancelAnimationFrame(frame);
+            handle.removeEventListener("pointermove", move);
+            handle.removeEventListener("pointerup", up);
+            handle.removeEventListener("pointercancel", up);
+            if (latest !== startWidth) onResize(latest);
+        };
+        handle.addEventListener("pointermove", move);
+        handle.addEventListener("pointerup", up);
+        handle.addEventListener("pointercancel", up);
+    };
+
+    return (
+        <div
+            className="git-split"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize the lists and the review"
+            aria-valuemin={LEFT_MIN}
+            aria-valuenow={width ?? undefined}
+            tabIndex={0}
+            title="Drag to resize · double-click to reset"
+            onPointerDown={onPointerDown}
+            onDoubleClick={() => onResize(null)}
+            onKeyDown={(event) => {
+                if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                event.preventDefault();
+                event.stopPropagation();
+                const step = event.shiftKey ? 64 : 16;
+                onResize(clamp(current() + (event.key === "ArrowRight" ? step : -step)));
+            }}
+        />
     );
 }
 

@@ -45,8 +45,20 @@ export function GitComposer({
     useLayoutEffect(() => {
         const el = summaryRef.current;
         if (!el) return;
-        el.style.height = "auto";
-        el.style.height = `${el.scrollHeight}px`;
+        const fit = () => {
+            el.style.height = "auto";
+            el.style.height = `${el.scrollHeight}px`;
+        };
+        fit();
+        // Widening the column can unwrap the summary, so its height follows the width too.
+        let width = el.clientWidth;
+        const observer = new ResizeObserver(() => {
+            if (el.clientWidth === width) return;
+            width = el.clientWidth;
+            fit();
+        });
+        observer.observe(el);
+        return () => observer.disconnect();
     }, [summary, summaryRef]);
     const commitLabel = stagedCount > 0 ? `Commit ${stagedCount} file${stagedCount === 1 ? "" : "s"}` : "Commit";
 

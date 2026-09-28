@@ -157,3 +157,28 @@ it("stages and unstages one file from the buttons on its row", async () => {
         unstage.mockRestore();
     }
 });
+
+it("resizes the lists against the review from the divider, and double-click puts it back", () => {
+    const offsetWidth = vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(300);
+    const clientWidth = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1000);
+    try {
+        render(<GitPane paneId="git-test" cwd="/repo" active visible />);
+        const divider = screen.getByRole("separator", { name: "Resize the lists and the review" });
+
+        fireEvent.keyDown(divider, { key: "ArrowRight" });
+        expect(getState().gitViews["git-test"].leftWidth).toBe(316);
+
+        fireEvent.keyDown(divider, { key: "ArrowLeft", shiftKey: true });
+        expect(getState().gitViews["git-test"].leftWidth).toBe(260);
+
+        offsetWidth.mockReturnValue(620);
+        fireEvent.keyDown(divider, { key: "ArrowRight", shiftKey: true });
+        expect(getState().gitViews["git-test"].leftWidth).toBe(640);
+
+        fireEvent.doubleClick(divider);
+        expect(getState().gitViews["git-test"].leftWidth).toBeNull();
+    } finally {
+        offsetWidth.mockRestore();
+        clientWidth.mockRestore();
+    }
+});

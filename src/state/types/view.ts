@@ -93,6 +93,8 @@ export interface GitPaneView {
     selected: Record<GitPanel, number>;
     /** The remote whose branches are listed under the local ones in the Branches tab. */
     openRemote: string | null;
+    /** The left column's width in pixels once someone has dragged it; null keeps the default. */
+    leftWidth: number | null;
     /** A repository found inside the project folder, when the folder is not one itself. */
     repo: string | null;
 }
@@ -101,6 +103,7 @@ export const DEFAULT_GIT_VIEW: GitPaneView = {
     panel: "files",
     selected: { files: 0, commits: 0, branches: 0 },
     openRemote: "origin",
+    leftWidth: null,
     repo: null,
 };
 
