@@ -280,6 +280,7 @@ struct ReviewRow {
 #[serde(rename_all = "camelCase")]
 pub struct Review {
     pub author: Option<String>,
+    pub avatar_url: Option<String>,
     /// `APPROVED`, `CHANGES_REQUESTED`, `COMMENTED` or `DISMISSED`.
     pub state: String,
     pub body: String,
@@ -297,6 +298,7 @@ pub async fn reviews(data_dir: &Path, input: PullRef) -> GithubResult<Vec<Review
         .filter(|row| row.state.as_deref() != Some("PENDING"))
         .map(|row| Review {
             author: login_of(&row.user),
+            avatar_url: avatar_of(&row.user),
             state: row.state.unwrap_or_else(|| "COMMENTED".into()),
             body: row.body.unwrap_or_default(),
             submitted_at: row.submitted_at,
