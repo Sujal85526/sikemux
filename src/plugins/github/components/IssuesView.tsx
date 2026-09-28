@@ -26,7 +26,11 @@ function IssueRow({ issue, now, onOpen }: { issue: Issue; now: number; onOpen: (
                     <Labels labels={issue.labels} />
                 </span>
             </span>
-            {issue.comments > 0 && <span className="gha-dim">{issue.comments} comments</span>}
+            {issue.comments > 0 && (
+                <span className="gha-dim">
+                    {issue.comments} comment{issue.comments === 1 ? "" : "s"}
+                </span>
+            )}
         </button>
     );
 }

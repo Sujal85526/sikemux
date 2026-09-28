@@ -23,7 +23,7 @@ export function latestOf(releases: readonly Release[]): number | null {
 }
 
 /** Folded away, the way GitHub keeps them, so the list stays readable. */
-function Assets({ release, saving, onSave }: { release: Release; saving: number | null; onSave: (id: number, name: string) => void }) {
+function Assets({ release, saving, onSave }: { release: Release; saving: ReadonlySet<number>; onSave: (id: number, name: string) => void }) {
     if (release.assets.length === 0) return null;
     return (
         <details className="gha-assets">
@@ -40,8 +40,8 @@ function Assets({ release, saving, onSave }: { release: Release; saving: number 
                     <span className="gha-artifact-name">{asset.name}</span>
                     <span className="gha-dim">{formatBytes(asset.sizeBytes)}</span>
                     <span className="gha-dim">{asset.downloads} downloads</span>
-                    <button type="button" className="gha-link" disabled={saving === asset.id} onClick={() => onSave(asset.id, asset.name)}>
-                        {saving === asset.id ? "Saving…" : "Download"}
+                    <button type="button" className="gha-link" disabled={saving.has(asset.id)} onClick={() => onSave(asset.id, asset.name)}>
+                        {saving.has(asset.id) ? "Saving…" : "Download"}
                     </button>
                 </div>
             ))}
@@ -56,7 +56,7 @@ interface Props {
 
 export function ReleasesView({ repo, active }: Props) {
     const releases = useResourceEnabled(active, githubReleasesR, repo);
-    const [saving, setSaving] = useState<number | null>(null);
+    const [saving, setSaving] = useState<ReadonlySet<number>>(() => new Set());
     const [opened, setOpened] = useState<ReadonlySet<number>>(() => new Set());
     const now = useNow(false);
 
@@ -76,12 +76,19 @@ export function ReleasesView({ repo, active }: Props) {
     const latest = latestOf(rows);
 
     const save = (id: number, name: string) => {
-        setSaving(id);
+        if (saving.has(id)) return;
+        setSaving((was) => new Set(was).add(id));
         void actionsApi
             .downloadAsset(repo, id, name)
             .then((saved) => notify("success", `Saved ${name} to ${saved.path}`))
             .catch(reportError(`Could not download ${name}`))
-            .finally(() => setSaving(null));
+            .finally(() =>
+                setSaving((was) => {
+                    const next = new Set(was);
+                    next.delete(id);
+                    return next;
+                }),
+            );
     };
 
     const toggle = (id: number) =>

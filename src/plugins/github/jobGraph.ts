@@ -10,10 +10,16 @@ export interface JobGroup {
 /** Groups that ran side by side, left to right in the order the run reached them. */
 export type Stage = JobGroup[];
 
+/** A matrix job's values are in parentheses and may hold " / " themselves, so only a split outside them counts. */
 export function splitName(name: string): { group: string | null; label: string } {
-    const at = name.indexOf(" / ");
-    if (at <= 0) return { group: null, label: name };
-    return { group: name.slice(0, at), label: name.slice(at + 3) };
+    let depth = 0;
+    for (let at = 0; at < name.length; at += 1) {
+        const char = name[at];
+        if (char === "(") depth += 1;
+        else if (char === ")") depth = Math.max(0, depth - 1);
+        else if (depth === 0 && at > 0 && name.startsWith(" / ", at)) return { group: name.slice(0, at), label: name.slice(at + 3) };
+    }
+    return { group: null, label: name };
 }
 
 function time(value: string | null): number | null {

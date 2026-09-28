@@ -60,6 +60,7 @@ export function InboxView({ active }: { active: boolean }) {
         );
     }
     const rows = inbox.data ?? [];
+    const unread = rows.filter((row) => row.unread).length;
 
     const refresh = () => invalidate((kind) => kind === "gha.inbox");
     const open = (item: Notification) => {
@@ -85,8 +86,8 @@ export function InboxView({ active }: { active: boolean }) {
                     Include read
                 </Checkbox>
                 <span className="gha-dim">
-                    {rows.filter((row) => row.unread).length} unread
-                    {rows.length > 0 && (
+                    {unread} unread
+                    {unread > 0 && (
                         <button type="button" className="gha-link" disabled={busy} onClick={readEverything}>
                             Mark all read
                         </button>

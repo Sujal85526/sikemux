@@ -25,6 +25,11 @@ describe("splitName", () => {
         expect(splitName("Build, verify, and publish")).toEqual({ group: null, label: "Build, verify, and publish" });
         expect(splitName(" / odd")).toEqual({ group: null, label: " / odd" });
     });
+
+    it("does not split inside a matrix job's values", () => {
+        expect(splitName("test (ubuntu / node 20)")).toEqual({ group: null, label: "test (ubuntu / node 20)" });
+        expect(splitName("Checks / test (a / b)")).toEqual({ group: "Checks", label: "test (a / b)" });
+    });
 });
 
 describe("stagesOf", () => {
