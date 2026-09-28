@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useModalFocus, usePluginOverlay } from "../../../plugin-api/host";
 import { useResource } from "../../../plugin-api/resources";
 import { IconPin, IconSearch, rankBy, useMouseActive } from "../../../plugin-api/ui";
@@ -124,36 +124,40 @@ export function RepoPicker({ current, onPick, onClose }: Props) {
                     {items.map((entry, index) => {
                         const heading = entry.group && entry.group !== items[index - 1]?.group ? entry.group : null;
                         return (
-                            <div
-                                key={entry.slug}
-                                className="picker-item-wrap"
-                                onMouseEnter={() => {
-                                    if (mouseActive.current) setSelected(index);
-                                }}>
+                            <Fragment key={entry.slug}>
                                 {heading && <div className="picker-group">{heading}</div>}
-                                <button type="button" className={`picker-item${index === selected ? " sel" : ""}`} onClick={() => activate(entry)}>
-                                    <span className="picker-icon plugin">
-                                        <GithubMark size={14} />
-                                    </span>
-                                    <span className="picker-name">{entry.slug}</span>
-                                    <span className="picker-sub">{current && slugOf(current) === entry.slug ? "open" : entry.sub}</span>
-                                </button>
-                                {entry.group !== null && index === selected && (
+                                <div
+                                    className="picker-item-wrap"
+                                    onMouseEnter={() => {
+                                        if (mouseActive.current) setSelected(index);
+                                    }}>
                                     <button
                                         type="button"
-                                        className="gha-pick-pin"
-                                        aria-label={pinned.includes(entry.slug) ? `Unpin ${entry.slug}` : `Pin ${entry.slug}`}
-                                        aria-pressed={pinned.includes(entry.slug)}
-                                        title={
-                                            pinned.includes(entry.slug)
-                                                ? "Stop keeping it at the top of this list"
-                                                : "Keep it at the top of this list"
-                                        }
-                                        onClick={() => togglePinned(entry.slug)}>
-                                        <IconPin size={14} filled={pinned.includes(entry.slug)} />
+                                        className={`picker-item${index === selected ? " sel" : ""}`}
+                                        onClick={() => activate(entry)}>
+                                        <span className="picker-icon plugin">
+                                            <GithubMark size={14} />
+                                        </span>
+                                        <span className="picker-name">{entry.slug}</span>
+                                        <span className="picker-sub">{current && slugOf(current) === entry.slug ? "open" : entry.sub}</span>
                                     </button>
-                                )}
-                            </div>
+                                    {entry.group !== null && index === selected && (
+                                        <button
+                                            type="button"
+                                            className="gha-pick-pin"
+                                            aria-label={pinned.includes(entry.slug) ? `Unpin ${entry.slug}` : `Pin ${entry.slug}`}
+                                            aria-pressed={pinned.includes(entry.slug)}
+                                            title={
+                                                pinned.includes(entry.slug)
+                                                    ? "Stop keeping it at the top of this list"
+                                                    : "Keep it at the top of this list"
+                                            }
+                                            onClick={() => togglePinned(entry.slug)}>
+                                            <IconPin size={14} filled={pinned.includes(entry.slug)} />
+                                        </button>
+                                    )}
+                                </div>
+                            </Fragment>
                         );
                     })}
                 </div>
