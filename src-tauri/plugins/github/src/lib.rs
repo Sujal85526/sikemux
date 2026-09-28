@@ -269,7 +269,8 @@ mod tests {
 }
 
 /// Runs against a real GitHub only when asked:
-/// `GHA_LIVE_REPO=owner/repo GHA_LIVE_TOKEN=… cargo test -p sikemux-plugin-github -- --ignored`
+/// `GHA_LIVE_REPO=owner/repo GH_TOKEN=… cargo test -p sikemux-plugin-github -- --ignored`
+/// The token is read from the environment, so the Keychain is never touched.
 #[cfg(test)]
 mod live {
     use super::*;
@@ -284,7 +285,7 @@ mod live {
     #[tokio::test]
     #[ignore]
     async fn reads_workflows_runs_and_a_log() {
-        let (Some(slug), Some(token)) = (env("GHA_LIVE_REPO"), env("GHA_LIVE_TOKEN")) else {
+        let (Some(slug), Some(_)) = (env("GHA_LIVE_REPO"), env("GH_TOKEN")) else {
             return;
         };
         let dir = std::env::temp_dir().join(format!("sikemux-gha-live-{}", std::process::id()));
@@ -293,14 +294,11 @@ mod live {
         let (owner, name) = slug.split_once('/').expect("GHA_LIVE_REPO is owner/repo");
 
         let status = plugin
-            .call(
-                &ctx,
-                "signIn",
-                json!({ "host": "github.com", "token": token }),
-            )
+            .call(&ctx, "signIn", json!({ "host": "github.com" }))
             .await
-            .expect("sign in");
+            .expect("sign in with the environment's token");
         assert_eq!(status["ok"], true, "{status}");
+        assert_eq!(status["tokenSource"], "environment", "{status}");
 
         let target = json!({ "owner": owner, "name": name });
         let workflows = plugin
