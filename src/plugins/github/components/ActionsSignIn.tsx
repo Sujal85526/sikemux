@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { openUrl, swallow } from "../../../plugin-api/host";
 import { actionsApi, failureMessage, type ActionsStatus } from "../api";
 import { GithubMark } from "./ActionsIcon";
@@ -28,8 +28,13 @@ export function ActionsSignIn({ status, onSignedIn }: Props) {
     const [error, setError] = useState<string | null>(status.authFailed ? status.message : null);
 
     const borrowed = status.tokenSource === "environment" || status.tokenSource === "ghCli";
+    const canSubmit = !busy && !!token.trim();
+
+    const checking = useRef(false);
 
     const submit = async (withToken: string | undefined) => {
+        if (checking.current) return;
+        checking.current = true;
         setBusy(true);
         setError(null);
         try {
@@ -39,6 +44,7 @@ export function ActionsSignIn({ status, onSignedIn }: Props) {
         } catch (failure) {
             setError(failureMessage(failure));
         } finally {
+            checking.current = false;
             setBusy(false);
         }
     };
@@ -81,7 +87,7 @@ export function ActionsSignIn({ status, onSignedIn }: Props) {
                         value={token}
                         onChange={(event) => setToken(event.target.value)}
                         onKeyDown={(event) => {
-                            if (event.key === "Enter" && token.trim()) void submit(token.trim());
+                            if (event.key === "Enter" && canSubmit) void submit(token.trim());
                         }}
                         placeholder="ghp_… or github_pat_…"
                         autoFocus={!borrowed}
@@ -102,7 +108,7 @@ export function ActionsSignIn({ status, onSignedIn }: Props) {
                         onClick={() => void openUrl(tokenPage(host.trim() || "github.com")).catch(swallow("open GitHub"))}>
                         Create a token
                     </button>
-                    <button type="button" className="gha-btn primary" disabled={busy || !token.trim()} onClick={() => void submit(token.trim())}>
+                    <button type="button" className="gha-btn primary" disabled={!canSubmit} onClick={() => void submit(token.trim())}>
                         {busy ? "Checking…" : "Sign in"}
                     </button>
                 </div>
