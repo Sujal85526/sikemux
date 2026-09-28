@@ -116,8 +116,7 @@
     background: transparent;
 }
 
-/* Plugin panes and the git pane are panels in their own right, so they take the rails' ground. */
-.pane-plugin,
-.pane-git {
+/* Plugin panes are panels in their own right, so they take the rails' ground. */
+.pane-plugin {
     background: var(--pane-ground);
 }
