@@ -125,7 +125,7 @@ panic = "abort"
 strip = "symbols"
 
 # Crates that never sit on a hot path are built for size. Together they take
-# about 1 MB off the binary; encryption itself stays in `ring` at full speed.
+# well over 1 MB off the binary; encryption itself stays in `ring` at full speed.
 [profile.release.package.sikemux-plugin-aws]
 opt-level = "z"
 [profile.release.package.sikemux-plugin-bruno]
@@ -155,4 +155,40 @@ opt-level = "s"
 [profile.release.package.rustls]
 opt-level = "s"
 [profile.release.package.rustls-webpki]
+opt-level = "s"
+[profile.release.package.agent-client-protocol]
+opt-level = "s"
+[profile.release.package.serde_with]
+opt-level = "s"
+[profile.release.package.minisign-verify]
+opt-level = "s"
+[profile.release.package.tauri-plugin-notification]
+opt-level = "s"
+[profile.release.package.mac-notification-sys]
+opt-level = "s"
+[profile.release.package.tauri-plugin-dialog]
+opt-level = "s"
+[profile.release.package.rfd]
+opt-level = "s"
+[profile.release.package.infer]
+opt-level = "s"
+[profile.release.package.cfb]
+opt-level = "s"
+[profile.release.package.tar]
+opt-level = "s"
+[profile.release.package.quick-xml]
+opt-level = "s"
+[profile.release.package.toml]
+opt-level = "s"
+[profile.release.package.toml_parser]
+opt-level = "s"
+[profile.release.package.time]
+opt-level = "s"
+[profile.release.package.hyper]
+opt-level = "s"
+[profile.release.package.hyper-util]
+opt-level = "s"
+[profile.release.package.idna]
+opt-level = "s"
+[profile.release.package.regex-syntax]
 opt-level = "s"
