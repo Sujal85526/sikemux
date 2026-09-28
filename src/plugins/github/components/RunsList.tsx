@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef } from "react";
 import { openUrl, swallow } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
-import { Dropdown, EmptyState, IconRefresh, IconRun, SkeletonRows, Tooltip } from "../../../plugin-api/ui";
+import { Dropdown, EmptyState, IconGit, IconRefresh, IconRun, SkeletonRows, Tooltip } from "../../../plugin-api/ui";
 import { failureMessage, type RepoRef, type Run } from "../api";
 import { actionsRunsR, actionsWorkflowsR } from "../resources";
 import { elapsedMs, formatAgo, formatDuration, isUnfinished, outcomeOf, statusParam } from "../runStatus";
@@ -23,6 +23,22 @@ const FILTER_LABEL: Record<StatusFilter, string> = {
 
 const EVERY_WORKFLOW = "all";
 
+const EVENT_LABEL: Record<string, string> = {
+    push: "Push",
+    pull_request: "Pull request",
+    pull_request_target: "Pull request",
+    workflow_dispatch: "Manual",
+    schedule: "Scheduled",
+    release: "Release",
+    workflow_run: "Workflow run",
+    merge_group: "Merge queue",
+};
+
+function eventLabel(event: string): string {
+    const words = event.replace(/_/gu, " ");
+    return EVENT_LABEL[event] ?? words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 const RunRow = memo(function RunRow({ paneId, run, now, selected }: { paneId: string; run: Run; now: number; selected: boolean }) {
     const outcome = outcomeOf(run);
     const finished = isUnfinished(run) ? null : run.updatedAt;
@@ -33,29 +49,31 @@ const RunRow = memo(function RunRow({ paneId, run, now, selected }: { paneId: st
             data-selected={selected ? "1" : "0"}
             data-outcome={outcome}
             onClick={() => showRun(paneId, run.id)}>
-            <OutcomeIcon outcome={outcome} />
-            <span className="gha-run-title">
-                <span className="gha-run-name">{run.title || run.name || `Run #${run.runNumber}`}</span>
-                <span className="gha-run-sub">
-                    <span className="gha-run-workflow">{run.name}</span>
-                    <span>{run.event}</span>
-                    {run.branch && <span className="gha-tag">{run.branch}</span>}
-                    {run.pullRequests.map((number) => (
-                        <span key={number} className="gha-tag">
-                            #{number}
-                        </span>
-                    ))}
+            <OutcomeIcon outcome={outcome} size={12} />
+            <span className="gha-run-name">{run.title || run.name || `Run #${run.runNumber}`}</span>
+            <span className="gha-run-duration">{formatDuration(elapsedMs(run.startedAt ?? run.createdAt, finished, now))}</span>
+            <span className="gha-run-sub">
+                <span className="gha-run-workflow">
+                    {run.name} <span className="gha-run-number">#{run.runNumber}</span>
                 </span>
+                <span>{eventLabel(run.event)}</span>
+                {run.branch && (
+                    <span className="gha-run-branch">
+                        <IconGit size={11} />
+                        <span>{run.branch}</span>
+                    </span>
+                )}
+                {run.pullRequests.map((number) => (
+                    <span key={number} className="gha-run-pull">
+                        #{number}
+                    </span>
+                ))}
             </span>
             <span className="gha-run-meta">
-                <span className="gha-mono gha-dim">{run.shortSha}</span>
-                {run.actor && <span className="gha-dim">{run.actor}</span>}
+                {run.actor && <span className="gha-run-actor">{run.actor}</span>}
+                <span className="gha-mono">{run.shortSha}</span>
+                <span>{formatAgo(run.createdAt, now)}</span>
             </span>
-            <span className="gha-run-times">
-                <span>{formatDuration(elapsedMs(run.startedAt ?? run.createdAt, finished, now))}</span>
-                <span className="gha-dim">{formatAgo(run.createdAt, now)}</span>
-            </span>
-            <span className="gha-run-number">#{run.runNumber}</span>
         </button>
     );
 });
