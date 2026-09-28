@@ -381,14 +381,6 @@
 
 /* ---- Lists ---- */
 
-.git-section-head {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1h);
-    flex: 0 0 auto;
-    height: 32px;
-    padding: 0 10px 0 14px;
-}
 .git-label {
     font-size: var(--text-3xs);
     letter-spacing: var(--tracking-label);
@@ -472,8 +464,13 @@
     color: var(--text-tertiary);
     font-size: var(--text-2xs);
 }
-.git-group .git-text-btn {
-    margin-left: auto;
+/* The Staged and Unstaged groups are the column's headings in the Changes tab. */
+.git-file-group {
+    height: 32px;
+    padding: 0 2px 0 8px;
+}
+.git-file-group.follows {
+    margin-top: var(--space-1h);
 }
 
 /* The git modal reuses the .dlg surface; only its sizing differs — menus and

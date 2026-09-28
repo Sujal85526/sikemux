@@ -923,12 +923,19 @@ function GitWorkbench({
         if (entry.kind === "group") {
             const staged = entry.side === "staged";
             return (
-                <div className="git-group">
-                    <span>{staged ? "Staged" : "Unstaged"}</span>
+                <div className={`git-group git-file-group${i > 0 ? " follows" : ""}`}>
+                    <span className="git-label">{staged ? "Staged" : "Unstaged"}</span>
                     <span className="git-count">{entry.count}</span>
-                    <button type="button" className="git-text-btn" onClick={staged ? unstageAll : stageAll}>
-                        {staged ? "Unstage all" : "Stage all"}
-                    </button>
+                    <span className="git-section-actions">
+                        {i === 0 && (
+                            <button type="button" className="git-text-btn" onClick={openFilesStashMenu}>
+                                Stash
+                            </button>
+                        )}
+                        <button type="button" className="git-text-btn" onClick={staged ? unstageAll : stageAll}>
+                            {staged ? "Unstage all" : "Stage all"}
+                        </button>
+                    </span>
                 </div>
             );
         }
@@ -1287,22 +1294,6 @@ function GitWorkbench({
                     onGenerate={generateCommitMessage}
                     onPickAgent={openAgentMenu}
                 />
-                <div className="git-section-head">
-                    <span className="git-label">Files</span>
-                    <span className="git-count">{files.length}</span>
-                    <span className="git-section-actions">
-                        <button
-                            type="button"
-                            className="git-text-btn"
-                            disabled={files.length === 0}
-                            onClick={unstagedFiles.length ? stageAll : unstageAll}>
-                            {unstagedFiles.length || files.length === 0 ? "Stage all" : "Unstage all"}
-                        </button>
-                        <button type="button" className="git-text-btn" disabled={files.length === 0} onClick={openFilesStashMenu}>
-                            Stash
-                        </button>
-                    </span>
-                </div>
                 {(fileFilterOpen || queries.files) && filterInput("files", "Filter files")}
                 <div className="git-list">
                     {fileEntries.length === 0 &&
