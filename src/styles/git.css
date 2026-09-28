@@ -36,6 +36,7 @@
     height: 36px;
     padding: 0 var(--space-1h);
     border-bottom: 1px solid var(--border);
+    background: var(--s-sunken);
     overflow: hidden;
 }
 .git-tb-grow {
