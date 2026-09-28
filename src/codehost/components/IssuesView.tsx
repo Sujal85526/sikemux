@@ -135,7 +135,7 @@ export function IssuesView({ paneId, repo, listState, item, composing, page, act
                                 type="button"
                                 className="gha-chip"
                                 data-on={listState === state ? "1" : "0"}
-                                onClick={() => setListState(paneId, state)}>
+                                onClick={() => setListState(paneId, "issues", state)}>
                                 {state === "all" ? "All" : state === "open" ? "Open" : "Closed"}
                             </button>
                         ))}

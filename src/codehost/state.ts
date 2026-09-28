@@ -77,8 +77,9 @@ export function setFollowBranch(provider: string, followBranch: boolean): void {
 export interface HostView {
     /** The pull request or issue open in this pane, by number. */
     item: number | null;
-    /** `open`, `closed` or `all`, for whichever list is showing. */
-    listState: string;
+    /** `open`, `closed` or `all`, for each list on its own. */
+    pullState: string;
+    issueState: string;
     workflowId: number | null;
     statusFilter: StatusFilter;
     /** A branch typed into the filter, which wins over following the project's branch. */
@@ -96,7 +97,8 @@ export interface HostView {
 
 const FRESH: HostView = {
     item: null,
-    listState: "open",
+    pullState: "all",
+    issueState: "open",
     workflowId: null,
     statusFilter: "all",
     branch: null,
@@ -165,8 +167,8 @@ export function compose(paneId: string, composing: "pull" | "issue" | null): voi
     updateView(paneId, { composing, item: null });
 }
 
-export function setListState(paneId: string, listState: string): void {
-    updateView(paneId, { listState, item: null, page: 1 });
+export function setListState(paneId: string, list: "pulls" | "issues", state: string): void {
+    updateView(paneId, { [list === "pulls" ? "pullState" : "issueState"]: state, item: null, page: 1 });
 }
 
 /** A check on a pull request opens its run in the same pane, at its first failed job, with Back leading to the pull request. */

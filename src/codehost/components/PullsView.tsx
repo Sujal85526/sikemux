@@ -720,7 +720,7 @@ export function PullsView({ paneId, repo, listState, item, composing, projectBra
                                 type="button"
                                 className="gha-chip"
                                 data-on={listState === state ? "1" : "0"}
-                                onClick={() => setListState(paneId, state)}>
+                                onClick={() => setListState(paneId, "pulls", state)}>
                                 {state === "all" ? "All" : state === "open" ? "Open" : "Closed"}
                             </button>
                         ))}

@@ -89,7 +89,7 @@ export function HostArea({ paneId, section, repo, branch, cwd, active }: Props) 
                         <PullsView
                             paneId={paneId}
                             repo={repo}
-                            listState={view.listState}
+                            listState={view.pullState}
                             item={view.item}
                             composing={view.composing === "pull"}
                             projectBranch={branch}
@@ -101,7 +101,7 @@ export function HostArea({ paneId, section, repo, branch, cwd, active }: Props) 
                         <IssuesView
                             paneId={paneId}
                             repo={repo}
-                            listState={view.listState}
+                            listState={view.issueState}
                             item={view.item}
                             composing={view.composing === "issue"}
                             page={view.page}

@@ -7,6 +7,7 @@ import {
     leaveRun,
     openRunFrom,
     refOf,
+    setListState,
     resetView,
     setFollowBranch,
     setProjectRepo,
@@ -121,5 +122,13 @@ describe("a run opened from a pull request's check", () => {
         showRun("pane-6", 7);
         leaveRun("pane-6");
         expect(viewOf("pane-6")).toMatchObject({ run: null, item: null, runFrom: null });
+    });
+});
+
+describe("the pull request and issue lists", () => {
+    it("start on every pull request and on open issues, and keep their filters apart", () => {
+        expect(viewOf("pane-lists")).toMatchObject({ pullState: "all", issueState: "open" });
+        setListState("pane-lists", "pulls", "closed");
+        expect(viewOf("pane-lists")).toMatchObject({ pullState: "closed", issueState: "open" });
     });
 });
