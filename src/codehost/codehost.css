@@ -526,7 +526,8 @@
 .gha-run-sub > .gha-branch {
     overflow: hidden;
 }
-.gha-run-sub > .gha-run-actor {
+.gha-item-sub > .gha-who,
+.gha-run-sub > .gha-who {
     flex-shrink: 1;
     min-width: 0;
     overflow: hidden;
@@ -1134,6 +1135,30 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-1h);
+}
+.gha-item-sub > .gha-who,
+.gha-item-sub > .gha-who,
+.gha-run-sub > .gha-who {
+    gap: var(--space-1);
+    align-self: center;
+}
+.gha-item-sub .gha-who-name,
+.gha-run-sub .gha-who-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: var(--weight-normal);
+    color: inherit;
+}
+.gha-tl-actor {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+}
+.gha-item-sub .gha-avatar,
+.gha-run-sub .gha-avatar,
+.gha-tl-actor > .gha-avatar {
+    width: 14px;
+    height: 14px;
 }
 .gha-who-name {
     font-weight: var(--weight-medium);

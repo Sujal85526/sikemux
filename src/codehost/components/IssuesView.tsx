@@ -24,7 +24,7 @@ function IssueRow({ issue, now, selected, onOpen }: { issue: Issue; now: number;
             <Comments count={issue.comments} />
             <span className="gha-item-sub">
                 <span className="gha-item-number">#{issue.number}</span>
-                {issue.author && <span>{issue.author}</span>}
+                {issue.author && <Who login={issue.author} avatarUrl={issue.avatarUrl} />}
                 {issue.assignees.length > 0 && <span>→ {issue.assignees.join(", ")}</span>}
             </span>
             <span className="gha-item-when">{formatAgo(issue.updatedAt, now)}</span>

@@ -139,6 +139,8 @@ export interface CodeHost {
     readonly api: CodeHostApi;
     /** A picture read straight from a commit email, such as GitHub's own noreply addresses, without asking the host. */
     readonly avatarForEmail?: (email: string) => string | null;
+    /** An account's picture from its name alone, for places the host named someone without sending their picture. */
+    readonly avatarForLogin?: (login: string) => string | null;
     /** The ref a pull request from a fork can be fetched by, such as GitHub's `pull/N/head`. */
     readonly pullHeadRef?: (number: number) => string;
     /** Shown in the Git pane while nobody is signed in to this host. */
@@ -174,6 +176,12 @@ export function hostApi(id: string): CodeHostApi {
 const HostContext = createContext<CodeHost | null>(null);
 
 export const HostProvider = HostContext.Provider;
+
+/** Someone's picture: the one the host sent, else whatever the host can make from their name. */
+export function usePictureOf(login: string | null, url: string | null): string | null {
+    const host = useContext(HostContext);
+    return url ?? (login ? (host?.avatarForLogin?.(login) ?? null) : null);
+}
 
 /** The host the Git pane is showing, for the few reads that are about an account rather than a repository. */
 export function useHost(): CodeHost {

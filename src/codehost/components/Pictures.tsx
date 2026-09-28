@@ -25,10 +25,20 @@ function usePicture(url: string): Picture | null {
 }
 
 /** An empty circle of the same size holds the place until the picture arrives, so nothing beside it moves. */
-export function Avatar({ url }: { url: string }) {
+export function Avatar({ url, login = null }: { url: string; login?: string | null }) {
     const picture = usePicture(url);
     if (picture?.data) return <img className="gha-avatar" src={picture.data} alt="" width={16} height={16} />;
+    if (picture?.failed && login) return <Initial login={login} />;
     return <span className="gha-avatar" aria-hidden="true" title={picture?.failed ? `No picture: ${picture.failed}` : undefined} />;
+}
+
+/** Someone with no picture to show, drawn as the first letter of their name. */
+export function Initial({ login }: { login: string | null }) {
+    return (
+        <span className="gha-avatar gha-avatar-letter" aria-hidden="true" title={login ?? undefined}>
+            {login?.charAt(0).toUpperCase()}
+        </span>
+    );
 }
 
 export function Prose({ children, className }: { children: string; className?: string }) {

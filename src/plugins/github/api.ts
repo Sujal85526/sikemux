@@ -200,7 +200,15 @@ function avatarOf(login: string, host: string): string {
     return host === "github.com" ? `https://avatars.githubusercontent.com/${login}?s=64` : `https://${host}/${login}.png?size=64`;
 }
 
+/** Where the signed-in account lives, so a name alone can find its picture. */
+let accountHost = "github.com";
+
+export function avatarForLogin(login: string): string | null {
+    return login.endsWith("[bot]") || login.includes("/") ? null : avatarOf(login, accountHost);
+}
+
 function accountOf(status: ActionsStatus): HostAccount {
+    if (status.host) accountHost = status.host;
     return {
         ok: status.ok,
         login: status.login,

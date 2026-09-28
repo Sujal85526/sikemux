@@ -55,7 +55,7 @@ function ReleaseRow({ release, latest, now, on, onOpen }: { release: Release; la
             </span>
             <span className="gha-item-sub">
                 {release.tag !== release.name && <span className="gha-mono">{release.tag}</span>}
-                {release.author && <span>{release.author}</span>}
+                {release.author && <Who login={release.author} avatarUrl={null} />}
             </span>
             <span className="gha-item-when">{formatAgo(release.publishedAt, now)}</span>
         </button>

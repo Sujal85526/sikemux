@@ -17,6 +17,7 @@ vi.mock("../../api/markdown", () => ({
     },
 }));
 
+import { Face } from "./CommentThread";
 import { Avatar, Prose } from "./Pictures";
 import { InHost, registerTestHost } from "../testHost";
 
@@ -33,6 +34,18 @@ describe("pictures from GitHub", () => {
         expect(container.innerHTML).toBe('<span class="gha-avatar" aria-hidden="true"></span>');
         await act(async () => deliver("data:image/png;base64,AA=="));
         expect(container.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,AA==");
+    });
+
+    it("finds a picture from a name alone, and falls back to the first letter when it cannot load", async () => {
+        const named = { ...host, avatarForLogin: (login: string) => `https://avatars.example/${login}` };
+        api.image.mockRejectedValueOnce(new Error("offline"));
+        const { container } = render(
+            <InHost host={named}>
+                <Face login="nodelike" url={null} />
+            </InHost>,
+        );
+        expect(api.image).toHaveBeenLastCalledWith("https://avatars.example/nodelike");
+        await waitFor(() => expect(container.textContent).toBe("N"));
     });
 
     it("shows a picture's description as a link until it loads, and for good if it cannot", async () => {

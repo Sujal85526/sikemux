@@ -9,7 +9,7 @@ import { runsR, workflowsR } from "../resources";
 import { elapsedMs, formatAgo, formatDuration, isUnfinished, outcomeOf, statusParam } from "../runStatus";
 import { filterBy, hostSettings, setFollowBranch, showRun, STATUS_FILTERS, updateView, type HostView, type StatusFilter } from "../state";
 import { OutcomeIcon } from "./ActionsIcon";
-import { Branch } from "./Bits";
+import { Branch, Who } from "./Bits";
 import { coarse, useEvery, useNow } from "./hooks";
 
 const LIVE_REFRESH_MS = 10_000;
@@ -45,7 +45,7 @@ const RunRow = memo(function RunRow({ paneId, run, workflow, now }: { paneId: st
                         #{number}
                     </span>
                 ))}
-                {run.actor && <span className="gha-run-actor">{run.actor}</span>}
+                {run.actor && <Who login={run.actor} avatarUrl={run.avatarUrl} />}
                 <span>{formatAgo(run.createdAt, now)}</span>
             </span>
         </button>

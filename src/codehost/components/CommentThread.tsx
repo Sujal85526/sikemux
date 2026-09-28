@@ -3,10 +3,11 @@ import { copyText, notify, reportError, swallow } from "../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
 import { IconCheck, IconClose, IconCommit, IconEye, IconGit, IconMerge, IconPencil, IconPush, IconUser } from "../../plugin-api/ui";
 import { hostApi, type RepoRef, type ReviewEvent, type TimelineItem } from "../api";
+import { usePictureOf } from "../registry";
 import { timelineR } from "../resources";
 import { formatAgo } from "../runStatus";
 import { SectionIcon } from "./ActionsIcon";
-import { Avatar, Prose } from "./Pictures";
+import { Avatar, Initial, Prose } from "./Pictures";
 
 const REVIEW_WORD: Record<string, string> = {
     APPROVED: "approved these changes",
@@ -42,17 +43,22 @@ export interface Post {
 }
 
 export function Face({ login, url }: { login: string | null; url: string | null }) {
-    return url ? (
-        <Avatar url={url} />
-    ) : (
-        <span className="gha-avatar gha-avatar-letter" aria-hidden="true" title={login ?? undefined}>
-            {login?.charAt(0).toUpperCase()}
-        </span>
-    );
+    const picture = usePictureOf(login, url);
+    return picture ? <Avatar url={picture} login={login} /> : <Initial login={login} />;
 }
 
 function Name({ login }: { login: string | null }) {
     return <span className="gha-comment-author">{login ?? "someone"}</span>;
+}
+
+/** Someone named in the timeline, with their face beside their name. */
+function Actor({ login, url }: { login: string | null; url: string | null }) {
+    return (
+        <span className="gha-tl-actor">
+            <Face login={login} url={url} />
+            <Name login={login} />
+        </span>
+    );
 }
 
 function PostCard({ post, now }: { post: Post; now: number }) {
@@ -92,12 +98,13 @@ function Event({ icon, tone, children }: { icon: ReactNode; tone?: string; child
 }
 
 function Commits({ commits, now }: { commits: readonly TimelineItem[]; now: number }) {
-    const authors = [...new Set(commits.map((commit) => commit.actor ?? "someone"))];
-    const who = authors.length > 1 ? `${authors[0]} and others` : authors[0];
+    const authors = [...new Set(commits.map((commit) => commit.actor))];
+    const first = commits.find((commit) => commit.actor === authors[0]);
     return (
         <div className="gha-tl-commits">
             <Event icon={<IconPush size={12} />}>
-                <Name login={who ?? null} />
+                <Actor login={authors[0] ?? null} url={first?.avatarUrl ?? null} />
+                {authors.length > 1 && <span className="gha-dim">and others</span>}
                 <span className="gha-dim">
                     added {commits.length} commit{commits.length === 1 ? "" : "s"} {formatAgo(commits[0]?.at ?? null, now)}
                 </span>
@@ -143,7 +150,7 @@ function blocksOf(items: readonly TimelineItem[]): Block[] {
 
 function ItemView({ item, now, base }: { item: TimelineItem; now: number; base: string | null }) {
     const when = <span className="gha-dim">{formatAgo(item.at, now)}</span>;
-    const who = <Name login={item.actor} />;
+    const who = <Actor login={item.actor} url={item.avatarUrl} />;
     const short = item.sha?.slice(0, 7);
     switch (item.kind) {
         case "commented":
@@ -193,13 +200,13 @@ function ItemView({ item, now, base }: { item: TimelineItem; now: number; base: 
         case "review_requested":
             return (
                 <Event icon={<IconEye size={12} />}>
-                    {who} <span className="gha-dim">requested a review from</span> <Name login={item.subject} /> {when}
+                    {who} <span className="gha-dim">requested a review from</span> <Actor login={item.subject} url={null} /> {when}
                 </Event>
             );
         case "review_request_removed":
             return (
                 <Event icon={<IconEye size={12} />}>
-                    {who} <span className="gha-dim">removed the review request for</span> <Name login={item.subject} /> {when}
+                    {who} <span className="gha-dim">removed the review request for</span> <Actor login={item.subject} url={null} /> {when}
                 </Event>
             );
         case "head_ref_force_pushed":
@@ -242,7 +249,8 @@ function ItemView({ item, now, base }: { item: TimelineItem; now: number; base: 
         case "unassigned":
             return (
                 <Event icon={<IconUser size={12} />}>
-                    {who} <span className="gha-dim">{item.kind === "assigned" ? "assigned" : "unassigned"}</span> <Name login={item.subject} /> {when}
+                    {who} <span className="gha-dim">{item.kind === "assigned" ? "assigned" : "unassigned"}</span>{" "}
+                    <Actor login={item.subject} url={null} /> {when}
                 </Event>
             );
         case "renamed":

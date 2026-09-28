@@ -18,6 +18,7 @@ import {
 import type { GitCommit } from "../../api/git";
 import { CommitReview } from "../../components/CommitReview";
 import { GitColumns } from "../../components/git/GitColumns";
+import { AuthorPicturesProvider, type AuthorPictures } from "../../components/git/AuthorAvatar";
 import { GitGraph } from "../../components/git/GitGraph";
 import { FoldPanel } from "../../components/git/FoldPanel";
 import { FileIcon } from "../../components/FileIcon";
@@ -63,7 +64,7 @@ function PullRow({ pull, now, onOpen }: { pull: Pull; now: number; onOpen: () =>
             <Comments count={pull.comments ?? 0} />
             <span className="gha-item-sub">
                 <span className="gha-item-number">#{pull.number}</span>
-                {pull.author && <span>{pull.author}</span>}
+                {pull.author && <Who login={pull.author} avatarUrl={pull.avatarUrl} />}
                 {pull.head && <Branch name={pull.head} />}
             </span>
             <span className="gha-item-when">{formatAgo(pull.updatedAt, now)}</span>
@@ -562,8 +563,18 @@ function PullHistory({
 }) {
     const open = useStore((s) => s.gitViews[paneId]?.historyOpen ?? false);
     const height = useStore((s) => s.gitViews[paneId]?.historyHeight ?? null);
+    const host = useHost();
     const commits = useResourceEnabled(active, pullCommitsR, repo, number);
     const now = useNow(false);
+    // The host names each commit's author rather than their email, so the graph finds their picture by that name.
+    const pictures = useMemo<AuthorPictures>(() => {
+        const byAuthor = new Map<string, string | null>();
+        for (const commit of commits.data ?? []) {
+            if (commit.author && !byAuthor.get(commit.author))
+                byAuthor.set(commit.author, commit.avatarUrl ?? host.avatarForLogin?.(commit.author) ?? null);
+        }
+        return { pictureFor: (login) => byAuthor.get(login) ?? null, load: (url) => host.api.image(url) };
+    }, [commits.data, host]);
     const rows = useMemo<GitCommit[]>(() => {
         const list = [...(commits.data ?? [])].reverse();
         return list.map((commit, index) => ({
@@ -571,7 +582,7 @@ function PullHistory({
             full_hash: commit.sha,
             parents: list[index + 1] ? [list[index + 1].sha] : [],
             author: commit.author ?? "someone",
-            author_email: "",
+            author_email: commit.author ?? "",
             date: formatAgo(commit.date, now),
             subject: commit.message.split("\n")[0],
             refs: [],
@@ -595,14 +606,16 @@ function PullHistory({
                 {commits.status === "loading" && !commits.data ? (
                     <SkeletonRows rows={4} label="Loading commits" />
                 ) : (
-                    <GitGraph
-                        commits={rows}
-                        selectedIndex={index}
-                        focused={index >= 0}
-                        range={null}
-                        onSelect={(i) => onSelect(rows[i]?.full_hash ?? null)}
-                        onActivate={() => {}}
-                    />
+                    <AuthorPicturesProvider value={pictures}>
+                        <GitGraph
+                            commits={rows}
+                            selectedIndex={index}
+                            focused={index >= 0}
+                            range={null}
+                            onSelect={(i) => onSelect(rows[i]?.full_hash ?? null)}
+                            onActivate={() => {}}
+                        />
+                    </AuthorPicturesProvider>
                 )}
             </div>
         </FoldPanel>
