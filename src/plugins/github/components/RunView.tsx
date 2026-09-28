@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { confirmDialog, copyText, notify, openUrl, reportError, swallow } from "../../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
-import { EmptyState, IconChevron, IconClose, IconRefresh, SkeletonRows, Tooltip } from "../../../plugin-api/ui";
+import { EmptyState, IconChevron, IconClose, IconGit, IconRefresh, SkeletonRows, Tooltip } from "../../../plugin-api/ui";
 import { actionsApi, failureMessage, type Job, type RepoRef, type Run } from "../api";
 import { actionsArtifactsR, actionsRunAttemptR, actionsRunR, actionsTimingR } from "../resources";
 import {
@@ -170,8 +170,8 @@ function Header({
 
     return (
         <div className="gha-run-head">
+            <OutcomeIcon outcome={outcome} size={14} />
             <div className="gha-run-head-main">
-                <OutcomeIcon outcome={outcome} size={15} />
                 <span className="gha-title">{run.title || run.name}</span>
                 <span className="gha-mono gha-dim">#{run.runNumber}</span>
                 <span className="gha-run-head-spacer" />
@@ -265,9 +265,14 @@ function SummaryCard({
                         }>
                         {run.shortSha}
                     </button>
-                    {run.branch && <span className="gha-tag">{run.branch}</span>}
+                    {run.branch && (
+                        <span className="gha-run-branch">
+                            <IconGit size={12} />
+                            <span>{run.branch}</span>
+                        </span>
+                    )}
                     {run.pullRequests.map((number) => (
-                        <span key={number} className="gha-tag">
+                        <span key={number} className="gha-run-pull">
                             #{number}
                         </span>
                     ))}
