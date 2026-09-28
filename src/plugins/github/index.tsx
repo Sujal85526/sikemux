@@ -1,7 +1,7 @@
 import { registerFrontendPlugin } from "../../plugin-api";
 import { hostCiGlyph, registerCodeHost } from "../../plugin-api/codehost";
 import { openGitArea } from "../../plugin-api/host";
-import { githubHostApi } from "./api";
+import { avatarForEmail, githubHostApi } from "./api";
 import { GithubSignIn } from "./components/ActionsSignIn";
 import { GithubMark } from "./components/GithubMark";
 import { GITHUB_PLUGIN_ID } from "./kinds";
@@ -30,6 +30,7 @@ registerCodeHost({
     },
     api: githubHostApi,
     pullHeadRef: (number) => `pull/${number}/head`,
+    avatarForEmail,
     SignIn: GithubSignIn,
 });
 

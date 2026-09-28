@@ -2,6 +2,9 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "rea
 import { subscribeTheme } from "../../themes/bus";
 import type { GitCommit } from "../../api/git";
 import { EmptyState } from "../Panel";
+import { AuthorAvatar } from "./AuthorAvatar";
+
+export { authorColor, initials } from "./AuthorAvatar";
 
 const ROW_H = 30;
 /** Beyond two, refs crowd the subject out of the row entirely. */
@@ -123,19 +126,6 @@ export function computeGraph(commits: GitCommit[]): { rows: RowLayout[]; maxLane
 /** A conventional-commit prefix such as `feat(git): ` repeats down the whole list; the row shows what follows it. */
 export function withoutScope(subject: string): string {
     return subject.replace(/^[a-z]+(\([^)]*\))?!?:\s+/i, "") || subject;
-}
-
-export function initials(name: string): string {
-    const parts = name.trim().split(/\s+/).filter(Boolean);
-    if (parts.length === 0) return "?";
-    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
-export function authorColor(key: string): string {
-    let h = 0;
-    for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
-    return `hsl(${h % 360} 62% 64%)`;
 }
 
 function readVar(el: HTMLElement, name: string): string {
@@ -371,9 +361,7 @@ export const GitGraph = memo(function GitGraph({
                         onClick={() => onSelect(i)}
                         onDoubleClick={onActivate}
                         title={`${c.subject} — ${c.hash} · ${c.author}${c.refs.length ? ` · ${c.refs.join(", ")}` : ""}`}>
-                        <span className="gg-avatar" style={{ background: authorColor(c.author_email || c.author) }} aria-hidden>
-                            {initials(c.author)}
-                        </span>
+                        <AuthorAvatar name={c.author} email={c.author_email} />
                         {refs.length > 0 && (
                             <span className="gg-refs">
                                 {refs.slice(0, MAX_ROW_REFS).map((r) => (

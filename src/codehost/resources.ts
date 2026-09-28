@@ -11,6 +11,7 @@ import {
     type Notification,
     type Pull,
     type PullCommit,
+    type CommitAuthor,
     type TimelineItem,
     type Release,
     type Review,
@@ -139,6 +140,13 @@ export const pullCommitsR = resource({
     kind: "host.pullCommits",
     fetch: (repo: RepoRef, number: number): Promise<PullCommit[]> => hostApi(repo.provider).pullCommits(repo, number),
     staleAfterMs: 60_000,
+});
+
+export const commitAuthorsR = resource({
+    kind: "host.commitAuthors",
+    fetch: (repo: RepoRef, gitRef: string | null): Promise<CommitAuthor[]> =>
+        hostApi(repo.provider).commitAuthors?.(repo, gitRef) ?? Promise.resolve([]),
+    staleAfterMs: 10 * 60_000,
 });
 
 export const pullReviewsR = resource({

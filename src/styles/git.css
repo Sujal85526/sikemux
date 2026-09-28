@@ -1723,3 +1723,7 @@
 .diff-merge-editor .cm-editor .cm-selectionBackground {
     background: var(--acc-soft);
 }
+.gg-avatar-picture {
+    object-fit: cover;
+    background: var(--surface-sunken);
+}

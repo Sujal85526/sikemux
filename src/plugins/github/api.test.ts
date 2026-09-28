@@ -15,7 +15,7 @@ vi.mock("../../plugin-api/backend", async (importOriginal) => ({
 }));
 vi.mock("../../plugin-api/resources", () => ({ invalidate: fake.invalidate }));
 
-import { actionsApi, type RunTick } from "./api";
+import { actionsApi, avatarForEmail, type RunTick } from "./api";
 
 const repo = { provider: "sikemux.github", owner: "nodelike", name: "sikemux" };
 const refused = { category: "auth", message: "github: sign-in failed: Bad credentials" };
@@ -63,5 +63,16 @@ describe("a refused token", () => {
         onTick({ run: null, jobs: [], error: "github: not signed in", finished: true, fatal: true, signedOut: true });
         expect(seen).toHaveBeenCalledTimes(1);
         expect(clearedGithub()).toBe(true);
+    });
+});
+
+describe("avatarForEmail", () => {
+    it("reads the account number out of GitHub's private commit email", () => {
+        expect(avatarForEmail("145369993+Sujal85526@users.noreply.github.com")).toBe("https://avatars.githubusercontent.com/u/145369993?s=64");
+    });
+
+    it("knows nothing about any other address", () => {
+        expect(avatarForEmail("someone@example.com")).toBeNull();
+        expect(avatarForEmail("Sujal85526@users.noreply.github.com")).toBeNull();
     });
 });

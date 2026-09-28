@@ -289,6 +289,13 @@ export interface TimelineItem {
     subject: string | null;
 }
 
+/** Who wrote a commit, by the email in it, and the account the host matched that email to. */
+export interface CommitAuthor {
+    email: string;
+    login: string;
+    avatarUrl: string;
+}
+
 export interface PullCommit {
     sha: string;
     message: string;

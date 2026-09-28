@@ -16,6 +16,7 @@ import type {
     PendingApproval,
     Pull,
     PullCommit,
+    CommitAuthor,
     Release,
     RepoListing,
     RepoRef,
@@ -102,6 +103,8 @@ export interface CodeHostApi {
     pull(repo: RepoRef, number: number): Promise<Pull>;
     pullFiles(repo: RepoRef, number: number): Promise<ChangedFile[]>;
     pullCommits(repo: RepoRef, number: number): Promise<PullCommit[]>;
+    /** The accounts behind recent commits' emails on a branch, so local history can show who wrote it. */
+    commitAuthors?(repo: RepoRef, gitRef: string | null): Promise<CommitAuthor[]>;
     pullReviews(repo: RepoRef, number: number): Promise<Review[]>;
     timeline(repo: RepoRef, number: number): Promise<TimelineItem[]>;
     /** `sha` is the head commit the person saw; the host refuses the merge if the branch has moved since. */
@@ -134,6 +137,8 @@ export interface CodeHost {
     readonly icon: (size: number) => ReactNode;
     readonly capabilities: HostCapabilities;
     readonly api: CodeHostApi;
+    /** A picture read straight from a commit email, such as GitHub's own noreply addresses, without asking the host. */
+    readonly avatarForEmail?: (email: string) => string | null;
     /** The ref a pull request from a fork can be fetched by, such as GitHub's `pull/N/head`. */
     readonly pullHeadRef?: (number: number) => string;
     /** Shown in the Git pane while nobody is signed in to this host. */

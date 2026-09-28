@@ -63,7 +63,8 @@ import {
 import { Tooltip } from "./Tooltip";
 import { GitCmdLogBar } from "./git/GitCmdLogBar";
 import { GitComposer } from "./git/GitComposer";
-import { GitGraph, authorColor, initials } from "./git/GitGraph";
+import { AuthorAvatar } from "./git/AuthorAvatar";
+import { GitGraph } from "./git/GitGraph";
 import { GitModalRenderer } from "./git/GitModalRenderer";
 import { VirtualPanelRows } from "./git/VirtualPanelRows";
 import { SkeletonRows } from "./Skeleton";
@@ -1132,9 +1133,7 @@ function GitWorkbench({
         <div className="git-detail">
             <h2 className="git-detail-title">{c.subject}</h2>
             <div className="git-detail-meta">
-                <span className="gg-avatar" style={{ background: authorColor(c.author_email || c.author) }} aria-hidden>
-                    {initials(c.author)}
-                </span>
+                <AuthorAvatar name={c.author} email={c.author_email} />
                 <span>{c.author}</span>
                 <span>·</span>
                 <span>{c.date}</span>

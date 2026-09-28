@@ -32,6 +32,7 @@ import type {
     Workflow,
     WorkflowFile,
     CodeHostApi,
+    CommitAuthor,
     HostAccount,
 } from "../../plugin-api/codehost";
 import { GITHUB_PLUGIN_ID } from "./kinds";
@@ -147,6 +148,7 @@ export const actionsApi = {
     pullFiles: (repo: RepoRef, number: number) => call<ChangedFile[]>("pullFiles", { ...repo, number }),
     pullCommits: (repo: RepoRef, number: number) => call<PullCommit[]>("pullCommits", { ...repo, number }),
     timeline: (repo: RepoRef, number: number) => call<TimelineItem[]>("timeline", { ...repo, number }),
+    commitAuthors: (repo: RepoRef, gitRef: string | null) => call<CommitAuthor[]>("commitAuthors", { ...repo, gitRef }),
     pullReviews: (repo: RepoRef, number: number) => call<Review[]>("pullReviews", { ...repo, number }),
     issues: (repo: RepoRef, state: string, page: number) => call<IssuePage>("issues", { ...repo, state, page }),
     issue: (repo: RepoRef, number: number) => call<Issue>("issue", { ...repo, number }),
@@ -214,3 +216,11 @@ export const githubHostApi: CodeHostApi = {
     ...actionsApi,
     status: () => actionsApi.status().then(accountOf),
 };
+
+const NOREPLY = /^(\d+)\+[^@]+@users\.noreply\.github\.com$/iu;
+
+/** GitHub's private commit emails carry the account's number, which is all its avatar address needs. */
+export function avatarForEmail(email: string): string | null {
+    const found = NOREPLY.exec(email.trim());
+    return found ? `https://avatars.githubusercontent.com/u/${found[1]}?s=64` : null;
+}
