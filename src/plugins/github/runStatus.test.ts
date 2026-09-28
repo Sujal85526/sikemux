@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Job, Step } from "./api";
-import { elapsedMs, failedStep, formatAgo, formatDuration, isRunning, jobsSummary, outcomeOf, statusParam, watchIsNewer } from "./runStatus";
+import { elapsedMs, failedStep, formatAgo, formatDuration, isUnfinished, jobsSummary, outcomeOf, statusParam, watchIsNewer } from "./runStatus";
 
 const NOW = Date.parse("2026-01-01T12:00:00Z");
 
@@ -47,11 +47,12 @@ describe("outcomeOf", () => {
         expect(outcomeOf({ status: "something_new", conclusion: null })).toBe("unknown");
     });
 
-    it("counts queued and running as still going, and nothing else", () => {
-        expect(isRunning({ status: "in_progress", conclusion: null })).toBe(true);
-        expect(isRunning({ status: "queued", conclusion: null })).toBe(true);
-        expect(isRunning({ status: "completed", conclusion: "success" })).toBe(false);
-        expect(isRunning({ status: "waiting", conclusion: null })).toBe(false);
+    it("counts queued, running and waiting for approval as unfinished, and nothing that has completed", () => {
+        expect(isUnfinished({ status: "in_progress", conclusion: null })).toBe(true);
+        expect(isUnfinished({ status: "queued", conclusion: null })).toBe(true);
+        expect(isUnfinished({ status: "waiting", conclusion: null })).toBe(true);
+        expect(isUnfinished({ status: "completed", conclusion: "success" })).toBe(false);
+        expect(isUnfinished({ status: "completed", conclusion: "action_required" })).toBe(false);
     });
 });
 

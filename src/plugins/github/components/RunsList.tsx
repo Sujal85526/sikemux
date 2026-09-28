@@ -4,7 +4,7 @@ import { useResourceEnabled } from "../../../plugin-api/resources";
 import { Dropdown, EmptyState, IconRefresh, IconRun, SkeletonRows, Tooltip } from "../../../plugin-api/ui";
 import { failureMessage, type RepoRef, type Run } from "../api";
 import { actionsRunsR, actionsWorkflowsR } from "../resources";
-import { elapsedMs, formatAgo, formatDuration, isRunning, outcomeOf, statusParam } from "../runStatus";
+import { elapsedMs, formatAgo, formatDuration, isUnfinished, outcomeOf, statusParam } from "../runStatus";
 import { filterBy, showRun, STATUS_FILTERS, updateView, type RunsView, type StatusFilter } from "../state";
 import { OutcomeIcon } from "./ActionsIcon";
 import { coarse, useEvery, useNow } from "./hooks";
@@ -24,7 +24,7 @@ const EVERY_WORKFLOW = "all";
 
 const RunRow = memo(function RunRow({ paneId, run, now, selected }: { paneId: string; run: Run; now: number; selected: boolean }) {
     const outcome = outcomeOf(run);
-    const finished = isRunning(run) ? null : run.updatedAt;
+    const finished = isUnfinished(run) ? null : run.updatedAt;
     return (
         <button
             type="button"
@@ -81,7 +81,7 @@ export function RunsList({ paneId, repo, view, branch, active, canWrite, onDispa
         perPage: 30,
     });
     const runs = page.data?.runs ?? [];
-    const anyRunning = runs.some(isRunning);
+    const anyRunning = runs.some(isUnfinished);
     const now = useNow(active && anyRunning);
 
     // A list with something still going is re-read on its own, so a run that
@@ -157,7 +157,7 @@ export function RunsList({ paneId, repo, view, branch, active, canWrite, onDispa
             )}
             <div className="gha-run-rows">
                 {runs.map((run) => (
-                    <RunRow key={run.id} paneId={paneId} run={run} now={isRunning(run) ? now : coarse(now)} selected={view.run === run.id} />
+                    <RunRow key={run.id} paneId={paneId} run={run} now={isUnfinished(run) ? now : coarse(now)} selected={view.run === run.id} />
                 ))}
             </div>
             {runs.length > 0 && (

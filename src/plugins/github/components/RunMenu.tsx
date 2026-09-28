@@ -3,7 +3,7 @@ import { confirmDialog, copyText, notify, openUrl, reportError, swallow } from "
 import { invalidate } from "../../../plugin-api/resources";
 import { Tooltip } from "../../../plugin-api/ui";
 import { actionsApi, type RepoRef, type Run } from "../api";
-import { isRunning } from "../runStatus";
+import { isUnfinished } from "../runStatus";
 import { MoreDots } from "./ActionsIcon";
 
 interface Props {
@@ -15,7 +15,7 @@ interface Props {
 
 export function RunMenu({ run, repo, canWrite, onDeleted }: Props) {
     const [open, setOpen] = useState(false);
-    const finished = !isRunning(run);
+    const finished = !isUnfinished(run);
 
     const act = (work: () => Promise<void>) => {
         setOpen(false);

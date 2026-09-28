@@ -1,7 +1,7 @@
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import type { RepoRef } from "../api";
 import { actionsRunsR } from "../resources";
-import { elapsedMs, formatDuration, isRunning, outcomeOf, OUTCOME_LABEL } from "../runStatus";
+import { elapsedMs, formatDuration, isUnfinished, outcomeOf, OUTCOME_LABEL } from "../runStatus";
 import { OutcomeIcon } from "./ActionsIcon";
 
 interface Props {
@@ -18,7 +18,7 @@ export function PullChecks({ repo, sha, active, now, onOpenRun }: Props) {
     const runs = found.data?.runs ?? [];
     if (runs.length === 0) return null;
     const failed = runs.filter((run) => outcomeOf(run) === "failure").length;
-    const going = runs.filter(isRunning).length;
+    const going = runs.filter(isUnfinished).length;
 
     return (
         <div className="gha-checks">
@@ -31,7 +31,7 @@ export function PullChecks({ repo, sha, active, now, onOpenRun }: Props) {
             </div>
             {runs.map((run) => {
                 const outcome = outcomeOf(run);
-                const live = isRunning(run);
+                const live = isUnfinished(run);
                 return (
                     <button key={run.id} type="button" className="gha-check" data-outcome={outcome} onClick={() => onOpenRun(run.id)}>
                         <OutcomeIcon outcome={outcome} />

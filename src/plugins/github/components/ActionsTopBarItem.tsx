@@ -3,7 +3,7 @@ import { useResourceEnabled } from "../../../plugin-api/resources";
 import { Tooltip } from "../../../plugin-api/ui";
 import { remoteRepoR } from "../project";
 import { actionsRunsR, actionsStatusR } from "../resources";
-import { formatAgo, isRunning, outcomeOf, OUTCOME_LABEL } from "../runStatus";
+import { formatAgo, isUnfinished, outcomeOf, OUTCOME_LABEL } from "../runStatus";
 import { actionsSettings, openRepo, refOf } from "../state";
 import { OutcomeIcon } from "./ActionsIcon";
 import { useEvery } from "./hooks";
@@ -22,7 +22,7 @@ export function ActionsTopBarItem({ projectCwd }: PluginTopBarProps) {
 
     const runs = useResourceEnabled(signedIn && !!repo, actionsRunsR, { ...(repo ?? { owner: "", name: "" }), perPage: 1 });
     const latest = runs.data?.runs[0] ?? null;
-    const live = !!latest && isRunning(latest);
+    const live = !!latest && isUnfinished(latest);
 
     useEvery(live, LIVE_REFRESH_MS, () => void runs.refresh());
 

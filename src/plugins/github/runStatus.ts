@@ -31,9 +31,11 @@ export function outcomeOf(thing: Pick<Run, "status" | "conclusion">): Outcome {
     return BY_STATUS[thing.status] ?? "unknown";
 }
 
-export function isRunning(thing: Pick<Run, "status" | "conclusion">): boolean {
+/** Still going, including a run held for approval, which can still be cancelled but not re-run. */
+export function isUnfinished(thing: Pick<Run, "status" | "conclusion">): boolean {
+    if (thing.status === "completed") return false;
     const outcome = outcomeOf(thing);
-    return outcome === "running" || outcome === "queued";
+    return outcome === "running" || outcome === "queued" || outcome === "blocked";
 }
 
 export const OUTCOME_LABEL: Record<Outcome, string> = {

@@ -9,7 +9,7 @@ import {
     failedStep,
     formatAgo,
     formatDuration,
-    isRunning,
+    isUnfinished,
     jobsSummary,
     outcomeOf,
     OUTCOME_LABEL,
@@ -138,7 +138,7 @@ function Header({
     onDeleted: () => void;
 }) {
     const outcome = outcomeOf(run);
-    const live = isRunning(run);
+    const live = isUnfinished(run);
     const act = (what: string, work: Promise<void>) =>
         void work
             .then(() => {
@@ -219,7 +219,7 @@ function SummaryCard({
     artifactsRef: RefObject<HTMLDivElement | null>;
 }) {
     const outcome = outcomeOf(run);
-    const live = isRunning(run);
+    const live = isUnfinished(run);
     const artifacts = useResourceEnabled(active && run.status === "completed", actionsArtifactsR, repo, run.id);
     const timing = useResourceEnabled(active && !live, actionsTimingR, repo, run.id);
     const count = artifacts.data?.length ?? 0;
@@ -340,7 +340,7 @@ export function RunView({ paneId, repo, runId, openJob, active, canWrite }: Prop
     const useWatched = watchIsNewer(watched?.run ?? null, shown.data?.run ?? null);
     const run = (useWatched ? watched?.run : shown.data?.run) ?? null;
     const jobs = useWatched && watched?.jobs.length ? watched.jobs : (shown.data?.jobs ?? []);
-    const moving = attempt === null && !!run && isRunning(run);
+    const moving = attempt === null && !!run && isUnfinished(run);
     const latestAttempt = Math.max(detail.data?.run.attempt ?? 0, watched?.run.attempt ?? 0, run?.attempt ?? 0);
     const now = useNow(active && moving);
 
@@ -357,7 +357,7 @@ export function RunView({ paneId, repo, runId, openJob, active, canWrite }: Prop
                 if (!tick.finished) return;
                 refreshRuns();
                 // A watch that gave up on a run still going is started again a little later.
-                if (tick.run && isRunning(tick.run)) setTimeout(() => setWatchRound((round) => round + 1), WATCH_RETRY_MS);
+                if (tick.run && isUnfinished(tick.run)) setTimeout(() => setWatchRound((round) => round + 1), WATCH_RETRY_MS);
             })
             .then((id) => {
                 if (stopped) void actionsApi.watchStop(id);
@@ -462,7 +462,7 @@ export function RunView({ paneId, repo, runId, openJob, active, canWrite }: Prop
                     />
                 ))}
             </div>
-            <RunSummaries repo={repo} jobs={jobs} finished={!isRunning(run)} active={active} />
+            <RunSummaries repo={repo} jobs={jobs} finished={!isUnfinished(run)} active={active} />
             <div ref={artifactsRef}>
                 <Artifacts repo={repo} runId={runId} active={active && run.status === "completed"} />
             </div>
