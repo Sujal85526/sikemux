@@ -333,9 +333,15 @@ export function ChatComposer({
                                 return;
                             }
                         }
+                        const plainKey = !event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey && !event.nativeEvent.isComposing;
+                        // As in an agent's terminal, Escape stops the turn it is running; whatever is typed stays.
+                        if (event.key === "Escape" && running && plainKey) {
+                            event.preventDefault();
+                            onStop();
+                            return;
+                        }
                         const direction = event.key === "ArrowUp" ? "older" : event.key === "ArrowDown" ? "newer" : null;
-                        const plainArrow = !event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey && !event.nativeEvent.isComposing;
-                        if (direction && plainArrow) {
+                        if (direction && plainKey) {
                             const { value } = event.currentTarget;
                             const recalled = arrowsBrowse(value, history, historyPosition, direction)
                                 ? recallPrompt(history, historyPosition, value, direction)

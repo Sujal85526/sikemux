@@ -421,6 +421,32 @@ describe("AgentChatPane", () => {
         expect(mocks.start).toHaveBeenCalledTimes(1);
     });
 
+    it("stops the running turn on Escape and keeps what was being typed", async () => {
+        render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
+        const editor = screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
+        await waitFor(() => expect(editor).toBeEnabled());
+        fireEvent.change(editor, { target: { value: "First" } });
+        fireEvent.keyDown(editor, { key: "Enter" });
+        fireEvent.change(editor, { target: { value: "and then the tests" } });
+
+        fireEvent.keyDown(editor, { key: "Escape", shiftKey: true });
+        expect(acpApi.cancel).not.toHaveBeenCalled();
+        fireEvent.keyDown(editor, { key: "Escape" });
+
+        expect(acpApi.cancel).toHaveBeenCalledWith(agent.id);
+        expect(editor.value).toBe("and then the tests");
+    });
+
+    it("leaves Escape alone while the agent is idle", async () => {
+        render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
+        const editor = screen.getByRole("textbox", { name: "Message agent" });
+        await waitFor(() => expect(editor).toBeEnabled());
+
+        fireEvent.keyDown(editor, { key: "Escape" });
+
+        expect(acpApi.cancel).not.toHaveBeenCalled();
+    });
+
     it("holds a message written mid-turn until the running turn ends", async () => {
         render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
         const editor = screen.getByRole("textbox", { name: "Message agent" });
