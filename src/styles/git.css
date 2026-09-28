@@ -1226,11 +1226,15 @@
     height: 20px;
     font-size: 9px;
 }
+/* Long branch names shorten rather than widen the row, and leave the subject room beside them. */
 .gg-refs {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    flex: none;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 45%;
+    overflow: hidden;
 }
 .gg-ref {
     font-size: var(--text-3xs);
@@ -1239,13 +1243,23 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    flex: none;
+    flex: 0 1 auto;
+    min-width: 48px;
     border: 1px solid var(--border);
     color: var(--text-secondary);
     max-width: 108px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+.gg-ref-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.gg-ref.more {
+    flex: none;
 }
 .gg-ref::before {
     content: "";

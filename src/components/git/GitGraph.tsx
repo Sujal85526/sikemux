@@ -263,7 +263,11 @@ function RefBadge({ label }: { label: string }) {
         kind = "tag";
         text = label.slice(5);
     } else if (label.includes("/")) kind = "remote";
-    return <span className={`gg-ref ${kind}`}>{text}</span>;
+    return (
+        <span className={`gg-ref ${kind}`}>
+            <span className="gg-ref-text">{text}</span>
+        </span>
+    );
 }
 
 export const GitGraph = memo(function GitGraph({
