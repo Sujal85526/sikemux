@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { copyText, notify, swallow } from "../../../plugin-api/host";
 import { EmptyState, SkeletonRows, VirtualLogList } from "../../../plugin-api/ui";
-import { failureMessage, type Job, type RepoRef } from "../api";
+import { failureMessage, type Job, type LogLine, type RepoRef } from "../api";
 import { stepStarts } from "../jobGraph";
 import { actionsJobLogR } from "../resources";
 import { useEvery } from "./hooks";
@@ -15,8 +15,18 @@ function clean(text: string): string {
     return text.replace(MARKUP, "");
 }
 
-/** A log re-reads itself while its job is still writing to it. */
 const LIVE_REFRESH_MS = 5_000;
+
+function findMatches(lines: readonly LogLine[], needle: string): number[] {
+    if (!needle) return [];
+    const found: number[] = [];
+    lines.forEach((line, index) => {
+        if (line.text.toLowerCase().includes(needle)) found.push(index);
+    });
+    return found;
+}
+
+const needleOf = (query: string) => query.trim().toLowerCase();
 
 interface Props {
     repo: RepoRef;
@@ -34,26 +44,35 @@ export function JobLogView({ repo, job, active, step }: Props) {
     const [jump, setJump] = useState<{ index: number } | null>(null);
     const [stepLine, setStepLine] = useState<number | null>(null);
 
-    // An open log follows a job that is still going, the way the run does.
     useEvery(active && running, LIVE_REFRESH_MS, () => void log.refresh());
+
+    // The last lines a job writes, usually the error, land after the last
+    // read made while it was running, so a finished job is read once more.
+    const refreshLog = useRef(log.refresh);
+    refreshLog.current = log.refresh;
+    const owesFinalRead = useRef(running);
+    useEffect(() => {
+        if (running) {
+            owesFinalRead.current = true;
+            return;
+        }
+        if (!owesFinalRead.current || !active) return;
+        owesFinalRead.current = false;
+        void refreshLog.current();
+    }, [running, active]);
 
     const lines = useMemo(() => log.data?.lines ?? [], [log.data]);
     const starts = useMemo(() => stepStarts(lines, job.steps), [lines, job.steps]);
-    const needle = query.trim().toLowerCase();
-    const matches = useMemo(() => {
-        if (!needle) return [];
-        const found: number[] = [];
-        lines.forEach((line, index) => {
-            if (line.text.toLowerCase().includes(needle)) found.push(index);
-        });
-        return found;
-    }, [lines, needle]);
+    const needle = needleOf(query);
+    const matches = useMemo(() => findMatches(lines, needle), [lines, needle]);
     const matched = useMemo(() => new Set(matches), [matches]);
 
+    const shownStep = useRef<{ number: number } | null>(null);
     useEffect(() => {
-        if (!step) return;
+        if (!step || step === shownStep.current) return;
         const index = starts.get(step.number);
         if (index === undefined) return;
+        shownStep.current = step;
         setStepLine(index);
         setJump({ index });
     }, [step, starts]);
@@ -99,8 +118,10 @@ export function JobLogView({ repo, job, active, step }: Props) {
                     value={query}
                     spellCheck={false}
                     onChange={(event) => {
+                        const first = findMatches(lines, needleOf(event.target.value))[0];
                         setQuery(event.target.value);
                         setMatch(0);
+                        if (first !== undefined) setJump({ index: first });
                     }}
                     onKeyDown={(event) => {
                         if (event.key !== "Enter") return;
