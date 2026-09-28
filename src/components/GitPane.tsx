@@ -38,7 +38,6 @@ import { TreeContextMenu, type CtxItem } from "./FileTree";
 import {
     IconCheckout,
     IconChevron,
-    IconClock,
     IconCopy,
     IconDiscard,
     IconFetch,
@@ -157,7 +156,7 @@ function GitWorkbench({
     const [menu, setMenu] = useState<{ x: number; y: number; items: CtxItem[]; alignRight: boolean } | null>(null);
     const [queries, setQueries] = useState<Record<GitPanel, string>>({ files: "", commits: "", branches: "" });
     const [fileFilterOpen, setFileFilterOpen] = useState(false);
-    const filterInputRef = useRef<HTMLInputElement>(null);
+    const filterInputs = useRef<Record<GitPanel, HTMLInputElement | null>>({ files: null, commits: null, branches: null });
     const [rangeAnchor, setRangeAnchor] = useState<number | null>(null);
 
     // Every operation runs through the workbench, so its outcome is reported once, here.
@@ -171,7 +170,7 @@ function GitWorkbench({
     }, [sharedOperation]);
 
     useEffect(() => {
-        if (fileFilterOpen) filterInputRef.current?.focus();
+        if (fileFilterOpen) filterInputs.current.files?.focus();
     }, [fileFilterOpen]);
 
     const filteredFiles = useMemo(() => filterByQuery(files, queries.files, (f) => [f.path]), [files, queries.files]);
@@ -210,7 +209,10 @@ function GitWorkbench({
     const selectedBranchEntry = branchEntries[clampSel("branches")];
 
     const setPanel = (p: GitPanel) => cmd.setGitView(paneId, { panel: p });
-    const setSel = (p: GitPanel, index: number) => cmd.setGitView(paneId, { selected: { ...sel, [p]: index } });
+    const setSel = (p: GitPanel, index: number) => cmd.setGitView(paneId, { panel: p, selected: { ...sel, [p]: index } });
+    const historyOpen = view.historyOpen;
+    const setHistoryOpen = (open: boolean) =>
+        cmd.setGitView(paneId, open ? { historyOpen: true } : { historyOpen: false, panel: panel === "commits" ? "files" : panel });
     const setOpenRemote = (name: string | null) => cmd.setGitView(paneId, { openRemote: name });
 
     const errorTimerRef = useRef<number | undefined>(undefined);
@@ -773,7 +775,7 @@ function GitWorkbench({
 
     const focusFilter = () => {
         if (panel === "files") setFileFilterOpen(true);
-        else filterInputRef.current?.focus();
+        else filterInputs.current[panel]?.focus();
     };
 
     // Rebuilt every render because it closes over the current selection, but
@@ -808,7 +810,10 @@ function GitWorkbench({
             else if (queries[panel]) setQueries((q) => ({ ...q, [panel]: "" }));
             else handled = false;
         } else if (GIT_PANEL_BY_KEY[k]) setPanel(GIT_PANEL_BY_KEY[k]!);
-        else if (k === "j" || k === "ArrowDown") moveSel(1);
+        else if (k === "h" && panel !== "branches") {
+            if (historyOpen) setHistoryOpen(false);
+            else cmd.setGitView(paneId, { historyOpen: true, panel: "commits" });
+        } else if (k === "j" || k === "ArrowDown") moveSel(1);
         else if (k === "k" || k === "ArrowUp") moveSel(-1);
         else if (k === "r" && panel === "commits" && selectedCommit) openCommitResetMenu(selectedCommit);
         else if (k === "r") refreshRepoState();
@@ -1269,7 +1274,9 @@ function GitWorkbench({
         <label className="git-filter">
             <IconSearch size={12} />
             <input
-                ref={filterInputRef}
+                ref={(input) => {
+                    filterInputs.current[p] = input;
+                }}
                 value={queries[p]}
                 placeholder={placeholder}
                 spellCheck={false}
@@ -1294,7 +1301,8 @@ function GitWorkbench({
 
     let left: ReactNode;
     let right: ReactNode;
-    if (panel === "files") {
+    if (panel !== "branches") {
+        const latest = commits[0];
         left = (
             <>
                 <GitComposer
@@ -1327,10 +1335,59 @@ function GitWorkbench({
                         renderRow={fileRow}
                     />
                 </div>
+                <div className={`git-history${historyOpen ? " open" : ""}`}>
+                    <button
+                        type="button"
+                        className="git-history-head"
+                        aria-expanded={historyOpen}
+                        onClick={() => (historyOpen ? setHistoryOpen(false) : cmd.setGitView(paneId, { historyOpen: true, panel: "commits" }))}>
+                        <span className="git-history-chev">
+                            <IconChevron size={10} />
+                        </span>
+                        <span className="git-label">History</span>
+                        {commits.length > 0 && <span className="git-count">{commits.length}</span>}
+                        {!historyOpen && latest && <span className="git-history-latest">{latest.subject}</span>}
+                        <kbd>h</kbd>
+                    </button>
+                    {historyOpen && (
+                        <>
+                            {filterInput("commits", "Filter commits")}
+                            <div className="git-list">
+                                {filteredCommits.length === 0 ? (
+                                    (loadingOrError(8, "Loading commits") ?? (
+                                        <EmptyState
+                                            title={queries.commits ? "No matches" : "No commits"}
+                                            message={queries.commits ? `Nothing matches "${queries.commits}".` : "No commits on this branch yet."}
+                                        />
+                                    ))
+                                ) : (
+                                    <GitGraph
+                                        commits={filteredCommits}
+                                        selectedIndex={clampSel("commits")}
+                                        focused={panel === "commits"}
+                                        range={null}
+                                        onSelect={onGraphSelect}
+                                        onActivate={onGraphActivate}
+                                    />
+                                )}
+                            </div>
+                        </>
+                    )}
+                </div>
             </>
         );
         right =
-            filteredFiles.length > 0 ? (
+            panel === "commits" && selectedCommit ? (
+                <CommitReview
+                    key={selectedCommit.hash}
+                    repo={repo}
+                    rev={selectedCommit.hash}
+                    title={selectedCommit.hash}
+                    subtitle={selectedCommit.subject}
+                    head={commitHead(selectedCommit)}
+                    onOpenFile={cmd.requestOpenFile}
+                />
+            ) : filteredFiles.length > 0 ? (
                 <MergeReview
                     repo={repo}
                     files={filteredFiles}
@@ -1339,57 +1396,19 @@ function GitWorkbench({
                     onSaved={onReviewSaved}
                     fileActions={reviewActions}
                 />
-            ) : commits[0] ? (
+            ) : latest ? (
                 <CommitReview
-                    key={commits[0].hash}
+                    key={latest.hash}
                     repo={repo}
-                    rev={commits[0].hash}
-                    title={commits[0].hash}
-                    subtitle={commits[0].subject}
-                    head={commitHead(commits[0])}
+                    rev={latest.hash}
+                    title={latest.hash}
+                    subtitle={latest.subject}
+                    head={commitHead(latest)}
                     onOpenFile={cmd.requestOpenFile}
                 />
             ) : (
                 <EmptyState message="Nothing to review." />
             );
-    } else if (panel === "commits") {
-        left = (
-            <>
-                {filterInput("commits", "Filter commits")}
-                <div className="git-list">
-                    {filteredCommits.length === 0 ? (
-                        (loadingOrError(8, "Loading commits") ?? (
-                            <EmptyState
-                                title={queries.commits ? "No matches" : "No commits"}
-                                message={queries.commits ? `Nothing matches "${queries.commits}".` : "No commits on this branch yet."}
-                            />
-                        ))
-                    ) : (
-                        <GitGraph
-                            commits={filteredCommits}
-                            selectedIndex={clampSel("commits")}
-                            focused={panel === "commits"}
-                            range={null}
-                            onSelect={onGraphSelect}
-                            onActivate={onGraphActivate}
-                        />
-                    )}
-                </div>
-            </>
-        );
-        right = selectedCommit ? (
-            <CommitReview
-                key={selectedCommit.hash}
-                repo={repo}
-                rev={selectedCommit.hash}
-                title={selectedCommit.hash}
-                subtitle={selectedCommit.subject}
-                head={commitHead(selectedCommit)}
-                onOpenFile={cmd.requestOpenFile}
-            />
-        ) : (
-            <EmptyState message="Select a commit to see what it changed." />
-        );
     } else {
         const localCount = branchEntries.filter((e) => e.kind === "local").length;
         left = (
@@ -1447,9 +1466,9 @@ function GitWorkbench({
 
     const tabs: [GitPanel, string, ReactNode, number | null][] = [
         ["files", "Changes", <IconFile key="i" size={13} />, files.length],
-        ["commits", "History", <IconClock key="i" size={13} />, null],
         ["branches", "Branches", <IconGit key="i" size={13} />, branches.length],
     ];
+    const tabOf = (p: GitPanel): GitPanel => (p === "branches" ? "branches" : "files");
 
     return (
         <div ref={paneRootRef} className="git-pane" tabIndex={-1}>
@@ -1516,9 +1535,9 @@ function GitWorkbench({
                                 key={id}
                                 type="button"
                                 role="tab"
-                                aria-selected={panel === id}
-                                className={panel === id ? "on" : ""}
-                                onClick={() => setPanel(id)}>
+                                aria-selected={tabOf(panel) === id}
+                                className={tabOf(panel) === id ? "on" : ""}
+                                onClick={() => setPanel(id === "files" && historyOpen && panel === "commits" ? "commits" : id)}>
                                 {icon}
                                 {label}
                                 {count ? <span className="git-tab-count">{count}</span> : null}

@@ -24,13 +24,14 @@ export const AI_MODEL_STORAGE = "sikemux.git.ai.model";
 
 export const defaultAiModel = (provider: GitAiProvider): string => AI_MODELS[provider][0];
 
-export const GIT_PANEL_BY_KEY: Partial<Record<string, GitPanel>> = { "1": "files", "2": "commits", "3": "branches" };
+export const GIT_PANEL_BY_KEY: Partial<Record<string, GitPanel>> = { "1": "files", "2": "branches" };
 
 export const GIT_HELP: GitCheatsheetSection[] = [
     {
         title: "Global",
         rows: helpRows(
-            ["1 2 3", "Changes, History, Branches"],
+            ["1 2", "Changes, Branches"],
+            ["h", "open or close History under Changes"],
             ["?", "open this cheatsheet"],
             ["@", "toggle command log"],
             ["/", "filter the list"],

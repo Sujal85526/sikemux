@@ -487,6 +487,66 @@
     overflow-y: auto;
     padding: 0 6px 6px;
 }
+/* History folds into the foot of the Changes column; open, it shares the column's height with the files. */
+.git-history {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    min-height: 0;
+    border-top: 1px solid var(--border);
+}
+.git-history.open {
+    flex: 1 1 0;
+}
+.git-history-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1h);
+    flex: 0 0 auto;
+    height: 32px;
+    padding: 0 10px 0 12px;
+    color: var(--text-tertiary);
+    text-align: left;
+}
+.shell .git-history-head {
+    border-radius: 0 !important;
+}
+.git-history-head:hover {
+    background: var(--surface-hover);
+}
+.git-history-chev {
+    display: flex;
+    flex: none;
+    transform: rotate(-90deg);
+    transition: transform var(--dur-1);
+}
+.git-history.open .git-history-chev {
+    transform: rotate(90deg);
+}
+.git-history-latest {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+}
+.git-history-head kbd {
+    margin-left: auto;
+    flex: none;
+    padding: 0 4px;
+    border: 1px solid var(--border);
+    font-family: var(--kbd);
+    font-size: var(--text-3xs);
+    color: var(--text-tertiary);
+}
+.git-history-latest + kbd {
+    margin-left: 0;
+}
+.git-history .git-filter {
+    margin-top: 0;
+}
 .git-left-foot {
     flex: 0 0 auto;
     padding: 10px;

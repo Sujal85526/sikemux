@@ -85,7 +85,7 @@ export interface CliOpenResult {
     error: string | null;
 }
 
-/** The git pane's three tabs: Changes, History and Branches. */
+/** Which list the git pane is on: the changed files or the history under them (both in Changes), or Branches. */
 export type GitPanel = "files" | "commits" | "branches";
 
 export interface GitPaneView {
@@ -95,6 +95,8 @@ export interface GitPaneView {
     openRemote: string | null;
     /** The left column's width in pixels once someone has dragged it; null keeps the default. */
     leftWidth: number | null;
+    /** Whether the history under the changed files is open. */
+    historyOpen: boolean;
     /** A repository found inside the project folder, when the folder is not one itself. */
     repo: string | null;
 }
@@ -104,6 +106,7 @@ export const DEFAULT_GIT_VIEW: GitPaneView = {
     selected: { files: 0, commits: 0, branches: 0 },
     openRemote: "origin",
     leftWidth: null,
+    historyOpen: false,
     repo: null,
 };
 
