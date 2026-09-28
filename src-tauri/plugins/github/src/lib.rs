@@ -153,6 +153,7 @@ impl Plugin for Github {
             "runAttempt" => answer(input, move |q| runs::attempt(data_dir, q)),
 
             "jobLog" => answer(input, move |q| logs::job(data_dir, q)),
+            "jobLogExcerpt" => answer(input, move |q| logs::excerpt(data_dir, q)),
             "annotations" => answer(input, move |q| annotations::list(data_dir, q)),
             "jobSummary" => answer(input, move |q| annotations::summary(data_dir, q)),
             "runTiming" => answer(input, move |q| runs::timing(data_dir, q)),

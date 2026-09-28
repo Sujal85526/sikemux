@@ -107,6 +107,40 @@ pub async fn job(data_dir: &Path, input: LogRequest) -> GithubResult<JobLog> {
     }
 }
 
+const EXCERPT_LINES: usize = 200;
+const MAX_EXCERPT_LINES: usize = 2000;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Excerpt {
+    #[serde(flatten)]
+    pub job: JobRef,
+    pub tail: Option<usize>,
+    pub grep: Option<String>,
+}
+
+/// Only the lines holding `grep`, if given, and then only the last `tail` of
+/// those, so a long log does not fill an agent's whole context.
+fn narrow(log: &mut JobLog, tail: Option<usize>, grep: Option<&str>) {
+    if let Some(needle) = grep
+        .map(str::to_lowercase)
+        .filter(|needle| !needle.is_empty())
+    {
+        log.lines
+            .retain(|line| line.text.to_lowercase().contains(&needle));
+    }
+    let keep = tail.unwrap_or(EXCERPT_LINES).clamp(1, MAX_EXCERPT_LINES);
+    let dropped = log.lines.len().saturating_sub(keep);
+    log.lines.drain(..dropped);
+    log.truncated |= dropped > 0;
+}
+
+pub async fn excerpt(data_dir: &Path, input: Excerpt) -> GithubResult<JobLog> {
+    let mut log = job(data_dir, LogRequest { job: input.job }).await?;
+    narrow(&mut log, input.tail, input.grep.as_deref());
+    Ok(log)
+}
+
 /// GitHub answers "not found" for a log that aged out, for one a job has not
 /// written yet, and for a repository the token cannot see. Asking about the
 /// job itself tells them apart.
@@ -138,6 +172,29 @@ mod tests {
             Some("2026-09-27T11:40:15.3836220Z")
         );
         assert_eq!(lines[0].text, "Current runner version");
+    }
+
+    #[test]
+    fn an_agent_reads_the_end_of_a_log_or_only_what_matches() {
+        let log = || JobLog {
+            lines: parse("one\nerror: two\nthree\nError: four\nfive\n"),
+            expired: false,
+            truncated: false,
+        };
+        let texts = |log: &JobLog| -> Vec<String> {
+            log.lines.iter().map(|line| line.text.clone()).collect()
+        };
+
+        let mut end = log();
+        narrow(&mut end, Some(2), None);
+        assert_eq!(texts(&end), ["Error: four", "five"]);
+        assert_eq!(end.lines.first().map(|line| line.number), Some(4));
+        assert!(end.truncated);
+
+        let mut matching = log();
+        narrow(&mut matching, None, Some("ERROR"));
+        assert_eq!(texts(&matching), ["error: two", "Error: four"]);
+        assert!(!matching.truncated);
     }
 
     #[test]

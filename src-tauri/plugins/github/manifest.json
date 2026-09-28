@@ -6,7 +6,7 @@
   "callTimeoutSecs": 120,
   "tools": [
     {
-      "name": "gha_workflows",
+      "name": "github_workflows",
       "method": "workflows",
       "description": "Every GitHub Actions workflow a repository has, with whether it is active. Get owner and name from the repository's git remote.",
       "properties": {
@@ -27,9 +27,9 @@
       ]
     },
     {
-      "name": "gha_runs",
+      "name": "github_runs",
       "method": "runs",
-      "description": "Recent workflow runs for a repository, newest first, with their status and conclusion. Narrow by workflow, branch, status or event.",
+      "description": "Recent workflow runs for a repository, newest first, with their status and conclusion. Narrow by workflow, branch, status, event, actor or commit.",
       "properties": {
         "owner": {
           "type": "string",
@@ -44,7 +44,7 @@
         "workflowId": {
           "type": "integer",
           "minimum": 1,
-          "description": "Only runs of this workflow. Its id comes from gha_workflows."
+          "description": "Only runs of this workflow. Its id comes from github_workflows."
         },
         "branch": {
           "type": "string",
@@ -77,6 +77,10 @@
           "type": "string",
           "description": "Only runs started by this GitHub login."
         },
+        "headSha": {
+          "type": "string",
+          "description": "Only runs for this commit, which is how a pull request's checks are found. The pull request's headSha comes from github_pulls."
+        },
         "perPage": {
           "type": "integer",
           "minimum": 1,
@@ -95,7 +99,7 @@
       ]
     },
     {
-      "name": "gha_run",
+      "name": "github_run",
       "method": "run",
       "description": "One workflow run with every job in it and each job's steps, which is how to see exactly which step failed.",
       "properties": {
@@ -112,7 +116,7 @@
         "runId": {
           "type": "integer",
           "minimum": 1,
-          "description": "The run's id, from gha_runs."
+          "description": "The run's id, from github_runs."
         }
       },
       "required": [
@@ -122,9 +126,9 @@
       ]
     },
     {
-      "name": "gha_job_log",
-      "method": "jobLog",
-      "description": "The full log of one job, line by line. Use it to read why a job failed. Logs age out of GitHub after a while, which the answer says.",
+      "name": "github_job_log",
+      "method": "jobLogExcerpt",
+      "description": "The end of one job's log, line by line, each with its line number. Use it to read why a job failed: start with the default tail, or grep for the error. Logs age out of GitHub after a while, which the answer says. truncated means earlier lines were left out.",
       "properties": {
         "owner": {
           "type": "string",
@@ -139,7 +143,17 @@
         "jobId": {
           "type": "integer",
           "minimum": 1,
-          "description": "The job's id, from gha_run."
+          "description": "The job's id, from github_run."
+        },
+        "tail": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2000,
+          "description": "How many lines from the end to return, after any grep. Default 200."
+        },
+        "grep": {
+          "type": "string",
+          "description": "Only lines containing this text, ignoring case, e.g. error or FAILED."
         }
       },
       "required": [
@@ -149,9 +163,9 @@
       ]
     },
     {
-      "name": "gha_annotations",
+      "name": "github_annotations",
       "method": "annotations",
-      "description": "What GitHub flagged in one job: the file, line and message behind a failure. Faster than reading the whole log. checkRunId comes from a job in gha_run.",
+      "description": "What GitHub flagged in one job: the file, line and message behind a failure. Faster than reading the whole log. checkRunId comes from a job in github_run.",
       "properties": {
         "owner": {
           "type": "string",
@@ -166,7 +180,7 @@
         "checkRunId": {
           "type": "integer",
           "minimum": 1,
-          "description": "The job's checkRunId, from gha_run."
+          "description": "The job's checkRunId, from github_run."
         }
       },
       "required": [
@@ -176,7 +190,7 @@
       ]
     },
     {
-      "name": "gha_artifacts",
+      "name": "github_artifacts",
       "method": "artifacts",
       "description": "What a workflow run left behind, with each artifact's size and whether it has expired.",
       "properties": {
@@ -193,7 +207,7 @@
         "runId": {
           "type": "integer",
           "minimum": 1,
-          "description": "The run's id, from gha_runs."
+          "description": "The run's id, from github_runs."
         }
       },
       "required": [
@@ -231,6 +245,11 @@
           "minimum": 1,
           "maximum": 100,
           "description": "How many to return. Default 30."
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Which page of results, from 1."
         }
       },
       "required": [
@@ -296,6 +315,17 @@
         "labels": {
           "type": "string",
           "description": "Comma-separated label names."
+        },
+        "perPage": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "How many to return. Default 30."
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Which page of results, from 1."
         }
       },
       "required": [
