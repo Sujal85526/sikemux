@@ -25,10 +25,10 @@ const wrapper = ({ children }: { children: React.ReactNode }) => <InHost host={h
 const repo = { provider: TEST_HOST, owner: "nodelike", name: "sikemux" };
 
 const makeRun = (overrides: Partial<Run> = {}): Run => ({
-    id: 7,
+    id: "7",
     name: "CI",
     title: "Ship it",
-    workflowId: 1,
+    workflowId: "1",
     path: null,
     runNumber: 12,
     attempt: 1,
@@ -61,7 +61,7 @@ beforeEach(() => {
     api.watchStart.mockReset().mockResolvedValue(1);
     api.runAttempt
         .mockReset()
-        .mockImplementation((_repo, runId: number, attempt: number) => Promise.resolve({ run: makeRun({ id: runId, attempt }), jobs: [] }));
+        .mockImplementation((_repo, runId: string, attempt: number) => Promise.resolve({ run: makeRun({ id: runId, attempt }), jobs: [] }));
 });
 
 afterEach(() => {
@@ -71,7 +71,7 @@ afterEach(() => {
 });
 
 async function renderRun(run: Run, runId = run.id) {
-    api.run.mockReset().mockImplementation((_repo, id: number) => Promise.resolve({ run: { ...run, id }, jobs: [] }));
+    api.run.mockReset().mockImplementation((_repo, id: string) => Promise.resolve({ run: { ...run, id }, jobs: [] }));
     const view = render(<RunView paneId="pane" repo={repo} runId={runId} openJob={null} active canWrite />, { wrapper });
     await act(async () => {});
     return view;
@@ -114,13 +114,13 @@ describe("RunView", () => {
         const view = await renderRun(makeRun({ attempt: 2 }));
         fireEvent.click(screen.getByRole("button", { name: "#1" }));
         await act(async () => {});
-        expect(api.runAttempt).toHaveBeenCalledWith(repo, 7, 1);
+        expect(api.runAttempt).toHaveBeenCalledWith(repo, "7", 1);
         api.runAttempt.mockClear();
 
-        view.rerender(<RunView paneId="pane" repo={repo} runId={8} openJob={null} active canWrite />);
+        view.rerender(<RunView paneId="pane" repo={repo} runId="8" openJob={null} active canWrite />);
         await act(async () => {});
         expect(api.runAttempt).not.toHaveBeenCalled();
-        expect(api.run).toHaveBeenCalledWith(repo, 8);
+        expect(api.run).toHaveBeenCalledWith(repo, "8");
     });
 
     it("starts the watch again, and says why, when it gives up on a run still going", async () => {

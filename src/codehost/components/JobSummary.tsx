@@ -5,7 +5,7 @@ import { Prose } from "./Pictures";
 
 interface Props {
     repo: RepoRef;
-    checkRunId: number;
+    checkRunId: string;
     active: boolean;
     jobName: string;
 }

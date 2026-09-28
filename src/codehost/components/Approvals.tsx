@@ -14,7 +14,7 @@ export function mayBeWaiting(status: string, conclusion: string | null): boolean
 
 interface Props {
     repo: RepoRef;
-    runId: number;
+    runId: string;
     status: string;
     conclusion: string | null;
     active: boolean;

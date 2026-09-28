@@ -81,8 +81,8 @@ describe("refOf", () => {
 describe("the view of one pane", () => {
     it("clears the open run and goes back to the first page when a filter changes", () => {
         updateView("pane-2", { page: 4 });
-        showRun("pane-2", 99);
-        expect(viewOf("pane-2").run).toBe(99);
+        showRun("pane-2", "99");
+        expect(viewOf("pane-2").run).toBe("99");
 
         filterBy("pane-2", { statusFilter: "failure" });
         expect(viewOf("pane-2")).toMatchObject({ statusFilter: "failure", page: 1, run: null, job: null });
@@ -90,14 +90,14 @@ describe("the view of one pane", () => {
 
     it("closes a run without touching the filters", () => {
         updateView("pane-3", { statusFilter: "failure" });
-        showRun("pane-3", 7);
-        updateView("pane-3", { job: 3 });
+        showRun("pane-3", "7");
+        updateView("pane-3", { job: "3" });
         closeRun("pane-3");
         expect(viewOf("pane-3")).toMatchObject({ statusFilter: "failure", run: null, job: null });
     });
 
     it("starts over when told the repository changed", () => {
-        updateView("pane-4", { statusFilter: "failure", page: 3, workflowId: 12 });
+        updateView("pane-4", { statusFilter: "failure", page: 3, workflowId: "12" });
         compose("pane-4", "pull");
         resetView("pane-4");
         expect(viewOf("pane-4")).toMatchObject({ statusFilter: "all", page: 1, workflowId: null, composing: null });
@@ -106,14 +106,14 @@ describe("the view of one pane", () => {
 
 describe("a run opened from a pull request's check", () => {
     it("asks for the failed job and goes back to the pull request", () => {
-        openRunFrom("pane-5", 412, 31);
-        expect(viewOf("pane-5")).toMatchObject({ run: 412, item: null, runFrom: 31, pickFailed: true });
+        openRunFrom("pane-5", "412", 31);
+        expect(viewOf("pane-5")).toMatchObject({ run: "412", item: null, runFrom: 31, pickFailed: true });
         leaveRun("pane-5");
         expect(viewOf("pane-5")).toMatchObject({ run: null, item: 31, runFrom: null });
     });
 
     it("goes back to the runs list when it was opened from there", () => {
-        showRun("pane-6", 7);
+        showRun("pane-6", "7");
         leaveRun("pane-6");
         expect(viewOf("pane-6")).toMatchObject({ run: null, item: null, runFrom: null });
     });

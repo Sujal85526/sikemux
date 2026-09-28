@@ -80,7 +80,7 @@ interface DetailProps {
     active: boolean;
     login: string | null;
     onBack: () => void;
-    onOpenRun: (runId: number) => void;
+    onOpenRun: (runId: string) => void;
 }
 
 const MERGE_METHODS: { value: MergeMethod; label: string }[] = [
@@ -132,7 +132,7 @@ function MergeBox({
     verdict: string | null;
     reviewed: boolean;
     active: boolean;
-    onOpenRun: (runId: number) => void;
+    onOpenRun: (runId: string) => void;
     /** Checking the branch out here, beside Close. */
     checkout?: ReactNode;
 }) {
@@ -320,7 +320,7 @@ function PullCard({
     reviewed: boolean;
     active: boolean;
     onClose: () => void;
-    onOpenRun: (runId: number) => void;
+    onOpenRun: (runId: string) => void;
 }) {
     return (
         <>

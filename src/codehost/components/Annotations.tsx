@@ -12,7 +12,7 @@ export function annotationPlace(path: string | null, startLine: number | null): 
 
 interface Props {
     repo: RepoRef;
-    checkRunId: number;
+    checkRunId: string;
     active: boolean;
 }
 

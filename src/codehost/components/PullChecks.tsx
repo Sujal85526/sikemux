@@ -19,7 +19,7 @@ interface Props {
     repo: RepoRef;
     sha: string;
     active: boolean;
-    onOpenRun: (runId: number) => void;
+    onOpenRun: (runId: string) => void;
 }
 
 /** The checks part of a pull request's merge box, one row per workflow run on its head commit. */

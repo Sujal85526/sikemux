@@ -80,14 +80,14 @@ export interface HostView {
     /** `open`, `closed` or `all`, for each list on its own. */
     pullState: string;
     issueState: string;
-    workflowId: number | null;
+    workflowId: string | null;
     statusFilter: StatusFilter;
     /** A branch typed into the filter, which wins over following the project's branch. */
     branch: string | null;
-    run: number | null;
-    job: number | null;
+    run: string | null;
+    job: string | null;
     page: number;
-    dispatching: number | null;
+    dispatching: string | null;
     composing: "pull" | "issue" | null;
     /** The pull request a run was opened from, which its Back returns to. */
     runFrom: number | null;
@@ -177,7 +177,7 @@ export function setListState(paneId: string, list: "pulls" | "issues", state: st
 }
 
 /** A check on a pull request opens its run in the same pane, at its first failed job, with Back leading to the pull request. */
-export function openRunFrom(paneId: string, runId: number, pull: number | null = null): void {
+export function openRunFrom(paneId: string, runId: string, pull: number | null = null): void {
     setGitView(paneId, { area: "actions" });
     updateView(paneId, { item: null, composing: null, run: runId, job: null, runFrom: pull, pickFailed: true, runTab: "summary" });
 }
@@ -193,12 +193,12 @@ export function leaveRun(paneId: string): void {
     updateView(paneId, { run: null, job: null, runFrom: null, item: from });
 }
 
-export function showRun(paneId: string, runId: number): void {
+export function showRun(paneId: string, runId: string): void {
     updateView(paneId, { run: runId, job: null, runFrom: null, pickFailed: false, runTab: "summary" });
 }
 
 /** Opens a job of the open run on the right, at its log. */
-export function showJob(paneId: string, jobId: number): void {
+export function showJob(paneId: string, jobId: string): void {
     updateView(paneId, { job: jobId, runTab: "logs" });
 }
 

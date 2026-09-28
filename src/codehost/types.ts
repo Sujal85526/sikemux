@@ -36,7 +36,7 @@ export interface RepoRef {
 }
 
 export interface Workflow {
-    id: number;
+    id: string;
     name: string;
     path: string;
     state: string;
@@ -60,10 +60,10 @@ export type RunStatus =
     | "action_required";
 
 export interface Run {
-    id: number;
+    id: string;
     name: string;
     title: string;
-    workflowId: number;
+    workflowId: string;
     path: string | null;
     runNumber: number;
     attempt: number;
@@ -83,7 +83,7 @@ export interface Run {
 }
 
 export interface RunQuery extends RepoRef {
-    workflowId?: number;
+    workflowId?: string;
     branch?: string;
     status?: RunStatus;
     event?: string;
@@ -109,7 +109,7 @@ export interface Step {
 }
 
 export interface Job {
-    id: number;
+    id: string;
     name: string;
     status: string;
     conclusion: string | null;
@@ -118,7 +118,7 @@ export interface Job {
     runner: string | null;
     url: string | null;
     /** Where this job's annotations live; absent on a job GitHub never checked. */
-    checkRunId: number | null;
+    checkRunId: string | null;
     steps: Step[];
 }
 
@@ -173,7 +173,7 @@ export interface WorkflowFile {
 }
 
 export interface Artifact {
-    id: number;
+    id: string;
     name: string;
     sizeBytes: number;
     expired: boolean;

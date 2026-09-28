@@ -57,7 +57,7 @@ interface OpenRun {
  * One run as both columns read it: the attempt picked, and while it is going, what the backend pushes on every tick.
  * The list behind it is re-read once it ends.
  */
-function useOpenRun(repo: RepoRef, runId: number, active: boolean): OpenRun {
+function useOpenRun(repo: RepoRef, runId: string, active: boolean): OpenRun {
     const [attempt, setAttempt] = useState<number | null>(null);
     const detail = useResourceEnabled(active && attempt === null, runR, repo, runId);
     const older = useResourceEnabled(active && attempt !== null, runAttemptR, repo, runId, attempt ?? 0);
@@ -266,7 +266,7 @@ function RunCard({
 }
 
 /** The run's jobs as rows, like a pull request lists its files. */
-const JobRows = memo(function JobRows({ paneId, jobs, openJob, now }: { paneId: string; jobs: Job[]; openJob: number | null; now: number }) {
+const JobRows = memo(function JobRows({ paneId, jobs, openJob, now }: { paneId: string; jobs: Job[]; openJob: string | null; now: number }) {
     return (
         <div className="git-list pr-files">
             <div className="git-group git-file-group">
@@ -394,7 +394,7 @@ function RunSummaries({ repo, jobs, finished, active }: { repo: RepoRef; jobs: J
     return (
         <div className="gha-run-summaries">
             {shown.map((job) => (
-                <JobSummary key={job.id} repo={repo} checkRunId={job.checkRunId ?? 0} active={active} jobName={job.name} />
+                <JobSummary key={job.id} repo={repo} checkRunId={job.checkRunId ?? ""} active={active} jobName={job.name} />
             ))}
             {rest > 0 && (
                 <button type="button" className="gha-link" onClick={() => setEverything(true)}>
@@ -416,7 +416,7 @@ function RunSummary({
     paneId: string;
     repo: RepoRef;
     open: OpenRun;
-    openJob: number | null;
+    openJob: string | null;
     active: boolean;
 }) {
     const run = open.run as Run;
@@ -425,7 +425,7 @@ function RunSummary({
     const timing = useResourceEnabled(active && !live, timingR, repo, run.id);
     const billable = timing.data?.billable ?? [];
     const minutes = billedMinutes(billable);
-    const pick = useCallback((jobId: number) => showJob(paneId, jobId), [paneId]);
+    const pick = useCallback((jobId: string) => showJob(paneId, jobId), [paneId]);
     const toggleFile = useCallback(() => setShowFile((was) => !was), []);
     return (
         <div className="run-summary">
@@ -455,7 +455,7 @@ function RunRight({
     paneId: string;
     repo: RepoRef;
     open: OpenRun;
-    openJob: number | null;
+    openJob: string | null;
     tab: RunTab;
     active: boolean;
     canWrite: boolean;
@@ -548,8 +548,8 @@ function RunRight({
 interface Props {
     paneId: string;
     repo: RepoRef;
-    runId: number;
-    openJob: number | null;
+    runId: string;
+    openJob: string | null;
     active: boolean;
     canWrite: boolean;
 }

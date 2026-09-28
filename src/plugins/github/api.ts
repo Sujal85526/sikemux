@@ -16,12 +16,14 @@ import type {
     PendingApproval,
     Pull,
     PullCommit,
+    Job,
     Release,
     RepoListing,
     RepoRef,
     Resolved,
     Review,
     ReviewEvent,
+    Run,
     RunDetail,
     RunPage,
     RunQuery,
@@ -70,6 +72,36 @@ function isSignedOut(error: unknown): boolean {
 function forgetSignedOut(): void {
     invalidate((kind) => kind.startsWith("host."));
 }
+
+/** GitHub numbers its runs, jobs, workflows and artifacts, and the Git pane names them by text, as every host can. */
+interface GithubRun extends Omit<Run, "id" | "workflowId"> {
+    id: number;
+    workflowId: number;
+}
+
+interface GithubJob extends Omit<Job, "id" | "checkRunId"> {
+    id: number;
+    checkRunId: number | null;
+}
+
+interface GithubRunDetail {
+    run: GithubRun;
+    jobs: GithubJob[];
+}
+
+interface GithubRunPage extends Omit<RunPage, "runs"> {
+    runs: GithubRun[];
+}
+
+interface GithubRunTick extends Omit<RunTick, "run" | "jobs"> {
+    run: GithubRun | null;
+    jobs: GithubJob[];
+}
+
+const fromRun = (run: GithubRun): Run => ({ ...run, id: String(run.id), workflowId: String(run.workflowId) });
+const fromJob = (job: GithubJob): Job => ({ ...job, id: String(job.id), checkRunId: job.checkRunId === null ? null : String(job.checkRunId) });
+const fromDetail = (detail: GithubRunDetail): RunDetail => ({ run: fromRun(detail.run), jobs: detail.jobs.map(fromJob) });
+const withTextId = <T extends { id: number }>(item: T): Omit<T, "id"> & { id: string } => ({ ...item, id: String(item.id) });
 
 async function call<T>(method: string, params?: unknown): Promise<T> {
     try {
@@ -130,18 +162,25 @@ export const actionsApi = {
     resolveRemote: (url: string) => backend.call<Resolved>("resolveRemote", { url }),
     myRepos: (limit = 50) => call<RepoListing[]>("myRepos", { limit }),
 
-    workflows: (repo: RepoRef) => call<Workflow[]>("workflows", repo),
+    workflows: (repo: RepoRef) => call<(Omit<Workflow, "id"> & { id: number })[]>("workflows", repo).then((rows): Workflow[] => rows.map(withTextId)),
     branches: (repo: RepoRef) => call<string[]>("branches", repo),
-    runs: (query: RunQuery) => call<RunPage>("runs", query),
-    run: (repo: RepoRef, runId: number) => call<RunDetail>("run", { ...repo, runId }),
-    jobLog: (repo: RepoRef, jobId: number) => call<JobLog>("jobLog", { ...repo, jobId }),
-    annotations: (repo: RepoRef, checkRunId: number) => call<Annotation[]>("annotations", { ...repo, checkRunId }),
-    jobSummary: (repo: RepoRef, checkRunId: number) => call<JobSummary | null>("jobSummary", { ...repo, checkRunId }),
-    runTiming: (repo: RepoRef, runId: number) => call<RunTiming>("runTiming", { ...repo, runId }),
-    workflowFile: (repo: RepoRef, workflowId: number) => call<WorkflowFile>("workflowFile", { ...repo, workflowId }),
-    artifacts: (repo: RepoRef, runId: number) => call<Artifact[]>("artifacts", { ...repo, runId }),
-    pendingApprovals: (repo: RepoRef, runId: number) => call<PendingApproval[]>("pendingApprovals", { ...repo, runId }),
-    runAttempt: (repo: RepoRef, runId: number, attempt: number) => call<RunDetail>("runAttempt", { ...repo, runId, attempt }),
+    runs: (query: RunQuery) =>
+        call<GithubRunPage>("runs", { ...query, workflowId: query.workflowId === undefined ? undefined : Number(query.workflowId) }).then(
+            (page): RunPage => ({ ...page, runs: page.runs.map(fromRun) }),
+        ),
+    run: (repo: RepoRef, runId: string) => call<GithubRunDetail>("run", { ...repo, runId: Number(runId) }).then(fromDetail),
+    jobLog: (repo: RepoRef, jobId: string) => call<JobLog>("jobLog", { ...repo, jobId: Number(jobId) }),
+    annotations: (repo: RepoRef, checkRunId: string) => call<Annotation[]>("annotations", { ...repo, checkRunId: Number(checkRunId) }),
+    jobSummary: (repo: RepoRef, checkRunId: string) => call<JobSummary | null>("jobSummary", { ...repo, checkRunId: Number(checkRunId) }),
+    runTiming: (repo: RepoRef, runId: string) => call<RunTiming>("runTiming", { ...repo, runId: Number(runId) }),
+    workflowFile: (repo: RepoRef, workflowId: string) => call<WorkflowFile>("workflowFile", { ...repo, workflowId: Number(workflowId) }),
+    artifacts: (repo: RepoRef, runId: string) =>
+        call<(Omit<Artifact, "id"> & { id: number })[]>("artifacts", { ...repo, runId: Number(runId) }).then((rows): Artifact[] =>
+            rows.map(withTextId),
+        ),
+    pendingApprovals: (repo: RepoRef, runId: string) => call<PendingApproval[]>("pendingApprovals", { ...repo, runId: Number(runId) }),
+    runAttempt: (repo: RepoRef, runId: string, attempt: number) =>
+        call<GithubRunDetail>("runAttempt", { ...repo, runId: Number(runId), attempt }).then(fromDetail),
 
     pulls: (repo: RepoRef, state: string) => call<Pull[]>("pulls", { ...repo, state }),
     pull: (repo: RepoRef, number: number) => call<Pull>("pull", { ...repo, number }),
@@ -170,23 +209,24 @@ export const actionsApi = {
     markRead: (id: string) => call<void>("markRead", { id }),
     markAllRead: () => call<void>("markAllRead"),
 
-    dispatch: (repo: RepoRef, workflowId: number, gitRef: string, inputs: Record<string, string>) =>
-        call<void>("dispatch", { ...repo, workflowId, gitRef, inputs }),
-    rerun: (repo: RepoRef, runId: number, failedOnly: boolean, debug = false) => call<void>("rerun", { ...repo, runId, failedOnly, debug }),
-    rerunJob: (repo: RepoRef, jobId: number, debug = false) => call<void>("rerunJob", { ...repo, jobId, debug }),
-    cancel: (repo: RepoRef, runId: number) => call<void>("cancel", { ...repo, runId }),
-    deleteRunLogs: (repo: RepoRef, runId: number) => call<void>("deleteRunLogs", { ...repo, runId }),
-    deleteRun: (repo: RepoRef, runId: number) => call<void>("deleteRun", { ...repo, runId }),
-    downloadArtifact: (repo: RepoRef, artifactId: number, name: string, onProgress?: (progress: DownloadProgress) => void) =>
-        download("downloadArtifact", { ...repo, artifactId, fileName: name }, onProgress),
-    reviewDeployment: (repo: RepoRef, runId: number, environmentIds: number[], state: "approved" | "rejected", comment = "") =>
-        call<void>("reviewDeployment", { ...repo, runId, environmentIds, state, comment }),
+    dispatch: (repo: RepoRef, workflowId: string, gitRef: string, inputs: Record<string, string>) =>
+        call<void>("dispatch", { ...repo, workflowId: Number(workflowId), gitRef, inputs }),
+    rerun: (repo: RepoRef, runId: string, failedOnly: boolean, debug = false) =>
+        call<void>("rerun", { ...repo, runId: Number(runId), failedOnly, debug }),
+    rerunJob: (repo: RepoRef, jobId: string, debug = false) => call<void>("rerunJob", { ...repo, jobId: Number(jobId), debug }),
+    cancel: (repo: RepoRef, runId: string) => call<void>("cancel", { ...repo, runId: Number(runId) }),
+    deleteRunLogs: (repo: RepoRef, runId: string) => call<void>("deleteRunLogs", { ...repo, runId: Number(runId) }),
+    deleteRun: (repo: RepoRef, runId: string) => call<void>("deleteRun", { ...repo, runId: Number(runId) }),
+    downloadArtifact: (repo: RepoRef, artifactId: string, name: string, onProgress?: (progress: DownloadProgress) => void) =>
+        download("downloadArtifact", { ...repo, artifactId: Number(artifactId), fileName: name }, onProgress),
+    reviewDeployment: (repo: RepoRef, runId: string, environmentIds: number[], state: "approved" | "rejected", comment = "") =>
+        call<void>("reviewDeployment", { ...repo, runId: Number(runId), environmentIds, state, comment }),
 
-    watchStart: (repo: RepoRef, runId: number, onTick: (tick: RunTick) => void) =>
+    watchStart: (repo: RepoRef, runId: string, onTick: (tick: RunTick) => void) =>
         backend
-            .openStream<RunTick>("watchRun", { ...repo, runId }, (tick) => {
+            .openStream<GithubRunTick>("watchRun", { ...repo, runId: Number(runId) }, (tick) => {
                 if (tick.signedOut) forgetSignedOut();
-                onTick(tick);
+                onTick({ ...tick, run: tick.run && fromRun(tick.run), jobs: tick.jobs.map(fromJob) });
             })
             .catch((error: unknown) => {
                 if (isSignedOut(error)) forgetSignedOut();

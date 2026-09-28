@@ -67,7 +67,7 @@ interface Props {
     projectBranch: string | null;
     active: boolean;
     canWrite: boolean;
-    onDispatch: (workflowId: number) => void;
+    onDispatch: (workflowId: string) => void;
 }
 
 export function RunsList({ paneId, repo, view, branch, projectBranch, active, canWrite, onDispatch }: Props) {
@@ -104,16 +104,16 @@ export function RunsList({ paneId, repo, view, branch, projectBranch, active, ca
         <div className="gha-runs pr-list">
             <div className="gha-list-head">
                 <Dropdown
-                    value={view.workflowId === null ? EVERY_WORKFLOW : String(view.workflowId)}
+                    value={view.workflowId === null ? EVERY_WORKFLOW : view.workflowId}
                     options={[
                         { value: EVERY_WORKFLOW, label: "Every workflow" },
                         ...(workflows.data ?? []).map((workflow) => ({
-                            value: String(workflow.id),
+                            value: workflow.id,
                             label: workflow.name,
                             detail: workflow.active ? undefined : "off",
                         })),
                     ]}
-                    onChange={(value) => filterBy(paneId, { workflowId: value === EVERY_WORKFLOW ? null : Number(value) })}
+                    onChange={(value) => filterBy(paneId, { workflowId: value === EVERY_WORKFLOW ? null : value })}
                     title="Which workflow's runs to show"
                 />
                 <span className="gha-page-spacer" />

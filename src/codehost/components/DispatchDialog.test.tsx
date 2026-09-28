@@ -9,7 +9,7 @@ import { InHost, registerTestHost, TEST_HOST } from "../testHost";
 const host = registerTestHost(api);
 const wrapper = ({ children }: { children: React.ReactNode }) => <InHost host={host}>{children}</InHost>;
 
-const workflow = { id: 1, name: "Deploy", path: ".github/workflows/deploy.yml", state: "active", active: true, url: "" };
+const workflow = { id: "1", name: "Deploy", path: ".github/workflows/deploy.yml", state: "active", active: true, url: "" };
 
 afterEach(cleanup);
 

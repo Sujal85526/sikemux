@@ -66,49 +66,49 @@ export const runsR = resource({
 
 export const runR = resource({
     kind: "host.run",
-    fetch: (repo: RepoRef, runId: number): Promise<RunDetail> => hostApi(repo.provider).run(repo, runId),
+    fetch: (repo: RepoRef, runId: string): Promise<RunDetail> => hostApi(repo.provider).run(repo, runId),
     staleAfterMs: 10_000,
 });
 
 export const annotationsR = resource({
     kind: "host.annotations",
-    fetch: (repo: RepoRef, checkRunId: number): Promise<Annotation[]> => hostApi(repo.provider).annotations(repo, checkRunId),
+    fetch: (repo: RepoRef, checkRunId: string): Promise<Annotation[]> => hostApi(repo.provider).annotations(repo, checkRunId),
     staleAfterMs: 60_000,
 });
 
 export const jobSummaryR = resource({
     kind: "host.jobSummary",
-    fetch: (repo: RepoRef, checkRunId: number): Promise<JobSummary | null> => hostApi(repo.provider).jobSummary(repo, checkRunId),
+    fetch: (repo: RepoRef, checkRunId: string): Promise<JobSummary | null> => hostApi(repo.provider).jobSummary(repo, checkRunId),
     staleAfterMs: 5 * 60_000,
 });
 
 export const timingR = resource({
     kind: "host.timing",
-    fetch: (repo: RepoRef, runId: number): Promise<RunTiming> => hostApi(repo.provider).runTiming(repo, runId),
+    fetch: (repo: RepoRef, runId: string): Promise<RunTiming> => hostApi(repo.provider).runTiming(repo, runId),
     staleAfterMs: 5 * 60_000,
 });
 
 export const workflowFileR = resource({
     kind: "host.workflowFile",
-    fetch: (repo: RepoRef, workflowId: number): Promise<WorkflowFile> => hostApi(repo.provider).workflowFile(repo, workflowId),
+    fetch: (repo: RepoRef, workflowId: string): Promise<WorkflowFile> => hostApi(repo.provider).workflowFile(repo, workflowId),
     staleAfterMs: 10 * 60_000,
 });
 
 export const artifactsR = resource({
     kind: "host.artifacts",
-    fetch: (repo: RepoRef, runId: number): Promise<Artifact[]> => hostApi(repo.provider).artifacts(repo, runId),
+    fetch: (repo: RepoRef, runId: string): Promise<Artifact[]> => hostApi(repo.provider).artifacts(repo, runId),
     staleAfterMs: 60_000,
 });
 
 export const approvalsR = resource({
     kind: "host.approvals",
-    fetch: (repo: RepoRef, runId: number): Promise<PendingApproval[]> => hostApi(repo.provider).pendingApprovals(repo, runId),
+    fetch: (repo: RepoRef, runId: string): Promise<PendingApproval[]> => hostApi(repo.provider).pendingApprovals(repo, runId),
     staleAfterMs: 15_000,
 });
 
 export const runAttemptR = resource({
     kind: "host.runAttempt",
-    fetch: (repo: RepoRef, runId: number, attempt: number): Promise<RunDetail> => hostApi(repo.provider).runAttempt(repo, runId, attempt),
+    fetch: (repo: RepoRef, runId: string, attempt: number): Promise<RunDetail> => hostApi(repo.provider).runAttempt(repo, runId, attempt),
     staleAfterMs: 5 * 60_000,
 });
 
@@ -187,6 +187,6 @@ export const inboxR = resource({
 
 export const jobLogR = resource({
     kind: "host.jobLog",
-    fetch: (repo: RepoRef, jobId: number): Promise<JobLog> => hostApi(repo.provider).jobLog(repo, jobId),
+    fetch: (repo: RepoRef, jobId: string): Promise<JobLog> => hostApi(repo.provider).jobLog(repo, jobId),
     staleAfterMs: 30_000,
 });

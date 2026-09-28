@@ -18,17 +18,17 @@ export function formatBytes(bytes: number): string {
 
 interface Props {
     repo: RepoRef;
-    runId: number;
+    runId: string;
     active: boolean;
 }
 
 export function Artifacts({ repo, runId, active }: Props) {
     const found = useResourceEnabled(active, artifactsR, repo, runId);
-    const [saving, setSaving] = useState<number | null>(null);
+    const [saving, setSaving] = useState<string | null>(null);
     const artifacts = found.data ?? [];
     if (artifacts.length === 0) return null;
 
-    const save = (id: number, name: string) => {
+    const save = (id: string, name: string) => {
         setSaving(id);
         void hostApi(repo.provider)
             .downloadArtifact(repo, id, name)

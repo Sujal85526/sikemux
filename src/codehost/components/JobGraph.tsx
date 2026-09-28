@@ -9,8 +9,8 @@ interface Props {
     run: Run;
     jobs: Job[];
     now: number;
-    openJob: number | null;
-    onOpen: (jobId: number) => void;
+    openJob: string | null;
+    onOpen: (jobId: string) => void;
     fileShown: boolean;
     onToggleFile: () => void;
 }

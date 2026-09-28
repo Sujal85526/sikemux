@@ -48,7 +48,7 @@ describe("a refused token", () => {
             handlers.onError?.(refused);
             return { stop() {} };
         });
-        await expect(actionsApi.downloadArtifact(repo, 3, "build")).rejects.toBe(refused);
+        await expect(actionsApi.downloadArtifact(repo, "3", "build")).rejects.toBe(refused);
         expect(clearedGithub()).toBe(true);
     });
 
@@ -59,10 +59,29 @@ describe("a refused token", () => {
             return Promise.resolve(1);
         });
         const seen = vi.fn();
-        await actionsApi.watchStart(repo, 7, seen);
+        await actionsApi.watchStart(repo, "7", seen);
         onTick({ run: null, jobs: [], error: "github: not signed in", finished: true, fatal: true, signedOut: true });
         expect(seen).toHaveBeenCalledTimes(1);
         expect(clearedGithub()).toBe(true);
+    });
+});
+
+describe("ids", () => {
+    it("names GitHub's numbered runs and jobs by text, and asks GitHub by number", async () => {
+        fake.call.mockResolvedValue({
+            run: { id: 7, workflowId: 2 },
+            jobs: [
+                { id: 30, checkRunId: 31 },
+                { id: 40, checkRunId: null },
+            ],
+        });
+        const detail = await actionsApi.run(repo, "7");
+        expect(fake.call).toHaveBeenCalledWith("run", { ...repo, runId: 7 });
+        expect(detail.run).toMatchObject({ id: "7", workflowId: "2" });
+        expect(detail.jobs).toMatchObject([
+            { id: "30", checkRunId: "31" },
+            { id: "40", checkRunId: null },
+        ]);
     });
 });
 

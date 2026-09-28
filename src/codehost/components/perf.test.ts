@@ -15,8 +15,8 @@ describe("coarse", () => {
 });
 
 describe("summaryJobs", () => {
-    const job = (id: number, conclusion = "success", checkRunId: number | null = id) => ({
-        id,
+    const job = (id: number, conclusion = "success", checkRunId: string | null = String(id)) => ({
+        id: String(id),
         name: `job ${id}`,
         status: "completed",
         conclusion,
@@ -34,7 +34,7 @@ describe("summaryJobs", () => {
 
     it("skips jobs that could not have written one", () => {
         const found = summaryJobs([job(1), job(2, "skipped"), job(3, "success", null)], true, false);
-        expect(found.map((each) => each.id)).toEqual([1]);
+        expect(found.map((each) => each.id)).toEqual(["1"]);
     });
 
     it("only loads the first few of a wide matrix until asked for the rest", () => {

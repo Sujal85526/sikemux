@@ -27,7 +27,7 @@ const line = (number: number, text: string, second: number): LogLine => ({
 });
 
 const makeJob = (status: string): Job => ({
-    id: 3,
+    id: "3",
     name: "build",
     status,
     conclusion: status === "completed" ? "failure" : null,

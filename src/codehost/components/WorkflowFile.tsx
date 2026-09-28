@@ -5,7 +5,7 @@ import { workflowFileR } from "../resources";
 
 interface Props {
     repo: RepoRef;
-    workflowId: number;
+    workflowId: string;
     active: boolean;
 }
 

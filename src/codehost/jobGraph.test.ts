@@ -4,7 +4,7 @@ import { splitName, stagesOf, stepStarts } from "./jobGraph";
 
 function job(id: number, name: string, startedAt: string | null, completedAt: string | null, status = "completed"): Job {
     return {
-        id,
+        id: String(id),
         name,
         status,
         conclusion: status === "completed" ? "success" : null,

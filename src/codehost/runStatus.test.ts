@@ -24,7 +24,7 @@ const step = (name: string, status: string, conclusion: string | null): Step => 
 });
 
 const job = (status: string, conclusion: string | null, steps: Step[] = []): Job => ({
-    id: 1,
+    id: "1",
     name: "build",
     status,
     conclusion,
