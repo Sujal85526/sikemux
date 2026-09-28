@@ -43,6 +43,24 @@ fn build(redirects: reqwest::redirect::Policy) -> Option<Client> {
         .ok()
 }
 
+/// Files can be large and slow, so a transfer has no overall deadline, only
+/// one on connecting and one on going quiet.
+fn transfers() -> ActionsResult<&'static Client> {
+    static CLIENT: OnceLock<Option<Client>> = OnceLock::new();
+    CLIENT
+        .get_or_init(|| {
+            Client::builder()
+                .connect_timeout(Duration::from_secs(30))
+                .read_timeout(Duration::from_secs(60))
+                .redirect(reqwest::redirect::Policy::none())
+                .user_agent("sikemux-github/0.1")
+                .build()
+                .ok()
+        })
+        .as_ref()
+        .ok_or_else(|| ActionsError::Transport("could not start the HTTP client".into()))
+}
+
 fn http() -> ActionsResult<&'static Client> {
     static CLIENT: OnceLock<Option<Client>> = OnceLock::new();
     CLIENT
@@ -242,6 +260,85 @@ pub async fn send_json<T: DeserializeOwned>(
     request(&session, method, path, &[], Some(body)).await
 }
 
+/// Every page of a list GitHub splits into pages of a hundred, up to
+/// `max_pages` of them. `items` takes the list out of a page, for the
+/// endpoints that wrap it in an object.
+pub async fn get_all<P: DeserializeOwned, T>(
+    data_dir: &Path,
+    path: &str,
+    query: &[(&str, String)],
+    max_pages: u32,
+    items: impl Fn(P) -> Vec<T>,
+) -> ActionsResult<Vec<T>> {
+    const PAGE: usize = 100;
+    let mut all = Vec::new();
+    for page in 1..=max_pages.max(1) {
+        let mut paged = query.to_vec();
+        paged.push(("per_page", PAGE.to_string()));
+        paged.push(("page", page.to_string()));
+        let batch = items(get::<P>(data_dir, path, &paged).await?);
+        let short = batch.len() < PAGE;
+        all.extend(batch);
+        if short {
+            break;
+        }
+    }
+    Ok(all)
+}
+
+/// An answer to a conditional read. GitHub does not count a "nothing changed"
+/// answer against the rate limit, which is what lets a run be watched closely.
+pub struct Conditional<T> {
+    /// Absent when nothing changed since `etag`.
+    pub value: Option<T>,
+    pub etag: Option<String>,
+    /// Requests left before the rate limit, when GitHub said.
+    pub remaining: Option<u64>,
+}
+
+pub async fn get_if_changed<T: DeserializeOwned>(
+    data_dir: &Path,
+    path: &str,
+    query: &[(&str, String)],
+    etag: Option<&str>,
+) -> ActionsResult<Conditional<T>> {
+    let session = Session::current(data_dir)?;
+    let url = format!("{}{path}", config::api_base(&session.host));
+    let mut request = http()?
+        .get(url)
+        .bearer_auth(&session.token)
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", API_VERSION)
+        .query(query);
+    if let Some(etag) = etag {
+        request = request.header("If-None-Match", etag);
+    }
+    let response = limited(request.send()).await?;
+    let status = response.status();
+    let headers = response.headers().clone();
+    let bytes = read_limited(response).await?;
+    let header = |name: &str| headers.get(name).and_then(|value| value.to_str().ok());
+    let remaining = header("x-ratelimit-remaining").and_then(|value| value.trim().parse().ok());
+    if status == StatusCode::NOT_MODIFIED {
+        return Ok(Conditional {
+            value: None,
+            etag: etag.map(str::to_string),
+            remaining,
+        });
+    }
+    if !status.is_success() {
+        if status == StatusCode::UNAUTHORIZED {
+            config::forget_token();
+        }
+        return Err(classify(status, &headers, &bytes));
+    }
+    Ok(Conditional {
+        etag: header("etag").map(str::to_string),
+        value: Some(serde_json::from_slice(&bytes)?),
+        remaining,
+    })
+}
+
 pub async fn post_empty(data_dir: &Path, path: &str, body: Option<&Value>) -> ActionsResult<()> {
     act(data_dir, Method::POST, path, body).await
 }
@@ -283,6 +380,71 @@ fn from_storage(location: &str) -> ActionsResult<reqwest::Request> {
     let url = reqwest::Url::parse(location)
         .map_err(|_| ActionsError::Response("the download redirect was not an address".into()))?;
     Ok(reqwest::Request::new(Method::GET, url))
+}
+
+/// Writes a file GitHub hands over, an artifact or a release asset, to
+/// `target` as it arrives, however large it is. It lands under a temporary
+/// name first, so a download cut short never looks finished.
+pub async fn download_to(
+    data_dir: &Path,
+    path: &str,
+    accept: &str,
+    target: &Path,
+) -> ActionsResult<u64> {
+    let session = Session::current(data_dir)?;
+    let url = format!("{}{path}", config::api_base(&session.host));
+    let request = transfers()?
+        .get(url)
+        .bearer_auth(&session.token)
+        .header("Accept", accept)
+        .header("X-GitHub-Api-Version", API_VERSION);
+    let mut response = limited(request.send()).await?;
+    if response.status().is_redirection() {
+        let location = response
+            .headers()
+            .get("location")
+            .and_then(|value| value.to_str().ok())
+            .ok_or_else(|| ActionsError::Response("the download redirect had no address".into()))?
+            .to_string();
+        response = limited(transfers()?.execute(from_storage(&location)?)).await?;
+    }
+    let status = response.status();
+    if !status.is_success() {
+        let headers = response.headers().clone();
+        let bytes = read_limited(response).await.unwrap_or_default();
+        return Err(classify(status, &headers, &bytes));
+    }
+    write_stream(response, target).await
+}
+
+async fn write_stream(response: Response, target: &Path) -> ActionsResult<u64> {
+    use tokio::io::AsyncWriteExt;
+    let failed =
+        |error: std::io::Error| ActionsError::Transport(format!("saving the download: {error}"));
+    let partial = target.with_extension(match target.extension() {
+        Some(extension) => format!("{}.part", extension.to_string_lossy()),
+        None => "part".to_string(),
+    });
+    let mut file = tokio::fs::File::create(&partial).await.map_err(failed)?;
+    let mut stream = response.bytes_stream();
+    let mut written: u64 = 0;
+    let outcome: ActionsResult<()> = async {
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk?;
+            file.write_all(&chunk).await.map_err(failed)?;
+            written += chunk.len() as u64;
+        }
+        file.flush().await.map_err(failed)?;
+        Ok(())
+    }
+    .await;
+    drop(file);
+    if let Err(error) = outcome {
+        tokio::fs::remove_file(&partial).await.ok();
+        return Err(error);
+    }
+    tokio::fs::rename(&partial, target).await.map_err(failed)?;
+    Ok(written)
 }
 
 pub async fn download_text(data_dir: &Path, path: &str) -> ActionsResult<String> {

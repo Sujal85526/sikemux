@@ -4395,6 +4395,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "reqwest",
+ "rustls",
  "serde",
  "serde_json",
  "sikemux-plugin-api",

@@ -273,6 +273,8 @@ mod live {
     use serde_json::json;
 
     fn env(name: &str) -> Option<String> {
+        // The app installs this at start-up; a test has to do it for itself.
+        let _ = rustls::crypto::ring::default_provider().install_default();
         std::env::var(name).ok().filter(|value| !value.is_empty())
     }
 
@@ -349,5 +351,42 @@ mod live {
             .await
             .expect("sign out");
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    /// `GHA_LIVE_ARTIFACT=owner/repo:artifact_id GH_TOKEN=… cargo test -p sikemux-plugin-github -- --ignored`
+    /// with an artifact over 16 MiB, which used to fail. The token is read from
+    /// the environment, so the Keychain is never touched.
+    #[tokio::test]
+    #[ignore]
+    async fn downloads_an_artifact_larger_than_an_api_answer() {
+        let (Some(target), Some(_)) = (env("GHA_LIVE_ARTIFACT"), env("GH_TOKEN")) else {
+            return;
+        };
+        let (slug, id) = target
+            .split_once(':')
+            .expect("GHA_LIVE_ARTIFACT is owner/repo:id");
+        let (owner, name) = slug.split_once('/').expect("owner/repo");
+        let dir = std::env::temp_dir().join(format!("sikemux-gha-dl-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        std::env::set_var("HOME", &dir);
+        let ctx = PluginContext::new(dir.clone());
+        let plugin = plugin().expect("plugin loads");
+        plugin
+            .call(&ctx, "signIn", json!({ "host": "github.com" }))
+            .await
+            .expect("sign in with the environment's token");
+        let saved = plugin
+            .call(
+                &ctx,
+                "downloadArtifact",
+                json!({ "owner": owner, "name": name, "artifactId": id.parse::<u64>().expect("id"), "fileName": "live" }),
+            )
+            .await
+            .expect("download");
+        let bytes = saved["bytes"].as_u64().expect("bytes");
+        assert!(bytes > 16 * 1024 * 1024, "{bytes}");
+        let path = saved["path"].as_str().expect("path");
+        assert_eq!(std::fs::metadata(path).expect("saved").len(), bytes);
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

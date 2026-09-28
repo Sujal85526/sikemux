@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::client;
+use crate::common::LIST_PAGES;
 use crate::error::{ActionsError, ActionsResult};
 use crate::workflows::RepoRef;
 
@@ -359,16 +360,15 @@ pub async fn jobs(data_dir: &Path, input: RunRef) -> ActionsResult<Vec<Job>> {
     let path = input
         .repo
         .path(&format!("/actions/runs/{}/jobs", input.run_id))?;
-    let list: JobList = client::get(
+    let jobs = client::get_all(
         data_dir,
         &path,
-        &[
-            ("per_page", MAX_PER_PAGE.to_string()),
-            ("filter", "latest".to_string()),
-        ],
+        &[("filter", "latest".to_string())],
+        LIST_PAGES,
+        |list: JobList| list.jobs,
     )
     .await?;
-    Ok(list.jobs.into_iter().map(Job::from).collect())
+    Ok(jobs.into_iter().map(Job::from).collect())
 }
 
 #[derive(Serialize, Clone)]
@@ -393,6 +393,63 @@ pub async fn detail(data_dir: &Path, input: RunRef) -> ActionsResult<RunDetail> 
         run: run?,
         jobs: jobs?,
     })
+}
+
+/// What a watch remembers between reads, so an unchanged run costs nothing.
+#[derive(Default)]
+pub struct Followed {
+    run: Option<(Run, Option<String>)>,
+    jobs: Option<(Vec<Job>, Option<String>)>,
+}
+
+/// The run and its jobs as they are now, and how many requests GitHub will
+/// still take this hour.
+pub async fn follow(
+    data_dir: &Path,
+    input: &RunRef,
+    held: &mut Followed,
+) -> ActionsResult<(RunDetail, Option<u64>)> {
+    let base = format!("/actions/runs/{}", input.run_id);
+    let run_etag = held.run.as_ref().and_then(|(_, etag)| etag.clone());
+    let jobs_etag = held.jobs.as_ref().and_then(|(_, etag)| etag.clone());
+    let jobs_query = [
+        ("per_page", MAX_PER_PAGE.to_string()),
+        ("filter", "latest".to_string()),
+    ];
+    let run_path = input.repo.path(&base)?;
+    let jobs_path = input.repo.path(&format!("{base}/jobs"))?;
+    let (run, jobs) = futures::future::join(
+        client::get_if_changed::<RunRow>(data_dir, &run_path, &[], run_etag.as_deref()),
+        client::get_if_changed::<JobList>(data_dir, &jobs_path, &jobs_query, jobs_etag.as_deref()),
+    )
+    .await;
+    let (run, jobs) = (run?, jobs?);
+    if let Some(row) = run.value {
+        held.run = Some((Run::from(row), run.etag));
+    }
+    if let Some(list) = jobs.value {
+        held.jobs = Some((list.jobs.into_iter().map(Job::from).collect(), jobs.etag));
+    }
+    let remaining = match (run.remaining, jobs.remaining) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    };
+    let current = held
+        .run
+        .as_ref()
+        .map(|(run, _)| run.clone())
+        .ok_or_else(|| ActionsError::Response("GitHub sent no run".into()))?;
+    Ok((
+        RunDetail {
+            run: current,
+            jobs: held
+                .jobs
+                .as_ref()
+                .map(|(jobs, _)| jobs.clone())
+                .unwrap_or_default(),
+        },
+        remaining,
+    ))
 }
 
 #[derive(Deserialize)]
@@ -499,6 +556,14 @@ pub struct JobRef {
     #[serde(flatten)]
     pub repo: RepoRef,
     pub job_id: u64,
+}
+
+pub async fn job_status(data_dir: &Path, input: JobRef) -> ActionsResult<String> {
+    let path = input
+        .repo
+        .path(&format!("/actions/jobs/{}", input.job_id))?;
+    let row: JobRow = client::get(data_dir, &path, &[]).await?;
+    Ok(row.status.unwrap_or_else(|| "queued".into()))
 }
 
 #[derive(Deserialize)]

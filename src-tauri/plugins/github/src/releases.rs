@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::artifacts;
 use crate::client;
-use crate::common::{login_of, ActorRow, MAX_PER_PAGE};
+use crate::common::{login_of, ActorRow, RELEASE_PAGES};
 use crate::error::ActionsResult;
 use crate::workflows::RepoRef;
 
@@ -89,10 +89,12 @@ impl From<ReleaseRow> for Release {
 }
 
 pub async fn list(data_dir: &Path, repo: RepoRef) -> ActionsResult<Vec<Release>> {
-    let rows: Vec<ReleaseRow> = client::get(
+    let rows: Vec<ReleaseRow> = client::get_all(
         data_dir,
         &repo.path("/releases")?,
-        &[("per_page", MAX_PER_PAGE.to_string())],
+        &[],
+        RELEASE_PAGES,
+        |rows| rows,
     )
     .await?;
     Ok(rows.into_iter().map(Release::from).collect())
@@ -104,7 +106,8 @@ pub struct DownloadAsset {
     #[serde(flatten)]
     pub repo: RepoRef,
     pub asset_id: u64,
-    pub name: String,
+    /// What to call the file, which is not the repository's `name`.
+    pub file_name: String,
 }
 
 /// A release asset is whatever was uploaded, so it keeps its own name rather
@@ -113,8 +116,12 @@ pub async fn download(data_dir: &Path, input: DownloadAsset) -> ActionsResult<ar
     let path = input
         .repo
         .path(&format!("/releases/assets/{}", input.asset_id))?;
-    let bytes = client::download_as(data_dir, &path, "application/octet-stream").await?;
-    artifacts::save_download(data_dir, &input.name, None, &bytes)
+    let target = artifacts::download_target(data_dir, &input.file_name, None)?;
+    let bytes = client::download_to(data_dir, &path, "application/octet-stream", &target).await?;
+    Ok(artifacts::Saved {
+        path: target.to_string_lossy().into_owned(),
+        bytes,
+    })
 }
 
 #[cfg(test)]

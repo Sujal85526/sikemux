@@ -8,11 +8,18 @@ use serde::{Deserialize, Serialize};
 use sikemux_plugin_api::{reply, PluginResult, StreamSink};
 use tokio::time::sleep;
 
-use crate::runs::{self, Job, Run, RunRef};
+use crate::error::ActionsError;
+use crate::runs::{self, Followed, Job, Run, RunRef};
 use crate::workflows::RepoRef;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(3);
+/// With few requests left in the hour, a run is read far less often, so the
+/// rest of the app still has some to use.
+const SPARING_INTERVAL: Duration = Duration::from_secs(30);
+const SPARING_BELOW: u64 = 500;
 const MAX_BACKOFF: Duration = Duration::from_secs(60);
+/// The longest a spent rate limit is waited out in one go before trying again.
+const MAX_RATE_WAIT: Duration = Duration::from_secs(15 * 60);
 const ERROR_GIVEUP: u32 = 6;
 /// One more read after a run reports itself finished, so the last job's steps
 /// arrive rather than the view stopping on a half-finished picture.
@@ -35,6 +42,18 @@ pub struct Watch {
     pub run_id: u64,
 }
 
+/// How long to wait before the next read. A spent rate limit is waited out
+/// for as long as GitHub says, and does not count as the watch failing.
+fn next_wait(failures: u32, rate_reset: Option<u64>, remaining: Option<u64>) -> Duration {
+    if let Some(seconds) = rate_reset {
+        return Duration::from_secs(seconds.max(1)).min(MAX_RATE_WAIT);
+    }
+    if remaining.is_some_and(|left| left < SPARING_BELOW) {
+        return backoff(failures).max(SPARING_INTERVAL);
+    }
+    backoff(failures)
+}
+
 fn backoff(failures: u32) -> Duration {
     if failures == 0 {
         return POLL_INTERVAL;
@@ -46,19 +65,28 @@ fn backoff(failures: u32) -> Duration {
 pub async fn run(data_dir: &Path, input: Watch, sink: StreamSink) -> PluginResult<()> {
     let mut failures: u32 = 0;
     let mut settled: u32 = 0;
+    let mut held = Followed::default();
+    let reference = RunRef {
+        repo: RepoRef {
+            owner: input.repo.owner.clone(),
+            name: input.repo.name.clone(),
+        },
+        run_id: input.run_id,
+    };
     loop {
-        let reference = RunRef {
-            repo: RepoRef {
-                owner: input.repo.owner.clone(),
-                name: input.repo.name.clone(),
-            },
-            run_id: input.run_id,
-        };
-        let (run, jobs, error) = match runs::detail(data_dir, reference).await {
-            Ok(detail) => (Some(detail.run), detail.jobs, None),
-            Err(error) => (None, Vec::new(), Some(error.to_string())),
-        };
-        failures = if error.is_some() {
+        let (run, jobs, error, rate_reset, remaining) =
+            match runs::follow(data_dir, &reference, &mut held).await {
+                Ok((detail, remaining)) => (Some(detail.run), detail.jobs, None, None, remaining),
+                Err(ActionsError::RateLimited { resets_in_secs }) => (
+                    None,
+                    Vec::new(),
+                    Some(ActionsError::RateLimited { resets_in_secs }.to_string()),
+                    Some(resets_in_secs),
+                    None,
+                ),
+                Err(error) => (None, Vec::new(), Some(error.to_string()), None, None),
+            };
+        failures = if error.is_some() && rate_reset.is_none() {
             failures.saturating_add(1)
         } else {
             0
@@ -85,7 +113,7 @@ pub async fn run(data_dir: &Path, input: Watch, sink: StreamSink) -> PluginResul
         if finished {
             return Ok(());
         }
-        sleep(backoff(failures)).await;
+        sleep(next_wait(failures, rate_reset, remaining)).await;
     }
 }
 
@@ -96,6 +124,20 @@ mod tests {
     #[test]
     fn a_healthy_watch_polls_at_a_steady_pace() {
         assert_eq!(backoff(0), POLL_INTERVAL);
+    }
+
+    #[test]
+    fn a_spent_rate_limit_is_waited_out_as_long_as_github_says() {
+        assert_eq!(next_wait(0, Some(120), None), Duration::from_secs(120));
+        assert_eq!(next_wait(0, Some(0), None), Duration::from_secs(1));
+        assert_eq!(next_wait(0, Some(99_999), None), MAX_RATE_WAIT);
+    }
+
+    #[test]
+    fn a_nearly_spent_limit_slows_the_watch_down() {
+        assert_eq!(next_wait(0, None, Some(4_000)), POLL_INTERVAL);
+        assert_eq!(next_wait(0, None, Some(100)), SPARING_INTERVAL);
+        assert_eq!(next_wait(0, None, None), POLL_INTERVAL);
     }
 
     #[test]
