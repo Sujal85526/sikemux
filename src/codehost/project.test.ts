@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { pickRemote, pullsByBranch } from "./project";
+import { claimRemote, pickRemote, pullsByBranch } from "./project";
+import type { CodeHost } from "./registry";
 import type { Pull } from "./types";
 
 describe("pickRemote", () => {
@@ -33,5 +34,29 @@ describe("pullsByBranch", () => {
 
     it("leaves out a fork's, whose branch only shares a name with one here", () => {
         expect(pullsByBranch([pull(49, "main", "Sujal85526")], repo).has("main")).toBe(false);
+    });
+});
+
+describe("claimRemote", () => {
+    const host = (id: string, server: string) =>
+        ({
+            id,
+            api: {
+                resolveRemote: (url: string) =>
+                    Promise.resolve({
+                        repo: { host: new URL(url).host, owner: "team", name: "thing" },
+                        slug: "team/thing",
+                        sameHost: new URL(url).host === server,
+                    }),
+            },
+        }) as unknown as Pick<CodeHost, "id" | "api">;
+
+    it("goes to the host whose server the remote is on", async () => {
+        const hosts = [host("github", "github.com"), host("bitbucket", "bitbucket.org")];
+        expect(await claimRemote("https://bitbucket.org/team/thing.git", hosts)).toEqual({ provider: "bitbucket", owner: "team", name: "thing" });
+    });
+
+    it("leaves a remote no host serves to the local workbench, even when a host can read its address", async () => {
+        expect(await claimRemote("https://gitlab.com/team/thing.git", [host("github", "github.com")])).toBeNull();
     });
 });

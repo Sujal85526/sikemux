@@ -70,7 +70,7 @@ export interface HostCapabilities {
 export interface CodeHostApi {
     status(): Promise<HostAccount>;
     signOut(): Promise<void>;
-    /** The repository a git remote points at, when it is on this host. */
+    /** The repository a git remote points at, and in `sameHost` whether it is on the server this host talks to. */
     resolveRemote(url: string): Promise<Resolved>;
     myRepos(limit?: number): Promise<RepoListing[]>;
     image(url: string): Promise<string>;

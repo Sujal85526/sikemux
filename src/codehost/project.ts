@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { git, gitOverviewR } from "../plugin-api/host";
 import { resource, useResourceEnabled } from "../plugin-api/resources";
 import { isOwnBranch } from "./checkout";
-import { enabledCodeHosts } from "./registry";
+import { enabledCodeHosts, type CodeHost } from "./registry";
 import { hostStatusR, pullsR } from "./resources";
 import { hostSettings, refOf } from "./state";
 import type { Pull, RepoRef } from "./types";
@@ -13,20 +13,26 @@ export function pickRemote(remotes: readonly { name: string; url: string }[]): s
     return (origin ?? remotes[0])?.url ?? null;
 }
 
-/** The repository a folder's remote points at, on the first enabled host that recognises it. */
+/**
+ * The repository a folder's remote points at, on the first enabled host that serves it. A host describes any remote it
+ * can parse, but claims only one on its own server: a Bitbucket or GitLab repository is not GitHub's to show.
+ */
 export const remoteRepoR = resource({
     kind: "host.remoteRepo",
     fetch: async (cwd: string): Promise<RepoRef | null> => {
         const url = pickRemote(await git.remotes(cwd));
-        if (!url) return null;
-        for (const host of enabledCodeHosts()) {
-            const resolved = await host.api.resolveRemote(url).catch(() => null);
-            if (resolved?.repo) return { provider: host.id, owner: resolved.repo.owner, name: resolved.repo.name };
-        }
-        return null;
+        return url ? claimRemote(url, enabledCodeHosts()) : null;
     },
     staleAfterMs: 5 * 60_000,
 });
+
+export async function claimRemote(url: string, hosts: readonly Pick<CodeHost, "id" | "api">[]): Promise<RepoRef | null> {
+    for (const host of hosts) {
+        const resolved = await host.api.resolveRemote(url).catch(() => null);
+        if (resolved?.repo && resolved.sameHost) return { provider: host.id, owner: resolved.repo.owner, name: resolved.repo.name };
+    }
+    return null;
+}
 
 export interface HostRepo {
     /** The repository the host sections show, which a hand-picked one for this folder overrides. */
