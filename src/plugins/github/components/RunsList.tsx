@@ -2,7 +2,7 @@ import { memo, useEffect, useRef } from "react";
 import { openUrl, swallow } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { Dropdown, EmptyState, IconGit, IconRefresh, IconRun, SkeletonRows, Tooltip } from "../../../plugin-api/ui";
-import { failureMessage, type RepoRef, type Run } from "../api";
+import { failureMessage, type RepoRef, type Run, type Workflow } from "../api";
 import { actionsRunsR, actionsWorkflowsR } from "../resources";
 import { elapsedMs, formatAgo, formatDuration, isUnfinished, outcomeOf, statusParam } from "../runStatus";
 import { filterBy, showRun, STATUS_FILTERS, updateView, type RunsView, type StatusFilter } from "../state";
@@ -77,6 +77,11 @@ const RunRow = memo(function RunRow({ paneId, run, now, selected }: { paneId: st
         </button>
     );
 });
+
+function actionsPage(runUrl: string, workflow: Workflow | null): string {
+    const actions = runUrl.replace(/\/runs\/\d+.*$/u, "");
+    return workflow ? `${actions}/workflows/${workflow.path.split("/").pop()}` : actions;
+}
 
 interface Props {
     paneId: string;
@@ -187,7 +192,10 @@ export function RunsList({ paneId, repo, view, branch, active, canWrite, onDispa
                         Older
                     </button>
                     {runs[0] && (
-                        <button type="button" className="gha-link" onClick={() => void openUrl(runs[0].url).catch(swallow("open GitHub"))}>
+                        <button
+                            type="button"
+                            className="gha-link"
+                            onClick={() => void openUrl(actionsPage(runs[0].url, chosen)).catch(swallow("open GitHub"))}>
                             Open on GitHub
                         </button>
                     )}
