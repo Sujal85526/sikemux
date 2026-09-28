@@ -148,7 +148,7 @@ function GitWorkbench({
     const onReviewSaved = useCallback(() => invalidate((kind, args) => kind === "git.overview" && args[0] === repo), [repo]);
 
     const [localBusy, setBusy] = useState<string | null>(null);
-    const summaryRef = useRef<HTMLTextAreaElement>(null);
+    const messageRef = useRef<HTMLTextAreaElement>(null);
     const aiProvider = useGitWorkbench((state) => state.provider);
     const aiModel = useGitWorkbench((state) => state.model);
     const sharedOperation = useGitWorkbench((state) => state.operations[repo]);
@@ -859,7 +859,7 @@ function GitWorkbench({
         else if (panel === "files" && k === "v") setRangeAnchor((a) => (a === null ? selectedFileIndex : null));
         else if (panel === "files" && k === " ") toggleStage();
         else if (panel === "files" && k === "a") (unstagedFiles.length ? stageAll : unstageAll)();
-        else if (panel === "files" && k === "c") summaryRef.current?.focus();
+        else if (panel === "files" && k === "c") messageRef.current?.focus();
         else if (panel === "files" && k === "C") doCommit();
         else if (panel === "files" && k === "g") generateCommitMessage();
         else if (panel === "files" && k === "d") openFilesDiscardMenu();
@@ -1342,7 +1342,7 @@ function GitWorkbench({
                     generating={generating}
                     stagedCount={files.filter(isStaged).length}
                     agentLabel={`${AI_PROVIDER_LABEL[aiProvider]} · ${(aiModel || defaultAiModel(aiProvider)).replace(/^[^/]+\//, "")}`}
-                    summaryRef={summaryRef}
+                    messageRef={messageRef}
                     onCommit={doCommit}
                     onGenerate={generateCommitMessage}
                     onPickAgent={openAgentMenu}

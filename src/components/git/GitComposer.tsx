@@ -1,19 +1,8 @@
-import { useLayoutEffect, useRef, type KeyboardEvent, type RefObject } from "react";
+import { useLayoutEffect, type KeyboardEvent, type RefObject } from "react";
 import { PRIMARY_SHORTCUT } from "../../lib/platform";
 import { setGitDraft, useGitWorkbench } from "../../state/gitWorkbench";
 import { IconChevron, IconSparkle } from "../Icons";
 import { Tooltip } from "../Tooltip";
-
-/** The draft is one string; its first line is the summary and the rest, after a blank line, the description. */
-export function splitDraft(draft: string): { summary: string; description: string } {
-    const newline = draft.indexOf("\n");
-    if (newline === -1) return { summary: draft, description: "" };
-    return { summary: draft.slice(0, newline), description: draft.slice(newline + 1).replace(/^\n/, "") };
-}
-
-export function joinDraft(summary: string, description: string): string {
-    return description ? `${summary}\n\n${description}` : summary;
-}
 
 export function GitComposer({
     repo,
@@ -21,7 +10,7 @@ export function GitComposer({
     generating,
     stagedCount,
     agentLabel,
-    summaryRef,
+    messageRef,
     onCommit,
     onGenerate,
     onPickAgent,
@@ -31,26 +20,24 @@ export function GitComposer({
     generating: boolean;
     stagedCount: number;
     agentLabel: string;
-    summaryRef: RefObject<HTMLTextAreaElement | null>;
+    messageRef: RefObject<HTMLTextAreaElement | null>;
     onCommit: () => void;
     onGenerate: () => void;
     onPickAgent: (anchor: HTMLElement) => void;
 }) {
     const draft = useGitWorkbench((state) => state.drafts[repo] ?? "");
-    const { summary, description } = splitDraft(draft);
-    const descriptionRef = useRef<HTMLTextAreaElement>(null);
-    const canCommit = !busy && stagedCount > 0 && !!summary.trim();
+    const canCommit = !busy && stagedCount > 0 && !!draft.trim();
 
-    // A long summary wraps rather than scrolling out of sight, so the box grows with it.
+    // The box grows with the message, up to a limit, rather than scrolling it out of sight.
     useLayoutEffect(() => {
-        const el = summaryRef.current;
+        const el = messageRef.current;
         if (!el) return;
         const fit = () => {
             el.style.height = "auto";
             el.style.height = `${el.scrollHeight}px`;
         };
         fit();
-        // Widening the column can unwrap the summary, so its height follows the width too.
+        // Widening the column can unwrap the message, so its height follows the width too.
         let width = el.clientWidth;
         const observer = new ResizeObserver(() => {
             if (el.clientWidth === width) return;
@@ -59,7 +46,7 @@ export function GitComposer({
         });
         observer.observe(el);
         return () => observer.disconnect();
-    }, [summary, summaryRef]);
+    }, [draft, messageRef]);
     const commitLabel = stagedCount > 0 ? `Commit ${stagedCount} file${stagedCount === 1 ? "" : "s"}` : "Commit";
 
     const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -78,35 +65,15 @@ export function GitComposer({
         <div className="git-compose">
             <div className="git-compose-well">
                 <textarea
-                    ref={summaryRef}
-                    className="git-compose-summary"
-                    placeholder="Summary"
-                    aria-label="Commit summary"
-                    value={summary}
-                    rows={1}
-                    spellCheck={false}
-                    readOnly={busy}
-                    onChange={(event) => setGitDraft(repo, joinDraft(event.target.value.replace(/\n/g, " "), description))}
-                    onKeyDown={(event) => {
-                        if (event.key === "Enter" && !event.metaKey && !event.ctrlKey) {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            descriptionRef.current?.focus();
-                            return;
-                        }
-                        onKeyDown(event);
-                    }}
-                />
-                <textarea
-                    ref={descriptionRef}
-                    className="git-compose-description"
-                    placeholder="Description"
-                    aria-label="Commit description"
-                    value={description}
+                    ref={messageRef}
+                    className="git-compose-message"
+                    placeholder={`Message (${PRIMARY_SHORTCUT}⏎ to commit)`}
+                    aria-label="Commit message"
+                    value={draft}
                     rows={3}
                     spellCheck={false}
                     readOnly={busy}
-                    onChange={(event) => setGitDraft(repo, joinDraft(summary, event.target.value))}
+                    onChange={(event) => setGitDraft(repo, event.target.value)}
                     onKeyDown={onKeyDown}
                 />
                 <div className="git-compose-foot">
