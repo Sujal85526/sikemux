@@ -5,7 +5,7 @@ import { actionsApi, failureMessage, type Issue, type RepoRef } from "../api";
 import { githubIssueR, githubIssuesR } from "../resources";
 import { formatAgo } from "../runStatus";
 import { compose, setListState, showItem, updateView } from "../state";
-import { Comments, Labels, PageHead, StateMark, stateLabel } from "./Bits";
+import { Comments, Labels, PageHead, StateMark, stateLabel, Who } from "./Bits";
 import { CommentThread } from "./CommentThread";
 import { useBusy, useNow } from "./hooks";
 import { NewIssueForm } from "./NewIssueForm";
@@ -71,9 +71,8 @@ function IssueDetail({ repo, number, active, onBack }: { repo: RepoRef; number: 
                     data-state={found.state === "closed" && found.stateReason === "not_planned" ? "not_planned" : found.state}>
                     {stateLabel("issue", found.state, false, found.stateReason)}
                 </span>
-                <span>
-                    {found.author ?? "Someone"} opened this {formatAgo(found.createdAt, now)}
-                </span>
+                <Who login={found.author} avatarUrl={found.avatarUrl} />
+                <span>opened {formatAgo(found.createdAt, now)}</span>
                 {found.assignees.length > 0 && <span>→ {found.assignees.join(", ")}</span>}
                 <Labels labels={found.labels} />
             </PageHead>

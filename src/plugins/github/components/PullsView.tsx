@@ -9,7 +9,7 @@ import { needsPull } from "../compose";
 import { compose, openRunFrom, setListState, showItem } from "../state";
 import { CommentThread } from "./CommentThread";
 import { OutcomeIcon } from "./ActionsIcon";
-import { Branch, Comments, Labels, PageHead, StateMark, stateLabel, stateOf } from "./Bits";
+import { Branch, Comments, Labels, PageHead, StateMark, stateLabel, stateOf, Who } from "./Bits";
 import { useBusy, useNow } from "./hooks";
 import { NewPullForm } from "./NewPullForm";
 import { PullChecks } from "./PullChecks";
@@ -261,17 +261,18 @@ function PullDetail({ repo, number, active, login, onBack, onOpenRun }: DetailPr
                 <span className="gha-state-word" data-kind="pull" data-state={stateOf(found.state, found.draft)}>
                     {stateLabel("pull", found.state, found.draft)}
                 </span>
-                {found.head && found.base ? (
-                    <span className="gha-page-merge">
-                        {found.author ?? "Someone"} {merged ? "merged" : found.state === "open" ? "wants to merge" : "wanted to merge"}{" "}
-                        <Branch name={found.head} /> into <Branch name={found.base} />
+                <Who login={found.author} avatarUrl={found.avatarUrl} />
+                {found.head && found.base && (
+                    <span className="gha-page-branches" title={`${merged ? "Merged" : "Merging"} ${found.head} into ${found.base}`}>
+                        <Branch name={found.head} />
+                        <span className="gha-page-arrow">→</span>
+                        <Branch name={found.base} />
                     </span>
-                ) : (
-                    found.author && <span>{found.author}</span>
                 )}
                 {found.additions !== null && (
                     <span className="gha-diffstat">
-                        <span className="gha-add">+{found.additions}</span> <span className="gha-del">−{found.deletions ?? 0}</span>
+                        <span className="gha-add">+{found.additions.toLocaleString()}</span>{" "}
+                        <span className="gha-del">−{(found.deletions ?? 0).toLocaleString()}</span>
                     </span>
                 )}
                 <Labels labels={found.labels} />

@@ -1221,15 +1221,32 @@
     font-size: var(--text-xs);
     color: var(--text-tertiary);
 }
-.gha-page-merge {
+.gha-page-sub > :not(.gha-state-word) + :not(.gha-labels)::before {
+    content: "·";
+    margin-right: var(--space-2);
+    color: var(--text-disabled);
+}
+.gha-page-sub > * {
     display: inline-flex;
-    align-items: baseline;
-    flex-wrap: wrap;
-    gap: 0 var(--space-1);
+    align-items: center;
     min-width: 0;
 }
-.gha-page-merge .gha-branch > span {
-    font-size: var(--text-2xs);
+.gha-who {
+    gap: var(--space-1h);
+}
+.gha-who-name {
+    font-weight: var(--weight-medium);
+    color: var(--text-secondary);
+}
+.gha-page-branches {
+    gap: var(--space-1h);
+}
+.gha-page-sub .gha-branch > span {
+    font-family: inherit;
+    font-size: inherit;
+}
+.gha-page-arrow {
+    color: var(--text-disabled);
 }
 .gha-state-word {
     --state: var(--text-tertiary);
@@ -1253,6 +1270,8 @@
     --state: var(--danger);
 }
 .gha-diffstat {
+    display: inline-flex;
+    gap: var(--space-1);
     font-size: var(--text-2xs);
     font-variant-numeric: tabular-nums;
 }

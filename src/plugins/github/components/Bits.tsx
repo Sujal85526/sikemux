@@ -3,6 +3,7 @@ import { openUrl, swallow } from "../../../plugin-api/host";
 import { IconCheck, IconChevron, IconExternal, IconGit, IconMerge, IconPullRequest } from "../../../plugin-api/ui";
 import type { Label } from "../api";
 import { CommentIcon, NotPlannedIcon, SectionIcon } from "./ActionsIcon";
+import { Avatar } from "./Pictures";
 
 const HEX = /^[0-9a-f]{6}$/iu;
 
@@ -28,6 +29,15 @@ export function Branch({ name }: { name: string }) {
         <span className="gha-branch" title={name}>
             <IconGit size={11} />
             <span>{name}</span>
+        </span>
+    );
+}
+
+export function Who({ login, avatarUrl }: { login: string | null; avatarUrl: string | null }) {
+    return (
+        <span className="gha-who">
+            {avatarUrl ? <Avatar url={avatarUrl} /> : <span className="gha-avatar" aria-hidden="true" />}
+            <span className="gha-who-name">{login ?? "someone"}</span>
         </span>
     );
 }
