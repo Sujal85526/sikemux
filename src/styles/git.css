@@ -503,18 +503,59 @@
 .git-history-head {
     display: flex;
     align-items: center;
-    gap: var(--space-1h);
+    gap: var(--space-1);
     flex: 0 0 auto;
     height: 32px;
-    padding: 0 10px 0 12px;
+    padding-right: 6px;
+}
+.git-history-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1h);
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100%;
+    padding: 0 6px 0 12px;
     color: var(--text-tertiary);
     text-align: left;
 }
-.shell .git-history-head {
+.shell .git-history-toggle {
     border-radius: 0 !important;
 }
 .git-history-head:hover {
     background: var(--surface-hover);
+}
+/* The search opens inside the header row, on its right, so the list below keeps its height. */
+.git-history-search {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1h);
+    flex: 0 1 190px;
+    min-width: 110px;
+    height: 24px;
+    padding: 0 8px;
+    border: 1px solid var(--border-selected);
+    border-radius: var(--radius-2);
+    background: var(--s-sunken);
+    color: var(--text-tertiary);
+}
+.git-history-search input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--text-primary);
+    font-family: var(--ui);
+    font-size: var(--text-xs);
+}
+.shell .git-history-search input {
+    border-radius: 0 !important;
+}
+.git-history-search input::placeholder {
+    color: var(--text-tertiary);
 }
 .git-history-chev {
     display: flex;
@@ -534,7 +575,7 @@
     font-size: var(--text-xs);
     color: var(--text-tertiary);
 }
-.git-history-head kbd {
+.git-history-toggle kbd {
     margin-left: auto;
     flex: none;
     padding: 0 4px;
@@ -545,9 +586,6 @@
 }
 .git-history-latest + kbd {
     margin-left: 0;
-}
-.git-history .git-filter {
-    margin-top: 0;
 }
 .git-left-foot {
     flex: 0 0 auto;

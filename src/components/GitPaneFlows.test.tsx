@@ -57,11 +57,15 @@ it("switches between Changes and Branches, with History folded under the changes
 
     const history = screen.getByRole("button", { name: /History/ });
     expect(history).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByPlaceholderText("Filter commits")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Search commits" })).not.toBeInTheDocument();
 
     await user.click(history);
     expect(getState().gitViews["git-test"]).toMatchObject({ historyOpen: true, panel: "commits" });
-    expect(screen.getByPlaceholderText("Filter commits")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Search commits" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Search commits" }));
+    expect(screen.getByRole("textbox", { name: "Search commits" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("textbox", { name: "Search commits" })).not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /Changes/ })).toHaveAttribute("aria-selected", "true");
 
     await user.click(screen.getByRole("button", { name: /History/ }));

@@ -168,6 +168,7 @@ function GitWorkbench({
     const [menu, setMenu] = useState<{ x: number; y: number; items: CtxItem[]; alignRight: boolean } | null>(null);
     const [queries, setQueries] = useState<Record<GitPanel, string>>({ files: "", commits: "", branches: "" });
     const [fileFilterOpen, setFileFilterOpen] = useState(false);
+    const [commitSearchOpen, setCommitSearchOpen] = useState(false);
     const filterInputs = useRef<Record<GitPanel, HTMLInputElement | null>>({ files: null, commits: null, branches: null });
     const [rangeAnchor, setRangeAnchor] = useState<number | null>(null);
 
@@ -184,6 +185,10 @@ function GitWorkbench({
     useEffect(() => {
         if (fileFilterOpen) filterInputs.current.files?.focus();
     }, [fileFilterOpen]);
+
+    useEffect(() => {
+        if (commitSearchOpen) filterInputs.current.commits?.focus();
+    }, [commitSearchOpen]);
 
     const filteredFiles = useMemo(() => filterByQuery(files, queries.files, (f) => [f.path]), [files, queries.files]);
     const filteredCommits = useMemo(() => filterByQuery(commits, queries.commits, (c) => [c.subject, c.hash, c.author]), [commits, queries.commits]);
@@ -815,6 +820,7 @@ function GitWorkbench({
 
     const focusFilter = () => {
         if (panel === "files") setFileFilterOpen(true);
+        else if (panel === "commits") setCommitSearchOpen(true);
         else filterInputs.current[panel]?.focus();
     };
 
@@ -1327,6 +1333,7 @@ function GitWorkbench({
                     if (event.key === "Escape" || event.key === "Enter") {
                         if (event.key === "Escape") setQueries((q) => ({ ...q, [p]: "" }));
                         if (p === "files") setFileFilterOpen(false);
+                        if (p === "commits") setCommitSearchOpen(false);
                         paneRootRef.current?.querySelector<HTMLElement>(".git-list .git-row.sel, .git-list .gg-row.sel, .git-list .git-row")?.focus();
                     }
                 }}
@@ -1371,22 +1378,75 @@ function GitWorkbench({
                     />
                 </div>
                 <div className={`git-history${historyOpen ? " open" : ""}`}>
-                    <button
-                        type="button"
-                        className="git-history-head"
-                        aria-expanded={historyOpen}
-                        onClick={() => (historyOpen ? setHistoryOpen(false) : cmd.setGitView(paneId, { historyOpen: true, panel: "commits" }))}>
-                        <span className="git-history-chev">
-                            <IconChevron size={10} />
-                        </span>
-                        <span className="git-label">History</span>
-                        {commits.length > 0 && <span className="git-count">{commits.length}</span>}
-                        {!historyOpen && latest && <span className="git-history-latest">{latest.subject}</span>}
-                        <kbd>h</kbd>
-                    </button>
+                    <div className="git-history-head">
+                        <button
+                            type="button"
+                            className="git-history-toggle"
+                            aria-expanded={historyOpen}
+                            onClick={() => {
+                                if (historyOpen) {
+                                    setCommitSearchOpen(false);
+                                    setHistoryOpen(false);
+                                } else cmd.setGitView(paneId, { historyOpen: true, panel: "commits" });
+                            }}>
+                            <span className="git-history-chev">
+                                <IconChevron size={10} />
+                            </span>
+                            <span className="git-label">History</span>
+                            {commits.length > 0 && <span className="git-count">{commits.length}</span>}
+                            {!historyOpen && latest && <span className="git-history-latest">{latest.subject}</span>}
+                            {!historyOpen && <kbd>h</kbd>}
+                        </button>
+                        {historyOpen &&
+                            (commitSearchOpen || queries.commits ? (
+                                <label className="git-history-search">
+                                    <IconSearch size={11} />
+                                    <input
+                                        ref={(input) => {
+                                            filterInputs.current.commits = input;
+                                        }}
+                                        value={queries.commits}
+                                        placeholder="Search commits"
+                                        aria-label="Search commits"
+                                        spellCheck={false}
+                                        autoCapitalize="off"
+                                        autoCorrect="off"
+                                        onChange={(event) => {
+                                            const value = event.target.value;
+                                            setQueries((q) => ({ ...q, commits: value }));
+                                            setSel("commits", 0);
+                                        }}
+                                        onBlur={() => {
+                                            if (!queries.commits) setCommitSearchOpen(false);
+                                        }}
+                                        onKeyDown={(event) => {
+                                            event.stopPropagation();
+                                            if (event.key !== "Escape" && event.key !== "Enter") return;
+                                            if (event.key === "Escape") setQueries((q) => ({ ...q, commits: "" }));
+                                            setCommitSearchOpen(false);
+                                            paneRootRef.current
+                                                ?.querySelector<HTMLElement>(".git-history .gg-row.sel, .git-history .gg-row")
+                                                ?.focus();
+                                        }}
+                                    />
+                                </label>
+                            ) : (
+                                <Tooltip label="Search commits (/)">
+                                    <button
+                                        type="button"
+                                        className="git-row-act"
+                                        aria-label="Search commits"
+                                        onClick={() => {
+                                            cmd.setGitView(paneId, { panel: "commits" });
+                                            setCommitSearchOpen(true);
+                                        }}>
+                                        <IconSearch size={12} />
+                                    </button>
+                                </Tooltip>
+                            ))}
+                    </div>
                     {historyOpen && (
                         <>
-                            {filterInput("commits", "Filter commits")}
                             <div className="git-list">
                                 {filteredCommits.length === 0 ? (
                                     (loadingOrError(8, "Loading commits") ?? (
