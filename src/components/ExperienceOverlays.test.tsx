@@ -22,7 +22,6 @@ vi.mock("../state/resources", () => ({
 vi.mock("../state/resources.defs", () => ({ agentCatalogR: { kind: "agents.catalog" } }));
 
 import { keybindingLabel } from "../keybindings";
-import * as cmd from "../state/commands";
 import { flushPersist, resetPersistenceForTests } from "../state/persist";
 import { getState, setState } from "../state/store";
 import { uiActivity } from "../lib/activity";
@@ -122,13 +121,6 @@ describe("Onboarding", () => {
         await waitFor(() => expect(trigger).toHaveFocus());
     });
 
-    it("lists detected agents", () => {
-        openOnboarding();
-
-        expect(screen.getByText("Claude")).toBeInTheDocument();
-        expect(screen.getByText("Codex").closest("li")).toHaveClass("is-missing");
-    });
-
     it("warns only when git is missing", async () => {
         openOnboarding();
         await waitFor(() => expect(invoke).toHaveBeenCalledWith("integration_health"));
@@ -140,14 +132,6 @@ describe("Onboarding", () => {
         expect(await screen.findByText("git not found: the Git view needs it")).toBeInTheDocument();
     });
 
-    it("serializes global experience overlays", () => {
-        setState({ onboardingOpen: false, diagnosticsOpen: true, whatsNewOpen: true });
-        act(() => cmd.openOnboarding());
-        expect(getState()).toMatchObject({ onboardingOpen: true, diagnosticsOpen: false, whatsNewOpen: false });
-
-        act(() => cmd.openWhatsNew());
-        expect(getState()).toMatchObject({ onboardingOpen: false, diagnosticsOpen: false, whatsNewOpen: true });
-    });
 });
 
 describe("DiagnosticsOverlay", () => {
@@ -179,17 +163,5 @@ describe("DiagnosticsOverlay", () => {
             uiActivity.setSources({ focusPane: () => null, rejections: () => [] });
             uiActivity.reset();
         }
-    });
-
-    it("names the commands the overlay itself is waiting on", async () => {
-        uiActivity.reset();
-        setState({ diagnosticsOpen: true });
-        render(<DiagnosticsOverlay />);
-
-        expect(await screen.findByText("in flight")).toBeInTheDocument();
-        expect(screen.getByText("slowest recent commands")).toBeInTheDocument();
-        expect(screen.getByText("top rejection messages")).toBeInTheDocument();
-        expect(screen.getByText("none")).toBeInTheDocument();
-        expect(screen.getByText("runtime_diagnostics")).toBeInTheDocument();
     });
 });

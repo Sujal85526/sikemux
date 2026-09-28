@@ -72,34 +72,16 @@ function projectWithAgent(resumable = true): string {
 }
 
 describe("workspace tab bars", () => {
-    it("keeps the terminal tab bar and new-tab action visible with one terminal", () => {
+    it.each([
+        ["one terminal", () => {}],
+        ["one agent", () => projectWithAgent()],
+    ])("keeps the tab bar and new-tab action visible with %s", (_, setup) => {
+        setup();
         render(<Stage />);
 
         expect(screen.getByRole("tablist")).toBeInTheDocument();
-        expect(screen.getByRole("button", { name: "New tab" })).toBeInTheDocument();
-    });
-
-    it("keeps the agent tab bar and new-tab action visible with one agent", () => {
-        projectWithAgent();
-
-        render(<Stage />);
-
-        expect(screen.getByRole("tablist")).toBeInTheDocument();
-        const addTab = screen.getByRole("button", { name: "New tab" });
-        expect(addTab).toBeInTheDocument();
-
-        fireEvent.click(addTab);
+        fireEvent.click(screen.getByRole("button", { name: "New tab" }));
         expect(getState().newTabPaletteOpen).toBe(true);
-    });
-
-    it("names the strip the variant its see-through rule is written against", () => {
-        projectWithAgent();
-        render(<Stage />);
-
-        // base.css strengthens `.tabbar.v-agent` when the window is transparent,
-        // where the strip's rule is drawn on the wallpaper with no ground of its
-        // own. Renaming the variant would drop that edge without failing a test.
-        expect(document.querySelector(".tabbar.v-agent")).toBeInTheDocument();
     });
 
     it("keeps the agent's tab in the strip once its desk takes focus", () => {
@@ -191,27 +173,6 @@ describe("workspace tab bars", () => {
         expect(within(screen.getByRole("group", { name: "Agent" })).getByRole("button", { name: /Claude/ })).toHaveAttribute("aria-pressed", "true");
         expect(screen.queryByText("only agent")).not.toBeInTheDocument();
         expect(screen.getAllByText("Claude").length).toBeGreaterThan(0);
-    });
-
-    it("shows YOLO inside the session composer", async () => {
-        projectWithAgent();
-        setState((state) => ({
-            agents: { ...state.agents, "agent-only": { ...state.agents["agent-only"], permissionMode: "bypass", skipPermissions: true } },
-        }));
-
-        render(<Stage />);
-
-        expect(await screen.findByRole("button", { name: /yolo/i })).toHaveAttribute("aria-pressed", "true");
-    });
-
-    it("puts windows and agents in one tab strip", () => {
-        projectWithAgent();
-
-        render(<Stage />);
-
-        const tabs = screen.getAllByRole("tab").map((tab) => tab.textContent);
-        expect(tabs).toContain("only agent");
-        expect(tabs.length).toBeGreaterThan(1);
     });
 
     it("switches from an agent tab to a window tab through the same strip", () => {

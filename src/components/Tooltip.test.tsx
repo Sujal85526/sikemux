@@ -14,10 +14,24 @@ describe("Tooltip", () => {
 
         const trigger = screen.getByRole("button", { name: "rail" });
         fireEvent.focus(trigger);
-        expect(await screen.findByRole("tooltip")).toHaveTextContent("Toggle sessions rail");
+        const tooltip = await screen.findByRole("tooltip");
+        expect(tooltip).toHaveTextContent("Toggle sessions rail");
+        expect(trigger).toHaveAttribute("aria-describedby", tooltip.id);
 
         fireEvent.blur(trigger);
         await waitFor(() => expect(screen.queryByRole("tooltip")).not.toBeInTheDocument());
+    });
+
+    it("closes on Escape", async () => {
+        render(
+            <Tooltip label="Full path">
+                <button type="button">File</button>
+            </Tooltip>,
+        );
+        fireEvent.focus(screen.getByRole("button"));
+        await screen.findByRole("tooltip");
+        fireEvent.keyDown(window, { key: "Escape" });
+        expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
     });
 
     it("waits before opening on hover so a passing cursor does not flash it", async () => {

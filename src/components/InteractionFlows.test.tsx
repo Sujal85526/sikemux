@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useRef, useState } from "react";
@@ -9,7 +9,6 @@ import { Dropdown } from "./Dropdown";
 import { DialogHost } from "./DialogHost";
 import { confirmDialog, resetDialogsForTests } from "../state/dialog";
 import { TabBar } from "./TabBar";
-import { Tooltip } from "./Tooltip";
 
 afterEach(() => {
     resetDialogsForTests();
@@ -75,17 +74,6 @@ describe("shared keyboard journeys", () => {
         expect(screen.getAllByRole("tab").filter((tab) => tab.tabIndex === 0)).toHaveLength(1);
         await user.keyboard("{End}");
         expect(screen.getByRole("tab", { name: "c" })).toHaveFocus();
-    });
-    it("associates focused tooltips and dismisses them on Escape", async () => {
-        render(
-            <Tooltip label="Full path">
-                <button>File</button>
-            </Tooltip>,
-        );
-        fireEvent.focus(screen.getByRole("button"));
-        expect(screen.getByRole("button")).toHaveAttribute("aria-describedby", screen.getByRole("tooltip").id);
-        fireEvent.keyDown(window, { key: "Escape" });
-        expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
     });
     it("keeps a portaled dropdown inside a modal focus scope", async () => {
         function Modal() {

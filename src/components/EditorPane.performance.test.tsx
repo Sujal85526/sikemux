@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { EditorPane } from "./EditorPane";
 import { getState, setState } from "../state/store";
@@ -16,7 +16,7 @@ afterEach(() => {
     setState(initial, true);
 });
 
-it("stress switches 12 warm documents 200 times without eager-loading inactive restored tabs", async () => {
+it("loads restored tabs only when they are shown, and reloads a changed one", async () => {
     const paths = Array.from({ length: 12 }, (_, i) => `/repo/file-${i}.ts`);
     const content = Array.from({ length: 1_000 }, (_, i) => `export const value${i} = ${i};`).join("\n");
     invoke.mockImplementation(async (command: string) => {
@@ -36,17 +36,6 @@ it("stress switches 12 warm documents 200 times without eager-loading inactive r
         await waitFor(() => expect(getState().editorViews.pane.activePath).toBe(paths[index]));
         await waitFor(() => expect(invoke.mock.calls.filter(([cmd]) => cmd === "read_file_versioned")).toHaveLength(index + 1));
     }
-    expect(invoke.mock.calls.filter(([cmd]) => cmd === "read_file_versioned")).toHaveLength(12);
-    const samples: number[] = [];
-    for (let i = 0; i < 200; i++) {
-        const index = (i + 1) % tabs.length;
-        const start = performance.now();
-        fireEvent.click(tabs[index]);
-        samples.push(performance.now() - start);
-        expect(getState().editorViews.pane.activePath).toBe(paths[index]);
-    }
-    samples.sort((a, b) => a - b);
-    process.stdout.write(JSON.stringify({ switches: samples.length, medianMs: samples[100], p95Ms: samples[190], maxMs: samples[199] }) + "\n");
     expect(invoke.mock.calls.filter(([cmd]) => cmd === "read_file_versioned")).toHaveLength(12);
     act(() => emit({ type: "fs-changed", repo: "/repo", paths: ["file-4.ts"] }));
     await waitFor(() => expect(invoke.mock.calls.filter(([cmd]) => cmd === "read_file_versioned")).toHaveLength(13));

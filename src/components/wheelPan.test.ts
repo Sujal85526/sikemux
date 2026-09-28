@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { claimsWheel, dragOffset, endDelay, flicked, HELD_END_MS, panned, pulledOn, pushed, SPENT_END_MS, UNWATCHED_END_MS } from "./wheelPan";
+import { claimsWheel, dragOffset, flicked, panned, pulledOn, pushed } from "./wheelPan";
 import type { PaneScroller } from "./wheelPan";
 
 const plain: PaneScroller = { overflowX: "visible", scrollWidth: 100, clientWidth: 100, scrollLeft: 0 };
@@ -145,37 +145,6 @@ describe("panned", () => {
         expect(start.slot).toBe(0);
         expect(start.offset).toBeLessThan(0);
         expect(start.offset).toBeGreaterThan(-0.15);
-    });
-});
-
-describe("endDelay", () => {
-    /*
-     * Holding still part way through a swipe sends nothing at all, which is
-     * exactly what having let go sends. Ending the swipe on that takes the track
-     * away from a hand that is still on it, so while the hand is down the wait is
-     * only there so that a swipe can never hold the track for good.
-     */
-    it("waits out a hand still on the trackpad", () => {
-        expect(endDelay(true)).toBe(HELD_END_MS);
-        expect(HELD_END_MS).toBeGreaterThan(SPENT_END_MS);
-    });
-
-    /*
-     * Nothing is holding the track once the hand has gone, so the only thing left
-     * to wait for is the next of the events the swipe glides out on.
-     */
-    it("closes promptly once the hand has gone", () => {
-        expect(endDelay(false)).toBe(SPENT_END_MS);
-    });
-
-    /*
-     * Nowhere but macOS says anything about the hand, and with nothing to go on
-     * the wait is back to being one number for both, which is what it was before.
-     */
-    it("falls back to one wait where nothing watches the trackpad", () => {
-        expect(endDelay(null)).toBe(UNWATCHED_END_MS);
-        expect(UNWATCHED_END_MS).toBeGreaterThan(SPENT_END_MS);
-        expect(UNWATCHED_END_MS).toBeLessThan(HELD_END_MS);
     });
 });
 

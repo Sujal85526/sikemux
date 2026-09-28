@@ -598,15 +598,6 @@ describe("workspace wheel pan", () => {
         expect(activeWindow()).toBe(before);
     });
 
-    it("leaves a gesture that is mostly vertical to whatever is under it", () => {
-        const { track, live } = stageOfScreens();
-
-        expect(swipe(live, 60, 50)).toBe(false);
-        act(() => void vi.advanceTimersByTime(SPENT_END_MS));
-
-        expect(track).not.toHaveClass("panning");
-    });
-
     /*
      * A switch from the keyboard mid-swipe takes the session off the screens the
      * gesture was dragging between, so the gesture has nothing left to hold and

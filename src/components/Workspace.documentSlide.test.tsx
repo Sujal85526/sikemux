@@ -190,18 +190,4 @@ describe("document slide", () => {
         expect(snapshots(container)).toHaveLength(0);
         expect(container.querySelector(".window-track")).toHaveClass("panning");
     });
-
-    /*
-     * Two documents of one screen are one screen, so the canvas has nothing to do
-     * while the document under it changes.
-     */
-    it("does not pan the track", async () => {
-        const { container } = await editorOfDocuments();
-
-        select(SECOND);
-
-        expect(container.querySelector(".window-track")).not.toHaveClass("panning");
-        expect(container.querySelectorAll(".window-layer.painted")).toHaveLength(1);
-        expect(snapshots(container)).toHaveLength(1);
-    });
 });

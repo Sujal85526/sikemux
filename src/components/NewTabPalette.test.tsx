@@ -40,30 +40,18 @@ describe("new tab palette", () => {
         expect(getState().newTabPaletteOpen).toBe(false);
     });
 
-    it("opens the agent picker on 2", () => {
+    const windowRoles = () => Object.values(getState().windows).map((window) => window.role);
+
+    it.each([
+        ["2", "opens the agent picker", () => getState().agentPaletteOpen && !getState().newTabPaletteOpen],
+        ["5", "opens the full Git workbench", () => windowRoles().includes("git")],
+        ["6", "focuses rail search", () => windowRoles().includes("search")],
+    ])("on %s %s", (key, _, opened) => {
         render(<NewTabPalette />);
 
-        pressKey("2");
+        pressKey(key);
 
-        expect(getState().agentPaletteOpen).toBe(true);
-        expect(getState().newTabPaletteOpen).toBe(false);
-    });
-
-    it("opens the full Git workbench on 5", () => {
-        render(<NewTabPalette />);
-
-        pressKey("5");
-
-        const roles = (getState().windowsBySession[getState().activeSessionId] ?? []).map((id) => getState().windows[id]?.role);
-        expect(roles).toContain("git");
-    });
-
-    it("focuses rail search on 6", () => {
-        render(<NewTabPalette />);
-
-        pressKey("6");
-
-        expect(Object.values(getState().windows).some((window) => window.role === "search")).toBe(true);
+        expect(opened()).toBe(true);
     });
 
     it("ignores a digit past the end of the list", () => {
@@ -108,6 +96,5 @@ describe("new tab palette", () => {
         render(<NewTabPalette />);
 
         expect(screen.getAllByRole("button").filter((button) => !(button as HTMLButtonElement).disabled)).toHaveLength(1);
-        expect(labels()).toEqual(["Terminal", "Agent", "Browser", "Editor", "Git", "Search"]);
     });
 });

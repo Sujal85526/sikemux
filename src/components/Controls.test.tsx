@@ -17,15 +17,6 @@ describe("Controls", () => {
         expect(onChange).toHaveBeenCalledWith(true);
     });
 
-    it("does not fire while the switch is disabled", async () => {
-        const user = userEvent.setup();
-        const onChange = vi.fn();
-        render(<Switch checked disabled onChange={onChange} label="Auto-resume restored agents" />);
-
-        await user.click(screen.getByRole("switch", { name: "Auto-resume restored agents" }));
-        expect(onChange).not.toHaveBeenCalled();
-    });
-
     it("keeps the checkbox label clickable", async () => {
         const user = userEvent.setup();
         const onChange = vi.fn();

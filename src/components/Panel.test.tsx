@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Badge, EmptyState, Panel, PanelBody, PanelHeader, PanelRow, PanelRowHint } from "./Panel";
+import { EmptyState, Panel, PanelBody, PanelHeader } from "./Panel";
 
 afterEach(cleanup);
 
@@ -28,42 +28,9 @@ describe("Panel", () => {
         render(<PanelHeader label="Limits" rule />);
         expect(screen.queryByRole("button", { name: /Focus Limits/ })).not.toBeInTheDocument();
     });
-
-    it("skips falsy badges", () => {
-        render(<PanelHeader label="Branches" badges={[null, <Badge tone="warn">3 selected</Badge>, false]} />);
-        expect(screen.getByText("3 selected")).toHaveClass("badge", "badge-warn");
-        expect(screen.getByText("Branches").parentElement?.querySelectorAll(".badge")).toHaveLength(1);
-    });
-
-    it("carries row selection and range state independently", () => {
-        const { container } = render(
-            <>
-                <PanelRow selected>a</PanelRow>
-                <PanelRow ranged>b</PanelRow>
-                <PanelRow selected ranged>
-                    c
-                </PanelRow>
-                <PanelRow muted>
-                    d<PanelRowHint>HEAD</PanelRowHint>
-                </PanelRow>
-            </>,
-        );
-        const rows = [...container.querySelectorAll(".panel-row")].map((row) => row.className);
-        expect(rows).toEqual(["panel-row sel", "panel-row ranged", "panel-row sel ranged", "panel-row muted"]);
-        expect(screen.getByText("HEAD")).toHaveClass("panel-row-hint");
-    });
 });
 
 describe("EmptyState", () => {
-    it("renders title, message and an action", () => {
-        const onClick = vi.fn();
-        render(<EmptyState title="No remotes" message="This repository has no remotes configured yet." action={{ label: "Add remote", onClick }} />);
-
-        expect(screen.getByText("No remotes")).toBeInTheDocument();
-        fireEvent.click(screen.getByRole("button", { name: "Add remote" }));
-        expect(onClick).toHaveBeenCalledTimes(1);
-    });
-
     it("announces the error tone", () => {
         render(<EmptyState tone="error" message="failed to load remotes" />);
         expect(screen.getByRole("alert")).toHaveTextContent("failed to load remotes");

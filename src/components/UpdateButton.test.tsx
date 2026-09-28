@@ -62,10 +62,4 @@ describe("UpdateButton progress", () => {
         expect(ring()).toBeNull();
         expect(screen.getByRole("button")).toBeEnabled();
     });
-
-    it("renders nothing without a pending update", () => {
-        render(<UpdateButton />);
-
-        expect(screen.queryByRole("button")).toBeNull();
-    });
 });

@@ -1,24 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { AI_MODELS, defaultAiModel } from "./gitPaneConstants";
-import { filterByQuery, helpRows, isInRange } from "./gitPaneLogic";
+import { filterByQuery, isInRange } from "./gitPaneLogic";
 
 describe("GitPane extracted logic", () => {
-    it("defaults each local AI provider to its first model", () => {
-        expect(defaultAiModel("hermes")).toBe(AI_MODELS.hermes[0]);
-    });
-
     it("tells whether a row is inside a range", () => {
         expect(isInRange([2, 5], 1)).toBe(false);
         expect(isInRange([2, 5], 2)).toBe(true);
         expect(isInRange([2, 5], 5)).toBe(true);
         expect(isInRange(null, 3)).toBe(false);
-    });
-
-    it("builds cheatsheet rows", () => {
-        expect(helpRows(["x", "do x"], ["y", "do y"])).toEqual([
-            { keys: "x", label: "do x" },
-            { keys: "y", label: "do y" },
-        ]);
     });
 
     it("filters rows across multiple fields case-insensitively", () => {

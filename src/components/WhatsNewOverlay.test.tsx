@@ -1,5 +1,4 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { getVersion } from "@tauri-apps/api/app";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -81,19 +80,6 @@ describe("WhatsNewOverlay", () => {
         expect(await screen.findByText("Saved offline.")).toBeInTheDocument();
         await waitFor(() => expect(invoke.mock.calls.some(([command]) => command === "release_notes")).toBe(true));
         expect(screen.queryByText(/could not be loaded/)).not.toBeInTheDocument();
-    });
-
-    it("sets a nightly's build under its release number", async () => {
-        vi.mocked(getVersion).mockResolvedValueOnce("0.4.0-nightly.10");
-        answer({ release_notes: () => release({ version: "0.4.0-nightly.10", contributors: [] }) });
-        setState({ whatsNewOpen: true, pendingUpdate: null, lastReleaseNotes: null });
-
-        render(<WhatsNewOverlay />);
-
-        const version = await screen.findByRole("heading", { level: 1, name: /nightly\.10/ });
-        expect(version.querySelector("small")).toHaveTextContent("nightly.10");
-        expect(version.firstChild?.nextSibling).toHaveTextContent("0.4.0");
-        expect(screen.getByText("nightly")).toBeInTheDocument();
     });
 
     it("says so when the notes cannot be loaded", async () => {

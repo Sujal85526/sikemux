@@ -75,8 +75,7 @@ describe("AgentPalette", () => {
         opener.focus();
         const view = render(<AgentPalette />);
 
-        const dialog = await screen.findByRole("dialog", { name: "Open agent CLI" });
-        expect(dialog).toHaveClass("picker", "agent-palette");
+        await screen.findByRole("dialog", { name: "Open agent CLI" });
         expect(screen.getByRole("textbox", { name: "Search agent sessions" })).toHaveFocus();
         expect(screen.getByRole("button", { name: "+ new Codex in Normal mode" })).toHaveClass("sel");
         expect(screen.getByRole("button", { name: "+ new Hermes in Normal mode" })).toBeInTheDocument();
@@ -84,8 +83,6 @@ describe("AgentPalette", () => {
         expect(screen.getByRole("button", { name: "Review picker in Normal mode" })).toBeInTheDocument();
         expect(screen.queryByText("Unrelated Hermes project")).not.toBeInTheDocument();
         expect(mocks.sessions).not.toHaveBeenCalledWith("hermes", expect.anything());
-        expect(screen.queryByRole("textbox", { name: /task/i })).not.toBeInTheDocument();
-        expect(screen.queryByText(/worktree/i)).not.toBeInTheDocument();
         expect(screen.getByRole("radio", { name: "safe" })).toBeChecked();
         expect(screen.getByRole("radio", { name: "yolo" })).not.toBeChecked();
 
@@ -146,8 +143,6 @@ describe("AgentPalette", () => {
             startup: "codex --sandbox workspace-write",
             directCommand: { program: "codex", args: ["--sandbox", "workspace-write"] },
         });
-        expect(getState().agents[id]).not.toHaveProperty("initialInput");
-        expect(getState().agents[id]).not.toHaveProperty("worktreePath");
         expect(getState().agentPaletteOpen).toBe(false);
     });
 

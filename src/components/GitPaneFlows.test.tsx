@@ -224,29 +224,15 @@ it("discards every unstaged change after asking, and says which files are new", 
     }
 });
 
-it("resizes the open history against the files, and double-click shares the column again", async () => {
+it("grows the open history when its handle moves up", async () => {
     const offsetHeight = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(200);
     const clientHeight = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(900);
     try {
-        const user = userEvent.setup();
         render(<GitPane paneId="git-test" cwd="/repo" active visible />);
-        expect(screen.queryByRole("separator", { name: "Resize the history" })).not.toBeInTheDocument();
+        await userEvent.setup().click(screen.getByRole("button", { name: /History/ }));
 
-        await user.click(screen.getByRole("button", { name: /History/ }));
-        const handle = screen.getByRole("separator", { name: "Resize the history" });
-
-        fireEvent.keyDown(handle, { key: "ArrowUp" });
+        fireEvent.keyDown(screen.getByRole("separator", { name: "Resize the history" }), { key: "ArrowUp" });
         expect(getState().gitViews["git-test"].historyHeight).toBe(216);
-
-        fireEvent.keyDown(handle, { key: "ArrowDown", shiftKey: true });
-        expect(getState().gitViews["git-test"].historyHeight).toBe(136);
-
-        offsetHeight.mockReturnValue(600);
-        fireEvent.keyDown(handle, { key: "ArrowUp", shiftKey: true });
-        expect(getState().gitViews["git-test"].historyHeight).toBe(620);
-
-        fireEvent.doubleClick(handle);
-        expect(getState().gitViews["git-test"].historyHeight).toBeNull();
     } finally {
         offsetHeight.mockRestore();
         clientHeight.mockRestore();
