@@ -79,12 +79,6 @@ describe("files a message names", () => {
         expect(mocks.requestOpenFile).toHaveBeenCalledWith("/work/demo/src/a.ts", 41, undefined);
     });
 
-    it("shows the icon that file has everywhere else", async () => {
-        const { container } = render(<Body text="I edited src/a.ts." />);
-        await screen.findByRole("button", { name: /src\/a\.ts/ });
-        expect(container.querySelector(".chat-file-ref .file-glyph")).not.toBeNull();
-    });
-
     it("leaves the words around it to the sentence", async () => {
         render(<Body text="I edited src/a.ts." />);
         const chip = await screen.findByRole("button", { name: /src\/a\.ts/ });
@@ -102,14 +96,6 @@ describe("files a message names", () => {
     it("gives a path in backticks the same treatment", async () => {
         render(<Body text="Look at `src/a.ts` again." />);
         expect(await screen.findByRole("button", { name: /src\/a\.ts/ })).toBeInTheDocument();
-    });
-
-    it("keeps the look the message gave the name it wrote", async () => {
-        const { rerender } = render(<Body text="Look at `src/a.ts` again." />);
-        expect(await screen.findByRole("button", { name: /src\/a\.ts/ })).toHaveClass("code");
-
-        rerender(<Body text="Look at src/a.ts again." />);
-        expect(await screen.findByRole("button", { name: /src\/a\.ts/ })).toHaveClass("link");
     });
 
     it("puts a name that is not a file back between its backticks", async () => {

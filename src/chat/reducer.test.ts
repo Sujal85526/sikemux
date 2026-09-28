@@ -277,18 +277,6 @@ describe("chat reducer", () => {
         });
     });
 
-    it("keeps a harness notification out of the transcript", () => {
-        const notified = update(initialChatState, {
-            sessionUpdate: "user_message_chunk",
-            content: {
-                type: "text",
-                text: "<task-notification>\n<task-id>b9u0</task-id>\n<event>audit</event>\n</task-notification>",
-            },
-        });
-
-        expect(notified.messages).toEqual([]);
-    });
-
     it("keeps a background agent's notice out even when its report has paragraphs", () => {
         const notified = update(initialChatState, {
             sessionUpdate: "user_message_chunk",

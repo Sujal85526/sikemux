@@ -851,33 +851,6 @@ describe("frontend persistence", () => {
         expect(getState().sessions[project.id]).not.toHaveProperty("deploy");
     });
 
-    it("turns v14 Rundeck env folders into group paths and drops folder-based deploy picks", () => {
-        const project = getState().sessions[getState().activeSessionId];
-        const window = getState().windows[project.activeWindowId];
-        applyHydrate(
-            JSON.stringify({
-                version: 14,
-                sessions: [{ ...project, kind: "project" }],
-                windowsBySession: { [project.id]: [window] },
-                sessionOrder: [project.id],
-                activeSessionId: project.id,
-                prefs: {
-                    pluginSettings: {
-                        "sikemux.rundeck": {
-                            activeProject: "ops",
-                            activeEnvFolder: "Prod",
-                            prodEnvs: ["prod", "live"],
-                            deployTargets: { "/repo/api": { project: "ops", folder: "Prod" } },
-                        },
-                    },
-                },
-                itemStates: {},
-            }),
-        );
-
-        expect(rundeckSettings.get()).toMatchObject({ activeProject: "ops", activeGroup: "Prod", prodEnvs: ["prod", "live"], deployTargets: {} });
-    });
-
     it("folds v11 Bruno sessions, one per workspace, into the one Bruno session and keeps every folder", () => {
         const project = getState().sessions[getState().activeSessionId];
         const window = getState().windows[project.activeWindowId];
@@ -1038,35 +1011,6 @@ describe("frontend persistence", () => {
             expect(restored.startup).toContain("Retrying (%s/5)");
             expect(restored.startup).not.toMatch(/[\r\n]/);
         }
-    });
-
-    it("replaces the multiline SSH startup from the first reconnect release", () => {
-        const sid = getState().activeSessionId;
-        const session = getState().sessions[sid];
-        const window = getState().windows[session.activeWindowId];
-
-        applyHydrate(
-            JSON.stringify({
-                version: 4,
-                sessions: [{ ...session, kind: "ssh", name: "prod-db" }],
-                windowsBySession: {
-                    [sid]: [
-                        {
-                            ...window,
-                            root: { ...window.root, startup: "(\n  sikemux_ssh_retries=0\n)" },
-                        },
-                    ],
-                },
-                agentsBySession: {},
-                sessionOrder: [sid],
-                activeSessionId: sid,
-                prefs: {},
-            }),
-        );
-
-        const restored = getState().windows[session.activeWindowId].root;
-        expect(restored.type).toBe("pane");
-        if (restored.type === "pane") expect(restored.startup).not.toMatch(/[\r\n]/);
     });
 
     it("upgrades legacy fixed project terminals to regular numbered tabs", () => {

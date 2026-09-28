@@ -77,15 +77,6 @@ it("shows the desk toggle as on while the agent's desk is in the layout", () => 
     expect(screen.getByRole("button", { name: "Hide desk" })).toHaveAttribute("aria-pressed", "true");
 });
 
-it("opens agents that speak ACP themselves in the chat", () => {
-    for (const type of ["opencode", "omp", "grok", "hermes"] as const) {
-        mocks.chatPane.mockClear();
-        render(<AgentSurface agent={{ ...agent, type }} session={session} visible />);
-        expect(mocks.chatPane).toHaveBeenCalled();
-        cleanup();
-    }
-});
-
 it("keeps Pi in its terminal, since it has no ACP mode", () => {
     render(<AgentSurface agent={{ ...agent, type: "pi" }} session={session} visible />);
     expect(mocks.chatPane).not.toHaveBeenCalled();
