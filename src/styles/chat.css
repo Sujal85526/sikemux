@@ -1618,7 +1618,7 @@ button.chat-tool:hover > .chat-tool-line::after,
 
 .chat-welcome-mark {
     display: flex;
-    margin-bottom: 4px;
+    margin-bottom: 6px;
     color: var(--ink-dim);
 }
 
@@ -1627,11 +1627,6 @@ button.chat-tool:hover > .chat-tool-line::after,
     font-size: var(--text-lg);
     font-weight: var(--weight-semibold);
     letter-spacing: var(--tracking-display);
-}
-
-.chat-welcome-sub {
-    color: var(--ink-faint);
-    font-size: var(--text-xs);
 }
 
 .chat-welcome-activity {

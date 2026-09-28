@@ -11,10 +11,9 @@ export function ChatWelcome({ cwd, agentType }: { cwd: string; agentType: AgentT
         <div className="chat-welcome">
             <div className="chat-welcome-head">
                 <span className={`chat-welcome-mark agent-glyph ${agentType}`} aria-hidden="true">
-                    <AgentIcon type={agentType} size={22} />
+                    <AgentIcon type={agentType} size={40} />
                 </span>
                 <span className="chat-welcome-title">{basename(cwd) || cwd}</span>
-                <span className="chat-welcome-sub">Start a session with this project.</span>
             </div>
             {!failed && (
                 <div className="chat-welcome-activity">
