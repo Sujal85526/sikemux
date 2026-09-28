@@ -3,8 +3,8 @@ import { IconChevron } from "../Icons";
 import { HISTORY_CLEARANCE, HISTORY_MIN, ResizeHandle } from "./ResizeHandle";
 
 /**
- * A panel at the foot of the git pane's left column: its header folds it, and while open its top edge resizes it
- * against the list above. History, a pull request's conversation and its commits are all one of these.
+ * A panel in the git pane's left column: its header folds it, and while open its top edge can resize it against the
+ * list above. History, a pull request's files and its commits are all one of these.
  */
 export function FoldPanel({
     label,
@@ -12,7 +12,7 @@ export function FoldPanel({
     summary,
     badge,
     open,
-    height,
+    height = null,
     onToggle,
     onResize,
     children,
@@ -24,15 +24,16 @@ export function FoldPanel({
     /** Sits at the header's end, open or folded. */
     badge?: ReactNode;
     open: boolean;
-    height: number | null;
+    height?: number | null;
     onToggle: () => void;
-    onResize: (height: number | null) => void;
+    /** Left out, the panel only folds, as the first panel under a card has nothing above it to trade height with. */
+    onResize?: (height: number | null) => void;
     children: ReactNode;
 }) {
     const panelRef = useRef<HTMLDivElement>(null);
     return (
         <>
-            {open && (
+            {open && onResize && (
                 <ResizeHandle
                     targetRef={panelRef}
                     axis="y"
