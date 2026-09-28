@@ -314,6 +314,7 @@ pub async fn files(data_dir: &Path, input: PullRef) -> GithubResult<Vec<ChangedF
 #[derive(Deserialize)]
 struct GitAuthor {
     name: Option<String>,
+    email: Option<String>,
     date: Option<String>,
 }
 
@@ -364,6 +365,56 @@ pub async fn commits(data_dir: &Path, input: PullRef) -> GithubResult<Vec<PullCo
             }
         })
         .collect())
+}
+
+/// Who wrote a commit, by the email in it, and the account GitHub matched that email to.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitAuthor {
+    pub email: String,
+    pub login: String,
+    pub avatar_url: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitsRef {
+    #[serde(flatten)]
+    pub repo: RepoRef,
+    /// A branch, tag or commit to list from; the default branch when absent.
+    pub git_ref: Option<String>,
+}
+
+/// The accounts behind the latest hundred commits' emails, so a git history
+/// read locally, which has only names and emails, can show who they are.
+pub async fn commit_authors(data_dir: &Path, input: CommitsRef) -> GithubResult<Vec<CommitAuthor>> {
+    let path = input.repo.path("/commits")?;
+    let query: Vec<(&str, String)> = input
+        .git_ref
+        .into_iter()
+        .map(|git_ref| ("sha", git_ref))
+        .collect();
+    let rows: Vec<CommitRow> = client::get_all(data_dir, &path, &query, 1, |rows| rows).await?;
+    let mut authors: Vec<CommitAuthor> = Vec::new();
+    for row in rows {
+        let (Some(email), Some(actor)) = (
+            row.commit.author.and_then(|author| author.email),
+            row.author,
+        ) else {
+            continue;
+        };
+        let Some(avatar_url) = actor.avatar_url else {
+            continue;
+        };
+        if authors.iter().all(|known| known.email != email) {
+            authors.push(CommitAuthor {
+                email,
+                login: actor.login,
+                avatar_url,
+            });
+        }
+    }
+    Ok(authors)
 }
 
 #[derive(Deserialize)]

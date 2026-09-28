@@ -170,6 +170,7 @@ impl Plugin for Github {
             "pull" => answer(input, move |q| pulls::get(data_dir, q)),
             "pullFiles" => answer(input, move |q| pulls::files(data_dir, q)),
             "pullCommits" => answer(input, move |q| pulls::commits(data_dir, q)),
+            "commitAuthors" => answer(input, move |q| pulls::commit_authors(data_dir, q)),
             "pullReviews" => answer(input, move |q| pulls::reviews(data_dir, q)),
             "mergePull" => answer(input, move |q| pulls::merge(data_dir, q)),
             "createPull" => answer(input, move |q| pulls::create(data_dir, q)),
