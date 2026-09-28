@@ -302,6 +302,8 @@ export interface Pull {
     mergedAt: string | null;
     mergedBy: string | null;
     mergeCommitSha: string | null;
+    /** The picture of each person named above by login alone. */
+    avatars: Record<string, string>;
     url: string;
 }
 

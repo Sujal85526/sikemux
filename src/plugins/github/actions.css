@@ -1916,6 +1916,18 @@
     border-radius: var(--radius-full);
     background: var(--gha-tint);
 }
+.gha-avatar-letter {
+    display: inline-grid;
+    place-items: center;
+    background: color-mix(in oklab, var(--acc) 22%, transparent);
+    color: var(--text-primary);
+    font-size: var(--text-3xs);
+    font-weight: var(--weight-semibold);
+    line-height: 1;
+}
+.gha-tl-face > .gha-avatar-letter {
+    font-size: var(--text-2xs);
+}
 
 .gha-graph {
     margin: var(--space-3) var(--space-5) 0;

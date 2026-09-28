@@ -38,6 +38,7 @@ const PULL = {
   mergedAt: null,
   mergedBy: null,
   mergeCommitSha: null,
+  avatars: {},
   url: "https://github.com/nodelike/sikemux/pull/31",
 };
 

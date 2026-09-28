@@ -42,7 +42,13 @@ export interface Post {
 }
 
 export function Face({ login, url }: { login: string | null; url: string | null }) {
-    return url ? <Avatar url={url} /> : <span className="gha-avatar" aria-hidden="true" title={login ?? undefined} />;
+    return url ? (
+        <Avatar url={url} />
+    ) : (
+        <span className="gha-avatar gha-avatar-letter" aria-hidden="true" title={login ?? undefined}>
+            {login?.charAt(0).toUpperCase()}
+        </span>
+    );
 }
 
 function Name({ login }: { login: string | null }) {

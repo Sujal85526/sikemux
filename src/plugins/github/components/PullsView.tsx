@@ -301,7 +301,7 @@ function PullSide({
                 ))}
                 {waiting.map((login) => (
                     <div className="gha-side-person" key={login}>
-                        <Face login={login} url={null} />
+                        <Face login={login} url={pull.avatars[login] ?? null} />
                         <span>{login}</span>
                         <span className="gha-page-spacer" />
                         <span className="gha-side-none" title="Awaiting review">
@@ -316,7 +316,7 @@ function PullSide({
                 ) : (
                     pull.assignees.map((login) => (
                         <div className="gha-side-person" key={login}>
-                            <Face login={login} url={null} />
+                            <Face login={login} url={pull.avatars[login] ?? null} />
                             <span>{login}</span>
                         </div>
                     ))
@@ -444,7 +444,7 @@ function PullDetail({ repo, number, active, login, onBack, onOpenRun }: DetailPr
                     {stateLabel("pull", found.state, found.draft)}
                 </span>
                 <span className="gha-page-sentence">
-                    <Who login={actor} avatarUrl={merged ? null : found.avatarUrl} />
+                    <Who login={actor} avatarUrl={actor === found.author ? found.avatarUrl : (found.avatars[actor ?? ""] ?? null)} />
                     <span>
                         {verb} {found.commits !== null ? plural(found.commits, "commit") + " " : ""}into
                     </span>

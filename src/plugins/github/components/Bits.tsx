@@ -3,7 +3,7 @@ import { openUrl, swallow } from "../../../plugin-api/host";
 import { IconCheck, IconChevron, IconExternal, IconGit, IconMerge, IconPullRequest } from "../../../plugin-api/ui";
 import type { Label } from "../api";
 import { CommentIcon, NotPlannedIcon, SectionIcon } from "./ActionsIcon";
-import { Avatar } from "./Pictures";
+import { Face } from "./CommentThread";
 
 export function Labels({ labels }: { labels: readonly Label[] }) {
     if (labels.length === 0) return null;
@@ -30,7 +30,7 @@ export function Branch({ name }: { name: string }) {
 export function Who({ login, avatarUrl }: { login: string | null; avatarUrl: string | null }) {
     return (
         <span className="gha-who">
-            {avatarUrl ? <Avatar url={avatarUrl} /> : <span className="gha-avatar" aria-hidden="true" />}
+            <Face login={login} url={avatarUrl} />
             <span className="gha-who-name">{login ?? "someone"}</span>
         </span>
     );
