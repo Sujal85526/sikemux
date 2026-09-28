@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { confirmDialog, notify, openUrl, reportError, swallow } from "../../plugin-api/host";
+import { useMemo, useState, type ReactNode } from "react";
+import { confirmDialog, copyText, notify, openUrl, reportError, swallow } from "../../plugin-api/host";
 import { checkoutPull, isOwnBranch, localBranchOf } from "../checkout";
 import { useHost } from "../registry";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
@@ -124,6 +124,7 @@ function MergeBox({
     reviewed,
     active,
     onOpenRun,
+    checkout,
 }: {
     repo: RepoRef;
     pull: Pull;
@@ -131,8 +132,11 @@ function MergeBox({
     reviewed: boolean;
     active: boolean;
     onOpenRun: (runId: number) => void;
+    /** Checking the branch out here, beside Close. */
+    checkout?: ReactNode;
 }) {
     const [method, setMethod] = useState<MergeMethod>("squash");
+    const now = useNow(false);
     const [busy, runBusy] = useBusy();
     const base = pull.base ?? "the base branch";
 
@@ -172,15 +176,38 @@ function MergeBox({
         }
     };
 
+    const checks = pull.headSha ? <PullChecks repo={repo} sha={pull.headSha} active={active} onOpenRun={onOpenRun} /> : null;
     if (pull.state === "merged") {
+        const merger = pull.mergedBy ?? null;
+        const commit = pull.mergeCommitSha;
         return (
             <div className="gha-merge-box" data-state="merged">
                 <div className="gha-merge-part">
                     <div className="gha-merge-row">
                         <StateMark kind="pull" state="merged" />
-                        <span className="gha-merge-title">Merged into {base}</span>
+                        <span className="gha-merge-title">Merged into</span>
+                        {pull.base && <Branch name={pull.base} />}
+                    </div>
+                    <div className="gha-merge-by">
+                        {merger && <Who login={merger} avatarUrl={pull.avatars[merger] ?? (merger === pull.author ? pull.avatarUrl : null)} />}
+                        <span>{formatAgo(pull.mergedAt, now)}</span>
+                        {commit && (
+                            <Tooltip label="Copy the merge commit">
+                                <button
+                                    type="button"
+                                    className="gha-link gha-mono"
+                                    onClick={() =>
+                                        void copyText(commit)
+                                            .then(() => notify("success", `Copied ${commit.slice(0, 7)}`))
+                                            .catch(swallow("copy the commit"))
+                                    }>
+                                    {commit.slice(0, 7)}
+                                </button>
+                            </Tooltip>
+                        )}
                     </div>
                 </div>
+                {checks}
             </div>
         );
     }
@@ -197,6 +224,7 @@ function MergeBox({
                         </button>
                     </div>
                 </div>
+                {checks}
             </div>
         );
     }
@@ -211,7 +239,7 @@ function MergeBox({
     return (
         <div className="gha-merge-box">
             <MergePart outcome={verdictPart.outcome} title={verdictPart.title} />
-            {pull.headSha && <PullChecks repo={repo} sha={pull.headSha} active={active} onOpenRun={onOpenRun} />}
+            {checks}
             {pull.draft ? (
                 <MergePart outcome="queued" title="This is a draft" detail="Mark it ready for review on GitHub before merging." />
             ) : (
@@ -231,6 +259,7 @@ function MergeBox({
                     </>
                 )}
                 <span className="gha-page-spacer" />
+                {checkout}
                 <button type="button" className="gha-btn danger" disabled={busy} onClick={() => runBusy(setState)}>
                     Close
                 </button>
@@ -292,27 +321,23 @@ function PullCard({
     onClose: () => void;
     onOpenRun: (runId: number) => void;
 }) {
-    const host = useHost();
     return (
-        <div className="pr-card">
-            <div className="pr-card-top">
-                <button type="button" className="pr-back" onClick={onClose}>
-                    <IconChevron size={11} /> Pull requests
-                </button>
-                <span className="gha-page-spacer" />
-                {cwd && pull.state === "open" && <CheckoutButton cwd={cwd} repo={repo} pull={pull} current={projectBranch} />}
-                <Tooltip label={`Open on ${host.name}`}>
-                    <button
-                        type="button"
-                        className="gha-icon-btn"
-                        aria-label={`Open on ${host.name}`}
-                        onClick={() => void openUrl(pull.url).catch(swallow(`open ${host.name}`))}>
-                        <IconExternal size={12} />
-                    </button>
-                </Tooltip>
+        <>
+            <button type="button" className="pr-back" onClick={onClose}>
+                <IconChevron size={11} /> Pull requests
+            </button>
+            <div className="pr-card">
+                <MergeBox
+                    repo={repo}
+                    pull={pull}
+                    verdict={verdict}
+                    reviewed={reviewed}
+                    active={active}
+                    onOpenRun={onOpenRun}
+                    checkout={cwd && pull.state === "open" ? <CheckoutButton cwd={cwd} repo={repo} pull={pull} current={projectBranch} /> : null}
+                />
             </div>
-            <MergeBox repo={repo} pull={pull} verdict={verdict} reviewed={reviewed} active={active} onOpenRun={onOpenRun} />
-        </div>
+        </>
     );
 }
 
@@ -406,6 +431,7 @@ function PullRight({
     onTab: (tab: PullTab) => void;
     onLeaveCommit: () => void;
 }) {
+    const host = useHost();
     const pull = useResourceEnabled(active, pullR, repo, number);
     const timeline = useResourceEnabled(active, timelineR, repo, number);
     const now = useNow(false);
@@ -422,9 +448,20 @@ function PullRight({
     return (
         <div className="pr-right">
             <div className="git-detail">
-                <h2 className="git-detail-title">
-                    {found.title} <span className="pr-number">#{found.number}</span>
-                </h2>
+                <div className="pr-title-row">
+                    <h2 className="git-detail-title">
+                        {found.title} <span className="pr-number">#{found.number}</span>
+                    </h2>
+                    <Tooltip label={`Open on ${host.name}`}>
+                        <button
+                            type="button"
+                            className="gha-icon-btn"
+                            aria-label={`Open on ${host.name}`}
+                            onClick={() => void openUrl(found.url).catch(swallow(`open ${host.name}`))}>
+                            <IconExternal size={12} />
+                        </button>
+                    </Tooltip>
+                </div>
                 <div className="git-detail-meta">
                     <Who login={actor} avatarUrl={actor === found.author ? found.avatarUrl : (found.avatars[actor ?? ""] ?? null)} />
                     <span>{merged ? "merged" : "opened"}</span>
