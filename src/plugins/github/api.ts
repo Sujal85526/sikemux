@@ -218,7 +218,10 @@ function download(method: string, params: unknown, onProgress?: (progress: Downl
                 else onProgress?.(tick);
             },
             onEnd: () => (saved ? resolve(saved) : reject(new Error("the download ended without saving anything"))),
-            onError: reject,
+            onError: (error) => {
+                if (isSignedOut(error)) forgetSignedOut();
+                reject(error);
+            },
         });
     });
 }
@@ -380,12 +383,16 @@ function isSignedOut(error: unknown): boolean {
     return error.category === "auth" || error.category === "unconfigured" || (error.category === "http" && error.status === 401);
 }
 
-/** A token GitHub has stopped accepting makes every cached answer stale, so the next read lands on the sign-in form. */
-async function read<T>(method: string, params?: unknown): Promise<T> {
+/** A token GitHub has stopped accepting makes every cached answer stale, whichever call found out, so the next read lands on the sign-in form. */
+function forgetSignedOut(): void {
+    invalidate((kind) => kind.startsWith("gha."));
+}
+
+async function call<T>(method: string, params?: unknown): Promise<T> {
     try {
         return await backend.call<T>(method, params);
     } catch (error) {
-        if (isSignedOut(error)) invalidate((kind) => kind.startsWith("gha."));
+        if (isSignedOut(error)) forgetSignedOut();
         throw error;
     }
 }
@@ -400,7 +407,7 @@ const images = new Map<string, Promise<string>>();
 function image(url: string): Promise<string> {
     const known = images.get(url);
     if (known) return known;
-    const fetched = backend.call<string>("image", { url });
+    const fetched = call<string>("image", { url });
     images.set(url, fetched);
     fetched.catch(() => images.delete(url));
     if (images.size > IMAGES_KEPT) {
@@ -416,59 +423,66 @@ export const actionsApi = {
     signOut: () => backend.call<void>("signOut"),
 
     resolveRemote: (url: string) => backend.call<Resolved>("resolveRemote", { url }),
-    myRepos: (limit = 50) => read<RepoListing[]>("myRepos", { limit }),
+    myRepos: (limit = 50) => call<RepoListing[]>("myRepos", { limit }),
 
-    workflows: (repo: RepoRef) => read<Workflow[]>("workflows", repo),
-    branches: (repo: RepoRef) => read<string[]>("branches", repo),
-    runs: (query: RunQuery) => read<RunPage>("runs", query),
-    run: (repo: RepoRef, runId: number) => read<RunDetail>("run", { ...repo, runId }),
-    jobLog: (repo: RepoRef, jobId: number) => read<JobLog>("jobLog", { ...repo, jobId }),
-    annotations: (repo: RepoRef, checkRunId: number) => read<Annotation[]>("annotations", { ...repo, checkRunId }),
-    jobSummary: (repo: RepoRef, checkRunId: number) => read<JobSummary | null>("jobSummary", { ...repo, checkRunId }),
-    runTiming: (repo: RepoRef, runId: number) => read<RunTiming>("runTiming", { ...repo, runId }),
-    workflowFile: (repo: RepoRef, workflowId: number) => read<WorkflowFile>("workflowFile", { ...repo, workflowId }),
-    artifacts: (repo: RepoRef, runId: number) => read<Artifact[]>("artifacts", { ...repo, runId }),
-    pendingApprovals: (repo: RepoRef, runId: number) => read<PendingApproval[]>("pendingApprovals", { ...repo, runId }),
-    runAttempt: (repo: RepoRef, runId: number, attempt: number) => read<RunDetail>("runAttempt", { ...repo, runId, attempt }),
+    workflows: (repo: RepoRef) => call<Workflow[]>("workflows", repo),
+    branches: (repo: RepoRef) => call<string[]>("branches", repo),
+    runs: (query: RunQuery) => call<RunPage>("runs", query),
+    run: (repo: RepoRef, runId: number) => call<RunDetail>("run", { ...repo, runId }),
+    jobLog: (repo: RepoRef, jobId: number) => call<JobLog>("jobLog", { ...repo, jobId }),
+    annotations: (repo: RepoRef, checkRunId: number) => call<Annotation[]>("annotations", { ...repo, checkRunId }),
+    jobSummary: (repo: RepoRef, checkRunId: number) => call<JobSummary | null>("jobSummary", { ...repo, checkRunId }),
+    runTiming: (repo: RepoRef, runId: number) => call<RunTiming>("runTiming", { ...repo, runId }),
+    workflowFile: (repo: RepoRef, workflowId: number) => call<WorkflowFile>("workflowFile", { ...repo, workflowId }),
+    artifacts: (repo: RepoRef, runId: number) => call<Artifact[]>("artifacts", { ...repo, runId }),
+    pendingApprovals: (repo: RepoRef, runId: number) => call<PendingApproval[]>("pendingApprovals", { ...repo, runId }),
+    runAttempt: (repo: RepoRef, runId: number, attempt: number) => call<RunDetail>("runAttempt", { ...repo, runId, attempt }),
 
-    pulls: (repo: RepoRef, state: string) => read<Pull[]>("pulls", { ...repo, state }),
-    pull: (repo: RepoRef, number: number) => read<Pull>("pull", { ...repo, number }),
-    pullFiles: (repo: RepoRef, number: number) => read<ChangedFile[]>("pullFiles", { ...repo, number }),
-    pullReviews: (repo: RepoRef, number: number) => read<Review[]>("pullReviews", { ...repo, number }),
-    issues: (repo: RepoRef, state: string, page: number) => read<IssuePage>("issues", { ...repo, state, page }),
-    issue: (repo: RepoRef, number: number) => read<Issue>("issue", { ...repo, number }),
-    comments: (repo: RepoRef, number: number) => read<Comment[]>("comments", { ...repo, number }),
-    releases: (repo: RepoRef) => read<Release[]>("releases", repo),
-    inbox: (all: boolean) => read<Notification[]>("inbox", { all }),
+    pulls: (repo: RepoRef, state: string) => call<Pull[]>("pulls", { ...repo, state }),
+    pull: (repo: RepoRef, number: number) => call<Pull>("pull", { ...repo, number }),
+    pullFiles: (repo: RepoRef, number: number) => call<ChangedFile[]>("pullFiles", { ...repo, number }),
+    pullReviews: (repo: RepoRef, number: number) => call<Review[]>("pullReviews", { ...repo, number }),
+    issues: (repo: RepoRef, state: string, page: number) => call<IssuePage>("issues", { ...repo, state, page }),
+    issue: (repo: RepoRef, number: number) => call<Issue>("issue", { ...repo, number }),
+    comments: (repo: RepoRef, number: number) => call<Comment[]>("comments", { ...repo, number }),
+    releases: (repo: RepoRef) => call<Release[]>("releases", repo),
+    inbox: (all: boolean) => call<Notification[]>("inbox", { all }),
     image,
 
     /** `sha` is the head commit the person saw; GitHub refuses the merge if the branch has moved since. */
-    mergePull: (repo: RepoRef, number: number, method: MergeMethod, sha: string) => backend.call<void>("mergePull", { ...repo, number, method, sha }),
-    createPull: (repo: RepoRef, pull: NewPull) => backend.call<Pull>("createPull", { ...repo, ...pull }),
-    setPullState: (repo: RepoRef, number: number, state: "open" | "closed") => backend.call<void>("setPullState", { ...repo, number, state }),
-    reviewPull: (repo: RepoRef, number: number, event: ReviewEvent, body: string) =>
-        backend.call<void>("reviewPull", { ...repo, number, event, body }),
-    createIssue: (repo: RepoRef, title: string, body: string) => backend.call<Issue>("createIssue", { ...repo, title, body }),
-    setIssueState: (repo: RepoRef, number: number, state: "open" | "closed") => backend.call<void>("setIssueState", { ...repo, number, state }),
-    addComment: (repo: RepoRef, number: number, body: string) => backend.call<void>("addComment", { ...repo, number, body }),
+    mergePull: (repo: RepoRef, number: number, method: MergeMethod, sha: string) => call<void>("mergePull", { ...repo, number, method, sha }),
+    createPull: (repo: RepoRef, pull: NewPull) => call<Pull>("createPull", { ...repo, ...pull }),
+    setPullState: (repo: RepoRef, number: number, state: "open" | "closed") => call<void>("setPullState", { ...repo, number, state }),
+    reviewPull: (repo: RepoRef, number: number, event: ReviewEvent, body: string) => call<void>("reviewPull", { ...repo, number, event, body }),
+    createIssue: (repo: RepoRef, title: string, body: string) => call<Issue>("createIssue", { ...repo, title, body }),
+    setIssueState: (repo: RepoRef, number: number, state: "open" | "closed") => call<void>("setIssueState", { ...repo, number, state }),
+    addComment: (repo: RepoRef, number: number, body: string) => call<void>("addComment", { ...repo, number, body }),
     downloadAsset: (repo: RepoRef, assetId: number, name: string, onProgress?: (progress: DownloadProgress) => void) =>
         download("downloadAsset", { ...repo, assetId, fileName: name }, onProgress),
-    markRead: (id: string) => backend.call<void>("markRead", { id }),
-    markAllRead: () => backend.call<void>("markAllRead"),
+    markRead: (id: string) => call<void>("markRead", { id }),
+    markAllRead: () => call<void>("markAllRead"),
 
     dispatch: (repo: RepoRef, workflowId: number, gitRef: string, inputs: Record<string, string>) =>
-        backend.call<void>("dispatch", { ...repo, workflowId, gitRef, inputs }),
-    rerun: (repo: RepoRef, runId: number, failedOnly: boolean, debug = false) => backend.call<void>("rerun", { ...repo, runId, failedOnly, debug }),
-    rerunJob: (repo: RepoRef, jobId: number, debug = false) => backend.call<void>("rerunJob", { ...repo, jobId, debug }),
-    cancel: (repo: RepoRef, runId: number) => backend.call<void>("cancel", { ...repo, runId }),
-    deleteRunLogs: (repo: RepoRef, runId: number) => backend.call<void>("deleteRunLogs", { ...repo, runId }),
-    deleteRun: (repo: RepoRef, runId: number) => backend.call<void>("deleteRun", { ...repo, runId }),
+        call<void>("dispatch", { ...repo, workflowId, gitRef, inputs }),
+    rerun: (repo: RepoRef, runId: number, failedOnly: boolean, debug = false) => call<void>("rerun", { ...repo, runId, failedOnly, debug }),
+    rerunJob: (repo: RepoRef, jobId: number, debug = false) => call<void>("rerunJob", { ...repo, jobId, debug }),
+    cancel: (repo: RepoRef, runId: number) => call<void>("cancel", { ...repo, runId }),
+    deleteRunLogs: (repo: RepoRef, runId: number) => call<void>("deleteRunLogs", { ...repo, runId }),
+    deleteRun: (repo: RepoRef, runId: number) => call<void>("deleteRun", { ...repo, runId }),
     downloadArtifact: (repo: RepoRef, artifactId: number, name: string, onProgress?: (progress: DownloadProgress) => void) =>
         download("downloadArtifact", { ...repo, artifactId, fileName: name }, onProgress),
     reviewDeployment: (repo: RepoRef, runId: number, environmentIds: number[], state: "approved" | "rejected", comment = "") =>
-        backend.call<void>("reviewDeployment", { ...repo, runId, environmentIds, state, comment }),
+        call<void>("reviewDeployment", { ...repo, runId, environmentIds, state, comment }),
 
     watchStart: (repo: RepoRef, runId: number, onTick: (tick: RunTick) => void) =>
-        backend.openStream<RunTick>("watchRun", { ...repo, runId }, onTick),
+        backend
+            .openStream<RunTick>("watchRun", { ...repo, runId }, (tick) => {
+                if (tick.signedOut) forgetSignedOut();
+                onTick(tick);
+            })
+            .catch((error: unknown) => {
+                if (isSignedOut(error)) forgetSignedOut();
+                throw error;
+            }),
     watchStop: (streamId: number) => backend.closeStream(streamId),
 };
