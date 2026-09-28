@@ -3,6 +3,7 @@
   "name": "SigNoz",
   "version": "0.1.0",
   "sikemux": ">=0.4",
+  "environment": ["SIGNOZ_URL", "SIGNOZ_API_KEY"],
   "tools": [
     {
       "name": "signoz_services",

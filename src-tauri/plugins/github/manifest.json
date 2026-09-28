@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "sikemux": ">=0.4",
   "callTimeoutSecs": 120,
+  "environment": ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GH_HOST"],
   "tools": [
     {
       "name": "github_workflows",

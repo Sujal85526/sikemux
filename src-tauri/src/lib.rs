@@ -99,6 +99,7 @@ pub fn run() {
     // same one-time initialisation. An rc file that runs something slow like
     // `fastfetch` makes that delay visible on the first pane.
     system::warm_login_shell_environment();
+    system::import_from_login_shell(&plugins::shell_variables());
 
     tauri::Builder::default()
         // Must be the first plugin: subsequent GUI launches focus the primary

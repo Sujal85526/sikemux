@@ -68,6 +68,21 @@ pub fn fix_path_from_login_shell() {
     unsafe { std::env::set_var("PATH", new_path) };
 }
 
+/// Copies the named variables in from the login shell, leaving any the app
+/// was already started with. Launched from the Dock, the app has none of them.
+pub fn import_from_login_shell(names: &[String]) {
+    let shell = login_shell_environment();
+    for name in names {
+        if std::env::var_os(name).is_some() {
+            continue;
+        }
+        if let Some(value) = shell.get(name) {
+            // SAFETY: called once at startup before any threads spawn, like the PATH fix above.
+            unsafe { std::env::set_var(name, value) };
+        }
+    }
+}
+
 #[cfg(windows)]
 pub fn fix_path_from_login_shell() {
     // Windows desktop applications inherit the user's PATH. Unlike macOS,

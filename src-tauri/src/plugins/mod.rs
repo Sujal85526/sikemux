@@ -39,6 +39,14 @@ pub struct PluginHost {
     disabled: RwLock<HashSet<String>>,
 }
 
+/// Every shell variable a built-in plugin reads.
+pub fn shell_variables() -> Vec<String> {
+    builtin::plugins()
+        .iter()
+        .flat_map(|plugin| plugin.manifest().environment.clone())
+        .collect()
+}
+
 impl PluginHost {
     pub fn with_builtins(data_root: &Path, sikemux: &Version) -> std::io::Result<Self> {
         Self::new(data_root, sikemux, builtin::plugins(), CALL_TIMEOUT)
@@ -350,6 +358,20 @@ mod tests {
             Duration::from_millis(100),
         )
         .expect("plugin runtime starts")
+    }
+
+    #[test]
+    #[cfg(all(feature = "github", feature = "signoz"))]
+    fn collects_the_shell_variables_plugins_read() {
+        let names = shell_variables();
+        for name in [
+            "GH_TOKEN",
+            "GH_ENTERPRISE_TOKEN",
+            "GH_HOST",
+            "SIGNOZ_API_KEY",
+        ] {
+            assert!(names.iter().any(|found| found == name), "{name} is missing");
+        }
     }
 
     #[test]
