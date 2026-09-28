@@ -36,9 +36,21 @@ impl fmt::Display for GithubError {
     }
 }
 
+/// reqwest's own message stops at "error sending request"; why it could not
+/// be sent, such as a DNS or certificate failure, is further down the chain.
 impl From<reqwest::Error> for GithubError {
     fn from(error: reqwest::Error) -> Self {
-        Self::Transport(error.to_string())
+        let mut message = error.to_string();
+        let mut cause = std::error::Error::source(&error);
+        while let Some(next) = cause {
+            let text = next.to_string();
+            if !message.contains(&text) {
+                message.push_str(": ");
+                message.push_str(&text);
+            }
+            cause = next.source();
+        }
+        Self::Transport(message)
     }
 }
 

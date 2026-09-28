@@ -20,6 +20,10 @@ use crate::error::{GithubError, GithubResult};
 pub const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 const MAX_REQUESTS_IN_FLIGHT: usize = 8;
 const MAX_REDIRECTS: usize = 5;
+/// Split across a host's addresses, so one that never answers, as happens on
+/// some networks for one of GitHub's CDN addresses, costs a second before the
+/// next is tried rather than the whole request.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(4);
 const API_VERSION: &str = "2022-11-28";
 const JSON: &str = "application/vnd.github+json";
 
@@ -63,10 +67,9 @@ fn build(transfer: bool) -> Option<Client> {
         .pool_idle_timeout(Duration::from_secs(25))
         .redirect(redirects)
         .user_agent("sikemux-github/0.1");
+    let builder = builder.connect_timeout(CONNECT_TIMEOUT);
     let builder = if transfer {
-        builder
-            .connect_timeout(Duration::from_secs(30))
-            .read_timeout(Duration::from_secs(60))
+        builder.read_timeout(Duration::from_secs(60))
     } else {
         builder.timeout(Duration::from_secs(30))
     };
