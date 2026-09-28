@@ -36,9 +36,17 @@ pub struct ActionsConfig {
     pub host: String,
     #[serde(default)]
     pub login: String,
+    /// Where the token signed in with lives. Only that place is read, so an
+    /// older token somewhere else never stands in for it.
+    #[serde(default)]
+    pub source: Option<TokenSource>,
     /// Whether Sikemux saved the Keychain token, and so may delete it on sign-out.
     #[serde(default)]
     pub owns_token: bool,
+    /// Set by signing out, so a token the shell or `gh` still holds is not
+    /// picked up again until somebody signs in.
+    #[serde(default)]
+    pub signed_out: bool,
 }
 
 impl Default for ActionsConfig {
@@ -46,7 +54,9 @@ impl Default for ActionsConfig {
         Self {
             host: DEFAULT_HOST.to_string(),
             login: String::new(),
+            source: None,
             owns_token: false,
+            signed_out: false,
         }
     }
 }
@@ -55,20 +65,29 @@ fn config_path(data_dir: &Path) -> PathBuf {
     data_dir.join("config.json")
 }
 
+/// The host signed in to wins. `GH_HOST` only chooses one when nothing has
+/// been signed in to yet.
+fn host_for(saved: Option<&str>, gh_host: Option<&str>) -> String {
+    saved
+        .filter(|host| !host.is_empty())
+        .map(str::to_string)
+        .or_else(|| gh_host.and_then(|host| validate_host(host).ok()))
+        .unwrap_or_else(|| DEFAULT_HOST.to_string())
+}
+
 pub fn load(data_dir: &Path) -> ActionsConfig {
-    let mut config: ActionsConfig = std::fs::read(config_path(data_dir))
+    let saved: Option<ActionsConfig> = std::fs::read(config_path(data_dir))
         .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default();
-    if let Ok(host) = std::env::var("GH_HOST") {
-        if let Ok(host) = validate_host(&host) {
-            config.host = host;
-        }
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok());
+    let gh_host = std::env::var("GH_HOST").ok();
+    let host = host_for(
+        saved.as_ref().map(|config| config.host.as_str()),
+        gh_host.as_deref(),
+    );
+    ActionsConfig {
+        host,
+        ..saved.unwrap_or_default()
     }
-    if config.host.is_empty() {
-        config.host = DEFAULT_HOST.to_string();
-    }
-    config
 }
 
 fn io_error(error: std::io::Error) -> ActionsError {
@@ -81,13 +100,6 @@ pub fn save(data_dir: &Path, config: &ActionsConfig) -> ActionsResult<()> {
     let staged = path.with_extension("json.tmp");
     std::fs::write(&staged, serde_json::to_vec_pretty(config)?).map_err(io_error)?;
     std::fs::rename(&staged, &path).map_err(io_error)
-}
-
-pub fn forget(data_dir: &Path) -> ActionsResult<()> {
-    match std::fs::remove_file(config_path(data_dir)) {
-        Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(io_error(error)),
-        _ => Ok(()),
-    }
 }
 
 fn valid_label(label: &str) -> bool {
@@ -269,23 +281,38 @@ pub fn forget_token() {
     }
 }
 
-fn look_up_token(host: &str) -> Option<(String, TokenSource)> {
-    if let Ok(Some(token)) = keychain_read(host) {
-        return Some((token, TokenSource::Keychain));
+/// Where to look for a token, in order. Once signed in, only the place signed
+/// in with counts; before anybody has, a token the shell or `gh` already holds
+/// is used without asking. After signing out, nothing is.
+pub fn sources_for(config: &ActionsConfig) -> Vec<TokenSource> {
+    if config.signed_out {
+        return Vec::new();
     }
-    if let Some(token) = env_token() {
-        return Some((token, TokenSource::Environment));
+    match config.source {
+        Some(source) => vec![source],
+        None => vec![TokenSource::Environment, TokenSource::GhCli],
     }
-    gh_cli_token(host).map(|token| (token, TokenSource::GhCli))
 }
 
-/// The token to use, and where it came from. A token Sikemux saved wins, so
-/// signing in here overrides whatever the shell happens to export.
+fn read_token(source: TokenSource, host: &str) -> Option<String> {
+    match source {
+        TokenSource::Keychain => keychain_read(host).ok().flatten(),
+        TokenSource::Environment => env_token(),
+        TokenSource::GhCli => gh_cli_token(host),
+    }
+}
+
+/// The token to use, and where it came from.
 pub fn resolve_token(config: &ActionsConfig) -> Option<(String, TokenSource)> {
+    if config.signed_out {
+        return None;
+    }
     if let Some(found) = cached_for(&config.host) {
         return Some(found);
     }
-    let (token, source) = look_up_token(&config.host)?;
+    let (token, source) = sources_for(config)
+        .into_iter()
+        .find_map(|source| read_token(source, &config.host).map(|token| (token, source)))?;
     if let Ok(mut held) = TOKEN.lock() {
         *held = Some(Cached {
             host: config.host.clone(),
@@ -362,12 +389,13 @@ mod tests {
         let config = ActionsConfig {
             host: "git.example.com".into(),
             login: "octocat".into(),
+            source: Some(TokenSource::Keychain),
             owns_token: true,
+            signed_out: false,
         };
         save(&dir, &config)?;
         assert_eq!(load(&dir).login, "octocat");
-        forget(&dir)?;
-        assert_eq!(load(&dir).host, DEFAULT_HOST);
+        assert_eq!(load(&dir).host, "git.example.com");
         std::fs::remove_dir_all(&dir).ok();
         Ok(())
     }
@@ -413,8 +441,41 @@ mod tests {
     }
 
     #[test]
-    fn forgetting_a_config_that_was_never_saved_is_fine() {
-        let dir = std::env::temp_dir().join(format!("sikemux-gha-none-{}", std::process::id()));
-        assert!(forget(&dir).is_ok());
+    fn the_host_signed_in_to_wins_over_gh_host() {
+        assert_eq!(host_for(Some("github.com"), Some("ghe.corp")), "github.com");
+        assert_eq!(host_for(None, Some("ghe.corp")), "ghe.corp");
+        assert_eq!(host_for(Some(""), Some("ghe.corp")), "ghe.corp");
+        assert_eq!(host_for(None, Some("not a host")), DEFAULT_HOST);
+        assert_eq!(host_for(None, None), DEFAULT_HOST);
+    }
+
+    #[test]
+    fn only_the_place_signed_in_with_is_read() {
+        let signed_in = |source| ActionsConfig {
+            source: Some(source),
+            ..ActionsConfig::default()
+        };
+        assert_eq!(
+            sources_for(&signed_in(TokenSource::GhCli)),
+            [TokenSource::GhCli]
+        );
+        assert_eq!(
+            sources_for(&signed_in(TokenSource::Keychain)),
+            [TokenSource::Keychain]
+        );
+        assert_eq!(
+            sources_for(&ActionsConfig::default()),
+            [TokenSource::Environment, TokenSource::GhCli]
+        );
+    }
+
+    #[test]
+    fn nothing_is_read_after_signing_out() {
+        let out = ActionsConfig {
+            signed_out: true,
+            ..ActionsConfig::default()
+        };
+        assert!(sources_for(&out).is_empty());
+        assert_eq!(resolve_token(&out), None);
     }
 }
