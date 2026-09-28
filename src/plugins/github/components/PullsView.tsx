@@ -1,7 +1,7 @@
 import { memo, useMemo } from "react";
 import { confirmDialog, notify, openUrl, reportError, swallow } from "../../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
-import { EmptyState, IconClose, IconPullRequest, Markdown, SkeletonRows, VirtualLogList } from "../../../plugin-api/ui";
+import { EmptyState, IconClose, IconPullRequest, SkeletonRows, VirtualLogList } from "../../../plugin-api/ui";
 import { actionsApi, failureMessage, type MergeMethod, type Pull, type RepoRef } from "../api";
 import { githubPullFilesR, githubPullR, githubPullReviewsR, githubPullsR } from "../resources";
 import { formatAgo } from "../runStatus";
@@ -13,6 +13,7 @@ import { useBusy, useNow } from "./hooks";
 import { NewPullForm } from "./NewPullForm";
 import { PullChecks } from "./PullChecks";
 import { ReviewBox } from "./ReviewBox";
+import { Prose } from "./Pictures";
 
 const LIST_STATES = ["open", "closed", "all"];
 
@@ -200,7 +201,7 @@ function PullDetail({ repo, number, active, login, onBack, onOpenRun }: DetailPr
                 <div className="gha-warn-note">GitHub is holding this back until the required reviews and checks pass.</div>
             )}
 
-            {found.body.trim() && <Markdown>{found.body}</Markdown>}
+            {found.body.trim() && <Prose>{found.body}</Prose>}
 
             {found.headSha && <PullChecks repo={repo} sha={found.headSha} active={active} onOpenRun={onOpenRun} />}
 
@@ -216,7 +217,7 @@ function PullDetail({ repo, number, active, login, onBack, onOpenRun }: DetailPr
                                 </span>
                                 <span className="gha-dim">{formatAgo(review.submittedAt, now)}</span>
                             </div>
-                            {review.body.trim() && <Markdown>{review.body}</Markdown>}
+                            {review.body.trim() && <Prose>{review.body}</Prose>}
                         </div>
                     ))}
                 </div>

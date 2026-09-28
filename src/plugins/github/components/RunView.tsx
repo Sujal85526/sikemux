@@ -25,6 +25,7 @@ import { coarse, useBusy, useNow } from "./hooks";
 import { JobGraph } from "./JobGraph";
 import { JobLogView } from "./JobLogView";
 import { JobSummary } from "./JobSummary";
+import { Avatar } from "./Pictures";
 import { RunMenu } from "./RunMenu";
 import { billedMinutes } from "./RunUsage";
 import { WorkflowFile } from "./WorkflowFile";
@@ -251,7 +252,7 @@ function SummaryCard({
                     Triggered via {TRIGGER[run.event] ?? run.event.replace(/_/gu, " ")} {formatAgo(run.createdAt, now)}
                 </span>
                 <span className="gha-run-card-trigger">
-                    {run.avatarUrl && <img className="gha-avatar" src={run.avatarUrl} alt="" width={16} height={16} />}
+                    {run.avatarUrl && <Avatar url={run.avatarUrl} />}
                     {run.actor && <span>{run.actor}</span>}
                     <button
                         type="button"

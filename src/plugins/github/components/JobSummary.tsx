@@ -1,7 +1,7 @@
 import { useResourceEnabled } from "../../../plugin-api/resources";
-import { Markdown } from "../../../plugin-api/ui";
 import type { RepoRef } from "../api";
 import { actionsJobSummaryR } from "../resources";
+import { Prose } from "./Pictures";
 
 interface Props {
     repo: RepoRef;
@@ -17,7 +17,7 @@ export function JobSummary({ repo, checkRunId, active, jobName }: Props) {
     return (
         <details className="gha-summary" open>
             <summary className="gha-summary-head">{jobName} summary</summary>
-            <Markdown>{summary.body}</Markdown>
+            <Prose>{summary.body}</Prose>
         </details>
     );
 }

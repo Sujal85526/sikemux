@@ -1428,9 +1428,12 @@
     color: var(--text-secondary);
 }
 .gha-avatar {
+    display: inline-block;
+    flex: 0 0 auto;
     width: 16px;
     height: 16px;
-    border-radius: 50%;
+    border-radius: var(--radius-full);
+    background: var(--gha-tint);
 }
 
 .gha-graph {

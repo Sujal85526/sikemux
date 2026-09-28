@@ -1,6 +1,6 @@
 import { notify, openUrl, reportError, swallow } from "../../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
-import { EmptyState, IconClose, IconInfo, Markdown, SkeletonRows } from "../../../plugin-api/ui";
+import { EmptyState, IconClose, IconInfo, SkeletonRows } from "../../../plugin-api/ui";
 import { actionsApi, failureMessage, type Issue, type RepoRef } from "../api";
 import { githubIssueR, githubIssuesR } from "../resources";
 import { formatAgo } from "../runStatus";
@@ -9,6 +9,7 @@ import { Labels, StateMark } from "./Bits";
 import { CommentThread } from "./CommentThread";
 import { useBusy, useNow } from "./hooks";
 import { NewIssueForm } from "./NewIssueForm";
+import { Prose } from "./Pictures";
 
 const LIST_STATES = ["open", "closed", "all"];
 
@@ -84,7 +85,7 @@ function IssueDetail({ repo, number, active, onBack }: { repo: RepoRef; number: 
                     </button>
                 </div>
             </div>
-            {found.body.trim() && <Markdown>{found.body}</Markdown>}
+            {found.body.trim() && <Prose>{found.body}</Prose>}
             <CommentThread repo={repo} number={found.number} active={active} now={now} />
         </div>
     );

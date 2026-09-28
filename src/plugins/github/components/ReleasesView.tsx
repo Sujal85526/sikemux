@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { notify, openUrl, reportError, swallow } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
-import { EmptyState, IconChevron, IconDownload, IconGit, Markdown, SkeletonRows } from "../../../plugin-api/ui";
+import { EmptyState, IconChevron, IconDownload, IconGit, SkeletonRows } from "../../../plugin-api/ui";
 import { actionsApi, failureMessage, type Release, type RepoRef } from "../api";
 import { githubReleasesR } from "../resources";
 import { formatAgo } from "../runStatus";
 import { formatBytes } from "./Artifacts";
 import { useNow } from "./hooks";
+import { Prose } from "./Pictures";
 
 const LONG_NOTES = 280;
 
@@ -131,7 +132,7 @@ export function ReleasesView({ repo, active }: Props) {
                     </div>
                     {release.body.trim() && (
                         <>
-                            <Markdown className={opened.has(release.id) ? "prose" : "prose gha-clamp"}>{release.body}</Markdown>
+                            <Prose className={opened.has(release.id) ? "prose" : "prose gha-clamp"}>{release.body}</Prose>
                             {release.body.length > LONG_NOTES && (
                                 <button type="button" className="gha-link" onClick={() => toggle(release.id)}>
                                     {opened.has(release.id) ? "Show less" : "Show more"}
