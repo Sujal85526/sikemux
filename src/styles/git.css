@@ -497,6 +497,32 @@
     min-height: 0;
     border-top: 1px solid var(--border);
 }
+/* Open, the history's top hairline is the handle that resizes it against the files. */
+.git-history-split + .git-history {
+    border-top: 0;
+}
+.git-history-split {
+    position: relative;
+    z-index: 3;
+    flex: 0 0 auto;
+    height: 1px;
+    background: var(--border);
+    cursor: row-resize;
+    outline: none;
+    touch-action: none;
+    transition: background var(--dur-1);
+}
+.git-history-split::before {
+    content: "";
+    position: absolute;
+    inset: -4px 0;
+}
+.git-history-split:hover,
+.git-history-split:active,
+.git-history-split:focus-visible {
+    background: var(--acc-line);
+    box-shadow: 0 0 0 1px var(--acc-line);
+}
 .git-history.open {
     flex: 1 1 0;
 }

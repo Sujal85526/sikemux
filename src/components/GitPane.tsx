@@ -124,6 +124,7 @@ function GitWorkbench({
 }) {
     const paneRootRef = useRef<HTMLDivElement>(null);
     const leftRef = useRef<HTMLDivElement>(null);
+    const historyRef = useRef<HTMLDivElement>(null);
     const storedView = useStore((s) => s.gitViews[paneId]);
     const view = {
         ...DEFAULT_GIT_VIEW,
@@ -1377,7 +1378,23 @@ function GitWorkbench({
                         renderRow={fileRow}
                     />
                 </div>
-                <div className={`git-history${historyOpen ? " open" : ""}`}>
+                {historyOpen && (
+                    <ResizeHandle
+                        targetRef={historyRef}
+                        axis="y"
+                        grows={-1}
+                        min={HISTORY_MIN}
+                        max={() => (leftRef.current?.clientHeight ?? HISTORY_MIN + HISTORY_CLEARANCE) - HISTORY_CLEARANCE}
+                        size={view.historyHeight}
+                        label="Resize the history"
+                        className="git-history-split"
+                        onResize={(height) => cmd.setGitView(paneId, { historyHeight: height })}
+                    />
+                )}
+                <div
+                    ref={historyRef}
+                    className={`git-history${historyOpen ? " open" : ""}`}
+                    style={historyOpen && view.historyHeight ? { flex: `0 0 ${view.historyHeight}px` } : undefined}>
                     <div className="git-history-head">
                         <button
                             type="button"
@@ -1643,7 +1660,17 @@ function GitWorkbench({
                         {left}
                         {cmdLogOpen && <GitCmdLogBar />}
                     </div>
-                    <SplitHandle leftRef={leftRef} width={view.leftWidth} onResize={(width) => cmd.setGitView(paneId, { leftWidth: width })} />
+                    <ResizeHandle
+                        targetRef={leftRef}
+                        axis="x"
+                        grows={1}
+                        min={LEFT_MIN}
+                        max={() => (leftRef.current?.parentElement?.clientWidth ?? LEFT_MIN + RIGHT_MIN) - RIGHT_MIN}
+                        size={view.leftWidth}
+                        label="Resize the lists and the review"
+                        className="git-split"
+                        onResize={(width) => cmd.setGitView(paneId, { leftWidth: width })}
+                    />
                     <div className="git-right">
                         <div className="git-right-review">
                             <Suspense fallback={<SkeletonRows rows={6} label="Loading diff preview" />}>{right}</Suspense>
@@ -1700,38 +1727,59 @@ function MoreButton({
 
 const LEFT_MIN = 260;
 const RIGHT_MIN = 360;
+const HISTORY_MIN = 96;
+/** Room kept above an open history for the tabs, the commit box and a few file rows. */
+const HISTORY_CLEARANCE = 280;
 
-/** The divider between the lists and the review. Dragging moves the column itself and saves the width on release. */
-function SplitHandle({
-    leftRef,
-    width,
+/**
+ * A hairline that resizes the box beside it. Dragging sizes the box directly and saves on release;
+ * `grows` says which way along the axis makes the box bigger.
+ */
+function ResizeHandle({
+    targetRef,
+    axis,
+    grows,
+    min,
+    max,
+    size,
+    label,
+    className,
     onResize,
 }: {
-    leftRef: RefObject<HTMLDivElement | null>;
-    width: number | null;
-    onResize: (width: number | null) => void;
+    targetRef: RefObject<HTMLDivElement | null>;
+    axis: "x" | "y";
+    grows: 1 | -1;
+    min: number;
+    max: () => number;
+    size: number | null;
+    label: string;
+    className: string;
+    onResize: (size: number | null) => void;
 }) {
-    const clamp = (next: number) => {
-        const room = leftRef.current?.parentElement?.clientWidth ?? next + RIGHT_MIN;
-        return Math.round(Math.min(Math.max(LEFT_MIN, room - RIGHT_MIN), Math.max(LEFT_MIN, next)));
+    const clamp = (next: number) => Math.round(Math.min(Math.max(min, max()), Math.max(min, next)));
+    const measure = () => (axis === "x" ? targetRef.current?.offsetWidth : targetRef.current?.offsetHeight) ?? size ?? min;
+    const apply = (next: number) => {
+        const el = targetRef.current;
+        if (!el) return;
+        if (axis === "x") el.style.width = `${next}px`;
+        else el.style.flex = `0 0 ${next}px`;
     };
-    const current = () => leftRef.current?.offsetWidth ?? width ?? LEFT_MIN;
 
     const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
         if (event.button !== 0) return;
         event.preventDefault();
         const handle = event.currentTarget;
         handle.setPointerCapture(event.pointerId);
-        const startX = event.clientX;
-        const startWidth = current();
-        let latest = startWidth;
+        const start = axis === "x" ? event.clientX : event.clientY;
+        const startSize = measure();
+        let latest = startSize;
         let frame: number | null = null;
         const move = (ev: PointerEvent) => {
-            latest = clamp(startWidth + ev.clientX - startX);
+            latest = clamp(startSize + grows * ((axis === "x" ? ev.clientX : ev.clientY) - start));
             if (frame !== null) return;
             frame = window.requestAnimationFrame(() => {
                 frame = null;
-                if (leftRef.current) leftRef.current.style.width = `${latest}px`;
+                apply(latest);
             });
         };
         const up = () => {
@@ -1739,31 +1787,35 @@ function SplitHandle({
             handle.removeEventListener("pointermove", move);
             handle.removeEventListener("pointerup", up);
             handle.removeEventListener("pointercancel", up);
-            if (latest !== startWidth) onResize(latest);
+            if (latest !== startSize) onResize(latest);
         };
         handle.addEventListener("pointermove", move);
         handle.addEventListener("pointerup", up);
         handle.addEventListener("pointercancel", up);
     };
 
+    const [less, more] = axis === "x" ? ["ArrowLeft", "ArrowRight"] : grows > 0 ? ["ArrowUp", "ArrowDown"] : ["ArrowDown", "ArrowUp"];
     return (
         <div
-            className="git-split"
+            className={className}
             role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize the lists and the review"
-            aria-valuemin={LEFT_MIN}
-            aria-valuenow={width ?? undefined}
+            aria-orientation={axis === "x" ? "vertical" : "horizontal"}
+            aria-label={label}
+            aria-valuemin={min}
+            aria-valuenow={size ?? undefined}
             tabIndex={0}
             title="Drag to resize · double-click to reset"
             onPointerDown={onPointerDown}
-            onDoubleClick={() => onResize(null)}
+            onDoubleClick={() => {
+                if (targetRef.current) targetRef.current.style.flex = "";
+                onResize(null);
+            }}
             onKeyDown={(event) => {
-                if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                if (event.key !== less && event.key !== more) return;
                 event.preventDefault();
                 event.stopPropagation();
                 const step = event.shiftKey ? 64 : 16;
-                onResize(clamp(current() + (event.key === "ArrowRight" ? step : -step)));
+                onResize(clamp(measure() + (event.key === more ? step : -step)));
             }}
         />
     );

@@ -102,6 +102,8 @@ export interface GitPaneView {
     leftWidth: number | null;
     /** Whether the history under the changed files is open. */
     historyOpen: boolean;
+    /** The open history's height in pixels once someone has dragged it; null shares the column evenly. */
+    historyHeight: number | null;
     /** A repository found inside the project folder, when the folder is not one itself. */
     repo: string | null;
 }
@@ -113,6 +115,7 @@ export const DEFAULT_GIT_VIEW: GitPaneView = {
     openRemote: "origin",
     leftWidth: null,
     historyOpen: false,
+    historyHeight: null,
     repo: null,
 };
 
