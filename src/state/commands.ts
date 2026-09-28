@@ -2131,7 +2131,8 @@ export const toggleAgentRail = (): void =>
     setState((s) => (s.zenMode ? { zenMode: false, agentRailOpen: true } : { agentRailOpen: !s.agentRailOpen }));
 export const setRailWidth = (edge: RailEdge, px: number): void =>
     setState(edge === "start" ? { sideRailWidth: clampRailWidth(edge, px) } : { agentRailWidth: clampRailWidth(edge, px) });
-export const toggleZen = (): void => setState((s) => ({ zenMode: !s.zenMode }));
+export const toggleZen = (): void =>
+    setState((s) => ({ zenMode: !s.zenMode, sideRailOpen: s.zenMode, agentRailOpen: s.zenMode }));
 
 export function requestOpenFile(path: string, line?: number, character?: number): void {
     ensureRoleWindow("files", "editor", "editor", path);
