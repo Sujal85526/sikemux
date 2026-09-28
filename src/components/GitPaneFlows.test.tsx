@@ -132,7 +132,7 @@ it("stages and unstages one file from the buttons on its row", async () => {
     resources.empty.refresh.mockResolvedValue(undefined);
     try {
         const user = userEvent.setup();
-        render(<GitPane paneId="git-test" cwd="/repo" active />);
+        render(<GitPane paneId="git-test" cwd="/repo" active visible />);
         await user.click(screen.getByRole("button", { name: "Stage file.ts" }));
         expect(stage).toHaveBeenCalledWith(expect.any(String), "file.ts");
         await user.click(screen.getByRole("button", { name: "Unstage file.ts" }));
