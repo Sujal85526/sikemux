@@ -234,6 +234,23 @@ pub fn history(pointer: *mut c_void, delta: i32) {
     }
 }
 
+/// Send `agent` as the tab's agent string, reloading so the site sees the change.
+pub fn introduce_as(pointer: *mut c_void, agent: &str) {
+    let Some(webview) = webview_from(pointer) else {
+        return;
+    };
+    unsafe {
+        if webview
+            .customUserAgent()
+            .is_some_and(|current| current.to_string() == agent)
+        {
+            return;
+        }
+        webview.setCustomUserAgent(Some(&NSString::from_str(agent)));
+        let _ = webview.reload();
+    }
+}
+
 /// Draw only `visible` of the page, less the `holes`, all in the page's own
 /// top-down coordinates. A native view is not cut off by the DOM around it, so
 /// a swipe would carry the page over the rails and it would cover any toast.

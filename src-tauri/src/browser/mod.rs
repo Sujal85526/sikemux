@@ -70,6 +70,7 @@ const LOAD_SETTLE: Duration = Duration::from_secs(2);
 /// with an "unsupported browser" page, so tabs — and the fetch that goes after
 /// their icons — introduce themselves as Safari.
 const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Safari/605.1.15";
+const MOBILE_USER_AGENT: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1";
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -808,6 +809,13 @@ impl BrowserManager {
         };
         if fixed.is_none() && was_fixed {
             let _ = view.set_zoom(1.0);
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let agent = fixed.and_then(|fixed| fixed.user_agent()).unwrap_or(USER_AGENT);
+            let _ = view.with_webview(move |platform| {
+                macos::introduce_as(platform.inner(), agent)
+            });
         }
         self.relayout(agent_id);
         Ok(())

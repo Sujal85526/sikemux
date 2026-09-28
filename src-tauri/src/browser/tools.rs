@@ -522,6 +522,9 @@ async fn run(
                     .set_viewport(agent_id, &tab_id, fixed)
                     .map_err(|error| error.to_string())?;
                 tokio::time::sleep(VIEWPORT_SETTLE).await;
+                let _ = manager
+                    .wait_until_loaded(agent_id, &tab_id, LOAD_TIMEOUT)
+                    .await;
             }
             state(&manager, agent_id).await
         }

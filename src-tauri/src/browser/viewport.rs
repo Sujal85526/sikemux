@@ -4,7 +4,7 @@
 
 use serde::Serialize;
 
-use super::{BrowserBounds, BrowserHole};
+use super::{BrowserBounds, BrowserHole, MOBILE_USER_AGENT};
 
 const MIN_SIZE: u32 = 200;
 const MAX_SIZE: u32 = 4000;
@@ -45,6 +45,12 @@ impl Viewport {
             height,
             preset: Some(preset),
         })
+    }
+
+    /// Sites pick their phone layout by the agent string, so the mobile preset
+    /// introduces itself as an iPhone. An iPad's Safari already claims to be a Mac.
+    pub fn user_agent(&self) -> Option<&'static str> {
+        (self.preset == Some("mobile")).then_some(MOBILE_USER_AGENT)
     }
 }
 
@@ -147,5 +153,15 @@ mod tests {
         assert!(Viewport::sized(100, 800).is_err());
         assert!(Viewport::sized(1280, 5000).is_err());
         assert!(Viewport::preset("watch").is_none());
+    }
+
+    #[test]
+    fn only_the_mobile_preset_claims_to_be_a_phone() {
+        assert_eq!(
+            Viewport::preset("mobile").unwrap().user_agent(),
+            Some(MOBILE_USER_AGENT)
+        );
+        assert_eq!(Viewport::preset("tablet").unwrap().user_agent(), None);
+        assert_eq!(Viewport::sized(390, 844).unwrap().user_agent(), None);
     }
 }

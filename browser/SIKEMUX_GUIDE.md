@@ -256,11 +256,12 @@ the pane, and a tab the pane is not showing lays out at the size it last had.
 `mobile` 390×844. `preset: "fit"` lets it follow the pane again. The size
 stays through reloads and navigations in that tab. The page lays out at that
 size and is scaled down to fit the pane, never up, so screenshots and `x`,
-`y` stay in the viewport's CSS pixels. Only the size changes: a mobile preset
-keeps the desktop Safari user agent and a mouse pointer, so sites that sniff
-either still serve their desktop version. The full state reports `viewport`
-with the page's `width` and `height`, and `fixed` holding the size you set or
-`false`. With no arguments it just returns the state.
+`y` stay in the viewport's CSS pixels. The `mobile` preset also sends
+iPhone Safari's user agent and reloads the page, so sites that sniff it serve
+their phone version; any other size sends desktop Safari's, as a real iPad
+does. The pointer stays a mouse, so sites that check for touch still see none.
+The full state reports `viewport` with the page's `width` and `height`, and
+`fixed` holding the size you set or `false`. With no arguments it just returns the state.
 
 `browser_wait` sleeps for `ms` (default 1000, max 30000) and then waits for any
 load to finish. Prefer it over repeated state reads when a page is settling.
