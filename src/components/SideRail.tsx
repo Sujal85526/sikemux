@@ -18,11 +18,10 @@ import * as cmd from "../state/commands";
 import { animate, EASE_IN, EASE_SWAP, foldedFrames, leavingRef, prefersReducedMotion } from "../lib/motion";
 import { rollupAgentStates } from "../state/agentStatus";
 import { getState, useStore } from "../state/store";
-import { AgentIcon, IconAgent, IconClose, IconCommand, IconFolder, IconPencil, IconPlus, Logo, WindowIcon } from "./Icons";
+import { AgentIcon, IconAgent, IconClose, IconCommand, IconFolder, IconPencil, IconPlus, WindowIcon } from "./Icons";
 import { Tooltip } from "./Tooltip";
 import { EmptyState, Panel, PanelHeader } from "./Panel";
-import { UpdateChip, VersionChip } from "./TopBar";
-import { RailToggle } from "./RailToggle";
+import { RailMasthead } from "./RailMasthead";
 import { AgentStateIndicator, showsAgentState } from "./AgentStateIndicator";
 import { agentIdsOf } from "../state/selectors";
 import { pluginSurface, type FrontendPlugin } from "../plugins/registry";
@@ -719,9 +718,7 @@ export const SideRail = memo(function SideRail() {
     return (
         <RailContext.Provider value={rail}>
             <aside ref={leavingRail} className="side-rail" onClickCapture={settingsOpen ? cmd.closeSettings : undefined}>
-                <div className="side-rail-head">
-                    <RailToggle edge="start" />
-                </div>
+                <RailMasthead />
                 <div className="rail-scroll">
                     <Group
                         label="Projects"
@@ -743,16 +740,6 @@ export const SideRail = memo(function SideRail() {
                     />
                     <Group label="Plugins" list={plugins} rows={pluginRows} emptyText="no plugins" className="rail-logos" />
                     <Group label="Terminals" list={commands} add={cmd.createCommandSession} addTitle="New terminal" emptyText="no terminals" />
-                </div>
-
-                <UpdateChip />
-
-                {/* Identity lives at the foot of the rail: present when you look for
-                it, out of the way of the sessions above it. */}
-                <div className="rail-sig">
-                    <Logo size={13} />
-                    <span className="rail-sig-name">Sikemux</span>
-                    <VersionChip />
                 </div>
             </aside>
             {projectDragVisual &&

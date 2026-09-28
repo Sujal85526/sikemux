@@ -111,14 +111,116 @@ textarea:focus,
     padding: var(--gutter-rail) var(--gutter-rail) var(--space-4);
 }
 
-.side-rail-head {
+.rail-masthead {
     display: flex;
+    align-items: center;
+    gap: var(--space-1h);
     flex: 0 0 auto;
-    padding: var(--space-1h) var(--space-2) 0;
+    height: 34px;
+    padding: var(--space-1h) var(--space-2) 0 calc(var(--gutter-rail) + var(--space-2));
 }
 
-.side-rail-head + .rail-scroll {
+.rail-masthead + .rail-scroll {
     padding-top: 0;
+}
+
+.rail-masthead-logo {
+    flex: 0 0 auto;
+    color: var(--acc);
+}
+
+.rail-masthead-name {
+    margin-left: 1px;
+    font-family: var(--ui);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-semibold);
+    color: var(--ink);
+}
+
+.rail-masthead-version {
+    padding-top: 1px;
+    font-family: var(--mono);
+    font-size: var(--text-3xs);
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-faint);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.rail-masthead-actions {
+    display: flex;
+    gap: 2px;
+    margin-left: auto;
+}
+
+.update-button {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: var(--control-hit);
+    height: var(--control-hit);
+    color: var(--acc);
+    transition: background var(--dur-1);
+}
+
+.update-button:hover:not(:disabled) {
+    background: var(--surface-hover);
+}
+
+.update-button:disabled {
+    cursor: progress;
+}
+
+.update-button-preparing,
+.update-button-downloading,
+.update-button-installing,
+.update-button-restarting {
+    color: var(--warn);
+}
+
+.update-button-error {
+    color: var(--danger);
+}
+
+.update-ring {
+    position: absolute;
+    inset: 2px;
+    width: calc(100% - 4px);
+    height: calc(100% - 4px);
+    transform: rotate(-90deg);
+}
+
+.update-ring circle {
+    fill: none;
+    stroke-width: 1.6;
+}
+
+.update-ring-track {
+    stroke: color-mix(in srgb, currentColor 20%, transparent);
+}
+
+.update-ring-bar {
+    stroke: currentColor;
+    stroke-linecap: round;
+    transition: stroke-dasharray 0.18s linear;
+}
+
+.update-ring-spin {
+    animation: update-ring-spin 1s linear infinite;
+}
+
+@keyframes update-ring-spin {
+    to {
+        transform: rotate(270deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .update-ring-spin {
+        animation: none;
+    }
 }
 
 .side-rail .panel-group,
@@ -1362,31 +1464,6 @@ textarea,
  * second tint over the one the pane already draws. */
 .terminal-host .xterm-viewport {
     background-color: transparent !important;
-}
-
-/* Rail signature — the app's identity, parked at the foot of the sessions
- * rather than occupying the row above the first project. */
-.rail-sig {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1h);
-    flex: 0 0 auto;
-    padding: 0 var(--gutter-rail) var(--space-2);
-    color: var(--ink-faint);
-}
-.rail-sig svg {
-    opacity: 0.6;
-}
-.rail-sig-name {
-    font-family: var(--ui);
-    font-size: var(--text-2xs);
-    font-weight: var(--weight-medium);
-    letter-spacing: var(--tracking-normal);
-}
-.rail-sig .tb-version {
-    margin-left: auto;
-    font-family: var(--mono);
-    font-size: var(--text-3xs);
 }
 
 /* ---- Rail typography -----------------------------------------------------

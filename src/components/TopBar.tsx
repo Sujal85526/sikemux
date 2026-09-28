@@ -1,5 +1,4 @@
-import { memo, useEffect, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { getVersion } from "@tauri-apps/api/app";
+import { memo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useBattery } from "../hooks/useBattery";
 import { useClock } from "../hooks/useClock";
@@ -14,7 +13,6 @@ import { WorkspaceTabs } from "./Workspace";
 import { useVoice } from "../voice/dictation";
 import { PRIMARY_SHORTCUT } from "../lib/platform";
 import { Tooltip } from "./Tooltip";
-import { isUpdateBusy, updateDownloadPercent, updateStatusLabel } from "../api/updater";
 import { RollingText } from "./RollingText";
 
 const time2 = (n: number) => String(n).padStart(2, "0");
@@ -107,68 +105,6 @@ function CogIcon({ size = 15 }: { size?: number }) {
             strokeLinejoin="round">
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-        </svg>
-    );
-}
-
-export function VersionChip() {
-    const [version, setVersion] = useState<string | null>(null);
-    useEffect(() => {
-        getVersion().then(setVersion).catch(swallow("getVersion"));
-    }, []);
-    if (!version) return null;
-    return (
-        <Tooltip label={`Sikemux ${version}`}>
-            <span className="tb-version">v{version}</span>
-        </Tooltip>
-    );
-}
-
-export function UpdateChip() {
-    const pending = useStore((s) => s.pendingUpdate);
-    if (!pending) return null;
-
-    const state = pending.state;
-    const busy = isUpdateBusy(state);
-    const statusLabel = updateStatusLabel(pending);
-    const percent = state === "downloading" ? updateDownloadPercent(pending) : null;
-    const onClick = () => {
-        if (busy) return;
-        cmd.openWhatsNew();
-    };
-
-    return (
-        <Tooltip
-            label={
-                state === "error"
-                    ? `Update v${pending.version} failed — ${pending.error ?? "unknown"}. Click to retry.`
-                    : busy
-                      ? `${statusLabel} v${pending.version}`
-                      : `Update v${pending.version} available (current: v${pending.currentVersion}). Click to install + relaunch.${pending.notes ? `\n\n${pending.notes}` : ""}`
-            }>
-            <button className={`tb-update tb-update-${state}${percent === null ? "" : " tb-update-measured"}`} onClick={onClick} disabled={busy}>
-                {percent !== null && <span className="tb-update-fill" style={{ transform: `scaleX(${percent / 100})` }} aria-hidden="true" />}
-                <UpdateArrow size={12} />
-                <span className="tb-update-label">{statusLabel}</span>
-            </button>
-        </Tooltip>
-    );
-}
-
-function UpdateArrow({ size = 12 }: { size?: number }) {
-    return (
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width={size}
-            height={size}
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.6"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true">
-            <path d="M8 2v9M4 7l4 4 4-4M3 14h10" />
         </svg>
     );
 }
