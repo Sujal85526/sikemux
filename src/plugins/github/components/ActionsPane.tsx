@@ -78,7 +78,9 @@ export function ActionsPane({ paneId, active }: Props) {
         );
     }
 
-    const branch = followBranch && !view.branch ? project.branch : view.branch;
+    // The project's branch means nothing on a repository that is not the project's.
+    const projectBranch = project.repo && repo && slugOf(project.repo) === slugOf(repo) ? project.branch : null;
+    const branch = followBranch && !view.branch ? projectBranch : view.branch;
 
     return (
         <div className="gha-pane" data-active={active ? "1" : "0"}>
@@ -102,7 +104,7 @@ export function ActionsPane({ paneId, active }: Props) {
                     paneId={paneId}
                     repo={repo ?? { owner: "", name: "" }}
                     view={view}
-                    projectBranch={project.branch}
+                    projectBranch={projectBranch}
                     onPickRepo={() => setPicking(true)}
                 />
                 <div className="gha-body">
@@ -129,7 +131,7 @@ export function ActionsPane({ paneId, active }: Props) {
                             listState={view.listState}
                             item={view.item}
                             composing={view.composing === "pull"}
-                            projectBranch={project.branch}
+                            projectBranch={projectBranch}
                             login={status.data?.login ?? null}
                             active={active}
                         />
@@ -179,7 +181,7 @@ export function ActionsPane({ paneId, active }: Props) {
                 <DispatchDialog
                     repo={repo}
                     workflow={dispatching}
-                    defaultBranch={branch ?? project.branch}
+                    defaultBranch={branch ?? projectBranch}
                     onClose={() => updateView(paneId, { dispatching: null })}
                 />
             )}
