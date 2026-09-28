@@ -164,7 +164,7 @@ describe("MergeReview", () => {
         });
 
         expect(slot).toHaveStyle({ height: "1200px", overflow: "clip" });
-        expect(slot.nextElementSibling).toHaveStyle({ transform: "translateY(1200px)" });
+        expect(slot.nextElementSibling).toHaveStyle({ top: "1200px" });
         expect(screen.getByTestId("diff:file-0.ts:HEAD:working")).toBeInTheDocument();
     });
 });

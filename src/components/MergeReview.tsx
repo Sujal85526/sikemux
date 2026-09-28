@@ -130,8 +130,9 @@ export function MergeReview({
                     {virtualizer.getVirtualItems().map((row) => {
                         const file = files[row.index];
                         if (!file) return null;
+                        // Placed by `top`, not a transform: WebKit draws a sticky file header inside a transformed box at the box's bottom and leaves it there as the list scrolls.
                         const style: CSSProperties = {
-                            transform: `translateY(${row.start}px)`,
+                            top: row.start,
                             height: row.size,
                             overflow: "clip",
                         };
