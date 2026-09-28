@@ -121,36 +121,13 @@
 .gha-side-item {
     flex: 1 1 auto;
     min-width: 0;
-    display: flex;
-    align-items: center;
     gap: var(--space-2);
-    height: 30px;
-    padding: 0 var(--space-2);
-    border: 1px solid transparent;
-    border-radius: var(--radius-2);
-    background: transparent;
-    color: var(--text-secondary);
     font: inherit;
     text-align: left;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     cursor: pointer;
-    transition:
-        background var(--dur-1) linear,
-        color var(--dur-1) linear;
-}
-.gha-side-item:hover {
-    background: var(--surface-hover);
-    color: var(--text-primary);
-}
-.gha-side-item[data-on="1"] {
-    background: var(--surface-selected);
-    border-color: var(--border-selected);
-    color: var(--text-primary);
-}
-.gha-side-item[data-off="1"] {
-    color: var(--text-tertiary);
 }
 .gha-side-item:focus-visible {
     box-shadow: var(--focus-ring);
@@ -420,6 +397,7 @@
 .gha-run-rows {
     display: flex;
     flex-direction: column;
+    gap: var(--space-0);
     padding: 0 var(--space-3);
 }
 .gha-run-row {
@@ -430,7 +408,6 @@
     min-height: 44px;
     padding: var(--space-1h) var(--space-2);
     border: 1px solid transparent;
-    border-bottom-color: var(--gha-rule);
     border-radius: var(--radius-2);
     background: none;
     color: var(--text-secondary);
@@ -573,17 +550,15 @@
 .gha-jobs {
     display: flex;
     flex-direction: column;
+    gap: var(--space-0);
     padding: 0 var(--space-3) var(--space-5);
-}
-.gha-job {
-    border-bottom: 1px solid var(--gha-rule);
 }
 .gha-job-head {
     display: flex;
     align-items: center;
     gap: var(--space-2);
     width: 100%;
-    height: 34px;
+    height: 28px;
     padding: 0 var(--space-2);
     border: 1px solid transparent;
     border-radius: var(--radius-2);
@@ -958,6 +933,7 @@
 .gha-list {
     display: flex;
     flex-direction: column;
+    gap: var(--space-0);
     padding: 0 var(--space-3) var(--space-5);
 }
 .gha-list-head {
@@ -995,7 +971,6 @@
     min-height: 44px;
     padding: var(--space-1h) var(--space-2);
     border: 1px solid transparent;
-    border-bottom-color: var(--gha-rule);
     border-radius: var(--radius-2);
     background: none;
     color: var(--text-secondary);
@@ -1509,7 +1484,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    height: 30px;
+    height: 28px;
     padding: 0 var(--space-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-2);
@@ -1610,6 +1585,7 @@ button.gha-step:focus-visible {
 }
 .gha-log-line.anchor {
     background: var(--surface-selected);
+    box-shadow: inset 0 0 0 1px var(--border-selected);
 }
 .gha-log-line.hit.current {
     background: color-mix(in oklab, var(--warn) 26%, transparent);
@@ -1628,7 +1604,7 @@ button.gha-step:focus-visible {
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    height: 32px;
+    height: 28px;
     padding: 0 var(--space-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-2);

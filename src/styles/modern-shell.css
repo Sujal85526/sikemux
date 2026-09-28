@@ -149,7 +149,8 @@ textarea:focus,
 .sess-row,
 .proj-row,
 .proj-child,
-.agent-row {
+.agent-row,
+.gha-side-item {
     display: flex;
     align-items: center;
     min-height: 28px;
@@ -172,7 +173,8 @@ textarea:focus,
 .sess-row:hover,
 .proj-row:hover,
 .proj-child:hover,
-.agent-row:hover {
+.agent-row:hover,
+.gha-side-item:hover {
     background: var(--surface-hover);
     color: var(--text-primary);
 }
@@ -180,7 +182,8 @@ textarea:focus,
 .sess-row.active,
 .proj-row.expanded,
 .proj-child.active,
-.agent-row.active {
+.agent-row.active,
+.gha-side-item[data-on="1"] {
     background: var(--surface-selected);
     box-shadow: inset 0 0 0 1px var(--border-selected);
     color: var(--text-primary);
