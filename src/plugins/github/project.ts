@@ -55,3 +55,9 @@ export function useRepoOf(cwd: string | null, enabled: boolean): ProjectRepo {
         loading: !!cwd && !overridden && fromRemote.status === "loading" && !fromRemote.data,
     };
 }
+
+/** The repository a pane is showing: its own choice, else the project's, else the last one opened anywhere. */
+export function useShownRepo(chosen: RepoRef | null, project: RepoRef | null): RepoRef | null {
+    const lastRepo = actionsSettings.useSelect((settings) => settings.lastRepo);
+    return useMemo(() => chosen ?? project ?? (lastRepo ? refOf(lastRepo) : null), [chosen, project, lastRepo]);
+}

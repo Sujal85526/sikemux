@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useActiveSurfacePane } from "../../../plugin-api/host";
+import { useActiveSurfacePane, useModalFocus } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { IconSearch, rankBy, useMouseActive } from "../../../plugin-api/ui";
-import type { RepoListing, Workflow } from "../api";
+import type { RepoListing, RepoRef, Workflow } from "../api";
 import { GITHUB_HUB } from "../kinds";
-import { actionsMyReposR, actionsWorkflowsR } from "../resources";
-import { closePalette, filterBy, refOf, showRepo, STATUS_FILTERS, updateView, useRunsView, type StatusFilter } from "../state";
+import { useProjectRepo, useShownRepo } from "../project";
+import { actionsMyReposR, actionsStatusR, actionsWorkflowsR } from "../resources";
+import { closePalette, filterBy, pickRepo, refOf, STATUS_FILTERS, updateView, useRunsView, type StatusFilter } from "../state";
 import { GithubMark } from "./ActionsIcon";
 
 const FILTER_LABEL: Record<StatusFilter, string> = {
@@ -25,7 +26,12 @@ export interface PaletteItem {
 }
 
 /** Everything the palette can do for a pane, before the query narrows it. */
-export function paletteItems(query: string, repos: readonly RepoListing[], workflows: readonly Workflow[]): PaletteItem[] {
+export function paletteItems(
+    query: string,
+    repos: readonly RepoListing[],
+    workflows: readonly Workflow[],
+    place: { cwd: string | null; shown: RepoRef | null },
+): PaletteItem[] {
     const typed = query.trim();
     const filters: PaletteItem[] = STATUS_FILTERS.map((filter) => ({
         id: `filter:${filter}`,
@@ -43,9 +49,13 @@ export function paletteItems(query: string, repos: readonly RepoListing[], workf
         id: `repo:${repo.slug}`,
         label: repo.slug,
         hint: "repo",
-        run: (paneId) => showRepo(paneId, { owner: repo.owner, name: repo.name }),
+        run: (paneId) => pickRepo(paneId, { owner: repo.owner, name: repo.name }, place),
     }));
-    const back: PaletteItem = { id: "back", label: "Back to runs", run: (paneId) => updateView(paneId, { run: null, job: null }) };
+    const back: PaletteItem = {
+        id: "back",
+        label: "Back to runs",
+        run: (paneId) => updateView(paneId, { section: "actions", item: null, composing: null, run: null, job: null }),
+    };
 
     const everything = [...workflowItems, ...repoItems, ...filters, back];
     const ranked = typed ? rankBy(typed, everything, (item) => item.label) : [...filters, back, ...workflowItems, ...repoItems];
@@ -54,20 +64,29 @@ export function paletteItems(query: string, repos: readonly RepoListing[], workf
     // repository this account has listed.
     const typedRepo = refOf(typed);
     if (!typedRepo || repos.some((repo) => repo.slug === typed)) return ranked;
-    return [{ id: `open:${typed}`, label: `Open ${typed}`, hint: "repo", run: (paneId) => showRepo(paneId, typedRepo) }, ...ranked];
+    return [{ id: `open:${typed}`, label: `Open ${typed}`, hint: "repo", run: (paneId) => pickRepo(paneId, typedRepo, place) }, ...ranked];
 }
 
 export function Palette() {
     const paneId = useActiveSurfacePane(GITHUB_HUB);
     const view = useRunsView(paneId ?? "");
-    const repos = useResourceEnabled(true, actionsMyReposR);
+    const status = useResourceEnabled(true, actionsStatusR);
+    const signedIn = !!status.data?.ok;
+    const project = useProjectRepo(signedIn);
+    const repo = useShownRepo(view.repo, project.repo);
+    const repos = useResourceEnabled(signedIn, actionsMyReposR);
     const [query, setQuery] = useState("");
     const [selected, setSelected] = useState(0);
     const mouseActive = useMouseActive();
+    const modalRef = useRef<HTMLDivElement>(null);
     const listRef = useRef<HTMLDivElement>(null);
+    useModalFocus(modalRef);
 
-    const workflows = useResourceEnabled(!!view.repo, actionsWorkflowsR, view.repo ?? { owner: "", name: "" });
-    const items = useMemo(() => paletteItems(query, repos.data ?? [], workflows.data ?? []), [query, repos.data, workflows.data]);
+    const workflows = useResourceEnabled(signedIn && !!repo, actionsWorkflowsR, repo ?? { owner: "", name: "" });
+    const items = useMemo(
+        () => paletteItems(query, repos.data ?? [], workflows.data ?? [], { cwd: project.cwd, shown: repo }),
+        [query, repos.data, workflows.data, project.cwd, repo],
+    );
 
     useEffect(() => {
         listRef.current?.querySelector<HTMLElement>(`.picker-item:nth-child(${selected + 1})`)?.scrollIntoView({ block: "nearest" });
@@ -80,12 +99,16 @@ export function Palette() {
     };
 
     const onKeyDown = (event: React.KeyboardEvent) => {
-        if (event.key === "Escape") closePalette();
-        else if (event.key === "ArrowDown" || (event.key === "Tab" && !event.shiftKey)) {
+        if (event.key === "Escape") {
+            event.stopPropagation();
+            closePalette();
+        } else if (event.key === "ArrowDown" || (event.key === "Tab" && !event.shiftKey)) {
             event.preventDefault();
+            event.stopPropagation();
             setSelected((index) => (items.length ? (index + 1) % items.length : 0));
         } else if (event.key === "ArrowUp" || (event.key === "Tab" && event.shiftKey)) {
             event.preventDefault();
+            event.stopPropagation();
             setSelected((index) => (items.length ? (index - 1 + items.length) % items.length : 0));
         } else if (event.key === "Enter") {
             event.preventDefault();
@@ -95,7 +118,15 @@ export function Palette() {
 
     return (
         <div className="picker-backdrop" onMouseDown={closePalette}>
-            <div className="picker" onMouseDown={(event) => event.stopPropagation()}>
+            <div
+                ref={modalRef}
+                tabIndex={-1}
+                className="picker"
+                role="dialog"
+                aria-modal="true"
+                aria-label="GitHub"
+                onKeyDown={onKeyDown}
+                onMouseDown={(event) => event.stopPropagation()}>
                 <div className="picker-input-wrap">
                     <IconSearch size={15} className="picker-search-icon" />
                     <input
@@ -106,7 +137,6 @@ export function Palette() {
                             setQuery(event.target.value);
                             setSelected(0);
                         }}
-                        onKeyDown={onKeyDown}
                         autoFocus
                         spellCheck={false}
                     />

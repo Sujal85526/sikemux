@@ -147,9 +147,9 @@ export function updateView(paneId: string, patch: Partial<RunsView>): void {
     useActions.setState((state) => ({ views: { ...state.views, [paneId]: { ...(state.views[paneId] ?? FRESH), ...patch } } }));
 }
 
-/** Changing what the list is of always starts it again from the first page. */
+/** Changing what the runs list is of always starts it again from the first page. */
 export function filterBy(paneId: string, patch: Pick<Partial<RunsView>, "workflowId" | "statusFilter" | "branch">): void {
-    updateView(paneId, { ...patch, page: 1, run: null, job: null });
+    updateView(paneId, { ...patch, section: "actions", item: null, composing: null, page: 1, run: null, job: null });
 }
 
 /**
@@ -161,6 +161,12 @@ export function showRepo(paneId: string, repo: RepoRef, shown: RepoRef | null = 
     const same = !!shown && slugOf(shown) === slugOf(repo);
     updateView(paneId, same ? { repo } : { ...FRESH, section: viewOf(paneId).section, repo });
     rememberRepo(slugOf(repo));
+}
+
+/** A repository picked by hand while a project is in front belongs to that project, so it comes back with it. */
+export function pickRepo(paneId: string, repo: RepoRef, place: { cwd: string | null; shown: RepoRef | null }): void {
+    showRepo(paneId, repo, place.shown);
+    if (place.cwd) setProjectRepo(place.cwd, slugOf(repo));
 }
 
 export function showSection(paneId: string, section: Section): void {

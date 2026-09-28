@@ -3,9 +3,9 @@ import { notify, reportError } from "../../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
 import { EmptyState, SkeletonRows } from "../../../plugin-api/ui";
 import { actionsApi } from "../api";
-import { useProjectRepo } from "../project";
+import { useProjectRepo, useShownRepo } from "../project";
 import { actionsStatusR, actionsWorkflowsR } from "../resources";
-import { actionsSettings, needsRepo, refOf, setProjectRepo, showRepo, slugOf, updateView, useRunsView, viewOf } from "../state";
+import { actionsSettings, needsRepo, pickRepo, refOf, showRepo, slugOf, updateView, useRunsView, viewOf } from "../state";
 import { GithubMark } from "./ActionsIcon";
 import { ActionsSidebar } from "./ActionsSidebar";
 import { ActionsSignIn } from "./ActionsSignIn";
@@ -28,13 +28,10 @@ export function ActionsPane({ paneId, active }: Props) {
     const view = useRunsView(paneId);
     const status = useResourceEnabled(active, actionsStatusR);
     const project = useProjectRepo(active && !!status.data?.ok);
-    const lastRepo = actionsSettings.useSelect((settings) => settings.lastRepo);
     const followBranch = actionsSettings.useSelect((settings) => settings.followBranch);
     const [picking, setPicking] = useState(false);
 
-    // Held still between renders so the rows below it are only redrawn when
-    // it really changes.
-    const repo = useMemo(() => view.repo ?? project.repo ?? (lastRepo ? refOf(lastRepo) : null), [view.repo, project.repo, lastRepo]);
+    const repo = useShownRepo(view.repo, project.repo);
 
     const workflows = useResourceEnabled(active && !!repo && view.dispatching !== null, actionsWorkflowsR, repo ?? { owner: "", name: "" });
     const dispatching = useMemo(
@@ -175,12 +172,7 @@ export function ActionsPane({ paneId, active }: Props) {
                 <RepoPicker
                     current={repo}
                     onClose={() => setPicking(false)}
-                    onPick={(picked) => {
-                        showRepo(paneId, picked);
-                        // A repository chosen while a project is in front belongs
-                        // to that project, so it comes back with it.
-                        if (project.cwd) setProjectRepo(project.cwd, slugOf(picked));
-                    }}
+                    onPick={(picked) => pickRepo(paneId, picked, { cwd: project.cwd, shown: repo })}
                 />
             )}
             {repo && dispatching && (
