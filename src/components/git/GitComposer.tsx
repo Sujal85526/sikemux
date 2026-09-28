@@ -130,7 +130,6 @@ export function GitComposer({
                     <Tooltip label={stagedCount > 0 ? `${commitLabel} (${PRIMARY_SHORTCUT}⏎)` : "Stage files to commit them"}>
                         <button type="button" className="git-compose-commit" disabled={!canCommit} onClick={onCommit}>
                             {commitLabel}
-                            <kbd>{PRIMARY_SHORTCUT}⏎</kbd>
                         </button>
                     </Tooltip>
                 </div>
