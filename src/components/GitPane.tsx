@@ -1382,7 +1382,7 @@ function GitWorkbench({
                 <div
                     ref={historyRef}
                     className={`git-history${historyOpen ? " open" : ""}`}
-                    style={historyOpen && view.historyHeight ? { flex: `0 0 ${view.historyHeight}px` } : undefined}>
+                    style={historyOpen && view.historyHeight ? { flex: `0 0 ${view.historyHeight}px`, minHeight: HISTORY_MIN } : undefined}>
                     <div className="git-history-head">
                         <button
                             type="button"
