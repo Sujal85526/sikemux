@@ -132,6 +132,7 @@ export const IPC_COMMANDS = [
     "git_remote_rename",
     "git_remote_set_url",
     "git_fetch",
+    "git_fetch_ref",
     "git_remote_branches",
     "git_checkout_remote_branch",
     "git_delete_remote_branch",

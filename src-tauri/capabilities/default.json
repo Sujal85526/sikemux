@@ -148,6 +148,7 @@
     "allow-git-remote-rename",
     "allow-git-remote-set-url",
     "allow-git-fetch",
+    "allow-git-fetch-ref",
     "allow-git-remote-branches",
     "allow-git-checkout-remote-branch",
     "allow-git-delete-remote-branch",

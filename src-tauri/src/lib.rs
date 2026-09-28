@@ -345,6 +345,7 @@ pub fn run() {
             git::git_remote_rename,
             git::git_remote_set_url,
             git::git_fetch,
+            git::git_fetch_ref,
             git::git_remote_branches,
             git::git_checkout_remote_branch,
             git::git_delete_remote_branch,

@@ -3925,6 +3925,38 @@ pub async fn git_fetch(repo: String, remote: Option<String>) -> Result<String, S
     .await
 }
 
+/// Fetches one ref from a remote into a local branch, such as a pull request
+/// from a fork, which exists only as `pull/N/head` on the remote it was opened on.
+#[tauri::command]
+pub async fn git_fetch_ref(
+    repo: String,
+    remote: String,
+    source: String,
+    branch: String,
+) -> Result<String, String> {
+    run_blocking(move || -> Result<String, String> {
+        for part in [&remote, &source, &branch] {
+            if !plain_ref_part(part) {
+                return Err(format!("{part:?} cannot be fetched"));
+            }
+        }
+        let spec = format!("+{source}:refs/heads/{branch}");
+        git_ok(&repo, &["fetch", "--end-of-options", &remote, &spec])
+    })
+    .await
+}
+
+/// A remote, ref or branch name that cannot be read as an option or a second refspec.
+fn plain_ref_part(part: &str) -> bool {
+    !part.is_empty()
+        && !part.starts_with('-')
+        && !part.contains(':')
+        && !part.contains("..")
+        && !part
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control() || "~^?*[\\".contains(c))
+}
+
 // ---- remote branches -----------------------------------------------------
 
 #[derive(Serialize, Clone)]
@@ -4116,6 +4148,16 @@ pub async fn git_set_upstream(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_fetched_ref_part_cannot_smuggle_an_option_or_a_second_refspec() {
+        for good in ["origin", "pull/12/head", "pr-12", "feat/thing"] {
+            assert!(super::plain_ref_part(good), "{good}");
+        }
+        for bad in ["", "-u", "a:b", "a b", "a..b", "a~1", "a^", "*"] {
+            assert!(!super::plain_ref_part(bad), "{bad}");
+        }
+    }
+
     use super::*;
     use std::{fs, path::Path};
     use tempfile::tempdir;
