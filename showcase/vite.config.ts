@@ -199,6 +199,21 @@ function parseMarkdown(requests: unknown[]): Promise<unknown[]> {
   );
 }
 
+function commitFiles(name: string, rev: string): string[] {
+  if (!LOCAL_ROOTS[name] || !existsSync(LOCAL_ROOTS[name])) return [];
+  try {
+    return execFileSync(
+      "git",
+      ["show", "--name-only", "--format=", "--end-of-options", rev],
+      { cwd: LOCAL_ROOTS[name], encoding: "utf8" },
+    )
+      .split("\n")
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 async function body(
   request: IncomingMessage,
 ): Promise<Record<string, unknown>> {
@@ -244,6 +259,12 @@ function demoFileSystem(): PluginOption {
                 found ? [...found.project.files].sort() : [],
               );
             }
+            case "/commit_files":
+              return send(
+                response,
+                200,
+                commitFiles(input.project as string, input.rev as string),
+              );
             case "/git_log":
               return send(
                 response,

@@ -220,6 +220,22 @@ export class ShowcaseBackend implements IpcTransport {
       ]),
     );
     this.on("git_stash_list", constant([]));
+    this.on("git_commit_files", async ({ repo, rev }) => {
+      const project = DEMO_PROJECTS.find(
+        (candidate) => candidate.path === repo,
+      );
+      if (!project) return [];
+      return server<string[]>("commit_files", { project: project.name, rev });
+    });
+    this.on("git_remote_branches", ({ repo, remote }) =>
+      (BRANCHES[repo as string] ?? ["main"]).map((name) => ({
+        name,
+        full_ref: `${remote}/${name}`,
+        is_head_pointer: false,
+        tracked_by: name,
+        subject: null,
+      })),
+    );
 
     let nextPty = 1;
     const ptyPanes = new Map<number, { paneId?: string; cwd: string | null }>();
