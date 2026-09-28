@@ -32,7 +32,7 @@ function IssueRow({ issue, now, selected, onOpen }: { issue: Issue; now: number;
     );
 }
 
-function IssueDetail({ repo, number, active }: { repo: RepoRef; number: number; active: boolean }) {
+export function IssueDetail({ repo, number, active }: { repo: RepoRef; number: number; active: boolean }) {
     const issue = useResourceEnabled(active, issueR, repo, number);
     const now = useNow(false);
     const [busy, runBusy] = useBusy();

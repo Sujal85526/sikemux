@@ -602,16 +602,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
-/* The glyph points right already, so closed needs no turn and open needs a quarter. */
-.gha-chevron {
-    display: inline-flex;
-    flex: 0 0 auto;
-    color: var(--text-tertiary);
-    transition: transform var(--dur-2) var(--ease-out);
-}
-.gha-chevron[data-open="1"] {
-    transform: rotate(90deg);
-}
 .gha-job-actions {
     display: flex;
     align-items: center;
@@ -1243,11 +1233,6 @@
 .gha-pane .prose {
     padding: var(--space-2) 0;
 }
-.gha-pane .prose.gha-clamp {
-    max-height: 190px;
-    overflow: hidden;
-    mask-image: linear-gradient(to bottom, #000 70%, transparent);
-}
 .gha-add {
     color: var(--live);
 }
@@ -1603,73 +1588,6 @@
     padding: var(--space-2);
     border-top: 1px solid var(--gha-rule);
     font-size: var(--text-2xs);
-}
-
-.gha-release {
-    padding: var(--space-3) var(--space-2) var(--space-4);
-    border-bottom: 1px solid var(--gha-rule);
-}
-.gha-release-head {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-    font-size: var(--text-2xs);
-    color: var(--text-tertiary);
-}
-.gha-release-spacer {
-    flex: 1 1 auto;
-}
-.gha-release-name {
-    font-size: var(--text-md);
-    font-weight: var(--weight-semibold);
-    letter-spacing: var(--tracking-tight);
-    color: var(--text-primary);
-}
-.gha-release-meta {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--space-1h);
-    padding-top: var(--space-1);
-    font-size: var(--text-2xs);
-    color: var(--text-tertiary);
-}
-.gha-release-author {
-    color: var(--text-secondary);
-}
-
-.gha-assets {
-    margin-top: var(--space-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    overflow: hidden;
-}
-.gha-assets-head {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1h);
-    padding: var(--space-1h) var(--space-2);
-    font-size: var(--text-2xs);
-    color: var(--text-secondary);
-    cursor: pointer;
-    list-style: none;
-}
-.gha-assets-head::-webkit-details-marker {
-    display: none;
-}
-.gha-assets-head:hover {
-    background: var(--surface-hover);
-    color: var(--text-primary);
-}
-.gha-assets[open] .gha-assets-head {
-    border-bottom: 1px solid var(--border);
-}
-.gha-assets[open] .gha-chevron {
-    transform: rotate(90deg);
-}
-.gha-assets .gha-artifact {
-    padding: 0 var(--space-2);
 }
 
 /* ---- What a job meant to be read, and what a run cost ------------------- */
@@ -2217,7 +2135,9 @@ button.git-file-row {
     overflow-y: auto;
     padding: var(--space-4) 16px var(--space-6);
 }
-.pr-conversation > .gha-thread {
+.pr-conversation > .gha-thread,
+.pr-conversation > .release-notes,
+.pr-conversation > .release-assets {
     max-width: 880px;
     margin: 0 auto;
 }

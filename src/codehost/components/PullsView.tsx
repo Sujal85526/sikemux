@@ -402,13 +402,13 @@ function PullFileRows({
     );
 }
 
-type PullTab = "conversation" | "files";
+export type PullTab = "conversation" | "files";
 
 /**
  * The right column of an open pull request: a header like a commit's in Changes, with a toggle where a commit's
  * actions sit, between the conversation and every changed file's diff.
  */
-function PullRight({
+export function PullRight({
     repo,
     cwd,
     number,

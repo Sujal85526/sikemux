@@ -84,7 +84,7 @@ export function HostArea({ paneId, section, repo, branch, cwd, active }: Props) 
             <div className="gha-pane" data-active={active ? "1" : "0"}>
                 <div className="gha-body">
                     {section === "inbox" ? (
-                        <InboxView active={active} />
+                        <InboxView paneId={paneId} login={status.data?.login ?? null} active={active} />
                     ) : section === "pulls" ? (
                         <PullsView
                             paneId={paneId}
@@ -108,7 +108,7 @@ export function HostArea({ paneId, section, repo, branch, cwd, active }: Props) 
                             active={active}
                         />
                     ) : section === "releases" ? (
-                        <ReleasesView repo={repo} active={active} />
+                        <ReleasesView paneId={paneId} repo={repo} active={active} />
                     ) : view.run === null ? (
                         <RunsList
                             paneId={paneId}
