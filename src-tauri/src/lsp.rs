@@ -2143,9 +2143,9 @@ mod tests {
         // SAFETY: `fd` is a live ChildStdin descriptor owned by this test.
         let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
         assert!(flags >= 0, "read pipe flags");
-        // SAFETY: the descriptor remains live and the flag combination keeps
-        // its existing access mode while temporarily adding O_NONBLOCK.
         assert!(
+            // SAFETY: the descriptor remains live and the flag combination keeps
+            // its existing access mode while temporarily adding O_NONBLOCK.
             unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } >= 0,
             "set nonblocking pipe"
         );
@@ -2164,8 +2164,8 @@ mod tests {
             );
             break;
         }
-        // SAFETY: `fd` is unchanged and live; restore the exact original flags.
         assert!(
+            // SAFETY: `fd` is unchanged and live; restore the exact original flags.
             unsafe { libc::fcntl(fd, libc::F_SETFL, flags) } >= 0,
             "restore blocking pipe"
         );
