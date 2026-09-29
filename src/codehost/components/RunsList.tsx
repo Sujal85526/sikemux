@@ -2,14 +2,14 @@ import { memo, useEffect, useMemo, useRef } from "react";
 import { openUrl, swallow } from "../../plugin-api/host";
 import { GitColumns } from "../../components/git/GitColumns";
 import { useResourceEnabled } from "../../plugin-api/resources";
-import { Dropdown, EmptyState, IconGit, IconRefresh, IconRun, SkeletonRows, Tooltip } from "../../plugin-api/ui";
+import { Dropdown, EmptyState, IconCommit, IconGit, IconPullRequest, IconRefresh, IconRun, SkeletonRows, Tooltip } from "../../plugin-api/ui";
 import { failureMessage, type RepoRef, type Run, type Workflow } from "../api";
 import { useHost } from "../registry";
 import { runsR, workflowsR } from "../resources";
-import { elapsedMs, formatAgo, formatDuration, isUnfinished, outcomeOf, statusParam } from "../runStatus";
+import { elapsedMs, formatAgo, formatDuration, isUnfinished, OUTCOME_LABEL, outcomeOf, statusParam } from "../runStatus";
 import { filterBy, hostSettings, setFollowBranch, showRun, STATUS_FILTERS, updateView, type HostView, type StatusFilter } from "../state";
 import { OutcomeIcon } from "./ActionsIcon";
-import { Branch, Who } from "./Bits";
+import { Face } from "./CommentThread";
 import { coarse, useEvery, useNow } from "./hooks";
 
 const LIVE_REFRESH_MS = 10_000;
@@ -26,27 +26,51 @@ const FILTER_LABEL: Record<StatusFilter, string> = {
 
 const EVERY_WORKFLOW = "all";
 
+/** A run as Bitbucket lists a pipeline: who started it and its title, then its number, commit and branch, with how it went beside. */
 const RunRow = memo(function RunRow({ paneId, run, workflow, now }: { paneId: string; run: Run; workflow: string | null; now: number }) {
     const outcome = outcomeOf(run);
     const finished = isUnfinished(run) ? null : run.updatedAt;
     return (
-        <button type="button" className="gha-run-row" data-outcome={outcome} onClick={() => showRun(paneId, run.id)}>
-            <OutcomeIcon outcome={outcome} size={12} />
+        <button
+            type="button"
+            className="gha-run-row"
+            data-outcome={outcome}
+            title={workflow ? `${workflow} #${run.runNumber}` : undefined}
+            onClick={() => showRun(paneId, run.id)}>
+            <span className="gha-run-face">
+                <Face login={run.actor} url={run.avatarUrl} />
+            </span>
             <span className="gha-run-name">{run.title || run.name || `Run #${run.runNumber}`}</span>
-            <span className="gha-run-duration">{formatDuration(elapsedMs(run.startedAt ?? run.createdAt, finished, now))}</span>
+            <span className="gha-run-status">
+                <OutcomeIcon outcome={outcome} size={12} />
+                {OUTCOME_LABEL[outcome]}
+            </span>
             <span className="gha-run-sub">
-                <span className="gha-run-workflow">
-                    {workflow && `${workflow} `}
-                    <span className="gha-item-number">#{run.runNumber}</span>
+                <span className="gha-run-who">
+                    #{run.runNumber} - {run.actor ?? "someone"}
                 </span>
-                {run.branch && <Branch name={run.branch} />}
-                {run.pullRequests.map((number) => (
-                    <span key={number} className="gha-item-number">
-                        #{number}
+                {run.shortSha && (
+                    <span className="gha-run-ref gha-run-sha">
+                        <IconCommit size={11} />
+                        {run.shortSha}
                     </span>
-                ))}
-                {run.actor && <Who login={run.actor} avatarUrl={run.avatarUrl} />}
-                <span>{formatAgo(run.createdAt, now)}</span>
+                )}
+                {run.pullRequests.length > 0 ? (
+                    <span className="gha-run-ref">
+                        <IconPullRequest size={11} />
+                        {run.pullRequests.map((number) => `#${number}`).join(" ")}
+                    </span>
+                ) : (
+                    run.branch && (
+                        <span className="gha-run-ref gha-run-branch">
+                            <IconGit size={11} />
+                            <span>{run.branch}</span>
+                        </span>
+                    )
+                )}
+            </span>
+            <span className="gha-run-when">
+                {formatAgo(run.startedAt ?? run.createdAt, now)} · {formatDuration(elapsedMs(run.startedAt ?? run.createdAt, finished, now))}
             </span>
         </button>
     );
