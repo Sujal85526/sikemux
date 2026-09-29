@@ -555,4 +555,129 @@ describe("DeskHost", () => {
         expect(await screen.findByTestId("desk-editor")).toHaveAttribute("data-pane", deskEditorId("agent-one"));
         expect(onEmpty).not.toHaveBeenCalled();
     });
+
+    it("closes a pane restored for an agent that is no longer there", () => {
+        setState({ deskPanes: {}, agents: {} } as never);
+        const view = render(<Host visible />);
+
+        expect(onEmpty).toHaveBeenCalled();
+        expect(view.container).toBeEmptyDOMElement();
+        expect(browserApi.snapshot).not.toHaveBeenCalled();
+    });
+
+    it("names an untitled tab by its address and marks one still loading", async () => {
+        renderPane();
+        await screen.findByRole("tab", { name: "Example" });
+        await announceStrip({
+            tabs: [tab({ title: "", url: "https://untitled.test/page" }), tab({ id: "tab-two", title: "Busy", active: false, loading: true })],
+            activeTabId: "tab-one",
+        });
+
+        expect(screen.getByRole("tab", { name: "https://untitled.test/page" })).toBeInTheDocument();
+        expect(screen.getByRole("tab", { name: /Busy/ }).closest(".tab-wrap")?.querySelector('[aria-label="Loading"]')).not.toBeNull();
+        expect(screen.getByRole("textbox", { name: "Address and search" })).toHaveValue("https://untitled.test/page");
+    });
+
+    it("closes the page whose tab is closed and reads the strip again", async () => {
+        renderPane();
+        const example = await screen.findByRole("tab", { name: "Example" });
+        vi.mocked(browserApi.snapshot).mockClear();
+
+        fireEvent.click(example.closest(".tab-wrap")!.querySelector(".tab-x")!);
+
+        await waitFor(() => expect(browserApi.closeTab).toHaveBeenCalledWith("agent-one", "tab-one"));
+        await waitFor(() => expect(browserApi.snapshot).toHaveBeenCalledWith("agent-one"));
+    });
+
+    it("sends forward and reload to the page and reads the strip again after each", async () => {
+        vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [tab({ canGoForward: true })], activeTabId: "tab-one" });
+        renderPane();
+        const forward = await screen.findByRole("button", { name: "Forward" });
+        await waitFor(() => expect(forward).toBeEnabled());
+        vi.mocked(browserApi.snapshot).mockClear();
+
+        fireEvent.click(forward);
+        fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+
+        expect(browserApi.forward).toHaveBeenCalledWith("agent-one");
+        expect(browserApi.reload).toHaveBeenCalledWith("agent-one");
+        await waitFor(() => expect(browserApi.snapshot).toHaveBeenCalledTimes(2));
+    });
+
+    it("reports a page action that fails", async () => {
+        vi.mocked(browserApi.reload).mockRejectedValue(new Error("gone"));
+        renderPane();
+        fireEvent.click(await screen.findByRole("button", { name: "Reload" }));
+
+        await waitFor(() => expect(useToasts.getState().toasts.length).toBeGreaterThan(0));
+    });
+
+    it("drops what was typed in the address bar once it loses focus", async () => {
+        renderPane();
+        const address = await screen.findByRole("textbox", { name: "Address and search" });
+        await waitFor(() => expect(address).toHaveValue("https://example.com"));
+
+        fireEvent.focus(address);
+        fireEvent.change(address, { target: { value: "half typ" } });
+        expect(address).toHaveValue("half typ");
+        fireEvent.blur(address);
+
+        expect(address).toHaveValue("https://example.com");
+    });
+
+    it("opens nothing for a restore that saved no pages", async () => {
+        setState({ deskRestores: { "pane-desk": { ...restored, tabs: [] } } } as never);
+        renderPane();
+
+        await waitFor(() => expect(screen.getByRole("tab", { name: "Example" })).toBeInTheDocument());
+        expect(browserApi.newTab).not.toHaveBeenCalled();
+    });
+
+    it("keeps the pane when restored pages fail to open but it already holds a page", async () => {
+        setState({ deskRestores: { "pane-desk": { ...restored, activeIndex: 5 } } } as never);
+        vi.mocked(browserApi.newTab).mockRejectedValue(new Error("no window"));
+        renderPane();
+        await announceStrip(snapshot);
+
+        await waitFor(() => expect(useToasts.getState().toasts.length).toBeGreaterThan(0));
+        expect(onEmpty).not.toHaveBeenCalled();
+    });
+
+    it("brings no restored tab to the front when the saved front tab did not open", async () => {
+        setState({ deskRestores: { "pane-desk": { ...restored, activeIndex: 5 } } } as never);
+        vi.mocked(browserApi.newTab).mockImplementation(async (_agentId, url) => `tab-${url}`);
+        renderPane();
+
+        await waitFor(() => expect(browserApi.newTab).toHaveBeenCalledTimes(2));
+        await waitFor(() => expect(browserApi.snapshot).toHaveBeenCalledTimes(2));
+        expect(browserApi.switchTab).not.toHaveBeenCalled();
+    });
+
+    it("re-places the page when a scrolling ancestor scrolls", async () => {
+        setState({
+            deskPanes: { "pane-desk": "agent-one" },
+            agents: { "agent-one": { id: "agent-one", type: "codex", title: "codex", launchState: "live" } },
+        } as never);
+        render(
+            <div data-testid="scroller" style={{ overflowY: "auto" }}>
+                <Host visible />
+            </div>,
+        );
+        await waitFor(() => expect(browserApi.setBounds).toHaveBeenCalledWith("agent-one", placed));
+
+        vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+            left: 640,
+            top: 40,
+            width: 480.4,
+            height: 320.6,
+            right: 0,
+            bottom: 0,
+            x: 640,
+            y: 40,
+            toJSON: () => ({}),
+        });
+        fireEvent.scroll(screen.getByTestId("scroller"));
+
+        await waitFor(() => expect(browserApi.setBounds).toHaveBeenLastCalledWith("agent-one", { ...placed, y: 40 }));
+    });
 });
