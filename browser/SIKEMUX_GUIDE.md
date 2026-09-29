@@ -225,6 +225,15 @@ text rather than replace it. `submit: true` presses Enter afterwards. The
 result carries the field's `value` afterwards, so you can check it took. A
 `<select>` picks the option whose value or label matches the text.
 
+`browser_act` plays up to 20 `steps` in one call, each an `action` of
+`click`, `type` or `press` with the same fields as that tool (`index`,
+`text`, `role`, `expectLabel`, `x`, `y`, `submit`, `key`). Use it to fill a
+form and submit it, or to open a menu and pick from it by `text`. It stops at
+the first step that fails, and after any step that navigates, opens a dialog
+or changes tab, because the steps after it were planned for the old page.
+`done` lists what each step did, `stopped` names the step it stopped at and
+why, and `report` covers the page once at the end.
+
 `browser_press` sends one key to the focused element: `Enter`, `Tab`,
 `Escape`, `Backspace`, `Delete`, `ArrowDown`, `Home`, `PageDown`, `Space`, or
 a single character. Hold modifiers with `+`, as in `Meta+a` to select all or

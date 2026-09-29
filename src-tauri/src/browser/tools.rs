@@ -284,6 +284,7 @@ async fn run(
                 report(&manager, agent_id, params).await?,
             )
         }
+        "browser.act" => act(app, agent_id, params).await,
         "browser.dialog" => {
             let accept = params
                 .get("accept")
@@ -538,6 +539,76 @@ async fn run(
         }
         _ => Err("unknown browser method".into()),
     }
+}
+
+/// Plays the steps in order and stops at the first that fails or that takes
+/// the tab somewhere else, since what came after was planned for the old page.
+async fn act(app: &AppHandle, agent_id: &str, params: &Value) -> Result<Value, String> {
+    let manager = app.state::<BrowserManager>();
+    let steps = params
+        .get("steps")
+        .and_then(Value::as_array)
+        .filter(|steps| !steps.is_empty())
+        .ok_or("steps must list at least one action")?;
+    let before = outcome(&manager, agent_id)?;
+    let mut done = Vec::new();
+    let mut stopped = None;
+    for (number, step) in steps.iter().enumerate() {
+        let (method, step_params) = step_call(step)?;
+        match Box::pin(run(app, agent_id, method, &step_params)).await {
+            Ok(result) => done.push(step_summary(step, result)),
+            Err(error) => {
+                stopped = Some(json!({ "step": number, "error": error }));
+                break;
+            }
+        }
+        let now = outcome(&manager, agent_id)?;
+        if number + 1 < steps.len() && moved_on(&before, &now) {
+            stopped = Some(json!({
+                "step": number,
+                "reason": "the page moved on, so the steps after it were not run",
+            }));
+            break;
+        }
+    }
+    let mut result = json!({ "done": done });
+    if let Some(stopped) = stopped {
+        result["stopped"] = stopped;
+    }
+    merge(result, report(&manager, agent_id, params).await?)
+}
+
+fn step_call(step: &Value) -> Result<(&'static str, Value), String> {
+    let method = match step.get("action").and_then(Value::as_str) {
+        Some("click") => "browser.click",
+        Some("type") => "browser.type",
+        Some("press") => "browser.press",
+        _ => return Err("each step's action must be click, type or press".into()),
+    };
+    let mut params = step.clone();
+    if let Value::Object(map) = &mut params {
+        map.remove("action");
+        map.insert("report".into(), json!("outcome"));
+    }
+    Ok((method, params))
+}
+
+/// What one step did, without the page details every step would repeat.
+fn step_summary(step: &Value, mut result: Value) -> Value {
+    if let Value::Object(map) = &mut result {
+        for key in ["tabId", "url", "title", "loading", "tabs"] {
+            map.remove(key);
+        }
+        map.insert("action".into(), step["action"].clone());
+    }
+    result
+}
+
+fn moved_on(before: &Value, now: &Value) -> bool {
+    now.get("dialog").is_some()
+        || now["loading"] == json!(true)
+        || before["tabId"] != now["tabId"]
+        || before["url"] != now["url"]
 }
 
 /// Wraps an agent's script so whatever it returns, awaited, comes back as JSON.
@@ -1114,6 +1185,36 @@ impl BrowserManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_step_becomes_its_tool_call_and_reports_only_what_it_did() {
+        let (method, params) =
+            step_call(&json!({ "action": "type", "index": 3, "text": "hi" })).unwrap();
+        assert_eq!(method, "browser.type");
+        assert_eq!(
+            params,
+            json!({ "index": 3, "text": "hi", "report": "outcome" })
+        );
+        assert!(step_call(&json!({ "action": "act" })).is_err());
+        let summary = step_summary(
+            &json!({ "action": "press", "key": "Enter" }),
+            json!({ "pressed": "Enter", "url": "https://a.test", "tabId": "t", "loading": false }),
+        );
+        assert_eq!(summary, json!({ "pressed": "Enter", "action": "press" }));
+    }
+
+    #[test]
+    fn steps_stop_once_the_tab_is_somewhere_else() {
+        let page = json!({ "tabId": "t", "url": "https://a.test/", "loading": false });
+        assert!(!moved_on(&page, &page));
+        let navigated = json!({ "tabId": "t", "url": "https://a.test/next", "loading": false });
+        assert!(moved_on(&page, &navigated));
+        let loading = json!({ "tabId": "t", "url": "https://a.test/", "loading": true });
+        assert!(moved_on(&page, &loading));
+        let asking =
+            json!({ "tabId": "t", "url": "https://a.test/", "loading": false, "dialog": {} });
+        assert!(moved_on(&page, &asking));
+    }
 
     #[test]
     fn page_answers_merge_under_the_action_result() {

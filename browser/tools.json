@@ -3,7 +3,7 @@
   "guide": {
     "file": "SIKEMUX_GUIDE.md",
     "name": "guide",
-    "description": "Read this before your first task launch or browser click: cursors, idempotency, UI opens, and the tab model.",
+    "description": "Read this before your first task launch or browser click: cursors, tabs and UI opens.",
     "comment": "Served by the sidecar from its own bundle, so it has no harness method."
   },
   "tools": [
@@ -159,6 +159,66 @@
       "required": [
         "key"
       ]
+    },
+    {
+      "name": "browser_act",
+      "method": "browser.act",
+      "description": "Run clicks, typing and keys in one call.",
+      "properties": {
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": ["click", "type", "press"]
+              },
+              "index": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 20000
+              },
+              "role": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "expectLabel": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "x": {
+                "type": "number",
+                "minimum": 0
+              },
+              "y": {
+                "type": "number",
+                "minimum": 0
+              },
+              "submit": {
+                "type": "boolean"
+              },
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 24
+              }
+            },
+            "required": ["action"]
+          }
+        },
+        "report": {
+          "enum": ["outcome", "changes", "full"]
+        }
+      },
+      "required": ["steps"]
     },
     {
       "name": "browser_drag",
@@ -517,7 +577,7 @@
     {
       "name": "workspace_inspect",
       "method": "workspace.inspect",
-      "description": "Inspect this agent's open project, panes, configured tasks, runs, and event cursor.",
+      "description": "Inspect the open project: panes, tasks, runs and the event cursor.",
       "properties": {},
       "required": []
     },
