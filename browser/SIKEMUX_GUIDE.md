@@ -181,6 +181,12 @@ an earlier read either reaches the same element or fails with "no element".
 Elements that appear later get new numbers. A page that redraws a list builds
 new elements, so read again after it does.
 
+The list leaves out elements a person cannot reach: ones lying under a
+modal, a banner or an open menu, and ones the page marks `inert` or
+`aria-hidden`. It also leaves out the parts of a listed control, such as a
+label wrapping a listed checkbox or a clickable span inside a link. They keep
+their numbers, so a number read earlier still works.
+
 `browser_find` with a `query` lists the elements whose visible text or
 accessible name contains it, with their numbers, exact matches first. `role`
 narrows it, as in `button`, `link`, `checkbox`, `textbox` or `tab`. When no

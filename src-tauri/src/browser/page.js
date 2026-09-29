@@ -6,6 +6,9 @@
     if (window.__sikemux) return;
     const INTERACTIVE =
         'a[href], button, input, select, textarea, summary, label, [role="button"], [role="link"], [role="tab"], [role="menuitem"], [role="checkbox"], [role="radio"], [role="option"], [role="switch"], [role="textbox"], [role="combobox"], [contenteditable="true"], [onclick], [tabindex]:not([tabindex="-1"])';
+    // Controls in their own right. Anything else in INTERACTIVE, such as a
+    // label or a div with a click handler, may just be part of a control.
+    const CONTROL = 'a[href], button, input, select, textarea, summary, iframe, frame, [role], [contenteditable="true"]';
     const TEXT_CAP = 2000;
     const FULL_TEXT_CAP = 40000;
     const MAX_FOUND = 30;
@@ -201,18 +204,34 @@
         const key = parts.join(" ");
         return { key, line: inViewport(rectOf(element)) ? key : `${key} [offscreen]` };
     };
+    // Lying under a modal, a banner or a menu, or shut off by the page.
+    const covered = (element) => {
+        if (element.closest("[inert], [aria-hidden='true']")) return true;
+        if (!inViewport(rectOf(element))) return false;
+        const rect = visibleRect(element);
+        return Boolean(rect) && !PROBES.some(([across, down]) => reaches(element, rect.left + rect.width * across, rect.top + rect.height * down));
+    };
     // An element keeps its number for as long as it stays on the page, so a
     // number read a moment ago never lands on a neighbour after a re-render.
+    // Covered elements and the parts of a listed control keep a number but are
+    // left out of the list.
     const listing = () => {
         const numbers = window.__sikemuxNumbers || (window.__sikemuxNumbers = { ids: new WeakMap(), next: 0 });
         const listed = new Map();
         const current = new Map();
-        for (const element of interactive(document, [])) {
-            if (!shown(element)) continue;
+        const present = interactive(document, []).filter(shown);
+        const reachable = new Set(present.filter((element) => !covered(element)));
+        const insideReachable = (element) => {
+            for (let node = parentAcross(element); node; node = parentAcross(node)) if (reachable.has(node)) return true;
+            return false;
+        };
+        const partOfAnother = (element) =>
+            (!element.matches(CONTROL) && insideReachable(element)) || (element.tagName === "LABEL" && reachable.has(element.control));
+        for (const element of present) {
             if (!numbers.ids.has(element)) numbers.ids.set(element, numbers.next++);
             const id = numbers.ids.get(element);
             current.set(id, element);
-            listed.set(id, entry(id, element));
+            if (reachable.has(element) && !partOfAnother(element)) listed.set(id, entry(id, element));
         }
         window.__sikemuxRefs = current;
         return listed;
@@ -247,8 +266,8 @@
     const matching = (query, role) => {
         const wanted = compact(query).toLowerCase();
         const wantedRole = role ? compact(role).toLowerCase() : null;
-        listing();
-        const candidates = [...refs()].filter(([, element]) => !wantedRole || roleOf(element) === wantedRole);
+        const listed = listing();
+        const candidates = [...refs()].filter(([id, element]) => listed.has(id) && (!wantedRole || roleOf(element) === wantedRole));
         const exact = candidates.filter(([, element]) => names(element).includes(wanted));
         const found = exact.length ? exact : candidates.filter(([, element]) => names(element).some((name) => name.includes(wanted)));
         return found.filter(([, element]) => !found.some(([, other]) => other !== element && within(other, element)));
