@@ -14,6 +14,18 @@ describe("the messages ↑ can bring back", () => {
         const onlyFiles: ChatMessage = { id: "f", role: "user", parts: [], attachments: ["/a.png"] };
         expect(sentPrompts([said("user", "again"), said("user", "again"), onlyFiles])).toEqual(["again"]);
     });
+
+    it("read only the words of a message that also carried a picture", () => {
+        const withPicture: ChatMessage = {
+            id: "p",
+            role: "user",
+            parts: [
+                { id: "p-c", kind: "content", content: { type: "image", data: "AAAA", mimeType: "image/png" } },
+                { id: "p-t", kind: "text", text: "what is this" },
+            ],
+        };
+        expect(sentPrompts([withPicture])).toEqual(["what is this"]);
+    });
 });
 
 describe("stepping through them", () => {

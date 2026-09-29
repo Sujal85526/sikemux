@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { chatReducer, initialChatState } from "./reducer";
 import type { ChatState } from "./types";
 
@@ -7,6 +7,20 @@ const ROOT_SESSION = "session-1";
 function update(state: ChatState, value: Record<string, unknown>, sessionId = ROOT_SESSION): ChatState {
     return chatReducer(state, { type: "session_update", sessionId, update: value });
 }
+
+function replay(state: ChatState, rows: Record<string, unknown>[], sessionId = ROOT_SESSION): ChatState {
+    return rows.reduce((current, row) => update(current, row, sessionId), state);
+}
+
+function toolPart(state: ChatState, messageIndex = 0, partIndex = 0) {
+    const part = state.messages[messageIndex].parts[partIndex];
+    if (part.kind !== "tool") throw new Error(`expected a tool part, got ${part.kind}`);
+    return part;
+}
+
+afterEach(() => {
+    vi.useRealTimers();
+});
 
 describe("chat reducer", () => {
     it("keeps the context window the agent reports and ignores a malformed one", () => {
@@ -397,5 +411,379 @@ describe("chat reducer", () => {
 
         expect(pending.permissions).toEqual([request]);
         expect(cleared.permissions).toEqual([]);
+    });
+
+    it("splits a message into text, thought and content parts as the kind changes", () => {
+        const streamed = replay(initialChatState, [
+            { sessionUpdate: "agent_thought_chunk", messageId: "m1", content: { type: "text", text: "Thinking" } },
+            { sessionUpdate: "agent_thought_chunk", messageId: "m1", content: { type: "text", text: " harder" } },
+            { sessionUpdate: "agent_message_chunk", messageId: "m1", content: { type: "text", text: "Answer" } },
+            { sessionUpdate: "agent_message_chunk", messageId: "m1", content: { type: "image", mimeType: "image/png", data: "AAAA" } },
+            { sessionUpdate: "agent_message_chunk", messageId: "m1", content: { type: "text", text: "After" } },
+        ]);
+
+        expect(streamed.messages).toHaveLength(1);
+        expect(streamed.messages[0].parts).toEqual([
+            { id: "m1-thought-0", kind: "thought", text: "Thinking harder" },
+            { id: "m1-text-1", kind: "text", text: "Answer" },
+            { id: "m1-content-2", kind: "content", content: { type: "image", mimeType: "image/png", data: "AAAA" } },
+            { id: "m1-text-3", kind: "text", text: "After" },
+        ]);
+    });
+
+    it("opens a message with a picture and keeps a small one's bytes", () => {
+        const streamed = update(initialChatState, {
+            sessionUpdate: "agent_message_chunk",
+            messageId: "m1",
+            content: { type: "image", mimeType: "image/png", data: "AAAA" },
+        });
+
+        expect(streamed.messages[0].parts).toEqual([
+            { id: "m1-content-0", kind: "content", content: { type: "image", mimeType: "image/png", data: "AAAA" } },
+        ]);
+    });
+
+    it("drops a chunk that carries no content block", () => {
+        const empty = update(initialChatState, { sessionUpdate: "agent_message_chunk", messageId: "m1" });
+        const untyped = update(initialChatState, { sessionUpdate: "agent_message_chunk", content: { text: "no type" } });
+
+        expect(empty).toBe(initialChatState);
+        expect(untyped).toBe(initialChatState);
+    });
+
+    it("starts a new assistant message after the user's own prompt rather than extending it", () => {
+        const prompted = chatReducer(initialChatState, { type: "local_prompt", text: "Hi", paths: [] });
+        const answered = replay(prompted, [
+            { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Hello" } },
+            { sessionUpdate: "agent_message_chunk", content: { type: "text", text: " there" } },
+        ]);
+
+        expect(answered.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+        expect(answered.messages[1].parts).toEqual([{ id: "assistant-fallback-2-text-0", kind: "text", text: "Hello there" }]);
+    });
+
+    it("times only the answer to a turn it watched run", () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(1_000);
+        const running = chatReducer(initialChatState, { type: "turn_started" });
+        const first = update(running, { sessionUpdate: "agent_message_chunk", messageId: "m1", content: { type: "text", text: "Hel" } });
+        vi.setSystemTime(1_500);
+        const second = update(first, { sessionUpdate: "agent_message_chunk", messageId: "m1", content: { type: "text", text: "lo" } });
+
+        expect(second.messages[0]).toMatchObject({ streamStartedAt: 1_000, streamEndedAt: 1_500, streamChars: 5 });
+
+        const replayed = update(initialChatState, {
+            sessionUpdate: "agent_message_chunk",
+            messageId: "m1",
+            content: { type: "text", text: "Hello" },
+        });
+        expect(replayed.messages[0].streamStartedAt).toBeUndefined();
+    });
+
+    it("drops a user chunk that is blank or a lone harness tag", () => {
+        const dropped = replay(initialChatState, [
+            { sessionUpdate: "user_message_chunk", content: { type: "text", text: "   \n" } },
+            { sessionUpdate: "user_message_chunk", content: { type: "text", text: "<ide_opened_file>src/a.ts</ide_opened_file>" } },
+            {
+                sessionUpdate: "user_message_chunk",
+                content: { type: "text", text: "<command-name>/clear</command-name>\n<command-args></command-args>" },
+            },
+        ]);
+
+        expect(dropped.messages).toEqual([]);
+    });
+
+    it("keeps a user message whose harness tag is never closed", () => {
+        const kept = update(initialChatState, {
+            sessionUpdate: "user_message_chunk",
+            content: { type: "text", text: "<system-reminder> left open" },
+        });
+
+        expect(kept.messages).toHaveLength(1);
+    });
+
+    it("replaces a call the agent announces again instead of merging into it", () => {
+        const opened = update(initialChatState, {
+            sessionUpdate: "tool_call",
+            toolCallId: "tool-1",
+            title: "Read a.ts",
+            kind: "read",
+            status: "pending",
+            locations: [{ path: "/a.ts" }],
+        });
+        const reopened = update(opened, { sessionUpdate: "tool_call", toolCallId: "tool-1", title: "Read b.ts", status: "in_progress" });
+
+        expect(reopened.messages[0].parts).toHaveLength(1);
+        expect(toolPart(reopened).tool).toEqual({ sessionUpdate: "tool_call", toolCallId: "tool-1", title: "Read b.ts", status: "in_progress" });
+    });
+
+    it("keeps a call's title when an update sends an empty one and stays open while it runs", () => {
+        const opened = update(initialChatState, { sessionUpdate: "tool_call", toolCallId: "tool-1", title: "Run tests", status: "pending" });
+        const progressed = update(opened, { sessionUpdate: "tool_call_update", toolCallId: "tool-1", title: "", status: "in_progress" });
+
+        expect(toolPart(progressed).tool).toMatchObject({ title: "Run tests", status: "in_progress" });
+        expect(toolPart(progressed).endedAt).toBeUndefined();
+        expect(toolPart(progressed).startedAt).toBeDefined();
+    });
+
+    it("keeps a finished call's end time and drops payloads a late update sends", () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(2_000);
+        const finished = replay(initialChatState, [
+            { sessionUpdate: "tool_call", toolCallId: "tool-1", title: "Grep", status: "in_progress" },
+            { sessionUpdate: "tool_call_update", toolCallId: "tool-1", status: "completed" },
+        ]);
+        vi.setSystemTime(9_000);
+        const late = update(finished, { sessionUpdate: "tool_call_update", toolCallId: "tool-1", status: "failed", rawOutput: { stderr: "late" } });
+
+        expect(toolPart(late).endedAt).toBe(2_000);
+        expect(toolPart(late).tool.status).toBe("failed");
+        expect(toolPart(late).tool).not.toHaveProperty("rawOutput");
+        expect(toolPart(late).failure).toBeUndefined();
+    });
+
+    it("settles a call first seen already finished without timing it", () => {
+        const replayed = update(initialChatState, {
+            sessionUpdate: "tool_call",
+            toolCallId: "tool-1",
+            title: "Grep",
+            status: "failed",
+            rawOutput: { stderr: "boom" },
+        });
+
+        expect(toolPart(replayed).startedAt).toBeUndefined();
+        expect(toolPart(replayed).failure).toBe("boom");
+    });
+
+    it("ignores a call with no title or no id", () => {
+        const noTitle = update(initialChatState, { sessionUpdate: "tool_call", toolCallId: "tool-1" });
+        const noId = update(initialChatState, { sessionUpdate: "tool_call_update", status: "completed" });
+
+        expect(noTitle).toBe(initialChatState);
+        expect(noId).toBe(initialChatState);
+    });
+
+    it("cancels a call that never reported a status when the turn ends", () => {
+        const opened = update(initialChatState, { sessionUpdate: "tool_call", toolCallId: "tool-1", title: "Grep" });
+        const ended = chatReducer(opened, { type: "turn_completed" });
+
+        expect(toolPart(ended).tool.status).toBe("cancelled");
+        expect(ended.stopReason).toBeNull();
+    });
+
+    it("leaves a finished subagent and plain text alone when the turn ends", () => {
+        const done = replay(initialChatState, [
+            { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Sending an agent" } },
+            { sessionUpdate: "subagent_spawned", subagentSessionId: "sub-1" },
+            { sessionUpdate: "subagent_state_update", subagentSessionId: "sub-1", state: "completed" },
+        ]);
+        const ended = chatReducer(done, { type: "turn_completed", stopReason: "end_turn" });
+
+        expect(ended.messages).toBe(done.messages);
+        expect(ended.stopReason).toBe("end_turn");
+    });
+
+    it("cancels a finished subagent's call that was still running", () => {
+        const done = replay(initialChatState, [{ sessionUpdate: "subagent_spawned", subagentSessionId: "sub-1" }]);
+        const nested = update(done, { sessionUpdate: "tool_call", toolCallId: "tool-1", title: "Grep", status: "in_progress" }, "sub-1");
+        const completed = update(nested, { sessionUpdate: "subagent_state_update", subagentSessionId: "sub-1", state: "completed" });
+        const ended = chatReducer(completed, { type: "turn_completed" });
+
+        const part = ended.messages[0].parts[0];
+        if (part.kind !== "subagent") throw new Error("expected a subagent");
+        expect(part.subagent.state).toBe("completed");
+        const inner = part.subagent.messages[0].parts[0];
+        expect(inner.kind === "tool" && inner.tool.status).toBe("cancelled");
+    });
+
+    it("names an unnamed subagent and spawns each session once", () => {
+        const spawned = update(initialChatState, { sessionUpdate: "subagent_spawned", subagentSessionId: "sub-1" });
+        const again = update(spawned, { sessionUpdate: "subagent_spawned", subagentSessionId: "sub-1", name: "Other" });
+        const anonymous = update(spawned, { sessionUpdate: "subagent_spawned" });
+
+        const part = spawned.messages[0].parts[0];
+        expect(part).toMatchObject({ kind: "subagent", subagent: { name: "Subagent", task: "", state: "running" } });
+        expect(again).toBe(spawned);
+        expect(anonymous).toBe(spawned);
+    });
+
+    it("ignores a subagent state it does not know or for a session it never saw", () => {
+        const spawned = update(initialChatState, { sessionUpdate: "subagent_spawned", subagentSessionId: "sub-1" });
+
+        expect(update(spawned, { sessionUpdate: "subagent_state_update", subagentSessionId: "sub-1", state: "exploded" })).toBe(spawned);
+        expect(update(spawned, { sessionUpdate: "subagent_state_update", subagentSessionId: "sub-9", state: "completed" })).toBe(spawned);
+        expect(update(spawned, { sessionUpdate: "subagent_state_update", state: "completed" })).toBe(spawned);
+    });
+
+    it("gives an unnamed background task defaults and starts each task once", () => {
+        const spawned = update(initialChatState, { sessionUpdate: "async_task_spawned", asyncTaskId: "task-1" });
+
+        expect(spawned.tasks).toEqual([
+            {
+                asyncTaskId: "task-1",
+                name: "Background task",
+                taskType: "",
+                description: "",
+                state: "running",
+                canStop: false,
+                outputFilePath: undefined,
+            },
+        ]);
+        expect(update(spawned, { sessionUpdate: "async_task_spawned", asyncTaskId: "task-1" })).toBe(spawned);
+        expect(update(spawned, { sessionUpdate: "async_task_spawned" })).toBe(spawned);
+    });
+
+    it("updates a paused task's details and ignores progress for an unknown task", () => {
+        const spawned = update(initialChatState, { sessionUpdate: "async_task_spawned", asyncTaskId: "task-1", name: "Explore" });
+        const paused = update(spawned, {
+            sessionUpdate: "async_task_state_update",
+            asyncTaskId: "task-1",
+            state: "paused",
+            description: "Searching",
+            lastToolName: "Grep",
+            outputFilePath: "/tmp/out.log",
+            usage: { totalTokens: 10, toolUses: 2, durationMs: 300 },
+        });
+        const progressed = update(paused, { sessionUpdate: "async_task_progress", asyncTaskId: "task-1", state: "bogus" });
+
+        expect(paused.tasks[0]).toMatchObject({
+            state: "paused",
+            description: "Searching",
+            lastToolName: "Grep",
+            outputFilePath: "/tmp/out.log",
+            usage: { totalTokens: 10, toolUses: 2, durationMs: 300 },
+        });
+        expect(progressed.tasks[0]).toEqual(paused.tasks[0]);
+        expect(update(paused, { sessionUpdate: "async_task_progress", asyncTaskId: "task-9", summary: "x" })).toBe(paused);
+    });
+
+    it("writes a notice without a summary when a stopped task never gave one", () => {
+        const spawned = update(initialChatState, { sessionUpdate: "async_task_spawned", asyncTaskId: "task-1", name: "Build" });
+        const stopped = update(spawned, { sessionUpdate: "async_task_state_update", asyncTaskId: "task-1", state: "stopped" });
+
+        expect(stopped.tasks).toEqual([]);
+        expect(stopped.messages[0].parts[0]).toEqual({ id: "notice-task-1", kind: "notice", notice: { name: "Build", state: "stopped" } });
+    });
+
+    it("keeps the plan, title and config the session reports", () => {
+        const plan = { sessionUpdate: "plan", entries: [{ content: "Write tests", status: "pending" }] };
+        const state = replay(initialChatState, [
+            plan,
+            { sessionUpdate: "session_info_update", title: "Coverage work" },
+            { sessionUpdate: "config_option_update", configOptions: [{ id: "model" }] },
+        ]);
+
+        expect(state.plan).toEqual(plan);
+        expect(state.title).toBe("Coverage work");
+        expect(state.setup).toEqual({ configOptions: [{ id: "model" }] });
+        expect(update(state, { sessionUpdate: "session_info_update", title: null }).title).toBe("Coverage work");
+    });
+
+    it("clears slash commands when the list is not an array and ignores unknown updates", () => {
+        const withCommands = update(initialChatState, {
+            sessionUpdate: "available_commands_update",
+            availableCommands: [{ name: "help", description: "Help" }],
+        });
+
+        expect(update(withCommands, { sessionUpdate: "available_commands_update" }).commands).toEqual([]);
+        expect(update(withCommands, { sessionUpdate: "something_new" })).toBe(withCommands);
+    });
+
+    it("keeps a usage cost only when both its amount and currency make sense", () => {
+        const noCurrency = update(initialChatState, { sessionUpdate: "usage_update", used: 1, size: 10, cost: { amount: 2 } });
+        const badAmount = update(initialChatState, { sessionUpdate: "usage_update", used: 1, size: 10, cost: { amount: Infinity, currency: "USD" } });
+
+        expect(noCurrency.usage).toEqual({ used: 1, size: 10 });
+        expect(badAmount.usage).toEqual({ used: 1, size: 10 });
+        expect(update(initialChatState, { sessionUpdate: "usage_update", used: NaN, size: 10 }).usage).toBeNull();
+    });
+
+    it("uses saved usage only until the agent reports its own", () => {
+        const saved = chatReducer(initialChatState, { type: "saved_usage", usage: { used: 5, size: 100 } });
+        const reported = update(saved, { sessionUpdate: "usage_update", used: 50, size: 100 });
+
+        expect(saved.usage).toEqual({ used: 5, size: 100 });
+        expect(chatReducer(reported, { type: "saved_usage", usage: { used: 5, size: 100 } })).toBe(reported);
+    });
+
+    it("stores config options sent outside a session update", () => {
+        const state = chatReducer(initialChatState, { type: "config", options: [{ id: "effort" }] });
+
+        expect(state.setup).toEqual({ configOptions: [{ id: "effort" }] });
+    });
+
+    it("keeps a running turn through a starting status but ends it on an error", () => {
+        const request = { requestId: "p1", sessionId: ROOT_SESSION, toolCall: { toolCallId: "t1", title: "Run" }, options: [] };
+        const busy = replay(chatReducer(chatReducer(initialChatState, { type: "turn_started" }), { type: "permission_requested", request }), [
+            { sessionUpdate: "async_task_spawned", asyncTaskId: "task-1" },
+            { sessionUpdate: "tool_call", toolCallId: "t1", title: "Run", status: "in_progress" },
+        ]);
+        const errored = chatReducer({ ...busy, error: "boom" }, { type: "error", message: "boom" });
+        const starting = chatReducer({ ...busy, error: "old" }, { type: "status", state: "starting" });
+        const failed = chatReducer({ ...busy, error: "crashed" }, { type: "status", state: "error" });
+
+        expect(starting).toMatchObject({ connection: "starting", running: true, error: null });
+        expect(starting.permissions).toHaveLength(1);
+        expect(starting.tasks).toHaveLength(1);
+        expect(toolPart(starting).tool.status).toBe("in_progress");
+
+        expect(failed).toMatchObject({ connection: "error", running: false, error: "crashed", permissions: [], tasks: [] });
+        expect(toolPart(failed).tool.status).toBe("cancelled");
+        expect(errored.connection).toBe("error");
+    });
+
+    it("keeps a ready connection ready when a prompt fails", () => {
+        const ready = chatReducer(chatReducer(initialChatState, { type: "ready", capabilities: {}, setup: {} }), { type: "turn_started" });
+        const failed = chatReducer(ready, { type: "error", message: "rate limited" });
+
+        expect(failed).toMatchObject({ connection: "ready", running: false, error: "rate limited" });
+    });
+
+    it("sends a prompt of only attachments as a message without text", () => {
+        const sent = chatReducer(initialChatState, { type: "local_prompt", text: "  ", paths: ["/tmp/shot.png"] });
+        const plain = chatReducer(initialChatState, { type: "local_prompt", text: "Hi", paths: [] });
+
+        expect(sent.messages[0]).toEqual({ id: "local-1", role: "user", parts: [], attachments: ["/tmp/shot.png"] });
+        expect(plain.messages[0]).not.toHaveProperty("attachments");
+    });
+
+    it("replaces a pending permission request that is asked again", () => {
+        const request = { requestId: "p1", sessionId: ROOT_SESSION, toolCall: { toolCallId: "t1", title: "Run" }, options: [] };
+        const renewed = { ...request, toolCall: { toolCallId: "t1", title: "Run again" } };
+        const state = chatReducer(chatReducer(initialChatState, { type: "permission_requested", request }), {
+            type: "permission_requested",
+            request: renewed,
+        });
+
+        expect(state.permissions).toEqual([renewed]);
+    });
+
+    it("drops the held transcript and plan when the first replayed update lands", () => {
+        const planned = update(initialChatState, { sessionUpdate: "plan", entries: [] });
+        const held = chatReducer({ ...planned, messages: [{ id: "m1", role: "assistant", parts: [] }] }, { type: "reset", hold: true });
+        const resumed = update(held, { sessionUpdate: "usage_update", used: 1, size: 10 });
+
+        expect(held.awaitingReplay).toBe(true);
+        expect(resumed).toMatchObject({ awaitingReplay: false, messages: [], plan: null });
+        expect(chatReducer(initialChatState, { type: "reset", hold: true }).awaitingReplay).toBe(false);
+    });
+
+    it("cancels a running subagent that had only written text when the turn ends", () => {
+        const spawned = update(initialChatState, { sessionUpdate: "subagent_spawned", subagentSessionId: "sub-1" });
+        const wrote = update(spawned, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Looking" } }, "sub-1");
+        const ended = chatReducer(wrote, { type: "turn_completed" });
+
+        const before = wrote.messages[0].parts[0];
+        const part = ended.messages[0].parts[0];
+        if (part.kind !== "subagent" || before.kind !== "subagent") throw new Error("expected a subagent");
+        expect(part.subagent.state).toBe("cancelled");
+        expect(part.subagent.messages).toBe(before.subagent.messages);
+    });
+
+    it("keeps a subagent's transcript as is when its session sends an update it cannot place", () => {
+        const spawned = update(initialChatState, { sessionUpdate: "subagent_spawned", subagentSessionId: "sub-1" });
+        const orphan = update(spawned, { sessionUpdate: "tool_call_update", toolCallId: "tool-9", status: "completed" }, "sub-1");
+
+        expect(orphan.messages[0].parts).toEqual(spawned.messages[0].parts);
     });
 });

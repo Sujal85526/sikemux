@@ -94,3 +94,16 @@ it("copies a whole answer from where it ends, and offers nothing in the middle o
     expect(rowMeta(state.messages, middle).text).toBe("");
     expect(last(state).text).toBe("Looking now.\n\nWired.");
 });
+
+it("counts no characters for a streamed message that never said how many arrived", () => {
+    const messages = [
+        {
+            id: "m1",
+            role: "assistant" as const,
+            parts: [{ id: "m1-t", kind: "text" as const, text: "hello" }],
+            streamStartedAt: 0,
+            streamEndedAt: 1_000,
+        },
+    ];
+    expect(rowMeta(messages, 0)).toEqual({ text: "hello", rate: null });
+});

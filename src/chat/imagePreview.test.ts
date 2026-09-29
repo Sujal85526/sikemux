@@ -1,7 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fsapi } from "../api/fs";
-import { localImagePath, localPath, previewCacheBytes, sizedSvg, useImagePreview } from "./imagePreview";
+import { localImagePath, localPath, previewCacheBytes, readImageSource, sizedSvg, useImagePreview } from "./imagePreview";
 import { act, renderHook, waitFor } from "@testing-library/react";
+
+afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+});
 
 describe("chat image previews", () => {
     it("decodes the file URL an agent writes for an attachment", () => {
@@ -91,5 +96,113 @@ describe("chat image previews", () => {
     it("has no local path for remote links", () => {
         expect(localPath("https://example.com/cat.png")).toBeNull();
         expect(localImagePath("https://example.com/cat.png")).toBeNull();
+    });
+
+    it("has no local path for an empty, relative or undecodable reference", () => {
+        expect(localPath(null)).toBeNull();
+        expect(localPath("")).toBeNull();
+        expect(localPath("shots/a.png")).toBeNull();
+        expect(localPath("file:///tmp/%E0%A4%A.png")).toBeNull();
+    });
+
+    it("leaves an SVG alone when its viewBox names no usable size or it is not an SVG", () => {
+        const flat = '<svg viewBox="0 0 0 10" xmlns="http://www.w3.org/2000/svg"/>';
+        const bare = '<svg xmlns="http://www.w3.org/2000/svg"/>';
+        const other = "<html/>";
+
+        expect(sizedSvg(flat)).toBe(flat);
+        expect(sizedSvg(bare)).toBe(bare);
+        expect(sizedSvg(other)).toBe(other);
+    });
+
+    it("reads a whole image for the viewer and nothing for a file that is not one", async () => {
+        const read = vi.spyOn(fsapi, "readFileBase64");
+        read.mockResolvedValueOnce({ mime: "image/png", data: "UE5H", size: 3 });
+        read.mockResolvedValueOnce({ mime: "text/plain", data: "aGk=", size: 2 });
+        read.mockRejectedValueOnce(new Error("gone"));
+
+        expect(await readImageSource("/shots/whole.png")).toBe("data:image/png;base64,UE5H");
+        expect(await readImageSource("/shots/actually-text.png")).toBeNull();
+        expect(await readImageSource("/shots/missing.png")).toBeNull();
+    });
+
+    it("shows nothing for no path or a path that is not an image, without reading it", () => {
+        const read = vi.spyOn(fsapi, "readFileBase64");
+        const { result, rerender } = renderHook(({ path }: { path: string | null }) => useImagePreview(path), {
+            initialProps: { path: null as string | null },
+        });
+
+        expect(result.current).toBeNull();
+        rerender({ path: "/notes/readme.md" });
+        expect(result.current).toBeNull();
+        expect(read).not.toHaveBeenCalled();
+    });
+
+    it("reads a picture once for every view of it, and remembers one it could not read", async () => {
+        const read = vi.spyOn(fsapi, "readFileBase64").mockImplementation(async (path) => {
+            if (path.includes("broken")) throw new Error("unreadable");
+            return { mime: "image/png", data: "UE5H", size: 3 };
+        });
+
+        const first = renderHook(() => useImagePreview("/shots/shared.png"));
+        const second = renderHook(() => useImagePreview("/shots/shared.png"));
+        await waitFor(() => expect(first.result.current).toBe("data:image/png;base64,UE5H"));
+        await waitFor(() => expect(second.result.current).toBe("data:image/png;base64,UE5H"));
+        const later = renderHook(() => useImagePreview("/shots/shared.png"));
+        expect(later.result.current).toBe("data:image/png;base64,UE5H");
+
+        const broken = renderHook(() => useImagePreview("/shots/broken.png"));
+        await waitFor(() => expect(read).toHaveBeenCalledWith("/shots/broken.png"));
+        await act(async () => {});
+        renderHook(() => useImagePreview("/shots/broken.png"));
+
+        expect(broken.result.current).toBeNull();
+        expect(read.mock.calls.map(([path]) => path)).toEqual(["/shots/shared.png", "/shots/broken.png"]);
+    });
+
+    it("has no preview for a big picture the webview fails to decode or has no canvas for", async () => {
+        vi.spyOn(fsapi, "readFileBase64").mockResolvedValue({ mime: "image/png", data: "A".repeat(1024), size: 4_000_000 });
+        const decode = vi.fn(async () => {
+            throw new Error("undecodable");
+        });
+        vi.stubGlobal("createImageBitmap", decode);
+        const undecodable = renderHook(() => useImagePreview("/shots/undecodable.png"));
+        await waitFor(() => expect(decode).toHaveBeenCalled());
+        await act(async () => {});
+
+        const close = vi.fn();
+        vi.stubGlobal("createImageBitmap", async () => ({ width: 10, height: 10, close }));
+        vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+        const canvasless = renderHook(() => useImagePreview("/shots/canvasless.png"));
+        await waitFor(() => expect(close).toHaveBeenCalled());
+        await act(async () => {});
+
+        expect(undecodable.result.current).toBeNull();
+        expect(canvasless.result.current).toBeNull();
+    });
+
+    it("shows no preview for a file named like a picture that is not one", async () => {
+        const read = vi.spyOn(fsapi, "readFileBase64").mockResolvedValue({ mime: "text/html", data: "PGh0bWw+", size: 6 });
+        const { result } = renderHook(() => useImagePreview("/shots/actually-html.png"));
+
+        await waitFor(() => expect(read).toHaveBeenCalled());
+        await act(async () => {});
+        expect(result.current).toBeNull();
+    });
+
+    it("keeps a preview that arrives after its view moved on to another file out of that view", async () => {
+        let answer: (blob: { mime: string; data: string; size: number }) => void = () => {};
+        vi.spyOn(fsapi, "readFileBase64").mockImplementation((path) =>
+            path === "/shots/slow.png"
+                ? new Promise((resolve) => (answer = resolve))
+                : Promise.resolve({ mime: "image/png", data: "RkFTVA==", size: 4 }),
+        );
+        const { result, rerender } = renderHook(({ path }) => useImagePreview(path), { initialProps: { path: "/shots/slow.png" } });
+        rerender({ path: "/shots/fast.png" });
+        await waitFor(() => expect(result.current).toBe("data:image/png;base64,RkFTVA=="));
+
+        await act(async () => answer({ mime: "image/png", data: "U0xPVw==", size: 4 }));
+
+        expect(result.current).toBe("data:image/png;base64,RkFTVA==");
     });
 });
