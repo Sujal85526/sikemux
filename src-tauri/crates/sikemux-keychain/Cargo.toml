@@ -1,0 +1,11 @@
+[package]
+name = "sikemux-keychain"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+sikemux-process = { path = "../sikemux-process" }
+
+[lints]
+workspace = true

@@ -4346,6 +4346,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sikemux-keychain"
+version = "0.1.0"
+dependencies = [
+ "sikemux-process",
+]
+
+[[package]]
 name = "sikemux-markdown"
 version = "0.1.0"
 dependencies = [
@@ -4448,8 +4455,8 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "sikemux-keychain",
  "sikemux-plugin-api",
- "sikemux-process",
  "tokio",
  "url",
 ]
