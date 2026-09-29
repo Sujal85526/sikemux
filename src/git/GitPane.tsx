@@ -1323,7 +1323,11 @@ function GitWorkbench({
                         if (event.key === "Escape") setQueries((q) => ({ ...q, [p]: "" }));
                         if (p === "files") setFileFilterOpen(false);
                         if (p === "commits") setCommitSearchOpen(false);
-                        paneRootRef.current?.querySelector<HTMLElement>(".git-list .git-row.sel, .git-list .gg-row.sel, .git-list .git-row")?.focus();
+                        window.requestAnimationFrame(() =>
+                            paneRootRef.current
+                                ?.querySelector<HTMLElement>(".git-list .git-row.sel, .git-list .gg-row.sel, .git-list .git-row")
+                                ?.focus(),
+                        );
                     }
                 }}
             />
@@ -1429,9 +1433,11 @@ function GitWorkbench({
                                             if (event.key !== "Escape" && event.key !== "Enter") return;
                                             if (event.key === "Escape") setQueries((q) => ({ ...q, commits: "" }));
                                             setCommitSearchOpen(false);
-                                            paneRootRef.current
-                                                ?.querySelector<HTMLElement>(".git-history .gg-row.sel, .git-history .gg-row")
-                                                ?.focus();
+                                            window.requestAnimationFrame(() =>
+                                                paneRootRef.current
+                                                    ?.querySelector<HTMLElement>(".git-history .gg-row.sel, .git-history .gg-row")
+                                                    ?.focus(),
+                                            );
                                         }}
                                     />
                                 </label>
