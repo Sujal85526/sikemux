@@ -203,7 +203,15 @@ impl CliBroker {
                     if let Some(window) = self.inner.app.get_window("main") {
                         let _ = window.show();
                         let _ = window.unminimize();
-                        let _ = window.set_focus();
+                        // An agent must not pull the person's keyboard away from
+                        // another app they are typing in, so it only asks for attention.
+                        if window.is_focused().unwrap_or(false) {
+                            let _ = window.set_focus();
+                        } else {
+                            let _ = window.request_user_attention(Some(
+                                tauri::UserAttentionType::Informational,
+                            ));
+                        }
                     }
                 }
                 let response = match result {

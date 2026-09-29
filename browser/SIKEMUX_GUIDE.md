@@ -162,7 +162,8 @@ A wait does not schedule you a future turn. It only holds this call open.
 
 Files and terminals open on your desk, and the tab comes to the front there
 without taking the person's focus. Add `focus: true` to bring the person to
-your session as well. A diff opens in the workspace.
+your session as well; when they are working in another app, Sikemux only
+bounces its Dock icon rather than taking their keyboard. A diff opens in the workspace.
 
 Paths must resolve inside the project; a path that escapes it is refused.
 
