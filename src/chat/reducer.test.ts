@@ -327,43 +327,26 @@ describe("chat reducer", () => {
         expect(stopped.tasks).toEqual([]);
     });
 
-    it("runs a turn the agent starts on its own until its closing usage report", () => {
-        const ready = chatReducer(initialChatState, { type: "ready", capabilities: {}, setup: {} });
-        const woken = update(ready, {
-            sessionUpdate: "tool_call",
-            toolCallId: "call-1",
-            title: "git log",
-            status: "in_progress",
-        });
-        expect(woken).toMatchObject({ running: true, unprompted: true });
+    it("does not mistake history replayed after the session is ready for a turn", () => {
+        const ready = chatReducer(chatReducer(initialChatState, { type: "reset", hold: true }), { type: "ready", capabilities: {}, setup: {} });
+        const replayed = [
+            { sessionUpdate: "user_message_chunk", content: { type: "text", text: "Run the pre-push checks" } },
+            { sessionUpdate: "tool_call", toolCallId: "call-1", title: "pnpm check", status: "completed" },
+            { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "All pushed." } },
+        ].reduce((state, row) => update(state, row), ready);
 
-        const report = { sessionUpdate: "usage_update", used: 1_000, size: 200_000 };
-        expect(update(woken, report).running).toBe(true);
-
-        const ended = update(woken, { ...report, _meta: { "_claude/origin": { kind: "peer" } } });
-        expect(ended).toMatchObject({ running: false, unprompted: false, usage: { used: 1_000, size: 200_000 } });
-        const part = ended.messages[0].parts[0];
-        expect(part.kind === "tool" && part.tool.status).toBe("cancelled");
-    });
-
-    it("does not mistake a resumed session's replay for a turn", () => {
-        const replayed = update(initialChatState, {
-            sessionUpdate: "agent_message_chunk",
-            content: { type: "text", text: "Earlier answer" },
-        });
         expect(replayed.running).toBe(false);
     });
 
-    it("leaves a prompted turn to its own completion", () => {
-        const ready = chatReducer(initialChatState, { type: "ready", capabilities: {}, setup: {} });
-        const prompted = chatReducer(ready, { type: "turn_started" });
+    it("leaves ending a turn to the turn events, not the usage report", () => {
+        const prompted = chatReducer(chatReducer(initialChatState, { type: "ready", capabilities: {}, setup: {} }), { type: "turn_started" });
         const reported = update(prompted, {
             sessionUpdate: "usage_update",
             used: 1,
             size: 10,
             _meta: { "_claude/origin": { kind: "task-notification" } },
         });
-        expect(reported.running).toBe(true);
+        expect(reported).toMatchObject({ running: true, usage: { used: 1, size: 10 } });
     });
 
     it("replaces slash commands when ACP sends a new command list", () => {

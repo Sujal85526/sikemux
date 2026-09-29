@@ -115,9 +115,6 @@ export interface ChatState {
     plan: unknown;
     usage: ContextUsage | null;
     running: boolean;
-    /* The agent started this turn on its own, woken by a message from another
-       session or a finished background task, so no prompt of ours will end it. */
-    unprompted: boolean;
     suppressUserEcho: boolean;
     error: string | null;
     title: string | null;

@@ -107,6 +107,29 @@ impl StreamMark {
     }
 }
 
+/// What an update from the agent's own session says about a turn nobody here
+/// prompted: the agent woke to a message from another session or a finished
+/// background task.
+#[derive(Debug, PartialEq)]
+enum TurnSignal {
+    Work,
+    Closes,
+}
+
+fn turn_signal(update: &Value) -> Option<TurnSignal> {
+    match update.get("sessionUpdate").and_then(Value::as_str)? {
+        "user_message_chunk" | "agent_message_chunk" | "agent_thought_chunk" | "tool_call" => {
+            Some(TurnSignal::Work)
+        }
+        // Claude's adapter tags the usage report that closes a turn it ran on
+        // its own with where the turn came from.
+        "usage_update" if update.pointer("/_meta/_claude~1origin").is_some() => {
+            Some(TurnSignal::Closes)
+        }
+        _ => None,
+    }
+}
+
 /// Clears the mark for a connection that ends part-way through a turn.
 struct TurnMark(StreamMark);
 
@@ -701,16 +724,52 @@ async fn run_connection(
     let permission_agent_id = agent_id.clone();
     let permission_manager = manager.clone();
 
+    let running = Arc::new(AtomicBool::new(false));
+    let unprompted = Arc::new(AtomicBool::new(false));
+    // Set once the session has loaded. A resumed session replays its history
+    // before that, and none of it is a turn.
+    let loaded_session = Arc::new(std::sync::OnceLock::<String>::new());
+    let wakes_on_its_own = provider == "claude";
+    let event_running = running.clone();
+    let event_unprompted = unprompted.clone();
+    let event_session = loaded_session.clone();
+
     agent_client_protocol::Client
         .builder()
         .on_receive_notification(
             async move |notification: air::SessionUpdate, _connection| {
+                let own_session = notification
+                    .0
+                    .get("sessionId")
+                    .and_then(Value::as_str)
+                    .is_some_and(|id| event_session.get().is_some_and(|own| own == id));
+                let signal = if wakes_on_its_own && own_session {
+                    notification.0.get("update").and_then(turn_signal)
+                } else {
+                    None
+                };
+                if signal == Some(TurnSignal::Work)
+                    && !event_running.load(Ordering::Acquire)
+                    && !event_unprompted.swap(true, Ordering::AcqRel)
+                {
+                    emit(&event_app, &event_agent_id, "turn_started", json!({}));
+                }
                 emit(
                     &event_app,
                     &event_agent_id,
                     "session_update",
                     notification.0,
                 );
+                if signal == Some(TurnSignal::Closes)
+                    && event_unprompted.swap(false, Ordering::AcqRel)
+                {
+                    emit(
+                        &event_app,
+                        &event_agent_id,
+                        "turn_completed",
+                        json!({ "stopReason": "end_turn" }),
+                    );
+                }
                 Ok(())
             },
             agent_client_protocol::on_receive_notification!(),
@@ -763,6 +822,9 @@ async fn run_connection(
             let app = app.clone();
             let agent_id = agent_id.clone();
             let ready = ready.clone();
+            let running = running.clone();
+            let unprompted = unprompted.clone();
+            let loaded_session = loaded_session.clone();
             async move {
                 emit(
                     &app,
@@ -827,6 +889,7 @@ async fn run_connection(
                         .to_owned();
                     (session_id, response.0)
                 };
+                let _ = loaded_session.set(session_id.clone());
 
                 let model_outside_config = native::models_outside_config(&setup);
                 setup = native::with_model_config(setup);
@@ -920,7 +983,6 @@ async fn run_connection(
                 };
                 let _turn_mark = TurnMark(stream.clone());
 
-                let running = Arc::new(AtomicBool::new(false));
                 let mut turn: u64 = 0;
                 let (stalled_tx, mut stalled_rx) = mpsc::unbounded_channel::<u64>();
                 let cancelled_turn = Arc::new(AtomicU64::new(0));
@@ -976,10 +1038,12 @@ async fn run_connection(
                             };
                             stream.set(true);
                             turn += 1;
+                            unprompted.store(false, Ordering::Release);
                             emit(&app, &agent_id, "turn_started", json!({}));
                             let response_app = app.clone();
                             let response_agent_id = agent_id.clone();
                             let response_running = running.clone();
+                            let response_unprompted = unprompted.clone();
                             let response_manager = manager.clone();
                             let response_stream = stream.clone();
                             let response_turn = turn;
@@ -989,6 +1053,7 @@ async fn run_connection(
                                 .send_request(PromptRequest::new(session_id.clone(), blocks))
                                 .on_receiving_result(async move |result| {
                                     response_running.store(false, Ordering::Release);
+                                    response_unprompted.store(false, Ordering::Release);
                                     response_stream.set(false);
                                     response_manager.cancel_permissions(Some(&response_agent_id));
                                     match result {
@@ -1164,6 +1229,15 @@ async fn run_connection(
                                     tokio::time::sleep(CANCEL_GRACE).await;
                                     let _ = stalled.send(cancelled);
                                 });
+                            } else if unprompted.swap(false, Ordering::AcqRel) {
+                                // No prompt of ours is open to answer with the
+                                // end of a turn the agent started itself.
+                                emit(
+                                    &app,
+                                    &agent_id,
+                                    "turn_completed",
+                                    json!({ "stopReason": "cancelled" }),
+                                );
                             }
                         }
                         AcpCommand::Stop => break,
@@ -1514,6 +1588,36 @@ mod tests {
                 config.environment().get(config_key).map(String::as_str),
                 Some("/profile")
             );
+        }
+    }
+
+    #[test]
+    fn only_work_and_the_tagged_usage_report_move_a_turn_the_agent_started() {
+        for kind in [
+            "user_message_chunk",
+            "agent_message_chunk",
+            "agent_thought_chunk",
+            "tool_call",
+        ] {
+            assert_eq!(
+                turn_signal(&json!({ "sessionUpdate": kind })),
+                Some(TurnSignal::Work)
+            );
+        }
+        assert_eq!(
+            turn_signal(&json!({
+                "sessionUpdate": "usage_update",
+                "_meta": { "_claude/origin": { "kind": "peer" } },
+            })),
+            Some(TurnSignal::Closes)
+        );
+        for update in [
+            json!({ "sessionUpdate": "usage_update", "used": 1, "size": 10 }),
+            json!({ "sessionUpdate": "tool_call_update" }),
+            json!({ "sessionUpdate": "available_commands_update" }),
+            json!({}),
+        ] {
+            assert_eq!(turn_signal(&update), None);
         }
     }
 

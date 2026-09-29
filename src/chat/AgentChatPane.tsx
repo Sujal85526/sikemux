@@ -88,7 +88,7 @@ import type {
 
 const MAX_ATTACHMENTS = 32;
 const MAX_DETAIL_CHARS = 120_000;
-const HIDDEN_FLUSH_MS = 250;
+const UPDATE_FLUSH_FALLBACK_MS = 250;
 // How far above the last line still counts as reading the latest message.
 const BOTTOM_SLACK = 72;
 /* A session that drops comes back on its own. The waits grow so an agent that
@@ -1849,16 +1849,13 @@ export function AgentChatPane({
             for (const [sessionId, update] of updates) dispatch({ type: "session_update", sessionId, update });
         };
 
-        /* A hidden window gets no animation frames, so a turn that runs behind
-           another tab would pile its whole transcript into one flush the moment
-           it comes back. A timer keeps it draining. */
+        /* WebKit stops animation frames for a window that is hidden or behind
+           another app, and only the first of those shows in document.hidden.
+           A timer keeps the queue draining either way. */
         const queueUpdate = (sessionId: string, update: Record<string, unknown>) => {
             queuedUpdatesRef.current.push([sessionId, update]);
-            if (document.hidden) {
-                if (updateTimerRef.current === null) updateTimerRef.current = window.setTimeout(flushUpdates, HIDDEN_FLUSH_MS);
-                return;
-            }
-            if (updateFrameRef.current === null) updateFrameRef.current = window.requestAnimationFrame(flushUpdates);
+            if (updateTimerRef.current === null) updateTimerRef.current = window.setTimeout(flushUpdates, UPDATE_FLUSH_FALLBACK_MS);
+            if (!document.hidden && updateFrameRef.current === null) updateFrameRef.current = window.requestAnimationFrame(flushUpdates);
         };
 
         const handleEvent = (event: AcpEvent) => {
@@ -1918,6 +1915,7 @@ export function AgentChatPane({
                 });
                 if (!mounted) return;
                 sessionIdRef.current = response.sessionId;
+                flushUpdates();
                 dispatch({ type: "ready", capabilities: response.capabilities, setup: response.setup });
                 setAppliedPermissionMode(initialMode);
             })
@@ -2066,16 +2064,8 @@ export function AgentChatPane({
 
     const steerable = state.capabilities.steering === true;
 
-    /* A turn the agent started on its own may end without the report that
-       closes it, so stopping one ends it here too. */
     const stop = () => {
-        const unprompted = state.unprompted;
-        void acpApi
-            .cancel(agent.id)
-            .then(() => {
-                if (unprompted) dispatch({ type: "turn_completed", stopReason: "cancelled" });
-            })
-            .catch((failure: unknown) => setComposerError(failure instanceof Error ? failure.message : String(failure)));
+        void acpApi.cancel(agent.id).catch((failure: unknown) => setComposerError(failure instanceof Error ? failure.message : String(failure)));
     };
 
     /* Steering stops whatever the agent has in flight so it reads this message
