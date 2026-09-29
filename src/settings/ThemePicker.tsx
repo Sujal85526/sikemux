@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CURATED_THEMES, THEMES, type Theme } from "../themes";
 import * as cmd from "../state/commands";
-import { IconCheck, IconImage, IconPencil, IconSearch, IconTrash } from "./Icons";
+import { IconCheck, IconImage, IconPencil, IconSearch, IconTrash } from "../components/Icons";
 
 type Tone = "all" | "dark" | "light";
 

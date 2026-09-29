@@ -5,7 +5,7 @@ import { basename, prettyPath } from "../lib/paths";
 import { useStore } from "../state/store";
 import type { AgentType } from "../state/types";
 import { AgentIcon, IconFolder } from "./Icons";
-import { SettingsPage, SettingsSection } from "./SettingsLayout";
+import { SettingsPage, SettingsSection } from "../settings/SettingsLayout";
 import "../styles/activity.css";
 
 type Metric = "agentMs" | "sessions" | "tokens" | "commits";

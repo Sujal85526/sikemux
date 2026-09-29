@@ -7,7 +7,7 @@ import { DEFAULT_CHAT_TEXT_SCALE } from "../chat/textScale";
 import { DEFAULT_EDITOR_TEXT_SCALE } from "../editor/textScale";
 import type { KeybindingOverrides } from "../keybindings";
 import type { CustomCommand } from "../commands/registry";
-import type { SettingsPageId } from "../settingsIndex";
+import type { SettingsPageId } from "../settings/settingsIndex";
 import { RAIL_WIDTH } from "../lib/railWidths";
 import { DEFAULT_PROVIDER_PROFILES, DEFAULT_PROVIDER_PROFILE_SELECTION } from "./types";
 

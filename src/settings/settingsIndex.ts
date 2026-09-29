@@ -1,4 +1,4 @@
-import { IS_MACOS } from "./lib/platform";
+import { IS_MACOS } from "../lib/platform";
 
 export type SettingsPageId = "general" | "appearance" | "keybindings" | "activity" | "about" | "agents" | "actions" | "cli" | "cloud" | "plugins";
 

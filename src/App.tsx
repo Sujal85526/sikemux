@@ -92,7 +92,7 @@ import { recordAgentTurns } from "./state/activityRecorder";
 import { useInstalledPlugins } from "./plugins/installed";
 import { useRailEntrance } from "./rail/railMotion";
 
-const SettingsPanel = lazy(() => import("./components/SettingsPanel").then((module) => ({ default: module.SettingsPanel })));
+const SettingsPanel = lazy(() => import("./settings/SettingsPanel").then((module) => ({ default: module.SettingsPanel })));
 
 /* The welcome, the release notes and the diagnostics panel, none of which exist
    until someone opens one. */

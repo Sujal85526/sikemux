@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { settingsApi } from "../api/settings";
 import { keybindingLabel, resolvedKeybinding } from "../keybindings";
 import { IS_MACOS } from "../lib/platform";
-import { SETTINGS_INDEX, SETTINGS_PAGE_ORDER } from "../settingsIndex";
+import { SETTINGS_INDEX, SETTINGS_PAGE_ORDER } from "./settingsIndex";
 import * as cmd from "../state/commands";
 import { getState, setState } from "../state/store";
 import { SettingsPanel } from "./SettingsPanel";

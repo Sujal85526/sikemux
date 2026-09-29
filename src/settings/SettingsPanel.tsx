@@ -42,10 +42,10 @@ import {
     IconSave,
     IconSearch,
     IconTrash,
-} from "./Icons";
-import { Dropdown } from "./Dropdown";
-import { Checkbox, Slider, Switch } from "./Controls";
-import { Tooltip } from "./Tooltip";
+} from "../components/Icons";
+import { Dropdown } from "../components/Dropdown";
+import { Checkbox, Slider, Switch } from "../components/Controls";
+import { Tooltip } from "../components/Tooltip";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
 import type { AgentProvider, ProjectRoot, ProviderProfile } from "../state/types";
 import { AGENT_PERMISSION_COPY, AGENT_PERMISSION_MODES } from "../agents/agentLaunch";
@@ -57,10 +57,10 @@ import {
     SETTINGS_PAGE_ORDER,
     type SettingsEntry,
     type SettingsPageId,
-} from "../settingsIndex";
+} from "./settingsIndex";
 import { useBuiltPlugins } from "../plugins/enabled";
 import { frontendPlugin, pluginSurface } from "../plugins/registry";
-import { ActivityPage } from "./ActivityPage";
+import { ActivityPage } from "../components/ActivityPage";
 import { SettingsPage, SettingsSection } from "./SettingsLayout";
 import { useVoice, type VoiceState } from "../voice/dictation";
 import "../styles/settings.css";

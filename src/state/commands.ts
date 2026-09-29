@@ -65,7 +65,7 @@ import {
 import { agentWindow } from "./agentWindow";
 import { DEFAULT_GIT_VIEW, DEFAULT_GLOBAL_SEARCH_VIEW, type GitArea } from "./types";
 import { copyText, readClipboardText } from "../lib/clipboard";
-import type { SettingsPageId } from "../settingsIndex";
+import type { SettingsPageId } from "../settings/settingsIndex";
 import {
     collectPanes,
     cloneLayout,
