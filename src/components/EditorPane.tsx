@@ -1014,13 +1014,12 @@ export function EditorPane({
             const belongsToAProject = Object.values(useStore.getState().sessions).some((s) => s?.kind === "project" && isPathWithin(e.path, s.cwd));
             if (!belongsHere && (belongsToAProject || !active)) return;
             void (async () => {
-                await openPath(e.path);
+                await openPathRef.current(e.path);
                 if (e.line != null && viewRef.current && !isImagePath(e.path)) {
                     scrollToLine(viewRef.current, e.line, e.character ?? 0);
                 }
             })().catch(reportError("open file"));
         });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [bare, cwd, active, paneId]);
 
     useEffect(() => {
