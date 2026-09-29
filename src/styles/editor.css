@@ -258,24 +258,34 @@
 .tabbar {
     display: flex;
     flex: 0 0 auto;
+    min-width: 0;
+}
+/* Only the tabs scroll; the add button after them stays at the end of the strip. */
+.tabbar-tabs {
+    display: flex;
+    flex: 0 1 auto;
+    align-self: stretch;
+    align-items: inherit;
+    gap: inherit;
+    min-width: 0;
     overflow-x: auto;
     overflow-y: hidden;
     scrollbar-width: none;
 }
 /* An end with tabs scrolled past it fades out, so a cut-off tab reads as more to scroll to. */
-.tabbar:is([data-fade-start], [data-fade-end]) {
+.tabbar-tabs:is([data-fade-start], [data-fade-end]) {
     --fade-start: 0px;
     --fade-end: 0px;
     -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--fade-start), #000 calc(100% - var(--fade-end)), transparent);
     mask-image: linear-gradient(to right, transparent, #000 var(--fade-start), #000 calc(100% - var(--fade-end)), transparent);
 }
-.tabbar[data-fade-start] {
+.tabbar-tabs[data-fade-start] {
     --fade-start: 32px;
 }
-.tabbar[data-fade-end] {
+.tabbar-tabs[data-fade-end] {
     --fade-end: 32px;
 }
-.tabbar::-webkit-scrollbar {
+.tabbar-tabs::-webkit-scrollbar {
     height: 0;
     display: none;
 }
@@ -362,18 +372,12 @@ body.is-sorting-tabs * {
 .tab-add:hover {
     color: var(--text-primary);
 }
-/* Sticky, so it has to hide the tabs that scroll under it — but with the
-   pane's own ground rather than a flat fill, which stayed opaque while the
-   window around it went see-through. */
 .tabbar-trailing {
     display: flex;
     align-items: center;
     margin-left: auto;
     margin-right: calc(0px - var(--space-1));
     padding: 3px 0 3px 4px;
-    position: sticky;
-    right: 0;
-    background: var(--pane-ground, transparent);
 }
 .tabbar-window-close {
     display: flex;

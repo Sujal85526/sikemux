@@ -371,23 +371,25 @@ export function TabBar({
     }
 
     return (
-        <div ref={scrollRef} className={`tabbar v-${variant}${reorder.dragging ? " is-reordering" : ""}`} role="tablist" aria-label={ariaLabel}>
-            {virtualized && <div aria-hidden="true" style={{ flex: `0 0 ${firstVirtual?.start ?? 0}px` }} />}
-            {runs.map((run) =>
-                run.group && run.items.length > 1 ? (
-                    <div
-                        key={`group:${run.group}`}
-                        className={`tab-group${run.items.some(({ tab }) => tab.active) ? " active" : ""}`}
-                        role="presentation">
-                        {run.items.map(({ tab, index }) => renderTab(tab, index))}
-                    </div>
-                ) : (
-                    run.items.map(({ tab, index }) => renderTab(tab, index))
-                ),
-            )}
-            {virtualized && (
-                <div aria-hidden="true" style={{ flex: `0 0 ${Math.max(0, tabVirtualizer.getTotalSize() - (lastVirtual?.end ?? 0))}px` }} />
-            )}
+        <div className={`tabbar v-${variant}${reorder.dragging ? " is-reordering" : ""}`}>
+            <div ref={scrollRef} className="tabbar-tabs" role="tablist" aria-label={ariaLabel}>
+                {virtualized && <div aria-hidden="true" style={{ flex: `0 0 ${firstVirtual?.start ?? 0}px` }} />}
+                {runs.map((run) =>
+                    run.group && run.items.length > 1 ? (
+                        <div
+                            key={`group:${run.group}`}
+                            className={`tab-group${run.items.some(({ tab }) => tab.active) ? " active" : ""}`}
+                            role="presentation">
+                            {run.items.map(({ tab, index }) => renderTab(tab, index))}
+                        </div>
+                    ) : (
+                        run.items.map(({ tab, index }) => renderTab(tab, index))
+                    ),
+                )}
+                {virtualized && (
+                    <div aria-hidden="true" style={{ flex: `0 0 ${Math.max(0, tabVirtualizer.getTotalSize() - (lastVirtual?.end ?? 0))}px` }} />
+                )}
+            </div>
             {onAdd && (
                 <Tooltip label={addTitle}>
                     <button type="button" className="tab-add" aria-label={addLabel ?? addTitle} onClick={onAdd}>

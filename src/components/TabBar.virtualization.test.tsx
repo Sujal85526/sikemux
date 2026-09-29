@@ -36,7 +36,7 @@ it("mounts a bounded window for a large tab strip and navigates by full-list ind
  * screen of strip with the last pill sitting off the end of it.
  */
 function laidOut(container: HTMLElement, pillWidth = 160): { strip: HTMLElement; scrollBy: ReturnType<typeof vi.fn> } {
-    const strip = container.querySelector(".tabbar") as HTMLElement;
+    const strip = container.querySelector(".tabbar-tabs") as HTMLElement;
     const scrollBy = vi.fn();
     strip.scrollBy = scrollBy;
     strip.getBoundingClientRect = () => new DOMRect(0, 0, 400, 30);
