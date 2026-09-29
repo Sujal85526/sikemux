@@ -5,6 +5,7 @@ import { useOccludeNativeViews } from "../state/nativeViews";
 import { Tooltip } from "./Tooltip";
 import "../styles/dropdown.css";
 import { alsoLeaving, leavingMenu } from "../lib/motion";
+import { rankBy } from "../lib/fuzzy";
 
 export interface DropdownOption {
     value: string;
@@ -25,6 +26,7 @@ export function Dropdown({
     disabled,
     align = "left",
     menuWidth,
+    search,
 }: {
     value: string;
     options: readonly DropdownOption[];
@@ -37,6 +39,8 @@ export function Dropdown({
     disabled?: boolean;
     align?: "left" | "right";
     menuWidth?: number;
+    /** Puts a filter box at the top of the menu, with this placeholder. */
+    search?: string;
 }) {
     const [open, setOpen] = useState(false);
     const [index, setIndex] = useState(0);
@@ -48,6 +52,12 @@ export function Dropdown({
     const id = useId();
     const active = options.find((option) => option.value === value);
     const [owner, setOwner] = useState<string>();
+    const [query, setQuery] = useState("");
+    const searchRef = useRef<HTMLInputElement>(null);
+    const shown = useMemo(
+        () => (search ? rankBy(query, options, (option) => [option.label, option.detail ?? ""]) : options),
+        [search, query, options],
+    );
     useOccludeNativeViews(open);
     const close = () => {
         setOpen(false);
@@ -55,6 +65,7 @@ export function Dropdown({
     };
     const show = () => {
         setOwner(buttonRef.current?.closest<HTMLElement>("[data-modal-scope]")?.dataset.modalScope);
+        setQuery("");
         setIndex(
             Math.max(
                 0,
@@ -64,7 +75,8 @@ export function Dropdown({
         setOpen(true);
     };
     const choose = (next: number) => {
-        if (options[next]) onChange(options[next].value);
+        if (!shown[next]) return;
+        onChange(shown[next].value);
         close();
     };
 
@@ -88,14 +100,14 @@ export function Dropdown({
             });
         };
         place();
-        menuRef.current?.focus();
+        (searchRef.current ?? menuRef.current)?.focus();
         window.addEventListener("resize", place);
         window.addEventListener("scroll", place, true);
         return () => {
             window.removeEventListener("resize", place);
             window.removeEventListener("scroll", place, true);
         };
-    }, [open, menuWidth, align]);
+    }, [open, menuWidth, align, shown.length]);
     useEffect(() => {
         if (open) menuRef.current?.querySelector<HTMLElement>(`[data-index="${index}"]`)?.scrollIntoView?.({ block: "nearest" });
     }, [index, open]);
@@ -147,11 +159,11 @@ export function Dropdown({
                         ref={menuElement}
                         id={id}
                         data-modal-owner={owner}
-                        className="dd-menu"
+                        className={`dd-menu${search ? " searchable" : ""}`}
                         role="listbox"
                         tabIndex={-1}
                         aria-label={label ?? title}
-                        aria-activedescendant={options[index] ? `${id}-${index}` : undefined}
+                        aria-activedescendant={shown[index] ? `${id}-${index}` : undefined}
                         style={{ position: "fixed", ...position }}
                         onKeyDown={(event) => {
                             event.stopPropagation();
@@ -160,7 +172,7 @@ export function Dropdown({
                                 close();
                             } else if (event.key === "Tab") {
                                 close();
-                            } else if (event.key === "Enter" || event.key === " ") {
+                            } else if (event.key === "Enter" || (event.key === " " && !search)) {
                                 event.preventDefault();
                                 choose(index);
                             } else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
@@ -169,10 +181,10 @@ export function Dropdown({
                                     event.key === "Home"
                                         ? 0
                                         : event.key === "End"
-                                          ? options.length - 1
-                                          : (index + (event.key === "ArrowDown" ? 1 : -1) + options.length) % options.length,
+                                          ? shown.length - 1
+                                          : (index + (event.key === "ArrowDown" ? 1 : -1) + shown.length) % Math.max(1, shown.length),
                                 );
-                            } else if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) {
+                            } else if (!search && event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) {
                                 event.preventDefault();
                                 const now = Date.now();
                                 prefix.current = {
@@ -183,23 +195,41 @@ export function Dropdown({
                                 if (found >= 0) setIndex(found);
                             }
                         }}>
-                        {options.map((option, itemIndex) => (
-                            <div
-                                key={option.value}
-                                id={`${id}-${itemIndex}`}
-                                data-index={itemIndex}
-                                role="option"
-                                aria-selected={option.value === value}
-                                className={`dd-item${itemIndex === index ? " active" : ""}`}
-                                onPointerMove={() => setIndex(itemIndex)}
-                                onClick={() => choose(itemIndex)}>
-                                <span className="dd-check">{option.value === value && <IconCheck size={11} />}</span>
-                                <span className={`dd-item-label${option.className ? ` ${option.className}` : ""}`}>
-                                    {option.label}
-                                    {option.detail && <small>{option.detail}</small>}
-                                </span>
-                            </div>
-                        ))}
+                        {search && (
+                            <input
+                                ref={searchRef}
+                                className="dd-search"
+                                value={query}
+                                placeholder={search}
+                                aria-label={search}
+                                spellCheck={false}
+                                autoComplete="off"
+                                onChange={(event) => {
+                                    setQuery(event.target.value);
+                                    setIndex(0);
+                                }}
+                            />
+                        )}
+                        {search && shown.length === 0 && <div className="dd-none">No matches</div>}
+                        <div className="dd-list">
+                            {shown.map((option, itemIndex) => (
+                                <div
+                                    key={option.value}
+                                    id={`${id}-${itemIndex}`}
+                                    data-index={itemIndex}
+                                    role="option"
+                                    aria-selected={option.value === value}
+                                    className={`dd-item${itemIndex === index ? " active" : ""}`}
+                                    onPointerMove={() => setIndex(itemIndex)}
+                                    onClick={() => choose(itemIndex)}>
+                                    <span className="dd-check">{option.value === value && <IconCheck size={11} />}</span>
+                                    <span className={`dd-item-label${option.className ? ` ${option.className}` : ""}`}>
+                                        {option.label}
+                                        {option.detail && <small>{option.detail}</small>}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
                     </div>,
                     document.body,
                 )}

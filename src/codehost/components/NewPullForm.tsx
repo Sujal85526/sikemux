@@ -142,6 +142,8 @@ export function NewPullForm({ paneId, repo, cwd, head: startingHead, active, onC
                         setFocus(null);
                     }}
                     title="The branch with the changes"
+                    search="Find a branch"
+                    menuWidth={300}
                 />
                 <span className="pr-new-into">into</span>
                 <Dropdown
@@ -155,6 +157,8 @@ export function NewPullForm({ paneId, repo, cwd, head: startingHead, active, onC
                         setFocus(null);
                     }}
                     title="The branch the changes land in"
+                    search="Find a branch"
+                    menuWidth={300}
                 />
                 <span className="gha-page-spacer" />
                 <Tooltip label="Cancel">
