@@ -18,12 +18,22 @@ are about to push. Install it by hand in an existing clone with `make hooks`.
 
 ## Project layout
 
-| Path             | What lives there                                                       |
-| ---------------- | ---------------------------------------------------------------------- |
-| `src/`           | React UI — components, Zustand state, editor, terminal, themes, keymap |
-| `src/api/`       | Thin wrappers over Tauri `invoke` commands                             |
-| `src-tauri/src/` | Rust core — PTY, git, LSP, fs watchers, AWS & Rundeck clients          |
-| `scripts/`       | Icon pipeline and platform release tooling                             |
+| Path                  | What lives there                                                           |
+| --------------------- | -------------------------------------------------------------------------- |
+| `src/`                | React UI: components, Zustand state, editor, terminal, themes, keymap      |
+| `src/state/commands/` | Every action that changes app state, one module per area                   |
+| `src/api/`            | Thin wrappers over Tauri `invoke` commands                                 |
+| `src/plugin-api/`     | The only part of the app a plugin's frontend may import                    |
+| `src/plugins/`        | Plugin frontends (AWS, Bitbucket, Bruno, GitHub, Rundeck, SigNoz)          |
+| `src-tauri/src/`      | Rust core: PTY, git, LSP, file watchers, browser tabs, agents, diagnostics |
+| `src-tauri/crates/`   | Shared Rust crates: plugin API, process runner, keychain, markdown         |
+| `src-tauri/plugins/`  | Plugin backends, one crate per plugin behind a Cargo feature               |
+| `browser/`            | Agent tool declarations (`tools.json`) and the guide agents read           |
+| `showcase/`           | Demo data and scenes for README and site screenshots                       |
+| `scripts/`            | Code generators, CI checks, icon pipeline and release tooling              |
+| `docs/architecture/`  | How the app fits together, and the decisions behind it                     |
+
+Read [the architecture overview](docs/architecture/overview.md) before a large change, and the decision records beside it before proposing to undo one.
 
 ## Before you open a PR
 
@@ -35,7 +45,13 @@ make check            # every gate, regardless of what changed
 pnpm build            # production frontend build
 ```
 
-`make check` runs Prettier in check mode, ShellCheck, ESLint, TypeScript, frontend tests with `NODE_ENV=test`, `cargo audit`, `cargo fmt --check`, Clippy with warnings denied, Rust tests, and credential-free release-tooling checks. These are the same quality gates enforced by CI.
+`make check` runs Prettier in check mode, ShellCheck, ESLint, TypeScript, frontend tests with coverage, the performance budget, `cargo audit`, `cargo fmt --check`, Clippy with warnings denied, Rust tests, and credential-free release-tooling checks. It also checks that generated files (IPC contracts, agent tools, grammars) match their sources. These are the same quality gates enforced by CI.
+
+Some gates are floors that only move one way. Raise them when you beat them; never lower them to get a change through:
+
+- **Test coverage:** the thresholds in `vite.config.ts` under `test.coverage.thresholds`. When a change lifts coverage, set each threshold to the new measured value, rounded down.
+- **`!important` in CSS:** the budget in `scripts/check-css-important.mjs`, checked by `pnpm lint`. Remove one and lower the budget to match.
+- **Bundle size:** the ceilings checked by `pnpm perf:budget` (see below).
 
 One CI job stays out of the hook: **macOS launched desktop E2E**. Run it with `pnpm test:e2e:desktop` if you touched the launch path — it builds the whole app, so the hook leaves it to CI.
 

@@ -99,7 +99,7 @@ own `agents` record. An agent's window has one pane whose id is the agent's id
 (`agentWindow.ts`), so `agents[pane.id]` is its record. Each agent can also have a desk
 (`desks`), which holds its browser tabs, the files it opened and its task terminals.
 
-**Persistence.** `persist.ts` watches the store. 600 ms after the last change it
+**Persistence.** `persist.ts` watches the store. Shortly after the last change it
 serializes a snapshot and sends it through `state_save`. `src-tauri/src/state.rs` writes
 it to SQLite at `~/.config/sikemux/state.sqlite3` (`state.dev.sqlite3` in debug, so dev
 builds never touch installed state). Loading runs `applyHydrate`, which migrates older
@@ -109,8 +109,8 @@ snapshots and validates them with `persistValidation.ts`. The schema version is
 **Resources.** Backend data that is fetched rather than owned, such as Git overviews,
 remotes, agent sessions and SSH hosts, goes through `resources.ts`. A definition in
 `resources.defs.ts` names a `kind`, a `fetch` function and a `staleAfterMs`. Components
-call `useResource(def, ...args)`. The cache shares one request between callers, keeps
-at most 256 entries, and drops unused ones after 15 minutes. `invalidate(predicate)`
+call `useResource(def, ...args)`. The cache shares one request between callers, is
+bounded in size, and drops entries nothing has used for a while. `invalidate(predicate)`
 refetches whatever matches, which is how file-watcher events refresh the UI.
 
 ## IPC
@@ -138,7 +138,7 @@ After adding or removing a command, run `pnpm ipc:generate` and commit the three
 - **Channels** carry streams to one caller. Terminal output is the busiest: each
   PTY (pseudo-terminal, the OS device a shell writes to) keeps its own screen in Rust
   (`vt100`), and `pty_attach` returns that screen plus a channel of raw bytes. The page
-  reports progress with `pty_ack`, and Rust pauses reading a shell once 512 KiB is
+  reports progress with `pty_ack`, and Rust pauses reading a shell once too much output is
   unacknowledged. A hidden pane unsubscribes; its shell keeps running. Plugin streams
   and update downloads also use channels.
 - **Events** are broadcast to the `main` web view with `emit_to`. Examples:
