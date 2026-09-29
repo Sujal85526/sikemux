@@ -137,6 +137,11 @@ async function configuredTask(project: string, taskId: string) {
     return { config, task };
 }
 
+/** The person already let a YOLO agent run anything, so its tasks skip the trust prompt. */
+function runsInYoloMode(request: HarnessRequest): boolean {
+    return Boolean(request.agentId && useStore.getState().agents[request.agentId]?.permissionMode === "bypass");
+}
+
 async function launchConfigured(request: HarnessRequest, taskId: string, key: string, replace = false): Promise<HarnessLaunch> {
     const { project } = request;
     const existing = replace ? undefined : harnessTasks.existing(project, taskId, key);
@@ -144,10 +149,12 @@ async function launchConfigured(request: HarnessRequest, taskId: string, key: st
     const { config, task } = await configuredTask(project, taskId);
     const previous = replace ? harnessTasks.latest(project, taskId) : undefined;
     const prepare = async (executionId: string, signal: AbortSignal): Promise<HarnessPrepared> => {
-        const trusted = await trustProjectConfig(config, (ask) => {
-            harnessTasks.awaitTrust(project, executionId);
-            return confirmDialog(ask);
-        });
+        const trusted =
+            runsInYoloMode(request) ||
+            (await trustProjectConfig(config, (ask) => {
+                harnessTasks.awaitTrust(project, executionId);
+                return confirmDialog(ask);
+            }));
         if (!trusted) throw new Error("Project configuration was not approved");
         const fresh = await loadProjectConfig(project);
         if (fresh.status !== "valid" || fresh.fingerprint !== config.fingerprint) throw new Error("Project configuration changed; inspect and retry");

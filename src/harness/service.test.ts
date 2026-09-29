@@ -90,6 +90,28 @@ describe("harness command service", () => {
         expect(harnessTasks.latest("/one", "test")).toMatchObject({ status: "failed", error: expect.stringContaining("configuration changed") });
         expect(spawn).not.toHaveBeenCalled();
     });
+    it("starts a YOLO agent's task without asking the person to trust sikemux.json, and still asks for a safe agent", async () => {
+        const state = useStore.getState();
+        const session = Object.values(state.sessions).find((session) => session.cwd === "/one")!;
+        useStore.setState(
+            withAgents(state, session.id, [
+                { id: "yolo-agent", type: "claude", title: "Yolo", startup: "", permissionMode: "bypass" },
+                { id: "safe-agent", type: "claude", title: "Safe", startup: "", permissionMode: "workspace-write" },
+            ]),
+        );
+        const { prepared } = fakeStart({ executionId: "yolo-run", taskId: "test", status: "running" } as HarnessRun);
+        vi.mocked(trustProjectConfig).mockResolvedValue(false);
+
+        await handleHarnessRequest({ ...request("task.start", { taskId: "test", idempotencyKey: "yolo" }), agentId: "yolo-agent" });
+        await Promise.resolve();
+        expect(trustProjectConfig).not.toHaveBeenCalled();
+        await vi.waitFor(() => expect(prepared).toHaveLength(1));
+
+        await expect(
+            handleHarnessRequest({ ...request("task.start", { taskId: "test", idempotencyKey: "safe" }), agentId: "safe-agent" }),
+        ).rejects.toThrow("not approved");
+        expect(trustProjectConfig).toHaveBeenCalledTimes(1);
+    });
     it("answers at once while the person has not yet trusted sikemux.json, and a retry picks the same run up", async () => {
         let answer!: (trusted: boolean) => void;
         vi.mocked(trustProjectConfig).mockImplementationOnce((_config, ask) => {

@@ -79,7 +79,8 @@ Two things can stop a launch:
   `status: "awaiting-trust"` and an `executionId` that `task_read` and
   `task_stop` already know. Call `task_start` again with the same key, or
   `events_wait` with that `executionId`, to see it start. If the person
-  refuses, the run ends as `failed`. A `command` needs no trust.
+  refuses, the run ends as `failed`. A `command` needs no trust, and neither
+does anything you start while the person runs you in YOLO mode.
 - If the same task is already running from the command deck, stop it there
   first. Starting a task already running through the harness just returns that
   execution.
