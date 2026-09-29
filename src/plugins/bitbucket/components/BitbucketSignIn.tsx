@@ -76,7 +76,7 @@ export function SignInForm({ status, onSignedIn }: Props) {
         <div className="gha-signin">
             <div className="gha-card">
                 <h2 className="gha-title">
-                    <BitbucketMark size={18} />
+                    <BitbucketMark size={18} className="icon-bitbucket" />
                     Connect to Bitbucket
                 </h2>
 

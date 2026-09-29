@@ -340,6 +340,9 @@
 .icon-github {
     color: var(--text-primary);
 }
+.icon-bitbucket {
+    color: var(--brand-bitbucket);
+}
 
 .sess-name {
     flex: 1;
