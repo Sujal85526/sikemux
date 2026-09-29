@@ -49,6 +49,12 @@ jobs:
       - name: Check the grammar manifest matches the installed grammars
         run: pnpm grammars:check
 
+      - name: Check the generated IPC contracts match the Rust commands
+        run: pnpm ipc:check
+
+      - name: Check the generated agent tool list matches its source
+        run: pnpm agent-tools:check
+
       - name: Run frontend tests with all-source coverage
         run: pnpm test:coverage
 
