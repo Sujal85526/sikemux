@@ -417,6 +417,68 @@ async fn commit_rows(
     Ok(commits)
 }
 
+/// `ada@example.com` out of `Ada Lovelace <ada@example.com>`.
+fn email_of_raw(raw: &str) -> Option<String> {
+    let (_, rest) = raw.split_once('<')?;
+    let email = rest.split('>').next()?.trim();
+    email.contains('@').then(|| email.to_ascii_lowercase())
+}
+
+/// Who wrote a commit, by the email in it, and the account Bitbucket matched that email to.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnownAuthor {
+    pub email: String,
+    pub login: String,
+    pub avatar_url: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitsRef {
+    #[serde(flatten)]
+    pub repo: RepoRef,
+    /// A branch, tag or commit to list from; every branch when absent.
+    pub git_ref: Option<String>,
+}
+
+fn known_authors(rows: Vec<CommitRow>) -> Vec<KnownAuthor> {
+    let mut known: Vec<KnownAuthor> = Vec::new();
+    for author in rows.into_iter().filter_map(|row| row.author) {
+        let (Some(email), Some(user)) = (author.raw.as_deref().and_then(email_of_raw), author.user)
+        else {
+            continue;
+        };
+        let (Some(login), Some(avatar_url)) = (user.login(), user.avatar()) else {
+            continue;
+        };
+        if known.iter().all(|seen| seen.email != email) {
+            known.push(KnownAuthor {
+                email,
+                login,
+                avatar_url,
+            });
+        }
+    }
+    known
+}
+
+/// The accounts behind the latest hundred commits' emails, so a git history
+/// read locally, which has only names and emails, shows the same faces as the
+/// pull requests and pipelines do.
+pub async fn commit_authors(
+    data_dir: &Path,
+    input: CommitsRef,
+) -> BitbucketResult<Vec<KnownAuthor>> {
+    let mut query = vec![("pagelen", "100".to_string())];
+    if let Some(git_ref) = input.git_ref.filter(|git_ref| !git_ref.is_empty()) {
+        query.push(("include", git_ref));
+    }
+    let rows: Vec<CommitRow> =
+        client::get_all(data_dir, &input.repo.path("/commits")?, &query, 1).await?;
+    Ok(known_authors(rows))
+}
+
 /// Oldest first, as the other hosts list them; Bitbucket gives them newest first.
 pub async fn commits(data_dir: &Path, input: Thread) -> BitbucketResult<Vec<PullCommit>> {
     commit_rows(data_dir, &input.repo, input.number).await
@@ -887,6 +949,24 @@ mod tests {
         });
         assert_eq!(commit.author.as_deref(), Some("Ada Lovelace"));
         assert_eq!(commit.message, "Fix it");
+    }
+
+    #[test]
+    fn commit_emails_are_matched_to_the_accounts_bitbucket_knows() {
+        let rows: Vec<CommitRow> = serde_json::from_value(json!([
+            { "hash": "a", "author": { "raw": "Kishore Gunalan <Kishore@Example.com>",
+                "user": { "nickname": "kishore", "links": { "avatar": { "href": "https://a/kg.png" } } } } },
+            { "hash": "b", "author": { "raw": "Kishore Gunalan <kishore@example.com>",
+                "user": { "nickname": "kishore", "links": { "avatar": { "href": "https://a/kg.png" } } } } },
+            { "hash": "c", "author": { "raw": "Nobody Known <nobody@example.com>" } },
+            { "hash": "d", "author": { "raw": "no email here", "user": { "nickname": "x" } } }
+        ]))
+        .expect("commit rows");
+        let known = known_authors(rows);
+        assert_eq!(known.len(), 1);
+        assert_eq!(known[0].email, "kishore@example.com");
+        assert_eq!(known[0].login, "kishore");
+        assert_eq!(known[0].avatar_url, "https://a/kg.png");
     }
 
     #[test]

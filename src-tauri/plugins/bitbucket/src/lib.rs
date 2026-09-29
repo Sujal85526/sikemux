@@ -180,6 +180,7 @@ fn dispatch<'a>(ctx: &'a PluginContext, method: &'a str, input: Value) -> Plugin
         "pull" => answer(input, move |q| pulls::get(data_dir, q)),
         "pullFiles" => answer(input, move |q| pulls::files(data_dir, q)),
         "pullCommits" => answer(input, move |q| pulls::commits(data_dir, q)),
+        "commitAuthors" => answer(input, move |q| pulls::commit_authors(data_dir, q)),
         "pullReviews" => answer(input, move |q| pulls::reviews(data_dir, q)),
         "timeline" => answer(input, move |q| pulls::timeline(data_dir, q)),
         "comments" => answer(input, move |q| pulls::comments(data_dir, q)),
