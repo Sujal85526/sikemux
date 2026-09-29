@@ -132,10 +132,11 @@ it("lists the pull request's commits in the history fold, newest first, and show
     expect(await screen.findByTestId("commit-review")).toHaveTextContent("aaaaaaa1111111");
 });
 
-it("keeps the list on the left and asks for a pick on the right while nothing is open", async () => {
+it("gives the list the whole pane while nothing is open", async () => {
     render(view(null));
     expect(await screen.findByText("the run page")).toBeInTheDocument();
-    expect(screen.getByText("Pick a pull request to see what it changes.")).toBeInTheDocument();
+    expect(document.querySelector(".gha-full-page .pr-list")).toBeInTheDocument();
+    expect(document.querySelector(".git-right")).not.toBeInTheDocument();
     showItem("p-git", null);
 });
 

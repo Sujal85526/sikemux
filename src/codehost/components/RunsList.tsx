@@ -246,5 +246,5 @@ export function RunsList({ paneId, repo, view, branch, projectBranch, active, ca
         </div>
     );
 
-    return <div className="gha-runs-page">{left}</div>;
+    return <div className="gha-full-page">{left}</div>;
 }

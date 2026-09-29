@@ -83,8 +83,10 @@ function PullHeadline({
             <span className="pr-headline-sub">
                 <span className="pr-headline-who">
                     {pull.author ?? "someone"} · #{pull.number}
-                    {labels ? ", updated " : " · "}
-                    {formatAgo(pull.updatedAt, now)}
+                    <span className="pr-headline-ago">
+                        {labels ? ", updated " : " · "}
+                        {formatAgo(pull.updatedAt, now)}
+                    </span>
                 </span>
                 {pull.head && <span className="pr-ref pr-ref-head">{pull.head}</span>}
                 {pull.head && pull.base && <span className="pr-ref-arrow">→</span>}
@@ -104,6 +106,13 @@ function PullRow({ pull, now, onOpen }: { pull: Pull; now: number; onOpen: () =>
                 title={<span className="pr-headline-title">{pull.title}</span>}
                 trailing={<Comments count={pull.comments ?? 0} />}
             />
+            <span className="pr-row-reviewers">
+                {pull.reviewers.map((login) => (
+                    <Face key={login} login={login} url={pull.avatars[login] ?? null} />
+                ))}
+            </span>
+            <span className="pr-row-comments">{pull.comments ? pull.comments.toLocaleString() : ""}</span>
+            <span className="pr-row-updated">{formatAgo(pull.updatedAt, now)}</span>
         </button>
     );
 }
@@ -791,57 +800,63 @@ export function PullsView({ paneId, repo, listState, item, composing, projectBra
                 {rows.length === 0 ? (
                     <EmptyState icon={<IconPullRequest size={20} />} message={`No ${listState === "all" ? "" : listState} pull requests.`} />
                 ) : (
-                    rows.map((pull) => <PullRow key={pull.number} pull={pull} now={now} onOpen={() => showItem(paneId, pull.number)} />)
+                    <div className="pr-rows">
+                        <div className="pr-cols" aria-hidden="true">
+                            <span>Pull request</span>
+                            <span>Reviewers</span>
+                            <span>Comments</span>
+                            <span>Updated</span>
+                        </div>
+                        {rows.map((pull) => (
+                            <PullRow key={pull.number} pull={pull} now={now} onOpen={() => showItem(paneId, pull.number)} />
+                        ))}
+                    </div>
                 )}
             </div>
         );
 
-    const left =
-        item === null ? (
-            list
-        ) : (
-            <PullColumn
-                paneId={paneId}
-                repo={repo}
-                cwd={cwd}
-                projectBranch={projectBranch}
-                number={item}
-                active={active}
-                login={login}
-                focus={focusPath}
-                commit={shownCommit}
-                onFocus={(path) => {
-                    setCommit(null);
-                    setFocus({ pull: item, path });
-                    setTabOf({ pull: item, tab: "files" });
-                }}
-                onCommit={(sha) => {
-                    setCommit(sha ? { pull: item, sha } : null);
-                    if (sha) setTabOf({ pull: item, tab: "files" });
-                }}
-                onClose={() => showItem(paneId, null)}
-                onBack={() => showItem(paneId, null)}
-                onOpenRun={(runId) => openRunFrom(paneId, runId, item)}
-            />
-        );
+    if (item === null) return <div className="gha-full-page">{list}</div>;
 
-    const right =
-        item === null ? (
-            <EmptyState icon={<IconPullRequest size={20} />} message="Pick a pull request to see what it changes." />
-        ) : (
-            <PullRight
-                repo={repo}
-                cwd={cwd}
-                number={item}
-                tab={tab}
-                commit={shownCommit}
-                focus={focusPath}
-                login={login}
-                active={active}
-                onTab={(next) => setTabOf({ pull: item, tab: next })}
-                onLeaveCommit={() => setCommit(null)}
-            />
-        );
+    const left = (
+        <PullColumn
+            paneId={paneId}
+            repo={repo}
+            cwd={cwd}
+            projectBranch={projectBranch}
+            number={item}
+            active={active}
+            login={login}
+            focus={focusPath}
+            commit={shownCommit}
+            onFocus={(path) => {
+                setCommit(null);
+                setFocus({ pull: item, path });
+                setTabOf({ pull: item, tab: "files" });
+            }}
+            onCommit={(sha) => {
+                setCommit(sha ? { pull: item, sha } : null);
+                if (sha) setTabOf({ pull: item, tab: "files" });
+            }}
+            onClose={() => showItem(paneId, null)}
+            onBack={() => showItem(paneId, null)}
+            onOpenRun={(runId) => openRunFrom(paneId, runId, item)}
+        />
+    );
+
+    const right = (
+        <PullRight
+            repo={repo}
+            cwd={cwd}
+            number={item}
+            tab={tab}
+            commit={shownCommit}
+            focus={focusPath}
+            login={login}
+            active={active}
+            onTab={(next) => setTabOf({ pull: item, tab: next })}
+            onLeaveCommit={() => setCommit(null)}
+        />
+    );
 
     return <GitColumns paneId={paneId} left={left} right={<div className="git-right-review">{right}</div>} />;
 }
