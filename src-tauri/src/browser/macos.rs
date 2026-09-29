@@ -1271,6 +1271,9 @@ pub fn install_shortcuts(app: AppHandle) {
         let pass = event.as_ptr();
         // SAFETY: AppKit hands the monitor a live event for the length of the call.
         let event = unsafe { event.as_ref() };
+        if super::input::stop_returned_key(event) {
+            return std::ptr::null_mut();
+        }
         let flags = event.modifierFlags();
         if !flags.contains(NSEventModifierFlags::Command) {
             return pass;

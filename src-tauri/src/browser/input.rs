@@ -4,16 +4,60 @@
 //! and keys take the same path through WebKit as the person's.
 //!
 //! Events go straight to the tab's view rather than through the window, so a
-//! tab that is off screen still receives them and the person's keyboard focus
-//! stays where it was.
+//! tab that is off screen still receives them. Keys only reach the page from
+//! the window's first responder, and a click makes the tab the first responder
+//! on its own, so the person's keyboard focus is held at the start of an agent
+//! action and given back at the end.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ffi::c_void;
+use std::time::{Duration, Instant};
 
-use objc2::msg_send;
-use objc2::rc::Retained;
-use objc2_app_kit::{NSEvent, NSEventModifierFlags, NSEventType};
-use objc2_foundation::{NSPoint, NSProcessInfo, NSString};
+use objc2::rc::{Retained, Weak};
+use objc2::runtime::AnyObject;
+use objc2::{msg_send, sel, Message};
+use objc2_app_kit::{NSEvent, NSEventModifierFlags, NSEventType, NSResponder, NSView, NSWindow};
+use objc2_foundation::{NSObjectProtocol, NSPoint, NSProcessInfo, NSString};
 use objc2_web_kit::WKWebView;
+
+/// WebKit hands a key back to the app once the page is done with it, which
+/// can take a while on a busy page.
+const SENT_KEY_LIFETIME: Duration = Duration::from_secs(30);
+/// WebKit takes the keyboard for a clicked page a moment after the click.
+const LATE_FOCUS_GRAB: Duration = Duration::from_millis(400);
+
+thread_local! {
+    static SENT_KEYS: RefCell<Vec<SentKey>> = const { RefCell::new(Vec::new()) };
+    static HELD_FOCUS: RefCell<HashMap<isize, HeldFocus>> = RefCell::new(HashMap::new());
+}
+
+/// A key-down the agent sent. A page that leaves a key unhandled has WebKit
+/// send it on through the app, where it would type into whatever the person
+/// has focused or fire an app shortcut.
+struct SentKey {
+    event: Retained<NSEvent>,
+    tab: Weak<WKWebView>,
+    edit: Option<Edit>,
+    at: Instant,
+}
+
+/// Where the person's keyboard focus was when an agent action began.
+struct HeldFocus {
+    responder: Retained<NSResponder>,
+    holders: usize,
+}
+
+/// The editing commands a text field answers to without any page script.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Edit {
+    SelectAll,
+    Copy,
+    Cut,
+    Paste,
+    Undo,
+    Redo,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mouse {
@@ -93,6 +137,7 @@ pub fn mouse(
 pub fn key(pointer: *mut c_void, stroke: &KeyStroke) -> Result<(), String> {
     let webview = webview_from(pointer)?;
     let window = webview.window().ok_or("the tab is not in a window")?;
+    take_keyboard(&window, &webview);
     let event = |kind: NSEventType| {
         NSEvent::keyEventWithType_location_modifierFlags_timestamp_windowNumber_context_characters_charactersIgnoringModifiers_isARepeat_keyCode(
             kind,
@@ -110,6 +155,7 @@ pub fn key(pointer: *mut c_void, stroke: &KeyStroke) -> Result<(), String> {
     };
     let down = event(NSEventType::KeyDown)?;
     let up = event(NSEventType::KeyUp)?;
+    remember_sent(&down, &webview, edit_of(stroke));
     // AppKit hands command chords to performKeyEquivalent, never to keyDown.
     if !stroke.flags.contains(NSEventModifierFlags::Command) || !webview.performKeyEquivalent(&down)
     {
@@ -119,10 +165,234 @@ pub fn key(pointer: *mut c_void, stroke: &KeyStroke) -> Result<(), String> {
     Ok(())
 }
 
+fn remember_sent(event: &NSEvent, tab: &WKWebView, edit: Option<Edit>) {
+    SENT_KEYS.with(|sent| {
+        let mut sent = sent.borrow_mut();
+        sent.retain(|key| key.at.elapsed() < SENT_KEY_LIFETIME);
+        sent.push(SentKey {
+            event: event.retain(),
+            tab: Weak::from(tab),
+            edit,
+            at: Instant::now(),
+        });
+    });
+}
+
+/// Called for every key-down the app is about to handle. An agent key the
+/// page left unhandled is kept from the app, and an editing chord among them
+/// is done in the tab, as the Edit menu would for the person.
+pub fn stop_returned_key(event: &NSEvent) -> bool {
+    let returned = SENT_KEYS.with(|sent| {
+        let mut sent = sent.borrow_mut();
+        let index = sent
+            .iter()
+            .position(|key| std::ptr::eq(&*key.event, event))?;
+        Some(sent.remove(index))
+    });
+    let Some(returned) = returned else {
+        return false;
+    };
+    if let (Some(edit), Some(tab)) = (returned.edit, returned.tab.load()) {
+        perform(&tab, edit);
+    }
+    true
+}
+
+fn edit_of(stroke: &KeyStroke) -> Option<Edit> {
+    let command = NSEventModifierFlags::Command;
+    let shifted = command | NSEventModifierFlags::Shift;
+    match (stroke.unmodified.as_str(), stroke.flags) {
+        ("a", flags) if flags == command => Some(Edit::SelectAll),
+        ("c", flags) if flags == command => Some(Edit::Copy),
+        ("x", flags) if flags == command => Some(Edit::Cut),
+        ("v", flags) if flags == command => Some(Edit::Paste),
+        ("z", flags) if flags == command => Some(Edit::Undo),
+        ("z", flags) if flags == shifted => Some(Edit::Redo),
+        _ => None,
+    }
+}
+
+fn perform(tab: &WKWebView, edit: Edit) {
+    let action = match edit {
+        Edit::SelectAll => sel!(selectAll:),
+        Edit::Copy => sel!(copy:),
+        Edit::Cut => sel!(cut:),
+        Edit::Paste => sel!(paste:),
+        Edit::Undo | Edit::Redo => {
+            // WKWebView has no `undo:` of its own; the page's history is
+            // reached through WebKit's editing command of the same name.
+            let command = sel!(_executeEditCommand:argument:completion:);
+            if tab.respondsToSelector(command) {
+                let name = NSString::from_str(if edit == Edit::Undo { "Undo" } else { "Redo" });
+                // SAFETY: `respondsToSelector` just confirmed this method. It takes a
+                // command name, an optional argument and an optional completion block,
+                // and returns nothing. Main thread, and `tab` is retained.
+                let _: () = unsafe {
+                    msg_send![tab, _executeEditCommand: &*name, argument: std::ptr::null::<NSString>(), completion: std::ptr::null::<AnyObject>()]
+                };
+            }
+            return;
+        }
+    };
+    // SAFETY: `tryToPerform:with:` only sends the action if the tab answers to it,
+    // and every editing action takes one sender and returns nothing.
+    let _ = unsafe { tab.tryToPerform_with(action, None) };
+}
+
+fn inside(responder: &NSResponder, tab: &WKWebView) -> bool {
+    responder
+        .downcast_ref::<NSView>()
+        .is_some_and(|view| view.isDescendantOf(tab))
+}
+
+/// Keys resolve against the window's first responder, not the view they
+/// are sent to, so the tab has to hold the keyboard while one is pressed.
+fn take_keyboard(window: &NSWindow, tab: &WKWebView) {
+    let holds = window
+        .firstResponder()
+        .is_some_and(|responder| inside(&responder, tab));
+    if !holds {
+        window.makeFirstResponder(Some(tab));
+    }
+}
+
+/// A text field edits through a shared field editor, which is the first
+/// responder only while that field is; the field itself is what to go back to.
+fn owner_of(responder: Retained<NSResponder>) -> Retained<NSResponder> {
+    if !responder.respondsToSelector(sel!(isFieldEditor)) {
+        return responder;
+    }
+    // SAFETY: `respondsToSelector` just confirmed `isFieldEditor`, which takes nothing
+    // and returns a BOOL. Main thread, and `responder` is retained.
+    let field_editor: bool = unsafe { msg_send![&*responder, isFieldEditor] };
+    if !field_editor || !responder.respondsToSelector(sel!(delegate)) {
+        return responder;
+    }
+    // SAFETY: a field editor's `delegate` takes nothing and returns the field it
+    // edits for, or nil. The result is retained.
+    let delegate: Option<Retained<AnyObject>> = unsafe { msg_send![&*responder, delegate] };
+    delegate
+        .and_then(|delegate| delegate.downcast::<NSResponder>().ok())
+        .unwrap_or(responder)
+}
+
+/// Notes where the person's keyboard focus is as an agent action begins, so
+/// `return_person_focus` can give it back. Nested and overlapping actions in
+/// one window share the first note.
+#[allow(dead_code)]
+pub fn hold_person_focus(pointer: *mut c_void) -> Result<(), String> {
+    let tab = webview_from(pointer)?;
+    let window = tab.window().ok_or("the tab is not in a window")?;
+    let number = window.windowNumber();
+    HELD_FOCUS.with(|held| {
+        let mut held = held.borrow_mut();
+        if let Some(focus) = held.get_mut(&number) {
+            focus.holders += 1;
+            return;
+        }
+        let Some(responder) = window.firstResponder() else {
+            return;
+        };
+        if inside(&responder, &tab) {
+            return;
+        }
+        held.insert(
+            number,
+            HeldFocus {
+                responder: owner_of(responder),
+                holders: 1,
+            },
+        );
+    });
+    Ok(())
+}
+
+/// Gives the keyboard back to where `hold_person_focus` found it, but only
+/// if this tab still has it: the person may have moved on meanwhile. WebKit
+/// takes the keyboard for a clicked page a moment late, so this looks again
+/// shortly after.
+#[allow(dead_code)]
+pub fn return_person_focus(pointer: *mut c_void) -> Result<(), String> {
+    let tab = webview_from(pointer)?;
+    let window = tab.window().ok_or("the tab is not in a window")?;
+    let number = window.windowNumber();
+    let person = HELD_FOCUS.with(|held| {
+        let mut held = held.borrow_mut();
+        let focus = held.get_mut(&number)?;
+        focus.holders -= 1;
+        if focus.holders > 0 {
+            return None;
+        }
+        held.remove(&number).map(|focus| focus.responder)
+    });
+    let Some(person) = person else {
+        return Ok(());
+    };
+    give_back(&window, &tab, &person);
+    after(
+        LATE_FOCUS_GRAB,
+        Box::new(move || {
+            let acting_again = HELD_FOCUS.with(|held| held.borrow().contains_key(&number));
+            if !acting_again {
+                give_back(&window, &tab, &person);
+            }
+        }),
+    );
+    Ok(())
+}
+
+fn give_back(window: &NSWindow, tab: &WKWebView, person: &NSResponder) {
+    let agent_has_it = window
+        .firstResponder()
+        .is_some_and(|responder| inside(&responder, tab));
+    if agent_has_it {
+        window.makeFirstResponder(Some(person));
+    }
+}
+
+type MainThreadWork = Box<dyn FnOnce()>;
+
+extern "C" {
+    static _dispatch_main_q: c_void;
+    fn dispatch_time(when: u64, delta: i64) -> u64;
+    fn dispatch_after_f(
+        when: u64,
+        queue: *const c_void,
+        context: *mut c_void,
+        work: extern "C" fn(*mut c_void),
+    );
+}
+
+/// Runs `work` on the main thread once `delay` has passed.
+fn after(delay: Duration, work: MainThreadWork) {
+    extern "C" fn run(context: *mut c_void) {
+        // SAFETY: `context` is the box `after` leaked below, and the main queue
+        // runs this exactly once.
+        let work = unsafe { Box::from_raw(context.cast::<MainThreadWork>()) };
+        work();
+    }
+    let context = Box::into_raw(Box::new(work)).cast::<c_void>();
+    let delta = i64::try_from(delay.as_nanos()).unwrap_or(i64::MAX);
+    // SAFETY: `_dispatch_main_q` is libdispatch's main queue, alive for the whole
+    // process. `run` takes back ownership of `context`, and the main queue only runs
+    // it on the main thread, where the objects the work holds belong.
+    unsafe {
+        dispatch_after_f(
+            dispatch_time(0, delta),
+            std::ptr::addr_of!(_dispatch_main_q),
+            context,
+            run,
+        );
+    }
+}
+
 /// Inserts text at the page's caret the way a keyboard or input method would,
 /// so editors that keep their own model of the document see it arrive.
 pub fn insert_text(pointer: *mut c_void, text: &str) -> Result<(), String> {
     let webview = webview_from(pointer)?;
+    if let Some(window) = webview.window() {
+        take_keyboard(&window, &webview);
+    }
     let text = NSString::from_str(text);
     // SAFETY: WKWebView implements NSTextInputClient's `insertText:`, which takes one
     // string and returns nothing. Main thread, and both objects are retained.
@@ -266,5 +536,20 @@ mod tests {
         assert_eq!(parse_key("Shift+k").unwrap().characters, "K");
         assert_eq!(parse_key("Control++").unwrap().characters, "+");
         assert!(parse_key("Super+a").is_err());
+    }
+
+    #[test]
+    fn only_the_plain_editing_chords_become_editing_commands() {
+        let edit = |name: &str| edit_of(&parse_key(name).unwrap());
+        assert_eq!(edit("Meta+a"), Some(Edit::SelectAll));
+        assert_eq!(edit("Meta+c"), Some(Edit::Copy));
+        assert_eq!(edit("Meta+x"), Some(Edit::Cut));
+        assert_eq!(edit("Meta+v"), Some(Edit::Paste));
+        assert_eq!(edit("Meta+z"), Some(Edit::Undo));
+        assert_eq!(edit("Shift+Meta+z"), Some(Edit::Redo));
+        assert_eq!(edit("Meta+t"), None);
+        assert_eq!(edit("Control+a"), None);
+        assert_eq!(edit("Alt+Meta+a"), None);
+        assert_eq!(edit("a"), None);
     }
 }
