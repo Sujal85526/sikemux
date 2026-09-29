@@ -21,7 +21,7 @@ import { GitColumns } from "../../git/GitColumns";
 import { AuthorPicturesProvider, type AuthorPictures } from "../../git/AuthorAvatar";
 import { GitGraph } from "../../git/GitGraph";
 import { FoldPanel } from "../../git/FoldPanel";
-import { FileIcon } from "../../components/FileIcon";
+import { FileIcon } from "../../ui/FileIcon";
 import { basename, dirname } from "../../lib/paths";
 import { requestOpenFile, setGitView } from "../../state/commands";
 import { useStore } from "../../state/store";

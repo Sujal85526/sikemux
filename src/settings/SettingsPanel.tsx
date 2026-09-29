@@ -42,10 +42,10 @@ import {
     IconSave,
     IconSearch,
     IconTrash,
-} from "../components/Icons";
-import { Dropdown } from "../components/Dropdown";
-import { Checkbox, Slider, Switch } from "../components/Controls";
-import { Tooltip } from "../components/Tooltip";
+} from "../ui/Icons";
+import { Dropdown } from "../ui/Dropdown";
+import { Checkbox, Slider, Switch } from "../ui/Controls";
+import { Tooltip } from "../ui/Tooltip";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
 import type { AgentProvider, ProjectRoot, ProviderProfile } from "../state/types";
 import { AGENT_PERMISSION_COPY, AGENT_PERMISSION_MODES } from "../agents/agentLaunch";

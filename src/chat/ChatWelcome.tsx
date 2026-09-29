@@ -1,5 +1,5 @@
 import { Calendar, isEmptyActivity, Overview, useActivitySummary } from "../shell/ActivityPage";
-import { AgentIcon } from "../components/Icons";
+import { AgentIcon } from "../ui/Icons";
 import { basename } from "../lib/paths";
 import type { AgentType } from "../state/types";
 import "../styles/activity.css";

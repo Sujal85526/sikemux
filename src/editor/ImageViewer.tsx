@@ -5,7 +5,7 @@ import { useModalFocus } from "../hooks/useModalFocus";
 import { hideImage, useShownImage, type ShownImage } from "../state/imageViewer";
 import { useOccludeNativeViews } from "../state/nativeViews";
 import { errMessage, notify } from "../state/toast";
-import { IconClose, IconDownload } from "../components/Icons";
+import { IconClose, IconDownload } from "../ui/Icons";
 
 /** The base64 half of a data URL, which is all a file needs of one. */
 function base64Of(src: string): string | null {

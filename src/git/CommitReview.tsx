@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { git } from "../api/git";
 import { DiffEditor } from "./DiffEditor";
-import { IconChevron } from "../components/Icons";
-import { FileIcon } from "../components/FileIcon";
-import { Tooltip } from "../components/Tooltip";
+import { IconChevron } from "../ui/Icons";
+import { FileIcon } from "../ui/FileIcon";
+import { Tooltip } from "../ui/Tooltip";
 import { basename, joinPath } from "../lib/paths";
 
 export function CommitReview({

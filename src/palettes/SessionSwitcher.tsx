@@ -4,7 +4,7 @@ import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import type { KeyModifier, SessionKind } from "../state/types";
 import { pluginSurface } from "../plugins/registry";
-import { IconCommand, IconFolder } from "../components/Icons";
+import { IconCommand, IconFolder } from "../ui/Icons";
 
 function kindIcon(kind: SessionKind): ReactNode {
     if (kind === "project") return <IconFolder size={16} />;

@@ -1,7 +1,7 @@
 import { Profiler } from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
-import { ErrorBoundary } from "./components/ErrorBoundary";
+import { ErrorBoundary } from "./ui/ErrorBoundary";
 import { installDiagnostics, reactProfilingEnabled } from "./lib/diagnostics";
 import "./styles.css";
 import { performanceTelemetry } from "./lib/performance";

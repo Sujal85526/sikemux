@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 import { animate, EASE_LEAVE, leavingRef } from "../lib/motion";
 import { setNativeViewHoles, type NativeViewHole } from "../state/nativeViews";
 import { useToasts, type ToastKind } from "../state/toast";
-import { IconCheck, IconClose, IconExclamation, IconInfoMark } from "../components/Icons";
+import { IconCheck, IconClose, IconExclamation, IconInfoMark } from "../ui/Icons";
 
 const KIND_ICON: Record<ToastKind, typeof IconCheck> = {
     success: IconCheck,

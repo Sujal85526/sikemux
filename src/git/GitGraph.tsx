@@ -1,7 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { subscribeTheme } from "../themes/bus";
 import type { GitCommit } from "../api/git";
-import { EmptyState } from "../components/Panel";
+import { EmptyState } from "../ui/Panel";
 import { AuthorAvatar } from "./AuthorAvatar";
 
 export { authorColor, initials } from "./AuthorAvatar";

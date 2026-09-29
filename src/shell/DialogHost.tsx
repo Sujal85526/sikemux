@@ -2,8 +2,8 @@ import { useModalFocus } from "../hooks/useModalFocus";
 import { useEffect, useRef, useState } from "react";
 import { acceptDialog, dismissDialog, useDialogs, type PendingDialog } from "../state/dialog";
 import { useOccludeNativeViews } from "../state/nativeViews";
-import { IconInfo, IconWarning } from "../components/Icons";
-import { Kbd } from "../components/Kbd";
+import { IconInfo, IconWarning } from "../ui/Icons";
+import { Kbd } from "../ui/Kbd";
 
 /**
  * Renders the app's own confirm/prompt sheet in place of the platform dialogs.

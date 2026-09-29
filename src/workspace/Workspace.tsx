@@ -23,14 +23,14 @@ import {
     type SplitSide,
 } from "../state/selectors";
 import { type CtxItem } from "../rail/FileTree";
-import { ErrorBoundary } from "../components/ErrorBoundary";
-import { ShaderField } from "../components/ShaderField";
+import { ErrorBoundary } from "../ui/ErrorBoundary";
+import { ShaderField } from "../ui/ShaderField";
 import { TabBar, type TabDescriptor } from "./TabBar";
 import type { TabDragOut, TabPoint } from "./useTabReorder";
-import { AgentIcon, IconArrowUp, IconPlus, WindowIcon } from "../components/Icons";
+import { AgentIcon, IconArrowUp, IconPlus, WindowIcon } from "../ui/Icons";
 import { AgentStateIndicator, SubagentCount } from "../agents/AgentStateIndicator";
 import { renderWorkbenchItem } from "../workbench/renderers";
-import { FileIcon } from "../components/FileIcon";
+import { FileIcon } from "../ui/FileIcon";
 import { fsapi } from "../api/fs";
 import { useStageMotion } from "../state/nativeViews";
 import { basename, relativePath } from "../lib/paths";

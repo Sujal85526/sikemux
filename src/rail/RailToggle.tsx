@@ -1,7 +1,7 @@
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
-import { IconPanelLeft, IconPanelRight } from "../components/Icons";
-import { Tooltip } from "../components/Tooltip";
+import { IconPanelLeft, IconPanelRight } from "../ui/Icons";
+import { Tooltip } from "../ui/Tooltip";
 
 const RAILS = {
     start: { name: "sessions rail", Icon: IconPanelLeft, toggle: cmd.toggleSideRail },

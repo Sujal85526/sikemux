@@ -1,5 +1,5 @@
 import type { Agent } from "../state/types";
-import { IconShield, IconShieldBolt } from "../components/Icons";
+import { IconShield, IconShieldBolt } from "../ui/Icons";
 import * as cmd from "../state/commands";
 
 export function YoloToggle({ agent, relaunches, disabled = false }: { agent: Agent; relaunches: boolean; disabled?: boolean }) {

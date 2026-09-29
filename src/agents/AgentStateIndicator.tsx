@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef } from "react";
 import { animate } from "../lib/motion";
 import { AGENT_STATE_META } from "../state/agentStatus";
 import type { AgentPresentationState } from "../state/types";
-import { IconAgent, IconCommand } from "../components/Icons";
+import { IconAgent, IconCommand } from "../ui/Icons";
 
 const BACKGROUND_LABEL = "Shells or monitors still running";
 const TWINKLE_CELLS = [0, 1, 2, 3, 4, 5, 6, 7, 8];

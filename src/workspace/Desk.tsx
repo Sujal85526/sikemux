@@ -3,8 +3,8 @@ import { browserApi, BLANK_URL, type BrowserBounds, type BrowserHole, type Brows
 import { onStageFrame, useNativeViewHoles, useNativeViewsOccluded, useStageMoving, type NativeViewHole } from "../state/nativeViews";
 import type { AgentType, PtyContext, Session, Window as WindowT } from "../state/types";
 import { reportError } from "../state/toast";
-import { AgentIcon, IconChevron, IconGlobe, IconPlus, IconRefresh, WindowIcon } from "../components/Icons";
-import { FileIcon } from "../components/FileIcon";
+import { AgentIcon, IconChevron, IconGlobe, IconPlus, IconRefresh, WindowIcon } from "../ui/Icons";
+import { FileIcon } from "../ui/FileIcon";
 import { TabBar, type TabDescriptor } from "./TabBar";
 import { getState, useStore } from "../state/store";
 import { refreshBrowserStrip } from "../state/browserStrips";

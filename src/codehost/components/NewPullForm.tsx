@@ -4,7 +4,7 @@ import { CommitReview } from "../../git/CommitReview";
 import { FoldPanel } from "../../git/FoldPanel";
 import { GitColumns } from "../../git/GitColumns";
 import { GitGraph } from "../../git/GitGraph";
-import { FileIcon } from "../../components/FileIcon";
+import { FileIcon } from "../../ui/FileIcon";
 import { basename, dirname } from "../../lib/paths";
 import { notify, reportError } from "../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";

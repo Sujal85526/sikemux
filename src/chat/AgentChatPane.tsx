@@ -21,8 +21,8 @@ import { invokeCommand as invoke } from "../api/invoke";
 import { agentSupportsSkipPermissions } from "../state/commands/agentLogic";
 import { ComposerPickers, effortConfig, sessionConfigs, type SessionConfig } from "./ComposerPickers";
 import { rateLabel, rowMeta } from "./messageMeta";
-import { CopyButton } from "../components/CopyButton";
-import { FileIcon } from "../components/FileIcon";
+import { CopyButton } from "../ui/CopyButton";
+import { FileIcon } from "../ui/FileIcon";
 import { basename } from "../lib/paths";
 import { animate, EASE_IN, foldedFrames, leavingRef } from "../lib/motion";
 import { hasPrimaryModifier, PRIMARY_SHORTCUT } from "../lib/platform";
@@ -51,7 +51,7 @@ import {
     IconShieldBolt,
     IconTimer,
     IconWarning,
-} from "../components/Icons";
+} from "../ui/Icons";
 import { chatReducer, initialChatState } from "./reducer";
 import { collapseDiff, fencedDiff, type DiffLine, type ToolDiff } from "./diff";
 import { toolDescription, type ToolOutput } from "./toolOutput";

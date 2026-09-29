@@ -4,9 +4,9 @@ import { isUpdateBusy, updateDownloadPercent, updateStatusLabel } from "../api/u
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { swallow } from "../state/toast";
-import { IconDownload, IconRefresh, IconWarning, Logo } from "../components/Icons";
+import { IconDownload, IconRefresh, IconWarning, Logo } from "../ui/Icons";
 import { RailToggle } from "./RailToggle";
-import { Tooltip } from "../components/Tooltip";
+import { Tooltip } from "../ui/Tooltip";
 
 const RING_RADIUS = 9;
 const RING_LENGTH = 2 * Math.PI * RING_RADIUS;

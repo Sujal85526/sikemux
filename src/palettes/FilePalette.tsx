@@ -7,8 +7,8 @@ import { useResourceEnabled } from "../state/resources";
 import { filesListR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { useMouseActive } from "../hooks/useMouseActive";
-import { IconSearch } from "../components/Icons";
-import { FileIcon } from "../components/FileIcon";
+import { IconSearch } from "../ui/Icons";
+import { FileIcon } from "../ui/FileIcon";
 import { leavingOverlay } from "../lib/motion";
 
 const MAX_RESULTS = 200;

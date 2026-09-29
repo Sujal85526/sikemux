@@ -1,5 +1,5 @@
 import { useRef, type ReactNode } from "react";
-import { IconChevron } from "../components/Icons";
+import { IconChevron } from "../ui/Icons";
 import { HISTORY_CLEARANCE, HISTORY_MIN, ResizeHandle } from "./ResizeHandle";
 
 /**

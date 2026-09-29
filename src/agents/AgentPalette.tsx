@@ -9,7 +9,7 @@ import { fetchResource, peekResource, useResource } from "../state/resources";
 import { agentCatalogR, agentSessionsR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import type { AgentPermissionMode, AgentType } from "../state/types";
-import { AgentIcon, IconSearch, IconShield, IconShieldBolt } from "../components/Icons";
+import { AgentIcon, IconSearch, IconShield, IconShieldBolt } from "../ui/Icons";
 import { leavingOverlay } from "../lib/motion";
 
 type Row = AgentSession & { type: AgentType };

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EditorView } from "@codemirror/view";
 import { SearchQuery, findNext, findPrevious, getSearchQuery, replaceAll, replaceNext, setSearchQuery } from "@codemirror/search";
-import { IconArrowDown, IconArrowUp, IconChevron, IconClose, IconReplace, IconReplaceAll, IconSearch } from "../components/Icons";
-import { Tooltip } from "../components/Tooltip";
+import { IconArrowDown, IconArrowUp, IconChevron, IconClose, IconReplace, IconReplaceAll, IconSearch } from "../ui/Icons";
+import { Tooltip } from "../ui/Tooltip";
 import { PRIMARY_SHORTCUT } from "../lib/platform";
 
 interface Props {

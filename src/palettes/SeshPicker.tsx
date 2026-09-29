@@ -17,7 +17,7 @@ import { useMouseActive } from "../hooks/useMouseActive";
 import { isPluginKind } from "../plugins/kinds";
 import { enabledFrontendPlugins } from "../plugins/enabled";
 import { pluginSurface } from "../plugins/registry";
-import { IconClose, IconCommand, IconFolder, IconSearch } from "../components/Icons";
+import { IconClose, IconCommand, IconFolder, IconSearch } from "../ui/Icons";
 import { leavingOverlay } from "../lib/motion";
 
 type Item =

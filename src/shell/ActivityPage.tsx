@@ -4,7 +4,7 @@ import { calendarColumns, dayDate, levelOf, levelThresholds, localDay, streaks }
 import { basename, prettyPath } from "../lib/paths";
 import { useStore } from "../state/store";
 import type { AgentType } from "../state/types";
-import { AgentIcon, IconFolder } from "../components/Icons";
+import { AgentIcon, IconFolder } from "../ui/Icons";
 import { SettingsPage, SettingsSection } from "../settings/SettingsLayout";
 import "../styles/activity.css";
 

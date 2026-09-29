@@ -1,8 +1,8 @@
 import { createContext, useContext, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import { fsapi } from "../api/fs";
-import { FileIcon } from "../components/FileIcon";
+import { FileIcon } from "../ui/FileIcon";
 import { TreeContextMenu, type CtxItem } from "../rail/FileTree";
-import { IconFolder } from "../components/Icons";
+import { IconFolder } from "../ui/Icons";
 import { copyText } from "../lib/clipboard";
 import { basename, dirname, relativePath } from "../lib/paths";
 import { FILE_MANAGER_NAME } from "../lib/platform";
