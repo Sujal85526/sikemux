@@ -14,6 +14,7 @@ import type {
     PendingApproval,
     Pull,
     PullCommit,
+    RateLimit,
     RepoListing,
     RepoRef,
     Resolved,
@@ -65,6 +66,7 @@ async function call<T>(method: string, params?: unknown): Promise<T> {
         return await backend.call<T>(method, params);
     } catch (error) {
         if (isSignedOut(error)) forgetSignedOut();
+        if (isPluginFailure(error, "rate-limited")) invalidate((kind) => kind === "host.rateLimit");
         throw error;
     }
 }
@@ -142,6 +144,7 @@ function accountOf(status: BitbucketStatus): HostAccount {
 
 /** Bitbucket as the Git pane reads any code host. What it has no counterpart for is empty, or refused if it is a change. */
 export const bitbucketHostApi: CodeHostApi = {
+    rateLimit: () => backend.call<RateLimit>("rateLimit"),
     status: () => bitbucketApi.status().then(accountOf),
     signOut: () => backend.call<void>("signOut"),
     resolveRemote: (url: string) => backend.call<Resolved>("resolveRemote", { url }),

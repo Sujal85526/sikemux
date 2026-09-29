@@ -127,6 +127,15 @@ pub async fn status(data_dir: &Path) -> Status {
             identity.scopes,
             None,
         ),
+        // Still signed in; GitHub is only asking to wait.
+        Err(error @ GithubError::RateLimited { .. }) => base(
+            true,
+            false,
+            config.login.clone(),
+            Some(source),
+            Vec::new(),
+            Some(error.to_string()),
+        ),
         Err(error) => {
             let auth_failed = matches!(
                 error,

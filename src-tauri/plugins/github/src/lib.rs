@@ -17,6 +17,7 @@
 //   common    — the shapes every part of the API repeats
 //   images    — avatars and pictures, handed to the window as data: addresses
 //   watch     — following a run while it is going
+//   ratelimit — holding requests back once a rate limit is spent
 
 mod annotations;
 mod approvals;
@@ -31,6 +32,7 @@ mod inbox;
 mod issues;
 mod logs;
 mod pulls;
+mod ratelimit;
 mod releases;
 mod repo;
 mod runs;
@@ -132,6 +134,7 @@ impl Plugin for Github {
         // state lived in a single machine several times the size of all of them.
         match method {
             "status" => Box::pin(async move { reply(auth::status(data_dir).await) }),
+            "rateLimit" => Box::pin(async move { reply(ratelimit::budget()) }),
             "signIn" => Box::pin(async move {
                 signed_in(data_dir, auth::sign_in(data_dir, params(input)?).await).await
             }),

@@ -10,6 +10,18 @@ export interface Repo {
     name: string;
 }
 
+/** How much of a host's rate limit is left. A host that says nothing about it leaves the numbers out. */
+export interface RateLimit {
+    /** Requests are being held back until `resetsAt`. */
+    limited: boolean;
+    /** Seconds since the epoch. */
+    resetsAt: number | null;
+    remaining: number | null;
+    limit: number | null;
+    /** Little of the limit is left. */
+    near: boolean;
+}
+
 export interface Resolved {
     repo: Repo | null;
     slug: string | null;

@@ -11,6 +11,7 @@ import { DispatchDialog } from "./DispatchDialog";
 import { InboxView } from "./InboxView";
 import { IssuesView } from "./IssuesView";
 import { PullsView } from "./PullsView";
+import { RateLimitBanner } from "./RateLimitBanner";
 import { ReleasesView } from "./ReleasesView";
 import { RunsList } from "./RunsList";
 import { RunView } from "./RunView";
@@ -82,6 +83,7 @@ export function HostArea({ paneId, section, repo, branch, cwd, active }: Props) 
     return (
         <LocalRepoProvider value={cwd}>
             <div className="gha-pane" data-active={active ? "1" : "0"}>
+                <RateLimitBanner active={active} />
                 <div className="gha-body">
                     {section === "inbox" ? (
                         <InboxView paneId={paneId} login={status.data?.login ?? null} active={active} />

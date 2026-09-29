@@ -7,7 +7,7 @@ pub enum BitbucketError {
     Unconfigured,
     Auth(String),
     Forbidden(String),
-    RateLimited,
+    RateLimited { resets_in_secs: u64 },
     Http { status: u16, message: String },
     BadArg(String),
     NotFound(String),
@@ -23,9 +23,11 @@ impl fmt::Display for BitbucketError {
             Self::Unconfigured => formatter.write_str("bitbucket: not signed in"),
             Self::Auth(message) => write!(formatter, "bitbucket: sign-in failed: {message}"),
             Self::Forbidden(message) => write!(formatter, "bitbucket: not allowed: {message}"),
-            Self::RateLimited => {
-                formatter.write_str("bitbucket: too many requests; try again in a minute")
-            }
+            Self::RateLimited { resets_in_secs } => write!(
+                formatter,
+                "bitbucket: the rate limit is used up; try again in {}",
+                in_words(*resets_in_secs)
+            ),
             Self::Http { status, message } => {
                 write!(formatter, "bitbucket: http {status}: {message}")
             }
@@ -71,7 +73,7 @@ impl From<BitbucketError> for PluginError {
             BitbucketError::Unconfigured => ("unconfigured", None),
             BitbucketError::Auth(_) => ("auth", None),
             BitbucketError::Forbidden(_) => ("forbidden", Some(403)),
-            BitbucketError::RateLimited => ("rate-limited", Some(429)),
+            BitbucketError::RateLimited { .. } => ("rate-limited", Some(429)),
             BitbucketError::Http { status, .. } => ("http", Some(*status)),
             BitbucketError::BadArg(_) => ("bad-params", None),
             BitbucketError::NotFound(_) => ("not-found", Some(404)),
@@ -85,6 +87,15 @@ impl From<BitbucketError> for PluginError {
             Some(status) => plugin_error.with_status(status),
             None => plugin_error,
         }
+    }
+}
+
+/// `40s`, `12 min` or `2 h 5 min`, for telling someone how long to wait.
+pub fn in_words(secs: u64) -> String {
+    match secs {
+        0..=59 => format!("{}s", secs.max(1)),
+        60..=3599 => format!("{} min", secs.div_ceil(60)),
+        _ => format!("{} h {} min", secs / 3600, (secs % 3600) / 60),
     }
 }
 

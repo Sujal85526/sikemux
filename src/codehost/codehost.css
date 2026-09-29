@@ -891,6 +891,10 @@
     background: color-mix(in oklab, var(--danger) 8%, transparent);
     color: var(--danger);
 }
+.gha-pane > .gha-rate-limit {
+    flex: none;
+    margin: var(--space-2) var(--space-3) 0;
+}
 .gha-list > .gha-callout {
     margin: var(--space-3) var(--space-2) 0;
 }

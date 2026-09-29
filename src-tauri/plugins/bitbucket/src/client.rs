@@ -17,6 +17,7 @@ use tokio::sync::Semaphore;
 use crate::config::{self, Method as AuthMethod};
 use crate::error::{BitbucketError, BitbucketResult};
 use crate::oauth;
+use crate::ratelimit;
 
 pub const API: &str = "https://api.bitbucket.org/2.0";
 pub const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
@@ -271,7 +272,11 @@ pub fn classify(status: StatusCode, bytes: &[u8]) -> BitbucketError {
         401 => BitbucketError::Auth(message),
         403 => BitbucketError::Forbidden(message),
         404 => BitbucketError::NotFound(message),
-        429 => BitbucketError::RateLimited,
+        429 => BitbucketError::RateLimited {
+            resets_in_secs: ratelimit::budget()
+                .resets_at
+                .map_or(60, |at| at.saturating_sub(ratelimit::now_secs())),
+        },
         status => BitbucketError::Http { status, message },
     }
 }
@@ -318,7 +323,10 @@ pub async fn send_limited(
     limit: usize,
     keep_tail: bool,
 ) -> BitbucketResult<(StatusCode, Vec<u8>, bool)> {
-    for attempt in 0..2 {
+    let mut refreshed = false;
+    let mut waited = false;
+    loop {
+        ratelimit::check()?;
         let session = Session::current(data_dir).await?;
         let mut request = session
             .credential
@@ -331,18 +339,25 @@ pub async fn send_limited(
         }
         let response = limited(request.send()).await?;
         let status = response.status();
-        if status == StatusCode::UNAUTHORIZED && attempt == 0 {
+        let headers = response.headers().clone();
+        if status == StatusCode::UNAUTHORIZED && !refreshed {
+            refreshed = true;
             forget().await;
             if session.method == AuthMethod::Oauth {
                 continue;
             }
         }
+        if let Some(secs) = ratelimit::named_wait(status, &headers)
+            .filter(|secs| *secs <= ratelimit::SHORT_WAIT_SECS && !waited)
+        {
+            waited = true;
+            tokio::time::sleep(Duration::from_secs(secs.max(1))).await;
+            continue;
+        }
+        ratelimit::observe(status, &headers);
         let (bytes, cut) = read_body(response, limit, keep_tail).await?;
         return Ok((status, bytes, cut));
     }
-    Err(BitbucketError::Auth(
-        "Bitbucket keeps refusing the token".into(),
-    ))
 }
 
 async fn fetch(
@@ -461,7 +476,7 @@ mod tests {
         ));
         assert!(matches!(
             classify(StatusCode::TOO_MANY_REQUESTS, b""),
-            BitbucketError::RateLimited
+            BitbucketError::RateLimited { .. }
         ));
     }
 

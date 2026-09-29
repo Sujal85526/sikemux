@@ -24,6 +24,7 @@ import {
     type RunDetail,
     type RunPage,
     type RunQuery,
+    type RateLimit,
     type Workflow,
 } from "./types";
 import { hostApi, type HostAccount } from "./registry";
@@ -32,6 +33,12 @@ export const hostStatusR = resource({
     kind: "host.status",
     fetch: (provider: string): Promise<HostAccount> => hostApi(provider).status(),
     staleAfterMs: 60_000,
+});
+
+export const rateLimitR = resource({
+    kind: "host.rateLimit",
+    fetch: (provider: string): Promise<RateLimit> => hostApi(provider).rateLimit(),
+    staleAfterMs: 30_000,
 });
 
 export const hostRemoteR = resource({

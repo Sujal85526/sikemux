@@ -17,6 +17,7 @@ import type {
     Pull,
     PullCommit,
     CommitAuthor,
+    RateLimit,
     Release,
     RepoListing,
     RepoRef,
@@ -82,6 +83,7 @@ export interface HostCapabilities {
 export interface CodeHostApi {
     status(): Promise<HostAccount>;
     signOut(): Promise<void>;
+    rateLimit(): Promise<RateLimit>;
     /** The repository a git remote points at, and in `sameHost` whether it is on the server this host talks to. */
     resolveRemote(url: string): Promise<Resolved>;
     myRepos(limit?: number): Promise<RepoListing[]>;

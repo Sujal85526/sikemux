@@ -13,6 +13,7 @@ use crate::client::{self, Credential, Session};
 use crate::config::{self, BitbucketConfig, Method};
 use crate::error::{BitbucketError, BitbucketResult};
 use crate::oauth;
+use crate::ratelimit;
 use crate::repo::User;
 
 /// Long enough to sign in to Atlassian from scratch, two-step login included.
@@ -20,9 +21,11 @@ const BROWSER_WAIT: Duration = Duration::from_secs(10 * 60);
 const PIPELINE_WRITE: &str = "pipeline:write";
 
 async fn identify(credential: &Credential) -> BitbucketResult<User> {
+    ratelimit::check()?;
     let request = credential.apply(client::http()?.get(format!("{}/user", client::API)));
     let response = client::limited(request.send()).await?;
     let status = response.status();
+    ratelimit::observe(status, response.headers());
     let (bytes, _) = client::read_body(response, 1024 * 1024, false).await?;
     if !status.is_success() {
         return Err(client::classify(status, &bytes));
@@ -82,6 +85,11 @@ pub async fn status(data_dir: &Path) -> Status {
             avatar_url: user.avatar(),
             can_write_ci: can_write(&session),
             ..base(true, false, None)
+        },
+        // Still signed in; Bitbucket is only asking to wait.
+        Err(error @ BitbucketError::RateLimited { .. }) => Status {
+            can_write_ci: can_write(&session),
+            ..base(true, false, Some(error.to_string()))
         },
         Err(error) => {
             let auth_failed = matches!(error, BitbucketError::Auth(_));

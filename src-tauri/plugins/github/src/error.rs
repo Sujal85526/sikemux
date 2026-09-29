@@ -24,7 +24,8 @@ impl fmt::Display for GithubError {
             Self::Forbidden(message) => write!(formatter, "github: not allowed: {message}"),
             Self::RateLimited { resets_in_secs } => write!(
                 formatter,
-                "github: rate limit reached; it resets in {resets_in_secs}s"
+                "github: the rate limit is used up; it resets in {}",
+                in_words(*resets_in_secs)
             ),
             Self::Http { status, message } => write!(formatter, "github: http {status}: {message}"),
             Self::BadArg(message) => write!(formatter, "invalid argument: {message}"),
@@ -79,6 +80,15 @@ impl From<GithubError> for PluginError {
             Some(status) => plugin_error.with_status(status),
             None => plugin_error,
         }
+    }
+}
+
+/// `40s`, `12 min` or `2 h 5 min`, for telling someone how long to wait.
+pub fn in_words(secs: u64) -> String {
+    match secs {
+        0..=59 => format!("{}s", secs.max(1)),
+        60..=3599 => format!("{} min", secs.div_ceil(60)),
+        _ => format!("{} h {} min", secs / 3600, (secs % 3600) / 60),
     }
 }
 

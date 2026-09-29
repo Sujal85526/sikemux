@@ -216,6 +216,13 @@ export const GITHUB: Record<string, (params: Params) => unknown> = {
     authFailed: false,
     message: null,
   }),
+  rateLimit: () => ({
+    limited: false,
+    resetsAt: null,
+    remaining: 4870,
+    limit: 5000,
+    near: false,
+  }),
   resolveRemote: () => ({
     repo: REPO,
     slug: "nodelike/sikemux",

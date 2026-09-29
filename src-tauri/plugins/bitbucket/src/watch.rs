@@ -13,7 +13,6 @@ use crate::pipelines::{self, Job, Run, RunRef};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(4);
 const MAX_BACKOFF: Duration = Duration::from_secs(60);
-const RATE_WAIT: Duration = Duration::from_secs(60);
 const ERROR_GIVEUP: u32 = 6;
 
 #[derive(Serialize)]
@@ -52,11 +51,11 @@ pub async fn run(data_dir: &Path, input: RunRef, sink: StreamSink) -> PluginResu
     let mut failures: u32 = 0;
     let mut last: (Option<Run>, Vec<Job>) = (None, Vec::new());
     loop {
-        let (error, gave_up, signed_out, rate_limited) =
+        let (error, gave_up, signed_out, rate_wait) =
             match pipelines::detail(data_dir, input.clone()).await {
                 Ok(detail) => {
                     last = (Some(detail.run), detail.jobs);
-                    (None, false, false, false)
+                    (None, false, false, None)
                 }
                 Err(error) => (
                     Some(error.to_string()),
@@ -65,10 +64,13 @@ pub async fn run(data_dir: &Path, input: RunRef, sink: StreamSink) -> PluginResu
                         error,
                         BitbucketError::Auth(_) | BitbucketError::Unconfigured
                     ),
-                    matches!(error, BitbucketError::RateLimited),
+                    match error {
+                        BitbucketError::RateLimited { resets_in_secs } => Some(resets_in_secs),
+                        _ => None,
+                    },
                 ),
             };
-        failures = if error.is_some() && !rate_limited {
+        failures = if error.is_some() && rate_wait.is_none() {
             failures.saturating_add(1)
         } else {
             0
@@ -87,10 +89,9 @@ pub async fn run(data_dir: &Path, input: RunRef, sink: StreamSink) -> PluginResu
         if finished {
             return Ok(());
         }
-        sleep(if rate_limited {
-            RATE_WAIT
-        } else {
-            backoff(failures)
+        sleep(match rate_wait {
+            Some(secs) => Duration::from_secs(secs.max(1)),
+            None => backoff(failures),
         })
         .await;
     }
@@ -105,7 +106,9 @@ mod tests {
         assert!(is_final(&BitbucketError::Unconfigured));
         assert!(is_final(&BitbucketError::NotFound("gone".into())));
         assert!(!is_final(&BitbucketError::Transport("offline".into())));
-        assert!(!is_final(&BitbucketError::RateLimited));
+        assert!(!is_final(&BitbucketError::RateLimited {
+            resets_in_secs: 5
+        }));
     }
 
     #[test]

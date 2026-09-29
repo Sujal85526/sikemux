@@ -9,6 +9,7 @@
 //   pulls     — pull requests, their files, commits and history, and merging one
 //   pipelines — pipelines as runs, their steps as jobs, and starting one
 //   watch     — following a pipeline while it is going
+//   ratelimit — holding requests back once Bitbucket refuses for too many
 //   images    — avatars, handed to the window as data: addresses
 
 mod auth;
@@ -19,6 +20,7 @@ mod images;
 mod oauth;
 mod pipelines;
 mod pulls;
+mod ratelimit;
 mod repo;
 mod watch;
 
@@ -108,6 +110,7 @@ impl Plugin for Bitbucket {
         let data_dir = ctx.data_dir();
         match method {
             "status" => Box::pin(async move { reply(auth::status(data_dir).await) }),
+            "rateLimit" => Box::pin(async move { reply(ratelimit::budget()) }),
             "signInWithToken" => Box::pin(async move {
                 signed_in(
                     data_dir,

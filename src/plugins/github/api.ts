@@ -16,6 +16,7 @@ import type {
     PendingApproval,
     Pull,
     PullCommit,
+    RateLimit,
     Job,
     Release,
     RepoListing,
@@ -108,6 +109,7 @@ async function call<T>(method: string, params?: unknown): Promise<T> {
         return await backend.call<T>(method, params);
     } catch (error) {
         if (isSignedOut(error)) forgetSignedOut();
+        if (isPluginFailure(error, "rate-limited")) invalidate((kind) => kind === "host.rateLimit");
         throw error;
     }
 }
@@ -262,6 +264,7 @@ function accountOf(status: ActionsStatus): HostAccount {
 /** GitHub as the git pane reads any code host. */
 export const githubHostApi: CodeHostApi = {
     ...actionsApi,
+    rateLimit: () => backend.call<RateLimit>("rateLimit"),
     status: () => actionsApi.status().then(accountOf),
 };
 

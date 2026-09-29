@@ -5,7 +5,7 @@
 use std::future::Future;
 use std::path::Path;
 use std::sync::OnceLock;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use futures::StreamExt;
 use reqwest::header::HeaderMap;
@@ -16,6 +16,7 @@ use tokio::sync::Semaphore;
 
 use crate::config::{self, TokenSource};
 use crate::error::{GithubError, GithubResult};
+use crate::ratelimit;
 
 pub const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 const MAX_REQUESTS_IN_FLIGHT: usize = 8;
@@ -158,32 +159,6 @@ pub async fn read_body(
     Ok((bytes, cut))
 }
 
-fn now_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|since| since.as_secs())
-        .unwrap_or(0)
-}
-
-/// GitHub reports a spent rate limit as a 403 with the remaining count at
-/// zero, which is worth telling apart from a token that simply may not.
-fn rate_limited_for(headers: &HeaderMap) -> Option<u64> {
-    let number = |name: &str| -> Option<u64> {
-        headers.get(name)?.to_str().ok()?.trim().parse::<u64>().ok()
-    };
-    if let Some(retry_after) = number("retry-after") {
-        return Some(retry_after);
-    }
-    if number("x-ratelimit-remaining")? != 0 {
-        return None;
-    }
-    Some(
-        number("x-ratelimit-reset")
-            .unwrap_or(0)
-            .saturating_sub(now_secs()),
-    )
-}
-
 fn error_message(bytes: &[u8]) -> Option<String> {
     let body: Value = serde_json::from_slice(bytes).ok()?;
     let message = body.get("message")?.as_str()?.to_string();
@@ -212,7 +187,7 @@ pub fn classify(status: StatusCode, headers: &HeaderMap, bytes: &[u8]) -> Github
     });
     match status.as_u16() {
         401 => GithubError::Auth(message),
-        403 | 429 => match rate_limited_for(headers) {
+        403 | 429 => match ratelimit::wait_for(status, headers, bytes) {
             Some(resets_in_secs) => GithubError::RateLimited { resets_in_secs },
             None => GithubError::Forbidden(message),
         },
@@ -235,15 +210,33 @@ fn api_request(
         .header("X-GitHub-Api-Version", API_VERSION)
 }
 
+/// A limit that resets within a few seconds is waited out and the request
+/// sent once more; a longer one fails at once, and so does everything after it
+/// until the limit resets.
 async fn exchange(request: RequestBuilder) -> GithubResult<(StatusCode, HeaderMap, Vec<u8>)> {
-    let response = limited(request.send()).await?;
-    let status = response.status();
-    let headers = response.headers().clone();
-    let (bytes, _) = read_body(response, MAX_RESPONSE_BYTES, false).await?;
-    if status == StatusCode::UNAUTHORIZED {
-        config::forget_token();
+    let mut request = request;
+    loop {
+        ratelimit::check()?;
+        let again = request.try_clone();
+        let response = limited(request.send()).await?;
+        let status = response.status();
+        let headers = response.headers().clone();
+        let (bytes, _) = read_body(response, MAX_RESPONSE_BYTES, false).await?;
+        if status == StatusCode::UNAUTHORIZED {
+            config::forget_token();
+        }
+        let wait = ratelimit::wait_for(status, &headers, &bytes);
+        match (wait, again) {
+            (Some(secs), Some(retry)) if secs <= ratelimit::SHORT_WAIT_SECS => {
+                tokio::time::sleep(Duration::from_secs(secs.max(1))).await;
+                request = retry;
+            }
+            _ => {
+                ratelimit::observe(status, &headers, &bytes);
+                return Ok((status, headers, bytes));
+            }
+        }
     }
-    Ok((status, headers, bytes))
 }
 
 pub async fn send(
@@ -399,8 +392,10 @@ pub async fn post_empty(data_dir: &Path, path: &str, body: Option<&Value>) -> Gi
 pub async fn open_download(data_dir: &Path, path: &str, accept: &str) -> GithubResult<Response> {
     let session = Session::current(data_dir).await?;
     let client = transfers()?;
+    ratelimit::check()?;
     let mut response =
         limited(api_request(client, &session, Method::GET, path, accept).send()).await?;
+    ratelimit::observe(response.status(), response.headers(), b"");
     if response.status().is_redirection() {
         let location = response
             .headers()
@@ -426,6 +421,7 @@ pub async fn failure(response: Response) -> GithubError {
     if status == StatusCode::UNAUTHORIZED {
         config::forget_token();
     }
+    ratelimit::observe(status, &headers, &bytes);
     classify(status, &headers, &bytes)
 }
 
