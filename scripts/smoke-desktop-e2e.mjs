@@ -309,6 +309,42 @@ async function exerciseBrowserTools(harnessEnv) {
     )
       fail("reload kept the old page", desktopLog);
 
+    const selected = await tool("browser.press", { key: "Meta+a" });
+    if (!selected) fail("Meta+a returned nothing", desktopLog);
+    const replaced = await tool("browser.type", {
+      selector: "#name",
+      text: "Grace Hopper",
+    });
+    if (replaced.value !== "Grace Hopper" || replaced.warning)
+      fail(
+        `typing over a field returned ${JSON.stringify(replaced)}`,
+        desktopLog,
+      );
+
+    const part = await tool("browser.screenshot", { selector: "#count" });
+    const partImage = Buffer.from(part.data ?? "", "base64");
+    if (
+      part.element?.label !== "Count" ||
+      partImage.length < 200 ||
+      partImage.length >= image.length
+    )
+      fail(
+        `an element screenshot came back as ${partImage.length} bytes for ${JSON.stringify(part.element)}`,
+        desktopLog,
+      );
+
+    const wide = await tool("browser.viewport", { preset: "desktop" });
+    if (wide.viewport?.width !== 1280 || wide.viewport?.height !== 800)
+      fail(
+        `the desktop preset laid out at ${JSON.stringify(wide.viewport)}`,
+        desktopLog,
+      );
+    if ((await evaluate("innerWidth")) !== 1280)
+      fail("the page does not see the desktop width", desktopLog);
+    if (typeof wide.visible !== "boolean")
+      fail("state has no visible flag", desktopLog);
+    await tool("browser.viewport", { preset: "fit" });
+
     const localFolder = await mkdtemp(join(tmpdir(), "sikemux-local-page-"));
     try {
       const localPage = join(localFolder, "page.html");
@@ -334,7 +370,7 @@ async function exerciseBrowserTools(harnessEnv) {
     server.closeAllConnections();
   }
   console.log(
-    "✓ Browser harness E2E passed: navigate, state, click by number across calls, find, click by text, type, screenshot, evaluate, wait on conditions, click by point, reload, local file",
+    "✓ Browser harness E2E passed: navigate, state, click by number across calls, find, click by text, type, screenshot, evaluate, wait on conditions, click by point, reload, Meta+a and replace, element screenshot, desktop viewport, local file",
   );
 }
 
