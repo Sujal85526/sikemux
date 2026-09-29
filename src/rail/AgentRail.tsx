@@ -9,13 +9,13 @@ import { agentCatalogR, agentSessionsR, agentUsageR } from "../state/resources.d
 import { useStore } from "../state/store";
 import { activeAgentId, agentIdsOf, agentsAwaitingInput } from "../state/selectors";
 import { type Agent, type AgentType } from "../state/types";
-import { AgentIcon, IconClose, IconPlus, IconRefresh, IconSearch } from "./Icons";
+import { AgentIcon, IconClose, IconPlus, IconRefresh, IconSearch } from "../components/Icons";
 import { AgentStateIndicator } from "../agents/AgentStateIndicator";
 import { sortByAttention } from "../state/agentStatus";
-import { Tooltip } from "./Tooltip";
-import { Panel, PanelHeader } from "./Panel";
+import { Tooltip } from "../components/Tooltip";
+import { Panel, PanelHeader } from "../components/Panel";
 import { animate, type Box, contentBox, EASE_LEAVE, glideSelection, leavingRef } from "../lib/motion";
-import { CountUp } from "./RollingText";
+import { CountUp } from "../components/RollingText";
 import { leavingRail } from "./railMotion";
 import { RailToggle } from "./RailToggle";
 

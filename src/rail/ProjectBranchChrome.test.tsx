@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WindowRole } from "../state/types";
 import { getState, setState } from "../state/store";
 import { SideRail } from "./SideRail";
-import { TopBar } from "./TopBar";
+import { TopBar } from "../components/TopBar";
 import { agentWindowId } from "../state/selectors";
 import { withAgents } from "../test/agents";
 

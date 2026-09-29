@@ -26,7 +26,7 @@ import { useBranchPulls, useHostRepo } from "../codehost/project";
 import { compose, showItem } from "../codehost/state";
 import type { Pull } from "../codehost/types";
 import { FileIcon } from "../components/FileIcon";
-import { TreeContextMenu, type CtxItem } from "../components/FileTree";
+import { TreeContextMenu, type CtxItem } from "../rail/FileTree";
 import {
     IconCheckout,
     IconChevron,

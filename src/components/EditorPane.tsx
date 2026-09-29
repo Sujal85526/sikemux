@@ -1,4 +1,4 @@
-import { FileTree } from "./FileTree";
+import { FileTree } from "../rail/FileTree";
 import { relocatedPath } from "../state/editorPaths";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invokeCommand as invoke } from "../api/invoke";

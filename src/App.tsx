@@ -6,10 +6,10 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { checkForUpdate } from "./api/updater";
 import { reportActive } from "./api/usage";
 import { TopBar } from "./components/TopBar";
-import { SideRail } from "./components/SideRail";
-import { AgentRail } from "./components/AgentRail";
-import { RailPeek } from "./components/RailPeek";
-import { RailResizer, useRailWidthVars } from "./components/RailResizer";
+import { SideRail } from "./rail/SideRail";
+import { AgentRail } from "./rail/AgentRail";
+import { RailPeek } from "./rail/RailPeek";
+import { RailResizer, useRailWidthVars } from "./rail/RailResizer";
 import { AgentSessionSync } from "./agents/AgentSessionSync";
 import { AgentLifecycleManager } from "./agents/AgentLifecycleManager";
 import { AgentPalettePortal as AgentPalette } from "./agents/AgentPalettePortal";
@@ -90,7 +90,7 @@ import { pluginsApi } from "./api/plugins";
 import "./plugins/builtin";
 import { recordAgentTurns } from "./state/activityRecorder";
 import { useInstalledPlugins } from "./plugins/installed";
-import { useRailEntrance } from "./components/railMotion";
+import { useRailEntrance } from "./rail/railMotion";
 
 const SettingsPanel = lazy(() => import("./components/SettingsPanel").then((module) => ({ default: module.SettingsPanel })));
 

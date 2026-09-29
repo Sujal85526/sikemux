@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import "./builtin";
-import { SideRail } from "../components/SideRail";
+import { SideRail } from "../rail/SideRail";
 import { TopBar } from "../components/TopBar";
 import { Workspace } from "../components/Workspace";
 import { keybindingActions, normaliseKeybindingOverrides } from "../keybindings";

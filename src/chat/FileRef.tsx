@@ -1,7 +1,7 @@
 import { createContext, useContext, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import { fsapi } from "../api/fs";
 import { FileIcon } from "../components/FileIcon";
-import { TreeContextMenu, type CtxItem } from "../components/FileTree";
+import { TreeContextMenu, type CtxItem } from "../rail/FileTree";
 import { IconFolder } from "../components/Icons";
 import { copyText } from "../lib/clipboard";
 import { basename, dirname, relativePath } from "../lib/paths";

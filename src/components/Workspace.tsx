@@ -22,7 +22,7 @@ import {
     workspaceTabDropAllowed,
     type SplitSide,
 } from "../state/selectors";
-import { type CtxItem } from "./FileTree";
+import { type CtxItem } from "../rail/FileTree";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { ShaderField } from "./ShaderField";
 import { TabBar, type TabDescriptor } from "./TabBar";

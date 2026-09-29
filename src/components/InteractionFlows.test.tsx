@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useRef, useState } from "react";
 import { useModalFocus } from "../hooks/useModalFocus";
-import { TreeContextMenu } from "./FileTree";
+import { TreeContextMenu } from "../rail/FileTree";
 import { navigateTabs } from "../lib/tabNavigation";
 import { Dropdown } from "./Dropdown";
 import { DialogHost } from "./DialogHost";
