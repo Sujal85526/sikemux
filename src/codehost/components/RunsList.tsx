@@ -4,7 +4,7 @@ import { useResourceEnabled } from "../../plugin-api/resources";
 import { Dropdown, EmptyState, IconCommit, IconGit, IconPullRequest, IconRefresh, IconRun, SkeletonRows, Tooltip } from "../../plugin-api/ui";
 import { failureMessage, type RepoRef, type Run, type Workflow } from "../api";
 import { useHost } from "../registry";
-import { runsR, workflowsR } from "../resources";
+import { pullsR, runsR, workflowsR } from "../resources";
 import { elapsedMs, formatAgo, formatDuration, isUnfinished, OUTCOME_LABEL, outcomeOf, statusParam } from "../runStatus";
 import { filterBy, hostSettings, setFollowBranch, showRun, STATUS_FILTERS, updateView, type HostView, type StatusFilter } from "../state";
 import { OutcomeIcon } from "./ActionsIcon";
@@ -26,7 +26,20 @@ const FILTER_LABEL: Record<StatusFilter, string> = {
 const EVERY_WORKFLOW = "all";
 
 /** A run as Bitbucket lists a pipeline: who started it and its title, then its number, commit and branch, with how it went beside. */
-const RunRow = memo(function RunRow({ paneId, run, workflow, now }: { paneId: string; run: Run; workflow: string | null; now: number }) {
+const RunRow = memo(function RunRow({
+    paneId,
+    run,
+    workflow,
+    pullTitle,
+    now,
+}: {
+    paneId: string;
+    run: Run;
+    workflow: string | null;
+    /** The title of the pull request the run belongs to, when the host has named it. */
+    pullTitle: string | null;
+    now: number;
+}) {
     const outcome = outcomeOf(run);
     const finished = isUnfinished(run) ? null : run.updatedAt;
     return (
@@ -55,9 +68,9 @@ const RunRow = memo(function RunRow({ paneId, run, workflow, now }: { paneId: st
                     </span>
                 )}
                 {run.pullRequests.length > 0 ? (
-                    <span className="gha-run-ref">
+                    <span className="gha-run-ref gha-run-branch" title={`#${run.pullRequests.join(", #")}`}>
                         <IconPullRequest size={11} />
-                        {run.pullRequests.map((number) => `#${number}`).join(" ")}
+                        <span>{pullTitle ?? run.pullRequests.map((number) => `#${number}`).join(" ")}</span>
                     </span>
                 ) : (
                     run.branch && (
@@ -99,6 +112,8 @@ export function RunsList({ paneId, repo, view, branch, projectBranch, active, ca
     const followBranch = hostSettings(repo.provider).useSelect((settings) => settings.followBranch);
     const workflows = useResourceEnabled(active, workflowsR, repo);
     const chosen = (workflows.data ?? []).find((workflow) => workflow.id === view.workflowId) ?? null;
+    const pulls = useResourceEnabled(active, pullsR, repo, "all");
+    const pullTitles = useMemo(() => new Map((pulls.data ?? []).map((pull) => [pull.number, pull.title])), [pulls.data]);
     const workflowNames = useMemo(() => new Map((workflows.data ?? []).map((workflow) => [workflow.id, workflow.name])), [workflows.data]);
     const page = useResourceEnabled(active, runsR, {
         ...repo,
@@ -208,6 +223,7 @@ export function RunsList({ paneId, repo, view, branch, projectBranch, active, ca
                         paneId={paneId}
                         run={run}
                         workflow={chosen ? null : (workflowNames.get(run.workflowId) ?? null)}
+                        pullTitle={run.pullRequests[0] ? (pullTitles.get(run.pullRequests[0]) ?? null) : null}
                         now={isUnfinished(run) ? now : coarse(now)}
                     />
                 ))}
