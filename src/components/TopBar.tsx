@@ -14,6 +14,8 @@ import { useVoice } from "../voice/dictation";
 import { PRIMARY_SHORTCUT } from "../lib/platform";
 import { Tooltip } from "./Tooltip";
 import { RollingText } from "./RollingText";
+import { remoteRepoR } from "../codehost/project";
+import { codeHost } from "../codehost/registry";
 
 const time2 = (n: number) => String(n).padStart(2, "0");
 
@@ -54,20 +56,26 @@ function twelveHour(d: Date): { h: number; m: number; ap: "am" | "pm" } {
  */
 function GitChip({ repo }: { repo: string }) {
     const res = useResource(gitOverviewR, repo);
+    const remote = useResource(remoteRepoR, repo).data ?? null;
+    const host = remote ? codeHost(remote.provider) : undefined;
     const st = res.data?.status;
     if (!st) return null;
 
     const dirty = st.files.length > 0;
     const ahead = st.ahead;
     const behind = st.behind;
-    const title = `${st.branch}${st.upstream ? ` → ${st.upstream}` : ""}${dirty ? ` · ${st.files.length} changed` : " · clean"}${ahead ? ` · ahead ${ahead}` : ""}${behind ? ` · behind ${behind}` : ""}`;
+    const title = `${host && remote ? `${host.name} · ${remote.owner}/${remote.name} · ` : ""}${st.branch}${st.upstream ? ` → ${st.upstream}` : ""}${dirty ? ` · ${st.files.length} changed` : " · clean"}${ahead ? ` · ahead ${ahead}` : ""}${behind ? ` · behind ${behind}` : ""}`;
 
     return (
         <>
             <span className="tb-git" data-no-window-drag>
                 <Tooltip label={title}>
                     <button className="tb-git-chip" onClick={cmd.openGitPane} aria-label={title}>
-                        <IconGit size={12} className={`tb-git-ico ${dirty ? "dirty" : "clean"}`} />
+                        {host ? (
+                            <span className="tb-git-host">{host.icon(12)}</span>
+                        ) : (
+                            <IconGit size={12} className={`tb-git-ico ${dirty ? "dirty" : "clean"}`} />
+                        )}
                         <span className="tb-git-branch">{st.branch}</span>
                         {(ahead > 0 || behind > 0) && (
                             <span className="tb-git-track">
