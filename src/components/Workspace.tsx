@@ -768,7 +768,7 @@ function DividerHandle({ d, windowId, areaRef }: { d: Divider; windowId: string;
         handle.setPointerCapture(e.pointerId);
         // Stopping the press's default also stops it focusing, and focus is what lets the arrow keys carry on.
         handle.focus({ preventScroll: true });
-        handle.classList.add("dragging");
+        handle.classList.add("dragging", "pointer-focus");
 
         const startSizes = split.sizes.slice();
         const i = d.index;
@@ -806,6 +806,7 @@ function DividerHandle({ d, windowId, areaRef }: { d: Divider; windowId: string;
     };
 
     const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+        e.currentTarget.classList.remove("pointer-focus");
         const direction = horizontal
             ? e.key === "ArrowLeft"
                 ? -1
@@ -851,6 +852,7 @@ function DividerHandle({ d, windowId, areaRef }: { d: Divider; windowId: string;
             title="Drag or use arrow keys to resize, double-click to even out"
             onPointerDown={onPointerDown}
             onKeyDown={onKeyDown}
+            onBlur={(e) => e.currentTarget.classList.remove("pointer-focus")}
             onDoubleClick={evenOut}
         />
     );

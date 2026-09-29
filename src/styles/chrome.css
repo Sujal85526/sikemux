@@ -835,14 +835,14 @@
 }
 .divider-row:hover::after,
 .divider-row.dragging::after,
-.divider-row:focus-visible::after {
+.divider-row:focus-visible:not(.pointer-focus)::after {
     width: 2px;
     background: var(--acc);
     opacity: 1;
 }
 .divider-column:hover::after,
 .divider-column.dragging::after,
-.divider-column:focus-visible::after {
+.divider-column:focus-visible:not(.pointer-focus)::after {
     height: 2px;
     background: var(--acc);
     opacity: 1;
