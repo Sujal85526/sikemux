@@ -2,7 +2,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const chat = readFileSync(join(process.cwd(), "src", "styles", "chat.css"), "utf8");
+const stylesDir = join(process.cwd(), "src", "styles");
+const chat = [...readFileSync(join(stylesDir, "chat.css"), "utf8").matchAll(/@import\s+"\.\/([\w/-]+\.css)"/g)]
+    .map((m) => readFileSync(join(stylesDir, m[1]), "utf8"))
+    .join("\n");
 
 function block(selector: string): string {
     const match = chat.match(new RegExp(`(^|\\n)${selector.replace(/[.\\-]/g, "\\$&")}\\s*\\{([^}]*)\\}`));
