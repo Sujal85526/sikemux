@@ -1,6 +1,5 @@
 import { memo, useEffect, useMemo, useRef } from "react";
 import { openUrl, swallow } from "../../plugin-api/host";
-import { GitColumns } from "../../components/git/GitColumns";
 import { useResourceEnabled } from "../../plugin-api/resources";
 import { Dropdown, EmptyState, IconCommit, IconGit, IconPullRequest, IconRefresh, IconRun, SkeletonRows, Tooltip } from "../../plugin-api/ui";
 import { failureMessage, type RepoRef, type Run, type Workflow } from "../api";
@@ -70,7 +69,8 @@ const RunRow = memo(function RunRow({ paneId, run, workflow, now }: { paneId: st
                 )}
             </span>
             <span className="gha-run-when">
-                {formatAgo(run.startedAt ?? run.createdAt, now)} · {formatDuration(elapsedMs(run.startedAt ?? run.createdAt, finished, now))}
+                <span className="gha-run-started">{formatAgo(run.startedAt ?? run.createdAt, now)}</span>
+                <span className="gha-run-took">{formatDuration(elapsedMs(run.startedAt ?? run.createdAt, finished, now))}</span>
             </span>
         </button>
     );
@@ -194,6 +194,14 @@ export function RunsList({ paneId, repo, view, branch, projectBranch, active, ca
                 <EmptyState title="No runs" message={`Nothing matches this filter${branch ? ` on ${branch}` : ""}.`} />
             )}
             <div className="gha-run-rows">
+                {runs.length > 0 && (
+                    <div className="gha-run-cols" aria-hidden="true">
+                        <span>Run</span>
+                        <span>Status</span>
+                        <span>Started</span>
+                        <span>Duration</span>
+                    </div>
+                )}
                 {runs.map((run) => (
                     <RunRow
                         key={run.id}
@@ -238,15 +246,5 @@ export function RunsList({ paneId, repo, view, branch, projectBranch, active, ca
         </div>
     );
 
-    return (
-        <GitColumns
-            paneId={paneId}
-            left={left}
-            right={
-                <div className="git-right-review">
-                    <EmptyState icon={<IconRun size={20} />} message="Pick a run to see its jobs and logs." />
-                </div>
-            }
-        />
-    );
+    return <div className="gha-runs-page">{left}</div>;
 }
