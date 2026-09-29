@@ -3,6 +3,7 @@
 icons:
 	./scripts/icons.sh
 
+dev: export BITBUCKET_OAUTH_SECRET ?= $(shell sed -n 's/^BITBUCKET_OAUTH_SECRET=//p' .env 2>/dev/null)
 dev: icons
 	pnpm dev:desktop
 
