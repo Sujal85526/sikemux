@@ -317,6 +317,15 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
+/* Grey on purpose: the mark says where the code lives without every row turning a brand colour. */
+.picker-host {
+    display: inline-flex;
+    flex: none;
+    color: var(--text-tertiary);
+}
+.picker-host > svg {
+    color: inherit;
+}
 .picker-tags {
     flex: 0 0 auto;
     display: grid;

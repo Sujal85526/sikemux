@@ -6,7 +6,9 @@ import { basename, expandHome, normalizePath, prettyPath, relativePath } from ".
 import { PRIMARY_SHORTCUT } from "../lib/platform";
 import { settingsApi } from "../api/settings";
 import * as cmd from "../state/commands";
-import { useResourceEnabled } from "../state/resources";
+import { useResource, useResourceEnabled } from "../state/resources";
+import { remoteRepoR } from "../codehost/project";
+import { codeHost } from "../codehost/registry";
 import { projectRootsScanR, sshHostsR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { reportError } from "../state/toast";
@@ -19,10 +21,22 @@ import { IconClose, IconCommand, IconFolder, IconSearch } from "./Icons";
 import { leavingOverlay } from "../lib/motion";
 
 type Item =
-    | { kind: "session"; id: string; name: string; sub: string; sk: SessionKind }
+    | { kind: "session"; id: string; name: string; sub: string; sk: SessionKind; cwd: string | null }
     | { kind: "dir"; path: string; name: string; sub: string }
     | { kind: "plugin"; key: string; name: string; sub: string; heading: string; icon: ReactNode; open: () => void; forget?: () => void }
     | { kind: "ssh"; alias: string; name: string; sub: string };
+
+/** Where the project's code lives, when that is a host Sikemux knows. */
+function HostMark({ path }: { path: string }) {
+    const remote = useResource(remoteRepoR, path).data ?? null;
+    const host = remote ? codeHost(remote.provider) : undefined;
+    if (!host || !remote) return null;
+    return (
+        <span className="picker-host" title={`${host.name} · ${remote.owner}/${remote.name}`}>
+            {host.icon(12)}
+        </span>
+    );
+}
 
 function sshSubtitle(h: SshHost): string {
     const target = h.hostname ?? h.alias;
@@ -85,6 +99,7 @@ export function SeshPicker() {
                 name: s.kind === "project" ? projectLabel(s.cwd, s.name) : s.name,
                 sub: s.kind === "project" ? pretty(s.cwd) : s.kind === "ssh" ? "ssh" : isPluginKind(s.kind) ? "plugin" : "command",
                 sk: s.kind,
+                cwd: s.kind === "project" ? s.cwd : null,
             }));
 
         const openCwds = new Set(sessions.map((s) => s.cwd).filter(Boolean));
@@ -285,6 +300,11 @@ export function SeshPicker() {
                                         </span>
                                         <span className="picker-name">{it.name}</span>
                                         <span className="picker-sub">{it.sub}</span>
+                                        {it.kind === "dir" ? (
+                                            <HostMark path={it.path} />
+                                        ) : it.kind === "session" && it.cwd ? (
+                                            <HostMark path={it.cwd} />
+                                        ) : null}
                                     </button>
                                     {it.kind === "plugin" && it.forget && (
                                         <button
