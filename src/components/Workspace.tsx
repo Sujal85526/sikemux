@@ -28,7 +28,7 @@ import { ShaderField } from "./ShaderField";
 import { TabBar, type TabDescriptor } from "./TabBar";
 import type { TabDragOut, TabPoint } from "./useTabReorder";
 import { AgentIcon, IconArrowUp, IconPlus, WindowIcon } from "./Icons";
-import { AgentStateIndicator, SubagentCount } from "./AgentStateIndicator";
+import { AgentStateIndicator, SubagentCount } from "../agents/AgentStateIndicator";
 import { renderWorkbenchItem } from "../workbench/renderers";
 import { FileIcon } from "./FileIcon";
 import { fsapi } from "../api/fs";

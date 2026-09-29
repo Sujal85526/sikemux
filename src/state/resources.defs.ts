@@ -1,5 +1,5 @@
 import { agentApi, type AgentInfo, type AgentModelInfo, type AgentSession, type AgentUsage } from "../api/agents";
-import type { AgentRuntimeProfile } from "../agentProfiles";
+import type { AgentRuntimeProfile } from "../agents/agentProfiles";
 import { filesApi } from "../api/files";
 import { git, type DiscoveredRepo, type GitOverview, type GitRemote, type GitRemoteBranch, type GitStash } from "../api/git";
 import { settingsApi, type ProjectEntry } from "../api/settings";

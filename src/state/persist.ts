@@ -9,7 +9,7 @@ import { parseReleaseCredits } from "../api/releases";
 import { normaliseKeybindingOverrides } from "../keybindings";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
 import { registerCustomThemes } from "../themes/bus";
-import { normalizePermissionMode } from "../agentLaunch";
+import { normalizePermissionMode } from "../agents/agentLaunch";
 import { clampRailWidth } from "../lib/railWidths";
 import { mergePinnedIntoRoots, normaliseProjectRoots, pruneOnDemandWindows } from "./commands";
 import { agentPaneId } from "./selectors";

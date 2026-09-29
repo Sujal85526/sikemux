@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { sendTestNotification } from "../agentNotifications";
+import { sendTestNotification } from "../agents/agentNotifications";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { invokeCommand as invoke } from "../api/invoke";
 import {
@@ -48,7 +48,7 @@ import { Checkbox, Slider, Switch } from "./Controls";
 import { Tooltip } from "./Tooltip";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
 import type { AgentProvider, ProjectRoot, ProviderProfile } from "../state/types";
-import { AGENT_PERMISSION_COPY, AGENT_PERMISSION_MODES } from "../agentLaunch";
+import { AGENT_PERMISSION_COPY, AGENT_PERMISSION_MODES } from "../agents/agentLaunch";
 import {
     searchSettings,
     SETTINGS_GROUPS,

@@ -7,7 +7,7 @@ import { agentCatalogR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import * as cmd from "../state/commands";
 import { agentDetectionApi, type ManifestReport } from "../api/agentDetection";
-import { selectedAgentRuntimeProfiles } from "../agentProfiles";
+import { selectedAgentRuntimeProfiles } from "../agents/agentProfiles";
 import { keybindingLabelForAction, type CoreKeybindingActionId } from "../keybindings";
 import { AgentIcon, IconCommand, IconFolder, IconSearch, Logo } from "./Icons";
 import { Kbd } from "./Kbd";

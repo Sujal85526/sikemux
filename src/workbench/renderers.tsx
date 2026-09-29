@@ -4,7 +4,7 @@ import { isPluginKind } from "../plugins/kinds";
 import { pluginSurface } from "../plugins/registry";
 import * as cmd from "../state/commands";
 import { TerminalPane } from "../terminal/TerminalPane";
-import { AgentPane } from "../components/AgentPane";
+import { AgentPane } from "../agents/AgentPane";
 import { DeskHost } from "../components/Desk";
 
 export interface WorkbenchItemRendererProps {

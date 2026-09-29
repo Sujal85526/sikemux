@@ -1,9 +1,9 @@
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
-import { agentIdsOf } from "./state/selectors";
-import { swallow } from "./state/toast";
-import { getState, setState, useStore, type StoreState } from "./state/store";
+import { agentIdsOf } from "../state/selectors";
+import { swallow } from "../state/toast";
+import { getState, setState, useStore, type StoreState } from "../state/store";
 
 type AgentView = Pick<StoreState, "sessionOrder" | "sessions" | "windows" | "windowsBySession" | "agents" | "agentActivity">;
 

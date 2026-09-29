@@ -1,7 +1,7 @@
 import { useModalFocus } from "../hooks/useModalFocus";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { type AgentInfo, type AgentSession } from "../api/agents";
-import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "../agentProfiles";
+import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "./agentProfiles";
 import { useMouseActive } from "../hooks/useMouseActive";
 import { rankBy } from "../lib/fuzzy";
 import * as cmd from "../state/commands";
@@ -9,7 +9,7 @@ import { fetchResource, peekResource, useResource } from "../state/resources";
 import { agentCatalogR, agentSessionsR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import type { AgentPermissionMode, AgentType } from "../state/types";
-import { AgentIcon, IconSearch, IconShield, IconShieldBolt } from "./Icons";
+import { AgentIcon, IconSearch, IconShield, IconShieldBolt } from "../components/Icons";
 import { leavingOverlay } from "../lib/motion";
 
 type Row = AgentSession & { type: AgentType };

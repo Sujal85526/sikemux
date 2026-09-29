@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentPresentationState, AgentRuntimeState } from "./state/types";
-import { getState, setState } from "./state/store";
-import { withAgents } from "./test/agents";
+import type { AgentPresentationState, AgentRuntimeState } from "../state/types";
+import { getState, setState } from "../state/store";
+import { withAgents } from "../test/agents";
 
 const notification = vi.hoisted(() => {
     const sent = vi.fn();

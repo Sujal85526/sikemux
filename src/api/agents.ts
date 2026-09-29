@@ -1,5 +1,5 @@
 import { invokeCommand as invoke } from "./invoke";
-import type { AgentRuntimeProfile } from "../agentProfiles";
+import type { AgentRuntimeProfile } from "../agents/agentProfiles";
 import type { AgentEffort, AgentType } from "../state/types";
 
 export interface AgentInfo {

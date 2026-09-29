@@ -22,7 +22,7 @@ import { AgentIcon, IconAgent, IconClose, IconCommand, IconFolder, IconPencil, I
 import { Tooltip } from "./Tooltip";
 import { EmptyState, Panel, PanelHeader } from "./Panel";
 import { RailMasthead } from "./RailMasthead";
-import { AgentStateIndicator, showsAgentState } from "./AgentStateIndicator";
+import { AgentStateIndicator, showsAgentState } from "../agents/AgentStateIndicator";
 import { agentIdsOf } from "../state/selectors";
 import { pluginSurface, type FrontendPlugin } from "../plugins/registry";
 import { useInstalledPlugins } from "../plugins/installed";

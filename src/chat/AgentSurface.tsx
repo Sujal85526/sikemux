@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import type { Agent, ProviderProfile, Session } from "../state/types";
 import { acpApi } from "../api/acp";
-import { agentSupportsChat } from "../agentLaunch";
+import { agentSupportsChat } from "../agents/agentLaunch";
 import { TerminalPane } from "../terminal/TerminalPane";
 import { IconAgent, IconCommand, IconPanelRight } from "../components/Icons";
 import { useStore } from "../state/store";

@@ -1,4 +1,4 @@
-import type { AgentType, ProviderProfile, ProviderProfileSelection } from "./state/types";
+import type { AgentType, ProviderProfile, ProviderProfileSelection } from "../state/types";
 
 export interface AgentRuntimeProfile {
     type: AgentType;

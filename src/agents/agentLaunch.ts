@@ -1,4 +1,4 @@
-import type { AgentEffort, AgentPermissionMode, AgentType } from "./state/types";
+import type { AgentEffort, AgentPermissionMode, AgentType } from "../state/types";
 
 export interface AgentLaunchOptions {
     resumeId?: string;

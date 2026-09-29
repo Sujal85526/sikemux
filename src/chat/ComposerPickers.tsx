@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { AgentIcon, IconCheck, IconChevron } from "../components/Icons";
-import { agentSupportsChat, CHAT_AGENT_TYPES, type ChatAgentType } from "../agentLaunch";
-import { selectedAgentRuntimeProfiles } from "../agentProfiles";
+import { agentSupportsChat, CHAT_AGENT_TYPES, type ChatAgentType } from "../agents/agentLaunch";
+import { selectedAgentRuntimeProfiles } from "../agents/agentProfiles";
 import { useResource } from "../state/resources";
 import { agentCatalogR } from "../state/resources.defs";
 import { useStore } from "../state/store";

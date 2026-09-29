@@ -12,7 +12,7 @@ import { sshApi } from "../api/ssh";
 import { checkForUpdateNow } from "../api/updater";
 import { basename, dirname, isPathWithin } from "../lib/paths";
 import { clampRailWidth, type RailEdge } from "../lib/railWidths";
-import { MAX_AGENT_MODEL_LENGTH, normalizePermissionMode, type ChatAgentType } from "../agentLaunch";
+import { MAX_AGENT_MODEL_LENGTH, normalizePermissionMode, type ChatAgentType } from "../agents/agentLaunch";
 import { cloneTheme, DEFAULT_THEME_ID, type Theme } from "../themes";
 import { sshStartup } from "../terminal/sshStartup";
 import { taskPtyBindings, type TaskTerminalPresentationRequest } from "../tasks/nativeRuntime";
