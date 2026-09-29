@@ -38,10 +38,12 @@ use tauri::{AppHandle, Emitter};
 
 use super::burst::Burst;
 use super::documents::DocumentEvent;
-use super::{BrowserShortcut, PageDialog, BROWSER_SHORTCUT_EVENT};
+use super::{BrowserShortcut, PageDialog, TabStall, BROWSER_SHORTCUT_EVENT};
 
 /// The property the tab watches to hear about a page that moved on its own.
 const URL_KEY_PATH: &str = "URL";
+/// WebKit's own verdict on whether the page's process still answers input.
+const RESPONSIVE_KEY_PATH: &str = "_webProcessIsResponsive";
 /// Past this many dialogs in `DIALOG_WINDOW`, a page's dialogs are answered
 /// with Cancel unseen, the way browsers offer to stop a page's dialogs.
 const DIALOG_LIMIT: usize = 3;
@@ -53,19 +55,25 @@ struct NativeTab {
     _delegate: Retained<TabUiDelegate>,
     _navigation: Retained<TabNavigationDelegate>,
     address_observer: Retained<AddressObserver>,
+    watches_responsiveness: bool,
 }
 
 /* AppKit throws if a view is freed while anything is still watching it, so the
-tab lets go of the address before it lets go of either of them. */
+tab lets go of what it watches before it lets go of either of them. */
 impl Drop for NativeTab {
     fn drop(&mut self) {
-        // SAFETY: `adopt` registered this observer for this key path, and the tab still
-        // retains both the observer and the webview. Tabs live only on the main thread.
-        unsafe {
-            self.webview.removeObserver_forKeyPath(
-                &self.address_observer,
-                &NSString::from_str(URL_KEY_PATH),
-            );
+        let watched = [URL_KEY_PATH, RESPONSIVE_KEY_PATH];
+        let count = if self.watches_responsiveness { 2 } else { 1 };
+        for key_path in &watched[..count] {
+            // SAFETY: `adopt` registered this observer for this key path, and the tab
+            // still retains both the observer and the webview. Tabs live only on the
+            // main thread.
+            unsafe {
+                self.webview.removeObserver_forKeyPath(
+                    &self.address_observer,
+                    &NSString::from_str(key_path),
+                );
+            }
         }
     }
 }
@@ -99,7 +107,8 @@ fn webview_from(pointer: *mut c_void) -> Option<Retained<WKWebView>> {
 /// focus. `moved` hears the new address and whether history can go either way;
 /// `dialog` hears a page dialog open and close; `upload` hands over files the
 /// agent picked for the next file chooser, which then never shows; `document`
-/// hears each top-level load start, get its answer, and finish or fail.
+/// hears each top-level load start, get its answer, and finish or fail;
+/// `health` hears the page's process stop answering, crash, and recover.
 #[allow(clippy::too_many_arguments)]
 pub fn adopt(
     pointer: *mut c_void,
@@ -109,6 +118,7 @@ pub fn adopt(
     dialog: impl Fn(Option<PageDialog>) + 'static,
     upload: impl Fn() -> Option<Vec<std::path::PathBuf>> + 'static,
     document: impl Fn(DocumentEvent) + 'static,
+    health: impl Fn(Option<TabStall>) + 'static,
 ) {
     let (Some(webview), Some(mtm)) = (webview_from(pointer), MainThreadMarker::new()) else {
         return;
@@ -122,13 +132,16 @@ pub fn adopt(
         Rc::new(dialog),
         Box::new(upload),
     );
+    let health: Rc<dyn Fn(Option<TabStall>)> = Rc::new(health);
     let navigation = TabNavigationDelegate::new(
         mtm,
         // SAFETY: main thread, and `webview` is retained.
         unsafe { webview.navigationDelegate() },
         Box::new(document),
+        health.clone(),
     );
-    let address_observer = AddressObserver::new(mtm, Box::new(moved));
+    let address_observer = AddressObserver::new(mtm, Box::new(moved), health);
+    let watches_responsiveness = webview.respondsToSelector(sel!(_webProcessIsResponsive));
     // SAFETY: main thread. WebKit holds delegates and observers weakly, so the tab keeps
     // them alive in TABS, and `Drop` removes the observer before letting go.
     unsafe {
@@ -142,6 +155,14 @@ pub fn adopt(
             NSKeyValueObservingOptions::empty(),
             std::ptr::null_mut(),
         );
+        if watches_responsiveness {
+            webview.addObserver_forKeyPath_options_context(
+                &address_observer,
+                &NSString::from_str(RESPONSIVE_KEY_PATH),
+                NSKeyValueObservingOptions::empty(),
+                std::ptr::null_mut(),
+            );
+        }
     }
     TABS.with(|tabs| {
         tabs.borrow_mut().insert(
@@ -152,6 +173,7 @@ pub fn adopt(
                 _delegate: delegate,
                 _navigation: navigation,
                 address_observer,
+                watches_responsiveness,
             },
         );
     });
@@ -183,12 +205,14 @@ pub fn forget(tab_id: &str) {
 
 struct AddressObserverIvars {
     moved: Box<dyn Fn(String, bool, bool)>,
+    health: Rc<dyn Fn(Option<TabStall>)>,
 }
 
 define_class!(
     /// What tells the app that a page changed its address without loading a new
     /// document — a web app routing between its own screens, or a jump to an
-    /// anchor. The navigation hooks never hear about either one.
+    /// anchor. The navigation hooks never hear about either one. It also hears
+    /// WebKit decide that the page's process stopped answering, or answers again.
     // SAFETY: a plain NSObject subclass that adds no dealloc and is only used on the
     // main thread.
     #[unsafe(super(NSObject))]
@@ -205,7 +229,7 @@ define_class!(
         #[unsafe(method(observeValueForKeyPath:ofObject:change:context:))]
         unsafe fn address_changed(
             &self,
-            _key_path: Option<&NSString>,
+            key_path: Option<&NSString>,
             object: Option<&AnyObject>,
             _change: Option<&NSDictionary<NSKeyValueChangeKey, AnyObject>>,
             _context: *mut c_void,
@@ -213,6 +237,13 @@ define_class!(
             let Some(webview) = object.and_then(|object| object.downcast_ref::<WKWebView>()) else {
                 return;
             };
+            if key_path.is_some_and(|path| path.to_string() == RESPONSIVE_KEY_PATH) {
+                // SAFETY: `adopt` only watches this key path on a webview that answers
+                // `_webProcessIsResponsive`, which takes nothing and returns a BOOL.
+                let responsive: bool = unsafe { msg_send![webview, _webProcessIsResponsive] };
+                (self.ivars().health)((!responsive).then_some(TabStall::Unresponsive));
+                return;
+            }
             /* A page that is fetching a document reports that address itself
                when the load commits, and may yet be sent somewhere else or fail
                outright. Leaving those to the navigation hook keeps the bar from
@@ -237,10 +268,14 @@ define_class!(
 );
 
 impl AddressObserver {
-    fn new(mtm: MainThreadMarker, moved: Box<dyn Fn(String, bool, bool)>) -> Retained<Self> {
+    fn new(
+        mtm: MainThreadMarker,
+        moved: Box<dyn Fn(String, bool, bool)>,
+        health: Rc<dyn Fn(Option<TabStall>)>,
+    ) -> Retained<Self> {
         let observer = mtm
             .alloc::<AddressObserver>()
-            .set_ivars(AddressObserverIvars { moved });
+            .set_ivars(AddressObserverIvars { moved, health });
         // SAFETY: `observer` is freshly allocated with its ivars set, and NSObject's `init`
         // takes nothing and returns that same object.
         unsafe { msg_send![super(observer), init] }
@@ -703,6 +738,7 @@ fn jpeg_bytes(image: &[u8]) -> Option<Vec<u8>> {
 struct TabNavigationDelegateIvars {
     inner: Option<Retained<ProtocolObject<dyn WKNavigationDelegate>>>,
     document: Box<dyn Fn(DocumentEvent)>,
+    health: Rc<dyn Fn(Option<TabStall>)>,
 }
 
 define_class!(
@@ -750,6 +786,7 @@ define_class!(
                 .and_then(|url| url.absoluteString())
                 .map(|url| url.to_string())
                 .unwrap_or_default();
+            (self.ivars().health)(None);
             (self.ivars().document)(DocumentEvent::Started {
                 navigation: navigation_id(navigation),
                 url,
@@ -807,6 +844,14 @@ define_class!(
             }
         }
 
+        #[unsafe(method(webViewWebContentProcessDidTerminate:))]
+        unsafe fn crashed(&self, webview: &WKWebView) {
+            (self.ivars().health)(Some(TabStall::Crashed));
+            if let Some(inner) = self.forward_to(sel!(webViewWebContentProcessDidTerminate:)) {
+                let _: () = msg_send![inner, webViewWebContentProcessDidTerminate: webview];
+            }
+        }
+
         #[unsafe(method(webView:didFailProvisionalNavigation:withError:))]
         unsafe fn failed_before_commit(
             &self,
@@ -856,10 +901,15 @@ impl TabNavigationDelegate {
         mtm: MainThreadMarker,
         inner: Option<Retained<ProtocolObject<dyn WKNavigationDelegate>>>,
         document: Box<dyn Fn(DocumentEvent)>,
+        health: Rc<dyn Fn(Option<TabStall>)>,
     ) -> Retained<Self> {
         let delegate = mtm
             .alloc::<TabNavigationDelegate>()
-            .set_ivars(TabNavigationDelegateIvars { inner, document });
+            .set_ivars(TabNavigationDelegateIvars {
+                inner,
+                document,
+                health,
+            });
         // SAFETY: `delegate` is freshly allocated with its ivars set, and NSObject's `init`
         // takes nothing and returns that same object.
         unsafe { msg_send![super(delegate), init] }

@@ -29,6 +29,8 @@ const SENT_KEY_LIFETIME: Duration = Duration::from_secs(30);
 const LATE_FOCUS_GRAB: Duration = Duration::from_millis(400);
 /// How long after an agent's input WebKit may still answer it with a cursor.
 const CURSOR_ANSWER_WINDOW: Duration = Duration::from_secs(3);
+/// No keyboard has a key with this code.
+const UNUSED_KEY_CODE: u16 = 0xFF;
 
 static ORIGINAL_SET_CURSOR: OnceLock<Imp> = OnceLock::new();
 static ORIGINAL_HIDE_CURSOR: OnceLock<Imp> = OnceLock::new();
@@ -511,6 +513,30 @@ pub fn guard_cursor() {
         };
         let _ = ORIGINAL_HIDE_CURSOR.set(original);
     }
+}
+
+/// WebKit only notices a hung page when input it sent goes unanswered for a
+/// few seconds, and a script call is not input. This sends a key release no
+/// key matches, which pages ignore, so `BrowserManager::stalled` can tell.
+#[allow(dead_code)]
+pub fn probe_responsiveness(pointer: *mut c_void) -> Result<(), String> {
+    let webview = webview_from(pointer)?;
+    let window = webview.window().ok_or("the tab is not in a window")?;
+    let release = NSEvent::keyEventWithType_location_modifierFlags_timestamp_windowNumber_context_characters_charactersIgnoringModifiers_isARepeat_keyCode(
+        NSEventType::KeyUp,
+        NSPoint::new(0.0, 0.0),
+        NSEventModifierFlags::empty(),
+        now(),
+        window.windowNumber(),
+        None,
+        &NSString::new(),
+        &NSString::new(),
+        false,
+        UNUSED_KEY_CODE,
+    )
+    .ok_or("AppKit refused the key event")?;
+    webview.keyUp(&release);
+    Ok(())
 }
 
 /// Inserts text at the page's caret the way a keyboard or input method would,

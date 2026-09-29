@@ -148,6 +148,30 @@ pub enum DownloadState {
     Failed,
 }
 
+/// Why a tab's page cannot answer at all, so a call into it would only time out.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TabStall {
+    /// WebKit gave up waiting on the page's process, which is hung or blocked
+    /// on something like a system dialog.
+    Unresponsive,
+    /// The page's process ended, leaving the tab blank until it loads again.
+    Crashed,
+}
+
+impl TabStall {
+    #[allow(dead_code)]
+    pub fn message(self) -> &'static str {
+        match self {
+            TabStall::Unresponsive => {
+                "the tab stopped responding; close it with browser_close_tab and open a new one"
+            }
+            TabStall::Crashed => {
+                "the tab's page crashed; navigate or reload to load it again, or close the tab"
+            }
+        }
+    }
+}
+
 /// An alert, confirm or prompt the page is blocked on until someone answers.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -306,6 +330,7 @@ pub struct BrowserManager {
     dialogs: Mutex<HashMap<String, PageDialog>>,
     uploads: Mutex<HashMap<String, Vec<PathBuf>>>,
     documents: Mutex<HashMap<String, documents::DocumentLog>>,
+    stalls: Mutex<HashMap<String, TabStall>>,
     local_files: local_files::LocalFiles,
     #[cfg(target_os = "macos")]
     recordings: Mutex<HashMap<String, recording::Session>>,
@@ -366,6 +391,7 @@ impl BrowserManager {
                 let (upload_app, upload_tab) = (app_handle.clone(), tab.clone());
                 let (document_app, document_agent, document_tab) =
                     (app_handle.clone(), agent.clone(), tab.clone());
+                let (health_app, health_tab) = (app_handle.clone(), tab.clone());
                 macos::adopt(
                     platform.inner(),
                     agent,
@@ -407,6 +433,14 @@ impl BrowserManager {
                                 },
                             );
                         }
+                    },
+                    move |stall| {
+                        let manager = health_app.state::<BrowserManager>();
+                        let mut stalls = manager.stalls_lock();
+                        match stall {
+                            Some(stall) => stalls.insert(health_tab.clone(), stall),
+                            None => stalls.remove(&health_tab),
+                        };
                     },
                 );
             });
@@ -607,6 +641,21 @@ impl BrowserManager {
             .unwrap_or_default()
     }
 
+    fn stalls_lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, TabStall>> {
+        self.stalls
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Set once WebKit has seen the tab's page stop answering or crash, and
+    /// cleared when it answers again or starts a new load. A hung page is only
+    /// noticed a few seconds after input reaches it; `input::probe_responsiveness`
+    /// sends some.
+    #[allow(dead_code)]
+    pub fn stalled(&self, tab_id: &str) -> Option<TabStall> {
+        self.stalls_lock().get(tab_id).copied()
+    }
+
     fn downloads_lock(&self) -> std::sync::MutexGuard<'_, HashMap<(String, String), PathBuf>> {
         self.downloads
             .lock()
@@ -679,6 +728,7 @@ impl BrowserManager {
             let view = agent.views.remove(tab_id);
             agent.viewports.remove(tab_id);
             self.documents_lock().remove(tab_id);
+            self.stalls_lock().remove(tab_id);
             if agent.strip.order.is_empty() {
                 agents.remove(agent_id);
             }
@@ -707,6 +757,7 @@ impl BrowserManager {
                 .into_iter()
                 .map(|(tab_id, view)| {
                     documents.remove(&tab_id);
+                    self.stalls_lock().remove(&tab_id);
                     view
                 })
                 .collect()
