@@ -290,8 +290,25 @@ function demoFileSystem(): PluginOption {
   };
 }
 
+// A Sikemux browser tab already holds Tauri's own read-only globals, so the mocks move to globals of their own.
+const TAURI_GLOBAL =
+  /\bwindow\.__TAURI_(INTERNALS|EVENT_PLUGIN_INTERNALS)__\b/g;
+
+const ownTauriGlobals = {
+  name: "sikemux-showcase-own-tauri-globals",
+  transform(code: string) {
+    if (!code.includes("__TAURI_")) return null;
+    return {
+      code: code.replace(TAURI_GLOBAL, "window.__SHOWCASE_TAURI_$1__"),
+      map: null,
+    };
+  },
+};
+
 export default mergeConfig(base, {
-  plugins: [demoFileSystem()],
+  plugins: [demoFileSystem(), ownTauriGlobals],
+  optimizeDeps: { rolldownOptions: { plugins: [ownTauriGlobals] } },
+  cacheDir: resolve(import.meta.dirname, "../node_modules/.vite-showcase"),
   server: { port: 1471, strictPort: true },
   // Headless Chrome's WebGL context scales xterm's glyphs twice at 2x; the DOM renderer draws the same cells.
   define: { "import.meta.env.VITE_TERMINAL_WEBGL": JSON.stringify("0") },
