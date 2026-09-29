@@ -156,6 +156,7 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
+    #[allow(clippy::expect_used)]
     fn a_saved_secret_reads_back_and_goes_on_delete() {
         let service = "sikemux-keychain-test";
         let account = format!("probe-{}", std::process::id());
