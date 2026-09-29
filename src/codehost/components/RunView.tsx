@@ -70,7 +70,9 @@ function useOpenRun(repo: RepoRef, runId: string, active: boolean): OpenRun {
     const run = (useWatched ? watched?.run : shown.data?.run) ?? null;
     const jobs = useWatched && watched?.jobs.length ? watched.jobs : (shown.data?.jobs ?? []);
     const moving = attempt === null && !!run && isUnfinished(run);
-    const latestAttempt = Math.max(detail.data?.run.attempt ?? 0, watched?.run.attempt ?? 0, run?.attempt ?? 0);
+    const highestAttempt = useRef(0);
+    const latestAttempt = Math.max(highestAttempt.current, detail.data?.run.attempt ?? 0, watched?.run.attempt ?? 0, run?.attempt ?? 0);
+    highestAttempt.current = latestAttempt;
     const now = useNow(active && moving);
 
     const latestRun = useRef(run);
@@ -179,13 +181,13 @@ function RunCard({
     const timing = useResourceEnabled(active && !live, timingR, repo, run.id);
     const took = live ? null : (timing.data?.runDurationMs ?? null);
     const [busy, runBusy] = useBusy();
-    const act = (what: string, work: () => Promise<void>) =>
+    const act = (done: string, failed: string, work: () => Promise<void>) =>
         work()
             .then(() => {
-                notify("success", what);
+                notify("success", done);
                 refreshRuns();
             })
-            .catch(reportError(`Could not ${what.toLowerCase()}`));
+            .catch(reportError(failed));
 
     const cancel = async () => {
         const sure = await confirmDialog({
@@ -194,7 +196,7 @@ function RunCard({
             confirmLabel: "Cancel run",
             destructive: true,
         });
-        if (sure) await act("Cancelled the run", () => hostApi(repo.provider).cancel(repo, run.id));
+        if (sure) await act("Cancelled the run", "Could not cancel the run", () => hostApi(repo.provider).cancel(repo, run.id));
     };
 
     return (
@@ -240,7 +242,13 @@ function RunCard({
                         type="button"
                         className="gha-btn primary"
                         disabled={busy}
-                        onClick={() => runBusy(() => act("Re-running the failed jobs", () => hostApi(repo.provider).rerun(repo, run.id, true)))}>
+                        onClick={() =>
+                            runBusy(() =>
+                                act("Re-running the failed jobs", "Could not re-run the failed jobs", () =>
+                                    hostApi(repo.provider).rerun(repo, run.id, true),
+                                ),
+                            )
+                        }>
                         Re-run failed jobs
                     </button>
                 )}
@@ -249,7 +257,11 @@ function RunCard({
                         type="button"
                         className="gha-btn"
                         disabled={busy}
-                        onClick={() => runBusy(() => act("Re-running every job", () => hostApi(repo.provider).rerun(repo, run.id, false)))}>
+                        onClick={() =>
+                            runBusy(() =>
+                                act("Re-running every job", "Could not re-run every job", () => hostApi(repo.provider).rerun(repo, run.id, false)),
+                            )
+                        }>
                         Re-run all jobs
                     </button>
                 )}
