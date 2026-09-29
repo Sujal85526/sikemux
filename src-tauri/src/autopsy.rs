@@ -528,8 +528,13 @@ mod macos {
     /// SAFETY: `pointer` must be a live `WKWebView*`, and this must run on the
     /// main thread.
     pub fn web_process_identifier(pointer: *mut c_void) -> Option<i32> {
+        // SAFETY: the only caller passes `platform.inner()` from inside `with_webview`: the
+        // live WKWebView, on the main thread.
         let webview: Retained<WKWebView> =
             unsafe { Retained::retain(pointer.cast::<WKWebView>()) }?;
+        // SAFETY: `_webProcessIdentifier` is a private WKWebView method that takes nothing
+        // and returns the pid as an int. Unlike `keep_running_when_covered`, its
+        // existence is not checked first.
         let pid: i32 = unsafe { msg_send![&*webview, _webProcessIdentifier] };
         (pid > 0).then_some(pid)
     }

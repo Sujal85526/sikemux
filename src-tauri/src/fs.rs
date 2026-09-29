@@ -376,6 +376,8 @@ fn sync_before_replace(file: &fs::File) -> AppResult<()> {
     {
         use std::os::fd::AsRawFd;
         // A filesystem that does not know the barrier falls through to fsync.
+        // SAFETY: `file` stays open for the call, so its descriptor is valid, and
+        // F_BARRIERFSYNC takes no pointer.
         if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_BARRIERFSYNC) } != -1 {
             return Ok(());
         }
@@ -665,13 +667,18 @@ fn clipboard_png() -> Option<Vec<u8>> {
     use objc2_foundation::NSDictionary;
 
     let pasteboard = NSPasteboard::generalPasteboard();
+    // SAFETY: objc2 does not tie NSPasteboard to the main thread, and the type is an
+    // immutable AppKit constant.
     if let Some(png) = unsafe { pasteboard.dataForType(NSPasteboardTypePNG) } {
         return Some(png.to_vec());
     }
     // Screenshots land on the clipboard as TIFF.
+    // SAFETY: as above.
     let tiff = unsafe { pasteboard.dataForType(NSPasteboardTypeTIFF) }?;
     let bitmap = NSBitmapImageRep::imageRepWithData(&tiff)?;
     let empty = NSDictionary::new();
+    // SAFETY: NSBitmapImageRep works off the main thread, and an empty properties
+    // dictionary is allowed.
     let png =
         unsafe { bitmap.representationUsingType_properties(NSBitmapImageFileType::PNG, &empty) }?;
     Some(png.to_vec())
@@ -811,6 +818,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let pipe = dir.path().join("pipe");
         let name = std::ffi::CString::new(pipe.to_string_lossy().as_bytes()).unwrap();
+        // SAFETY: `name` is a nul-terminated path that outlives the call.
         assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
         assert!(matches!(read_bounded(&pipe, 1024), Err(AppError::Fs(_))));
         assert!(matches!(

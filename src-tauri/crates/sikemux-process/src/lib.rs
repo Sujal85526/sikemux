@@ -62,6 +62,8 @@ impl ProcessCancellation {
 /// and reaps it once this lands.
 fn kill_group(pid: u32) {
     #[cfg(unix)]
+    // SAFETY: `kill` takes only integers. The child is not reaped yet, so its pid and
+    // the process group it leads (see `process_group(0)`) still belong to it.
     unsafe {
         libc::kill(-(pid as i32), libc::SIGKILL);
         libc::kill(pid as i32, libc::SIGKILL);

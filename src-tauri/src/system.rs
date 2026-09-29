@@ -451,6 +451,8 @@ pub fn normalize_user_environment() {
 /// devices too.
 #[cfg(unix)]
 pub fn raise_fd_limit() {
+    // SAFETY: `rlimit` is a plain C struct for which all zeroes is valid, and both calls
+    // only touch the struct we pass, during the call.
     unsafe {
         let mut lim = std::mem::zeroed::<libc::rlimit>();
         if libc::getrlimit(libc::RLIMIT_NOFILE, &mut lim) != 0 {
@@ -563,6 +565,8 @@ fn current_fd_count() -> Option<usize> {
 
 #[cfg(unix)]
 fn current_fd_limit() -> (Option<u64>, Option<u64>) {
+    // SAFETY: `rlimit` is a plain C struct for which all zeroes is valid, and
+    // `getrlimit` only writes into the struct we pass.
     unsafe {
         let mut lim = std::mem::zeroed::<libc::rlimit>();
         if libc::getrlimit(libc::RLIMIT_NOFILE, &mut lim) != 0 {

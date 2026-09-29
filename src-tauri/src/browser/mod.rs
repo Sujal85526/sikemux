@@ -1110,6 +1110,8 @@ fn quarantine(path: &Path) {
     ) else {
         return;
     };
+    // SAFETY: `target` and `name` are nul-terminated and live through the call, and
+    // `value.len()` is exactly the bytes `value` points at.
     unsafe {
         libc::setxattr(
             target.as_ptr(),
@@ -1602,6 +1604,8 @@ mod tests {
         let target = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
         let name = std::ffi::CString::new("com.apple.quarantine").unwrap();
         let mut value = [0u8; 64];
+        // SAFETY: `value` is a writable buffer of `value.len()` bytes, and both names are
+        // nul-terminated and live through the call.
         let read = unsafe {
             libc::getxattr(
                 target.as_ptr(),

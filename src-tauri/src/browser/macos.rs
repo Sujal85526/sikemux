@@ -57,6 +57,8 @@ struct NativeTab {
 tab lets go of the address before it lets go of either of them. */
 impl Drop for NativeTab {
     fn drop(&mut self) {
+        // SAFETY: `adopt` registered this observer for this key path, and the tab still
+        // retains both the observer and the webview. Tabs live only on the main thread.
         unsafe {
             self.webview.removeObserver_forKeyPath(
                 &self.address_observer,
@@ -84,6 +86,8 @@ struct OpenDialog {
 }
 
 fn webview_from(pointer: *mut c_void) -> Option<Retained<WKWebView>> {
+    // SAFETY: every caller passes `platform.inner()` from inside Tauri's `with_webview`,
+    // which runs on the main thread while that WKWebView is alive.
     unsafe { Retained::retain(pointer.cast::<WKWebView>()) }
 }
 
@@ -106,6 +110,7 @@ pub fn adopt(
     let (Some(webview), Some(mtm)) = (webview_from(pointer), MainThreadMarker::new()) else {
         return;
     };
+    // SAFETY: main thread (checked just above), and `webview` is retained.
     let inner = unsafe { webview.UIDelegate() };
     let delegate = TabUiDelegate::new(
         mtm,
@@ -116,10 +121,13 @@ pub fn adopt(
     );
     let navigation = TabNavigationDelegate::new(
         mtm,
+        // SAFETY: main thread, and `webview` is retained.
         unsafe { webview.navigationDelegate() },
         Box::new(document),
     );
     let address_observer = AddressObserver::new(mtm, Box::new(moved));
+    // SAFETY: main thread. WebKit holds delegates and observers weakly, so the tab keeps
+    // them alive in TABS, and `Drop` removes the observer before letting go.
     unsafe {
         webview.setUIDelegate(Some(ProtocolObject::from_ref(&*delegate)));
         webview.setNavigationDelegate(Some(ProtocolObject::from_ref(&*navigation)));
@@ -155,6 +163,8 @@ pub fn keep_running_when_covered(pointer: *mut c_void, keep_running: bool) {
     let selector = sel!(_setWindowOcclusionDetectionEnabled:);
     if webview.respondsToSelector(selector) {
         let enabled = Bool::new(!keep_running);
+        // SAFETY: `respondsToSelector` just confirmed this private method exists; it takes
+        // one BOOL and returns nothing.
         let _: () = unsafe { msg_send![&*webview, _setWindowOcclusionDetectionEnabled: enabled] };
     }
 }
@@ -176,14 +186,19 @@ define_class!(
     /// What tells the app that a page changed its address without loading a new
     /// document — a web app routing between its own screens, or a jump to an
     /// anchor. The navigation hooks never hear about either one.
+    // SAFETY: a plain NSObject subclass that adds no dealloc and is only used on the
+    // main thread.
     #[unsafe(super(NSObject))]
     #[thread_kind = MainThreadOnly]
     #[ivars = AddressObserverIvars]
     struct AddressObserver;
 
+    // SAFETY: every NSObject subclass already conforms to NSObjectProtocol.
     unsafe impl NSObjectProtocol for AddressObserver {}
 
     impl AddressObserver {
+        // SAFETY: the signature matches KVO's `observeValueForKeyPath:ofObject:change:context:`,
+        // which fires on the main thread for the webview's address.
         #[unsafe(method(observeValueForKeyPath:ofObject:change:context:))]
         unsafe fn address_changed(
             &self,
@@ -199,15 +214,18 @@ define_class!(
                when the load commits, and may yet be sent somewhere else or fail
                outright. Leaving those to the navigation hook keeps the bar from
                ever showing a page that never arrived. */
+            // SAFETY: `webview` is the observed view, alive for this call on the main thread.
             if unsafe { webview.isLoading() } {
                 return;
             }
+            // SAFETY: same live webview, same thread.
             let Some(address) = (unsafe { webview.URL() }) else {
                 return;
             };
             let Some(address) = address.absoluteString() else {
                 return;
             };
+            // SAFETY: same live webview, same thread.
             (self.ivars().moved)(address.to_string(), unsafe { webview.canGoBack() }, unsafe {
                 webview.canGoForward()
             });
@@ -220,6 +238,8 @@ impl AddressObserver {
         let observer = mtm
             .alloc::<AddressObserver>()
             .set_ivars(AddressObserverIvars { moved });
+        // SAFETY: `observer` is freshly allocated with its ivars set, and NSObject's `init`
+        // takes nothing and returns that same object.
         unsafe { msg_send![super(observer), init] }
     }
 }
@@ -228,6 +248,7 @@ pub fn history(pointer: *mut c_void, delta: i32) {
     let Some(webview) = webview_from(pointer) else {
         return;
     };
+    // SAFETY: main thread (see `webview_from`), and `webview` is retained.
     unsafe {
         if delta < 0 {
             webview.goBack();
@@ -242,6 +263,7 @@ pub fn introduce_as(pointer: *mut c_void, agent: &str) {
     let Some(webview) = webview_from(pointer) else {
         return;
     };
+    // SAFETY: main thread (see `webview_from`), and `webview` is retained.
     unsafe {
         if webview
             .customUserAgent()
@@ -262,6 +284,7 @@ pub fn clip(pointer: *mut c_void, visible: Option<NSRect>, holes: Vec<(NSRect, f
         return;
     };
     let view: &NSView = &webview;
+    // SAFETY: every NSView answers `layer` with a CALayer or nil, and the result is retained.
     let Some(layer): Option<Retained<CALayer>> = (unsafe { msg_send![view, layer] }) else {
         return;
     };
@@ -309,9 +332,11 @@ pub fn clip(pointer: *mut c_void, visible: Option<NSRect>, holes: Vec<(NSRect, f
     CATransaction::begin();
     CATransaction::setDisableActions(true);
     if visible == whole && holes.is_empty() {
+        // SAFETY: main thread, and `layer` is retained for the whole function.
         unsafe { layer.setMask(None) };
     } else {
         let path = CGMutablePath::new();
+        // SAFETY: a null transform means none, and `path` is a fresh path only we hold.
         unsafe {
             CGMutablePath::add_rect(Some(&path), std::ptr::null(), flip(visible));
             for (hole, radius) in &holes {
@@ -326,8 +351,10 @@ pub fn clip(pointer: *mut c_void, visible: Option<NSRect>, holes: Vec<(NSRect, f
         }
         let mask = CAShapeLayer::new();
         mask.setFrame(layer.bounds());
+        // SAFETY: an immutable constant string QuartzCore sets up when it loads.
         mask.setFillRule(unsafe { kCAFillRuleEvenOdd });
         mask.setPath(Some(&path));
+        // SAFETY: main thread, and the layer retains `mask` from here on.
         unsafe { layer.setMask(Some(&mask)) };
     }
     CATransaction::commit();
@@ -359,8 +386,12 @@ fn pass_clicks_through_holes(view: &NSView) -> Option<()> {
     let class = view.class();
     let selector = sel!(hitTest:);
     let inherited = class.instance_method(selector)?;
+    // SAFETY: `inherited` is a real method of the view's class, so its type string lives
+    // as long as the class does.
     let types = unsafe { objc2::ffi::method_getTypeEncoding(inherited) };
     let hit_test: HitTest = hit_test_outside_holes;
+    // SAFETY: `hit_test_outside_holes` has `hitTest:`'s exact signature and reuses its
+    // type string. `class_addMethod` only adds to the class, never replaces a method.
     let added = unsafe {
         objc2::ffi::class_addMethod(
             (class as *const objc2::runtime::AnyClass).cast_mut(),
@@ -376,6 +407,8 @@ fn pass_clicks_through_holes(view: &NSView) -> Option<()> {
 
 type HitTest = unsafe extern "C-unwind" fn(&NSView, Sel, NSPoint) -> *mut NSView;
 
+// SAFETY: only AppKit calls this, as the `hitTest:` method installed above, with a
+// live view on the main thread.
 unsafe extern "C-unwind" fn hit_test_outside_holes(
     view: &NSView,
     selector: Sel,
@@ -383,6 +416,7 @@ unsafe extern "C-unwind" fn hit_test_outside_holes(
 ) -> *mut NSView {
     let holes = HOLES.with(|all| all.borrow().get(&view_key(view)).cloned());
     if let Some(holes) = holes {
+        // SAFETY: main thread, and `view` is alive for this call.
         let superview = unsafe { view.superview() };
         let local = view.convertPoint_fromView(point, superview.as_deref());
         let local = if view.isFlipped() {
@@ -403,12 +437,16 @@ unsafe extern "C-unwind" fn hit_test_outside_holes(
     let Some(inherited) = PAGE_HIT_TEST.with(|cell| cell.get()) else {
         return std::ptr::null_mut();
     };
+    // SAFETY: `inherited` is the `hitTest:` implementation this function stands in
+    // front of, so it has the same signature.
     let inherited = unsafe { std::mem::transmute::<Imp, HitTest>(inherited) };
+    // SAFETY: passes AppKit's own arguments straight to the original `hitTest:`.
     unsafe { inherited(view, selector, point) }
 }
 
 pub fn history_state(pointer: *mut c_void) -> (bool, bool) {
     webview_from(pointer)
+        // SAFETY: main thread (see `webview_from`), and `webview` is retained.
         .map(|webview| unsafe { (webview.canGoBack(), webview.canGoForward()) })
         .unwrap_or((false, false))
 }
@@ -420,14 +458,17 @@ pub fn snapshot_jpeg(pointer: *mut c_void, done: Box<dyn FnOnce(Result<Vec<u8>, 
         done(Err("the tab is gone".into()));
         return;
     };
+    // SAFETY: main thread, as `mtm` proves.
     let configuration = unsafe { WKSnapshotConfiguration::new(mtm) };
     let scale = webview
         .window()
         .map(|window| window.backingScaleFactor())
         .unwrap_or(1.0)
         .max(1.0);
+    // SAFETY: main thread, and `webview` is retained.
     let zoom = unsafe { webview.pageZoom() }.max(0.01);
     let width = (webview.frame().size.width / zoom / scale).max(1.0);
+    // SAFETY: `configuration` is ours and not yet handed to WebKit.
     unsafe {
         configuration.setSnapshotWidth(Some(&NSNumber::numberWithDouble(width)));
         configuration.setAfterScreenUpdates(true);
@@ -437,8 +478,10 @@ pub fn snapshot_jpeg(pointer: *mut c_void, done: Box<dyn FnOnce(Result<Vec<u8>, 
         let Some(done) = done.lock().ok().and_then(|mut slot| slot.take()) else {
             return;
         };
+        // SAFETY: WebKit passes a live image or nil; `retain` takes our own reference.
         let image = unsafe { Retained::retain(image) };
         let Some(image) = image else {
+            // SAFETY: WebKit passes a live error or nil; `retain` takes our own reference.
             done(Err(unsafe { Retained::retain(error) }
                 .map(|error| error.localizedDescription().to_string())
                 .unwrap_or_else(|| "the page could not be captured".into())));
@@ -454,6 +497,7 @@ pub fn snapshot_jpeg(pointer: *mut c_void, done: Box<dyn FnOnce(Result<Vec<u8>, 
             done(jpeg_bytes(&pixels).ok_or_else(|| "could not encode the page image".to_string()));
         });
     });
+    // SAFETY: main thread; WebKit copies the block and holds `configuration` for the call.
     unsafe {
         webview.takeSnapshotWithConfiguration_completionHandler(Some(&configuration), &block)
     };
@@ -485,25 +529,30 @@ pub fn call_async(
         let Some(done) = done.lock().ok().and_then(|mut slot| slot.take()) else {
             return;
         };
+        // SAFETY: WebKit passes a live error or nil; `retain` takes our own reference.
         if let Some(error) = unsafe { Retained::retain(error) } {
             done(Err(script_error(&error)));
             return;
         }
+        // SAFETY: WebKit passes a live result or nil, valid until the block returns.
         let text = unsafe { value.as_ref() }
             .and_then(|value| value.downcast_ref::<NSString>())
             .map(|text| text.to_string());
         done(text.ok_or_else(|| "the script returned nothing readable".into()));
     });
     let world = match world {
+        // SAFETY: main thread, as `mtm` proves.
         World::Page => unsafe { WKContentWorld::pageWorld(mtm) },
         World::Helper => HELPER_WORLD.with(|slot| {
             slot.borrow_mut()
+                // SAFETY: main thread, as `mtm` proves; HELPER_WORLD keeps the world alive.
                 .get_or_insert_with(|| unsafe {
                     WKContentWorld::worldWithName(&NSString::from_str("sikemux"), mtm)
                 })
                 .clone()
         }),
     };
+    // SAFETY: main thread, `webview` and `world` are retained, and WebKit copies the block.
     unsafe {
         webview.callAsyncJavaScript_arguments_inFrame_inContentWorld_completionHandler(
             &NSString::from_str(body),
@@ -539,9 +588,11 @@ pub fn full_page_jpeg(
         done(Err("the tab is gone".into()));
         return;
     };
+    // SAFETY: main thread, as `mtm` proves.
     let configuration = unsafe { WKPDFConfiguration::new(mtm) };
     if height > most {
         let width = webview.frame().size.width;
+        // SAFETY: `configuration` is ours and not yet handed to WebKit.
         unsafe {
             configuration.setRect(NSRect::new(
                 NSPoint::new(0.0, 0.0),
@@ -554,7 +605,9 @@ pub fn full_page_jpeg(
         let Some(done) = done.lock().ok().and_then(|mut slot| slot.take()) else {
             return;
         };
+        // SAFETY: WebKit passes live data or nil; `retain` takes our own reference.
         let Some(data) = (unsafe { Retained::retain(data) }) else {
+            // SAFETY: WebKit passes a live error or nil; `retain` takes our own reference.
             done(Err(unsafe { Retained::retain(error) }
                 .map(|error| error.localizedDescription().to_string())
                 .unwrap_or_else(|| "the page could not be captured".into())));
@@ -571,6 +624,7 @@ pub fn full_page_jpeg(
             done(jpeg_bytes(&pixels).ok_or_else(|| "could not encode the page image".to_string()));
         });
     });
+    // SAFETY: main thread; WebKit copies the block and holds `configuration` for the call.
     unsafe { webview.createPDFWithConfiguration_completionHandler(Some(&configuration), &block) };
 }
 
@@ -578,7 +632,10 @@ fn jpeg_bytes(image: &[u8]) -> Option<Vec<u8>> {
     let bitmap = NSBitmapImageRep::imageRepWithData(&NSData::with_bytes(image))?;
     let quality = NSNumber::numberWithDouble(0.82);
     let properties: Retained<NSDictionary<NSString, AnyObject>> =
+        // SAFETY: an immutable constant string AppKit sets up when it loads.
         NSDictionary::from_slices(&[unsafe { NSImageCompressionFactor }], &[&*quality]);
+    // SAFETY: NSBitmapImageRep works off the main thread, and `properties` maps the
+    // compression key to an NSNumber as AppKit expects.
     let jpeg = unsafe {
         bitmap.representationUsingType_properties(NSBitmapImageFileType::JPEG, &properties)
     }?;
@@ -593,20 +650,27 @@ struct TabNavigationDelegateIvars {
 define_class!(
     /// Sits in front of the navigation delegate the webview came with, hearing
     /// how each top-level load goes and passing every call on to it.
+    // SAFETY: a plain NSObject subclass that adds no dealloc and is only used on the
+    // main thread.
     #[unsafe(super(NSObject))]
     #[thread_kind = MainThreadOnly]
     #[ivars = TabNavigationDelegateIvars]
     struct TabNavigationDelegate;
 
+    // SAFETY: every NSObject subclass already conforms to NSObjectProtocol.
     unsafe impl NSObjectProtocol for TabNavigationDelegate {}
 
     impl TabNavigationDelegate {
+        // SAFETY: matches NSObject's `respondsToSelector:`: a selector in, a BOOL out.
         #[unsafe(method(respondsToSelector:))]
         fn responds_to_selector(&self, selector: Sel) -> bool {
+            // SAFETY: asks NSObject's own answer for the selector we were given.
             let own: bool = unsafe { msg_send![super(self), respondsToSelector: selector] };
             own || self.inner_responds(selector)
         }
 
+        // SAFETY: matches `forwardingTargetForSelector:`. The returned object is not retained
+        // for the caller, as the method requires, and our ivars keep it alive.
         #[unsafe(method(forwardingTargetForSelector:))]
         fn forwarding_target(&self, _selector: Sel) -> *mut AnyObject {
             self.ivars()
@@ -618,9 +682,12 @@ define_class!(
         }
     }
 
+    // SAFETY: each method below has the signature WebKit declares for its selector, and
+    // WebKit calls them on the main thread with a live webview and arguments.
     unsafe impl WKNavigationDelegate for TabNavigationDelegate {
         #[unsafe(method(webView:didStartProvisionalNavigation:))]
         unsafe fn started(&self, webview: &WKWebView, navigation: Option<&WKNavigation>) {
+            // SAFETY: main thread, and WebKit keeps `webview` alive for the callback.
             let url = unsafe { webview.URL() }
                 .and_then(|url| url.absoluteString())
                 .map(|url| url.to_string())
@@ -641,7 +708,9 @@ define_class!(
             response: &WKNavigationResponse,
             handler: &block2::DynBlock<dyn Fn(WKNavigationResponsePolicy)>,
         ) {
+            // SAFETY: main thread, and WebKit keeps `response` alive for the callback.
             if unsafe { response.isForMainFrame() } {
+                // SAFETY: same live response, same thread.
                 let answer = unsafe { response.response() };
                 let status = answer
                     .downcast_ref::<objc2_foundation::NSHTTPURLResponse>()
@@ -733,11 +802,14 @@ impl TabNavigationDelegate {
         let delegate = mtm
             .alloc::<TabNavigationDelegate>()
             .set_ivars(TabNavigationDelegateIvars { inner, document });
+        // SAFETY: `delegate` is freshly allocated with its ivars set, and NSObject's `init`
+        // takes nothing and returns that same object.
         unsafe { msg_send![super(delegate), init] }
     }
 
     fn inner_responds(&self, selector: Sel) -> bool {
         self.ivars().inner.as_ref().is_some_and(|inner| {
+            // SAFETY: our ivars retain `inner`, and any object may be asked `respondsToSelector:`.
             let responds: bool = unsafe { msg_send![&**inner, respondsToSelector: selector] };
             responds
         })
@@ -773,13 +845,18 @@ struct TabUiDelegateIvars {
 }
 
 define_class!(
+    // SAFETY: a plain NSObject subclass that adds no dealloc and is only used on the
+    // main thread.
     #[unsafe(super(NSObject))]
     #[thread_kind = MainThreadOnly]
     #[ivars = TabUiDelegateIvars]
     struct TabUiDelegate;
 
+    // SAFETY: every NSObject subclass already conforms to NSObjectProtocol.
     unsafe impl NSObjectProtocol for TabUiDelegate {}
 
+    // SAFETY: each method below has the signature WebKit declares for its selector, and
+    // WebKit calls them on the main thread with a live webview and arguments.
     unsafe impl WKUIDelegate for TabUiDelegate {
         #[unsafe(method(webView:runJavaScriptAlertPanelWithMessage:initiatedByFrame:completionHandler:))]
         unsafe fn alert(
@@ -942,6 +1019,8 @@ impl TabUiDelegate {
             dialog,
             upload,
         });
+        // SAFETY: `delegate` is freshly allocated with its ivars set, and NSObject's `init`
+        // takes nothing and returns that same object.
         unsafe { msg_send![super(delegate), init] }
     }
 }
@@ -971,6 +1050,7 @@ fn present_sheet(
         answer(false, String::new());
         return;
     }
+    // SAFETY: main thread, and WebKit keeps `frame` alive while its dialog callback runs.
     let host = unsafe { frame.securityOrigin().host().to_string() };
     let alert = NSAlert::new(mtm);
     let title = if host.is_empty() {
@@ -1132,6 +1212,7 @@ pub fn install_shortcuts(app: AppHandle) {
     };
     let block = RcBlock::new(move |event: NonNull<NSEvent>| -> *mut NSEvent {
         let pass = event.as_ptr();
+        // SAFETY: AppKit hands the monitor a live event for the length of the call.
         let event = unsafe { event.as_ref() };
         let flags = event.modifierFlags();
         if !flags.contains(NSEventModifierFlags::Command) {
@@ -1160,6 +1241,8 @@ pub fn install_shortcuts(app: AppHandle) {
         );
         std::ptr::null_mut()
     });
+    // SAFETY: main thread (checked above). AppKit copies the block, and the monitor it
+    // returns is kept in SHORTCUT_MONITOR so it stays installed.
     let monitor = unsafe {
         NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::KeyDown, &block)
     };

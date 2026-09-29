@@ -33,6 +33,8 @@ pub struct KeyStroke {
 }
 
 fn webview_from(pointer: *mut c_void) -> Result<Retained<WKWebView>, String> {
+    // SAFETY: every caller passes `platform.inner()` from inside Tauri's `with_webview`,
+    // which runs on the main thread while that WKWebView is alive.
     unsafe { Retained::retain(pointer.cast::<WKWebView>()) }.ok_or_else(|| "the tab is gone".into())
 }
 
@@ -50,6 +52,7 @@ pub fn mouse(
 ) -> Result<(), String> {
     let webview = webview_from(pointer)?;
     let window = webview.window().ok_or("the tab is not in a window")?;
+    // SAFETY: main thread (see `webview_from`), and `webview` is retained.
     let zoom = unsafe { webview.pageZoom() }.max(0.01);
     let height = webview.frame().size.height;
     let local = if webview.isFlipped() {
@@ -119,6 +122,8 @@ pub fn key(pointer: *mut c_void, stroke: &KeyStroke) -> Result<(), String> {
 pub fn insert_text(pointer: *mut c_void, text: &str) -> Result<(), String> {
     let webview = webview_from(pointer)?;
     let text = NSString::from_str(text);
+    // SAFETY: WKWebView implements NSTextInputClient's `insertText:`, which takes one
+    // string and returns nothing. Main thread, and both objects are retained.
     let _: () = unsafe { msg_send![&*webview, insertText: &*text] };
     Ok(())
 }

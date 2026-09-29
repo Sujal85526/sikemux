@@ -64,9 +64,11 @@ fn validate_agent_id(value: &str) -> Result<String, String> {
 /// is killed rather than closed leaves its sidecar running forever.
 #[cfg(unix)]
 fn watch_parent() {
+    // SAFETY: `getppid` takes nothing and cannot fail.
     let launcher = unsafe { libc::getppid() };
     std::thread::spawn(move || loop {
         std::thread::sleep(PARENT_CHECK_INTERVAL);
+        // SAFETY: `getppid` takes nothing and cannot fail.
         if unsafe { libc::getppid() } != launcher {
             std::process::exit(0);
         }
