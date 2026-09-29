@@ -76,20 +76,19 @@ export function SeshPicker() {
     const projects = showProjects ? (scanned.data ?? []) : [];
     const hosts = showSsh ? (hostsR.data ?? []) : [];
 
-    const pretty = (p: string) => prettyPath(p, home);
-    const projectLabel = (cwd: string, fallback: string) => {
-        const roots = projectRoots
-            .map((r) => normalizePath(expandHome(r.path, home)))
-            .filter(Boolean)
-            .sort((a, b) => b.length - a.length);
-        for (const root of roots) {
-            if (relativePath(cwd, root) === "") return fallback;
-            if (relativePath(cwd, root) !== null) return basename(cwd);
-        }
-        return fallback;
-    };
-
     const items = useMemo<Item[]>(() => {
+        const pretty = (p: string) => prettyPath(p, home);
+        const projectLabel = (cwd: string, fallback: string) => {
+            const roots = projectRoots
+                .map((r) => normalizePath(expandHome(r.path, home)))
+                .filter(Boolean)
+                .sort((a, b) => b.length - a.length);
+            for (const root of roots) {
+                if (relativePath(cwd, root) === "") return fallback;
+                if (relativePath(cwd, root) !== null) return basename(cwd);
+            }
+            return fallback;
+        };
         const wantKind = (k: SessionKind) => mode === "all" || (mode === "projects" && k === "project") || (mode === "ssh" && k === "ssh");
         const sessionItems: Item[] = sessions
             .filter((s) => wantKind(s.kind))
@@ -155,8 +154,8 @@ export function SeshPicker() {
             return kept.map((x) => x.it);
         };
         return groups.flatMap(finalize);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [sessions, projects, hosts, pluginSettings, disabledPlugins, query, home, mode, projectRoots]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- plugin settings change which plugins enabledFrontendPlugins returns
+    }, [sessions, projects, hosts, pluginSettings, disabledPlugins, query, home, mode, projectRoots, showProjects, showPlugins, showSsh]);
 
     useEffect(() => {
         setSel((s) => Math.min(s, Math.max(0, items.length - 1)));

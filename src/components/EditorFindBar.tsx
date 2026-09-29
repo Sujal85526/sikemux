@@ -79,7 +79,7 @@ export function EditorFindBar({ getView, documentKey, open, replaceOpenOnMount, 
             findInputRef.current?.select();
         }, 0);
         return () => window.clearTimeout(t);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- the seed is applied only when the bar is opened or summoned again
     }, [open, signal]);
 
     const run = (fn: (view: EditorView) => boolean, center = true) => {

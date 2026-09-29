@@ -742,7 +742,7 @@ export function EditorPane({
         })();
         // openPath intentionally uses the latest editor refs. Queue changes are
         // the only trigger; the ref prevents overlapping reads during rerenders.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- only a change to the queue should start an open
     }, [paneId, pendingCliOpens]);
 
     // The active tab was changed from outside this pane (⌥./⌥, cycling, or any
@@ -769,7 +769,7 @@ export function EditorPane({
         return () => {
             cancelled = true;
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- makeState and switchTo are rebuilt every render; only an outside tab change runs this
     }, [activePath]);
 
     useEffect(() => {
@@ -807,7 +807,7 @@ export function EditorPane({
         return () => {
             cancelled = true;
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- saved tabs are restored once, when the pane first becomes visible
     }, [visible]);
 
     useEffect(() => {
@@ -939,7 +939,7 @@ export function EditorPane({
             unsubscribe();
             if (timer) window.clearTimeout(timer);
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- a new language hint does not need a new file watcher
     }, [cwd, paneId, visible]);
 
     const pathRenamedRef = useRef<(event: { src: string; dest: string }) => void>(() => {});
@@ -997,7 +997,7 @@ export function EditorPane({
         })()
             .catch(reportError("open file"))
             .finally(() => onRevealed?.(reveal.seq));
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- each reveal runs once, keyed by its sequence number
     }, [reveal?.seq]);
 
     useEffect(() => {
@@ -1035,7 +1035,7 @@ export function EditorPane({
             setLspContext(view, null);
             setHoverLinkContext(view, null);
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- bindLspContext is rebuilt every render but only reads cwd and the stable nav history
     }, [activePath, cwd]);
 
     // The grammar packs download per language, so a freshly opened document may

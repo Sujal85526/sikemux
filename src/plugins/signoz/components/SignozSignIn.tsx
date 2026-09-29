@@ -61,7 +61,7 @@ export function SignozSignIn({ status, onSignedIn }: Props) {
     // this email signs in are already on screen.
     useEffect(() => {
         if (status.url) look(true);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- only the address remembered when the form opens is checked
     }, []);
 
     const passwordOrgs = inspection?.orgs.filter((org) => org.password) ?? [];

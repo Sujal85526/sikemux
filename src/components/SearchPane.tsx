@@ -159,7 +159,7 @@ export function SearchPane({
                 matchIndex: 0,
             });
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- only new results move the selection
     }, [files, sessionId]);
 
     useEffect(() => {
@@ -538,7 +538,7 @@ function Threads({
         if (!selected || rows.length === 0) return;
         const idx = rows.findIndex((r) => r.kind === "msg" && r.file.path === selected.path && r.hitIndex === selected.matchIndex);
         if (idx >= 0) virtualizer.scrollToIndex(idx, { align: "auto" });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- scroll only when the selection moves, not when rows collapse
     }, [selected]);
 
     if (!cwd) return <ThreadNotice className="sp-empty">open a project session</ThreadNotice>;

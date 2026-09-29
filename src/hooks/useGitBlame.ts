@@ -25,6 +25,6 @@ export function useGitBlame(viewGetter: () => EditorView | null, cwd: string, ac
             if (e.repo !== cwd) return;
             refreshBlame(viewGetter());
         });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- callers pass a new getter every render for the same editor
     }, [activePath, cwd]);
 }

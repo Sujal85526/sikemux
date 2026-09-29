@@ -196,7 +196,7 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
         for (const par of parents) {
             if (!dirs[par]) void loadDir(par);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- a folder finishing loading must not re-expand parents the user collapsed
     }, [revealPath, activePath, cwd, active]);
 
     useEffect(() => {

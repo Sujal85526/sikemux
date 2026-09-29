@@ -37,6 +37,6 @@ export function useGitBaseline(viewGetter: () => EditorView | null, cwd: string,
             cancelled = true;
             unsub();
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- callers pass a new getter every render for the same editor
     }, [activePath, cwd]);
 }

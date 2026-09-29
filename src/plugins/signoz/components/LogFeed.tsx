@@ -67,8 +67,7 @@ function useLines(paneId: string, active: boolean, search: LogSearch, live: bool
             alive = false;
             if (streamId !== null) void signozApi.tailStop(streamId).catch(swallow("stop SigNoz tail"));
         };
-        // The search is compared by value: a new object with the same filters is the same feed.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- the key compares the search by value, so the same filters keep the same feed
     }, [active, key, live, paneId]);
 
     const loadOlder = () => {
