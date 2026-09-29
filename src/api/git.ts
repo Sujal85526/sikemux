@@ -65,6 +65,12 @@ export interface GitCommit {
     unpushed: boolean;
 }
 
+export interface GitCompare {
+    merge_base: string;
+    files: { path: string; status: "A" | "M" | "D" | "R" }[];
+    commits: GitCommit[];
+}
+
 export interface GitOverview {
     status: GitStatus;
     branches: GitBranch[];
@@ -233,6 +239,7 @@ export const git = {
     fileDiff: (repo: string, path: string, baseRev: string, headRev: string | null, full: boolean) =>
         invoke<DiffRow[]>("git_file_diff", { repo, path, baseRev, headRev, full }),
     commitFiles: (repo: string, rev: string) => invoke<string[]>("git_commit_files", { repo, rev }),
+    compare: (repo: string, base: string, head: string) => invoke<GitCompare>("git_compare", { repo, base, head }),
     blame: (repo: string, path: string, contents?: string | null) => invoke<GitBlame>("git_blame", { repo, path, contents: contents ?? null }),
     commit: (repo: string, message: string) => invoke<string>("git_commit", { repo, message }),
     push: (repo: string) => invoke<string>("git_push", { repo }),

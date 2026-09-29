@@ -323,6 +323,7 @@ pub fn run() {
             git::git_file_at,
             git::git_file_diff,
             git::git_commit_files,
+            git::git_compare,
             git::git_blame,
             git::git_commit,
             git::git_push,

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { git } from "../api/git";
 import { DiffEditor } from "./DiffEditor";
 import { IconChevron } from "./Icons";
@@ -12,6 +12,8 @@ export function CommitReview({
     title,
     subtitle,
     head,
+    range,
+    focusPath,
     onOpenFile,
 }: {
     repo: string;
@@ -20,12 +22,23 @@ export function CommitReview({
     subtitle: string;
     /** Replaces the hash-and-subject line at the top. */
     head?: ReactNode;
+    /** Shows these files, open, against `base` instead of the commit's own parent. */
+    range?: { base: string; files: readonly string[] };
+    /** Opens this file and scrolls to it. */
+    focusPath?: string | null;
     onOpenFile: (abs: string) => void;
 }) {
     const [files, setFiles] = useState<string[]>([]);
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+    const stackRef = useRef<HTMLDivElement>(null);
+    const rangeFiles = range?.files;
 
     useEffect(() => {
+        if (rangeFiles) {
+            setFiles([...rangeFiles]);
+            setCollapsed(new Set());
+            return;
+        }
         let cancelled = false;
         setFiles([]);
         setCollapsed(new Set());
@@ -43,7 +56,19 @@ export function CommitReview({
         return () => {
             cancelled = true;
         };
-    }, [repo, rev]);
+    }, [repo, rev, rangeFiles]);
+
+    useEffect(() => {
+        if (!focusPath) return;
+        setCollapsed((s) => {
+            if (!s.has(focusPath)) return s;
+            const n = new Set(s);
+            n.delete(focusPath);
+            return n;
+        });
+        const item = [...(stackRef.current?.children ?? [])].find((el) => el instanceof HTMLElement && el.dataset.path === focusPath);
+        item?.scrollIntoView({ block: "start" });
+    }, [focusPath]);
 
     const toggle = (f: string) =>
         setCollapsed((s) => {
@@ -60,12 +85,12 @@ export function CommitReview({
                     <span className="commit-subject">{subtitle}</span>
                 </div>
             )}
-            <div className="commit-stack">
+            <div className="commit-stack" ref={stackRef}>
                 {files.length === 0 && <div className="commit-empty">no files</div>}
                 {files.map((f) => {
                     const open = !collapsed.has(f);
                     return (
-                        <div className={`acc-item${open ? " open" : ""}`} key={f}>
+                        <div className={`acc-item${open ? " open" : ""}`} key={f} data-path={f}>
                             <div className="acc-header" onClick={() => toggle(f)}>
                                 <Tooltip label={open ? "Collapse" : "Expand"}>
                                     <button className="acc-toggle" aria-label={open ? "Collapse" : "Expand"}>
@@ -87,7 +112,9 @@ export function CommitReview({
                                 </Tooltip>
                                 <span className="acc-grow" />
                             </div>
-                            {open && <DiffEditor repo={repo} path={f} baseRev={`${rev}~1`} headRev={rev} editable={false} autoHeight />}
+                            {open && (
+                                <DiffEditor repo={repo} path={f} baseRev={range?.base ?? `${rev}~1`} headRev={rev} editable={false} autoHeight />
+                            )}
                         </div>
                     );
                 })}

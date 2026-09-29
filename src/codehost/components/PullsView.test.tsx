@@ -11,10 +11,21 @@ const api = vi.hoisted(() => ({
     pullCommits: vi.fn(),
     pullFiles: vi.fn(),
     runs: vi.fn(() => Promise.resolve({ runs: [], total: 0 })),
+    branches: vi.fn(() => Promise.resolve(["main", "feat/run-page"])),
+    createPull: vi.fn(() => Promise.resolve({ number: 32 })),
 }));
 
+const localGit = vi.hoisted(() => ({
+    compare: vi.fn(),
+    push: vi.fn(),
+}));
+
+vi.mock("../../api/git", async (importOriginal) => ({ ...(await importOriginal<typeof import("../../api/git")>()), git: localGit }));
+
 vi.mock("../../components/CommitReview", () => ({
-    CommitReview: ({ rev }: { rev: string }) => <div data-testid="commit-review">{rev}</div>,
+    CommitReview: ({ rev, range }: { rev: string; range?: { base: string; files: string[] } }) => (
+        <div data-testid="commit-review">{range ? `${range.base}..${rev} ${range.files.join(" ")}` : rev}</div>
+    ),
 }));
 
 import { invalidate } from "../../plugin-api/resources";
@@ -75,9 +86,19 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-const view = (item: number | null) => (
+const view = (item: number | null, composing = false, projectBranch = "main") => (
     <InHost host={host}>
-        <PullsView paneId="p-git" repo={repo} listState="open" item={item} composing={false} projectBranch="main" cwd="/repo" login="me" active />
+        <PullsView
+            paneId="p-git"
+            repo={repo}
+            listState="open"
+            item={item}
+            composing={composing}
+            projectBranch={projectBranch}
+            cwd="/repo"
+            login="me"
+            active
+        />
     </InHost>
 );
 
@@ -116,4 +137,44 @@ it("keeps the list on the left and asks for a pick on the right while nothing is
     expect(await screen.findByText("the run page")).toBeInTheDocument();
     expect(screen.getByText("Pick a pull request to see what it changes.")).toBeInTheDocument();
     showItem("p-git", null);
+});
+
+it("writes a new pull request beside the branch's diff, with its title taken from its only commit", async () => {
+    const user = userEvent.setup();
+    localGit.compare.mockResolvedValue({
+        merge_base: "base000",
+        files: [{ path: "src/run.ts", status: "A" }],
+        commits: [
+            {
+                hash: "ccccccc",
+                full_hash: "ccccccc3333333",
+                parents: ["base000"],
+                author: "me",
+                author_email: "me@example.test",
+                date: "now",
+                subject: "feat: the run page",
+                refs: [],
+                unpushed: false,
+            },
+        ],
+    });
+    render(view(null, true, "feat/run-page"));
+
+    const left = document.querySelector(".git-left") as HTMLElement;
+    const right = document.querySelector(".git-right") as HTMLElement;
+    expect(await within(left).findByRole("button", { name: /run\.ts/ })).toBeInTheDocument();
+    await waitFor(() => expect(within(left).getByLabelText("Title")).toHaveValue("feat: the run page"));
+    expect(localGit.compare).toHaveBeenCalledWith("/repo", "main", "feat/run-page");
+    expect(within(right).getByTestId("commit-review")).toHaveTextContent("base000..feat/run-page src/run.ts");
+
+    await user.click(within(left).getByRole("button", { name: "Open pull request" }));
+    await waitFor(() =>
+        expect(api.createPull).toHaveBeenCalledWith(repo, {
+            title: "feat: the run page",
+            head: "feat/run-page",
+            base: "main",
+            body: "",
+            draft: false,
+        }),
+    );
 });

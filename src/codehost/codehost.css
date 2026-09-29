@@ -2060,7 +2060,6 @@ button.gha-step:focus-visible {
 /* The merge box sits inside the card, so it drops its own frame and keeps only the rules between its parts. */
 .pr-card .gha-merge-box {
     border: 0;
-    border-top: 1px solid var(--border);
     border-radius: 0;
     background: none;
 }
@@ -2084,7 +2083,7 @@ button.gha-step:focus-visible {
     overflow-y: auto;
 }
 .pr-files:last-of-type,
-.pr-files:has(+ .git-history:not(.open) + .git-history:not(.open)) {
+.pr-files:has(+ .git-history:not(.open)) {
     flex-grow: 1;
 }
 .pr-files-stat {
@@ -2242,4 +2241,187 @@ button.git-file-row {
 }
 .git-right-review > .empty-state {
     margin: auto;
+}
+/* A new pull request's column: the two branches, then a message box like the commit box, then the branch's files and commits. */
+.pr-new-head {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--space-1h);
+    min-width: 0;
+    padding: var(--space-2) 10px 0;
+}
+.pr-new-head > .dd:first-child {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+.pr-new-branch.dd-btn {
+    height: 26px;
+    max-width: 100%;
+    overflow: hidden;
+    padding: 0 var(--space-2);
+    gap: var(--space-1h);
+    background: none;
+    font-size: var(--text-xs);
+}
+.pr-new-branch .dd-icon {
+    color: var(--text-tertiary);
+}
+.pr-new-branch .dd-val {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.pr-new-into {
+    flex: none;
+    color: var(--text-tertiary);
+    font-size: var(--text-xs);
+}
+.pr-new-push {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: var(--space-2) 10px 0;
+    padding: 5px 5px 5px 10px;
+    border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--border));
+    border-radius: var(--radius-2);
+    background: color-mix(in srgb, var(--warn) 8%, transparent);
+    color: var(--warn);
+    font-size: var(--text-xs);
+}
+.pr-new-push > .gha-btn {
+    margin-left: auto;
+}
+.pr-new-title {
+    display: block;
+    width: 100%;
+    padding: 9px 10px 2px;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+}
+.shell .pr-new-title {
+    border-radius: 0 !important;
+}
+.pr-new-title::placeholder {
+    color: var(--text-disabled);
+}
+.git-compose-message.pr-new-body {
+    min-height: 56px;
+    padding-top: 4px;
+}
+/* A pull request's headline, as Bitbucket sets it: the author's face, then its state and title, then who, when and which branches. */
+.pr-headline {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-items: center;
+    column-gap: var(--space-3);
+    row-gap: 3px;
+}
+.pr-face {
+    grid-row: 1 / span 2;
+    display: flex;
+}
+.pr-face > .gha-avatar {
+    width: 36px;
+    height: 36px;
+    font-size: var(--text-sm);
+}
+.pr-row .pr-face > .gha-avatar {
+    width: 28px;
+    height: 28px;
+    font-size: var(--text-xs);
+}
+.pr-headline-top {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+}
+.pr-headline-title {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-primary);
+    font-weight: var(--weight-medium);
+}
+.pr-headline-top > :last-child:not(.pr-headline-title) {
+    margin-left: auto;
+}
+.pr-headline-top > .gha-item-comments {
+    flex: none;
+}
+.gha-state-word.pr-state {
+    flex: none;
+    height: 18px;
+    padding: 0 6px;
+    border: 1px solid color-mix(in oklab, var(--state) 40%, transparent);
+    border-radius: var(--radius-1);
+}
+.pr-headline-sub {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1h);
+    min-width: 0;
+    color: var(--text-tertiary);
+    font-size: var(--text-2xs);
+    white-space: nowrap;
+}
+.pr-headline-who {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.pr-ref {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 40%;
+    padding: 1px 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border-radius: var(--radius-1);
+    background: var(--surface-active);
+    color: var(--text-secondary);
+}
+.pr-headline-who + .pr-ref {
+    margin-left: var(--space-1h);
+}
+.pr-ref-head {
+    flex-shrink: 10;
+}
+.pr-row .pr-headline-who {
+    flex-shrink: 0;
+}
+.pr-ref-arrow,
+.pr-ref-arrow + .pr-ref {
+    flex: none;
+}
+.pr-row {
+    width: 100%;
+    padding: var(--space-2);
+    border: 1px solid transparent;
+    border-radius: var(--radius-2);
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-size: var(--text-sm);
+    text-align: left;
+    cursor: pointer;
+}
+.pr-row:hover {
+    background: var(--surface-hover);
+}
+.pr-row:focus-visible {
+    box-shadow: var(--focus-ring);
+    outline: none;
 }

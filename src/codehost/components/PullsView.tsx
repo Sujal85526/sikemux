@@ -30,9 +30,9 @@ import { pullCommitsR, pullFilesR, pullR, pullReviewsR, pullsR, timelineR } from
 import { formatAgo, type Outcome } from "../runStatus";
 import { needsPull } from "../compose";
 import { compose, openRunFrom, setListState, showItem } from "../state";
-import { CommentThread } from "./CommentThread";
+import { CommentThread, Face } from "./CommentThread";
 import { OutcomeIcon } from "./ActionsIcon";
-import { Branch, Comments, Labels, StateMark, Who } from "./Bits";
+import { Branch, Comments, Labels, StateMark, stateLabel, stateOf, Who } from "./Bits";
 import { useBusy, useNow } from "./hooks";
 import { NewPullForm } from "./NewPullForm";
 import { PullFiles } from "./PullFiles";
@@ -53,21 +53,57 @@ export function reviewVerdict(reviews: readonly { author: string | null; state: 
     return null;
 }
 
+/** Who opened it, its state and title, then its number, age and branches: one headline for the list and the open pull request. */
+function PullHeadline({
+    pull,
+    now,
+    title,
+    trailing,
+    labels = false,
+}: {
+    pull: Pull;
+    now: number;
+    title: ReactNode;
+    trailing?: ReactNode;
+    labels?: boolean;
+}) {
+    const state = stateOf(pull.state, pull.draft);
+    return (
+        <>
+            <span className="pr-face">
+                <Face login={pull.author} url={pull.avatarUrl} />
+            </span>
+            <span className="pr-headline-top">
+                <span className="gha-state-word pr-state" data-kind="pull" data-state={state}>
+                    {stateLabel("pull", pull.state, pull.draft)}
+                </span>
+                {title}
+                {trailing}
+            </span>
+            <span className="pr-headline-sub">
+                <span className="pr-headline-who">
+                    {pull.author ?? "someone"} · #{pull.number}
+                    {labels ? ", updated " : " · "}
+                    {formatAgo(pull.updatedAt, now)}
+                </span>
+                {pull.head && <span className="pr-ref pr-ref-head">{pull.head}</span>}
+                {pull.head && pull.base && <span className="pr-ref-arrow">→</span>}
+                {pull.base && <span className="pr-ref">{pull.base}</span>}
+                {labels && <Labels labels={pull.labels} />}
+            </span>
+        </>
+    );
+}
+
 function PullRow({ pull, now, onOpen }: { pull: Pull; now: number; onOpen: () => void }) {
     return (
-        <button type="button" className="gha-item-row" onClick={onOpen}>
-            <StateMark kind="pull" state={pull.state} draft={pull.draft} />
-            <span className="gha-item-head">
-                <span className="gha-item-title">{pull.title}</span>
-                <Labels labels={pull.labels} />
-            </span>
-            <Comments count={pull.comments ?? 0} />
-            <span className="gha-item-sub">
-                <span className="gha-item-number">#{pull.number}</span>
-                {pull.author && <Who login={pull.author} avatarUrl={pull.avatarUrl} />}
-                {pull.head && <Branch name={pull.head} />}
-            </span>
-            <span className="gha-item-when">{formatAgo(pull.updatedAt, now)}</span>
+        <button type="button" className="pr-row pr-headline" onClick={onOpen}>
+            <PullHeadline
+                pull={pull}
+                now={now}
+                title={<span className="pr-headline-title">{pull.title}</span>}
+                trailing={<Comments count={pull.comments ?? 0} />}
+            />
         </button>
     );
 }
@@ -443,8 +479,6 @@ export function PullRight({
     const now = useNow(false);
     if (!pull.data) return <SkeletonRows rows={6} label="Loading pull request" />;
     const found = pull.data;
-    const merged = found.state === "merged";
-    const actor = merged ? (found.mergedBy ?? found.author) : found.author;
     const said =
         (timeline.data ?? []).filter((item) => item.kind === "commented" || (item.kind === "reviewed" && (item.body ?? "").trim())).length + 1;
     const tabs: { id: PullTab; label: string; count: number | null }[] = [
@@ -454,32 +488,24 @@ export function PullRight({
     return (
         <div className="pr-right">
             <div className="git-detail">
-                <div className="pr-title-row">
-                    <h2 className="git-detail-title">
-                        {found.title} <span className="pr-number">#{found.number}</span>
-                    </h2>
-                    <Tooltip label={`Open on ${host.name}`}>
-                        <button
-                            type="button"
-                            className="gha-icon-btn"
-                            aria-label={`Open on ${host.name}`}
-                            onClick={() => void openUrl(found.url).catch(swallow(`open ${host.name}`))}>
-                            <IconExternal size={12} />
-                        </button>
-                    </Tooltip>
-                </div>
-                <div className="git-detail-meta">
-                    <Who login={actor} avatarUrl={actor === found.author ? found.avatarUrl : (found.avatars[actor ?? ""] ?? null)} />
-                    <span>{merged ? "merged" : "opened"}</span>
-                    <span>{formatAgo(merged ? found.mergedAt : found.createdAt, now)}</span>
-                    {found.head && <Branch name={found.head} />}
-                    {found.base && (
-                        <>
-                            <span>→</span>
-                            <Branch name={found.base} />
-                        </>
-                    )}
-                    <Labels labels={found.labels} />
+                <div className="pr-headline">
+                    <PullHeadline
+                        pull={found}
+                        now={now}
+                        labels
+                        title={<h2 className="git-detail-title pr-headline-title">{found.title}</h2>}
+                        trailing={
+                            <Tooltip label={`Open on ${host.name}`}>
+                                <button
+                                    type="button"
+                                    className="gha-icon-btn"
+                                    aria-label={`Open on ${host.name}`}
+                                    onClick={() => void openUrl(found.url).catch(swallow(`open ${host.name}`))}>
+                                    <IconExternal size={12} />
+                                </button>
+                            </Tooltip>
+                        }
+                    />
                 </div>
                 <div className="git-detail-actions" role="tablist" aria-label="Pull request">
                     {tabs.map((each) => (
@@ -707,7 +733,9 @@ export function PullsView({ paneId, repo, listState, item, composing, projectBra
     if (composing) {
         return (
             <NewPullForm
+                paneId={paneId}
                 repo={repo}
+                cwd={cwd}
                 head={projectBranch}
                 active={active}
                 onCreated={(number) => showItem(paneId, number)}

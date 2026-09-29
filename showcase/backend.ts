@@ -3,7 +3,7 @@ import type {
   IpcTransport,
   IpcUnsubscribe,
 } from "../src/api/transport";
-import type { GitOverview } from "../src/api/git";
+import type { GitCommit, GitOverview } from "../src/api/git";
 import {
   AGENT_SCRIPTS,
   AGENT_USAGE,
@@ -226,6 +226,30 @@ export class ShowcaseBackend implements IpcTransport {
       );
       if (!project) return [];
       return server<string[]>("commit_files", { project: project.name, rev });
+    });
+    this.on("git_compare", async ({ repo }) => {
+      const project = DEMO_PROJECTS.find(
+        (candidate) => candidate.path === repo,
+      );
+      if (!project) throw new Error("could not find repository");
+      const log = await server<GitCommit[]>("git_log", {
+        project: project.name,
+        count: 4,
+      });
+      const commits = log.slice(0, 3);
+      const paths = new Set<string>();
+      for (const commit of commits) {
+        const files = await server<string[]>("commit_files", {
+          project: project.name,
+          rev: commit.full_hash,
+        });
+        files.forEach((path) => paths.add(path));
+      }
+      return {
+        merge_base: log[3]?.full_hash ?? "",
+        files: [...paths].map((path) => ({ path, status: "M" })),
+        commits,
+      };
     });
     this.on("git_remote_branches", ({ repo, remote }) =>
       (BRANCHES[repo as string] ?? ["main"]).map((name) => ({
