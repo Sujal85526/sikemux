@@ -548,6 +548,16 @@
             const covered = top && !within(top, element) && !within(element, top) ? describe(top) : null;
             return { index, x: point.x, y: point.y, label: label(element), covered };
         },
+        // The part of an element a person can see, scrolled into view, for a
+        // picture of just that element.
+        areaOf(target) {
+            const index = this.resolve(target);
+            const element = pick(index);
+            element.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
+            const rect = visibleRect(element);
+            if (!rect) throw new Error(`element [${index}] ("${describe(element)}") is hidden or cut off, so there is nothing of it to capture`);
+            return { index, label: describe(element), left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+        },
         // What a click at a point will land on, so a click by coordinates can
         // say what it hit.
         hitAt(x, y, expectLabel) {

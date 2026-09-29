@@ -593,6 +593,25 @@
         },
         "annotate": {
           "type": "boolean"
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "selector": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
         }
       },
       "required": []

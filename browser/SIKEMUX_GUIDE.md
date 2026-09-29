@@ -277,7 +277,10 @@ why, and `report` covers the page once at the end.
 `browser_press` sends one key to the focused element: `Enter`, `Tab`,
 `Escape`, `Backspace`, `Delete`, `ArrowDown`, `Home`, `PageDown`, `Space`, or
 a single character. Hold modifiers with `+`, as in `Meta+a` to select all or
-`Shift+Tab` to go back a field. `Meta` is the Command key.
+`Shift+Tab` to go back a field. `Meta` is the Command key. The editing chords
+`Meta+a`, `Meta+c`, `Meta+x`, `Meta+v`, `Meta+z` and `Shift+Meta+z` act on the
+page itself when it does not handle them; other command chords never reach
+the Sikemux app.
 
 `browser_drag` presses on `fromIndex` (or `fromX`, `fromY`), moves to
 `toIndex` (or `toX`, `toY`) and releases there. Sliders and sortable lists
@@ -288,6 +291,15 @@ events.
 absolute `paths` and the number (or `x`, `y`) of the file input or of the
 button that opens its chooser. The chooser never shows; the page gets the
 files and its change events. Only one file is given when the input takes one.
+
+While you click, type or press, the tab holds the keyboard, and afterwards
+the person's focus goes back to wherever they were typing, so they can keep
+working in Sikemux while you drive a page. A menu that closes when its page
+loses focus may therefore close between your calls; open it and pick from it
+in one `browser_act`.
+
+A page that hangs or whose process crashes is reported at once on the next
+call: close that tab with `browser_close_tab` and open a new one.
 
 `browser_dialog` answers an alert, confirm or prompt. Page state reports an
 open one under `dialog`, and until it is answered the page is frozen: every
@@ -325,7 +337,14 @@ their phone version; any other size sends desktop Safari's, as a real iPad
 does. The pointer stays a mouse, so sites that check for touch still see none.
 The full state reports `viewport` with the page's `width` and `height`, and
 `fixed` holding the size you set or `false`, with a note when the pane is
-narrow enough that the page may be showing its phone layout. With no arguments it just returns the state.
+narrow enough that the page may be showing its phone layout. A fixed size is
+the page's real window size, so `vw` units, media queries and `innerWidth`
+all see it, and the call returns once the page has laid out at it.
+
+Every state carries `visible`: whether the person can see this tab in the
+pane right now. A tab that is not visible still lays out at a real size and
+takes input, but do not tell the person a page is on their screen when
+`visible` is false. With no arguments it just returns the state.
 
 `browser_wait` waits for the page to reach a state. `text` or `textGone`
 waits for words to show or go, `selector` or `selectorGone` for an element,
@@ -360,7 +379,9 @@ over demo data.
 when layout or rendering matters; use `browser_extract` when you only need
 text. Its pixels are CSS pixels, so a point you read off it can go straight to
 `browser_click` as `x` and `y`. `fullPage: true` captures the whole page
-instead, cut at 14,400 pixels tall (`cutAt` says when it was).
+instead, cut at 14,400 pixels tall (`cutAt` says when it was). An `index`,
+`text` or `selector` captures only that element, scrolled into view, which
+is the cheapest way to check one component.
 `annotate: true` reads state afresh, draws each element's number on the
 picture, and returns the list of the elements it drew, which is the quickest
 way to match what you see to a number. It leaves out elements that are cut

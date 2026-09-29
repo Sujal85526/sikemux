@@ -159,7 +159,6 @@ pub enum TabStall {
 }
 
 impl TabStall {
-    #[allow(dead_code)]
     pub fn message(self) -> &'static str {
         match self {
             TabStall::Unresponsive => {
@@ -651,7 +650,6 @@ impl BrowserManager {
     /// cleared when it answers again or starts a new load. A hung page is only
     /// noticed a few seconds after input reaches it; `input::probe_responsiveness`
     /// sends some.
-    #[allow(dead_code)]
     pub fn stalled(&self, tab_id: &str) -> Option<TabStall> {
         self.stalls_lock().get(tab_id).copied()
     }
@@ -810,7 +808,6 @@ impl BrowserManager {
     }
 
     /// Whether the person can see this tab's page in its pane right now.
-    #[allow(dead_code)]
     pub fn shown(&self, agent_id: &str, tab_id: &str) -> bool {
         self.lock().get(agent_id).is_some_and(|agent| {
             agent.strip.active.as_deref() == Some(tab_id)

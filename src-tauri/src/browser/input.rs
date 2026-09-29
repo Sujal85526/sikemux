@@ -290,7 +290,6 @@ fn owner_of(responder: Retained<NSResponder>) -> Retained<NSResponder> {
 /// Notes where the person's keyboard focus is as an agent action begins, so
 /// `return_person_focus` can give it back. Nested and overlapping actions in
 /// one window share the first note.
-#[allow(dead_code)]
 pub fn hold_person_focus(pointer: *mut c_void) -> Result<(), String> {
     let tab = webview_from(pointer)?;
     let window = tab.window().ok_or("the tab is not in a window")?;
@@ -322,7 +321,6 @@ pub fn hold_person_focus(pointer: *mut c_void) -> Result<(), String> {
 /// if this tab still has it: the person may have moved on meanwhile. WebKit
 /// takes the keyboard for a clicked page a moment late, so this looks again
 /// shortly after.
-#[allow(dead_code)]
 pub fn return_person_focus(pointer: *mut c_void) -> Result<(), String> {
     let tab = webview_from(pointer)?;
     let window = tab.window().ok_or("the tab is not in a window")?;
@@ -518,7 +516,6 @@ pub fn guard_cursor() {
 /// WebKit only notices a hung page when input it sent goes unanswered for a
 /// few seconds, and a script call is not input. This sends a key release no
 /// key matches, which pages ignore, so `BrowserManager::stalled` can tell.
-#[allow(dead_code)]
 pub fn probe_responsiveness(pointer: *mut c_void) -> Result<(), String> {
     let webview = webview_from(pointer)?;
     let window = webview.window().ok_or("the tab is not in a window")?;

@@ -162,8 +162,6 @@ fn parse_inner_size(raw: &str) -> Option<(f64, f64)> {
     let (width, height) = text.split_once('x')?;
     Some((width.parse().ok()?, height.parse().ok()?))
 }
-
-#[allow(dead_code)]
 impl BrowserManager {
     /// The size the tab's page should lay out at now, in CSS pixels.
     pub fn layout_size(&self, agent_id: &str, tab_id: &str) -> Option<(f64, f64)> {

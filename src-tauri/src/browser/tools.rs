@@ -29,8 +29,9 @@ const UPLOAD_TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_UPLOAD_FILES: usize = 20;
 const DRAG_STEPS: u32 = 12;
 const DRAG_STEP_DELAY: Duration = Duration::from_millis(16);
-const VIEWPORT_SETTLE: Duration = Duration::from_millis(150);
 const NARROW_VIEWPORT: u64 = 700;
+/// How long a page may take to answer before WebKit is asked whether it hangs.
+const SLOW_ANSWER: Duration = Duration::from_secs(1);
 
 use crate::generated_agent_tools::BROWSER_METHODS as METHODS;
 use native::Mouse;
@@ -56,9 +57,28 @@ pub fn execute(app: &AppHandle, request: &HarnessRequest) -> Result<Value, Strin
         marks.extend(manager.mark_acting(app, agent_id));
     }
     let before = tab_ids(&manager, agent_id);
+    let sends_input = matches!(
+        request.method.as_str(),
+        "browser.click"
+            | "browser.type"
+            | "browser.press"
+            | "browser.act"
+            | "browser.drag"
+            | "browser.upload"
+    );
+    let held = sends_input
+        .then(|| manager.active_view(agent_id).ok())
+        .flatten()
+        .map(|(_, view)| view);
+    if let Some(view) = &held {
+        let _ = tauri::async_runtime::block_on(native::hold_person_focus(view));
+    }
     let mut result =
         tauri::async_runtime::block_on(run(app, agent_id, &request.method, &request.params))
             .map_err(|error| error.to_string());
+    if let Some(view) = &held {
+        let _ = tauri::async_runtime::block_on(native::return_person_focus(view));
+    }
     if acts_on_a_tab {
         marks.extend(manager.mark_acting(app, agent_id));
         manager.release_acting(app, agent_id, marks);
@@ -513,6 +533,15 @@ async fn run(
             let (tab_id, view) = active(&manager, agent_id)?;
             let annotate = params.get("annotate").and_then(Value::as_bool) == Some(true);
             let full_page = params.get("fullPage").and_then(Value::as_bool) == Some(true);
+            let named = element_target(params, "index");
+            let area = if named == Value::Null {
+                None
+            } else {
+                if full_page {
+                    return Err("pass fullPage or an element, not both".into());
+                }
+                Some(call(&view, "areaOf", &[named]).await?)
+            };
             let marked = if annotate {
                 let page = state(&manager, agent_id).await?;
                 let shown = call(&view, "showMarks", &[json!(true)]).await?;
@@ -530,7 +559,7 @@ async fn run(
             } else {
                 None
             };
-            let image = screenshot(&view, height).await;
+            let image = screenshot(&view, height, area.as_ref().map(area_rect)).await;
             let _ = if annotate {
                 call(&view, "showMarks", &[json!(false)]).await
             } else {
@@ -546,6 +575,9 @@ async fn run(
             });
             if let Some(elements) = marked {
                 result["elements"] = elements;
+            }
+            if let Some(area) = area {
+                result["element"] = json!({ "index": area["index"], "label": area["label"] });
             }
             if height.is_some_and(|height| height > MAX_PAGE_HEIGHT) {
                 result["cutAt"] = json!(MAX_PAGE_HEIGHT);
@@ -636,10 +668,10 @@ async fn run(
                 manager
                     .set_viewport(agent_id, &tab_id, fixed)
                     .map_err(|error| error.to_string())?;
-                tokio::time::sleep(VIEWPORT_SETTLE).await;
                 let _ = manager
                     .wait_until_loaded(agent_id, &tab_id, LOAD_TIMEOUT)
                     .await;
+                manager.settle_viewport(agent_id, &tab_id).await?;
             }
             state(&manager, agent_id).await
         }
@@ -1084,6 +1116,18 @@ mod native {
                 .map_err(Option::unwrap_or_default)
         }
 
+        pub async fn hold_person_focus(view: &Webview) -> Result<(), String> {
+            on_tab(view, input::hold_person_focus).await
+        }
+
+        pub async fn return_person_focus(view: &Webview) -> Result<(), String> {
+            on_tab(view, input::return_person_focus).await
+        }
+
+        pub async fn probe_responsiveness(view: &Webview) -> Result<(), String> {
+            on_tab(view, input::probe_responsiveness).await
+        }
+
         pub async fn reload_from_origin(view: &Webview) -> Result<(), String> {
             on_tab(view, |tab| {
                 // SAFETY: `on_tab` hands over the tab's WKWebView from inside
@@ -1123,7 +1167,17 @@ mod native {
                 );
             })
             .map_err(|error| Some(error.to_string()))?;
-            match tokio::time::timeout(limit, receiver).await {
+            let mut receiver = receiver;
+            match tokio::time::timeout(super::super::SLOW_ANSWER.min(limit), &mut receiver).await {
+                Ok(Ok(result)) => return result.map_err(Some),
+                Ok(Err(_)) => return Err(Some("the tab went away".into())),
+                Err(_) => {
+                    let _ = super::probe_responsiveness(view).await;
+                }
+            }
+            match tokio::time::timeout(limit.saturating_sub(super::super::SLOW_ANSWER), receiver)
+                .await
+            {
                 Ok(Ok(result)) => result.map_err(Some),
                 Ok(Err(_)) => Err(Some("the tab went away".into())),
                 Err(_) => Err(None),
@@ -1173,6 +1227,18 @@ mod native {
 
         pub async fn reload_from_origin(_: &Webview) -> Result<(), String> {
             Err(UNSUPPORTED.into())
+        }
+
+        pub async fn hold_person_focus(_: &Webview) -> Result<(), String> {
+            Ok(())
+        }
+
+        pub async fn return_person_focus(_: &Webview) -> Result<(), String> {
+            Ok(())
+        }
+
+        pub async fn probe_responsiveness(_: &Webview) -> Result<(), String> {
+            Ok(())
         }
 
         pub async fn run_helper(_: &Webview, _: &str) -> Result<String, String> {
@@ -1228,6 +1294,21 @@ mod native {
         limit: std::time::Duration,
     ) -> Result<String, String> {
         platform::run_script(view, body, limit).await
+    }
+
+    /// Notes where the person's keyboard is before the agent sends input, so
+    /// `return_person_focus` can put it back once the tab has taken it.
+    pub async fn hold_person_focus(view: &Webview) -> Result<(), String> {
+        platform::hold_person_focus(view).await
+    }
+
+    pub async fn return_person_focus(view: &Webview) -> Result<(), String> {
+        platform::return_person_focus(view).await
+    }
+
+    /// Nudges WebKit into checking whether the tab's page still answers.
+    pub async fn probe_responsiveness(view: &Webview) -> Result<(), String> {
+        platform::probe_responsiveness(view).await
     }
 
     /// Reloads skipping the cache, so a stale script or stylesheet is fetched again.
@@ -1287,6 +1368,9 @@ async fn on_tab<T: Send + 'static>(
 /// waiting on an alert answers nothing, so calling into it would only time out.
 fn active(manager: &BrowserManager, agent_id: &str) -> Result<(String, Webview), String> {
     let (tab_id, view) = active_tab(manager, agent_id)?;
+    if let Some(stall) = manager.stalled(&tab_id) {
+        return Err(stall.message().into());
+    }
     match manager.dialog(&tab_id) {
         Some(dialog) => Err(format!(
             "the page is waiting on a {} dialog saying \"{}\"; answer it with browser_dialog",
@@ -1417,6 +1501,7 @@ async fn read_state(
     if let Value::Object(map) = &mut result {
         map.insert("tabId".into(), json!(tab_id));
         map.insert("loading".into(), json!(page.loading));
+        map.insert("visible".into(), json!(manager.shown(agent_id, &tab_id)));
         map.insert("tabs".into(), tabs(manager, agent_id)["tabs"].clone());
     }
     Ok(result)
@@ -1501,8 +1586,18 @@ pub(super) async fn eval(view: &Webview, script: &str) -> Result<String, String>
     }
 }
 
-/// The visible part of the tab, or with `height` the whole page down to it.
-async fn screenshot(view: &Webview, height: Option<f64>) -> Result<Vec<u8>, String> {
+fn area_rect(area: &Value) -> (f64, f64, f64, f64) {
+    let side = |key: &str| area.get(key).and_then(Value::as_f64).unwrap_or(0.0);
+    (side("left"), side("top"), side("width"), side("height"))
+}
+
+/// The visible part of the tab, only `area` of it, or with `height` the
+/// whole page down to it.
+async fn screenshot(
+    view: &Webview,
+    height: Option<f64>,
+    area: Option<(f64, f64, f64, f64)>,
+) -> Result<Vec<u8>, String> {
     #[cfg(target_os = "macos")]
     {
         let (sender, receiver) = tokio::sync::oneshot::channel();
@@ -1517,7 +1612,7 @@ async fn screenshot(view: &Webview, height: Option<f64>) -> Result<Vec<u8>, Stri
                 Some(height) => {
                     super::macos::full_page_jpeg(platform.inner(), height, MAX_PAGE_HEIGHT, done)
                 }
-                None => super::macos::snapshot_jpeg(platform.inner(), done),
+                None => super::macos::snapshot_jpeg(platform.inner(), area, done),
             }
         })
         .map_err(|error| error.to_string())?;
@@ -1529,7 +1624,7 @@ async fn screenshot(view: &Webview, height: Option<f64>) -> Result<Vec<u8>, Stri
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (view, height);
+        let _ = (view, height, area);
         Err("screenshots are not available on this platform yet".into())
     }
 }

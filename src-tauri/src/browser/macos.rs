@@ -546,7 +546,12 @@ pub fn history_state(pointer: *mut c_void) -> (bool, bool) {
 
 /// The visible page as a JPEG at 1x: plenty for a model to read at a fraction
 /// of the bytes of a Retina PNG.
-pub fn snapshot_jpeg(pointer: *mut c_void, done: Box<dyn FnOnce(Result<Vec<u8>, String>) + Send>) {
+/// `area` is a part of the viewport in CSS pixels: left, top, width, height.
+pub fn snapshot_jpeg(
+    pointer: *mut c_void,
+    area: Option<(f64, f64, f64, f64)>,
+    done: Box<dyn FnOnce(Result<Vec<u8>, String>) + Send>,
+) {
     let (Some(webview), Some(mtm)) = (webview_from(pointer), MainThreadMarker::new()) else {
         done(Err("the tab is gone".into()));
         return;
@@ -560,11 +565,20 @@ pub fn snapshot_jpeg(pointer: *mut c_void, done: Box<dyn FnOnce(Result<Vec<u8>, 
         .max(1.0);
     // SAFETY: main thread, and `webview` is retained.
     let zoom = unsafe { webview.pageZoom() }.max(0.01);
-    let width = (webview.bounds().size.width / zoom / scale).max(1.0);
+    let width = match area {
+        Some((_, _, width, _)) => (width / scale).max(1.0),
+        None => (webview.bounds().size.width / zoom / scale).max(1.0),
+    };
     // SAFETY: `configuration` is ours and not yet handed to WebKit.
     unsafe {
         configuration.setSnapshotWidth(Some(&NSNumber::numberWithDouble(width)));
         configuration.setAfterScreenUpdates(true);
+        if let Some((left, top, width, height)) = area {
+            configuration.setRect(NSRect::new(
+                NSPoint::new(left * zoom, top * zoom),
+                NSSize::new(width * zoom, height * zoom),
+            ));
+        }
     }
     let done = std::sync::Mutex::new(Some(done));
     let block = RcBlock::new(move |image: *mut NSImage, error: *mut NSError| {
