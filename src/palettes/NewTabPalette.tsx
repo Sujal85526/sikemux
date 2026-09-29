@@ -3,7 +3,7 @@ import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { agentIdsOf } from "../state/selectors";
 import { useModalFocus } from "../hooks/useModalFocus";
-import { IconAgent, IconCommand, IconCommit, IconEditor, IconGlobe, IconSearch } from "./Icons";
+import { IconAgent, IconCommand, IconCommit, IconEditor, IconGlobe, IconSearch } from "../components/Icons";
 import { leavingOverlay } from "../lib/motion";
 
 interface TabChoice {
