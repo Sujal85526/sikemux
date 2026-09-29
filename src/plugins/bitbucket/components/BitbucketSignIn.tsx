@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { openUrl, swallow } from "../../../plugin-api/host";
 import { resource, useResource } from "../../../plugin-api/resources";
-import { SkeletonRows } from "../../../plugin-api/ui";
+import { SignInScreen, SignInWaiting, SkeletonRows } from "../../../plugin-api/ui";
 import { bitbucketApi, failureMessage, type BitbucketStatus, type BrowserSignIn } from "../api";
 import { BitbucketMark } from "./BitbucketMark";
 
@@ -73,94 +73,83 @@ export function SignInForm({ status, onSignedIn }: Props) {
     };
 
     return (
-        <div className="gha-signin">
-            <div className="signin">
-                <span className="signin-mark">
-                    <BitbucketMark size={26} className="icon-bitbucket" />
-                </span>
-                <h2 className="signin-title">Connect Bitbucket</h2>
-                <p className="signin-lede">Pull requests, pipelines and reviews for this repository, right beside your changes.</p>
+        <SignInScreen
+            mark={<BitbucketMark size={26} className="icon-bitbucket" />}
+            title="Connect Bitbucket"
+            lede="Pull requests, pipelines and reviews for this repository, right beside your changes."
+            foot="Sikemux keeps your sign-in in the macOS Keychain.">
+            {withToken ? (
+                <div className="signin-form">
+                    <label className="signin-field">
+                        <span>Token</span>
+                        <input
+                            className="signin-input mono"
+                            type="password"
+                            value={token}
+                            onChange={(event) => setToken(event.target.value)}
+                            onKeyDown={(event) => {
+                                if (event.key === "Enter") void submit();
+                            }}
+                            placeholder="ATATT… or ATCTT…"
+                            autoFocus
+                            spellCheck={false}
+                        />
+                    </label>
+                    <label className="signin-field">
+                        <span>Atlassian account email</span>
+                        <input
+                            className="signin-input"
+                            type="email"
+                            value={email}
+                            onChange={(event) => setEmail(event.target.value)}
+                            onKeyDown={(event) => {
+                                if (event.key === "Enter") void submit();
+                            }}
+                            placeholder="you@example.com"
+                            spellCheck={false}
+                            autoCapitalize="off"
+                            autoCorrect="off"
+                        />
+                        <small className="signin-hint">
+                            An API token needs the email it belongs to. Leave it empty for a repository or workspace access token.
+                        </small>
+                    </label>
+                    <button type="button" className="signin-btn primary" disabled={!canSubmit} onClick={() => void submit()}>
+                        {busy ? "Checking…" : "Sign in"}
+                    </button>
+                </div>
+            ) : waiting ? (
+                <SignInWaiting onCancel={() => waiting.cancel()}>Finish signing in in your browser</SignInWaiting>
+            ) : (
+                <button type="button" className="signin-btn primary" onClick={signInWithBrowser}>
+                    <BitbucketMark size={14} />
+                    Continue with Bitbucket
+                </button>
+            )}
 
+            {error && (
+                <div className="signin-callout" data-tone="danger">
+                    {error}
+                </div>
+            )}
+
+            <div className="signin-alt">
                 {withToken ? (
-                    <div className="signin-form">
-                        <label className="gha-field">
-                            <span>Token</span>
-                            <input
-                                className="gha-input gha-mono"
-                                type="password"
-                                value={token}
-                                onChange={(event) => setToken(event.target.value)}
-                                onKeyDown={(event) => {
-                                    if (event.key === "Enter") void submit();
-                                }}
-                                placeholder="ATATT… or ATCTT…"
-                                autoFocus
-                                spellCheck={false}
-                            />
-                        </label>
-                        <label className="gha-field">
-                            <span>Atlassian account email</span>
-                            <input
-                                className="gha-input"
-                                type="email"
-                                value={email}
-                                onChange={(event) => setEmail(event.target.value)}
-                                onKeyDown={(event) => {
-                                    if (event.key === "Enter") void submit();
-                                }}
-                                placeholder="you@example.com"
-                                spellCheck={false}
-                                autoCapitalize="off"
-                                autoCorrect="off"
-                            />
-                            <small className="gha-hint">
-                                An API token needs the email it belongs to. Leave it empty for a repository or workspace access token.
-                            </small>
-                        </label>
-                        <button type="button" className="gha-btn primary signin-go" disabled={!canSubmit} onClick={() => void submit()}>
-                            {busy ? "Checking…" : "Sign in"}
+                    status.browserSignIn ? (
+                        <button type="button" className="signin-link" onClick={() => setWithToken(false)}>
+                            Sign in with the browser instead
                         </button>
-                    </div>
-                ) : waiting ? (
-                    <div className="signin-waiting" role="status">
-                        <span className="signin-spinner" aria-hidden="true" />
-                        Finish signing in in your browser
-                        <button type="button" className="gha-link" onClick={() => waiting.cancel()}>
-                            Cancel
+                    ) : (
+                        <button type="button" className="signin-link" onClick={() => void openUrl(API_TOKENS_PAGE).catch(swallow("open Atlassian"))}>
+                            Create an API token
                         </button>
-                    </div>
+                    )
                 ) : (
-                    <button type="button" className="gha-btn primary signin-go" onClick={signInWithBrowser}>
-                        <BitbucketMark size={14} />
-                        Continue with Bitbucket
+                    <button type="button" className="signin-link" disabled={!!waiting} onClick={() => setWithToken(true)}>
+                        Use a token instead
                     </button>
                 )}
-
-                {error && (
-                    <div className="gha-callout signin-error" data-tone="danger">
-                        {error}
-                    </div>
-                )}
-
-                <div className="signin-alt">
-                    {withToken ? (
-                        status.browserSignIn ? (
-                            <button type="button" className="gha-link" onClick={() => setWithToken(false)}>
-                                Sign in with the browser instead
-                            </button>
-                        ) : (
-                            <button type="button" className="gha-link" onClick={() => void openUrl(API_TOKENS_PAGE).catch(swallow("open Atlassian"))}>
-                                Create an API token
-                            </button>
-                        )
-                    ) : (
-                        <button type="button" className="gha-link" disabled={!!waiting} onClick={() => setWithToken(true)}>
-                            Use a token instead
-                        </button>
-                    )}
-                </div>
-                <p className="signin-foot">Sikemux keeps your sign-in in the macOS Keychain.</p>
             </div>
-        </div>
+        </SignInScreen>
     );
 }

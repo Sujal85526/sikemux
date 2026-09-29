@@ -1,7 +1,6 @@
 import { lazy } from "react";
 import { registerFrontendPlugin } from "../../plugin-api";
 import { IconAws } from "../../plugin-api/ui";
-import { AwsOverlay } from "./components/AwsOverlay";
 import { AWS_CONSOLE, AWS_PLUGIN_ID } from "./kinds";
 import { openAwsSession } from "./state";
 
@@ -20,5 +19,4 @@ registerFrontendPlugin({
     open: openAwsSession,
     openTitle: "Open AWS",
     openShortcut: "Alt+KeyA",
-    Overlay: AwsOverlay,
 });

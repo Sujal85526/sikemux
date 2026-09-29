@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { openUrl, swallow } from "../../../plugin-api/host";
 import { resource, useResource } from "../../../plugin-api/resources";
-import { SkeletonRows } from "../../../plugin-api/ui";
+import { SignInScreen, SkeletonRows } from "../../../plugin-api/ui";
 import { actionsApi, failureMessage, type ActionsStatus } from "../api";
 import { GithubMark } from "./GithubMark";
 
@@ -66,92 +66,87 @@ export function ActionsSignIn({ status, onSignedIn }: Props) {
     };
 
     return (
-        <div className="gha-signin">
-            <div className="signin">
-                <span className="signin-mark">
-                    <GithubMark size={26} />
-                </span>
-                <h2 className="signin-title">Connect GitHub</h2>
-                <p className="signin-lede">Pull requests, Actions runs and issues for this repository, right beside your changes.</p>
+        <SignInScreen
+            mark={<GithubMark size={26} />}
+            title="Connect GitHub"
+            lede="Pull requests, Actions runs and issues for this repository, right beside your changes."
+            foot="Sikemux keeps your sign-in in the macOS Keychain.">
+            {borrowed && (
+                <>
+                    <button type="button" className="signin-btn primary" disabled={busy} onClick={() => void submit(undefined)}>
+                        <GithubMark size={14} />
+                        {busy
+                            ? "Checking…"
+                            : status.tokenSource === "ghCli"
+                              ? "Continue with the gh CLI"
+                              : `Continue with ${status.tokenVariable ?? "that token"}`}
+                    </button>
+                    <p className="signin-note">{sourceNote(status)}</p>
+                    <div className="signin-or">or paste a token</div>
+                </>
+            )}
 
-                {borrowed && (
-                    <>
-                        <button type="button" className="gha-btn primary signin-go" disabled={busy} onClick={() => void submit(undefined)}>
-                            <GithubMark size={14} />
-                            {busy
-                                ? "Checking…"
-                                : status.tokenSource === "ghCli"
-                                  ? "Continue with the gh CLI"
-                                  : `Continue with ${status.tokenVariable ?? "that token"}`}
-                        </button>
-                        <p className="signin-note">{sourceNote(status)}</p>
-                        <div className="signin-or">or paste a token</div>
-                    </>
-                )}
-
-                <div className="signin-form">
-                    {editingHost && (
-                        <label className="gha-field">
-                            <span>Host</span>
-                            <input
-                                className="gha-input gha-mono"
-                                value={host}
-                                onChange={(event) => setHost(event.target.value)}
-                                placeholder="github.com"
-                                spellCheck={false}
-                                autoCapitalize="off"
-                                autoCorrect="off"
-                            />
-                        </label>
-                    )}
-                    <label className="gha-field">
-                        <span>Personal access token</span>
+            <div className="signin-form">
+                {editingHost && (
+                    <label className="signin-field">
+                        <span>Host</span>
                         <input
-                            className="gha-input gha-mono"
-                            type="password"
-                            value={token}
-                            onChange={(event) => setToken(event.target.value)}
-                            onKeyDown={(event) => {
-                                if (event.key === "Enter" && canSubmit) void submit(token.trim());
-                            }}
-                            placeholder="ghp_… or github_pat_…"
-                            autoFocus={!borrowed}
+                            className="signin-input mono"
+                            value={host}
+                            onChange={(event) => setHost(event.target.value)}
+                            placeholder="github.com"
                             spellCheck={false}
+                            autoCapitalize="off"
+                            autoCorrect="off"
                         />
-                        <small className="gha-hint">
-                            It needs <code>repo</code> to read private repositories and <code>workflow</code> to start or re-run one.
-                        </small>
                     </label>
-                    <button
-                        type="button"
-                        className={`gha-btn signin-go${borrowed ? "" : " primary"}`}
-                        disabled={!canSubmit}
-                        onClick={() => void submit(token.trim())}>
-                        {busy ? "Checking…" : "Sign in with token"}
-                    </button>
-                </div>
-
-                {error && (
-                    <div className="gha-callout signin-error" data-tone="danger">
-                        {error}
-                    </div>
                 )}
-
-                <div className="signin-alt">
-                    <button
-                        type="button"
-                        className="gha-link"
-                        onClick={() => void openUrl(tokenPage(host.trim() || "github.com")).catch(swallow("open GitHub"))}>
-                        Create a token
-                    </button>
-                    {!editingHost && (
-                        <button type="button" className="gha-link" onClick={() => setEditingHost(true)}>
-                            GitHub Enterprise
-                        </button>
-                    )}
-                </div>
-                <p className="signin-foot">Sikemux keeps your sign-in in the macOS Keychain.</p>
+                <label className="signin-field">
+                    <span>Personal access token</span>
+                    <input
+                        className="signin-input mono"
+                        type="password"
+                        value={token}
+                        onChange={(event) => setToken(event.target.value)}
+                        onKeyDown={(event) => {
+                            if (event.key === "Enter" && canSubmit) void submit(token.trim());
+                        }}
+                        placeholder="ghp_… or github_pat_…"
+                        autoFocus={!borrowed}
+                        spellCheck={false}
+                    />
+                    <small className="signin-hint">
+                        It needs <code>repo</code> to read private repositories and <code>workflow</code> to start or re-run one.
+                    </small>
+                </label>
+                <button
+                    type="button"
+                    className={`signin-btn${borrowed ? "" : " primary"}`}
+                    disabled={!canSubmit}
+                    onClick={() => void submit(token.trim())}>
+                    {busy ? "Checking…" : "Sign in with token"}
+                </button>
             </div>
-        </div>
+
+            {error && (
+                <div className="signin-callout" data-tone="danger">
+                    {error}
+                </div>
+            )}
+
+            <div className="signin-alt">
+                <button
+                    type="button"
+                    className="signin-link"
+                    onClick={() => void openUrl(tokenPage(host.trim() || "github.com")).catch(swallow("open GitHub"))}>
+                    Create a token
+                </button>
+                {!editingHost && (
+                    <button type="button" className="signin-link" onClick={() => setEditingHost(true)}>
+                        GitHub Enterprise
+                    </button>
+                )}
+            </div>
+        </SignInScreen>
     );
 }
