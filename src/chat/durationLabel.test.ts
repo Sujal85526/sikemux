@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { durationLabel } from "./AgentChatPane";
+import { durationLabel } from "./durationLabel";
 
 it("keeps a quick tool call legible instead of rounding it away", () => {
     expect(durationLabel(0)).toBe("0ms");

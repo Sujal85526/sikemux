@@ -73,6 +73,31 @@ import { FoldMemoryContext, newFoldMemory, useLongTextFold } from "./longText";
 import { imagesInClipboard, savePastedClipboard } from "./pasteImage";
 import { caretAtEdge, recallPrompt, sentPrompts, type HistoryPosition } from "./promptHistory";
 import { showImage } from "../state/imageViewer";
+import { eventMessage, permissionRequest, recordOf, statusFromEvent } from "./acpEvents";
+import { durationLabel, elapsedLabel } from "./durationLabel";
+import { activeToolLabel, toolKind, toolLabel, toolPath, toolRunning, toolTarget, toolUrl } from "./toolLabels";
+import { mergePaths, slashTokenAt } from "./composerInput";
+import { combineQueued, nextBatch, queuedLabel, type QueuedMessage } from "./queuedMessages";
+import {
+    attachmentName,
+    decodedFenceName,
+    formatDetail,
+    groupParts,
+    groupTasks,
+    runningSubagents,
+    subagentActivity,
+    subagentTask,
+    taskDetail,
+} from "./transcript";
+import {
+    activityText,
+    backendState,
+    composerPlaceholder as placeholderFor,
+    connectingLabel,
+    knownEffort,
+    permissionModeOf,
+    RECONNECT_DELAYS,
+} from "./chatStatus";
 import type {
     AcpAsyncTask,
     AcpAvailableCommand,
@@ -86,126 +111,9 @@ import type {
     ContextUsage,
 } from "./types";
 
-const MAX_ATTACHMENTS = 32;
-const MAX_DETAIL_CHARS = 120_000;
 const UPDATE_FLUSH_FALLBACK_MS = 250;
 // How far above the last line still counts as reading the latest message.
 const BOTTOM_SLACK = 72;
-/* A session that drops comes back on its own. The waits grow so an agent that
-   cannot come back stops trying and hands the decision over. */
-const RECONNECT_DELAYS = [700, 2_000, 5_000, 12_000];
-
-function recordOf(value: unknown): Record<string, unknown> | null {
-    return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
-}
-
-function eventMessage(event: AcpEvent): string {
-    return typeof event.payload.message === "string" ? event.payload.message : "ACP session failed";
-}
-
-function formatDetail(value: unknown): string {
-    let formatted: string;
-    try {
-        formatted = JSON.stringify(value, null, 2) ?? String(value);
-    } catch {
-        formatted = String(value);
-    }
-    return formatted.length > MAX_DETAIL_CHARS ? `${formatted.slice(0, MAX_DETAIL_CHARS)}\n… output truncated` : formatted;
-}
-
-function permissionRequest(payload: Record<string, unknown>): AcpPermissionRequest | null {
-    const requestId = typeof payload.requestId === "string" ? payload.requestId : null;
-    const sessionId = typeof payload.sessionId === "string" ? payload.sessionId : null;
-    const toolCall = recordOf(payload.toolCall);
-    const options = Array.isArray(payload.options) ? payload.options : null;
-    if (!requestId || !sessionId || !toolCall || typeof toolCall.toolCallId !== "string" || !options) return null;
-    return {
-        requestId,
-        sessionId,
-        toolCall: { ...toolCall, toolCallId: toolCall.toolCallId, title: typeof toolCall.title === "string" ? toolCall.title : "Agent tool" },
-        options: options.flatMap((option) => {
-            const row = recordOf(option);
-            return row && typeof row.optionId === "string" && typeof row.name === "string" && typeof row.kind === "string"
-                ? [{ optionId: row.optionId, name: row.name, kind: row.kind }]
-                : [];
-        }),
-    };
-}
-
-function statusFromEvent(event: AcpEvent): "connecting" | "installing" | "starting" | "initializing" | "ready" | "stopped" | "error" {
-    const value = event.payload.state;
-    return value === "installing" || value === "starting" || value === "initializing" || value === "ready" || value === "stopped" || value === "error"
-        ? value
-        : "connecting";
-}
-
-function mergePaths(current: string[], incoming: readonly string[]): string[] {
-    const merged = [...current];
-    for (const path of incoming) {
-        if (!path || path.includes("\0") || merged.includes(path)) continue;
-        if (merged.length === MAX_ATTACHMENTS) break;
-        merged.push(path);
-    }
-    return merged;
-}
-
-/* The command a draft is naming is the one the caret sits in, so a slash works
-   part-way through a sentence and not only as the first thing typed. */
-function slashTokenAt(text: string, caret: number): { start: number; needle: string } | null {
-    if (caret <= 0) return null;
-    const start = text.lastIndexOf("/", caret - 1);
-    if (start < 0) return null;
-    if (start > 0 && !/\s/.test(text[start - 1])) return null;
-    const needle = text.slice(start + 1, caret);
-    return /\s/.test(needle) ? null : { start, needle };
-}
-
-// Splits `mcp__server__tool` so the server name can be de-emphasized.
-function toolLabel(title: string): { scope?: string; name: string } {
-    const segments = title.split("__");
-    return segments[0] === "mcp" && segments.length > 2 ? { scope: segments[1], name: segments.slice(2).join("__") } : { name: title };
-}
-
-const ACTIVITY_BY_KIND: Record<string, string> = {
-    read: "Reading…",
-    edit: "Editing…",
-    delete: "Deleting…",
-    move: "Moving…",
-    search: "Searching…",
-    execute: "Running a command…",
-    think: "Thinking…",
-    fetch: "Fetching…",
-    switch_mode: "Switching mode…",
-};
-
-/* A tool titles itself with what it was handed — often a whole shell command.
-   The running row is one line, so say what the agent is doing rather than
-   quote it back. */
-function activityLabel(tool: AcpToolCall): string {
-    const byKind = ACTIVITY_BY_KIND[tool.kind ?? ""];
-    if (byKind) return byKind;
-    const name = toolLabel(tool.title).name.split("\n")[0].trim();
-    return name.length > 0 && name.length <= 40 ? name : "Working…";
-}
-
-const KIND_WORDS: Record<string, string> = {
-    read: "read",
-    edit: "edit",
-    delete: "delete",
-    move: "move",
-    search: "search",
-    execute: "run",
-    think: "think",
-    fetch: "fetch",
-    switch_mode: "mode",
-};
-
-function toolKind(tool: AcpToolCall): string {
-    const byKind = KIND_WORDS[tool.kind ?? ""];
-    if (byKind) return byKind;
-    const { scope, name } = toolLabel(tool.title);
-    return scope ?? name.split(/[\s(]/)[0].slice(0, 12).toLowerCase();
-}
 
 function ToolKindIcon({ tool, kind }: { tool: AcpToolCall; kind?: string }) {
     if (tool.status === "failed") return <IconWarning size={11} />;
@@ -229,22 +137,6 @@ function ToolKindIcon({ tool, kind }: { tool: AcpToolCall; kind?: string }) {
     }
 }
 
-/* The row has one line for the target, so a path shows the name it ends in and
-   keeps the rest in the tooltip. A command is not a path and stays as typed. */
-function toolTarget(tool: AcpToolCall): string {
-    const line = toolLabel(tool.title).name.split("\n")[0].trim();
-    if (!line.includes("/") || /\s/.test(line) || safeWebUrl(line)) return line;
-    return basename(line) || line;
-}
-
-function toolUrl(target: string): { before: string; raw: string; url: string; after: string } | null {
-    const match = /https?:\/\/[^\s<>"'`]+/.exec(target);
-    if (!match) return null;
-    const raw = match[0].replace(/[.,;:!?)\]]+$/, "");
-    const url = safeWebUrl(raw);
-    return url ? { before: target.slice(0, match.index), raw, url, after: target.slice(match.index + raw.length) } : null;
-}
-
 function ToolTarget({ text }: { text: string }) {
     const agentId = useContext(ChatAgentContext).id;
     const link = toolUrl(text);
@@ -264,28 +156,6 @@ function ToolTarget({ text }: { text: string }) {
             {link.after}
         </>
     );
-}
-
-/* Which file a call was about: the one it reported touching, or the one its
-   title names when it reported nothing. A shell command is not a file, and a
-   title with a space in it is a command. */
-function toolPath(tool: AcpToolCall): string | null {
-    const first = Array.isArray(tool.locations) ? tool.locations[0] : null;
-    if (first && typeof first === "object") {
-        const { path, line } = first as { path?: unknown; line?: unknown };
-        if (typeof path === "string" && path) return typeof line === "number" ? `${path}:${line}` : path;
-    }
-    const named = toolLabel(tool.title).name.split("\n")[0].trim();
-    return named.includes("/") && !/\s/.test(named) && !safeWebUrl(named) ? named : null;
-}
-
-export function durationLabel(ms: number): string {
-    // Tool calls are often quicker than a tenth of a second, and rounding those
-    // to seconds reported every one of them as the same 0.0s.
-    const elapsed = Math.max(0, ms);
-    if (elapsed < 1000) return `${Math.round(elapsed)}ms`;
-    const seconds = Math.round(elapsed / 1000);
-    return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
 }
 
 /* The text of one diff line: its runs, with the span that changed inside the
@@ -533,18 +403,6 @@ function openLink(href: string, agentId: string, external: boolean) {
     else void invoke("open_url", { url: href, app: null, shortcut: null }).catch(swallow("open chat link"));
 }
 
-/* An attachment arrives as bytes and a type, with nothing naming it, so the
-   type is the only thing that can say what it would be saved as. */
-function attachmentName(mimeType: string): string {
-    const kind =
-        mimeType
-            .split("/")
-            .pop()
-            ?.split("+")[0]
-            ?.replace(/[^a-z0-9]/gi, "") || "png";
-    return `attachment.${kind}`;
-}
-
 /* Every picture in a transcript is a thumbnail of itself: it opens at the size
    the window allows, where it can also be saved. */
 function ChatImage({
@@ -628,14 +486,6 @@ function ChatFence({ lang: info, text }: { lang?: string; text: string }) {
             )}
         </pre>
     );
-}
-
-function decodedFenceName(info: string): string {
-    try {
-        return decodeURIComponent(info);
-    } catch {
-        return info;
-    }
 }
 
 /* A fence says what file it quotes, when it says anything at all. The name is
@@ -782,24 +632,6 @@ function ComposerAttachment({ path, onRemove }: { path: string; onRemove: () => 
             {remove}
         </span>
     );
-}
-
-type PartGroup = { id: string; tools: Extract<ChatPart, { kind: "tool" }>[] } | { id: string; part: ChatPart };
-
-function groupParts(parts: ChatPart[]): PartGroup[] {
-    const groups: PartGroup[] = [];
-    for (const part of parts) {
-        const last = groups.at(-1);
-        if (part.kind !== "tool") groups.push({ id: part.id, part });
-        else if (last && "tools" in last) last.tools.push(part);
-        else groups.push({ id: part.id, tools: [part] });
-    }
-    return groups;
-}
-
-function toolRunning(tool: AcpToolCall): boolean {
-    const status = tool.status ?? "pending";
-    return status !== "completed" && status !== "failed" && status !== "cancelled";
 }
 
 /* A run of tool calls is worth watching while the agent is still adding to it
@@ -954,26 +786,6 @@ function SubagentStateMark({ state }: { state: AcpSubagent["state"] }) {
     );
 }
 
-/* A subagent is handed a whole prompt as its task, and a prompt is paragraphs.
-   The row is one line, so it opens with the first line and the tooltip keeps
-   the rest. */
-function subagentTask(task: string): string {
-    return task.split("\n")[0].trim();
-}
-
-/* What a subagent is up to, taken from the last thing it sent. A tool it is
-   part-way through says more than the prose it wrote before starting. */
-function subagentActivity(subagent: AcpSubagent): string {
-    for (let index = subagent.messages.length - 1; index >= 0; index -= 1) {
-        const parts = subagent.messages[index].parts;
-        for (let position = parts.length - 1; position >= 0; position -= 1) {
-            const part = parts[position];
-            if (part.kind === "tool") return `${toolKind(part.tool)} ${toolTarget(part.tool)}`.trim();
-        }
-    }
-    return subagentTask(subagent.task);
-}
-
 /* A folded subagent keeps streaming into a transcript nobody is reading, so its
    body is only built once the reader opens it. */
 function SubagentPart({ subagent }: { subagent: AcpSubagent }) {
@@ -1014,12 +826,6 @@ function SubagentPart({ subagent }: { subagent: AcpSubagent }) {
     );
 }
 
-/* A task whose description repeats its name would print the same words twice,
-   once in each voice, so the detail takes the first thing that says more. */
-function taskDetail(task: AcpAsyncTask): string | undefined {
-    return [task.summary, task.description, task.lastToolName, task.taskType].find((text) => text && text !== task.name);
-}
-
 function BackgroundTasks({ tasks, stopping, onStop }: { tasks: AcpAsyncTask[]; stopping: string[]; onStop: (taskId: string) => void }) {
     if (tasks.length === 0) return null;
     return (
@@ -1046,13 +852,6 @@ function BackgroundTasks({ tasks, stopping, onStop }: { tasks: AcpAsyncTask[]; s
             ))}
         </>
     );
-}
-
-function runningSubagents(messages: ChatMessage[]): AcpSubagent[] {
-    const running: AcpSubagent[] = [];
-    for (const message of messages)
-        for (const part of message.parts) if (part.kind === "subagent" && part.subagent.state === "running") running.push(part.subagent);
-    return running;
 }
 
 /* A subagent at work belongs where the reader already watches for live things
@@ -1105,44 +904,6 @@ function Group({
     );
 }
 
-/* An agent names its own task types — "shell", "monitor" — and they are the
-   only thing that separates one background task from another, so they are what
-   the groups are cut on. */
-function groupTasks(tasks: AcpAsyncTask[]): [string, AcpAsyncTask[]][] {
-    const groups = new Map<string, AcpAsyncTask[]>();
-    for (const task of tasks) {
-        const kind = task.taskType || "task";
-        const existing = groups.get(kind);
-        if (existing) existing.push(task);
-        else groups.set(kind, [task]);
-    }
-    return [...groups];
-}
-
-type QueuedMessage = { id: string; text: string; paths: string[] };
-
-const queuedLabel = (message: QueuedMessage): string => message.text || message.paths.map(basename).join(", ");
-
-const isCommand = (message: QueuedMessage) => message.text.startsWith("/");
-
-/* A slash command only works as the whole prompt, so it goes out on its own. */
-function nextBatch(queued: QueuedMessage[]): QueuedMessage[] {
-    if (queued.length === 0 || isCommand(queued[0])) return queued.slice(0, 1);
-    const command = queued.findIndex(isCommand);
-    return command === -1 ? queued : queued.slice(0, command);
-}
-
-function combineQueued(messages: QueuedMessage[]): QueuedMessage {
-    return {
-        id: messages[0].id,
-        text: messages
-            .map((message) => message.text)
-            .filter(Boolean)
-            .join("\n\n"),
-        paths: [...new Set(messages.flatMap((message) => message.paths))],
-    };
-}
-
 function QueuedMessages({
     messages,
     steerable,
@@ -1191,17 +952,6 @@ function QueuedMessages({
             })}
         </Group>
     );
-}
-
-function connectingLabel(connection: ChatState["connection"]): string | null {
-    if (connection === "installing") return "Installing structured-session adapter…";
-    if (connection === "starting") return "Starting agent adapter…";
-    if (connection === "connecting" || connection === "initializing") return "Connecting to agent session…";
-    return null;
-}
-
-function elapsedLabel(seconds: number): string {
-    return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
 }
 
 /* Keeps its own clock so a ticking second redraws this row alone, not the
@@ -1727,7 +1477,7 @@ export function AgentChatPane({
     const [changingPermissions, setChangingPermissions] = useState(false);
     const [appliedPermissionMode, setAppliedPermissionMode] = useState<string | null>(null);
     const environmentKeys = JSON.stringify(profile?.environmentKeys ?? []);
-    const permissionMode = agent.permissionMode ?? (agent.skipPermissions ? "bypass" : "workspace-write");
+    const permissionMode = permissionModeOf(agent);
 
     /* A restored transcript opens on estimated row heights, and every row that
        measures taller or shorter than the estimate moves the bottom. Anchoring
@@ -1775,17 +1525,10 @@ export function AgentChatPane({
 
     useEffect(() => {
         if (!active) return;
-        const backendState =
-            state.connection === "error" || state.connection === "stopped"
-                ? "stopped"
-                : state.permissions.length > 0
-                  ? "blocked"
-                  : state.running
-                    ? "working"
-                    : state.connection === "ready"
-                      ? "idle"
-                      : "unknown";
-        cmd.noteAcpAgentState(agent.id, backendState);
+        cmd.noteAcpAgentState(
+            agent.id,
+            backendState({ connection: state.connection, awaitingPermission: state.permissions.length > 0, running: state.running }),
+        );
     }, [active, agent.id, state.connection, state.running, state.permissions.length]);
 
     /* A turn ends long before the work it started does. Shells, monitors and
@@ -1900,7 +1643,7 @@ export function AgentChatPane({
                 await acpApi.subscribe(handleEvent, controller.signal);
                 if (!mounted) return;
                 const current = agentRef.current;
-                const initialMode = current.permissionMode ?? (current.skipPermissions ? "bypass" : "workspace-write");
+                const initialMode = permissionModeOf(current);
                 const response = await acpApi.start({
                     agentId: current.id,
                     provider: current.type,
@@ -1969,8 +1712,7 @@ export function AgentChatPane({
             })
             .catch((error: unknown) => {
                 if (sessionIdRef.current !== sessionId) return;
-                const currentMode = agentRef.current.permissionMode ?? (agentRef.current.skipPermissions ? "bypass" : "workspace-write");
-                if (currentMode === permissionMode)
+                if (permissionModeOf(agentRef.current) === permissionMode)
                     cmd.setAgentPermissionMode(agent.id, appliedPermissionMode as NonNullable<Agent["permissionMode"]>);
                 setComposerError(error instanceof Error ? error.message : String(error));
             })
@@ -2144,10 +1886,7 @@ export function AgentChatPane({
             const options = sessionConfigs({ configOptions: response.configOptions });
             const model = options.find((option) => option.id === "model")?.currentValue ?? agent.model;
             const effort = effortConfig(options, agent.type)?.currentValue ?? agent.effort;
-            const knownEffort = ["off", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"].includes(effort ?? "")
-                ? (effort as Agent["effort"])
-                : undefined;
-            cmd.setAgentModelPreferences(agent.id, model, knownEffort);
+            cmd.setAgentModelPreferences(agent.id, model, knownEffort(effort));
         } catch (error) {
             if (sessionIdRef.current === sessionId) setComposerError(error instanceof Error ? error.message : String(error));
         } finally {
@@ -2155,28 +1894,11 @@ export function AgentChatPane({
             setChangingConfig(false);
         }
     };
-    const activeTool = useMemo(() => {
-        const parts = displayState.messages.at(-1)?.parts ?? [];
-        for (let index = parts.length - 1; index >= 0; index -= 1) {
-            const part = parts[index];
-            if (part.kind !== "tool") continue;
-            return toolRunning(part.tool) ? activityLabel(part.tool) : null;
-        }
-        return null;
-    }, [displayState.messages]);
+    const activeTool = useMemo(() => activeToolLabel(displayState.messages), [displayState.messages]);
     const subagents = useMemo(() => runningSubagents(displayState.messages), [displayState.messages]);
     const plan = useMemo(() => (displayState.plan === null ? null : formatDetail(displayState.plan)), [displayState.plan]);
     const connecting = connectingLabel(displayState.connection);
-    /* A permission card already says what the turn is waiting on, so a spinner
-       beside it would only compete with it. */
-    const activity =
-        displayState.permissions.length > 0
-            ? null
-            : displayState.running
-              ? (activeTool ?? "Thinking…")
-              : displayState.messages.length > 0
-                ? connecting
-                : null;
+    const activity = activityText(displayState, activeTool);
     const disconnected = displayState.connection === "error" || displayState.connection === "stopped";
     const reconnecting = disconnected && reconnectAttempt < RECONNECT_DELAYS.length;
     const welcoming = displayState.messages.length === 0 && displayState.connection === "ready";
@@ -2188,20 +1910,7 @@ export function AgentChatPane({
             cwd,
         });
     const chatAgent = useMemo(() => ({ id: agent.id, type: agent.type }), [agent.id, agent.type]);
-    const composerPlaceholder =
-        state.connection === "ready"
-            ? state.running
-                ? "Send to queue behind the running turn"
-                : "Ask about this project, or type / for commands"
-            : reconnecting
-              ? "Reconnecting — this message sends as soon as the session is back"
-              : disconnected
-                ? "Reconnect to continue this conversation"
-                : state.connection === "installing"
-                  ? "Installing structured-session adapter…"
-                  : state.connection === "starting"
-                    ? "Starting agent adapter…"
-                    : "Connecting to agent session…";
+    const composerPlaceholder = placeholderFor(state, { reconnecting, disconnected });
 
     return (
         <PathRootsProvider cwd={cwd} home={home} agentId={chatAgent.id}>
