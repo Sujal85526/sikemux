@@ -44,7 +44,7 @@ import { refreshBlame } from "./gitBlame";
 import type { CliPendingEditorOpen, DeskReveal } from "../state/types";
 import { IconClose, IconEditor, IconEye, IconFile } from "../components/Icons";
 import { FileIcon } from "../components/FileIcon";
-import { TabBar } from "../components/TabBar";
+import { TabBar } from "../workspace/TabBar";
 import { EditorFindBar } from "./EditorFindBar";
 import { EditorInsights } from "./EditorInsights";
 import { ShaderField } from "../components/ShaderField";

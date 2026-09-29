@@ -11,8 +11,8 @@ import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { DEFAULT_GLOBAL_SEARCH_VIEW } from "../state/types";
 import { notify, errMessage } from "../state/toast";
-import { FileIcon } from "./FileIcon";
-import { IconSearch } from "./Icons";
+import { FileIcon } from "../components/FileIcon";
+import { IconSearch } from "../components/Icons";
 import { basename, dirname, isPathWithin, joinPath, normalizePath } from "../lib/paths";
 import { PRIMARY_SHORTCUT, SHIFT_SHORTCUT } from "../lib/platform";
 

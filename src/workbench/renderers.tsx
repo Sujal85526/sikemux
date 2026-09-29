@@ -5,7 +5,7 @@ import { pluginSurface } from "../plugins/registry";
 import * as cmd from "../state/commands";
 import { TerminalPane } from "../terminal/TerminalPane";
 import { AgentPane } from "../agents/AgentPane";
-import { DeskHost } from "../components/Desk";
+import { DeskHost } from "../workspace/Desk";
 
 export interface WorkbenchItemRendererProps {
     pane: PaneNode;
@@ -20,7 +20,7 @@ export interface WorkbenchItemRendererProps {
 const EditorPane = lazy(() => import("../editor/EditorPane").then((module) => ({ default: module.EditorPane })));
 const GitPane = lazy(() => import("../git/GitPane").then((module) => ({ default: module.GitPane })));
 const DiffPane = lazy(() => import("../git/DiffPane").then((module) => ({ default: module.DiffPane })));
-const SearchPane = lazy(() => import("../components/SearchPane").then((module) => ({ default: module.SearchPane })));
+const SearchPane = lazy(() => import("../workspace/SearchPane").then((module) => ({ default: module.SearchPane })));
 
 const paneCwd = (pane: PaneNode, session: Session) => pane.cwd || session.cwd;
 const terminalContext = (session: Session, win: WindowT, pane: PaneNode): PtyContext => ({

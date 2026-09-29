@@ -8,7 +8,7 @@ import { navigateTabs } from "../lib/tabNavigation";
 import { Dropdown } from "./Dropdown";
 import { DialogHost } from "./DialogHost";
 import { confirmDialog, resetDialogsForTests } from "../state/dialog";
-import { TabBar } from "./TabBar";
+import { TabBar } from "../workspace/TabBar";
 
 afterEach(() => {
     resetDialogsForTests();

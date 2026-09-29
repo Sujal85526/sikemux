@@ -9,7 +9,7 @@ import { gitOverviewR } from "../state/resources.defs";
 import { useInstalledPlugins } from "../plugins/installed";
 import { useStore } from "../state/store";
 import { IconBattery, IconFocus, IconGit, IconMic, IconZoom } from "./Icons";
-import { WorkspaceTabs } from "./Workspace";
+import { WorkspaceTabs } from "../workspace/Workspace";
 import { useVoice } from "../voice/dictation";
 import { PRIMARY_SHORTCUT } from "../lib/platform";
 import { Tooltip } from "./Tooltip";

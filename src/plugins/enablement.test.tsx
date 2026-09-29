@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import "./builtin";
 import { SideRail } from "../rail/SideRail";
 import { TopBar } from "../components/TopBar";
-import { Workspace } from "../components/Workspace";
+import { Workspace } from "../workspace/Workspace";
 import { keybindingActions, normaliseKeybindingOverrides } from "../keybindings";
 import * as cmd from "../state/commands";
 import { applyHydrate } from "../state/persist";

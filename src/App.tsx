@@ -17,7 +17,7 @@ import { FilePalette } from "./components/FilePalette";
 import { NewTabPalette } from "./components/NewTabPalette";
 import { SeshPicker } from "./components/SeshPicker";
 import { SessionSwitcher } from "./components/SessionSwitcher";
-import { Workspace } from "./components/Workspace";
+import { Workspace } from "./workspace/Workspace";
 import { Toaster } from "./components/Toaster";
 import { CommandPalette } from "./components/CommandPalette";
 import { DialogHost } from "./components/DialogHost";
