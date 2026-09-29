@@ -200,6 +200,8 @@ pub fn run() {
                 use tauri::Manager;
                 if let Some(window) = _app.get_window("main") {
                     if let Ok(handle) = window.ns_window() {
+                        // SAFETY: `ns_window()` is the main window's live NSWindow, and
+                        // Tauri runs setup on the main thread.
                         unsafe {
                             transparency::apply(handle, 0);
                         }

@@ -63,6 +63,8 @@ const MAX_COMMAND_OUTPUT_BYTES: usize = 32 * 1024 * 1024;
 
 fn kill_and_reap_process(child: &mut std::process::Child) {
     #[cfg(unix)]
+    // SAFETY: kill only takes integers and touches no memory. A spawned child's id is
+    // never zero, so this never becomes kill(0), which would signal our own process group.
     unsafe {
         libc::kill(-(child.id() as i32), libc::SIGKILL);
     }

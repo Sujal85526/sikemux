@@ -20,6 +20,10 @@ string_slice = "deny"
 todo = "deny"
 unimplemented = "deny"
 unreachable = "deny"
+undocumented_unsafe_blocks = "deny"
+
+[lints.clippy]
+undocumented_unsafe_blocks = "deny"
 
 [lib]
 name = "sikemux_lib"
