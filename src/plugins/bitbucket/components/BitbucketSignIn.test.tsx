@@ -39,7 +39,7 @@ describe("SignInForm", () => {
         });
         const onSignedIn = vi.fn();
         render(<SignInForm status={status} onSignedIn={onSignedIn} />);
-        fireEvent.click(screen.getByRole("button", { name: "Sign in with Bitbucket" }));
+        fireEvent.click(screen.getByRole("button", { name: "Continue with Bitbucket" }));
         expect(fake.openUrl).toHaveBeenCalledWith("https://bitbucket.org/site/oauth2/authorize?client_id=x");
         expect(screen.getByText(/Finish signing in in your browser/)).toBeTruthy();
         await act(async () => finish(signedIn));
@@ -50,7 +50,7 @@ describe("SignInForm", () => {
         const cancel = vi.fn();
         fake.signInWithBrowser.mockReset().mockReturnValue({ done: new Promise(() => {}), cancel });
         render(<SignInForm status={status} onSignedIn={() => {}} />);
-        fireEvent.click(screen.getByRole("button", { name: "Sign in with Bitbucket" }));
+        fireEvent.click(screen.getByRole("button", { name: "Continue with Bitbucket" }));
         fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
         expect(cancel).toHaveBeenCalled();
     });

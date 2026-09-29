@@ -74,31 +74,15 @@ export function SignInForm({ status, onSignedIn }: Props) {
 
     return (
         <div className="gha-signin">
-            <div className="gha-card">
-                <h2 className="gha-title">
-                    <BitbucketMark size={18} className="icon-bitbucket" />
-                    Connect to Bitbucket
-                </h2>
+            <div className="signin">
+                <span className="signin-mark">
+                    <BitbucketMark size={26} className="icon-bitbucket" />
+                </span>
+                <h2 className="signin-title">Connect Bitbucket</h2>
+                <p className="signin-lede">Pull requests, pipelines and reviews for this repository, right beside your changes.</p>
 
-                {status.browserSignIn && !withToken && (
-                    <div className="gha-callout">
-                        {waiting
-                            ? "Finish signing in in your browser, then come back here."
-                            : "Sign in on bitbucket.org and Sikemux keeps you signed in."}
-                        {waiting ? (
-                            <button type="button" className="gha-btn" onClick={() => waiting.cancel()}>
-                                Cancel
-                            </button>
-                        ) : (
-                            <button type="button" className="gha-btn primary" onClick={signInWithBrowser}>
-                                Sign in with Bitbucket
-                            </button>
-                        )}
-                    </div>
-                )}
-
-                {withToken && (
-                    <>
+                {withToken ? (
+                    <div className="signin-form">
                         <label className="gha-field">
                             <span>Token</span>
                             <input
@@ -130,44 +114,52 @@ export function SignInForm({ status, onSignedIn }: Props) {
                                 autoCorrect="off"
                             />
                             <small className="gha-hint">
-                                An API token needs the email it belongs to. Leave it empty for a repository or workspace access token. Sikemux keeps
-                                the token in your Keychain.
+                                An API token needs the email it belongs to. Leave it empty for a repository or workspace access token.
                             </small>
                         </label>
-                    </>
+                        <button type="button" className="gha-btn primary signin-go" disabled={!canSubmit} onClick={() => void submit()}>
+                            {busy ? "Checking…" : "Sign in"}
+                        </button>
+                    </div>
+                ) : waiting ? (
+                    <div className="signin-waiting" role="status">
+                        <span className="signin-spinner" aria-hidden="true" />
+                        Finish signing in in your browser
+                        <button type="button" className="gha-link" onClick={() => waiting.cancel()}>
+                            Cancel
+                        </button>
+                    </div>
+                ) : (
+                    <button type="button" className="gha-btn primary signin-go" onClick={signInWithBrowser}>
+                        <BitbucketMark size={14} />
+                        Continue with Bitbucket
+                    </button>
                 )}
 
                 {error && (
-                    <div className="gha-callout" data-tone="danger">
+                    <div className="gha-callout signin-error" data-tone="danger">
                         {error}
                     </div>
                 )}
 
-                <div className="gha-card-actions">
+                <div className="signin-alt">
                     {withToken ? (
-                        <>
-                            {status.browserSignIn ? (
-                                <button type="button" className="gha-link" onClick={() => setWithToken(false)}>
-                                    Sign in with the browser instead
-                                </button>
-                            ) : (
-                                <button
-                                    type="button"
-                                    className="gha-link"
-                                    onClick={() => void openUrl(API_TOKENS_PAGE).catch(swallow("open Atlassian"))}>
-                                    Create an API token
-                                </button>
-                            )}
-                            <button type="button" className="gha-btn primary" disabled={!canSubmit} onClick={() => void submit()}>
-                                {busy ? "Checking…" : "Sign in"}
+                        status.browserSignIn ? (
+                            <button type="button" className="gha-link" onClick={() => setWithToken(false)}>
+                                Sign in with the browser instead
                             </button>
-                        </>
+                        ) : (
+                            <button type="button" className="gha-link" onClick={() => void openUrl(API_TOKENS_PAGE).catch(swallow("open Atlassian"))}>
+                                Create an API token
+                            </button>
+                        )
                     ) : (
                         <button type="button" className="gha-link" disabled={!!waiting} onClick={() => setWithToken(true)}>
                             Use a token instead
                         </button>
                     )}
                 </div>
+                <p className="signin-foot">Sikemux keeps your sign-in in the macOS Keychain.</p>
             </div>
         </div>
     );
