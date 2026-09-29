@@ -11,7 +11,7 @@ import * as commands from "../state/commands";
 import { appTaskRuntime } from "../tasks/application";
 import { NativeTaskExecutionBackend, WorkbenchTaskTerminalSurface, taskPtyBindings } from "../tasks/nativeRuntime";
 import { HarnessEvents } from "./events";
-import { HarnessTasks, type HarnessLaunch, type HarnessLaunchRequest, type HarnessPrepared, type HarnessRun } from "./tasks";
+import { HarnessTasks, type HarnessHistory, type HarnessLaunch, type HarnessLaunchRequest, type HarnessPrepared, type HarnessRun } from "./tasks";
 
 export interface HarnessRequest {
     id: string;
@@ -54,7 +54,16 @@ export const harnessTasks = new HarnessTasks(
             : preserveFocus(() => commands.openTaskTerminal(request)),
     ),
     harnessEvents,
+    sessionHistory(),
 );
+
+function sessionHistory(): HarnessHistory | undefined {
+    try {
+        return window.sessionStorage;
+    } catch {
+        return undefined;
+    }
+}
 
 function text(params: Record<string, unknown>, key: string, required = true): string | undefined {
     const value = params[key];
@@ -107,8 +116,14 @@ function executionFor(project: string, params: Record<string, unknown>): string 
     if (executionId) return executionId;
     if (!taskId) throw new Error("executionId or taskId is required");
     const latest = harnessTasks.latest(project, taskId);
-    if (!latest) throw new Error(`Task ${taskId} has not been started from this app session; start it with task_start`);
-    return latest.executionId;
+    if (latest) return latest.executionId;
+    if (harnessTasks.startedBeforeReload(project, taskId))
+        throw new Error(
+            `Task ${taskId} was started before the Sikemux window reloaded; a reload stops every task and forgets its runs. Start it again with task_start.`,
+        );
+    throw new Error(
+        `Task ${taskId} has not been started since Sikemux opened; call workspace_inspect to see the runs it knows about, or start it with task_start`,
+    );
 }
 
 async function configuredTask(project: string, taskId: string) {
@@ -224,8 +239,10 @@ function launchCommand(request: HarnessRequest, launch: HarnessLaunchRequest, ke
 
 function earlierCommand(project: string, taskId: string): HarnessLaunchRequest {
     const launch = harnessTasks.launchRequest(project, taskId);
-    if (!launch) throw new Error(`Task ${taskId} has not been started from this app session; start it again with command`);
-    return launch;
+    if (launch) return launch;
+    if (harnessTasks.startedBeforeReload(project, taskId))
+        throw new Error(`Task ${taskId} was started before the Sikemux window reloaded, which forgot its command; start it again with command`);
+    throw new Error(`Task ${taskId} has not been started since Sikemux opened; start it with command`);
 }
 
 function launchTask(request: HarnessRequest, key: string): HarnessLaunch | Promise<HarnessLaunch> {

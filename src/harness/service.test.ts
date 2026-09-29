@@ -238,7 +238,7 @@ describe("harness command service", () => {
         );
         await expect(handleHarnessRequest(request("task.read", { taskId: "test", executionId: "new" }))).rejects.toThrow("not both");
         await expect(handleHarnessRequest(request("task.read", {}))).rejects.toThrow("executionId or taskId");
-        await expect(handleHarnessRequest(request("task.read", { taskId: "other" }))).rejects.toThrow("has not been started");
+        await expect(handleHarnessRequest(request("task.read", { taskId: "other" }))).rejects.toThrow("workspace_inspect");
         const stop = vi.spyOn(harnessTasks, "stop").mockResolvedValue(runs[1]);
         await handleHarnessRequest(request("task.stop", { taskId: "test" }));
         expect(stop).toHaveBeenCalledWith("/one", "new");

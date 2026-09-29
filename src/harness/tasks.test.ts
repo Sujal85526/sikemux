@@ -145,4 +145,18 @@ describe("managed harness tasks", () => {
         expect(backend.start).toHaveBeenCalledTimes(2);
         expect(tasks.latest("/one", "dev")).toMatchObject({ executionId: second.executionId, label: "Dev", command: "echo test" });
     });
+    it("knows which tasks were started before the window reloaded", async () => {
+        const stored = new Map<string, string>();
+        const history = { getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => void stored.set(key, value) };
+        const backend = { start: vi.fn(() => ({ ptyId: 1, completion: new Promise<TaskProcessExit>(() => {}) })), stop: vi.fn(async () => {}) };
+        const before = new HarnessTasks(backend, { open: async () => {} }, new HarnessEvents(), history);
+        await start(before, request, "key");
+        expect(before.startedBeforeReload("/one", "dev")).toBe(false);
+        const after = new HarnessTasks(backend, { open: async () => {} }, new HarnessEvents(), history);
+        expect(after.startedBeforeReload("/one", "dev")).toBe(true);
+        expect(after.startedBeforeReload("/one", "other")).toBe(false);
+        expect(after.startedBeforeReload("/two", "dev")).toBe(false);
+        await start(after, request, "key");
+        expect(after.startedBeforeReload("/one", "dev")).toBe(false);
+    });
 });

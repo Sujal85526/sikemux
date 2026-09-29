@@ -40,16 +40,39 @@ interface Entry {
 }
 
 const ACTIVE: HarnessRun["status"][] = ["awaiting-trust", "starting", "running", "stopping"];
+const HISTORY_KEY = "sikemux.harness.started";
+
+export type HarnessHistory = Pick<Storage, "getItem" | "setItem">;
+
+function readHistory(history: HarnessHistory | undefined): string[] {
+    try {
+        const stored: unknown = JSON.parse(history?.getItem(HISTORY_KEY) ?? "[]");
+        return Array.isArray(stored) ? stored.filter((entry): entry is string => typeof entry === "string") : [];
+    } catch {
+        return [];
+    }
+}
 
 export class HarnessTasks {
     private readonly entries = new Map<string, Entry>();
     private readonly keys = new Map<string, { taskId: string; executionId: string }>();
+    private readonly earlier: ReadonlySet<string>;
+    private readonly started: Set<string>;
 
+    /** `history` outlives a reload of the window, which stops every task and forgets its runs. */
     constructor(
         private readonly backend: TaskExecutionBackend,
         private readonly surface: TaskTerminalSurface,
         private readonly events: HarnessEvents,
-    ) {}
+        private readonly history?: HarnessHistory,
+    ) {
+        this.earlier = new Set(readHistory(history));
+        this.started = new Set(this.earlier);
+    }
+
+    startedBeforeReload(project: string, taskId: string): boolean {
+        return this.earlier.has(JSON.stringify([project, taskId])) && !this.latest(project, taskId);
+    }
 
     list(project: string): HarnessRun[] {
         return [...this.entries.values()].filter((entry) => entry.run.project === project).map((entry) => ({ ...entry.run }));
@@ -99,6 +122,7 @@ export class HarnessTasks {
         const entry: Entry = { run, agentId: options.agentId, abort: new AbortController(), started: Promise.resolve(run) };
         this.entries.set(executionId, entry);
         this.keys.set(JSON.stringify([project, key]), { taskId, executionId });
+        this.remember(project, taskId);
         this.publish(run);
         entry.started = this.launch(entry, prepare);
         void entry.started.catch(() => {});
@@ -231,6 +255,17 @@ export class HarnessTasks {
         const entry = this.entries.get(executionId);
         if (!entry || entry.run.project !== project) throw new Error("Task execution does not belong to this project");
         return entry;
+    }
+
+    private remember(project: string, taskId: string): void {
+        const key = JSON.stringify([project, taskId]);
+        if (this.started.has(key) || this.started.size >= 256) return;
+        this.started.add(key);
+        try {
+            this.history?.setItem(HISTORY_KEY, JSON.stringify([...this.started]));
+        } catch {
+            this.started.delete(key);
+        }
     }
 
     private publish(run: HarnessRun): void {
