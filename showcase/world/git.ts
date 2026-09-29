@@ -25,11 +25,11 @@ export const GIT_STATUS: Record<string, GitStatus> = {
     behind: 0,
     files: [
       staged("src/styles/modern-shell.css"),
-      staged("src/components/AgentRailDensity.test.tsx", "A"),
-      modified("src/components/AgentRail.tsx"),
+      staged("src/rail/AgentRailDensity.test.tsx", "A"),
+      modified("src/rail/AgentRail.tsx"),
       modified("src/styles/tokens.css"),
       modified("DESIGN.md"),
-      untracked("src/components/AgentRailDensity.tsx"),
+      untracked("src/rail/AgentRailDensity.tsx"),
     ],
   },
   [FRONT]: {

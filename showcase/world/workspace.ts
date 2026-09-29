@@ -81,7 +81,7 @@ const agents: PersistedAgent[] = Object.values(AGENTS).map((agent) => ({
   keepAlive: true,
 }));
 
-export const EDITOR_TABS = [`${SIKEMUX}/src/components/AgentRail.tsx`];
+export const EDITOR_TABS = [`${SIKEMUX}/src/rail/AgentRail.tsx`];
 
 export function demoSnapshot(): PersistedSnapshot {
   return {

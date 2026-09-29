@@ -55,7 +55,7 @@ function edit(
   );
 }
 
-const RAIL = `${SIKEMUX}/src/components/AgentRail.tsx`;
+const RAIL = `${SIKEMUX}/src/rail/AgentRail.tsx`;
 const SHELL_CSS = `${SIKEMUX}/src/styles/modern-shell.css`;
 
 export interface AgentScript {
@@ -76,12 +76,12 @@ export const AGENT_SCRIPTS: Record<string, AgentScript> = {
       ),
       tool("search", 'rg "rail-density" src', {
         rawOutput:
-          "src/styles/modern-shell.css:1184\nsrc/components/AgentRail.tsx:212",
+          "src/styles/modern-shell.css:1184\nsrc/rail/AgentRail.tsx:212",
       }),
       tool("read", "src/styles/modern-shell.css", {
         locations: [{ path: SHELL_CSS, line: 1170 }],
       }),
-      tool("read", "src/components/AgentRail.tsx", {
+      tool("read", "src/rail/AgentRail.tsx", {
         locations: [{ path: RAIL, line: 205 }],
       }),
       say(
@@ -97,9 +97,9 @@ export const AGENT_SCRIPTS: Record<string, AgentScript> = {
         `<div className="agent-row" data-state={state}>`,
         `<div className="agent-row" data-state={state} data-density={density}>`,
       ),
-      tool("execute", "pnpm test src/components/AgentRail", {
+      tool("execute", "pnpm test src/rail/AgentRail", {
         rawOutput:
-          " ✓ src/components/AgentRail.test.tsx (24 tests) 311ms\n Test Files  1 passed (1)\n      Tests  24 passed (24)",
+          " ✓ src/rail/AgentRail.test.tsx (24 tests) 311ms\n Test Files  1 passed (1)\n      Tests  24 passed (24)",
       }),
       say(
         "Labels now line up with the project rows at both densities. `AgentRail.test.tsx` passes, and I added a case that measures the label's left edge against a project row.",
@@ -112,12 +112,12 @@ export const AGENT_SCRIPTS: Record<string, AgentScript> = {
       think("Running the rail tests first, then the density snapshot at 2x."),
       tool(
         "execute",
-        "pnpm test src/components/AgentRail src/components/SideRail",
-        { rawOutput: " ✓ src/components/AgentRail.test.tsx (25 tests) 318ms" },
+        "pnpm test src/rail/AgentRail src/rail/SideRail",
+        { rawOutput: " ✓ src/rail/AgentRail.test.tsx (25 tests) 318ms" },
       ),
       tool(
         "execute",
-        "pnpm vitest run src/components/AgentRailDensity.test.tsx",
+        "pnpm vitest run src/rail/AgentRailDensity.test.tsx",
         {},
         "in_progress",
       ),
