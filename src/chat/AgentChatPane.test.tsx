@@ -752,6 +752,35 @@ describe("AgentChatPane", () => {
         expect(mocks.openUrlOnDesk).toHaveBeenCalledWith(agent.id, "https://docs.livekit.io/home/self-hosting/deployment/");
     });
 
+    it("finds text across the conversation with the find shortcut", async () => {
+        await openTranscript("Look at the styles");
+        emit("session_update", {
+            sessionId: "session-1",
+            update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "The styles are in chat.css" } },
+        });
+        await screen.findByText("The styles are in chat.css");
+
+        fireEvent.keyDown(window, { key: "f", code: "KeyF", metaKey: IS_MACOS, ctrlKey: !IS_MACOS });
+        const input = await screen.findByRole("textbox", { name: "Find in chat" });
+        expect(input).toHaveFocus();
+
+        fireEvent.change(input, { target: { value: "styles" } });
+        expect(screen.getByText("1/2")).toBeInTheDocument();
+        fireEvent.keyDown(input, { key: "Enter" });
+        expect(screen.getByText("2/2")).toBeInTheDocument();
+        fireEvent.keyDown(input, { key: "Enter" });
+        expect(screen.getByText("1/2")).toBeInTheDocument();
+        fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+        expect(screen.getByText("2/2")).toBeInTheDocument();
+
+        fireEvent.change(input, { target: { value: "nowhere" } });
+        expect(screen.getByText("No results")).toBeInTheDocument();
+
+        fireEvent.keyDown(input, { key: "Escape" });
+        expect(screen.queryByRole("textbox", { name: "Find in chat" })).toBeNull();
+        expect(screen.getByRole("textbox", { name: "Message agent" })).toHaveFocus();
+    });
+
     it("builds a subagent's transcript only once it is opened", async () => {
         await openTranscript();
         emit("session_update", {

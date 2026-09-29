@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { acpApi } from "../api/acp";
 import { effortConfig, sessionConfigs, type SessionConfig } from "./ComposerPickers";
@@ -6,6 +6,7 @@ import { rowMeta } from "./messageMeta";
 import type { Agent, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
+import { hasPrimaryModifier } from "../lib/platform";
 import { IconArrowDown, IconFile, IconPlug, IconWarning } from "../ui/Icons";
 import { chatReducer, initialChatState } from "./reducer";
 import { PathRootsProvider } from "./FileRef";
@@ -26,6 +27,8 @@ import { useAcpSession } from "./useAcpSession";
 import { useSavedUsage } from "./useSavedUsage";
 import { usePromptQueue } from "./usePromptQueue";
 import { BOTTOM_SLACK, useStickToBottom } from "./useStickToBottom";
+
+const ChatFind = lazy(() => import("./ChatFind"));
 
 export function AgentChatPane({
     agent,
@@ -146,13 +149,26 @@ export function AgentChatPane({
         [state.messages, queued],
     );
 
-    const { atBottom, noteGesture, onScroll, jumpToBottom } = useStickToBottom({
+    const { atBottom, noteGesture, onScroll, jumpToBottom, leaveBottom } = useStickToBottom({
         scrollRef,
         contentRef: scrollContentRef,
         visible,
         messageCount: displayState.messages.length,
         revision: displayState.revision,
     });
+
+    // Find opens on its shortcut while this chat is the pane in use; it counts up so asking again refocuses it.
+    const [findRequest, setFindRequest] = useState(0);
+    useEffect(() => {
+        if (!active) return;
+        const onKey = (event: KeyboardEvent) => {
+            if (event.defaultPrevented || event.shiftKey || event.altKey || event.code !== "KeyF" || !hasPrimaryModifier(event)) return;
+            event.preventDefault();
+            setFindRequest((count) => count + 1);
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [active]);
 
     const stop = () => {
         void acpApi.cancel(agent.id).catch((failure: unknown) => setComposerError(failure instanceof Error ? failure.message : String(failure)));
@@ -224,6 +240,22 @@ export function AgentChatPane({
         <PathRootsProvider cwd={cwd} home={home} agentId={chatAgent.id}>
             <ChatAgentContext.Provider value={chatAgent}>
                 <div className="agent-chat-pane" ref={paneRef}>
+                    {findRequest > 0 && (
+                        <Suspense fallback={null}>
+                            <ChatFind
+                                request={findRequest}
+                                visible={visible}
+                                messages={displayState.messages}
+                                scrollRef={scrollRef}
+                                virtualizer={virtualizer}
+                                onLeaveBottom={leaveBottom}
+                                onClose={() => {
+                                    setFindRequest(0);
+                                    paneRef.current?.querySelector<HTMLTextAreaElement>(".chat-composer textarea")?.focus();
+                                }}
+                            />
+                        </Suspense>
+                    )}
                     <div
                         className="chat-scroll"
                         ref={scrollRef}

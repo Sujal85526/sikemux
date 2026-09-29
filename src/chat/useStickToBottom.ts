@@ -83,5 +83,11 @@ export function useStickToBottom({
         pinToBottom();
     };
 
-    return { atBottom, noteGesture, onScroll, jumpToBottom };
+    /** Stops holding the bottom, for a scroll this pane makes itself up into the transcript. */
+    const leaveBottom = () => {
+        stickToBottomRef.current = false;
+        setAtBottom(false);
+    };
+
+    return { atBottom, noteGesture, onScroll, jumpToBottom, leaveBottom };
 }
