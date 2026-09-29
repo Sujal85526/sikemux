@@ -111,7 +111,9 @@ function PullRow({ pull, now, onOpen }: { pull: Pull; now: number; onOpen: () =>
                     <Face key={login} login={login} url={pull.avatars[login] ?? null} />
                 ))}
             </span>
-            <span className="pr-row-comments">{pull.comments ? pull.comments.toLocaleString() : ""}</span>
+            <span className="pr-row-comments">
+                <Comments count={pull.comments ?? 0} />
+            </span>
             <span className="pr-row-updated">{formatAgo(pull.updatedAt, now)}</span>
         </button>
     );

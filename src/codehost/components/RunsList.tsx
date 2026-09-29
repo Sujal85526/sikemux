@@ -41,15 +41,15 @@ const RunRow = memo(function RunRow({ paneId, run, workflow, now }: { paneId: st
             </span>
             <span className="gha-run-name">{run.title || run.name || `Run #${run.runNumber}`}</span>
             <span className="gha-run-status">
-                <OutcomeIcon outcome={outcome} size={12} />
-                {OUTCOME_LABEL[outcome]}
+                <OutcomeIcon outcome={outcome} size={14} />
+                <span className="gha-run-status-word">{OUTCOME_LABEL[outcome]}</span>
             </span>
             <span className="gha-run-sub">
                 <span className="gha-run-who">
                     #{run.runNumber} - {run.actor ?? "someone"}
                 </span>
                 {run.shortSha && (
-                    <span className="gha-run-ref gha-run-sha">
+                    <span className="gha-run-ref">
                         <IconCommit size={11} />
                         {run.shortSha}
                     </span>

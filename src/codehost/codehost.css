@@ -489,6 +489,8 @@
     background: color-mix(in oklab, currentColor 12%, transparent);
 }
 .gha-run-name {
+    grid-column: 2;
+    grid-row: 1;
     min-width: 0;
     font-weight: var(--weight-medium);
     color: var(--text-primary);
@@ -501,14 +503,16 @@
     display: flex;
 }
 .gha-run-face > .gha-avatar {
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
     font-size: var(--text-xs);
 }
 .gha-run-status {
     display: inline-flex;
     align-items: center;
     gap: var(--space-1h);
+    grid-column: 3;
+    grid-row: 1 / span 2;
     justify-self: end;
     color: var(--text-tertiary);
     font-size: var(--text-xs);
@@ -523,6 +527,11 @@
 }
 .gha-run-row:is([data-outcome="running"], [data-outcome="blocked"]) .gha-run-status {
     color: var(--warn);
+}
+/* A narrow list shows only how a run went, as an icon; the words and times come back as columns when there is room. */
+.gha-run-status-word,
+.gha-run-when {
+    display: none;
 }
 .gha-run-when {
     justify-self: end;
@@ -573,6 +582,9 @@
     .gha-run-when {
         display: contents;
     }
+    .gha-run-status-word {
+        display: inline;
+    }
     .gha-run-started,
     .gha-run-took {
         grid-row: 1 / span 2;
@@ -590,6 +602,8 @@
     }
 }
 .gha-run-sub {
+    grid-column: 2;
+    grid-row: 2;
     display: flex;
     align-items: center;
     gap: var(--space-2);
@@ -631,12 +645,6 @@
 }
 .gha-run-rows {
     container-type: inline-size;
-}
-/* A narrow list keeps the branch over the commit. */
-@container (max-width: 520px) {
-    .gha-run-sha {
-        display: none;
-    }
 }
 .gha-item-sub > .gha-who {
     flex-shrink: 1;
