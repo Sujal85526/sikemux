@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
 import type { Job, Step } from "./api";
-import { elapsedMs, failedStep, formatAgo, formatDuration, checksSummary, isUnfinished, jobsSummary, outcomeOf, watchIsNewer } from "./runStatus";
+import {
+    elapsedMs,
+    eventLabel,
+    failedStep,
+    formatAgo,
+    formatDuration,
+    checksSummary,
+    isUnfinished,
+    jobsSummary,
+    outcomeOf,
+    statusParam,
+    watchIsNewer,
+} from "./runStatus";
 
 const NOW = Date.parse("2026-01-01T12:00:00Z");
 
@@ -160,5 +172,23 @@ describe("watchIsNewer", () => {
     it("uses whichever there is", () => {
         expect(watchIsNewer(null, at(1, 30))).toBe(false);
         expect(watchIsNewer(at(1, 30), null)).toBe(true);
+    });
+});
+
+describe("statusParam", () => {
+    it("asks for no status when every run is wanted", () => {
+        expect(statusParam("all")).toBeUndefined();
+        expect(statusParam("failure")).toBe("failure");
+    });
+});
+
+describe("eventLabel", () => {
+    it("names the events people start runs with", () => {
+        expect(eventLabel("pull_request_target")).toBe("Pull request");
+        expect(eventLabel("merge_group")).toBe("Merge queue");
+    });
+
+    it("spells out an event it has no name for", () => {
+        expect(eventLabel("repository_dispatch")).toBe("Repository dispatch");
     });
 });

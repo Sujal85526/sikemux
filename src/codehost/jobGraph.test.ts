@@ -66,6 +66,21 @@ describe("stagesOf", () => {
     it("has nothing to draw for a run with no jobs", () => {
         expect(stagesOf([])).toEqual([]);
     });
+
+    it("counts a job with an unreadable start as not started", () => {
+        const stages = stagesOf([job(1, "odd", "yesterday", null, "queued"), job(2, "build", at(0), at(2))]);
+        expect(stages.map((stage) => stage.map((group) => group.jobs[0]?.label))).toEqual([["build"], ["odd"]]);
+    });
+
+    it("keeps jobs that started together in the order they were listed", () => {
+        const stages = stagesOf([job(1, "second", at(0), at(1)), job(2, "first", at(0), at(1))]);
+        expect(stages.map((stage) => stage.map((group) => group.jobs[0]?.label))).toEqual([["second", "first"]]);
+    });
+
+    it("does not guess what waited on a finished job whose end is unknown", () => {
+        const stages = stagesOf([job(1, "build", at(0), null), job(2, "deploy", at(5), at(6))]);
+        expect(stages).toHaveLength(1);
+    });
 });
 
 describe("stepStarts", () => {
@@ -91,6 +106,11 @@ describe("stepStarts", () => {
             [2, 2],
             [3, 4],
         ]);
+    });
+
+    it("steps over lines with no time on them", () => {
+        const lines = [{ number: 1, timestamp: null, text: "no clock" }, line(2, 4)];
+        expect([...stepStarts(lines, [step(1, 4)])]).toEqual([[1, 1]]);
     });
 
     it("skips a step that never ran and one that wrote nothing", () => {

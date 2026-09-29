@@ -1,15 +1,19 @@
 import { describe, expect, it } from "vitest";
+import { emit } from "../state/bus";
 import {
     closeRun,
     compose,
     filterBy,
     forgetAccount,
     hostSettings,
+    isSection,
     leaveRun,
+    needsRepo,
     openRunFrom,
     refOf,
     setListState,
     resetView,
+    sameRepo,
     setFollowBranch,
     setProjectAccount,
     setProjectRepo,
@@ -138,5 +142,46 @@ describe("the pull request and issue lists", () => {
         expect(viewOf("pane-lists")).toMatchObject({ pullState: "all", issueState: "open" });
         setListState("pane-lists", "pulls", "closed");
         expect(viewOf("pane-lists")).toMatchObject({ pullState: "closed", issueState: "open" });
+        setListState("pane-lists", "issues", "all");
+        expect(viewOf("pane-lists")).toMatchObject({ pullState: "closed", issueState: "all" });
+    });
+});
+
+describe("sections", () => {
+    it("knows its own section names and nothing else", () => {
+        expect(isSection("actions")).toBe(true);
+        expect(isSection("wiki")).toBe(false);
+        expect(isSection(3)).toBe(false);
+    });
+
+    it("needs a repository for every section but the inbox", () => {
+        expect(needsRepo("inbox")).toBe(false);
+        expect(needsRepo("releases")).toBe(true);
+    });
+});
+
+describe("sameRepo", () => {
+    const ref = { provider: HOST, owner: "nodelike", name: "sikemux" };
+
+    it("matches the same repository on the same host, whichever account reads it", () => {
+        expect(sameRepo(ref, { ...ref, account: "work" })).toBe(true);
+        expect(sameRepo(ref, { ...ref, provider: "other.host" })).toBe(false);
+        expect(sameRepo(ref, { ...ref, name: "tool" })).toBe(false);
+    });
+
+    it("never matches a missing repository", () => {
+        expect(sameRepo(null, ref)).toBe(false);
+        expect(sameRepo(ref, null)).toBe(false);
+    });
+});
+
+describe("closing a pane", () => {
+    it("forgets what the pane had open, and leaves other panes alone", () => {
+        showRun("pane-closing", "7");
+        showRun("pane-staying", "8");
+        emit({ type: "pane-closed", paneId: "pane-closing" });
+        emit({ type: "pane-closed", paneId: "pane-never-seen" });
+        expect(viewOf("pane-closing").run).toBeNull();
+        expect(viewOf("pane-staying").run).toBe("8");
     });
 });
