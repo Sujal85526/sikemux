@@ -167,4 +167,22 @@ describe("MergeReview", () => {
         expect(slot.nextElementSibling).toHaveStyle({ top: "1200px" });
         expect(screen.getByTestId("diff:file-0.ts:HEAD:working")).toBeInTheDocument();
     });
+
+    it("shows each file's own actions and follows a file whose status changed", () => {
+        const actions = (file: GitFile) => <button type="button">{`Act on ${file.path}`}</button>;
+        const { rerender } = render(
+            <MergeReview repo="/repo" files={files} focusPath="working.ts" onOpenFile={() => {}} onSaved={() => {}} fileActions={actions} />,
+        );
+        expect(screen.getByRole("button", { name: "Act on both.ts" })).toBeInTheDocument();
+        expect(screen.getByTestId("diff:working.ts:HEAD:working")).toHaveAttribute("data-editable", "true");
+        expect(screen.getByTestId("diff:staged.ts:HEAD::index")).toHaveAttribute("data-editable", "false");
+
+        const staged = files.map((f) => (f.path === "working.ts" ? { ...f, index: "M", worktree: " " } : f));
+        rerender(<MergeReview repo="/repo" files={staged} focusPath="working.ts" onOpenFile={() => {}} onSaved={() => {}} fileActions={actions} />);
+        expect(screen.getByTestId("diff:working.ts:HEAD::index")).toBeInTheDocument();
+
+        rerender(<MergeReview repo="/repo" files={staged.slice(0, 1)} onOpenFile={() => {}} onSaved={() => {}} fileActions={actions} />);
+        expect(screen.getByText("1 file")).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Act on both.ts" })).toBeNull();
+    });
 });

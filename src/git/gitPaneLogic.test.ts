@@ -20,4 +20,12 @@ describe("GitPane extracted logic", () => {
         expect(filterByQuery(rows, "STAGED", (r) => [r.path, r.status])).toEqual([rows[2]]);
         expect(filterByQuery(rows, "", (r) => [r.path])).toEqual(rows);
     });
+
+    it("treats a missing field as matching nothing", () => {
+        const rows = [
+            { subject: "fix", author: null },
+            { subject: "feat", author: "Ada" },
+        ];
+        expect(filterByQuery(rows, "ada", (r) => [r.subject, r.author])).toEqual([rows[1]]);
+    });
 });

@@ -36,4 +36,12 @@ describe("git file status decorations", () => {
         ]);
         expect(gitFileBadges({ path: "file.ts", index: " ", worktree: "M" })).toMatchObject([{ letter: "M", source: "unstaged" }]);
     });
+
+    it("ranks additions and renames above plain edits, and falls back to modified", () => {
+        expect(gitFileDecoration({ path: "file.ts", index: "M", worktree: "A" })).toMatchObject({ letter: "A", cls: "a" });
+        expect(gitFileDecoration({ path: "file.ts", index: "R", worktree: "M" })).toMatchObject({ letter: "R", label: "renamed" });
+        expect(gitFileDecoration({ path: "file.ts", index: "X", worktree: " " })).toMatchObject({ letter: "X", cls: "m", label: "X" });
+        expect(gitFileDecoration({ path: "file.ts", index: " ", worktree: " " })).toEqual({ letter: "M", cls: "m", label: "modified" });
+        expect(gitStatusDecoration("  ")).toBeNull();
+    });
 });

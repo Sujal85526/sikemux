@@ -202,4 +202,99 @@ describe("DiffEditor", () => {
         await new Promise((resolve) => setTimeout(resolve, 20));
         expect(mocks.mergeProps?.head).toBe("const value = 4;\n");
     });
+
+    it("edits a file deleted from the working tree as empty, but reports any other read failure", async () => {
+        mocks.readTextFileLimited.mockRejectedValue(new Error("No such file or directory (os error 2)"));
+        const first = render(<DiffEditor repo="/repo" path="gone.ts" baseRev="HEAD" editable />);
+        await first.findByTestId("merge-editor");
+        expect(mocks.mergeProps?.head).toBe("");
+        first.unmount();
+
+        mocks.readTextFileLimited.mockRejectedValue(new Error("permission denied"));
+        const second = render(<DiffEditor repo="/repo" path="locked.ts" baseRev="HEAD" editable />);
+        expect(await second.findByText("x permission denied")).toBeInTheDocument();
+    });
+
+    it("edits against a head revision instead of the working file", async () => {
+        mocks.fileAt.mockImplementation(async (_repo: string, rev: string) => `at ${rev}\n`);
+        const { findByTestId, container } = render(<DiffEditor repo="/repo" path="src/app.ts" baseRev="HEAD" headRev="abc" editable autoHeight />);
+        await findByTestId("merge-editor");
+        expect(mocks.readTextFileLimited).not.toHaveBeenCalled();
+        expect(mocks.mergeProps).toMatchObject({ base: "at HEAD\n", head: "at abc\n" });
+        expect(container.querySelector(".diff-editor")).toHaveClass("auto");
+    });
+
+    it("refuses to edit a file too large to diff inline, and does not keep it cached", async () => {
+        mocks.fileAt.mockResolvedValue("x".repeat(33 * 1024 * 1024));
+        const first = render(<DiffEditor repo="/repo" path="huge.log" baseRev="HEAD" headRev="abc" editable />);
+        expect(await first.findByText("x huge.log is too large for inline diff (33.0 MB).")).toBeInTheDocument();
+        first.unmount();
+
+        const reads = mocks.fileAt.mock.calls.length;
+        const second = render(<DiffEditor repo="/repo" path="huge.log" baseRev="HEAD" headRev="abc" editable />);
+        await second.findByText(/too large/);
+        expect(mocks.fileAt.mock.calls.length).toBeGreaterThan(reads);
+    });
+
+    it("treats text full of replacement characters as binary", async () => {
+        mocks.readTextFileLimited.mockResolvedValue("\ufffd".repeat(9));
+        const { findByText } = render(<DiffEditor repo="/repo" path="data.bin" baseRev="HEAD" editable />);
+        expect(await findByText("x data.bin looks binary; inline diff is disabled.")).toBeInTheDocument();
+    });
+
+    it("reads a failed diff again rather than remembering the failure", async () => {
+        mocks.fileDiff.mockRejectedValueOnce(new Error("index.lock exists"));
+        const first = render(<DiffEditor repo="/repo" path="src/app.ts" baseRev="HEAD" headRev=":index" editable={false} />);
+        expect(await first.findByText("x index.lock exists")).toBeInTheDocument();
+        first.unmount();
+
+        const second = render(<DiffEditor repo="/repo" path="src/app.ts" baseRev="HEAD" headRev=":index" editable={false} />);
+        await waitFor(() => expect(second.container.querySelector(".diff-view")).toBeInTheDocument());
+        expect(mocks.fileDiff).toHaveBeenCalledTimes(2);
+    });
+
+    it("saves only on the save shortcut, and never from a read-only diff", async () => {
+        const readOnly = render(<DiffEditor repo="/repo" path="src/app.ts" baseRev="HEAD" headRev=":index" editable={false} />);
+        await waitFor(() => expect(readOnly.container.querySelector(".diff-view")).toBeInTheDocument());
+        fireEvent.keyDown(readOnly.container.querySelector(".diff-editor")!, { key: "s", metaKey: true });
+        readOnly.unmount();
+
+        const editable = render(<DiffEditor repo="/repo" path="src/app.ts" baseRev="HEAD" editable />);
+        await editable.findByTestId("merge-editor");
+        const root = editable.container.querySelector(".diff-editor")!;
+        fireEvent.keyDown(root, { key: "s" });
+        fireEvent.keyDown(root, { key: "a", ctrlKey: true });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(mocks.writeFile).not.toHaveBeenCalled();
+
+        fireEvent.keyDown(root, { key: "S", ctrlKey: true });
+        await waitFor(() => expect(mocks.writeFile).toHaveBeenCalledOnce());
+    });
+
+    it("reads again after a change anywhere when the event names no repository or files", async () => {
+        const { container } = render(<DiffEditor repo="/repo" path="src/app.ts" baseRev="HEAD" editable={false} />);
+        await waitFor(() => expect(container.querySelector(".diff-view")).toBeInTheDocument());
+
+        act(() => emit({ type: "fs-changed", repo: "" }));
+        await waitFor(() => expect(mocks.fileDiff).toHaveBeenCalledTimes(2));
+        act(() => emit({ type: "git-refresh", repo: "" }));
+        await waitFor(() => expect(mocks.fileDiff).toHaveBeenCalledTimes(3));
+        act(() => emit({ type: "git-refresh", repo: "/elsewhere" }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(mocks.fileDiff).toHaveBeenCalledTimes(3);
+    });
+
+    it("drops a read that finishes after it was invalidated", async () => {
+        let finish!: (rows: DiffRow[]) => void;
+        mocks.fileDiff.mockImplementationOnce(() => new Promise<DiffRow[]>((resolve) => (finish = resolve)));
+        const first = render(<DiffEditor repo="/repo" path="src/slow.ts" baseRev="HEAD" headRev="abc" editable={false} />);
+        invalidateDiffContentCache("/repo");
+        await act(async () => finish(ROWS));
+        await waitFor(() => expect(first.container.querySelector(".diff-view")).toBeInTheDocument());
+        first.unmount();
+
+        const second = render(<DiffEditor repo="/repo" path="src/slow.ts" baseRev="HEAD" headRev="abc" editable={false} />);
+        await waitFor(() => expect(second.container.querySelector(".diff-view")).toBeInTheDocument());
+        expect(mocks.fileDiff).toHaveBeenCalledTimes(2);
+    });
 });
