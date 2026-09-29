@@ -131,7 +131,6 @@ describe("Onboarding", () => {
         openOnboarding();
         expect(await screen.findByText("git not found: the Git view needs it")).toBeInTheDocument();
     });
-
 });
 
 describe("DiagnosticsOverlay", () => {

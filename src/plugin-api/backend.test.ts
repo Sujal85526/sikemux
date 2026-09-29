@@ -27,7 +27,6 @@ beforeEach(() => {
 });
 
 describe("createPluginBackend", () => {
-
     it("delivers items until the stream ends", async () => {
         const native = startedStream();
         const onItem = vi.fn();

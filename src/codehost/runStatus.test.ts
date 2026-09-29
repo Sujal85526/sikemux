@@ -1,16 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Job, Step } from "./api";
-import {
-    elapsedMs,
-    failedStep,
-    formatAgo,
-    formatDuration,
-    checksSummary,
-    isUnfinished,
-    jobsSummary,
-    outcomeOf,
-    watchIsNewer,
-} from "./runStatus";
+import { elapsedMs, failedStep, formatAgo, formatDuration, checksSummary, isUnfinished, jobsSummary, outcomeOf, watchIsNewer } from "./runStatus";
 
 const NOW = Date.parse("2026-01-01T12:00:00Z");
 

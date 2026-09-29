@@ -110,7 +110,6 @@ describe("SessionController lifecycle", () => {
         expect(dispose).toHaveBeenCalledOnce();
         expect(controller.getSnapshot()).toMatchObject({ itemCount: 0, activeItemId: null, disposed: true, retiringItems: 0 });
     });
-
 });
 
 describe("SessionController retries and generations", () => {

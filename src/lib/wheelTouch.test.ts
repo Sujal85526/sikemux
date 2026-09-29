@@ -4,7 +4,6 @@ import { fingersDown, onFingers, setFingersDown } from "./wheelTouch";
 beforeEach(() => setFingersDown(null));
 
 describe("wheel touch", () => {
-
     /*
      * A landing starts a swipe and a lift ends one, and each is reported once
      * however many scroll events carry it.

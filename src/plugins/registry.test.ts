@@ -15,7 +15,6 @@ describe("plugin kinds", () => {
 });
 
 describe("frontend plugin registry", () => {
-
     it("refuses a surface named after another plugin", () => {
         expect(() =>
             registerFrontendPlugin({ id: "test.thief", surfaces: [surface("test.other:view")], open: () => {}, openTitle: "Open" }),

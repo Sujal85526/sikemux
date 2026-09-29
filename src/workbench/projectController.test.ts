@@ -340,5 +340,4 @@ describe("ProjectController", () => {
         await expect(controller.refresh()).resolves.toBeUndefined();
         expect(() => controller.retain()).toThrow("disposed");
     });
-
 });

@@ -812,10 +812,10 @@ impl BrowserManager {
         }
         #[cfg(target_os = "macos")]
         {
-            let agent = fixed.and_then(|fixed| fixed.user_agent()).unwrap_or(USER_AGENT);
-            let _ = view.with_webview(move |platform| {
-                macos::introduce_as(platform.inner(), agent)
-            });
+            let agent = fixed
+                .and_then(|fixed| fixed.user_agent())
+                .unwrap_or(USER_AGENT);
+            let _ = view.with_webview(move |platform| macos::introduce_as(platform.inner(), agent));
         }
         self.relayout(agent_id);
         Ok(())

@@ -1,10 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-    NAVIGATION_HISTORY_LIMITS,
-    NavigationHistory,
-    parseNavigationLocation,
-    type NavigationLocationInput,
-} from "./navigationHistory";
+import { NAVIGATION_HISTORY_LIMITS, NavigationHistory, parseNavigationLocation, type NavigationLocationInput } from "./navigationHistory";
 
 function location(path: string, overrides: Partial<NavigationLocationInput> = {}): NavigationLocationInput {
     return { project: "/repo", path, ...overrides };

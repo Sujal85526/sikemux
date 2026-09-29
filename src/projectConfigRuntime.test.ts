@@ -5,7 +5,6 @@ import { clearProjectConfigTrustForTests, trustProjectConfig } from "./projectCo
 beforeEach(clearProjectConfigTrustForTests);
 
 describe("project config runtime boundary", () => {
-
     it("asks once per exact fingerprint", async () => {
         const confirm = vi.fn(async () => true);
         const result = {

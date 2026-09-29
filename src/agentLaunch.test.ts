@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-    agentLaunchArgs,
-    normalizeAgentEffort,
-    normalizePermissionMode,
-    permissionArgs,
-} from "./agentLaunch";
+import { agentLaunchArgs, normalizeAgentEffort, normalizePermissionMode, permissionArgs } from "./agentLaunch";
 
 describe("agent launch policy", () => {
     it("maps Codex Normal and YOLO modes to explicit flags", () => {
