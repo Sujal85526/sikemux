@@ -7,7 +7,7 @@ import { useStore } from "../state/store";
 import { errMessage, swallow } from "../state/toast";
 import { useOccludeNativeViews } from "../state/nativeViews";
 import { ExperienceBackdrop } from "./ExperienceOverlays";
-import { ShaderField } from "./ShaderField";
+import { ShaderField } from "../components/ShaderField";
 import { Markdown, MARKDOWN_PLAIN, type MarkdownComponents } from "../markdown/Markdown";
 
 const FEATURED = 3;

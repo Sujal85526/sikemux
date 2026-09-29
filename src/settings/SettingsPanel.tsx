@@ -60,7 +60,7 @@ import {
 } from "./settingsIndex";
 import { useBuiltPlugins } from "../plugins/enabled";
 import { frontendPlugin, pluginSurface } from "../plugins/registry";
-import { ActivityPage } from "../components/ActivityPage";
+import { ActivityPage } from "../shell/ActivityPage";
 import { SettingsPage, SettingsSection } from "./SettingsLayout";
 import { useVoice, type VoiceState } from "../voice/dictation";
 import "../styles/settings.css";

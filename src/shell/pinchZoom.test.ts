@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installPinchZoom, PINCH_IDLE_MS } from "./pinchZoom";
-import { getState, setState } from "./state/store";
+import { getState, setState } from "../state/store";
 
 const initial = getState();
 let uninstall: () => void;

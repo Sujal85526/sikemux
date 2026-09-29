@@ -1,6 +1,6 @@
 import { useEffect } from "react";
-import * as cmd from "./state/commands";
-import { getState } from "./state/store";
+import * as cmd from "../state/commands";
+import { getState } from "../state/store";
 
 interface TextSurface {
     size: () => number;

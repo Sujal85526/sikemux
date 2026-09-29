@@ -2,7 +2,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import "./builtin";
 import { SideRail } from "../rail/SideRail";
-import { TopBar } from "../components/TopBar";
+import { TopBar } from "../shell/TopBar";
 import { Workspace } from "../workspace/Workspace";
 import { keybindingActions, normaliseKeybindingOverrides } from "../keybindings";
 import * as cmd from "../state/commands";

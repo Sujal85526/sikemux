@@ -5,7 +5,7 @@ import { useRef, useState } from "react";
 import { useModalFocus } from "../hooks/useModalFocus";
 import { TreeContextMenu } from "../rail/FileTree";
 import { navigateTabs } from "../lib/tabNavigation";
-import { Dropdown } from "./Dropdown";
+import { Dropdown } from "../components/Dropdown";
 import { DialogHost } from "./DialogHost";
 import { confirmDialog, resetDialogsForTests } from "../state/dialog";
 import { TabBar } from "../workspace/TabBar";

@@ -5,7 +5,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { checkForUpdate } from "./api/updater";
 import { reportActive } from "./api/usage";
-import { TopBar } from "./components/TopBar";
+import { TopBar } from "./shell/TopBar";
 import { SideRail } from "./rail/SideRail";
 import { AgentRail } from "./rail/AgentRail";
 import { RailPeek } from "./rail/RailPeek";
@@ -18,17 +18,17 @@ import { NewTabPalette } from "./palettes/NewTabPalette";
 import { SeshPicker } from "./palettes/SeshPicker";
 import { SessionSwitcher } from "./palettes/SessionSwitcher";
 import { Workspace } from "./workspace/Workspace";
-import { Toaster } from "./components/Toaster";
+import { Toaster } from "./shell/Toaster";
 import { CommandPalette } from "./palettes/CommandPalette";
-import { DialogHost } from "./components/DialogHost";
+import { DialogHost } from "./shell/DialogHost";
 import { ImageViewer } from "./editor/ImageViewer";
 import { useOccludeNativeViews } from "./state/nativeViews";
 import { TerminalPane } from "./terminal/TerminalPane";
-import { HarnessBridge } from "./components/HarnessBridge";
-import { CliOpenBridge } from "./components/CliOpenBridge";
+import { HarnessBridge } from "./shell/HarnessBridge";
+import { CliOpenBridge } from "./shell/CliOpenBridge";
 import { git } from "./api/git";
 import { runKeybindingAction, useKeymap } from "./keymap";
-import { usePinchZoom } from "./pinchZoom";
+import { usePinchZoom } from "./shell/pinchZoom";
 import { introduceNotifications, useAgentNotifications } from "./agents/agentNotifications";
 import { useVoiceDictation } from "./voice/dictation";
 import { VoiceCaption } from "./voice/VoiceCaption";
@@ -96,9 +96,9 @@ const SettingsPanel = lazy(() => import("./settings/SettingsPanel").then((module
 
 /* The welcome, the release notes and the diagnostics panel, none of which exist
    until someone opens one. */
-const Onboarding = lazy(() => import("./components/ExperienceOverlays").then((module) => ({ default: module.Onboarding })));
-const DiagnosticsOverlay = lazy(() => import("./components/ExperienceOverlays").then((module) => ({ default: module.DiagnosticsOverlay })));
-const WhatsNewOverlay = lazy(() => import("./components/WhatsNewOverlay").then((module) => ({ default: module.WhatsNewOverlay })));
+const Onboarding = lazy(() => import("./shell/ExperienceOverlays").then((module) => ({ default: module.Onboarding })));
+const DiagnosticsOverlay = lazy(() => import("./shell/ExperienceOverlays").then((module) => ({ default: module.DiagnosticsOverlay })));
+const WhatsNewOverlay = lazy(() => import("./shell/WhatsNewOverlay").then((module) => ({ default: module.WhatsNewOverlay })));
 
 interface BootInfo {
     home: string;
