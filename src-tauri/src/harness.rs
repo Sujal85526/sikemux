@@ -12,6 +12,7 @@ mod terminal_text;
 
 pub const MAX_PENDING: usize = 64;
 pub const MAX_OUTPUT: usize = 1024 * 1024;
+const REPLY_TIMEOUT: Duration = Duration::from_secs(65);
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -140,11 +141,13 @@ pub fn execute(
         return crate::plugins::agent::execute(app, &request.method, &request.params);
     }
     let id = request.id.clone();
-    let inspecting = request.method == "workspace.inspect";
+    let method = request.method.clone();
+    let inspecting = method == "workspace.inspect";
     let receiver = broker.enqueue(request)?;
     let _ = app.emit_to("main", "harness-request", ());
-    let result = receiver.recv_timeout(Duration::from_secs(65))
-        .unwrap_or_else(|_| Err("Harness request timed out; task.start may still complete. Retry with the same idempotencyKey.".into()));
+    let result = receiver
+        .recv_timeout(REPLY_TIMEOUT)
+        .unwrap_or_else(|_| Err(timeout_message(&method)));
     broker.remove(&id);
     match result {
         Ok(mut value) if inspecting => {
@@ -156,6 +159,16 @@ pub fn execute(
             Ok(value)
         }
         other => other,
+    }
+}
+
+fn timeout_message(method: &str) -> String {
+    let tool = method.replace('.', "_");
+    let seconds = REPLY_TIMEOUT.as_secs();
+    if method == "task.start" {
+        format!("{tool} got no answer from Sikemux within {seconds} s; the task may still start. Call task_start again with the same idempotencyKey to see where it got to.")
+    } else {
+        format!("{tool} got no answer from Sikemux within {seconds} s. Check that the Sikemux window is open and responsive, then retry.")
     }
 }
 
@@ -532,6 +545,15 @@ mod tests {
         assert_eq!(receiver.recv().unwrap().unwrap(), Value::Bool(true));
         assert!(broker.enqueue(request("one")).is_ok());
         broker.shutdown();
+    }
+    #[test]
+    fn timeouts_name_the_method_and_only_task_start_mentions_the_key() {
+        let start = timeout_message("task.start");
+        assert!(start.starts_with("task_start "));
+        assert!(start.contains("idempotencyKey"));
+        let read = timeout_message("task.read");
+        assert!(read.starts_with("task_read "));
+        assert!(!read.contains("idempotencyKey") && !read.contains("task_start"));
     }
     #[test]
     fn output_pages_preserve_split_utf8() {
