@@ -73,6 +73,7 @@ impl Drop for NativeTab {
 thread_local! {
     static TABS: RefCell<HashMap<String, NativeTab>> = RefCell::new(HashMap::new());
     static SHORTCUT_MONITOR: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
+    static PERSON_MONITOR: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
     static OPEN_DIALOGS: RefCell<HashMap<String, OpenDialog>> = RefCell::new(HashMap::new());
     static HOLES: RefCell<HashMap<usize, Vec<NSRect>>> = RefCell::new(HashMap::new());
     static PAGE_HIT_TEST: std::cell::Cell<Option<Imp>> = const { std::cell::Cell::new(None) };
@@ -1274,6 +1275,7 @@ pub fn install_shortcuts(app: AppHandle) {
         if super::input::stop_returned_key(event) {
             return std::ptr::null_mut();
         }
+        super::input::note_person(event);
         let flags = event.modifierFlags();
         if !flags.contains(NSEventModifierFlags::Command) {
             return pass;
@@ -1307,6 +1309,29 @@ pub fn install_shortcuts(app: AppHandle) {
         NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::KeyDown, &block)
     };
     SHORTCUT_MONITOR.with(|slot| *slot.borrow_mut() = monitor);
+    watch_the_person();
+}
+
+/// The person's own pointer and modifier keys, which AppKit delivers through
+/// the app, unlike the agent's events sent straight to a tab.
+fn watch_the_person() {
+    let block = RcBlock::new(|event: NonNull<NSEvent>| -> *mut NSEvent {
+        // SAFETY: AppKit hands the monitor a live event for the length of the call.
+        super::input::note_person(unsafe { event.as_ref() });
+        event.as_ptr()
+    });
+    let mask = NSEventMask::MouseMoved
+        | NSEventMask::LeftMouseDown
+        | NSEventMask::LeftMouseDragged
+        | NSEventMask::RightMouseDown
+        | NSEventMask::OtherMouseDown
+        | NSEventMask::ScrollWheel
+        | NSEventMask::FlagsChanged;
+    // SAFETY: main thread, as `install_shortcuts` is. AppKit copies the block, and the
+    // monitor it returns is kept in PERSON_MONITOR so it stays installed.
+    let monitor = unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(mask, &block) };
+    PERSON_MONITOR.with(|slot| *slot.borrow_mut() = monitor);
+    super::input::guard_cursor();
 }
 
 #[cfg(test)]

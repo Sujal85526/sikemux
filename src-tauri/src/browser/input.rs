@@ -9,13 +9,14 @@
 //! on its own, so the person's keyboard focus is held at the start of an agent
 //! action and given back at the end.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::ffi::c_void;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use objc2::rc::{Retained, Weak};
-use objc2::runtime::AnyObject;
+use objc2::runtime::{AnyClass, AnyObject, Bool, Imp, Sel};
 use objc2::{msg_send, sel, Message};
 use objc2_app_kit::{NSEvent, NSEventModifierFlags, NSEventType, NSResponder, NSView, NSWindow};
 use objc2_foundation::{NSObjectProtocol, NSPoint, NSProcessInfo, NSString};
@@ -26,10 +27,16 @@ use objc2_web_kit::WKWebView;
 const SENT_KEY_LIFETIME: Duration = Duration::from_secs(30);
 /// WebKit takes the keyboard for a clicked page a moment after the click.
 const LATE_FOCUS_GRAB: Duration = Duration::from_millis(400);
+/// How long after an agent's input WebKit may still answer it with a cursor.
+const CURSOR_ANSWER_WINDOW: Duration = Duration::from_secs(3);
+
+static ORIGINAL_SET_CURSOR: OnceLock<Imp> = OnceLock::new();
+static ORIGINAL_HIDE_CURSOR: OnceLock<Imp> = OnceLock::new();
 
 thread_local! {
     static SENT_KEYS: RefCell<Vec<SentKey>> = const { RefCell::new(Vec::new()) };
     static HELD_FOCUS: RefCell<HashMap<isize, HeldFocus>> = RefCell::new(HashMap::new());
+    static LAST_INPUT: Cell<LastInput> = const { Cell::new(LastInput::NONE) };
 }
 
 /// A key-down the agent sent. A page that leaves a key unhandled has WebKit
@@ -98,6 +105,7 @@ pub fn mouse(
 ) -> Result<(), String> {
     let webview = webview_from(pointer)?;
     let window = webview.window().ok_or("the tab is not in a window")?;
+    note(|last| last.agent_pointer = Some(Instant::now()));
     // SAFETY: main thread (see `webview_from`), and `webview` is retained.
     let zoom = unsafe { webview.pageZoom() }.max(0.01);
     let height = webview.bounds().size.height;
@@ -138,6 +146,7 @@ pub fn key(pointer: *mut c_void, stroke: &KeyStroke) -> Result<(), String> {
     let webview = webview_from(pointer)?;
     let window = webview.window().ok_or("the tab is not in a window")?;
     take_keyboard(&window, &webview);
+    note(|last| last.agent_key = Some(Instant::now()));
     let event = |kind: NSEventType| {
         NSEvent::keyEventWithType_location_modifierFlags_timestamp_windowNumber_context_characters_charactersIgnoringModifiers_isARepeat_keyCode(
             kind,
@@ -386,6 +395,124 @@ fn after(delay: Duration, work: MainThreadWork) {
     }
 }
 
+/// When the agent and the person last used the pointer and the keyboard.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct LastInput {
+    agent_pointer: Option<Instant>,
+    agent_key: Option<Instant>,
+    person_pointer: Option<Instant>,
+    person_key: Option<Instant>,
+}
+
+impl LastInput {
+    const NONE: Self = Self {
+        agent_pointer: None,
+        agent_key: None,
+        person_pointer: None,
+        person_key: None,
+    };
+
+    /// WebKit answers a pointer event with the cursor for that point and a key
+    /// with hiding the cursor, and does so for the whole app. The answer to the
+    /// agent's input is dropped until the person's own input takes over again.
+    fn cursor_follows_agent(agent: Option<Instant>, person: Option<Instant>, now: Instant) -> bool {
+        agent.is_some_and(|agent| {
+            now.duration_since(agent) < CURSOR_ANSWER_WINDOW
+                && person.is_none_or(|person| person < agent)
+        })
+    }
+
+    fn keeps_cursor_shape(&self, now: Instant) -> bool {
+        Self::cursor_follows_agent(self.agent_pointer, self.person_pointer, now)
+    }
+
+    fn keeps_cursor_shown(&self, now: Instant) -> bool {
+        Self::cursor_follows_agent(self.agent_key, self.person_key, now)
+    }
+}
+
+fn note(update: impl FnOnce(&mut LastInput)) {
+    LAST_INPUT.with(|cell| {
+        let mut last = cell.get();
+        update(&mut last);
+        cell.set(last);
+    });
+}
+
+/// Called for every pointer and key event the person makes in the app.
+pub fn note_person(event: &NSEvent) {
+    let now = Instant::now();
+    match event.r#type() {
+        NSEventType::KeyDown | NSEventType::FlagsChanged => {
+            note(|last| last.person_key = Some(now))
+        }
+        _ => note(|last| last.person_pointer = Some(now)),
+    }
+}
+
+type SetCursor = unsafe extern "C-unwind" fn(*mut AnyObject, Sel);
+type HideCursor = unsafe extern "C-unwind" fn(*const AnyClass, Sel, Bool);
+
+// SAFETY: only the Objective-C runtime calls this, as NSCursor's `set`, with a live
+// cursor.
+unsafe extern "C-unwind" fn set_cursor(cursor: *mut AnyObject, selector: Sel) {
+    if LAST_INPUT
+        .with(Cell::get)
+        .keeps_cursor_shape(Instant::now())
+    {
+        return;
+    }
+    if let Some(original) = ORIGINAL_SET_CURSOR.get() {
+        // SAFETY: `original` is the `set` implementation this function replaced,
+        // so it takes the same arguments.
+        unsafe { std::mem::transmute::<Imp, SetCursor>(*original)(cursor, selector) };
+    }
+}
+
+// SAFETY: only the Objective-C runtime calls this, as NSCursor's class method
+// `setHiddenUntilMouseMoves:`.
+unsafe extern "C-unwind" fn hide_cursor(class: *const AnyClass, selector: Sel, hide: Bool) {
+    if hide.as_bool()
+        && LAST_INPUT
+            .with(Cell::get)
+            .keeps_cursor_shown(Instant::now())
+    {
+        return;
+    }
+    if let Some(original) = ORIGINAL_HIDE_CURSOR.get() {
+        // SAFETY: `original` is the implementation this function replaced, so it
+        // takes the same arguments.
+        unsafe { std::mem::transmute::<Imp, HideCursor>(*original)(class, selector, hide) };
+    }
+}
+
+/// Keeps the person's cursor from changing shape or hiding in answer to the
+/// agent's input: WebKit sets the cursor for the whole app whenever the real
+/// pointer is anywhere over the window. Call once, on the main thread.
+pub fn guard_cursor() {
+    let Some(class) = AnyClass::get(c"NSCursor") else {
+        return;
+    };
+    if let Some(method) = class.instance_method(sel!(set)) {
+        let replacement: SetCursor = set_cursor;
+        // SAFETY: `set_cursor` has the signature of `-[NSCursor set]` and calls the
+        // implementation it replaces, which is stored before anything can call it.
+        let original = unsafe {
+            method.set_implementation(std::mem::transmute::<SetCursor, Imp>(replacement))
+        };
+        let _ = ORIGINAL_SET_CURSOR.set(original);
+    }
+    if let Some(method) = class.class_method(sel!(setHiddenUntilMouseMoves:)) {
+        let replacement: HideCursor = hide_cursor;
+        // SAFETY: `hide_cursor` has the signature of `+[NSCursor
+        // setHiddenUntilMouseMoves:]` and calls the implementation it replaces.
+        let original = unsafe {
+            method.set_implementation(std::mem::transmute::<HideCursor, Imp>(replacement))
+        };
+        let _ = ORIGINAL_HIDE_CURSOR.set(original);
+    }
+}
+
 /// Inserts text at the page's caret the way a keyboard or input method would,
 /// so editors that keep their own model of the document see it arrive.
 pub fn insert_text(pointer: *mut c_void, text: &str) -> Result<(), String> {
@@ -393,6 +520,7 @@ pub fn insert_text(pointer: *mut c_void, text: &str) -> Result<(), String> {
     if let Some(window) = webview.window() {
         take_keyboard(&window, &webview);
     }
+    note(|last| last.agent_key = Some(Instant::now()));
     let text = NSString::from_str(text);
     // SAFETY: WKWebView implements NSTextInputClient's `insertText:`, which takes one
     // string and returns nothing. Main thread, and both objects are retained.
@@ -536,6 +664,28 @@ mod tests {
         assert_eq!(parse_key("Shift+k").unwrap().characters, "K");
         assert_eq!(parse_key("Control++").unwrap().characters, "+");
         assert!(parse_key("Super+a").is_err());
+    }
+
+    #[test]
+    fn the_cursor_ignores_the_agent_until_the_person_moves_or_types() {
+        let start = Instant::now();
+        let later = |ms| start + Duration::from_millis(ms);
+        let mut last = LastInput::NONE;
+        assert!(!last.keeps_cursor_shape(start));
+
+        last.agent_pointer = Some(start);
+        assert!(last.keeps_cursor_shape(later(100)));
+        assert!(!last.keeps_cursor_shown(later(100)));
+        assert!(!last.keeps_cursor_shape(start + CURSOR_ANSWER_WINDOW));
+
+        last.person_pointer = Some(later(50));
+        assert!(!last.keeps_cursor_shape(later(100)));
+
+        last.agent_key = Some(later(200));
+        last.person_key = Some(later(10));
+        assert!(last.keeps_cursor_shown(later(300)));
+        last.person_key = Some(later(250));
+        assert!(!last.keeps_cursor_shown(later(300)));
     }
 
     #[test]
