@@ -3,6 +3,7 @@ import {
     closeRun,
     compose,
     filterBy,
+    forgetAccount,
     hostSettings,
     leaveRun,
     openRunFrom,
@@ -10,6 +11,7 @@ import {
     setListState,
     resetView,
     setFollowBranch,
+    setProjectAccount,
     setProjectRepo,
     showRun,
     togglePinned,
@@ -28,13 +30,25 @@ describe("hostSettings", () => {
                 ({
                     pinned: ["nodelike/sikemux", "not a repo", 7, "nodelike/sikemux"],
                     repoByProject: { "/repo": "owner/name", "/bad": 3, "/alsobad": "owner" },
+                    accountByProject: { "/repo": "work-id", "/bad": 4, "/empty": "" },
                 }) as unknown as HostSettings,
         );
         expect(settings.get()).toEqual({
             pinned: ["nodelike/sikemux"],
             repoByProject: { "/repo": "owner/name" },
+            accountByProject: { "/repo": "work-id" },
             followBranch: true,
         });
+    });
+
+    it("forgets an account in every project that picked it once it signs out", () => {
+        setProjectAccount(HOST, "/work", "work-id");
+        setProjectAccount(HOST, "/also-work", "work-id");
+        setProjectAccount(HOST, "/home", "home-id");
+        forgetAccount(HOST, "work-id");
+        expect(settings.get().accountByProject).toEqual({ "/home": "home-id" });
+        setProjectAccount(HOST, "/home", null);
+        expect(settings.get().accountByProject).toEqual({});
     });
 
     it("keeps following the branch unless it was turned off on purpose", () => {

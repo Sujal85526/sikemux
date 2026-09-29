@@ -104,6 +104,25 @@
     font-size: var(--text-2xs);
     color: var(--text-tertiary);
 }
+.host-account-row {
+    height: auto;
+    min-height: 28px;
+    padding-block: var(--space-1);
+}
+.host-account-name {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    text-align: left;
+}
+.host-account-detail {
+    overflow: hidden;
+    color: var(--text-tertiary);
+    font-size: var(--text-2xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 .host-account-warning {
     padding: 0 var(--space-2) var(--space-1h);
     font-size: var(--text-2xs);

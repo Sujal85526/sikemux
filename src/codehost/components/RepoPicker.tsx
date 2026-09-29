@@ -5,7 +5,7 @@ import { IconPin, IconSearch, rankBy, useMouseActive } from "../../plugin-api/ui
 import type { RepoListing, RepoRef } from "../api";
 import { myReposR } from "../resources";
 import { formatAgo } from "../runStatus";
-import { useHost } from "../registry";
+import { useAccount, useHost } from "../registry";
 import { hostSettings, refOf, slugOf, togglePinned } from "../state";
 
 interface Entry {
@@ -47,7 +47,7 @@ export function RepoPicker({ current, onPick, onClose }: Props) {
     usePluginOverlay(true);
 
     const host = useHost();
-    const mine = useResource(myReposR, host.id);
+    const mine = useResource(myReposR, host.id, useAccount());
     const pinned = hostSettings(host.id).useSelect((settings) => settings.pinned);
     const [query, setQuery] = useState("");
     const [selected, setSelected] = useState(0);

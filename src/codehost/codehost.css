@@ -891,7 +891,8 @@
     background: color-mix(in oklab, var(--danger) 8%, transparent);
     color: var(--danger);
 }
-.gha-pane > .gha-rate-limit {
+.gha-pane > .gha-rate-limit,
+.gha-pane > .gha-add-account {
     flex: none;
     margin: var(--space-2) var(--space-3) 0;
 }

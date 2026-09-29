@@ -12,7 +12,7 @@ const githubStatusR = resource({
     staleAfterMs: 60_000,
 });
 
-export function GithubSignIn({ onSignedIn }: { onSignedIn: () => void }) {
+export function GithubSignIn({ onSignedIn }: { onSignedIn: (account: string | null) => void }) {
     const status = useResource(githubStatusR);
     if (!status.data) return <SkeletonRows rows={4} label="Connecting to GitHub" />;
     return <ActionsSignIn status={status.data} onSignedIn={onSignedIn} />;
@@ -29,7 +29,7 @@ function tokenPage(host: string): string {
 
 interface Props {
     status: ActionsStatus;
-    onSignedIn: () => void;
+    onSignedIn: (account: string | null) => void;
 }
 
 /**
@@ -54,7 +54,7 @@ export function ActionsSignIn({ status, onSignedIn }: Props) {
         setError(null);
         try {
             const result = await actionsApi.signIn(host.trim(), withToken);
-            if (result.ok) onSignedIn();
+            if (result.ok) onSignedIn(result.account);
             else setError(result.message ?? "GitHub turned that token down");
         } catch (failure) {
             setError(failureMessage(failure));

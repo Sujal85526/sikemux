@@ -37,6 +37,8 @@ import type {
 
 /** Who is signed in to a host, in the terms every host shares. */
 export interface HostAccount {
+    /** Which signed-in account this is; null while a borrowed token stands in before anyone has signed in. */
+    id: string | null;
     /** Signed in and the token works. */
     ok: boolean;
     login: string;
@@ -47,6 +49,17 @@ export interface HostAccount {
     canWriteCi: boolean;
     /** Something to tell the person about the sign-in, such as a missing permission. */
     warning: string | null;
+}
+
+/** One of the accounts signed in to a host. */
+export interface HostAccountEntry {
+    id: string;
+    login: string;
+    /** What tells two accounts apart beyond their login, such as the server or a full name. */
+    detail: string | null;
+    avatarUrl: string | null;
+    /** The account a project uses when nothing else chooses one. */
+    isDefault: boolean;
 }
 
 /** What a host supports. The Git pane leaves out whatever a host cannot do rather than showing it empty. */
@@ -81,12 +94,17 @@ export interface HostCapabilities {
 
 /** Every read and write a host answers. Each takes the repository it is about, whose `provider` names the host. */
 export interface CodeHostApi {
-    status(): Promise<HostAccount>;
-    signOut(): Promise<void>;
-    rateLimit(): Promise<RateLimit>;
+    /** Every call below that takes no repository is about `account`, or the default account when it is null. */
+    status(account: string | null): Promise<HostAccount>;
+    signOut(account: string | null): Promise<void>;
+    rateLimit(account: string | null): Promise<RateLimit>;
+    accounts(): Promise<HostAccountEntry[]>;
+    setDefaultAccount(account: string): Promise<void>;
+    /** The first signed-in account, default first, that can see the repository. */
+    accountFor(repo: RepoRef): Promise<string | null>;
     /** The repository a git remote points at, and in `sameHost` whether it is on the server this host talks to. */
     resolveRemote(url: string): Promise<Resolved>;
-    myRepos(limit?: number): Promise<RepoListing[]>;
+    myRepos(account: string | null, limit?: number): Promise<RepoListing[]>;
     image(url: string): Promise<string>;
 
     workflows(repo: RepoRef): Promise<Workflow[]>;
@@ -136,9 +154,9 @@ export interface CodeHostApi {
     releases(repo: RepoRef): Promise<Release[]>;
     downloadAsset(repo: RepoRef, assetId: number, name: string, onProgress?: (progress: DownloadProgress) => void): Promise<SavedArtifact>;
 
-    inbox(all: boolean): Promise<Notification[]>;
-    markRead(id: string): Promise<void>;
-    markAllRead(): Promise<void>;
+    inbox(account: string | null, all: boolean): Promise<Notification[]>;
+    markRead(account: string | null, id: string): Promise<void>;
+    markAllRead(account: string | null): Promise<void>;
 }
 
 export interface CodeHost {
@@ -156,8 +174,8 @@ export interface CodeHost {
     readonly avatarForLogin?: (login: string) => string | null;
     /** The ref a pull request from a fork can be fetched by, such as GitHub's `pull/N/head`. */
     readonly pullHeadRef?: (number: number) => string;
-    /** Shown in the Git pane while nobody is signed in to this host. */
-    readonly SignIn: ComponentType<{ onSignedIn: () => void }>;
+    /** Shown in the Git pane while nobody is signed in to this host, and to add another account. */
+    readonly SignIn: ComponentType<{ onSignedIn: (account: string | null) => void }>;
 }
 
 const hosts = new Map<string, CodeHost>();
@@ -187,6 +205,14 @@ export function hostApi(id: string): CodeHostApi {
 }
 
 const HostContext = createContext<CodeHost | null>(null);
+const AccountContext = createContext<string | null>(null);
+
+/** The account the Git pane is showing its host as, or null for the host's default account. */
+export const AccountProvider = AccountContext.Provider;
+
+export function useAccount(): string | null {
+    return useContext(AccountContext);
+}
 
 export const HostProvider = HostContext.Provider;
 

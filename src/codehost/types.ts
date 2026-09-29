@@ -45,6 +45,8 @@ export interface RepoRef {
     provider: string;
     owner: string;
     name: string;
+    /** The signed-in account to ask as; with none, the host's default account. */
+    account?: string | null;
 }
 
 export interface Workflow {

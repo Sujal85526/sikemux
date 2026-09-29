@@ -27,18 +27,30 @@ import {
     type RateLimit,
     type Workflow,
 } from "./types";
-import { hostApi, type HostAccount } from "./registry";
+import { hostApi, type HostAccount, type HostAccountEntry } from "./registry";
 
 export const hostStatusR = resource({
     kind: "host.status",
-    fetch: (provider: string): Promise<HostAccount> => hostApi(provider).status(),
+    fetch: (provider: string, account: string | null): Promise<HostAccount> => hostApi(provider).status(account),
     staleAfterMs: 60_000,
 });
 
 export const rateLimitR = resource({
     kind: "host.rateLimit",
-    fetch: (provider: string): Promise<RateLimit> => hostApi(provider).rateLimit(),
+    fetch: (provider: string, account: string | null): Promise<RateLimit> => hostApi(provider).rateLimit(account),
     staleAfterMs: 30_000,
+});
+
+export const accountsR = resource({
+    kind: "host.accounts",
+    fetch: (provider: string): Promise<HostAccountEntry[]> => hostApi(provider).accounts(),
+    staleAfterMs: 5 * 60_000,
+});
+
+export const accountForR = resource({
+    kind: "host.accountFor",
+    fetch: (repo: RepoRef): Promise<string | null> => hostApi(repo.provider).accountFor(repo),
+    staleAfterMs: 10 * 60_000,
 });
 
 export const hostRemoteR = resource({
@@ -49,7 +61,7 @@ export const hostRemoteR = resource({
 
 export const myReposR = resource({
     kind: "host.myRepos",
-    fetch: (provider: string): Promise<RepoListing[]> => hostApi(provider).myRepos(),
+    fetch: (provider: string, account: string | null): Promise<RepoListing[]> => hostApi(provider).myRepos(account),
     staleAfterMs: 5 * 60_000,
 });
 
@@ -188,7 +200,7 @@ export const releasesR = resource({
 
 export const inboxR = resource({
     kind: "host.inbox",
-    fetch: (provider: string, all: boolean): Promise<Notification[]> => hostApi(provider).inbox(all),
+    fetch: (provider: string, account: string | null, all: boolean): Promise<Notification[]> => hostApi(provider).inbox(account, all),
     staleAfterMs: 30_000,
 });
 

@@ -16,7 +16,7 @@ const IDLE_REFRESH_MS = 20_000;
 function HostCiGlyph({ hostId, projectCwd }: PluginTopBarProps & { hostId: string }) {
     const found = useHostRepo(projectCwd, !!projectCwd);
     const repo = found.repo?.provider === hostId ? found.repo : null;
-    const status = useResourceEnabled(!!repo, hostStatusR, hostId);
+    const status = useResourceEnabled(!!repo, hostStatusR, hostId, repo?.account ?? null);
     const signedIn = !!status.data?.ok;
     const runs = useResourceEnabled(signedIn && !!repo, runsR, {
         ...(repo ?? { provider: hostId, owner: "", name: "" }),

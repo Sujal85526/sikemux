@@ -14,7 +14,7 @@ const bitbucketStatusR = resource({
     staleAfterMs: 60_000,
 });
 
-export function BitbucketSignIn({ onSignedIn }: { onSignedIn: () => void }) {
+export function BitbucketSignIn({ onSignedIn }: { onSignedIn: (account: string | null) => void }) {
     const status = useResource(bitbucketStatusR);
     if (!status.data) return <SkeletonRows rows={4} label="Connecting to Bitbucket" />;
     return <SignInForm status={status.data} onSignedIn={onSignedIn} />;
@@ -22,7 +22,7 @@ export function BitbucketSignIn({ onSignedIn }: { onSignedIn: () => void }) {
 
 interface Props {
     status: BitbucketStatus;
-    onSignedIn: () => void;
+    onSignedIn: (account: string | null) => void;
 }
 
 /** Signing in through the browser comes first; a pasted token is for workspaces that turn outside apps away. */
@@ -44,7 +44,7 @@ export function SignInForm({ status, onSignedIn }: Props) {
         attempt.done.then(
             (result) => {
                 setWaiting(null);
-                if (result.ok) onSignedIn();
+                if (result.ok) onSignedIn(result.account);
                 else setError(result.message ?? "Bitbucket did not let that account in");
             },
             (failure: unknown) => {
@@ -62,7 +62,7 @@ export function SignInForm({ status, onSignedIn }: Props) {
         setError(null);
         try {
             const result = await bitbucketApi.signInWithToken(token.trim(), email.trim() || null);
-            if (result.ok) onSignedIn();
+            if (result.ok) onSignedIn(result.account);
             else setError(result.message ?? "Bitbucket turned that token down");
         } catch (failure) {
             setError(failureMessage(failure));

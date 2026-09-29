@@ -7,8 +7,8 @@ import type { GitArea } from "../../state/types";
 import type { RepoRef } from "../types";
 import { useHostRepo } from "../project";
 import { commitAuthorsR, hostStatusR } from "../resources";
-import { codeHost, HostProvider, type CodeHost } from "../registry";
-import { sameRepo, setProjectRepo, slugOf } from "../state";
+import { AccountProvider, codeHost, HostProvider, type CodeHost } from "../registry";
+import { sameRepo, setProjectAccount, setProjectRepo, slugOf } from "../state";
 import { GitRail, HostRailItems, type RailItem } from "./HostRail";
 
 const HostArea = lazy(() => import("./HostArea").then((module) => ({ default: module.HostArea })));
@@ -35,6 +35,7 @@ export function GitHostShell({ paneId, cwd, area, active, onArea, local, childre
     const found = useHostRepo(cwd, active);
     const host = found.repo ? codeHost(found.repo.provider) : undefined;
     const [picking, setPicking] = useState(false);
+    const [adding, setAdding] = useState(false);
     const hosted = !!host;
     const pictures = useAuthorPictures(host, found.repo, active);
 
@@ -64,42 +65,69 @@ export function GitHostShell({ paneId, cwd, area, active, onArea, local, childre
         );
     }
     const repo = found.repo;
+    const added = (account: string | null) => {
+        if (account) setProjectAccount(host.id, cwd, account);
+        setAdding(false);
+        invalidate((kind) => kind.startsWith("host."));
+    };
 
     return (
         <HostProvider value={host}>
-            <div className="git-shell">
-                <GitRail
-                    local={local}
-                    host={<HostRailItems area={area} slug={slugOf(repo)} active={active} onArea={onArea} onPickRepo={() => setPicking(true)} />}
-                />
-                <div className="git-shell-main">
-                    {area === "local" ? (
-                        <AuthorPicturesProvider value={pictures}>{children}</AuthorPicturesProvider>
-                    ) : (
-                        <Suspense fallback={<SkeletonRows rows={8} label={`Loading ${host.name}`} />}>
-                            <HostArea
-                                paneId={paneId}
-                                section={area}
-                                repo={repo}
-                                branch={found.branch}
-                                cwd={sameRepo(found.remote, repo) ? cwd : null}
+            <AccountProvider value={repo.account ?? null}>
+                <div className="git-shell">
+                    <GitRail
+                        local={local}
+                        host={
+                            <HostRailItems
+                                area={area}
+                                slug={slugOf(repo)}
+                                cwd={cwd}
                                 active={active}
+                                onArea={onArea}
+                                onPickRepo={() => setPicking(true)}
+                                onAddAccount={() => setAdding(true)}
                             />
-                        </Suspense>
-                    )}
-                </div>
-            </div>
-            {picking && (
-                <Suspense fallback={null}>
-                    <RepoPicker
-                        current={repo}
-                        onClose={() => setPicking(false)}
-                        onPick={(picked) =>
-                            setProjectRepo(host.id, cwd, found.remote && slugOf(found.remote) === slugOf(picked) ? null : slugOf(picked))
                         }
                     />
-                </Suspense>
-            )}
+                    <div className="git-shell-main">
+                        {adding ? (
+                            <div className="gha-pane" data-active={active ? "1" : "0"}>
+                                <div className="gha-callout gha-add-account">
+                                    <span>Add another {host.name} account. This project switches to it once it signs in.</span>
+                                    <button type="button" className="gha-link" onClick={() => setAdding(false)}>
+                                        Cancel
+                                    </button>
+                                </div>
+                                <host.SignIn onSignedIn={added} />
+                            </div>
+                        ) : area === "local" ? (
+                            <AuthorPicturesProvider value={pictures}>{children}</AuthorPicturesProvider>
+                        ) : (
+                            <Suspense fallback={<SkeletonRows rows={8} label={`Loading ${host.name}`} />}>
+                                <HostArea
+                                    paneId={paneId}
+                                    section={area}
+                                    repo={repo}
+                                    branch={found.branch}
+                                    cwd={sameRepo(found.remote, repo) ? cwd : null}
+                                    active={active}
+                                />
+                            </Suspense>
+                        )}
+                    </div>
+                </div>
+                {picking && (
+                    <Suspense fallback={null}>
+                        <RepoPicker
+                            current={repo}
+                            onClose={() => setPicking(false)}
+                            onPick={(picked) =>
+                                setProjectRepo(host.id, cwd, found.remote && slugOf(found.remote) === slugOf(picked) ? null : slugOf(picked))
+                            }
+                        />
+                    </Suspense>
+                )}
+            </AccountProvider>
         </HostProvider>
     );
 }
@@ -107,7 +135,7 @@ export function GitHostShell({ paneId, cwd, area, active, onArea, local, childre
 /** The host's pictures for the emails in local commits, once someone is signed in to it. */
 function useAuthorPictures(host: CodeHost | undefined, repo: RepoRef | null, active: boolean): AuthorPictures | null {
     const provider = repo?.provider ?? "";
-    const status = useResourceEnabled(active && !!host, hostStatusR, provider);
+    const status = useResourceEnabled(active && !!host, hostStatusR, provider, repo?.account ?? null);
     const signedIn = !!status.data?.ok;
     const authors = useResourceEnabled(
         active && signedIn && !!host?.api.commitAuthors,

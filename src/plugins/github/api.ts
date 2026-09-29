@@ -37,6 +37,7 @@ import type {
     CodeHostApi,
     CommitAuthor,
     HostAccount,
+    HostAccountEntry,
 } from "../../plugin-api/codehost";
 import { GITHUB_PLUGIN_ID } from "./kinds";
 
@@ -48,6 +49,8 @@ export type TokenSource = "keychain" | "environment" | "ghCli";
 
 export interface ActionsStatus {
     configured: boolean;
+    /** Which signed-in account this is; null while a borrowed token stands in before anyone has signed in. */
+    account: string | null;
     host: string;
     login: string;
     tokenSource: TokenSource | null;
@@ -157,12 +160,12 @@ function download(method: string, params: unknown, onProgress?: (progress: Downl
 }
 
 export const actionsApi = {
-    status: () => backend.call<ActionsStatus>("status"),
+    status: (account: string | null = null) => backend.call<ActionsStatus>("status", { account }),
     signIn: (host: string, token?: string) => backend.call<ActionsStatus>("signIn", { host, token }),
-    signOut: () => backend.call<void>("signOut"),
+    signOut: (account: string | null) => backend.call<void>("signOut", { account }),
 
     resolveRemote: (url: string) => backend.call<Resolved>("resolveRemote", { url }),
-    myRepos: (limit = 50) => call<RepoListing[]>("myRepos", { limit }),
+    myRepos: (account: string | null, limit = 50) => call<RepoListing[]>("myRepos", { account, limit }),
 
     workflows: (repo: RepoRef) => call<(Omit<Workflow, "id"> & { id: number })[]>("workflows", repo).then((rows): Workflow[] => rows.map(withTextId)),
     branches: (repo: RepoRef) => call<string[]>("branches", repo),
@@ -195,7 +198,7 @@ export const actionsApi = {
     issue: (repo: RepoRef, number: number) => call<Issue>("issue", { ...repo, number }),
     comments: (repo: RepoRef, number: number) => call<Comment[]>("comments", { ...repo, number }),
     releases: (repo: RepoRef) => call<Release[]>("releases", repo),
-    inbox: (all: boolean) => call<Notification[]>("inbox", { all }),
+    inbox: (account: string | null, all: boolean) => call<Notification[]>("inbox", { account, all }),
     image,
 
     /** `sha` is the head commit the person saw; GitHub refuses the merge if the branch has moved since. */
@@ -208,8 +211,8 @@ export const actionsApi = {
     addComment: (repo: RepoRef, number: number, body: string) => call<void>("addComment", { ...repo, number, body }),
     downloadAsset: (repo: RepoRef, assetId: number, name: string, onProgress?: (progress: DownloadProgress) => void) =>
         download("downloadAsset", { ...repo, assetId, fileName: name }, onProgress),
-    markRead: (id: string) => call<void>("markRead", { id }),
-    markAllRead: () => call<void>("markAllRead"),
+    markRead: (account: string | null, id: string) => call<void>("markRead", { account, id }),
+    markAllRead: (account: string | null) => call<void>("markAllRead", { account }),
 
     dispatch: (repo: RepoRef, workflowId: string, gitRef: string, inputs: Record<string, string>) =>
         call<void>("dispatch", { ...repo, workflowId: Number(workflowId), gitRef, inputs }),
@@ -252,6 +255,7 @@ export function avatarForLogin(login: string): string | null {
 function accountOf(status: ActionsStatus): HostAccount {
     if (status.host) accountHost = status.host;
     return {
+        id: status.account,
         ok: status.ok,
         login: status.login,
         avatarUrl: status.login ? avatarOf(status.login, status.host) : null,
@@ -262,10 +266,30 @@ function accountOf(status: ActionsStatus): HostAccount {
 }
 
 /** GitHub as the git pane reads any code host. */
+interface ListedAccount {
+    id: string;
+    host: string;
+    login: string;
+    isDefault: boolean;
+}
+
+function entryOf(account: ListedAccount): HostAccountEntry {
+    return {
+        id: account.id,
+        login: account.login,
+        detail: account.host === "github.com" ? null : account.host,
+        avatarUrl: avatarOf(account.login, account.host),
+        isDefault: account.isDefault,
+    };
+}
+
 export const githubHostApi: CodeHostApi = {
     ...actionsApi,
-    rateLimit: () => backend.call<RateLimit>("rateLimit"),
-    status: () => actionsApi.status().then(accountOf),
+    rateLimit: (account: string | null) => backend.call<RateLimit>("rateLimit", { account }),
+    status: (account: string | null) => actionsApi.status(account).then(accountOf),
+    accounts: () => backend.call<ListedAccount[]>("accounts").then((listed) => listed.map(entryOf)),
+    setDefaultAccount: (account: string) => backend.call<void>("setDefaultAccount", { id: account }),
+    accountFor: (repo: RepoRef) => call<string | null>("accountFor", repo),
 };
 
 const NOREPLY = /^(\d+)\+[^@]+@users\.noreply\.github\.com$/iu;

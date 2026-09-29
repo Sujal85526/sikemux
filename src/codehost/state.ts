@@ -22,6 +22,8 @@ export interface HostSettings {
     pinned: string[];
     /** A repository picked by hand for a project folder, which wins over what its remote says. */
     repoByProject: Record<string, string>;
+    /** An account picked by hand for a project folder, which wins over the first account that can see its repository. */
+    accountByProject: Record<string, string>;
     followBranch: boolean;
 }
 
@@ -34,9 +36,14 @@ function decodeSettings(saved: unknown): HostSettings {
     for (const [cwd, slug] of Object.entries(isRecord(raw.repoByProject) ? raw.repoByProject : {})) {
         if (isSlug(slug)) repoByProject[cwd] = slug;
     }
+    const accountByProject: Record<string, string> = {};
+    for (const [cwd, account] of Object.entries(isRecord(raw.accountByProject) ? raw.accountByProject : {})) {
+        if (typeof account === "string" && account) accountByProject[cwd] = account;
+    }
     return {
         pinned: Array.isArray(raw.pinned) ? [...new Set(raw.pinned.filter(isSlug))] : [],
         repoByProject,
+        accountByProject,
         followBranch: raw.followBranch !== false,
     };
 }
@@ -67,6 +74,23 @@ export function setProjectRepo(provider: string, cwd: string, slug: string | nul
         else delete repoByProject[cwd];
         return { ...settings, repoByProject };
     });
+}
+
+export function setProjectAccount(provider: string, cwd: string, account: string | null): void {
+    hostSettings(provider).update((settings) => {
+        const accountByProject = { ...settings.accountByProject };
+        if (account) accountByProject[cwd] = account;
+        else delete accountByProject[cwd];
+        return { ...settings, accountByProject };
+    });
+}
+
+/** Every project that picked an account forgets it once it signs out, and goes back to finding one. */
+export function forgetAccount(provider: string, account: string): void {
+    hostSettings(provider).update((settings) => ({
+        ...settings,
+        accountByProject: Object.fromEntries(Object.entries(settings.accountByProject).filter(([, picked]) => picked !== account)),
+    }));
 }
 
 export function setFollowBranch(provider: string, followBranch: boolean): void {

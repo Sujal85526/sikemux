@@ -5,7 +5,7 @@ import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
 import { Checkbox, EmptyState, IconCheck, SkeletonRows } from "../../plugin-api/ui";
 import { failureMessage, type Notification, type RepoRef } from "../api";
 import { inboxR } from "../resources";
-import { useHost } from "../registry";
+import { useAccount, useHost } from "../registry";
 import { formatAgo } from "../runStatus";
 import { useBusy, useNow } from "./hooks";
 import { IssueDetail } from "./IssuesView";
@@ -97,7 +97,8 @@ export function InboxView({ paneId, login, active }: Props) {
     const host = useHost();
     const [all, setAll] = useState(false);
     const [shown, setShown] = useState<Notification | null>(null);
-    const inbox = useResourceEnabled(active, inboxR, host.id, all);
+    const account = useAccount();
+    const inbox = useResourceEnabled(active, inboxR, host.id, account, all);
     const now = useNow(false);
     const [busy, runBusy] = useBusy();
 
@@ -108,12 +109,12 @@ export function InboxView({ paneId, login, active }: Props) {
     const open = (item: Notification) => {
         setShown(item);
         if (!item.unread) return;
-        void host.api.markRead(item.id).then(refresh).catch(swallow("mark it read"));
+        void host.api.markRead(account, item.id).then(refresh).catch(swallow("mark it read"));
     };
     const readEverything = () =>
         runBusy(() =>
             host.api
-                .markAllRead()
+                .markAllRead(account)
                 .then(() => {
                     notify("success", "Inbox cleared");
                     refresh();

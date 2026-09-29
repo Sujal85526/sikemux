@@ -13,6 +13,7 @@ import { SignInForm } from "./BitbucketSignIn";
 
 const status: BitbucketStatus = {
     configured: false,
+    account: null,
     method: null,
     login: "",
     displayName: null,
@@ -24,7 +25,7 @@ const status: BitbucketStatus = {
     browserSignIn: true,
 };
 
-const signedIn: BitbucketStatus = { ...status, configured: true, method: "oauth", login: "ada", ok: true, canWriteCi: true };
+const signedIn: BitbucketStatus = { ...status, account: "ada-id", configured: true, method: "oauth", login: "ada", ok: true, canWriteCi: true };
 
 afterEach(cleanup);
 
@@ -42,7 +43,7 @@ describe("SignInForm", () => {
         expect(fake.openUrl).toHaveBeenCalledWith("https://bitbucket.org/site/oauth2/authorize?client_id=x");
         expect(screen.getByText(/Finish signing in in your browser/)).toBeTruthy();
         await act(async () => finish(signedIn));
-        expect(onSignedIn).toHaveBeenCalledTimes(1);
+        expect(onSignedIn).toHaveBeenCalledWith("ada-id");
     });
 
     it("stops waiting on the browser when told to", () => {

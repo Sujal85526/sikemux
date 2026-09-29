@@ -9,6 +9,7 @@ import { ActionsSignIn } from "./ActionsSignIn";
 
 const status: ActionsStatus = {
     configured: false,
+    account: null,
     host: "github.com",
     login: "",
     tokenSource: null,

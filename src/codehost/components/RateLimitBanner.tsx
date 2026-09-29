@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
-import { useHost } from "../registry";
+import { useAccount, useHost } from "../registry";
 import { rateLimitR } from "../resources";
 import type { RateLimit } from "../types";
 import { useNow } from "./hooks";
@@ -37,7 +37,7 @@ export function rateLimitNote(host: string, budget: RateLimit, now: number): { t
 /** Says when a host's rate limit is spent or nearly so, and reads everything again once it resets. */
 export function RateLimitBanner({ active }: { active: boolean }) {
     const host = useHost();
-    const budget = useResourceEnabled(active, rateLimitR, host.id).data;
+    const budget = useResourceEnabled(active, rateLimitR, host.id, useAccount()).data;
     const limited = !!budget?.limited;
     const now = useNow(limited);
     const resetsAt = budget?.resetsAt ?? null;

@@ -5,7 +5,7 @@ import { failureMessage } from "../api";
 import { LocalRepoProvider } from "../localRepo";
 import { useHost } from "../registry";
 import { hostStatusR, workflowsR } from "../resources";
-import { hostSettings, resetView, slugOf, updateView, useHostView, type Section } from "../state";
+import { hostSettings, resetView, setProjectAccount, slugOf, updateView, useHostView, type Section } from "../state";
 import type { RepoRef } from "../types";
 import { DispatchDialog } from "./DispatchDialog";
 import { InboxView } from "./InboxView";
@@ -32,7 +32,7 @@ interface Props {
 export function HostArea({ paneId, section, repo, branch, cwd, active }: Props) {
     const host = useHost();
     const view = useHostView(paneId);
-    const status = useResourceEnabled(active, hostStatusR, host.id);
+    const status = useResourceEnabled(active, hostStatusR, host.id, repo.account ?? null);
     const followBranch = hostSettings(host.id).useSelect((settings) => settings.followBranch);
     const signedIn = !!status.data?.ok;
 
@@ -73,7 +73,12 @@ export function HostArea({ paneId, section, repo, branch, cwd, active }: Props) 
     if (!signedIn) {
         return (
             <div className="gha-pane" data-active={active ? "1" : "0"}>
-                <host.SignIn onSignedIn={() => invalidate((kind) => kind.startsWith("host."))} />
+                <host.SignIn
+                    onSignedIn={(account) => {
+                        if (account && cwd) setProjectAccount(host.id, cwd, account);
+                        invalidate((kind) => kind.startsWith("host."));
+                    }}
+                />
             </div>
         );
     }

@@ -7,6 +7,7 @@ import type {
     CodeHostApi,
     Comment,
     HostAccount,
+    HostAccountEntry,
     JobLog,
     JobSummary,
     MergeMethod,
@@ -35,6 +36,8 @@ const backend = createPluginBackend(BITBUCKET_PLUGIN_ID);
 
 export interface BitbucketStatus {
     configured: boolean;
+    /** Which signed-in account this is. */
+    account: string | null;
     method: "oauth" | "token" | null;
     login: string;
     displayName: string | null;
@@ -126,13 +129,14 @@ function signInWithBrowser(openPage: (url: string) => void): BrowserSignIn {
 }
 
 export const bitbucketApi = {
-    status: () => backend.call<BitbucketStatus>("status"),
+    status: (account: string | null = null) => backend.call<BitbucketStatus>("status", { account }),
     signInWithToken: (token: string, email: string | null) => backend.call<BitbucketStatus>("signInWithToken", { token, email }),
     signInWithBrowser,
 };
 
 function accountOf(status: BitbucketStatus): HostAccount {
     return {
+        id: status.account,
         ok: status.ok,
         login: status.login,
         avatarUrl: status.avatarUrl,
@@ -143,12 +147,33 @@ function accountOf(status: BitbucketStatus): HostAccount {
 }
 
 /** Bitbucket as the Git pane reads any code host. What it has no counterpart for is empty, or refused if it is a change. */
+interface ListedAccount {
+    id: string;
+    login: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+    isDefault: boolean;
+}
+
+function entryOf(account: ListedAccount): HostAccountEntry {
+    return {
+        id: account.id,
+        login: account.login,
+        detail: account.displayName && account.displayName !== account.login ? account.displayName : null,
+        avatarUrl: account.avatarUrl,
+        isDefault: account.isDefault,
+    };
+}
+
 export const bitbucketHostApi: CodeHostApi = {
-    rateLimit: () => backend.call<RateLimit>("rateLimit"),
-    status: () => bitbucketApi.status().then(accountOf),
-    signOut: () => backend.call<void>("signOut"),
+    rateLimit: (account: string | null) => backend.call<RateLimit>("rateLimit", { account }),
+    status: (account: string | null) => bitbucketApi.status(account).then(accountOf),
+    signOut: (account: string | null) => backend.call<void>("signOut", { account }),
+    accounts: () => backend.call<ListedAccount[]>("accounts").then((listed) => listed.map(entryOf)),
+    setDefaultAccount: (account: string) => backend.call<void>("setDefaultAccount", { id: account }),
+    accountFor: (repo: RepoRef) => call<string | null>("accountFor", repo),
     resolveRemote: (url: string) => backend.call<Resolved>("resolveRemote", { url }),
-    myRepos: (limit = 50) => call<RepoListing[]>("myRepos", { limit }),
+    myRepos: (account: string | null, limit = 50) => call<RepoListing[]>("myRepos", { account, limit }),
     image,
 
     workflows: (repo: RepoRef) => call<Workflow[]>("workflows", repo),

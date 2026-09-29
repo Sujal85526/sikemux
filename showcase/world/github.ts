@@ -206,6 +206,7 @@ function jobsFor(runId: number) {
 export const GITHUB: Record<string, (params: Params) => unknown> = {
   status: () => ({
     configured: true,
+    account: "github.com:Sujalxcode",
     host: "github.com",
     login: "Sujalxcode",
     tokenSource: "ghCli",
@@ -216,6 +217,16 @@ export const GITHUB: Record<string, (params: Params) => unknown> = {
     authFailed: false,
     message: null,
   }),
+  accounts: () => [
+    {
+      id: "github.com:Sujalxcode",
+      host: "github.com",
+      login: "Sujalxcode",
+      source: "ghCli",
+      isDefault: true,
+    },
+  ],
+  accountFor: () => "github.com:Sujalxcode",
   rateLimit: () => ({
     limited: false,
     resetsAt: null,
