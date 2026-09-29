@@ -116,15 +116,29 @@ enum TurnSignal {
     Closes,
 }
 
-fn turn_signal(update: &Value) -> Option<TurnSignal> {
-    match update.get("sessionUpdate").and_then(Value::as_str)? {
-        "user_message_chunk" | "agent_message_chunk" | "agent_thought_chunk" | "tool_call" => {
-            Some(TurnSignal::Work)
-        }
-        // Claude's adapter tags the usage report that closes a turn it ran on
-        // its own with where the turn came from.
-        "usage_update" if update.pointer("/_meta/_claude~1origin").is_some() => {
-            Some(TurnSignal::Closes)
+fn turn_signal(provider: &str, update: &Value) -> Option<TurnSignal> {
+    let kind = update.get("sessionUpdate").and_then(Value::as_str)?;
+    match provider {
+        "claude" => match kind {
+            "user_message_chunk" | "agent_message_chunk" | "agent_thought_chunk" | "tool_call" => {
+                Some(TurnSignal::Work)
+            }
+            // Claude's adapter tags the usage report that closes a turn it ran
+            // on its own with where the turn came from.
+            "usage_update" if update.pointer("/_meta/_claude~1origin").is_some() => {
+                Some(TurnSignal::Closes)
+            }
+            _ => None,
+        },
+        // Codex says outright when its thread starts and stops working.
+        "codex" if kind == "session_info_update" => {
+            match update
+                .pointer("/_meta/codex/threadStatus/type")
+                .and_then(Value::as_str)?
+            {
+                "active" => Some(TurnSignal::Work),
+                _ => Some(TurnSignal::Closes),
+            }
         }
         _ => None,
     }
@@ -729,7 +743,7 @@ async fn run_connection(
     // Set once the session has loaded. A resumed session replays its history
     // before that, and none of it is a turn.
     let loaded_session = Arc::new(std::sync::OnceLock::<String>::new());
-    let wakes_on_its_own = provider == "claude";
+    let event_provider = provider.clone();
     let event_running = running.clone();
     let event_unprompted = unprompted.clone();
     let event_session = loaded_session.clone();
@@ -743,8 +757,11 @@ async fn run_connection(
                     .get("sessionId")
                     .and_then(Value::as_str)
                     .is_some_and(|id| event_session.get().is_some_and(|own| own == id));
-                let signal = if wakes_on_its_own && own_session {
-                    notification.0.get("update").and_then(turn_signal)
+                let signal = if own_session {
+                    notification
+                        .0
+                        .get("update")
+                        .and_then(|update| turn_signal(&event_provider, update))
                 } else {
                     None
                 };
@@ -1592,7 +1609,7 @@ mod tests {
     }
 
     #[test]
-    fn only_work_and_the_tagged_usage_report_move_a_turn_the_agent_started() {
+    fn claude_turns_open_on_work_and_close_on_the_tagged_usage_report() {
         for kind in [
             "user_message_chunk",
             "agent_message_chunk",
@@ -1600,15 +1617,18 @@ mod tests {
             "tool_call",
         ] {
             assert_eq!(
-                turn_signal(&json!({ "sessionUpdate": kind })),
+                turn_signal("claude", &json!({ "sessionUpdate": kind })),
                 Some(TurnSignal::Work)
             );
         }
         assert_eq!(
-            turn_signal(&json!({
-                "sessionUpdate": "usage_update",
-                "_meta": { "_claude/origin": { "kind": "peer" } },
-            })),
+            turn_signal(
+                "claude",
+                &json!({
+                    "sessionUpdate": "usage_update",
+                    "_meta": { "_claude/origin": { "kind": "peer" } },
+                })
+            ),
             Some(TurnSignal::Closes)
         );
         for update in [
@@ -1617,8 +1637,35 @@ mod tests {
             json!({ "sessionUpdate": "available_commands_update" }),
             json!({}),
         ] {
-            assert_eq!(turn_signal(&update), None);
+            assert_eq!(turn_signal("claude", &update), None);
         }
+    }
+
+    #[test]
+    fn codex_turns_follow_its_thread_status() {
+        let status = |kind: &str| {
+            json!({
+                "sessionUpdate": "session_info_update",
+                "_meta": { "codex": { "threadStatus": { "type": kind } } },
+            })
+        };
+        assert_eq!(
+            turn_signal("codex", &status("active")),
+            Some(TurnSignal::Work)
+        );
+        for kind in ["idle", "systemError", "notLoaded"] {
+            assert_eq!(
+                turn_signal("codex", &status(kind)),
+                Some(TurnSignal::Closes)
+            );
+        }
+        for update in [
+            json!({ "sessionUpdate": "agent_message_chunk" }),
+            json!({ "sessionUpdate": "session_info_update", "title": "Named" }),
+        ] {
+            assert_eq!(turn_signal("codex", &update), None);
+        }
+        assert_eq!(turn_signal("opencode", &status("active")), None);
     }
 
     #[test]
