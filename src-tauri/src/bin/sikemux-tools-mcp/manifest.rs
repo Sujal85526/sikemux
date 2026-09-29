@@ -52,7 +52,10 @@ impl Manifest {
 
     pub fn instructions(&self) -> String {
         format!(
-            "Sikemux drives the person's open project and this agent's browser tabs. Call {} before the first task launch or browser click.",
+            "Sikemux drives the person's open project and this agent's browser tabs. Call {} before the first task launch or browser click. \
+             When the person asks you to open, show or preview a page, use browser_navigate: it opens on your desk beside them, not in their own browser. \
+             Desk tabs run the same WebKit as Sikemux and Safari, so check web pages there rather than in headless Chromium. \
+             The browser tools used most are browser_navigate, browser_state, browser_find, browser_click, browser_type, browser_wait and browser_screenshot; load them together.",
             self.guide.name
         )
     }
@@ -117,25 +120,91 @@ impl Tool {
                 check(value, schema, name, false)?;
             }
         }
-        for name in &self.required {
-            if !object.contains_key(name) {
-                return Err(format!("'{name}' is a required property"));
-            }
-        }
-        let unexpected: Vec<String> = object
+        let unexpected: Vec<&String> = object
             .keys()
             .filter(|name| !self.properties.contains_key(*name))
-            .map(|name| format!("'{name}'"))
             .collect();
+        let hints: Vec<String> = unexpected
+            .iter()
+            .filter_map(|name| {
+                self.closest(name)
+                    .map(|known| format!("'{name}' should be '{known}'"))
+            })
+            .collect();
+        let hint = if hints.is_empty() {
+            String::new()
+        } else {
+            format!("; {}", hints.join(", "))
+        };
+        for name in &self.required {
+            if !object.contains_key(name) {
+                return Err(format!("'{name}' is a required property{hint}"));
+            }
+        }
         if unexpected.is_empty() {
             return Ok(());
         }
         let verb = if unexpected.len() == 1 { "was" } else { "were" };
+        let listed: Vec<String> = unexpected.iter().map(|name| format!("'{name}'")).collect();
         Err(format!(
-            "Additional properties are not allowed ({} {verb} unexpected)",
-            unexpected.join(", ")
+            "Additional properties are not allowed ({} {verb} unexpected){hint}",
+            listed.join(", ")
         ))
     }
+
+    /// The property an agent most likely meant by a name this tool lacks.
+    fn closest(&self, name: &str) -> Option<&str> {
+        const SAME_MEANING: &[(&str, &[&str])] = &[
+            (
+                "script",
+                &["expression", "code", "js", "javascript", "function"],
+            ),
+            ("selector", &["query", "css"]),
+            ("tail", &["lines"]),
+            ("taskId", &["name", "task", "id"]),
+            ("deltaY", &["y", "dy", "amount", "pixels"]),
+            ("url", &["href", "link"]),
+            ("text", &["value", "content"]),
+            ("index", &["element", "ref", "number"]),
+        ];
+        let lowered = name.to_ascii_lowercase();
+        let known = |candidate: &str| self.properties.contains_key(candidate);
+        SAME_MEANING
+            .iter()
+            .find(|(meant, others)| known(meant) && others.contains(&lowered.as_str()))
+            .map(|(meant, _)| *meant)
+            .or_else(|| {
+                self.properties
+                    .keys()
+                    .map(|candidate| {
+                        (
+                            candidate,
+                            distance(&lowered, &candidate.to_ascii_lowercase()),
+                        )
+                    })
+                    .filter(|(_, apart)| *apart <= 2)
+                    .min_by_key(|(_, apart)| *apart)
+                    .map(|(candidate, _)| candidate.as_str())
+            })
+    }
+}
+
+fn distance(from: &str, to: &str) -> usize {
+    let to: Vec<char> = to.chars().collect();
+    let mut previous: Vec<usize> = (0..=to.len()).collect();
+    for (row, left) in from.chars().enumerate() {
+        let mut current = vec![row + 1];
+        for (column, right) in to.iter().enumerate() {
+            let substitute = previous[column] + usize::from(left != *right);
+            current.push(
+                substitute
+                    .min(previous[column + 1] + 1)
+                    .min(current[column] + 1),
+            );
+        }
+        previous = current;
+    }
+    previous[to.len()]
 }
 
 /// `label` names the value for nested errors; the top level keeps the wording

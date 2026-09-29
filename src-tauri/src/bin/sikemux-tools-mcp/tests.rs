@@ -293,6 +293,37 @@ fn bad_arguments_are_named_the_way_the_agent_learned_them() {
 }
 
 #[test]
+fn a_misnamed_argument_is_pointed_at_the_one_meant() {
+    let manifest = Manifest::load();
+    let complaint = |name: &str, arguments: Value| {
+        manifest
+            .tool(name)
+            .expect("a declared tool")
+            .validate(&arguments)
+            .expect_err("the arguments are refused")
+    };
+    assert_eq!(
+        complaint(
+            "browser_evaluate",
+            json!({ "expression": "document.title" })
+        ),
+        "'script' is a required property; 'expression' should be 'script'"
+    );
+    assert_eq!(
+        complaint("browser_extract", json!({ "query": "main" })),
+        "Additional properties are not allowed ('query' was unexpected); 'query' should be 'selector'"
+    );
+    assert_eq!(
+        complaint("browser_click", json!({ "indx": 3 })),
+        "Additional properties are not allowed ('indx' was unexpected); 'indx' should be 'index'"
+    );
+    assert_eq!(
+        complaint("browser_click", json!({ "zzzzzz": 3 })),
+        "Additional properties are not allowed ('zzzzzz' was unexpected)"
+    );
+}
+
+#[test]
 fn a_screenshot_comes_back_as_an_image() {
     let blocks = content_for(
         "browser_screenshot",
