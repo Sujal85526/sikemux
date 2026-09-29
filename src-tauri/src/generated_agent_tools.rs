@@ -36,4 +36,5 @@ pub const HARNESS_METHODS: &[&str] = &[
     "task.stop",
     "ui.open",
     "events.wait",
+    "app.console",
 ];

@@ -379,7 +379,7 @@
     {
       "name": "browser_upload",
       "method": "browser.upload",
-      "description": "Give files to a file input, as if picked in its chooser.",
+      "description": "Give files to a file input.",
       "properties": {
         "paths": {
           "type": "array",
@@ -777,10 +777,25 @@
     {
       "name": "task_start",
       "method": "task.start",
-      "description": "Start a configured project task in a managed terminal.",
+      "description": "Start a sikemux.json task or any shell command in a managed terminal.",
       "properties": {
         "taskId": {
           "type": "string"
+        },
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "cwd": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
         },
         "idempotencyKey": {
           "type": "string",
@@ -793,7 +808,6 @@
         }
       },
       "required": [
-        "taskId",
         "idempotencyKey"
       ]
     },
@@ -916,6 +930,22 @@
       "required": [
         "cursor"
       ]
+    },
+    {
+      "name": "app_console",
+      "method": "app.console",
+      "description": "Read the Sikemux app's own console and errors.",
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "errors": {
+          "type": "boolean"
+        }
+      },
+      "required": []
     }
   ]
 }

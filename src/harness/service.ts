@@ -10,6 +10,7 @@ import { useStore, setState } from "../state/store";
 import * as commands from "../state/commands";
 import { appTaskRuntime } from "../tasks/application";
 import { NativeTaskExecutionBackend, WorkbenchTaskTerminalSurface, taskPtyBindings } from "../tasks/nativeRuntime";
+import { appConsole } from "./appConsole";
 import { HarnessEvents } from "./events";
 import { HarnessTasks, type HarnessHistory, type HarnessLaunch, type HarnessLaunchRequest, type HarnessPrepared, type HarnessRun } from "./tasks";
 
@@ -495,6 +496,8 @@ export async function handleHarnessRequest(request: HarnessRequest, signal?: Abo
             harnessEvents.publish({ project, kind: "ui.opened" });
             return result;
         }
+        case "app.console":
+            return appConsole.read(params);
         default:
             throw new Error("Unknown harness method");
     }

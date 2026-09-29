@@ -55,7 +55,16 @@ inventing new ones. Inspect again after writing to see `configErrors`.
 
 ## Running a task
 
-`task_start` takes a `taskId` and an `idempotencyKey` you choose.
+`task_start` takes an `idempotencyKey` you choose and either a `taskId` from
+`sikemux.json` or a `command` to run. A `command` runs in the same kind of
+managed terminal as a configured task, in the project root or in `cwd`, a
+directory inside the project given relative to it, and `label` names its tab.
+The result's `taskId` looks like `sh:pnpm-dev-3fa2c1`; use it with
+`task_read`, `task_stop` and `task_restart`, or pass it back to `task_start`
+to run the same command again. Starting the same command in the same
+directory while it still runs returns that run. Use this for dev servers and
+watchers rather than background shell jobs: you can read their output, see
+when they exit, and they stop with the project.
 
 The key is what makes a retry safe. Reusing a key returns the original
 execution rather than starting a second one, and it keeps doing so after that
@@ -64,16 +73,24 @@ call fails or you are unsure whether it landed.
 
 Two things can stop a launch:
 
-- The project may need trust. Sikemux shows its own dialog, and a changed
-  `sikemux.json` is checked again before the next launch.
+- A `sikemux.json` task may need trust. Sikemux shows its own dialog, and a
+  changed `sikemux.json` is checked again before the next launch. While the
+  dialog waits on the person, `task_start` returns at once with
+  `status: "awaiting-trust"` and an `executionId` that `task_read` and
+  `task_stop` already know. Call `task_start` again with the same key, or
+  `events_wait` with that `executionId`, to see it start. If the person
+  refuses, the run ends as `failed`. A `command` needs no trust.
 - If the same task is already running from the command deck, stop it there
   first. Starting a task already running through the harness just returns that
   execution.
 
-`readyWhen` makes `task_start` wait, up to 45 seconds, until that text
-appears in the output, such as `Ready in` for a dev server. The result then
-carries `ready`: `true` once it appeared, `false` if the task stopped or the
-wait ran out first.
+`task_start` always answers within about 30 seconds. If the task is still
+launching it returns `status: "starting"`; call again with the same key.
+`readyWhen` makes it wait, within those 30 seconds, until that text appears
+in the output, such as `Ready in` for a dev server. The result then carries
+`ready`: `true` once it appeared, `false` if the task stopped or time ran out,
+with a `note` when it is still running; keep waiting with `events_wait`, or
+`task_read` with `search`.
 
 `task_restart` takes a `taskId`, stops that task's latest execution, starts a
 new one, and returns it. Use it instead of a stop followed by a start with a
@@ -382,6 +399,12 @@ for a thrown error nobody caught, `unhandled rejection` for a failed promise)
 and its text. `errors: true` drops the log, info and debug noise. Up to 200
 messages are kept, and the newest 50 are returned unless you pass `limit`.
 
+`app_console` reads the Sikemux app's own window the same way, not a tab.
+Its levels add `swallowed`, for errors the app caught and kept quiet, and
+each message carries an ISO `at` time. Use it when Sikemux itself misbehaves,
+such as a blank avatar or a panel that does not load, instead of asking the
+person to open Web Inspector.
+
 Tabs are yours. `browser_list_tabs`, `browser_switch_tab` and
 `browser_close_tab` act on this pane's tabs, not the person's other windows.
 Switching returns the full state of the tab you land on.
@@ -394,7 +417,8 @@ now the current one. Tabs do not survive a restart of Sikemux.
 
 Run history and idempotency keys live for the current frontend session, capped
 at 128 runs and 256 keys. Restarting the app does not resume commands, and
-reloading the frontend loses run handles. Closing the project stops its harness
+reloading the Sikemux window stops every task and loses run handles;
+`task_read` then says the task was started before the reload. Closing the project stops its harness
 tasks.
 
 If you hit a capacity error on either cap, the person needs to restart Sikemux;
