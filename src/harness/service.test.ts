@@ -5,6 +5,7 @@ import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTe
 import { loadProjectConfig } from "../projects/projectConfig";
 import { trustProjectConfig } from "../projects/projectConfigRuntime";
 import { handleHarnessRequest, harnessTasks, type HarnessRequest } from "./service";
+import type { HarnessPrepared, HarnessRun } from "./tasks";
 import { withAgents } from "../test/agents";
 
 vi.mock("../projects/projectConfig", async (original) => ({ ...(await original<object>()), loadProjectConfig: vi.fn() }));
@@ -23,6 +24,18 @@ const config = {
     },
     trust: { requiresApproval: true, executableEntries: 1, reasons: [] },
 };
+function fakeStart(result: HarnessRun) {
+    const prepared: HarnessPrepared[] = [];
+    const start = vi.spyOn(harnessTasks, "start").mockImplementation((_project, _taskId, _key, prepare) => ({
+        executionId: result.executionId,
+        started: Promise.resolve(prepare(result.executionId, new AbortController().signal)).then((launch) => {
+            prepared.push(launch);
+            return result;
+        }),
+    }));
+    vi.spyOn(harnessTasks, "get").mockImplementation(() => ({ ...result }));
+    return { start, prepared };
+}
 function request(method: string, params = {}): HarnessRequest {
     return { id: crypto.randomUUID(), project: "/one", agentId: null, method, params };
 }
@@ -64,7 +77,8 @@ describe("harness command service", () => {
         expect(useStore.getState().sessions[useStore.getState().activeSessionId].cwd).toBe("/one");
     });
     it("rejects untrusted and changed configurations before launching", async () => {
-        const start = vi.spyOn(harnessTasks, "start");
+        const spawn = vi.fn();
+        transport.register("task_spawn", spawn);
         vi.mocked(trustProjectConfig).mockResolvedValueOnce(false);
         await expect(handleHarnessRequest(request("task.start", { taskId: "test", idempotencyKey: "denied" }))).rejects.toThrow("not approved");
         vi.mocked(loadProjectConfig)
@@ -73,7 +87,27 @@ describe("harness command service", () => {
         await expect(handleHarnessRequest(request("task.start", { taskId: "test", idempotencyKey: "changed" }))).rejects.toThrow(
             "configuration changed",
         );
-        expect(start).not.toHaveBeenCalled();
+        expect(harnessTasks.latest("/one", "test")).toMatchObject({ status: "failed", error: expect.stringContaining("configuration changed") });
+        expect(spawn).not.toHaveBeenCalled();
+    });
+    it("answers at once while the person has not yet trusted sikemux.json, and a retry picks the same run up", async () => {
+        let answer!: (trusted: boolean) => void;
+        vi.mocked(trustProjectConfig).mockImplementationOnce((_config, ask) => {
+            void ask!({ title: "Trust" });
+            return new Promise((resolve) => {
+                answer = resolve;
+            });
+        });
+        const waiting = await handleHarnessRequest(request("task.start", { taskId: "test", idempotencyKey: "trust" }));
+        expect(waiting).toMatchObject({ status: "awaiting-trust", note: expect.stringContaining("trust") });
+        const { executionId } = waiting as HarnessRun;
+        expect(await handleHarnessRequest(request("task.read", { taskId: "test" }))).toMatchObject({ executionId, status: "awaiting-trust" });
+        expect(await handleHarnessRequest(request("task.start", { taskId: "test", idempotencyKey: "trust" }))).toMatchObject({
+            executionId,
+            status: "awaiting-trust",
+        });
+        expect(await handleHarnessRequest(request("task.stop", { taskId: "test" }))).toMatchObject({ executionId, status: "stopped" });
+        answer(true);
     });
     it("tells a missing configuration apart from an invalid one", async () => {
         const errors = [{ path: "$.tasks[0].cwd", code: "missing-field" as const, message: "is required" }];
@@ -89,14 +123,15 @@ describe("harness command service", () => {
         expect(await handleHarnessRequest(request("workspace.inspect"))).toMatchObject({ configStatus: "invalid", configErrors: errors });
     });
     it("passes exact configured launch data and leaves focus in the other project", async () => {
-        const start = vi.spyOn(harnessTasks, "start").mockResolvedValue({ executionId: "run", taskId: "test", project: "/one", status: "running" });
+        const { start, prepared } = fakeStart({ executionId: "run", taskId: "test", project: "/one", status: "running" });
         await handleHarnessRequest(request("task.start", { taskId: "test", idempotencyKey: "new" }));
-        expect(start).toHaveBeenCalledWith(
-            expect.objectContaining({ command: "echo test", cwd: "/one", env: { PRIVATE: "not-in-inspection" } }),
-            "new",
-            "http://localhost:5173",
-            undefined,
-        );
+        expect(start).toHaveBeenCalledWith("/one", "test", "new", expect.any(Function), { agentId: undefined, replace: false });
+        expect(prepared).toEqual([
+            {
+                request: expect.objectContaining({ command: "echo test", cwd: "/one", env: { PRIVATE: "not-in-inspection" } }),
+                previewUrl: "http://localhost:5173",
+            },
+        ]);
         expect(useStore.getState().sessions[useStore.getState().activeSessionId].cwd).toBe("/two");
     });
     it("opens a file an agent asks for on that agent's desk, at the line it names", async () => {
@@ -160,19 +195,23 @@ describe("harness command service", () => {
             order.push("stop");
             return { ...running, status: "stopped" };
         });
-        const start = vi.spyOn(harnessTasks, "start").mockImplementation(async () => {
+        const { start, prepared } = fakeStart({ executionId: "fresh", taskId: "test", project: "/one", status: "running" });
+        start.mockClear();
+        const fake = start.getMockImplementation()!;
+        start.mockImplementation((...args) => {
             order.push("start");
-            return { executionId: "fresh", taskId: "test", project: "/one", status: "running" };
+            return fake(...args);
         });
         expect(await handleHarnessRequest(request("task.restart", { taskId: "test" }))).toMatchObject({ executionId: "fresh" });
         expect(stop).toHaveBeenCalledWith("/one", "old");
-        expect(order).toEqual(["stop", "start"]);
-        expect(start.mock.calls[0][1]).toMatch(/^[0-9a-f-]{36}$/);
+        expect(order).toEqual(["start", "stop"]);
+        expect(prepared).toHaveLength(1);
+        expect(start.mock.calls[0][2]).toMatch(/^[0-9a-f-]{36}$/);
+        expect(start.mock.calls[0][4]).toMatchObject({ replace: true });
     });
     it("waits for readyWhen text to appear in a started task's output", async () => {
         const run = { executionId: "run", taskId: "test", project: "/one", status: "running" as const, ptyId: 7 };
-        vi.spyOn(harnessTasks, "start").mockResolvedValue(run);
-        vi.spyOn(harnessTasks, "get").mockReturnValue(run);
+        fakeStart(run);
         const output = vi.fn(() => ({ bytes: [], cursor: 0, end: 20, hasMore: false, truncated: false, matches: 1 }));
         transport.register("harness_task_output", output);
         const result = await handleHarnessRequest(request("task.start", { taskId: "test", idempotencyKey: "ready", readyWhen: "Ready in" }));
@@ -182,6 +221,19 @@ describe("harness command service", () => {
         output.mockReturnValue({ bytes: [], cursor: 0, end: 20, hasMore: false, truncated: false, matches: 0 });
         const failed = await handleHarnessRequest(request("task.start", { taskId: "test", idempotencyKey: "never", readyWhen: "Ready in" }));
         expect(failed).toMatchObject({ ready: false });
+        expect(failed).not.toHaveProperty("note");
+    });
+    it("gives up on readyWhen before the bridge would time out and says the task is still running", async () => {
+        vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+        try {
+            fakeStart({ executionId: "slow", taskId: "test", project: "/one", status: "running", ptyId: 8 });
+            transport.register("harness_task_output", () => ({ bytes: [], cursor: 0, end: 0, hasMore: false, truncated: false, matches: 0 }));
+            const pending = handleHarnessRequest(request("task.start", { taskId: "test", idempotencyKey: "slow", readyWhen: "never" }));
+            await vi.advanceTimersByTimeAsync(31_000);
+            expect(await pending).toMatchObject({ status: "running", ready: false, note: expect.stringContaining("events_wait") });
+        } finally {
+            vi.useRealTimers();
+        }
     });
     it("rejects invalid read limits and preview opens without an agent", async () => {
         vi.spyOn(harnessTasks, "get").mockReturnValue({ executionId: "run", taskId: "test", project: "/one", status: "running", ptyId: 42 });
