@@ -562,10 +562,11 @@ fn permission_mode_id(
         .ok_or_else(|| format!("The {provider} adapter does not offer permission mode {expected}"))
 }
 
-/// Native agents still ask before some actions in their most open mode, and
-/// some have no such mode at all, so under bypass the host says yes for the user.
-fn approves_for_user(provider: &str, mode: &str) -> bool {
-    mode == "bypass" && native::arguments(provider).is_some()
+/// Every agent still asks before some actions in its most open mode, such as
+/// Claude Code for an `rm -rf` of a computed path, and some agents have no
+/// such mode at all, so under YOLO the host says yes for the person.
+fn approves_for_user(mode: &str) -> bool {
+    mode == "bypass"
 }
 
 /// Carries the chat's saved model and effort into a native agent's session.
@@ -727,10 +728,7 @@ async fn run_connection(
         }
     };
     let agent = AcpAgent::new(config);
-    let approving = Arc::new(AtomicBool::new(approves_for_user(
-        &provider,
-        &permission_mode,
-    )));
+    let approving = Arc::new(AtomicBool::new(approves_for_user(&permission_mode)));
     let permission_approving = approving.clone();
     let event_app = app.clone();
     let event_agent_id = agent_id.clone();
@@ -1129,7 +1127,7 @@ async fn run_connection(
                             };
                             if result.is_ok() {
                                 approving.store(
-                                    approves_for_user(&provider, &mode),
+                                    approves_for_user(&mode),
                                     Ordering::Release,
                                 );
                             }
@@ -1575,12 +1573,13 @@ mod tests {
                 permission_mode_id(provider, "workspace-write", &json!({})).unwrap(),
                 None
             );
-            assert!(approves_for_user(provider, "bypass"));
-            assert!(!approves_for_user(provider, "workspace-write"));
         }
-        assert!(approves_for_user("hermes", "bypass"));
-        assert!(!approves_for_user("claude", "bypass"));
-        assert!(!approves_for_user("codex", "bypass"));
+    }
+
+    #[test]
+    fn yolo_answers_every_agent_for_the_person_and_safe_mode_asks_them() {
+        assert!(approves_for_user("bypass"));
+        assert!(!approves_for_user("workspace-write"));
     }
 
     #[test]
