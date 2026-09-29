@@ -57,7 +57,15 @@ const FIXTURE_PAGE = `<!doctype html>
     <p id="secret" hidden>Revealed</p>
     <label>Name <input id="name" type="text" /></label>
     <p id="echo"></p>
+    <button id="later" type="button">Load later</button>
     <script>
+      document.getElementById("later").addEventListener("click", () => {
+        setTimeout(() => {
+          const note = document.createElement("p");
+          note.textContent = "Loaded late";
+          document.body.append(note);
+        }, 800);
+      });
       let clicks = 0;
       document.getElementById("count").addEventListener("click", () => {
         document.getElementById("clicks").textContent = "clicks: " + ++clicks;
@@ -266,12 +274,67 @@ async function exerciseBrowserTools(harnessEnv) {
 
     const title = await evaluate("document.title");
     if (title !== FIXTURE_TITLE) fail(`evaluate returned ${title}`, desktopLog);
+
+    await tool("browser.click", { selector: "#later" });
+    const waited = await tool("browser.wait", {
+      text: "Loaded late",
+      timeoutMs: 5000,
+    });
+    if (!waited.met || waited.waitedMs < 100)
+      fail(`wait for text returned ${JSON.stringify(waited)}`, desktopLog);
+    const missing = await tool("browser.wait", {
+      selector: "#never",
+      timeoutMs: 400,
+    });
+    if (missing.met || !missing.failing?.length)
+      fail(
+        `a wait that cannot be met said ${JSON.stringify(missing)}`,
+        desktopLog,
+      );
+
+    const box = await evaluate(
+      "(() => { const r = document.getElementById('count').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()",
+    );
+    const pointed = await tool("browser.click", { x: box.x, y: box.y });
+    if (pointed.hit?.label !== "Count")
+      fail(`a click by x,y hit ${JSON.stringify(pointed.hit)}`, desktopLog);
+
+    const reloaded = await tool("browser.reload", {
+      waitFor: { selector: "#count" },
+    });
+    if (!reloaded.met) fail("reload did not wait for the page", desktopLog);
+    if (
+      (await evaluate("document.getElementById('clicks').textContent")) !==
+      "clicks: 0"
+    )
+      fail("reload kept the old page", desktopLog);
+
+    const localFolder = await mkdtemp(join(tmpdir(), "sikemux-local-page-"));
+    try {
+      const localPage = join(localFolder, "page.html");
+      await writeFile(
+        localPage,
+        "<!doctype html><title>Local smoke</title><p>From disk</p>",
+        "utf8",
+      );
+      const local = await tool("browser.navigate", { url: localPage });
+      if (
+        local.title !== "Local smoke" ||
+        !local.url.startsWith("http://127.0.0.1:")
+      )
+        fail(
+          `a local file opened as ${local.url} "${local.title}"`,
+          desktopLog,
+        );
+    } finally {
+      await rm(localFolder, { recursive: true, force: true });
+    }
   } finally {
     server.close();
     server.closeAllConnections();
   }
   console.log(
-    "✓ Browser harness E2E passed: navigate, state, click by number across calls, find, click by text, type, screenshot, evaluate",
+    "✓ Browser harness E2E passed: navigate, state, click by number across calls, find, click by text, type, screenshot, evaluate, wait on conditions, click by point, reload, local file",
   );
 }
 
