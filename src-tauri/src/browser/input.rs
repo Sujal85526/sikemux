@@ -42,7 +42,9 @@ fn now() -> f64 {
     NSProcessInfo::processInfo().systemUptime()
 }
 
-/// `x` and `y` are CSS pixels from the top left of the page's viewport.
+/// `x` and `y` are CSS pixels from the top left of the page's viewport. The
+/// view's bounds are in page pixels even while it is drawn scaled, so only
+/// the page's own zoom stands between the two.
 pub fn mouse(
     pointer: *mut c_void,
     kind: Mouse,
@@ -54,7 +56,7 @@ pub fn mouse(
     let window = webview.window().ok_or("the tab is not in a window")?;
     // SAFETY: main thread (see `webview_from`), and `webview` is retained.
     let zoom = unsafe { webview.pageZoom() }.max(0.01);
-    let height = webview.frame().size.height;
+    let height = webview.bounds().size.height;
     let local = if webview.isFlipped() {
         NSPoint::new(x * zoom, y * zoom)
     } else {

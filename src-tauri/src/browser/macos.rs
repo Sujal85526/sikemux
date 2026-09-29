@@ -13,10 +13,12 @@ use std::time::{Duration, Instant};
 use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, Bool, Imp, ProtocolObject, Sel};
-use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadMarker, MainThreadOnly};
+use objc2::{
+    define_class, msg_send, sel, ClassType, DefinedClass, MainThreadMarker, MainThreadOnly,
+};
 use objc2_app_kit::{
-    NSAlert, NSAlertFirstButtonReturn, NSAlertSecondButtonReturn, NSBitmapImageFileType,
-    NSBitmapImageRep, NSEvent, NSEventMask, NSEventModifierFlags, NSImage,
+    NSAlert, NSAlertFirstButtonReturn, NSAlertSecondButtonReturn, NSAutoresizingMaskOptions,
+    NSBitmapImageFileType, NSBitmapImageRep, NSEvent, NSEventMask, NSEventModifierFlags, NSImage,
     NSImageCompressionFactor, NSModalResponse, NSTextField, NSView,
 };
 use objc2_core_graphics::CGMutablePath;
@@ -276,10 +278,59 @@ pub fn introduce_as(pointer: *mut c_void, agent: &str) {
     }
 }
 
-/// Draw only `visible` of the page, less the `holes`, all in the page's own
-/// top-down coordinates. A native view is not cut off by the DOM around it, so
-/// a swipe would carry the page over the rails and it would cover any toast.
-pub fn clip(pointer: *mut c_void, visible: Option<NSRect>, holes: Vec<(NSRect, f64)>) {
+/// Puts the tab's view at `frame`, given top-down in the window's content
+/// view. With `page`, the page lays out at that size and the view draws it
+/// scaled into `frame`: its bounds take the page's size, so AppKit scales the
+/// drawing and maps every event point back into page pixels on its own.
+pub fn place(pointer: *mut c_void, frame: NSRect, page: Option<NSSize>) {
+    let Some(webview) = webview_from(pointer) else {
+        return;
+    };
+    let view: &NSView = &webview;
+    // SAFETY: main thread (see `webview_from`), and `webview` is retained.
+    let Some(parent) = (unsafe { view.superview() }) else {
+        return;
+    };
+    let origin = if parent.isFlipped() {
+        frame.origin
+    } else {
+        NSPoint::new(
+            frame.origin.x,
+            parent.frame().size.height - frame.origin.y - frame.size.height,
+        )
+    };
+    let page_size = page.unwrap_or(frame.size);
+    if view.frame().size != frame.size || view.bounds().size != page_size {
+        // WebKit lays the page out at whatever size its own `setFrameSize:` is
+        // given, so it hears the page's size, and the view then takes the
+        // smaller frame through NSView's method, which WebKit never sees.
+        view.setFrameSize(page_size);
+        if page.is_some() {
+            // SAFETY: `view` is a live NSView on the main thread, and NSView's
+            // `setFrameSize:` takes one NSSize and returns nothing.
+            let _: () =
+                unsafe { msg_send![super(view, NSView::class()), setFrameSize: frame.size] };
+        }
+        view.setBoundsSize(page_size);
+        // WebKit's own content view fills the view by resizing with it, and a
+        // change of bounds alone resizes nothing.
+        let whole = view.bounds();
+        let fills = NSAutoresizingMaskOptions::ViewWidthSizable
+            | NSAutoresizingMaskOptions::ViewHeightSizable;
+        for child in view.subviews() {
+            if child.autoresizingMask().contains(fills) {
+                child.setFrame(whole);
+            }
+        }
+    }
+    view.setFrameOrigin(origin);
+}
+
+/// Draw the page less `clip_left` and `clip_right` off its sides and less the
+/// `holes`, all in the page's own top-down pixels. A native view is not cut
+/// off by the DOM around it, so a swipe would carry the page over the rails
+/// and it would cover any toast.
+pub fn clip(pointer: *mut c_void, clip_left: f64, clip_right: f64, holes: Vec<(NSRect, f64)>) {
     let Some(webview) = webview_from(pointer) else {
         return;
     };
@@ -289,7 +340,13 @@ pub fn clip(pointer: *mut c_void, visible: Option<NSRect>, holes: Vec<(NSRect, f
         return;
     };
     let whole = view.bounds();
-    let visible = visible.unwrap_or(whole);
+    let visible = NSRect::new(
+        NSPoint::new(whole.origin.x + clip_left, whole.origin.y),
+        NSSize::new(
+            (whole.size.width - clip_left - clip_right).max(0.0),
+            whole.size.height,
+        ),
+    );
     let holes: Vec<(NSRect, f64)> = holes
         .into_iter()
         .filter_map(|(hole, radius)| {
@@ -467,7 +524,7 @@ pub fn snapshot_jpeg(pointer: *mut c_void, done: Box<dyn FnOnce(Result<Vec<u8>, 
         .max(1.0);
     // SAFETY: main thread, and `webview` is retained.
     let zoom = unsafe { webview.pageZoom() }.max(0.01);
-    let width = (webview.frame().size.width / zoom / scale).max(1.0);
+    let width = (webview.bounds().size.width / zoom / scale).max(1.0);
     // SAFETY: `configuration` is ours and not yet handed to WebKit.
     unsafe {
         configuration.setSnapshotWidth(Some(&NSNumber::numberWithDouble(width)));
@@ -591,7 +648,7 @@ pub fn full_page_jpeg(
     // SAFETY: main thread, as `mtm` proves.
     let configuration = unsafe { WKPDFConfiguration::new(mtm) };
     if height > most {
-        let width = webview.frame().size.width;
+        let width = webview.bounds().size.width;
         // SAFETY: `configuration` is ours and not yet handed to WebKit.
         unsafe {
             configuration.setRect(NSRect::new(

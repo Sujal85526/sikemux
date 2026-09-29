@@ -31,8 +31,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use tauri::webview::{DownloadEvent, NewWindowResponse, PageLoadEvent, WebviewBuilder};
 use tauri::{
-    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Position, Rect, Size, State, Url,
-    Webview, WebviewUrl,
+    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, State, Url, Webview, WebviewUrl,
 };
 
 use crate::error::{AppError, AppResult};
@@ -52,15 +51,8 @@ const POPUP_WINDOW: Duration = Duration::from_secs(10);
 // Parked pages sit outside the window, since a hidden view still takes file
 // drops over the spot it last covered. They are hidden too once they are idle.
 const PARKED_ORIGIN: f64 = -100_000.0;
-const PARKED_BOUNDS: BrowserBounds = BrowserBounds {
-    x: PARKED_ORIGIN,
-    y: PARKED_ORIGIN,
-    width: 1200.0,
-    height: 800.0,
-    clip_left: 0.0,
-    clip_right: 0.0,
-    holes: Vec::new(),
-};
+/// What a parked page lays out at before its pane has ever shown one.
+const PARKED_SIZE: (f64, f64) = (1200.0, 800.0);
 
 const ACTING_LINGER: Duration = Duration::from_secs(3);
 /// A hidden page runs no animation frames, and React reveals streamed content
@@ -287,7 +279,20 @@ struct AgentBrowser {
     strip: TabStrip,
     views: HashMap<String, Webview>,
     bounds: Option<BrowserBounds>,
+    /// The size of the page area the last time it showed a page.
+    seen: Option<(f64, f64)>,
     viewports: HashMap<String, viewport::Viewport>,
+}
+
+impl AgentBrowser {
+    fn layout_of(&self, tab_id: &str) -> viewport::Layout {
+        let shown = self.strip.active.as_deref() == Some(tab_id);
+        viewport::layout(
+            self.bounds.as_ref().filter(|_| shown),
+            self.viewports.get(tab_id).copied(),
+            self.seen.unwrap_or(PARKED_SIZE),
+        )
+    }
 }
 
 #[derive(Default)]
@@ -337,20 +342,18 @@ impl BrowserManager {
             label_safe(agent_id),
             self.next_tab.fetch_add(1, Ordering::AcqRel)
         );
-        // A parked tab keeps this frame, so a page the agent drives before the
-        // pane shows it still lays out like a desktop window, not a 1px slit.
-        let bounds = self
+        let (width, height) = self
             .lock()
             .get(agent_id)
-            .and_then(|agent| agent.bounds.clone())
-            .unwrap_or(PARKED_BOUNDS);
+            .and_then(|agent| agent.seen)
+            .unwrap_or(PARKED_SIZE);
 
         let builder = self.tab_builder(app, agent_id, &tab_id, parsed);
         let webview = window
             .add_child(
                 builder,
-                LogicalPosition::new(bounds.x, bounds.y),
-                LogicalSize::new(bounds.width, bounds.height),
+                LogicalPosition::new(PARKED_ORIGIN, PARKED_ORIGIN),
+                LogicalSize::new(width, height),
             )
             .map_err(window_error)?;
         let _ = webview.hide();
@@ -730,24 +733,41 @@ impl BrowserManager {
     }
 
     /// `None` parks every tab of the agent off screen: the pane is hidden,
-    /// showing its blank page, or an app overlay needs to paint over it.
+    /// showing its blank page, or an app overlay needs to paint over it. A
+    /// pane squeezed to a sliver parks them too, and is never remembered as
+    /// the size a parked page lays out at.
     pub fn set_bounds(&self, agent_id: &str, bounds: Option<BrowserBounds>) -> AppResult<()> {
         validate_agent_id(agent_id)?;
         if let Some(bounds) = &bounds {
             validate_bounds(bounds)?;
         }
+        let bounds = bounds.filter(|area| !viewport::collapsed(area));
         {
             let mut agents = self.lock();
-            match agents.get_mut(agent_id) {
-                Some(agent) => agent.bounds = bounds,
-                None if bounds.is_some() => {
-                    agents.entry(agent_id.to_owned()).or_default().bounds = bounds;
-                }
+            let agent = match agents.get_mut(agent_id) {
+                Some(agent) => agent,
+                None if bounds.is_some() => agents.entry(agent_id.to_owned()).or_default(),
                 None => return Ok(()),
+            };
+            if let Some(area) = &bounds {
+                agent.seen = Some((area.width, area.height));
             }
+            agent.bounds = bounds;
         }
         self.relayout(agent_id);
         Ok(())
+    }
+
+    /// Whether the person can see this tab's page in its pane right now.
+    #[allow(dead_code)]
+    pub fn shown(&self, agent_id: &str, tab_id: &str) -> bool {
+        self.lock().get(agent_id).is_some_and(|agent| {
+            agent.strip.active.as_deref() == Some(tab_id)
+                && agent
+                    .bounds
+                    .as_ref()
+                    .is_some_and(|area| area.clip_left + area.clip_right < area.width)
+        })
     }
 
     pub fn navigate(&self, app: &AppHandle, agent_id: &str, url: &str) -> AppResult<()> {
@@ -793,7 +813,7 @@ impl BrowserManager {
         tab_id: &str,
         fixed: Option<viewport::Viewport>,
     ) -> AppResult<()> {
-        let (view, was_fixed) = {
+        let view = {
             let mut agents = self.lock();
             let agent = agents
                 .get_mut(agent_id)
@@ -803,15 +823,13 @@ impl BrowserManager {
                 .get(tab_id)
                 .cloned()
                 .ok_or(AppError::BadArg("unknown browser tab"))?;
-            let was_fixed = match fixed {
+            match fixed {
                 Some(fixed) => agent.viewports.insert(tab_id.to_owned(), fixed),
                 None => agent.viewports.remove(tab_id),
             };
-            (view, was_fixed.is_some())
+            view
         };
-        if fixed.is_none() && was_fixed {
-            let _ = view.set_zoom(1.0);
-        }
+        let _ = view.set_zoom(1.0);
         #[cfg(target_os = "macos")]
         {
             let agent = fixed
@@ -843,12 +861,7 @@ impl BrowserManager {
 
     /// Show the active tab inside the pane's page area and park the rest.
     fn relayout(&self, agent_id: &str) {
-        let plan: Vec<(
-            Webview,
-            Option<BrowserBounds>,
-            Option<viewport::Viewport>,
-            bool,
-        )> = {
+        let plan: Vec<(Webview, viewport::Layout, bool)> = {
             let agents = self.lock();
             let Some(agent) = agents.get(agent_id) else {
                 return;
@@ -856,56 +869,17 @@ impl BrowserManager {
             agent
                 .views
                 .iter()
-                .map(|(id, view)| {
-                    let shown = agent.strip.active.as_deref() == Some(id.as_str());
-                    (
-                        view.clone(),
-                        agent.bounds.clone().filter(|_| shown),
-                        agent.viewports.get(id).copied(),
-                        agent.strip.awake(id),
-                    )
-                })
+                .map(|(id, view)| (view.clone(), agent.layout_of(id), agent.strip.awake(id)))
                 .collect()
         };
-        for (view, bounds, fixed, awake) in plan {
-            #[cfg(target_os = "macos")]
-            let _ = view.with_webview(move |platform| {
-                macos::keep_running_when_covered(platform.inner(), awake)
-            });
-            let bounds = match (bounds, fixed) {
-                (Some(area), Some(fixed)) => {
-                    let (placed, zoom) = viewport::fit(&area, fixed);
-                    let _ = view.set_zoom(zoom);
-                    Some(placed)
-                }
-                (None, Some(fixed)) => {
-                    let _ = view.set_zoom(1.0);
-                    let _ = view.set_size(LogicalSize::new(
-                        f64::from(fixed.width),
-                        f64::from(fixed.height),
-                    ));
-                    None
-                }
-                (bounds, None) => bounds,
+        for (view, layout, awake) in plan {
+            let shown = matches!(layout, viewport::Layout::Shown { .. });
+            place(&view, layout, awake);
+            let _ = if shown || awake {
+                view.show()
+            } else {
+                view.hide()
             };
-            match bounds {
-                Some(bounds) => {
-                    let _ = view.set_bounds(Rect {
-                        position: Position::Logical(LogicalPosition::new(bounds.x, bounds.y)),
-                        size: Size::Logical(LogicalSize::new(bounds.width, bounds.height)),
-                    });
-                    #[cfg(target_os = "macos")]
-                    let _ = view.with_webview(move |platform| {
-                        let holes = holes(&bounds);
-                        macos::clip(platform.inner(), visible_part(&bounds), holes)
-                    });
-                    let _ = view.show();
-                }
-                None => {
-                    let _ = view.set_position(LogicalPosition::new(PARKED_ORIGIN, PARKED_ORIGIN));
-                    let _ = if awake { view.show() } else { view.hide() };
-                }
-            }
         }
     }
 
@@ -1154,37 +1128,73 @@ fn tab_may_load(url: &Url) -> bool {
     }
 }
 
-/// The uncut part of the page in its own coordinates, or `None` when all of it shows.
+/// Puts the tab's view where `layout` says, laid out at the page size it names.
 #[cfg(target_os = "macos")]
-fn visible_part(bounds: &BrowserBounds) -> Option<objc2_foundation::NSRect> {
+fn place(view: &Webview, layout: viewport::Layout, awake: bool) {
     use objc2_foundation::{NSPoint, NSRect, NSSize};
-    (bounds.clip_left > 0.0 || bounds.clip_right > 0.0).then(|| {
-        NSRect::new(
-            NSPoint::new(bounds.clip_left, 0.0),
-            NSSize::new(
-                bounds.width - bounds.clip_left - bounds.clip_right,
-                bounds.height,
+    let _ = view.with_webview(move |platform| {
+        let tab = platform.inner();
+        macos::keep_running_when_covered(tab, awake);
+        match layout {
+            viewport::Layout::Shown { frame, page } => {
+                macos::place(
+                    tab,
+                    NSRect::new(
+                        NSPoint::new(frame.x, frame.y),
+                        NSSize::new(frame.width, frame.height),
+                    ),
+                    page.map(|(width, height)| NSSize::new(width, height)),
+                );
+                let holes = frame
+                    .holes
+                    .iter()
+                    .map(|hole| {
+                        (
+                            NSRect::new(
+                                NSPoint::new(hole.x, hole.y),
+                                NSSize::new(hole.width, hole.height),
+                            ),
+                            hole.radius,
+                        )
+                    })
+                    .collect();
+                macos::clip(tab, frame.clip_left, frame.clip_right, holes);
+            }
+            viewport::Layout::Parked {
+                page: (width, height),
+            } => macos::place(
+                tab,
+                NSRect::new(
+                    NSPoint::new(PARKED_ORIGIN, PARKED_ORIGIN),
+                    NSSize::new(width, height),
+                ),
+                None,
             ),
-        )
-    })
+        }
+    });
 }
 
-#[cfg(target_os = "macos")]
-fn holes(bounds: &BrowserBounds) -> Vec<(objc2_foundation::NSRect, f64)> {
-    use objc2_foundation::{NSPoint, NSRect, NSSize};
-    bounds
-        .holes
-        .iter()
-        .map(|hole| {
-            (
-                NSRect::new(
-                    NSPoint::new(hole.x, hole.y),
-                    NSSize::new(hole.width, hole.height),
-                ),
-                hole.radius,
-            )
-        })
-        .collect()
+/// Elsewhere a fixed viewport can only be had by zooming the page.
+#[cfg(not(target_os = "macos"))]
+fn place(view: &Webview, layout: viewport::Layout, _awake: bool) {
+    use tauri::{Position, Rect, Size};
+    let (x, y, width, height, zoom) = match layout {
+        viewport::Layout::Shown { frame, page } => (
+            frame.x,
+            frame.y,
+            frame.width,
+            frame.height,
+            page.map_or(1.0, |(page_width, _)| frame.width / page_width),
+        ),
+        viewport::Layout::Parked {
+            page: (width, height),
+        } => (PARKED_ORIGIN, PARKED_ORIGIN, width, height, 1.0),
+    };
+    let _ = view.set_zoom(zoom);
+    let _ = view.set_bounds(Rect {
+        position: Position::Logical(LogicalPosition::new(x, y)),
+        size: Size::Logical(LogicalSize::new(width, height)),
+    });
 }
 
 const MAX_HOLES: usize = 32;
