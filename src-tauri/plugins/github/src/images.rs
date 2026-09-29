@@ -60,13 +60,15 @@ fn image_kind(content_type: &str) -> Option<String> {
 
 pub async fn image(data_dir: &Path, input: ImageRef) -> GithubResult<String> {
     let refused = || GithubError::BadArg("that is not an image GitHub serves".into());
-    let signed_in = config::load(data_dir).host;
+    let signed_in = config::load(data_dir).host_of(client::chosen().as_deref());
     let mut url = Url::parse(&input.url).map_err(|_| refused())?;
+    let mut account = String::new();
     for _ in 0..MAX_HOPS {
         let mut request = client::http()?.get(url.clone());
         if access(&url, &signed_in).ok_or_else(refused)? {
             if let Ok(session) = Session::current(data_dir).await {
                 request = request.bearer_auth(session.token);
+                account = session.account.id;
             }
         }
         let response = client::limited(request.send()).await?;
@@ -80,7 +82,7 @@ pub async fn image(data_dir: &Path, input: ImageRef) -> GithubResult<String> {
             continue;
         }
         if !response.status().is_success() {
-            return Err(client::failure(response).await);
+            return Err(client::failure(&account, response).await);
         }
         let kind = response
             .headers()

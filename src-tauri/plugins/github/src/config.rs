@@ -1,7 +1,8 @@
-// Which GitHub this talks to and the token it carries. A token Sikemux saved
-// lives in the Keychain; one already in the environment, or one the `gh` CLI
-// is holding, is used as it is and never copied anywhere.
+// The GitHub accounts signed in here, on github.com or a company's own
+// GitHub. A token typed in is saved in the Keychain; one already in the
+// environment, or held by the `gh` CLI, is used where it is and never copied.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
@@ -17,11 +18,8 @@ pub const TOKEN_SERVICE: &str = "sikemux-github-token";
 #[cfg(test)]
 pub const TOKEN_SERVICE: &str = "sikemux-github-token-test";
 pub const DEFAULT_HOST: &str = "github.com";
-const KEYCHAIN_TIMEOUT: Duration = Duration::from_secs(10);
 const GH_TIMEOUT: Duration = Duration::from_secs(10);
 const OUTPUT_LIMIT: usize = 64 * 1024;
-/// What `security` exits with when there is simply no such entry.
-const KEYCHAIN_NOT_FOUND: i32 = 44;
 /// Reading the Keychain means starting `security`, and asking the `gh` CLI
 /// means starting that. Doing either on every request costs more than the
 /// request. A token is held for long enough to serve a screenful of calls and
@@ -38,32 +36,101 @@ pub enum TokenSource {
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct GithubConfig {
+pub struct Account {
+    /// `host:login`, which is also the Keychain entry a saved token is under.
+    pub id: String,
     pub host: String,
-    #[serde(default)]
     pub login: String,
-    /// Where the token signed in with lives. Only that place is read, so an
-    /// older token somewhere else never stands in for it.
-    #[serde(default)]
-    pub source: Option<TokenSource>,
-    /// Whether Sikemux saved the Keychain token, and so may delete it on sign-out.
+    /// Where the token lives. Only that place is read, so an older token
+    /// somewhere else never stands in for it.
+    pub source: TokenSource,
+    /// Whether Sikemux saved the token, and so may delete it on sign-out.
     #[serde(default)]
     pub owns_token: bool,
-    /// Set by signing out, so a token the shell or `gh` still holds is not
-    /// picked up again until somebody signs in.
+}
+
+pub fn account_id(host: &str, login: &str) -> String {
+    format!("{host}:{login}")
+}
+
+#[derive(Serialize, Deserialize, Clone, Default, PartialEq, Eq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubConfig {
+    #[serde(default)]
+    pub accounts: Vec<Account>,
+    /// The account a project uses when it names none.
+    #[serde(default)]
+    pub default: Option<String>,
+    /// Set by signing the last account out, so a token the shell or `gh`
+    /// still holds is not picked up again until somebody signs in.
     #[serde(default)]
     pub signed_out: bool,
 }
 
-impl Default for GithubConfig {
-    fn default() -> Self {
-        Self {
-            host: DEFAULT_HOST.to_string(),
-            login: String::new(),
-            source: None,
-            owns_token: false,
-            signed_out: false,
+impl GithubConfig {
+    /// The account named, or with none named, the default one.
+    pub fn account(&self, id: Option<&str>) -> Option<&Account> {
+        match id.or(self.default.as_deref()) {
+            Some(wanted) => self.accounts.iter().find(|account| account.id == wanted),
+            None => self.accounts.first(),
         }
+    }
+
+    /// Adds the account, or replaces the one with the same id. The first account becomes the default.
+    pub fn upsert(&mut self, account: Account) {
+        match self.accounts.iter_mut().find(|kept| kept.id == account.id) {
+            Some(kept) => *kept = account,
+            None => self.accounts.push(account),
+        }
+        let default_is_signed_in = self
+            .default
+            .as_ref()
+            .is_some_and(|id| self.accounts.iter().any(|account| &account.id == id));
+        if !default_is_signed_in {
+            self.default = self.accounts.first().map(|account| account.id.clone());
+        }
+        self.signed_out = false;
+    }
+
+    /// Takes the account out; a removed default passes to the first account left.
+    pub fn remove(&mut self, id: &str) -> Option<Account> {
+        let index = self.accounts.iter().position(|account| account.id == id)?;
+        let removed = self.accounts.remove(index);
+        if self.default.as_deref() == Some(id) {
+            self.default = self.accounts.first().map(|account| account.id.clone());
+        }
+        self.signed_out = self.accounts.is_empty();
+        Some(removed)
+    }
+
+    /// Every account, the default first, which is the order to try them in.
+    pub fn in_order(&self) -> Vec<Account> {
+        let mut ordered = self.accounts.clone();
+        ordered.sort_by_key(|account| Some(&account.id) != self.default.as_ref());
+        ordered
+    }
+
+    /// The GitHub a new sign-in starts on: the default account's, else
+    /// whatever `GH_HOST` names, else github.com.
+    pub fn host_hint(&self) -> String {
+        host_for(
+            self.account(None).map(|account| account.host.as_str()),
+            std::env::var("GH_HOST").ok().as_deref(),
+        )
+    }
+
+    /// The host of the account named, or of the default one.
+    pub fn host_of(&self, id: Option<&str>) -> String {
+        self.account(id)
+            .map_or_else(|| self.host_hint(), |account| account.host.clone())
+    }
+
+    /// Whether any account signed in here is on this host.
+    pub fn serves(&self, host: &str) -> bool {
+        if self.accounts.is_empty() {
+            return self.host_hint() == host;
+        }
+        self.accounts.iter().any(|account| account.host == host)
     }
 }
 
@@ -82,18 +149,10 @@ fn host_for(saved: Option<&str>, gh_host: Option<&str>) -> String {
 }
 
 pub fn load(data_dir: &Path) -> GithubConfig {
-    let saved: Option<GithubConfig> = std::fs::read(config_path(data_dir))
+    std::fs::read(config_path(data_dir))
         .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok());
-    let gh_host = std::env::var("GH_HOST").ok();
-    let host = host_for(
-        saved.as_ref().map(|config| config.host.as_str()),
-        gh_host.as_deref(),
-    );
-    GithubConfig {
-        host,
-        ..saved.unwrap_or_default()
-    }
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
 }
 
 fn io_error(error: std::io::Error) -> GithubError {
@@ -151,97 +210,32 @@ pub fn api_base(host: &str) -> String {
     }
 }
 
-fn validate_account(raw: &str) -> GithubResult<String> {
-    let account = raw.trim();
-    let allowed = |c: char| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | ':');
-    if account.is_empty() || account.len() > 128 || !account.chars().all(allowed) {
-        return Err(GithubError::BadArg(
-            "the Keychain account is letters, digits, dots, dashes and underscores".into(),
-        ));
-    }
-    Ok(account.to_string())
-}
-
-/// Secrets reach `security -i` on a command line it splits on spaces, so
-/// anything that could end the value early is refused rather than escaped.
-fn validate_secret(raw: &str) -> GithubResult<String> {
-    let secret = raw.trim();
-    let allowed = |c: char| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '~');
-    if secret.is_empty() || secret.len() > 1024 || !secret.chars().all(allowed) {
-        return Err(GithubError::BadArg(
-            "that does not look like a GitHub token".into(),
-        ));
-    }
-    Ok(secret.to_string())
-}
-
 fn run(
     command: &mut Command,
     input: Option<&[u8]>,
     timeout: Duration,
 ) -> GithubResult<std::process::Output> {
     sikemux_process::run(command, input, timeout, OUTPUT_LIMIT, None)
-        .map_err(|error| GithubError::Keychain(error.to_string()))
+        .map_err(|error| GithubError::Transport(error.to_string()))
 }
 
-pub fn keychain_read(account: &str) -> GithubResult<Option<String>> {
-    let output = run(
-        Command::new("security").args([
-            "find-generic-password",
-            "-s",
-            TOKEN_SERVICE,
-            "-a",
-            account,
-            "-w",
-        ]),
-        None,
-        KEYCHAIN_TIMEOUT,
-    )?;
-    if output.status.code() == Some(KEYCHAIN_NOT_FOUND) {
-        return Ok(None);
+fn keychain_error(error: sikemux_keychain::KeychainError) -> GithubError {
+    match error {
+        sikemux_keychain::KeychainError::Invalid(message) => GithubError::BadArg(message),
+        sikemux_keychain::KeychainError::Failed(message) => GithubError::Keychain(message),
     }
-    if !output.status.success() {
-        return Err(GithubError::Keychain(format!(
-            "could not read the saved token: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-    let secret = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    Ok((!secret.is_empty()).then_some(secret))
 }
 
-/// `security -i` reads the command from stdin, so the token never shows up in
-/// the process list the way an argument would.
-pub fn keychain_write(account: &str, secret: &str) -> GithubResult<()> {
-    let account = validate_account(account)?;
-    let secret = validate_secret(secret)?;
-    let line = format!("add-generic-password -U -s {TOKEN_SERVICE} -a {account} -w {secret}\n");
-    let output = run(
-        Command::new("security").arg("-i"),
-        Some(line.as_bytes()),
-        KEYCHAIN_TIMEOUT,
-    )?;
-    if !output.status.success() {
-        return Err(GithubError::Keychain(
-            "the Keychain refused to save it".into(),
-        ));
-    }
-    Ok(())
+pub fn keychain_read(id: &str) -> GithubResult<Option<String>> {
+    sikemux_keychain::read(TOKEN_SERVICE, id).map_err(keychain_error)
 }
 
-pub fn keychain_delete(account: &str) -> GithubResult<()> {
-    run(
-        Command::new("security").args([
-            "delete-generic-password",
-            "-s",
-            TOKEN_SERVICE,
-            "-a",
-            account,
-        ]),
-        None,
-        KEYCHAIN_TIMEOUT,
-    )?;
-    Ok(())
+pub fn keychain_write(id: &str, secret: &str) -> GithubResult<()> {
+    sikemux_keychain::write(TOKEN_SERVICE, id, secret).map_err(keychain_error)
+}
+
+pub fn keychain_delete(id: &str) -> GithubResult<()> {
+    sikemux_keychain::delete(TOKEN_SERVICE, id).map_err(keychain_error)
 }
 
 /// The variables the `gh` CLI reads a token from. A github.com token is never
@@ -272,13 +266,13 @@ pub fn env_variable(host: &str) -> Option<&'static str> {
 
 /// The token the `gh` CLI is already signed in with, so somebody who has run
 /// `gh auth login` never types one here.
-pub fn gh_cli_token(host: &str) -> Option<String> {
-    let output = run(
-        Command::new("gh").args(["auth", "token", "--hostname", host]),
-        None,
-        GH_TIMEOUT,
-    )
-    .ok()?;
+pub fn gh_cli_token(host: &str, login: Option<&str>) -> Option<String> {
+    let mut command = Command::new("gh");
+    command.args(["auth", "token", "--hostname", host]);
+    if let Some(login) = login.filter(|login| !login.is_empty()) {
+        command.args(["--user", login]);
+    }
+    let output = run(&mut command, None, GH_TIMEOUT).ok()?;
     if !output.status.success() {
         return None;
     }
@@ -291,82 +285,85 @@ pub fn gh_cli_token(host: &str) -> Option<String> {
 pub fn offered_token(host: &str) -> Option<(String, TokenSource)> {
     env_token(host)
         .map(|token| (token, TokenSource::Environment))
-        .or_else(|| gh_cli_token(host).map(|token| (token, TokenSource::GhCli)))
+        .or_else(|| gh_cli_token(host, None).map(|token| (token, TokenSource::GhCli)))
 }
 
 struct Cached {
-    host: String,
     token: String,
-    source: TokenSource,
     at: Instant,
 }
 
-static TOKEN: Mutex<Option<Cached>> = Mutex::new(None);
+static TOKENS: Mutex<BTreeMap<String, Cached>> = Mutex::new(BTreeMap::new());
 
-fn cached_for(host: &str) -> Option<(String, TokenSource)> {
-    let held = TOKEN.lock().ok()?;
-    let cached = held.as_ref()?;
-    (cached.host == host && cached.at.elapsed() < TOKEN_TTL)
-        .then(|| (cached.token.clone(), cached.source))
+fn cached_for(id: &str) -> Option<String> {
+    let held = TOKENS.lock().ok()?;
+    let cached = held.get(id)?;
+    (cached.at.elapsed() < TOKEN_TTL).then(|| cached.token.clone())
 }
 
-/// Drops the held token, so the next call goes and looks again. Signing in or
-/// out changes which token is right, and a refused one is worth re-reading in
-/// case the shell or the Keychain has a newer one.
-pub fn forget_token() {
-    if let Ok(mut held) = TOKEN.lock() {
-        *held = None;
+/// Drops a held token, or all of them, so the next call goes and looks again.
+/// Signing in or out changes which token is right, and a refused one is worth
+/// re-reading in case the shell or the Keychain has a newer one.
+pub fn forget_token(id: Option<&str>) {
+    if let Ok(mut held) = TOKENS.lock() {
+        match id {
+            Some(id) => {
+                held.remove(id);
+            }
+            None => held.clear(),
+        }
     }
 }
 
-/// Where to look for a token, in order. Once signed in, only the place signed
-/// in with counts; before anybody has, a token the shell or `gh` already holds
-/// is used without asking. After signing out, nothing is.
-pub fn sources_for(config: &GithubConfig) -> Vec<TokenSource> {
-    if config.signed_out {
-        return Vec::new();
-    }
-    match config.source {
-        Some(source) => vec![source],
-        None => vec![TokenSource::Environment, TokenSource::GhCli],
-    }
-}
-
-fn read_token(source: TokenSource, host: &str) -> GithubResult<Option<String>> {
-    Ok(match source {
-        TokenSource::Keychain => keychain_read(host)?,
-        TokenSource::Environment => env_token(host),
-        TokenSource::GhCli => gh_cli_token(host),
+fn read_token(account: &Account) -> GithubResult<Option<String>> {
+    Ok(match account.source {
+        TokenSource::Keychain => keychain_read(&account.id)?,
+        TokenSource::Environment => env_token(&account.host),
+        TokenSource::GhCli => gh_cli_token(&account.host, Some(&account.login)),
     })
 }
 
+/// The account a call runs as, and its token. With nobody signed in yet, a
+/// token the shell or `gh` holds stands in, under an account with no login.
 /// Starts a process or waits on the Keychain, so it belongs inside `blocking`.
-pub fn resolve_token(config: &GithubConfig) -> GithubResult<Option<(String, TokenSource)>> {
-    if config.signed_out {
-        return Ok(None);
-    }
-    if let Some(found) = cached_for(&config.host) {
-        return Ok(Some(found));
-    }
-    let mut found = None;
-    for source in sources_for(config) {
-        if let Some(token) = read_token(source, &config.host)? {
-            found = Some((token, source));
-            break;
+pub fn resolve(
+    config: &GithubConfig,
+    chosen: Option<&str>,
+) -> GithubResult<Option<(Account, String)>> {
+    let account = match config.account(chosen) {
+        Some(account) => account.clone(),
+        None if config.accounts.is_empty() && !config.signed_out && chosen.is_none() => {
+            let host = config.host_hint();
+            let Some((token, source)) = offered_token(&host) else {
+                return Ok(None);
+            };
+            let account = Account {
+                id: account_id(&host, ""),
+                host,
+                login: String::new(),
+                source,
+                owns_token: false,
+            };
+            return Ok(Some((account, token)));
         }
+        None => return Ok(None),
+    };
+    if let Some(token) = cached_for(&account.id) {
+        return Ok(Some((account, token)));
     }
-    let Some((token, source)) = found else {
+    let Some(token) = read_token(&account)? else {
         return Ok(None);
     };
-    if let Ok(mut held) = TOKEN.lock() {
-        *held = Some(Cached {
-            host: config.host.clone(),
-            token: token.clone(),
-            source,
-            at: Instant::now(),
-        });
+    if let Ok(mut held) = TOKENS.lock() {
+        held.insert(
+            account.id.clone(),
+            Cached {
+                token: token.clone(),
+                at: Instant::now(),
+            },
+        );
     }
-    Ok(Some((token, source)))
+    Ok(Some((account, token)))
 }
 
 /// Runs work that starts a process or touches the Keychain on a thread meant
@@ -428,71 +425,91 @@ mod tests {
         );
     }
 
-    #[test]
-    fn keeps_keychain_arguments_to_safe_characters() {
-        assert!(validate_account("github.com").is_ok());
-        assert!(validate_account("a b").is_err());
-        assert!(validate_secret("github_pat_11ABC-def.xyz~").is_ok());
-        assert!(validate_secret("ghp_abc def").is_err());
-        assert!(validate_secret("ghp_abc\n-a other").is_err());
-        assert!(validate_secret("").is_err());
+    fn account(host: &str, login: &str) -> Account {
+        Account {
+            id: account_id(host, login),
+            host: host.into(),
+            login: login.into(),
+            source: TokenSource::Keychain,
+            owns_token: true,
+        }
     }
 
     #[test]
     fn round_trips_the_config_file() -> GithubResult<()> {
         let dir = std::env::temp_dir().join(format!("sikemux-gha-{}", std::process::id()));
-        let config = GithubConfig {
-            host: "git.example.com".into(),
-            login: "octocat".into(),
-            source: Some(TokenSource::Keychain),
-            owns_token: true,
-            signed_out: false,
-        };
+        let mut config = GithubConfig::default();
+        config.upsert(account("git.example.com", "octocat"));
         save(&dir, &config)?;
-        assert_eq!(load(&dir).login, "octocat");
-        assert_eq!(load(&dir).host, "git.example.com");
+        assert_eq!(load(&dir), config);
         std::fs::remove_dir_all(&dir).ok();
         Ok(())
     }
 
-    /// One test, because the held token is one slot the whole process shares
-    /// and Rust runs tests beside each other.
     #[test]
-    fn a_held_token_belongs_to_one_host_and_does_not_outlive_its_welcome() {
-        let hold = |host: &str, at: Instant| {
-            if let Ok(mut held) = TOKEN.lock() {
-                *held = Some(Cached {
-                    host: host.into(),
-                    token: "ghp_held".into(),
-                    source: TokenSource::Keychain,
-                    at,
-                });
+    fn the_first_account_is_the_default_and_each_can_be_named() {
+        let mut config = GithubConfig::default();
+        config.upsert(account("github.com", "work"));
+        config.upsert(account("github.com", "home"));
+        assert_eq!(config.default.as_deref(), Some("github.com:work"));
+        assert_eq!(
+            config
+                .account(Some("github.com:home"))
+                .map(|a| a.login.as_str()),
+            Some("home")
+        );
+        assert!(config.account(Some("github.com:gone")).is_none());
+        assert!(config.serves("github.com"));
+        assert!(!config.serves("ghe.corp"));
+    }
+
+    #[test]
+    fn signing_the_last_account_out_stops_borrowing_the_shells_token() {
+        let mut config = GithubConfig::default();
+        config.upsert(account("github.com", "work"));
+        config.upsert(account("github.com", "home"));
+        config.remove("github.com:work");
+        assert_eq!(config.default.as_deref(), Some("github.com:home"));
+        assert!(!config.signed_out);
+        config.remove("github.com:home");
+        assert!(config.signed_out);
+        assert!(matches!(resolve(&config, None), Ok(None)));
+    }
+
+    #[test]
+    fn an_account_that_is_not_signed_in_resolves_to_nothing() {
+        let mut config = GithubConfig::default();
+        config.upsert(account("github.com", "work"));
+        assert!(matches!(
+            resolve(&config, Some("github.com:other")),
+            Ok(None)
+        ));
+    }
+
+    #[test]
+    fn a_held_token_is_kept_per_account_and_does_not_outlive_its_welcome() {
+        let hold = |id: &str, at: Instant| {
+            if let Ok(mut held) = TOKENS.lock() {
+                held.insert(
+                    id.into(),
+                    Cached {
+                        token: "ghp_held".into(),
+                        at,
+                    },
+                );
             }
         };
-
-        forget_token();
-        assert_eq!(cached_for("github.com"), None);
-
-        hold("github.com", Instant::now());
-        assert_eq!(
-            cached_for("github.com"),
-            Some(("ghp_held".into(), TokenSource::Keychain))
-        );
-        assert_eq!(
-            cached_for("git.example.com"),
-            None,
-            "another host is not it"
-        );
-
-        hold(
-            "github.com",
-            Instant::now() - TOKEN_TTL - Duration::from_secs(1),
-        );
-        assert_eq!(cached_for("github.com"), None, "held too long");
-
-        hold("github.com", Instant::now());
-        forget_token();
-        assert_eq!(cached_for("github.com"), None);
+        let id = "held.test:someone";
+        forget_token(Some(id));
+        assert_eq!(cached_for(id), None);
+        hold(id, Instant::now());
+        assert_eq!(cached_for(id).as_deref(), Some("ghp_held"));
+        assert_eq!(cached_for("held.test:other"), None);
+        hold(id, Instant::now() - TOKEN_TTL - Duration::from_secs(1));
+        assert_eq!(cached_for(id), None, "held too long");
+        hold(id, Instant::now());
+        forget_token(Some(id));
+        assert_eq!(cached_for(id), None);
     }
 
     #[test]
@@ -502,36 +519,6 @@ mod tests {
         assert_eq!(host_for(Some(""), Some("ghe.corp")), "ghe.corp");
         assert_eq!(host_for(None, Some("not a host")), DEFAULT_HOST);
         assert_eq!(host_for(None, None), DEFAULT_HOST);
-    }
-
-    #[test]
-    fn only_the_place_signed_in_with_is_read() {
-        let signed_in = |source| GithubConfig {
-            source: Some(source),
-            ..GithubConfig::default()
-        };
-        assert_eq!(
-            sources_for(&signed_in(TokenSource::GhCli)),
-            [TokenSource::GhCli]
-        );
-        assert_eq!(
-            sources_for(&signed_in(TokenSource::Keychain)),
-            [TokenSource::Keychain]
-        );
-        assert_eq!(
-            sources_for(&GithubConfig::default()),
-            [TokenSource::Environment, TokenSource::GhCli]
-        );
-    }
-
-    #[test]
-    fn nothing_is_read_after_signing_out() {
-        let out = GithubConfig {
-            signed_out: true,
-            ..GithubConfig::default()
-        };
-        assert!(sources_for(&out).is_empty());
-        assert!(matches!(resolve_token(&out), Ok(None)));
     }
 
     #[test]

@@ -88,12 +88,22 @@ fn default_limit() -> u32 {
     50
 }
 
+/// The status of the account that just signed in.
 async fn signed_in(
     data_dir: &std::path::Path,
-    outcome: BitbucketResult<()>,
+    outcome: BitbucketResult<String>,
 ) -> Result<Value, PluginError> {
-    outcome?;
-    reply(auth::status(data_dir).await)
+    let id = outcome?;
+    reply(client::as_account(Some(id), auth::status(data_dir)).await)
+}
+
+/// Which account a call is for; with none named, the default one.
+fn account_of(input: &Value) -> Option<String> {
+    input
+        .get("account")
+        .and_then(Value::as_str)
+        .filter(|account| !account.is_empty())
+        .map(str::to_string)
 }
 
 impl Plugin for Bitbucket {
@@ -107,52 +117,8 @@ impl Plugin for Bitbucket {
         method: &'a str,
         input: Value,
     ) -> PluginFuture<'a, Value> {
-        let data_dir = ctx.data_dir();
-        match method {
-            "status" => Box::pin(async move { reply(auth::status(data_dir).await) }),
-            "rateLimit" => Box::pin(async move { reply(ratelimit::budget()) }),
-            "signInWithToken" => Box::pin(async move {
-                signed_in(
-                    data_dir,
-                    auth::sign_in_with_token(data_dir, params(input)?).await,
-                )
-                .await
-            }),
-            "signOut" => Box::pin(async move { reply(auth::sign_out(data_dir).await?) }),
-
-            "resolveRemote" => Box::pin(async move { reply(resolve(params(input)?)) }),
-            "myRepos" => answer(input, move |query: MineQuery| {
-                repo::mine(data_dir, query.limit)
-            }),
-            "branches" => answer(input, move |q| repo::branches(data_dir, q)),
-            "image" => answer(input, move |q| images::image(data_dir, q)),
-
-            "workflows" => answer(input, move |q| pipelines::workflows(data_dir, q)),
-            "workflowFile" => answer(input, move |q| pipelines::workflow_file(data_dir, q)),
-            "dispatch" => answer(input, move |q| pipelines::dispatch(data_dir, q)),
-            "runs" => answer(input, move |q| pipelines::list(data_dir, q)),
-            "run" => answer(input, move |q| pipelines::detail(data_dir, q)),
-            "runTiming" => answer(input, move |q| pipelines::timing(data_dir, q)),
-            "rerun" => answer(input, move |q| pipelines::rerun(data_dir, q)),
-            "cancel" => answer(input, move |q| pipelines::cancel(data_dir, q)),
-            "jobLog" => answer(input, move |q| pipelines::log(data_dir, q)),
-            "jobLogExcerpt" => answer(input, move |q| pipelines::excerpt(data_dir, q)),
-
-            "pulls" => answer(input, move |q| pulls::list(data_dir, q)),
-            "pull" => answer(input, move |q| pulls::get(data_dir, q)),
-            "pullFiles" => answer(input, move |q| pulls::files(data_dir, q)),
-            "pullCommits" => answer(input, move |q| pulls::commits(data_dir, q)),
-            "pullReviews" => answer(input, move |q| pulls::reviews(data_dir, q)),
-            "timeline" => answer(input, move |q| pulls::timeline(data_dir, q)),
-            "comments" => answer(input, move |q| pulls::comments(data_dir, q)),
-            "addComment" => answer(input, move |q| pulls::add_comment(data_dir, q)),
-            "mergePull" => answer(input, move |q| pulls::merge(data_dir, q)),
-            "createPull" => answer(input, move |q| pulls::create(data_dir, q)),
-            "setPullState" => answer(input, move |q| pulls::set_state(data_dir, q)),
-            "reviewPull" => answer(input, move |q| pulls::review(data_dir, q)),
-
-            _ => Box::pin(async move { Err(PluginError::unknown_method(method)) }),
-        }
+        let account = account_of(&input);
+        Box::pin(client::as_account(account, dispatch(ctx, method, input)))
     }
 
     fn stream<'a>(
@@ -162,15 +128,87 @@ impl Plugin for Bitbucket {
         input: Value,
         sink: StreamSink,
     ) -> PluginFuture<'a, ()> {
-        let data_dir = ctx.data_dir();
-        match method {
-            "signInWithBrowser" => Box::pin(async move {
-                auth::sign_in_with_browser(data_dir, &sink).await?;
-                sink.send(reply(auth::status(data_dir).await)?)
-            }),
-            "watchRun" => Box::pin(async move { watch::run(data_dir, params(input)?, sink).await }),
-            _ => Box::pin(async move { Err(PluginError::unknown_method(method)) }),
-        }
+        let account = account_of(&input);
+        Box::pin(client::as_account(
+            account,
+            dispatch_stream(ctx, method, input, sink),
+        ))
+    }
+}
+
+fn dispatch<'a>(ctx: &'a PluginContext, method: &'a str, input: Value) -> PluginFuture<'a, Value> {
+    let data_dir = ctx.data_dir();
+    match method {
+        "status" => Box::pin(async move { reply(auth::status(data_dir).await) }),
+        "accounts" => Box::pin(async move { reply(auth::accounts(data_dir)) }),
+        "setDefaultAccount" => answer(input, move |q| auth::set_default(data_dir, q)),
+        "accountFor" => answer(input, move |q| auth::account_for(data_dir, q)),
+        "rateLimit" => Box::pin(async move {
+            let status = auth::status(data_dir).await;
+            reply(ratelimit::budget(
+                status.account.as_deref().unwrap_or_default(),
+            ))
+        }),
+        "signInWithToken" => Box::pin(async move {
+            signed_in(
+                data_dir,
+                auth::sign_in_with_token(data_dir, params(input)?).await,
+            )
+            .await
+        }),
+        "signOut" => Box::pin(async move { reply(auth::sign_out(data_dir).await?) }),
+
+        "resolveRemote" => Box::pin(async move { reply(resolve(params(input)?)) }),
+        "myRepos" => answer(input, move |query: MineQuery| {
+            repo::mine(data_dir, query.limit)
+        }),
+        "branches" => answer(input, move |q| repo::branches(data_dir, q)),
+        "image" => answer(input, move |q| images::image(data_dir, q)),
+
+        "workflows" => answer(input, move |q| pipelines::workflows(data_dir, q)),
+        "workflowFile" => answer(input, move |q| pipelines::workflow_file(data_dir, q)),
+        "dispatch" => answer(input, move |q| pipelines::dispatch(data_dir, q)),
+        "runs" => answer(input, move |q| pipelines::list(data_dir, q)),
+        "run" => answer(input, move |q| pipelines::detail(data_dir, q)),
+        "runTiming" => answer(input, move |q| pipelines::timing(data_dir, q)),
+        "rerun" => answer(input, move |q| pipelines::rerun(data_dir, q)),
+        "cancel" => answer(input, move |q| pipelines::cancel(data_dir, q)),
+        "jobLog" => answer(input, move |q| pipelines::log(data_dir, q)),
+        "jobLogExcerpt" => answer(input, move |q| pipelines::excerpt(data_dir, q)),
+
+        "pulls" => answer(input, move |q| pulls::list(data_dir, q)),
+        "pull" => answer(input, move |q| pulls::get(data_dir, q)),
+        "pullFiles" => answer(input, move |q| pulls::files(data_dir, q)),
+        "pullCommits" => answer(input, move |q| pulls::commits(data_dir, q)),
+        "pullReviews" => answer(input, move |q| pulls::reviews(data_dir, q)),
+        "timeline" => answer(input, move |q| pulls::timeline(data_dir, q)),
+        "comments" => answer(input, move |q| pulls::comments(data_dir, q)),
+        "addComment" => answer(input, move |q| pulls::add_comment(data_dir, q)),
+        "mergePull" => answer(input, move |q| pulls::merge(data_dir, q)),
+        "createPull" => answer(input, move |q| pulls::create(data_dir, q)),
+        "setPullState" => answer(input, move |q| pulls::set_state(data_dir, q)),
+        "reviewPull" => answer(input, move |q| pulls::review(data_dir, q)),
+
+        _ => Box::pin(async move { Err(PluginError::unknown_method(method)) }),
+    }
+}
+
+fn dispatch_stream<'a>(
+    ctx: &'a PluginContext,
+    method: &'a str,
+    input: Value,
+    sink: StreamSink,
+) -> PluginFuture<'a, ()> {
+    let data_dir = ctx.data_dir();
+    match method {
+        "signInWithBrowser" => Box::pin(async move {
+            let id = auth::sign_in_with_browser(data_dir, &sink).await?;
+            sink.send(reply(
+                client::as_account(Some(id), auth::status(data_dir)).await,
+            )?)
+        }),
+        "watchRun" => Box::pin(async move { watch::run(data_dir, params(input)?, sink).await }),
+        _ => Box::pin(async move { Err(PluginError::unknown_method(method)) }),
     }
 }
 

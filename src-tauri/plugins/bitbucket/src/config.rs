@@ -1,10 +1,9 @@
-// How this is signed in to Bitbucket. The secret itself, an OAuth refresh
-// token or an API token, lives in the Keychain; the file beside it only says
-// which of the two it is and who it belongs to.
+// The Bitbucket accounts signed in here. Each account's secret, an OAuth
+// refresh token or an API token, lives in the Keychain; the file beside it
+// only says which accounts there are, how each signed in, and which one a
+// project uses when it names none.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
@@ -15,10 +14,6 @@ const TOKEN_SERVICE: &str = "sikemux-bitbucket-token";
 /// Tests keep to an entry of their own, so they never replace or delete a real token.
 #[cfg(test)]
 const TOKEN_SERVICE: &str = "sikemux-bitbucket-token-test";
-const KEYCHAIN_TIMEOUT: Duration = Duration::from_secs(10);
-const OUTPUT_LIMIT: usize = 64 * 1024;
-/// What `security` exits with when there is simply no such entry.
-const KEYCHAIN_NOT_FOUND: i32 = 44;
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -29,12 +24,30 @@ pub enum Method {
     Token,
 }
 
-impl Method {
-    fn account(self) -> &'static str {
-        match self {
-            Self::Oauth => "oauth",
-            Self::Token => "token",
-        }
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Account {
+    /// Bitbucket's id for the person, without its braces.
+    pub id: String,
+    pub login: String,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub avatar_url: Option<String>,
+    pub method: Method,
+    /// An Atlassian API token is sent with the account's email; an access
+    /// token made for a repository or workspace is sent on its own.
+    #[serde(default)]
+    pub email: Option<String>,
+}
+
+impl Account {
+    fn keychain_account(&self) -> String {
+        let kind = match self.method {
+            Method::Oauth => "oauth",
+            Method::Token => "token",
+        };
+        format!("{kind}:{}", self.id)
     }
 }
 
@@ -42,13 +55,53 @@ impl Method {
 #[serde(rename_all = "camelCase")]
 pub struct BitbucketConfig {
     #[serde(default)]
-    pub method: Option<Method>,
+    pub accounts: Vec<Account>,
+    /// The account a project uses when it names none.
     #[serde(default)]
-    pub login: String,
-    /// An Atlassian API token is sent with the account's email; an access
-    /// token made for a repository or workspace is sent on its own.
-    #[serde(default)]
-    pub email: Option<String>,
+    pub default: Option<String>,
+}
+
+impl BitbucketConfig {
+    /// The account named, or with none named, the default one.
+    pub fn account(&self, id: Option<&str>) -> Option<&Account> {
+        let wanted = id.or(self.default.as_deref());
+        match wanted {
+            Some(wanted) => self.accounts.iter().find(|account| account.id == wanted),
+            None => self.accounts.first(),
+        }
+    }
+
+    /// Adds the account, or replaces the one with the same id. The first account becomes the default.
+    pub fn upsert(&mut self, account: Account) {
+        match self.accounts.iter_mut().find(|kept| kept.id == account.id) {
+            Some(kept) => *kept = account,
+            None => self.accounts.push(account),
+        }
+        let default_is_signed_in = self
+            .default
+            .as_ref()
+            .is_some_and(|id| self.accounts.iter().any(|account| &account.id == id));
+        if !default_is_signed_in {
+            self.default = self.accounts.first().map(|account| account.id.clone());
+        }
+    }
+
+    /// Takes the account out; a removed default passes to the first account left.
+    pub fn remove(&mut self, id: &str) -> Option<Account> {
+        let index = self.accounts.iter().position(|account| account.id == id)?;
+        let removed = self.accounts.remove(index);
+        if self.default.as_deref() == Some(id) {
+            self.default = self.accounts.first().map(|account| account.id.clone());
+        }
+        Some(removed)
+    }
+
+    /// Every account, the default first, which is the order to try them in.
+    pub fn in_order(&self) -> Vec<Account> {
+        let mut ordered = self.accounts.clone();
+        ordered.sort_by_key(|account| Some(&account.id) != self.default.as_ref());
+        ordered
+    }
 }
 
 fn config_path(data_dir: &Path) -> PathBuf {
@@ -74,89 +127,24 @@ pub fn save(data_dir: &Path, config: &BitbucketConfig) -> BitbucketResult<()> {
     std::fs::rename(&staged, &path).map_err(io_error)
 }
 
-/// Secrets reach `security -i` on a command line it splits on spaces, so
-/// anything that could end the value early is refused rather than escaped.
-fn validate_secret(raw: &str) -> BitbucketResult<String> {
-    let secret = raw.trim();
-    let allowed =
-        |c: char| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '~' | '=' | '+' | '/');
-    if secret.is_empty() || secret.len() > 4096 || !secret.chars().all(allowed) {
-        return Err(BitbucketError::BadArg(
-            "that does not look like a Bitbucket token".into(),
-        ));
+fn keychain_error(error: sikemux_keychain::KeychainError) -> BitbucketError {
+    match error {
+        sikemux_keychain::KeychainError::Invalid(message) => BitbucketError::BadArg(message),
+        sikemux_keychain::KeychainError::Failed(message) => BitbucketError::Keychain(message),
     }
-    Ok(secret.to_string())
 }
 
-fn run(
-    command: &mut Command,
-    input: Option<&[u8]>,
-    timeout: Duration,
-) -> BitbucketResult<std::process::Output> {
-    sikemux_process::run(command, input, timeout, OUTPUT_LIMIT, None)
-        .map_err(|error| BitbucketError::Keychain(error.to_string()))
+pub fn keychain_read(account: &Account) -> BitbucketResult<Option<String>> {
+    sikemux_keychain::read(TOKEN_SERVICE, &account.keychain_account()).map_err(keychain_error)
 }
 
-pub fn keychain_read(method: Method) -> BitbucketResult<Option<String>> {
-    let output = run(
-        Command::new("security").args([
-            "find-generic-password",
-            "-s",
-            TOKEN_SERVICE,
-            "-a",
-            method.account(),
-            "-w",
-        ]),
-        None,
-        KEYCHAIN_TIMEOUT,
-    )?;
-    if output.status.code() == Some(KEYCHAIN_NOT_FOUND) {
-        return Ok(None);
-    }
-    if !output.status.success() {
-        return Err(BitbucketError::Keychain(format!(
-            "could not read the saved token: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-    let secret = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    Ok((!secret.is_empty()).then_some(secret))
+pub fn keychain_write(account: &Account, secret: &str) -> BitbucketResult<()> {
+    sikemux_keychain::write(TOKEN_SERVICE, &account.keychain_account(), secret)
+        .map_err(keychain_error)
 }
 
-/// `security -i` reads the command from stdin, so the token never shows up in
-/// the process list the way an argument would.
-pub fn keychain_write(method: Method, secret: &str) -> BitbucketResult<()> {
-    let secret = validate_secret(secret)?;
-    let line = format!(
-        "add-generic-password -U -s {TOKEN_SERVICE} -a {} -w {secret}\n",
-        method.account()
-    );
-    let output = run(
-        Command::new("security").arg("-i"),
-        Some(line.as_bytes()),
-        KEYCHAIN_TIMEOUT,
-    )?;
-    if !output.status.success() {
-        return Err(BitbucketError::Keychain(
-            "the Keychain refused to save it".into(),
-        ));
-    }
-    Ok(())
-}
-
-pub fn keychain_delete(method: Method) -> BitbucketResult<()> {
-    run(
-        Command::new("security").args([
-            "delete-generic-password",
-            "-s",
-            TOKEN_SERVICE,
-            "-a",
-            method.account(),
-        ]),
-        None,
-        KEYCHAIN_TIMEOUT,
-    )?;
-    Ok(())
+pub fn keychain_delete(account: &Account) -> BitbucketResult<()> {
+    sikemux_keychain::delete(TOKEN_SERVICE, &account.keychain_account()).map_err(keychain_error)
 }
 
 /// Runs work that starts a process or touches the Keychain on a thread meant
@@ -173,28 +161,69 @@ pub async fn blocking<T: Send + 'static>(
 mod tests {
     use super::*;
 
-    #[test]
-    fn tokens_keep_the_characters_atlassian_puts_in_them() {
-        assert!(validate_secret("ATATT3xFfGF0abc_def-ghi=A1B2C3D4").is_ok());
-        assert!(validate_secret("a+b/c==").is_ok());
-    }
-
-    #[test]
-    fn anything_that_could_end_the_keychain_command_early_is_refused() {
-        for raw in ["", "   ", "two words", "a\nb", "a;b", "a\"b"] {
-            assert!(validate_secret(raw).is_err(), "{raw:?}");
+    fn account(id: &str) -> Account {
+        Account {
+            id: id.into(),
+            login: id.into(),
+            display_name: None,
+            avatar_url: None,
+            method: Method::Oauth,
+            email: None,
         }
     }
 
     #[test]
-    fn nothing_saved_reads_as_signed_out() {
+    fn the_first_account_becomes_the_default_and_a_second_does_not() {
+        let mut config = BitbucketConfig::default();
+        assert!(config.account(None).is_none());
+        config.upsert(account("work"));
+        config.upsert(account("home"));
+        assert_eq!(config.account(None).map(|a| a.id.as_str()), Some("work"));
+        assert_eq!(
+            config.account(Some("home")).map(|a| a.id.as_str()),
+            Some("home")
+        );
+        assert!(config.account(Some("gone")).is_none());
+    }
+
+    #[test]
+    fn signing_in_again_replaces_the_account_rather_than_adding_one() {
+        let mut config = BitbucketConfig::default();
+        config.upsert(account("work"));
+        let mut again = account("work");
+        again.login = "renamed".into();
+        config.upsert(again);
+        assert_eq!(config.accounts.len(), 1);
+        assert_eq!(config.accounts[0].login, "renamed");
+    }
+
+    #[test]
+    fn removing_the_default_hands_it_to_the_next_account() {
+        let mut config = BitbucketConfig::default();
+        config.upsert(account("work"));
+        config.upsert(account("home"));
+        config.remove("work");
+        assert_eq!(config.default.as_deref(), Some("home"));
+        config.remove("home");
+        assert_eq!(config.default, None);
+    }
+
+    #[test]
+    fn accounts_are_tried_default_first() {
+        let mut config = BitbucketConfig::default();
+        config.upsert(account("work"));
+        config.upsert(account("home"));
+        config.default = Some("home".into());
+        let order: Vec<String> = config.in_order().into_iter().map(|a| a.id).collect();
+        assert_eq!(order, ["home", "work"]);
+    }
+
+    #[test]
+    fn nothing_saved_reads_as_no_accounts() {
         let dir = std::env::temp_dir().join(format!("sikemux-bb-config-{}", std::process::id()));
         assert_eq!(load(&dir), BitbucketConfig::default());
-        let saved = BitbucketConfig {
-            method: Some(Method::Token),
-            login: "someone".into(),
-            email: Some("someone@example.com".into()),
-        };
+        let mut saved = BitbucketConfig::default();
+        saved.upsert(account("work"));
         save(&dir, &saved).expect("saves");
         assert_eq!(load(&dir), saved);
         std::fs::remove_dir_all(dir).ok();

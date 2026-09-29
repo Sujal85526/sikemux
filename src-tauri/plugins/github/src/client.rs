@@ -14,7 +14,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use tokio::sync::Semaphore;
 
-use crate::config::{self, TokenSource};
+use crate::config::{self, Account};
 use crate::error::{GithubError, GithubResult};
 use crate::ratelimit;
 
@@ -97,10 +97,23 @@ pub fn http() -> GithubResult<&'static Client> {
         .ok_or_else(no_client)
 }
 
+tokio::task_local! {
+    /// The account a call named, held for everything the call does.
+    static CHOSEN: Option<String>;
+}
+
+/// Runs a call as the account it named, or with none named, as the default one.
+pub fn as_account<F: Future>(account: Option<String>, work: F) -> impl Future<Output = F::Output> {
+    CHOSEN.scope(account, work)
+}
+
+pub fn chosen() -> Option<String> {
+    CHOSEN.try_with(Clone::clone).ok().flatten()
+}
+
 pub struct Session {
-    pub host: String,
+    pub account: Account,
     pub token: String,
-    pub source: TokenSource,
 }
 
 impl Session {
@@ -108,15 +121,12 @@ impl Session {
     /// without restarting the app.
     pub async fn current(data_dir: &Path) -> GithubResult<Session> {
         let data_dir = data_dir.to_path_buf();
+        let chosen = chosen();
         config::blocking(Box::new(move || {
             let config = config::load(&data_dir);
-            let (token, source) =
-                config::resolve_token(&config)?.ok_or(GithubError::Unconfigured)?;
-            Ok(Session {
-                host: config.host,
-                token,
-                source,
-            })
+            let (account, token) =
+                config::resolve(&config, chosen.as_deref())?.ok_or(GithubError::Unconfigured)?;
+            Ok(Session { account, token })
         }))
         .await
     }
@@ -204,7 +214,10 @@ fn api_request(
     accept: &str,
 ) -> RequestBuilder {
     client
-        .request(method, format!("{}{path}", config::api_base(&session.host)))
+        .request(
+            method,
+            format!("{}{path}", config::api_base(&session.account.host)),
+        )
         .bearer_auth(&session.token)
         .header("Accept", accept)
         .header("X-GitHub-Api-Version", API_VERSION)
@@ -213,17 +226,20 @@ fn api_request(
 /// A limit that resets within a few seconds is waited out and the request
 /// sent once more; a longer one fails at once, and so does everything after it
 /// until the limit resets.
-async fn exchange(request: RequestBuilder) -> GithubResult<(StatusCode, HeaderMap, Vec<u8>)> {
+async fn exchange(
+    account: &str,
+    request: RequestBuilder,
+) -> GithubResult<(StatusCode, HeaderMap, Vec<u8>)> {
     let mut request = request;
     loop {
-        ratelimit::check()?;
+        ratelimit::check(account)?;
         let again = request.try_clone();
         let response = limited(request.send()).await?;
         let status = response.status();
         let headers = response.headers().clone();
         let (bytes, _) = read_body(response, MAX_RESPONSE_BYTES, false).await?;
         if status == StatusCode::UNAUTHORIZED {
-            config::forget_token();
+            config::forget_token(Some(account));
         }
         let wait = ratelimit::wait_for(status, &headers, &bytes);
         match (wait, again) {
@@ -232,7 +248,7 @@ async fn exchange(request: RequestBuilder) -> GithubResult<(StatusCode, HeaderMa
                 request = retry;
             }
             _ => {
-                ratelimit::observe(status, &headers, &bytes);
+                ratelimit::observe(account, status, &headers, &bytes);
                 return Ok((status, headers, bytes));
             }
         }
@@ -253,7 +269,7 @@ pub async fn send(
     if let Some(body) = body {
         request = request.json(body);
     }
-    exchange(request).await
+    exchange(&session.account.id, request).await
 }
 
 /// The body of a successful answer. The network half of every call lives in
@@ -370,7 +386,7 @@ async fn fetch_if_changed(
     if let Some(etag) = etag {
         request = request.header("If-None-Match", etag);
     }
-    let (status, headers, bytes) = exchange(request).await?;
+    let (status, headers, bytes) = exchange(&session.account.id, request).await?;
     let header = |name: &str| headers.get(name).and_then(|value| value.to_str().ok());
     let remaining = header("x-ratelimit-remaining").and_then(|value| value.trim().parse().ok());
     if status == StatusCode::NOT_MODIFIED {
@@ -392,10 +408,11 @@ pub async fn post_empty(data_dir: &Path, path: &str, body: Option<&Value>) -> Gi
 pub async fn open_download(data_dir: &Path, path: &str, accept: &str) -> GithubResult<Response> {
     let session = Session::current(data_dir).await?;
     let client = transfers()?;
-    ratelimit::check()?;
+    let account = session.account.id.as_str();
+    ratelimit::check(account)?;
     let mut response =
         limited(api_request(client, &session, Method::GET, path, accept).send()).await?;
-    ratelimit::observe(response.status(), response.headers(), b"");
+    ratelimit::observe(account, response.status(), response.headers(), b"");
     if response.status().is_redirection() {
         let location = response
             .headers()
@@ -406,12 +423,12 @@ pub async fn open_download(data_dir: &Path, path: &str, accept: &str) -> GithubR
         response = limited(client.execute(from_storage(&location)?)).await?;
     }
     if !response.status().is_success() {
-        return Err(failure(response).await);
+        return Err(failure(account, response).await);
     }
     Ok(response)
 }
 
-pub async fn failure(response: Response) -> GithubError {
+pub async fn failure(account: &str, response: Response) -> GithubError {
     let status = response.status();
     let headers = response.headers().clone();
     let bytes = read_body(response, MAX_RESPONSE_BYTES, false)
@@ -419,9 +436,9 @@ pub async fn failure(response: Response) -> GithubError {
         .map(|(bytes, _)| bytes)
         .unwrap_or_default();
     if status == StatusCode::UNAUTHORIZED {
-        config::forget_token();
+        config::forget_token(Some(account));
     }
-    ratelimit::observe(status, &headers, &bytes);
+    ratelimit::observe(account, status, &headers, &bytes);
     classify(status, &headers, &bytes)
 }
 

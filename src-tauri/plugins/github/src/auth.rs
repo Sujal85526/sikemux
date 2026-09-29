@@ -1,6 +1,7 @@
-// Signing in, signing out, and saying who the app is talking to GitHub as.
+// Signing accounts in and out, and saying who the app is talking to GitHub as.
 // A token typed here is saved in the Keychain; one already in the environment
-// or held by the `gh` CLI is used where it is and never copied.
+// or held by the `gh` CLI is used where it is and never copied. Signing in to
+// a second account adds it beside the first rather than replacing it.
 
 use std::path::Path;
 
@@ -8,8 +9,9 @@ use reqwest::Method;
 use serde::{Deserialize, Serialize};
 
 use crate::client::{self, Session};
-use crate::config::{self, GithubConfig, TokenSource};
+use crate::config::{self, Account, TokenSource};
 use crate::error::{GithubError, GithubResult};
+use crate::workflows::RepoRef;
 
 #[derive(Deserialize)]
 struct Viewer {
@@ -51,6 +53,9 @@ pub async fn identify(session: &Session) -> GithubResult<Identity> {
 #[serde(rename_all = "camelCase")]
 pub struct Status {
     pub configured: bool,
+    /// Which account this is about; absent while a token the shell or `gh`
+    /// holds is used before anybody has signed in.
+    pub account: Option<String>,
     pub host: String,
     pub login: String,
     pub token_source: Option<TokenSource>,
@@ -70,37 +75,54 @@ fn can_write(scopes: &[String]) -> bool {
     scopes.is_empty() || scopes.iter().any(|scope| scope == "workflow")
 }
 
+fn variable_for(source: Option<TokenSource>, host: &str) -> Option<&'static str> {
+    (source == Some(TokenSource::Environment))
+        .then(|| config::env_variable(host))
+        .flatten()
+}
+
+/// The account the call named, or the default one.
 pub async fn status(data_dir: &Path) -> Status {
     let config = config::load(data_dir);
-    let base = |ok,
-                auth_failed,
+    let chosen = client::chosen();
+    let saved = config.account(chosen.as_deref()).cloned();
+    let host = saved
+        .as_ref()
+        .map_or_else(|| config.host_hint(), |account| account.host.clone());
+    let base = |ok: bool,
+                auth_failed: bool,
                 login: String,
-                token_source: Option<TokenSource>,
+                source: Option<TokenSource>,
                 scopes: Vec<String>,
-                message| Status {
-        configured: token_source.is_some(),
-        host: config.host.clone(),
+                message: Option<String>| Status {
+        configured: source.is_some(),
+        account: saved.as_ref().map(|account| account.id.clone()),
+        host: host.clone(),
         can_write_workflows: ok && can_write(&scopes),
-        token_variable: (token_source == Some(TokenSource::Environment))
-            .then(|| config::env_variable(&config.host))
-            .flatten(),
+        token_variable: variable_for(source, &host),
         login,
-        token_source,
+        token_source: source,
         scopes,
         ok,
         auth_failed,
         message,
     };
+    let saved_login = saved
+        .as_ref()
+        .map(|account| account.login.clone())
+        .unwrap_or_default();
+    let saved_source = saved.as_ref().map(|account| account.source);
     let session = match Session::current(data_dir).await {
         Ok(session) => session,
         // Not signed in, but a token the shell or `gh` holds can be offered.
         Err(GithubError::Unconfigured) => {
-            let host = config.host.clone();
-            let waiting = config::blocking(Box::new(move || Ok(config::offered_token(&host))))
-                .await
-                .ok()
-                .flatten()
-                .map(|(_, source)| source);
+            let offer_host = host.clone();
+            let waiting =
+                config::blocking(Box::new(move || Ok(config::offered_token(&offer_host))))
+                    .await
+                    .ok()
+                    .flatten()
+                    .map(|(_, source)| source);
             let mut status = base(false, false, String::new(), waiting, Vec::new(), None);
             status.configured = false;
             return status;
@@ -110,29 +132,22 @@ pub async fn status(data_dir: &Path) -> Status {
             return base(
                 false,
                 false,
-                config.login.clone(),
-                config.source,
+                saved_login,
+                saved_source,
                 Vec::new(),
                 Some(error.to_string()),
             )
         }
     };
-    let source = session.source;
+    let source = Some(session.account.source);
     match identify(&session).await {
-        Ok(identity) => base(
-            true,
-            false,
-            identity.login,
-            Some(source),
-            identity.scopes,
-            None,
-        ),
+        Ok(identity) => base(true, false, identity.login, source, identity.scopes, None),
         // Still signed in; GitHub is only asking to wait.
         Err(error @ GithubError::RateLimited { .. }) => base(
             true,
             false,
-            config.login.clone(),
-            Some(source),
+            session.account.login.clone(),
+            source,
             Vec::new(),
             Some(error.to_string()),
         ),
@@ -144,13 +159,39 @@ pub async fn status(data_dir: &Path) -> Status {
             base(
                 false,
                 auth_failed,
-                config.login.clone(),
-                Some(source),
+                session.account.login.clone(),
+                source,
                 Vec::new(),
                 Some(error.to_string()),
             )
         }
     }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Listed {
+    pub id: String,
+    pub host: String,
+    pub login: String,
+    pub source: TokenSource,
+    pub is_default: bool,
+}
+
+/// Every account signed in, the default first.
+pub fn accounts(data_dir: &Path) -> Vec<Listed> {
+    let config = config::load(data_dir);
+    config
+        .in_order()
+        .into_iter()
+        .map(|account| Listed {
+            is_default: config.default.as_deref() == Some(account.id.as_str()),
+            id: account.id,
+            host: account.host,
+            login: account.login,
+            source: account.source,
+        })
+        .collect()
 }
 
 #[derive(Deserialize)]
@@ -161,11 +202,11 @@ pub struct SignIn {
     pub token: Option<String>,
 }
 
-pub async fn sign_in(data_dir: &Path, input: SignIn) -> GithubResult<()> {
-    let before = config::load(data_dir);
+/// Adds the account the token belongs to, and says which one it is.
+pub async fn sign_in(data_dir: &Path, input: SignIn) -> GithubResult<String> {
     let host = match input.host.as_deref() {
         Some(host) => config::validate_host(host)?,
-        None => before.host.clone(),
+        None => config::load(data_dir).host_hint(),
     };
     let token = input.token.map(|token| token.trim().to_string());
     let (token, source) = match token.filter(|token| !token.is_empty()) {
@@ -183,60 +224,107 @@ pub async fn sign_in(data_dir: &Path, input: SignIn) -> GithubResult<()> {
     };
     let owns_token = source == TokenSource::Keychain;
     let probe = Session {
-        host: host.clone(),
+        account: Account {
+            id: config::account_id(&host, ""),
+            host: host.clone(),
+            login: String::new(),
+            source,
+            owns_token,
+        },
         token: token.clone(),
-        source,
     };
     let identity = identify(&probe).await?;
+    let account = Account {
+        id: config::account_id(&host, &identity.login),
+        host,
+        login: identity.login,
+        source,
+        owns_token,
+    };
+    let id = account.id.clone();
     let data_dir = data_dir.to_path_buf();
     config::blocking(Box::new(move || {
-        if owns_token {
-            config::keychain_write(&host, &token)?;
+        let mut config = config::load(&data_dir);
+        let leaves_a_token_behind = config
+            .accounts
+            .iter()
+            .any(|kept| kept.id == account.id && kept.owns_token && !account.owns_token);
+        if account.owns_token {
+            config::keychain_write(&account.id, &token)?;
         }
-        if leaves_a_token_behind(&before, &host, owns_token) {
-            config::keychain_delete(&before.host)?;
+        if leaves_a_token_behind {
+            config::keychain_delete(&account.id)?;
         }
-        config::forget_token();
-        config::save(
-            &data_dir,
-            &GithubConfig {
-                host,
-                login: identity.login,
-                source: Some(source),
-                owns_token,
-                signed_out: false,
-            },
-        )
+        config.upsert(account);
+        config::save(&data_dir, &config)
     }))
-    .await
+    .await?;
+    config::forget_token(Some(&id));
+    Ok(id)
 }
 
-/// A token Sikemux saved earlier is deleted once a sign-in stops using it,
-/// rather than left in the Keychain where nothing will ever clear it.
-fn leaves_a_token_behind(before: &GithubConfig, host: &str, owns_token: bool) -> bool {
-    before.owns_token && !(owns_token && before.host == host)
-}
-
-/// Only a token Sikemux saved is deleted. One the shell or `gh` provides is
-/// left where it is, and is not used here again until somebody signs in.
+/// Signs out the account the call named, or the default one. Only a token
+/// Sikemux saved is deleted; one the shell or `gh` provides is left where it is.
 pub async fn sign_out(data_dir: &Path) -> GithubResult<()> {
     let data_dir = data_dir.to_path_buf();
-    config::blocking(Box::new(move || {
-        config::forget_token();
-        let config = config::load(&data_dir);
-        if config.owns_token {
-            config::keychain_delete(&config.host)?;
+    let chosen = client::chosen();
+    let removed = config::blocking(Box::new(move || {
+        let mut config = config::load(&data_dir);
+        let Some(id) = config
+            .account(chosen.as_deref())
+            .map(|account| account.id.clone())
+        else {
+            config.signed_out = true;
+            config::save(&data_dir, &config)?;
+            return Ok(None);
+        };
+        let removed = config.remove(&id);
+        if let Some(account) = removed.as_ref().filter(|account| account.owns_token) {
+            config::keychain_delete(&account.id)?;
         }
-        config::save(
-            &data_dir,
-            &GithubConfig {
-                host: config.host,
-                signed_out: true,
-                ..GithubConfig::default()
-            },
-        )
+        config::save(&data_dir, &config)?;
+        Ok(removed)
+    }))
+    .await?;
+    config::forget_token(removed.as_ref().map(|account| account.id.as_str()));
+    Ok(())
+}
+
+#[derive(Deserialize)]
+pub struct DefaultChoice {
+    pub id: String,
+}
+
+pub async fn set_default(data_dir: &Path, input: DefaultChoice) -> GithubResult<()> {
+    let data_dir = data_dir.to_path_buf();
+    config::blocking(Box::new(move || {
+        let mut config = config::load(&data_dir);
+        if !config.accounts.iter().any(|account| account.id == input.id) {
+            return Err(GithubError::NotFound(
+                "no account signed in by that id".into(),
+            ));
+        }
+        config.default = Some(input.id);
+        config::save(&data_dir, &config)
     }))
     .await
+}
+
+/// The first account, default first, that can see the repository, so a
+/// project owned by a work organisation opens as the work account by itself.
+pub async fn account_for(data_dir: &Path, repo: RepoRef) -> GithubResult<Option<String>> {
+    let path = repo.path("")?;
+    for account in config::load(data_dir).in_order() {
+        let id = account.id.clone();
+        let seen: GithubResult<serde_json::Value> =
+            client::as_account(Some(id.clone()), client::get(data_dir, &path, &[])).await;
+        match seen {
+            Ok(_) => return Ok(Some(id)),
+            Err(GithubError::Unconfigured) => return Ok(None),
+            Err(_) => continue,
+        }
+    }
+    Ok(None)
 }
 
 #[cfg(test)]
@@ -252,19 +340,11 @@ mod tests {
     }
 
     #[test]
-    fn a_saved_token_goes_once_nothing_uses_it() {
-        let owned = GithubConfig {
-            host: "github.com".into(),
-            owns_token: true,
-            ..GithubConfig::default()
-        };
-        assert!(leaves_a_token_behind(&owned, "github.com", false));
-        assert!(leaves_a_token_behind(&owned, "ghe.corp", true));
-        assert!(!leaves_a_token_behind(&owned, "github.com", true));
-        assert!(!leaves_a_token_behind(
-            &GithubConfig::default(),
-            "github.com",
-            false
-        ));
+    fn only_a_token_from_the_shell_names_its_variable() {
+        assert_eq!(
+            variable_for(Some(TokenSource::Keychain), "github.com"),
+            None
+        );
+        assert_eq!(variable_for(None, "github.com"), None);
     }
 }

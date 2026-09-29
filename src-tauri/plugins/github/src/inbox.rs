@@ -114,7 +114,7 @@ pub struct Query {
 }
 
 pub async fn list(data_dir: &Path, input: Query) -> GithubResult<Vec<Notification>> {
-    let host = crate::config::load(data_dir).host;
+    let host = crate::config::load(data_dir).host_of(client::chosen().as_deref());
     let rows: Vec<NotificationRow> = client::get(
         data_dir,
         "/notifications",

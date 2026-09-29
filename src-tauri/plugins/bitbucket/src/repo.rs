@@ -76,6 +76,7 @@ pub struct Links {
 /// its API, so the nickname stands in for the login other hosts have.
 #[derive(Deserialize, Default, Clone)]
 pub struct User {
+    pub uuid: Option<String>,
     pub display_name: Option<String>,
     pub nickname: Option<String>,
     #[serde(default)]

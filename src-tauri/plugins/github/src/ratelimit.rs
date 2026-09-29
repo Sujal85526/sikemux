@@ -2,6 +2,7 @@
 // is refused here without reaching GitHub, since GitHub treats requests made
 // into a spent limit as abuse and holds the account back for longer.
 
+use std::collections::BTreeMap;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -29,13 +30,8 @@ pub struct Budget {
     pub near: bool,
 }
 
-static STATE: Mutex<Budget> = Mutex::new(Budget {
-    limited: false,
-    resets_at: None,
-    remaining: None,
-    limit: None,
-    near: false,
-});
+/// Each account's token has a limit of its own.
+static STATES: Mutex<BTreeMap<String, Budget>> = Mutex::new(BTreeMap::new());
 
 pub fn now_secs() -> u64 {
     SystemTime::now()
@@ -68,11 +64,14 @@ pub fn wait_for(status: StatusCode, headers: &HeaderMap, body: &[u8]) -> Option<
 }
 
 /// Refuses a request while a spent limit has not yet reset.
-pub fn check() -> GithubResult<()> {
+pub fn check(account: &str) -> GithubResult<()> {
     let now = now_secs();
-    let mut state = STATE
+    let mut states = STATES
         .lock()
         .map_err(|_| GithubError::Transport("rate limit state".into()))?;
+    let Some(state) = states.get_mut(account) else {
+        return Ok(());
+    };
     match state.resets_at {
         Some(at) if state.limited && at > now => Err(GithubError::RateLimited {
             resets_in_secs: at - now,
@@ -85,10 +84,11 @@ pub fn check() -> GithubResult<()> {
 }
 
 /// Keeps what an answer says about the limit, and holds requests back if it is spent.
-pub fn observe(status: StatusCode, headers: &HeaderMap, body: &[u8]) {
-    let Ok(mut state) = STATE.lock() else {
+pub fn observe(account: &str, status: StatusCode, headers: &HeaderMap, body: &[u8]) {
+    let Ok(mut states) = STATES.lock() else {
         return;
     };
+    let state = states.entry(account.to_string()).or_default();
     if let Some(remaining) = number(headers, "x-ratelimit-remaining") {
         state.remaining = Some(remaining);
         state.limit = number(headers, "x-ratelimit-limit").or(state.limit);
@@ -100,19 +100,16 @@ pub fn observe(status: StatusCode, headers: &HeaderMap, body: &[u8]) {
     }
 }
 
-pub fn budget() -> Budget {
-    let _ = check();
-    let mut budget = STATE.lock().map(|state| *state).unwrap_or_default();
+pub fn budget(account: &str) -> Budget {
+    let _ = check(account);
+    let mut budget = STATES
+        .lock()
+        .ok()
+        .and_then(|states| states.get(account).copied())
+        .unwrap_or_default();
     budget.near =
         matches!((budget.remaining, budget.limit), (Some(left), Some(all)) if left < all / 10);
     budget
-}
-
-#[cfg(test)]
-pub fn reset() {
-    if let Ok(mut state) = STATE.lock() {
-        *state = Budget::default();
-    }
 }
 
 #[cfg(test)]
@@ -156,8 +153,9 @@ mod tests {
 
     #[test]
     fn once_spent_nothing_is_sent_until_it_resets() {
-        reset();
+        let account = "limit.test:someone";
         observe(
+            account,
             StatusCode::OK,
             &headers(&[
                 ("x-ratelimit-remaining", "12"),
@@ -165,23 +163,29 @@ mod tests {
             ]),
             b"",
         );
-        assert!(check().is_ok());
-        assert_eq!((budget().remaining, budget().limit), (Some(12), Some(5000)));
-        assert!(budget().near);
+        assert!(check(account).is_ok());
+        assert_eq!(
+            (budget(account).remaining, budget(account).limit),
+            (Some(12), Some(5000))
+        );
+        assert!(budget(account).near);
         observe(
+            account,
             StatusCode::TOO_MANY_REQUESTS,
             &headers(&[("retry-after", "90")]),
             b"",
         );
-        match check() {
+        match check(account) {
             Err(GithubError::RateLimited { resets_in_secs }) => {
                 assert!((89..=90).contains(&resets_in_secs))
             }
             other => panic!("expected to be held back, got {other:?}"),
         }
-        assert!(budget().limited);
-        reset();
-        assert!(check().is_ok());
+        assert!(budget(account).limited);
+        assert!(
+            check("limit.test:another").is_ok(),
+            "another account has its own limit"
+        );
     }
 
     #[test]

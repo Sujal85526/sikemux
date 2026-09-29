@@ -2,6 +2,7 @@
 // single answer may be, the credential each request carries, and Bitbucket's
 // error shapes turned into ours.
 
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
@@ -14,7 +15,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::Semaphore;
 
-use crate::config::{self, Method as AuthMethod};
+use crate::config::{self, Account, Method as AuthMethod};
 use crate::error::{BitbucketError, BitbucketResult};
 use crate::oauth;
 use crate::ratelimit;
@@ -85,19 +86,51 @@ struct HeldToken {
     at: Instant,
 }
 
-static ACCESS: tokio::sync::Mutex<Option<Access>> = tokio::sync::Mutex::const_new(None);
-static API_TOKEN: Mutex<Option<HeldToken>> = Mutex::new(None);
+tokio::task_local! {
+    /// The account a call named, held for everything the call does.
+    static CHOSEN: Option<String>;
+}
 
-/// Drops every credential held in memory, so the next request reads the Keychain again.
-pub async fn forget() {
-    *ACCESS.lock().await = None;
+/// Runs a call as the account it named, or with none named, as the default one.
+pub fn as_account<F: Future>(account: Option<String>, work: F) -> impl Future<Output = F::Output> {
+    CHOSEN.scope(account, work)
+}
+
+pub fn chosen() -> Option<String> {
+    CHOSEN.try_with(Clone::clone).ok().flatten()
+}
+
+static ACCESS: tokio::sync::Mutex<BTreeMap<String, Access>> =
+    tokio::sync::Mutex::const_new(BTreeMap::new());
+static API_TOKEN: Mutex<BTreeMap<String, HeldToken>> = Mutex::new(BTreeMap::new());
+
+/// Drops the credentials held in memory for one account, or for all of them,
+/// so the next request reads the Keychain again.
+pub async fn forget(account: Option<&str>) {
+    let mut access = ACCESS.lock().await;
+    match account {
+        Some(id) => access.remove(id),
+        None => {
+            access.clear();
+            None
+        }
+    };
     if let Ok(mut held) = API_TOKEN.lock() {
-        *held = None;
+        match account {
+            Some(id) => held.remove(id),
+            None => {
+                held.clear();
+                None
+            }
+        };
     }
 }
 
-pub async fn remember_access(tokens: &oauth::Tokens) {
-    *ACCESS.lock().await = Some(access_of(tokens));
+pub async fn remember_access(account: &str, tokens: &oauth::Tokens) {
+    ACCESS
+        .lock()
+        .await
+        .insert(account.to_string(), access_of(tokens));
 }
 
 fn access_of(tokens: &oauth::Tokens) -> Access {
@@ -114,55 +147,70 @@ fn access_of(tokens: &oauth::Tokens) -> Access {
 }
 
 pub struct Session {
+    pub account: Account,
     pub credential: Credential,
     /// What the OAuth grant allows. Empty for a pasted token, which says nothing about itself.
     pub scopes: Vec<String>,
-    pub method: AuthMethod,
 }
 
 impl Session {
+    /// The account the call named, or the default one.
     pub async fn current(data_dir: &Path) -> BitbucketResult<Session> {
         let config = config::load(data_dir);
-        match config.method {
-            None => Err(BitbucketError::Unconfigured),
-            Some(AuthMethod::Token) => {
-                let token = api_token().await?;
-                let credential = match config.email.filter(|email| !email.is_empty()) {
+        let account = config
+            .account(chosen().as_deref())
+            .cloned()
+            .ok_or(BitbucketError::Unconfigured)?;
+        Self::of(account).await
+    }
+
+    pub async fn of(account: Account) -> BitbucketResult<Session> {
+        match account.method {
+            AuthMethod::Token => {
+                let token = api_token(&account).await?;
+                let credential = match account.email.clone().filter(|email| !email.is_empty()) {
                     Some(email) => Credential::Basic { email, token },
                     None => Credential::Bearer(token),
                 };
                 Ok(Session {
+                    account,
                     credential,
                     scopes: Vec::new(),
-                    method: AuthMethod::Token,
                 })
             }
-            Some(AuthMethod::Oauth) => {
-                let (token, scopes) = access_token().await?;
+            AuthMethod::Oauth => {
+                let (token, scopes) = access_token(&account).await?;
                 Ok(Session {
+                    account,
                     credential: Credential::Bearer(token),
                     scopes,
-                    method: AuthMethod::Oauth,
                 })
             }
         }
     }
 }
 
-async fn api_token() -> BitbucketResult<String> {
+async fn api_token(account: &Account) -> BitbucketResult<String> {
     if let Ok(held) = API_TOKEN.lock() {
-        if let Some(held) = held.as_ref().filter(|held| held.at.elapsed() < TOKEN_TTL) {
+        if let Some(held) = held
+            .get(&account.id)
+            .filter(|held| held.at.elapsed() < TOKEN_TTL)
+        {
             return Ok(held.token.clone());
         }
     }
-    let token = config::blocking(Box::new(|| config::keychain_read(AuthMethod::Token)))
+    let reading = account.clone();
+    let token = config::blocking(Box::new(move || config::keychain_read(&reading)))
         .await?
         .ok_or(BitbucketError::Unconfigured)?;
     if let Ok(mut held) = API_TOKEN.lock() {
-        *held = Some(HeldToken {
-            token: token.clone(),
-            at: Instant::now(),
-        });
+        held.insert(
+            account.id.clone(),
+            HeldToken {
+                token: token.clone(),
+                at: Instant::now(),
+            },
+        );
     }
     Ok(token)
 }
@@ -170,28 +218,30 @@ async fn api_token() -> BitbucketResult<String> {
 /// One refresh at a time: the lock is held across it, so requests that find
 /// the token stale together wait for the one refresh rather than each spending
 /// the refresh token.
-async fn access_token() -> BitbucketResult<(String, Vec<String>)> {
+async fn access_token(account: &Account) -> BitbucketResult<(String, Vec<String>)> {
     let mut held = ACCESS.lock().await;
     if let Some(access) = held
-        .as_ref()
+        .get(&account.id)
         .filter(|access| access.expires > Instant::now() + EXPIRY_MARGIN)
     {
         return Ok((access.token.clone(), access.scopes.clone()));
     }
-    let refresh_token = config::blocking(Box::new(|| config::keychain_read(AuthMethod::Oauth)))
+    let reading = account.clone();
+    let refresh_token = config::blocking(Box::new(move || config::keychain_read(&reading)))
         .await?
         .ok_or(BitbucketError::Unconfigured)?;
     let tokens = oauth::refresh(&refresh_token).await?;
     if tokens.refresh_token != refresh_token {
+        let writing = account.clone();
         let replacement = tokens.refresh_token.clone();
         config::blocking(Box::new(move || {
-            config::keychain_write(AuthMethod::Oauth, &replacement)
+            config::keychain_write(&writing, &replacement)
         }))
         .await?;
     }
     let access = access_of(&tokens);
     let answer = (access.token.clone(), access.scopes.clone());
-    *held = Some(access);
+    held.insert(account.id.clone(), access);
     Ok(answer)
 }
 
@@ -273,9 +323,7 @@ pub fn classify(status: StatusCode, bytes: &[u8]) -> BitbucketError {
         403 => BitbucketError::Forbidden(message),
         404 => BitbucketError::NotFound(message),
         429 => BitbucketError::RateLimited {
-            resets_in_secs: ratelimit::budget()
-                .resets_at
-                .map_or(60, |at| at.saturating_sub(ratelimit::now_secs())),
+            resets_in_secs: ratelimit::latest_wait(),
         },
         status => BitbucketError::Http { status, message },
     }
@@ -326,8 +374,8 @@ pub async fn send_limited(
     let mut refreshed = false;
     let mut waited = false;
     loop {
-        ratelimit::check()?;
         let session = Session::current(data_dir).await?;
+        ratelimit::check(&session.account.id)?;
         let mut request = session
             .credential
             .apply(http()?.request(method.clone(), address(path)));
@@ -342,8 +390,8 @@ pub async fn send_limited(
         let headers = response.headers().clone();
         if status == StatusCode::UNAUTHORIZED && !refreshed {
             refreshed = true;
-            forget().await;
-            if session.method == AuthMethod::Oauth {
+            forget(Some(&session.account.id)).await;
+            if session.account.method == AuthMethod::Oauth {
                 continue;
             }
         }
@@ -354,7 +402,7 @@ pub async fn send_limited(
             tokio::time::sleep(Duration::from_secs(secs.max(1))).await;
             continue;
         }
-        ratelimit::observe(status, &headers);
+        ratelimit::observe(&session.account.id, status, &headers);
         let (bytes, cut) = read_body(response, limit, keep_tail).await?;
         return Ok((status, bytes, cut));
     }

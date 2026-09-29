@@ -2,6 +2,8 @@
 // nothing about it until a request is refused, so once one is, requests are
 // held back here for a while, longer each time it happens again.
 
+use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -29,23 +31,17 @@ pub struct Budget {
     pub near: bool,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 struct State {
     budget: Budget,
     /// Refusals in a row, which lengthen the wait.
     strikes: u32,
 }
 
-static STATE: Mutex<State> = Mutex::new(State {
-    budget: Budget {
-        limited: false,
-        resets_at: None,
-        remaining: None,
-        limit: None,
-        near: false,
-    },
-    strikes: 0,
-});
+/// Each account has a limit of its own.
+static STATES: Mutex<BTreeMap<String, State>> = Mutex::new(BTreeMap::new());
+/// The wait set by the latest refusal, for the error that reports it.
+static LATEST_WAIT: AtomicU64 = AtomicU64::new(FIRST_WAIT_SECS);
 
 pub fn now_secs() -> u64 {
     SystemTime::now()
@@ -74,11 +70,14 @@ pub fn named_wait(status: StatusCode, headers: &HeaderMap) -> Option<u64> {
         .flatten()
 }
 
-pub fn check() -> BitbucketResult<()> {
+pub fn check(account: &str) -> BitbucketResult<()> {
     let now = now_secs();
-    let mut state = STATE
+    let mut states = STATES
         .lock()
         .map_err(|_| BitbucketError::Transport("rate limit state".into()))?;
+    let Some(state) = states.get_mut(account) else {
+        return Ok(());
+    };
     match state.budget.resets_at {
         Some(at) if state.budget.limited && at > now => Err(BitbucketError::RateLimited {
             resets_in_secs: at - now,
@@ -90,10 +89,11 @@ pub fn check() -> BitbucketResult<()> {
     }
 }
 
-pub fn observe(status: StatusCode, headers: &HeaderMap) {
-    let Ok(mut state) = STATE.lock() else {
+pub fn observe(account: &str, status: StatusCode, headers: &HeaderMap) {
+    let Ok(mut states) = STATES.lock() else {
         return;
     };
+    let state = states.entry(account.to_string()).or_default();
     if let Some(limit) = number(headers, "x-ratelimit-limit") {
         state.budget.limit = Some(limit);
     }
@@ -105,25 +105,26 @@ pub fn observe(status: StatusCode, headers: &HeaderMap) {
     }
     if status == StatusCode::TOO_MANY_REQUESTS {
         state.strikes = state.strikes.saturating_add(1);
-        let wait = wait_after(headers, state.strikes);
+        let wait = wait_after(headers, state.strikes).max(1);
         state.budget.limited = true;
-        state.budget.resets_at = Some(now_secs() + wait.max(1));
+        state.budget.resets_at = Some(now_secs() + wait);
+        LATEST_WAIT.store(wait, Ordering::Relaxed);
     } else if status.is_success() {
         state.strikes = 0;
     }
 }
 
-pub fn budget() -> Budget {
-    let _ = check();
-    STATE.lock().map(|state| state.budget).unwrap_or_default()
+pub fn latest_wait() -> u64 {
+    LATEST_WAIT.load(Ordering::Relaxed)
 }
 
-#[cfg(test)]
-fn reset() {
-    if let Ok(mut state) = STATE.lock() {
-        state.budget = Budget::default();
-        state.strikes = 0;
-    }
+pub fn budget(account: &str) -> Budget {
+    let _ = check(account);
+    STATES
+        .lock()
+        .ok()
+        .and_then(|states| states.get(account).map(|state| state.budget))
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -151,26 +152,27 @@ mod tests {
 
     #[test]
     fn once_refused_nothing_is_sent_until_the_wait_is_over() {
-        reset();
+        let account = "limit-test";
         observe(
+            account,
             StatusCode::OK,
             &headers(&[
                 ("x-ratelimit-limit", "1000"),
                 ("x-ratelimit-nearlimit", "true"),
             ]),
         );
-        assert!(check().is_ok());
-        assert!(budget().near);
-        assert_eq!(budget().limit, Some(1000));
-        observe(StatusCode::TOO_MANY_REQUESTS, &HeaderMap::new());
-        match check() {
+        assert!(check(account).is_ok());
+        assert!(budget(account).near);
+        assert_eq!(budget(account).limit, Some(1000));
+        observe(account, StatusCode::TOO_MANY_REQUESTS, &HeaderMap::new());
+        match check(account) {
             Err(BitbucketError::RateLimited { resets_in_secs }) => {
                 assert!((59..=60).contains(&resets_in_secs))
             }
             other => panic!("expected to be held back, got {other:?}"),
         }
-        reset();
-        assert!(check().is_ok());
+        assert_eq!(latest_wait(), 60);
+        assert!(check("another-account").is_ok());
     }
 
     #[test]
