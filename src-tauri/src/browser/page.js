@@ -148,9 +148,27 @@
         return element;
     };
     const describe = (element) => label(element) || element.tagName.toLowerCase();
+    // Styled switches often hide the real checkbox inside the label or wrapper
+    // a person clicks, so its state is read from there.
+    const toggleOf = (element) => {
+        if (element.tagName === "INPUT" || element.hasAttribute("aria-checked") || element.hasAttribute("aria-pressed")) return element;
+        if (element.tagName === "LABEL" && element.control) return element.control;
+        const inner = element.querySelectorAll('input[type="checkbox"], input[type="radio"], [role="switch"], [role="checkbox"]');
+        return inner.length === 1 ? inner[0] : element;
+    };
+    // What a field holds now, cut short; passwords never leave the page.
+    const currentValue = (element) => {
+        if (element.tagName === "SELECT") return compact(element.selectedOptions && element.selectedOptions[0] ? element.selectedOptions[0].textContent : element.value).slice(0, 80) || null;
+        if (element.tagName !== "INPUT" && element.tagName !== "TEXTAREA") return null;
+        if (["checkbox", "radio", "button", "submit", "reset", "image", "file", "hidden"].includes(element.type)) return null;
+        if (!element.value) return null;
+        if (element.type === "password") return "•".repeat(Math.min(element.value.length, 12));
+        return compact(element.value).slice(0, 80);
+    };
     const label = (element) =>
         compact(
             element.getAttribute("aria-label") ||
+                labelledBy(element) ||
                 (element.labels && element.labels[0] && element.labels[0].innerText) ||
                 element.placeholder ||
                 element.innerText ||
@@ -162,9 +180,30 @@
         ).slice(0, 96);
     // Every name an element goes by, so it can be found by any of them.
     const names = (element) =>
-        [element.getAttribute("aria-label"), element.labels && element.labels[0] && element.labels[0].innerText, element.placeholder, element.innerText, element.value, element.title, element.alt]
+        [
+            element.getAttribute("aria-label"),
+            labelledBy(element),
+            element.labels && element.labels[0] && element.labels[0].innerText,
+            element.placeholder,
+            element.innerText,
+            element.value,
+            element.title,
+            element.alt,
+            element.getAttribute("name"),
+            element.id,
+        ]
             .map((value) => (typeof value === "string" ? compact(value).toLowerCase() : ""))
             .filter(Boolean);
+    const labelledBy = (element) => {
+        const ids = compact(element.getAttribute("aria-labelledby"));
+        if (!ids) return "";
+        return ids
+            .split(" ")
+            .map((id) => element.ownerDocument.getElementById(id))
+            .filter(Boolean)
+            .map((part) => part.innerText || part.textContent || "")
+            .join(" ");
+    };
     const roleOf = (element) => {
         const explicit = compact(element.getAttribute("role")).split(" ")[0];
         if (explicit) return explicit.toLowerCase();
@@ -189,8 +228,53 @@
     const refs = () => window.__sikemuxRefs || new Map();
     const pick = (index) => {
         const element = refs().get(index);
-        if (!element || !element.isConnected) throw new Error(`no element [${index}]; it has left the page, so read browser_state or browser_find again`);
-        return element;
+        if (element && element.isConnected) return element;
+        const numbers = window.__sikemuxNumbers;
+        if (!numbers || index >= numbers.next) {
+            const latest = numbers && numbers.next ? `; this page has handed out [0] to [${numbers.next - 1}]` : "; this page has not been read yet";
+            throw new Error(`no element [${index}]${latest}. Numbers start again on every new page, so read browser_state or browser_find first`);
+        }
+        const was = element ? ` ("${describe(element)}")` : "";
+        throw new Error(`no element [${index}]${was}: it has left the page or is hidden now, so read browser_state or browser_find again`);
+    };
+    // Elements named by a CSS selector, searched through open shadow roots and
+    // same-site frames the way the element list is.
+    const selected = (selector) => {
+        const found = [];
+        const search = (root) => {
+            try {
+                found.push(...root.querySelectorAll(selector));
+            } catch {
+                throw new Error(`"${selector}" is not a valid CSS selector`);
+            }
+            for (const element of root.querySelectorAll("*")) {
+                if (element.shadowRoot) search(element.shadowRoot);
+                if (isFrame(element)) {
+                    const inner = frameDocument(element);
+                    if (inner) search(inner);
+                }
+            }
+        };
+        search(document);
+        return found;
+    };
+    // The one element a selector names, numbered so later calls can use it.
+    const numberFor = (element) => {
+        const numbers = window.__sikemuxNumbers || (window.__sikemuxNumbers = { ids: new WeakMap(), next: 0 });
+        if (!numbers.ids.has(element)) numbers.ids.set(element, numbers.next++);
+        const id = numbers.ids.get(element);
+        const current = window.__sikemuxRefs || (window.__sikemuxRefs = new Map());
+        current.set(id, element);
+        return id;
+    };
+    const bySelector = (selector) => {
+        const found = selected(selector).filter(shown);
+        if (!found.length) throw new Error(`nothing shown matches "${selector}"`);
+        if (found.length > 1) {
+            const lines = found.slice(0, 10).map((element) => entry(numberFor(element), element).line);
+            throw new Error(`${found.length} shown elements match "${selector}"; nothing was done. Pass a narrower selector or one of these numbers:\n${lines.join("\n")}`);
+        }
+        return numberFor(found[0]);
     };
     const entry = (id, element) => {
         const tag = element.tagName.toLowerCase();
@@ -198,8 +282,18 @@
         const text = label(element);
         if (text) parts.push(text);
         if (tag === "a") parts.push(`(${compact(element.getAttribute("href")).slice(0, 80)})`);
-        if (element.checked) parts.push("[checked]");
-        if (element.disabled) parts.push("[disabled]");
+        const filled = currentValue(element);
+        if (filled != null && filled !== text) parts.push(`value="${filled}"`);
+        const toggle = toggleOf(element);
+        const checked = toggle.getAttribute("aria-checked") ?? toggle.getAttribute("aria-pressed");
+        if (toggle.checked || checked === "true") parts.push("[checked]");
+        else if (checked === "mixed") parts.push("[mixed]");
+        else if (toggle.type === "checkbox" || toggle.type === "radio" || checked === "false") parts.push("[unchecked]");
+        const expanded = element.getAttribute("aria-expanded");
+        if (expanded === "true") parts.push("[expanded]");
+        if (expanded === "false") parts.push("[collapsed]");
+        if (element.getAttribute("aria-selected") === "true") parts.push("[selected]");
+        if (element.disabled || element.getAttribute("aria-disabled") === "true") parts.push("[disabled]");
         if (isFrame(element)) parts.push("(another site's frame: its inside cannot be read; click it or use x,y to reach in)");
         const key = parts.join(" ");
         return { key, line: inViewport(rectOf(element)) ? key : `${key} [offscreen]` };
@@ -286,7 +380,7 @@
             range.setStart(node, at);
             range.setEnd(node, Math.min(node.data.length, at + wanted.length));
             const rect = range.getBoundingClientRect();
-            if (rect.width < 1 || rect.height < 1) continue;
+            if (rect.width < 1 || rect.height < 1 || rect.right <= 0 || rect.bottom <= 0 || rect.left >= innerWidth) continue;
             const point = { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2), text: compact(node.parentElement.innerText || node.data).slice(0, 96) };
             if (!inViewport(rect)) point.offscreen = true;
             points.push(point);
@@ -365,6 +459,16 @@
         return note;
     };
 
+    const scrollerOf = (element) => {
+        for (let node = element; node; node = parentAcross(node)) {
+            if (node === document.body || node === document.documentElement) break;
+            const style = getComputedStyle(node);
+            if (/(auto|scroll|overlay)/.test(style.overflowY) && node.scrollHeight > node.clientHeight) return node;
+        }
+        return document.scrollingElement || document.documentElement;
+    };
+    const scrollState = (scroller) => ({ y: Math.round(scroller.scrollTop), height: scroller.scrollHeight, viewport: scroller.clientHeight, atBottom: scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2 });
+
     window.__sikemux = {
         // "changes" answers with what differs from the previous read of this
         // page, and with everything when there was none.
@@ -392,8 +496,29 @@
                 const points = textPoints(query);
                 result.note = points.length ? "the words are on the page but on nothing numbered; click one of these points by x and y" : "nothing on the page shows those words";
                 if (points.length) result.points = points;
+                if (role) {
+                    const wantedRole = compact(role).toLowerCase();
+                    const listed = listing();
+                    const sameRole = [...listed].filter(([id]) => roleOf(refs().get(id)) === wantedRole).slice(0, MAX_FOUND);
+                    if (sameRole.length) {
+                        result.note = `no ${wantedRole} is named that way; these are every ${wantedRole} on the page`;
+                        result.elements = sameRole.map(([, listedEntry]) => listedEntry.line).join("\n");
+                    }
+                }
             }
             return result;
+        },
+        // Whether the page shows what an agent is waiting for. Every condition
+        // given must hold at once.
+        check(condition) {
+            const failing = [];
+            const text = () => pageLines().join("\n").toLowerCase();
+            if (condition.text != null && !text().includes(compact(condition.text).toLowerCase())) failing.push(`text "${condition.text}" is not on the page`);
+            if (condition.textGone != null && text().includes(compact(condition.textGone).toLowerCase())) failing.push(`text "${condition.textGone}" is still on the page`);
+            if (condition.selector != null && !selected(condition.selector).some(shown)) failing.push(`nothing shown matches "${condition.selector}"`);
+            if (condition.selectorGone != null && selected(condition.selectorGone).some(shown)) failing.push(`"${condition.selectorGone}" is still shown`);
+            if (condition.url != null && !location.href.includes(condition.url)) failing.push(`the url is ${location.href}, which does not contain "${condition.url}"`);
+            return { met: failing.length === 0, failing };
         },
         locate(text, role) {
             const found = matching(text, role);
@@ -401,35 +526,71 @@
             const scope = role ? ` with role ${role}` : "";
             if (!found.length) throw new Error(`nothing${scope} is labelled "${text}"; try browser_find with part of the words`);
             const listedMatches = found.slice(0, 10).map(([id, element]) => entry(id, element).line);
-            throw new Error(`${found.length} elements${scope} match "${text}"; nothing was clicked. Pass an index, or a role or fuller text:\n${listedMatches.join("\n")}`);
+            throw new Error(`${found.length} elements${scope} match "${text}"; nothing was done. Pass an index, or a role or fuller text:\n${listedMatches.join("\n")}`);
         },
-        point(index, expectLabel) {
+        // The number of the element a call names by `index`, `text` (with an
+        // optional `role`) or `selector`, whichever it gives.
+        resolve(target) {
+            if (target.index != null) return target.index;
+            if (target.selector != null) return bySelector(target.selector);
+            if (target.text != null) return this.locate(target.text, target.role);
+            throw new Error("pass index, text or selector");
+        },
+        point(target, expectLabel) {
+            const index = typeof target === "number" ? target : this.resolve(target);
             const element = pick(index);
             if (expectLabel != null && !names(element).some((name) => name.includes(compact(expectLabel).toLowerCase()))) {
-                throw new Error(`element [${index}] is "${describe(element)}", not "${expectLabel}"; nothing was clicked`);
+                throw new Error(`element [${index}] is "${describe(element)}", not "${expectLabel}"; nothing was done`);
             }
-            element.scrollIntoView({ block: "center", inline: "center" });
+            element.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
             const point = centre(element);
             const top = elementAt(point.x, point.y);
             const covered = top && !within(top, element) && !within(element, top) ? describe(top) : null;
             return { index, x: point.x, y: point.y, label: label(element), covered };
         },
-        focus(index, text) {
-            const element = index == null ? focused() : pick(index);
-            if (!element || (element === element.ownerDocument.body && !element.isContentEditable)) throw new Error("nothing is focused; pass an element index");
+        // What a click at a point will land on, so a click by coordinates can
+        // say what it hit.
+        hitAt(x, y, expectLabel) {
+            if (x > innerWidth || y > innerHeight) throw new Error(`${x},${y} is outside the ${innerWidth}×${innerHeight} viewport; nothing was done`);
+            const top = elementAt(x, y);
+            if (!top || top === document.documentElement || top === document.body) {
+                if (expectLabel != null) throw new Error(`nothing but the page itself is at ${x},${y}, not "${expectLabel}"; nothing was done`);
+                return { x, y, hit: null };
+            }
+            let control = top;
+            for (let node = top; node; node = parentAcross(node)) {
+                if (node.matches && node.matches(INTERACTIVE)) {
+                    control = node;
+                    break;
+                }
+            }
+            const numbers = window.__sikemuxNumbers;
+            const index = numbers && numbers.ids.has(control) ? numbers.ids.get(control) : null;
+            const hit = { tag: control.tagName.toLowerCase(), label: describe(control), ...(index != null ? { index } : {}) };
+            if (expectLabel != null) {
+                const wanted = compact(expectLabel).toLowerCase();
+                const named = [...names(control), ...names(top)].some((name) => name.includes(wanted));
+                if (!named) throw new Error(`${x},${y} is on ${hit.tag} "${hit.label}", not "${expectLabel}"; nothing was done`);
+            }
+            return { x, y, hit };
+        },
+        focus(target, text, replace) {
+            const element = target == null ? focused() : pick(typeof target === "number" ? target : this.resolve(target));
+            if (!element || (element === element.ownerDocument.body && !element.isContentEditable)) throw new Error("nothing is focused, so there is nowhere to type; pass the field's index or selector, or click into it first");
             if (element.tagName === "SELECT") {
                 const option = [...element.options].find((option) => option.value === text || compact(option.textContent) === compact(text));
-                if (!option) throw new Error(`no option matching "${text}"`);
+                if (!option) throw new Error(`no option matching "${text}"; the options are: ${[...element.options].map((option) => compact(option.textContent)).slice(0, 20).join(", ")}`);
                 element.value = option.value;
                 element.dispatchEvent(new Event("input", { bubbles: true }));
                 element.dispatchEvent(new Event("change", { bubbles: true }));
                 return { selected: option.value };
             }
-            if (index == null) return { replacing: false };
-            element.scrollIntoView({ block: "center", inline: "center" });
-            if (isFrame(element)) return { replacing: false, clickFirst: centre(element) };
+            const into = describe(element);
+            if (target == null) return { replacing: replace ? selectContents(element) : false, into };
+            element.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
+            if (isFrame(element)) return { replacing: false, clickFirst: centre(element), into };
             element.focus({ preventScroll: true });
-            return { replacing: selectContents(element) };
+            return { replacing: selectContents(element), into };
         },
         // WebKit only acts on a bare pointer move while its page is active, so
         // when the real move left nothing hovered the page is told by hand.
@@ -452,11 +613,14 @@
             target.dispatchEvent(new MouseEvent("mousemove", init));
             return { hovered: describe(target), note: "Sikemux is in the background, so the page got hover events but CSS :hover styles do not apply" };
         },
-        valueOf(index) {
-            const element = index == null ? focused() : pick(index);
+        // A long value shows its end, where typing lands, with its length.
+        valueOf(target) {
+            const element = target == null ? focused() : pick(typeof target === "number" ? target : this.resolve(target));
             if (!element || isFrame(element)) return { value: null };
-            const value = "value" in element && typeof element.value === "string" ? element.value : element.innerText;
-            return { value: compact(value).slice(0, 400) };
+            const raw = "value" in element && typeof element.value === "string" ? element.value : element.innerText;
+            const value = compact(raw);
+            if (element.type === "password") return { value: "•".repeat(Math.min(value.length, 12)), valueLength: value.length };
+            return value.length > 400 ? { value: `…${value.slice(-400)}`, valueLength: value.length } : { value };
         },
         // A draggable element hands its drag to the system, which a synthesized
         // mouse cannot steer, so these drags are played out as DOM events.
@@ -501,7 +665,7 @@
         annotate(index, x, y, text, durationMs) {
             const element = index == null ? null : pick(index);
             if (element || x != null) {
-                if (element) element.scrollIntoView({ block: "center", inline: "center" });
+                if (element) element.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
                 const note = box(element, { x, y }, text, "box");
                 overlay.notes.push(note);
                 if (durationMs) setTimeout(() => note.node.remove(), durationMs);
@@ -551,17 +715,41 @@
             if (overlay) overlay.layer.classList.toggle("quiet", !visible);
             return {};
         },
-        scroll(deltaY, index) {
-            const target = index == null ? null : pick(index);
-            if (target) target.scrollBy({ top: deltaY, behavior: "instant" });
-            else scrollBy({ top: deltaY, behavior: "instant" });
-            return { y: Math.round(target ? target.scrollTop : scrollY) };
+        // Moves the page, or the scrolling element a target names, by deltaY
+        // or to its top or bottom; a target with neither is brought into view.
+        scroll(deltaY, target, to) {
+            const element = target == null ? null : pick(this.resolve(target));
+            const page = document.scrollingElement || document.documentElement;
+            const scroller = element && (deltaY != null || to != null) ? scrollerOf(element) : page;
+            if (element && deltaY == null && to == null) {
+                element.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
+                return { revealed: describe(element), onScreen: Boolean(onScreen(element)), ...scrollState(page) };
+            }
+            if (to === "top") scroller.scrollTo({ top: 0, behavior: "instant" });
+            else if (to === "bottom") scroller.scrollTo({ top: scroller.scrollHeight, behavior: "instant" });
+            else scroller.scrollBy({ top: deltaY ?? 600, behavior: "instant" });
+            return scrollState(scroller);
         },
         extract(selector) {
-            const roots = selector ? [...document.querySelectorAll(selector)] : [document.body];
+            const roots = selector ? selected(selector) : [document.body];
             if (selector && roots.length === 0) throw new Error(`nothing matches "${selector}"`);
-            const text = compact(roots.map((root) => root?.innerText || "").join("\n\n"));
-            return { url: location.href, title: document.title, text: text.length > 40000 ? `${text.slice(0, 40000)}…` : text, matches: roots.length };
+            const CAP = 40000;
+            const textOf = (root) => compact((root && (root.innerText || root.textContent)) || "") || compact(root && (root.getAttribute("aria-label") || root.getAttribute("alt") || root.getAttribute("title") || root.value || ""));
+            if (!selector || roots.length === 1) {
+                const text = textOf(roots[0]);
+                return { url: location.href, title: document.title, text: clip(text, CAP), matches: roots.length };
+            }
+            let room = CAP;
+            const parts = [];
+            for (const root of roots) {
+                if (room <= 0) break;
+                const text = clip(textOf(root), Math.min(room, 4000));
+                room -= text.length;
+                parts.push(text || `<${root.tagName.toLowerCase()}> with no text`);
+            }
+            const result = { url: location.href, title: document.title, matches: roots.length, parts };
+            if (parts.length < roots.length) result.note = `the text ran past ${CAP} characters, so only the first ${parts.length} matches are here`;
+            return result;
         },
     };
 })();

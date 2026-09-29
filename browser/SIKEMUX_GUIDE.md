@@ -5,9 +5,15 @@ description: How to drive a Sikemux project and its browser — task launches, o
 
 # Working inside Sikemux
 
-You are running in a pane of a Sikemux workspace. The tools named `sikemux_*`
-act on the project the person has open. The tools named `browser_*` act on the
-browser tabs on your desk, the pane beside yours that the person can see.
+You are running in a pane of a Sikemux workspace. `workspace_inspect`, the
+`task_*` tools, `ui_open` and `events_wait` act on the project the person has
+open. The tools named `browser_*` act on the browser tabs on your desk, the
+pane beside yours that the person can see.
+
+When the person asks you to open, show or preview a page, open it on your desk
+with `browser_navigate`, not in their own browser. Desk tabs run WebKit, the
+same engine as Sikemux itself and Safari, so check a web page there rather
+than in a headless Chromium you install.
 
 Your desk holds everything you open for the person: browser pages, files and
 the terminals of tasks you start, as tabs in one strip.
@@ -179,7 +185,14 @@ chooses how much:
 with the same element for as long as that element is there, so a number from
 an earlier read either reaches the same element or fails with "no element".
 Elements that appear later get new numbers. A page that redraws a list builds
-new elements, so read again after it does.
+new elements, so read again after it does. Numbering starts again at 0 on
+every new page, so never carry a number across a navigation; the error says
+when a number was never handed out on this page.
+
+Each element line shows what a person would see of its state: `value="…"` for
+a filled field, `[checked]` or `[unchecked]` for checkboxes, radios and
+switches (read from the hidden checkbox inside a styled switch too),
+`[expanded]` or `[collapsed]`, `[selected]` and `[disabled]`.
 
 The list leaves out elements a person cannot reach: ones lying under a
 modal, a banner or an open menu, and ones the page marks `inert` or
@@ -187,24 +200,28 @@ modal, a banner or an open menu, and ones the page marks `inert` or
 label wrapping a listed checkbox or a clickable span inside a link. They keep
 their numbers, so a number read earlier still works.
 
-`browser_find` with a `query` lists the elements whose visible text or
-accessible name contains it, with their numbers, exact matches first. `role`
-narrows it, as in `button`, `link`, `checkbox`, `textbox` or `tab`. When no
-element matches but the words show on the page, it returns `points` with
-their `x`, `y` to click instead.
+`browser_find` with a `query` lists the elements whose visible text,
+accessible name, placeholder, `name` or `id` contains it, with their numbers,
+exact matches first. `role` narrows it, as in `button`, `link`, `checkbox`,
+`textbox` or `tab`; when nothing of that role is named that way, it lists
+every element of that role instead. When no element matches but the words
+show on the page, it returns `points` with their `x`, `y` to click instead.
 
 Clicks, keys and typing arrive as real input, the same as the person's, so
 pages that check for a trusted event and editors that keep their own model of
 the text both respond to them.
 
 `browser_click` takes a number from the latest state, or `text` naming the
-element by its visible text or accessible name, or `x` and `y` in CSS pixels
-from the top left of the viewport, which is where a screenshot's pixels sit
-too. `text` must pick out one element: when several match, nothing is clicked
-and the error lists them, so pass their number or a `role`. With a number,
-`expectLabel` makes the click fail rather than land on an element whose label
-does not contain it. The result names the `index` and `label` it clicked. Coordinates reach things that have no number, such as a canvas or a
-field inside a frame from another site. `double: true` double-clicks.
+element by its visible text or accessible name, or a CSS `selector`, or `x`
+and `y` in CSS pixels from the top left of the viewport, which is where a
+screenshot's pixels sit too. `text` and `selector` must pick out one element:
+when several match, nothing is clicked and the error lists them, so pass
+their number, a `role` or a narrower selector. `expectLabel` makes the click
+fail rather than land on an element whose label does not contain it, with
+coordinates too. The result names the `index` and `label` it clicked; a click
+by coordinates names what it `hit` instead, so check that before trusting a
+point read off an older screenshot. Coordinates reach things that have no
+number, such as a canvas or a field inside a frame from another site. `double: true` double-clicks.
 `hover: true` only moves the pointer there, to open a hover menu; while
 Sikemux is in the background the page is told about the hover but CSS
 `:hover` styles do not apply. A result with `covered` names what was on top
@@ -219,15 +236,20 @@ number, or better the field inside it by `x` and `y` from a screenshot, then
 `browser_extract`, `browser_network` and `browser_console` cover only the
 top page.
 
-`browser_type` with an `index` focuses that element and replaces its value.
-Without one it types at the caret of whatever is focused, so it can add to
-text rather than replace it. `submit: true` presses Enter afterwards. The
-result carries the field's `value` afterwards, so you can check it took. A
-`<select>` picks the option whose value or label matches the text.
+`browser_type` with an `index` or `selector` focuses that element and
+replaces its value. Without one it types at the caret of whatever is focused,
+so it adds to the text there; `replace: true` selects the focused field's
+text first so the typing replaces it. `submit: true` presses Enter
+afterwards. The result names the field it typed `into` and carries its
+`value` afterwards (the end of it, with `valueLength`, when it is long), and a
+`warning` when the value suggests the text did not land, such as a field
+still empty. A `<select>` picks the option whose value or label matches the
+text.
 
 `browser_act` plays up to 20 `steps` in one call, each an `action` of
 `click`, `type` or `press` with the same fields as that tool (`index`,
-`text`, `role`, `expectLabel`, `x`, `y`, `submit`, `key`). Use it to fill a
+`text`, `role`, `selector`, `expectLabel`, `x`, `y`, `replace`, `submit`,
+`key`). Use it to fill a
 form and submit it, or to open a menu and pick from it by `text`. It stops at
 the first step that fails, and after any step that navigates, opens a dialog
 or changes tab, because the steps after it were planned for the old page.
@@ -256,13 +278,21 @@ other browser tool refuses rather than hang. `accept: true` presses OK and
 dialog and may answer it before you do.
 
 `browser_evaluate` runs JavaScript in the page and returns the result as
-JSON. Pass an expression such as `document.title`, or a function body that
-uses `return`. Promises are awaited for up to 30 seconds, and elements come
-back as their markup. Reach for it when no other tool reads what you need;
-prefer the other tools for acting, since they send real input.
+JSON. The code goes in `script`: an expression such as `document.title`, or
+statements that end in `return`, since statements without one return
+nothing. Promises are awaited for `timeoutMs`, 30 seconds by default and 60 at
+most, and elements come back as their markup. Reach for it when no other tool
+reads what you need. Prefer the other tools for acting, since they send real
+input, and `browser_wait` for waiting, rather than a polling loop in a script.
+A script that reloads or leaves the page loses its result; use
+`browser_reload` for that. It runs with the page's own session, so `fetch` of
+the site's API returns what the signed-in person would get.
 
-`browser_scroll` moves the page by `deltaY` pixels, default 600, negative for
-up. Pass an `index` to scroll inside a scrollable element instead.
+`browser_scroll` with an `index`, `text` or `selector` alone brings that
+element into view and says whether it is now on screen. `deltaY` moves by
+that many pixels, negative for up, and `to: "top"` or `"bottom"` jumps to an
+end; either acts on the page, or with a target on the scrolling container
+around it. It returns the scroll position and `atBottom`.
 
 A tab's viewport follows the pane, so it changes size when the person resizes
 the pane, and a tab the pane is not showing lays out at the size it last had.
@@ -276,10 +306,27 @@ iPhone Safari's user agent and reloads the page, so sites that sniff it serve
 their phone version; any other size sends desktop Safari's, as a real iPad
 does. The pointer stays a mouse, so sites that check for touch still see none.
 The full state reports `viewport` with the page's `width` and `height`, and
-`fixed` holding the size you set or `false`. With no arguments it just returns the state.
+`fixed` holding the size you set or `false`, with a note when the pane is
+narrow enough that the page may be showing its phone layout. With no arguments it just returns the state.
 
-`browser_wait` sleeps for `ms` (default 1000, max 30000) and then waits for any
-load to finish. Prefer it over repeated state reads when a page is settling.
+`browser_wait` waits for the page to reach a state. `text` or `textGone`
+waits for words to show or go, `selector` or `selectorGone` for an element,
+`url` for the address to contain a string, and `networkIdle: true` for the
+page's fetch and XHR calls to have been quiet for half a second. Give several
+and all must hold. It checks every 200 ms for up to `timeoutMs` (10 seconds by
+default, 60 at most) and returns `met`, `waitedMs` and, when it ran out, the
+conditions still `failing`, along with the page. With no condition it sleeps
+for `ms` (default 1000, max 30000) and then waits for any load to finish.
+Prefer a condition over a guessed sleep, and over screenshots taken to see
+whether something has finished.
+
+`browser_navigate` and `browser_reload` take the same conditions as
+`waitFor`, to arrive at a page that has finished drawing. Navigating to the
+url the tab is already on reloads it; `browser_reload` does so directly, and
+`hard: true` skips the cache so a changed script or stylesheet is fetched
+again. When the load failed, as when nothing listens on that port, the result
+says so in `loadError`, and a page that loaded without any text or controls
+yet comes with a note to wait for it.
 
 `browser_screenshot` returns an image of the visible part of the tab. Use it
 when layout or rendering matters; use `browser_extract` when you only need
@@ -309,13 +356,17 @@ after ten minutes. Narrate with `browser_annotate` captions as you go; a
 recording of a tab the person is not looking at still works.
 
 `browser_network` lists the fetch and XHR calls the page has made since it
-loaded, oldest first, with each status, duration and a truncated response body.
+loaded, oldest first, with each `id`, status, duration and the start of its
+response body. Pass an `id` to read that one call whole.
 It is how you tell a request that failed apart from a button that never asked,
 which the DOM alone cannot show. A call that never got an answer carries the
 `error` the page saw, such as `TypeError: Load failed`. Data requests a
 framework makes behind a navigation are named in `framework`: `next rsc`,
 `next server action` or `next data`. Narrow a busy page with `filter`, a
-substring of the URL. Images, scripts and styles do not appear.
+substring of the URL's path (or of the whole URL when no path matches),
+`method` such as `POST`, and `status`: a code such as `404`, a class such as
+`5xx`, `failed` or `pending`. A long list keeps the newest calls and says how
+many it left out. Images, scripts and styles do not appear.
 
 `documents` lists the tab's last 20 whole-page loads, oldest first, with each
 `status`, `mimeType`, duration, and the `error` of a load that never reached
@@ -335,6 +386,9 @@ Tabs are yours. `browser_list_tabs`, `browser_switch_tab` and
 `browser_close_tab` act on this pane's tabs, not the person's other windows.
 Switching returns the full state of the tab you land on.
 `browser_navigate` reuses the current tab unless you pass `newTab: true`.
+When an action makes the page open a tab of its own, as a link with a new
+window target does, the result lists it under `openedTabs`, and that tab is
+now the current one. Tabs do not survive a restart of Sikemux.
 
 ## What does not survive
 

@@ -14,11 +14,24 @@ interface Changes {
     textRemoved?: string;
 }
 
+interface Target {
+    index?: number;
+    text?: string;
+    role?: string;
+    selector?: string;
+}
+
 interface PageApi {
     state(mode?: string, fullText?: boolean): { elements?: string; text?: string; textLength?: number; changes?: Changes | "none" };
     find(query: string, role?: string | null): { matches: number; elements: string; note?: string };
     locate(text: string, role?: string | null): number;
-    point(index: number, expectLabel?: string | null): { index: number; label: string; covered: string | null };
+    point(target: number | Target, expectLabel?: string | null): { index: number; label: string; covered: string | null };
+    hitAt(x: number, y: number, expectLabel?: string | null): { hit: { tag: string; label: string; index?: number } | null };
+    focus(target: Target | null, text: string, replace?: boolean): { replacing: boolean; into: string };
+    valueOf(target: Target | null): { value: string | null; valueLength?: number };
+    check(condition: Record<string, string>): { met: boolean; failing: string[] };
+    scroll(deltaY: number | null, target: Target | null, to: string | null): { revealed?: string; y: number };
+    extract(selector?: string | null): { text?: string; parts?: string[]; matches: number };
     showMarks(visible: boolean): { marked?: number[] };
 }
 
@@ -90,12 +103,29 @@ describe("element numbers", () => {
         expect(() => page().point(save)).toThrow(/no element/);
     });
 
+    it("say when a number was never handed out on this page, as after a navigation", () => {
+        load(`<button data-rect="0,0,80,20">Save</button>`);
+        page().state("full");
+
+        expect(() => page().point(40)).toThrow(/no element \[40\]; this page has handed out \[0\] to \[0\]/);
+        load(`<button data-rect="0,0,80,20">Save</button>`);
+        expect(() => page().point(3)).toThrow(/this page has not been read yet/);
+    });
+
+    it("name the element that left, so a stale number is told apart from a wrong one", () => {
+        load(`<button data-rect="0,0,80,20">Save</button>`);
+        const save = numberOf(page().state("full").elements, "Save");
+        document.querySelector("button")!.remove();
+
+        expect(() => page().point(save)).toThrow(/no element \[\d+\] \("Save"\): it has left the page/);
+    });
+
     it("refuse a click whose element no longer carries the expected label", () => {
         load(`<button data-rect="0,0,80,20">Neurologist</button>`);
         const index = numberOf(page().state("full").elements, "Neurologist");
         document.querySelector("button")!.textContent = "Nephrologist";
 
-        expect(() => page().point(index, "Neurologist")).toThrow(/not "Neurologist"; nothing was clicked/);
+        expect(() => page().point(index, "Neurologist")).toThrow(/not "Neurologist"; nothing was done/);
         expect(page().point(index, "nephro").label).toBe("Nephrologist");
     });
 });
@@ -144,7 +174,7 @@ describe("finding by label", () => {
     });
 
     it("refuses an ambiguous name and lists the candidates", () => {
-        expect(() => page().locate("Save")).toThrow(/2 elements match "Save"; nothing was clicked[\s\S]*<button[\s\S]*<div>/);
+        expect(() => page().locate("Save")).toThrow(/2 elements match "Save"; nothing was done[\s\S]*<button[\s\S]*<div>/);
         expect(() => page().locate("Delete")).toThrow(/nothing is labelled "Delete"/);
     });
 
@@ -196,5 +226,118 @@ describe("annotated screenshots", () => {
         load(`<div tabindex="0" data-rect="0,0,1024,768">Card\n<button data-rect="10,10,80,20">Open</button></div>`);
         const elements = page().state("full").elements;
         expect(page().showMarks(true).marked).toEqual([numberOf(elements, "Open")]);
+    });
+});
+
+describe("targets", () => {
+    it("resolve a CSS selector to one numbered element, and list the candidates when it names several", () => {
+        load(
+            `<button class="go" data-rect="0,0,80,20">Go</button>\n<button class="stop" data-rect="0,30,80,20">Stop</button>\n<button class="stop" data-rect="0,60,80,20">Halt</button>`,
+        );
+
+        expect(page().point({ selector: ".go" }).label).toBe("Go");
+        expect(() => page().point({ selector: ".stop" })).toThrow(/2 shown elements match "\.stop"[\s\S]*Stop[\s\S]*Halt/);
+        expect(() => page().point({ selector: "##" })).toThrow(/not a valid CSS selector/);
+    });
+
+    it("say what a point lands on, and refuse one that is not the expected element", () => {
+        load(`<button data-rect="0,0,80,20">Copy</button>\n<p data-rect="0,40,200,20">Paragraph</p>`);
+        const elements = page().state("full").elements;
+
+        expect(page().hitAt(10, 10).hit).toEqual({ tag: "button", label: "Copy", index: numberOf(elements, "Copy") });
+        expect(() => page().hitAt(10, 45, "Copy")).toThrow(/is on p "Paragraph", not "Copy"; nothing was done/);
+        expect(() => page().hitAt(5000, 10)).toThrow(/outside the/);
+    });
+});
+
+describe("typing", () => {
+    it("types over the focused field's text only when asked to replace it", () => {
+        load(`<input data-rect="0,0,80,20" value="old text">`);
+        const input = document.querySelector("input")!;
+        input.focus();
+
+        expect(page().focus(null, "new", false).replacing).toBe(false);
+        expect(page().focus(null, "new", true).replacing).toBe(true);
+        expect(input.selectionStart).toBe(0);
+        expect(input.selectionEnd).toBe(8);
+    });
+
+    it("refuses to type when nothing is focused", () => {
+        load(`<input data-rect="0,0,80,20">`);
+        expect(() => page().focus(null, "x")).toThrow(/nothing is focused, so there is nowhere to type/);
+    });
+
+    it("reports the end of a long value with its length, and never a password", () => {
+        load(`<textarea data-rect="0,0,80,20"></textarea>\n<input type="password" data-rect="0,30,80,20" value="hunter22">`);
+        document.querySelector("textarea")!.value = `${"a".repeat(500)}END`;
+
+        const long = page().valueOf({ selector: "textarea" });
+        expect(long.valueLength).toBe(503);
+        expect(long.value!.endsWith("aEND")).toBe(true);
+        expect(page().valueOf({ selector: "input" }).value).toBe("••••••••");
+    });
+});
+
+describe("element lines", () => {
+    it("show the state a person sees, including a switch that hides its checkbox", () => {
+        load(
+            [
+                `<input name="email" data-rect="0,0,80,20" value="a@b.c">`,
+                `<label data-rect="0,30,80,20">Public bot<input type="checkbox" style="opacity:0"></label>`,
+                `<button role="switch" aria-checked="true" data-rect="0,60,80,20">Intents</button>`,
+                `<button aria-expanded="false" data-rect="0,90,80,20">Menu</button>`,
+            ].join("\n"),
+        );
+        const elements = page().state("full").elements!;
+
+        expect(elements).toMatch(/name=email> a@b\.c/);
+        expect(elements).toMatch(/Public bot \[unchecked\]/);
+        expect(elements).toMatch(/Intents \[checked\]/);
+        expect(elements).toMatch(/Menu \[collapsed\]/);
+    });
+
+    it("are found by name, id and the element that labels them", () => {
+        load(
+            `<span id="caption">Scene prompt</span>\n<textarea id="prompt-input" aria-labelledby="caption" data-rect="0,0,80,20"></textarea>\n<input name="postcode" data-rect="0,30,80,20">`,
+        );
+
+        expect(page().find("prompt-input").matches).toBe(1);
+        expect(page().find("scene prompt").matches).toBe(1);
+        expect(page().find("postcode").matches).toBe(1);
+    });
+
+    it("list every element of a role when none of them has the name asked for", () => {
+        load(`<textarea data-rect="0,0,80,20" placeholder="Describe the scene"></textarea>`);
+
+        const found = page().find("prompt", "textbox");
+        expect(found.matches).toBe(0);
+        expect(found.elements).toMatch(/Describe the scene/);
+    });
+});
+
+describe("waiting and reading", () => {
+    it("checks every condition and names those that do not hold", () => {
+        load(`<p data-rect="0,0,200,20">Saved</p>\n<div class="spinner" data-rect="0,30,20,20"></div>`);
+
+        expect(page().check({ text: "saved" }).met).toBe(true);
+        const pending = page().check({ text: "Saved", selectorGone: ".spinner", textGone: "Loading" });
+        expect(pending.met).toBe(false);
+        expect(pending.failing).toEqual(['".spinner" is still shown']);
+        expect(page().check({ url: "/nowhere" }).failing[0]).toMatch(/does not contain "\/nowhere"/);
+    });
+
+    it("brings a target into view when no distance is given", () => {
+        load(`<button data-rect="0,0,80,20">Top</button>\n<h2 id="pricing" data-rect="0,2000,80,20">Pricing</h2>`);
+
+        expect(page().scroll(null, { selector: "#pricing" }, null).revealed).toBe("Pricing");
+    });
+
+    it("extracts each match of a selector on its own, even one with no text", () => {
+        load(
+            `<div class="card" data-rect="0,0,80,20">One</div>\n<div class="card" data-rect="0,30,80,20"><img alt="Two"></div>\n<div class="card" data-rect="0,60,80,20"></div>`,
+        );
+
+        expect(page().extract(".card").parts).toEqual(["One", "<div> with no text", "<div> with no text"]);
+        expect(() => page().extract("#missing")).toThrow(/nothing matches "#missing"/);
     });
 });

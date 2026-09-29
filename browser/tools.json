@@ -10,7 +10,7 @@
     {
       "name": "browser_navigate",
       "method": "browser.navigate",
-      "description": "Open a URL in this tab, or a new one with newTab, and wait for the load.",
+      "description": "Open a URL (newTab for a new tab) and wait for it to load.",
       "properties": {
         "url": {
           "type": "string",
@@ -18,6 +18,45 @@
         },
         "newTab": {
           "type": "boolean"
+        },
+        "waitFor": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "textGone": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "selector": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "selectorGone": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "url": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "networkIdle": {
+              "type": "boolean"
+            },
+            "timeoutMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 60000
+            }
+          }
         },
         "report": {
           "enum": [
@@ -30,6 +69,63 @@
       "required": [
         "url"
       ]
+    },
+    {
+      "name": "browser_reload",
+      "method": "browser.reload",
+      "description": "Reload this tab; hard skips the cache.",
+      "properties": {
+        "hard": {
+          "type": "boolean"
+        },
+        "waitFor": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "textGone": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "selector": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "selectorGone": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "url": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "networkIdle": {
+              "type": "boolean"
+            },
+            "timeoutMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 60000
+            }
+          }
+        },
+        "report": {
+          "enum": [
+            "outcome",
+            "changes",
+            "full"
+          ]
+        }
+      },
+      "required": []
     },
     {
       "name": "browser_state",
@@ -65,16 +161,11 @@
     {
       "name": "browser_click",
       "method": "browser.click",
-      "description": "Click a numbered element, a labelled one by text, or an x,y point.",
+      "description": "Click an element by number, text or selector, or a point.",
       "properties": {
         "index": {
           "type": "integer",
           "minimum": 0
-        },
-        "expectLabel": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 500
         },
         "text": {
           "type": "string",
@@ -85,6 +176,16 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 40
+        },
+        "selector": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "expectLabel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
         },
         "x": {
           "type": "number",
@@ -113,15 +214,23 @@
     {
       "name": "browser_type",
       "method": "browser.type",
-      "description": "Type into a numbered element, replacing its value, or at the caret.",
+      "description": "Type into a field, replacing its value, or at the caret.",
       "properties": {
         "index": {
           "type": "integer",
           "minimum": 0
         },
+        "selector": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
         "text": {
           "type": "string",
           "maxLength": 20000
+        },
+        "replace": {
+          "type": "boolean"
         },
         "submit": {
           "type": "boolean"
@@ -188,6 +297,14 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 40
+              },
+              "selector": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "replace": {
+                "type": "boolean"
               },
               "expectLabel": {
                 "type": "string",
@@ -347,14 +464,35 @@
     {
       "name": "browser_scroll",
       "method": "browser.scroll",
-      "description": "Scroll the page, or a numbered element, by deltaY pixels.",
+      "description": "Scroll to an element, by deltaY, or to the top or bottom.",
       "properties": {
         "deltaY": {
           "type": "number"
         },
+        "to": {
+          "enum": [
+            "top",
+            "bottom"
+          ]
+        },
         "index": {
           "type": "integer",
           "minimum": 0
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "selector": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
         }
       },
       "required": []
@@ -362,7 +500,7 @@
     {
       "name": "browser_extract",
       "method": "browser.extract",
-      "description": "Read the page's text, or the parts matching a CSS selector.",
+      "description": "Read the page's text, or each part matching a CSS selector.",
       "properties": {
         "selector": {
           "type": "string",
@@ -374,12 +512,17 @@
     {
       "name": "browser_evaluate",
       "method": "browser.evaluate",
-      "description": "Run JavaScript in the page; the result comes back as JSON.",
+      "description": "Run JavaScript in the page, given as script; returns JSON.",
       "properties": {
         "script": {
           "type": "string",
           "minLength": 1,
           "maxLength": 20000
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 60000
         }
       },
       "required": [
@@ -389,7 +532,7 @@
     {
       "name": "browser_network",
       "method": "browser.network",
-      "description": "List page loads and fetch/XHR calls with status, timing and body.",
+      "description": "List page loads and fetch/XHR calls with status and body.",
       "properties": {
         "limit": {
           "type": "integer",
@@ -400,9 +543,26 @@
           "type": "string",
           "maxLength": 200
         },
+        "method": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10
+        },
+        "status": {
+          "type": "string",
+          "pattern_comment": "",
+          "minLength": 1,
+          "maxLength": 8
+        },
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
         "since": {
           "type": "string",
-          "enum": ["navigation"]
+          "enum": [
+            "navigation"
+          ]
         }
       },
       "required": []
@@ -426,7 +586,7 @@
     {
       "name": "browser_screenshot",
       "method": "browser.screenshot",
-      "description": "Capture the tab; fullPage for the whole page, annotate to number elements.",
+      "description": "Capture the tab, the whole page, or with element numbers.",
       "properties": {
         "fullPage": {
           "type": "boolean"
@@ -492,8 +652,41 @@
     {
       "name": "browser_wait",
       "method": "browser.wait",
-      "description": "Wait ms milliseconds, then for any load to finish.",
+      "description": "Wait for text, a selector, a url or a quiet network.",
       "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "textGone": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "selector": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "selectorGone": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "networkIdle": {
+          "type": "boolean"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 60000
+        },
         "ms": {
           "type": "integer",
           "minimum": 0,
@@ -577,7 +770,7 @@
     {
       "name": "workspace_inspect",
       "method": "workspace.inspect",
-      "description": "Inspect the open project: panes, tasks, runs and the event cursor.",
+      "description": "Inspect the open project: tasks, runs and the event cursor.",
       "properties": {},
       "required": []
     },
@@ -675,7 +868,7 @@
     {
       "name": "ui_open",
       "method": "ui.open",
-      "description": "Open a project file, diff, task terminal, or the configured preview.",
+      "description": "Open a project file, diff, task terminal or the preview.",
       "properties": {
         "kind": {
           "enum": [

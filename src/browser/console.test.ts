@@ -60,3 +60,12 @@ describe("browser console recorder", () => {
         expect(messages()[0].text).toBe("line 10");
     });
 });
+
+describe("browser console recorder noise", () => {
+    it("drops the bare error WebKit reports for another origin or script world", () => {
+        window.dispatchEvent(new ErrorEvent("error", { message: "Script error." }));
+        window.dispatchEvent(new ErrorEvent("error", { message: "Script error.", filename: "https://cdn.test/app.js" }));
+
+        expect(messages().map((message) => message.text)).toEqual(["Script error."]);
+    });
+});
