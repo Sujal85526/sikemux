@@ -9,7 +9,7 @@ import { taskPtyBindings } from "../tasks/nativeRuntime";
 import type { Session, Window as WindowT } from "../state/types";
 import { DeskHost } from "./Desk";
 
-vi.mock("./EditorPane", () => ({
+vi.mock("../editor/EditorPane", () => ({
     EditorPane: ({ paneId, visible }: { paneId: string; visible: boolean }) => (
         <div data-testid="desk-editor" data-pane={paneId} data-visible={String(visible)} />
     ),

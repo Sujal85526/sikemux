@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { languageServersAllowed } from "./languageServerTrust";
-import { getState, setState } from "./state/store";
+import { getState, setState } from "../state/store";
 
 describe("languageServersAllowed", () => {
     beforeEach(() => setState({ languageServerTrust: {} }));

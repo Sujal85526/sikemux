@@ -13,7 +13,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
 vi.mock("../terminal/TerminalPane", () => ({ TerminalPane: () => <div>Terminal output</div> }));
 vi.mock("../chat/AgentSurface", () => ({ AgentSurface: () => <div>Agent output</div> }));
-vi.mock("./EditorFindBar", () => ({ EditorFindBar: () => null }));
+vi.mock("../editor/EditorFindBar", () => ({ EditorFindBar: () => null }));
 
 Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
 Range.prototype.getBoundingClientRect = () => new DOMRect();

@@ -14,7 +14,7 @@ import type { Agent } from "../state/types";
 vi.mock("../terminal/TerminalPane", () => ({ TerminalPane: () => <div>Terminal output</div> }));
 vi.mock("../chat/AgentSurface", () => ({ AgentSurface: () => <div>Agent output</div> }));
 vi.mock("./BrowserPane", () => ({ AgentBrowserShell: ({ children }: { children: React.ReactNode }) => children }));
-vi.mock("./EditorPane", () => ({ EditorPane: () => <div>Editor document</div> }));
+vi.mock("../editor/EditorPane", () => ({ EditorPane: () => <div>Editor document</div> }));
 
 const initial = getState();
 

@@ -15,7 +15,7 @@ vi.mock("../git/GitPane", () => ({
         return <div data-testid="git-workbench" data-active={active} />;
     },
 }));
-vi.mock("./EditorPane", () => ({
+vi.mock("../editor/EditorPane", () => ({
     EditorPane: ({ active }: { active: boolean }) => {
         useEffect(() => {
             lifecycle.editorMounted();

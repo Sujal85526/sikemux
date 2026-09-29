@@ -17,15 +17,15 @@ import {
     languageFor,
     loadLanguage,
     type EditorLanguageHint,
-} from "../editor/codemirror";
-import { isImagePath } from "../editor/media";
+} from "./codemirror";
+import { isImagePath } from "./media";
 import { Markdown, MARKDOWN_GFM, type MarkdownComponents } from "../markdown/Markdown";
-import { gitDiffGutter } from "../editor/gitGutter";
-import { gitInlineBlame } from "../editor/gitBlame";
-import { DocumentIO } from "../editor/documentIO";
-import { lspNav, setLspContext } from "../editor/lspNav";
-import { lspHoverLink, setHoverLinkContext } from "../editor/lspHoverLink";
-import { lspPeek } from "../editor/lspPeek";
+import { gitDiffGutter } from "./gitGutter";
+import { gitInlineBlame } from "./gitBlame";
+import { DocumentIO } from "./documentIO";
+import { lspNav, setLspContext } from "./lspNav";
+import { lspHoverLink, setHoverLinkContext } from "./lspHoverLink";
+import { lspPeek } from "./lspPeek";
 import { fsapi, type FileBlob } from "../api/fs";
 import type { LspTextChange } from "../api/lsp";
 import { subscribe } from "../state/bus";
@@ -40,14 +40,14 @@ import { useLspBridge } from "../hooks/useLspBridge";
 import { useNavHistory, type NavEntry } from "../hooks/useNavHistory";
 import { useGitBaseline } from "../hooks/useGitBaseline";
 import { useGitBlame } from "../hooks/useGitBlame";
-import { refreshBlame } from "../editor/gitBlame";
+import { refreshBlame } from "./gitBlame";
 import type { CliPendingEditorOpen, DeskReveal } from "../state/types";
-import { IconClose, IconEditor, IconEye, IconFile } from "./Icons";
-import { FileIcon } from "./FileIcon";
-import { TabBar } from "./TabBar";
+import { IconClose, IconEditor, IconEye, IconFile } from "../components/Icons";
+import { FileIcon } from "../components/FileIcon";
+import { TabBar } from "../components/TabBar";
 import { EditorFindBar } from "./EditorFindBar";
 import { EditorInsights } from "./EditorInsights";
-import { ShaderField } from "./ShaderField";
+import { ShaderField } from "../components/ShaderField";
 import { basename, dirname, isPathWithin, joinPath, normalizePath } from "../lib/paths";
 import { localPath } from "../chat/imagePreview";
 import { safeWebUrl } from "../terminal/interactions";

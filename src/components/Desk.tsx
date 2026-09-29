@@ -24,7 +24,7 @@ import { TerminalPane } from "../terminal/TerminalPane";
 import { basename } from "../lib/paths";
 import * as cmd from "../state/commands";
 
-const EditorPane = lazy(() => import("./EditorPane").then((module) => ({ default: module.EditorPane })));
+const EditorPane = lazy(() => import("../editor/EditorPane").then((module) => ({ default: module.EditorPane })));
 const NO_FILES: readonly string[] = [];
 const NO_DIRTY: readonly string[] = [];
 

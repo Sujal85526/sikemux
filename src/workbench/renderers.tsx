@@ -17,7 +17,7 @@ export interface WorkbenchItemRendererProps {
     painted: boolean;
 }
 
-const EditorPane = lazy(() => import("../components/EditorPane").then((module) => ({ default: module.EditorPane })));
+const EditorPane = lazy(() => import("../editor/EditorPane").then((module) => ({ default: module.EditorPane })));
 const GitPane = lazy(() => import("../git/GitPane").then((module) => ({ default: module.GitPane })));
 const DiffPane = lazy(() => import("../git/DiffPane").then((module) => ({ default: module.DiffPane })));
 const SearchPane = lazy(() => import("../components/SearchPane").then((module) => ({ default: module.SearchPane })));
