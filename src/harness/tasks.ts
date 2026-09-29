@@ -64,6 +64,10 @@ export class HarnessTasks {
         return runs.at(-1);
     }
 
+    launchRequest(project: string, taskId: string): HarnessLaunchRequest | undefined {
+        return [...this.entries.values()].filter(({ run, request }) => run.project === project && run.taskId === taskId && request).at(-1)?.request;
+    }
+
     existing(project: string, taskId: string, key: string): HarnessLaunch | undefined {
         const previous = this.keys.get(JSON.stringify([project, key]));
         if (!previous) return undefined;

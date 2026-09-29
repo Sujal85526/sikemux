@@ -11,7 +11,7 @@ import * as commands from "../state/commands";
 import { appTaskRuntime } from "../tasks/application";
 import { NativeTaskExecutionBackend, WorkbenchTaskTerminalSurface, taskPtyBindings } from "../tasks/nativeRuntime";
 import { HarnessEvents } from "./events";
-import { HarnessTasks, type HarnessLaunch, type HarnessPrepared, type HarnessRun } from "./tasks";
+import { HarnessTasks, type HarnessLaunch, type HarnessLaunchRequest, type HarnessPrepared, type HarnessRun } from "./tasks";
 
 export interface HarnessRequest {
     id: string;
@@ -159,6 +159,86 @@ async function launchConfigured(request: HarnessRequest, taskId: string, key: st
     return harnessTasks.start(project, taskId, key, prepare, { agentId: request.agentId ?? undefined, replace });
 }
 
+const COMMAND_TASK_PREFIX = "sh:";
+
+function commandCwd(value: string | undefined): string {
+    const normalized = (value ?? ".").replaceAll("\\", "/").replace(/\/+$/, "");
+    const parts = normalized.split("/").filter((part) => part !== ".");
+    if (
+        normalized.startsWith("/") ||
+        normalized.startsWith("~") ||
+        /^[A-Za-z]:/.test(normalized) ||
+        parts.some((part) => part === "" || part === "..")
+    )
+        throw new Error("cwd must be a directory inside the project, relative to it");
+    return parts.join("/");
+}
+
+/* The id comes from the command and its directory, so starting the same command
+   again while it runs finds that run instead of launching a second copy. */
+function commandTaskId(command: string, cwd: string, label: string | undefined): string {
+    let hash = 0x811c9dc5;
+    for (const byte of new TextEncoder().encode(`${cwd}\0${command}`)) hash = Math.imul(hash ^ byte, 0x01000193);
+    const slug = (label ?? command)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 32)
+        .replace(/-+$/, "");
+    return `${COMMAND_TASK_PREFIX}${slug || "command"}-${(hash >>> 0).toString(16).padStart(8, "0").slice(0, 6)}`;
+}
+
+function commandLaunch(request: HarnessRequest, params: Record<string, unknown>): HarnessLaunchRequest {
+    const command = text(params, "command")!;
+    const label = text(params, "label", false);
+    if (label && label.length > 80) throw new Error("label must be at most 80 characters");
+    const cwd = commandCwd(text(params, "cwd", false));
+    return {
+        taskId: commandTaskId(command, cwd, label),
+        project: request.project,
+        source: "project",
+        label: label ?? (command.length > 80 ? `${command.slice(0, 79)}…` : command),
+        command,
+        cwd: cwd ? joinPath(request.project, cwd) : request.project,
+        env: {},
+        cols: 120,
+        rows: 30,
+    };
+}
+
+function launchCommand(request: HarnessRequest, launch: HarnessLaunchRequest, key: string, replace = false): HarnessLaunch {
+    const { project } = request;
+    const previous = replace ? harnessTasks.latest(project, launch.taskId) : undefined;
+    return harnessTasks.start(
+        project,
+        launch.taskId,
+        key,
+        async () => {
+            projectSession(request);
+            if (previous) await harnessTasks.stop(project, previous.executionId);
+            return { request: launch };
+        },
+        { agentId: request.agentId ?? undefined, replace },
+    );
+}
+
+function earlierCommand(project: string, taskId: string): HarnessLaunchRequest {
+    const launch = harnessTasks.launchRequest(project, taskId);
+    if (!launch) throw new Error(`Task ${taskId} has not been started from this app session; start it again with command`);
+    return launch;
+}
+
+function launchTask(request: HarnessRequest, key: string): HarnessLaunch | Promise<HarnessLaunch> {
+    const { params, project } = request;
+    const taskId = text(params, "taskId", false);
+    if (taskId && params.command !== undefined) throw new Error("Pass either taskId or command, not both");
+    if (!taskId && params.command === undefined) throw new Error("taskId or command is required");
+    if (!taskId) return launchCommand(request, commandLaunch(request, params), key);
+    if (params.cwd !== undefined || params.label !== undefined) throw new Error("cwd and label go with command; a sikemux.json task sets its own");
+    if (!taskId.startsWith(COMMAND_TASK_PREFIX)) return launchConfigured(request, taskId, key);
+    return harnessTasks.existing(project, taskId, key) ?? launchCommand(request, earlierCommand(project, taskId), key);
+}
+
 /* MCP hosts give up on a tool call after about a minute, and the native bridge
    after 65 s, so a start answers well before either with whatever state it reached. */
 const START_BUDGET_MS = 30_000;
@@ -276,15 +356,18 @@ export async function handleHarnessRequest(request: HarnessRequest, signal?: Abo
         }
         case "task.start": {
             const until = Date.now() + START_BUDGET_MS;
-            const taskId = text(params, "taskId")!;
             const key = text(params, "idempotencyKey")!;
             if (key.length > 128) throw new Error("idempotencyKey must be at most 128 characters");
             const readyWhen = text(params, "readyWhen", false);
-            return answerStart(project, await launchConfigured(request, taskId, key), until, readyWhen, signal);
+            return answerStart(project, await launchTask(request, key), until, readyWhen, signal);
         }
         case "task.restart": {
             const until = Date.now() + START_BUDGET_MS;
-            const launch = await launchConfigured(request, text(params, "taskId")!, crypto.randomUUID(), true);
+            const taskId = text(params, "taskId")!;
+            const key = crypto.randomUUID();
+            const launch = taskId.startsWith(COMMAND_TASK_PREFIX)
+                ? launchCommand(request, earlierCommand(project, taskId), key, true)
+                : await launchConfigured(request, taskId, key, true);
             return answerStart(project, launch, until, undefined, signal);
         }
         case "task.read": {

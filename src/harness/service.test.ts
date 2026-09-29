@@ -134,6 +134,62 @@ describe("harness command service", () => {
         ]);
         expect(useStore.getState().sessions[useStore.getState().activeSessionId].cwd).toBe("/two");
     });
+    it("runs an ad-hoc command in a managed terminal under an id made from the command, without asking for trust", async () => {
+        const { start, prepared } = fakeStart({ executionId: "adhoc", taskId: "sh:web-000000", project: "/one", status: "running" });
+        const result = await handleHarnessRequest(
+            request("task.start", { command: "pnpm dev --port 3000", cwd: "./web/", label: "Web", idempotencyKey: "adhoc" }),
+        );
+        expect(result).toMatchObject({ executionId: "adhoc", status: "running" });
+        const taskId = start.mock.calls[0][1];
+        expect(taskId).toMatch(/^sh:web-[0-9a-f]{6}$/);
+        expect(prepared[0].request).toEqual(
+            expect.objectContaining({ taskId, label: "Web", command: "pnpm dev --port 3000", cwd: "/one/web", env: {} }),
+        );
+        expect(trustProjectConfig).not.toHaveBeenCalled();
+        await handleHarnessRequest(request("task.start", { command: "pnpm dev --port 3000", cwd: "web", idempotencyKey: "again" }));
+        expect(start.mock.calls[1][1]).toMatch(/^sh:pnpm-dev-port-3000-[0-9a-f]{6}$/);
+        expect(start.mock.calls[1][1].slice(-6)).toBe(taskId.slice(-6));
+        await handleHarnessRequest(request("task.start", { command: "pnpm dev --port 3000", idempotencyKey: "root" }));
+        expect(start.mock.calls[2][1].slice(-6)).not.toBe(taskId.slice(-6));
+        expect(prepared[2].request.cwd).toBe("/one");
+    });
+    it("rejects ad-hoc commands outside the project and mixed task arguments", async () => {
+        for (const cwd of ["../other", "/etc", "~/x", "a//b"])
+            await expect(handleHarnessRequest(request("task.start", { command: "ls", cwd, idempotencyKey: `cwd-${cwd}` }))).rejects.toThrow(
+                "inside the project",
+            );
+        await expect(handleHarnessRequest(request("task.start", { taskId: "test", command: "ls", idempotencyKey: "both" }))).rejects.toThrow(
+            "not both",
+        );
+        await expect(handleHarnessRequest(request("task.start", { idempotencyKey: "neither" }))).rejects.toThrow("taskId or command");
+        await expect(handleHarnessRequest(request("task.start", { taskId: "test", cwd: "web", idempotencyKey: "cwd" }))).rejects.toThrow(
+            "go with command",
+        );
+        await expect(handleHarnessRequest(request("task.restart", { taskId: "sh:never-abcdef" }))).rejects.toThrow("has not been started");
+    });
+    it("restarts an ad-hoc command, and starts it again by id, from what it last ran", async () => {
+        const launch = {
+            taskId: "sh:dev-abcdef",
+            project: "/one",
+            source: "project" as const,
+            label: "dev",
+            command: "pnpm dev",
+            cwd: "/one",
+            env: {},
+            cols: 120,
+            rows: 30,
+        };
+        vi.spyOn(harnessTasks, "launchRequest").mockReturnValue(launch);
+        const running = { executionId: "old", taskId: "sh:dev-abcdef", project: "/one", status: "running" as const, ptyId: 3 };
+        vi.spyOn(harnessTasks, "list").mockReturnValue([running]);
+        const stop = vi.spyOn(harnessTasks, "stop").mockResolvedValue({ ...running, status: "stopped" });
+        const { start, prepared } = fakeStart({ executionId: "new", taskId: "sh:dev-abcdef", project: "/one", status: "running" });
+        await handleHarnessRequest(request("task.restart", { taskId: "sh:dev-abcdef" }));
+        expect(stop).toHaveBeenCalledWith("/one", "old");
+        expect(start.mock.calls[0][4]).toMatchObject({ replace: true });
+        await handleHarnessRequest(request("task.start", { taskId: "sh:dev-abcdef", idempotencyKey: "by-id" }));
+        expect(prepared.map((each) => each.request)).toEqual([launch, launch]);
+    });
     it("opens a file an agent asks for on that agent's desk, at the line it names", async () => {
         const state = useStore.getState();
         const session = Object.values(state.sessions).find((session) => session.cwd === "/one")!;
