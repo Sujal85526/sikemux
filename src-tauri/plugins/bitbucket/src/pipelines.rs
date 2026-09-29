@@ -145,10 +145,15 @@ impl Run {
             (None, Some("SCHEDULE")) => "schedule",
             _ => "push",
         };
-        let title = match (pull, &branch) {
-            (Some(number), _) => format!("Pull request #{number}"),
-            (None, Some(branch)) => branch.clone(),
-            (None, None) => sha.chars().take(7).collect(),
+        let message = text(target, &["commit", "message"])
+            .and_then(|message| message.lines().next())
+            .map(str::trim)
+            .filter(|line| !line.is_empty());
+        let title = match (message, pull, &branch) {
+            (Some(line), _, _) => line.to_string(),
+            (None, Some(number), _) => format!("Pull request #{number}"),
+            (None, None, Some(branch)) => branch.clone(),
+            (None, None, None) => sha.chars().take(7).collect(),
         };
         let (status, conclusion) = status_of(row.state.as_ref());
         Run {
@@ -235,6 +240,8 @@ pub async fn list(data_dir: &Path, input: RunQuery) -> BitbucketResult<RunPage> 
         ("sort", "-created_on".to_string()),
         ("page", page.to_string()),
         ("pagelen", per_page.to_string()),
+        // The list leaves out the commit's message unless asked, and it is what a run is titled by.
+        ("fields", "+values.target.commit.message".to_string()),
     ];
     if let Some(branch) = &input.branch {
         query.push(("target.branch", branch.clone()));
@@ -836,6 +843,22 @@ mod tests {
         assert_eq!(run.branch.as_deref(), Some("fix"));
         assert_eq!(run.title, "Pull request #12");
         assert_eq!(run.workflow_id, "pull-requests:**");
+    }
+
+    #[test]
+    fn a_pipeline_is_titled_by_its_commit_message_first_line() {
+        let run = Run::from_row(
+            &repo(),
+            &row(json!({
+                "uuid": "{d}", "build_number": 8, "created_on": "t0",
+                "target": {
+                    "type": "pipeline_pullrequest_target", "source": "fix", "destination": "main",
+                    "commit": { "hash": "abc", "message": "build(dossier): gate the baseline\n\nWith a body." },
+                    "pullrequest": { "id": 12 }
+                }
+            })),
+        );
+        assert_eq!(run.title, "build(dossier): gate the baseline");
     }
 
     #[test]

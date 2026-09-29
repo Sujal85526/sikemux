@@ -22,6 +22,29 @@ export function OutcomeIcon({ outcome, size = 13 }: { outcome: Outcome; size?: n
     );
 }
 
+const RING_MARK: Record<Outcome, React.ReactNode> = {
+    running: <path d="M6.9 5.7 10.3 8l-3.4 2.3z" fill="currentColor" stroke="none" />,
+    queued: <path d="M8 5.2V8l1.8 1.2" />,
+    success: <path d="m5.4 8.2 1.8 1.8 3.5-3.7" />,
+    failure: <path d="m5.9 5.9 4.2 4.2m0-4.2-4.2 4.2" />,
+    cancelled: <path d="M5.6 10.4 10.4 5.6" />,
+    skipped: <path d="M5.4 8h5.2" />,
+    blocked: <path d="M8 5.2v3.3M8 10.6v.1" />,
+    unknown: <path d="M8 5.2v3.3M8 10.6v.1" />,
+};
+
+/** How a run went, as Bitbucket draws it: the mark inside a ring. */
+export function RingedOutcome({ outcome, size = 16 }: { outcome: Outcome; size?: number }) {
+    return (
+        <span className="gha-outcome" data-outcome={outcome} title={OUTCOME_LABEL[outcome]} aria-label={OUTCOME_LABEL[outcome]} role="img">
+            <Stroke size={size}>
+                <circle cx="8" cy="8" r="6.3" />
+                {RING_MARK[outcome]}
+            </Stroke>
+        </span>
+    );
+}
+
 export function MoreDots({ size = 13 }: { size?: number }) {
     return (
         <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">

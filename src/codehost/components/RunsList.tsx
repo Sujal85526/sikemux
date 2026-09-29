@@ -7,7 +7,8 @@ import { useHost } from "../registry";
 import { pullsR, runsR, workflowsR } from "../resources";
 import { elapsedMs, formatAgo, formatDuration, isUnfinished, OUTCOME_LABEL, outcomeOf, statusParam } from "../runStatus";
 import { filterBy, hostSettings, setFollowBranch, showRun, STATUS_FILTERS, updateView, type HostView, type StatusFilter } from "../state";
-import { OutcomeIcon } from "./ActionsIcon";
+import { RingedOutcome } from "./ActionsIcon";
+import { RunMenu } from "./RunMenu";
 import { Face } from "./CommentThread";
 import { coarse, useEvery, useNow } from "./hooks";
 
@@ -28,12 +29,16 @@ const EVERY_WORKFLOW = "all";
 /** A run as Bitbucket lists a pipeline: who started it and its title, then its number, commit and branch, with how it went beside. */
 const RunRow = memo(function RunRow({
     paneId,
+    repo,
+    canWrite,
     run,
     workflow,
     pullTitle,
     now,
 }: {
     paneId: string;
+    repo: RepoRef;
+    canWrite: boolean;
     run: Run;
     workflow: string | null;
     /** The title of the pull request the run belongs to, when the host has named it. */
@@ -43,49 +48,54 @@ const RunRow = memo(function RunRow({
     const outcome = outcomeOf(run);
     const finished = isUnfinished(run) ? null : run.updatedAt;
     return (
-        <button
-            type="button"
-            className="gha-run-row"
-            data-outcome={outcome}
-            title={workflow ? `${workflow} #${run.runNumber}` : undefined}
-            onClick={() => showRun(paneId, run.id)}>
-            <span className="gha-run-face">
-                <Face login={run.actor} url={run.avatarUrl} />
-            </span>
-            <span className="gha-run-name">{run.title || run.name || `Run #${run.runNumber}`}</span>
-            <span className="gha-run-status">
-                <OutcomeIcon outcome={outcome} size={14} />
-                <span className="gha-run-status-word">{OUTCOME_LABEL[outcome]}</span>
-            </span>
-            <span className="gha-run-sub">
-                <span className="gha-run-who">
-                    #{run.runNumber} - {run.actor ?? "someone"}
+        <div className="gha-run-item">
+            <button
+                type="button"
+                className="gha-run-row"
+                data-outcome={outcome}
+                title={workflow ? `${workflow} #${run.runNumber}` : undefined}
+                onClick={() => showRun(paneId, run.id)}>
+                <span className="gha-run-face">
+                    <Face login={run.actor} url={run.avatarUrl} />
                 </span>
-                {run.shortSha && (
-                    <span className="gha-run-ref">
-                        <IconCommit size={11} />
-                        {run.shortSha}
+                <span className="gha-run-name">{run.title || run.name || `Run #${run.runNumber}`}</span>
+                <span className="gha-run-status">
+                    <RingedOutcome outcome={outcome} size={16} />
+                    <span className="gha-run-status-word">{OUTCOME_LABEL[outcome]}</span>
+                </span>
+                <span className="gha-run-sub">
+                    <span className="gha-run-who">
+                        #{run.runNumber} - {run.actor ?? "someone"}
                     </span>
-                )}
-                {run.pullRequests.length > 0 ? (
-                    <span className="gha-run-ref gha-run-branch" title={`#${run.pullRequests.join(", #")}`}>
-                        <IconPullRequest size={11} />
-                        <span>{pullTitle ?? run.pullRequests.map((number) => `#${number}`).join(" ")}</span>
-                    </span>
-                ) : (
-                    run.branch && (
-                        <span className="gha-run-ref gha-run-branch">
-                            <IconGit size={11} />
-                            <span>{run.branch}</span>
+                    {run.shortSha && (
+                        <span className="gha-run-ref">
+                            <IconCommit size={11} />
+                            {run.shortSha}
                         </span>
-                    )
-                )}
+                    )}
+                    {run.pullRequests.length > 0 ? (
+                        <span className="gha-run-ref gha-run-branch" title={`#${run.pullRequests.join(", #")}`}>
+                            <IconPullRequest size={11} />
+                            <span>{pullTitle ?? run.pullRequests.map((number) => `#${number}`).join(" ")}</span>
+                        </span>
+                    ) : (
+                        run.branch && (
+                            <span className="gha-run-ref gha-run-branch">
+                                <IconGit size={11} />
+                                <span>{run.branch}</span>
+                            </span>
+                        )
+                    )}
+                </span>
+                <span className="gha-run-when">
+                    <span className="gha-run-started">{formatAgo(run.startedAt ?? run.createdAt, now)}</span>
+                    <span className="gha-run-took">{formatDuration(elapsedMs(run.startedAt ?? run.createdAt, finished, now))}</span>
+                </span>
+            </button>
+            <span className="gha-run-more">
+                <RunMenu run={run} repo={repo} canWrite={canWrite} onDeleted={() => {}} />
             </span>
-            <span className="gha-run-when">
-                <span className="gha-run-started">{formatAgo(run.startedAt ?? run.createdAt, now)}</span>
-                <span className="gha-run-took">{formatDuration(elapsedMs(run.startedAt ?? run.createdAt, finished, now))}</span>
-            </span>
-        </button>
+        </div>
     );
 });
 
@@ -221,6 +231,8 @@ export function RunsList({ paneId, repo, view, branch, projectBranch, active, ca
                     <RunRow
                         key={run.id}
                         paneId={paneId}
+                        repo={repo}
+                        canWrite={canWrite}
                         run={run}
                         workflow={chosen ? null : (workflowNames.get(run.workflowId) ?? null)}
                         pullTitle={run.pullRequests[0] ? (pullTitles.get(run.pullRequests[0]) ?? null) : null}
