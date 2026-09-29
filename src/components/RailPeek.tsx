@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 type PeekEdge = "start" | "end";
 type PeekPhase = "closed" | "open" | "closing";
@@ -14,9 +14,7 @@ const EDGE_REACH_PX = 28;
 function withinEdgeReach(root: HTMLElement, edge: PeekEdge, event: PointerEvent) {
     const rect = root.getBoundingClientRect();
     if (event.clientY < rect.top || event.clientY > rect.bottom) return false;
-    return edge === "start"
-        ? event.clientX <= rect.left + EDGE_REACH_PX
-        : event.clientX >= rect.right - EDGE_REACH_PX;
+    return edge === "start" ? event.clientX <= rect.left + EDGE_REACH_PX : event.clientX >= rect.right - EDGE_REACH_PX;
 }
 
 export function RailPeek({ edge, children }: RailPeekProps) {
@@ -26,26 +24,29 @@ export function RailPeek({ edge, children }: RailPeekProps) {
     const phaseRef = useRef<PeekPhase>("closed");
     phaseRef.current = phase;
 
-    const clearCloseTimer = () => {
+    const clearCloseTimer = useCallback(() => {
         if (closeTimer.current === null) return;
         window.clearTimeout(closeTimer.current);
         closeTimer.current = null;
-    };
+    }, []);
 
-    const open = () => {
+    const open = useCallback(() => {
         clearCloseTimer();
         setPhase("open");
-    };
+    }, [clearCloseTimer]);
 
-    const close = (ignoreFocus = false) => {
-        if (!ignoreFocus && rootRef.current?.contains(document.activeElement)) return;
-        clearCloseTimer();
-        setPhase("closing");
-        closeTimer.current = window.setTimeout(() => {
-            closeTimer.current = null;
-            setPhase("closed");
-        }, CLOSE_DURATION_MS);
-    };
+    const close = useCallback(
+        (ignoreFocus = false) => {
+            if (!ignoreFocus && rootRef.current?.contains(document.activeElement)) return;
+            clearCloseTimer();
+            setPhase("closing");
+            closeTimer.current = window.setTimeout(() => {
+                closeTimer.current = null;
+                setPhase("closed");
+            }, CLOSE_DURATION_MS);
+        },
+        [clearCloseTimer],
+    );
 
     useEffect(() => {
         const onPointerMove = (event: PointerEvent) => {
@@ -63,7 +64,7 @@ export function RailPeek({ edge, children }: RailPeekProps) {
             window.removeEventListener("pointermove", onPointerMove);
             clearCloseTimer();
         };
-    }, [edge]);
+    }, [edge, open, close, clearCloseTimer]);
 
     return (
         <div
