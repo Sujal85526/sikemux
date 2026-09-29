@@ -51,7 +51,7 @@ import { ShaderField } from "../components/ShaderField";
 import { basename, dirname, isPathWithin, joinPath, normalizePath } from "../lib/paths";
 import { localPath } from "../chat/imagePreview";
 import { safeWebUrl } from "../terminal/interactions";
-import { keybindingLabelForAction } from "../keybindings";
+import { keybindingLabelForAction } from "../commands/keybindings";
 
 const DEFAULT_VIEW = { openTabs: [], activePath: null };
 const EMPTY_CLI_OPENS: CliPendingEditorOpen[] = [];

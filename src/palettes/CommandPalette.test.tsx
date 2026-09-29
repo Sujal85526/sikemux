@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CustomCommand } from "../commands/registry";
-import { keybindingActions } from "../keybindings";
+import { keybindingActions } from "../commands/keybindings";
 import { CommandPalette } from "./CommandPalette";
 
 const custom: CustomCommand = {

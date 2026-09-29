@@ -5,7 +5,7 @@ import { DEFAULT_THEME_ID, type Theme } from "../themes";
 import { DEFAULT_TERMINAL_FONT_SIZE } from "../terminal/fontSize";
 import { DEFAULT_CHAT_TEXT_SCALE } from "../chat/textScale";
 import { DEFAULT_EDITOR_TEXT_SCALE } from "../editor/textScale";
-import type { KeybindingOverrides } from "../keybindings";
+import type { KeybindingOverrides } from "../commands/keybindings";
 import type { CustomCommand } from "../commands/registry";
 import type { SettingsPageId } from "../settings/settingsIndex";
 import { RAIL_WIDTH } from "../lib/railWidths";

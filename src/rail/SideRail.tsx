@@ -12,7 +12,7 @@ import {
     type RefObject,
 } from "react";
 import { createPortal, flushSync } from "react-dom";
-import { keybindingLabelForAction, type KeybindingActionId } from "../keybindings";
+import { keybindingLabelForAction, type KeybindingActionId } from "../commands/keybindings";
 import type { Agent, AgentRuntimeState, Session, SessionKind, Window, WindowRole } from "../state/types";
 import * as cmd from "../state/commands";
 import { animate, EASE_IN, EASE_SWAP, foldedFrames, leavingRef, prefersReducedMotion } from "../lib/motion";

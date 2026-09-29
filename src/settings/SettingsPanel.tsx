@@ -13,7 +13,7 @@ import {
     resolvedKeybinding,
     type KeybindingActionId,
     type KeybindingOverrides,
-} from "../keybindings";
+} from "../commands/keybindings";
 import { settingsApi } from "../api/settings";
 import { isUpdateBusy, updateCheckLabel } from "../api/updater";
 import { prettyPath } from "../lib/paths";

@@ -2592,11 +2592,11 @@ export const setShareUsageData = (value: boolean): void => setState({ shareUsage
 export const setLanguageServerTrust = (project: string, allowed: boolean): void =>
     setState((s) => ({ languageServerTrust: { ...s.languageServerTrust, [project]: allowed } }));
 
-export function setKeybinding(id: import("../keybindings").KeybindingActionId, binding: string | null): void {
+export function setKeybinding(id: import("../commands/keybindings").KeybindingActionId, binding: string | null): void {
     setState((s) => ({ keybindingOverrides: { ...s.keybindingOverrides, [id]: binding } }));
 }
 
-export function resetKeybinding(id: import("../keybindings").KeybindingActionId): void {
+export function resetKeybinding(id: import("../commands/keybindings").KeybindingActionId): void {
     setState((s) => {
         const keybindingOverrides = { ...s.keybindingOverrides };
         delete keybindingOverrides[id];

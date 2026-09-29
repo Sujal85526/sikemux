@@ -6,7 +6,7 @@ import { clampChatTextScale } from "../chat/textScale";
 import { clampEditorTextScale } from "../editor/textScale";
 import { isTheme } from "../themes";
 import { parseReleaseCredits } from "../api/releases";
-import { normaliseKeybindingOverrides } from "../keybindings";
+import { normaliseKeybindingOverrides } from "../commands/keybindings";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
 import { registerCustomThemes } from "../themes/bus";
 import { normalizePermissionMode } from "../agents/agentLaunch";

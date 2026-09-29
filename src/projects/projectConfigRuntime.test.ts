@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ConfirmRequest } from "./state/dialog";
+import type { ConfirmRequest } from "../state/dialog";
 import { clearProjectConfigTrustForTests, trustProjectConfig } from "./projectConfigRuntime";
 
 beforeEach(clearProjectConfigTrustForTests);

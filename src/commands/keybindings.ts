@@ -1,7 +1,7 @@
-import { IS_MACOS } from "./lib/platform";
-import { enabledFrontendPlugins } from "./plugins/enabled";
-import { getState } from "./state/store";
-import { frontendPlugin, frontendPlugins, type FrontendPlugin, type PluginShortcut } from "./plugins/registry";
+import { IS_MACOS } from "../lib/platform";
+import { enabledFrontendPlugins } from "../plugins/enabled";
+import { getState } from "../state/store";
+import { frontendPlugin, frontendPlugins, type FrontendPlugin, type PluginShortcut } from "../plugins/registry";
 
 type CoreKeybindingCategory = "Workspace" | "Panes" | "Navigation" | "Browser";
 /** A plugin's own shortcuts are grouped under its name. */

@@ -1,6 +1,6 @@
-import type { CustomCommand } from "./commands/registry";
+import type { CustomCommand } from "../commands/registry";
 import type { ProjectAction, ProjectConfigLoadResult, ProjectTask, ProjectWorktreeCreateHook, SikemuxProjectConfig } from "./projectConfig";
-import { confirmDialog, type ConfirmRequest } from "./state/dialog";
+import { confirmDialog, type ConfirmRequest } from "../state/dialog";
 
 const trustedConfigs = new Set<string>();
 

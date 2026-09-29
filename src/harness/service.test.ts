@@ -2,13 +2,13 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { useStore } from "../state/store";
 import { createProjectSession } from "../state/commands";
 import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "../api/transport";
-import { loadProjectConfig } from "../projectConfig";
-import { trustProjectConfig } from "../projectConfigRuntime";
+import { loadProjectConfig } from "../projects/projectConfig";
+import { trustProjectConfig } from "../projects/projectConfigRuntime";
 import { handleHarnessRequest, harnessTasks, type HarnessRequest } from "./service";
 import { withAgents } from "../test/agents";
 
-vi.mock("../projectConfig", async (original) => ({ ...(await original<object>()), loadProjectConfig: vi.fn() }));
-vi.mock("../projectConfigRuntime", async (original) => ({ ...(await original<object>()), trustProjectConfig: vi.fn() }));
+vi.mock("../projects/projectConfig", async (original) => ({ ...(await original<object>()), loadProjectConfig: vi.fn() }));
+vi.mock("../projects/projectConfigRuntime", async (original) => ({ ...(await original<object>()), trustProjectConfig: vi.fn() }));
 const initial = useStore.getState();
 let transport: MemoryIpcTransport;
 const config = {

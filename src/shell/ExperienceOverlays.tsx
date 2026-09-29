@@ -8,7 +8,7 @@ import { useStore } from "../state/store";
 import * as cmd from "../state/commands";
 import { agentDetectionApi, type ManifestReport } from "../api/agentDetection";
 import { selectedAgentRuntimeProfiles } from "../agents/agentProfiles";
-import { keybindingLabelForAction, type CoreKeybindingActionId } from "../keybindings";
+import { keybindingLabelForAction, type CoreKeybindingActionId } from "../commands/keybindings";
 import { AgentIcon, IconCommand, IconFolder, IconSearch, Logo } from "../components/Icons";
 import { Kbd } from "../components/Kbd";
 import { ShaderField } from "../components/ShaderField";

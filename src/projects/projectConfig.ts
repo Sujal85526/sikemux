@@ -1,5 +1,5 @@
-import { fsapi } from "./api/fs";
-import { joinPath } from "./lib/paths";
+import { fsapi } from "../api/fs";
+import { joinPath } from "../lib/paths";
 
 export const PROJECT_CONFIG_FILE = "sikemux.json";
 export const PROJECT_CONFIG_VERSION = 1 as const;

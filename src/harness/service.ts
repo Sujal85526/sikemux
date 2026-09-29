@@ -1,7 +1,7 @@
 import { invokeCommand } from "../api/invoke";
 import { browserApi } from "../api/browser";
-import { loadProjectConfig } from "../projectConfig";
-import { trustProjectConfig } from "../projectConfigRuntime";
+import { loadProjectConfig } from "../projects/projectConfig";
+import { trustProjectConfig } from "../projects/projectConfigRuntime";
 import { joinPath } from "../lib/paths";
 import { collectPanes } from "../state/layout";
 import { agentIdsOf } from "../state/selectors";

@@ -1,13 +1,13 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { loadApplicationActions } from "./actions/bridge";
-import { browserApi } from "./api/browser";
-import { IS_MACOS } from "./lib/platform";
-import type { Session } from "./state/types";
-import { getState, setState } from "./state/store";
+import { loadApplicationActions } from "../actions/bridge";
+import { browserApi } from "../api/browser";
+import { IS_MACOS } from "../lib/platform";
+import type { Session } from "../state/types";
+import { getState, setState } from "../state/store";
 import { useKeymap } from "./keymap";
-import { activeAgentId, agentWindowId } from "./state/selectors";
-import { withAgents } from "./test/agents";
+import { activeAgentId, agentWindowId } from "../state/selectors";
+import { withAgents } from "../test/agents";
 
 const initial = getState();
 

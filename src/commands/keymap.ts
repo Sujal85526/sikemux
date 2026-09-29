@@ -1,16 +1,16 @@
 import { useEffect } from "react";
-import { browserApi } from "./api/browser";
+import { browserApi } from "../api/browser";
 import { actionForEvent, pluginOpenedBy, pluginShortcutFor, type KeybindingActionId } from "./keybindings";
-import * as cmd from "./state/commands";
-import { activeAgentId } from "./state/selectors";
-import { getState, type StoreState } from "./state/store";
-import type { KeyModifier } from "./state/types";
-import { runMeasuredAction } from "./lib/instrumentation";
-import { applicationActionContext, executeApplicationAction, matchApplicationActionKeybinding } from "./actions/bridge";
-import { reportError } from "./state/toast";
-import { isPluginKind } from "./plugins/kinds";
-import { pluginOverlayOpen } from "./plugins/overlays";
-import { frontendPlugin, pluginSurface } from "./plugins/registry";
+import * as cmd from "../state/commands";
+import { activeAgentId } from "../state/selectors";
+import { getState, type StoreState } from "../state/store";
+import type { KeyModifier } from "../state/types";
+import { runMeasuredAction } from "../lib/instrumentation";
+import { applicationActionContext, executeApplicationAction, matchApplicationActionKeybinding } from "../actions/bridge";
+import { reportError } from "../state/toast";
+import { isPluginKind } from "../plugins/kinds";
+import { pluginOverlayOpen } from "../plugins/overlays";
+import { frontendPlugin, pluginSurface } from "../plugins/registry";
 
 function isTerminalKeyTarget(e: KeyboardEvent): boolean {
     const target = e.target instanceof Element ? e.target : document.activeElement;

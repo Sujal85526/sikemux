@@ -11,7 +11,7 @@ import {
 } from "../commands/registry";
 import { useMouseActive } from "../hooks/useMouseActive";
 import { rankBy } from "../lib/fuzzy";
-import type { KeybindingOverrides } from "../keybindings";
+import type { KeybindingOverrides } from "../commands/keybindings";
 import { IconCommand, IconSearch } from "../components/Icons";
 import { runMeasuredAction } from "../lib/instrumentation";
 import { contentBox, glideSelection, leavingOverlay } from "../lib/motion";

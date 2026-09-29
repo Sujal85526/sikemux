@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { settingsApi } from "../api/settings";
-import { keybindingLabel, resolvedKeybinding } from "../keybindings";
+import { keybindingLabel, resolvedKeybinding } from "../commands/keybindings";
 import { IS_MACOS } from "../lib/platform";
 import { SETTINGS_INDEX, SETTINGS_PAGE_ORDER } from "./settingsIndex";
 import * as cmd from "../state/commands";

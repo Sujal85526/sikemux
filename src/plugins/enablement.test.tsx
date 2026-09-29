@@ -4,7 +4,7 @@ import "./builtin";
 import { SideRail } from "../rail/SideRail";
 import { TopBar } from "../shell/TopBar";
 import { Workspace } from "../workspace/Workspace";
-import { keybindingActions, normaliseKeybindingOverrides } from "../keybindings";
+import { keybindingActions, normaliseKeybindingOverrides } from "../commands/keybindings";
 import * as cmd from "../state/commands";
 import { applyHydrate } from "../state/persist";
 import { getState, setState } from "../state/store";

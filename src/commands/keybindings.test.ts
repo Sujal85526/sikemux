@@ -13,7 +13,7 @@ import {
     keybindingCategories,
     resolvedKeybinding,
 } from "./keybindings";
-import { getState, setState } from "./state/store";
+import { getState, setState } from "../state/store";
 
 function key(code: string, modifiers: Partial<Pick<KeyboardEvent, "metaKey" | "ctrlKey" | "altKey" | "shiftKey">> = {}) {
     return {
@@ -35,7 +35,7 @@ describe("keybindings", () => {
     });
 
     it("answers a shortcut on Enter from the numpad Enter too", async () => {
-        await import("./plugins/builtin");
+        await import("../plugins/builtin");
         const send = getKeybindingAction("plugin.run:sikemux.bruno/send")?.defaultBinding ?? "";
         expect(actionForEvent(key("NumpadEnter", { metaKey: send.startsWith("Meta"), ctrlKey: send.startsWith("Ctrl") }), {})).toBe(
             "plugin.run:sikemux.bruno/send",
@@ -98,7 +98,7 @@ describe("keybindings", () => {
 
 describe("plugin shortcuts", () => {
     it("lists a plugin's open shortcut once it registers, and knows which plugin it opens", async () => {
-        await import("./plugins/builtin");
+        await import("../plugins/builtin");
         const aws = keybindingActions().find((action) => action.id === "plugin.open:sikemux.aws");
         expect(aws).toMatchObject({ label: "Open AWS", defaultBinding: "Alt+KeyA" });
         expect(pluginOpenedBy("plugin.open:sikemux.aws")).toBe("sikemux.aws");
@@ -111,7 +111,7 @@ describe("plugin shortcuts", () => {
 
 describe("a plugin's own shortcuts", () => {
     it("are listed under the plugin's name and run only when they apply", async () => {
-        const { registerFrontendPlugin } = await import("./plugins/registry");
+        const { registerFrontendPlugin } = await import("../plugins/registry");
         const manifests = getState().pluginManifests;
         setState({ pluginManifests: [...manifests, { id: "test.shortcuts", name: "Test kit", version: "0.1.0", sikemux: ">=0.4" }] });
         let applies = true;

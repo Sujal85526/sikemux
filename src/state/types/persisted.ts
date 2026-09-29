@@ -1,6 +1,6 @@
 import type { Theme } from "../../themes";
 import type { CustomCommand } from "../../commands/registry";
-import type { KeybindingOverrides } from "../../keybindings";
+import type { KeybindingOverrides } from "../../commands/keybindings";
 import type { HeldRelease } from "../../api/releases";
 import type {
     Agent,

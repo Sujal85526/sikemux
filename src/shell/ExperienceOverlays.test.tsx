@@ -21,7 +21,7 @@ vi.mock("../state/resources", () => ({
 }));
 vi.mock("../state/resources.defs", () => ({ agentCatalogR: { kind: "agents.catalog" } }));
 
-import { keybindingLabel } from "../keybindings";
+import { keybindingLabel } from "../commands/keybindings";
 import { flushPersist, resetPersistenceForTests } from "../state/persist";
 import { getState, setState } from "../state/store";
 import { uiActivity } from "../lib/activity";

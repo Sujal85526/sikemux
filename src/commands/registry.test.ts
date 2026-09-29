@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { keybindingActions, keybindingLabel } from "../keybindings";
+import { keybindingActions, keybindingLabel } from "./keybindings";
 import { buildCommandRegistry, customCommandAvailable, type CustomCommand } from "./registry";
 
 const custom: CustomCommand = {
