@@ -1,4 +1,4 @@
-import type { StoreState } from "./state/store";
+import type { StoreState } from "../state/store";
 
 export function worktreeHasLiveOwners(state: Pick<StoreState, "sessions" | "agents">, path: string): boolean {
     const hasProject = Object.values(state.sessions).some((session) => session.kind === "project" && session.cwd === path);

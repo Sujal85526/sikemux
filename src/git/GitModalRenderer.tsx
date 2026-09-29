@@ -1,8 +1,8 @@
-import { useModalFocus } from "../../hooks/useModalFocus";
+import { useModalFocus } from "../hooks/useModalFocus";
 import { useEffect, useRef, useState } from "react";
-import { closeGitModal, dispatchGitMenuKey } from "../../state/git";
-import { getState, useStore } from "../../state/store";
-import { PRIMARY_SHORTCUT } from "../../lib/platform";
+import { closeGitModal, dispatchGitMenuKey } from "../state/git";
+import { getState, useStore } from "../state/store";
+import { PRIMARY_SHORTCUT } from "../lib/platform";
 
 type ConfirmModal = Extract<NonNullable<ReturnType<typeof useStore.getState>["gitModal"]>, { kind: "confirm" }>;
 

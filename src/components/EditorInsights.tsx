@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { languageFromPath, lsp, type LspDocumentSymbol } from "../api/lsp";
 import { basename, relativePath } from "../lib/paths";
 import type { DiagnosticProblem, DiagnosticsController } from "../workbench/diagnosticsController";
-import { VirtualPanelRows } from "./git/VirtualPanelRows";
+import { VirtualPanelRows } from "../git/VirtualPanelRows";
 
 export type EditorInsightsTab = "problems" | "outline";
 

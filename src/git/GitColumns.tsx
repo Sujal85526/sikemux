@@ -1,6 +1,6 @@
 import { useRef, type ReactNode } from "react";
-import * as cmd from "../../state/commands";
-import { useStore } from "../../state/store";
+import * as cmd from "../state/commands";
+import { useStore } from "../state/store";
 import { LEFT_MIN, RIGHT_MIN, ResizeHandle } from "./ResizeHandle";
 
 /**

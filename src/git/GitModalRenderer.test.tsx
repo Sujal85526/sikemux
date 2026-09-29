@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { GitModalRenderer } from "./GitModalRenderer";
-import { getState, setState } from "../../state/store";
+import { getState, setState } from "../state/store";
 
 afterEach(() => {
     cleanup();

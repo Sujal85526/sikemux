@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { GitColumns } from "../../components/git/GitColumns";
+import { GitColumns } from "../../git/GitColumns";
 import { notify, openUrl, reportError, swallow } from "../../plugin-api/host";
 import { useResourceEnabled } from "../../plugin-api/resources";
 import { EmptyState, IconExternal, IconGit, IconRefresh, SkeletonRows, Tooltip } from "../../plugin-api/ui";

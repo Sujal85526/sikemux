@@ -25,8 +25,8 @@ import { BranchPullChip } from "../codehost/components/BranchPullChip";
 import { useBranchPulls, useHostRepo } from "../codehost/project";
 import { compose, showItem } from "../codehost/state";
 import type { Pull } from "../codehost/types";
-import { FileIcon } from "./FileIcon";
-import { TreeContextMenu, type CtxItem } from "./FileTree";
+import { FileIcon } from "../components/FileIcon";
+import { TreeContextMenu, type CtxItem } from "../components/FileTree";
 import {
     IconCheckout,
     IconChevron,
@@ -46,21 +46,21 @@ import {
     IconSearch,
     IconTrash,
     IconWarning,
-} from "./Icons";
-import { Tooltip } from "./Tooltip";
-import { GitCmdLogBar } from "./git/GitCmdLogBar";
-import { GitComposer } from "./git/GitComposer";
-import { AuthorAvatar } from "./git/AuthorAvatar";
-import { GitGraph } from "./git/GitGraph";
-import { GitModalRenderer } from "./git/GitModalRenderer";
-import { VirtualPanelRows } from "./git/VirtualPanelRows";
-import { GitColumns } from "./git/GitColumns";
-import { HISTORY_CLEARANCE, HISTORY_MIN, ResizeHandle } from "./git/ResizeHandle";
-import { SkeletonRows } from "./Skeleton";
-import { EmptyState } from "./Panel";
-import { AI_MODELS, AI_PROVIDER_LABEL, GIT_HELP, GIT_PANEL_BY_KEY, defaultAiModel } from "./git/gitPaneConstants";
-import { filterByQuery, isInRange } from "./git/gitPaneLogic";
-import type { GitAiProvider } from "./git/gitPaneTypes";
+} from "../components/Icons";
+import { Tooltip } from "../components/Tooltip";
+import { GitCmdLogBar } from "./GitCmdLogBar";
+import { GitComposer } from "./GitComposer";
+import { AuthorAvatar } from "./AuthorAvatar";
+import { GitGraph } from "./GitGraph";
+import { GitModalRenderer } from "./GitModalRenderer";
+import { VirtualPanelRows } from "./VirtualPanelRows";
+import { GitColumns } from "./GitColumns";
+import { HISTORY_CLEARANCE, HISTORY_MIN, ResizeHandle } from "./ResizeHandle";
+import { SkeletonRows } from "../components/Skeleton";
+import { EmptyState } from "../components/Panel";
+import { AI_MODELS, AI_PROVIDER_LABEL, GIT_HELP, GIT_PANEL_BY_KEY, defaultAiModel } from "./gitPaneConstants";
+import { filterByQuery, isInRange } from "./gitPaneLogic";
+import type { GitAiProvider } from "./gitPaneTypes";
 import { basename as basenameOf, dirname } from "../lib/paths";
 
 const CommitReview = lazy(() => import("./CommitReview").then((module) => ({ default: memo(module.CommitReview) })));

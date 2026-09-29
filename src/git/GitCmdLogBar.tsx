@@ -1,6 +1,6 @@
-import { clearGitCmdLog, toggleGitCmdLog } from "../../state/git";
-import { useStore } from "../../state/store";
-import { Tooltip } from "../Tooltip";
+import { clearGitCmdLog, toggleGitCmdLog } from "../state/git";
+import { useStore } from "../state/store";
+import { Tooltip } from "../components/Tooltip";
 
 export function GitCmdLogBar() {
     const open = useStore((s) => s.gitCmdLogOpen);

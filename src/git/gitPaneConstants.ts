@@ -1,6 +1,6 @@
-import type { GitCheatsheetSection } from "../../state/gitTypes";
-import { PRIMARY_SHORTCUT } from "../../lib/platform";
-import type { GitPanel } from "../../state/types";
+import type { GitCheatsheetSection } from "../state/gitTypes";
+import { PRIMARY_SHORTCUT } from "../lib/platform";
+import type { GitPanel } from "../state/types";
 import { helpRows } from "./gitPaneLogic";
 import type { GitAiProvider } from "./gitPaneTypes";
 

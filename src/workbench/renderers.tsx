@@ -18,8 +18,8 @@ export interface WorkbenchItemRendererProps {
 }
 
 const EditorPane = lazy(() => import("../components/EditorPane").then((module) => ({ default: module.EditorPane })));
-const GitPane = lazy(() => import("../components/GitPane").then((module) => ({ default: module.GitPane })));
-const DiffPane = lazy(() => import("../components/DiffPane").then((module) => ({ default: module.DiffPane })));
+const GitPane = lazy(() => import("../git/GitPane").then((module) => ({ default: module.GitPane })));
+const DiffPane = lazy(() => import("../git/DiffPane").then((module) => ({ default: module.DiffPane })));
 const SearchPane = lazy(() => import("../components/SearchPane").then((module) => ({ default: module.SearchPane })));
 
 const paneCwd = (pane: PaneNode, session: Session) => pane.cwd || session.cwd;

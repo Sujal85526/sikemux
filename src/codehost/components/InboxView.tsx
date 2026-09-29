@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { GitColumns } from "../../components/git/GitColumns";
+import { GitColumns } from "../../git/GitColumns";
 import { notify, openUrl, reportError, swallow } from "../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
 import { Checkbox, EmptyState, IconCheck, SkeletonRows } from "../../plugin-api/ui";

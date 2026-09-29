@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { FileIcon } from "./FileIcon";
-import { IconChevron } from "./Icons";
-import { Tooltip } from "./Tooltip";
+import { FileIcon } from "../components/FileIcon";
+import { IconChevron } from "../components/Icons";
+import { Tooltip } from "../components/Tooltip";
 import { basename, dirname } from "../lib/paths";
 
 const REVIEW_HEADER_HEIGHT = 29;

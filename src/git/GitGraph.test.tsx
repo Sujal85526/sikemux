@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { computeGraph } from "./GitGraph";
-import type { GitCommit } from "../../api/git";
+import type { GitCommit } from "../api/git";
 
 /** A straight chain, newest first: c0 is the child of c1, and so on. */
 function chain(count: number): GitCommit[] {

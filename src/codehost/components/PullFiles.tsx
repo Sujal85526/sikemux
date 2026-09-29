@@ -1,11 +1,11 @@
 import { memo, useEffect, useMemo, useState } from "react";
-import { DiffView } from "../../components/DiffView";
+import { DiffView } from "../../git/DiffView";
 import { requestOpenFile } from "../../state/commands";
 import { currentTheme, subscribeTheme } from "../../themes/bus";
 import { joinPath } from "../../lib/paths";
 import { useResourceEnabled } from "../../plugin-api/resources";
 import { EmptyState, SkeletonRows } from "../../plugin-api/ui";
-import { FileReviewList } from "../../components/FileReviewList";
+import { FileReviewList } from "../../git/FileReviewList";
 import { failureMessage, type ChangedFile, type RepoRef } from "../api";
 import { patchToRows } from "../patchRows";
 import { pullFilesR } from "../resources";

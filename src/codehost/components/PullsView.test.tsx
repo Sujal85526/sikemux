@@ -22,7 +22,7 @@ const localGit = vi.hoisted(() => ({
 
 vi.mock("../../api/git", async (importOriginal) => ({ ...(await importOriginal<typeof import("../../api/git")>()), git: localGit }));
 
-vi.mock("../../components/CommitReview", () => ({
+vi.mock("../../git/CommitReview", () => ({
     CommitReview: ({ rev, range }: { rev: string; range?: { base: string; files: string[] } }) => (
         <div data-testid="commit-review">{range ? `${range.base}..${rev} ${range.files.join(" ")}` : rev}</div>
     ),

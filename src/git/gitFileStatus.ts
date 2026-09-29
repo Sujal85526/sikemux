@@ -1,4 +1,4 @@
-import type { GitFile } from "../../api/git";
+import type { GitFile } from "../api/git";
 
 export interface GitStatusDecoration {
     letter: string;

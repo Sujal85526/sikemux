@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { GitColumns } from "../../components/git/GitColumns";
-import { FoldPanel } from "../../components/git/FoldPanel";
+import { GitColumns } from "../../git/GitColumns";
+import { FoldPanel } from "../../git/FoldPanel";
 import { confirmDialog, copyText, notify, openUrl, reportError, swallow } from "../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
 import { EmptyState, IconChevron, IconExternal, IconRefresh, SkeletonRows, Tooltip } from "../../plugin-api/ui";

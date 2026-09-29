@@ -63,7 +63,7 @@ import type { ProjectConfigLoadResult } from "./projectConfig";
 import { agentDetectionApi } from "./api/agentDetection";
 import { lsp } from "./api/lsp";
 import { projectActionCommand, trustProjectConfig } from "./projectConfigRuntime";
-import { worktreeHasLiveOwners } from "./worktreeLifecycle";
+import { worktreeHasLiveOwners } from "./git/worktreeLifecycle";
 import { performanceTelemetry } from "./lib/performance";
 import { workbenchRuntime } from "./workbench/runtime";
 import {

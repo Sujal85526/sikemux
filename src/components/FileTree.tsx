@@ -16,7 +16,7 @@ import { dispatchPaths, pathDropTargetAt, registerFolderDrop, resolvePathDropTar
 import { IconChevron, IconFolder, IconPlus } from "./Icons";
 import { FileIcon } from "./FileIcon";
 import { Tooltip } from "./Tooltip";
-import { gitFileDecoration } from "./git/gitFileStatus";
+import { gitFileDecoration } from "../git/gitFileStatus";
 import { basename, dirname, isPathWithin, joinPath, normalizePath, relativePath as pathRelative } from "../lib/paths";
 import { FILE_MANAGER_NAME } from "../lib/platform";
 import { leavingMenu } from "../lib/motion";

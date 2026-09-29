@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, type ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { PANEL_ROW_HEIGHT } from "../Panel";
+import { PANEL_ROW_HEIGHT } from "../components/Panel";
 
 const VIRTUAL_THRESHOLD = 100;
 

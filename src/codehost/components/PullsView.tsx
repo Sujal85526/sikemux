@@ -16,11 +16,11 @@ import {
     Tooltip,
 } from "../../plugin-api/ui";
 import type { GitCommit } from "../../api/git";
-import { CommitReview } from "../../components/CommitReview";
-import { GitColumns } from "../../components/git/GitColumns";
-import { AuthorPicturesProvider, type AuthorPictures } from "../../components/git/AuthorAvatar";
-import { GitGraph } from "../../components/git/GitGraph";
-import { FoldPanel } from "../../components/git/FoldPanel";
+import { CommitReview } from "../../git/CommitReview";
+import { GitColumns } from "../../git/GitColumns";
+import { AuthorPicturesProvider, type AuthorPictures } from "../../git/AuthorAvatar";
+import { GitGraph } from "../../git/GitGraph";
+import { FoldPanel } from "../../git/FoldPanel";
 import { FileIcon } from "../../components/FileIcon";
 import { basename, dirname } from "../../lib/paths";
 import { requestOpenFile, setGitView } from "../../state/commands";

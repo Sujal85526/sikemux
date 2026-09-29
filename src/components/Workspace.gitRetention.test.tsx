@@ -6,7 +6,7 @@ import * as cmd from "../state/commands";
 import { getState, setState } from "../state/store";
 
 const lifecycle = vi.hoisted(() => ({ mounted: vi.fn(), unmounted: vi.fn(), editorMounted: vi.fn(), editorUnmounted: vi.fn() }));
-vi.mock("./GitPane", () => ({
+vi.mock("../git/GitPane", () => ({
     GitPane: ({ active }: { active: boolean }) => {
         useEffect(() => {
             lifecycle.mounted();

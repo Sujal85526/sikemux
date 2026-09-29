@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
-import { AuthorPicturesProvider, type AuthorPictures } from "../../components/git/AuthorAvatar";
+import { AuthorPicturesProvider, type AuthorPictures } from "../../git/AuthorAvatar";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
 import { subscribe } from "../../state/bus";
 import { SkeletonRows } from "../../plugin-api/ui";

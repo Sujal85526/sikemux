@@ -3,7 +3,7 @@ import { DiffEditor } from "./DiffEditor";
 import { FileReviewList } from "./FileReviewList";
 import { hasUnstaged, isStaged, type GitFile } from "../api/git";
 import { joinPath } from "../lib/paths";
-import { gitFileBadges, gitStatusBadge, type GitStatusBadge } from "./git/gitFileStatus";
+import { gitFileBadges, gitStatusBadge, type GitStatusBadge } from "./gitFileStatus";
 
 const REVIEW_ROW_ESTIMATE = 250;
 const REVIEW_DOUBLE_ROW_ESTIMATE = 470;

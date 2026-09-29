@@ -1,7 +1,7 @@
 import { notify, reportError } from "../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
 import { EmptyState, IconInfo, IconPlus, SkeletonRows, Tooltip } from "../../plugin-api/ui";
-import { GitColumns } from "../../components/git/GitColumns";
+import { GitColumns } from "../../git/GitColumns";
 import { hostApi, failureMessage, type Issue, type RepoRef } from "../api";
 import { issueR, issuesR } from "../resources";
 import { formatAgo } from "../runStatus";
