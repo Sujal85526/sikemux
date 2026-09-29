@@ -145,5 +145,5 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Launch the built app and open a real editor target
-        run: pnpm test:e2e:desktop
+      - name: Launch the built app, open a real editor target and drive a browser tab
+        run: pnpm test:e2e:desktop --browser

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn, spawnSync } from "node:child_process";
+import { createServer } from "node:http";
 import {
   mkdtemp,
   mkdir,
@@ -38,6 +39,39 @@ const cliExecutable = resolve(
 );
 
 const exerciseHarnessTasks = process.argv.includes("--tasks");
+const exerciseBrowser = process.argv.includes("--browser");
+
+const BROWSER_AGENT_ID = "e2e-browser";
+const FIXTURE_TITLE = "Sikemux browser smoke";
+const FIXTURE_PAGE = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>${FIXTURE_TITLE}</title>
+  </head>
+  <body>
+    <h1>Browser smoke</h1>
+    <button id="count" type="button">Count</button>
+    <p id="clicks">clicks: 0</p>
+    <button id="reveal" type="button">Reveal the secret</button>
+    <p id="secret" hidden>Revealed</p>
+    <label>Name <input id="name" type="text" /></label>
+    <p id="echo"></p>
+    <script>
+      let clicks = 0;
+      document.getElementById("count").addEventListener("click", () => {
+        document.getElementById("clicks").textContent = "clicks: " + ++clicks;
+      });
+      document.getElementById("reveal").addEventListener("click", () => {
+        document.getElementById("secret").hidden = false;
+      });
+      document.getElementById("name").addEventListener("input", (event) => {
+        document.getElementById("echo").textContent = event.target.value;
+      });
+    </script>
+  </body>
+</html>
+`;
 
 const READY_TIMEOUT_MS = 20_000;
 const OPEN_TIMEOUT_MS = 70_000;
@@ -118,6 +152,127 @@ async function stopExactChild(child) {
     child.kill("SIGKILL");
     await new Promise((resolveExit) => child.once("exit", resolveExit));
   }
+}
+
+function serveFixture() {
+  const server = createServer((request, response) => {
+    response.setHeader("Content-Type", "text/html; charset=utf-8");
+    response.end(FIXTURE_PAGE);
+  });
+  return new Promise((resolveServer, rejectServer) => {
+    server.once("error", rejectServer);
+    server.listen(0, "127.0.0.1", () => resolveServer(server));
+  });
+}
+
+function numberOf(elements, label) {
+  const line = elements
+    .split("\n")
+    .find((candidate) => candidate.endsWith(` ${label}`));
+  const index = Number(/^\[(\d+)\]/u.exec(line ?? "")?.[1]);
+  if (!Number.isInteger(index))
+    fail(`no numbered element "${label}" in:\n${elements}`, desktopLog);
+  return index;
+}
+
+// The fixture server lives in this process, so a CLI call must not block its event loop.
+function runWhileServing(executable, args, env, timeout) {
+  return new Promise((resolveRun) => {
+    const child = spawn(executable, args, { cwd: root, env, timeout });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.on("error", (error) => resolveRun({ error, stdout, stderr }));
+    child.on("close", (status, signal) =>
+      resolveRun({ status, signal, stdout, stderr }),
+    );
+  });
+}
+
+// Each step is its own CLI process, so element numbers must survive between calls.
+async function exerciseBrowserTools(harnessEnv) {
+  const env = { ...harnessEnv, SIKEMUX_AGENT_ID: BROWSER_AGENT_ID };
+  const tool = async (method, params = {}) => {
+    const result = await runWhileServing(
+      cliExecutable,
+      ["tool", method, JSON.stringify(params)],
+      env,
+      70_000,
+    );
+    if (result.error) fail(`${method}: ${result.error.message}`, desktopLog);
+    if (result.status !== 0) fail(`${method}: ${result.stderr}`, desktopLog);
+    return JSON.parse(result.stdout);
+  };
+  const evaluate = async (script) =>
+    (await tool("browser.evaluate", { script })).result;
+
+  const server = await serveFixture();
+  try {
+    const url = `http://127.0.0.1:${server.address().port}/`;
+    const opened = await tool("browser.navigate", { url });
+    if (opened.url !== url || opened.title !== FIXTURE_TITLE)
+      fail(`navigate landed on ${opened.url} "${opened.title}"`, desktopLog);
+
+    const { elements } = await tool("browser.state");
+    const counted = await tool("browser.click", {
+      index: numberOf(elements, "Count"),
+    });
+    if (counted.label !== "Count")
+      fail(`click by index hit "${counted.label}"`, desktopLog);
+    const clicks = await evaluate(
+      "document.getElementById('clicks').textContent",
+    );
+    if (clicks !== "clicks: 1")
+      fail(`click by index did not reach the page: ${clicks}`, desktopLog);
+
+    const found = await tool("browser.find", { query: "Reveal the secret" });
+    const reveal = numberOf(found.elements, "Reveal the secret");
+    await tool("browser.click", { text: "Reveal the secret" });
+    if ((await evaluate("document.getElementById('secret').hidden")) !== false)
+      fail("click by text did not reach the page", desktopLog);
+    const again = await tool("browser.click", {
+      index: reveal,
+      expectLabel: "Reveal the secret",
+    });
+    if (again.label !== "Reveal the secret")
+      fail(`click by a found number hit "${again.label}"`, desktopLog);
+
+    const typed = await tool("browser.type", {
+      index: numberOf(elements, "Name"),
+      text: "Ada Lovelace",
+    });
+    if (typed.value !== "Ada Lovelace")
+      fail(`type returned ${JSON.stringify(typed.value)}`, desktopLog);
+    const echoed = await evaluate(
+      "document.getElementById('echo').textContent",
+    );
+    if (echoed !== "Ada Lovelace")
+      fail(`typing did not fire input events: ${echoed}`, desktopLog);
+
+    const shot = await tool("browser.screenshot");
+    const image = Buffer.from(shot.data ?? "", "base64");
+    if (
+      shot.mimeType !== "image/jpeg" ||
+      image.length < 1024 ||
+      image[0] !== 0xff ||
+      image[1] !== 0xd8
+    )
+      fail(`screenshot is not a JPEG (${image.length} bytes)`, desktopLog);
+
+    const title = await evaluate("document.title");
+    if (title !== FIXTURE_TITLE) fail(`evaluate returned ${title}`, desktopLog);
+  } finally {
+    server.close();
+    server.closeAllConnections();
+  }
+  console.log(
+    "✓ Browser harness E2E passed: navigate, state, click by number across calls, find, click by text, type, screenshot, evaluate",
+  );
 }
 
 await executableExists(appExecutable, "debug desktop executable");
@@ -405,6 +560,8 @@ try {
       "Harness task E2E passed: trust, launch, deduplication, output cursor, terminal reveal, stop, retained output, exit code",
     );
   }
+
+  if (exerciseBrowser) await exerciseBrowserTools(harnessEnv);
 
   const afterOpen = run(cliExecutable, ["status"], isolatedEnvironment, 2_000);
   if (afterOpen.status !== 0) {
