@@ -129,6 +129,10 @@ async fn run(
         }
         "browser.navigate" => {
             let url = text("url").ok_or("url is required")?;
+            let url = match super::local_files::local_target(&url) {
+                Some(path) => manager.local_files.url_for(&path)?,
+                None => url,
+            };
             let wanted = super::normalize_url(&url);
             let current = manager
                 .active_view(agent_id)

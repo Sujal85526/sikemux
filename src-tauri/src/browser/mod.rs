@@ -13,6 +13,7 @@ mod documents;
 mod favicon;
 #[cfg(target_os = "macos")]
 mod input;
+mod local_files;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
@@ -300,6 +301,7 @@ pub struct BrowserManager {
     dialogs: Mutex<HashMap<String, PageDialog>>,
     uploads: Mutex<HashMap<String, Vec<PathBuf>>>,
     documents: Mutex<HashMap<String, documents::DocumentLog>>,
+    local_files: local_files::LocalFiles,
     #[cfg(target_os = "macos")]
     recordings: Mutex<HashMap<String, recording::Session>>,
 }
@@ -1131,7 +1133,9 @@ fn validate_url(url: &str) -> AppResult<()> {
     let parsed = Url::parse(url).map_err(|_| AppError::BadArg("invalid browser url"))?;
     let opens = matches!(parsed.scheme(), "http" | "https") || parsed.as_str() == BLANK_URL;
     if !opens {
-        return Err(AppError::BadArg("browser url scheme is not allowed"));
+        return Err(AppError::BadArg(
+            "browser url scheme is not allowed; to show a local file, pass its path or file:// url to browser_navigate",
+        ));
     }
     Ok(())
 }

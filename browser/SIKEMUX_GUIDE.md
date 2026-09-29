@@ -345,6 +345,16 @@ again. When the load failed, as when nothing listens on that port, the result
 says so in `loadError`, and a page that loaded without any text or controls
 yet comes with a note to wait for it.
 
+Tabs only open `http` and `https` pages. To show a local HTML file, image or
+folder, pass its absolute path, a `~/` path or a `file://` url to
+`browser_navigate`: Sikemux serves its folder to the tab from a private
+address on this machine, so relative links and assets load too.
+
+To see Sikemux's own interface in a tab, as when checking a change to it,
+run `pnpm showcase:serve` in the Sikemux repository and navigate to
+`http://localhost:1471/showcase/`. It is the real frontend with hot reload
+over demo data.
+
 `browser_screenshot` returns an image of the visible part of the tab. Use it
 when layout or rendering matters; use `browser_extract` when you only need
 text. Its pixels are CSS pixels, so a point you read off it can go straight to
