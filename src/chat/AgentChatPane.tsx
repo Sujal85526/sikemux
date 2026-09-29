@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { acpApi, type AcpEvent } from "../api/acp";
+import { acpApi } from "../api/acp";
 import { effortConfig, sessionConfigs, type SessionConfig } from "./ComposerPickers";
 import { rowMeta } from "./messageMeta";
-import { animate } from "../lib/motion";
 import type { Agent, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
@@ -11,33 +10,22 @@ import { IconArrowDown, IconFile, IconPlug, IconWarning } from "../ui/Icons";
 import { chatReducer, initialChatState } from "./reducer";
 import { PathRootsProvider } from "./FileRef";
 import { ChatWelcome } from "./ChatWelcome";
-import { guessClaudeWindow } from "./contextWindow";
-import { agentApi } from "../api/agents";
 import { FoldMemoryContext, newFoldMemory } from "./longText";
 import { sentPrompts } from "./promptHistory";
-import { eventMessage, permissionRequest, recordOf, statusFromEvent } from "./acpEvents";
 import { activeToolLabel } from "./toolLabels";
-import { combineQueued, nextBatch, type QueuedMessage } from "./queuedMessages";
 import { formatDetail, runningSubagents } from "./transcript";
-import {
-    activityText,
-    backendState,
-    composerPlaceholder as placeholderFor,
-    connectingLabel,
-    knownEffort,
-    permissionModeOf,
-    RECONNECT_DELAYS,
-} from "./chatStatus";
+import { activityText, backendState, composerPlaceholder as placeholderFor, connectingLabel, knownEffort, RECONNECT_DELAYS } from "./chatStatus";
 import { ChatAgentContext } from "./chatAgent";
 import { ChatMessageRow } from "./ChatMessageRow";
 import { ChatActivity } from "./ChatActivity";
 import { PermissionRequest } from "./PermissionRequest";
 import { BackgroundTasks, QueuedMessages, RunningSubagents } from "./LiveStack";
 import { ChatComposer } from "./ChatComposer";
-
-const UPDATE_FLUSH_FALLBACK_MS = 250;
-// How far above the last line still counts as reading the latest message.
-const BOTTOM_SLACK = 72;
+import { useMessageArrival } from "./useMessageArrival";
+import { useAcpSession } from "./useAcpSession";
+import { useSavedUsage } from "./useSavedUsage";
+import { usePromptQueue } from "./usePromptQueue";
+import { BOTTOM_SLACK, useStickToBottom } from "./useStickToBottom";
 
 export function AgentChatPane({
     agent,
@@ -60,73 +48,22 @@ export function AgentChatPane({
     const displayStateRef = useRef(state);
     if (visible) displayStateRef.current = state;
     const displayState = displayStateRef.current;
-    const [queued, setQueued] = useState<QueuedMessage[]>([]);
-    const sentHistory = useMemo(
-        () =>
-            sentPrompts(
-                state.messages,
-                queued.map((message) => message.text),
-            ),
-        [state.messages, queued],
-    );
-    const queuedCount = useRef(0);
     const [composerError, setComposerError] = useState<string | null>(null);
     const [replyingPermission, setReplyingPermission] = useState<string | null>(null);
     const [stoppingTasks, setStoppingTasks] = useState<string[]>([]);
-    const [atBottom, setAtBottom] = useState(true);
-    const [restartKey, setRestartKey] = useState(0);
-    const [reconnectAttempt, setReconnectAttempt] = useState(0);
     const paneRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const scrollContentRef = useRef<HTMLDivElement>(null);
-    const stickToBottomRef = useRef(true);
-    const lastScrollTopRef = useRef(0);
-    const lastGestureRef = useRef(0);
-    const queuedUpdatesRef = useRef<[string, Record<string, unknown>][]>([]);
-    const updateFrameRef = useRef<number | null>(null);
-    const updateTimerRef = useRef<number | null>(null);
-    const agentRef = useRef(agent);
-    agentRef.current = agent;
     const agentLockedRef = useRef(false);
     if (state.messages.length > 0) agentLockedRef.current = true;
-    const sessionIdRef = useRef<string | null>(null);
-    const lifecycleRef = useRef<Promise<unknown>>(Promise.resolve());
     const [changingConfig, setChangingConfig] = useState(false);
     const configPending = useRef(false);
-    const [changingPermissions, setChangingPermissions] = useState(false);
-    const [appliedPermissionMode, setAppliedPermissionMode] = useState<string | null>(null);
-    const environmentKeys = JSON.stringify(profile?.environmentKeys ?? []);
-    const permissionMode = permissionModeOf(agent);
+
+    useMessageArrival(scrollRef, displayState.messages);
 
     /* A restored transcript opens on estimated row heights, and every row that
        measures taller or shorter than the estimate moves the bottom. Anchoring
        to the end makes the list hold the bottom still while that settles. */
-    /* A message that has just arrived rises into place. Only new ones: a row
-       the list remounts on scroll, or a transcript restored all at once, just shows. */
-    const shownMessages = useRef<Set<string> | null>(null);
-    useLayoutEffect(() => {
-        const ids = displayState.messages.map((message) => message.id);
-        const shown = shownMessages.current;
-        if (!shown) {
-            shownMessages.current = new Set(ids);
-            return;
-        }
-        const fresh = ids.filter((id) => !shown.has(id));
-        for (const id of fresh) shown.add(id);
-        if (fresh.length === 0 || fresh.length > 2) return;
-        for (const id of fresh) {
-            const row = scrollRef.current?.querySelector<HTMLElement>(`.chat-virtual-row[data-index="${ids.indexOf(id)}"] > *`);
-            animate(
-                row,
-                [
-                    { opacity: 0, transform: "translateY(10px) scale(0.985)" },
-                    { opacity: 1, transform: "none" },
-                ],
-                { duration: 200 },
-            );
-        }
-    }, [displayState.messages]);
-
     const virtualizer = useVirtualizer({
         count: displayState.messages.length,
         getScrollElement: () => scrollRef.current,
@@ -160,313 +97,65 @@ export function AgentChatPane({
 
     useEffect(() => onBusyChange(state.running), [onBusyChange, state.running]);
 
-    useEffect(() => setQueued([]), [agent.id, cwd]);
-
-    /* A session drops when its adapter exits — a rate limit, a crash, a laptop
-       waking up. It resumes itself so the conversation is there to carry on
-       with, and only asks once the waits have run out. */
-    useEffect(() => {
-        if (state.connection === "ready") setReconnectAttempt(0);
-    }, [state.connection]);
-
-    useEffect(() => {
-        const dropped = state.connection === "error" || state.connection === "stopped";
-        if (!active || !dropped || reconnectAttempt >= RECONNECT_DELAYS.length) return;
-        const timer = window.setTimeout(() => {
-            setReconnectAttempt((value) => value + 1);
-            setRestartKey((value) => value + 1);
-        }, RECONNECT_DELAYS[reconnectAttempt]);
-        return () => window.clearTimeout(timer);
-    }, [active, reconnectAttempt, state.connection]);
-
-    const reconnect = useCallback(() => {
-        setReconnectAttempt(0);
-        setRestartKey((value) => value + 1);
-    }, []);
-
-    useEffect(() => {
-        if (!active) return;
-        const controller = new AbortController();
-        let mounted = true;
-        const hold = Boolean(agentRef.current.resumeId);
-        dispatch({ type: "reset", hold });
-        if (!hold) {
-            foldMemory.streamed.clear();
-            foldMemory.expanded.clear();
-        }
-        setAppliedPermissionMode(null);
-        setChangingPermissions(false);
-        sessionIdRef.current = null;
-
-        const flushUpdates = () => {
-            if (updateFrameRef.current !== null) {
-                window.cancelAnimationFrame(updateFrameRef.current);
-                updateFrameRef.current = null;
-            }
-            if (updateTimerRef.current !== null) {
-                window.clearTimeout(updateTimerRef.current);
-                updateTimerRef.current = null;
-            }
-            const updates = queuedUpdatesRef.current.splice(0);
-            for (const [sessionId, update] of updates) dispatch({ type: "session_update", sessionId, update });
-        };
-
-        /* WebKit stops animation frames for a window that is hidden or behind
-           another app, and only the first of those shows in document.hidden.
-           A timer keeps the queue draining either way. */
-        const queueUpdate = (sessionId: string, update: Record<string, unknown>) => {
-            queuedUpdatesRef.current.push([sessionId, update]);
-            if (updateTimerRef.current === null) updateTimerRef.current = window.setTimeout(flushUpdates, UPDATE_FLUSH_FALLBACK_MS);
-            if (!document.hidden && updateFrameRef.current === null) updateFrameRef.current = window.requestAnimationFrame(flushUpdates);
-        };
-
-        const handleEvent = (event: AcpEvent) => {
-            if (!mounted || event.agentId !== agent.id) return;
-            if (event.kind !== "session_update") flushUpdates();
-            if (event.kind === "status") dispatch({ type: "status", state: statusFromEvent(event) });
-            else if (event.kind === "ready") {
-                dispatch({
-                    type: "ready",
-                    capabilities: recordOf(event.payload.capabilities) ?? {},
-                    setup: recordOf(event.payload.setup) ?? {},
-                });
-            } else if (event.kind === "session_update") {
-                const batch = Array.isArray(event.payload.updates) ? event.payload.updates : [];
-                for (const entry of batch) {
-                    const row = recordOf(entry);
-                    if (!row) continue;
-                    const update = recordOf(row.update);
-                    const sessionId = typeof row.sessionId === "string" ? row.sessionId : null;
-                    if (update && sessionId) queueUpdate(sessionId, update);
-                }
-            } else if (event.kind === "turn_started") {
-                if (sessionIdRef.current && agentRef.current.resumeId !== sessionIdRef.current) {
-                    cmd.attachAgentSession(agent.id, sessionIdRef.current);
-                }
-                dispatch({ type: "turn_started" });
-            } else if (event.kind === "turn_completed") {
-                dispatch({
-                    type: "turn_completed",
-                    stopReason: typeof event.payload.stopReason === "string" ? event.payload.stopReason : undefined,
-                });
-            } else if (event.kind === "permission_request") {
-                const request = permissionRequest(event.payload);
-                if (request) dispatch({ type: "permission_requested", request });
-            } else if (event.kind === "error") dispatch({ type: "error", message: eventMessage(event) });
-        };
-
-        const lifecycle = lifecycleRef.current
-            .catch(() => {})
-            .then(async () => {
-                if (!mounted) return;
-                await acpApi.subscribe(handleEvent, controller.signal);
-                if (!mounted) return;
-                const current = agentRef.current;
-                const initialMode = permissionModeOf(current);
-                const response = await acpApi.start({
-                    agentId: current.id,
-                    provider: current.type,
-                    cwd,
-                    resumeId: current.resumeId,
-                    permissionMode: initialMode,
-                    configPath: profile?.configPath,
-                    executablePath: profile?.executablePath || current.executablePath,
-                    model: current.model,
-                    effort: current.effort,
-                    environmentKeys: JSON.parse(environmentKeys) as string[],
-                });
-                if (!mounted) return;
-                sessionIdRef.current = response.sessionId;
-                flushUpdates();
-                dispatch({ type: "ready", capabilities: response.capabilities, setup: response.setup });
-                setAppliedPermissionMode(initialMode);
-            })
-            .catch((error: unknown) => {
-                if (!controller.signal.aborted && mounted) {
-                    dispatch({ type: "error", message: error instanceof Error ? error.message : String(error) });
-                }
-            });
-
-        lifecycleRef.current = lifecycle;
-        return () => {
-            mounted = false;
-            sessionIdRef.current = null;
-            if (updateFrameRef.current !== null) window.cancelAnimationFrame(updateFrameRef.current);
-            updateFrameRef.current = null;
-            if (updateTimerRef.current !== null) window.clearTimeout(updateTimerRef.current);
-            updateTimerRef.current = null;
-            queuedUpdatesRef.current = [];
-            controller.abort();
-            lifecycleRef.current = lifecycle.finally(() => acpApi.stop(agent.id).catch(() => {}));
-        };
-    }, [
+    const { agentRef, sessionIdRef, reconnectAttempt, reconnect, changingPermissions, appliedPermissionMode, permissionMode } = useAcpSession({
         active,
-        agent.id,
-        agent.type,
-        agent.profileId,
-        agent.executablePath,
+        agent,
+        profile,
         cwd,
-        profile?.configPath,
-        profile?.executablePath,
-        environmentKeys,
-        restartKey,
+        connection: state.connection,
         foldMemory,
-    ]);
+        dispatch,
+        onError: setComposerError,
+    });
 
-    useEffect(() => {
-        const sessionId = sessionIdRef.current;
-        if (
-            sessionId === null ||
-            state.connection !== "ready" ||
-            changingPermissions ||
-            appliedPermissionMode === null ||
-            permissionMode === appliedPermissionMode
-        )
-            return;
-        setChangingPermissions(true);
-        void acpApi
-            .setPermissionMode(agent.id, permissionMode)
-            .then(() => {
-                if (sessionIdRef.current === sessionId) setAppliedPermissionMode(permissionMode);
-            })
-            .catch((error: unknown) => {
-                if (sessionIdRef.current !== sessionId) return;
-                if (permissionModeOf(agentRef.current) === permissionMode)
-                    cmd.setAgentPermissionMode(agent.id, appliedPermissionMode as NonNullable<Agent["permissionMode"]>);
-                setComposerError(error instanceof Error ? error.message : String(error));
-            })
-            .finally(() => {
-                if (sessionIdRef.current === sessionId) setChangingPermissions(false);
-            });
-    }, [agent.id, state.connection, permissionMode, appliedPermissionMode, changingPermissions]);
-
-    const setupRef = useRef(state.setup);
-    setupRef.current = state.setup;
-    const reported = state.usage !== null;
-    useEffect(() => {
-        const { resumeId, type } = agentRef.current;
-        if (state.connection !== "ready" || reported || !resumeId || (type !== "claude" && type !== "codex")) return;
-        let current = true;
-        void agentApi
-            .sessionContext(type, cwd, resumeId, profile?.configPath)
-            .then((saved) => {
-                if (!current || !saved) return;
-                const size = saved.size ?? guessClaudeWindow(setupRef.current, agentRef.current.model);
-                dispatch({ type: "saved_usage", usage: { used: saved.used, size } });
-            })
-            .catch(() => {});
-        return () => {
-            current = false;
-        };
-    }, [agent.id, agent.resumeId, cwd, profile?.configPath, state.connection, reported]);
+    useSavedUsage({
+        agentRef,
+        agentId: agent.id,
+        agentResumeId: agent.resumeId,
+        cwd,
+        configPath: profile?.configPath,
+        connection: state.connection,
+        reported: state.usage !== null,
+        setup: state.setup,
+        dispatch,
+    });
 
     useEffect(() => {
         if (state.title && state.title !== agent.title) cmd.setAgentTitle(agent.id, state.title);
     }, [agent.id, agent.title, state.title]);
 
-    const promptNow = useCallback(async (text: string, paths: string[]) => {
-        dispatch({ type: "local_prompt", text, paths });
-        cmd.titleAgentFromPrompt(agentRef.current.id, text);
-        try {
-            await acpApi.prompt(agentRef.current.id, text, paths);
-        } catch (error) {
-            dispatch({ type: "error", message: error instanceof Error ? error.message : String(error) });
-        }
-    }, []);
-
-    /* Messages written mid-turn wait, then go out together as one prompt once
-       the running turn ends, so nothing in flight is cut short. */
-    useEffect(() => {
-        if (state.connection !== "ready" || state.running || queued.length === 0) return;
-        const batch = nextBatch(queued);
-        const sent = new Set(batch.map((message) => message.id));
-        setQueued((current) => current.filter((message) => !sent.has(message.id)));
-        const next = combineQueued(batch);
-        void promptNow(next.text, next.paths);
-    }, [promptNow, queued, state.connection, state.running]);
-
-    /* The scroller's own bottom, not the last message's — a permission card or
-       an error sits below the list and still has to be reachable. Idempotent,
-       so the observer below can call it until the heights stop moving. */
-    const pinToBottom = useCallback(() => {
-        const element = scrollRef.current;
-        if (!element) return;
-        const target = element.scrollHeight - element.clientHeight;
-        if (Math.abs(element.scrollTop - target) < 1) return;
-        element.scrollTop = target;
-        lastScrollTopRef.current = element.scrollTop;
-    }, []);
-
-    const noteGesture = useCallback(() => {
-        lastGestureRef.current = performance.now();
-    }, []);
-
-    /*
-     * A restored session opens on estimated row heights. Landing at the
-     * estimated bottom mounts the real rows, they measure taller, and the
-     * bottom moves again — so one scroll after the messages arrive stops
-     * short. Watching the content's height instead re-pins through every
-     * settling pass, and through markdown and highlighting that arrive late.
-     */
-    useLayoutEffect(() => {
-        const content = scrollContentRef.current;
-        if (!content || typeof ResizeObserver === "undefined") return;
-        const observer = new ResizeObserver(() => {
-            if (stickToBottomRef.current) pinToBottom();
-        });
-        observer.observe(content);
-        return () => observer.disconnect();
-    }, [pinToBottom]);
-
-    useLayoutEffect(() => {
-        if (!visible || !stickToBottomRef.current || displayState.messages.length === 0) return;
-        pinToBottom();
-    }, [displayState.messages.length, displayState.revision, pinToBottom, visible]);
-
     const steerable = state.capabilities.steering === true;
+
+    const { queued, send, steer, drop } = usePromptQueue({
+        agentRef,
+        agentId: agent.id,
+        cwd,
+        connection: state.connection,
+        running: state.running,
+        commands: state.commands,
+        steerable,
+        dispatch,
+        onError: setComposerError,
+    });
+    const sentHistory = useMemo(
+        () =>
+            sentPrompts(
+                state.messages,
+                queued.map((message) => message.text),
+            ),
+        [state.messages, queued],
+    );
+
+    const { atBottom, noteGesture, onScroll, jumpToBottom } = useStickToBottom({
+        scrollRef,
+        contentRef: scrollContentRef,
+        visible,
+        messageCount: displayState.messages.length,
+        revision: displayState.revision,
+    });
 
     const stop = () => {
         void acpApi.cancel(agent.id).catch((failure: unknown) => setComposerError(failure instanceof Error ? failure.message : String(failure)));
-    };
-
-    /* Steering stops whatever the agent has in flight so it reads this message
-       now, so a message only goes this way when it is asked to. */
-    const steer = async (messages: QueuedMessage[]) => {
-        const steered = new Set(messages.map((message) => message.id));
-        setQueued((current) => current.filter((candidate) => !steered.has(candidate.id)));
-        const message = combineQueued(messages);
-        dispatch({ type: "local_prompt", text: message.text, paths: message.paths });
-        try {
-            if ((await acpApi.steer(agent.id, message.text, message.paths)) !== "promptRequired") return;
-            await acpApi.prompt(agent.id, message.text, message.paths);
-        } catch (error) {
-            dispatch({ type: "error", message: error instanceof Error ? error.message : String(error) });
-        }
-    };
-
-    /** Says whether the composer may clear what it just handed over. */
-    const send = (text: string, paths: string[], steerNow: boolean): boolean => {
-        const commandName = text.match(/^\/([^\s]+)/)?.[1];
-        if (commandName && state.commands.length > 0 && !state.commands.some((command) => command.name === commandName)) {
-            setComposerError(`/${commandName} is not available in this session`);
-            return false;
-        }
-        setComposerError(null);
-        if (state.connection === "ready" && !state.running) {
-            void promptNow(text, paths);
-            return true;
-        }
-
-        /* Written mid-turn, or while the session is still coming up: it waits
-           in the queue and goes out with the rest of it once the session is free. */
-        queuedCount.current += 1;
-        const message: QueuedMessage = { id: `queued-${queuedCount.current}`, text, paths };
-        if (steerNow && steerable && state.running) {
-            void steer([...queued, message]);
-            return true;
-        }
-        setQueued((current) => [...current, message]);
-        return true;
     };
 
     const stopTask = async (taskId: string) => {
@@ -542,23 +231,7 @@ export function AgentChatPane({
                         onTouchMove={noteGesture}
                         onMouseDown={noteGesture}
                         onKeyDown={noteGesture}
-                        onScroll={(event) => {
-                            const element = event.currentTarget;
-                            const previous = lastScrollTopRef.current;
-                            lastScrollTopRef.current = element.scrollTop;
-                            const distance = element.scrollHeight - element.scrollTop - element.clientHeight;
-                            // The transcript also scrolls itself, to hold the bottom
-                            // still while rows settle into their real heights. Only a
-                            // scroll up that a wheel, key or drag just asked for means
-                            // the reader walked away; sitting at the bottom means stuck.
-                            const gesture = lastGestureRef.current;
-                            lastGestureRef.current = 0;
-                            const walkedAway = element.scrollTop < previous - 1 && performance.now() - gesture < 150;
-                            const next = walkedAway ? false : distance < BOTTOM_SLACK ? true : stickToBottomRef.current;
-                            if (next === stickToBottomRef.current) return;
-                            stickToBottomRef.current = next;
-                            setAtBottom(next);
-                        }}>
+                        onScroll={onScroll}>
                         <div className="chat-scroll-content" ref={scrollContentRef}>
                             {welcoming && <ChatWelcome cwd={cwd} agentType={agent.type} />}
                             {displayState.messages.length === 0 && !welcoming && (
@@ -650,15 +323,7 @@ export function AgentChatPane({
 
                     <div className="chat-composer-wrap">
                         {!atBottom && displayState.messages.length > 0 && (
-                            <button
-                                type="button"
-                                className="chat-jump-bottom"
-                                aria-label="Jump to latest message"
-                                onClick={() => {
-                                    stickToBottomRef.current = true;
-                                    setAtBottom(true);
-                                    pinToBottom();
-                                }}>
+                            <button type="button" className="chat-jump-bottom" aria-label="Jump to latest message" onClick={jumpToBottom}>
                                 <IconArrowDown size={14} />
                             </button>
                         )}
@@ -670,7 +335,7 @@ export function AgentChatPane({
                                     messages={queued}
                                     steerable={steerable && state.running}
                                     onSteer={(messages) => void steer(messages)}
-                                    onDrop={(id) => setQueued((current) => current.filter((message) => message.id !== id))}
+                                    onDrop={drop}
                                 />
                             </div>
                         )}
