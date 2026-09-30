@@ -81,6 +81,21 @@ describe("new tab palette", () => {
         expect(getState().agentPaletteOpen).toBe(true);
     });
 
+    it("selects the row under a moving mouse, not under a resting one", () => {
+        render(<NewTabPalette />);
+        const git = screen.getByRole("button", { name: /Git/ });
+
+        fireEvent.mouseEnter(git);
+        expect(git).not.toHaveClass("sel");
+
+        fireEvent.mouseMove(window);
+        fireEvent.mouseEnter(git);
+        expect(git).toHaveClass("sel");
+        pressKey("Enter");
+
+        expect(windowRoles()).toContain("git");
+    });
+
     it("keeps the browser in its fixed slot when unavailable", () => {
         render(<NewTabPalette />);
 

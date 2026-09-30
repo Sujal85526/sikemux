@@ -3,6 +3,7 @@ import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { agentIdsOf } from "../state/selectors";
 import { useModalFocus } from "../hooks/useModalFocus";
+import { useMouseActive } from "../hooks/useMouseActive";
 import { IconAgent, IconCommand, IconCommit, IconEditor, IconGlobe, IconSearch } from "../ui/Icons";
 import { leavingOverlay } from "../lib/motion";
 
@@ -26,6 +27,7 @@ export function NewTabPalette() {
     const selectedRef = useRef(0);
     const modalRef = useRef<HTMLDivElement>(null);
     useModalFocus(modalRef);
+    const mouseActive = useMouseActive();
     const choices: TabChoice[] = [
         {
             id: "terminal",
@@ -139,6 +141,11 @@ export function NewTabPalette() {
                             disabled={choice.disabled}
                             className={`picker-item new-tab-item${selected === index ? " sel" : ""}`}
                             onFocus={() => {
+                                selectedRef.current = index;
+                                setSelected(index);
+                            }}
+                            onMouseEnter={() => {
+                                if (!mouseActive.current || choice.disabled) return;
                                 selectedRef.current = index;
                                 setSelected(index);
                             }}
