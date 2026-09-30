@@ -29,6 +29,34 @@ export interface AgentSession {
     mtime: number; // unix seconds
 }
 
+/** Where the last page of saved chats ended; handed back to fetch the next one. */
+export interface RecentCursor {
+    atMs: number;
+    agent: string;
+    key: string;
+}
+
+export interface RecentChatsRequest {
+    providers: { agent: AgentType; configPath?: string | null }[];
+    projects: string[];
+    limit: number;
+    cursor?: RecentCursor | null;
+    query?: string;
+    /** Chats already open as agents, left out so a page stays full. */
+    exclude: { agent: AgentType; id: string }[];
+}
+
+export interface RecentChat extends AgentSession {
+    agent: AgentType;
+    /** The project folder the chat ran in. */
+    project: string;
+}
+
+export interface RecentChatsPage {
+    sessions: RecentChat[];
+    next: RecentCursor | null;
+}
+
 export interface AgentUsageWindow {
     label: string;
     usedPercent: number;
@@ -109,6 +137,7 @@ export const agentApi = {
     usage: (agent: AgentType, executablePath?: string, configPath?: string): Promise<AgentUsage> =>
         invoke<AgentUsage>("agent_usage", { agent, executablePath, configPath }),
     sessions: fetchSessions,
+    recent: (request: RecentChatsRequest): Promise<RecentChatsPage> => invoke<RecentChatsPage>("agent_recent_sessions", { request }),
     sessionContext: (agent: AgentType, cwd: string, sessionId: string, configPath?: string): Promise<SavedSessionContext | null> =>
         invoke<SavedSessionContext | null>("agent_session_context", { agent, cwd, sessionId, configPath }),
     renameSession: (agent: AgentType, cwd: string, sessionId: string, title: string, executablePath?: string, configPath?: string): Promise<void> =>

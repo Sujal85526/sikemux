@@ -32,6 +32,7 @@ import type {
     ProviderProfileSelection,
     RecentEntry,
     RailDensity,
+    AgentRailScope,
     DiffTarget,
     Session,
     SessionSwitcherView,
@@ -81,6 +82,9 @@ export interface DomainState {
     voiceDictation: boolean;
     notificationsIntroduced: boolean;
     railDensity: RailDensity;
+    /** The agent rail shows every CLI's chats instead of one provider's. */
+    agentRailAllAgents: boolean;
+    agentRailScope: AgentRailScope;
     onboardingComplete: boolean;
     lastSeenVersion: string;
     customCommands: CustomCommand[];
@@ -240,6 +244,8 @@ export const useStore = create<StoreState>(() => {
         voiceDictation: false,
         notificationsIntroduced: false,
         railDensity: "comfortable",
+        agentRailAllAgents: false,
+        agentRailScope: "project",
         onboardingComplete: false,
         lastSeenVersion: "",
         customCommands: [],

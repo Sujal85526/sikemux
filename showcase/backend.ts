@@ -24,7 +24,7 @@ import {
   brunoDir,
 } from "./world/bruno";
 import { BROWSER_TABS, placeBrowserPage } from "./browserPage";
-import { DEMO_HOME, DEMO_PROJECTS } from "./world/projects";
+import { DEMO_HOME, DEMO_PROJECTS, SIKEMUX } from "./world/projects";
 import { terminalReplay } from "./world/terminals";
 import { demoSnapshot } from "./world/workspace";
 
@@ -39,6 +39,46 @@ async function server<T>(endpoint: string, input: unknown): Promise<T> {
   const value = await response.json();
   if (!response.ok) throw new Error(value.error);
   return value as T;
+}
+
+interface RecentRequest {
+  providers: { agent: string }[];
+  projects: string[];
+  limit: number;
+  cursor?: { key: string } | null;
+  query?: string;
+  exclude: { agent: string; id: string }[];
+}
+
+// The demo's saved chats all belong to the sikemux project.
+function recentPage(request: RecentRequest) {
+  const rows = request.providers
+    .flatMap(({ agent }) =>
+      (SAVED_SESSIONS[agent] ?? []).map((row) => ({
+        ...row,
+        agent,
+        project: SIKEMUX,
+      })),
+    )
+    .filter((row) => request.projects.includes(row.project))
+    .filter(
+      (row) =>
+        !request.exclude.some(
+          (open) => open.agent === row.agent && open.id === row.id,
+        ),
+    )
+    .filter(
+      (row) =>
+        !request.query || row.title.toLowerCase().includes(request.query),
+    )
+    .sort((a, b) => b.mtime - a.mtime);
+  const start = request.cursor ? Number(request.cursor.key) : 0;
+  const sessions = rows.slice(start, start + request.limit);
+  const end = start + sessions.length;
+  return {
+    sessions,
+    next: end < rows.length ? { atMs: 0, agent: "", key: String(end) } : null,
+  };
 }
 
 export class ShowcaseBackend implements IpcTransport {
@@ -291,6 +331,9 @@ export class ShowcaseBackend implements IpcTransport {
     this.on(
       "agent_sessions",
       ({ agent }) => SAVED_SESSIONS[agent as string] ?? [],
+    );
+    this.on("agent_recent_sessions", ({ request }) =>
+      recentPage(request as RecentRequest),
     );
     this.on(
       "agent_usage",

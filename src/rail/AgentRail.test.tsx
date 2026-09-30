@@ -4,14 +4,45 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
     available: vi.fn(),
-    sessions: vi.fn(),
+    saved: vi.fn(),
+    recent: vi.fn(),
     usage: vi.fn(),
     renameSession: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock("../api/agents", () => ({
-    agentApi: { available: mocks.available, sessions: mocks.sessions, usage: mocks.usage, renameSession: mocks.renameSession },
+    agentApi: { available: mocks.available, recent: mocks.recent, usage: mocks.usage, renameSession: mocks.renameSession },
 }));
+
+interface Saved {
+    id: string;
+    title: string;
+    mtime: number;
+    project?: string;
+    agent?: string;
+}
+
+/* Pages the saved chats the way the backend does: every requested provider
+   and project, newest first, a cursor carrying on from the last row. */
+function fakeRecent(request: RecentChatsRequest): Promise<RecentChatsPage> {
+    const rows = request.providers
+        .flatMap((provider) =>
+            (mocks.saved() as Saved[])
+                .filter((row) => !row.agent || row.agent === provider.agent)
+                .map((row) => ({ agent: provider.agent, id: row.id, title: row.title, mtime: row.mtime, project: row.project ?? "/code/sikemux" })),
+        )
+        .filter((row) => request.projects.includes(row.project))
+        .filter((row) => !request.exclude.some((open) => open.agent === row.agent && open.id === row.id))
+        .filter((row) => !request.query || row.title.toLowerCase().includes(request.query))
+        .sort((a, b) => b.mtime - a.mtime);
+    const start = request.cursor ? Number(request.cursor.key) : 0;
+    const page = rows.slice(start, start + request.limit);
+    const end = start + page.length;
+    return Promise.resolve({
+        sessions: page,
+        next: page.length === request.limit && end < rows.length ? { atMs: 0, agent: "", key: String(end) } : null,
+    });
+}
 
 // jsdom has no ResizeObserver; the rail uses one to keep filling its list.
 vi.stubGlobal(
@@ -22,6 +53,7 @@ vi.stubGlobal(
     },
 );
 
+import type { RecentChatsPage, RecentChatsRequest } from "../api/agents";
 import { invalidate } from "../state/resources";
 import { getState, setState } from "../state/store";
 import { AgentRailBody } from "./AgentRail";
@@ -54,10 +86,11 @@ beforeEach(() => {
         agents: {},
     });
     mocks.available.mockResolvedValue([{ type: "codex", label: "Codex", command: "codex", defaultModel: "gpt-5.6-sol", defaultEffort: "high" }]);
-    mocks.sessions.mockResolvedValue([
+    mocks.saved.mockReturnValue([
         { id: "older", title: "Fix terminal focus", mtime: 100 },
         { id: "newer", title: "Build launch page", mtime: 200 },
     ]);
+    mocks.recent.mockImplementation(fakeRecent);
     mocks.usage.mockResolvedValue({
         provider: "codex",
         plan: "pro",
@@ -229,5 +262,98 @@ describe("agent rail", () => {
 
         await user.click(screen.getByRole("menuitem", { name: "Open" }));
         await waitFor(() => expect(agentIdsOf(getState(), "sess-project")).toHaveLength(1));
+    });
+
+    it("lists every provider's chats from the all agents tab and starts a chat through the picker", async () => {
+        mocks.available.mockResolvedValue([
+            { type: "codex", label: "Codex", command: "codex", defaultModel: null, defaultEffort: null },
+            { type: "claude", label: "Claude", command: "claude", defaultModel: null, defaultEffort: null },
+        ]);
+        mocks.saved.mockReturnValue([
+            { id: "c1", title: "Codex chat", mtime: 100, agent: "codex" },
+            { id: "k1", title: "Claude chat", mtime: 200, agent: "claude" },
+        ]);
+        invalidate((kind) => kind === "agents.catalog");
+        const user = userEvent.setup();
+        render(<AgentRailBody />);
+
+        expect(await screen.findByRole("button", { name: /Codex chat/ })).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: /Claude chat/ })).not.toBeInTheDocument();
+
+        await user.click(screen.getByRole("tab", { name: "All agents" }));
+        expect(await screen.findByRole("button", { name: /Claude chat/ })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: /Codex chat/ })).toBeInTheDocument();
+        expect(getState().agentRailAllAgents).toBe(true);
+        expect(screen.queryByRole("region", { name: /plan limits/i })).not.toBeInTheDocument();
+
+        await user.click(screen.getByRole("tab", { name: "Claude" }));
+        expect(getState().agentRailAllAgents).toBe(false);
+        await waitFor(() => expect(screen.queryByRole("button", { name: /Codex chat/ })).not.toBeInTheDocument());
+    });
+
+    it("shows every project's open agents by what they need, and their chats, under all projects", async () => {
+        setState((state) => ({
+            sessions: {
+                ...state.sessions,
+                "sess-other": {
+                    id: "sess-other",
+                    name: "website",
+                    kind: "project" as const,
+                    cwd: "/code/website",
+                    pinned: false,
+                    activeWindowId: "win-other",
+                },
+            },
+            sessionOrder: ["sess-project", "sess-other"],
+        }));
+        setState((state) =>
+            withAgents(state, "sess-other", [
+                { id: "agent-away", type: "codex", title: "Pricing copy", startup: "codex", cwd: "/code/website", launchState: "live" },
+            ]),
+        );
+        setState((state) => ({
+            agentActivity: {
+                ...state.agentActivity,
+                "agent-away": {
+                    state: "blocked",
+                    backendState: "blocked",
+                    unread: false,
+                    updatedAt: 0,
+                    sequence: 1,
+                    source: "acp",
+                    confidence: "high",
+                    reason: "",
+                },
+            },
+        }));
+        mocks.saved.mockReturnValue([
+            { id: "here", title: "Fix terminal focus", mtime: 100 },
+            { id: "there", title: "Hero image", mtime: 300, project: "/code/website" },
+        ]);
+        const user = userEvent.setup();
+        render(<AgentRailBody />);
+
+        expect(await screen.findByRole("button", { name: /Fix terminal focus/ })).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: /Hero image/ })).not.toBeInTheDocument();
+
+        await user.click(screen.getByRole("tab", { name: "All projects, 1 waiting" }));
+        expect(await screen.findByRole("button", { name: /Hero image/ })).toBeInTheDocument();
+        expect(screen.getByText("Needs you 1")).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "New chat" })).not.toBeInTheDocument();
+
+        await user.click(screen.getByRole("button", { name: /Hero image/ }));
+        await waitFor(() => expect(getState().activeSessionId).toBe("sess-other"));
+        expect(agentIdsOf(getState(), "sess-other").map((id) => getState().agents[id].resumeId)).toContain("there");
+    });
+
+    it("asks for the next page as the list scrolls to its end", async () => {
+        mocks.saved.mockReturnValue(Array.from({ length: 30 }, (_, index) => ({ id: `s${index}`, title: `Chat ${index}`, mtime: 1000 - index })));
+        render(<AgentRailBody />);
+
+        expect(await screen.findByText("Chat 0")).toBeInTheDocument();
+        await waitFor(() => expect(mocks.recent.mock.calls.length).toBeGreaterThan(1));
+        const cursors = mocks.recent.mock.calls.map((call) => (call[0] as RecentChatsRequest).cursor?.key ?? null);
+        expect(cursors.slice(0, 3)).toEqual([null, "12", "24"]);
+        expect(await screen.findByText("Chat 29")).toBeInTheDocument();
     });
 });

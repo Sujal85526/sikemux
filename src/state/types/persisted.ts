@@ -10,6 +10,7 @@ import type {
     ProviderProfile,
     ProviderProfileSelection,
     RailDensity,
+    AgentRailScope,
     RecentEntry,
     Session,
     Window,
@@ -83,6 +84,8 @@ export interface PersistedPrefs {
     notificationsIntroduced?: boolean;
     autoResumeAgents?: boolean;
     railDensity?: RailDensity;
+    agentRailAllAgents?: boolean;
+    agentRailScope?: AgentRailScope;
     onboardingComplete?: boolean;
     lastSeenVersion?: string;
     customCommands?: CustomCommand[];

@@ -111,6 +111,8 @@ const PERSISTED_KEYS = [
     "voiceDictation",
     "notificationsIntroduced",
     "railDensity",
+    "agentRailAllAgents",
+    "agentRailScope",
     "onboardingComplete",
     "lastSeenVersion",
     "customCommands",
@@ -168,6 +170,8 @@ function packPrefs(s: StoreState): PersistedPrefs {
         voiceDictation: s.voiceDictation,
         notificationsIntroduced: s.notificationsIntroduced,
         railDensity: s.railDensity,
+        agentRailAllAgents: s.agentRailAllAgents,
+        agentRailScope: s.agentRailScope,
         onboardingComplete: s.onboardingComplete,
         lastSeenVersion: s.lastSeenVersion,
         customCommands: s.customCommands,
@@ -993,6 +997,8 @@ export function applyHydrate(raw: string): HydrationResult {
         voiceDictation: prefs.voiceDictation === true,
         notificationsIntroduced: prefs.notificationsIntroduced === true,
         railDensity: prefs.railDensity === "compact" || prefs.railDensity === "comfortable" ? prefs.railDensity : cur.railDensity,
+        agentRailAllAgents: prefs.agentRailAllAgents === true,
+        agentRailScope: prefs.agentRailScope === "all" ? "all" : "project",
         onboardingComplete:
             typeof prefs.onboardingComplete === "boolean"
                 ? prefs.onboardingComplete
