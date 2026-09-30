@@ -148,3 +148,6 @@
     white-space: pre;
     user-select: text;
 }
+.ed-viewer-document {
+    padding: 0;
+}

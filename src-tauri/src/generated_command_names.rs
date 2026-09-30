@@ -68,6 +68,8 @@ pub const IPC_COMMANDS: &[&str] = &[
     "read_text_file_limited",
     "open_in_default_app",
     "preview_file",
+    "document_preview_show",
+    "document_preview_hide",
     "write_file",
     "write_file_versioned",
     "write_file_new",

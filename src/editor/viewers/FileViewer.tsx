@@ -1,4 +1,5 @@
 import type { FilePreview } from "../../api/fs";
+import { DocumentView } from "./DocumentView";
 import { FontView } from "./FontView";
 import { HexView } from "./HexView";
 import { ImageView } from "./ImageView";
@@ -41,6 +42,7 @@ export default function FileViewer({ viewer, visible, onReload }: { viewer: View
         case "font":
             return <FontView key={url} {...props} />;
         case "document":
+            return <DocumentView key={url} visible={visible} {...props} />;
         case "binary":
             return <HexView key={url} {...props} />;
     }

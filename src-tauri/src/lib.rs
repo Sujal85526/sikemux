@@ -12,6 +12,7 @@ mod cli_install;
 mod cli_protocol;
 mod cli_server;
 mod diff;
+mod document_preview;
 mod error;
 mod external;
 mod file_serving;
@@ -164,6 +165,7 @@ pub fn run() {
             {
                 use tauri::Manager;
                 autopsy::forget_web_content_pid();
+                document_preview::clear(webview.app_handle());
                 if let Some(watchdog) = webview.try_state::<UiWatchdogState>() {
                     watchdog.suspend();
                 }
@@ -292,6 +294,8 @@ pub fn run() {
             fs::read_text_file_limited,
             fs::open_in_default_app,
             preview::preview_file,
+            document_preview::document_preview_show,
+            document_preview::document_preview_hide,
             fs::write_file,
             fs::write_file_versioned,
             fs::write_file_new,

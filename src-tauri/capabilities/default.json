@@ -84,6 +84,8 @@
     "allow-read-text-file-limited",
     "allow-open-in-default-app",
     "allow-preview-file",
+    "allow-document-preview-show",
+    "allow-document-preview-hide",
     "allow-write-file",
     "allow-write-file-versioned",
     "allow-write-file-new",
