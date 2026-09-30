@@ -45,8 +45,9 @@ export function useOccludeNativeViews(active: boolean): void {
     }, [active]);
 }
 
-/* A toast is too small and too brief to send a page away for, so the page
-   leaves a hole where it sits instead. Rects are in the window's CSS pixels. */
+/* A toast or a menu is too small to send a page away for, so the page leaves
+   a hole where it sits instead. Each overlay owns its own holes and the page
+   cuts all of them. Rects are in the window's CSS pixels. */
 export interface NativeViewHole {
     x: number;
     y: number;
@@ -56,6 +57,7 @@ export interface NativeViewHole {
 }
 
 const NO_HOLES: NativeViewHole[] = [];
+const holesByOwner = new Map<object, NativeViewHole[]>();
 let holes = NO_HOLES;
 const holeListeners = new Set<() => void>();
 
@@ -70,10 +72,13 @@ function currentHoles(): NativeViewHole[] {
     return holes;
 }
 
-export function setNativeViewHoles(next: NativeViewHole[]): void {
-    const same = next.length === holes.length && next.every((hole, i) => sameHole(hole, holes[i]));
-    if (same) return;
-    holes = next.length ? next : NO_HOLES;
+/** Replace the holes `owner` asked for. An empty list withdraws them. */
+export function setNativeViewHoles(owner: object, next: NativeViewHole[]): void {
+    const previous = holesByOwner.get(owner) ?? NO_HOLES;
+    if (next.length === previous.length && next.every((hole, i) => sameHole(hole, previous[i]))) return;
+    if (next.length) holesByOwner.set(owner, next);
+    else holesByOwner.delete(owner);
+    holes = holesByOwner.size ? [...holesByOwner.values()].flat() : NO_HOLES;
     for (const listener of holeListeners) listener();
 }
 

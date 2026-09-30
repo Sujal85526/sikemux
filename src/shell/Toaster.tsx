@@ -4,6 +4,8 @@ import { setNativeViewHoles, type NativeViewHole } from "../state/nativeViews";
 import { useToasts, type ToastKind } from "../state/toast";
 import { IconCheck, IconClose, IconExclamation, IconInfoMark } from "../ui/Icons";
 
+const TOASTS = {};
+
 const KIND_ICON: Record<ToastKind, typeof IconCheck> = {
     success: IconCheck,
     error: IconExclamation,
@@ -76,7 +78,7 @@ export function Toaster() {
         let frame = 0;
         const measure = () => {
             frame = 0;
-            setNativeViewHoles(restingRects(node));
+            setNativeViewHoles(TOASTS, restingRects(node));
         };
         const schedule = () => {
             if (!frame) frame = requestAnimationFrame(measure);
@@ -89,10 +91,10 @@ export function Toaster() {
             observer.disconnect();
             window.removeEventListener("resize", schedule);
             if (frame) cancelAnimationFrame(frame);
-            setNativeViewHoles([]);
+            setNativeViewHoles(TOASTS, []);
         };
     }, []);
-    useLayoutEffect(() => setNativeViewHoles(island.current ? restingRects(island.current) : []), [toasts]);
+    useLayoutEffect(() => setNativeViewHoles(TOASTS, island.current ? restingRects(island.current) : []), [toasts]);
     // The island stays mounted while empty: a live region has to exist before it is spoken into.
     return (
         <div ref={island} className="toaster" aria-live="polite" aria-atomic="false">

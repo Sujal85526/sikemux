@@ -18,8 +18,12 @@ beforeEach(() => {
     vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame"] });
 });
 
+const TOASTS = {};
+const MENU = {};
+
 afterEach(() => {
-    setNativeViewHoles([]);
+    setNativeViewHoles(TOASTS, []);
+    setNativeViewHoles(MENU, []);
     vi.useRealTimers();
 });
 
@@ -72,18 +76,34 @@ describe("holes in native views", () => {
         });
         expect(result.current).toEqual([]);
 
-        act(() => setNativeViewHoles([toast]));
+        act(() => setNativeViewHoles(TOASTS, [toast]));
         expect(result.current).toEqual([toast]);
         const count = renders.mock.calls.length;
 
-        act(() => setNativeViewHoles([{ ...toast }]));
+        act(() => setNativeViewHoles(TOASTS, [{ ...toast }]));
         expect(renders).toHaveBeenCalledTimes(count);
 
-        act(() => setNativeViewHoles([{ ...toast, radius: 4 }]));
+        act(() => setNativeViewHoles(TOASTS, [{ ...toast, radius: 4 }]));
         expect(result.current).toEqual([{ ...toast, radius: 4 }]);
 
-        act(() => setNativeViewHoles([]));
+        act(() => setNativeViewHoles(TOASTS, []));
         expect(result.current).toEqual([]);
+    });
+});
+
+describe("holes from more than one overlay", () => {
+    const toast = { x: 10, y: 20, width: 200, height: 40, radius: 8 };
+    const menu = { x: 300, y: 60, width: 196, height: 240, radius: 10 };
+
+    it("cuts every overlay's holes and withdraws only the one that lets go", () => {
+        const { result } = renderHook(() => useNativeViewHoles());
+
+        act(() => setNativeViewHoles(TOASTS, [toast]));
+        act(() => setNativeViewHoles(MENU, [menu]));
+        expect(result.current).toEqual([toast, menu]);
+
+        act(() => setNativeViewHoles(MENU, []));
+        expect(result.current).toEqual([toast]);
     });
 });
 

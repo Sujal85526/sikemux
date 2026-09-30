@@ -230,8 +230,9 @@ describe("DeskHost", () => {
         renderPane();
         await waitFor(() => expect(browserApi.setBounds).toHaveBeenCalledWith("agent-one", placed));
 
+        const toasts = {};
         act(() =>
-            setNativeViewHoles([
+            setNativeViewHoles(toasts, [
                 { x: 600, y: 380, width: 200, height: 34, radius: 13 },
                 { x: 10, y: 380, width: 200, height: 34, radius: 13 },
             ]),
@@ -243,7 +244,7 @@ describe("DeskHost", () => {
             }),
         );
 
-        act(() => setNativeViewHoles([]));
+        act(() => setNativeViewHoles(toasts, []));
         await waitFor(() => expect(browserApi.setBounds).toHaveBeenLastCalledWith("agent-one", placed));
     });
 
