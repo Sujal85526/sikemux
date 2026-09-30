@@ -35,9 +35,7 @@ function Holes() {
 function renderBar(pageAddress = "https://example.com/") {
     render(
         <>
-            <AddressBar tabId="tab-one" pageAddress={pageAddress} onGo={onGo}>
-                <button type="button">Reload</button>
-            </AddressBar>
+            <AddressBar tabId="tab-one" pageAddress={pageAddress} onGo={onGo} />
             <Holes />
         </>,
     );

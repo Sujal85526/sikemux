@@ -177,7 +177,7 @@
     width: 100%;
     min-width: 0;
     height: 100%;
-    padding: 0 30px 0 9px;
+    padding: 0 9px;
     border: 1px solid transparent;
     border-radius: var(--radius-control);
     outline: 0;
@@ -205,7 +205,7 @@
 
 .browser-address-site {
     position: absolute;
-    inset: 0 30px;
+    inset: 0 9px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -232,14 +232,6 @@
 
 .browser-address-field:focus-within .browser-address-site {
     visibility: hidden;
-}
-
-.browser-toolbar .browser-reload {
-    position: absolute;
-    top: 3px;
-    right: 3px;
-    width: 24px;
-    height: 20px;
 }
 
 .browser-viewport {

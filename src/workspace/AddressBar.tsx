@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { browserApi, type AddressSuggestions } from "../api/browser";
 import { setNativeViewHoles } from "../state/nativeViews";
@@ -59,17 +59,7 @@ function Marked({ text, words }: { text: string; words: string[] }) {
  * The address field, which finishes a remembered site in place as it is typed
  * and lists the pages that match below it.
  */
-export function AddressBar({
-    tabId,
-    pageAddress,
-    onGo,
-    children,
-}: {
-    tabId: string | undefined;
-    pageAddress: string;
-    onGo: (url: string) => void;
-    children: ReactNode;
-}) {
+export function AddressBar({ tabId, pageAddress, onGo }: { tabId: string | undefined; pageAddress: string; onGo: (url: string) => void }) {
     const listId = useId();
     const fieldRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -195,7 +185,6 @@ export function AddressBar({
                     <span>{site.host}</span>
                 </span>
             )}
-            {children}
             {open &&
                 place &&
                 createPortal(

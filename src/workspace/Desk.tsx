@@ -447,19 +447,18 @@ function BrowserPage({
                     onClick={() => run(browserApi.forward(agentId), "browser forward")}>
                     <IconChevron size={13} />
                 </button>
+                <button
+                    type="button"
+                    aria-label="Reload"
+                    title={withShortcut("Reload", reloadShortcut)}
+                    onClick={() => run(browserApi.reload(agentId), "reload browser")}>
+                    <IconRefresh size={13} />
+                </button>
                 <AddressBar
                     tabId={activeTab?.id}
                     pageAddress={pageAddress}
-                    onGo={(url) => run(browserApi.navigate(agentId, url), "navigate browser")}>
-                    <button
-                        type="button"
-                        className="browser-reload"
-                        aria-label="Reload"
-                        title={withShortcut("Reload", reloadShortcut)}
-                        onClick={() => run(browserApi.reload(agentId), "reload browser")}>
-                        <IconRefresh size={13} />
-                    </button>
-                </AddressBar>
+                    onGo={(url) => run(browserApi.navigate(agentId, url), "navigate browser")}
+                />
             </div>
             <div ref={viewportRef} className="browser-viewport" tabIndex={-1}>
                 {blank && <div className="browser-blank" aria-label="Blank browser page" />}
