@@ -379,3 +379,51 @@
     color: var(--text-secondary);
     font-weight: var(--weight-medium);
 }
+
+/* ⌘L's address floats over the page. The panel is the edge, so the field and
+   the list inside it draw none of their own. */
+.address-float {
+    position: fixed;
+    z-index: var(--layer-menu);
+    display: flex;
+    flex-direction: column;
+    padding: 4px;
+    border: 1px solid var(--border);
+    background: var(--surface-overlay);
+    box-shadow: var(--shadow-4);
+}
+
+.address-float .browser-address-field,
+.address-float .browser-address-field:hover,
+.address-float .browser-address-field:focus-within {
+    align-items: center;
+    height: 38px;
+    margin: 0;
+    padding-left: 10px;
+    border: 0;
+    background: transparent;
+}
+
+.address-float .browser-address-icon {
+    flex: none;
+    color: var(--ink-faint);
+}
+
+.address-float .browser-address {
+    padding: 0 10px;
+    font-size: var(--text-sm);
+}
+
+.address-float .address-suggestions {
+    position: relative;
+    z-index: auto;
+    padding: 5px 0 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.address-float .address-suggestions li {
+    height: 32px;
+}

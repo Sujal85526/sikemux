@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { browserApi, takeKeyboardFromPages, type BrowserSnapshot, type BrowserTab } from "../api/browser";
 import { occludeNativeViews, setNativeViewHoles, useStageMotion } from "../state/nativeViews";
@@ -185,7 +185,7 @@ describe("DeskHost", () => {
 
     /* A page is a webview of its own and keeps the keyboard it had, so the app's
        webview has to take it back before the field can have it. */
-    it("takes the keyboard back from the page and selects the address on the address shortcut", async () => {
+    it("opens the address over the middle of the page on the address shortcut, with the keyboard taken from the page", async () => {
         renderPane();
         const agentPane = { type: "pane", id: "agent-one", cwd: "/repo", kind: "agent", title: "codex" };
         const deskPane = { type: "pane", id: "pane-desk", cwd: "/repo", kind: "desk", title: "desk" };
@@ -195,13 +195,20 @@ describe("DeskHost", () => {
             windows: { window: { ...win, root: { type: "split", id: "split", dir: "row", children: [agentPane, deskPane], sizes: [50, 50] } } },
         } as never);
         await announceStrip(snapshot);
-        const address = screen.getByRole("textbox", { name: "Address and search" });
 
-        expect(cmd.focusBrowserAddress()).toBe(true);
+        act(() => {
+            expect(cmd.focusBrowserAddress()).toBe(true);
+        });
 
-        await waitFor(() => expect(address).toHaveFocus());
+        const panel = await screen.findByRole("dialog", { name: "Open address" });
+        const field = within(panel).getByRole("textbox", { name: "Address and search" });
+        await waitFor(() => expect(field).toHaveFocus());
         expect(takeKeyboardFromPages).toHaveBeenCalled();
         expect(browserApi.newTab).not.toHaveBeenCalled();
+
+        fireEvent.keyDown(field, { key: "Escape" });
+        await waitFor(() => expect(screen.queryByRole("dialog", { name: "Open address" })).not.toBeInTheDocument());
+        expect(getState().deskAddressOpen).toBeNull();
     });
 
     it("lets go of the address on Escape and drops what was typed", async () => {

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { browserApi, type AddressSuggestions } from "../api/browser";
+import { browserApi, takeKeyboardFromPages, type AddressSuggestions } from "../api/browser";
 import { setNativeViewHoles } from "../state/nativeViews";
+import { swallow } from "../state/toast";
 import { IconLock, IconSearch } from "../ui/Icons";
 import { SiteIcon } from "../ui/SiteIcon";
 
@@ -65,9 +66,22 @@ function Marked({ text, words }: { text: string; words: string[] }) {
 
 /**
  * The address field, which finishes a remembered site in place as it is typed
- * and lists the pages that match below it.
+ * and lists the pages that match below it. A floating one sits in a panel of
+ * its own, takes the keyboard as it opens, and says when it is done.
  */
-export function AddressBar({ tabId, pageAddress, onGo }: { tabId: string | undefined; pageAddress: string; onGo: (url: string) => void }) {
+export function AddressBar({
+    tabId,
+    pageAddress,
+    onGo,
+    floating = false,
+    onLeave,
+}: {
+    tabId: string | undefined;
+    pageAddress: string;
+    onGo: (url: string) => void;
+    floating?: boolean;
+    onLeave?: () => void;
+}) {
     const listId = useId();
     const fieldRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -133,7 +147,15 @@ export function AddressBar({ tabId, pageAddress, onGo }: { tabId: string | undef
     const go = (url: string) => {
         reset();
         onGo(url);
+        onLeave?.();
     };
+
+    useEffect(() => {
+        if (!floating) return;
+        void takeKeyboardFromPages()
+            .catch(swallow("take keyboard from pages"))
+            .then(() => inputRef.current?.focus());
+    }, [floating]);
 
     useLayoutEffect(() => {
         if (suffix && selected === 0) inputRef.current?.setSelectionRange(value.length - suffix.length, value.length);
@@ -141,13 +163,13 @@ export function AddressBar({ tabId, pageAddress, onGo }: { tabId: string | undef
 
     useLayoutEffect(() => {
         const field = fieldRef.current;
-        if (!open || !field) return setPlace(null);
+        if (!open || floating || !field) return setPlace(null);
         const rect = field.getBoundingClientRect();
         const next = { left: rect.left, top: rect.bottom, width: rect.width };
         setPlace((previous) =>
             previous && previous.left === next.left && previous.top === next.top && previous.width === next.width ? previous : next,
         );
-    }, [open, rows.length]);
+    }, [open, floating, rows.length]);
 
     /* The page under the list is a native view that paints over the app, so it
        gives up the list's box for as long as the list is open. */
@@ -163,12 +185,13 @@ export function AddressBar({ tabId, pageAddress, onGo }: { tabId: string | undef
        something that takes no focus, and a click on the page, which is a view of
        its own and only shows up as the window losing focus. */
     useEffect(() => {
-        if (!open) return;
+        if (!open && !floating) return;
         const inside = (target: EventTarget | null) =>
             target instanceof Node && (!!fieldRef.current?.contains(target) || !!menuRef.current?.contains(target));
         const leave = () => {
             inputRef.current?.blur();
             reset();
+            onLeave?.();
         };
         const leaveUnlessInside = (event: Event) => {
             if (!inside(event.target)) leave();
@@ -181,88 +204,94 @@ export function AddressBar({ tabId, pageAddress, onGo }: { tabId: string | undef
             document.removeEventListener("focusin", leaveUnlessInside);
             window.removeEventListener("blur", leave);
         };
-    }, [open, reset]);
+    }, [open, floating, reset, onLeave]);
+
+    const list = open && (
+        <ul
+            ref={menuRef}
+            id={listId}
+            className="address-suggestions"
+            role="listbox"
+            aria-label="Suggestions"
+            style={place ? { left: place.left, top: place.top, width: place.width } : undefined}>
+            {rows.map((row, index) => (
+                <li
+                    key={`${row.search}-${row.url}`}
+                    id={`${listId}-${index}`}
+                    role="option"
+                    aria-selected={index === selected}
+                    className={index === selected ? "selected" : undefined}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => go(row.url)}>
+                    <span className="address-suggestion-icon">{row.search ? <IconSearch size={13} /> : <SiteIcon src={row.icon} />}</span>
+                    <span className="address-suggestion-text">
+                        <span className="address-suggestion-title">
+                            <Marked text={row.title} words={words} />
+                        </span>
+                        {row.detail && (
+                            <span className="address-suggestion-detail">
+                                {" — "}
+                                {row.search ? row.detail : <Marked text={row.detail} words={words} />}
+                            </span>
+                        )}
+                    </span>
+                </li>
+            ))}
+        </ul>
+    );
 
     return (
-        <div ref={fieldRef} className={`browser-address-field${open ? " open" : ""}`}>
-            <input
-                ref={inputRef}
-                className="browser-address"
-                aria-label="Address and search"
-                aria-autocomplete="both"
-                aria-controls={open ? listId : undefined}
-                aria-activedescendant={choice ? `${listId}-${selected}` : undefined}
-                value={value}
-                placeholder="Search or enter address"
-                spellCheck={false}
-                autoComplete="off"
-                onFocus={(event) => {
-                    event.currentTarget.select();
-                    setSelected(-1);
-                    setBrowsing(true);
-                    ask("");
-                }}
-                onBlur={reset}
-                onChange={(event) => {
-                    const input = event.currentTarget;
-                    const kind = (event.nativeEvent as InputEvent).inputType ?? "";
-                    edit(input.value, !kind.startsWith("delete") && input.selectionStart === input.value.length);
-                }}
-                onKeyDown={(event) => {
-                    if (event.key === "Escape") {
-                        event.preventDefault();
-                        event.currentTarget.blur();
-                    } else if (event.key === "Enter") {
-                        event.preventDefault();
-                        go(choice?.url ?? value);
-                    } else if (open && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
-                        event.preventDefault();
-                        setSelected((index) => Math.min(rows.length - 1, Math.max(first, index + (event.key === "ArrowDown" ? 1 : -1))));
-                    }
-                }}
-            />
-            {site && (
-                <span className="browser-address-site" aria-hidden="true">
-                    {site.secure && <IconLock size={11} />}
-                    <span>{site.host}</span>
-                </span>
-            )}
-            {open &&
-                place &&
-                createPortal(
-                    <ul
-                        ref={menuRef}
-                        id={listId}
-                        className="address-suggestions"
-                        role="listbox"
-                        aria-label="Suggestions"
-                        style={{ left: place.left, top: place.top, width: place.width }}>
-                        {rows.map((row, index) => (
-                            <li
-                                key={`${row.search}-${row.url}`}
-                                id={`${listId}-${index}`}
-                                role="option"
-                                aria-selected={index === selected}
-                                className={index === selected ? "selected" : undefined}
-                                onMouseDown={(event) => event.preventDefault()}
-                                onClick={() => go(row.url)}>
-                                <span className="address-suggestion-icon">{row.search ? <IconSearch size={13} /> : <SiteIcon src={row.icon} />}</span>
-                                <span className="address-suggestion-text">
-                                    <span className="address-suggestion-title">
-                                        <Marked text={row.title} words={words} />
-                                    </span>
-                                    {row.detail && (
-                                        <span className="address-suggestion-detail">
-                                            {" — "}
-                                            {row.search ? row.detail : <Marked text={row.detail} words={words} />}
-                                        </span>
-                                    )}
-                                </span>
-                            </li>
-                        ))}
-                    </ul>,
-                    document.body,
+        <>
+            <div ref={fieldRef} className={`browser-address-field${open && !floating ? " open" : ""}`}>
+                {floating && <IconSearch size={14} className="browser-address-icon" />}
+                <input
+                    ref={inputRef}
+                    className="browser-address"
+                    aria-label="Address and search"
+                    aria-autocomplete="both"
+                    aria-controls={open ? listId : undefined}
+                    aria-activedescendant={choice ? `${listId}-${selected}` : undefined}
+                    value={value}
+                    placeholder="Search or enter address"
+                    spellCheck={false}
+                    autoComplete="off"
+                    onFocus={(event) => {
+                        event.currentTarget.select();
+                        setSelected(-1);
+                        setBrowsing(true);
+                        ask("");
+                    }}
+                    onBlur={() => {
+                        reset();
+                        onLeave?.();
+                    }}
+                    onChange={(event) => {
+                        const input = event.currentTarget;
+                        const kind = (event.nativeEvent as InputEvent).inputType ?? "";
+                        edit(input.value, !kind.startsWith("delete") && input.selectionStart === input.value.length);
+                    }}
+                    onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                            event.preventDefault();
+                            event.currentTarget.blur();
+                        } else if (event.key === "Enter") {
+                            event.preventDefault();
+                            go(choice?.url ?? value);
+                        } else if (open && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+                            event.preventDefault();
+                            setSelected((index) => Math.min(rows.length - 1, Math.max(first, index + (event.key === "ArrowDown" ? 1 : -1))));
+                        }
+                    }}
+                />
+                {site && (
+                    <span className="browser-address-site" aria-hidden="true">
+                        {site.secure && <IconLock size={11} />}
+                        <span>{site.host}</span>
+                    </span>
                 )}
-        </div>
+                {!floating && list && place && createPortal(list, document.body)}
+            </div>
+            {floating && list}
+        </>
     );
 }

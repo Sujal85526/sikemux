@@ -7,6 +7,7 @@ import { AgentIcon, IconChevron, IconPlus, IconRefresh, WindowIcon } from "../ui
 import { FileIcon } from "../ui/FileIcon";
 import { SiteIcon } from "../ui/SiteIcon";
 import { AddressBar } from "./AddressBar";
+import { FloatingAddress } from "./FloatingAddress";
 import { TabBar, type TabDescriptor } from "./TabBar";
 import { getState, useStore } from "../state/store";
 import { refreshBrowserStrip } from "../state/browserStrips";
@@ -357,6 +358,7 @@ function BrowserPage({
     const shown = (visible || travelling) && !hidden && !occluded && !blank && !!activeTab;
 
     const pageAddress = blank ? "" : (activeTab?.url ?? "");
+    const addressFloating = useStore((state) => state.deskAddressOpen === agentId) && visible && !hidden;
 
     useLayoutEffect(() => {
         const host = viewportRef.current;
@@ -427,6 +429,7 @@ function BrowserPage({
     const run = (operation: Promise<unknown>, label: string) => {
         void operation.then(() => refresh()).catch(reportError(label));
     };
+    const go = (url: string) => run(browserApi.navigate(agentId, url), "navigate browser");
 
     return (
         <div className="desk-page" hidden={hidden} data-browser-pane>
@@ -454,15 +457,14 @@ function BrowserPage({
                     onClick={() => run(browserApi.reload(agentId), "reload browser")}>
                     <IconRefresh size={13} />
                 </button>
-                <AddressBar
-                    tabId={activeTab?.id}
-                    pageAddress={pageAddress}
-                    onGo={(url) => run(browserApi.navigate(agentId, url), "navigate browser")}
-                />
+                <AddressBar tabId={activeTab?.id} pageAddress={pageAddress} onGo={go} />
             </div>
             <div ref={viewportRef} className="browser-viewport" tabIndex={-1}>
                 {blank && <div className="browser-blank" aria-label="Blank browser page" />}
             </div>
+            {addressFloating && (
+                <FloatingAddress over={viewportRef} tabId={activeTab?.id} pageAddress={pageAddress} onGo={go} onClose={cmd.closeDeskAddress} />
+            )}
         </div>
     );
 }

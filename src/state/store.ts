@@ -128,6 +128,8 @@ export interface ViewState {
     agentPaletteOpen: boolean;
     filePaletteOpen: boolean;
     newTabPaletteOpen: boolean;
+    /** The agent whose desk has its address open in the middle of the page, from ⌘L. */
+    deskAddressOpen: string | null;
     settingsOpen: boolean;
     settingsPage: SettingsPageId;
     zoomedPaneId: string | null;
@@ -255,6 +257,7 @@ export const useStore = create<StoreState>(() => {
         agentPaletteOpen: false,
         filePaletteOpen: false,
         newTabPaletteOpen: false,
+        deskAddressOpen: null,
         settingsOpen: false,
         settingsPage: "general",
         zoomedPaneId: null,
