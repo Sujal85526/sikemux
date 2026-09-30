@@ -70,11 +70,12 @@
     background: transparent;
 }
 
-/* A length, not a share of the strip: the tab list is as wide as its tabs,
-   and a share of that is taken before the list knows its width, from each
-   title at full length, which left the add button stranded at the far end. */
+/* A width, not a share of the strip or a flex basis. The tab list is as wide
+   as its tabs, and WebKit measures a tab for that from its title at full length
+   unless the tab has a width of its own, which left the add button stranded. */
 .tabbar.v-desk .tab-wrap {
-    flex: 0 1 180px;
+    flex: 0 1 auto;
+    width: 180px;
     min-width: 120px;
 }
 
