@@ -108,6 +108,11 @@ async fn status(data_dir: &Path) -> Status {
     }
 }
 
+/// Whether a call could find a credential, judged without the Keychain.
+fn has_credentials(config: &config::SignozConfig) -> bool {
+    !config.url.is_empty() && (config::env_api_key().is_some() || !config.account.is_empty())
+}
+
 async fn signed_in(data_dir: &Path, outcome: SignozResult<()>) -> Result<Value, PluginError> {
     outcome?;
     reply(status(data_dir).await)
@@ -175,6 +180,14 @@ impl Plugin for Signoz {
             }
         })
     }
+
+    fn offers_agent_tools<'a>(
+        &'a self,
+        ctx: &'a PluginContext,
+        _remotes: &'a [String],
+    ) -> PluginFuture<'a, bool> {
+        Box::pin(async move { Ok(has_credentials(&auth::load(ctx.data_dir()).await?)) })
+    }
 }
 
 #[cfg(test)]
@@ -186,6 +199,21 @@ mod tests {
         assert_eq!(
             plugin().expect("manifest parses").manifest().id,
             "sikemux.signoz"
+        );
+    }
+
+    #[test]
+    fn only_a_saved_address_with_a_credential_can_answer_an_agent() {
+        let config = |url: &str, account: &str| config::SignozConfig {
+            url: url.into(),
+            account: account.into(),
+            ..Default::default()
+        };
+        assert!(!has_credentials(&config("", "key")));
+        assert!(has_credentials(&config("https://signoz.example", "key")));
+        assert_eq!(
+            has_credentials(&config("https://signoz.example", "")),
+            config::env_api_key().is_some()
         );
     }
 }
