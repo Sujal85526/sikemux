@@ -16,6 +16,11 @@ pub enum View {
     Pane,
 }
 
+/// Milliseconds to the microsecond, which is finer than any span or request needs.
+pub fn round_ms(ms: f64) -> f64 {
+    (ms * 1_000.0).round() / 1_000.0
+}
+
 pub fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

@@ -385,7 +385,7 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 200,
-          "description": "Default 100."
+          "description": "Default 20."
         },
         "offset": {
           "type": "integer",
@@ -457,7 +457,7 @@
     {
       "name": "signoz_trace",
       "method": "trace",
-      "description": "Every span of one trace, in waterfall order, with errors marked.",
+      "description": "One trace as an outline in waterfall order: the root, every failing span and the spans with the most time of their own, each with its path from the root. `hidden` counts the spans left out below a span, and `service` appears only where it changes. Pass spanId to open one span and everything under it.",
       "properties": {
         "traceId": {
           "type": "string",
@@ -468,6 +468,15 @@
           "minimum": 1,
           "maximum": 10080,
           "description": "How far back to look for the trace. Default 1440 (24 hours)."
+        },
+        "spanId": {
+          "type": "string"
+        },
+        "maxSpans": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500,
+          "description": "Default 40."
         }
       },
       "required": [
