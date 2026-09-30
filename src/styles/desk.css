@@ -171,30 +171,34 @@
     min-width: 0;
     height: 26px;
     margin-left: 4px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-control);
+    background: color-mix(in srgb, var(--ink) 5%, transparent);
 }
 
+.browser-address-field:hover {
+    background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.browser-address-field:focus-within {
+    border-color: var(--border-selected);
+    background: color-mix(in srgb, var(--void) 80%, transparent);
+}
+
+/* The field's edge and fill sit on the wrapper: every input takes the control
+   corner, and the field has to square its lower corners while its list is open. */
 .browser-address {
     width: 100%;
     min-width: 0;
     height: 100%;
-    padding: 0 9px;
-    border: 1px solid transparent;
-    border-radius: var(--radius-control);
+    padding: 0 8px;
+    border: 0;
     outline: 0;
-    background: color-mix(in srgb, var(--ink) 5%, transparent);
+    background: transparent;
     color: var(--ink);
     font-family: var(--ui);
     font-size: var(--text-xs);
     font-weight: var(--weight-medium);
-}
-
-.browser-address-field:hover .browser-address {
-    background: color-mix(in srgb, var(--ink) 8%, transparent);
-}
-
-.browser-address:focus {
-    border-color: var(--border-selected);
-    background: color-mix(in srgb, var(--void) 80%, transparent);
 }
 
 /* The app's own selection tint is too faint over the field, and here it is
@@ -211,7 +215,7 @@
 
 .browser-address-site {
     position: absolute;
-    inset: 0 9px;
+    inset: 0 8px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -282,6 +286,15 @@
     background: color-mix(in srgb, var(--pane) calc(var(--window-opacity, 1) * 100%), transparent);
 }
 
+/* The list continues the field it drops from: one fill, one border, and square
+   corners where the two meet so neither edge bends at the join. */
+.browser-address-field.open {
+    border-bottom-color: transparent;
+    border-bottom-right-radius: 0;
+    border-bottom-left-radius: 0;
+    background: var(--surface-overlay);
+}
+
 .address-suggestions {
     position: fixed;
     z-index: var(--layer-menu);
@@ -289,12 +302,23 @@
     flex-direction: column;
     gap: 2px;
     margin: 0;
-    padding: 4px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-4);
+    padding: 5px 4px 4px;
+    border: 1px solid var(--border-selected);
+    border-top: 0;
+    border-radius: 0 0 var(--radius-control) var(--radius-control);
     background: var(--surface-overlay);
     box-shadow: var(--shadow-2);
     list-style: none;
+}
+
+.address-suggestions::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 8px;
+    left: 8px;
+    height: 1px;
+    background: var(--line);
 }
 
 .address-suggestions li {

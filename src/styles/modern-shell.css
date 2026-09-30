@@ -1199,7 +1199,8 @@ textarea,
  * an ancestor-scoped rule never reaches them — that is how a right-click menu
  * kept square corners while the buttons inside it, matched by the bare
  * `button` rule above, rounded. A float is known by what it is, not by where
- * it happens to be mounted, so `[role="menu"]` catches the ones that move. */
+ * it happens to be mounted, so `[role="menu"]` catches the ones that move.
+ * The address bar's suggestions are the lower half of its field, not a float. */
 :where(
     .picker,
     .command-palette,
@@ -1216,7 +1217,7 @@ textarea,
     .dlg,
     [role="menu"],
     [role="dialog"],
-    [role="listbox"]
+    [role="listbox"]:not(.address-suggestions)
 ) {
     border-radius: var(--radius-4) !important;
 }

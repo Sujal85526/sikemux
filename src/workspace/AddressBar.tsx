@@ -130,7 +130,7 @@ export function AddressBar({ tabId, pageAddress, onGo }: { tabId: string | undef
         const field = fieldRef.current;
         if (!open || !field) return setPlace(null);
         const rect = field.getBoundingClientRect();
-        const next = { left: rect.left, top: rect.bottom + 4, width: rect.width };
+        const next = { left: rect.left, top: rect.bottom, width: rect.width };
         setPlace((previous) =>
             previous && previous.left === next.left && previous.top === next.top && previous.width === next.width ? previous : next,
         );
@@ -141,7 +141,7 @@ export function AddressBar({ tabId, pageAddress, onGo }: { tabId: string | undef
     useLayoutEffect(() => {
         const menu = menuRef.current;
         if (!menu || !place) return setNativeViewHoles(menuRef, []);
-        const radius = parseFloat(getComputedStyle(menu).borderTopLeftRadius) || 0;
+        const radius = parseFloat(getComputedStyle(menu).borderBottomLeftRadius) || 0;
         setNativeViewHoles(menuRef, [{ x: place.left, y: place.top, width: menu.offsetWidth, height: menu.offsetHeight, radius }]);
     }, [place, rows.length]);
     useEffect(() => () => setNativeViewHoles(menuRef, []), []);
@@ -171,7 +171,7 @@ export function AddressBar({ tabId, pageAddress, onGo }: { tabId: string | undef
     }, [open, reset]);
 
     return (
-        <div ref={fieldRef} className="browser-address-field">
+        <div ref={fieldRef} className={`browser-address-field${open ? " open" : ""}`}>
             <input
                 ref={inputRef}
                 className="browser-address"
