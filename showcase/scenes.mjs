@@ -178,7 +178,7 @@ export const SCENES = [
       await openWindow(page, "s-sikemux", "w-sikemux-git");
       await page.waitForTimeout(500);
       await run(page, async () => {
-        const commands = await import("/src/state/commands.ts");
+        const commands = await import("/src/state/commands/index.ts");
         const host = await import("/src/codehost/state.ts");
         commands.setGitView("p-git", { area: "actions" });
         host.showRun("p-git", 36316473434);
