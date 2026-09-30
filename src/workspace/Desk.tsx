@@ -487,6 +487,11 @@ function BrowserPage({
                         onFocus={(event) => event.currentTarget.select()}
                         onBlur={() => setTyped(null)}
                         onChange={(event) => setTyped(event.target.value)}
+                        onKeyDown={(event) => {
+                            if (event.key !== "Escape") return;
+                            event.preventDefault();
+                            event.currentTarget.blur();
+                        }}
                     />
                     {site && (
                         <span className="browser-address-site" aria-hidden="true">

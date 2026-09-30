@@ -202,6 +202,19 @@ describe("DeskHost", () => {
         expect(browserApi.newTab).not.toHaveBeenCalled();
     });
 
+    it("lets go of the address on Escape and drops what was typed", async () => {
+        renderPane();
+        await announceStrip(snapshot);
+        const address = screen.getByRole("textbox", { name: "Address and search" });
+        address.focus();
+        fireEvent.change(address, { target: { value: "half-typ" } });
+
+        fireEvent.keyDown(address, { key: "Escape" });
+
+        expect(address).not.toHaveFocus();
+        expect(address).toHaveValue("https://example.com");
+    });
+
     it("marks the tab the agent is working in with its colour and icon, beside the site's", async () => {
         renderPane();
         await waitFor(() => expect(screen.getByRole("tab", { name: "Example" })).toBeInTheDocument());
