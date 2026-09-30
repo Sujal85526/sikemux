@@ -3,8 +3,10 @@ import { browserApi, BLANK_URL, type BrowserBounds, type BrowserHole, type Brows
 import { onStageFrame, useNativeViewHoles, useNativeViewsOccluded, useStageMoving, type NativeViewHole } from "../state/nativeViews";
 import type { AgentType, PtyContext, Session, Window as WindowT } from "../state/types";
 import { reportError } from "../state/toast";
-import { AgentIcon, IconChevron, IconGlobe, IconLock, IconPlus, IconRefresh, WindowIcon } from "../ui/Icons";
+import { AgentIcon, IconChevron, IconPlus, IconRefresh, WindowIcon } from "../ui/Icons";
 import { FileIcon } from "../ui/FileIcon";
+import { SiteIcon } from "../ui/SiteIcon";
+import { AddressBar } from "./AddressBar";
 import { TabBar, type TabDescriptor } from "./TabBar";
 import { getState, useStore } from "../state/store";
 import { refreshBrowserStrip } from "../state/browserStrips";
@@ -116,25 +118,6 @@ export function DeskHost({
             onEmpty={onEmpty}
         />
     );
-}
-
-/** What the address bar shows while nobody is editing it: the site alone. */
-function siteOf(url: string): { host: string; secure: boolean } | null {
-    try {
-        const parsed = new URL(url);
-        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
-        return { host: parsed.host.replace(/^www\./, ""), secure: parsed.protocol === "https:" };
-    } catch {
-        return null;
-    }
-}
-
-/** The site's own mark once it has arrived, and a globe until then. */
-function SiteIcon({ src }: { src: string | null }) {
-    const [broken, setBroken] = useState(false);
-    useEffect(() => setBroken(false), [src]);
-    if (!src || broken) return <IconGlobe size={13} />;
-    return <img className="tab-favicon" src={src} alt="" onError={() => setBroken(true)} />;
 }
 
 function DeskSession({
@@ -359,7 +342,6 @@ function BrowserPage({
     const reloadShortcut = useShortcutLabel("browser.reload");
     const viewportRef = useRef<HTMLDivElement>(null);
     const measureRef = useRef<() => void>(() => {});
-    const [typed, setTyped] = useState<string | null>(null);
     const [placement, setPlacement] = useState<Placement | null>(null);
     const occluded = useNativeViewsOccluded();
     const appHoles = useNativeViewHoles();
@@ -374,13 +356,7 @@ function BrowserPage({
     const travelling = moving && painted && !!placement && placement.clipLeft + placement.clipRight < placement.width;
     const shown = (visible || travelling) && !hidden && !occluded && !blank && !!activeTab;
 
-    /* The bar follows the page until someone starts typing in it, and goes back
-       to following once they are done. Pages move on their own — a click inside
-       a web app changes the address — and that must not eat a half-typed one. */
     const pageAddress = blank ? "" : (activeTab?.url ?? "");
-    const address = typed ?? pageAddress;
-    const site = typed === null ? siteOf(pageAddress) : null;
-    useEffect(() => setTyped(null), [activeTab?.id]);
 
     useLayoutEffect(() => {
         const host = viewportRef.current;
@@ -454,13 +430,7 @@ function BrowserPage({
 
     return (
         <div className="desk-page" hidden={hidden} data-browser-pane>
-            <form
-                className={`browser-toolbar${activeTab?.loading ? " loading" : ""}`}
-                onSubmit={(event) => {
-                    event.preventDefault();
-                    setTyped(null);
-                    run(browserApi.navigate(agentId, address), "navigate browser");
-                }}>
+            <div className={`browser-toolbar${activeTab?.loading ? " loading" : ""}`}>
                 <button
                     type="button"
                     aria-label="Back"
@@ -477,28 +447,10 @@ function BrowserPage({
                     onClick={() => run(browserApi.forward(agentId), "browser forward")}>
                     <IconChevron size={13} />
                 </button>
-                <div className="browser-address-field">
-                    <input
-                        className="browser-address"
-                        aria-label="Address and search"
-                        value={address}
-                        placeholder="Search or enter address"
-                        spellCheck={false}
-                        onFocus={(event) => event.currentTarget.select()}
-                        onBlur={() => setTyped(null)}
-                        onChange={(event) => setTyped(event.target.value)}
-                        onKeyDown={(event) => {
-                            if (event.key !== "Escape") return;
-                            event.preventDefault();
-                            event.currentTarget.blur();
-                        }}
-                    />
-                    {site && (
-                        <span className="browser-address-site" aria-hidden="true">
-                            {site.secure && <IconLock size={11} />}
-                            <span>{site.host}</span>
-                        </span>
-                    )}
+                <AddressBar
+                    tabId={activeTab?.id}
+                    pageAddress={pageAddress}
+                    onGo={(url) => run(browserApi.navigate(agentId, url), "navigate browser")}>
                     <button
                         type="button"
                         className="browser-reload"
@@ -507,8 +459,8 @@ function BrowserPage({
                         onClick={() => run(browserApi.reload(agentId), "reload browser")}>
                         <IconRefresh size={13} />
                     </button>
-                </div>
-            </form>
+                </AddressBar>
+            </div>
             <div ref={viewportRef} className="browser-viewport" tabIndex={-1}>
                 {blank && <div className="browser-blank" aria-label="Blank browser page" />}
             </div>

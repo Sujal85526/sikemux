@@ -283,3 +283,77 @@
     inset: 0;
     background: color-mix(in srgb, var(--pane) calc(var(--window-opacity, 1) * 100%), transparent);
 }
+
+.address-suggestions {
+    position: fixed;
+    z-index: var(--layer-menu);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 4px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-4);
+    background: var(--surface-overlay);
+    box-shadow: var(--shadow-2);
+    list-style: none;
+}
+
+.address-suggestions li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-2);
+    color: var(--ink);
+    font-family: var(--ui);
+    font-size: var(--text-xs);
+    cursor: default;
+}
+
+.address-suggestions li:hover {
+    background: var(--surface-hover);
+}
+
+.address-suggestions li.selected {
+    border-color: var(--border-selected);
+    background: var(--surface-selected);
+}
+
+.address-suggestion-icon {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    color: var(--ink-faint);
+}
+
+.address-suggestion-icon .tab-favicon {
+    width: 13px;
+    height: 13px;
+    object-fit: contain;
+}
+
+.address-suggestion-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.address-suggestion-title b {
+    font-weight: var(--weight-semibold);
+}
+
+.address-suggestion-detail {
+    color: var(--ink-faint);
+}
+
+.address-suggestion-detail b {
+    color: var(--text-secondary);
+    font-weight: var(--weight-medium);
+}

@@ -34,6 +34,7 @@ vi.mock("../api/browser", async () => {
             switchTab: vi.fn(),
             closeTab: vi.fn(),
             navigate: vi.fn(),
+            suggest: vi.fn(),
             back: vi.fn(),
             forward: vi.fn(),
             reload: vi.fn(),
@@ -111,6 +112,7 @@ beforeEach(() => {
     setState({ browserStrips: {}, deskRestores: {}, desks: {}, editorViews: {} } as never);
     vi.mocked(browserApi.snapshot).mockResolvedValue(snapshot);
     vi.mocked(browserApi.subscribeTabs).mockResolvedValue(vi.fn());
+    vi.mocked(browserApi.suggest).mockResolvedValue({ completion: null, pages: [], searches: false, searchUrl: "" });
     for (const operation of [
         browserApi.newTab,
         browserApi.closeAgent,
@@ -177,7 +179,7 @@ describe("DeskHost", () => {
 
         const address = screen.getByRole("textbox", { name: "Address and search" });
         fireEvent.change(address, { target: { value: "openai.com" } });
-        fireEvent.submit(address.closest("form")!);
+        fireEvent.keyDown(address, { key: "Enter" });
         expect(browserApi.navigate).toHaveBeenCalledWith("agent-one", "openai.com");
     });
 
@@ -349,7 +351,7 @@ describe("DeskHost", () => {
         const back = await screen.findByRole("button", { name: "Back" });
         expect(back).toBeEnabled();
         expect(screen.getByRole("button", { name: "Forward" })).toBeDisabled();
-        expect(back.closest("form")).toHaveClass("loading");
+        expect(back.closest(".browser-toolbar")).toHaveClass("loading");
         fireEvent.click(back);
         expect(browserApi.back).toHaveBeenCalledWith("agent-one");
     });
