@@ -98,9 +98,7 @@ beforeEach(() => {
         { sha: "aaaaaaa1111111", message: "feat: first", author: "someone", avatarUrl: null, date: "2026-01-01T10:00:00Z" },
         { sha: "bbbbbbb2222222", message: "feat: second\n\nwith a body", author: "someone", avatarUrl: null, date: "2026-01-01T11:00:00Z" },
     ]);
-    api.pullFiles.mockResolvedValue([
-        { path: "src/run.ts", status: "added", additions: 3, deletions: 0, patch: "@@ -0,0 +1,1 @@\n+x", previousPath: null },
-    ]);
+    api.pullFiles.mockResolvedValue([{ path: "src/run.ts", status: "added", additions: 3, deletions: 0, patch: "@@ -0,0 +1,1 @@\n+x" }]);
 });
 afterEach(cleanup);
 
@@ -578,11 +576,11 @@ describe("an open pull request", () => {
 
     it("tells each changed file's kind of change", async () => {
         api.pullFiles.mockResolvedValue([
-            { path: "a.ts", status: "added", additions: 1000, deletions: 0, patch: null, previousPath: null },
-            { path: "src/b.ts", status: "removed", additions: 0, deletions: 2, patch: null, previousPath: null },
-            { path: "c.ts", status: "renamed", additions: 0, deletions: 0, patch: null, previousPath: "old.ts" },
-            { path: "d.ts", status: "copied", additions: 0, deletions: 0, patch: null, previousPath: "e.ts" },
-            { path: "f.ts", status: "modified", additions: 1, deletions: 1, patch: null, previousPath: null },
+            { path: "a.ts", status: "added", additions: 1000, deletions: 0 },
+            { path: "src/b.ts", status: "removed", additions: 0, deletions: 2 },
+            { path: "c.ts", status: "renamed", additions: 0, deletions: 0, previousPath: "old.ts" },
+            { path: "d.ts", status: "copied", additions: 0, deletions: 0, previousPath: "e.ts" },
+            { path: "f.ts", status: "modified", additions: 1, deletions: 1 },
         ]);
         detail();
         await within(leftColumn()).findByTitle("src/b.ts");

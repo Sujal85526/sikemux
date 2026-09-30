@@ -17,7 +17,6 @@ const file = (path: string, status: string, extra: Partial<ChangedFile> = {}): C
     additions: 1,
     deletions: 2,
     patch: "@@ -1,1 +1,1 @@\n-a\n+b",
-    previousPath: null,
     ...extra,
 });
 
@@ -60,7 +59,7 @@ describe("PullFiles", () => {
             file("b.ts", "removed"),
             file("c.ts", "renamed", { previousPath: "old/c.ts" }),
             file("d.ts", "copied", { previousPath: "e.ts" }),
-            file("f.ts", "modified", { patch: null }),
+            file("f.ts", "modified", { patch: undefined }),
         ]);
         show(3);
         const marks = await screen.findAllByLabelText(/^(added|deleted|renamed|copied|modified)$/);

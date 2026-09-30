@@ -323,8 +323,8 @@ export interface ChangedFile {
     status: string;
     additions: number;
     deletions: number;
-    previousPath: string | null;
-    patch: string | null;
+    previousPath?: string;
+    patch?: string;
 }
 
 export interface Review {
