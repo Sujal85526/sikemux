@@ -26,7 +26,7 @@ describe("new tab palette", () => {
     it("numbers the destinations a project can open", () => {
         render(<NewTabPalette />);
 
-        expect(labels()).toEqual(["Terminal", "Agent", "Browser", "Editor", "Git", "Search"]);
+        expect(labels()).toEqual(["Terminal", "Agent", "Browser", "File", "Git", "Search"]);
         expect(screen.getAllByRole("button").map((row) => row.querySelector("kbd")?.textContent)).toEqual(["1", "2", "3", "4", "5", "6"]);
     });
 
@@ -104,12 +104,27 @@ describe("new tab palette", () => {
         expect(getState().newTabPaletteOpen).toBe(true);
     });
 
-    it("keeps stable slots and explains unavailable project destinations", () => {
+    it("keeps stable slots, and outside a project offers a terminal or an agent in a project picked next", () => {
         cmd.closeNewTabPalette();
         cmd.createCommandSession();
         cmd.openNewTabPalette();
         render(<NewTabPalette />);
 
-        expect(screen.getAllByRole("button").filter((button) => !(button as HTMLButtonElement).disabled)).toHaveLength(1);
+        const enabled = screen.getAllByRole("button").filter((button) => !(button as HTMLButtonElement).disabled);
+        expect(enabled.map((row) => row.querySelector(".new-tab-label")?.textContent)).toEqual(["Terminal", "Agent"]);
+
+        pressKey("2");
+        expect(getState()).toMatchObject({ pickerOpen: true, pickerMode: "projects" });
+    });
+
+    it("puts a browser tab on the desk of the project's agent even from a terminal tab", () => {
+        cmd.addAgent("claude");
+        const agentWindow = getState().sessions[getState().activeSessionId].activeWindowId;
+        cmd.newWindow();
+        render(<NewTabPalette />);
+
+        expect(screen.getByRole("button", { name: /Browser/ })).not.toBeDisabled();
+        pressKey("3");
+        expect(getState().sessions[getState().activeSessionId].activeWindowId).toBe(agentWindow);
     });
 });

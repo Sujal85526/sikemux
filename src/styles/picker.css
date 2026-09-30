@@ -512,6 +512,13 @@
     white-space: nowrap;
 }
 
+.new-tab-shortcut {
+    flex: none;
+    color: var(--text-tertiary);
+    font-family: var(--mono);
+    font-size: var(--text-2xs);
+}
+
 .new-tab-item:disabled {
     opacity: 0.65;
 }

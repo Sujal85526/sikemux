@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
-import { agentIdsOf } from "../state/selectors";
+import { nearestAgentId } from "../state/selectors";
+import { useShortcutLabel } from "../commands/useShortcutLabel";
 import { useModalFocus } from "../hooks/useModalFocus";
 import { useMouseActive } from "../hooks/useMouseActive";
 import { IconAgent, IconCommand, IconCommit, IconEditor, IconGlobe, IconSearch } from "../ui/Icons";
@@ -12,6 +13,7 @@ interface TabChoice {
     label: string;
     detail: string;
     icon: ReactNode;
+    shortcut: string;
     open: () => void;
     disabled?: boolean;
 }
@@ -19,10 +21,18 @@ interface TabChoice {
 export function NewTabPalette() {
     const session = useStore((state) => state.sessions[state.activeSessionId]);
     const browserAgent = useStore((state) => {
-        const id = agentIdsOf(state, state.activeSessionId)[0];
+        const id = nearestAgentId(state);
         return id ? state.agents[id] : undefined;
     });
     const project = session?.kind === "project";
+    const shortcuts = {
+        terminal: useShortcutLabel("terminal.new"),
+        agent: useShortcutLabel("agent.choose"),
+        browser: useShortcutLabel("browser.tabNew"),
+        file: useShortcutLabel("palette.files"),
+        git: useShortcutLabel("window.git"),
+        search: useShortcutLabel("search.global"),
+    };
     const [selected, setSelected] = useState(0);
     const selectedRef = useRef(0);
     const modalRef = useRef<HTMLDivElement>(null);
@@ -32,34 +42,34 @@ export function NewTabPalette() {
         {
             id: "terminal",
             label: "Terminal",
-            detail: "A new shell in this project",
+            detail: session?.kind === "ssh" ? `Another login on ${session.name}` : project ? "A new shell in this project" : "A new shell",
             icon: <IconCommand size={14} />,
-            open: cmd.newWindow,
-            disabled: !session,
+            shortcut: shortcuts.terminal,
+            open: cmd.newTerminal,
         },
         {
             id: "agent",
             label: "Agent",
-            detail: project ? "Start or resume an agent" : "Open a project first",
+            detail: project ? "Start or resume an agent" : "Pick a project, then start an agent there",
             icon: <IconAgent size={14} />,
-            open: cmd.openAgentPalette,
-            disabled: !project,
+            shortcut: shortcuts.agent,
+            open: cmd.chooseAgent,
         },
         {
             id: "browser",
             label: "Browser",
             detail: browserAgent ? `Browse on ${browserAgent.title}'s desk` : "Start an agent to use its browser",
             icon: <IconGlobe size={14} />,
-            open: () => {
-                void cmd.newBrowserTab();
-            },
+            shortcut: shortcuts.browser,
+            open: cmd.newDeskBrowserTab,
             disabled: !browserAgent,
         },
         {
             id: "editor",
-            label: "Editor",
+            label: "File",
             detail: project ? "Open a project file" : "Open a project first",
             icon: <IconEditor size={14} />,
+            shortcut: shortcuts.file,
             open: cmd.openFilePalette,
             disabled: !project,
         },
@@ -68,6 +78,7 @@ export function NewTabPalette() {
             label: "Git",
             detail: project ? "Changes, branches, remotes and stashes" : "Open a project first",
             icon: <IconCommit size={14} />,
+            shortcut: shortcuts.git,
             open: cmd.openGitWorkbench,
             disabled: !project,
         },
@@ -76,6 +87,7 @@ export function NewTabPalette() {
             label: "Search",
             detail: project ? "Search across the project" : "Open a project first",
             icon: <IconSearch size={14} />,
+            shortcut: shortcuts.search,
             open: cmd.focusGlobalSearch,
             disabled: !project,
         },
@@ -153,6 +165,7 @@ export function NewTabPalette() {
                             <span className="new-tab-icon">{choice.icon}</span>
                             <span className="new-tab-label">{choice.label}</span>
                             <span className="new-tab-detail">{choice.detail}</span>
+                            {choice.shortcut && <span className="new-tab-shortcut">{choice.shortcut}</span>}
                             <kbd className="new-tab-key">{index + 1}</kbd>
                         </button>
                     ))}

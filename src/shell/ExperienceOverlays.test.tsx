@@ -71,10 +71,10 @@ describe("Onboarding", () => {
         await waitFor(() => expect(project).toHaveFocus());
 
         fireEvent.keyDown(project, { key: "ArrowDown" });
+        expect(screen.getByRole("button", { name: /Start an agent/ })).toHaveFocus();
+        fireEvent.keyDown(document.activeElement!, { key: "ArrowUp" });
+        fireEvent.keyDown(document.activeElement!, { key: "ArrowUp" });
         expect(screen.getByRole("button", { name: /Connect to a host/ })).toHaveFocus();
-        fireEvent.keyDown(document.activeElement!, { key: "ArrowUp" });
-        fireEvent.keyDown(document.activeElement!, { key: "ArrowUp" });
-        expect(screen.getByRole("button", { name: /Browse commands/ })).toHaveFocus();
 
         await user.tab();
         expect(screen.getByRole("button", { name: "Close welcome" })).toHaveFocus();
@@ -89,6 +89,16 @@ describe("Onboarding", () => {
         expect(getState()).toMatchObject({ onboardingOpen: false, onboardingComplete: true, pickerOpen: true, pickerMode: "projects" });
         expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
         await expectPersistedComplete();
+    });
+
+    it("answers the shortcut shown beside a move", async () => {
+        openOnboarding({ "project.open": "Ctrl+Shift+KeyO" });
+        const project = screen.getByRole("button", { name: /Open a project/ });
+        await waitFor(() => expect(project).toHaveFocus());
+
+        fireEvent.keyDown(project, { code: "KeyO", ctrlKey: true, shiftKey: true });
+
+        expect(getState()).toMatchObject({ onboardingOpen: false, pickerOpen: true, pickerMode: "projects" });
     });
 
     it("treats both Escape and the close button as persisted completion", async () => {

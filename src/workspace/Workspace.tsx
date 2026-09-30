@@ -34,7 +34,8 @@ import { FileIcon } from "../ui/FileIcon";
 import { fsapi } from "../api/fs";
 import { useStageMotion } from "../state/nativeViews";
 import { basename, relativePath } from "../lib/paths";
-import { FILE_MANAGER_NAME, PRIMARY_SHORTCUT } from "../lib/platform";
+import { FILE_MANAGER_NAME } from "../lib/platform";
+import { useShortcutLabel } from "../commands/useShortcutLabel";
 import { notify, reportError } from "../state/toast";
 import { copyText } from "../lib/clipboard";
 import { PAN_MS, panOffset, useWindowPan } from "./useWindowPan";
@@ -167,6 +168,7 @@ export const Workspace = memo(function Workspace() {
                     </div>
                 );
             })}
+            {activeSession?.kind === "project" && (windowsBySession[activeSession.id] ?? EMPTY_IDS).length === 0 && <EmptyStage />}
             {activeSession && activeOrder.length > 1 && activeSlots.has(activeSession.activeWindowId) && (
                 <WindowScrollIndicator count={activeOrder.length} index={activeOrder.indexOf(activeSession.activeWindowId)} ms={pan.ms} />
             )}
@@ -246,6 +248,28 @@ function splitTargetAt(sessionId: string, point: TabPoint): SplitTarget | null {
     };
 }
 
+/** A project with every tab closed, which would otherwise show nothing to click. */
+function EmptyStage() {
+    const moves = [
+        { label: "New agent", shortcut: useShortcutLabel("agent.new"), run: () => void cmd.startAgent() },
+        { label: "New terminal", shortcut: useShortcutLabel("terminal.new"), run: cmd.newTerminal },
+        { label: "Open file", shortcut: useShortcutLabel("palette.files"), run: cmd.openFilePalette },
+    ];
+    return (
+        <div className="empty-stage">
+            <span className="empty-stage-title">Nothing open in this project</span>
+            <div className="empty-stage-moves">
+                {moves.map((move) => (
+                    <button key={move.label} type="button" className="empty-stage-move" onClick={move.run}>
+                        <span>{move.label}</span>
+                        {move.shortcut && <kbd>{move.shortcut}</kbd>}
+                    </button>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 /** The active session's tabs. A project holding only rail-driven surfaces has none, and shows no strip. */
 export function WorkspaceTabs() {
     const session = useStore((s) => s.sessions[s.activeSessionId]);
@@ -290,12 +314,15 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
     const termTitleList = useStore(useShallow((s) => termPaneIds.map((id) => s.terminalTitles[id] ?? "")));
     const termTitles = useMemo(() => new Map(termPaneIds.map((id, index) => [id, termTitleList[index]])), [termPaneIds, termTitleList]);
 
+    const closeShortcut = useShortcutLabel("pane.close");
+    const permissionsShortcut = useShortcutLabel("agent.permissions");
+
     const windowMenu = (win: WindowT): CtxItem[] => {
         const siblings = refs.flatMap((ref) => (ref.doc === undefined ? [windowsById[ref.id]] : [])).filter(Boolean) as WindowT[];
         const others = siblings.filter((t) => t.id !== win.id && !t.fixed && t.role !== "agent");
         return [
             { label: "Duplicate", run: () => cmd.duplicateWindow(win.id) },
-            { label: "Close", hint: "⌥W", disabled: win.fixed, run: () => cmd.closeWindowById(win.id) },
+            { label: "Close", hint: closeShortcut, disabled: win.fixed, run: () => cmd.closeWindowById(win.id) },
             { label: "Close Others", disabled: others.length === 0, run: () => others.forEach((t) => cmd.closeWindowById(t.id)) },
         ];
     };
@@ -310,7 +337,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
         const toRight = index >= 0 ? open.slice(index + 1) : [];
         const saved = open.filter((path) => !dirty.has(path));
         return [
-            { label: "Close", hint: `${PRIMARY_SHORTCUT}W`, run: () => close([doc]) },
+            { label: "Close", hint: closeShortcut, run: () => close([doc]) },
             { label: "Close Others", disabled: others.length === 0, run: () => close(others) },
             { label: "Close to the Left", disabled: toLeft.length === 0, run: () => close(toLeft) },
             { label: "Close to the Right", disabled: toRight.length === 0, run: () => close(toRight) },
@@ -345,14 +372,18 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                 ? [{ label: agent.keepAlive ? "Allow Auto-Sleep" : "Keep Alive", run: () => cmd.setAgentKeepAlive(agent.id, !agent.keepAlive) }]
                 : []),
             ...(agent.resumeId ? [{ sep: true as const }] : []),
-            { label: "Close", hint: "⌥W", run: () => cmd.closeAgent(agent.id) },
+            { label: "Close", hint: closeShortcut, run: () => cmd.closeAgent(agent.id) },
             { label: "Close Others", disabled: others.length === 0, run: () => others.forEach((x) => cmd.closeAgent(x.id)) },
         ];
         if (cmd.agentSupportsSkipPermissions(agent.type)) {
             const skip = agent.permissionMode === "bypass" || agent.skipPermissions === true;
             items.push(
                 { sep: true },
-                { label: skip ? "Disable YOLO Mode" : "Enable YOLO Mode", hint: "⌥Y", run: () => cmd.toggleAgentSkipPermissions(agent.id) },
+                {
+                    label: skip ? "Disable YOLO Mode" : "Enable YOLO Mode",
+                    hint: permissionsShortcut,
+                    run: () => cmd.toggleAgentSkipPermissions(agent.id),
+                },
             );
         }
         return items;
@@ -690,7 +721,9 @@ const WindowLayer = memo(function WindowLayer({
                                 while it is the one being read, so a screen off stage spends no
                                 WebGL context on a field nobody is looking at. The editor draws
                                 its own, on the code panel beside its file tree, and the desk has none. */}
-                            {p.kind !== "editor" && p.kind !== "desk" && <ShaderField preset="ambient" className="pane-field" enabled={paneShader && live && shown} />}
+                            {p.kind !== "editor" && p.kind !== "desk" && (
+                                <ShaderField preset="ambient" className="pane-field" enabled={paneShader && live && shown} />
+                            )}
                             <ErrorBoundary label={`${p.kind} pane`}>
                                 {renderWorkbenchItem({ pane: p, session, win, active: paneActive, visible: paneVisible, painted: panePainted })}
                             </ErrorBoundary>

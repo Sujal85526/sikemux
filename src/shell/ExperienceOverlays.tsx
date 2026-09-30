@@ -8,8 +8,8 @@ import { useStore } from "../state/store";
 import * as cmd from "../state/commands";
 import { agentDetectionApi, type ManifestReport } from "../api/agentDetection";
 import { selectedAgentRuntimeProfiles } from "../agents/agentProfiles";
-import { keybindingLabelForAction, type CoreKeybindingActionId } from "../commands/keybindings";
-import { AgentIcon, IconCommand, IconFolder, IconSearch, Logo } from "../ui/Icons";
+import { actionForEvent, keybindingLabelForAction, type CoreKeybindingActionId } from "../commands/keybindings";
+import { AgentIcon, IconAgent, IconCommand, IconFolder, IconSearch, Logo } from "../ui/Icons";
 import { Kbd } from "../ui/Kbd";
 import { ShaderField } from "../ui/ShaderField";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -29,8 +29,15 @@ const WELCOME_MOVES = [
         Icon: IconFolder,
         run: () => cmd.openPicker("projects"),
     },
-    { id: "ssh.open", label: "Connect to a host", detail: "Hosts from your SSH config", Icon: IconCommand, run: () => cmd.openPicker("ssh") },
+    {
+        id: "agent.new",
+        label: "Start an agent",
+        detail: "In a project you pick, ready to type to",
+        Icon: IconAgent,
+        run: () => void cmd.startAgent(),
+    },
     { id: "palette.commands", label: "Browse commands", detail: "Every action and its shortcut", Icon: IconSearch, run: cmd.openCommandPalette },
+    { id: "ssh.open", label: "Connect to a host", detail: "Hosts from your SSH config", Icon: IconCommand, run: () => cmd.openPicker("ssh") },
 ] as const satisfies readonly {
     id: CoreKeybindingActionId;
     label: string;
@@ -129,6 +136,12 @@ export function Onboarding() {
         if (event.key === "Escape") {
             event.preventDefault();
             cmd.closeOnboarding();
+            return;
+        }
+        const pressed = WELCOME_MOVES.find((move) => move.id === actionForEvent(event.nativeEvent, overrides));
+        if (pressed) {
+            event.preventDefault();
+            runMove(pressed.run);
             return;
         }
         if (event.key === "ArrowDown" || event.key === "ArrowUp") {
