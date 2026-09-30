@@ -97,4 +97,4 @@ For questions, or to talk an idea through before opening an issue, ask in the [S
 
 ## License
 
-By contributing, you agree that your contributions are licensed under the [MIT License](LICENSE).
+By contributing, you license your contributions to nodelike under the project's [license](LICENSE), and you grant nodelike the right to license them under other terms as well, including commercial ones.

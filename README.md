@@ -93,4 +93,8 @@ Ask for help and follow releases on [Discord](https://discord.gg/UKfmHpF9kX). Is
 
 ## License
 
-[MIT](LICENSE) © nodelike
+[FSL-1.1-MIT](LICENSE) © nodelike
+
+Sikemux is free to use, modify and self-host, at home or at work. You may not offer it, or a fork of it, as a competing product. Each release becomes MIT two years after it ships.
+
+"Sikemux" and its logo are trademarks of nodelike. Forks must use a different name and logo.
