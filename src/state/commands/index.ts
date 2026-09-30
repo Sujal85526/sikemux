@@ -5,6 +5,7 @@ export * from "./agents";
 export * from "./appearance";
 export * from "./cliOpen";
 export * from "./customCommands";
+export * from "./deepLink";
 export * from "./desk";
 export * from "./editor";
 export * from "./git";

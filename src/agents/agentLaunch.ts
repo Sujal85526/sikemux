@@ -32,6 +32,10 @@ export function supportedPermissionModes(type: AgentType): readonly AgentPermiss
 /** Agents the built-in chat can drive over ACP. Pi has no ACP mode of its own. */
 export type ChatAgentType = Exclude<AgentType, "pi">;
 
+export function isAgentType(value: string): value is AgentType {
+    return Object.hasOwn(AGENT_EFFORTS, value);
+}
+
 export const CHAT_AGENT_TYPES: readonly ChatAgentType[] = ["codex", "claude", "opencode", "omp", "grok", "hermes"];
 
 export function agentSupportsChat(type: AgentType): type is ChatAgentType {

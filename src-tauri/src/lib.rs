@@ -11,6 +11,7 @@ pub mod cli_client;
 mod cli_install;
 mod cli_protocol;
 mod cli_server;
+mod deep_link;
 mod diff;
 mod document_preview;
 mod error;
@@ -219,6 +220,7 @@ pub fn run() {
             }
             Ok(())
         })
+        .manage(deep_link::DeepLinks::default())
         .manage(PtyManager::default())
         .manage(AcpManager::default())
         .manage(BrowserManager::default())
@@ -409,6 +411,7 @@ pub fn run() {
             cli_server::cli_open_result,
             cli_server::cli_editor_tabs_closed,
             cli_server::cli_runtime_info,
+            deep_link::take_deep_links,
             cli_install::cli_install_status,
             cli_install::cli_install,
             voice::voice_status,
@@ -421,6 +424,10 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building sikemux")
         .run(|app_handle, event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Opened { urls } = &event {
+                deep_link::receive(app_handle, urls);
+            }
             // The window-close and reload hooks above only fire on their
             // specific events. An in-app update relaunches via the process
             // plugin's `relaunch()` → `app.restart()`, which raises

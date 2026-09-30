@@ -26,6 +26,7 @@ import { useOccludeNativeViews } from "./state/nativeViews";
 import { TerminalPane } from "./terminal/TerminalPane";
 import { HarnessBridge } from "./shell/HarnessBridge";
 import { CliOpenBridge } from "./shell/CliOpenBridge";
+import { DeepLinkBridge } from "./shell/DeepLinkBridge";
 import { git } from "./api/git";
 import { runKeybindingAction, useKeymap } from "./commands/keymap";
 import { getKeybindingAction } from "./commands/keybindings";
@@ -942,6 +943,7 @@ export default function App() {
         <div className="shell">
             <ShellBackdrop />
             <CliOpenBridge />
+            <DeepLinkBridge />
             <HarnessBridge />
             <ProjectBridge />
             <AgentSessionSync />

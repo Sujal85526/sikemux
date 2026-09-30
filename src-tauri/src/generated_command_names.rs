@@ -183,6 +183,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "cli_open_result",
     "cli_editor_tabs_closed",
     "cli_runtime_info",
+    "take_deep_links",
     "cli_install_status",
     "cli_install",
     "voice_status",

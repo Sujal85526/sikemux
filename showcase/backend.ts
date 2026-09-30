@@ -115,6 +115,7 @@ export class ShowcaseBackend implements IpcTransport {
       constant({ percent: 86, charging: false, time_remaining: null }),
     );
     this.on("cli_frontend_ready", constant([]));
+    this.on("take_deep_links", constant([]));
     this.on("harness_claim", constant([]));
     this.on("git_worktree_list", constant([]));
     this.on("agent_sessions_watch_start", constant(1));
