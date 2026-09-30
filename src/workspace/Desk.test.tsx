@@ -208,11 +208,13 @@ describe("DeskHost", () => {
         expect(browserApi.newTab).not.toHaveBeenCalled();
         expect(toolbarField).toHaveValue("");
         expect(toolbarField).not.toHaveAttribute("placeholder");
+        await waitFor(() => expect(browserApi.setBounds).toHaveBeenLastCalledWith("agent-one", expect.objectContaining({ dim: 0.2 })));
 
         fireEvent.keyDown(field, { key: "Escape" });
         await waitFor(() => expect(screen.queryByRole("dialog", { name: "Open address" })).not.toBeInTheDocument());
         expect(getState().deskAddressOpen).toBeNull();
         expect(toolbarField).toHaveValue("https://example.com");
+        await waitFor(() => expect(vi.mocked(browserApi.setBounds).mock.lastCall?.[1]).not.toHaveProperty("dim"));
     });
 
     it("lets go of the address on Escape and drops what was typed", async () => {

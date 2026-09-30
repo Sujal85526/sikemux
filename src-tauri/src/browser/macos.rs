@@ -21,7 +21,7 @@ use objc2_app_kit::{
     NSBitmapImageFileType, NSBitmapImageRep, NSEvent, NSEventMask, NSEventModifierFlags, NSImage,
     NSImageCompressionFactor, NSModalResponse, NSTextField, NSView,
 };
-use objc2_core_graphics::CGMutablePath;
+use objc2_core_graphics::{CGColor, CGMutablePath};
 use objc2_foundation::{
     NSData, NSDictionary, NSError, NSKeyValueChangeKey, NSKeyValueObservingOptions, NSNumber,
     NSObject, NSObjectNSKeyValueObserverRegistration, NSObjectProtocol, NSPoint, NSRect, NSSize,
@@ -84,6 +84,7 @@ thread_local! {
     static PERSON_MONITOR: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
     static OPEN_DIALOGS: RefCell<HashMap<String, OpenDialog>> = RefCell::new(HashMap::new());
     static HOLES: RefCell<HashMap<usize, Vec<NSRect>>> = RefCell::new(HashMap::new());
+    static SHADES: RefCell<HashMap<usize, Retained<CALayer>>> = RefCell::new(HashMap::new());
     static PAGE_HIT_TEST: std::cell::Cell<Option<Imp>> = const { std::cell::Cell::new(None) };
     /// WebKit tears a named world down once nothing holds it, and the element
     /// numbers the agent was given go with it.
@@ -199,6 +200,7 @@ pub fn forget(tab_id: &str) {
     TABS.with(|tabs| {
         if let Some(tab) = tabs.borrow_mut().remove(tab_id) {
             HOLES.with(|holes| holes.borrow_mut().remove(&view_key(&tab.webview)));
+            SHADES.with(|shades| shades.borrow_mut().remove(&view_key(&tab.webview)));
         }
     });
 }
@@ -450,6 +452,42 @@ pub fn clip(pointer: *mut c_void, clip_left: f64, clip_right: f64, holes: Vec<(N
         // SAFETY: main thread, and the layer retains `mask` from here on.
         unsafe { layer.setMask(Some(&mask)) };
     }
+    CATransaction::commit();
+}
+
+/// Lay a black shade of `alpha` over the page, or take it off at zero, so an
+/// app panel floating on the page stands apart from it. The shade lives in the
+/// page's own layer, so the mask `clip` sets cuts it where the panel is.
+pub fn dim(pointer: *mut c_void, alpha: f64) {
+    let Some(webview) = webview_from(pointer) else {
+        return;
+    };
+    let view: &NSView = &webview;
+    // SAFETY: every NSView answers `layer` with a CALayer or nil, and the result is retained.
+    let Some(layer): Option<Retained<CALayer>> = (unsafe { msg_send![view, layer] }) else {
+        return;
+    };
+    let key = view_key(&webview);
+    CATransaction::begin();
+    CATransaction::setDisableActions(true);
+    SHADES.with(|shades| {
+        let mut shades = shades.borrow_mut();
+        if alpha <= 0.0 {
+            if let Some(shade) = shades.remove(&key) {
+                shade.removeFromSuperlayer();
+            }
+            return;
+        }
+        let shade = shades.entry(key).or_insert_with(|| {
+            let shade = CALayer::new();
+            // Above whatever layers WebKit draws the page into.
+            shade.setZPosition(1.0e6);
+            layer.addSublayer(&shade);
+            shade
+        });
+        shade.setFrame(layer.bounds());
+        shade.setBackgroundColor(Some(&CGColor::new_generic_gray(0.0, alpha)));
+    });
     CATransaction::commit();
 }
 

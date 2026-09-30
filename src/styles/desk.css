@@ -302,6 +302,14 @@
     background: color-mix(in srgb, var(--pane) calc(var(--window-opacity, 1) * 100%), transparent);
 }
 
+/* A page that is there is shaded natively; a blank one has only this. */
+.browser-dim {
+    position: absolute;
+    inset: 0;
+    background: #000;
+    pointer-events: none;
+}
+
 /* The list continues the field it drops from: one fill, one border, and square
    corners where the two meet so neither edge bends at the join. */
 .browser-address-field.open {

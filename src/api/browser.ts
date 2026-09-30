@@ -60,6 +60,8 @@ export interface BrowserBounds {
     clipLeft: number;
     clipRight: number;
     holes: BrowserHole[];
+    /** How dark a shade to lay over the page, from 0 to 1. */
+    dim?: number;
 }
 
 /** A command chord pressed while a page had keyboard focus. */

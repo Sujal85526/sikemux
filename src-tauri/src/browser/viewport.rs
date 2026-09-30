@@ -145,6 +145,7 @@ fn fit(area: &BrowserBounds, viewport: Viewport) -> BrowserBounds {
                 radius: hole.radius / scale,
             })
             .collect(),
+        dim: area.dim,
     }
 }
 
@@ -227,6 +228,7 @@ mod tests {
             clip_left: 0.0,
             clip_right: 0.0,
             holes: Vec::new(),
+            dim: 0.0,
         }
     }
 

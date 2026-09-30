@@ -31,6 +31,8 @@ import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
 const EditorPane = lazy(() => import("../editor/EditorPane").then((module) => ({ default: module.EditorPane })));
 const NO_FILES: readonly string[] = [];
 const NO_DIRTY: readonly string[] = [];
+/** How dark the page goes under the ⌘L address, so the panel stands apart from it. */
+const UNDER_ADDRESS_DIM = 0.2;
 
 /*
  * Which scrollers can move this pane on screen: its own scrolling ancestors,
@@ -416,8 +418,9 @@ function BrowserPage({
     const holesKey = JSON.stringify(placement ? holesOver(placement, appHoles) : []);
     const holes = useMemo<BrowserHole[]>(() => JSON.parse(holesKey), [holesKey]);
     useEffect(() => {
-        void browserApi.setBounds(agentId, shown && placement ? { ...placement, holes } : null).catch(reportError("place browser page"));
-    }, [agentId, placement, holes, shown]);
+        const dim = addressFloating ? { dim: UNDER_ADDRESS_DIM } : {};
+        void browserApi.setBounds(agentId, shown && placement ? { ...placement, holes, ...dim } : null).catch(reportError("place browser page"));
+    }, [agentId, placement, holes, shown, addressFloating]);
 
     useEffect(
         () => () => {
@@ -461,6 +464,7 @@ function BrowserPage({
             </div>
             <div ref={viewportRef} className="browser-viewport" tabIndex={-1}>
                 {blank && <div className="browser-blank" aria-label="Blank browser page" />}
+                {blank && addressFloating && <div className="browser-dim" style={{ opacity: UNDER_ADDRESS_DIM }} />}
             </div>
             {addressFloating && (
                 <FloatingAddress over={viewportRef} tabId={activeTab?.id} pageAddress={pageAddress} onGo={go} onClose={cmd.closeDeskAddress} />

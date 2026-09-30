@@ -91,7 +91,8 @@ pub struct BrowserSnapshot {
 
 /// Where the page area sits, in the main window's CSS pixels. The clips are
 /// how much of either side lies outside the stage and must not be drawn. The
-/// holes are app elements, like toasts, that must show through the page.
+/// holes are app elements, like toasts, that must show through the page. The
+/// dim is how dark a shade to lay over the page while an app panel floats on it.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BrowserBounds {
@@ -102,6 +103,8 @@ pub struct BrowserBounds {
     pub clip_left: f64,
     pub clip_right: f64,
     pub holes: Vec<BrowserHole>,
+    #[serde(default)]
+    pub dim: f64,
 }
 
 /// A rounded rectangle in the page's own coordinates.
@@ -1220,6 +1223,7 @@ fn place(view: &Webview, layout: viewport::Layout, awake: bool) {
                     })
                     .collect();
                 macos::clip(tab, frame.clip_left, frame.clip_right, holes);
+                macos::dim(tab, frame.dim);
             }
             viewport::Layout::Parked {
                 page: (width, height),
@@ -1262,6 +1266,7 @@ const MAX_HOLES: usize = 32;
 
 fn validate_bounds(bounds: &BrowserBounds) -> AppResult<()> {
     let finite = [
+        bounds.dim,
         bounds.x,
         bounds.y,
         bounds.width,
@@ -1288,6 +1293,7 @@ fn validate_bounds(bounds: &BrowserBounds) -> AppResult<()> {
         || bounds.clip_left < 0.0
         || bounds.clip_right < 0.0
         || bounds.clip_left + bounds.clip_right > bounds.width
+        || !(0.0..=1.0).contains(&bounds.dim)
     {
         return Err(AppError::BadArg("invalid browser bounds"));
     }
@@ -1726,8 +1732,19 @@ mod tests {
                 height: 34.0,
                 radius: 13.0,
             }],
+            dim: 0.0,
         };
         assert!(validate_bounds(&good).is_ok());
+        assert!(validate_bounds(&BrowserBounds {
+            dim: 0.2,
+            ..good.clone()
+        })
+        .is_ok());
+        assert!(validate_bounds(&BrowserBounds {
+            dim: 1.5,
+            ..good.clone()
+        })
+        .is_err());
         assert!(validate_bounds(&BrowserBounds {
             holes: vec![BrowserHole {
                 width: 0.0,
