@@ -212,7 +212,7 @@ export const bitbucketHostApi: CodeHostApi = {
 
     pulls: (repo: RepoRef, state: string) => call<Pull[]>("pulls", { ...repo, state }),
     pull: (repo: RepoRef, number: number) => call<Pull>("pull", { ...repo, number }),
-    pullFiles: (repo: RepoRef, number: number) => call<ChangedFile[]>("pullFiles", { ...repo, number }),
+    pullFiles: (repo: RepoRef, number: number) => call<ChangedFile[]>("pullFiles", { ...repo, number, fullPatches: true }),
     pullCommits: (repo: RepoRef, number: number) => call<PullCommit[]>("pullCommits", { ...repo, number }),
     commitAuthors: (repo: RepoRef, gitRef: string | null) => call<CommitAuthor[]>("commitAuthors", { ...repo, gitRef }),
     pullReviews: (repo: RepoRef, number: number) => call<Review[]>("pullReviews", { ...repo, number }),

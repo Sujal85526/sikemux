@@ -283,15 +283,149 @@ pub async fn get(data_dir: &Path, input: Thread) -> BitbucketResult<Pull> {
     Ok(pull)
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ChangedFile {
     pub path: String,
     pub status: String,
     pub additions: u64,
     pub deletions: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub previous_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub patch: Option<String>,
+    /// Says which part of the patch this is and how to read the rest.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+const PATCH_LINES: usize = 400;
+const MAX_PATCH_LINES: usize = 1000;
+const PATCH_BYTES: usize = 32 * 1024;
+
+/// Agents get the file list alone unless they name `paths`, and then a window
+/// of each patch. The pull request view asks for `fullPatches`.
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PatchQuery {
+    #[serde(default)]
+    pub paths: Vec<String>,
+    #[serde(default)]
+    pub offset: usize,
+    pub lines: Option<usize>,
+    #[serde(default)]
+    pub full_patches: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FilesQuery {
+    #[serde(flatten)]
+    pub pull: Thread,
+    #[serde(flatten)]
+    pub patches: PatchQuery,
+}
+
+fn cut_at_char(text: &str, most: usize) -> &str {
+    text.get(..text.floor_char_boundary(most)).unwrap_or_default()
+}
+
+/// Up to `lines` lines of `patch` from `offset`, and at most `PATCH_BYTES` of
+/// them, with a note whenever any of the patch is left out.
+fn window(patch: &str, offset: usize, lines: Option<usize>) -> (String, Option<String>) {
+    let all: Vec<&str> = patch.split('\n').collect();
+    let total = all.len();
+    if offset >= total {
+        return (
+            String::new(),
+            Some(format!(
+                "The patch has {total} lines; offset {offset} is past its end."
+            )),
+        );
+    }
+    let most = lines.unwrap_or(PATCH_LINES).clamp(1, MAX_PATCH_LINES);
+    let mut shown = String::new();
+    let mut end = offset;
+    let mut line_cut = false;
+    for line in all.iter().skip(offset).take(most) {
+        let room = PATCH_BYTES.saturating_sub(shown.len() + 1);
+        if line.len() > room {
+            if end == offset {
+                shown.push_str(cut_at_char(line, room));
+                line_cut = true;
+                end += 1;
+            }
+            break;
+        }
+        if end > offset {
+            shown.push('\n');
+        }
+        shown.push_str(line);
+        end += 1;
+    }
+    if offset == 0 && end == total && !line_cut {
+        return (shown, None);
+    }
+    let mut note = format!("Lines {}-{end} of {total}.", offset + 1);
+    if line_cut {
+        note.push_str(&format!(
+            " Line {end} was cut at {} KB.",
+            PATCH_BYTES / 1024
+        ));
+    }
+    if end < total {
+        note.push_str(&format!(
+            " {} more lines left out: pass offset {end} for the next part, or run git diff locally.",
+            total - end
+        ));
+    }
+    (shown, Some(note))
+}
+
+fn is_named(file: &ChangedFile, path: &str) -> bool {
+    file.path == path || file.previous_path.as_deref() == Some(path)
+}
+
+/// The files to answer with, carrying the patches `query` asks for.
+fn pick(files: Vec<ChangedFile>, query: &PatchQuery) -> BitbucketResult<Vec<ChangedFile>> {
+    if query.full_patches {
+        return Ok(files);
+    }
+    if let Some(unknown) = query
+        .paths
+        .iter()
+        .find(|path| !files.iter().any(|file| is_named(file, path)))
+    {
+        return Err(BitbucketError::BadArg(format!(
+            "`{unknown}` is not among the files this pull request changes"
+        )));
+    }
+    Ok(files
+        .into_iter()
+        .filter_map(|mut file| {
+            if query.paths.is_empty() {
+                file.patch = None;
+                return Some(file);
+            }
+            if !query.paths.iter().any(|path| is_named(&file, path)) {
+                return None;
+            }
+            match file.patch.take() {
+                Some(patch) => {
+                    let (shown, note) = window(&patch, query.offset, query.lines);
+                    file.patch = Some(shown);
+                    file.note = note;
+                }
+                None => {
+                    file.note = Some(
+                        "Bitbucket shows no patch for this file: it is binary or only renamed. Run git diff locally."
+                            .into(),
+                    );
+                }
+            }
+            Some(file)
+        })
+        .collect())
 }
 
 /// Each file's hunks out of one unified diff, keyed by the path it ends up
@@ -322,34 +456,50 @@ fn patches_of(diff: &str) -> BTreeMap<String, String> {
     found
 }
 
-pub async fn files(data_dir: &Path, input: Thread) -> BitbucketResult<Vec<ChangedFile>> {
-    let diff_path = pull_path(&input.repo, input.number, "/diff")?;
+fn changed_file(stat: DiffStat) -> Option<ChangedFile> {
+    let old = stat.old.map(|file| file.path);
+    let path = stat.new.map(|file| file.path).or_else(|| old.clone())?;
+    let status = match stat.status.as_deref() {
+        Some("added") => "added",
+        Some("removed") => "removed",
+        Some("renamed") => "renamed",
+        _ => "modified",
+    };
+    Some(ChangedFile {
+        previous_path: old.filter(|old| *old != path),
+        path,
+        status: status.into(),
+        additions: stat.lines_added,
+        deletions: stat.lines_removed,
+        patch: None,
+        note: None,
+    })
+}
+
+pub async fn files(data_dir: &Path, input: FilesQuery) -> BitbucketResult<Vec<ChangedFile>> {
+    let FilesQuery {
+        pull,
+        patches: query,
+    } = input;
+    if query.paths.is_empty() && !query.full_patches {
+        let stats = diffstat(data_dir, &pull.repo, pull.number).await?;
+        return Ok(stats.into_iter().filter_map(changed_file).collect());
+    }
+    let diff_path = pull_path(&pull.repo, pull.number, "/diff")?;
     let (stats, diff) = futures::try_join!(
-        diffstat(data_dir, &input.repo, input.number),
+        diffstat(data_dir, &pull.repo, pull.number),
         client::get_text(data_dir, &diff_path, &[])
     )?;
     let mut patches = patches_of(&diff);
-    Ok(stats
+    let files = stats
         .into_iter()
-        .filter_map(|stat| {
-            let old = stat.old.map(|file| file.path);
-            let path = stat.new.map(|file| file.path).or_else(|| old.clone())?;
-            let status = match stat.status.as_deref() {
-                Some("added") => "added",
-                Some("removed") => "removed",
-                Some("renamed") => "renamed",
-                _ => "modified",
-            };
-            Some(ChangedFile {
-                patch: patches.remove(&path),
-                previous_path: old.filter(|old| *old != path),
-                path,
-                status: status.into(),
-                additions: stat.lines_added,
-                deletions: stat.lines_removed,
-            })
+        .filter_map(changed_file)
+        .map(|mut file| {
+            file.patch = patches.remove(&file.path);
+            file
         })
-        .collect())
+        .collect();
+    pick(files, &query)
 }
 
 #[derive(Deserialize)]
@@ -919,6 +1069,157 @@ mod tests {
             pull.avatars.get("bo").map(String::as_str),
             Some("https://a/bo.png")
         );
+    }
+
+    fn changed(path: &str, patch: Option<&str>) -> ChangedFile {
+        ChangedFile {
+            path: path.into(),
+            status: "modified".into(),
+            additions: 1,
+            deletions: 1,
+            previous_path: None,
+            patch: patch.map(Into::into),
+            note: None,
+        }
+    }
+
+    fn asking(paths: &[&str]) -> PatchQuery {
+        PatchQuery {
+            paths: paths.iter().map(|path| path.to_string()).collect(),
+            ..PatchQuery::default()
+        }
+    }
+
+    #[test]
+    fn lists_the_files_without_their_patches_by_default() {
+        let mut renamed = changed("new.rs", Some("@@ -1 +1 @@\n-a\n+b"));
+        renamed.status = "renamed".into();
+        renamed.previous_path = Some("old.rs".into());
+        let listed = pick(
+            vec![renamed, changed("b.rs", Some("@@"))],
+            &PatchQuery::default(),
+        )
+        .unwrap();
+        assert!(listed
+            .iter()
+            .all(|file| file.patch.is_none() && file.note.is_none()));
+        assert_eq!(
+            serde_json::to_value(&listed[0]).unwrap(),
+            json!({ "path": "new.rs", "status": "renamed", "additions": 1, "deletions": 1, "previousPath": "old.rs" })
+        );
+        assert_eq!(
+            serde_json::to_value(&listed[1]).unwrap(),
+            json!({ "path": "b.rs", "status": "modified", "additions": 1, "deletions": 1 })
+        );
+    }
+
+    #[test]
+    fn named_paths_come_back_alone_with_their_patches() {
+        let files = vec![
+            changed("a.rs", Some("@@ -1 +1 @@\n-a\n+b")),
+            changed("b.rs", Some("@@")),
+            changed("logo.png", None),
+        ];
+        let picked = pick(files.clone(), &asking(&["a.rs", "logo.png"])).unwrap();
+        assert_eq!(picked.len(), 2);
+        assert_eq!(picked[0].patch.as_deref(), Some("@@ -1 +1 @@\n-a\n+b"));
+        assert_eq!(picked[0].note, None);
+        assert!(picked[1].patch.is_none());
+        assert!(picked[1].note.as_deref().unwrap().contains("git diff"));
+
+        assert!(matches!(
+            pick(files.clone(), &asking(&["missing.rs"])),
+            Err(BitbucketError::BadArg(_))
+        ));
+        let full = PatchQuery {
+            full_patches: true,
+            ..PatchQuery::default()
+        };
+        assert_eq!(pick(files.clone(), &full).unwrap(), files);
+    }
+
+    #[test]
+    fn a_diffstat_row_names_the_file_and_any_old_path() {
+        let stat: DiffStat = serde_json::from_value(json!({
+            "status": "renamed", "lines_added": 2, "lines_removed": 1,
+            "old": { "path": "old.rs" }, "new": { "path": "new.rs" },
+        }))
+        .unwrap();
+        let file = changed_file(stat).unwrap();
+        assert_eq!(
+            (file.path.as_str(), file.status.as_str()),
+            ("new.rs", "renamed")
+        );
+        assert_eq!(file.previous_path.as_deref(), Some("old.rs"));
+        let gone: DiffStat =
+            serde_json::from_value(json!({ "status": "removed", "old": { "path": "gone.rs" } }))
+                .unwrap();
+        let gone = changed_file(gone).unwrap();
+        assert_eq!((gone.path.as_str(), gone.previous_path), ("gone.rs", None));
+    }
+
+    #[test]
+    fn reads_the_patch_arguments_beside_the_pull_request() {
+        let query: FilesQuery = serde_json::from_value(json!({
+            "owner": "a", "name": "b", "number": 3, "paths": ["x.rs"], "offset": 400, "lines": 50,
+        }))
+        .unwrap();
+        assert_eq!(query.pull.number, 3);
+        assert_eq!(query.patches.paths, ["x.rs"]);
+        assert_eq!((query.patches.offset, query.patches.lines), (400, Some(50)));
+        assert!(!query.patches.full_patches);
+        let view: FilesQuery = serde_json::from_value(
+            json!({ "owner": "a", "name": "b", "number": 3, "fullPatches": true }),
+        )
+        .unwrap();
+        assert!(view.patches.full_patches);
+    }
+
+    #[test]
+    fn a_rename_is_found_by_its_old_path_too() {
+        let mut renamed = changed("new.rs", Some("@@"));
+        renamed.previous_path = Some("old.rs".into());
+        let picked = pick(vec![renamed, changed("b.rs", None)], &asking(&["old.rs"])).unwrap();
+        assert_eq!(picked.len(), 1);
+        assert_eq!(picked[0].path, "new.rs");
+    }
+
+    #[test]
+    fn a_long_patch_is_cut_and_says_how_to_read_the_rest() {
+        let patch: Vec<String> = (1..=1000).map(|line| format!("+line {line}")).collect();
+        let patch = patch.join("\n");
+        let (shown, note) = window(&patch, 0, None);
+        assert_eq!(shown.lines().count(), PATCH_LINES);
+        assert_eq!(shown.lines().last(), Some("+line 400"));
+        assert_eq!(
+            note.as_deref(),
+            Some("Lines 1-400 of 1000. 600 more lines left out: pass offset 400 for the next part, or run git diff locally.")
+        );
+
+        let (shown, note) = window(&patch, 990, None);
+        assert_eq!(shown.lines().next(), Some("+line 991"));
+        assert_eq!(note.as_deref(), Some("Lines 991-1000 of 1000."));
+
+        let (shown, _) = window(&patch, 0, Some(5));
+        assert_eq!(shown.lines().count(), 5);
+
+        let (shown, note) = window(&patch, 5000, None);
+        assert!(shown.is_empty());
+        assert!(note.unwrap().contains("past its end"));
+    }
+
+    #[test]
+    fn a_patch_stops_at_its_byte_budget() {
+        let wide = format!("+{}", "é".repeat(PATCH_BYTES));
+        let patch = format!("@@ -1 +1 @@\n{wide}\n+after");
+        let (shown, note) = window(&patch, 0, None);
+        assert_eq!(shown, "@@ -1 +1 @@");
+        assert!(note.unwrap().contains("pass offset 1"));
+
+        let (shown, note) = window(&patch, 1, None);
+        assert!(shown.len() <= PATCH_BYTES);
+        assert!(shown.starts_with("+é"));
+        assert!(note.unwrap().contains("Line 2 was cut at 32 KB"));
     }
 
     #[test]
