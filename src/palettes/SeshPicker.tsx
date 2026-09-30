@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { SessionKind } from "../state/types";
 import { fuzzyScore, isSubstringMatch } from "../lib/fuzzy";
 import { basename, expandHome, normalizePath, prettyPath, relativePath } from "../lib/paths";
-import { PRIMARY_SHORTCUT } from "../lib/platform";
+import { useShortcutLabel } from "../commands/useShortcutLabel";
 import { settingsApi } from "../api/settings";
 import * as cmd from "../state/commands";
 import { useResource, useResourceEnabled } from "../state/resources";
@@ -46,6 +46,7 @@ function sshSubtitle(h: SshHost): string {
 }
 
 export function SeshPicker() {
+    const settingsShortcut = useShortcutLabel("settings.toggle");
     const modalRef = useRef<HTMLDivElement>(null);
     useModalFocus(modalRef);
     const sessionsById = useStore((s) => s.sessions);
@@ -257,7 +258,7 @@ export function SeshPicker() {
                                         }}>
                                         open settings
                                     </button>{" "}
-                                    to add some ({PRIMARY_SHORTCUT},)
+                                    to add some{settingsShortcut && ` (${settingsShortcut})`}
                                 </>
                             ) : showSsh && hosts.length === 0 && mode === "ssh" ? (
                                 "no hosts in ~/.ssh/config"

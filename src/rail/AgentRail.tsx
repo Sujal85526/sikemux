@@ -4,6 +4,7 @@ import type { AgentInfo, AgentUsage, AgentUsageWindow } from "../api/agents";
 import { usePageVisible } from "../hooks/usePageVisible";
 import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "../agents/agentProfiles";
 import * as cmd from "../state/commands";
+import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
 import { type ResourceHandle, useResource, useResourceEnabled } from "../state/resources";
 import { agentCatalogR, agentSessionsR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
@@ -620,6 +621,7 @@ function AgentHeader({
     plan?: string | null;
     canOpenPalette: boolean;
 }) {
+    const chooseShortcut = useShortcutLabel("agent.choose");
     const label = agents.find((a) => a.type === type)?.label ?? type;
     return (
         <div className="agent-header">
@@ -641,11 +643,12 @@ function AgentHeader({
                             <IconSearch size={15} />
                         </button>
                     </Tooltip>
-                    <Tooltip label={type ? `new ${label} agent — ⌥N` : canOpenPalette ? "Review agent setup" : "No agent CLI detected"}>
+                    <Tooltip
+                        label={type ? withShortcut("Choose agent", chooseShortcut) : canOpenPalette ? "Review agent setup" : "No agent CLI detected"}>
                         <button
                             className="agent-header-action"
                             disabled={!type && !canOpenPalette}
-                            aria-label={type ? `New ${label} agent` : canOpenPalette ? "Review agent setup" : "No agent CLI detected"}
+                            aria-label={type ? "Choose agent" : canOpenPalette ? "Review agent setup" : "No agent CLI detected"}
                             onClick={() => {
                                 if (type || canOpenPalette) cmd.openAgentPalette();
                             }}>

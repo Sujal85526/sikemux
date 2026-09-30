@@ -10,3 +10,4 @@ export { VirtualLogList } from "../ui/VirtualLogList";
 export { useMouseActive } from "../hooks/useMouseActive";
 export { rankBy } from "../lib/fuzzy";
 export { FILE_MANAGER_NAME, IS_MACOS, PRIMARY_SHORTCUT } from "../lib/platform";
+export { currentShortcutLabel, useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";

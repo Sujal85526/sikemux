@@ -11,7 +11,7 @@ import { useStore } from "../state/store";
 import { IconBattery, IconFocus, IconGit, IconMic, IconZoom } from "../ui/Icons";
 import { WorkspaceTabs } from "../workspace/Workspace";
 import { useVoice } from "../voice/dictation";
-import { PRIMARY_SHORTCUT } from "../lib/platform";
+import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
 import { Tooltip } from "../ui/Tooltip";
 import { RollingText } from "../ui/RollingText";
 import { remoteRepoR } from "../codehost/project";
@@ -158,6 +158,8 @@ export const TopBar = memo(function TopBar() {
     const session = useStore((s) => s.sessions[s.activeSessionId]);
     const zoomed = useStore((s) => s.zoomedPaneId != null);
     const zen = useStore((s) => s.zenMode);
+    const focusShortcut = useShortcutLabel("view.focusMode");
+    const settingsShortcut = useShortcutLabel("settings.toggle");
     const [stripHovered, setStripHovered] = useState(false);
     const plugins = useInstalledPlugins();
 
@@ -187,12 +189,12 @@ export const TopBar = memo(function TopBar() {
                 <BatteryChip />
                 <ClockChip />
                 <div className="tb-toggles">
-                    <Tooltip label="Focus mode — hide rails">
+                    <Tooltip label={withShortcut("Focus mode — hide rails", focusShortcut)}>
                         <button className={`tb-btn${zen ? " on" : ""}`} onClick={cmd.toggleZen} aria-pressed={zen} aria-label="Focus mode">
                             <IconFocus size={15} />
                         </button>
                     </Tooltip>
-                    <Tooltip label={`Settings — ${PRIMARY_SHORTCUT},`}>
+                    <Tooltip label={withShortcut("Settings", settingsShortcut)}>
                         <button className="tb-btn" onClick={cmd.toggleSettings} aria-label="Settings">
                             <CogIcon size={15} />
                         </button>

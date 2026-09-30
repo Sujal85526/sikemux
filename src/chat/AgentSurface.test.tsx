@@ -6,12 +6,15 @@ import { AgentSurface } from "./AgentSurface";
 const mocks = vi.hoisted(() => ({
     chatPane: vi.fn(() => null),
     toggleDesk: vi.fn(),
-    state: { deskPanes: {} as Record<string, string>, windows: {} as Record<string, unknown> },
+    state: { deskPanes: {} as Record<string, string>, windows: {} as Record<string, unknown>, keybindingOverrides: {} },
 }));
 
 vi.mock("./AgentChatPane", () => ({ AgentChatPane: mocks.chatPane }));
 vi.mock("../terminal/TerminalPane", () => ({ TerminalPane: () => null }));
-vi.mock("../state/store", () => ({ useStore: (select: (state: typeof mocks.state) => unknown) => select(mocks.state) }));
+vi.mock("../state/store", () => ({
+    useStore: (select: (state: typeof mocks.state) => unknown) => select(mocks.state),
+    getState: () => mocks.state,
+}));
 vi.mock("../state/commands", () => ({
     toggleDesk: mocks.toggleDesk,
     toggleAgentSkipPermissions: vi.fn(),
@@ -33,7 +36,7 @@ afterEach(() => {
     cleanup();
     mocks.chatPane.mockClear();
     mocks.toggleDesk.mockClear();
-    mocks.state = { deskPanes: {}, windows: {} };
+    mocks.state = { deskPanes: {}, windows: {}, keybindingOverrides: {} };
 });
 
 /* The window layer keeps a live agent mounted so it keeps its process. The
@@ -55,6 +58,7 @@ it("shows the desk toggle as off while the agent's desk is hidden", () => {
 
 it("shows the desk toggle as on while the agent's desk is in the layout", () => {
     mocks.state = {
+        keybindingOverrides: {},
         deskPanes: { "desk-1": "agent-1" },
         windows: {
             "window-1": {

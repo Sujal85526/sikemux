@@ -7,6 +7,7 @@ import { IconAgent, IconCommand, IconPanelRight } from "../ui/Icons";
 import { useStore } from "../state/store";
 import { shownDeskPaneId } from "../state/selectors";
 import * as cmd from "../state/commands";
+import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
 import { AgentChatPane } from "./AgentChatPane";
 import { YoloToggle } from "./YoloToggle";
 import "../styles/chat.css";
@@ -16,13 +17,14 @@ type AgentView = "gui" | "tui";
 function DeskButton({ agent }: { agent: Agent }) {
     const open = useStore((state) => shownDeskPaneId(state, agent.id) !== null);
     const label = open ? "Hide desk" : "Show desk";
+    const shortcut = useShortcutLabel("desk.toggle");
     return (
         <button
             type="button"
             className="agent-desk-open"
             aria-pressed={open}
             aria-label={label}
-            title={label}
+            title={withShortcut(label, shortcut)}
             onClick={() => cmd.toggleDesk(agent.id)}>
             <IconPanelRight size={13} />
         </button>

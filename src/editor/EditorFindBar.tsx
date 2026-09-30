@@ -160,7 +160,7 @@ export function EditorFindBar({ getView, documentKey, open, replaceOpenOnMount, 
                         spellCheck={false}
                     />
                     <div className="ed-findbar-toggles">
-                        <Tooltip label="Match case — ⌥C">
+                        <Tooltip label="Match case">
                             <button
                                 type="button"
                                 className={`ed-findbar-toggle${caseSensitive ? " on" : ""}`}
@@ -170,7 +170,7 @@ export function EditorFindBar({ getView, documentKey, open, replaceOpenOnMount, 
                                 Aa
                             </button>
                         </Tooltip>
-                        <Tooltip label="Whole word — ⌥W">
+                        <Tooltip label="Whole word">
                             <button
                                 type="button"
                                 className={`ed-findbar-toggle${wholeWord ? " on" : ""}`}
@@ -180,7 +180,7 @@ export function EditorFindBar({ getView, documentKey, open, replaceOpenOnMount, 
                                 ab
                             </button>
                         </Tooltip>
-                        <Tooltip label="Regex — ⌥R">
+                        <Tooltip label="Regex">
                             <button
                                 type="button"
                                 className={`ed-findbar-toggle${regexp ? " on" : ""}`}

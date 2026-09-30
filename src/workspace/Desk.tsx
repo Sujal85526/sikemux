@@ -23,6 +23,7 @@ import {
 import { TerminalPane } from "../terminal/TerminalPane";
 import { basename } from "../lib/paths";
 import * as cmd from "../state/commands";
+import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
 
 const EditorPane = lazy(() => import("../editor/EditorPane").then((module) => ({ default: module.EditorPane })));
 const NO_FILES: readonly string[] = [];
@@ -148,6 +149,7 @@ function DeskSession({
     painted: boolean;
     onEmpty: () => void;
 }) {
+    const newTabShortcut = useShortcutLabel("browser.tabNew");
     const snapshot = useStore((state) => state.browserStrips[agentId]) ?? EMPTY_STRIP;
     const desk = useStore((state) => state.desks[agentId]) ?? EMPTY_DESK;
     const editorId = deskEditorId(agentId);
@@ -278,8 +280,8 @@ function DeskSession({
                 }}
                 onAdd={() => cmd.newBrowserTab(agentId)}
                 addIcon={<IconPlus size={13} />}
-                addTitle="New browser tab — ⌘T"
-                addLabel="New browser tab — Command T"
+                addTitle={withShortcut("New browser tab", newTabShortcut)}
+                addLabel="New browser tab"
             />
             <div className="desk-body">
                 <BrowserPage
@@ -341,6 +343,9 @@ function BrowserPage({
     snapshot: BrowserSnapshot;
     refresh: (signal?: AbortSignal) => Promise<void>;
 }) {
+    const backShortcut = useShortcutLabel("browser.back");
+    const forwardShortcut = useShortcutLabel("browser.forward");
+    const reloadShortcut = useShortcutLabel("browser.reload");
     const viewportRef = useRef<HTMLDivElement>(null);
     const measureRef = useRef<() => void>(() => {});
     const [typed, setTyped] = useState<string | null>(null);
@@ -447,7 +452,7 @@ function BrowserPage({
                 <button
                     type="button"
                     aria-label="Back"
-                    title="Back — ⌘["
+                    title={withShortcut("Back", backShortcut)}
                     disabled={!activeTab?.canGoBack}
                     onClick={() => run(browserApi.back(agentId), "browser back")}>
                     <IconChevron size={13} className="browser-back-icon" />
@@ -455,12 +460,16 @@ function BrowserPage({
                 <button
                     type="button"
                     aria-label="Forward"
-                    title="Forward — ⌘]"
+                    title={withShortcut("Forward", forwardShortcut)}
                     disabled={!activeTab?.canGoForward}
                     onClick={() => run(browserApi.forward(agentId), "browser forward")}>
                     <IconChevron size={13} />
                 </button>
-                <button type="button" aria-label="Reload" title="Reload — ⌘R" onClick={() => run(browserApi.reload(agentId), "reload browser")}>
+                <button
+                    type="button"
+                    aria-label="Reload"
+                    title={withShortcut("Reload", reloadShortcut)}
+                    onClick={() => run(browserApi.reload(agentId), "reload browser")}>
                     <IconRefresh size={13} />
                 </button>
                 <input
