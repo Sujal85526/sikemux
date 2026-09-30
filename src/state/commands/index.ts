@@ -8,6 +8,7 @@ export * from "./customCommands";
 export * from "./desk";
 export * from "./editor";
 export * from "./git";
+export * from "./launch";
 export * from "./panes";
 export * from "./search";
 export * from "./sessions";

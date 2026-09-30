@@ -94,6 +94,18 @@ export function activeAgentId(state: Pick<StoreState, "windows">, session: Pick<
     return win?.role === "agent" ? agentPaneId(win) : null;
 }
 
+/** The agent in front, or else the one in this project that worked last: whose desk a browser tab goes on. */
+export function nearestAgentId(
+    state: Pick<StoreState, "sessions" | "activeSessionId" | "windows" | "windowsBySession" | "agentActivity">,
+): string | null {
+    const session = state.sessions[state.activeSessionId];
+    if (session?.kind !== "project") return null;
+    const active = activeAgentId(state, session);
+    if (active) return active;
+    const lastWorked = (id: string) => state.agentActivity[id]?.updatedAt ?? 0;
+    return [...agentIdsOf(state, session.id)].sort((left, right) => lastWorked(right) - lastWorked(left))[0] ?? null;
+}
+
 /** The session a window belongs to. */
 export function ownerSessionId(state: Pick<StoreState, "sessionOrder" | "windowsBySession">, windowId: string): string | null {
     return state.sessionOrder.find((sid) => state.windowsBySession[sid]?.includes(windowId)) ?? null;

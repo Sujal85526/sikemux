@@ -186,6 +186,7 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
             if (known) agent.baselineSessionIds = [...new Set(known)];
         }
         d.agents[agent.id] = agent;
+        d.lastAgentType = type;
         const win = agentWindow(agent, cwd);
         d.windows[win.id] = win;
         d.windowsBySession[session.id] = [...(d.windowsBySession[session.id] ?? []), win.id];

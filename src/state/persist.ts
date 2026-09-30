@@ -120,6 +120,7 @@ const PERSISTED_KEYS = [
     "providerProfiles",
     "selectedProviderProfileIds",
     "defaultAgentPermissionMode",
+    "lastAgentType",
     "languageServerTrust",
 ] as const satisfies readonly (keyof StoreState)[];
 type PersistedKey = (typeof PERSISTED_KEYS)[number];
@@ -175,6 +176,7 @@ function packPrefs(s: StoreState): PersistedPrefs {
         providerProfiles,
         selectedProviderProfileIds: normaliseProviderProfileSelection(s.selectedProviderProfileIds, providerProfiles, {}),
         defaultAgentPermissionMode: s.defaultAgentPermissionMode === "bypass" ? "bypass" : "workspace-write",
+        lastAgentType: s.lastAgentType,
         languageServerTrust: s.languageServerTrust,
     };
 }
@@ -1024,6 +1026,7 @@ export function applyHydrate(raw: string): HydrationResult {
                 : prefs.defaultAgentPermissionMode === "bypass"
                   ? "bypass"
                   : "workspace-write",
+        lastAgentType: AGENT_TYPES.has(prefs.lastAgentType as AgentType) ? (prefs.lastAgentType as AgentType) : null,
         languageServerTrust: normaliseLanguageServerTrust(prefs.languageServerTrust),
     });
     pruneOnDemandWindows();

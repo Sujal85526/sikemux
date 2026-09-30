@@ -19,6 +19,7 @@ import type { HeldRelease, ReleaseCredits } from "../api/releases";
 import type {
     Agent,
     AgentPermissionMode,
+    AgentType,
     Desk,
     DeskView,
     EditorPaneView,
@@ -89,6 +90,8 @@ export interface DomainState {
     providerProfiles: ProviderProfile[];
     selectedProviderProfileIds: ProviderProfileSelection;
     defaultAgentPermissionMode: AgentPermissionMode;
+    /** The agent ⌘N starts: whichever was launched last. */
+    lastAgentType: AgentType | null;
     /** Whether each project, by root path, may start its language servers. A project absent here has not been asked. */
     languageServerTrust: Record<string, boolean>;
 }
@@ -242,6 +245,7 @@ export const useStore = create<StoreState>(() => {
         providerProfiles: DEFAULT_PROVIDER_PROFILES.map((profile) => ({ ...profile })),
         selectedProviderProfileIds: { ...DEFAULT_PROVIDER_PROFILE_SELECTION },
         defaultAgentPermissionMode: "bypass",
+        lastAgentType: null,
         languageServerTrust: {},
 
         home: "",

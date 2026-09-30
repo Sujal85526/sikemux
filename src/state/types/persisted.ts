@@ -5,6 +5,7 @@ import type { HeldRelease } from "../../api/releases";
 import type {
     Agent,
     AgentPermissionMode,
+    AgentType,
     ProjectRoot,
     ProviderProfile,
     ProviderProfileSelection,
@@ -91,5 +92,6 @@ export interface PersistedPrefs {
     providerProfiles?: ProviderProfile[];
     selectedProviderProfileIds?: ProviderProfileSelection;
     defaultAgentPermissionMode?: AgentPermissionMode;
+    lastAgentType?: AgentType | null;
     languageServerTrust?: Record<string, boolean>;
 }
