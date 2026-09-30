@@ -43,7 +43,7 @@ describe("keybindings", () => {
     });
 
     it("treats the shifted + as the plain = it shares a key with", () => {
-        const increase = getKeybindingAction("text.sizeIncrease").defaultBinding;
+        const increase = getKeybindingAction("text.sizeIncrease").defaultBinding ?? "";
         const held = { metaKey: increase.startsWith("Meta"), ctrlKey: increase.startsWith("Ctrl") };
         expect(actionForEvent(key("Equal", held), {})).toBe("text.sizeIncrease");
         expect(actionForEvent(key("Equal", { ...held, shiftKey: true }), {})).toBe("text.sizeIncrease");
@@ -58,26 +58,46 @@ describe("keybindings", () => {
     it("routes an event through overrides and reports conflicts", () => {
         const overrides = { "project.open": "Ctrl+Shift+KeyO" } as const;
         expect(actionForEvent(key("KeyO", { ctrlKey: true, shiftKey: true }), overrides)).toBe("project.open");
-        expect(actionForEvent(key("KeyP", { altKey: true }), overrides)).toBeNull();
+        expect(actionForEvent(key("KeyQ", { altKey: true }), overrides)).toBeNull();
         expect(findKeybindingConflict(overrides, "ssh.open", "Ctrl+Shift+KeyO")?.id).toBe("project.open");
     });
 
-    it("keeps every default binding unique and routes both session actions", () => {
+    it("keeps every default binding unique", async () => {
+        await import("../plugins/builtin");
         const owners = new Map<string, string[]>();
         for (const action of keybindingActions()) {
+            if (!action.defaultBinding) continue;
             const bindingOwners = owners.get(action.defaultBinding) ?? [];
             bindingOwners.push(action.id);
             owners.set(action.defaultBinding, bindingOwners);
         }
 
         expect(Array.from(owners, ([binding, ids]) => ({ binding, ids })).filter(({ ids }) => ids.length > 1)).toEqual([]);
-        expect(actionForEvent(key("KeyQ", { altKey: true }), {})).toBe("session.close");
-        expect(actionForEvent(key("KeyU", { altKey: true }), {})).toBe("session.lastUsed");
+    });
+
+    it("leaves Option alone by default, so shells and keyboard layouts keep it", async () => {
+        await import("../plugins/builtin");
+        const optionOnly = keybindingActions().filter((action) => {
+            const parts = action.defaultBinding?.split("+") ?? [];
+            return parts.includes("Alt") && !parts.includes("Meta") && !parts.includes("Ctrl");
+        });
+        expect(optionOnly.map((action) => action.id)).toEqual([]);
+    });
+
+    it("gives new agents, terminals and the desk one key each", () => {
+        const primary = { metaKey: getKeybindingAction("agent.new").defaultBinding?.startsWith("Meta") };
+        if (!primary.metaKey) return;
+        expect(actionForEvent(key("KeyN", { metaKey: true }), {})).toBe("agent.new");
+        expect(actionForEvent(key("KeyT", { metaKey: true }), {})).toBe("terminal.new");
+        expect(actionForEvent(key("KeyJ", { metaKey: true }), {})).toBe("desk.toggle");
+        expect(actionForEvent(key("KeyW", { metaKey: true }), {})).toBe("pane.close");
+        expect(actionForEvent(key("Digit3", { metaKey: true }), {})).toBe("tab.goto3");
     });
 
     it("requires a modifier for user-recorded shortcuts", () => {
         expect(keybindingHasModifier("KeyA")).toBe(false);
-        expect(keybindingHasModifier("Shift+KeyA")).toBe(true);
+        expect(keybindingHasModifier("Shift+KeyA")).toBe(false);
+        expect(keybindingHasModifier("Alt+Shift+KeyA")).toBe(true);
     });
 
     it("sanitizes persisted overrides", () => {
@@ -100,7 +120,8 @@ describe("plugin shortcuts", () => {
     it("lists a plugin's open shortcut once it registers, and knows which plugin it opens", async () => {
         await import("../plugins/builtin");
         const aws = keybindingActions().find((action) => action.id === "plugin.open:sikemux.aws");
-        expect(aws).toMatchObject({ label: "Open AWS", defaultBinding: "Alt+KeyA" });
+        expect(aws).toMatchObject({ label: "Open AWS" });
+        expect(aws?.defaultBinding).toMatch(/^(Meta|Ctrl)\+Alt\+KeyA$/);
         expect(pluginOpenedBy("plugin.open:sikemux.aws")).toBe("sikemux.aws");
         expect(pluginOpenedBy("ssh.open")).toBeNull();
         expect(normaliseKeybindingOverrides({ "plugin.open:sikemux.aws": "Alt+Shift+KeyA", "aws.open": "Alt+KeyZ" })).toEqual({

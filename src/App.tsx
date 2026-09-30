@@ -28,6 +28,7 @@ import { HarnessBridge } from "./shell/HarnessBridge";
 import { CliOpenBridge } from "./shell/CliOpenBridge";
 import { git } from "./api/git";
 import { runKeybindingAction, useKeymap } from "./commands/keymap";
+import { getKeybindingAction } from "./commands/keybindings";
 import { usePinchZoom } from "./shell/pinchZoom";
 import { introduceNotifications, useAgentNotifications } from "./agents/agentNotifications";
 import { useVoiceDictation } from "./voice/dictation";
@@ -554,17 +555,6 @@ function ApplicationCommandPalette() {
                 : []),
         ]);
     const standaloneCommands: StandaloneCommand[] = [
-        ...(activeKind === "project"
-            ? [
-                  {
-                      id: "agents.launch",
-                      title: "Open an agent CLI",
-                      detail: "Choose a local provider and open it directly in a PTY",
-                      category: "Agents",
-                      execute: runStandalone("agents.launch", cmd.openAgentPalette),
-                  } satisfies StandaloneCommand,
-              ]
-            : []),
         ...(activeKind === "project" && activeProjectCwd
             ? [
                   languageServersAllowedHere
@@ -656,7 +646,8 @@ function ApplicationCommandPalette() {
             onClose={cmd.closeCommandPalette}
             onExecute={cmd.noteRecentCommand}
             executeBuiltin={(id) => {
-                runKeybindingAction(id, new KeyboardEvent("keydown"), getState());
+                if (runKeybindingAction(id, new KeyboardEvent("keydown"), getState())) return;
+                notify("info", `${getKeybindingAction(id)?.label ?? id}: nothing here to act on`);
             }}
             executeCustom={(command) => {
                 cmd.runCustomCommand(command);

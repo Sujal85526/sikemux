@@ -8,14 +8,8 @@ import type { KeyModifier } from "../state/types";
 import { runMeasuredAction } from "../lib/instrumentation";
 import { applicationActionContext, executeApplicationAction, matchApplicationActionKeybinding } from "../actions/bridge";
 import { reportError } from "../state/toast";
-import { isPluginKind } from "../plugins/kinds";
 import { pluginOverlayOpen } from "../plugins/overlays";
 import { frontendPlugin, pluginSurface } from "../plugins/registry";
-
-function isTerminalKeyTarget(e: KeyboardEvent): boolean {
-    const target = e.target instanceof Element ? e.target : document.activeElement;
-    return !!target?.closest?.(".xterm");
-}
 
 const TEXT_SCALE_STEP = 0.1;
 
@@ -42,8 +36,9 @@ function keyTargetIn(e: KeyboardEvent, selector: string): boolean {
     return !!target?.closest?.(selector);
 }
 
-function isBrowserKeyTarget(e: KeyboardEvent): boolean {
-    return keyTargetIn(e, "[data-browser-pane]");
+/** A key pressed on a page, or a command deck run, which has no key behind it and means the page in front. */
+function reachesBrowser(e: KeyboardEvent): boolean {
+    return keyTargetIn(e, "[data-browser-pane]") || !e.isTrusted;
 }
 
 /** The agent whose desk the key was pressed in, if it was pressed in one. */
@@ -58,6 +53,7 @@ function hasOpenModal(st: StoreState): boolean {
         st.agentPaletteOpen ||
         st.filePaletteOpen ||
         st.commandPaletteOpen ||
+        st.newTabPaletteOpen ||
         st.commandPopup !== null ||
         st.onboardingOpen ||
         st.diagnosticsOpen ||
@@ -122,6 +118,10 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
             cmd.toggleZen();
             return true;
         case "pane.splitRow":
+            // ⌘D adds the next match to the selection in the editor, which it keeps.
+            if (event.metaKey && !event.shiftKey && !event.altKey && event.code === "KeyD" && keyTargetIn(event, ".cm-editor")) {
+                return false;
+            }
             cmd.splitActivePane("row");
             return true;
         case "pane.splitColumn":
@@ -134,11 +134,6 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
             cmd.moveFocus("left");
             return true;
         case "pane.focusDown":
-            // Alt+J is a useful multiline fallback in terminal apps. Preserve that
-            // physical default while allowing any reassigned focus shortcut through.
-            if (event.altKey && !event.metaKey && !event.ctrlKey && !event.shiftKey && event.code === "KeyJ" && isTerminalKeyTarget(event)) {
-                return false;
-            }
             cmd.moveFocus("down");
             return true;
         case "pane.focusUp":
@@ -162,9 +157,12 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
         case "pane.zoom":
             cmd.toggleZoom();
             return true;
-        case "pane.close":
-            cmd.closeActiveFocusTarget();
+        case "pane.close": {
+            const deskAgentId = deskKeyTarget(event);
+            if (deskAgentId) cmd.closeShownDeskTab(deskAgentId);
+            else cmd.closeActiveFocusTarget();
             return true;
+        }
         case "text.sizeIncrease": {
             const surface = textSurfaceFor(event, st);
             if (surface === "chat") cmd.adjustChatTextScale(TEXT_SCALE_STEP);
@@ -186,13 +184,17 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
             else cmd.resetTerminalFontSize();
             return true;
         }
-        case "session.newContextual":
-            if (active?.kind === "project" && activeAgentId(st, active)) cmd.openAgentPalette();
-            else if (active?.kind === "project") cmd.newWindow();
-            else if (active?.kind === "command") cmd.createCommandSession();
-            else if (active?.kind === "ssh") cmd.openPicker("ssh");
-            else if (active && isPluginKind(active.kind)) cmd.openPluginSession(active.kind);
-            else return false;
+        case "agent.new":
+            void cmd.startAgent();
+            return true;
+        case "agent.choose":
+            cmd.chooseAgent();
+            return true;
+        case "desk.toggle":
+            cmd.toggleNearestDesk();
+            return true;
+        case "terminal.new":
+            cmd.newTerminal();
             return true;
         case "window.next":
             cmd.cycleTab(1);
@@ -201,10 +203,23 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
             cmd.cycleTab(-1);
             return true;
         case "tab.next":
-            cmd.cycleTabs(1);
+        case "tab.previous": {
+            const delta = action === "tab.next" ? 1 : -1;
+            const deskAgentId = deskKeyTarget(event);
+            if (deskAgentId) cmd.cycleDeskTab(deskAgentId, delta);
+            else cmd.cycleTabs(delta);
             return true;
-        case "tab.previous":
-            cmd.cycleTabs(-1);
+        }
+        case "tab.goto1":
+        case "tab.goto2":
+        case "tab.goto3":
+        case "tab.goto4":
+        case "tab.goto5":
+        case "tab.goto6":
+        case "tab.goto7":
+        case "tab.goto8":
+        case "tab.goto9":
+            cmd.selectTabAt(Number(action.slice("tab.goto".length)));
             return true;
         case "project.open":
             cmd.openPicker("projects");
@@ -250,31 +265,19 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
             else cmd.openNewTabPalette();
             return true;
         case "browser.tabNew":
-            return cmd.newBrowserTab();
-        case "browser.tabClose": {
-            const deskAgentId = deskKeyTarget(event);
-            if (!deskAgentId) return false;
-            cmd.closeShownDeskTab(deskAgentId);
+            cmd.newDeskBrowserTab();
             return true;
-        }
         case "browser.address":
             return cmd.focusBrowserAddress();
         case "browser.reload":
-            if (!isBrowserKeyTarget(event)) return false;
+            if (!reachesBrowser(event)) return false;
             return cmd.reloadBrowserTab();
         case "browser.back":
-            if (!isBrowserKeyTarget(event)) return false;
+            if (!reachesBrowser(event)) return false;
             return cmd.browserHistory(-1);
         case "browser.forward":
-            if (!isBrowserKeyTarget(event)) return false;
+            if (!reachesBrowser(event)) return false;
             return cmd.browserHistory(1);
-        case "browser.tabNext":
-        case "browser.tabPrevious": {
-            const deskAgentId = deskKeyTarget(event);
-            if (!deskAgentId) return false;
-            cmd.cycleDeskTab(deskAgentId, action === "browser.tabNext" ? 1 : -1);
-            return true;
-        }
         case "window.files":
             cmd.openEditorPane();
             return true;
@@ -352,27 +355,27 @@ export function useKeymap(): void {
                 return;
             }
 
-            // The first-run tour asks the reader to press real bindings, so it
-            // claims every shortcut while it is open — including the ones other
-            // modals let through.
+            // The welcome screen answers the shortcuts it shows, so nothing
+            // behind it may, including the ones other modals let through.
             if (st.onboardingOpen) return;
-            if (!action) {
-                if (hasOpenModal(st)) return;
-                if (typingTarget(target) && !event.metaKey && !event.ctrlKey && !event.altKey) return;
-                const context = applicationActionContext(st, event.target);
-                const contributed = matchApplicationActionKeybinding(event, context);
-                if (!contributed) return;
-                runMeasuredAction(contributed.commandId, "keymap", () => {
-                    cmd.noteRecentCommand(`standalone:${contributed.commandId}`);
-                    void executeApplicationAction(contributed.actionId, context).catch(reportError(`run action ${contributed.commandId}`));
-                    return true;
-                });
+            if (hasOpenModal(st) && !(action && MODAL_ACTIONS.has(action))) return;
+            // Option belongs to what is being typed into: shells read it as Meta, other layouts type with it.
+            if (event.altKey && !event.metaKey && !event.ctrlKey && typingTarget(target)) return;
+            if (action && runMeasuredAction(action, "keymap", () => runKeybindingAction(action, event, st))) {
                 consume(event);
                 return;
             }
-            if (hasOpenModal(st) && !MODAL_ACTIONS.has(action)) return;
-            if (!runMeasuredAction(action, "keymap", () => runKeybindingAction(action, event, st))) return;
 
+            // A built-in that does not apply here leaves its key to the project's own actions.
+            if (typingTarget(target) && !event.metaKey && !event.ctrlKey && !event.altKey) return;
+            const context = applicationActionContext(st, event.target);
+            const contributed = matchApplicationActionKeybinding(event, context);
+            if (!contributed) return;
+            runMeasuredAction(contributed.commandId, "keymap", () => {
+                cmd.noteRecentCommand(`standalone:${contributed.commandId}`);
+                void executeApplicationAction(contributed.actionId, context).catch(reportError(`run action ${contributed.commandId}`));
+                return true;
+            });
             consume(event);
         };
 

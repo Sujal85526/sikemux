@@ -1,11 +1,13 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadApplicationActions } from "../actions/bridge";
+import { agentApi } from "../api/agents";
 import { browserApi } from "../api/browser";
 import { IS_MACOS } from "../lib/platform";
 import type { Session } from "../state/types";
 import { getState, setState } from "../state/store";
 import { useKeymap } from "./keymap";
+import { getKeybindingAction, type CoreKeybindingActionId } from "./keybindings";
 import { activeAgentId, agentWindowId } from "../state/selectors";
 import { withAgents } from "../test/agents";
 
@@ -33,6 +35,23 @@ function lookAtAgent(sessionId: string, agentId: string): void {
     });
 }
 
+/** Presses whatever key `action` is bound to by default on this platform. */
+function pressAction(action: CoreKeybindingActionId, target: EventTarget = window): void {
+    const parts = (getKeybindingAction(action).defaultBinding ?? "").split("+");
+    const code = parts.pop() ?? "";
+    target.dispatchEvent(
+        new KeyboardEvent("keydown", {
+            code,
+            metaKey: parts.includes("Meta"),
+            ctrlKey: parts.includes("Ctrl"),
+            altKey: parts.includes("Alt"),
+            shiftKey: parts.includes("Shift"),
+            bubbles: true,
+            cancelable: true,
+        }),
+    );
+}
+
 function KeymapHarness() {
     useKeymap();
     return null;
@@ -55,20 +74,20 @@ beforeEach(() => {
     });
 });
 
-describe("Alt+Tab session switching", () => {
-    it("previews each session and commits only when Alt is released", () => {
+describe("Control+` session switching", () => {
+    it("previews each session and commits only when Control is released", () => {
         render(<KeymapHarness />);
 
-        window.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", code: "Tab", altKey: true, bubbles: true, cancelable: true }));
+        pressAction("session.next");
         expect(getState().activeSessionId).toBe("one");
         expect(getState().sessionSwitcher?.selectedSessionId).toBe("two");
         expect(getState().zoomedPaneId).toBe("zoomed");
 
-        window.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", code: "Tab", altKey: true, bubbles: true, cancelable: true }));
+        pressAction("session.next");
         expect(getState().activeSessionId).toBe("one");
         expect(getState().sessionSwitcher?.selectedSessionId).toBe("three");
 
-        window.dispatchEvent(new KeyboardEvent("keyup", { key: "Alt", code: "AltLeft", bubbles: true, cancelable: true }));
+        window.dispatchEvent(new KeyboardEvent("keyup", { key: "Control", code: "ControlLeft", bubbles: true, cancelable: true }));
         expect(getState().activeSessionId).toBe("three");
         expect(getState().sessionSwitcher).toBeNull();
         expect(getState().zoomedPaneId).toBeNull();
@@ -77,65 +96,116 @@ describe("Alt+Tab session switching", () => {
     it("cancels the preview with Escape", () => {
         render(<KeymapHarness />);
 
-        window.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", code: "Tab", altKey: true, bubbles: true, cancelable: true }));
-        window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", altKey: true, bubbles: true, cancelable: true }));
+        pressAction("session.next");
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", ctrlKey: true, bubbles: true, cancelable: true }));
 
         expect(getState().activeSessionId).toBe("one");
         expect(getState().sessionSwitcher).toBeNull();
     });
 });
 
-describe("agent picker shortcut", () => {
-    it("opens the agent picker modal with Alt+N from the agent view", () => {
-        lookAtAgent("one", "agent-one");
+describe("agent shortcuts", () => {
+    const codex = { type: "codex" as const, label: "Codex", command: "/bin/codex", available: true, defaultModel: null, defaultEffort: null };
+
+    it("starts the agent launched last, from any tab of the project", async () => {
+        const available = vi.spyOn(agentApi, "available").mockResolvedValue([{ ...codex, type: "claude", label: "Claude" }, codex]);
+        setState({ lastAgentType: "codex" });
         render(<KeymapHarness />);
 
-        window.dispatchEvent(new KeyboardEvent("keydown", { key: "n", code: "KeyN", altKey: true, bubbles: true, cancelable: true }));
+        pressAction("agent.new");
+
+        await waitFor(() => expect(activeAgentId(getState(), getState().sessions.one)).not.toBeNull());
+        const agentId = activeAgentId(getState(), getState().sessions.one)!;
+        expect(getState().agents[agentId].type).toBe("codex");
+        available.mockRestore();
+    });
+
+    it("asks for a project first when none is in front, then starts the agent there", async () => {
+        const available = vi.spyOn(agentApi, "available").mockResolvedValue([codex]);
+        setState({ activeSessionId: "command" });
+        render(<KeymapHarness />);
+
+        pressAction("agent.new");
+        expect(getState()).toMatchObject({ pickerOpen: true, pickerMode: "projects" });
+
+        setState({ activeSessionId: "two", pickerOpen: false });
+        await waitFor(() => expect(activeAgentId(getState(), getState().sessions.two)).not.toBeNull());
+        available.mockRestore();
+    });
+
+    it("opens the agent picker from a terminal tab too", () => {
+        render(<KeymapHarness />);
+
+        pressAction("agent.choose");
 
         expect(getState().agentPaletteOpen).toBe(true);
-        expect(activeAgentId(getState(), getState().sessions.one)).toBe("agent-one");
     });
 });
 
-describe("embedded browser shortcuts", () => {
-    it("opens the new-tab chooser with Command+T rather than a browser tab", () => {
+describe("terminal and browser shortcuts", () => {
+    it("opens a terminal tab with Command+T, not a chooser or a browser tab", () => {
         const open = vi.spyOn(browserApi, "newTab").mockResolvedValue("browser-tab");
         lookAtAgent("one", "agent-one");
+        const before = getState().windowsBySession.one?.length ?? 0;
         render(<KeymapHarness />);
 
-        window.dispatchEvent(
-            new KeyboardEvent("keydown", {
-                code: "KeyT",
-                metaKey: IS_MACOS,
-                ctrlKey: !IS_MACOS,
-                bubbles: true,
-                cancelable: true,
-            }),
-        );
+        pressAction("terminal.new");
 
-        expect(getState().newTabPaletteOpen).toBe(true);
+        const windows = getState().windowsBySession.one ?? [];
+        expect(windows).toHaveLength(before + 1);
+        expect(getState().windows[getState().sessions.one.activeWindowId].role).toBe("term");
+        expect(getState().newTabPaletteOpen).toBe(false);
         expect(open).not.toHaveBeenCalled();
         open.mockRestore();
     });
 
-    it("opens a browser tab for the active agent with Command+Shift+T", async () => {
+    it("opens a browser tab for the active agent", async () => {
         const open = vi.spyOn(browserApi, "newTab").mockResolvedValue("browser-tab");
         lookAtAgent("one", "agent-one");
         render(<KeymapHarness />);
 
-        window.dispatchEvent(
-            new KeyboardEvent("keydown", {
-                code: "KeyT",
-                shiftKey: true,
-                metaKey: IS_MACOS,
-                ctrlKey: !IS_MACOS,
-                bubbles: true,
-                cancelable: true,
-            }),
-        );
+        pressAction("browser.tabNew");
 
         await waitFor(() => expect(open).toHaveBeenCalledWith("agent-one"));
         open.mockRestore();
+    });
+
+    it("brings the project's agent forward for a browser tab asked for from a terminal", async () => {
+        const open = vi.spyOn(browserApi, "newTab").mockResolvedValue("browser-tab");
+        lookAtAgent("one", "agent-one");
+        const agentWindow = getState().sessions.one.activeWindowId;
+        setState((state) => ({ sessions: { ...state.sessions, one: { ...state.sessions.one, activeWindowId: "one-window" } } }));
+        render(<KeymapHarness />);
+
+        pressAction("browser.tabNew");
+
+        await waitFor(() => expect(open).toHaveBeenCalledWith("agent-one"));
+        expect(getState().sessions.one.activeWindowId).toBe(agentWindow);
+        open.mockRestore();
+    });
+});
+
+describe("Option in text", () => {
+    function TerminalHarness() {
+        useKeymap();
+        return (
+            <div className="xterm">
+                <textarea aria-label="Terminal input" />
+            </div>
+        );
+    }
+
+    afterEach(cleanup);
+
+    it("reaches the shell even when someone bound an Option chord", () => {
+        setState({ keybindingOverrides: { "pane.zoom": "Alt+KeyZ" } });
+        render(<TerminalHarness />);
+
+        fireEvent.keyDown(screen.getByRole("textbox", { name: "Terminal input" }), { code: "KeyZ", key: "Ω", altKey: true });
+        expect(getState().zoomedPaneId).toBe("zoomed");
+
+        window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyZ", altKey: true, bubbles: true, cancelable: true }));
+        expect(getState().zoomedPaneId).toBeNull();
     });
 });
 
@@ -152,7 +222,7 @@ describe("command popup modality", () => {
             },
         });
 
-        window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", code: "KeyZ", altKey: true, bubbles: true, cancelable: true }));
+        pressAction("pane.zoom");
         expect(getState().zoomedPaneId).toBe("zoomed");
         expect(getState().commandPopup).not.toBeNull();
 
@@ -194,7 +264,7 @@ describe("contributed action keybindings", () => {
                     command: "pnpm check",
                     placement: "terminal",
                     contexts: ["project"],
-                    keybinding: "Meta+Shift+KeyT",
+                    keybinding: "Meta+Alt+KeyQ",
                 },
                 {
                     id: "zoom-collision",
@@ -203,7 +273,7 @@ describe("contributed action keybindings", () => {
                     command: "echo no",
                     placement: "background",
                     contexts: ["project"],
-                    keybinding: "Alt+KeyZ",
+                    keybinding: getKeybindingAction("pane.zoom").defaultBinding!,
                 },
             ],
             isCurrent: () => true,
@@ -213,19 +283,50 @@ describe("contributed action keybindings", () => {
         try {
             render(<KeymapHarness />);
 
-            window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyZ", altKey: true, bubbles: true, cancelable: true }));
+            pressAction("pane.zoom");
             expect(getState().zoomedPaneId).toBeNull();
             expect(execute).not.toHaveBeenCalled();
 
-            window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyT", metaKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+            window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyQ", metaKey: true, altKey: true, bubbles: true, cancelable: true }));
             await waitFor(() => expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: "quality" })));
             expect(getState().recentCommandKeys.filter((key) => key === "standalone:project.action.quality")).toHaveLength(1);
 
             registration.dispose();
             execute.mockClear();
-            window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyT", metaKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+            window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyQ", metaKey: true, altKey: true, bubbles: true, cancelable: true }));
             await Promise.resolve();
             expect(execute).not.toHaveBeenCalled();
+        } finally {
+            registration.dispose();
+        }
+    });
+
+    it("runs a project action on a built-in's key when the built-in has nothing to act on", async () => {
+        const execute = vi.fn();
+        const runtime = await loadApplicationActions();
+        const registration = runtime.registerProjectActions({
+            projectId: "one",
+            projectRoot: "/tmp/one",
+            configPath: "/tmp/one/sikemux.json",
+            actions: [
+                {
+                    id: "yank",
+                    label: "Shares a key with agent permissions",
+                    description: "",
+                    command: "echo",
+                    placement: "background",
+                    contexts: ["project"],
+                    keybinding: getKeybindingAction("agent.permissions").defaultBinding!,
+                },
+            ],
+            isCurrent: () => true,
+            execute,
+        });
+
+        try {
+            render(<KeymapHarness />);
+            pressAction("agent.permissions");
+            await waitFor(() => expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: "yank" })));
         } finally {
             registration.dispose();
         }

@@ -3,7 +3,7 @@ import { enabledFrontendPlugins } from "../plugins/enabled";
 import { getState } from "../state/store";
 import { frontendPlugin, frontendPlugins, type FrontendPlugin, type PluginShortcut } from "../plugins/registry";
 
-type CoreKeybindingCategory = "Workspace" | "Panes" | "Navigation" | "Browser";
+type CoreKeybindingCategory = "Workspace" | "Agents" | "Panes" | "Navigation" | "Browser";
 /** A plugin's own shortcuts are grouped under its name. */
 export type KeybindingCategory = CoreKeybindingCategory | (string & {});
 
@@ -12,8 +12,19 @@ export interface KeybindingAction {
     label: string;
     detail: string;
     category: KeybindingCategory;
-    defaultBinding: string;
+    /** `null` leaves the action unbound until someone records a key for it. */
+    defaultBinding: string | null;
 }
+
+/*
+ * Option is left to whatever has focus: shells and agent TUIs read it as Meta,
+ * and other keyboard layouts type characters with it. So the macOS defaults
+ * all hold Command or Control, and elsewhere Ctrl+Shift, which terminals leave
+ * alone, stands in for Command.
+ */
+const on = (mac: string, other: string): string => (IS_MACOS ? mac : other);
+
+const tabPositions = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 
 const coreKeybindingActions = [
     {
@@ -21,350 +32,360 @@ const coreKeybindingActions = [
         label: "Open command deck",
         detail: "Search every action, shortcut, and custom command",
         category: "Workspace",
-        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+Shift+KeyP`,
+        defaultBinding: on("Meta+Shift+KeyP", "Ctrl+Shift+KeyP"),
     },
     {
         id: "palette.files",
         label: "Open file or request palette",
         detail: "Files in projects, or what the plugin in front offers",
         category: "Workspace",
-        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+KeyP`,
+        defaultBinding: on("Meta+KeyP", "Ctrl+Alt+KeyP"),
     },
     {
         id: "search.global",
         label: "Global search",
         detail: "Search across the active project",
         category: "Workspace",
-        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+Shift+KeyF`,
+        defaultBinding: on("Meta+Shift+KeyF", "Ctrl+Shift+KeyF"),
     },
     {
         id: "settings.toggle",
         label: "Open settings",
         detail: "Open or close this preferences window",
         category: "Workspace",
-        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+Comma`,
+        defaultBinding: on("Meta+Comma", "Ctrl+Comma"),
     },
     {
         id: "view.focusMode",
         label: "Focus mode",
         detail: "Hide both rails",
         category: "Workspace",
-        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+KeyB`,
-    },
-    {
-        id: "session.open",
-        label: "Open or create session",
-        detail: "Show every available session type",
-        category: "Workspace",
-        defaultBinding: "Alt+KeyS",
+        defaultBinding: on("Meta+KeyB", "Ctrl+Alt+KeyF"),
     },
     {
         id: "project.open",
         label: "Open project",
         detail: "Open the project picker",
         category: "Workspace",
-        defaultBinding: "Alt+KeyP",
+        defaultBinding: on("Meta+KeyO", "Ctrl+Shift+KeyO"),
+    },
+    {
+        id: "session.open",
+        label: "Open project, host or plugin",
+        detail: "Pick from projects, SSH hosts and plugins in one list",
+        category: "Workspace",
+        defaultBinding: on("Meta+Shift+KeyO", "Ctrl+Alt+KeyO"),
     },
     {
         id: "ssh.open",
         label: "Connect to SSH host",
         detail: "Open the SSH host picker",
         category: "Workspace",
-        defaultBinding: "Alt+Shift+KeyS",
+        defaultBinding: on("Meta+Shift+KeyS", "Ctrl+Alt+KeyS"),
     },
     {
-        id: "session.newContextual",
-        label: "New item",
-        detail: "Create a window or session for the current context",
+        id: "palette.newTab",
+        label: "New…",
+        detail: "Choose what to open: terminal, agent, browser, editor, Git or search",
         category: "Workspace",
-        defaultBinding: "Alt+KeyN",
+        defaultBinding: null,
     },
     {
         id: "session.close",
         label: "Close session",
-        detail: "Close the active session",
+        detail: "Close the project, host or terminal session in front, asking first if agents would stop",
         category: "Workspace",
-        defaultBinding: "Alt+KeyQ",
-    },
-    {
-        id: "session.command",
-        label: "Focus command session",
-        detail: "Jump to the command terminal",
-        category: "Workspace",
-        defaultBinding: "Alt+KeyT",
-    },
-    {
-        id: "pane.splitRow",
-        label: "Split pane right",
-        detail: "Create a side-by-side pane",
-        category: "Panes",
-        defaultBinding: "Alt+Backslash",
-    },
-    {
-        id: "pane.splitColumn",
-        label: "Split pane down",
-        detail: "Create a pane below",
-        category: "Panes",
-        defaultBinding: "Alt+Minus",
-    },
-    {
-        id: "pane.splitStack",
-        label: "Split pane into tabs",
-        detail: "Create a pane in the same place, reached by tab",
-        category: "Panes",
-        defaultBinding: "Alt+Equal",
-    },
-    {
-        id: "pane.focusLeft",
-        label: "Focus pane left",
-        detail: "Move focus to the pane on the left",
-        category: "Panes",
-        defaultBinding: "Alt+KeyH",
-    },
-    {
-        id: "pane.focusDown",
-        label: "Focus pane down",
-        detail: "Move focus to the pane below",
-        category: "Panes",
-        defaultBinding: "Alt+KeyJ",
-    },
-    {
-        id: "pane.focusUp",
-        label: "Focus pane up",
-        detail: "Move focus to the pane above",
-        category: "Panes",
-        defaultBinding: "Alt+KeyK",
-    },
-    {
-        id: "pane.focusRight",
-        label: "Focus pane right",
-        detail: "Move focus to the pane on the right",
-        category: "Panes",
-        defaultBinding: "Alt+KeyL",
-    },
-    {
-        id: "pane.resizeLeft",
-        label: "Resize pane left",
-        detail: "Grow the active pane toward the left",
-        category: "Panes",
-        defaultBinding: "Alt+Shift+KeyH",
-    },
-    {
-        id: "pane.resizeDown",
-        label: "Resize pane down",
-        detail: "Grow the active pane downward",
-        category: "Panes",
-        defaultBinding: "Alt+Shift+KeyJ",
-    },
-    {
-        id: "pane.resizeUp",
-        label: "Resize pane up",
-        detail: "Grow the active pane upward",
-        category: "Panes",
-        defaultBinding: "Alt+Shift+KeyK",
-    },
-    {
-        id: "pane.resizeRight",
-        label: "Resize pane right",
-        detail: "Grow the active pane toward the right",
-        category: "Panes",
-        defaultBinding: "Alt+Shift+KeyL",
-    },
-    {
-        id: "pane.zoom",
-        label: "Zoom pane",
-        detail: "Fill the window with the active pane",
-        category: "Panes",
-        defaultBinding: "Alt+KeyZ",
-    },
-    {
-        id: "pane.close",
-        label: "Close focused pane",
-        detail: "Close the current pane or focused agent",
-        category: "Panes",
-        defaultBinding: "Alt+KeyW",
+        defaultBinding: on("Meta+Shift+KeyW", "Ctrl+Shift+KeyQ"),
     },
     {
         id: "text.sizeIncrease",
         label: "Increase text size",
         detail: "Larger text in the focused editor or chat, or in every terminal",
         category: "Workspace",
-        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+Equal`,
+        defaultBinding: on("Meta+Equal", "Ctrl+Equal"),
     },
     {
         id: "text.sizeDecrease",
         label: "Decrease text size",
         detail: "Smaller text in the focused editor or chat, or in every terminal",
         category: "Workspace",
-        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+Minus`,
+        defaultBinding: on("Meta+Minus", "Ctrl+Minus"),
     },
     {
         id: "text.sizeReset",
         label: "Reset text size",
         detail: "Return the focused editor or chat, or every terminal, to its default size",
         category: "Workspace",
-        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+Digit0`,
+        defaultBinding: on("Meta+Digit0", "Ctrl+Digit0"),
+    },
+    {
+        id: "agent.new",
+        label: "New agent",
+        detail: "Start the agent you launched last in this project, ready to type to",
+        category: "Agents",
+        defaultBinding: on("Meta+KeyN", "Ctrl+Shift+KeyN"),
+    },
+    {
+        id: "agent.choose",
+        label: "Choose agent",
+        detail: "Start any installed agent, or resume an earlier conversation",
+        category: "Agents",
+        defaultBinding: on("Meta+Shift+KeyN", "Ctrl+Alt+KeyN"),
+    },
+    {
+        id: "desk.toggle",
+        label: "Show or hide desk",
+        detail: "The agent's pages, files and terminals, beside it",
+        category: "Agents",
+        defaultBinding: on("Meta+KeyJ", "Ctrl+Shift+KeyJ"),
+    },
+    {
+        id: "agent.permissions",
+        label: "Toggle agent permissions",
+        detail: "Toggle skip-permissions for the active agent",
+        category: "Agents",
+        defaultBinding: on("Meta+Shift+KeyY", "Ctrl+Shift+KeyY"),
+    },
+    {
+        id: "terminal.new",
+        label: "New terminal",
+        detail: "A shell tab in this project, another login on this host, or a new command session",
+        category: "Panes",
+        defaultBinding: on("Meta+KeyT", "Ctrl+Shift+KeyT"),
+    },
+    {
+        id: "session.command",
+        label: "Focus command session",
+        detail: "Jump to the command terminal",
+        category: "Panes",
+        defaultBinding: on("Meta+Ctrl+KeyT", "Ctrl+Alt+Shift+KeyT"),
+    },
+    {
+        id: "pane.splitRow",
+        label: "Split pane right",
+        detail: "Create a side-by-side pane",
+        category: "Panes",
+        defaultBinding: on("Meta+KeyD", "Ctrl+Shift+KeyD"),
+    },
+    {
+        id: "pane.splitColumn",
+        label: "Split pane down",
+        detail: "Create a pane below",
+        category: "Panes",
+        defaultBinding: on("Meta+Shift+KeyD", "Ctrl+Shift+KeyE"),
+    },
+    {
+        id: "pane.splitStack",
+        label: "Split pane into tabs",
+        detail: "Create a pane in the same place, reached by tab",
+        category: "Panes",
+        defaultBinding: on("Meta+Alt+KeyD", "Ctrl+Alt+Shift+KeyD"),
+    },
+    {
+        id: "pane.focusLeft",
+        label: "Focus pane left",
+        detail: "Move focus to the pane on the left",
+        category: "Panes",
+        defaultBinding: on("Meta+Alt+ArrowLeft", "Ctrl+Alt+ArrowLeft"),
+    },
+    {
+        id: "pane.focusDown",
+        label: "Focus pane down",
+        detail: "Move focus to the pane below",
+        category: "Panes",
+        defaultBinding: on("Meta+Alt+ArrowDown", "Ctrl+Alt+ArrowDown"),
+    },
+    {
+        id: "pane.focusUp",
+        label: "Focus pane up",
+        detail: "Move focus to the pane above",
+        category: "Panes",
+        defaultBinding: on("Meta+Alt+ArrowUp", "Ctrl+Alt+ArrowUp"),
+    },
+    {
+        id: "pane.focusRight",
+        label: "Focus pane right",
+        detail: "Move focus to the pane on the right",
+        category: "Panes",
+        defaultBinding: on("Meta+Alt+ArrowRight", "Ctrl+Alt+ArrowRight"),
+    },
+    {
+        id: "pane.resizeLeft",
+        label: "Resize pane left",
+        detail: "Grow the active pane toward the left",
+        category: "Panes",
+        defaultBinding: on("Meta+Ctrl+ArrowLeft", "Ctrl+Alt+Shift+ArrowLeft"),
+    },
+    {
+        id: "pane.resizeDown",
+        label: "Resize pane down",
+        detail: "Grow the active pane downward",
+        category: "Panes",
+        defaultBinding: on("Meta+Ctrl+ArrowDown", "Ctrl+Alt+Shift+ArrowDown"),
+    },
+    {
+        id: "pane.resizeUp",
+        label: "Resize pane up",
+        detail: "Grow the active pane upward",
+        category: "Panes",
+        defaultBinding: on("Meta+Ctrl+ArrowUp", "Ctrl+Alt+Shift+ArrowUp"),
+    },
+    {
+        id: "pane.resizeRight",
+        label: "Resize pane right",
+        detail: "Grow the active pane toward the right",
+        category: "Panes",
+        defaultBinding: on("Meta+Ctrl+ArrowRight", "Ctrl+Alt+Shift+ArrowRight"),
+    },
+    {
+        id: "pane.zoom",
+        label: "Zoom pane",
+        detail: "Fill the window with the active pane",
+        category: "Panes",
+        defaultBinding: on("Meta+Shift+Enter", "Ctrl+Shift+Enter"),
+    },
+    {
+        id: "pane.close",
+        label: "Close",
+        detail: "Close the page, file, pane or tab in front, asking first if an agent is mid-turn",
+        category: "Panes",
+        defaultBinding: on("Meta+KeyW", "Ctrl+Shift+KeyW"),
     },
     {
         id: "window.previous",
-        label: "Previous window",
-        detail: "Move to the previous workspace window",
+        label: "Previous tab",
+        detail: "Move one tab left along the strip",
         category: "Navigation",
-        defaultBinding: "Alt+BracketLeft",
+        defaultBinding: on("Meta+Shift+BracketLeft", "Ctrl+PageUp"),
     },
     {
         id: "window.next",
-        label: "Next window",
-        detail: "Move to the next workspace window",
+        label: "Next tab",
+        detail: "Move one tab right along the strip",
         category: "Navigation",
-        defaultBinding: "Alt+BracketRight",
+        defaultBinding: on("Meta+Shift+BracketRight", "Ctrl+PageDown"),
     },
     {
         id: "tab.previous",
-        label: "Previous terminal tab",
-        detail: "Move to the previous terminal tab",
+        label: "Previous of the same kind",
+        detail: "The previous desk page, agent, file or terminal, whichever is in front",
         category: "Navigation",
-        defaultBinding: "Alt+Comma",
+        defaultBinding: "Ctrl+Shift+Tab",
     },
     {
         id: "tab.next",
-        label: "Next terminal tab",
-        detail: "Move to the next terminal tab",
+        label: "Next of the same kind",
+        detail: "The next desk page, agent, file or terminal, whichever is in front",
         category: "Navigation",
-        defaultBinding: "Alt+Period",
+        defaultBinding: "Ctrl+Tab",
     },
+    ...tabPositions.map(
+        (position) =>
+            ({
+                id: `tab.goto${position}`,
+                label: position === 9 ? "Last tab" : `Tab ${position}`,
+                detail: position === 9 ? "Jump to the last tab in the strip" : `Jump to tab ${position} in the strip`,
+                category: "Navigation",
+                defaultBinding: on(`Meta+Digit${position}`, `Ctrl+Digit${position}`),
+            }) as const,
+    ),
     {
         id: "session.lastUsed",
         label: "Switch to last-used session",
         detail: "Toggle back to the session you used immediately before this one",
         category: "Navigation",
-        defaultBinding: "Alt+KeyU",
+        defaultBinding: on("Meta+Alt+KeyU", "Ctrl+Alt+KeyU"),
     },
     {
         id: "session.next",
         label: "Next session",
-        detail: "Cycle forward through sessions",
+        detail: "Cycle forward through sessions; hold Control to keep choosing",
         category: "Navigation",
-        defaultBinding: "Alt+Tab",
+        defaultBinding: "Ctrl+Backquote",
     },
     {
         id: "session.previous",
         label: "Previous session",
         detail: "Cycle backward through sessions",
         category: "Navigation",
-        defaultBinding: "Alt+Backquote",
+        defaultBinding: "Ctrl+Shift+Backquote",
     },
     {
         id: "session.nextGroup",
         label: "Next session group",
         detail: "Cycle through project, SSH, cloud and command groups",
         category: "Navigation",
-        defaultBinding: "Alt+Shift+Tab",
+        defaultBinding: "Ctrl+Alt+Backquote",
     },
     {
         id: "window.files",
         label: "Focus files",
         detail: "Jump to the files window",
         category: "Navigation",
-        defaultBinding: "Alt+Digit1",
+        defaultBinding: on("Meta+Alt+Digit1", "Ctrl+Alt+Digit1"),
     },
     {
         id: "window.terminal",
         label: "Focus terminal",
         detail: "Jump to the terminal window",
         category: "Navigation",
-        defaultBinding: "Alt+Digit2",
+        defaultBinding: on("Meta+Alt+Digit2", "Ctrl+Alt+Digit2"),
     },
     {
         id: "window.git",
         label: "Focus Git",
         detail: "Jump to the Git window",
         category: "Navigation",
-        defaultBinding: "Alt+Digit3",
+        defaultBinding: on("Meta+Alt+Digit3", "Ctrl+Alt+Digit3"),
     },
     {
         id: "window.agents",
         label: "Focus agents",
         detail: "Jump to the agents view",
         category: "Navigation",
-        defaultBinding: "Alt+Digit4",
+        defaultBinding: on("Meta+Alt+Digit4", "Ctrl+Alt+Digit4"),
     },
     {
         id: "window.search",
         label: "Focus search",
         detail: "Jump to the search window",
         category: "Navigation",
-        defaultBinding: "Alt+Digit5",
-    },
-    {
-        id: "agent.permissions",
-        label: "Toggle agent permissions",
-        detail: "Toggle skip-permissions for the active agent",
-        category: "Navigation",
-        defaultBinding: "Alt+KeyY",
-    },
-    {
-        id: "palette.newTab",
-        label: "New tab",
-        detail: "Choose what to open: terminal, agent, browser, editor, Git or search",
-        category: "Navigation",
-        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+KeyT`,
+        defaultBinding: on("Meta+Alt+Digit5", "Ctrl+Alt+Digit5"),
     },
     {
         id: "browser.tabNew",
         label: "New browser tab",
-        detail: "Open a page on the active agent's desk",
+        detail: "Open a page on the desk of the agent in front, or the one that worked last",
         category: "Browser",
-        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+Shift+KeyT`,
-    },
-    {
-        id: "browser.tabClose",
-        label: "Close desk tab",
-        detail: "Close the page, file or terminal showing on an agent's desk",
-        category: "Browser",
-        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+KeyW`,
+        defaultBinding: on("Meta+Shift+KeyT", "Ctrl+Shift+KeyB"),
     },
     {
         id: "browser.address",
         label: "Focus browser address",
         detail: "Focus the embedded browser address bar",
         category: "Browser",
-        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+KeyL`,
+        defaultBinding: on("Meta+KeyL", "Ctrl+Shift+KeyL"),
     },
     {
         id: "browser.reload",
         label: "Reload browser tab",
         detail: "Reload the active embedded browser tab",
         category: "Browser",
-        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+KeyR`,
+        defaultBinding: on("Meta+KeyR", "Ctrl+KeyR"),
     },
     {
         id: "browser.back",
         label: "Browser back",
         detail: "Go back in the active embedded browser tab",
         category: "Browser",
-        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+BracketLeft`,
+        defaultBinding: on("Meta+BracketLeft", "Ctrl+BracketLeft"),
     },
     {
         id: "browser.forward",
         label: "Browser forward",
         detail: "Go forward in the active embedded browser tab",
         category: "Browser",
-        defaultBinding: `${IS_MACOS ? "Meta" : "Ctrl"}+BracketRight`,
-    },
-    {
-        id: "browser.tabNext",
-        label: "Next desk tab",
-        detail: "Select the next tab on an agent's desk",
-        category: "Browser",
-        defaultBinding: "Ctrl+Tab",
-    },
-    {
-        id: "browser.tabPrevious",
-        label: "Previous desk tab",
-        detail: "Select the previous tab on an agent's desk",
-        category: "Browser",
-        defaultBinding: "Ctrl+Shift+Tab",
+        defaultBinding: on("Meta+BracketRight", "Ctrl+BracketRight"),
     },
 ] as const satisfies readonly KeybindingAction[];
 
@@ -376,7 +397,7 @@ export type PluginRunActionId = `plugin.run:${string}`;
 export type KeybindingActionId = CoreKeybindingActionId | PluginOpenActionId | PluginRunActionId;
 export type KeybindingOverrides = Partial<Record<KeybindingActionId, string | null>>;
 
-const CORE_KEYBINDING_CATEGORIES: readonly KeybindingCategory[] = ["Workspace", "Panes", "Navigation", "Browser"];
+const CORE_KEYBINDING_CATEGORIES: readonly KeybindingCategory[] = ["Workspace", "Agents", "Panes", "Navigation", "Browser"];
 
 /** Core's sections, then one for each plugin with shortcuts of its own. */
 export function keybindingCategories(): readonly KeybindingCategory[] {
@@ -466,9 +487,32 @@ export function eventToKeybinding(event: Pick<KeyboardEvent, "code" | "metaKey" 
     return parts.join("+");
 }
 
+/** Shift alone only changes what a key types, so a shortcut needs one of the others. */
 export function keybindingHasModifier(binding: string): boolean {
     const parts = binding.split("+");
-    return parts.includes("Meta") || parts.includes("Ctrl") || parts.includes("Alt") || parts.includes("Shift");
+    return parts.includes("Meta") || parts.includes("Ctrl") || parts.includes("Alt");
+}
+
+const RESERVED: Readonly<Record<string, string>> = IS_MACOS
+    ? {
+          "Meta+KeyQ": "Quit",
+          "Meta+KeyH": "Hide",
+          "Meta+Alt+KeyH": "Hide Others",
+          "Meta+KeyM": "Minimize",
+          "Meta+Tab": "the app switcher",
+          "Meta+Space": "Spotlight",
+          "Meta+KeyC": "Copy",
+          "Meta+KeyV": "Paste",
+          "Meta+KeyX": "Cut",
+          "Meta+KeyA": "Select All",
+          "Meta+KeyZ": "Undo",
+          "Meta+Shift+KeyZ": "Redo",
+      }
+    : { "Alt+Tab": "the window switcher", "Alt+F4": "closing the window", "Ctrl+Shift+KeyC": "Copy", "Ctrl+Shift+KeyV": "Paste" };
+
+/** What the system or every text field already does with this key, when that is taken. */
+export function reservedKeybinding(binding: string): string | null {
+    return RESERVED[binding] ?? null;
 }
 
 export function matchesKeybinding(event: Pick<KeyboardEvent, "code" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey">, binding: string): boolean {
