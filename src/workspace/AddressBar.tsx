@@ -20,12 +20,13 @@ interface Place {
     width: number;
 }
 
-/** What the address bar shows while nobody is editing it: the site alone. */
-function siteOf(url: string): { host: string; secure: boolean } | null {
+/** What the address bar shows while nobody is editing it: the address without its scheme, the site picked out. */
+function siteOf(url: string): { host: string; path: string; secure: boolean } | null {
     try {
         const parsed = new URL(url);
         if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
-        return { host: parsed.host.replace(/^www\./, ""), secure: parsed.protocol === "https:" };
+        const path = parsed.pathname + parsed.search + parsed.hash;
+        return { host: parsed.host.replace(/^www\./, ""), path: path === "/" ? "" : path, secure: parsed.protocol === "https:" };
     } catch {
         return null;
     }
@@ -296,7 +297,8 @@ export function AddressBar({
                 {site && (
                     <span className="browser-address-site" aria-hidden="true">
                         {site.secure && <IconLock size={11} />}
-                        <span>{site.host}</span>
+                        <span className="browser-address-host">{site.host}</span>
+                        <span className="browser-address-path">{site.path}</span>
                     </span>
                 )}
                 {!floating && list && place && createPortal(list, document.body)}

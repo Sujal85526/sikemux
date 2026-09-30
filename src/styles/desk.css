@@ -207,8 +207,9 @@
     background: color-mix(in srgb, var(--acc) 42%, transparent);
 }
 
-/* The full address is still in the input underneath, drawn clear so the site
-   name centred over it is all that reads until the field is focused. */
+/* The full address is still in the input underneath, drawn clear so the one
+   over it, without its scheme and with the site picked out, is all that reads
+   until the field is focused. */
 .browser-address-field:has(.browser-address-site) .browser-address:not(:focus) {
     color: transparent;
 }
@@ -218,8 +219,6 @@
     inset: 0 8px;
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 6px;
     min-width: 0;
     overflow: hidden;
     color: var(--ink);
@@ -232,12 +231,25 @@
 
 .browser-address-site svg {
     flex: none;
+    margin-right: 6px;
     color: var(--ink-faint);
 }
 
-.browser-address-site span {
+.browser-address-host,
+.browser-address-path {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.browser-address-host {
+    flex: 0 0 auto;
+    max-width: 100%;
+}
+
+.browser-address-path {
+    flex: 0 1 auto;
+    color: var(--ink-faint);
 }
 
 .browser-address-field:focus-within .browser-address-site {
