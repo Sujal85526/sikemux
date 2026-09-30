@@ -156,6 +156,32 @@ export function guardDiscardDirty(paths: string[], action: string, proceed: () =
     });
 }
 
+export function busyAgentIds(state: Pick<StoreState, "agentActivity">, agentIds: readonly string[]): string[] {
+    return agentIds.filter((id) => {
+        const backend = state.agentActivity[id]?.backendState;
+        return backend === "working" || backend === "blocked";
+    });
+}
+
+/** Closing whatever holds these agents stops them, so it asks first. */
+export function guardStopAgents(agentIds: readonly string[], title: string, proceed: () => void): void {
+    if (agentIds.length === 0) {
+        proceed();
+        return;
+    }
+    const agents = getState().agents;
+    const shown = agentIds.slice(0, 3).map((id) => agents[id]?.title ?? "agent");
+    const more = agentIds.length > 3 ? ` and ${agentIds.length - 3} more` : "";
+    void confirmDialog({
+        title,
+        body: `${shown.join(", ")}${more} ${agentIds.length === 1 ? "stops" : "stop"} with it.`,
+        confirmLabel: "Close",
+        destructive: true,
+    }).then((ok) => {
+        if (ok) proceed();
+    });
+}
+
 /* Nothing shows this agent's browser once its pane is gone, so the strip stops
    being worth reading — and so do the pages a restored pane never opened. */
 export function dropDeskPaneState(d: StoreState, paneId: string): void {

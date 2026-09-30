@@ -1,7 +1,7 @@
 import { pluginDocuments } from "../../plugins/documents";
 import { taskPtyBindings } from "../../tasks/nativeRuntime";
 import { getState, mutate, type StoreState } from "../store";
-import { agentPaneId, ownerSessionId, paneToSeparate, tabSplitAllowed, type SplitSide } from "../selectors";
+import { agentPaneId, editorPaneOf, ownerSessionId, paneToSeparate, tabSplitAllowed, type SplitSide } from "../selectors";
 import {
     collectPanes,
     computeLayout,
@@ -18,11 +18,14 @@ import type { FocusDir, PaneNode, Session, SplitDir, Window, WindowRole, TabRef 
 import { closeAgent } from "./agents";
 import { requestOpenFile } from "./editor";
 import { closeSession } from "./sessions";
+import { closeDesk } from "./desk";
 import {
+    busyAgentIds,
     closeDocument,
     dirtyPathsForPane,
     disposePaneState,
     guardDiscardDirty,
+    guardStopAgents,
     makeWindow,
     patchWindow,
     pruneWindowViews,
@@ -265,8 +268,7 @@ export function closeActiveFocusTarget(): void {
     const session = st.sessions[st.activeSessionId];
     if (!session) return;
 
-    // The agent picker is frontmost while open, so ⌥W dismisses it before it
-    // reaches whatever is behind it.
+    // The agent picker is frontmost while open, so it goes before whatever is behind it.
     if (st.agentPaletteOpen) {
         closeAgentPalette();
         return;
@@ -274,8 +276,17 @@ export function closeActiveFocusTarget(): void {
 
     const win = st.windows[session.activeWindowId];
     if (win?.role === "agent") {
-        const paneId = agentPaneId(win);
-        if (paneId) closeAgent(paneId);
+        const agentId = agentPaneId(win);
+        const active = collectPanes(win.root).find((pane) => pane.id === win.activePaneId);
+        if (active?.kind === "desk") {
+            closeDesk(active.id);
+            return;
+        }
+        if (active && active.id !== agentId) {
+            guardDiscardDirty(dirtyPathsForPane(st, active.id), "close pane", closeActivePane);
+            return;
+        }
+        if (agentId) guardStopAgents(busyAgentIds(st, [agentId]), `Close ${st.agents[agentId]?.title ?? "agent"}?`, () => closeAgent(agentId));
         return;
     }
     if (win?.role === "ssh-config") {
@@ -285,10 +296,18 @@ export function closeActiveFocusTarget(): void {
 
     const documents = win ? pluginDocuments(win.role) : undefined;
     if (win && documents) {
-        // ⌥W closes the document in front, not the plugin holding it.
+        // The document in front closes, not the plugin holding it.
         const { activeId } = documents.list(win.activePaneId);
         if (activeId) documents.close(win.activePaneId, activeId);
         return;
+    }
+
+    if (win?.role === "files" && collectPanes(win.root).length === 1) {
+        const activePath = st.editorViews[editorPaneOf(win, st.editorViews)]?.activePath;
+        if (activePath) {
+            closeDocument(win, activePath);
+            return;
+        }
     }
 
     if (win && collectPanes(win.root).length > 1) {
@@ -306,7 +325,7 @@ export function closeActiveFocusTarget(): void {
         return;
     }
 
-    closeActivePane();
+    if (win) guardDiscardDirty(dirtyPathsForPane(st, win.activePaneId), "close pane", closeActivePane);
 }
 
 export function focusPane(paneId: string): void {

@@ -19,6 +19,7 @@ import {
     dirtyPathsForSession,
     disposePaneState,
     guardDiscardDirty,
+    guardStopAgents,
     makeSession,
     makeWindow,
     pruneWindowViews,
@@ -150,7 +151,12 @@ export function reorderSession(sourceId: string, targetId: string, placement: "b
 }
 
 export function closeSession(id: string): void {
-    guardDiscardDirty(dirtyPathsForSession(getState(), id), "close session", () => closeSessionNow(id));
+    const st = getState();
+    if (!st.sessions[id] || st.sessionOrder.length <= 1) return;
+    const name = st.sessions[id].name;
+    guardStopAgents(agentIdsOf(st, id), `Close ${name}?`, () =>
+        guardDiscardDirty(dirtyPathsForSession(getState(), id), "close session", () => closeSessionNow(id)),
+    );
 }
 
 function closeSessionNow(id: string): void {
