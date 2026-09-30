@@ -546,6 +546,24 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
 
     const refByKey = new Map(refs.map((ref) => [tabRefKey(ref), ref]));
 
+    const atGroupEdge = (key: string, placement: "before" | "after") => {
+        const group = tabs.find((tab) => tab.id === key)?.group;
+        if (!group) return true;
+        const members = tabs.filter((tab) => tab.group === group);
+        return (placement === "before" ? members[0] : members[members.length - 1]).id === key;
+    };
+    // Beside a split tab means beside the whole group, so only its outer tabs take a drop.
+    const dropTarget = (key: string, placement: "before" | "after"): TabRef | undefined => {
+        if (!atGroupEdge(key, placement)) return undefined;
+        const pane = paneOfTab.get(key);
+        return refByKey.get(key) ?? (pane ? { id: pane.windowId } : undefined);
+    };
+    const leavingPane = (key: string) => {
+        const pane = refByKey.has(key) ? undefined : paneOfTab.get(key);
+        const win = pane ? windowsById[pane.windowId] : undefined;
+        return pane && win && paneToSeparate(win, getState(), pane.paneId) ? pane : undefined;
+    };
+
     const withSeparate = (win: WindowT, items: CtxItem[]): CtxItem[] => {
         const pane = paneToSeparate(win, getState());
         if (!pane) return items;
@@ -618,13 +636,22 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                 addIcon={<IconPlus size={13} />}
                 addTitle="New tab"
                 canReorder={(sourceKey, targetKey, placement) => {
-                    const source = refByKey.get(sourceKey);
-                    const target = refByKey.get(targetKey);
+                    const leaving = leavingPane(sourceKey);
+                    const source = refByKey.get(sourceKey) ?? (leaving ? { id: leaving.windowId } : undefined);
+                    const target = dropTarget(targetKey, placement);
                     return !!source && !!target && workspaceTabDropAllowed(refs, source, target, placement);
                 }}
                 onReorder={(sourceKey, targetKey, placement) => {
+                    const target = dropTarget(targetKey, placement);
+                    const leaving = leavingPane(sourceKey);
+                    if (target && leaving) {
+                        const before = new Set(getState().windowsBySession[session.id]);
+                        cmd.separatePane(leaving.windowId, leaving.paneId);
+                        const separated = getState().windowsBySession[session.id]?.find((id) => !before.has(id));
+                        if (separated) cmd.reorderWindowTab(session.id, separated, target.id, placement);
+                        return;
+                    }
                     const source = refByKey.get(sourceKey);
-                    const target = refByKey.get(targetKey);
                     if (!source || !target) return;
                     // Beside another window's documents means beside that window.
                     if (source.doc !== undefined && target.doc !== undefined) cmd.reorderDocumentTab(source.id, source.doc, target.doc, placement);

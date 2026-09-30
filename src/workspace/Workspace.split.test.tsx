@@ -172,6 +172,59 @@ describe("a split tab in the strip", () => {
     });
 });
 
+describe("dragging a pane's tab out of its split", () => {
+    const placePills = () =>
+        document.querySelectorAll<HTMLElement>(".tab-wrap").forEach((wrap) => {
+            const left = Number(wrap.dataset.index) * 100;
+            vi.spyOn(wrap, "getBoundingClientRect").mockReturnValue({
+                left,
+                right: left + 100,
+                top: 0,
+                bottom: 30,
+                width: 100,
+                height: 30,
+            } as DOMRect);
+        });
+    const drag = (tab: HTMLElement, from: number, to: number) => {
+        fireEvent.pointerDown(tab, { button: 0, clientX: from, clientY: 10 });
+        fireEvent.pointerMove(window, { clientX: to, clientY: 10 });
+        fireEvent.pointerUp(window, { clientX: to, clientY: 10 });
+        act(() => vi.advanceTimersByTime(TAB_SLIDE_MS));
+    };
+
+    it("gives the pane its own tab where it is dropped", () => {
+        cmd.newWindow();
+        cmd.newWindow();
+        cmd.newWindow();
+        const [first, second, third, fourth] = getState().windowsBySession[getState().activeSessionId];
+        const fourthPane = collectPanes(getState().windows[fourth].root)[0].id;
+        cmd.splitWithTab(getState().activeSessionId, { id: first }, "left");
+        render(<WorkspaceTabs />);
+        placePills();
+
+        drag(screen.getAllByRole("tab")[3], 310, 110);
+
+        const [a, moved, c, d] = getState().windowsBySession[getState().activeSessionId];
+        expect([a, c, d]).toEqual([second, third, fourth]);
+        expect(collectPanes(getState().windows[moved].root).map((pane) => pane.id)).toEqual([fourthPane]);
+        expect(collectPanes(getState().windows[fourth].root)).toHaveLength(1);
+    });
+
+    it("stays in its split when dropped among the split's own tabs", () => {
+        cmd.newWindow();
+        cmd.newWindow();
+        const [first, second, third] = getState().windowsBySession[getState().activeSessionId];
+        cmd.splitWithTab(getState().activeSessionId, { id: first }, "left");
+        render(<WorkspaceTabs />);
+        placePills();
+
+        drag(screen.getAllByRole("tab")[2], 210, 110);
+
+        expect(getState().windowsBySession[getState().activeSessionId]).toEqual([second, third]);
+        expect(collectPanes(getState().windows[third].root)).toHaveLength(2);
+    });
+});
+
 describe("an agent's button back to the tab bar", () => {
     const showAgent = (...others: PaneNode[]) => {
         const sessionId = getState().activeSessionId;
