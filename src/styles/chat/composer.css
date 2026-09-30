@@ -365,6 +365,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+    .agent-surface-menu,
     .agent-view-switch button,
     .yolo-toggle {
         transition: none;

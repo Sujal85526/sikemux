@@ -25,6 +25,7 @@ import {
 import { type CtxItem } from "../rail/FileTree";
 import { ErrorBoundary } from "../ui/ErrorBoundary";
 import { ShaderField } from "../ui/ShaderField";
+import { agentMenu } from "./agentMenu";
 import { TabBar, type TabDescriptor } from "./TabBar";
 import type { TabDragOut, TabPoint } from "./useTabReorder";
 import { AgentIcon, IconArrowUp, IconPlus, WindowIcon } from "../ui/Icons";
@@ -354,39 +355,14 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
         ];
     };
 
-    const agentMenu = (agent: Agent): CtxItem[] => {
-        const agents = refs
+    const agentTabMenu = (agent: Agent): CtxItem[] => {
+        const others = refs
             .flatMap((ref) => {
                 const win = ref.doc === undefined ? windowsById[ref.id] : undefined;
                 return win?.role === "agent" ? [agentsById[agentPaneId(win) ?? ""]] : [];
             })
-            .filter(Boolean) as Agent[];
-        const others = agents.filter((x) => x.id !== agent.id);
-        const items: CtxItem[] = [
-            ...(agent.launchState === "dormant"
-                ? [{ label: "Resume", run: () => cmd.selectAgent(agent.id) }]
-                : agent.resumeId
-                  ? [{ label: "Sleep", run: () => cmd.sleepAgent(agent.id) }]
-                  : []),
-            ...(agent.resumeId && agent.launchState !== "dormant"
-                ? [{ label: agent.keepAlive ? "Allow Auto-Sleep" : "Keep Alive", run: () => cmd.setAgentKeepAlive(agent.id, !agent.keepAlive) }]
-                : []),
-            ...(agent.resumeId ? [{ sep: true as const }] : []),
-            { label: "Close", hint: closeShortcut, run: () => cmd.closeAgent(agent.id) },
-            { label: "Close Others", disabled: others.length === 0, run: () => others.forEach((x) => cmd.closeAgent(x.id)) },
-        ];
-        if (cmd.agentSupportsSkipPermissions(agent.type)) {
-            const skip = agent.permissionMode === "bypass" || agent.skipPermissions === true;
-            items.push(
-                { sep: true },
-                {
-                    label: skip ? "Disable YOLO Mode" : "Enable YOLO Mode",
-                    hint: permissionsShortcut,
-                    run: () => cmd.toggleAgentSkipPermissions(agent.id),
-                },
-            );
-        }
-        return items;
+            .filter((x): x is Agent => !!x && x.id !== agent.id);
+        return agentMenu(agent, others, session, { close: closeShortcut, permissions: permissionsShortcut });
     };
 
     const { tabs, paneOfTab } = useMemo(() => {
@@ -628,7 +604,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                     if (ref.doc !== undefined) return fileMenu(win, ref.doc);
                     if (win.role === "agent") {
                         const agent = agentsById[agentPaneId(win) ?? ""];
-                        return agent ? withSeparate(win, agentMenu(agent)) : [];
+                        return agent ? withSeparate(win, agentTabMenu(agent)) : [];
                     }
                     return withSeparate(win, windowMenu(win));
                 }}

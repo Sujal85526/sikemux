@@ -3,9 +3,11 @@ import type { Agent, ProviderProfile, Session } from "../state/types";
 import { acpApi } from "../api/acp";
 import { agentSupportsChat } from "../agents/agentLaunch";
 import { TerminalPane } from "../terminal/TerminalPane";
-import { AgentIcon, IconAgent, IconCommand, IconPanelRight } from "../ui/Icons";
-import { useStore } from "../state/store";
-import { shownDeskPaneId } from "../state/selectors";
+import { AgentIcon, IconAgent, IconCommand, IconMoreVertical, IconPanelRight } from "../ui/Icons";
+import { getState, useStore } from "../state/store";
+import { agentIdsOf, shownDeskPaneId } from "../state/selectors";
+import { TreeContextMenu } from "../rail/FileTree";
+import { agentMenu } from "../workspace/agentMenu";
 import * as cmd from "../state/commands";
 import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
 import { AgentChatPane } from "./AgentChatPane";
@@ -28,6 +30,43 @@ function DeskButton({ agent }: { agent: Agent }) {
             onClick={() => cmd.toggleDesk(agent.id)}>
             <IconPanelRight size={13} />
         </button>
+    );
+}
+
+function AgentMenuButton({ agent, session }: { agent: Agent; session: Session }) {
+    const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
+    const close = useShortcutLabel("pane.close");
+    const permissions = useShortcutLabel("agent.permissions");
+    const others = () => {
+        const state = getState();
+        return agentIdsOf(state, session.id)
+            .map((id) => state.agents[id])
+            .filter((x): x is Agent => !!x && x.id !== agent.id);
+    };
+    return (
+        <>
+            <button
+                type="button"
+                className="agent-surface-menu"
+                aria-label="Agent menu"
+                aria-haspopup="menu"
+                aria-expanded={anchor !== null}
+                title="More"
+                onClick={(event) => {
+                    const box = event.currentTarget.getBoundingClientRect();
+                    setAnchor({ x: box.left, y: box.bottom + 4 });
+                }}>
+                <IconMoreVertical size={14} />
+            </button>
+            {anchor && (
+                <TreeContextMenu
+                    x={anchor.x}
+                    y={anchor.y}
+                    items={agentMenu(agent, others(), session, { close, permissions })}
+                    onClose={() => setAnchor(null)}
+                />
+            )}
+        </>
     );
 }
 
@@ -63,6 +102,7 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                 <span className="agent-surface-title" title={agent.title}>
                     {agent.title}
                 </span>
+                <AgentMenuButton agent={agent} session={session} />
                 {view === "tui" && cmd.agentSupportsSkipPermissions(agent.type) && <YoloToggle agent={agent} relaunches />}
                 <div className="agent-view-switch" role="group" aria-label="Agent view">
                     <button

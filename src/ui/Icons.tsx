@@ -84,6 +84,13 @@ export function IconPin({ size, className, filled = false }: IconProps & { fille
     );
 }
 
+export const IconMoreVertical = makeSvgIcon(
+    <>
+        <circle cx="8" cy="3.5" r="1" fill="currentColor" stroke="none" />
+        <circle cx="8" cy="8" r="1" fill="currentColor" stroke="none" />
+        <circle cx="8" cy="12.5" r="1" fill="currentColor" stroke="none" />
+    </>,
+);
 export const IconMore = makeSvgIcon(
     <>
         <circle cx="3.5" cy="8" r="1" fill="currentColor" stroke="none" />
