@@ -85,6 +85,17 @@ describe("agent rail", () => {
         expect(agent).toMatchObject({ resumeId: "older", title: "Fix terminal focus", cwd: "/code/sikemux" });
     });
 
+    it("starts a fresh chat for the selected provider from the new chat row", async () => {
+        const user = userEvent.setup();
+        render(<AgentRailBody />);
+
+        await user.click(await screen.findByRole("button", { name: "New chat" }));
+        await waitFor(() => expect(agentIdsOf(getState(), "sess-project")).toHaveLength(1));
+        const agent = getState().agents[agentIdsOf(getState(), "sess-project")[0]];
+        expect(agent).toMatchObject({ type: "codex", cwd: "/code/sikemux" });
+        expect(agent.resumeId).toBeUndefined();
+    });
+
     it("shows live plan windows only for detected Codex and Claude providers", async () => {
         const resetBase = Math.floor(Date.now() / 1000);
         mocks.available.mockResolvedValue([

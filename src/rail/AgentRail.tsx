@@ -9,7 +9,7 @@ import { agentCatalogR, agentSessionsR, agentUsageR } from "../state/resources.d
 import { useStore } from "../state/store";
 import { activeAgentId, agentIdsOf, agentsAwaitingInput } from "../state/selectors";
 import { type Agent, type AgentType } from "../state/types";
-import { AgentIcon, IconClose, IconPlus, IconRefresh, IconSearch } from "../ui/Icons";
+import { AgentIcon, IconClose, IconPencil, IconPlus, IconRefresh, IconSearch } from "../ui/Icons";
 import { AgentStateIndicator } from "../agents/AgentStateIndicator";
 import { sortByAttention } from "../state/agentStatus";
 import { Tooltip } from "../ui/Tooltip";
@@ -343,6 +343,22 @@ export function AgentRailBody() {
                 </div>
             )}
             <div className="rail-scroll" ref={scrollRef} onScroll={onRailScroll}>
+                {selectedType && (
+                    <button
+                        type="button"
+                        className="agent-row agent-new"
+                        onClick={() =>
+                            cmd.addAgent(selectedType, undefined, undefined, {
+                                profileId: selectedProviderProfile(selectedType, profiles, profileSelections)?.id,
+                                detectedExecutablePath: selectedProvider?.command,
+                            })
+                        }>
+                        <span className="agent-glyph">
+                            <IconPencil size={15} />
+                        </span>
+                        <span className="agent-title">New chat</span>
+                    </button>
+                )}
                 {noContent && (
                     <div className="agent-empty">
                         {catalog.status === "loading"
