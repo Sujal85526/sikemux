@@ -31,11 +31,10 @@ function siteOf(url: string): { host: string; secure: boolean } | null {
     }
 }
 
-/** The most visited sites, bar the one already open. */
+/** The most visited sites, bar the page already open. */
 function topSites(found: AddressSuggestions | null, pageAddress: string): Row[] {
-    const open = siteOf(pageAddress)?.host;
     return (found?.pages ?? [])
-        .filter((page) => siteOf(page.url)?.host !== open)
+        .filter((page) => page.url !== pageAddress)
         .map((page) => ({ url: page.url, title: page.title, detail: page.address, icon: page.icon, search: false }));
 }
 

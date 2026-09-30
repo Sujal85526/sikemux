@@ -199,19 +199,27 @@ describe("AddressBar", () => {
         searchUrl: "",
     };
 
-    it("offers the most visited sites on focus, leaving out the one already open, with none picked", async () => {
+    it("offers the most visited sites on focus, with none picked", async () => {
         vi.mocked(browserApi.suggest).mockResolvedValue(topSites);
         const input = renderBar("https://www.example.com/?zx=1790764778073");
         await act(async () => input.focus());
 
         expect(browserApi.suggest).toHaveBeenCalledWith("");
         const options = screen.getAllByRole("option");
-        expect(options.map((option) => option.textContent)).toEqual(["YouTube — youtube.com/", "GitHub — github.com/"]);
+        expect(options.map((option) => option.textContent)).toEqual(["Example — example.com/", "YouTube — youtube.com/", "GitHub — github.com/"]);
         expect(options.every((option) => option.getAttribute("aria-selected") === "false")).toBe(true);
         expect(input).toHaveValue("https://www.example.com/?zx=1790764778073");
 
         fireEvent.keyDown(input, { key: "Enter" });
         expect(onGo).toHaveBeenCalledWith("https://www.example.com/?zx=1790764778073");
+    });
+
+    it("leaves the page already open out of the top sites", async () => {
+        vi.mocked(browserApi.suggest).mockResolvedValue(topSites);
+        const input = renderBar("https://example.com/");
+        await act(async () => input.focus());
+
+        expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["YouTube — youtube.com/", "GitHub — github.com/"]);
     });
 
     it("picks a top site with the arrow keys and backs out to the open address above the first", async () => {
