@@ -34,6 +34,7 @@ export type PersistedAgent = Pick<
     | "effort"
     | "skipPermissions"
     | "keepAlive"
+    | "renamed"
 >;
 
 export interface PersistedSnapshot {

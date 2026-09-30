@@ -1,11 +1,11 @@
-import type { AgentSession } from "../../api/agents";
+import { agentApi, type AgentSession } from "../../api/agents";
 import { MAX_AGENT_MODEL_LENGTH, normalizePermissionMode, type ChatAgentType } from "../../agents/agentLaunch";
 import { emit } from "../bus";
 import { reduceAgentState } from "../agentStatus";
-import { peekResource } from "../resources";
+import { invalidate, peekResource } from "../resources";
 import { agentSessionsR } from "../resources.defs";
 import { getState, mutate, type StoreState } from "../store";
-import { notify } from "../toast";
+import { notify, reportError, swallow } from "../toast";
 import { agentIdsWithLiveSessions } from "../agentLiveSessions";
 import { agentSupportsSkipPermissions } from "./agentLogic";
 import { agentDirectCommand, agentStartup } from "./agentLaunchCommand";
@@ -18,6 +18,8 @@ import { withActiveSession } from "./shared";
 import { closeWindowById } from "./tabs";
 
 const FALLBACK_AGENT_TITLE_MAX = 13;
+/** Providers list a session under at most this many characters. */
+const SESSION_TITLE_MAX = 72;
 
 function profileLaunchOptions(profile: ProviderProfile | undefined, model?: string, effort?: AgentEffort) {
     return {
@@ -198,6 +200,7 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
 
 export function reconcileAgentSessions(type: AgentType, cwd: string, configPath: string | undefined, rows: AgentSession[]): void {
     if (rows.length === 0) return;
+    const unsavedNames: { sessionId: string; name: string; executablePath?: string }[] = [];
     mutate((d) => {
         const rowById = new Map(rows.map((row) => [row.id, row]));
         const matchingAgents: Agent[] = [];
@@ -220,6 +223,11 @@ export function reconcileAgentSessions(type: AgentType, cwd: string, configPath:
             claimed.add(agent.resumeId);
             const row = rowById.get(agent.resumeId);
             if (!row) continue;
+            if (agent.renamed) {
+                if (row.title !== agent.title)
+                    unsavedNames.push({ sessionId: row.id, name: agent.title, executablePath: agentExecutablePath(d, agent) });
+                continue;
+            }
             const nextTitle = usableAgentSessionTitle(row, agent.title);
             if (nextTitle !== agent.title) {
                 agent.title = nextTitle;
@@ -247,7 +255,8 @@ export function reconcileAgentSessions(type: AgentType, cwd: string, configPath:
             if (idx < 0) continue;
             const [row] = candidates.splice(idx, 1);
             agent.resumeId = row.id;
-            agent.title = usableAgentSessionTitle(row, agent.title);
+            if (agent.renamed) unsavedNames.push({ sessionId: row.id, name: agent.title, executablePath: agentExecutablePath(d, agent) });
+            else agent.title = usableAgentSessionTitle(row, agent.title);
             const profile = agent.profileId
                 ? d.providerProfiles.find((item) => item.id === agent.profileId && item.provider === agent.type)
                 : undefined;
@@ -270,6 +279,9 @@ export function reconcileAgentSessions(type: AgentType, cwd: string, configPath:
             claimed.add(row.id);
         }
     });
+    for (const { sessionId, name, executablePath } of unsavedNames) {
+        void saveSessionName({ type, cwd, sessionId, configPath, executablePath }, name).catch(swallow("save chat name"));
+    }
 }
 
 export function attachAgentSession(id: string, resumeId: string): void {
@@ -306,11 +318,82 @@ export function setAgentTitle(id: string, title: string): void {
     if (!value || value.length > 200 || /[\0\r\n]/.test(value)) return;
     mutate((d) => {
         const agent = d.agents[id];
-        if (agent) agent.title = value;
+        if (agent && !agent.renamed) agent.title = value;
     });
 }
 
-const PROMPT_TITLE_MAX = 72;
+/* Written the way a provider lists a session, so the name reads back unchanged. */
+function sessionName(title: string): string | null {
+    const name = title.split(/\s+/).filter(Boolean).join(" ");
+    if (!name || name.startsWith("<") || [...name].length > SESSION_TITLE_MAX || /\p{Cc}/u.test(name)) return null;
+    return name;
+}
+
+/** Where a provider keeps a chat, and the CLI that renames it for the providers that rename through their own command. */
+interface SavedSession {
+    type: AgentType;
+    cwd: string;
+    sessionId: string;
+    configPath?: string;
+    executablePath?: string;
+}
+
+/* Codex and Hermes start their CLI for every rename, so a name already on its
+   way, or one the provider refused, is not sent again. */
+const namesInFlight = new Set<string>();
+const namesRefused = new Set<string>();
+
+async function saveSessionName(session: SavedSession, name: string): Promise<void> {
+    const key = [session.type, session.configPath ?? "", session.sessionId, name].join("\0");
+    if (namesInFlight.has(key) || namesRefused.has(key)) return;
+    namesInFlight.add(key);
+    try {
+        await agentApi.renameSession(session.type, session.cwd, session.sessionId, name, session.executablePath, session.configPath);
+        invalidate((kind) => kind === "agents.sessions");
+    } catch (error) {
+        namesRefused.add(key);
+        throw error;
+    } finally {
+        namesInFlight.delete(key);
+    }
+}
+
+function agentExecutablePath(state: Pick<StoreState, "providerProfiles">, agent: Agent): string | undefined {
+    const profile = agent.profileId ? state.providerProfiles.find((item) => item.id === agent.profileId && item.provider === agent.type) : undefined;
+    return profile?.executablePath || agent.executablePath;
+}
+
+export function renameAgent(id: string, title: string): void {
+    const name = sessionName(title);
+    if (!name || getState().agents[id]?.title === name) return;
+    mutate((d) => {
+        const agent = d.agents[id];
+        if (!agent) return;
+        agent.title = name;
+        agent.renamed = true;
+        const winId = agentWindowId(d, id);
+        if (winId) d.windows[winId].name = name;
+    });
+    const state = getState();
+    const agent = state.agents[id];
+    const winId = agentWindowId(state, id);
+    const sessionId = winId ? ownerSessionId(state, winId) : null;
+    const cwd = agent?.cwd || (sessionId ? state.sessions[sessionId]?.cwd : undefined);
+    if (!agent?.resumeId || !cwd) return;
+    const configPath = agent.profileId
+        ? state.providerProfiles.find((profile) => profile.id === agent.profileId && profile.provider === agent.type)?.configPath
+        : undefined;
+    void saveSessionName(
+        { type: agent.type, cwd, sessionId: agent.resumeId, configPath, executablePath: agentExecutablePath(state, agent) },
+        name,
+    ).catch(reportError("rename chat"));
+}
+
+/** Renames a chat that is not open, in the provider's own session storage. */
+export function renameAgentSession(session: SavedSession, title: string): void {
+    const name = sessionName(title);
+    if (name) void saveSessionName(session, name).catch(reportError("rename chat"));
+}
 
 /* Stands in until the provider titles the conversation, which Claude only does
    once the first turn ends. */
@@ -319,10 +402,10 @@ export function titleAgentFromPrompt(id: string, text: string): void {
     if (!title || title.startsWith("/") || title.startsWith("<")) return;
     mutate((d) => {
         const agent = d.agents[id];
-        if (!agent) return;
+        if (!agent || agent.renamed) return;
         const profile = agent.profileId ? d.providerProfiles.find((item) => item.id === agent.profileId && item.provider === agent.type) : undefined;
         if (agent.title !== (profile?.name || agent.type)) return;
-        agent.title = [...title].slice(0, PROMPT_TITLE_MAX).join("");
+        agent.title = [...title].slice(0, SESSION_TITLE_MAX).join("");
     });
 }
 

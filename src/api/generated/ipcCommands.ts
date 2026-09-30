@@ -55,6 +55,7 @@ export const IPC_COMMANDS = [
     "agent_usage",
     "agent_sessions",
     "agent_session_context",
+    "agent_session_rename",
     "live_agent_sessions",
     "agent_sessions_watch_start",
     "agent_sessions_watch_stop",

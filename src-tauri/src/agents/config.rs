@@ -40,7 +40,7 @@ fn omp_config_root() -> Option<PathBuf> {
     Some(home.join(config.trim_start_matches(['/', '\\'])))
 }
 
-fn omp_agent_root() -> Option<PathBuf> {
+pub(super) fn omp_agent_root() -> Option<PathBuf> {
     if let Some(profile) = omp_profile_name() {
         return Some(
             omp_config_root()?

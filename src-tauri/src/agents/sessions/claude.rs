@@ -4,6 +4,7 @@ use std::path::Path;
 use rayon::prelude::*;
 use serde_json::Value;
 
+use super::rename::append_line;
 use super::{
     cached_title, condense, read_prefix, read_suffix, stamped_transcripts, text_from_content,
     MAX_AGENT_TRANSCRIPTS_INSPECTED,
@@ -107,6 +108,20 @@ fn scan_claude_line(line: &str, titles: &mut ClaudeTitles) {
             }
         }
     }
+}
+
+/// Names a session the way Claude's `/rename` does.
+pub(super) fn rename_claude_session(
+    path: &Path,
+    session_id: &str,
+    name: &str,
+) -> Result<(), String> {
+    let line = format!(
+        r#"{{"type":"custom-title","customTitle":{},"sessionId":{}}}"#,
+        Value::from(name),
+        Value::from(session_id),
+    );
+    append_line(path, &line)
 }
 
 // Bound the per-file read: the first user prompt sits near the top and Claude

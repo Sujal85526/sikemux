@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use rusqlite::{Connection, OpenFlags};
 
@@ -118,4 +119,58 @@ fn opencode_query(conn: &Connection, sql: &str, cwd: &str) -> Option<Vec<AgentSe
         })
         .ok()?;
     Some(rows.filter_map(|r| r.ok()).collect())
+}
+
+/// Sets the title the way OpenCode's own rename does; a title it did not generate is never replaced.
+pub(super) fn rename_opencode_session(session_id: &str, name: &str) -> Result<(), String> {
+    rename_in_databases(&opencode_db_paths(), session_id, name)
+}
+
+fn rename_in_databases(databases: &[PathBuf], session_id: &str, name: &str) -> Result<(), String> {
+    for db in databases {
+        let Ok(conn) = Connection::open_with_flags(db, OpenFlags::SQLITE_OPEN_READ_WRITE) else {
+            continue;
+        };
+        let _ = conn.busy_timeout(Duration::from_secs(5));
+        let changed = conn
+            .execute(
+                "UPDATE session SET title = ?1 WHERE id = ?2",
+                (name, session_id),
+            )
+            .map_err(|error| error.to_string())?;
+        if changed > 0 {
+            return Ok(());
+        }
+    }
+    Err("session not found".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{opencode_sessions_from_conn, rename_in_databases};
+    use rusqlite::Connection;
+
+    #[test]
+    fn a_renamed_opencode_session_lists_under_its_new_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("opencode.db");
+        let conn = Connection::open(&db).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE session (id TEXT PRIMARY KEY, title TEXT, directory TEXT, time_created INTEGER, time_updated INTEGER);
+             INSERT INTO session VALUES ('ses_1', 'New session - 2026-09-30T10:00:00Z', '/repo', 1, 2);",
+        )
+        .unwrap();
+
+        rename_in_databases(std::slice::from_ref(&db), "ses_1", "Flaky test fix").unwrap();
+
+        assert_eq!(
+            opencode_sessions_from_conn(&conn, "/repo")[0].title,
+            "Flaky test fix"
+        );
+        let updated: i64 = conn
+            .query_row("SELECT time_updated FROM session", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(updated, 2);
+        assert!(rename_in_databases(&[db], "ses_missing", "Name").is_err());
+    }
 }

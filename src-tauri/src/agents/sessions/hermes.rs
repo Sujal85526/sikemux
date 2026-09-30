@@ -1,7 +1,10 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use rusqlite::{Connection, OpenFlags};
+use tokio::process::Command;
 
+use crate::agents::executable::apply_login_environment;
 use crate::agents::AgentSession;
 
 // ---- hermes — `sessions` table in ~/.hermes/state.db (SQLite) -----------
@@ -38,4 +41,43 @@ pub(super) fn hermes_sessions() -> Vec<AgentSession> {
         Ok(iter) => iter.filter_map(|r| r.ok()).collect(),
         Err(_) => Vec::new(),
     }
+}
+
+const HERMES_RENAME_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Renames through Hermes's own command, which keeps titles unique and marks the
+/// name as the user's so generated titles never replace it.
+pub(super) async fn rename_hermes_session(
+    executable: &Path,
+    session_id: &str,
+    name: &str,
+) -> Result<(), String> {
+    let mut command = Command::new(executable);
+    apply_login_environment(&mut command);
+    command
+        .args(["sessions", "rename", "--", session_id, name])
+        .kill_on_drop(true)
+        .stdin(std::process::Stdio::null());
+    let output = tokio::time::timeout(HERMES_RENAME_TIMEOUT, command.output())
+        .await
+        .map_err(|_| "Hermes took too long to rename the chat".to_string())?
+        .map_err(|_| "Could not start Hermes".to_string())?;
+    if output.status.success() {
+        return Ok(());
+    }
+    // Hermes prints why it refused, such as a title already in use, on stdout.
+    let printed = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let reason = printed
+        .lines()
+        .map(str::trim)
+        .rfind(|line| !line.is_empty())
+        .unwrap_or("unknown error");
+    Err(format!(
+        "Hermes could not rename the chat: {}",
+        reason.trim_start_matches("Error: ")
+    ))
 }
