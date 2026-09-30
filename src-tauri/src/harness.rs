@@ -138,7 +138,12 @@ pub fn execute(
         return crate::browser::tools::execute(app, &request);
     }
     if crate::plugins::agent::is_agent_method(&request.method) {
-        return crate::plugins::agent::execute(app, &request.method, &request.params);
+        return crate::plugins::agent::execute(
+            app,
+            &request.project,
+            &request.method,
+            &request.params,
+        );
     }
     let id = request.id.clone();
     let method = request.method.clone();

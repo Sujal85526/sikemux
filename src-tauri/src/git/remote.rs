@@ -149,6 +149,24 @@ pub async fn git_remotes(repo: String) -> Result<Vec<GitRemote>, String> {
     .await
 }
 
+/// The URL of every remote of the repository `path` is in; none outside one.
+pub fn remote_urls(path: &str) -> Vec<String> {
+    let Ok(repo) = open_repo(path) else {
+        return Vec::new();
+    };
+    let Ok(names) = repo.remotes() else {
+        return Vec::new();
+    };
+    names
+        .iter()
+        .filter_map(|name| name.ok().flatten())
+        .filter_map(|name| {
+            let remote = repo.find_remote(name).ok()?;
+            remote.url().ok().map(str::to_owned)
+        })
+        .collect()
+}
+
 #[tauri::command]
 pub async fn git_remote_add(repo: String, name: String, url: String) -> Result<(), String> {
     run_blocking(move || -> Result<(), String> {
@@ -435,6 +453,30 @@ pub async fn git_set_upstream(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remote_urls_are_read_from_anywhere_inside_the_repository() {
+        let repo = tempfile::tempdir().expect("tempdir");
+        let git = git2::Repository::init(repo.path()).expect("init");
+        git.remote("origin", "git@github.com:nodelike/sikemux.git")
+            .expect("origin");
+        git.remote("mirror", "https://bitbucket.org/team/sikemux.git")
+            .expect("mirror");
+        let inside = repo.path().join("src");
+        std::fs::create_dir(&inside).expect("subdirectory");
+
+        let mut urls = remote_urls(&inside.to_string_lossy());
+        urls.sort();
+        assert_eq!(
+            urls,
+            [
+                "git@github.com:nodelike/sikemux.git",
+                "https://bitbucket.org/team/sikemux.git"
+            ]
+        );
+        let outside = tempfile::tempdir().expect("tempdir");
+        assert!(remote_urls(&outside.path().to_string_lossy()).is_empty());
+    }
 
     #[test]
     fn a_fetched_ref_part_cannot_smuggle_an_option_or_a_second_refspec() {
