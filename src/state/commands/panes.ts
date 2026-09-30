@@ -19,7 +19,7 @@ import type { FocusDir, PaneNode, Session, SplitDir, Window, WindowRole, TabRef 
 import { closeAgent } from "./agents";
 import { requestOpenFile } from "./editor";
 import { closeSession } from "./sessions";
-import { closeDesk } from "./desk";
+import { closeDesk, closeShownDeskTab } from "./desk";
 import {
     busyAgentIds,
     closeDocument,
@@ -280,7 +280,7 @@ export function closeActiveFocusTarget(): void {
         const agentId = agentPaneId(win);
         const active = collectPanes(win.root).find((pane) => pane.id === win.activePaneId);
         if (active?.kind === "desk") {
-            closeDesk(active.id);
+            if (!agentId || !closeShownDeskTab(agentId)) closeDesk(active.id);
             return;
         }
         if (active && active.id !== agentId) {

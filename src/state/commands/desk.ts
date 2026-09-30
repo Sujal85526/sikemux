@@ -233,12 +233,14 @@ export function closeDeskItem(agentId: string, item: DeskItem): void {
     });
 }
 
-export function closeShownDeskTab(agentId: string): void {
+/** Closes the page, file or terminal the desk is showing; false when it shows nothing. */
+export function closeShownDeskTab(agentId: string): boolean {
     const state = getState();
     const items = deskItemsOf(state, agentId);
     const shown = shownDeskItem(state.desks[agentId] ?? EMPTY_DESK, items);
     const item = items.find((candidate) => isShown(candidate, shown, state.browserStrips[agentId] ?? EMPTY_STRIP));
     if (item) closeDeskItem(agentId, item);
+    return !!item;
 }
 
 export function cycleDeskTab(agentId: string, delta: number): void {
