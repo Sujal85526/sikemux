@@ -97,6 +97,15 @@ async fn signed_in(
     reply(client::as_account(Some(id), auth::status(data_dir)).await)
 }
 
+/// Whether the repository has a remote on Bitbucket, and an account is signed in.
+fn works_in(data_dir: &std::path::Path, remotes: &[String]) -> bool {
+    let on_bitbucket = remotes
+        .iter()
+        .filter_map(|remote| repo::from_remote(remote))
+        .any(|repo| repo.host == repo::HOST);
+    on_bitbucket && !config::load(data_dir).accounts.is_empty()
+}
+
 /// Which account a call is for; with none named, the default one.
 fn account_of(input: &Value) -> Option<String> {
     input
@@ -133,6 +142,14 @@ impl Plugin for Bitbucket {
             account,
             dispatch_stream(ctx, method, input, sink),
         ))
+    }
+
+    fn offers_agent_tools<'a>(
+        &'a self,
+        ctx: &'a PluginContext,
+        remotes: &'a [String],
+    ) -> PluginFuture<'a, bool> {
+        Box::pin(async move { Ok(works_in(ctx.data_dir(), remotes)) })
     }
 }
 
@@ -261,6 +278,30 @@ mod tests {
             .await
             .expect("resolves");
         assert_eq!(elsewhere["sameHost"], false);
+    }
+
+    #[test]
+    fn an_agent_is_offered_bitbucket_only_when_signed_in_with_a_remote_there() {
+        let dir = std::env::temp_dir().join(format!("sikemux-bb-offer-{}", std::process::id()));
+        let remote = ["https://bitbucket.org/swishx/api-docs.git".to_string()];
+        assert!(!works_in(&dir, &remote));
+
+        let mut config = config::BitbucketConfig::default();
+        config.upsert(config::Account {
+            id: "abc".into(),
+            login: "someone".into(),
+            display_name: None,
+            avatar_url: None,
+            method: config::Method::Token,
+            email: None,
+        });
+        config::save(&dir, &config).expect("saves");
+        assert!(works_in(&dir, &remote));
+        assert!(!works_in(
+            &dir,
+            &["git@github.com:nodelike/sikemux.git".to_string()]
+        ));
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[tokio::test]
