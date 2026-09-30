@@ -197,6 +197,12 @@
     background: color-mix(in srgb, var(--void) 80%, transparent);
 }
 
+/* The app's own selection tint is too faint over the field, and here it is
+   what shows the part of an address the bar has finished for you. */
+.browser-address::selection {
+    background: color-mix(in srgb, var(--acc) 42%, transparent);
+}
+
 /* The full address is still in the input underneath, drawn clear so the site
    name centred over it is all that reads until the field is focused. */
 .browser-address-field:has(.browser-address-site) .browser-address:not(:focus) {
