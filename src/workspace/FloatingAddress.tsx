@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { setNativeViewHoles } from "../state/nativeViews";
 import { AddressBar } from "./AddressBar";
@@ -10,10 +10,11 @@ interface Place {
 }
 
 const MAX_WIDTH = 680;
+const MARGIN = 16;
 
 /**
  * The address opened from the keyboard: a field and its suggestions floating
- * over the upper middle of the page, rather than hanging from the toolbar.
+ * over the middle of the page, rather than hanging from the toolbar.
  */
 export function FloatingAddress({
     over,
@@ -30,19 +31,16 @@ export function FloatingAddress({
     onClose: () => void;
 }) {
     const panelRef = useRef<HTMLDivElement>(null);
-    const [place, setPlace] = useState<Place | null>(null);
+    const [area, setArea] = useState<DOMRect | null>(null);
+    const [height, setHeight] = useState(0);
 
     useLayoutEffect(() => {
-        const area = over.current;
-        if (!area) return;
-        const measure = () => {
-            const rect = area.getBoundingClientRect();
-            const width = Math.min(MAX_WIDTH, rect.width - 32);
-            setPlace({ left: rect.left + (rect.width - width) / 2, top: rect.top + rect.height * 0.18, width });
-        };
+        const page = over.current;
+        if (!page) return;
+        const measure = () => setArea(page.getBoundingClientRect());
         measure();
         const observer = new ResizeObserver(measure);
-        observer.observe(area);
+        observer.observe(page);
         window.addEventListener("resize", measure);
         return () => {
             observer.disconnect();
@@ -50,20 +48,35 @@ export function FloatingAddress({
         };
     }, [over]);
 
-    /* The page is a native view that paints over the app, so it gives up the
-       panel's box, and again each time the list under the field grows or shrinks. */
+    useLayoutEffect(() => {
+        const panel = panelRef.current;
+        if (!panel) return;
+        const measure = () => setHeight(panel.offsetHeight);
+        measure();
+        const observer = new ResizeObserver(measure);
+        observer.observe(panel);
+        return () => observer.disconnect();
+    }, []);
+
+    /* The field sits a little above the middle of the page and the list grows
+       down from it, rising only as far as a long list needs to stay on the page. */
+    const place = useMemo<Place | null>(() => {
+        if (!area) return null;
+        const width = Math.min(MAX_WIDTH, area.width - 2 * MARGIN);
+        return {
+            left: area.left + (area.width - width) / 2,
+            top: Math.max(area.top + MARGIN, Math.min(area.top + area.height * 0.36, area.bottom - height - MARGIN)),
+            width,
+        };
+    }, [area, height]);
+
+    /* The page is a native view that paints over the app, so it gives up the panel's box. */
     useLayoutEffect(() => {
         const panel = panelRef.current;
         if (!panel || !place) return;
-        const cut = () => {
-            const radius = parseFloat(getComputedStyle(panel).borderTopLeftRadius) || 0;
-            setNativeViewHoles(panelRef, [{ x: place.left, y: place.top, width: panel.offsetWidth, height: panel.offsetHeight, radius }]);
-        };
-        cut();
-        const observer = new ResizeObserver(cut);
-        observer.observe(panel);
-        return () => observer.disconnect();
-    }, [place]);
+        const radius = parseFloat(getComputedStyle(panel).borderTopLeftRadius) || 0;
+        setNativeViewHoles(panelRef, [{ x: place.left, y: place.top, width: place.width, height, radius }]);
+    }, [place, height]);
     useEffect(() => () => setNativeViewHoles(panelRef, []), []);
 
     return createPortal(
