@@ -118,6 +118,24 @@ async fn signed_in(
     reply(client::as_account(Some(id), auth::status(data_dir)).await)
 }
 
+/// Whether the repository has a remote on a GitHub this can reach, and a
+/// token to reach it with.
+async fn works_in(data_dir: &std::path::Path, remotes: &[String]) -> GithubResult<bool> {
+    let config = config::load(data_dir);
+    let on_served_host = remotes
+        .iter()
+        .filter_map(|remote| repo::from_remote(remote))
+        .any(|repo| config.serves(&repo.host));
+    if !on_served_host || config.signed_out {
+        return Ok(false);
+    }
+    if !config.accounts.is_empty() {
+        return Ok(true);
+    }
+    let host = config.host_hint();
+    config::blocking(Box::new(move || Ok(config::offered_token(&host).is_some()))).await
+}
+
 /// Which account a call is for; with none named, the default one.
 fn account_of(input: &Value) -> Option<String> {
     input
@@ -154,6 +172,14 @@ impl Plugin for Github {
             account,
             dispatch_stream(ctx, method, input, sink),
         ))
+    }
+
+    fn offers_agent_tools<'a>(
+        &'a self,
+        ctx: &'a PluginContext,
+        remotes: &'a [String],
+    ) -> PluginFuture<'a, bool> {
+        Box::pin(async move { Ok(works_in(ctx.data_dir(), remotes).await?) })
     }
 }
 
@@ -316,6 +342,34 @@ mod tests {
             .await
             .expect("resolves");
         assert_eq!(nothing["repo"], Value::Null);
+    }
+
+    #[tokio::test]
+    async fn an_agent_is_offered_github_only_for_a_signed_in_host_it_has_a_remote_on() {
+        let dir = std::env::temp_dir().join(format!("sikemux-gha-offer-{}", std::process::id()));
+        let mut signed_in = config::GithubConfig::default();
+        signed_in.upsert(config::Account {
+            id: config::account_id("github.com", "octocat"),
+            host: "github.com".into(),
+            login: "octocat".into(),
+            source: config::TokenSource::Keychain,
+            owns_token: true,
+        });
+        config::save(&dir, &signed_in).expect("saves");
+        let on = |remotes: &[&str]| {
+            let remotes: Vec<String> = remotes.iter().map(|remote| (*remote).into()).collect();
+            let dir = dir.clone();
+            async move { works_in(&dir, &remotes).await.expect("answers") }
+        };
+        assert!(on(&["git@github.com:nodelike/sikemux.git"]).await);
+        assert!(!on(&["git@bitbucket.org:team/app.git"]).await);
+        assert!(!on(&[]).await);
+
+        let mut signed_out = signed_in.clone();
+        signed_out.remove(&config::account_id("github.com", "octocat"));
+        config::save(&dir, &signed_out).expect("saves");
+        assert!(!on(&["git@github.com:nodelike/sikemux.git"]).await);
+        std::fs::remove_dir_all(dir).ok();
     }
 }
 
