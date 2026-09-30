@@ -1,9 +1,20 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use serde::Deserialize;
 use serde_json::{json, Value};
 
 pub const DEFAULT_MINUTES: u32 = 30;
 const MAX_MINUTES: u32 = 7 * 24 * 60;
+
+/// Who reads the answer. Agents get a compact shape by default; the SigNoz pane
+/// asks for every field it draws.
+#[derive(Deserialize, Default, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub enum View {
+    #[default]
+    Agent,
+    Pane,
+}
 
 pub fn now_ms() -> u64 {
     SystemTime::now()

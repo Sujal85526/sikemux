@@ -261,7 +261,7 @@
     {
       "name": "signoz_search_logs",
       "method": "searchLogs",
-      "description": "Search logs, newest first, with their attributes and trace ids.",
+      "description": "Search logs, newest first. What every returned line has in common is listed once in `shared`; each line keeps its id, timestamp, body and whatever differs. Bodies over 1000 characters are clipped; pass a line's id to read it whole. Page with nextOffset.",
       "properties": {
         "service": {
           "type": "string"
@@ -281,11 +281,15 @@
           "type": "string",
           "description": "Only lines from this trace."
         },
+        "id": {
+          "type": "string",
+          "description": "One line's id, to read that line whole."
+        },
         "limit": {
           "type": "integer",
           "minimum": 1,
           "maximum": 200,
-          "description": "Default 100."
+          "description": "Default 30."
         },
         "offset": {
           "type": "integer",
