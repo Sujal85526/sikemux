@@ -103,6 +103,42 @@ describe("AddressBar", () => {
         expect(holes).toEqual([]);
     });
 
+    it("closes the list when a click lands anywhere else, even on something that takes no focus", async () => {
+        const input = renderBar();
+        input.focus();
+        await type(input, "you");
+        expect(screen.getByRole("listbox")).toBeInTheDocument();
+
+        fireEvent.pointerDown(document.body);
+
+        expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+        expect(input).not.toHaveFocus();
+        expect(input).toHaveValue("https://example.com/");
+        expect(holes).toEqual([]);
+    });
+
+    it("closes the list when a click on the page takes the window's focus", async () => {
+        const input = renderBar();
+        input.focus();
+        await type(input, "you");
+
+        act(() => {
+            window.dispatchEvent(new Event("blur"));
+        });
+
+        expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    });
+
+    it("keeps the list open while the pointer goes down on a suggestion", async () => {
+        const input = renderBar();
+        input.focus();
+        await type(input, "you");
+
+        fireEvent.pointerDown(screen.getAllByRole("option")[1]);
+
+        expect(screen.getByRole("listbox")).toBeInTheDocument();
+    });
+
     it("opens a page that is clicked without the field losing focus first", async () => {
         const input = renderBar();
         input.focus();

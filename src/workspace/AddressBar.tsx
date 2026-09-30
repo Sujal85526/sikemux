@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { browserApi, type AddressSuggestions } from "../api/browser";
 import { setNativeViewHoles } from "../state/nativeViews";
@@ -89,12 +89,12 @@ export function AddressBar({ tabId, pageAddress, onGo }: { tabId: string | undef
     const value =
         typed === null ? pageAddress : selected > 0 && choice ? (choice.search ? choice.title : choice.detail || choice.url) : typed + suffix;
 
-    const reset = () => {
+    const reset = useCallback(() => {
         asked.current += 1;
         setTyped(null);
         setFound(null);
         setSelected(0);
-    };
+    }, []);
 
     useEffect(() => {
         asked.current += 1;
@@ -145,6 +145,30 @@ export function AddressBar({ tabId, pageAddress, onGo }: { tabId: string | undef
         setNativeViewHoles(menuRef, [{ x: place.left, y: place.top, width: menu.offsetWidth, height: menu.offsetHeight, radius }]);
     }, [place, rows.length]);
     useEffect(() => () => setNativeViewHoles(menuRef, []), []);
+
+    /* The field's own blur misses some ways of going elsewhere: a click on
+       something that takes no focus, and a click on the page, which is a view of
+       its own and only shows up as the window losing focus. */
+    useEffect(() => {
+        if (!open) return;
+        const inside = (target: EventTarget | null) =>
+            target instanceof Node && (!!fieldRef.current?.contains(target) || !!menuRef.current?.contains(target));
+        const leave = () => {
+            inputRef.current?.blur();
+            reset();
+        };
+        const leaveUnlessInside = (event: Event) => {
+            if (!inside(event.target)) leave();
+        };
+        document.addEventListener("pointerdown", leaveUnlessInside, true);
+        document.addEventListener("focusin", leaveUnlessInside);
+        window.addEventListener("blur", leave);
+        return () => {
+            document.removeEventListener("pointerdown", leaveUnlessInside, true);
+            document.removeEventListener("focusin", leaveUnlessInside);
+            window.removeEventListener("blur", leave);
+        };
+    }, [open, reset]);
 
     return (
         <div ref={fieldRef} className="browser-address-field">
