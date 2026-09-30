@@ -256,6 +256,7 @@ pub fn run() {
             browser::browser_switch_tab,
             browser::browser_close_tab,
             browser::browser_navigate,
+            browser::browser_suggest,
             browser::browser_back,
             browser::browser_forward,
             browser::browser_reload,

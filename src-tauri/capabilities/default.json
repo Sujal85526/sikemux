@@ -45,6 +45,7 @@
     "allow-browser-switch-tab",
     "allow-browser-close-tab",
     "allow-browser-navigate",
+    "allow-browser-suggest",
     "allow-browser-back",
     "allow-browser-forward",
     "allow-browser-reload",

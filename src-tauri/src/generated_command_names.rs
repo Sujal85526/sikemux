@@ -28,6 +28,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "browser_switch_tab",
     "browser_close_tab",
     "browser_navigate",
+    "browser_suggest",
     "browser_back",
     "browser_forward",
     "browser_reload",

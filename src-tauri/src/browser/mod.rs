@@ -11,6 +11,7 @@ pub mod agents;
 mod burst;
 mod documents;
 mod favicon;
+mod history;
 #[cfg(target_os = "macos")]
 mod input;
 mod local_files;
@@ -326,6 +327,7 @@ pub struct BrowserManager {
     shortcuts_installed: AtomicBool,
     downloads: Mutex<HashMap<(String, String), PathBuf>>,
     icons: Mutex<favicon::IconCache>,
+    history: history::History,
     dialogs: Mutex<HashMap<String, PageDialog>>,
     uploads: Mutex<HashMap<String, Vec<PathBuf>>>,
     documents: Mutex<HashMap<String, documents::DocumentLog>>,
@@ -667,7 +669,7 @@ impl BrowserManager {
         tab_id: &str,
         update: impl FnOnce(&mut TabPage),
     ) {
-        let (changed, loading) = {
+        let (changed, loading, shown) = {
             let mut agents = self.lock();
             match agents
                 .get_mut(agent_id)
@@ -677,13 +679,24 @@ impl BrowserManager {
                     let before = page.clone();
                     update(page);
                     let loading = (before.loading != page.loading).then_some(page.loading);
-                    (*page != before, loading)
+                    let visited = !page.loading && (loading.is_some() || before.url != page.url);
+                    let shown = (*page != before && !page.loading).then(|| (page.clone(), visited));
+                    (*page != before, loading, shown)
                 }
-                None => (false, None),
+                None => (false, None, None),
             }
         };
         if changed {
             self.announce(app);
+        }
+        if let Some((page, visited)) = shown {
+            self.history.note(
+                app,
+                &page.url,
+                &page.title,
+                page.favicon.as_deref(),
+                visited,
+            );
         }
         match loading {
             Some(true) => self.relayout(agent_id),
@@ -1360,8 +1373,7 @@ pub fn normalize_url(input: &str) -> String {
             }
         );
     }
-    let query = url::form_urlencoded::byte_serialize(value.as_bytes()).collect::<String>();
-    format!("https://www.google.com/search?q={query}")
+    history::search_url(value)
 }
 
 #[tauri::command]
@@ -1418,7 +1430,18 @@ pub async fn browser_navigate(
     agent_id: String,
     url: String,
 ) -> AppResult<()> {
-    manager.navigate(&app, &agent_id, &url)
+    manager.navigate(&app, &agent_id, &url)?;
+    manager.history.note_typed(&app, &normalize_url(&url));
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn browser_suggest(
+    app: AppHandle,
+    manager: State<'_, BrowserManager>,
+    query: String,
+) -> AppResult<history::AddressSuggestions> {
+    Ok(manager.history.suggest(&app, &query))
 }
 
 #[tauri::command]
