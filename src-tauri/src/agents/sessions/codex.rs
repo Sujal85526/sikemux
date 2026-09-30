@@ -10,6 +10,7 @@ use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader as AsyncBufReader};
 use tokio::process::{ChildStdin, Command};
 
+use super::recent::{Found, Hit, Listed, PageScan};
 use super::{
     cached_title, collect_jsonl, condense, next_title_cache_access, stamped_transcripts,
     title_cache_stamp, TitleCacheStamp, MAX_AGENT_TRANSCRIPTS_INSPECTED,
@@ -151,25 +152,60 @@ pub(super) fn codex_sessions(cwd: &str, config_path: Option<&str>) -> Vec<AgentS
     let mut out: Vec<AgentSession> = files
         .par_iter()
         .filter_map(|(path, stamp)| {
-            let rollout = cached_codex_rollout(path, *stamp)?;
-            if rollout.cwd != cwd {
-                return None;
-            }
-            let id = rollout.id.as_str();
-            let title = indexed_titles
-                .get(id)
-                .cloned()
-                .or_else(|| cached_title(path, *stamp, || codex_title(path)))
-                .unwrap_or_else(|| id.chars().take(8).collect());
-            Some(AgentSession {
-                id: id.to_string(),
-                title,
-                mtime: stamp.unix_secs(),
-            })
+            codex_session(path, *stamp, &indexed_titles)
+                .filter(|found| found.project == cwd)
+                .map(|found| found.session)
         })
         .collect();
     out.sort_by_key(|item| std::cmp::Reverse(item.mtime));
     out
+}
+
+/// Rollouts for every project share one folder, so the page lists them all
+/// newest first and opens headers only until it has enough for these projects.
+pub(super) fn codex_recent(scan: &PageScan<'_>, config_path: Option<&str>) -> Vec<Hit> {
+    let Some(root) = agent_config_root("codex", config_path) else {
+        return Vec::new();
+    };
+    let indexed_titles = codex_indexed_titles(&root);
+    let mut paths = Vec::new();
+    collect_jsonl(&root.join("sessions"), &mut paths, 0);
+    let listed = paths
+        .into_iter()
+        .map(|path| {
+            let stamp = title_cache_stamp(&path);
+            Listed {
+                at_ms: stamp.unix_millis(),
+                key: path.to_string_lossy().into_owned(),
+                item: (path, stamp),
+            }
+        })
+        .collect();
+    scan.collect(listed, |(path, stamp)| {
+        codex_session(path, *stamp, &indexed_titles)
+    })
+}
+
+fn codex_session(
+    path: &Path,
+    stamp: TitleCacheStamp,
+    indexed_titles: &CodexTitles,
+) -> Option<Found> {
+    let rollout = cached_codex_rollout(path, stamp)?;
+    let id = rollout.id.as_str();
+    let title = indexed_titles
+        .get(id)
+        .cloned()
+        .or_else(|| cached_title(path, stamp, || codex_title(path)))
+        .unwrap_or_else(|| id.chars().take(8).collect());
+    Some(Found {
+        project: rollout.cwd.clone(),
+        session: AgentSession {
+            id: id.to_string(),
+            title,
+            mtime: stamp.unix_secs(),
+        },
+    })
 }
 
 fn codex_title(path: &Path) -> Option<String> {

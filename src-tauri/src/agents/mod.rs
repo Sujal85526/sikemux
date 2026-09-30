@@ -13,7 +13,7 @@ pub(crate) use executable::resolve_agent_executable;
 pub(crate) use sessions::context::session_transcript_path;
 pub use watch::{note_streaming_session, watch_count};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AgentSession {
     id: String,
     title: String,

@@ -6,6 +6,7 @@ mod hermes;
 mod omp;
 pub(super) mod opencode;
 pub(super) mod pi;
+pub(crate) mod recent;
 pub(crate) mod rename;
 
 use std::collections::HashMap;
@@ -143,6 +144,10 @@ struct TitleCacheStamp {
 impl TitleCacheStamp {
     fn unix_secs(self) -> u64 {
         (self.modified_ns / 1_000_000_000) as u64
+    }
+
+    fn unix_millis(self) -> u64 {
+        (self.modified_ns / 1_000_000) as u64
     }
 }
 

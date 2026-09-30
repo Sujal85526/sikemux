@@ -4,10 +4,11 @@ use std::path::Path;
 use rayon::prelude::*;
 use serde_json::Value;
 
+use super::recent::{Found, Hit, Listed, PageScan};
 use super::rename::append_line;
 use super::{
     cached_title, condense, read_prefix, read_suffix, stamped_transcripts, text_from_content,
-    MAX_AGENT_TRANSCRIPTS_INSPECTED,
+    title_cache_stamp, MAX_AGENT_TRANSCRIPTS_INSPECTED,
 };
 use crate::agents::config::agent_config_root;
 use crate::agents::AgentSession;
@@ -44,6 +45,44 @@ pub(super) fn claude_sessions(cwd: &str, config_path: Option<&str>) -> Vec<Agent
         .collect();
     out.sort_by_key(|item| std::cmp::Reverse(item.mtime));
     out
+}
+
+/// Each project has its own transcript folder, so only the projects asked for are read.
+pub(super) fn claude_recent(scan: &PageScan<'_>, config_path: Option<&str>) -> Vec<Hit> {
+    let Some(root) = agent_config_root("claude", config_path) else {
+        return Vec::new();
+    };
+    let mut listed = Vec::new();
+    for project in scan.projects() {
+        let Ok(entries) = fs::read_dir(root.join("projects").join(project.replace('/', "-")))
+        else {
+            continue;
+        };
+        for path in entries
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().and_then(|e| e.to_str()) == Some("jsonl"))
+        {
+            let stamp = title_cache_stamp(&path);
+            listed.push(Listed {
+                at_ms: stamp.unix_millis(),
+                key: path.to_string_lossy().into_owned(),
+                item: (path, stamp, project.clone()),
+            });
+        }
+    }
+    scan.collect(listed, |(path, stamp, project)| {
+        let id = path.file_stem().and_then(|s| s.to_str())?;
+        let title = cached_title(path, *stamp, || claude_title(path))?;
+        Some(Found {
+            project: project.clone(),
+            session: AgentSession {
+                id: id.to_string(),
+                title,
+                mtime: stamp.unix_secs(),
+            },
+        })
+    })
 }
 
 #[derive(Default)]

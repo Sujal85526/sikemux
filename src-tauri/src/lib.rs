@@ -282,6 +282,7 @@ pub fn run() {
             agents::models::agent_models,
             agents::usage::agent_usage,
             agents::sessions::agent_sessions,
+            agents::sessions::recent::agent_recent_sessions,
             agents::sessions::context::agent_session_context,
             agents::sessions::rename::agent_session_rename,
             agents::sessions::live_agent_sessions,

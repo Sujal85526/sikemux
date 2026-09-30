@@ -71,6 +71,7 @@
     "allow-agent-models",
     "allow-agent-usage",
     "allow-agent-sessions",
+    "allow-agent-recent-sessions",
     "allow-agent-session-context",
     "allow-agent-session-rename",
     "allow-live-agent-sessions",

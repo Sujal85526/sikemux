@@ -4,6 +4,7 @@ use std::time::Duration;
 use rusqlite::{Connection, OpenFlags};
 use tokio::process::Command;
 
+use super::recent::{Found, Hit, Listed, PageScan};
 use crate::agents::executable::apply_login_environment;
 use crate::agents::AgentSession;
 
@@ -41,6 +42,53 @@ pub(super) fn hermes_sessions() -> Vec<AgentSession> {
         Ok(iter) => iter.filter_map(|r| r.ok()).collect(),
         Err(_) => Vec::new(),
     }
+}
+
+/// Hermes records the folder each session ran in, so the page asks only for these projects.
+pub(super) fn hermes_recent(scan: &PageScan<'_>) -> Vec<Hit> {
+    let Ok(home) = std::env::var("HOME") else {
+        return Vec::new();
+    };
+    let db = PathBuf::from(&home).join(".hermes/state.db");
+    let Ok(conn) = Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_ONLY) else {
+        return Vec::new();
+    };
+    let projects: Vec<&String> = scan.projects().collect();
+    if projects.is_empty() {
+        return Vec::new();
+    }
+    let placeholders = vec!["?"; projects.len()].join(", ");
+    let sql = format!(
+        "SELECT id, \
+         COALESCE(NULLIF(TRIM(title), ''), substr(id, 1, 13)) AS title, \
+         CAST(COALESCE(started_at, 0) AS INTEGER) AS mtime, \
+         cwd \
+         FROM sessions WHERE cwd IN ({placeholders})"
+    );
+    let Ok(mut stmt) = conn.prepare(&sql) else {
+        return Vec::new();
+    };
+    let Ok(rows) = stmt.query_map(rusqlite::params_from_iter(projects), |row| {
+        Ok(Found {
+            project: row.get::<_, String>(3)?,
+            session: AgentSession {
+                id: row.get::<_, String>(0)?,
+                title: row.get::<_, String>(1)?,
+                mtime: row.get::<_, i64>(2).unwrap_or(0).max(0) as u64,
+            },
+        })
+    }) else {
+        return Vec::new();
+    };
+    let listed = rows
+        .filter_map(Result::ok)
+        .map(|found| Listed {
+            at_ms: found.session.mtime * 1000,
+            key: found.session.id.clone(),
+            item: found,
+        })
+        .collect();
+    scan.collect(listed, |found| Some(found.clone()))
 }
 
 const HERMES_RENAME_TIMEOUT: Duration = Duration::from_secs(30);

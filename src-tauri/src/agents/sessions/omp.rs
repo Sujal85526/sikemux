@@ -8,6 +8,7 @@ use rusqlite::{Connection, OpenFlags};
 use serde_json::Value;
 
 use super::claude::{CLAUDE_HEAD_BYTES, CLAUDE_TAIL_BYTES};
+use super::recent::{Found, Hit, Listed, PageScan};
 use super::rename::now_iso8601;
 use super::{
     cached_title, collect_jsonl, condense, mtime_of, read_prefix, read_suffix, text_from_content,
@@ -32,42 +33,68 @@ fn omp_sessions_from_dirs(cwd: &str, roots: Vec<PathBuf>) -> Vec<AgentSession> {
     let mut out: Vec<AgentSession> = files
         .par_iter()
         .filter_map(|path| {
-            let file = fs::File::open(path).ok()?;
-            let header = BufReader::new(file)
-                .lines()
-                .take(40)
-                .map_while(Result::ok)
-                .filter_map(|line| serde_json::from_str::<Value>(&line).ok())
-                .find(|value| value.get("type").and_then(Value::as_str) == Some("session"))?;
-            if header.get("cwd").and_then(Value::as_str) != Some(cwd) {
-                return None;
-            }
-            let mtime = mtime_of(path);
-            let title = cached_title(path, title_cache_stamp(path), || omp_title(path))
-                .or_else(|| {
-                    header
-                        .get("title")
-                        .and_then(Value::as_str)
-                        .and_then(condense)
-                })
-                .or_else(|| header.get("id").and_then(Value::as_str).and_then(condense))
-                .unwrap_or_else(|| {
-                    path.file_stem()
-                        .and_then(|name| name.to_str())
-                        .unwrap_or("session")
-                        .chars()
-                        .take(13)
-                        .collect()
-                });
-            Some(AgentSession {
-                id: path.to_string_lossy().into_owned(),
-                title,
-                mtime,
-            })
+            omp_session(path)
+                .filter(|found| found.project == cwd)
+                .map(|found| found.session)
         })
         .collect();
     out.sort_by_key(|item| std::cmp::Reverse(item.mtime));
     out
+}
+
+pub(super) fn omp_recent(scan: &PageScan<'_>) -> Vec<Hit> {
+    let mut files = Vec::new();
+    for root in omp_session_dirs() {
+        collect_jsonl(&root, &mut files, 0);
+    }
+    files.sort_unstable();
+    files.dedup();
+    let listed = files
+        .into_iter()
+        .map(|path| Listed {
+            at_ms: title_cache_stamp(&path).unix_millis(),
+            key: path.to_string_lossy().into_owned(),
+            item: path,
+        })
+        .collect();
+    scan.collect(listed, |path| omp_session(path))
+}
+
+/// The session in one transcript and the project its header names.
+fn omp_session(path: &Path) -> Option<Found> {
+    let file = fs::File::open(path).ok()?;
+    let header = BufReader::new(file)
+        .lines()
+        .take(40)
+        .map_while(Result::ok)
+        .filter_map(|line| serde_json::from_str::<Value>(&line).ok())
+        .find(|value| value.get("type").and_then(Value::as_str) == Some("session"))?;
+    let project = header.get("cwd").and_then(Value::as_str)?.to_string();
+    let mtime = mtime_of(path);
+    let title = cached_title(path, title_cache_stamp(path), || omp_title(path))
+        .or_else(|| {
+            header
+                .get("title")
+                .and_then(Value::as_str)
+                .and_then(condense)
+        })
+        .or_else(|| header.get("id").and_then(Value::as_str).and_then(condense))
+        .unwrap_or_else(|| {
+            path.file_stem()
+                .and_then(|name| name.to_str())
+                .unwrap_or("session")
+                .chars()
+                .take(13)
+                .collect()
+        });
+    Some(Found {
+        project,
+        session: AgentSession {
+            id: path.to_string_lossy().into_owned(),
+            title,
+            mtime,
+        },
+    })
 }
 
 fn scan_omp_line(line: &str, named: &mut Option<String>, first_user: &mut Option<String>) {

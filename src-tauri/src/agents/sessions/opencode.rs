@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use rusqlite::{Connection, OpenFlags};
 
+use super::recent::{Found, Hit, Listed, PageScan};
 use crate::agents::AgentSession;
 
 // ---- opencode — SQLite in the user's opencode data dir ------------------
@@ -68,6 +69,33 @@ pub(super) fn opencode_sessions(cwd: &str) -> Vec<AgentSession> {
     out.retain(|s| seen.insert(s.id.clone()));
     out.truncate(400);
     out
+}
+
+/// OpenCode keeps sessions in SQLite, so each project is one indexed query.
+pub(super) fn opencode_recent(scan: &PageScan<'_>) -> Vec<Hit> {
+    let mut seen = HashSet::new();
+    let mut listed = Vec::new();
+    for db in opencode_db_paths() {
+        let Ok(conn) = Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_ONLY) else {
+            continue;
+        };
+        for project in scan.projects() {
+            for session in opencode_sessions_from_conn(&conn, project) {
+                if !seen.insert(session.id.clone()) {
+                    continue;
+                }
+                listed.push(Listed {
+                    at_ms: session.mtime * 1000,
+                    key: session.id.clone(),
+                    item: Found {
+                        project: project.clone(),
+                        session,
+                    },
+                });
+            }
+        }
+    }
+    scan.collect(listed, |found| Some(found.clone()))
 }
 
 fn opencode_sessions_from_conn(conn: &Connection, cwd: &str) -> Vec<AgentSession> {

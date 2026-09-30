@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use rayon::prelude::*;
 use serde_json::Value;
 
+use super::recent::{Found, Hit, Listed, PageScan};
 use super::rename::{append_line, now_iso8601};
 use super::{
     cached_title, collect_jsonl, condense, mtime_of, read_suffix, text_from_content,
@@ -39,35 +40,60 @@ pub(super) fn pi_sessions(cwd: &str) -> Vec<AgentSession> {
     let mut out: Vec<AgentSession> = files
         .par_iter()
         .filter_map(|path| {
-            let file = fs::File::open(path).ok()?;
-            let mut first = String::new();
-            BufReader::new(file).read_line(&mut first).ok()?;
-            let v = serde_json::from_str::<Value>(first.trim()).ok()?;
-            if v.get("type").and_then(|t| t.as_str()) != Some("session") {
-                return None;
-            }
-            if v.get("cwd").and_then(|c| c.as_str()) != Some(cwd) {
-                return None;
-            }
-            let id = path.to_string_lossy().to_string();
-            let mtime = mtime_of(path);
-            let title = cached_title(path, title_cache_stamp(path), || {
-                pi_latest_name(path).or_else(|| pi_title(path))
-            })
-            .or_else(|| v.get("id").and_then(|i| i.as_str()).and_then(condense))
-            .unwrap_or_else(|| {
-                path.file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("session")
-                    .chars()
-                    .take(13)
-                    .collect()
-            });
-            Some(AgentSession { id, title, mtime })
+            pi_session(path)
+                .filter(|found| found.project == cwd)
+                .map(|found| found.session)
         })
         .collect();
     out.sort_by_key(|item| std::cmp::Reverse(item.mtime));
     out
+}
+
+pub(super) fn pi_recent(scan: &PageScan<'_>) -> Vec<Hit> {
+    let Some(root) = pi_session_dir() else {
+        return Vec::new();
+    };
+    let mut files = Vec::new();
+    collect_jsonl(&root, &mut files, 0);
+    let listed = files
+        .into_iter()
+        .map(|path| Listed {
+            at_ms: title_cache_stamp(&path).unix_millis(),
+            key: path.to_string_lossy().into_owned(),
+            item: path,
+        })
+        .collect();
+    scan.collect(listed, |path| pi_session(path))
+}
+
+/// The session in one transcript and the project its header names.
+fn pi_session(path: &Path) -> Option<Found> {
+    let file = fs::File::open(path).ok()?;
+    let mut first = String::new();
+    BufReader::new(file).read_line(&mut first).ok()?;
+    let v = serde_json::from_str::<Value>(first.trim()).ok()?;
+    if v.get("type").and_then(|t| t.as_str()) != Some("session") {
+        return None;
+    }
+    let project = v.get("cwd").and_then(|c| c.as_str())?.to_string();
+    let id = path.to_string_lossy().to_string();
+    let mtime = mtime_of(path);
+    let title = cached_title(path, title_cache_stamp(path), || {
+        pi_latest_name(path).or_else(|| pi_title(path))
+    })
+    .or_else(|| v.get("id").and_then(|i| i.as_str()).and_then(condense))
+    .unwrap_or_else(|| {
+        path.file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("session")
+            .chars()
+            .take(13)
+            .collect()
+    });
+    Some(Found {
+        project,
+        session: AgentSession { id, title, mtime },
+    })
 }
 
 fn pi_title(path: &Path) -> Option<String> {

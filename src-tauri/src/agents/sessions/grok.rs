@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use rayon::prelude::*;
 use serde_json::Value;
 
+use super::recent::{Found, Hit, Listed, PageScan};
 use super::rename::now_iso8601;
 use super::{condense, mtime_of, MAX_AGENT_TRANSCRIPTS_INSPECTED, MAX_AGENT_TRANSCRIPT_PATHS};
 use crate::agents::config::grok_root;
@@ -158,6 +159,13 @@ fn grok_session_mtime(session_dir: &Path) -> u64 {
 }
 
 fn grok_session(session_dir: &Path, cwd: &str) -> Option<AgentSession> {
+    grok_found(session_dir)
+        .filter(|found| Path::new(&found.project) == Path::new(cwd))
+        .map(|found| found.session)
+}
+
+/// The session in one folder and the project Grok recorded for it.
+fn grok_found(session_dir: &Path) -> Option<Found> {
     let summary_path = session_dir.join("summary.json");
     let summary = fs::read_to_string(&summary_path)
         .ok()
@@ -168,9 +176,6 @@ fn grok_session(session_dir: &Path, cwd: &str) -> Option<AgentSession> {
         .and_then(Value::as_str)
         .map(PathBuf::from)
         .or_else(|| session_dir.parent().and_then(grok_group_cwd))?;
-    if workspace != Path::new(cwd) {
-        return None;
-    }
     let id = summary
         .as_ref()
         .and_then(|value| value.pointer("/info/id"))
@@ -190,10 +195,13 @@ fn grok_session(session_dir: &Path, cwd: &str) -> Option<AgentSession> {
         })
         .or_else(|| grok_first_user(session_dir))
         .unwrap_or_else(|| id.chars().take(13).collect());
-    Some(AgentSession {
-        id: id.to_string(),
-        title,
-        mtime: grok_session_mtime(session_dir),
+    Some(Found {
+        project: workspace.to_string_lossy().into_owned(),
+        session: AgentSession {
+            id: id.to_string(),
+            title,
+            mtime: grok_session_mtime(session_dir),
+        },
     })
 }
 
@@ -210,6 +218,21 @@ pub(super) fn grok_sessions(cwd: &str) -> Vec<AgentSession> {
         .collect();
     out.sort_by_key(|item| std::cmp::Reverse(item.mtime));
     out
+}
+
+pub(super) fn grok_recent(scan: &PageScan<'_>) -> Vec<Hit> {
+    let Some(root) = grok_root() else {
+        return Vec::new();
+    };
+    let listed = collect_grok_session_dirs(&root)
+        .into_iter()
+        .map(|dir| Listed {
+            at_ms: grok_session_mtime(&dir) * 1000,
+            key: dir.to_string_lossy().into_owned(),
+            item: dir,
+        })
+        .collect();
+    scan.collect(listed, |dir| grok_found(dir))
 }
 
 /// Names a session the way Grok's `/rename` does: a title marked manual, so generated titles never replace it.
