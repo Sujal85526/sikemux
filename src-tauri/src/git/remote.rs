@@ -164,7 +164,64 @@ pub fn remote_urls(path: &str) -> Vec<String> {
             let remote = repo.find_remote(name).ok()?;
             remote.url().ok().map(str::to_owned)
         })
+        .map(|url| with_real_ssh_host(&url, ssh_hostname))
         .collect()
+}
+
+/// A remote such as `git@github-work:org/repo` names a host alias from
+/// ~/.ssh/config; this swaps in the host it stands for, so a plugin can tell
+/// which service the remote lives on.
+fn with_real_ssh_host(remote_url: &str, resolve: impl Fn(&str) -> Option<String>) -> String {
+    if let Ok(mut parsed) = url::Url::parse(remote_url) {
+        if !matches!(parsed.scheme(), "ssh" | "git+ssh") {
+            return remote_url.to_owned();
+        }
+        let Some(real) = parsed.host_str().and_then(&resolve) else {
+            return remote_url.to_owned();
+        };
+        return match parsed.set_host(Some(&real)) {
+            Ok(()) => parsed.into(),
+            Err(_) => remote_url.to_owned(),
+        };
+    }
+    let Some((user_host, path)) = remote_url.split_once(':') else {
+        return remote_url.to_owned();
+    };
+    if user_host.contains('/') {
+        return remote_url.to_owned();
+    }
+    let (user, host) = match user_host.rsplit_once('@') {
+        Some((user, host)) => (Some(user), host),
+        None => (None, user_host),
+    };
+    let Some(real) = resolve(host) else {
+        return remote_url.to_owned();
+    };
+    match user {
+        Some(user) => format!("{user}@{real}:{path}"),
+        None => format!("{real}:{path}"),
+    }
+}
+
+/// `ssh -G` prints the settings ssh would use for a host without connecting.
+fn ssh_hostname(host: &str) -> Option<String> {
+    if host.starts_with('-') {
+        return None;
+    }
+    let output = std::process::Command::new("ssh")
+        .args(["-G", host])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .find_map(|line| line.strip_prefix("hostname "))
+        .map(str::to_owned)
+        .filter(|real| real != host)
 }
 
 #[tauri::command]
@@ -453,6 +510,26 @@ pub async fn git_set_upstream(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_ssh_host_alias_is_replaced_by_the_host_it_stands_for() {
+        let resolve = |host: &str| (host == "github-work").then(|| "github.com".to_owned());
+        assert_eq!(
+            with_real_ssh_host("git@github-work:org/repo.git", resolve),
+            "git@github.com:org/repo.git"
+        );
+        assert_eq!(
+            with_real_ssh_host("ssh://git@github-work/org/repo.git", resolve),
+            "ssh://git@github.com/org/repo.git"
+        );
+        for untouched in [
+            "git@bitbucket.org:team/repo.git",
+            "https://github-work/org/repo.git",
+            "/local/path/repo.git",
+        ] {
+            assert_eq!(with_real_ssh_host(untouched, resolve), untouched);
+        }
+    }
 
     #[test]
     fn remote_urls_are_read_from_anywhere_inside_the_repository() {
