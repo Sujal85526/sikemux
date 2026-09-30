@@ -56,6 +56,8 @@ export interface DomainState {
     customThemes: Theme[];
     uiTextScale: number;
     paneShader: boolean;
+    /** A picture on disk that panes show, dithered, in place of the grain. */
+    paneImage: string | null;
     terminalFontSize: number;
     chatTextScale: number;
     editorTextScale: number;
@@ -216,6 +218,7 @@ export const useStore = create<StoreState>(() => {
         customThemes: [],
         uiTextScale: 1,
         paneShader: true,
+        paneImage: null,
         terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
         chatTextScale: DEFAULT_CHAT_TEXT_SCALE,
         editorTextScale: DEFAULT_EDITOR_TEXT_SCALE,

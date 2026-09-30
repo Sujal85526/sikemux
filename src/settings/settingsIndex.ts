@@ -59,6 +59,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     section("appearance", "Interface"),
     row("appearance", "Interface", "Text size", "font zoom scale larger smaller accessibility"),
     row("appearance", "Interface", "Pane texture", "dither dithering shader grain noise background effect"),
+    row("appearance", "Interface", "Pane image", "picture photo wallpaper background dither dithered custom"),
     ...(IS_MACOS
         ? [
               section("appearance", "Window"),

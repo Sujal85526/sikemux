@@ -24,7 +24,7 @@ import {
 } from "../state/selectors";
 import { type CtxItem } from "../rail/FileTree";
 import { ErrorBoundary } from "../ui/ErrorBoundary";
-import { ShaderField } from "../ui/ShaderField";
+import { PaneField } from "../ui/ShaderField";
 import { agentMenu } from "./agentMenu";
 import { TabBar, type TabDescriptor } from "./TabBar";
 import type { TabDragOut, TabPoint } from "./useTabReorder";
@@ -725,7 +725,7 @@ const WindowLayer = memo(function WindowLayer({
                                 WebGL context on a field nobody is looking at. The editor draws
                                 its own, on the code panel beside its file tree, and the desk has none. */}
                             {p.kind !== "editor" && p.kind !== "desk" && (
-                                <ShaderField preset="ambient" className="pane-field" enabled={paneShader && live && shown} />
+                                <PaneField enabled={paneShader && live && shown} />
                             )}
                             <ErrorBoundary label={`${p.kind} pane`}>
                                 {renderWorkbenchItem({ pane: p, session, win, active: paneActive, visible: paneVisible, painted: panePainted })}

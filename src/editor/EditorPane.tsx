@@ -48,7 +48,7 @@ import { FileIcon } from "../ui/FileIcon";
 import { TabBar } from "../workspace/TabBar";
 import { EditorFindBar } from "./EditorFindBar";
 import { EditorInsights } from "./EditorInsights";
-import { ShaderField } from "../ui/ShaderField";
+import { PaneField } from "../ui/ShaderField";
 import { basename, dirname, isPathWithin, joinPath, normalizePath } from "../lib/paths";
 import { localPath } from "../chat/imagePreview";
 import { safeWebUrl } from "../terminal/interactions";
@@ -1075,7 +1075,7 @@ export function EditorPane({
                 />
             )}
             <div className="ed-main">
-                {!bare && <ShaderField preset="ambient" className="pane-field" enabled={paneShader && visible} />}
+                {!bare && <PaneField enabled={paneShader && visible} />}
                 {/* An ordinary editor's documents are tabs in the session
                     strip, so the only bar left here is the one an SSH config
                     window needs to close itself. */}

@@ -1200,6 +1200,8 @@ interface ThemeEdit {
 function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePageProps) {
     const uiTextScale = useStore((state) => state.uiTextScale);
     const paneShader = useStore((state) => state.paneShader);
+    const paneImage = useStore((state) => state.paneImage);
+    const home = useStore((state) => state.home);
     const customThemes = useStore((s) => s.customThemes);
     const [edit, setEdit] = useState<ThemeEdit | null>(null);
     const editorRef = useRef<HTMLDivElement>(null);
@@ -1311,6 +1313,28 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                         asLabel
                         control={<Switch checked={paneShader} onChange={cmd.setPaneShader} label="Pane texture" />}
                     />
+                    <SettingsRow
+                        label="Pane image"
+                        desc={paneImage ? prettyPath(paneImage, home) : "A picture shared by every pane, dithered in place of the grain."}>
+                        <div className="settings-actions">
+                            {paneImage && (
+                                <button className="settings-btn" type="button" onClick={() => cmd.setPaneImage(null)}>
+                                    Remove
+                                </button>
+                            )}
+                            <button
+                                className="settings-btn"
+                                type="button"
+                                onClick={() =>
+                                    void settingsApi
+                                        .pickImage()
+                                        .then((path) => path && cmd.setPaneImage(path))
+                                        .catch(reportError("image picker"))
+                                }>
+                                {paneImage ? "Change…" : "Choose…"}
+                            </button>
+                        </div>
+                    </SettingsRow>
                 </SettingsRows>
             </SettingsSection>
 

@@ -11,6 +11,7 @@ export const setRestoreAgentTabs = (value: boolean): void => setState({ restoreA
 export const setAgentNotifications = (value: boolean): void => setState({ agentNotifications: value });
 export const setVoiceDictation = (value: boolean): void => setState({ voiceDictation: value });
 export const setPaneShader = (value: boolean): void => setState({ paneShader: value });
+export const setPaneImage = (path: string | null): void => setState({ paneImage: path });
 export const setUiTextScale = (value: number): void => setState({ uiTextScale: [1, 1.1, 1.25].includes(value) ? value : 1 });
 
 export const setRailDensity = (value: import("../types").RailDensity): void => setState({ railDensity: value });
