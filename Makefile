@@ -1,4 +1,4 @@
-.PHONY: dev build run icons format format-check lint test test-coverage tsc rust-fmt rust-clippy rust-test rust-audit shell-lint release-check hooks prepush check ci clean clean-dev
+.PHONY: dev showcase build run icons format format-check lint test test-coverage tsc rust-fmt rust-clippy rust-test rust-audit shell-lint release-check hooks prepush check ci clean clean-dev
 
 icons:
 	./scripts/icons.sh
@@ -6,6 +6,9 @@ icons:
 dev: export BITBUCKET_OAUTH_SECRET ?= $(shell sed -n 's/^BITBUCKET_OAUTH_SECRET=//p' .env 2>/dev/null)
 dev: icons
 	pnpm dev:desktop
+
+showcase:
+	pnpm showcase:serve --open /showcase/
 
 # Release artifacts target the host architecture (Apple Silicon on the
 # supported release machine).

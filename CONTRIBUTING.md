@@ -70,7 +70,7 @@ Agent tools are declared once in `browser/tools.json`. Add or change one there, 
 
 ## Screenshots
 
-`pnpm showcase` renders the app in headless Chrome on demo data and writes every scene to `showcase/out/` as a full window, a framed window, and 2x crops. It needs Google Chrome installed. Add `--publish` to refresh the README images, or `--site <dir>` to copy every capture somewhere else. Scenes live in `showcase/scenes.mjs` and the demo data in `showcase/world/`.
+`pnpm showcase` renders the app in headless Chrome on demo data and writes every scene to `showcase/out/` as a full window, a framed window, and 2x crops. It needs Google Chrome installed. Add `--publish` to refresh the README images, or `--site <dir>` to copy every capture somewhere else. Scenes live in `showcase/scenes.mjs` and the demo data in `showcase/world/`. To click around the same demo app yourself, run `make showcase`; it opens http://localhost:1471/showcase/ in your browser.
 
 ## Commit messages
 
