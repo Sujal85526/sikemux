@@ -299,7 +299,8 @@ async function exerciseBrowserTools(harnessEnv) {
     if (pointed.hit?.label !== "Count")
       fail(`a click by x,y hit ${JSON.stringify(pointed.hit)}`, desktopLog);
 
-    const reloaded = await tool("browser.reload", {
+    const reloaded = await tool("browser.navigate", {
+      go: "reload",
       waitFor: { selector: "#count" },
     });
     if (!reloaded.met) fail("reload did not wait for the page", desktopLog);

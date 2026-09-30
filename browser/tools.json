@@ -10,7 +10,7 @@
     {
       "name": "browser_navigate",
       "method": "browser.navigate",
-      "description": "Open a URL (newTab for a new tab) and wait for it to load.",
+      "description": "Open a URL (newTab for a new tab), or go back, forward or reload, and wait for the page. A hard reload skips the cache.",
       "properties": {
         "url": {
           "type": "string",
@@ -19,62 +19,13 @@
         "newTab": {
           "type": "boolean"
         },
-        "waitFor": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "text": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 500
-            },
-            "textGone": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 500
-            },
-            "selector": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 512
-            },
-            "selectorGone": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 512
-            },
-            "url": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 2048
-            },
-            "networkIdle": {
-              "type": "boolean"
-            },
-            "timeoutMs": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 60000
-            }
-          }
-        },
-        "report": {
+        "go": {
           "enum": [
-            "outcome",
-            "changes",
-            "full"
+            "back",
+            "forward",
+            "reload"
           ]
-        }
-      },
-      "required": [
-        "url"
-      ]
-    },
-    {
-      "name": "browser_reload",
-      "method": "browser.reload",
-      "description": "Reload this tab; hard skips the cache.",
-      "properties": {
+        },
         "hard": {
           "type": "boolean"
         },
@@ -130,10 +81,14 @@
     {
       "name": "browser_state",
       "method": "browser.state",
-      "description": "Read the tab: url, title, numbered elements, text and tabs.",
+      "description": "Read the tab: url, title, numbered elements, text and tabs. A selector reads only the text of the parts it matches.",
       "properties": {
         "fullText": {
           "type": "boolean"
+        },
+        "selector": {
+          "type": "string",
+          "maxLength": 512
         }
       },
       "required": []
@@ -498,18 +453,6 @@
       "required": []
     },
     {
-      "name": "browser_extract",
-      "method": "browser.extract",
-      "description": "Read the page's text, or each part matching a CSS selector.",
-      "properties": {
-        "selector": {
-          "type": "string",
-          "maxLength": 512
-        }
-      },
-      "required": []
-    },
-    {
       "name": "browser_evaluate",
       "method": "browser.evaluate",
       "description": "Run JavaScript in the page, given as script; returns JSON.",
@@ -719,43 +662,6 @@
           ]
         }
       },
-      "required": []
-    },
-    {
-      "name": "browser_back",
-      "method": "browser.back",
-      "description": "Go back in this tab's history.",
-      "properties": {
-        "report": {
-          "enum": [
-            "outcome",
-            "changes",
-            "full"
-          ]
-        }
-      },
-      "required": []
-    },
-    {
-      "name": "browser_forward",
-      "method": "browser.forward",
-      "description": "Go forward in this tab's history.",
-      "properties": {
-        "report": {
-          "enum": [
-            "outcome",
-            "changes",
-            "full"
-          ]
-        }
-      },
-      "required": []
-    },
-    {
-      "name": "browser_list_tabs",
-      "method": "browser.tabs",
-      "description": "List this agent's browser tabs with their ids.",
-      "properties": {},
       "required": []
     },
     {

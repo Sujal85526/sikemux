@@ -398,8 +398,8 @@ fn bad_arguments_are_named_the_way_the_agent_learned_them() {
         "'nope' is not of type 'integer'"
     );
     assert_eq!(
-        complaint("browser_navigate", json!({})),
-        "'url' is a required property"
+        complaint("browser_find", json!({})),
+        "'query' is a required property"
     );
 }
 
@@ -421,8 +421,8 @@ fn a_misnamed_argument_is_pointed_at_the_one_meant() {
         "'script' is a required property; 'expression' should be 'script'"
     );
     assert_eq!(
-        complaint("browser_extract", json!({ "query": "main" })),
-        "Additional properties are not allowed ('query' was unexpected); 'query' should be 'selector'"
+        complaint("browser_state", json!({ "selecter": "main" })),
+        "Additional properties are not allowed ('selecter' was unexpected); 'selecter' should be 'selector'"
     );
     assert_eq!(
         complaint("browser_click", json!({ "indx": 3 })),

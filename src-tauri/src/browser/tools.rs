@@ -47,10 +47,7 @@ pub fn execute(app: &AppHandle, request: &HarnessRequest) -> Result<Value, Strin
         .as_deref()
         .ok_or("browser tools need the agent's id")?;
     let manager = app.state::<BrowserManager>();
-    let acts_on_a_tab = !matches!(
-        request.method.as_str(),
-        "browser.tabs" | "browser.tab.close"
-    );
+    let acts_on_a_tab = request.method != "browser.tab.close";
     let mut marks = Vec::new();
     if acts_on_a_tab {
         manager.announce_acting(app, agent_id);
@@ -83,7 +80,7 @@ pub fn execute(app: &AppHandle, request: &HarnessRequest) -> Result<Value, Strin
         marks.extend(manager.mark_acting(app, agent_id));
         manager.release_acting(app, agent_id, marks);
     }
-    if !matches!(request.method.as_str(), "browser.navigate" | "browser.tabs") {
+    if request.method != "browser.navigate" {
         if let Ok(Value::Object(map)) = &mut result {
             let opened = opened_tabs(&manager, agent_id, &before);
             if !opened.is_empty() {
@@ -132,7 +129,6 @@ async fn run(
             .map(|value| value as usize)
     };
     match method {
-        "browser.tabs" => Ok(tabs(&manager, agent_id)),
         "browser.tab.switch" => {
             let id = text("tabId").ok_or("tabId is required")?;
             manager
@@ -148,7 +144,12 @@ async fn run(
             Ok(tabs(&manager, agent_id))
         }
         "browser.navigate" => {
-            let url = text("url").ok_or("url is required")?;
+            let url = match (text("url"), text("go")) {
+                (Some(_), Some(_)) => return Err("pass url or go, not both".into()),
+                (None, Some(go)) => return step(app, agent_id, &go, params).await,
+                (None, None) => return Err("url or go is required".into()),
+                (Some(url), None) => url,
+            };
             let url = match super::local_files::local_target(&url) {
                 Some(path) => manager.local_files.url_for(&path)?,
                 None => url,
@@ -175,7 +176,7 @@ async fn run(
                     note = Some("the tab was already on this url, so it was reloaded");
                 } else {
                     if same_document(&current, &wanted) {
-                        note = Some("only the #fragment changed, so the page moved within itself and did not load again; use browser_reload to load it afresh");
+                        note = Some("only the #fragment changed, so the page moved within itself and did not load again; use browser_navigate with go reload to load it afresh");
                     }
                     manager
                         .navigate(app, agent_id, &url)
@@ -196,19 +197,14 @@ async fn run(
             }
             Ok(result)
         }
-        "browser.reload" => {
-            let (tab_id, view) = active_tab(&manager, agent_id)?;
-            if params.get("hard").and_then(Value::as_bool) == Some(true) {
-                native::reload_from_origin(&view).await?;
-            } else {
-                manager
-                    .reload(agent_id)
-                    .map_err(|error| error.to_string())?;
-            }
-            settle(&manager, agent_id, &tab_id).await;
-            arrived(app, agent_id, &tab_id, params).await
-        }
         "browser.state" => {
+            if active_tab(&manager, agent_id).is_err() {
+                return Ok(tabs(&manager, agent_id));
+            }
+            if let Some(selector) = text("selector") {
+                let (_, view) = active(&manager, agent_id)?;
+                return call(&view, "extract", &[json!(selector)]).await;
+            }
             let full_text = params.get("fullText").and_then(Value::as_bool) == Some(true);
             read_state(&manager, agent_id, "full", full_text).await
         }
@@ -518,17 +514,6 @@ async fn run(
             )
             .await
         }
-        "browser.extract" => {
-            let (_, view) = active(&manager, agent_id)?;
-            call(
-                &view,
-                "extract",
-                &[text("selector")
-                    .map(|value| json!(value))
-                    .unwrap_or(Value::Null)],
-            )
-            .await
-        }
         "browser.screenshot" => {
             let (tab_id, view) = active(&manager, agent_id)?;
             let annotate = params.get("annotate").and_then(Value::as_bool) == Some(true);
@@ -675,16 +660,30 @@ async fn run(
             }
             state(&manager, agent_id).await
         }
-        "browser.back" | "browser.forward" => {
-            let (tab_id, _) = active(&manager, agent_id)?;
-            manager
-                .history(agent_id, if method == "browser.back" { -1 } else { 1 })
-                .map_err(|error| error.to_string())?;
-            settle(&manager, agent_id, &tab_id).await;
-            report(&manager, agent_id, params).await
-        }
         _ => Err("unknown browser method".into()),
     }
+}
+
+/// Back, forward or reload in the current tab, then the page as it arrives.
+async fn step(app: &AppHandle, agent_id: &str, go: &str, params: &Value) -> Result<Value, String> {
+    let manager = app.state::<BrowserManager>();
+    let (tab_id, view) = active_tab(&manager, agent_id)?;
+    let hard = params.get("hard").and_then(Value::as_bool) == Some(true);
+    match go {
+        "back" => manager
+            .history(agent_id, -1)
+            .map_err(|error| error.to_string())?,
+        "forward" => manager
+            .history(agent_id, 1)
+            .map_err(|error| error.to_string())?,
+        "reload" if hard => native::reload_from_origin(&view).await?,
+        "reload" => manager
+            .reload(agent_id)
+            .map_err(|error| error.to_string())?,
+        other => return Err(format!("go must be back, forward or reload, not {other}")),
+    }
+    settle(&manager, agent_id, &tab_id).await;
+    arrived(app, agent_id, &tab_id, params).await
 }
 
 /// Plays the steps in order and stops at the first that fails or that takes
@@ -780,7 +779,7 @@ fn script_failure(error: &str, limit: Duration) -> String {
             limit.as_secs()
         )
     } else if error.contains("no longer reachable") {
-        "the page navigated or reloaded while the script ran, so its result was lost; to reload, use browser_reload".into()
+        "the page navigated or reloaded while the script ran, so its result was lost; to reload, use browser_navigate with go reload".into()
     } else {
         error.to_owned()
     }
@@ -1756,7 +1755,7 @@ mod tests {
             "Completion handler for function call is no longer reachable",
             limit
         )
-        .contains("browser_reload"));
+        .contains("go reload"));
         assert_eq!(script_failure("TypeError: x", limit), "TypeError: x");
     }
 

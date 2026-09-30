@@ -230,10 +230,10 @@ need to know the server is up, read the task output or navigate to it.
 `browser_state` returns page state: url, title, numbered interactive elements,
 visible text, and the open tabs. The text stops after about 2 KB, and
 `textLength` then gives its full length; `fullText: true` returns up to 40 KB,
-and `browser_extract` reads the text of one part of the page.
+and a CSS `selector` returns only the text of each part it matches.
 
 Tools that act (navigate, click, type with submit, press, drag, upload,
-dialog, wait, back, forward) report on the page afterwards, and `report`
+dialog, wait) report on the page afterwards, and `report`
 chooses how much:
 
 - `"changes"`, the default, returns url, title and loading plus `changes`
@@ -284,8 +284,7 @@ page. A frame from another site, such as a card field or a sign-in widget,
 cannot be read from outside, so state lists it as a single element. Click its
 number, or better the field inside it by `x` and `y` from a screenshot, then
 `browser_type` without an index to type at the caret. The page's text,
-`browser_extract`, `browser_network` and `browser_console` cover only the
-top page.
+`browser_network` and `browser_console` cover only the top page.
 
 ## browser-input: Acting on a page
 
@@ -307,8 +306,8 @@ number, such as a canvas or a field inside a frame from another site. `double: t
 `hover: true` only moves the pointer there, to open a hover menu; while
 Sikemux is in the background the page is told about the hover but CSS
 `:hover` styles do not apply. A result with `covered` names what was on top
-of the element and took the click instead. `browser_back` and
-`browser_forward` move through the current tab's history.
+of the element and took the click instead. `browser_navigate` with `go:
+"back"` or `go: "forward"` moves through the current tab's history.
 
 `browser_type` with an `index` or `selector` focuses that element and
 replaces its value. Without one it types at the caret of whatever is focused,
@@ -382,10 +381,10 @@ for `ms` (default 1000, max 30000) and then waits for any load to finish.
 Prefer a condition over a guessed sleep, and over screenshots taken to see
 whether something has finished.
 
-`browser_navigate` and `browser_reload` take the same conditions as
-`waitFor`, to arrive at a page that has finished drawing. Navigating to the
-url the tab is already on reloads it; `browser_reload` does so directly, and
-`hard: true` skips the cache so a changed script or stylesheet is fetched
+`browser_navigate` takes the same conditions as `waitFor`, to arrive at a
+page that has finished drawing. Navigating to the url the tab is already on
+reloads it; `go: "reload"` does so directly, and with it `hard: true` skips
+the cache so a changed script or stylesheet is fetched
 again. When the load failed, as when nothing listens on that port, the result
 says so in `loadError`, and a page that loaded without any text or controls
 yet comes with a note to wait for it.
@@ -422,8 +421,8 @@ pane right now. A tab that is not visible still lays out at a real size and
 takes input, but do not tell the person a page is on their screen when
 `visible` is false. With no arguments it just returns the state.
 
-Tabs are yours. `browser_list_tabs`, `browser_switch_tab` and
-`browser_close_tab` act on this pane's tabs, not the person's other windows.
+Tabs are yours. `browser_state` lists them, even before any is open, and
+`browser_switch_tab` and `browser_close_tab` act on this pane's tabs, not the person's other windows.
 Switching returns what changed since you last read that tab, or its full
 state when you have not read it yet.
 `browser_navigate` reuses the current tab unless you pass `newTab: true`.
@@ -434,7 +433,7 @@ now the current one. Tabs do not survive a restart of Sikemux.
 ## browser-evidence: Screenshots, drawings and recordings
 
 `browser_screenshot` returns an image of the visible part of the tab. Use it
-when layout or rendering matters; use `browser_extract` when you only need
+when layout or rendering matters; use `browser_state` when you only need
 text. Its pixels are CSS pixels, so a point you read off it can go straight to
 `browser_click` as `x` and `y`. `fullPage: true` captures the whole page
 instead, cut at 14,400 pixels tall (`cutAt` says when it was). An `index`,
@@ -505,7 +504,7 @@ most, and elements come back as their markup. Reach for it when no other tool
 reads what you need. Prefer the other tools for acting, since they send real
 input, and `browser_wait` for waiting, rather than a polling loop in a script.
 A script that reloads or leaves the page loses its result; use
-`browser_reload` for that. It runs with the page's own session, so `fetch` of
+`browser_navigate` with `go: "reload"` for that. It runs with the page's own session, so `fetch` of
 the site's API returns what the signed-in person would get.
 
 ## shell: The same operations from a shell
