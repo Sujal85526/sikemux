@@ -3,7 +3,7 @@ import { browserApi, BLANK_URL, type BrowserBounds, type BrowserHole, type Brows
 import { onStageFrame, useNativeViewHoles, useNativeViewsOccluded, useStageMoving, type NativeViewHole } from "../state/nativeViews";
 import type { AgentType, PtyContext, Session, Window as WindowT } from "../state/types";
 import { reportError } from "../state/toast";
-import { AgentIcon, IconChevron, IconGlobe, IconPlus, IconRefresh, WindowIcon } from "../ui/Icons";
+import { AgentIcon, IconChevron, IconGlobe, IconLock, IconPlus, IconRefresh, WindowIcon } from "../ui/Icons";
 import { FileIcon } from "../ui/FileIcon";
 import { TabBar, type TabDescriptor } from "./TabBar";
 import { getState, useStore } from "../state/store";
@@ -116,6 +116,17 @@ export function DeskHost({
             onEmpty={onEmpty}
         />
     );
+}
+
+/** What the address bar shows while nobody is editing it: the site alone. */
+function siteOf(url: string): { host: string; secure: boolean } | null {
+    try {
+        const parsed = new URL(url);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+        return { host: parsed.host.replace(/^www\./, ""), secure: parsed.protocol === "https:" };
+    } catch {
+        return null;
+    }
 }
 
 /** The site's own mark once it has arrived, and a globe until then. */
@@ -368,6 +379,7 @@ function BrowserPage({
        a web app changes the address — and that must not eat a half-typed one. */
     const pageAddress = blank ? "" : (activeTab?.url ?? "");
     const address = typed ?? pageAddress;
+    const site = typed === null ? siteOf(pageAddress) : null;
     useEffect(() => setTyped(null), [activeTab?.id]);
 
     useLayoutEffect(() => {
@@ -465,23 +477,32 @@ function BrowserPage({
                     onClick={() => run(browserApi.forward(agentId), "browser forward")}>
                     <IconChevron size={13} />
                 </button>
-                <button
-                    type="button"
-                    aria-label="Reload"
-                    title={withShortcut("Reload", reloadShortcut)}
-                    onClick={() => run(browserApi.reload(agentId), "reload browser")}>
-                    <IconRefresh size={13} />
-                </button>
-                <input
-                    className="browser-address"
-                    aria-label="Address and search"
-                    value={address}
-                    placeholder="Search or enter address"
-                    spellCheck={false}
-                    onFocus={(event) => event.currentTarget.select()}
-                    onBlur={() => setTyped(null)}
-                    onChange={(event) => setTyped(event.target.value)}
-                />
+                <div className="browser-address-field">
+                    <input
+                        className="browser-address"
+                        aria-label="Address and search"
+                        value={address}
+                        placeholder="Search or enter address"
+                        spellCheck={false}
+                        onFocus={(event) => event.currentTarget.select()}
+                        onBlur={() => setTyped(null)}
+                        onChange={(event) => setTyped(event.target.value)}
+                    />
+                    {site && (
+                        <span className="browser-address-site" aria-hidden="true">
+                            {site.secure && <IconLock size={11} />}
+                            <span>{site.host}</span>
+                        </span>
+                    )}
+                    <button
+                        type="button"
+                        className="browser-reload"
+                        aria-label="Reload"
+                        title={withShortcut("Reload", reloadShortcut)}
+                        onClick={() => run(browserApi.reload(agentId), "reload browser")}>
+                        <IconRefresh size={13} />
+                    </button>
+                </div>
             </form>
             <div ref={viewportRef} className="browser-viewport" tabIndex={-1}>
                 {blank && <div className="browser-blank" aria-label="Blank browser page" />}

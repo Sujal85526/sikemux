@@ -191,6 +191,12 @@ export const IconPlug = makeSvgIcon(
         <path d="M8 11v2.8" />
     </>,
 );
+export const IconLock = makeSvgIcon(
+    <>
+        <rect x="3.5" y="7" width="9" height="6.5" rx="1.5" />
+        <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
+    </>,
+);
 export const IconGlobe = makeSvgIcon(
     <>
         <circle cx="8" cy="8" r="5.6" />
