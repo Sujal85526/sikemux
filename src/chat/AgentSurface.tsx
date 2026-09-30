@@ -3,7 +3,7 @@ import type { Agent, ProviderProfile, Session } from "../state/types";
 import { acpApi } from "../api/acp";
 import { agentSupportsChat } from "../agents/agentLaunch";
 import { TerminalPane } from "../terminal/TerminalPane";
-import { IconAgent, IconCommand, IconPanelRight } from "../ui/Icons";
+import { AgentIcon, IconAgent, IconCommand, IconPanelRight } from "../ui/Icons";
 import { useStore } from "../state/store";
 import { shownDeskPaneId } from "../state/selectors";
 import * as cmd from "../state/commands";
@@ -57,6 +57,9 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
     return (
         <section className="agent-surface">
             <header className="agent-surface-header">
+                <span className={`agent-surface-mark agent-glyph ${agent.type}`} aria-hidden="true">
+                    <AgentIcon type={agent.type} size={16} />
+                </span>
                 <span className="agent-surface-title" title={agent.title}>
                     {agent.title}
                 </span>

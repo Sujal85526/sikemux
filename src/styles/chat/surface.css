@@ -1,6 +1,7 @@
 .agent-surface {
     display: grid;
-    grid-template-rows: 33px minmax(0, 1fr);
+    /* 28px rather than 34px: the header reaches up into the pane's 6px inset. */
+    grid-template-rows: 28px minmax(0, 1fr);
     width: 100%;
     height: 100%;
     min-width: 0;
@@ -13,31 +14,38 @@
 }
 
 .agent-surface-header {
-    /* Every control in this row is this tall, so the view buttons and the
-       pills beside them line up. */
-    --control-h: var(--control-hit);
+    --control-h: 24px;
     display: flex;
     align-items: center;
     gap: var(--space-2);
+    height: 34px;
     min-width: 0;
-    /* The pane insets its contents, so the space above the controls already
-       includes that inset and the space below the hairline does not. Matching
-       the inset here puts the same gap on both sides of the row. */
-    padding: 0 var(--space-2) var(--space-1h);
-    /* Same treatment as the tab strip above it: transparent, separated by a
-     * single themed hairline rather than a tint of its own. */
+    /* The pane insets its contents, and the desk beside it does not. Bleeding
+       into that inset puts this hairline at the same height as the desk's, and
+       runs it the full width of the pane like the desk's does. */
+    margin: calc(-1 * var(--space-1h)) calc(-1 * var(--space-1h)) 0;
+    padding: 0 11px 0 14px;
     border-bottom: 1px solid var(--border);
     background: transparent;
+}
+
+.agent-surface-mark {
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    flex: none;
 }
 
 .agent-surface-title {
     min-width: 0;
     flex: 1;
     overflow: hidden;
-    color: var(--ink-dim);
+    color: var(--ink);
     font-family: var(--ui);
-    font-size: var(--text-xs);
-    font-weight: 520;
+    font-size: var(--text-md);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-tight);
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -47,9 +55,9 @@
     align-items: center;
     height: var(--control-h);
     padding: 2px;
-    border: 1px solid var(--line);
+    border: 1px solid var(--border);
     border-radius: var(--radius-control);
-    background: color-mix(in srgb, var(--void) 46%, transparent);
+    background: transparent;
 }
 
 .agent-view-switch button {
@@ -58,7 +66,7 @@
     justify-content: center;
     gap: 5px;
     height: 100%;
-    padding: 0 10px;
+    padding: 0 8px;
     color: var(--ink-faint);
     font-family: var(--ui);
     font-size: calc(10.5px * var(--chat-text-em, 1));
@@ -88,9 +96,9 @@
     width: var(--control-h);
     height: var(--control-h);
     padding: 0;
-    border: 1px solid var(--line);
+    border: 1px solid var(--border);
     border-radius: var(--radius-control);
-    background: color-mix(in srgb, var(--void) 46%, transparent);
+    background: transparent;
     color: var(--ink-faint);
     transition:
         color 100ms,

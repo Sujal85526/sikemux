@@ -342,6 +342,7 @@
 }
 
 @media (max-width: 760px) {
+    .agent-surface-mark,
     .agent-surface-title {
         display: none;
     }
