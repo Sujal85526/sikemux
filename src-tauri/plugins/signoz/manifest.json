@@ -493,7 +493,7 @@
     {
       "name": "signoz_dashboard",
       "method": "dashboard",
-      "description": "One dashboard's variables and panels, without their data.",
+      "description": "One dashboard's variables and panels, without their data. Read a drawable panel with signoz_dashboard_panel.",
       "properties": {
         "id": {
           "type": "string",
