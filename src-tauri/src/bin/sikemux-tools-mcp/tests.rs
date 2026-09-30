@@ -669,3 +669,35 @@ fn a_tool_this_server_cannot_read_does_not_hide_the_others() {
         .collect();
     assert_eq!(names, ["signoz_trace"]);
 }
+
+#[test]
+fn the_plugin_tools_first_listed_stay_fixed_and_no_others_are_reachable() {
+    let manifest = Manifest::load();
+    let plugins = PluginTools::default();
+    let app = fake_sikemux(json!({ "status": "result", "value": [{
+        "plugin": "sikemux.signoz",
+        "name": "signoz_trace",
+        "method": "trace",
+        "description": "One trace, span by span.",
+        "properties": { "traceId": { "type": "string" } },
+        "required": ["traceId"],
+    }] }));
+    let first = list(&manifest, &plugins, &|method: &str, params: &Value| {
+        app.relay(method, params.clone())
+    });
+    assert_eq!(app.received()["request"]["project"], json!("/project"));
+
+    assert_eq!(list(&manifest, &plugins, &unreachable_app), first);
+    let refused = call(
+        &manifest,
+        &plugins,
+        &unreachable_app,
+        "github_runs",
+        &json!({}),
+    );
+    assert_eq!(refused["isError"], json!(true));
+    assert_eq!(
+        field(&refused["content"][0], "text"),
+        "Unknown tool: github_runs"
+    );
+}
