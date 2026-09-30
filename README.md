@@ -91,9 +91,9 @@ The Rust runtime owns each task's native PTY. The renderer only displays it. You
 
 Sikemux detects Claude, Codex, Hermes, Pi, and OpenCode on your `PATH`. It reads their saved sessions and can run several agents in one project, each in its own pane.
 
-- Open an agent picker with `⌥N` from the Agents view. Sikemux launches the selected CLI directly in a PTY.
-- Choose Normal or YOLO mode. Press `⌥Y` to toggle the mode for a resumable agent.
-- Press `⌘T` to split the active agent pane and open the embedded browser. Browser tabs belong to the session and keep their sign-ins. You can take control at any time. Agent commands run through your configured interactive shell and use its environment and login. Browser tools use the agent’s own MCP configuration.
+- Press `⌘N` to start the agent you launched last, ready to type to. Press `⌘⇧N` to pick another agent or resume an earlier conversation. Outside a project, both ask for a project first.
+- Choose Normal or YOLO mode. Press `⌘⇧Y` to toggle the mode for a resumable agent.
+- Press `⌘J` to show the agent's desk beside it, and `⌘⇧T` to open a browser tab there. Browser tabs belong to the session and keep their sign-ins. You can take control at any time. Agent commands run through your configured interactive shell and use its environment and login. Browser tools use the agent’s own MCP configuration.
 
 ![Agents view](public/screenshots/project-agents-view.png)
 
@@ -187,13 +187,13 @@ The SigNoz panel shows service health, logs, traces, and dashboards from a SigNo
 
 ### Bruno
 
-Open a [Bruno](https://www.usebruno.com/) collection as its own session. Use `⌘P` for the request palette and `⌥E` for environments. Save with `⌘S` and send with `⌘↵`. Pre-request and post-request hooks run in a scripting sandbox.
+Open a [Bruno](https://www.usebruno.com/) collection as its own session. Use `⌘P` for the request palette and `⌘E` for environments. Save with `⌘S` and send with `⌘↵`. Pre-request and post-request hooks run in a scripting sandbox.
 
 ![Bruno](public/screenshots/api-bruno-pane-view.png)
 
 ### SSH and command sessions
 
-Press `⌥⇧S` to connect to an SSH host. Press `⌥S` to open a scratch command shell. Both open as multiplexed sessions.
+Press `⌘⇧S` to connect to an SSH host, and `⌘T` there for another login on it. Outside a project or host, `⌘T` opens a scratch command shell. Both open as multiplexed sessions.
 
 ### Command-line editor integration
 
@@ -214,11 +214,11 @@ Terminals opened by Sikemux set `TERM_PROGRAM=Sikemux`, `SIKEMUX=1`, the app ver
 
 Sikemux includes nine themes: Aura, Ayu Dark, Tokyo Night, Catppuccin Mocha, Dracula, Gruvbox Dark, Nord, One Dark, and Solarized Dark.
 
-The custom theme editor covers the interface, editor, syntax colors, and all 16 terminal colors. Window controls include a frameless overlay title bar, adjustable transparency and blur through a private macOS API, and Zen mode.
+The custom theme editor covers the interface, editor, syntax colors, and all 16 terminal colors. Window controls include a frameless overlay title bar, adjustable transparency and blur through a private macOS API, and focus mode.
 
 ### Pane management, updates, and diagnostics
 
-You can tile and split panes, move focus with Vim-style shortcuts, find sessions with fuzzy matching, and move backward or forward through editor history. Sikemux saves each layout change as a transaction and restores the layout after a restart. The built-in updater reports new releases.
+You can tile and split panes, move focus with `⌘⌥` and the arrow keys, find sessions with fuzzy matching, and move backward or forward through editor history. Sikemux saves each layout change as a transaction and restores the layout after a restart. The built-in updater reports new releases.
 
 Optional shell integration reports the current directory, command phase, and last exit status without editing shell startup files. Diagnostics combine redacted browser and native traces, latency percentiles, subsystem counts, and an operating-system thread watchdog. The watchdog can save evidence when the WebView stalls.
 
@@ -226,22 +226,24 @@ Optional shell integration reports the current directory, command phase, and las
 
 These are the defaults. You can reassign or clear every command in Settings → Keybindings. Changes save automatically.
 
-| Key          | Action                           |     | Key              | Action                        |
-| ------------ | -------------------------------- | --- | ---------------- | ----------------------------- |
-| `⌥S`         | Open or create a session         |     | `⌥\` / `⌥-`      | Split pane by row or column   |
-| `⌥P`         | Open project                     |     | `⌥H/J/K/L`       | Move focus between panes      |
-| `⌥⇧S`        | Connect to an SSH host           |     | `⌥⇧H/J/K/L`      | Resize active pane            |
-| `⌥A`         | Open AWS                         |     | `⌥Z`             | Zoom or unzoom pane           |
-| `⌥B`         | Open a Bruno workspace           |     | `⌥W`             | Close focused pane            |
-| `⌥1` to `⌥5` | Files, Term, Git, Agents, Search |     | `⌥Tab` / `⌥⇧Tab` | Cycle session or group        |
-| `⌥[` `⌥]`    | Previous or next window          |     | `⌥N`             | Open terminal or agent picker |
-| `⌘P`         | Open file or request palette     |     | `⌥Y`             | Toggle agent YOLO mode        |
-| `⌘⇧F`        | Search project                   |     | `⌥U`             | Open last-used session        |
-| `⌘⇧P`        | Open command deck                |     | `⌥T`             | Focus command terminal        |
-| `⌘T`         | Open embedded browser tab        |     | `⌘L`             | Focus browser address         |
-| `⌘,`         | Open settings                    |     | `Esc`            | Dismiss active modal          |
+| Key          | Action                            |     | Key              | Action                          |
+| ------------ | --------------------------------- | --- | ---------------- | ------------------------------- |
+| `⌘N`         | New agent (the one launched last) |     | `⌘D` / `⌘⇧D`     | Split pane right or down        |
+| `⌘⇧N`        | Choose or resume an agent         |     | `⌘⌥←↑↓→`         | Move focus between panes        |
+| `⌘T`         | New terminal                      |     | `⌘⌃←↑↓→`         | Resize active pane              |
+| `⌘J`         | Show or hide the agent's desk     |     | `⌘⇧↵`            | Zoom or unzoom pane             |
+| `⌘⇧T`        | New browser tab on the desk       |     | `⌘W`             | Close what is in front          |
+| `⌘1` to `⌘9` | Go to a tab                       |     | `⌘⇧W`            | Close session                   |
+| `⌘⇧[` `⌘⇧]`  | Previous or next tab              |     | `⌃Tab` / `⌃⇧Tab` | Next or previous of the kind    |
+| `⌘⌥1` to `5` | Files, Term, Git, Agents, Search  |     | `` ⌃` ``         | Cycle sessions (hold to choose) |
+| `⌘O`         | Open project                      |     | `⌘⇧Y`            | Toggle agent YOLO mode          |
+| `⌘⇧O`        | Open project, host or plugin      |     | `⌘⌥U`            | Open last-used session          |
+| `⌘⇧S`        | Connect to an SSH host            |     | `⌘L`             | Focus browser address           |
+| `⌘P`         | Open file or request palette      |     | `⌘⌥A` / `⌘⌥B`    | Open AWS or Bruno               |
+| `⌘⇧F`        | Search project                    |     | `⌘B`             | Focus mode                      |
+| `⌘⇧P`        | Open command deck                 |     | `⌘,`             | Open settings                   |
 
-On Windows, use `Ctrl` for shortcuts marked `⌘` and `Alt` for shortcuts marked `⌥`.
+Option is left to whatever you are typing into, so shell and agent keys such as `⌥B`, `⌥F` and `⌥.` reach the terminal. On Windows and Linux most shortcuts use `Ctrl+Shift`; Settings → Keybindings lists them all.
 
 ## Installation
 
