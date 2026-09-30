@@ -21,7 +21,7 @@ Download the latest `.dmg` from [sikemux.com](https://sikemux.com) or [Releases]
 ## What's inside
 
 - **Projects** with a code editor, terminals, Git, and search, all in one working directory
-- **Coding agents**: Claude, Codex, Hermes, Pi and OpenCode, several at once, each with its own browser tabs
+- **Coding agents**: Claude, Codex, Hermes, Pi and OpenCode, several at once, each with its own browser tabs, and one list of every agent and recent chat across your open projects
 - **Panels** for AWS, GitHub, Bitbucket, Rundeck, SigNoz and Bruno
 - **SSH** sessions, nine themes and a custom theme editor
 
