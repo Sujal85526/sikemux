@@ -1262,7 +1262,7 @@ pub fn answer_dialog(tab_id: &str, accept: bool, text: Option<&str>) -> Result<(
 }
 
 /// Command chords are the app's, not the page's, apart from the editing set
-/// every text field expects to keep.
+/// every text field expects to keep and the menu's own Quit, Hide and Minimize.
 fn forwards_chord(key: &str, flags: NSEventModifierFlags) -> bool {
     if flags.contains(NSEventModifierFlags::Control) || flags.contains(NSEventModifierFlags::Option)
     {
@@ -1275,7 +1275,10 @@ fn forwards_chord(key: &str, flags: NSEventModifierFlags) -> bool {
     if !char.is_ascii_graphic() {
         return false;
     }
-    !matches!(char.to_ascii_lowercase(), 'a' | 'c' | 'v' | 'x' | 'z' | 'y')
+    !matches!(
+        char.to_ascii_lowercase(),
+        'a' | 'c' | 'v' | 'x' | 'z' | 'y' | 'q' | 'h' | 'm'
+    )
 }
 
 fn dom_code(key_code: u16, key: &str) -> String {
@@ -1289,6 +1292,21 @@ fn dom_code(key_code: u16, key: &str) -> String {
         124 => "ArrowRight",
         125 => "ArrowDown",
         126 => "ArrowUp",
+        18 => "Digit1",
+        19 => "Digit2",
+        20 => "Digit3",
+        21 => "Digit4",
+        23 => "Digit5",
+        22 => "Digit6",
+        26 => "Digit7",
+        28 => "Digit8",
+        25 => "Digit9",
+        29 => "Digit0",
+        33 => "BracketLeft",
+        30 => "BracketRight",
+        27 => "Minus",
+        24 => "Equal",
+        50 => "Backquote",
         _ => "",
     };
     if !named.is_empty() {
@@ -1413,6 +1431,9 @@ mod tests {
         assert!(!forwards_chord("t", plain | NSEventModifierFlags::Option));
         assert!(!forwards_chord("", plain));
         assert!(!forwards_chord("\u{F729}", plain));
+        assert!(!forwards_chord("q", plain));
+        assert!(!forwards_chord("h", plain));
+        assert!(!forwards_chord("m", plain));
     }
 
     #[test]
@@ -1420,6 +1441,8 @@ mod tests {
         assert_eq!(dom_code(17, "t"), "KeyT");
         assert_eq!(dom_code(18, "1"), "Digit1");
         assert_eq!(dom_code(33, "["), "BracketLeft");
+        assert_eq!(dom_code(33, "{"), "BracketLeft");
+        assert_eq!(dom_code(18, "!"), "Digit1");
         assert_eq!(dom_code(36, "\r"), "Enter");
         assert_eq!(dom_code(99, "\u{F704}"), "");
     }

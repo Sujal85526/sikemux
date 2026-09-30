@@ -2,6 +2,8 @@ mod acp;
 mod activity;
 mod agent_detection;
 mod agents;
+#[cfg(target_os = "macos")]
+mod app_menu;
 mod autopsy;
 mod browser;
 mod cli_auth;
@@ -101,7 +103,10 @@ pub fn run() {
     system::warm_login_shell_environment();
     system::import_from_login_shell(&plugins::shell_variables());
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "macos")]
+    let builder = builder.menu(app_menu::build);
+    builder
         // Must be the first plugin: subsequent GUI launches focus the primary
         // process instead of creating a second workspace/CLI broker.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
