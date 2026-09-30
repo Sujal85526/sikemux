@@ -2,7 +2,7 @@
 // their size is a running tax; the guide's opening is fetched once and its
 // topics on demand. Run this when changing a description to see the bill before
 // and after.
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
@@ -44,18 +44,19 @@ const advertised = (schema) =>
             .map(([key, value]) => [key, advertised(value)]),
         )
       : schema;
-const schemas = served.map((tool) => ({
-  name: tool.name,
-  description: tool.description,
-  inputSchema: {
-    type: "object",
-    properties: advertised(tool.properties),
-    required: tool.required,
-    additionalProperties: false,
-  },
-}));
+const declared = (tools) =>
+  tools.map((tool) => ({
+    name: tool.name,
+    description: tool.description,
+    inputSchema: {
+      type: "object",
+      properties: advertised(tool.properties ?? {}),
+      required: tool.required ?? [],
+      additionalProperties: false,
+    },
+  }));
 
-const perRequest = JSON.stringify(schemas).length;
+const perRequest = JSON.stringify(declared(served)).length;
 const prose = served.reduce(
   (total, tool) => total + tool.description.length,
   0,
@@ -82,4 +83,22 @@ for (const tool of [...served]
   .sort((a, b) => b.description.length - a.description.length)
   .slice(0, 5)) {
   console.log(`  ${String(tool.description.length).padStart(4)}  ${tool.name}`);
+}
+
+// A plugin's tools are sent only to agents in a repository where they would
+// work, so each family is billed on its own.
+const pluginsDir = resolve(root, "src-tauri/plugins");
+console.log("\nplugin tools, sent where the plugin would work");
+for (const entry of (await readdir(pluginsDir, { withFileTypes: true })).filter(
+  (entry) => entry.isDirectory(),
+)) {
+  const plugin = JSON.parse(
+    await readFile(resolve(pluginsDir, entry.name, "manifest.json"), "utf8"),
+  );
+  const tools = plugin.tools ?? [];
+  if (tools.length === 0) continue;
+  const bytes = JSON.stringify(declared(tools)).length;
+  console.log(
+    `  ${String(bytes).padStart(5)}  ${entry.name} (${tools.length} tools, ~${approxTokens(bytes)} tokens)`,
+  );
 }

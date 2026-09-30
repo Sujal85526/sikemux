@@ -138,6 +138,49 @@ fn schemas_stay_lean_so_prose_lives_in_the_guide() {
     );
 }
 
+/// A plugin's tools reach only agents in a repository where they would work,
+/// but there they are paid on every request like the built-in ones.
+#[test]
+fn every_plugin_keeps_its_tools_within_budget() {
+    let plugins = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("plugins");
+    let mut checked = 0;
+    for entry in std::fs::read_dir(plugins).expect("the plugins directory") {
+        let path = entry.expect("a plugin").path().join("manifest.json");
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let manifest: Value = serde_json::from_str(&text).expect("a manifest");
+        let tools: Vec<Tool> = manifest
+            .get("tools")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .map(|tool| {
+                let mut tool = tool.clone();
+                tool["required"] = tool.get("required").cloned().unwrap_or(json!([]));
+                tool["properties"] = tool.get("properties").cloned().unwrap_or(json!({}));
+                serde_json::from_value(tool).expect("a plugin tool")
+            })
+            .collect();
+        let served: Vec<Value> = tools.iter().map(Tool::declaration).collect();
+        for tool in &served {
+            assert!(
+                field(tool, "description").len() <= 160,
+                "{} description is too long",
+                field(tool, "name")
+            );
+        }
+        let bytes = Value::Array(served).to_string().len();
+        assert!(
+            bytes <= 5600,
+            "{} sends {bytes} bytes of tool schema on every request; merge tools that share their fields",
+            path.display()
+        );
+        checked += 1;
+    }
+    assert!(checked > 0, "no plugin manifests were found");
+}
+
 #[test]
 fn the_guide_explains_what_the_schemas_no_longer_say() {
     let manifest = Manifest::load();

@@ -19,7 +19,7 @@
     {
       "name": "bitbucket_pull_files",
       "method": "pullFiles",
-      "description": "The files a pull request changes, with status, lines added and removed, and any old path. Name paths to get their unified diffs; a long diff comes back in parts, with a note on how to read the rest.",
+      "description": "The files a pull request changes, with status, line counts and any old path. Name paths for their diffs; a long diff comes in parts, with a note on the rest.",
       "properties": {
         "owner": { "type": "string", "description": "The workspace." },
         "name": { "type": "string", "description": "The repository slug." },
