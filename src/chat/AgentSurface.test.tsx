@@ -6,6 +6,7 @@ import { AgentSurface } from "./AgentSurface";
 const mocks = vi.hoisted(() => ({
     chatPane: vi.fn(() => null),
     toggleDesk: vi.fn(),
+    renameAgent: vi.fn(),
     state: { deskPanes: {} as Record<string, string>, windows: {} as Record<string, unknown>, keybindingOverrides: {} },
 }));
 
@@ -17,6 +18,7 @@ vi.mock("../state/store", () => ({
 }));
 vi.mock("../state/commands", () => ({
     toggleDesk: mocks.toggleDesk,
+    renameAgent: mocks.renameAgent,
     toggleAgentSkipPermissions: vi.fn(),
     agentSupportsSkipPermissions: () => true,
 }));
@@ -36,6 +38,7 @@ afterEach(() => {
     cleanup();
     mocks.chatPane.mockClear();
     mocks.toggleDesk.mockClear();
+    mocks.renameAgent.mockClear();
     mocks.state = { deskPanes: {}, windows: {}, keybindingOverrides: {} };
 });
 
@@ -85,4 +88,15 @@ it("keeps Pi in its terminal, since it has no ACP mode", () => {
     render(<AgentSurface agent={{ ...agent, type: "pi" }} session={session} visible />);
     expect(mocks.chatPane).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: /GUI/ })).toBeDisabled();
+});
+
+it("renames the agent from its title on double-click", () => {
+    render(<AgentSurface agent={agent} session={session} visible />);
+    fireEvent.doubleClick(screen.getByText("Agent session"));
+    const field = screen.getByRole("textbox", { name: "Chat name" });
+    fireEvent.change(field, { target: { value: "Parser rewrite" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+
+    expect(mocks.renameAgent).toHaveBeenCalledWith("agent-1", "Parser rewrite");
+    expect(screen.queryByRole("textbox", { name: "Chat name" })).not.toBeInTheDocument();
 });

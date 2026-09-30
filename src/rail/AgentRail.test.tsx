@@ -6,10 +6,11 @@ const mocks = vi.hoisted(() => ({
     available: vi.fn(),
     sessions: vi.fn(),
     usage: vi.fn(),
+    renameSession: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock("../api/agents", () => ({
-    agentApi: { available: mocks.available, sessions: mocks.sessions, usage: mocks.usage },
+    agentApi: { available: mocks.available, sessions: mocks.sessions, usage: mocks.usage, renameSession: mocks.renameSession },
 }));
 
 // jsdom has no ResizeObserver; the rail uses one to keep filling its list.
@@ -25,6 +26,13 @@ import { invalidate } from "../state/resources";
 import { getState, setState } from "../state/store";
 import { AgentRailBody } from "./AgentRail";
 import { agentIdsOf } from "../state/selectors";
+import { withAgents } from "../test/agents";
+
+function openAgent(title: string) {
+    setState((state) =>
+        withAgents(state, "sess-project", [{ id: "agent-open", type: "codex", title, startup: "codex", cwd: "/code/sikemux", launchState: "live" }]),
+    );
+}
 
 const initial = getState();
 
@@ -155,5 +163,71 @@ describe("agent rail", () => {
         expect(await screen.findByRole("tab", { name: "Hermes" })).toBeInTheDocument();
         expect(screen.queryByRole("region", { name: /plan limits/i })).not.toBeInTheDocument();
         expect(mocks.usage).not.toHaveBeenCalled();
+    });
+
+    it("renames an open chat in place on double-click", async () => {
+        openAgent("Fix terminal focus");
+        const user = userEvent.setup();
+        render(<AgentRailBody />);
+
+        await user.dblClick(await screen.findByRole("button", { name: "Fix terminal focus" }));
+        const field = screen.getByRole("textbox", { name: "Chat name" });
+        await user.clear(field);
+        await user.type(field, "Terminal focus bug{Enter}");
+
+        expect(getState().agents["agent-open"]).toMatchObject({ title: "Terminal focus bug", renamed: true });
+        expect(screen.getByRole("button", { name: "Terminal focus bug" })).toBeInTheDocument();
+    });
+
+    it("keeps the old name when a rename is cancelled with Escape", async () => {
+        openAgent("Fix terminal focus");
+        const user = userEvent.setup();
+        render(<AgentRailBody />);
+
+        await user.dblClick(await screen.findByRole("button", { name: "Fix terminal focus" }));
+        await user.type(screen.getByRole("textbox", { name: "Chat name" }), " draft{Escape}");
+
+        expect(getState().agents["agent-open"].title).toBe("Fix terminal focus");
+        expect(screen.queryByRole("textbox", { name: "Chat name" })).not.toBeInTheDocument();
+    });
+
+    it("opens the agent menu on right-click and renames from it", async () => {
+        openAgent("Fix terminal focus");
+        const user = userEvent.setup();
+        render(<AgentRailBody />);
+
+        await user.pointer({ keys: "[MouseRight]", target: await screen.findByRole("button", { name: "Fix terminal focus" }) });
+        expect(screen.getByRole("menuitem", { name: /Close Others/ })).toBeInTheDocument();
+        expect(screen.getByRole("menuitem", { name: /Copy Link/ })).toBeInTheDocument();
+
+        await user.click(screen.getByRole("menuitem", { name: "Rename…" }));
+        expect(screen.getByRole("textbox", { name: "Chat name" })).toHaveValue("Fix terminal focus");
+    });
+
+    it("renames a recent chat in the provider's own session from the row's menu", async () => {
+        mocks.available.mockResolvedValue([{ type: "claude", label: "Claude", command: "claude", defaultModel: null, defaultEffort: null }]);
+        invalidate((kind) => kind === "agents.catalog");
+        const user = userEvent.setup();
+        render(<AgentRailBody />);
+
+        await user.pointer({ keys: "[MouseRight]", target: await screen.findByRole("button", { name: /Fix terminal focus/ }) });
+        await user.click(screen.getByRole("menuitem", { name: "Rename…" }));
+        const field = screen.getByRole("textbox", { name: "Chat name" });
+        await user.clear(field);
+        await user.type(field, "Terminal focus bug{Enter}");
+
+        expect(mocks.renameSession).toHaveBeenCalledWith("claude", "/code/sikemux", "older", "Terminal focus bug", "claude", undefined);
+        expect(agentIdsOf(getState(), "sess-project")).toHaveLength(0);
+    });
+
+    it("opens a recent chat from the row's menu", async () => {
+        const user = userEvent.setup();
+        render(<AgentRailBody />);
+
+        await user.pointer({ keys: "[MouseRight]", target: await screen.findByRole("button", { name: /Fix terminal focus/ }) });
+        expect(screen.getByRole("menuitem", { name: "Rename…" })).toBeInTheDocument();
+
+        await user.click(screen.getByRole("menuitem", { name: "Open" }));
+        await waitFor(() => expect(agentIdsOf(getState(), "sess-project")).toHaveLength(1));
     });
 });

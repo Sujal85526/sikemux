@@ -4,10 +4,10 @@ import { acpApi } from "../api/acp";
 import { agentSupportsChat } from "../agents/agentLaunch";
 import { TerminalPane } from "../terminal/TerminalPane";
 import { AgentIcon, IconAgent, IconCommand, IconMoreVertical, IconPanelRight } from "../ui/Icons";
-import { getState, useStore } from "../state/store";
-import { agentIdsOf, shownDeskPaneId } from "../state/selectors";
-import { TreeContextMenu } from "../rail/FileTree";
-import { agentMenu } from "../workspace/agentMenu";
+import { useStore } from "../state/store";
+import { shownDeskPaneId } from "../state/selectors";
+import { AgentTitleInput } from "../agents/AgentTitleInput";
+import { AgentContextMenu } from "../workspace/AgentContextMenu";
 import * as cmd from "../state/commands";
 import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
 import { AgentChatPane } from "./AgentChatPane";
@@ -33,16 +33,8 @@ function DeskButton({ agent }: { agent: Agent }) {
     );
 }
 
-function AgentMenuButton({ agent, session }: { agent: Agent; session: Session }) {
+function AgentMenuButton({ agent, session, onRename }: { agent: Agent; session: Session; onRename: () => void }) {
     const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
-    const close = useShortcutLabel("pane.close");
-    const permissions = useShortcutLabel("agent.permissions");
-    const others = () => {
-        const state = getState();
-        return agentIdsOf(state, session.id)
-            .map((id) => state.agents[id])
-            .filter((x): x is Agent => !!x && x.id !== agent.id);
-    };
     return (
         <>
             <button
@@ -59,12 +51,7 @@ function AgentMenuButton({ agent, session }: { agent: Agent; session: Session })
                 <IconMoreVertical size={14} />
             </button>
             {anchor && (
-                <TreeContextMenu
-                    x={anchor.x}
-                    y={anchor.y}
-                    items={agentMenu(agent, others(), session, { close, permissions })}
-                    onClose={() => setAnchor(null)}
-                />
+                <AgentContextMenu agent={agent} session={session} x={anchor.x} y={anchor.y} onClose={() => setAnchor(null)} onRename={onRename} />
             )}
         </>
     );
@@ -75,6 +62,7 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
     const [view, setView] = useState<AgentView>(supportsGui ? "gui" : "tui");
     const [switching, setSwitching] = useState(false);
     const [chatBusy, setChatBusy] = useState(false);
+    const [renaming, setRenaming] = useState(false);
 
     const switchView = useCallback(
         async (next: AgentView) => {
@@ -99,10 +87,19 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                 <span className={`agent-surface-mark agent-glyph ${agent.type}`} aria-hidden="true">
                     <AgentIcon type={agent.type} size={16} />
                 </span>
-                <span className="agent-surface-title" title={agent.title}>
-                    {agent.title}
-                </span>
-                <AgentMenuButton agent={agent} session={session} />
+                {renaming ? (
+                    <AgentTitleInput
+                        title={agent.title}
+                        className="agent-surface-title"
+                        onSave={(title) => cmd.renameAgent(agent.id, title)}
+                        onDone={() => setRenaming(false)}
+                    />
+                ) : (
+                    <span className="agent-surface-title" title={agent.title} onDoubleClick={() => setRenaming(true)}>
+                        {agent.title}
+                    </span>
+                )}
+                <AgentMenuButton agent={agent} session={session} onRename={() => setRenaming(true)} />
                 {view === "tui" && cmd.agentSupportsSkipPermissions(agent.type) && <YoloToggle agent={agent} relaunches />}
                 <div className="agent-view-switch" role="group" aria-label="Agent view">
                     <button
