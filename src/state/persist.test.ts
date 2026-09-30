@@ -1036,4 +1036,27 @@ describe("frontend persistence", () => {
         expect(restored).toMatchObject({ name: "Terminal", role: "term" });
         expect(restored.fixed).toBeUndefined();
     });
+
+    it("makes a legacy fixed Git tab in a project closable", () => {
+        const sid = getState().activeSessionId;
+        const session = getState().sessions[sid];
+        const window = getState().windows[session.activeWindowId];
+
+        applyHydrate(
+            JSON.stringify({
+                version: 4,
+                sessions: [{ ...session, kind: "project", cwd: "/work/demo" }],
+                windowsBySession: {
+                    [sid]: [{ ...window, name: "git", role: "git", root: { ...window.root, kind: "git" }, fixed: true }],
+                },
+                agentsBySession: {},
+                sessionOrder: [sid],
+                activeSessionId: sid,
+                prefs: {},
+            }),
+        );
+
+        expect(getState().windows[window.id]).toMatchObject({ role: "git" });
+        expect(getState().windows[window.id].fixed).toBeUndefined();
+    });
 });

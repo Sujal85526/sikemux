@@ -797,10 +797,8 @@ export function applyHydrate(raw: string): HydrationResult {
                 role: deriveRole(row),
                 activePaneId: ids.panes.includes(row.activePaneId) ? row.activePaneId : ids.panes[0],
             };
-            if (sessions[sid].kind === "project" && restored.role === "term") {
-                restored.name = "Terminal";
-                delete restored.fixed;
-            }
+            if (sessions[sid].kind === "project") delete restored.fixed;
+            if (sessions[sid].kind === "project" && restored.role === "term") restored.name = "Terminal";
             windows[row.id] = restored;
             windowsBySession[sid].push(row.id);
         }
