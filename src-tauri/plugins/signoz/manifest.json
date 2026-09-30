@@ -7,9 +7,21 @@
   "tools": [
     {
       "name": "signoz_services",
-      "method": "services",
-      "description": "Every traced service with its calls, errors, error rate and p99 latency.",
+      "method": "agentServices",
+      "description": "Traced services with calls, errors and p99. Name a service for its overview, its endpoints or its errors grouped by message.",
       "properties": {
+        "service": {
+          "type": "string"
+        },
+        "show": {
+          "type": "string",
+          "enum": [
+            "overview",
+            "endpoints",
+            "errors"
+          ],
+          "description": "With service. Default overview."
+        },
         "environment": {
           "type": "string",
           "description": "deployment.environment, e.g. production."
@@ -21,226 +33,57 @@
         },
         "start": {
           "type": "integer",
-          "description": "Unix ms; with end, used instead of minutes."
+          "description": "Unix ms; with end, replaces minutes."
         },
         "end": {
-          "type": "integer",
-          "description": "Unix ms."
+          "type": "integer"
+        },
+        "filters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "equals",
+                  "not-equals",
+                  "contains",
+                  "not-contains",
+                  "exists",
+                  "not-exists"
+                ]
+              },
+              "value": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean"
+                ]
+              }
+            },
+            "required": [
+              "key",
+              "op"
+            ],
+            "additionalProperties": false
+          },
+          "description": "Leave value out for exists and not-exists."
+        },
+        "expression": {
+          "type": "string",
+          "description": "SigNoz filter syntax, e.g. status >= 500 AND path != '/health'."
         }
       },
       "required": []
     },
     {
-      "name": "signoz_service_overview",
-      "method": "serviceOverview",
-      "description": "One service's request rate, error rate, p99 and p50, as totals and over time.",
-      "properties": {
-        "service": {
-          "type": "string"
-        },
-        "environment": {
-          "type": "string",
-          "description": "deployment.environment, e.g. production."
-        },
-        "minutes": {
-          "type": "integer",
-          "maximum": 10080,
-          "description": "Default 30."
-        },
-        "start": {
-          "type": "integer",
-          "description": "Unix ms; with end, used instead of minutes."
-        },
-        "end": {
-          "type": "integer",
-          "description": "Unix ms."
-        },
-        "filters": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "key": {
-                "type": "string"
-              },
-              "op": {
-                "type": "string",
-                "enum": [
-                  "equals",
-                  "not-equals",
-                  "contains",
-                  "not-contains",
-                  "exists",
-                  "not-exists"
-                ]
-              },
-              "value": {
-                "type": [
-                  "string",
-                  "number",
-                  "boolean"
-                ]
-              }
-            },
-            "required": [
-              "key",
-              "op"
-            ],
-            "additionalProperties": false
-          },
-          "description": "Leave value out for exists and not-exists."
-        },
-        "expression": {
-          "type": "string",
-          "description": "SigNoz filter syntax, e.g. status >= 500 AND path != '/health'."
-        }
-      },
-      "required": [
-        "service"
-      ]
-    },
-    {
-      "name": "signoz_endpoints",
-      "method": "operations",
-      "description": "One service's endpoints, busiest first, with rate, errors and latency.",
-      "properties": {
-        "service": {
-          "type": "string"
-        },
-        "environment": {
-          "type": "string",
-          "description": "deployment.environment, e.g. production."
-        },
-        "minutes": {
-          "type": "integer",
-          "maximum": 10080,
-          "description": "Default 30."
-        },
-        "start": {
-          "type": "integer",
-          "description": "Unix ms; with end, used instead of minutes."
-        },
-        "end": {
-          "type": "integer",
-          "description": "Unix ms."
-        },
-        "filters": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "key": {
-                "type": "string"
-              },
-              "op": {
-                "type": "string",
-                "enum": [
-                  "equals",
-                  "not-equals",
-                  "contains",
-                  "not-contains",
-                  "exists",
-                  "not-exists"
-                ]
-              },
-              "value": {
-                "type": [
-                  "string",
-                  "number",
-                  "boolean"
-                ]
-              }
-            },
-            "required": [
-              "key",
-              "op"
-            ],
-            "additionalProperties": false
-          },
-          "description": "Leave value out for exists and not-exists."
-        },
-        "expression": {
-          "type": "string",
-          "description": "SigNoz filter syntax, e.g. status >= 500 AND path != '/health'."
-        }
-      },
-      "required": [
-        "service"
-      ]
-    },
-    {
-      "name": "signoz_error_groups",
-      "method": "errorGroups",
-      "description": "One service's error logs grouped by message, with counts and first and last seen.",
-      "properties": {
-        "service": {
-          "type": "string"
-        },
-        "environment": {
-          "type": "string",
-          "description": "deployment.environment, e.g. production."
-        },
-        "minutes": {
-          "type": "integer",
-          "maximum": 10080,
-          "description": "Default 30."
-        },
-        "start": {
-          "type": "integer",
-          "description": "Unix ms; with end, used instead of minutes."
-        },
-        "end": {
-          "type": "integer",
-          "description": "Unix ms."
-        },
-        "filters": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "key": {
-                "type": "string"
-              },
-              "op": {
-                "type": "string",
-                "enum": [
-                  "equals",
-                  "not-equals",
-                  "contains",
-                  "not-contains",
-                  "exists",
-                  "not-exists"
-                ]
-              },
-              "value": {
-                "type": [
-                  "string",
-                  "number",
-                  "boolean"
-                ]
-              }
-            },
-            "required": [
-              "key",
-              "op"
-            ],
-            "additionalProperties": false
-          },
-          "description": "Leave value out for exists and not-exists."
-        },
-        "expression": {
-          "type": "string",
-          "description": "SigNoz filter syntax, e.g. status >= 500 AND path != '/health'."
-        }
-      },
-      "required": [
-        "service"
-      ]
-    },
-    {
-      "name": "signoz_search_logs",
+      "name": "signoz_logs",
       "method": "searchLogs",
-      "description": "Search logs, newest first. What every returned line has in common is listed once in `shared`; each line keeps its id, timestamp, body and whatever differs. Bodies over 1000 characters are clipped; pass a line's id to read it whole. Page with nextOffset.",
+      "description": "Search logs, newest first. Fields every line shares are listed once in `shared`. Bodies over 1000 characters are clipped; pass id to read one whole.",
       "properties": {
         "service": {
           "type": "string"
@@ -283,11 +126,10 @@
         },
         "start": {
           "type": "integer",
-          "description": "Unix ms; with end, used instead of minutes."
+          "description": "Unix ms; with end, replaces minutes."
         },
         "end": {
-          "type": "integer",
-          "description": "Unix ms."
+          "type": "integer"
         },
         "filters": {
           "type": "array",
@@ -332,9 +174,9 @@
       "required": []
     },
     {
-      "name": "signoz_search_traces",
-      "method": "searchTraces",
-      "description": "Find traces by their root spans, slowest or most recent first.",
+      "name": "signoz_traces",
+      "method": "agentTraces",
+      "description": "Find traces by their root spans. Pass traceId for one trace as an outline of its root, failing spans and slowest spans; spanId opens one span.",
       "properties": {
         "service": {
           "type": "string"
@@ -361,6 +203,17 @@
         "offset": {
           "type": "integer"
         },
+        "traceId": {
+          "type": "string"
+        },
+        "spanId": {
+          "type": "string"
+        },
+        "maxSpans": {
+          "type": "integer",
+          "maximum": 500,
+          "description": "Default 40."
+        },
         "environment": {
           "type": "string",
           "description": "deployment.environment, e.g. production."
@@ -368,15 +221,14 @@
         "minutes": {
           "type": "integer",
           "maximum": 10080,
-          "description": "Default 30."
+          "description": "Default 30, or 1440 to find a traceId."
         },
         "start": {
           "type": "integer",
-          "description": "Unix ms; with end, used instead of minutes."
+          "description": "Unix ms; with end, replaces minutes."
         },
         "end": {
-          "type": "integer",
-          "description": "Unix ms."
+          "type": "integer"
         },
         "filters": {
           "type": "array",
@@ -421,57 +273,11 @@
       "required": []
     },
     {
-      "name": "signoz_trace",
-      "method": "trace",
-      "description": "One trace as an outline in waterfall order: the root, every failing span and the spans with the most time of their own, each with its path from the root. `hidden` counts the spans left out below a span, and `service` appears only where it changes. Pass spanId to open one span and everything under it.",
-      "properties": {
-        "traceId": {
-          "type": "string"
-        },
-        "minutes": {
-          "type": "integer",
-          "maximum": 10080,
-          "description": "Look-back to find it in. Default 1440."
-        },
-        "spanId": {
-          "type": "string"
-        },
-        "maxSpans": {
-          "type": "integer",
-          "maximum": 500,
-          "description": "Default 40."
-        }
-      },
-      "required": [
-        "traceId"
-      ]
-    },
-    {
       "name": "signoz_dashboards",
-      "method": "dashboards",
-      "description": "Saved dashboards: id, title, tags and panel count.",
-      "properties": {},
-      "required": []
-    },
-    {
-      "name": "signoz_dashboard",
-      "method": "dashboard",
-      "description": "One dashboard's variables and panels, without their data. Read a drawable panel with signoz_dashboard_panel.",
+      "method": "agentDashboards",
+      "description": "Saved dashboards. Pass id for one dashboard's variables and panels, and panelId as well for that panel's data.",
       "properties": {
         "id": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "id"
-      ]
-    },
-    {
-      "name": "signoz_dashboard_panel",
-      "method": "dashboardPanel",
-      "description": "The data behind one dashboard panel over a window.",
-      "properties": {
-        "dashboardId": {
           "type": "string"
         },
         "panelId": {
@@ -495,40 +301,18 @@
         },
         "start": {
           "type": "integer",
-          "description": "Unix ms; with end, used instead of minutes."
+          "description": "Unix ms; with end, replaces minutes."
         },
         "end": {
-          "type": "integer",
-          "description": "Unix ms."
-        }
-      },
-      "required": [
-        "dashboardId",
-        "panelId"
-      ]
-    },
-    {
-      "name": "signoz_field_keys",
-      "method": "fieldKeys",
-      "description": "Attribute names you can filter on, matching a search.",
-      "properties": {
-        "signal": {
-          "type": "string",
-          "enum": [
-            "logs",
-            "traces"
-          ]
-        },
-        "search": {
-          "type": "string"
+          "type": "integer"
         }
       },
       "required": []
     },
     {
-      "name": "signoz_field_values",
-      "method": "fieldValues",
-      "description": "Values one attribute takes, matching a search.",
+      "name": "signoz_fields",
+      "method": "agentFields",
+      "description": "Attribute names to filter on, matching search. Pass name for the values one attribute takes.",
       "properties": {
         "signal": {
           "type": "string",
@@ -544,9 +328,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "name"
-      ]
+      "required": []
     }
   ]
 }

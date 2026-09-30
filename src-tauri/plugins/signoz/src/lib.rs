@@ -6,7 +6,9 @@
 //   logs      — search, and a tail that polls for new lines
 //   services  — health per service, and one service's charts, endpoints and errors
 //   traces    — every span of one trace, ordered for a waterfall
+//   agent     — which method each of the agent's tools reaches
 
+mod agent;
 mod auth;
 mod client;
 mod config;
@@ -137,6 +139,7 @@ impl Plugin for Signoz {
     ) -> PluginFuture<'a, Value> {
         Box::pin(async move {
             let data_dir = ctx.data_dir();
+            let (method, input) = agent::route(method, input)?;
             match method {
                 "status" => reply(status(data_dir).await),
                 "inspect" => answer(auth::inspect(data_dir, params(input)?)).await,
