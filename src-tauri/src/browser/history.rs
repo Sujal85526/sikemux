@@ -15,6 +15,7 @@ use super::{browser_state_dir, normalize_url};
 const FILE_NAME: &str = "history.json";
 const MAX_PAGES: usize = 3000;
 const MAX_SUGGESTIONS: usize = 6;
+const MAX_TOP_SITES: usize = 8;
 const MAX_TITLE_LEN: usize = 300;
 /// Visits land in bursts while a page redirects, so they are written together.
 const SAVE_DELAY: Duration = Duration::from_secs(2);
@@ -220,7 +221,7 @@ impl Store {
         if words.is_empty() {
             return AddressSuggestions {
                 completion: None,
-                pages: Vec::new(),
+                pages: self.top_sites(now),
                 searches,
                 search_url,
             };
@@ -304,14 +305,7 @@ impl Store {
             })
             .max_by(|a, b| score(a.0).total_cmp(&score(b.0)))?;
 
-        let url = Url::parse(&page.url).ok()?;
-        let host = url.host_str()?;
-        let site = format!(
-            "{}://{}/",
-            url.scheme(),
-            url.port()
-                .map_or(host.to_owned(), |port| format!("{host}:{port}"))
-        );
+        let site = root_of(&page.url)?;
         let site_address = address_of(&site);
         if needle.contains('/')
             || !site_address.to_lowercase().starts_with(needle)
@@ -322,14 +316,7 @@ impl Store {
                 ..self.suggestion(&page.url, &page.title)
             });
         }
-        let title = self
-            .pages
-            .iter()
-            .find(|page| page.url == site && !page.title.is_empty())
-            .map_or_else(
-                || site_address.trim_end_matches('/').to_owned(),
-                |page| page.title.clone(),
-            );
+        let title = self.site_title(&site);
         let address = if address.to_lowercase().starts_with("www.") {
             full_address(&site)
         } else {
@@ -339,6 +326,44 @@ impl Store {
             address,
             ..self.suggestion(&site, &title)
         })
+    }
+
+    /// The sites visited most, each offered at its front page, for when nothing
+    /// has been typed yet.
+    fn top_sites(&self, now: u64) -> Vec<Suggestion> {
+        let mut sites: HashMap<String, f64> = HashMap::new();
+        for page in &self.pages {
+            if let Some(site) = root_of(&page.url) {
+                *sites.entry(site).or_default() += frecency(page, now);
+            }
+        }
+        let visited: std::collections::HashSet<String> = self
+            .pages
+            .iter()
+            .filter(|page| page.visits > 0)
+            .filter_map(|page| root_of(&page.url))
+            .collect();
+        let mut ranked: Vec<(String, f64)> = sites
+            .into_iter()
+            .filter(|(site, _)| visited.contains(site))
+            .collect();
+        ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        ranked
+            .into_iter()
+            .take(MAX_TOP_SITES)
+            .map(|(site, _)| self.suggestion(&site, &self.site_title(&site)))
+            .collect()
+    }
+
+    /// The front page's own title when it was ever opened, else the site's name.
+    fn site_title(&self, site: &str) -> String {
+        self.pages
+            .iter()
+            .find(|page| page.url == site && !page.title.is_empty())
+            .map_or_else(
+                || address_of(site).trim_end_matches('/').to_owned(),
+                |page| page.title.clone(),
+            )
     }
 
     fn suggestion(&self, url: &str, title: &str) -> Suggestion {
@@ -379,6 +404,15 @@ fn remembered(url: &str) -> Option<String> {
     }
     parsed.set_fragment(None);
     Some(parsed.to_string())
+}
+
+fn root_of(url: &str) -> Option<String> {
+    let mut url = Url::parse(url).ok()?;
+    url.host_str()?;
+    url.set_path("/");
+    url.set_query(None);
+    url.set_fragment(None);
+    Some(url.to_string())
 }
 
 fn host_of(url: &str) -> Option<String> {
@@ -581,6 +615,50 @@ mod tests {
                 .icon
                 .as_deref(),
             Some("data:image/png;base64,x")
+        );
+    }
+
+    #[test]
+    fn offers_the_most_visited_sites_when_nothing_is_typed() {
+        let mut store = Store::default();
+        visit(&mut store, "https://www.youtube.com/", "YouTube", 1);
+        visit(
+            &mut store,
+            "https://www.youtube.com/watch?v=a",
+            "A - YouTube",
+            3,
+        );
+        visit(
+            &mut store,
+            "https://www.youtube.com/watch?v=b",
+            "B - YouTube",
+            3,
+        );
+        visit(&mut store, "https://github.com/nodelike", "nodelike", 4);
+        visit(&mut store, "http://localhost:3000/app", "Dev", 2);
+        store.note_typed("https://never.example/", NOW);
+
+        let found = store.suggest("  ", NOW);
+        assert_eq!(found.completion, None);
+        assert_eq!(
+            found
+                .pages
+                .iter()
+                .map(|page| (
+                    page.url.as_str(),
+                    page.title.as_str(),
+                    page.address.as_str()
+                ))
+                .collect::<Vec<_>>(),
+            [
+                ("https://www.youtube.com/", "YouTube", "youtube.com/"),
+                ("https://github.com/", "github.com", "github.com/"),
+                (
+                    "http://localhost:3000/",
+                    "localhost:3000",
+                    "localhost:3000/"
+                ),
+            ]
         );
     }
 

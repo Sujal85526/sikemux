@@ -175,16 +175,70 @@ describe("AddressBar", () => {
 
     it("ignores an answer that arrives after the typing has moved on", async () => {
         let answerFirst: (value: AddressSuggestions) => void = () => {};
+        const input = renderBar();
+        input.focus();
         vi.mocked(browserApi.suggest)
             .mockImplementationOnce(() => new Promise((resolve) => (answerFirst = resolve)))
             .mockResolvedValueOnce({ ...youtube, completion: null, pages: [] });
-        const input = renderBar();
-        input.focus();
         await type(input, "y");
         await type(input, "yo");
         await act(async () => answerFirst(youtube));
 
         expect(input).toHaveValue("yo");
         expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    });
+
+    const topSites: AddressSuggestions = {
+        completion: null,
+        pages: [
+            { url: "https://example.com/", title: "Example", address: "example.com/", icon: null },
+            { url: "https://www.youtube.com/", title: "YouTube", address: "youtube.com/", icon: null },
+            { url: "https://github.com/", title: "GitHub", address: "github.com/", icon: null },
+        ],
+        searches: false,
+        searchUrl: "",
+    };
+
+    it("offers the most visited sites on focus, leaving out the one already open, with none picked", async () => {
+        vi.mocked(browserApi.suggest).mockResolvedValue(topSites);
+        const input = renderBar("https://www.example.com/?zx=1790764778073");
+        await act(async () => input.focus());
+
+        expect(browserApi.suggest).toHaveBeenCalledWith("");
+        const options = screen.getAllByRole("option");
+        expect(options.map((option) => option.textContent)).toEqual(["YouTube — youtube.com/", "GitHub — github.com/"]);
+        expect(options.every((option) => option.getAttribute("aria-selected") === "false")).toBe(true);
+        expect(input).toHaveValue("https://www.example.com/?zx=1790764778073");
+
+        fireEvent.keyDown(input, { key: "Enter" });
+        expect(onGo).toHaveBeenCalledWith("https://www.example.com/?zx=1790764778073");
+    });
+
+    it("picks a top site with the arrow keys and backs out to the open address above the first", async () => {
+        vi.mocked(browserApi.suggest).mockResolvedValue(topSites);
+        const input = renderBar();
+        await act(async () => input.focus());
+
+        fireEvent.keyDown(input, { key: "ArrowDown" });
+        expect(input).toHaveValue("youtube.com/");
+        fireEvent.keyDown(input, { key: "ArrowUp" });
+        expect(input).toHaveValue("https://example.com/");
+        expect(screen.getAllByRole("option").every((option) => option.getAttribute("aria-selected") === "false")).toBe(true);
+
+        fireEvent.keyDown(input, { key: "ArrowDown" });
+        fireEvent.keyDown(input, { key: "ArrowDown" });
+        fireEvent.keyDown(input, { key: "Enter" });
+        expect(onGo).toHaveBeenCalledWith("https://github.com/");
+    });
+
+    it("offers the top sites again once the field is emptied", async () => {
+        const input = renderBar();
+        input.focus();
+        await type(input, "you");
+        vi.mocked(browserApi.suggest).mockResolvedValue(topSites);
+        await type(input, "", "deleteContentBackward");
+
+        expect(browserApi.suggest).toHaveBeenLastCalledWith("");
+        expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["YouTube — youtube.com/", "GitHub — github.com/"]);
     });
 });

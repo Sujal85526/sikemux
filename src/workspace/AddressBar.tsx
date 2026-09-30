@@ -30,6 +30,14 @@ function siteOf(url: string): { host: string; secure: boolean } | null {
     }
 }
 
+/** The most visited sites, bar the one already open. */
+function topSites(found: AddressSuggestions | null, pageAddress: string): Row[] {
+    const open = siteOf(pageAddress)?.host;
+    return (found?.pages ?? [])
+        .filter((page) => siteOf(page.url)?.host !== open)
+        .map((page) => ({ url: page.url, title: page.title, detail: page.address, icon: page.icon, search: false }));
+}
+
 function rowsFor(typed: string, found: AddressSuggestions | null, suffix: string): Row[] {
     if (!found || !typed.trim()) return [];
     const searchRow: Row = { url: found.searchUrl, title: typed, detail: "Google Search", icon: null, search: true };
@@ -74,6 +82,9 @@ export function AddressBar({ tabId, pageAddress, onGo }: { tabId: string | undef
        not bring it straight back. */
     const [completing, setCompleting] = useState(false);
     const [selected, setSelected] = useState(0);
+    /* Focusing the field without typing, or emptying it, offers the sites
+       visited most, with none of them picked until the arrow keys pick one. */
+    const [browsing, setBrowsing] = useState(false);
     const [place, setPlace] = useState<Place | null>(null);
 
     const completion = found?.completion?.address ?? "";
@@ -81,40 +92,42 @@ export function AddressBar({ tabId, pageAddress, onGo }: { tabId: string | undef
         completing && typed && completion.length > typed.length && completion.toLowerCase().startsWith(typed.toLowerCase())
             ? completion.slice(typed.length)
             : "";
-    const rows = typed === null ? [] : rowsFor(typed, found, suffix);
-    const open = rows.length > 1 || !!suffix;
+    const idle = browsing && !typed?.trim();
+    const rows = idle ? topSites(found, pageAddress) : typed === null ? [] : rowsFor(typed, found, suffix);
+    const open = idle ? rows.length > 0 : rows.length > 1 || !!suffix;
     const choice = open ? rows[selected] : undefined;
+    const first = idle ? -1 : 0;
     const words = (typed ?? "").toLowerCase().split(/\s+/).filter(Boolean);
     const site = typed === null ? siteOf(pageAddress) : null;
     const value =
-        typed === null ? pageAddress : selected > 0 && choice ? (choice.search ? choice.title : choice.detail || choice.url) : typed + suffix;
+        choice && selected > first ? (choice.search ? choice.title : choice.detail || choice.url) : typed === null ? pageAddress : typed + suffix;
 
     const reset = useCallback(() => {
         asked.current += 1;
         setTyped(null);
         setFound(null);
         setSelected(0);
+        setBrowsing(false);
     }, []);
 
-    useEffect(() => {
-        asked.current += 1;
-        setTyped(null);
-        setFound(null);
-        setSelected(0);
-    }, [tabId]);
+    useEffect(reset, [tabId, reset]);
+
+    const ask = (text: string) => {
+        const asking = ++asked.current;
+        void browserApi
+            .suggest(text)
+            .then((next) => {
+                if (asking === asked.current) setFound(next);
+            })
+            .catch(() => {});
+    };
 
     const edit = (text: string, forward: boolean) => {
         setTyped(text);
         setCompleting(forward);
-        setSelected(0);
-        const ask = ++asked.current;
-        if (!text.trim()) return setFound(null);
-        void browserApi
-            .suggest(text)
-            .then((next) => {
-                if (ask === asked.current) setFound(next);
-            })
-            .catch(() => {});
+        setSelected(text.trim() ? 0 : -1);
+        setBrowsing(true);
+        ask(text);
     };
 
     const go = (url: string) => {
@@ -178,12 +191,17 @@ export function AddressBar({ tabId, pageAddress, onGo }: { tabId: string | undef
                 aria-label="Address and search"
                 aria-autocomplete="both"
                 aria-controls={open ? listId : undefined}
-                aria-activedescendant={open ? `${listId}-${selected}` : undefined}
+                aria-activedescendant={choice ? `${listId}-${selected}` : undefined}
                 value={value}
                 placeholder="Search or enter address"
                 spellCheck={false}
                 autoComplete="off"
-                onFocus={(event) => event.currentTarget.select()}
+                onFocus={(event) => {
+                    event.currentTarget.select();
+                    setSelected(-1);
+                    setBrowsing(true);
+                    ask("");
+                }}
                 onBlur={reset}
                 onChange={(event) => {
                     const input = event.currentTarget;
@@ -199,7 +217,7 @@ export function AddressBar({ tabId, pageAddress, onGo }: { tabId: string | undef
                         go(choice?.url ?? value);
                     } else if (open && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
                         event.preventDefault();
-                        setSelected((index) => Math.min(rows.length - 1, Math.max(0, index + (event.key === "ArrowDown" ? 1 : -1))));
+                        setSelected((index) => Math.min(rows.length - 1, Math.max(first, index + (event.key === "ArrowDown" ? 1 : -1))));
                     }
                 }}
             />
