@@ -288,7 +288,15 @@ export function TabBar({
                 data-tab-id={t.id}
                 ref={wrapRef}
                 className={`tab-wrap${t.active ? " active" : ""}${t.className ? ` ${t.className}` : ""}${reorder.dragClass(t.id)}`}
-                role="presentation">
+                role="presentation"
+                data-no-window-drag
+                onPointerDown={
+                    onReorder
+                        ? (event) => {
+                              if (!(event.target instanceof Element && event.target.closest(".tab-x"))) reorder.onPointerDown(event, t.id);
+                          }
+                        : undefined
+                }>
                 <Tooltip label={t.title}>
                     <button
                         ref={(element) => {
@@ -327,7 +335,6 @@ export function TabBar({
                         }}
                         aria-label={`${t.label}${t.dirty ? ", unsaved changes" : ""}`}
                         className={`tab${t.active ? " active" : ""}${t.preview ? " preview" : ""}`}
-                        onPointerDown={onReorder ? (event) => reorder.onPointerDown(event, t.id) : undefined}
                         onClick={(event) => {
                             if (reorder.consumeClick()) return;
                             event.currentTarget.focus({ preventScroll: true });
@@ -379,7 +386,8 @@ export function TabBar({
                         <div
                             key={`group:${run.group}`}
                             className={`tab-group${run.items.some(({ tab }) => tab.active) ? " active" : ""}`}
-                            role="presentation">
+                            role="presentation"
+                            data-no-window-drag>
                             {run.items.map(({ tab, index }) => renderTab(tab, index))}
                         </div>
                     ) : (

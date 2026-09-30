@@ -63,6 +63,28 @@ describe("dragging a tab to a new place", () => {
         expect(pill("a")).not.toHaveClass("tab-lifted");
     });
 
+    it("lifts the tab when it is grabbed by its close corner rather than its label", () => {
+        const onClose = vi.fn();
+        renderStrip({ onClose });
+        const tail = pill("a").querySelector(".tab-tail")!;
+
+        fireEvent.pointerDown(tail, { button: 0, clientX: 90, clientY: 10 });
+        fireEvent.pointerMove(window, { clientX: 300, clientY: 10 });
+
+        expect(pill("a")).toHaveClass("tab-lifted");
+        expect(tail.closest("[data-no-window-drag]")).not.toBeNull();
+    });
+
+    it("leaves a press on the close button to close the tab", () => {
+        const onClose = vi.fn();
+        renderStrip({ onClose });
+
+        fireEvent.pointerDown(screen.getByRole("button", { name: "Close a" }), { button: 0, clientX: 90, clientY: 10 });
+        fireEvent.pointerMove(window, { clientX: 300, clientY: 10 });
+
+        expect(pill("a")).not.toHaveClass("tab-lifted");
+    });
+
     it("leaves the neighbours alone until the tab crosses one's middle", () => {
         const { tab } = renderStrip();
 
