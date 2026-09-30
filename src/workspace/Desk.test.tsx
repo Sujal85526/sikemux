@@ -1,12 +1,13 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { browserApi, type BrowserSnapshot, type BrowserTab } from "../api/browser";
+import { browserApi, takeKeyboardFromPages, type BrowserSnapshot, type BrowserTab } from "../api/browser";
 import { occludeNativeViews, setNativeViewHoles, useStageMotion } from "../state/nativeViews";
 import { useToasts } from "../state/toast";
 import { getState, setState } from "../state/store";
 import { deskEditorId } from "../state/desks";
 import { taskPtyBindings } from "../tasks/nativeRuntime";
 import type { Session, Window as WindowT } from "../state/types";
+import * as cmd from "../state/commands";
 import { DeskHost } from "./Desk";
 
 vi.mock("../editor/EditorPane", () => ({
@@ -25,6 +26,7 @@ vi.mock("../api/browser", async () => {
     const actual = await vi.importActual<typeof import("../api/browser")>("../api/browser");
     return {
         ...actual,
+        takeKeyboardFromPages: vi.fn().mockResolvedValue(undefined),
         browserApi: {
             snapshot: vi.fn(),
             newTab: vi.fn(),
@@ -177,6 +179,27 @@ describe("DeskHost", () => {
         fireEvent.change(address, { target: { value: "openai.com" } });
         fireEvent.submit(address.closest("form")!);
         expect(browserApi.navigate).toHaveBeenCalledWith("agent-one", "openai.com");
+    });
+
+    /* A page is a webview of its own and keeps the keyboard it had, so the app's
+       webview has to take it back before the field can have it. */
+    it("takes the keyboard back from the page and selects the address on the address shortcut", async () => {
+        renderPane();
+        const agentPane = { type: "pane", id: "agent-one", cwd: "/repo", kind: "agent", title: "codex" };
+        const deskPane = { type: "pane", id: "pane-desk", cwd: "/repo", kind: "desk", title: "desk" };
+        setState({
+            sessions: { project: session },
+            activeSessionId: "project",
+            windows: { window: { ...win, root: { type: "split", id: "split", dir: "row", children: [agentPane, deskPane], sizes: [50, 50] } } },
+        } as never);
+        await announceStrip(snapshot);
+        const address = screen.getByRole("textbox", { name: "Address and search" });
+
+        expect(cmd.focusBrowserAddress()).toBe(true);
+
+        await waitFor(() => expect(address).toHaveFocus());
+        expect(takeKeyboardFromPages).toHaveBeenCalled();
+        expect(browserApi.newTab).not.toHaveBeenCalled();
     });
 
     it("marks the tab the agent is working in with its colour and icon, beside the site's", async () => {

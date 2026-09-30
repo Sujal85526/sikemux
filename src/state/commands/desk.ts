@@ -1,4 +1,4 @@
-import { browserApi } from "../../api/browser";
+import { browserApi, takeKeyboardFromPages } from "../../api/browser";
 import { taskPtyBindings, type TaskTerminalPresentationRequest } from "../../tasks/nativeRuntime";
 import { emit } from "../bus";
 import { getState, mutate, type StoreState } from "../store";
@@ -16,7 +16,7 @@ import {
     terminalKey,
     type DeskItem,
 } from "../desks";
-import { reportError } from "../toast";
+import { reportError, swallow } from "../toast";
 import { activeAgentId, shownDeskPaneId } from "../selectors";
 import { collectPanes, makePane, newId, removePane, splitPane } from "../layout";
 import type { Desk } from "../types";
@@ -272,20 +272,24 @@ export function browserHistory(delta: number): boolean {
 export function focusBrowserAddress(): boolean {
     const agentId = activeBrowserAgentId();
     if (!agentId) return false;
-    const selector = `.desk[data-agent-id="${CSS.escape(agentId)}"] .browser-address`;
-    const focus = () => {
-        const input = document.querySelector<HTMLInputElement>(selector);
-        input?.focus();
-        input?.select();
-    };
     const hasPage = (getState().browserStrips[agentId]?.tabs.length ?? 0) > 0;
     openDesk(agentId);
     setDeskActive(agentId, BROWSER_ACTIVE);
-    if (hasPage) window.requestAnimationFrame(focus);
-    else
-        void browserApi
-            .newTab(agentId)
-            .then(() => window.setTimeout(focus, 50))
-            .catch(reportError("open browser address"));
+    void (hasPage ? Promise.resolve("") : browserApi.newTab(agentId)).then(() => focusAddressOf(agentId)).catch(reportError("open browser address"));
     return true;
+}
+
+/* The desk may still be mounting or switching to its page, so the field is
+   looked for over the next frames rather than in the one after this. */
+async function focusAddressOf(agentId: string): Promise<void> {
+    const selector = `.desk[data-agent-id="${CSS.escape(agentId)}"] .desk-page:not([hidden]) .browser-address`;
+    let input: HTMLInputElement | null = null;
+    for (let frame = 0; frame < 60 && !input; frame++) {
+        await new Promise((next) => window.requestAnimationFrame(next));
+        input = document.querySelector<HTMLInputElement>(selector);
+    }
+    if (!input) return;
+    await takeKeyboardFromPages().catch(swallow("take keyboard from pages"));
+    input.focus();
+    input.select();
 }

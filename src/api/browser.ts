@@ -1,3 +1,4 @@
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { invokeCommand as invoke } from "./invoke";
 import { getIpcTransport } from "./transport";
 
@@ -60,6 +61,11 @@ export interface BrowserDownload {
     url: string;
     path: string;
     state: "started" | "finished" | "failed";
+}
+
+/** Pages are webviews of their own, and one that has the keyboard keeps it until the app's webview takes it back. */
+export function takeKeyboardFromPages(): Promise<void> {
+    return getCurrentWebview().setFocus();
 }
 
 export const browserApi = {
