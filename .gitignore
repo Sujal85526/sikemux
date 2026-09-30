@@ -21,3 +21,8 @@ scratch/
 
 # Showcase captures
 showcase/out/
+
+# Local agent tooling
+graphify-out/
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
