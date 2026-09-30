@@ -328,7 +328,8 @@ pub struct FilesQuery {
 }
 
 fn cut_at_char(text: &str, most: usize) -> &str {
-    text.get(..text.floor_char_boundary(most)).unwrap_or_default()
+    text.get(..text.floor_char_boundary(most))
+        .unwrap_or_default()
 }
 
 /// Up to `lines` lines of `patch` from `offset`, and at most `PATCH_BYTES` of
