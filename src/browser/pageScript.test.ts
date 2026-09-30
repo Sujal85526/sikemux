@@ -150,6 +150,76 @@ describe("page state", () => {
         expect(page().state("changes").changes).toBe("none");
     });
 
+    const longPage = () =>
+        load(
+            [
+                ...Array.from({ length: 10 }, (_, k) => `<button data-rect="0,${-40 * (k + 1)},80,20">Above ${k}</button>`),
+                ...Array.from({ length: 10 }, (_, k) => `<button data-rect="0,${30 * k},80,20">Here ${k}</button>`),
+                ...Array.from({ length: 500 }, (_, k) => `<button data-rect="0,${768 + 30 * k},80,20">Below ${k}</button>`),
+            ].join("\n"),
+        );
+    const lineCount = (elements: string | undefined) => (elements ? elements.split("\n").length : 0);
+
+    it("lists everything in view but only the offscreen elements nearest it, and counts the rest", () => {
+        longPage();
+        const full = page().state("full") as { elements?: string; offscreen?: string };
+
+        expect(lineCount(full.elements)).toBe(50);
+        expect(full.elements).toContain("> Here 9");
+        expect(full.elements).toContain("> Above 9 [offscreen]");
+        expect(full.elements).toContain("> Below 29 [offscreen]");
+        expect(full.elements).not.toContain("> Below 30 ");
+        expect(full.offscreen).toBe("470 more elements are offscreen and not listed (470 below); scroll toward them or use browser_find");
+    });
+
+    it("keeps unlisted elements reachable by number and by find", () => {
+        longPage();
+        page().state("full");
+
+        const found = page().find("Below 300");
+        expect(found.matches).toBe(1);
+        const index = Number(/^\[(\d+)\]/.exec(found.elements)?.[1]);
+        expect(page().point(index).label).toBe("Below 300");
+    });
+
+    it("never reports an unlisted element as removed, and lists it once it comes into view", () => {
+        longPage();
+        const full = page().state("full");
+        expect(page().state("changes").changes).toBe("none");
+
+        const buttons = [...document.querySelectorAll("button")];
+        buttons.find((button) => button.textContent === "Below 400")!.remove();
+        const afterRemoval = page().state("changes").changes as Changes;
+        expect(afterRemoval.removed).toBeUndefined();
+        expect(afterRemoval.elements).toBeUndefined();
+
+        buttons.find((button) => button.textContent === "Below 200")!.setAttribute("data-rect", "200,0,80,20");
+        const scrolled = page().state("changes").changes as Changes;
+        expect(scrolled.elements).toMatch(/^\[\d+\] <button[^>]*> Below 200$/);
+
+        buttons.find((button) => button.textContent === "Below 200")!.remove();
+        buttons.find((button) => button.textContent === "Here 0")!.remove();
+        const gone = page().state("changes").changes as Changes;
+        expect(gone.removed).toHaveLength(2);
+        expect(gone.removed).toContain(numberOf(full.elements, "Here 0"));
+    });
+
+    it("caps new offscreen elements in a change report too", () => {
+        longPage();
+        page().state("full");
+
+        for (let k = 0; k < 100; k++) {
+            const row = document.createElement("button");
+            row.textContent = `Loaded ${k}`;
+            row.setAttribute("data-rect", `0,${20000 + 30 * k},80,20`);
+            document.body.append(row);
+        }
+        const next = page().state("changes").changes as Changes & { offscreen?: string };
+
+        expect(lineCount(next.elements)).toBe(40);
+        expect(next.offscreen).toBe("60 more new elements are offscreen and not listed (60 below); scroll toward them or use browser_find");
+    });
+
     it("caps the text unless the full text is asked for", () => {
         load(`<p data-rect="0,0,200,20">${"word ".repeat(1000)}</p>`);
 

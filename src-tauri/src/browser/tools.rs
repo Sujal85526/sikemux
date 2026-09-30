@@ -138,7 +138,7 @@ async fn run(
             manager
                 .switch_tab(app, agent_id, &id)
                 .map_err(|error| error.to_string())?;
-            state(&manager, agent_id).await
+            read_state(&manager, agent_id, "changes", false).await
         }
         "browser.tab.close" => {
             let id = text("tabId").ok_or("tabId is required")?;

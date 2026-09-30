@@ -12,6 +12,7 @@
     const TEXT_CAP = 2000;
     const FULL_TEXT_CAP = 40000;
     const MAX_FOUND = 30;
+    const MAX_OFFSCREEN = 40;
     const MAX_MARK_SHARE = 0.4;
     const IMPLICIT_ROLES = { A: "link", BUTTON: "button", SUMMARY: "button", SELECT: "combobox", TEXTAREA: "textbox", OPTION: "option" };
     const INPUT_ROLES = { checkbox: "checkbox", radio: "radio", button: "button", submit: "button", reset: "button", image: "button", range: "slider", search: "searchbox" };
@@ -24,6 +25,12 @@
         return style.visibility !== "hidden" && style.display !== "none" && style.opacity !== "0";
     };
     const inViewport = (rect) => rect.bottom > 0 && rect.right > 0 && rect.top < innerHeight && rect.left < innerWidth;
+    const offscreenBy = (rect) => {
+        if (inViewport(rect)) return null;
+        if (rect.bottom <= 0) return { side: "above", distance: -rect.bottom };
+        if (rect.top >= innerHeight) return { side: "below", distance: rect.top - innerHeight };
+        return { side: "to the side", distance: rect.right <= 0 ? -rect.right : rect.left - innerWidth };
+    };
     const isFrame = (element) => element.tagName === "IFRAME" || element.tagName === "FRAME";
     // A frame from the same site can be read; another site's frame cannot.
     const frameDocument = (frame) => {
@@ -296,7 +303,8 @@
         if (element.disabled || element.getAttribute("aria-disabled") === "true") parts.push("[disabled]");
         if (isFrame(element)) parts.push("(another site's frame: its inside cannot be read; click it or use x,y to reach in)");
         const key = parts.join(" ");
-        return { key, line: inViewport(rectOf(element)) ? key : `${key} [offscreen]` };
+        const offscreen = offscreenBy(rectOf(element));
+        return { key, line: offscreen ? `${key} [offscreen]` : key, offscreen };
     };
     // Lying under a modal, a banner or a menu, or shut off by the page.
     const covered = (element) => {
@@ -345,17 +353,40 @@
             return !left;
         });
     };
+    // Every element in view is kept, but only the offscreen ones nearest the
+    // view, so a long page does not flood the report; the rest are counted.
+    const trim = (entries) => {
+        const nearest = entries
+            .filter(([, listedEntry]) => listedEntry.offscreen)
+            .sort(([, a], [, b]) => a.offscreen.distance - b.offscreen.distance);
+        const dropped = new Set(nearest.slice(MAX_OFFSCREEN).map(([id]) => id));
+        return { kept: entries.filter(([id]) => !dropped.has(id)), dropped: nearest.slice(MAX_OFFSCREEN) };
+    };
+    const offscreenNote = (dropped, what) => {
+        const sides = new Map();
+        for (const [, listedEntry] of dropped) sides.set(listedEntry.offscreen.side, (sides.get(listedEntry.offscreen.side) || 0) + 1);
+        const split = ["above", "below", "to the side"].filter((side) => sides.has(side)).map((side) => `${sides.get(side)} ${side}`);
+        return `${dropped.length} more ${what} offscreen and not listed (${split.join(", ")}); scroll toward them or use browser_find`;
+    };
+    // Numbers the agent has not been shown yet are only listed once they come
+    // into view or change, and only numbers it was shown are reported removed.
     const changes = (last, listed, lines) => {
         const found = {};
-        const elements = [...listed].filter(([id, now]) => !last.listed.has(id) || last.listed.get(id).key !== now.key).map(([, now]) => now.line);
-        const removed = [...last.listed.keys()].filter((id) => !listed.has(id));
+        const moved = new Set([...listed].filter(([id, now]) => !last.listed.has(id) || last.listed.get(id).key !== now.key).map(([id]) => id));
+        const unseen = [...listed].filter(([id, now]) => !last.shown.has(id) && (!now.offscreen || moved.has(id)));
+        const { kept, dropped } = trim(unseen);
+        const keptIds = new Set(kept.map(([id]) => id));
+        const elements = [...listed].filter(([id]) => keptIds.has(id) || (last.shown.has(id) && moved.has(id)));
+        const removed = [...last.shown].filter((id) => !listed.has(id));
         const added = without(lines, last.lines).join("\n");
         const gone = without(last.lines, lines).join("\n");
-        if (elements.length) found.elements = elements.join("\n");
+        if (elements.length) found.elements = elements.map(([, now]) => now.line).join("\n");
+        if (dropped.length) found.offscreen = offscreenNote(dropped, "new elements are");
         if (removed.length) found.removed = removed;
         if (added) found.textAdded = clip(added, TEXT_CAP);
         if (gone) found.textRemoved = clip(gone, TEXT_CAP);
-        return Object.keys(found).length ? found : "none";
+        const shown = new Set([...[...last.shown].filter((id) => listed.has(id)), ...elements.map(([id]) => id)]);
+        return { found: Object.keys(found).length ? found : "none", shown };
     };
     const matching = (query, role) => {
         const wanted = compact(query).toLowerCase();
@@ -476,15 +507,21 @@
             const listed = listing();
             const lines = pageLines();
             const last = window.__sikemuxLast;
-            window.__sikemuxLast = { listed, lines };
             const page = { url: location.href, title: document.title, scroll: { y: Math.round(scrollY), height: document.documentElement.scrollHeight, viewport: innerHeight } };
-            if (mode === "changes" && last) return { ...page, changes: changes(last, listed, lines) };
+            if (mode === "changes" && last) {
+                const { found, shown } = changes(last, listed, lines);
+                window.__sikemuxLast = { listed, lines, shown };
+                return { ...page, changes: found };
+            }
+            const { kept, dropped } = trim([...listed]);
+            window.__sikemuxLast = { listed, lines, shown: new Set(kept.map(([id]) => id)) };
             const text = lines.join("\n");
             const cap = fullText ? FULL_TEXT_CAP : TEXT_CAP;
             return {
                 ...page,
                 viewport: { width: innerWidth, height: innerHeight },
-                elements: [...listed.values()].map((listedEntry) => listedEntry.line).join("\n"),
+                elements: kept.map(([, listedEntry]) => listedEntry.line).join("\n"),
+                ...(dropped.length ? { offscreen: offscreenNote(dropped, "elements are") } : {}),
                 text: clip(text, cap),
                 ...(text.length > cap ? { textLength: text.length } : {}),
             };
