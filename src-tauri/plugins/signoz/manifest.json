@@ -12,23 +12,20 @@
       "properties": {
         "environment": {
           "type": "string",
-          "description": "deployment.environment, e.g. production. Omit for every environment."
+          "description": "deployment.environment, e.g. production."
         },
         "minutes": {
           "type": "integer",
-          "minimum": 1,
           "maximum": 10080,
-          "description": "Look back this many minutes. Default 30."
+          "description": "Default 30."
         },
         "start": {
           "type": "integer",
-          "minimum": 0,
-          "description": "Window start, Unix ms. Use with end instead of minutes."
+          "description": "Unix ms; with end, used instead of minutes."
         },
         "end": {
           "type": "integer",
-          "minimum": 0,
-          "description": "Window end, Unix ms."
+          "description": "Unix ms."
         }
       },
       "required": []
@@ -39,29 +36,24 @@
       "description": "One service's request rate, error rate, p99 and p50, as totals and over time.",
       "properties": {
         "service": {
-          "type": "string",
-          "minLength": 1,
-          "description": "service.name"
+          "type": "string"
         },
         "environment": {
           "type": "string",
-          "description": "deployment.environment, e.g. production. Omit for every environment."
+          "description": "deployment.environment, e.g. production."
         },
         "minutes": {
           "type": "integer",
-          "minimum": 1,
           "maximum": 10080,
-          "description": "Look back this many minutes. Default 30."
+          "description": "Default 30."
         },
         "start": {
           "type": "integer",
-          "minimum": 0,
-          "description": "Window start, Unix ms. Use with end instead of minutes."
+          "description": "Unix ms; with end, used instead of minutes."
         },
         "end": {
           "type": "integer",
-          "minimum": 0,
-          "description": "Window end, Unix ms."
+          "description": "Unix ms."
         },
         "filters": {
           "type": "array",
@@ -69,8 +61,7 @@
             "type": "object",
             "properties": {
               "key": {
-                "type": "string",
-                "minLength": 1
+                "type": "string"
               },
               "op": {
                 "type": "string",
@@ -97,11 +88,11 @@
             ],
             "additionalProperties": false
           },
-          "description": "Attribute filters, e.g. [{\"key\": \"http.status_code\", \"op\": \"equals\", \"value\": 503}]. value is left out for exists and not-exists."
+          "description": "Leave value out for exists and not-exists."
         },
         "expression": {
           "type": "string",
-          "description": "Extra filter in SigNoz query syntax, e.g. status >= 500 AND path != '/health'. Brackets and quotes must balance."
+          "description": "SigNoz filter syntax, e.g. status >= 500 AND path != '/health'."
         }
       },
       "required": [
@@ -114,29 +105,24 @@
       "description": "One service's endpoints, busiest first, with rate, errors and latency.",
       "properties": {
         "service": {
-          "type": "string",
-          "minLength": 1,
-          "description": "service.name"
+          "type": "string"
         },
         "environment": {
           "type": "string",
-          "description": "deployment.environment, e.g. production. Omit for every environment."
+          "description": "deployment.environment, e.g. production."
         },
         "minutes": {
           "type": "integer",
-          "minimum": 1,
           "maximum": 10080,
-          "description": "Look back this many minutes. Default 30."
+          "description": "Default 30."
         },
         "start": {
           "type": "integer",
-          "minimum": 0,
-          "description": "Window start, Unix ms. Use with end instead of minutes."
+          "description": "Unix ms; with end, used instead of minutes."
         },
         "end": {
           "type": "integer",
-          "minimum": 0,
-          "description": "Window end, Unix ms."
+          "description": "Unix ms."
         },
         "filters": {
           "type": "array",
@@ -144,8 +130,7 @@
             "type": "object",
             "properties": {
               "key": {
-                "type": "string",
-                "minLength": 1
+                "type": "string"
               },
               "op": {
                 "type": "string",
@@ -172,11 +157,11 @@
             ],
             "additionalProperties": false
           },
-          "description": "Attribute filters, e.g. [{\"key\": \"http.status_code\", \"op\": \"equals\", \"value\": 503}]. value is left out for exists and not-exists."
+          "description": "Leave value out for exists and not-exists."
         },
         "expression": {
           "type": "string",
-          "description": "Extra filter in SigNoz query syntax, e.g. status >= 500 AND path != '/health'. Brackets and quotes must balance."
+          "description": "SigNoz filter syntax, e.g. status >= 500 AND path != '/health'."
         }
       },
       "required": [
@@ -189,29 +174,24 @@
       "description": "One service's error logs grouped by message, with counts and first and last seen.",
       "properties": {
         "service": {
-          "type": "string",
-          "minLength": 1,
-          "description": "service.name"
+          "type": "string"
         },
         "environment": {
           "type": "string",
-          "description": "deployment.environment, e.g. production. Omit for every environment."
+          "description": "deployment.environment, e.g. production."
         },
         "minutes": {
           "type": "integer",
-          "minimum": 1,
           "maximum": 10080,
-          "description": "Look back this many minutes. Default 30."
+          "description": "Default 30."
         },
         "start": {
           "type": "integer",
-          "minimum": 0,
-          "description": "Window start, Unix ms. Use with end instead of minutes."
+          "description": "Unix ms; with end, used instead of minutes."
         },
         "end": {
           "type": "integer",
-          "minimum": 0,
-          "description": "Window end, Unix ms."
+          "description": "Unix ms."
         },
         "filters": {
           "type": "array",
@@ -219,8 +199,7 @@
             "type": "object",
             "properties": {
               "key": {
-                "type": "string",
-                "minLength": 1
+                "type": "string"
               },
               "op": {
                 "type": "string",
@@ -247,11 +226,11 @@
             ],
             "additionalProperties": false
           },
-          "description": "Attribute filters, e.g. [{\"key\": \"http.status_code\", \"op\": \"equals\", \"value\": 503}]. value is left out for exists and not-exists."
+          "description": "Leave value out for exists and not-exists."
         },
         "expression": {
           "type": "string",
-          "description": "Extra filter in SigNoz query syntax, e.g. status >= 500 AND path != '/health'. Brackets and quotes must balance."
+          "description": "SigNoz filter syntax, e.g. status >= 500 AND path != '/health'."
         }
       },
       "required": [
@@ -268,7 +247,7 @@
         },
         "text": {
           "type": "string",
-          "description": "Text the log body contains."
+          "description": "Text the body contains."
         },
         "severities": {
           "type": "array",
@@ -287,33 +266,28 @@
         },
         "limit": {
           "type": "integer",
-          "minimum": 1,
           "maximum": 200,
           "description": "Default 30."
         },
         "offset": {
-          "type": "integer",
-          "minimum": 0
+          "type": "integer"
         },
         "environment": {
           "type": "string",
-          "description": "deployment.environment, e.g. production. Omit for every environment."
+          "description": "deployment.environment, e.g. production."
         },
         "minutes": {
           "type": "integer",
-          "minimum": 1,
           "maximum": 10080,
-          "description": "Look back this many minutes. Default 30."
+          "description": "Default 30."
         },
         "start": {
           "type": "integer",
-          "minimum": 0,
-          "description": "Window start, Unix ms. Use with end instead of minutes."
+          "description": "Unix ms; with end, used instead of minutes."
         },
         "end": {
           "type": "integer",
-          "minimum": 0,
-          "description": "Window end, Unix ms."
+          "description": "Unix ms."
         },
         "filters": {
           "type": "array",
@@ -321,8 +295,7 @@
             "type": "object",
             "properties": {
               "key": {
-                "type": "string",
-                "minLength": 1
+                "type": "string"
               },
               "op": {
                 "type": "string",
@@ -349,11 +322,11 @@
             ],
             "additionalProperties": false
           },
-          "description": "Attribute filters, e.g. [{\"key\": \"http.status_code\", \"op\": \"equals\", \"value\": 503}]. value is left out for exists and not-exists."
+          "description": "Leave value out for exists and not-exists."
         },
         "expression": {
           "type": "string",
-          "description": "Extra filter in SigNoz query syntax, e.g. status >= 500 AND path != '/health'. Brackets and quotes must balance."
+          "description": "SigNoz filter syntax, e.g. status >= 500 AND path != '/health'."
         }
       },
       "required": []
@@ -371,8 +344,7 @@
           "description": "Only traces whose root span failed."
         },
         "minDurationMs": {
-          "type": "number",
-          "minimum": 0
+          "type": "number"
         },
         "order": {
           "type": "string",
@@ -383,33 +355,28 @@
         },
         "limit": {
           "type": "integer",
-          "minimum": 1,
           "maximum": 200,
           "description": "Default 20."
         },
         "offset": {
-          "type": "integer",
-          "minimum": 0
+          "type": "integer"
         },
         "environment": {
           "type": "string",
-          "description": "deployment.environment, e.g. production. Omit for every environment."
+          "description": "deployment.environment, e.g. production."
         },
         "minutes": {
           "type": "integer",
-          "minimum": 1,
           "maximum": 10080,
-          "description": "Look back this many minutes. Default 30."
+          "description": "Default 30."
         },
         "start": {
           "type": "integer",
-          "minimum": 0,
-          "description": "Window start, Unix ms. Use with end instead of minutes."
+          "description": "Unix ms; with end, used instead of minutes."
         },
         "end": {
           "type": "integer",
-          "minimum": 0,
-          "description": "Window end, Unix ms."
+          "description": "Unix ms."
         },
         "filters": {
           "type": "array",
@@ -417,8 +384,7 @@
             "type": "object",
             "properties": {
               "key": {
-                "type": "string",
-                "minLength": 1
+                "type": "string"
               },
               "op": {
                 "type": "string",
@@ -445,11 +411,11 @@
             ],
             "additionalProperties": false
           },
-          "description": "Attribute filters, e.g. [{\"key\": \"http.status_code\", \"op\": \"equals\", \"value\": 503}]. value is left out for exists and not-exists."
+          "description": "Leave value out for exists and not-exists."
         },
         "expression": {
           "type": "string",
-          "description": "Extra filter in SigNoz query syntax, e.g. status >= 500 AND path != '/health'. Brackets and quotes must balance."
+          "description": "SigNoz filter syntax, e.g. status >= 500 AND path != '/health'."
         }
       },
       "required": []
@@ -460,21 +426,18 @@
       "description": "One trace as an outline in waterfall order: the root, every failing span and the spans with the most time of their own, each with its path from the root. `hidden` counts the spans left out below a span, and `service` appears only where it changes. Pass spanId to open one span and everything under it.",
       "properties": {
         "traceId": {
-          "type": "string",
-          "minLength": 1
+          "type": "string"
         },
         "minutes": {
           "type": "integer",
-          "minimum": 1,
           "maximum": 10080,
-          "description": "How far back to look for the trace. Default 1440 (24 hours)."
+          "description": "Look-back to find it in. Default 1440."
         },
         "spanId": {
           "type": "string"
         },
         "maxSpans": {
           "type": "integer",
-          "minimum": 1,
           "maximum": 500,
           "description": "Default 40."
         }
@@ -496,8 +459,7 @@
       "description": "One dashboard's variables and panels, without their data. Read a drawable panel with signoz_dashboard_panel.",
       "properties": {
         "id": {
-          "type": "string",
-          "minLength": 1
+          "type": "string"
         }
       },
       "required": [
@@ -510,12 +472,10 @@
       "description": "The data behind one dashboard panel over a window.",
       "properties": {
         "dashboardId": {
-          "type": "string",
-          "minLength": 1
+          "type": "string"
         },
         "panelId": {
-          "type": "string",
-          "minLength": 1
+          "type": "string"
         },
         "variables": {
           "type": "object",
@@ -530,19 +490,16 @@
         },
         "minutes": {
           "type": "integer",
-          "minimum": 1,
           "maximum": 10080,
-          "description": "Look back this many minutes. Default 30."
+          "description": "Default 30."
         },
         "start": {
           "type": "integer",
-          "minimum": 0,
-          "description": "Window start, Unix ms. Use with end instead of minutes."
+          "description": "Unix ms; with end, used instead of minutes."
         },
         "end": {
           "type": "integer",
-          "minimum": 0,
-          "description": "Window end, Unix ms."
+          "description": "Unix ms."
         }
       },
       "required": [
@@ -581,8 +538,7 @@
           ]
         },
         "name": {
-          "type": "string",
-          "minLength": 1
+          "type": "string"
         },
         "search": {
           "type": "string"
