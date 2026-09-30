@@ -3,6 +3,7 @@
 // topics on demand. Run this when changing a description to see the bill before
 // and after.
 import { readFile, readdir } from "node:fs/promises";
+import { homedir } from "node:os";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
@@ -101,4 +102,42 @@ for (const entry of (await readdir(pluginsDir, { withFileTypes: true })).filter(
   console.log(
     `  ${String(bytes).padStart(5)}  ${entry.name} (${tools.length} tools, ~${approxTokens(bytes)} tokens)`,
   );
+}
+
+// Sikemux counts each tool call on this machine. A tool nobody calls is a
+// schema paid for on every request with nothing back.
+const identifiers = ["com.nodelike.sikemux", "com.nodelike.sikemux.dev"];
+const methodNames = new Map(
+  manifest.tools.map((tool) => [tool.method, tool.name]),
+);
+for (const identifier of identifiers) {
+  const path = resolve(
+    homedir(),
+    "Library/Application Support",
+    identifier,
+    "agent-tool-calls.json",
+  );
+  let tallies;
+  try {
+    tallies = JSON.parse(await readFile(path, "utf8"));
+  } catch {
+    continue;
+  }
+  const counted = new Map(
+    Object.entries(tallies).map(([key, tally]) => [
+      methodNames.get(key) ?? key,
+      tally,
+    ]),
+  );
+  console.log(`\ncalls counted by ${identifier}`);
+  for (const [name, tally] of [...counted].sort(
+    (a, b) => b[1].calls - a[1].calls,
+  )) {
+    const failed = tally.failures > 0 ? `  (${tally.failures} failed)` : "";
+    console.log(`  ${String(tally.calls).padStart(5)}  ${name}${failed}`);
+  }
+  const unused = manifest.tools
+    .map((tool) => tool.name)
+    .filter((name) => !counted.has(name));
+  if (unused.length > 0) console.log(`  never called: ${unused.join(", ")}`);
 }

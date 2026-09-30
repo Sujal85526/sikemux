@@ -9,6 +9,7 @@ use tauri::{Emitter, State};
 use crate::cli_server::CliBrokerState;
 
 mod terminal_text;
+mod tool_calls;
 
 pub const MAX_PENDING: usize = 64;
 pub const MAX_OUTPUT: usize = 1024 * 1024;
@@ -127,9 +128,22 @@ impl HarnessBroker {
 pub fn execute(
     app: &tauri::AppHandle,
     broker: &HarnessBroker,
-    mut request: HarnessRequest,
+    request: HarnessRequest,
 ) -> Result<Value, String> {
     request.validate()?;
+    let tool = tool_calls::name_of(&request);
+    let result = run(app, broker, request);
+    if let Some(tool) = tool {
+        tool_calls::record(app, &tool, result.is_ok());
+    }
+    result
+}
+
+fn run(
+    app: &tauri::AppHandle,
+    broker: &HarnessBroker,
+    mut request: HarnessRequest,
+) -> Result<Value, String> {
     request.project = std::fs::canonicalize(&request.project)
         .map_err(|error| error.to_string())?
         .to_string_lossy()
