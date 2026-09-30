@@ -724,9 +724,7 @@ const WindowLayer = memo(function WindowLayer({
                                 while it is the one being read, so a screen off stage spends no
                                 WebGL context on a field nobody is looking at. The editor draws
                                 its own, on the code panel beside its file tree, and the desk has none. */}
-                            {p.kind !== "editor" && p.kind !== "desk" && (
-                                <PaneField enabled={paneShader && live && shown} />
-                            )}
+                            {p.kind !== "editor" && p.kind !== "desk" && <PaneField enabled={paneShader && live && shown} />}
                             <ErrorBoundary label={`${p.kind} pane`}>
                                 {renderWorkbenchItem({ pane: p, session, win, active: paneActive, visible: paneVisible, painted: panePainted })}
                             </ErrorBoundary>
