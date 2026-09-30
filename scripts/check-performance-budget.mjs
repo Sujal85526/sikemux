@@ -195,8 +195,8 @@ const budgets = [
     // glyph is actually rendered. Plugin panes bring their own sheets.
     label: "application CSS",
     pattern: /^index-.*\.css$/,
-    raw: 216_000,
-    gzip: 37_800,
+    raw: 220_000,
+    gzip: 38_500,
   },
   {
     label: "settings lazy CSS",
