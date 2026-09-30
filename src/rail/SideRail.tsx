@@ -22,6 +22,7 @@ import { AgentIcon, IconAgent, IconClose, IconCommand, IconFolder, IconPencil, I
 import { Tooltip } from "../ui/Tooltip";
 import { EmptyState, Panel, PanelHeader } from "../ui/Panel";
 import { RailMasthead } from "./RailMasthead";
+import { UpdateChip } from "./UpdateChip";
 import { AgentStateIndicator, showsAgentState } from "../agents/AgentStateIndicator";
 import { agentIdsOf } from "../state/selectors";
 import { pluginSurface, type FrontendPlugin } from "../plugins/registry";
@@ -741,6 +742,7 @@ export const SideRail = memo(function SideRail() {
                     <Group label="Plugins" list={plugins} rows={pluginRows} emptyText="no plugins" className="rail-logos" />
                     <Group label="Terminals" list={commands} add={cmd.createCommandSession} addTitle="New terminal" emptyText="no terminals" />
                 </div>
+                <UpdateChip />
             </aside>
             {projectDragVisual &&
                 createPortal(

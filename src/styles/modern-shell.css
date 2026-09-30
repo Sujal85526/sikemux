@@ -165,70 +165,85 @@ textarea:focus,
     margin-left: auto;
 }
 
-.update-button {
+.rail-update {
     position: relative;
-    display: grid;
-    place-items: center;
-    width: var(--control-hit);
-    height: var(--control-hit);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex: 0 0 auto;
+    margin: 0 var(--gutter-rail) var(--space-2);
+    height: 30px;
+    padding: 0 11px;
+    background: var(--surface-selected);
+    border: 1px solid var(--border-selected);
     color: var(--acc);
-    transition: background var(--dur-1);
+    font-family: var(--mono);
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-semibold);
+    letter-spacing: 0.04em;
+    text-transform: lowercase;
+    text-align: left;
+    transition:
+        background var(--dur-1),
+        border-color var(--dur-1),
+        color var(--dur-1);
 }
 
-.update-button:hover:not(:disabled) {
+.rail-update:hover:not(:disabled) {
     background: var(--surface-hover);
+    border-color: var(--border-strong);
 }
 
-.update-button:disabled {
+.rail-update-preparing,
+.rail-update-downloading,
+.rail-update-installing,
+.rail-update-restarting {
+    color: var(--warn);
+    border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+    animation: tb-update-pulse 1.4s ease-in-out infinite;
     cursor: progress;
 }
 
-.update-button-preparing,
-.update-button-downloading,
-.update-button-installing,
-.update-button-restarting {
-    color: var(--warn);
-}
-
-.update-button-error {
+.rail-update-error {
     color: var(--danger);
+    border-color: color-mix(in srgb, var(--danger) 50%, transparent);
 }
 
-.update-ring {
+.rail-update-error:hover {
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.rail-update-measured {
+    animation: none;
+}
+
+.rail-update-fill {
     position: absolute;
-    inset: 2px;
-    width: calc(100% - 4px);
-    height: calc(100% - 4px);
-    transform: rotate(-90deg);
+    inset: 0;
+    transform-origin: left center;
+    background: color-mix(in srgb, var(--warn) 20%, transparent);
+    transition: transform 0.18s linear;
+    pointer-events: none;
 }
 
-.update-ring circle {
-    fill: none;
-    stroke-width: 1.6;
+.rail-update > svg,
+.rail-update-label {
+    position: relative;
+    flex: 0 0 auto;
 }
 
-.update-ring-track {
-    stroke: color-mix(in srgb, currentColor 20%, transparent);
-}
-
-.update-ring-bar {
-    stroke: currentColor;
-    stroke-linecap: round;
-    transition: stroke-dasharray 0.18s linear;
-}
-
-.update-ring-spin {
-    animation: update-ring-spin 1s linear infinite;
-}
-
-@keyframes update-ring-spin {
-    to {
-        transform: rotate(270deg);
-    }
+.rail-update-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    line-height: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .update-ring-spin {
+    .rail-update {
         animation: none;
     }
 }

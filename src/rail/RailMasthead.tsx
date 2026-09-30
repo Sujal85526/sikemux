@@ -1,15 +1,9 @@
 import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
-import { isUpdateBusy, updateDownloadPercent, updateStatusLabel } from "../api/updater";
-import * as cmd from "../state/commands";
-import { useStore } from "../state/store";
 import { swallow } from "../state/toast";
-import { IconDownload, IconRefresh, IconWarning, Logo } from "../ui/Icons";
+import { Logo } from "../ui/Icons";
 import { RailToggle } from "./RailToggle";
 import { Tooltip } from "../ui/Tooltip";
-
-const RING_RADIUS = 9;
-const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
 
 function useAppVersion(): string | null {
     const [version, setVersion] = useState<string | null>(null);
@@ -17,16 +11,6 @@ function useAppVersion(): string | null {
         getVersion().then(setVersion).catch(swallow("getVersion"));
     }, []);
     return version;
-}
-
-function ProgressRing({ percent }: { percent: number | null }) {
-    const shown = percent === null ? RING_LENGTH * 0.25 : (RING_LENGTH * percent) / 100;
-    return (
-        <svg className={`update-ring${percent === null ? " update-ring-spin" : ""}`} viewBox="0 0 22 22" aria-hidden="true">
-            <circle className="update-ring-track" cx="11" cy="11" r={RING_RADIUS} />
-            <circle className="update-ring-bar" cx="11" cy="11" r={RING_RADIUS} strokeDasharray={`${shown} ${RING_LENGTH}`} />
-        </svg>
-    );
 }
 
 function splitVersion(version: string): { release: string; channel: string | null } {
@@ -48,31 +32,6 @@ function VersionLabel({ version }: { version: string }) {
     );
 }
 
-export function UpdateButton() {
-    const pending = useStore((s) => s.pendingUpdate);
-    if (!pending) return null;
-
-    const state = pending.state;
-    const busy = isUpdateBusy(state);
-    const statusLabel = updateStatusLabel(pending);
-    const label =
-        state === "error"
-            ? `Update v${pending.version} failed — ${pending.error ?? "unknown"}. Click to retry.`
-            : busy
-              ? `${statusLabel} v${pending.version}`
-              : `Update v${pending.version} available (current: v${pending.currentVersion}). Click to install + relaunch.${pending.notes ? `\n\n${pending.notes}` : ""}`;
-    const Glyph = state === "error" ? IconWarning : state === "installing" || state === "restarting" ? IconRefresh : IconDownload;
-
-    return (
-        <Tooltip label={label}>
-            <button className={`update-button update-button-${state}`} onClick={cmd.openWhatsNew} disabled={busy} aria-label={label}>
-                {busy && <ProgressRing percent={state === "downloading" ? updateDownloadPercent(pending) : null} />}
-                <Glyph size={busy ? 10 : 14} />
-            </button>
-        </Tooltip>
-    );
-}
-
 export function RailMasthead() {
     const version = useAppVersion();
     return (
@@ -81,7 +40,6 @@ export function RailMasthead() {
             <span className="rail-masthead-name">Sikemux</span>
             {version && <VersionLabel version={version} />}
             <span className="rail-masthead-actions">
-                <UpdateButton />
                 <RailToggle edge="start" />
             </span>
         </div>
