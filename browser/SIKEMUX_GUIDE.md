@@ -45,6 +45,10 @@ This page is what to know before your first call. Call `guide` again with a
   rather than sleeps or screenshots taken to see whether something finished.
 - Every state says whether the tab is `visible` to the person; do not tell
   them a page is on their screen when it is not.
+- Plugin tools (`github_*`, `bitbucket_*`, `signoz_*`) are listed only when
+  they can work here: signed in, and for GitHub or Bitbucket a remote of this
+  project on that host. If one you need is missing, ask the person to sign in
+  from its pane in Sikemux and restart you.
 
 ## Topics
 
