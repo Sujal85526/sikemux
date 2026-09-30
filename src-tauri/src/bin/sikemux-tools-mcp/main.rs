@@ -273,7 +273,11 @@ fn call(
     arguments: &Value,
 ) -> Value {
     if name == manifest.guide_name() {
-        return content(vec![text(manifest.guide_text())], false);
+        let topic = arguments.get("topic").and_then(Value::as_str);
+        return match manifest.guide_text(topic) {
+            Ok(guide) => content(vec![text(guide)], false),
+            Err(message) => invalid(&message),
+        };
     }
     if let Some(tool) = manifest.tool(name) {
         if let Err(message) = tool.validate(arguments) {

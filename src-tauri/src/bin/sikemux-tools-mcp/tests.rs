@@ -141,7 +141,7 @@ fn schemas_stay_lean_so_prose_lives_in_the_guide() {
 #[test]
 fn the_guide_explains_what_the_schemas_no_longer_say() {
     let manifest = Manifest::load();
-    let guide = manifest.guide_text();
+    let guide = manifest.guide_text(Some("all")).expect("the whole guide");
     for tool in manifest.declarations() {
         let name = field(&tool, "name");
         if name == manifest.guide_name() {
@@ -246,6 +246,74 @@ fn the_guide_is_served_without_asking_the_app() {
     let body = field(&answer["content"][0], "text");
     assert!(body.contains("Working inside Sikemux"));
     assert!(body.contains("Element numbers expire"));
+    assert!(
+        !body.contains("## browser-input:"),
+        "the opening stops before the topics"
+    );
+}
+
+#[test]
+fn the_guide_opening_stays_small_and_lists_every_topic() {
+    let manifest = Manifest::load();
+    let opening = manifest.guide_text(None).expect("the opening");
+    assert!(
+        opening.len() <= 4096,
+        "every agent reads the guide's opening; move detail into a topic"
+    );
+    let topics = &manifest.declarations().last().cloned().expect("the guide")["inputSchema"]
+        ["properties"]["topic"]["enum"];
+    let topics: Vec<&str> = topics
+        .as_array()
+        .expect("topics")
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    assert!(topics.len() > 5);
+    for topic in topics.iter().filter(|topic| **topic != "all") {
+        assert!(
+            opening.contains(&format!("`{topic}`")),
+            "the opening does not offer {topic}"
+        );
+        let section = manifest.guide_text(Some(topic)).expect("a topic");
+        assert!(section.starts_with(&format!("## {topic}: ")));
+        assert!(
+            !section[3..].contains("\n## "),
+            "{topic} runs into the next topic"
+        );
+    }
+}
+
+#[test]
+fn a_guide_topic_is_served_alone_and_an_unknown_one_lists_the_rest() {
+    let manifest = Manifest::load();
+    let ask = |topic: &str| {
+        call(
+            &manifest,
+            &PluginTools::with(Vec::new()),
+            &unreachable_app,
+            manifest.guide_name(),
+            &json!({ "topic": topic }),
+        )
+    };
+    let reading = ask("browser-reading");
+    assert_eq!(reading["isError"], json!(false));
+    let body = field(&reading["content"][0], "text");
+    assert!(body.contains("browser_find"));
+    assert!(!body.contains("Working inside Sikemux"));
+    let unknown = ask("cooking");
+    assert_eq!(unknown["isError"], json!(true));
+    assert!(field(&unknown["content"][0], "text").contains("browser-reading"));
+}
+
+#[test]
+fn length_limits_are_checked_but_never_sent() {
+    let manifest = Manifest::load();
+    let served = serde_json::to_string(&manifest.declarations()).expect("declarations");
+    assert!(!served.contains("maxLength") && !served.contains("minLength"));
+    let navigate = manifest.tool("browser_navigate").expect("browser_navigate");
+    assert!(navigate
+        .validate(&json!({ "url": "x".repeat(9000) }))
+        .is_err());
 }
 
 #[test]

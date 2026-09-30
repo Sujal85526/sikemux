@@ -46,8 +46,33 @@ impl Manifest {
         &self.guide.name
     }
 
-    pub fn guide_text(&self) -> &'static str {
-        GUIDE
+    /// The guide's opening, which every agent reads, or one topic of it, or
+    /// all of it for `"all"`.
+    pub fn guide_text(&self, topic: Option<&str>) -> Result<&'static str, String> {
+        let sections = guide_topics();
+        match topic {
+            None => Ok(sections
+                .first()
+                .map_or(GUIDE, |(_, start)| &GUIDE[..*start])),
+            Some(ALL_TOPICS) => Ok(GUIDE),
+            Some(wanted) => sections
+                .iter()
+                .enumerate()
+                .find(|(_, (name, _))| *name == wanted)
+                .map(|(index, (_, start))| {
+                    let end = sections
+                        .get(index + 1)
+                        .map_or(GUIDE.len(), |(_, next)| *next);
+                    GUIDE[*start..end].trim_end()
+                })
+                .ok_or_else(|| {
+                    let names: Vec<&str> = sections.iter().map(|(name, _)| *name).collect();
+                    format!(
+                        "No guide topic '{wanted}'. Topics: {}, or {ALL_TOPICS}",
+                        names.join(", ")
+                    )
+                }),
+        }
     }
 
     pub fn instructions(&self) -> String {
@@ -74,10 +99,53 @@ impl Manifest {
         declared.push(declaration(
             &self.guide.name,
             &self.guide.description,
-            &Map::new(),
+            &guide_properties(),
             &[],
         ));
         declared
+    }
+}
+
+const ALL_TOPICS: &str = "all";
+
+/// Each `## name: Title` heading of the guide, with where its section starts.
+/// Headings without a name belong to the opening every agent reads.
+fn guide_topics() -> Vec<(&'static str, usize)> {
+    let mut start = 0;
+    let mut topics = Vec::new();
+    for line in GUIDE.split_inclusive('\n') {
+        if let Some((name, _)) = line
+            .strip_prefix("## ")
+            .and_then(|heading| heading.split_once(": "))
+        {
+            topics.push((name, start));
+        }
+        start += line.len();
+    }
+    topics
+}
+
+fn guide_properties() -> Map<String, Value> {
+    let mut topics: Vec<&str> = guide_topics().into_iter().map(|(name, _)| name).collect();
+    topics.push(ALL_TOPICS);
+    let mut properties = Map::new();
+    properties.insert("topic".into(), json!({ "enum": topics }));
+    properties
+}
+
+/// Length limits are still checked here, but an agent never needs to read
+/// them, so they are left out of what every request carries.
+fn advertised(schema: &Value) -> Value {
+    match schema {
+        Value::Object(fields) => Value::Object(
+            fields
+                .iter()
+                .filter(|(key, _)| !matches!(key.as_str(), "maxLength" | "minLength"))
+                .map(|(key, value)| (key.clone(), advertised(value)))
+                .collect(),
+        ),
+        Value::Array(items) => Value::Array(items.iter().map(advertised).collect()),
+        other => other.clone(),
     }
 }
 
@@ -92,7 +160,7 @@ fn declaration(
         "description": description,
         "inputSchema": {
             "type": "object",
-            "properties": properties,
+            "properties": advertised(&Value::Object(properties.clone())),
             "required": required,
             "additionalProperties": false,
         },

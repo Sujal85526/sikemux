@@ -8,30 +8,64 @@ description: How to drive a Sikemux project and its browser — task launches, o
 You are running in a pane of a Sikemux workspace. `workspace_inspect`, the
 `task_*` tools, `ui_open` and `events_wait` act on the project the person has
 open. The tools named `browser_*` act on the browser tabs on your desk, the
-pane beside yours that the person can see.
+pane beside yours that the person can see. Your desk holds everything you open
+for the person: browser pages, files and the terminals of tasks you start, as
+tabs in one strip.
 
 When the person asks you to open, show or preview a page, open it on your desk
 with `browser_navigate`, not in their own browser. Desk tabs run WebKit, the
 same engine as Sikemux itself and Safari, so check a web page there rather
 than in a headless Chromium you install.
 
-Your desk holds everything you open for the person: browser pages, files and
-the terminals of tasks you start, as tabs in one strip.
+This page is what to know before your first call. Call `guide` again with a
+`topic` from the list at the end when you need the details of one area.
 
-Read this once before your first task launch or browser click. Everything the
-tool descriptions leave out is here.
+## Essentials
 
-## Start by inspecting
+- `workspace_inspect` comes first. It returns the open project, the tasks in
+  `sikemux.json`, the runs you already started and an event cursor. Task ids
+  come from there; do not guess one.
+- `task_start` takes an `idempotencyKey` you choose and either a `taskId` or a
+  `command`. Reusing a key returns the original run, so pick one key per
+  attempt and reuse it when a call fails or you are unsure it landed. Use
+  tasks for dev servers and watchers rather than background shell jobs.
+- `task_read` pages output by byte cursor: start at `0` and pass back the
+  `cursor` it returns. `plain: true` strips terminal escapes, `tail: N` gives
+  the last lines and `search` the matching ones.
+- `events_wait` takes an event cursor from `workspace_inspect` or the last
+  wait. **Event cursors are not output cursors**; never mix them. A timeout
+  is normal: wait again with the fresh cursor.
+- Browser tools that act report what changed since your last read of the
+  page (`report: "changes"`); `"outcome"` is leaner and `"full"` returns the
+  whole state. The first read of a new page is always full.
+- **Element numbers expire** when their element leaves the page, and
+  numbering restarts on every new page. Never carry a number across a
+  navigation; read or `browser_find` again.
+- Wait with `browser_wait` conditions, or `waitFor` on `browser_navigate`,
+  rather than sleeps or screenshots taken to see whether something finished.
+- Every state says whether the tab is `visible` to the person; do not tell
+  them a page is on their screen when it is not.
 
-`workspace_inspect` is the entry point. It returns the open project,
-its panes, the tasks configured in `sikemux.json`, the harness runs you already
-started, and an event cursor. Task ids come from there — do not guess one.
+## Topics
+
+Pass one of these as `topic`:
+
+- `config` — writing or fixing `sikemux.json`, and what `configStatus` means
+- `tasks` — launching, trust prompts, `readyWhen`, restarting, stopping, and what a reload loses
+- `output` — `task_read` paging, `plain`, `tail`, `search`, and `events_wait`
+- `ui` — `ui_open` for files, diffs, terminals and the preview
+- `browser-reading` — page state, report modes, element numbers and lines, `browser_find`, frames
+- `browser-input` — clicking, typing, `browser_act`, keys, drag, upload, scrolling, dialogs
+- `browser-pages` — navigating, reloading, waiting, local files, viewport sizes, tabs
+- `browser-evidence` — `browser_screenshot`, `browser_annotate`, `browser_record`
+- `browser-debugging` — `browser_network`, loads, `browser_console`, `app_console`, `browser_evaluate`
+- `shell` — the `sikemux tool` CLI for scripts and tasks
+
+## config: Writing sikemux.json
 
 `configStatus` is `absent` when the project has no `sikemux.json`, and
 `invalid` when it has one that failed to load; `configErrors` then lists each
 problem by path. Neither state offers any tasks.
-
-## Writing sikemux.json
 
 The file sits at the project root. Tasks are what `task_start` launches:
 
@@ -53,7 +87,7 @@ are rejected. If the project already describes its processes elsewhere, such
 as `.claude/launch.json` or a Procfile, carry those commands over rather than
 inventing new ones. Inspect again after writing to see `configErrors`.
 
-## Running a task
+## tasks: Running and stopping tasks
 
 `task_start` takes an `idempotencyKey` you choose and either a `taskId` from
 `sikemux.json` or a `command` to run. A `command` runs in the same kind of
@@ -101,7 +135,22 @@ A task you start opens its terminal as a tab on your desk, without taking the
 person's focus. To bring the person to it, call `ui_open` with
 `kind: "terminal"`, the `executionId`, and `focus: true`.
 
-## Reading output
+`task_stop` takes an `executionId` and stops that exact execution and
+its process tree. A `taskId` instead stops that task's latest execution. It
+does not stop a task started from the command deck.
+
+### What does not survive
+
+Run history and idempotency keys live for the current frontend session, capped
+at 128 runs and 256 keys. Restarting the app does not resume commands, and
+reloading the Sikemux window stops every task and loses run handles;
+`task_read` then says the task was started before the reload. Closing the project stops its harness
+tasks.
+
+If you hit a capacity error on either cap, the person needs to restart Sikemux;
+you cannot clear it yourself.
+
+## output: Reading output and waiting
 
 `task_read` pages through a task's output by byte cursor. Name the run with
 its `executionId`, or pass a `taskId` to read that task's latest execution.
@@ -134,7 +183,7 @@ the cursor you were given rather than trying to recover it.
 Finished terminals are kept for roughly ten minutes, and can be dropped sooner
 when the app is under pressure. Read output you care about promptly.
 
-## Waiting for something to happen
+### Waiting for something to happen
 
 `events_wait` blocks for up to 30 seconds and returns task output,
 task lifecycle, and UI-open events.
@@ -152,7 +201,7 @@ replaying and inspect the workspace again for current state.
 
 A wait does not schedule you a future turn. It only holds this call open.
 
-## Opening things for the person
+## ui: Opening things for the person
 
 `ui_open` takes a `kind`:
 
@@ -172,13 +221,7 @@ Preview needs an agent session and opens as a page on your desk. The `previewUrl
 you get back is configuration, not proof that anything is listening. If you
 need to know the server is up, read the task output or navigate to it.
 
-## Stopping
-
-`task_stop` takes an `executionId` and stops that exact execution and
-its process tree. A `taskId` instead stops that task's latest execution. It
-does not stop a task started from the command deck.
-
-## The browser
+## browser-reading: Reading a page
 
 `browser_state` returns page state: url, title, numbered interactive elements,
 visible text, and the open tabs. The text stops after about 2 KB, and
@@ -219,12 +262,28 @@ modal, a banner or an open menu, and ones the page marks `inert` or
 label wrapping a listed checkbox or a clickable span inside a link. They keep
 their numbers, so a number read earlier still works.
 
+On a long page the list gives every element in view but only the 40 offscreen
+elements nearest the view, marked `[offscreen]`; `offscreen` counts the rest
+above and below. They keep their numbers, and `browser_find` finds them. A
+change report lists such an element once it scrolls into view, and never
+reports one you were not shown as removed.
+
 `browser_find` with a `query` lists the elements whose visible text,
 accessible name, placeholder, `name` or `id` contains it, with their numbers,
 exact matches first. `role` narrows it, as in `button`, `link`, `checkbox`,
 `textbox` or `tab`; when nothing of that role is named that way, it lists
 every element of that role instead. When no element matches but the words
 show on the page, it returns `points` with their `x`, `y` to click instead.
+
+Controls inside a frame from the same site are numbered with the rest of the
+page. A frame from another site, such as a card field or a sign-in widget,
+cannot be read from outside, so state lists it as a single element. Click its
+number, or better the field inside it by `x` and `y` from a screenshot, then
+`browser_type` without an index to type at the caret. The page's text,
+`browser_extract`, `browser_network` and `browser_console` cover only the
+top page.
+
+## browser-input: Acting on a page
 
 Clicks, keys and typing arrive as real input, the same as the person's, so
 pages that check for a trusted event and editors that keep their own model of
@@ -246,14 +305,6 @@ Sikemux is in the background the page is told about the hover but CSS
 `:hover` styles do not apply. A result with `covered` names what was on top
 of the element and took the click instead. `browser_back` and
 `browser_forward` move through the current tab's history.
-
-Controls inside a frame from the same site are numbered with the rest of the
-page. A frame from another site, such as a card field or a sign-in widget,
-cannot be read from outside, so state lists it as a single element. Click its
-number, or better the field inside it by `x` and `y` from a screenshot, then
-`browser_type` without an index to type at the caret. The page's text,
-`browser_extract`, `browser_network` and `browser_console` cover only the
-top page.
 
 `browser_type` with an `index` or `selector` focuses that element and
 replaces its value. Without one it types at the caret of whatever is focused,
@@ -308,44 +359,13 @@ other browser tool refuses rather than hang. `accept: true` presses OK and
 `false` presses Cancel; `text` fills a prompt first. The person sees the same
 dialog and may answer it before you do.
 
-`browser_evaluate` runs JavaScript in the page and returns the result as
-JSON. The code goes in `script`: an expression such as `document.title`, or
-statements that end in `return`, since statements without one return
-nothing. Promises are awaited for `timeoutMs`, 30 seconds by default and 60 at
-most, and elements come back as their markup. Reach for it when no other tool
-reads what you need. Prefer the other tools for acting, since they send real
-input, and `browser_wait` for waiting, rather than a polling loop in a script.
-A script that reloads or leaves the page loses its result; use
-`browser_reload` for that. It runs with the page's own session, so `fetch` of
-the site's API returns what the signed-in person would get.
-
 `browser_scroll` with an `index`, `text` or `selector` alone brings that
 element into view and says whether it is now on screen. `deltaY` moves by
 that many pixels, negative for up, and `to: "top"` or `"bottom"` jumps to an
 end; either acts on the page, or with a target on the scrolling container
 around it. It returns the scroll position and `atBottom`.
 
-A tab's viewport follows the pane, so it changes size when the person resizes
-the pane, and a tab the pane is not showing lays out at the size it last had.
-`browser_viewport` holds the current tab at `width` and `height` in CSS pixels
-(200 to 4000), or a `preset`: `desktop` is 1280×800, `tablet` 820×1180 and
-`mobile` 390×844. `preset: "fit"` lets it follow the pane again. The size
-stays through reloads and navigations in that tab. The page lays out at that
-size and is scaled down to fit the pane, never up, so screenshots and `x`,
-`y` stay in the viewport's CSS pixels. The `mobile` preset also sends
-iPhone Safari's user agent and reloads the page, so sites that sniff it serve
-their phone version; any other size sends desktop Safari's, as a real iPad
-does. The pointer stays a mouse, so sites that check for touch still see none.
-The full state reports `viewport` with the page's `width` and `height`, and
-`fixed` holding the size you set or `false`, with a note when the pane is
-narrow enough that the page may be showing its phone layout. A fixed size is
-the page's real window size, so `vw` units, media queries and `innerWidth`
-all see it, and the call returns once the page has laid out at it.
-
-Every state carries `visible`: whether the person can see this tab in the
-pane right now. A tab that is not visible still lays out at a real size and
-takes input, but do not tell the person a page is on their screen when
-`visible` is false. With no arguments it just returns the state.
+## browser-pages: Pages, tabs and viewport
 
 `browser_wait` waits for the page to reach a state. `text` or `textGone`
 waits for words to show or go, `selector` or `selectorGone` for an element,
@@ -376,6 +396,39 @@ run `pnpm showcase:serve` in the Sikemux repository and navigate to
 `http://localhost:1471/showcase/`. It is the real frontend with hot reload
 over demo data.
 
+A tab's viewport follows the pane, so it changes size when the person resizes
+the pane, and a tab the pane is not showing lays out at the size it last had.
+`browser_viewport` holds the current tab at `width` and `height` in CSS pixels
+(200 to 4000), or a `preset`: `desktop` is 1280×800, `tablet` 820×1180 and
+`mobile` 390×844. `preset: "fit"` lets it follow the pane again. The size
+stays through reloads and navigations in that tab. The page lays out at that
+size and is scaled down to fit the pane, never up, so screenshots and `x`,
+`y` stay in the viewport's CSS pixels. The `mobile` preset also sends
+iPhone Safari's user agent and reloads the page, so sites that sniff it serve
+their phone version; any other size sends desktop Safari's, as a real iPad
+does. The pointer stays a mouse, so sites that check for touch still see none.
+The full state reports `viewport` with the page's `width` and `height`, and
+`fixed` holding the size you set or `false`, with a note when the pane is
+narrow enough that the page may be showing its phone layout. A fixed size is
+the page's real window size, so `vw` units, media queries and `innerWidth`
+all see it, and the call returns once the page has laid out at it.
+
+Every state carries `visible`: whether the person can see this tab in the
+pane right now. A tab that is not visible still lays out at a real size and
+takes input, but do not tell the person a page is on their screen when
+`visible` is false. With no arguments it just returns the state.
+
+Tabs are yours. `browser_list_tabs`, `browser_switch_tab` and
+`browser_close_tab` act on this pane's tabs, not the person's other windows.
+Switching returns what changed since you last read that tab, or its full
+state when you have not read it yet.
+`browser_navigate` reuses the current tab unless you pass `newTab: true`.
+When an action makes the page open a tab of its own, as a link with a new
+window target does, the result lists it under `openedTabs`, and that tab is
+now the current one. Tabs do not survive a restart of Sikemux.
+
+## browser-evidence: Screenshots, drawings and recordings
+
 `browser_screenshot` returns an image of the visible part of the tab. Use it
 when layout or rendering matters; use `browser_extract` when you only need
 text. Its pixels are CSS pixels, so a point you read off it can go straight to
@@ -404,6 +457,8 @@ person's Movies folder under Sikemux, named after the page. It follows you
 across tabs, includes your pointer, boxes and captions, and stops by itself
 after ten minutes. Narrate with `browser_annotate` captions as you go; a
 recording of a tab the person is not looking at still works.
+
+## browser-debugging: Network, console and scripts
 
 `browser_network` lists the fetch and XHR calls the page has made since it
 loaded, oldest first, with each `id`, status, duration and the start of its
@@ -438,26 +493,18 @@ each message carries an ISO `at` time. Use it when Sikemux itself misbehaves,
 such as a blank avatar or a panel that does not load, instead of asking the
 person to open Web Inspector.
 
-Tabs are yours. `browser_list_tabs`, `browser_switch_tab` and
-`browser_close_tab` act on this pane's tabs, not the person's other windows.
-Switching returns the full state of the tab you land on.
-`browser_navigate` reuses the current tab unless you pass `newTab: true`.
-When an action makes the page open a tab of its own, as a link with a new
-window target does, the result lists it under `openedTabs`, and that tab is
-now the current one. Tabs do not survive a restart of Sikemux.
+`browser_evaluate` runs JavaScript in the page and returns the result as
+JSON. The code goes in `script`: an expression such as `document.title`, or
+statements that end in `return`, since statements without one return
+nothing. Promises are awaited for `timeoutMs`, 30 seconds by default and 60 at
+most, and elements come back as their markup. Reach for it when no other tool
+reads what you need. Prefer the other tools for acting, since they send real
+input, and `browser_wait` for waiting, rather than a polling loop in a script.
+A script that reloads or leaves the page loses its result; use
+`browser_reload` for that. It runs with the page's own session, so `fetch` of
+the site's API returns what the signed-in person would get.
 
-## What does not survive
-
-Run history and idempotency keys live for the current frontend session, capped
-at 128 runs and 256 keys. Restarting the app does not resume commands, and
-reloading the Sikemux window stops every task and loses run handles;
-`task_read` then says the task was started before the reload. Closing the project stops its harness
-tasks.
-
-If you hit a capacity error on either cap, the person needs to restart Sikemux;
-you cannot clear it yourself.
-
-## The same operations from a shell
+## shell: The same operations from a shell
 
 Every tool here is also a CLI verb, which is useful inside a task or a script:
 
