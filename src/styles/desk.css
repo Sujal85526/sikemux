@@ -70,8 +70,11 @@
     background: transparent;
 }
 
+/* A length, not a share of the strip: the tab list is as wide as its tabs,
+   and a share of that is taken before the list knows its width, from each
+   title at full length, which left the add button stranded at the far end. */
 .tabbar.v-desk .tab-wrap {
-    width: min(180px, 30%);
+    flex: 0 1 180px;
     min-width: 120px;
 }
 
