@@ -8,353 +8,89 @@ Bring Claude Code, Codex or OpenCode. Sikemux gives them your shell, browser, lo
 
 ![Sikemux with a Claude Code agent and its browser tab](public/screenshots/sikemux-hero.png)
 
-[![macOS](https://img.shields.io/badge/macOS-11%2B%20Apple%20Silicon-000?logo=apple&logoColor=white)](#installation)
-[![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)](https://tauri.app)
-[![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev)
-[![Rust](https://img.shields.io/badge/Rust-backend-000?logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![Latest release](https://img.shields.io/github/v/release/nodelike/sikemux?display_name=tag)](https://github.com/nodelike/sikemux/releases/latest)
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/UKfmHpF9kX)
 [![Website](https://img.shields.io/badge/website-sikemux.com-a277ff)](https://sikemux.com)
 
 </div>
 
----
+## Install
 
-## What it does
+Download the latest `.dmg` from [sikemux.com](https://sikemux.com) or [Releases](https://github.com/nodelike/sikemux/releases/latest). It is about 10 MB, needs macOS 11 or later on Apple Silicon, and keeps itself up to date.
 
-Sikemux puts the tools tied to a terminal project in one window. Open a project once. Its files, shells, Git state, agents, cloud resources, deployments, and API collections stay attached to that project.
+## What's inside
 
-The download is about 10 MB. Sikemux draws its interface with the WebView that macOS already ships, so it carries no browser engine of its own.
+- **Projects** with a code editor, terminals, Git, and search, all in one working directory
+- **Coding agents**: Claude, Codex, Hermes, Pi and OpenCode, several at once, each with its own browser tabs
+- **Panels** for AWS, GitHub, Bitbucket, Rundeck, SigNoz and Bruno
+- **SSH** sessions, nine themes and a custom theme editor
 
-### Projects
+The [website](https://sikemux.com) has the full tour.
 
-Each project has five views named `Files`, `Term`, `Git`, `Agents`, and `Search`. They all use the same working directory.
+## Project config
 
-The editor uses CodeMirror 6 and supports JavaScript, TypeScript, JSX, Python, Rust, Go, HTML, CSS, JSON, YAML, Markdown, and legacy modes. LSP support covers hover, go to definition, and peek. The editor also has project-wide Problems and Outline panels, a Git gutter, find and replace, indentation guides, and virtualized rendering for large files.
-
-Sikemux includes a side-by-side diff editor and a three-way merge view for resolving conflicts. The file tree watches the filesystem for changes. You can create, rename, delete, and move files, or drop files in from Finder.
-
-![Files view](public/screenshots/project-editor-view.png)
-
-<table>
-<tr>
-<td width="50%"><img src="public/screenshots/project-term-view.png" alt="Terminal view"/></td>
-<td width="50%"><img src="public/screenshots/project-git-view.png" alt="Git view"/></td>
-</tr>
-<tr>
-<td align="center"><b>Terminal.</b> xterm.js backed by native Rust PTYs, with split panes, tabs, path drag and drop, and optional WebGL rendering.</td>
-<td align="center"><b>Git.</b> Branches, staging, commits, diffs, merges, pull and push, worktrees, and commit messages generated through a local CLI.</td>
-</tr>
-</table>
-
-### Project actions, tasks, and previews
-
-A project can check in a bounded `sikemux.json` file. Sikemux puts its actions and tasks in the command deck, opened with `⌘⇧P` on macOS or `Ctrl+Shift+P` on Windows. Actions can also define project-specific shortcuts.
-
-The only accepted action context is `"project"`. An empty context list makes the action available throughout its project. Sikemux shows the command before it runs and remembers approval only for the current app process. If the file changes, Sikemux asks again.
+Check a `sikemux.json` into a project to add actions, tasks, and a preview to the command deck (`⌘⇧P`). Sikemux shows each command and asks before running it.
 
 ```json
 {
   "version": 1,
   "actions": [
     {
-      "id": "quality",
-      "label": "Run quality checks",
-      "description": "Format, lint and test",
+      "id": "check",
+      "label": "Run checks",
       "command": "pnpm check",
       "placement": "terminal",
-      "contexts": ["project"],
-      "keybinding": "Meta+Shift+KeyT"
+      "contexts": ["project"]
     }
   ],
-  "tasks": [
-    {
-      "id": "dev",
-      "label": "Development server",
-      "command": "pnpm dev",
-      "cwd": ".",
-      "env": { "NODE_ENV": "development" }
-    }
-  ],
-  "preview": {
-    "url": "http://localhost:5173",
-    "command": "pnpm dev"
-  }
+  "tasks": [{ "id": "dev", "label": "Dev server", "command": "pnpm dev" }],
+  "preview": { "url": "http://localhost:5173", "command": "pnpm dev" }
 }
 ```
 
-Project shortcuts use physical key codes. Use `Meta` on macOS and usually `Ctrl` on Windows. The `env` object lives in the checked-in file, so do not put secrets there.
+Agents can start, read, and stop these tasks through Sikemux's MCP tools or the `sikemux tool` CLI. [`browser/SIKEMUX_GUIDE.md`](browser/SIKEMUX_GUIDE.md) describes the protocol.
 
-The Rust runtime owns each task's native PTY. The renderer only displays it. You can detach and reattach the terminal view without stopping the process. Restarts and stops target the correct task generation. The Stop action remains available if the configuration disappears or becomes invalid while a task is running. Sikemux does not write task environment values to saved terminal state or diagnostics.
+## CLI
 
-### Coding agents
-
-Sikemux detects Claude, Codex, Hermes, Pi, and OpenCode on your `PATH`. It reads their saved sessions and can run several agents in one project, each in its own pane.
-
-- Press `⌘N` to start the agent you launched last, ready to type to. Press `⌘⇧N` to pick another agent or resume an earlier conversation. Outside a project, both ask for a project first.
-- Choose Normal or YOLO mode. Press `⌘⇧Y` to toggle the mode for a resumable agent.
-- Press `⌘J` to show the agent's desk beside it, and `⌘⇧T` to open a browser tab there. Browser tabs belong to the session and keep their sign-ins. You can take control at any time. Agent commands run through your configured interactive shell and use its environment and login. Browser tools use the agent’s own MCP configuration.
-
-![Agents view](public/screenshots/project-agents-view.png)
-
-### Agent harness tools
-
-The bundled browser MCP also exposes six Sikemux tools and a guide. They operate on the agent's open project rather than on a browser tab. The native CLI exposes the same operations with JSON input and output:
-
-```bash
-sikemux tool workspace.inspect
-sikemux tool task.start '{"taskId":"dev","idempotencyKey":"dev-first-run"}'
-sikemux tool task.read '{"executionId":"RETURNED_ID","cursor":0}'
-sikemux tool events.wait '{"cursor":"RETURNED_EVENT_CURSOR","timeoutMs":30000}'
-sikemux tool ui.open '{"kind":"file","path":"src/App.tsx","line":42,"focus":true}'
-sikemux tool task.stop '{"executionId":"RETURNED_ID"}'
-```
-
-| CLI method          | MCP tool            | Behavior                                                                         |
-| ------------------- | ------------------- | -------------------------------------------------------------------------------- |
-| `workspace.inspect` | `workspace_inspect` | Project panes, configured tasks, harness runs, and the current event cursor      |
-| `task.start`        | `task_start`        | Start a configured task in a managed terminal; requires an idempotency key       |
-| `task.read`         | `task_read`         | Status, exit code, and output after a byte cursor                                |
-| `task.stop`         | `task_stop`         | Stop one exact execution and its process tree                                    |
-| `ui.open`           | `ui_open`           | Open a file, diff, task terminal, or the configured preview                      |
-| `events.wait`       | `events_wait`       | Wait up to 30 seconds for project task output, task lifecycle, or UI-open events |
-
-A seventh tool, `guide`, has no CLI pair. It returns `browser/SIKEMUX_GUIDE.md`, the operating guide agents read once instead of paying for long tool descriptions on every request. Tool schemas stay one line each and the guide carries the protocol: cursors, idempotency, retention, and the browser tab model. It is the agent-facing copy of the rest of this section, so changes here belong in both.
-
-Task launches use `sikemux.json` and its existing project-trust dialog. A changed configuration is checked again before launch. Reusing an idempotency key returns the original execution, including after completion. Starting an already active harness task returns that execution. A task already running through the command deck must be stopped there before launching the same task through the harness.
-
-Task terminals open in the background and remain available in the project. Use `ui.open` with `kind: "terminal"`, an `executionId`, and `focus: true` to reveal one. Files open as background tabs by default. Set `focus: true` to reveal the file at the requested one-based line. Files must resolve inside the project. Preview opens require an agent session and use that agent's browser. A returned `previewUrl` is configured information; inspect task output or use browser tools to verify readiness.
-
-Pass the returned output cursor into the next `task.read`. `hasMore` means another page is available. Output pages default to 8 KiB, with a supported `limit` of 4–8192 bytes, and may contain terminal escape sequences. Each task retains up to 1 MiB of raw output; `truncated` reports when a cursor predates retained bytes. Completed and stopped PTYs use the native ten-minute retention period and may be evicted earlier under capacity pressure.
-
-Event cursors are separate from output cursors. Inspect the workspace to obtain an event cursor, then pass it to `events.wait`. An optional `executionId` filters the wait. A timeout returns an empty event list and a new cursor. Event history holds 256 entries; `truncated` means the caller should inspect current state again. Waits do not schedule future agent turns.
-
-Harness run history and idempotency keys last for the current frontend session, with limits of 128 runs and 256 keys. App restart does not resume commands, and a frontend reload loses harness run handles. Closing a project stops its harness tasks. The local authenticated endpoint follows `SIKEMUX_CLI_ENDPOINT`; terminals launched by Sikemux also provide project and agent context. From an external shell, run the CLI inside the open project's Git root or set `SIKEMUX_PROJECT` explicitly.
-
-Run the native smoke with `pnpm test:e2e:desktop`. To also exercise managed tasks, run `node scripts/smoke-desktop-e2e.mjs --tasks` after that build and approve the temporary fixture project in its isolated Sikemux window. This checks launch deduplication, live event waits, output cursors, retained logs, exact execution stops, and failure exit codes. The fixture is removed afterward.
-
-### AWS
-
-The AWS panel shows:
-
-- Cost and billing
-- ECS services and tasks, including selectable and copyable CloudWatch log output while it streams
-- EC2, Lambda, S3, and SQS
-
-Use the refresh action to load changes made in the AWS console.
-
-<table>
-<tr>
-<td width="50%"><img src="public/screenshots/cloud-aws-billing-view.png" alt="AWS billing"/></td>
-<td width="50%"><img src="public/screenshots/cloud-aws-ecs-tasks-logs-view.png" alt="AWS ECS tasks and logs"/></td>
-</tr>
-</table>
-
-### GitHub
-
-The GitHub panel shows the project's repository without a trip to github.com:
-
-- Actions runs, each with its job graph, steps, annotations, searchable logs, step summaries, and artifacts. Re-run, cancel, approve a waiting deployment, or start a workflow with its inputs.
-- Pull requests with their diffs, reviews, comments, and checks. Review, merge, close, or open one from a branch picker.
-- Issues, releases with their notes and assets, and GitHub's notifications.
-
-Sikemux signs in with a token from `GH_TOKEN`, `GITHUB_TOKEN`, or the `gh` CLI, and never copies it. A token you paste goes to the Keychain. GitHub Enterprise hosts use `GH_ENTERPRISE_TOKEN` instead. Agents can read the same data through the `github_*` tools.
-
-![GitHub](public/screenshots/cicd-github-run-view.png)
-
-### Bitbucket
-
-A project whose remote is on bitbucket.org gets the same Git panel, filled from Bitbucket Cloud:
-
-- Pipelines with their steps and logs. Stop one, run it again, or start any pipeline in `bitbucket-pipelines.yml` with variables.
-- Pull requests with their diffs, commits, activity, and checks. Approve, request changes, comment, merge or squash, decline, or open one from a branch picker.
-
-Sign in through the browser and Sikemux keeps the refresh token in the Keychain. Where a workspace turns outside apps away, paste an Atlassian API token with its email, or a repository or workspace access token. Agents can read the same data through the `bitbucket_*` tools.
-
-### Rundeck
-
-The Rundeck panel lets you browse projects, start jobs from a palette, and follow each deployment step and its output as it runs.
-
-Sikemux uses HTTPS by default. You can allow HTTP when signing in to a Rundeck installation on a private subnet. Sikemux accepts it only if every resolved address is private, loopback, or link-local. It pins those verified addresses in the credential and token client to block DNS rebinding. Sikemux stores the acknowledgement beside the token configuration and saves that file with mode `600`.
-
-![Rundeck](public/screenshots/cicd-rundeck-deploy-view.png)
-
-### SigNoz
-
-The SigNoz panel shows service health, logs, traces, and dashboards from a SigNoz instance. Sign in with your SigNoz account or an API key.
-
-![SigNoz](public/screenshots/observability-signoz-view.png)
-
-### Bruno
-
-Open a [Bruno](https://www.usebruno.com/) collection as its own session. Use `⌘P` for the request palette and `⌘E` for environments. Save with `⌘S` and send with `⌘↵`. Pre-request and post-request hooks run in a scripting sandbox.
-
-![Bruno](public/screenshots/api-bruno-pane-view.png)
-
-### SSH and command sessions
-
-Press `⌘⇧S` to connect to an SSH host, and `⌘T` there for another login on it. Outside a project or host, `⌘T` opens a scratch command shell. Both open as multiplexed sessions.
-
-### Command-line editor integration
-
-Packaged builds include a native `sikemux` CLI. It sends files and project directories to the running app and accepts editor-style line and column positions. The `--wait` flag blocks until you close the opened tab, which means Git can use Sikemux as its editor.
-
-Install the launchers from Settings → CLI. Sikemux does not replace unrelated files or edit shell startup files.
+Install the `sikemux` launcher from Settings → CLI.
 
 ```bash
 sikemux .
 sikemux src/App.tsx:42:5
-sikemux open --wait README.md
 EDITOR=sikemux-editor git commit
 ```
 
-Terminals opened by Sikemux set `TERM_PROGRAM=Sikemux`, `SIKEMUX=1`, the app version, and typed context for the current session, project, pane, or agent. If neither `EDITOR` nor `VISUAL` is set, Sikemux points both to its bundled wait-enabled editor CLI. It leaves existing values alone.
+## Shortcuts
 
-### Themes and window controls
+| Key   | Action                        |     | Key   | Action       |
+| ----- | ----------------------------- | --- | ----- | ------------ |
+| `⌘N`  | New agent                     |     | `⌘T`  | New terminal |
+| `⌘⇧N` | Choose or resume an agent     |     | `⌘D`  | Split pane   |
+| `⌘J`  | Show or hide the agent's desk |     | `⌘P`  | Open file    |
+| `⌘O`  | Open project                  |     | `⌘⇧P` | Command deck |
+| `⌘⇧S` | Connect to an SSH host        |     | `⌘,`  | Settings     |
 
-Sikemux includes nine themes: Aura, Ayu Dark, Tokyo Night, Catppuccin Mocha, Dracula, Gruvbox Dark, Nord, One Dark, and Solarized Dark.
+Settings → Keybindings lists and rebinds every shortcut.
 
-The custom theme editor covers the interface, editor, syntax colors, and all 16 terminal colors. Window controls include a frameless overlay title bar, adjustable transparency and blur through a private macOS API, and focus mode.
+## Build from source
 
-### Pane management, updates, and diagnostics
-
-You can tile and split panes, move focus with `⌘⌥` and the arrow keys, find sessions with fuzzy matching, and move backward or forward through editor history. Sikemux saves each layout change as a transaction and restores the layout after a restart. The built-in updater reports new releases.
-
-Optional shell integration reports the current directory, command phase, and last exit status without editing shell startup files. Diagnostics combine redacted browser and native traces, latency percentiles, subsystem counts, and an operating-system thread watchdog. The watchdog can save evidence when the WebView stalls.
-
-## Keyboard shortcuts
-
-These are the defaults. You can reassign or clear every command in Settings → Keybindings. Changes save automatically.
-
-| Key          | Action                            |     | Key              | Action                          |
-| ------------ | --------------------------------- | --- | ---------------- | ------------------------------- |
-| `⌘N`         | New agent (the one launched last) |     | `⌘D` / `⌘⇧D`     | Split pane right or down        |
-| `⌘⇧N`        | Choose or resume an agent         |     | `⌘⌥←↑↓→`         | Move focus between panes        |
-| `⌘T`         | New terminal                      |     | `⌘⌃←↑↓→`         | Resize active pane              |
-| `⌘J`         | Show or hide the agent's desk     |     | `⌘⇧↵`            | Zoom or unzoom pane             |
-| `⌘⇧T`        | New browser tab on the desk       |     | `⌘W`             | Close what is in front          |
-| `⌘1` to `⌘9` | Go to a tab                       |     | `⌘⇧W`            | Close session                   |
-| `⌘⇧[` `⌘⇧]`  | Previous or next tab              |     | `⌃Tab` / `⌃⇧Tab` | Next or previous of the kind    |
-| `⌘⌥1` to `5` | Files, Term, Git, Agents, Search  |     | `` ⌃` ``         | Cycle sessions (hold to choose) |
-| `⌘O`         | Open project                      |     | `⌘⇧Y`            | Toggle agent YOLO mode          |
-| `⌘⇧O`        | Open project, host or plugin      |     | `⌘⌥U`            | Open last-used session          |
-| `⌘⇧S`        | Connect to an SSH host            |     | `⌘L`             | Focus browser address           |
-| `⌘P`         | Open file or request palette      |     | `⌘⌥A` / `⌘⌥B`    | Open AWS or Bruno               |
-| `⌘⇧F`        | Search project                    |     | `⌘B`             | Focus mode                      |
-| `⌘⇧P`        | Open command deck                 |     | `⌘,`             | Open settings                   |
-
-Option is left to whatever you are typing into, so shell and agent keys such as `⌥B`, `⌥F` and `⌥.` reach the terminal. On Windows and Linux most shortcuts use `Ctrl+Shift`; Settings → Keybindings lists them all.
-
-## Installation
-
-### Download
-
-Download the latest `.dmg` from [sikemux.com](https://sikemux.com) or [Releases](https://github.com/nodelike/sikemux/releases/latest). Published releases support Apple Silicon and require macOS 11 or later. The updater keeps an installed copy current. The published updater feed does not cover Intel Macs.
-
-### Build from source
-
-You need [Rust](https://www.rust-lang.org/tools/install), Node.js 22 or later, and [pnpm](https://pnpm.io/).
+You need [Rust](https://www.rust-lang.org/tools/install), Node.js 22+, and [pnpm](https://pnpm.io/).
 
 ```bash
 git clone git@github.com:nodelike/sikemux.git
 cd sikemux
 pnpm install
-
-# Run Vite and Tauri with hot reload, separate from the installed app
-make dev
-# Or run pnpm dev:desktop
-
-# Build an Apple Silicon app and DMG on an Apple Silicon Mac
-make build
-# Or run pnpm build:mac
-
-# Build a Windows NSIS installer from Windows
-pnpm build:windows
+make dev     # hot reload, runs beside the installed app
+make build   # Apple Silicon app and DMG
+make check   # every quality gate
 ```
 
-Sikemux generates commit messages through a locally installed Hermes, Codex, or Claude CLI. It does not call a model provider directly and does not need its own API key. Choose the CLI and model in the commit panel. The selected CLI streams generated text into the commit box.
-
-Claude's partial-message stream and Codex's local app server send token-level text updates. Sikemux forwards Hermes output when its quiet CLI mode flushes. For large changes, it sends zero-context diffs within the selected model's budget while covering every file and hunk. It summarizes generated files and lockfiles instead of sending their full contents.
-
-Windows development requires Microsoft C++ Build Tools and WebView2. Sikemux uses native ConPTY and defaults to PowerShell on Windows.
-
-The terminal defaults to xterm.js's DOM renderer. Set `VITE_TERMINAL_WEBGL=1` to test WebGL.
-
-```bash
-VITE_TERMINAL_WEBGL=1 pnpm dev:desktop
-```
-
-Development builds use the separate `com.nodelike.sikemux.dev` identity. They can run beside the installed app without triggering its single-instance guard or sharing its application data. If WebGL fails to start or loses its context, Sikemux switches back to DOM rendering. Run `window.sikemuxDiagnostics?.snapshot()` in the WebView console to see renderer counts.
-
-Run the full local quality gate with:
-
-```bash
-make check
-```
-
-It runs Prettier, ESLint, TypeScript checks, deterministic frontend tests, Rust formatting, Clippy, Rust tests, and release-tooling checks that need no credentials. `make test-coverage` reports coverage for all frontend TypeScript and TSX files, including files that no test imports. `make run` launches an existing release build.
-
-### Publishing a release
-
-Releases publish from the **Release** GitHub Actions workflow, never from a laptop. Commit the version bump and a `RELEASE_NOTES.md` headed `# Sikemux v<version>`, then push the matching tag. Tag a commit already on `main` for a nightly, or on its `release/<major.minor>` branch for stable. Only the owner can push a `v*` tag, so only the owner can start a release:
-
-```bash
-git tag v0.4.1 && git push origin v0.4.1
-```
-
-A run is titled with its tag, so the approval names what it will publish, and it stops if the tag disagrees with `package.json`. The workflow reads the version from `package.json`, runs the full CI suite, then builds, verifies, and publishes with `scripts/release.sh`. A prerelease version goes to the nightly channel and any other version to stable. Only one release runs at a time, and each run keeps its built artifacts.
-
-If a release fails before it publishes, fix it and move the tag onto the fix. Only the owner can move a release tag, and moving it starts a fresh run:
-
-```bash
-git tag -f v0.4.1 && git push -f origin v0.4.1
-```
-
-The workflow takes its signing material from the `release` environment:
-
-| Name                                                                                                                                       | Kind                    | Needed for         |
-| ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------- | ------------------ |
-| `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`                                                                          | secret                  | every release      |
-| `RELEASE_NOTARIZED`                                                                                                                        | variable, `1` to enable | notarized releases |
-| `APPLE_CERTIFICATE` (base64 `.p12`), `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | secrets                 | notarized releases |
-
-Limit the environment's deployment refs to `main`, `release/*`, and `v*` tags, and add yourself as a required reviewer so nothing publishes unapproved.
-
-Run `scripts/release.sh` locally without `--publish` to preview a release: it builds, signs, and verifies everything without touching GitHub.
-
-### Community releases without an Apple Developer membership
-
-The updater and Apple Gatekeeper trust different signatures. By default, `scripts/release.sh` makes a community release. It signs the updater archive with the Tauri updater key and applies an ad hoc code signature to the app and DMG.
-
-Existing community installations can receive in-app updates. Fresh downloads are not notarized by Apple, so macOS may ask you to remove quarantine again. Keep the updater private key secure. Clients reject archives that do not match the public key bundled with the app.
-
-Both channels create a versioned GitHub release holding the build. A stable cut also attaches `latest.json`, which the default channel follows. A nightly cut requires a prerelease semantic version, publishes its release as a prerelease, and repoints the moving `nightly` release that the opt-in Nightly channel follows.
-
-Stable is cut from a `release/<major.minor>` branch and nightly from `main`. A nightly targets whichever version comes next, whether that is a patch, a minor or a major, and a stable release of that version overtakes its nightlies for nightly users too.
-
-A hotfix cut from a release branch claims a version as well. When it claims the one the nightlies are building toward, the Nightly channel moves onto the hotfix, because the updater takes the newest version across both feeds, and loses whatever `main` had that the hotfix did not until a later nightly passes it. Before cutting such a hotfix, publish a nightly at the version after it, so the hotfix lands below the nightlies instead of over them.
-
-```bash
-./scripts/release.sh 0.3.5 "Release notes"
-./scripts/release.sh 0.4.0-nightly.1 "Nightly notes" --nightly
-```
-
-If you have an Apple Developer membership, set `RELEASE_NOTARIZED=1` with the Developer ID and notarization environment variables. The release script then requires a successful Gatekeeper assessment and stapled notarization tickets before it publishes anything.
+[CONTRIBUTING.md](CONTRIBUTING.md) covers the project layout and checks. [docs/releasing.md](docs/releasing.md) covers publishing.
 
 ## Community
 
-Join the [Sikemux Discord](https://discord.gg/UKfmHpF9kX) to ask for help, share your setup, and follow releases and nightlies.
-
-## Contributing
-
-Issues and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers setup, the project layout, and checks to run before opening a pull request.
+Ask for help and follow releases on [Discord](https://discord.gg/UKfmHpF9kX). Issues and pull requests are welcome.
 
 ## License
 
 [MIT](LICENSE) © nodelike
-
----
-
-<div align="center">
-<sub><code>sike</code> + <code>mux</code>, built by <a href="https://github.com/nodelike">@nodelike</a></sub>
-</div>
