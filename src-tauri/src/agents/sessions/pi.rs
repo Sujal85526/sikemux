@@ -5,10 +5,13 @@ use std::path::{Path, PathBuf};
 use rayon::prelude::*;
 use serde_json::Value;
 
+use super::rename::{append_line, now_iso8601};
 use super::{
-    cached_title, collect_jsonl, condense, mtime_of, text_from_content, title_cache_stamp,
-    MAX_AGENT_TRANSCRIPTS_INSPECTED,
+    cached_title, collect_jsonl, condense, mtime_of, read_suffix, text_from_content,
+    title_cache_stamp, MAX_AGENT_TRANSCRIPTS_INSPECTED,
 };
+
+const PI_TAIL_BYTES: u64 = 128 * 1024;
 use crate::agents::AgentSession;
 
 // ---- pi — ~/.pi/agent/sessions/**/<session>.jsonl ----------------------
@@ -48,16 +51,18 @@ pub(super) fn pi_sessions(cwd: &str) -> Vec<AgentSession> {
             }
             let id = path.to_string_lossy().to_string();
             let mtime = mtime_of(path);
-            let title = cached_title(path, title_cache_stamp(path), || pi_title(path))
-                .or_else(|| v.get("id").and_then(|i| i.as_str()).and_then(condense))
-                .unwrap_or_else(|| {
-                    path.file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("session")
-                        .chars()
-                        .take(13)
-                        .collect()
-                });
+            let title = cached_title(path, title_cache_stamp(path), || {
+                pi_latest_name(path).or_else(|| pi_title(path))
+            })
+            .or_else(|| v.get("id").and_then(|i| i.as_str()).and_then(condense))
+            .unwrap_or_else(|| {
+                path.file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("session")
+                    .chars()
+                    .take(13)
+                    .collect()
+            });
             Some(AgentSession { id, title, mtime })
         })
         .collect();
@@ -98,4 +103,86 @@ fn pi_title(path: &Path) -> Option<String> {
         }
     }
     named.or(first_user)
+}
+
+/// The name pi's `/name` gave the session last, which may sit past the lines read for its first prompt.
+fn pi_latest_name(path: &Path) -> Option<String> {
+    let mut file = fs::File::open(path).ok()?;
+    let start = file.metadata().ok()?.len().saturating_sub(PI_TAIL_BYTES);
+    let tail = read_suffix(&mut file, start)?;
+    tail.lines()
+        .skip(usize::from(start > 0))
+        .filter(|line| line.contains("\"session_info\""))
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter(|value| value.get("type").and_then(Value::as_str) == Some("session_info"))
+        .filter_map(|value| value.get("name").and_then(Value::as_str).and_then(condense))
+        .last()
+}
+
+/// Names a session the way pi's `/name` does: a `session_info` entry that continues its last entry.
+pub(super) fn rename_pi_session(path: &Path, name: &str) -> Result<(), String> {
+    let mut file = fs::File::open(path).map_err(|error| error.to_string())?;
+    let start = file
+        .metadata()
+        .map_err(|error| error.to_string())?
+        .len()
+        .saturating_sub(PI_TAIL_BYTES);
+    let tail = read_suffix(&mut file, start).unwrap_or_default();
+    let parent = tail.lines().rev().find_map(|line| {
+        serde_json::from_str::<Value>(line)
+            .ok()?
+            .get("id")?
+            .as_str()
+            .map(str::to_string)
+    });
+    let entry = serde_json::json!({
+        "type": "session_info",
+        "id": uuid::Uuid::new_v4().simple().to_string()[..8],
+        "parentId": parent,
+        "timestamp": now_iso8601(),
+        "name": name,
+    });
+    append_line(path, &entry.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{pi_latest_name, pi_title, rename_pi_session};
+    use serde_json::Value;
+
+    const SESSION: &str = concat!(
+        "{\"type\":\"session\",\"version\":3,\"id\":\"aaaa1111\",\"timestamp\":\"2026-09-29T10:00:00.000Z\",\"cwd\":\"/repo\"}\n",
+        "{\"type\":\"message\",\"id\":\"a1b2c3d4\",\"parentId\":null,\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Fix the flaky test\"}]}}\n",
+        "{\"type\":\"message\",\"id\":\"b2c3d4e5\",\"parentId\":\"a1b2c3d4\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Done\"}]}}\n",
+    );
+
+    #[test]
+    fn a_renamed_pi_session_continues_its_last_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session.jsonl");
+        std::fs::write(&path, SESSION).unwrap();
+
+        rename_pi_session(&path, "Flaky test fix").unwrap();
+
+        let body = std::fs::read_to_string(&path).unwrap();
+        let entry: Value = serde_json::from_str(body.lines().last().unwrap()).unwrap();
+        assert_eq!(entry["type"], "session_info");
+        assert_eq!(entry["parentId"], "b2c3d4e5");
+        assert_eq!(entry["name"], "Flaky test fix");
+        assert_eq!(entry["id"].as_str().unwrap().len(), 8);
+        assert_eq!(pi_latest_name(&path).as_deref(), Some("Flaky test fix"));
+    }
+
+    #[test]
+    fn a_name_given_late_in_a_long_session_is_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session.jsonl");
+        let filler = "{\"type\":\"custom\",\"id\":\"f\"}\n".repeat(300);
+        std::fs::write(&path, format!("{SESSION}{filler}")).unwrap();
+
+        rename_pi_session(&path, "Late name").unwrap();
+
+        assert_eq!(pi_title(&path).as_deref(), Some("Fix the flaky test"));
+        assert_eq!(pi_latest_name(&path).as_deref(), Some("Late name"));
+    }
 }
