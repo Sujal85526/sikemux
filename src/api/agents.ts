@@ -111,6 +111,8 @@ export const agentApi = {
     sessions: fetchSessions,
     sessionContext: (agent: AgentType, cwd: string, sessionId: string, configPath?: string): Promise<SavedSessionContext | null> =>
         invoke<SavedSessionContext | null>("agent_session_context", { agent, cwd, sessionId, configPath }),
+    renameSession: (agent: AgentType, cwd: string, sessionId: string, title: string, executablePath?: string, configPath?: string): Promise<void> =>
+        invoke<void>("agent_session_rename", { agent, cwd, sessionId, title, executablePath, configPath }),
     sessionResults: fetchSessionResults,
     watchStart: (agent: AgentType, cwd: string, configPath?: string): Promise<number> =>
         invoke<number>("agent_sessions_watch_start", { agent, cwd, configPath }),

@@ -6,6 +6,7 @@ mod hermes;
 mod omp;
 pub(super) mod opencode;
 pub(super) mod pi;
+pub(crate) mod rename;
 
 use std::collections::HashMap;
 use std::fs;
@@ -171,12 +172,15 @@ fn title_cache_stamp(path: &Path) -> TitleCacheStamp {
     }
 }
 
+/// The longest title a session is listed under.
+const MAX_TITLE_CHARS: usize = 72;
+
 fn condense(text: &str) -> Option<String> {
     let c = text.split_whitespace().collect::<Vec<_>>().join(" ");
     if c.is_empty() || c.starts_with('<') {
         return None;
     }
-    Some(c.chars().take(72).collect())
+    Some(c.chars().take(MAX_TITLE_CHARS).collect())
 }
 
 fn text_from_content(content: &Value) -> Option<String> {

@@ -553,7 +553,7 @@ fn stamp(ms: u64) -> String {
     format!("{year:04}{month:02}{day:02}-{hour:02}{minute:02}{second:02}-{millis:03}")
 }
 
-fn iso8601(ms: u64) -> String {
+pub(crate) fn iso8601(ms: u64) -> String {
     let (year, month, day, hour, minute, second, millis) = utc_parts(ms);
     format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{millis:03}Z")
 }

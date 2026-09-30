@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use rayon::prelude::*;
 use serde_json::Value;
 
+use super::rename::now_iso8601;
 use super::{condense, mtime_of, MAX_AGENT_TRANSCRIPTS_INSPECTED, MAX_AGENT_TRANSCRIPT_PATHS};
 use crate::agents::config::grok_root;
 use crate::agents::AgentSession;
@@ -211,9 +212,61 @@ pub(super) fn grok_sessions(cwd: &str) -> Vec<AgentSession> {
     out
 }
 
+/// Names a session the way Grok's `/rename` does: a title marked manual, so generated titles never replace it.
+pub(super) fn rename_grok_session(
+    root: &Path,
+    cwd: &str,
+    session_id: &str,
+    name: &str,
+) -> Result<(), String> {
+    let session_dir = collect_grok_session_dirs(root)
+        .into_iter()
+        .find(|dir| grok_session(dir, cwd).is_some_and(|session| session.id == session_id))
+        .ok_or("session not found")?;
+    let summary_path = session_dir.join("summary.json");
+    let lock = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(session_dir.join("summary.json.lock"))
+        .map_err(|error| error.to_string())?;
+    lock_exclusive(&lock)?;
+    let mut summary = fs::read_to_string(&summary_path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .filter(Value::is_object)
+        .ok_or("session not found")?;
+    summary["generated_title"] = Value::from(name);
+    summary["title_is_manual"] = Value::Bool(true);
+    summary["updated_at"] = Value::from(now_iso8601());
+    if summary
+        .get("session_summary")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+    {
+        summary["session_summary"] = Value::from(name);
+    }
+    let text = serde_json::to_string_pretty(&summary).map_err(|error| error.to_string())?;
+    let staged = session_dir.join("summary.json.tmp");
+    fs::write(&staged, text).map_err(|error| error.to_string())?;
+    fs::rename(&staged, &summary_path).map_err(|error| error.to_string())
+}
+
+/// Grok takes this lock around every change to a session's summary; it is released when the file closes.
+#[cfg(unix)]
+fn lock_exclusive(file: &fs::File) -> Result<(), String> {
+    rustix::fs::flock(file, rustix::fs::FlockOperation::LockExclusive)
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(not(unix))]
+fn lock_exclusive(_file: &fs::File) -> Result<(), String> {
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{grok_session, percent_decode};
+    use super::{grok_session, percent_decode, rename_grok_session};
 
     #[test]
     fn grok_summary_maps_workspace_title_and_resume_id() {
@@ -232,5 +285,35 @@ mod tests {
         assert_eq!(result.title, "Fix flaky tests");
         assert_eq!(percent_decode("%2Frepo").as_deref(), Some("/repo"));
         assert!(grok_session(&session, "/another").is_none());
+    }
+
+    #[test]
+    fn a_renamed_grok_session_is_pinned_as_a_manual_title() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root
+            .path()
+            .join("sessions")
+            .join("%2Frepo")
+            .join("session-1");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("updates.jsonl"), "").unwrap();
+        std::fs::write(
+            dir.join("summary.json"),
+            r#"{"info":{"id":"session-1","cwd":"/repo"},"session_summary":"Fix flaky tests","generated_title":"Fix flaky tests","num_messages":2}"#,
+        )
+        .unwrap();
+
+        rename_grok_session(root.path(), "/repo", "session-1", "Flaky test fix").unwrap();
+
+        let summary: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("summary.json")).unwrap())
+                .unwrap();
+        assert_eq!(summary["generated_title"], "Flaky test fix");
+        assert_eq!(summary["title_is_manual"], true);
+        assert_eq!(summary["session_summary"], "Fix flaky tests");
+        assert_eq!(summary["num_messages"], 2);
+        assert!(summary["updated_at"].as_str().unwrap().ends_with('Z'));
+        assert_eq!(grok_session(&dir, "/repo").unwrap().title, "Flaky test fix");
+        assert!(rename_grok_session(root.path(), "/elsewhere", "session-1", "Name").is_err());
     }
 }
