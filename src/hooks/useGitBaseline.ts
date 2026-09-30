@@ -3,14 +3,14 @@ import type { EditorView } from "@codemirror/view";
 import { git } from "../api/git";
 import { LARGE_DOC_BYTES } from "../editor/codemirror";
 import { setGitBaseline } from "../editor/gitGutter";
-import { isImagePath } from "../editor/media";
+import { isPreviewPath } from "../editor/viewers/fileKinds";
 import { subscribe } from "../state/bus";
 import { swallow } from "../state/toast";
 import { relativePath } from "../lib/paths";
 
 export function useGitBaseline(viewGetter: () => EditorView | null, cwd: string, activePath: string | null) {
     useEffect(() => {
-        if (!activePath || !cwd || isImagePath(activePath)) return;
+        if (!activePath || !cwd || isPreviewPath(activePath)) return;
         const rel = relativePath(activePath, cwd);
         if (!rel) return;
 

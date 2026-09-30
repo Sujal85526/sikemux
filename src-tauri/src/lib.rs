@@ -14,6 +14,7 @@ mod cli_server;
 mod diff;
 mod error;
 mod external;
+mod file_serving;
 mod files;
 mod fs;
 mod fs_watch;
@@ -25,6 +26,7 @@ mod lsp;
 mod markdown;
 pub mod observability;
 mod plugins;
+mod preview;
 mod pty;
 mod release_credits;
 mod search;
@@ -219,6 +221,8 @@ pub fn run() {
         .manage(AcpManager::default())
         .manage(BrowserManager::default())
         .manage(VoiceManager::default())
+        .manage(preview::Previews::default())
+        .register_asynchronous_uri_scheme_protocol(preview::SCHEME, preview::handle)
         .invoke_handler(tauri::generate_handler![
             acp::acp_start,
             acp::acp_prompt,
@@ -286,7 +290,8 @@ pub fn run() {
             fs::read_file,
             fs::read_file_versioned,
             fs::read_text_file_limited,
-            fs::read_file_base64,
+            fs::open_in_default_app,
+            preview::preview_file,
             fs::write_file,
             fs::write_file_versioned,
             fs::write_file_new,

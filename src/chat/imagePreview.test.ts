@@ -3,6 +3,22 @@ import { fsapi } from "../api/fs";
 import { localImagePath, localPath, previewCacheBytes, readImageSource, sizedSvg, useImagePreview } from "./imagePreview";
 import { act, renderHook, waitFor } from "@testing-library/react";
 
+const url = (path: string) => `preview://localhost/${encodeURIComponent(path)}`;
+
+/* Stands in for the backend: `previewFile` reports on a file and `fetch` reads it from the preview scheme. */
+function serve(files: Record<string, { mime: string; size?: number; body?: string }>) {
+    const preview = vi.spyOn(fsapi, "previewFile").mockImplementation(async (path) => {
+        const file = files[path];
+        if (!file) throw new Error("unreadable");
+        return { mime: file.mime, size: file.size ?? file.body?.length ?? 0, modified: 0 };
+    });
+    vi.stubGlobal(
+        "fetch",
+        vi.fn(async (href: string) => new Response(files[decodeURIComponent(new URL(href).pathname.slice(1))]?.body ?? "")),
+    );
+    return preview;
+}
+
 afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
@@ -29,8 +45,7 @@ describe("chat image previews", () => {
     });
 
     it("holds only a handful of thumbnails at a time", async () => {
-        const megabyte = "A".repeat(1024 * 1024);
-        vi.spyOn(fsapi, "readFileBase64").mockResolvedValue({ mime: "image/png", data: megabyte, size: 1024 });
+        serve(Object.fromEntries(Array.from({ length: 20 }, (_, index) => [`/shots/${index}.png`, { mime: "image/png", size: 1024 }])));
 
         for (let index = 0; index < 20; index += 1) {
             const { unmount } = renderHook(() => useImagePreview(`/shots/${index}.png`));
@@ -46,7 +61,7 @@ describe("chat image previews", () => {
        outright and left the composer showing a file icon. */
     it("shrinks a screenshot rather than refusing to preview it", async () => {
         const thumb = "data:image/jpeg;base64,VEhVTUI=";
-        vi.spyOn(fsapi, "readFileBase64").mockResolvedValue({ mime: "image/png", data: "A".repeat(1024 * 1024), size: 4_634_596 });
+        serve({ "/shots/retina.png": { mime: "image/png", size: 4_634_596, body: "PNG" } });
         vi.stubGlobal("createImageBitmap", async () => ({ width: 3024, height: 1890, close: () => {} }));
         vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ drawImage: vi.fn() } as unknown as CanvasRenderingContext2D);
         const drawn = vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue(thumb);
@@ -62,7 +77,7 @@ describe("chat image previews", () => {
     /* A window with no canvas to draw on has nothing to shrink a picture with,
        and a file icon beats parking six megabytes in the cache. */
     it("has no preview for a big picture it cannot shrink", async () => {
-        const read = vi.spyOn(fsapi, "readFileBase64").mockResolvedValue({ mime: "image/png", data: "A".repeat(1024 * 1024), size: 4_634_596 });
+        const read = serve({ "/shots/unshrinkable.png": { mime: "image/png", size: 4_634_596, body: "PNG" } });
         vi.stubGlobal("createImageBitmap", undefined);
         const held = previewCacheBytes();
 
@@ -77,12 +92,12 @@ describe("chat image previews", () => {
 
     it("gives an SVG that only has a viewBox the size its viewBox names", async () => {
         const markup = '<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><path d="M0 0h16v16H0z"/></svg>';
-        vi.spyOn(fsapi, "readFileBase64").mockResolvedValue({ mime: "image/svg+xml", data: btoa(markup), size: markup.length });
+        serve({ "/Downloads/codex-icon.svg": { mime: "image/svg+xml", body: markup } });
 
         const { result } = renderHook(() => useImagePreview("/Downloads/codex-icon.svg"));
 
         await waitFor(() => expect(result.current).not.toBeNull());
-        const drawn = atob(result.current!.replace("data:image/svg+xml;base64,", ""));
+        const drawn = decodeURIComponent(result.current!.replace("data:image/svg+xml;charset=utf-8,", ""));
         expect(drawn).toContain('width="512"');
         expect(drawn).toContain('height="512"');
         vi.restoreAllMocks();
@@ -115,19 +130,16 @@ describe("chat image previews", () => {
         expect(sizedSvg(other)).toBe(other);
     });
 
-    it("reads a whole image for the viewer and nothing for a file that is not one", async () => {
-        const read = vi.spyOn(fsapi, "readFileBase64");
-        read.mockResolvedValueOnce({ mime: "image/png", data: "UE5H", size: 3 });
-        read.mockResolvedValueOnce({ mime: "text/plain", data: "aGk=", size: 2 });
-        read.mockRejectedValueOnce(new Error("gone"));
+    it("shows a whole image from disk and nothing for a file that is not one", async () => {
+        serve({ "/shots/whole.png": { mime: "image/png", size: 4_000_000 }, "/shots/actually-text.png": { mime: "text/plain" } });
 
-        expect(await readImageSource("/shots/whole.png")).toBe("data:image/png;base64,UE5H");
+        expect(await readImageSource("/shots/whole.png")).toBe(url("/shots/whole.png"));
         expect(await readImageSource("/shots/actually-text.png")).toBeNull();
         expect(await readImageSource("/shots/missing.png")).toBeNull();
     });
 
     it("shows nothing for no path or a path that is not an image, without reading it", () => {
-        const read = vi.spyOn(fsapi, "readFileBase64");
+        const read = vi.spyOn(fsapi, "previewFile");
         const { result, rerender } = renderHook(({ path }: { path: string | null }) => useImagePreview(path), {
             initialProps: { path: null as string | null },
         });
@@ -139,17 +151,14 @@ describe("chat image previews", () => {
     });
 
     it("reads a picture once for every view of it, and remembers one it could not read", async () => {
-        const read = vi.spyOn(fsapi, "readFileBase64").mockImplementation(async (path) => {
-            if (path.includes("broken")) throw new Error("unreadable");
-            return { mime: "image/png", data: "UE5H", size: 3 };
-        });
+        const read = serve({ "/shots/shared.png": { mime: "image/png", size: 3 } });
 
         const first = renderHook(() => useImagePreview("/shots/shared.png"));
         const second = renderHook(() => useImagePreview("/shots/shared.png"));
-        await waitFor(() => expect(first.result.current).toBe("data:image/png;base64,UE5H"));
-        await waitFor(() => expect(second.result.current).toBe("data:image/png;base64,UE5H"));
+        await waitFor(() => expect(first.result.current).toBe(url("/shots/shared.png")));
+        await waitFor(() => expect(second.result.current).toBe(url("/shots/shared.png")));
         const later = renderHook(() => useImagePreview("/shots/shared.png"));
-        expect(later.result.current).toBe("data:image/png;base64,UE5H");
+        expect(later.result.current).toBe(url("/shots/shared.png"));
 
         const broken = renderHook(() => useImagePreview("/shots/broken.png"));
         await waitFor(() => expect(read).toHaveBeenCalledWith("/shots/broken.png"));
@@ -161,7 +170,10 @@ describe("chat image previews", () => {
     });
 
     it("has no preview for a big picture the webview fails to decode or has no canvas for", async () => {
-        vi.spyOn(fsapi, "readFileBase64").mockResolvedValue({ mime: "image/png", data: "A".repeat(1024), size: 4_000_000 });
+        serve({
+            "/shots/undecodable.png": { mime: "image/png", size: 4_000_000, body: "PNG" },
+            "/shots/canvasless.png": { mime: "image/png", size: 4_000_000, body: "PNG" },
+        });
         const decode = vi.fn(async () => {
             throw new Error("undecodable");
         });
@@ -182,7 +194,7 @@ describe("chat image previews", () => {
     });
 
     it("shows no preview for a file named like a picture that is not one", async () => {
-        const read = vi.spyOn(fsapi, "readFileBase64").mockResolvedValue({ mime: "text/html", data: "PGh0bWw+", size: 6 });
+        const read = serve({ "/shots/actually-html.png": { mime: "text/html" } });
         const { result } = renderHook(() => useImagePreview("/shots/actually-html.png"));
 
         await waitFor(() => expect(read).toHaveBeenCalled());
@@ -191,18 +203,16 @@ describe("chat image previews", () => {
     });
 
     it("keeps a preview that arrives after its view moved on to another file out of that view", async () => {
-        let answer: (blob: { mime: string; data: string; size: number }) => void = () => {};
-        vi.spyOn(fsapi, "readFileBase64").mockImplementation((path) =>
-            path === "/shots/slow.png"
-                ? new Promise((resolve) => (answer = resolve))
-                : Promise.resolve({ mime: "image/png", data: "RkFTVA==", size: 4 }),
+        let answer: (preview: { mime: string; size: number; modified: number }) => void = () => {};
+        vi.spyOn(fsapi, "previewFile").mockImplementation((path) =>
+            path === "/shots/slow.png" ? new Promise((resolve) => (answer = resolve)) : Promise.resolve({ mime: "image/png", size: 4, modified: 0 }),
         );
         const { result, rerender } = renderHook(({ path }) => useImagePreview(path), { initialProps: { path: "/shots/slow.png" } });
         rerender({ path: "/shots/fast.png" });
-        await waitFor(() => expect(result.current).toBe("data:image/png;base64,RkFTVA=="));
+        await waitFor(() => expect(result.current).toBe(url("/shots/fast.png")));
 
-        await act(async () => answer({ mime: "image/png", data: "U0xPVw==", size: 4 }));
+        await act(async () => answer({ mime: "image/png", size: 4, modified: 0 }));
 
-        expect(result.current).toBe("data:image/png;base64,RkFTVA==");
+        expect(result.current).toBe(url("/shots/fast.png"));
     });
 });

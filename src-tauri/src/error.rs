@@ -51,6 +51,9 @@ pub enum AppError {
     #[error("file conflict: {0}")]
     FileConflict(String),
 
+    #[error("{0} is not UTF-8 text")]
+    NotText(String),
+
     #[error("watch: {0}")]
     Watch(String),
 
@@ -135,6 +138,7 @@ impl AppError {
             AppError::Search(_) => "search",
             AppError::Fs(_) => "fs",
             AppError::FileConflict(_) => "file-conflict",
+            AppError::NotText(_) => "not-text",
             AppError::Watch(_) => "watch",
             AppError::State(_) => "state",
             AppError::Window(_) => "window",

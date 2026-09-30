@@ -11,6 +11,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use url::Url;
 
+use crate::file_serving::{content_type, parse_range, percent_decode};
+
 const MAX_SHARES: usize = 16;
 const MAX_REQUEST_HEAD: usize = 16 * 1024;
 
@@ -262,23 +264,6 @@ fn safe_relative(rest: &str) -> Option<PathBuf> {
     Some(relative)
 }
 
-fn percent_decode(segment: &str) -> Option<String> {
-    let bytes = segment.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut at = 0;
-    while at < bytes.len() {
-        if bytes[at] == b'%' {
-            let hex = segment.get(at + 1..at + 3)?;
-            out.push(u8::from_str_radix(hex, 16).ok()?);
-            at += 3;
-        } else {
-            out.push(bytes[at]);
-            at += 1;
-        }
-    }
-    String::from_utf8(out).ok()
-}
-
 fn listing(folder: &Path, relative: &Path) -> String {
     let mut names: Vec<(String, bool)> = std::fs::read_dir(folder)
         .into_iter()
@@ -356,17 +341,6 @@ impl Request {
             range,
         }
     }
-}
-
-/// A single `bytes=start-` or `bytes=start-end` range, which is all media elements ask for.
-fn parse_range(value: &str) -> Option<(u64, Option<u64>)> {
-    let (start, end) = value.strip_prefix("bytes=")?.split_once('-')?;
-    let start = start.trim().parse().ok()?;
-    let end = match end.trim() {
-        "" => None,
-        end => Some(end.parse().ok()?),
-    };
-    Some((start, end))
 }
 
 async fn read_head(stream: &mut TcpStream) -> std::io::Result<Option<String>> {
@@ -457,41 +431,6 @@ fn response_head(
     }
     head.push_str("\r\n");
     head
-}
-
-fn content_type(path: &Path) -> &'static str {
-    let extension = path
-        .extension()
-        .map(|extension| extension.to_string_lossy().to_ascii_lowercase())
-        .unwrap_or_default();
-    match extension.as_str() {
-        "html" | "htm" => "text/html; charset=utf-8",
-        "css" => "text/css; charset=utf-8",
-        "js" | "mjs" => "text/javascript; charset=utf-8",
-        "json" | "map" => "application/json",
-        "txt" | "md" | "csv" | "log" => "text/plain; charset=utf-8",
-        "xml" => "application/xml",
-        "svg" => "image/svg+xml",
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        "avif" => "image/avif",
-        "ico" => "image/x-icon",
-        "woff" => "font/woff",
-        "woff2" => "font/woff2",
-        "ttf" => "font/ttf",
-        "otf" => "font/otf",
-        "wasm" => "application/wasm",
-        "pdf" => "application/pdf",
-        "mp4" => "video/mp4",
-        "webm" => "video/webm",
-        "mov" => "video/quicktime",
-        "mp3" => "audio/mpeg",
-        "wav" => "audio/wav",
-        "ogg" => "audio/ogg",
-        _ => "application/octet-stream",
-    }
 }
 
 #[cfg(test)]
@@ -599,14 +538,6 @@ mod tests {
             folder.answer(&localhost),
             Answer::File(folder.root.join("index.html"))
         );
-    }
-
-    #[test]
-    fn media_ranges_parse() {
-        assert_eq!(parse_range("bytes=0-"), Some((0, None)));
-        assert_eq!(parse_range("bytes=10-19"), Some((10, Some(19))));
-        assert_eq!(parse_range("bytes=-5"), None);
-        assert_eq!(parse_range("items=0-1"), None);
     }
 
     #[test]

@@ -38,13 +38,6 @@ pub enum PathKind {
 }
 
 #[derive(Serialize)]
-pub struct FileBlob {
-    mime: String,
-    data: String,
-    size: u64,
-}
-
-#[derive(Serialize)]
 pub struct FileSnapshot {
     content: String,
     version: String,
@@ -182,7 +175,7 @@ pub async fn path_kinds(paths: Vec<String>) -> AppResult<Vec<Option<PathKind>>> 
 pub async fn read_file(path: String) -> AppResult<String> {
     spawn_blocking(move || {
         let bytes = read_bounded(Path::new(&path), EDITOR_TEXT_MAX_BYTES)?;
-        String::from_utf8(bytes).map_err(|_| AppError::Fs(format!("{path} is not UTF-8 text")))
+        String::from_utf8(bytes).map_err(|_| AppError::NotText(path))
     })
     .await
     .map_err(|e| AppError::Other(format!("read_file join: {e}")))?
@@ -201,8 +194,8 @@ pub async fn read_file_versioned(path: String) -> AppResult<FileSnapshot> {
             .map_err(|_| AppError::Other("file write lock poisoned".into()))?;
         let bytes = read_bounded(&path, EDITOR_TEXT_MAX_BYTES)?;
         let version = content_version(&bytes);
-        let content = String::from_utf8(bytes)
-            .map_err(|_| AppError::Fs(format!("{} is not UTF-8 text", path.display())))?;
+        let content =
+            String::from_utf8(bytes).map_err(|_| AppError::NotText(path.display().to_string()))?;
         Ok(FileSnapshot { content, version })
     })
     .await
@@ -211,7 +204,6 @@ pub async fn read_file_versioned(path: String) -> AppResult<FileSnapshot> {
 
 const INLINE_TEXT_MAX_BYTES: u64 = 1024 * 1024;
 const EDITOR_TEXT_MAX_BYTES: u64 = 16 * 1024 * 1024;
-const MEDIA_MAX_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Refuses anything but a regular file. Opening without blocking means a named
 /// pipe is turned away instead of hanging until something writes to it.
@@ -288,41 +280,10 @@ fn human_bytes(bytes: u64) -> String {
 }
 
 #[tauri::command]
-pub async fn read_file_base64(path: String) -> AppResult<FileBlob> {
-    spawn_blocking(move || read_file_base64_sync(path))
+pub async fn open_in_default_app(path: String) -> AppResult<()> {
+    spawn_blocking(move || open::that_detached(&path).map_err(AppError::from))
         .await
-        .map_err(|e| AppError::Other(format!("read_file_base64 join: {e}")))?
-}
-
-fn read_file_base64_sync(path: String) -> AppResult<FileBlob> {
-    let bytes = read_bounded(Path::new(&path), MEDIA_MAX_BYTES)?;
-    let mime = mime_for_path(&path);
-    Ok(FileBlob {
-        mime,
-        size: bytes.len() as u64,
-        data: general_purpose::STANDARD.encode(bytes),
-    })
-}
-
-fn mime_for_path(path: &str) -> String {
-    let ext = Path::new(path)
-        .extension()
-        .and_then(|s| s.to_str())
-        .map(|s| s.to_ascii_lowercase())
-        .unwrap_or_default();
-    match ext.as_str() {
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        "svg" => "image/svg+xml",
-        "bmp" => "image/bmp",
-        "ico" => "image/x-icon",
-        "avif" => "image/avif",
-        "tif" | "tiff" => "image/tiff",
-        _ => "application/octet-stream",
-    }
-    .to_string()
+        .map_err(|e| AppError::Other(format!("open_in_default_app join: {e}")))?
 }
 
 #[tauri::command]

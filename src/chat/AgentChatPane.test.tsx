@@ -35,7 +35,7 @@ vi.mock("../api/fs", () => ({
     fsapi: {
         pathKinds: mocks.pathKinds,
         revealInFinder: mocks.revealInFinder,
-        readFileBase64: vi.fn(async () => {
+        previewFile: vi.fn(async () => {
             throw new Error("no file");
         }),
     },

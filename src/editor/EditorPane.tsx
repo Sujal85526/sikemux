@@ -1,6 +1,6 @@
 import { FileTree } from "../rail/FileTree";
 import { relocatedPath } from "../state/editorPaths";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invokeCommand as invoke } from "../api/invoke";
 import { Compartment, EditorState, Prec, type Text } from "@codemirror/state";
 import { EditorView, keymap, type ViewUpdate } from "@codemirror/view";
@@ -18,7 +18,8 @@ import {
     loadLanguage,
     type EditorLanguageHint,
 } from "./codemirror";
-import { isImagePath } from "./media";
+import { isPreviewPath } from "./viewers/fileKinds";
+import type { ViewerState } from "./viewers/FileViewer";
 import { Markdown, MARKDOWN_GFM, type MarkdownComponents } from "../markdown/Markdown";
 import { gitDiffGutter } from "./gitGutter";
 import { gitInlineBlame } from "./gitBlame";
@@ -26,7 +27,7 @@ import { DocumentIO } from "./documentIO";
 import { lspNav, setLspContext } from "./lspNav";
 import { lspHoverLink, setHoverLinkContext } from "./lspHoverLink";
 import { lspPeek } from "./lspPeek";
-import { fsapi, type FileBlob } from "../api/fs";
+import { fsapi, type FilePreview } from "../api/fs";
 import type { LspTextChange } from "../api/lsp";
 import { subscribe } from "../state/bus";
 import * as cmd from "../state/commands";
@@ -52,6 +53,8 @@ import { basename, dirname, isPathWithin, joinPath, normalizePath } from "../lib
 import { localPath } from "../chat/imagePreview";
 import { safeWebUrl } from "../terminal/interactions";
 import { keybindingLabelForAction } from "../commands/keybindings";
+
+const FileViewer = lazy(() => import("./viewers/FileViewer"));
 
 const DEFAULT_VIEW = { openTabs: [], activePath: null };
 const EMPTY_CLI_OPENS: CliPendingEditorOpen[] = [];
@@ -106,101 +109,13 @@ function lspChangesFromUpdate(update: ViewUpdate): LspTextChange[] | null {
     return count === 1 ? out : null;
 }
 
-interface ImageState {
-    path: string;
-    loading: boolean;
-    blob?: FileBlob;
-    error?: string;
+interface Previewed {
+    preview: FilePreview;
+    revision: number;
 }
 
-function formatBytes(n: number): string {
-    if (n < 1024) return `${n} B`;
-    const units = ["KB", "MB", "GB"];
-    let v = n / 1024;
-    let i = 0;
-    while (v >= 1024 && i < units.length - 1) {
-        v /= 1024;
-        i += 1;
-    }
-    return `${v >= 10 ? v.toFixed(1) : v.toFixed(2)} ${units[i]}`;
-}
-
-function ImageViewer({ image, onReload }: { image: ImageState; onReload: (path: string) => void }) {
-    const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
-    const [zoom, setZoom] = useState<"fit" | number>("fit");
-
-    useEffect(() => {
-        setDims(null);
-        setZoom("fit");
-    }, [image.path, image.blob?.data]);
-
-    const src = image.blob ? `data:${image.blob.mime};base64,${image.blob.data}` : "";
-    const zoomLabel = zoom === "fit" ? "fit" : `${Math.round(zoom * 100)}%`;
-
-    return (
-        <div className="ed-image-viewer">
-            <div className="ed-image-bar">
-                <div className="ed-image-title" title={image.path}>
-                    <FileIcon name={basename(image.path)} size={16} />
-                    <span>{basename(image.path)}</span>
-                </div>
-                <div className="ed-image-meta">
-                    {image.blob && <span>{formatBytes(image.blob.size)}</span>}
-                    {dims && (
-                        <span>
-                            {dims.w}×{dims.h}
-                        </span>
-                    )}
-                    {image.blob && <span>{image.blob.mime}</span>}
-                    <span>{zoomLabel}</span>
-                </div>
-                <div className="ed-image-actions">
-                    <button type="button" onClick={() => setZoom("fit")} disabled={zoom === "fit"} title="Fit image to editor">
-                        fit
-                    </button>
-                    <button type="button" onClick={() => setZoom(1)} disabled={zoom === 1} title="Actual size">
-                        100%
-                    </button>
-                    <button type="button" onClick={() => setZoom((z) => (z === "fit" ? 1.25 : Math.min(z * 1.25, 8)))} title="Zoom in">
-                        +
-                    </button>
-                    <button type="button" onClick={() => setZoom((z) => (z === "fit" ? 0.8 : Math.max(z / 1.25, 0.1)))} title="Zoom out">
-                        −
-                    </button>
-                    <button type="button" onClick={() => onReload(image.path)} title="Reload image">
-                        reload
-                    </button>
-                </div>
-            </div>
-            <div className="ed-image-stage">
-                {image.loading && <div className="ed-image-message">loading image…</div>}
-                {image.error && (
-                    <div className="ed-image-message error">
-                        <strong>couldn't open image</strong>
-                        <span>{image.error}</span>
-                    </div>
-                )}
-                {image.blob && !image.error && (
-                    <img
-                        src={src}
-                        alt={basename(image.path)}
-                        draggable={false}
-                        onLoad={(e) => setDims({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
-                        style={
-                            zoom === "fit"
-                                ? undefined
-                                : {
-                                      width: `${Math.max(1, (dims?.w ?? 0) * zoom)}px`,
-                                      height: "auto",
-                                      maxWidth: "none",
-                                      maxHeight: "none",
-                                  }
-                        }
-                    />
-                )}
-            </div>
-        </div>
-    );
+function sameFile(a: FilePreview, b: FilePreview) {
+    return a.size === b.size && a.modified === b.modified && a.mime === b.mime;
 }
 
 function markdownLinkFile(href: string, documentPath: string): string | null {
@@ -289,9 +204,10 @@ export function EditorPane({
     dirtyRef.current = dirty;
 
     const savedRef = useRef<Map<string, string>>(new Map());
-    const imagesRef = useRef<Map<string, FileBlob>>(new Map());
+    const previewsRef = useRef<Map<string, Previewed>>(new Map());
+    const previewRevisionRef = useRef(0);
     const closeTabsRef = useRef<(paths: string[]) => void>(() => {});
-    const [activeImage, setActiveImage] = useState<ImageState | null>(null);
+    const [viewer, setViewer] = useState<ViewerState | null>(null);
     const [markdownPreview, setMarkdownPreview] = useState<{ path: string; content: string } | null>(null);
 
     const cacheState = (path: string, state: EditorState) => {
@@ -308,15 +224,7 @@ export function EditorPane({
         }
     };
 
-    const cacheImage = (path: string, blob: FileBlob) => {
-        imagesRef.current.delete(path);
-        imagesRef.current.set(path, blob);
-        while (imagesRef.current.size > 4) {
-            const candidate = [...imagesRef.current.keys()].find((cachedPath) => cachedPath !== path && cachedPath !== currentRef.current);
-            if (!candidate) break;
-            imagesRef.current.delete(candidate);
-        }
-    };
+    const showsViewer = (path: string) => previewsRef.current.has(path) || isPreviewPath(path);
 
     const [findState, setFindState] = useState<{
         open: boolean;
@@ -368,7 +276,7 @@ export function EditorPane({
     });
 
     const bindLspContext = (view: EditorView, path: string | null) => {
-        if (!path || !cwd || isImagePath(path)) {
+        if (!path || !cwd || showsViewer(path)) {
             setLspContext(view, null);
             setHoverLinkContext(view, null);
             return;
@@ -391,7 +299,7 @@ export function EditorPane({
     const save = useCallback((): boolean => {
         const path = currentRef.current;
         const view = viewRef.current;
-        if (!path || !view || isImagePath(path)) return false;
+        if (!path || !view || showsViewer(path)) return false;
         if (!dirtyRef.current.has(path)) {
             void reloadFromDiskRef.current(path, false).catch(swallow("refresh clean editor"));
             return true;
@@ -493,7 +401,7 @@ export function EditorPane({
                         ]),
                     ),
                     EditorView.updateListener.of((u) => {
-                        if (!u.docChanged || !currentRef.current || isImagePath(currentRef.current)) return;
+                        if (!u.docChanged || !currentRef.current || showsViewer(currentRef.current)) return;
                         const p = currentRef.current;
                         const doc = u.state.doc;
                         const baseline = savedRef.current.get(p);
@@ -580,55 +488,64 @@ export function EditorPane({
     }, [editableCompartment, previewingMarkdown]);
 
     useEffect(() => {
-        if (active && !activeImage && !previewingMarkdown) viewRef.current?.focus();
-    }, [active, activePath, activeImage, previewingMarkdown]);
+        if (active && !viewer && !previewingMarkdown) viewRef.current?.focus();
+    }, [active, activePath, viewer, previewingMarkdown]);
 
     useEffect(() => {
         setMarkdownPreview(null);
     }, [activePath]);
 
-    const showImage = useCallback((path: string, force = false) => {
-        const cached = force ? undefined : imagesRef.current.get(path);
-        if (cached) {
-            setActiveImage({ path, loading: false, blob: cached });
-            return;
-        }
-        setActiveImage({ path, loading: true });
-        void fsapi
-            .readFileBase64(path)
-            .then((blob) => {
-                cacheImage(path, blob);
-                if (currentRef.current === path) setActiveImage({ path, loading: false, blob });
-            })
-            .catch((e) => {
-                if (currentRef.current === path) setActiveImage({ path, loading: false, error: errMessage(e) });
-            });
-    }, []);
+    /** Asks the backend about the file again; the revision only moves when the file did. */
+    const loadPreview = async (path: string, force = false): Promise<Previewed> => {
+        const preview = await fsapi.previewFile(path);
+        const held = previewsRef.current.get(path);
+        const previewed = held && !force && sameFile(held.preview, preview) ? held : { preview, revision: ++previewRevisionRef.current };
+        previewsRef.current.set(path, previewed);
+        return previewed;
+    };
 
-    const reloadImage = useCallback(
-        (path: string) => {
-            imagesRef.current.delete(path);
-            showImage(path, true);
-        },
-        [showImage],
-    );
+    /** The file as editor text, or null when it is not text and opens in a viewer instead. */
+    const readDocument = async (path: string) => {
+        try {
+            return await documentIORef.current.read(path);
+        } catch (error) {
+            if (errCategory(error) !== "not-text") throw error;
+            await loadPreview(path);
+            return null;
+        }
+    };
+
+    /* Shows what is already known at once, then checks the disk; "reload" loads the file again even if it looks unchanged. */
+    const showViewerRef = useRef<(path: string, mode?: "refresh" | "reload") => void>(() => {});
+    showViewerRef.current = (path, mode = "refresh") => {
+        const held = previewsRef.current.get(path);
+        setViewer(held ? { path, ...held } : { path, revision: 0 });
+        loadPreview(path, mode === "reload")
+            .then((previewed) => {
+                if (currentRef.current === path) setViewer({ path, ...previewed });
+            })
+            .catch((error: unknown) => {
+                if (currentRef.current === path) setViewer({ path, revision: 0, error: errMessage(error) });
+            });
+    };
+    const reloadViewer = useCallback((path: string) => showViewerRef.current(path, "reload"), []);
 
     const switchTo = (path: string, fresh?: EditorState) => {
         const view = viewRef.current;
         if (!view) return;
-        if (currentRef.current && !isImagePath(currentRef.current)) cacheState(currentRef.current, view.state);
+        if (currentRef.current && !showsViewer(currentRef.current)) cacheState(currentRef.current, view.state);
 
-        if (isImagePath(path)) {
+        if (showsViewer(path)) {
             currentRef.current = path;
             bindLspContext(view, null);
-            showImage(path);
+            showViewerRef.current(path);
             cmd.setEditorView(paneId, { activePath: path });
             return;
         }
 
         const st = fresh ?? states.current.get(path);
         if (!st) return;
-        setActiveImage(null);
+        setViewer(null);
         view.setState(st);
         refreshViewTheme(view);
         currentRef.current = path;
@@ -660,19 +577,18 @@ export function EditorPane({
         const liveTabs = useStore.getState().editorViews[paneId]?.openTabs ?? [];
         if (liveTabs.includes(path)) {
             if (!preview) cmd.keepEditorTab(paneId, path);
-            if (isImagePath(path) || states.current.has(path)) {
+            if (showsViewer(path) || states.current.has(path)) {
                 switchTo(path);
                 return;
             }
         }
-        if (isImagePath(path)) {
-            const blob = await fsapi.readFileBase64(path);
-            cacheImage(path, blob);
+        if (isPreviewPath(path)) await loadPreview(path);
+        const snapshot = isPreviewPath(path) ? null : await readDocument(path);
+        if (!snapshot) {
             openTab(path, true, preview);
             switchTo(path);
             return;
         }
-        const snapshot = await documentIORef.current.read(path);
         const content = snapshot.content;
         const latest = request === openRequestRef.current;
         // Two rapid opens of the same path can resolve out of order. Do not
@@ -701,7 +617,7 @@ export function EditorPane({
             try {
                 await openPath(target.path);
                 if (currentRef.current !== target.path) switchTo(target.path);
-                if (target.line != null && viewRef.current && !isImagePath(target.path)) {
+                if (target.line != null && viewRef.current && !showsViewer(target.path)) {
                     if (currentRef.current === target.path) {
                         scrollToLine(viewRef.current, target.line, target.column ?? 0);
                     }
@@ -750,16 +666,20 @@ export function EditorPane({
     // switchTo() directly, so they leave currentRef === activePath and no-op here.
     useEffect(() => {
         if (!hydratedRef.current || !activePath || currentRef.current === activePath) return;
-        if (isImagePath(activePath) || states.current.has(activePath)) {
+        if (showsViewer(activePath) || states.current.has(activePath)) {
             switchTo(activePath);
             return;
         }
         let cancelled = false;
         (async () => {
             try {
-                const snapshot = await documentIORef.current.read(activePath);
-                const content = snapshot.content;
+                const snapshot = await readDocument(activePath);
                 if (cancelled) return;
+                if (!snapshot) {
+                    switchTo(activePath);
+                    return;
+                }
+                const content = snapshot.content;
                 const st = makeState(activePath, content);
                 cacheState(activePath, st);
                 savedRef.current.set(activePath, content);
@@ -780,11 +700,12 @@ export function EditorPane({
         (async () => {
             const want = activePath && tabs.includes(activePath) ? activePath : tabs[0];
             const load = async (path: string) => {
-                if (isImagePath(path) || states.current.has(path)) return true;
+                if (showsViewer(path) || states.current.has(path)) return true;
                 try {
-                    const snapshot = await documentIORef.current.read(path);
-                    const content = snapshot.content;
+                    const snapshot = await readDocument(path);
                     if (cancelled) return false;
+                    if (!snapshot) return true;
+                    const content = snapshot.content;
                     const st = makeState(path, content);
                     cacheState(path, st);
                     savedRef.current.set(path, content);
@@ -816,9 +737,8 @@ export function EditorPane({
         (async () => {
             const path = currentRef.current;
             if (!path || dirtyRef.current.has(path)) return;
-            if (isImagePath(path)) {
-                imagesRef.current.delete(path);
-                showImage(path, true);
+            if (showsViewer(path)) {
+                showViewerRef.current(path);
                 return;
             }
             try {
@@ -839,7 +759,7 @@ export function EditorPane({
         return () => {
             cancelled = true;
         };
-    }, [visible, cwd, paneId, makeState, showImage]);
+    }, [visible, cwd, paneId, makeState]);
 
     useEffect(() => {
         if (!cwd || !visible) return;
@@ -862,9 +782,8 @@ export function EditorPane({
                 for (const path of tabsNow) {
                     if (cancelled) return;
                     if (changed && !changed.some((entry) => isPathWithin(path, entry))) continue;
-                    if (isImagePath(path)) {
-                        imagesRef.current.delete(path);
-                        if (currentRef.current === path) showImage(path, true);
+                    if (showsViewer(path)) {
+                        if (currentRef.current === path) showViewerRef.current(path);
                         continue;
                     }
                     if (dirtyRef.current.has(path)) {
@@ -959,10 +878,10 @@ export function EditorPane({
                 savedRef.current.set(next, saved);
                 savedRef.current.delete(path);
             }
-            const image = imagesRef.current.get(path);
-            if (image) {
-                cacheImage(next, image);
-                imagesRef.current.delete(path);
+            const previewed = previewsRef.current.get(path);
+            if (previewed) {
+                previewsRef.current.set(next, previewed);
+                previewsRef.current.delete(path);
             }
             documentIORef.current.relocate(path, next);
             conflictedRef.current.delete(path);
@@ -972,7 +891,7 @@ export function EditorPane({
             if (currentRef.current === path) {
                 currentRef.current = next;
                 if (view) bindLspContext(view, next);
-                setActiveImage((image) => (image ? { ...image, path: next } : image));
+                if (previewed) showViewerRef.current(next, "reload");
             }
         }
         setDirty((paths) => new Set([...paths].map((path) => relocatedPath(path, src, dest))));
@@ -992,7 +911,7 @@ export function EditorPane({
         void (async () => {
             await openPath(reveal.path);
             hydratedRef.current = true;
-            if (reveal.line != null && viewRef.current && !isImagePath(reveal.path))
+            if (reveal.line != null && viewRef.current && !showsViewer(reveal.path))
                 scrollToLine(viewRef.current, reveal.line, reveal.character ?? 0);
         })()
             .catch(reportError("open file"))
@@ -1015,7 +934,7 @@ export function EditorPane({
             if (!belongsHere && (belongsToAProject || !active)) return;
             void (async () => {
                 await openPathRef.current(e.path);
-                if (e.line != null && viewRef.current && !isImagePath(e.path)) {
+                if (e.line != null && viewRef.current && !showsViewer(e.path)) {
                     scrollToLine(viewRef.current, e.line, e.character ?? 0);
                 }
             })().catch(reportError("open file"));
@@ -1025,7 +944,7 @@ export function EditorPane({
     useEffect(() => {
         const view = viewRef.current;
         if (!view) return;
-        if (!activePath || !cwd || isImagePath(activePath)) {
+        if (!activePath || !cwd || showsViewer(activePath)) {
             setLspContext(view, null);
             setHoverLinkContext(view, null);
             return;
@@ -1041,7 +960,7 @@ export function EditorPane({
     // The grammar packs download per language, so a freshly opened document may
     // start plain and gain its highlighting a moment later.
     useEffect(() => {
-        if (!activePath || isImagePath(activePath)) return;
+        if (!activePath || showsViewer(activePath)) return;
         let cancelled = false;
         void loadLanguage(activePath, languageHint)
             .then((extensions) => {
@@ -1090,7 +1009,7 @@ export function EditorPane({
         const forgotten = new Set(paths);
         for (const p of forgotten) {
             states.current.delete(p);
-            imagesRef.current.delete(p);
+            previewsRef.current.delete(p);
             savedRef.current.delete(p);
             saveSequenceRef.current.delete(p);
             conflictedRef.current.delete(p);
@@ -1119,7 +1038,7 @@ export function EditorPane({
                 switchTo(fallback);
             } else {
                 currentRef.current = null;
-                setActiveImage(null);
+                setViewer(null);
                 viewRef.current?.setState(makeState("", ""));
             }
         }
@@ -1202,14 +1121,14 @@ export function EditorPane({
                     id={`editor-content-${paneId}`}
                     role={onCloseWindow ? "tabpanel" : undefined}
                     aria-labelledby={onCloseWindow && activePath ? `editor-tab-${paneId}-${encodeURIComponent(activePath)}` : undefined}
-                    className={`ed-host${activeImage ? " image-mode" : ""}${previewingMarkdown ? " preview-mode" : ""}`}>
+                    className={`ed-host${viewer ? " viewer-mode" : ""}${previewingMarkdown ? " preview-mode" : ""}`}>
                     <div
                         className="ed-source-host"
-                        hidden={!!activeImage || previewingMarkdown}
-                        aria-hidden={!!activeImage || previewingMarkdown}
+                        hidden={!!viewer || previewingMarkdown}
+                        aria-hidden={!!viewer || previewingMarkdown}
                         ref={hostRef}
                     />
-                    {!activeImage && !previewingMarkdown && (
+                    {!viewer && !previewingMarkdown && (
                         <EditorFindBar
                             getView={getEditorView}
                             documentKey={activePath}
@@ -1220,7 +1139,11 @@ export function EditorPane({
                             onClose={closeFind}
                         />
                     )}
-                    {activeImage && <ImageViewer image={activeImage} onReload={reloadImage} />}
+                    {viewer && (
+                        <Suspense>
+                            <FileViewer viewer={viewer} visible={visible} onReload={reloadViewer} />
+                        </Suspense>
+                    )}
                     {previewingMarkdown && (
                         <MarkdownPreview source={markdownPreview.content} path={markdownPreview.path} onOpenFile={openLinkedFile} />
                     )}
