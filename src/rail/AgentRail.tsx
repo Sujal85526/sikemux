@@ -9,7 +9,7 @@ import { agentCatalogR, agentSessionsR, agentUsageR } from "../state/resources.d
 import { useStore } from "../state/store";
 import { activeAgentId, agentIdsOf, agentsAwaitingInput } from "../state/selectors";
 import { type Agent, type AgentType } from "../state/types";
-import { AgentIcon, IconClose, IconPencil, IconPlus, IconRefresh, IconSearch } from "../ui/Icons";
+import { AgentIcon, IconClose, IconPlus, IconRefresh, IconSearch } from "../ui/Icons";
 import { AgentStateIndicator } from "../agents/AgentStateIndicator";
 import { sortByAttention } from "../state/agentStatus";
 import { Tooltip } from "../ui/Tooltip";
@@ -354,7 +354,7 @@ export function AgentRailBody() {
                             })
                         }>
                         <span className="agent-glyph">
-                            <IconPencil size={15} />
+                            <IconPlus size={15} />
                         </span>
                         <span className="agent-title">New chat</span>
                     </button>
