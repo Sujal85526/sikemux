@@ -346,6 +346,7 @@ mod live {
                     "start": now - 60 * 60_000,
                     "end": now,
                     "limit": 5,
+                    "view": "pane",
                 }),
             )
             .await
