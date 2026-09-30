@@ -365,6 +365,7 @@ function toPersistedAgent(value: unknown): PersistedAgent | null {
     if (model) agent.model = model;
     if (typeof value.effort === "string" && AGENT_EFFORTS.has(value.effort)) agent.effort = value.effort as PersistedAgent["effort"];
     if (value.keepAlive === true) agent.keepAlive = true;
+    if (value.renamed === true) agent.renamed = true;
     return agent;
 }
 
@@ -388,6 +389,7 @@ function persistedAgent(agent: Agent): PersistedAgent {
         ...(agent.model ? { model: agent.model } : {}),
         ...(agent.effort ? { effort: agent.effort } : {}),
         ...(agent.keepAlive ? { keepAlive: true } : {}),
+        ...(agent.renamed ? { renamed: true } : {}),
     };
 }
 

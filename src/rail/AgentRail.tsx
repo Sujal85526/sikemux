@@ -12,6 +12,9 @@ import { activeAgentId, agentIdsOf, agentsAwaitingInput } from "../state/selecto
 import { type Agent, type AgentType } from "../state/types";
 import { AgentIcon, IconClose, IconPlus, IconRefresh, IconSearch } from "../ui/Icons";
 import { AgentStateIndicator } from "../agents/AgentStateIndicator";
+import { AgentTitleInput } from "../agents/AgentTitleInput";
+import { AgentContextMenu } from "../workspace/AgentContextMenu";
+import { TreeContextMenu } from "./FileTree";
 import { sortByAttention } from "../state/agentStatus";
 import { Tooltip } from "../ui/Tooltip";
 import { Panel, PanelHeader } from "../ui/Panel";
@@ -119,6 +122,10 @@ export function AgentRailBody() {
     // Recent chats live here and nowhere else, so the search for them does too.
     const [query, setQuery] = useState("");
     const [searchOpen, setSearchOpen] = useState(false);
+    const [renamingId, setRenamingId] = useState<string | null>(null);
+    const [menu, setMenu] = useState<{ agentId: string; x: number; y: number } | null>(null);
+    const [renamingRecentId, setRenamingRecentId] = useState<string | null>(null);
+    const [recentMenu, setRecentMenu] = useState<{ sessionId: string; title: string; x: number; y: number } | null>(null);
     const searchRef = useRef<HTMLInputElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const selectedType = useMemo(() => {
@@ -262,6 +269,8 @@ export function AgentRailBody() {
         backgroundById,
     );
 
+    const menuAgent = menu ? agentsById[menu.agentId] : undefined;
+
     const activeOpenKeys = new Set(opens.map((a) => sessionKey(a.type, persistedSessionIdOf(a))));
     const needle = query.trim().toLowerCase();
     const recentAll = disk.filter((d) => {
@@ -280,6 +289,14 @@ export function AgentRailBody() {
         if (el.scrollHeight - el.scrollTop - el.clientHeight < 120) {
             setVisibleRecents((v) => Math.min(v + RECENTS_PAGE, recentAll.length));
         }
+    };
+
+    const openRecent = (sessionId: string, title: string) => {
+        if (!selectedType) return;
+        cmd.addAgent(selectedType, sessionId, title, {
+            profileId: selectedProviderProfile(selectedType, profiles, profileSelections)?.id,
+            detectedExecutablePath: selectedProvider?.command,
+        });
     };
 
     const toggleSearch = () => {
@@ -377,14 +394,36 @@ export function AgentRailBody() {
                         <PanelHeader label="Open" rule />
                         {opens.map((a) => {
                             const active = activeAgentId({ windows: windowsById }, session) === a.id;
+                            const glyph = (
+                                <span className={`agent-glyph ${a.type}`}>
+                                    <AgentIcon type={a.type} size={20} />
+                                </span>
+                            );
                             return (
                                 <div key={a.id} className="agent-row-wrap" data-agent-id={a.id} data-session={session.id} ref={leaveRow}>
-                                    <button className={`agent-row${active ? " active" : ""}`} onClick={() => cmd.selectAgent(a.id)}>
-                                        <span className={`agent-glyph ${a.type}`}>
-                                            <AgentIcon type={a.type} size={20} />
-                                        </span>
-                                        <span className="agent-title">{a.title}</span>
-                                    </button>
+                                    {renamingId === a.id ? (
+                                        <div className={`agent-row${active ? " active" : ""}`}>
+                                            {glyph}
+                                            <AgentTitleInput
+                                                title={a.title}
+                                                className="agent-title"
+                                                onSave={(title) => cmd.renameAgent(a.id, title)}
+                                                onDone={() => setRenamingId(null)}
+                                            />
+                                        </div>
+                                    ) : (
+                                        <button
+                                            className={`agent-row${active ? " active" : ""}`}
+                                            onClick={() => cmd.selectAgent(a.id)}
+                                            onDoubleClick={() => setRenamingId(a.id)}
+                                            onContextMenu={(event) => {
+                                                event.preventDefault();
+                                                setMenu({ agentId: a.id, x: event.clientX, y: event.clientY });
+                                            }}>
+                                            {glyph}
+                                            <span className="agent-title">{a.title}</span>
+                                        </button>
+                                    )}
                                     <AgentStateMark state={activityById[a.id]?.state} background={(backgroundById[a.id] ?? 0) > 0} />
                                     <Tooltip label={`Close ${a.title}`}>
                                         <button type="button" className="row-x" aria-label={`Close ${a.title}`} onClick={() => cmd.closeAgent(a.id)}>
@@ -397,29 +436,77 @@ export function AgentRailBody() {
                     </Panel>
                 )}
 
+                {menu && menuAgent && (
+                    <AgentContextMenu
+                        agent={menuAgent}
+                        session={session}
+                        x={menu.x}
+                        y={menu.y}
+                        onClose={() => setMenu(null)}
+                        onRename={() => setRenamingId(menuAgent.id)}
+                    />
+                )}
+
                 <AgentAttentionGroup />
 
                 {selectedType && recentDisplay.length > 0 && (
                     <Panel variant="group" className="agent-group">
                         <PanelHeader label="Recent" rule />
-                        {recentDisplay.map((s) => (
-                            <button
-                                key={s.id}
-                                className="agent-row recent"
-                                onClick={() =>
-                                    cmd.addAgent(selectedType, s.id, s.title, {
-                                        profileId: selectedProviderProfile(selectedType, profiles, profileSelections)?.id,
-                                        detectedExecutablePath: selectedProvider?.command,
-                                    })
-                                }>
+                        {recentDisplay.map((s) => {
+                            const glyph = (
                                 <span className={`agent-glyph ${selectedType}`}>
                                     <AgentIcon type={selectedType} size={20} />
                                 </span>
-                                <span className="agent-title">{s.title}</span>
-                                <span className="agent-ago">{ago(s.mtime)}</span>
-                            </button>
-                        ))}
+                            );
+                            return renamingRecentId === s.id ? (
+                                <div key={s.id} className="agent-row recent">
+                                    {glyph}
+                                    <AgentTitleInput
+                                        title={s.title}
+                                        className="agent-title"
+                                        onSave={(title) =>
+                                            cmd.renameAgentSession(
+                                                {
+                                                    type: selectedType,
+                                                    cwd,
+                                                    sessionId: s.id,
+                                                    configPath: selectedProvider?.configPath ?? undefined,
+                                                    executablePath: selectedProvider?.command,
+                                                },
+                                                title,
+                                            )
+                                        }
+                                        onDone={() => setRenamingRecentId(null)}
+                                    />
+                                    <span className="agent-ago">{ago(s.mtime)}</span>
+                                </div>
+                            ) : (
+                                <button
+                                    key={s.id}
+                                    className="agent-row recent"
+                                    onClick={() => openRecent(s.id, s.title)}
+                                    onContextMenu={(event) => {
+                                        event.preventDefault();
+                                        setRecentMenu({ sessionId: s.id, title: s.title, x: event.clientX, y: event.clientY });
+                                    }}>
+                                    {glyph}
+                                    <span className="agent-title">{s.title}</span>
+                                    <span className="agent-ago">{ago(s.mtime)}</span>
+                                </button>
+                            );
+                        })}
                     </Panel>
+                )}
+                {selectedType && recentMenu && (
+                    <TreeContextMenu
+                        x={recentMenu.x}
+                        y={recentMenu.y}
+                        items={[
+                            { label: "Open", run: () => openRecent(recentMenu.sessionId, recentMenu.title) },
+                            { label: "Rename…", run: () => setRenamingRecentId(recentMenu.sessionId) },
+                        ]}
+                        onClose={() => setRecentMenu(null)}
+                    />
                 )}
             </div>
             {/* The rail's footer: plan limits sit under the agents they apply

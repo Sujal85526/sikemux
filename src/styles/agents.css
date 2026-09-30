@@ -73,6 +73,14 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+.agent-rename {
+    min-width: 0;
+    margin-left: -5px;
+    padding: 1px 4px;
+    border: 1px solid var(--border-selected);
+    background: transparent;
+    color: inherit;
+}
 
 .agent-activity {
     width: 16px;

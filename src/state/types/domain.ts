@@ -124,6 +124,8 @@ export interface Agent {
     launchState?: "live" | "dormant";
     /** Exempts a resumable live agent from automatic idle sleeping. */
     keepAlive?: boolean;
+    /** The user named this agent, so titles from the provider no longer replace it. */
+    renamed?: boolean;
 }
 
 export interface PtyDirectCommand {

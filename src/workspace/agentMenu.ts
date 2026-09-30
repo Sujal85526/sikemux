@@ -1,13 +1,24 @@
 import { copyText } from "../lib/clipboard";
 import type { CtxItem } from "../rail/FileTree";
 import * as cmd from "../state/commands";
+import { promptDialog } from "../state/dialog";
 import { notify, reportError } from "../state/toast";
 import type { Agent, Session } from "../state/types";
 
-/** The menu an agent's tab and its header both open. `others` are the agents "Close Others" closes. */
-export function agentMenu(agent: Agent, others: Agent[], session: Session, hints: { close: string; permissions: string }): CtxItem[] {
+/**
+ * The menu an agent's tab, its header and its rail row open. `others` are the agents "Close Others" closes.
+ * `rename` edits the name in place where the name is on screen; without it, Rename asks in a dialog.
+ */
+export function agentMenu(
+    agent: Agent,
+    others: Agent[],
+    session: Session,
+    hints: { close: string; permissions: string },
+    rename: () => void = () => void renameAgentPrompt(agent),
+): CtxItem[] {
     const link = cmd.agentLink(agent, session);
     const items: CtxItem[] = [
+        { label: "Rename…", run: rename },
         ...(agent.launchState === "dormant"
             ? [{ label: "Resume", run: () => cmd.selectAgent(agent.id) }]
             : agent.resumeId
@@ -16,7 +27,7 @@ export function agentMenu(agent: Agent, others: Agent[], session: Session, hints
         ...(agent.resumeId && agent.launchState !== "dormant"
             ? [{ label: agent.keepAlive ? "Allow Auto-Sleep" : "Keep Alive", run: () => cmd.setAgentKeepAlive(agent.id, !agent.keepAlive) }]
             : []),
-        ...(agent.resumeId ? [{ sep: true as const }] : []),
+        { sep: true },
         { label: "Close", hint: hints.close, run: () => cmd.closeAgent(agent.id) },
         { label: "Close Others", disabled: others.length === 0, run: () => others.forEach((x) => cmd.closeAgent(x.id)) },
     ];
@@ -42,4 +53,9 @@ export function agentMenu(agent: Agent, others: Agent[], session: Session, hints
         },
     );
     return items;
+}
+
+async function renameAgentPrompt(agent: Agent): Promise<void> {
+    const title = await promptDialog({ title: "Rename chat", label: "Name", initial: agent.title, confirmLabel: "Rename" });
+    if (title) cmd.renameAgent(agent.id, title);
 }
