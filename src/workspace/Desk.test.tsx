@@ -195,6 +195,7 @@ describe("DeskHost", () => {
             windows: { window: { ...win, root: { type: "split", id: "split", dir: "row", children: [agentPane, deskPane], sizes: [50, 50] } } },
         } as never);
         await announceStrip(snapshot);
+        const toolbarField = screen.getByRole("textbox", { name: "Address and search" });
 
         act(() => {
             expect(cmd.focusBrowserAddress()).toBe(true);
@@ -205,10 +206,13 @@ describe("DeskHost", () => {
         await waitFor(() => expect(field).toHaveFocus());
         expect(takeKeyboardFromPages).toHaveBeenCalled();
         expect(browserApi.newTab).not.toHaveBeenCalled();
+        expect(toolbarField).toHaveValue("");
+        expect(toolbarField).not.toHaveAttribute("placeholder");
 
         fireEvent.keyDown(field, { key: "Escape" });
         await waitFor(() => expect(screen.queryByRole("dialog", { name: "Open address" })).not.toBeInTheDocument());
         expect(getState().deskAddressOpen).toBeNull();
+        expect(toolbarField).toHaveValue("https://example.com");
     });
 
     it("lets go of the address on Escape and drops what was typed", async () => {

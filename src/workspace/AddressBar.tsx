@@ -66,19 +66,22 @@ function Marked({ text, words }: { text: string; words: string[] }) {
 /**
  * The address field, which finishes a remembered site in place as it is typed
  * and lists the pages that match below it. A floating one sits in a panel of
- * its own, takes the keyboard as it opens, and says when it is done.
+ * its own, takes the keyboard as it opens, and says when it is done. While
+ * one is open the bar in the toolbar stands vacant, so the address shows once.
  */
 export function AddressBar({
     tabId,
     pageAddress,
     onGo,
     floating = false,
+    vacant = false,
     onLeave,
 }: {
     tabId: string | undefined;
     pageAddress: string;
     onGo: (url: string) => void;
     floating?: boolean;
+    vacant?: boolean;
     onLeave?: () => void;
 }) {
     const listId = useId();
@@ -111,9 +114,17 @@ export function AddressBar({
     const choice = open ? rows[selected] : undefined;
     const first = idle ? -1 : 0;
     const words = (typed ?? "").toLowerCase().split(/\s+/).filter(Boolean);
-    const site = typed === null ? siteOf(pageAddress) : null;
+    const site = typed === null && !vacant ? siteOf(pageAddress) : null;
     const value =
-        choice && selected > first ? (choice.search ? choice.title : choice.detail || choice.url) : typed === null ? pageAddress : typed + suffix;
+        choice && selected > first
+            ? choice.search
+                ? choice.title
+                : choice.detail || choice.url
+            : typed === null
+              ? vacant
+                  ? ""
+                  : pageAddress
+              : typed + suffix;
 
     const reset = useCallback(() => {
         asked.current += 1;
@@ -251,7 +262,7 @@ export function AddressBar({
                     aria-controls={open ? listId : undefined}
                     aria-activedescendant={choice ? `${listId}-${selected}` : undefined}
                     value={value}
-                    placeholder="Search or enter address"
+                    placeholder={vacant ? undefined : "Search or enter address"}
                     spellCheck={false}
                     autoComplete="off"
                     onFocus={(event) => {

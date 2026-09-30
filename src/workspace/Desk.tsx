@@ -457,7 +457,7 @@ function BrowserPage({
                     onClick={() => run(browserApi.reload(agentId), "reload browser")}>
                     <IconRefresh size={13} />
                 </button>
-                <AddressBar tabId={activeTab?.id} pageAddress={pageAddress} onGo={go} />
+                <AddressBar tabId={activeTab?.id} pageAddress={pageAddress} onGo={go} vacant={addressFloating} />
             </div>
             <div ref={viewportRef} className="browser-viewport" tabIndex={-1}>
                 {blank && <div className="browser-blank" aria-label="Blank browser page" />}
