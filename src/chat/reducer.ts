@@ -140,7 +140,7 @@ function appendChunk(
             contentText !== undefined
                 ? { id: `${messageId}-${partKind}-0`, kind: partKind, text: contentText }
                 : { id: `${messageId}-content-0`, kind: "content", content: boundContent(chunk.content) };
-        const opened: ChatMessage = { id: messageId, role, parts: [part] };
+        const opened: ChatMessage = { id: messageId, role, parts: [part], ...(timed ? { sentAt: Date.now() } : {}) };
         messages.push(stream ? { ...opened, ...timedStream(opened, contentText.length) } : opened);
         nextId += 1;
     } else {
@@ -412,8 +412,14 @@ function contextUsage(update: Record<string, unknown>): ContextUsage | null {
 }
 
 function endTurn(state: ChatState, stopReason: string | null): ChatState {
+    const settled = settleState(state);
+    const last = settled.messages.at(-1);
+    // Only a turn this side watched run has a finish worth stamping.
+    const messages =
+        state.running && last?.role === "assistant" ? [...settled.messages.slice(0, -1), { ...last, endedAt: Date.now() }] : settled.messages;
     return {
-        ...settleState(state),
+        ...settled,
+        messages,
         running: false,
         suppressUserEcho: false,
         permissions: [],
@@ -511,6 +517,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
                     {
                         id,
                         role: "user",
+                        sentAt: Date.now(),
                         parts: action.text.trim() ? [{ id: `${id}-text`, kind: "text", text: action.text }] : [],
                         ...(action.paths.length ? { attachments: action.paths } : {}),
                     },

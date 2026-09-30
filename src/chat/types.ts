@@ -102,6 +102,11 @@ export interface ChatMessage {
     streamStartedAt?: number;
     streamEndedAt?: number;
     streamChars?: number;
+    /* When this side saw the message begin. A replayed message has none, since
+       the history a session replays carries no times. */
+    sentAt?: number;
+    /* When the turn this message closed finished, as this side saw it. */
+    endedAt?: number;
 }
 
 export interface ChatState {

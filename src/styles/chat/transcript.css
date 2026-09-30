@@ -112,6 +112,12 @@
     color: var(--ink-dim);
 }
 
+.chat-message-time {
+    font-size: calc(10.5px * var(--chat-text-em, 1));
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-dim);
+}
+
 .chat-message-rate {
     margin-left: auto;
     font-family: var(--mono);

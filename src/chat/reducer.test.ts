@@ -743,7 +743,7 @@ describe("chat reducer", () => {
         const sent = chatReducer(initialChatState, { type: "local_prompt", text: "  ", paths: ["/tmp/shot.png"] });
         const plain = chatReducer(initialChatState, { type: "local_prompt", text: "Hi", paths: [] });
 
-        expect(sent.messages[0]).toEqual({ id: "local-1", role: "user", parts: [], attachments: ["/tmp/shot.png"] });
+        expect(sent.messages[0]).toEqual({ id: "local-1", role: "user", sentAt: expect.any(Number), parts: [], attachments: ["/tmp/shot.png"] });
         expect(plain.messages[0]).not.toHaveProperty("attachments");
     });
 

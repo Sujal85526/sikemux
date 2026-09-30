@@ -2,7 +2,8 @@ import { memo, useContext, useState } from "react";
 import { CopyButton } from "../ui/CopyButton";
 import { basename } from "../lib/paths";
 import { AgentIcon, IconCheck, IconChevron, IconClose, IconFile, IconPlug, IconTimer, IconWarning } from "../ui/Icons";
-import { rateLabel } from "./messageMeta";
+import { rateLabel, sentLabel, sentTitle } from "./messageMeta";
+import { durationLabel } from "./durationLabel";
 import { localImagePath, useImagePreview } from "./imagePreview";
 import { ChatFileRef, useFileRef } from "./FileRef";
 import { ChatAgentContext } from "./chatAgent";
@@ -180,11 +181,15 @@ export const ChatMessageRow = memo(function ChatMessageRow({
     live,
     copyable,
     rate,
+    at,
+    took,
 }: {
     message: ChatMessage;
     live: boolean;
     copyable: string;
     rate: number | null;
+    at: number | null;
+    took: number | null;
 }) {
     return (
         <article className={`chat-message ${message.role}`}>
@@ -200,6 +205,11 @@ export const ChatMessageRow = memo(function ChatMessageRow({
                 {copyable && (
                     <div className="chat-message-meta">
                         <CopyButton value={copyable} label={message.role === "user" ? "message" : "reply"} size={15} />
+                        {at !== null && (
+                            <time className="chat-message-time" dateTime={new Date(at).toISOString()} title={sentTitle(at)}>
+                                {took === null ? sentLabel(at) : `${sentLabel(at)} · took ${durationLabel(took)}`}
+                            </time>
+                        )}
                         {rate !== null && (
                             <span className="chat-message-rate" title="Writing speed, estimated from the text that arrived">
                                 {rateLabel(rate)}
