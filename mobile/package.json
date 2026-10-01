@@ -1,0 +1,13 @@
+{
+  "name": "sikemux-mobile",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "native:ios": "pnpm --filter @sikemux/native ubrn:ios",
+    "native:android": "pnpm --filter @sikemux/native ubrn:android",
+    "ios": "pnpm --filter sikemux-app ios",
+    "android": "pnpm --filter sikemux-app android",
+    "start": "pnpm --filter sikemux-app start",
+    "typecheck": "pnpm -r typecheck"
+  }
+}

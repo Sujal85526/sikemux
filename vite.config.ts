@@ -1,6 +1,6 @@
 import { rmSync } from "node:fs";
 import { resolve } from "node:path";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 import type { PluginOption } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -144,10 +144,11 @@ export default defineConfig({
   server: {
     port: 1420,
     strictPort: true,
-    watch: { ignored: ["**/src-tauri/**"] },
+    watch: { ignored: ["**/src-tauri/**", "**/mobile/**"] },
   },
   test: {
     environment: "jsdom",
+    exclude: [...configDefaults.exclude, "mobile/**"],
     setupFiles: "./src/test/setup.ts",
     globals: false,
     coverage: {

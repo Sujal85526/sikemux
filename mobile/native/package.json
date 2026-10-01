@@ -1,0 +1,45 @@
+{
+  "name": "@sikemux/native",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Sikemux core client, compiled from Rust, for the phone app",
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "author": "nodelike <kishore.sensei@gmail.com> (https://github.com/nodelike)",
+  "homepage": "https://github.com/nodelike/sikemux/tree/main/mobile/native",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nodelike/sikemux.git",
+    "directory": "mobile/native"
+  },
+  "main": "./src/index.tsx",
+  "types": "./src/index.tsx",
+  "react-native": "./src/index.tsx",
+  "scripts": {
+    "ubrn:ios": "ubrn build ios --and-generate",
+    "ubrn:android": "ubrn build android --and-generate",
+    "ubrn:clean": "rm -rf cpp/ android/CMakeLists.txt android/src/main/java android/*.cpp ios/ src/Native* src/index.*ts* src/generated/",
+    "typecheck": "tsc"
+  },
+  "peerDependencies": {
+    "react": "*",
+    "react-native": "*"
+  },
+  "dependencies": {
+    "@ubjs/core": "0.31.0-6"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "typescript": "^6.0.3",
+    "uniffi-bindgen-react-native": "0.31.0-6"
+  },
+  "codegenConfig": {
+    "name": "NativeSikemuxSpec",
+    "type": "modules",
+    "jsSrcsDir": "src",
+    "android": {
+      "javaPackageName": "com.sikemux.native"
+    }
+  }
+}
