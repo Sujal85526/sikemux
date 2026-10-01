@@ -549,10 +549,9 @@ async fn a_device_starts_a_chat_agent_the_app_published_and_talks_to_it() {
     let core_key = SecretKey::generate();
     let phone = Device::new("Phone", DeviceAccess::Full);
     let core = start_core(&core_key, &[&phone]);
-    let (app, _app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    let (app, mut app_events) = CoreClient::connect(&core.socket).await.expect("app");
     publish_fake_agent(&app).await;
     let status = listening(&app).await;
-    drop(app);
 
     let endpoint = phone.endpoint().await;
     let (client, mut events) = remote::connect(&endpoint, core_addr(&status))
@@ -568,6 +567,19 @@ async fn a_device_starts_a_chat_agent_the_app_published_and_talks_to_it() {
         .await
         .expect("the phone starts a chat");
     assert!(!start.session_id.is_empty());
+    let begun = loop {
+        let event = tokio::time::timeout(WAIT, app_events.recv())
+            .await
+            .expect("the app never heard the chat begin")
+            .expect("the app's connection closed");
+        if let ClientEvent::Event(Event::ChatBegun { chat }) = event {
+            break chat;
+        }
+    };
+    assert_eq!(begun.agent_id, agent_id);
+    assert_eq!(begun.launcher.as_deref(), Some("opencode"));
+    assert_eq!(begun.permission_mode, "bypass");
+    assert_eq!(begun.started_by, Some(phone.id()));
     client
         .acp_prompt(
             agent_id.clone(),

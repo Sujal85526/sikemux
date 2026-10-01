@@ -54,6 +54,11 @@ export interface AcpChat {
     pendingPermissions: string[];
     /** The paired device that started it; null when this app did. */
     startedBy: string | null;
+    /** The app's launcher a device started it with. */
+    launcher: string | null;
+    permissionMode: string;
+    model: string | null;
+    effort: string | null;
 }
 
 /** Something read elsewhere and handed to the agent whole, such as an issue and its comments. */

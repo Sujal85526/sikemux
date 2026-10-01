@@ -1,6 +1,6 @@
 import { AGENT_NAMES, CHAT_AGENT_TYPES, normalizePermissionMode } from "../agents/agentLaunch";
 import type { LauncherRequest, PublishedProject } from "../api/remote";
-import type { AgentPermissionMode, ProviderProfile, Session } from "../state/types";
+import type { AgentPermissionMode, AgentType, ProviderProfile, Session } from "../state/types";
 
 export interface RemoteWorkspace {
     readonly projects: PublishedProject[];
@@ -37,4 +37,10 @@ export function remoteWorkspace(
         }));
     });
     return { projects, launchers };
+}
+
+/** The provider profile a chat was started with, read back from its launcher's id. */
+export function profileOfLauncher(launcher: string | null, profiles: readonly ProviderProfile[], type: AgentType): string | undefined {
+    const profileId = launcher?.startsWith(`${type}:`) ? launcher.slice(type.length + 1) : undefined;
+    return profiles.some((profile) => profile.id === profileId && profile.provider === type) ? profileId : undefined;
 }

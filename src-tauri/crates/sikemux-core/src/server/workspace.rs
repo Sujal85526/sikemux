@@ -9,7 +9,7 @@ use agent_client_protocol::schema::v1::{EnvVariable, McpServer, McpServerStdio};
 use serde_json::Value;
 
 use crate::protocol::{
-    ChatLaunch, ChatLauncher, LauncherInfo, ProjectInfo, RequestId, Response, Workspace,
+    ChatLaunch, ChatLauncher, Event, LauncherInfo, ProjectInfo, RequestId, Response, Workspace,
 };
 
 use super::chat;
@@ -146,6 +146,7 @@ pub(crate) fn start_chat(
 ) {
     let agent_id = format!("agent-{}", uuid::Uuid::new_v4().simple());
     let tools = cli_endpoint(core).and_then(|endpoint| tools_server(&agent_id, &endpoint));
+    let launcher = choice.launcher.clone();
     let launch = match core.workspaces.launch(choice, &agent_id, tools) {
         Ok(launch) => launch,
         Err(error) => {
@@ -153,8 +154,11 @@ pub(crate) fn start_chat(
             return;
         }
     };
-    match chat::begin(core, launch, Some(client)) {
+    match chat::begin(core, launch, Some(client), Some(launcher)) {
         Ok(started) => {
+            core.broadcast_local(&Event::ChatBegun {
+                chat: started.info(),
+            });
             let core = core.clone();
             let client = client.clone();
             tokio::spawn(async move {

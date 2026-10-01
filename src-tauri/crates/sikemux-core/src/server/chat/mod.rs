@@ -78,9 +78,17 @@ struct PendingPermission {
     at: u64,
 }
 
+/// Who started a chat, and with which of the app's launchers.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Origin {
+    pub started_by: Option<String>,
+    pub launcher: Option<String>,
+}
+
 pub(crate) struct Chat {
     pub launch: ChatLaunch,
-    pub started_by: Option<String>,
+    pub origin: Origin,
     core: Weak<Core>,
     generation: u64,
     commands: mpsc::UnboundedSender<ChatCommand>,
@@ -285,7 +293,7 @@ impl Chat {
         self.commands.send(command).map_err(|_| STOPPED.into())
     }
 
-    fn info(&self) -> ChatInfo {
+    pub(crate) fn info(&self) -> ChatInfo {
         let start = self.feed.start();
         ChatInfo {
             agent_id: self.launch.agent_id.clone(),
@@ -299,7 +307,11 @@ impl Chat {
             },
             running: self.turn_running(),
             pending_permissions: self.pending_permissions(),
-            started_by: self.started_by.clone(),
+            started_by: self.origin.started_by.clone(),
+            launcher: self.origin.launcher.clone(),
+            permission_mode: self.feed.permission_mode(),
+            model: self.launch.model.clone(),
+            effort: self.launch.effort.clone(),
         }
     }
 
@@ -325,7 +337,7 @@ impl Chat {
             .or(launch.effort);
         Some(ChatRecord {
             launch,
-            started_by: self.started_by.clone(),
+            origin: self.origin.clone(),
         })
     }
 }
@@ -336,7 +348,8 @@ impl Chat {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ChatRecord {
     pub launch: ChatLaunch,
-    pub started_by: Option<String>,
+    #[serde(flatten)]
+    pub origin: Origin,
 }
 
 #[derive(Default)]
@@ -455,7 +468,7 @@ impl Chats {
         &self,
         core: &Arc<Core>,
         launch: ChatLaunch,
-        started_by: Option<String>,
+        origin: Origin,
     ) -> CoreResult<(Arc<Chat>, mpsc::UnboundedReceiver<ChatCommand>)> {
         let mut chats = self.chats.lock().map_err(CoreError::poisoned)?;
         if chats.contains_key(&launch.agent_id) {
@@ -474,7 +487,7 @@ impl Chats {
             turned: AtomicBool::new(false),
             approving: AtomicBool::new(crate::acp::approves_for_user(&launch.permission_mode)),
             launch,
-            started_by,
+            origin,
             core: Arc::downgrade(core),
         });
         chats.insert(chat.agent_id().to_owned(), chat.clone());
@@ -533,10 +546,14 @@ pub(crate) fn begin(
     core: &Arc<Core>,
     launch_spec: ChatLaunch,
     subscriber: Option<&Arc<ClientConn>>,
+    launcher: Option<String>,
 ) -> CoreResult<Arc<Chat>> {
     validate(&launch_spec)?;
-    let started_by = subscriber.and_then(|client| client.peer.device_id());
-    let (chat, queue) = core.chats.insert(core, launch_spec, started_by)?;
+    let origin = Origin {
+        started_by: subscriber.and_then(|client| client.peer.device_id()),
+        launcher,
+    };
+    let (chat, queue) = core.chats.insert(core, launch_spec, origin)?;
     if let Some(client) = subscriber {
         chat.feed.subscribe(client);
     }
@@ -564,7 +581,7 @@ pub(crate) fn resume(core: &Arc<Core>, record: ChatRecord) {
         eprintln!("sikemux core: chat {agent_id} was not resumed after the update: {error}");
         return;
     }
-    match core.chats.insert(core, record.launch, record.started_by) {
+    match core.chats.insert(core, record.launch, record.origin) {
         Ok((chat, queue)) => launch(core, &chat, queue),
         Err(error) => {
             eprintln!("sikemux core: chat {agent_id} was not resumed after the update: {error}")

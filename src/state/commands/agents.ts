@@ -1,5 +1,7 @@
 import { agentApi, type AgentSession } from "../../api/agents";
-import { MAX_AGENT_MODEL_LENGTH, normalizePermissionMode, type ChatAgentType } from "../../agents/agentLaunch";
+import type { AcpChat } from "../../api/acp";
+import { profileOfLauncher } from "../../remote/workspace";
+import { agentSupportsChat, isAgentType, MAX_AGENT_MODEL_LENGTH, normalizePermissionMode, type ChatAgentType } from "../../agents/agentLaunch";
 import { emit } from "../bus";
 import { reduceAgentState } from "../agentStatus";
 import { invalidate, peekResource } from "../resources";
@@ -14,7 +16,7 @@ import { agentWindow } from "../agentWindow";
 import { newId } from "../layout";
 import type { Agent, AgentEffort, AgentPermissionMode, AgentType, AgentWorktree, ProviderProfile } from "../types";
 import { selectSession } from "./sessions";
-import { openProjectSession, withActiveSession } from "./shared";
+import { openProjectSession, projectSessionInBackground, withActiveSession } from "./shared";
 import { closeWindowById } from "./tabs";
 
 const FALLBACK_AGENT_TITLE_MAX = 13;
@@ -196,6 +198,50 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
         attached = true;
     });
     return attached;
+}
+
+/**
+ * Shows a chat a paired device started among its project's agents, so the Mac
+ * can follow it. Leaves the screen where it is: the phone started it, not you.
+ */
+export function adoptChat(chat: AcpChat): boolean {
+    const type = chat.provider;
+    if (!isAgentType(type) || !agentSupportsChat(type)) return false;
+    let adopted = false;
+    mutate((d) => {
+        if (d.agents[chat.agentId]) return;
+        const sessionId = projectSessionInBackground(d as unknown as StoreState, chat.cwd);
+        const permissionMode = normalizePermissionMode(type, chat.permissionMode as AgentPermissionMode);
+        const profileId = profileOfLauncher(chat.launcher, d.providerProfiles, type);
+        const profile = profileId ? d.providerProfiles.find((item) => item.id === profileId) : undefined;
+        const model = chat.model ?? undefined;
+        const effort = (chat.effort ?? undefined) as AgentEffort | undefined;
+        const resumeId = chat.sessionId ?? undefined;
+        const launchOptions = profileLaunchOptions(profile, model, effort);
+        const agent: Agent = {
+            id: chat.agentId,
+            type,
+            title: type,
+            startup: agentStartup(type, resumeId, permissionMode, profile?.executablePath, launchOptions),
+            directCommand: agentDirectCommand(type, resumeId, permissionMode, profile?.executablePath, launchOptions),
+            resumeId,
+            createdAt: Date.now(),
+            permissionMode,
+            profileId,
+            executablePath: profile?.executablePath,
+            cwd: chat.cwd,
+            model,
+            effort,
+            ...(permissionMode === "bypass" ? { skipPermissions: true } : {}),
+            launchState: "live",
+        };
+        d.agents[agent.id] = agent;
+        const win = agentWindow(agent, chat.cwd);
+        d.windows[win.id] = win;
+        d.windowsBySession[sessionId] = [...(d.windowsBySession[sessionId] ?? []), win.id];
+        adopted = true;
+    });
+    return adopted;
 }
 
 export function reconcileAgentSessions(type: AgentType, cwd: string, configPath: string | undefined, rows: AgentSession[]): void {

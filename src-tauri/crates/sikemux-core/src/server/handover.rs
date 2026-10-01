@@ -409,7 +409,17 @@ fn migrate(mut state: Value) -> Result<Value, String> {
                 }
                 state["format"] = Value::from(3);
             }
-            3 => return Ok(state),
+            3 => {
+                // Format 3 chats were started without a launcher.
+                let chats = state.get_mut("chats").and_then(Value::as_array_mut);
+                for chat in chats.into_iter().flatten() {
+                    if let Some(chat) = chat.as_object_mut() {
+                        chat.insert("launcher".into(), Value::Null);
+                    }
+                }
+                state["format"] = Value::from(4);
+            }
+            4 => return Ok(state),
             other => return Err(format!("it is in format {other}, not {RESUME_FORMAT}")),
         }
     }
@@ -905,7 +915,7 @@ mod tests {
     #[test]
     fn format_one_state_gains_an_empty_chat_list() {
         let migrated = migrate(json!({ "format": 1, "sessions": [] })).expect("migrate");
-        assert_eq!(migrated["format"], 3);
+        assert_eq!(migrated["format"], 4);
         assert_eq!(migrated["chats"], json!([]));
         assert_eq!(migrated["sessions"], json!([]));
     }
@@ -918,20 +928,23 @@ mod tests {
             "chats": [{ "launch": {} }],
         }))
         .expect("migrate");
-        assert_eq!(migrated["format"], 3);
+        assert_eq!(migrated["format"], 4);
         assert_eq!(
             migrated["sessions"][0]["owner"],
             json!({ "project": "/p", "startedBy": null })
         );
         assert_eq!(
             migrated["chats"][0],
-            json!({ "launch": {}, "startedBy": null })
+            json!({ "launch": {}, "startedBy": null, "launcher": null })
         );
     }
 
     #[test]
     fn current_state_is_left_as_it_is_and_unknown_formats_are_refused() {
-        let current = json!({ "format": 3, "chats": [{ "launch": {}, "startedBy": "phone" }] });
+        let current = json!({
+            "format": 4,
+            "chats": [{ "launch": {}, "startedBy": "phone", "launcher": "claude" }],
+        });
         assert_eq!(migrate(current.clone()).expect("migrate"), current);
         assert!(migrate(json!({ "format": 9 })).is_err());
         assert!(migrate(json!({})).is_err());

@@ -118,6 +118,19 @@ export function attachSession(d: StoreState, session: Session, windows: Window[]
     d.pickerOpen = false;
 }
 
+/** A project's session, opened behind the one in front if the project is not open yet. Returns its id. */
+export function projectSessionInBackground(d: StoreState, cwd: string): string {
+    const existing = d.sessionOrder.map((id) => d.sessions[id]).find((s) => s.cwd === cwd && s.kind === "project");
+    if (existing) return existing.id;
+    const window = makeWindow(cwd, "Terminal", { role: "term" });
+    const session = makeSession("project", basename(cwd), cwd, window.id);
+    d.sessions[session.id] = session;
+    d.sessionOrder.push(session.id);
+    d.windows[window.id] = window;
+    d.windowsBySession[session.id] = [window.id];
+    return session.id;
+}
+
 /** Brings a project's session forward, opening one with a terminal if the project is not open yet. Returns its id. */
 export function openProjectSession(d: StoreState, cwd: string): string {
     const existing = d.sessionOrder.map((id) => d.sessions[id]).find((s) => s.cwd === cwd && s.kind === "project");

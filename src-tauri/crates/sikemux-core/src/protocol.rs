@@ -73,10 +73,10 @@ pub mod frozen {
 
     /// The format of the state a core hands to its replacement. A core only
     /// replaces itself with a binary that reads its format.
-    pub const RESUME_FORMAT: u32 = 3;
+    pub const RESUME_FORMAT: u32 = 4;
 
     /// Every hand-over format a core of this build takes over from.
-    pub const READS_FORMATS: [u32; 3] = [1, 2, RESUME_FORMAT];
+    pub const READS_FORMATS: [u32; 4] = [1, 2, 3, RESUME_FORMAT];
 
     /// The argument that makes a core binary print its [`UpgradeInfo`].
     pub const UPGRADE_INFO_ARG: &str = "--upgrade-info";
@@ -453,6 +453,11 @@ pub struct ChatInfo {
     pub pending_permissions: Vec<String>,
     /// The paired device that started it. The app started the rest.
     pub started_by: Option<String>,
+    /// The app's launcher a device started it with.
+    pub launcher: Option<String>,
+    pub permission_mode: String,
+    pub model: Option<String>,
+    pub effort: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -857,6 +862,11 @@ pub enum Event {
     /// or not it shows that agent.
     Attention {
         attention: Attention,
+    },
+    /// A paired device started a chat. Sent only to clients on this Mac,
+    /// which show it beside their own.
+    ChatBegun {
+        chat: ChatInfo,
     },
     /// What an agent waited on was answered or withdrawn.
     AttentionCleared {

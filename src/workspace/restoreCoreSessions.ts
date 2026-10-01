@@ -67,6 +67,7 @@ export async function restoreCoreSessions(deps: CoreSessionRestoreDeps = default
         return;
     }
     const chats = await deps.chats.list().catch((): AcpChat[] => []);
+    for (const chat of chats) if (chat.startedBy !== null) cmd.adoptChat(chat);
     const plan = agentSessionPlan(getState(), sessions);
     cmd.applyAgentSessionPlan(plan);
     for (const id of plan.resume) {

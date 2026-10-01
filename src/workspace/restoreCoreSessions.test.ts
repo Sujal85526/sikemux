@@ -33,7 +33,20 @@ function terminal(id: number, running = true, exit: CoreSession["exit"] = runnin
 }
 
 function chat(agentId: string, startedBy: string | null = null): AcpChat {
-    return { agentId, provider: "claude", cwd: "/repo", sessionId: "s", state: "ready", running: true, pendingPermissions: [], startedBy };
+    return {
+        agentId,
+        provider: "claude",
+        cwd: "/repo",
+        sessionId: "s",
+        state: "ready",
+        running: true,
+        pendingPermissions: [],
+        startedBy,
+        launcher: startedBy ? "claude" : null,
+        permissionMode: "bypass",
+        model: null,
+        effort: null,
+    };
 }
 
 function deps(sessions: CoreSession[], chats: AcpChat[] = []) {
@@ -167,6 +180,25 @@ describe("restoring what the core kept", () => {
         expect(stopChat).not.toHaveBeenCalled();
         runScheduled();
         expect(stopChat.mock.calls.map(([id]) => id).sort()).toEqual(["agent-ended", "agent-forgotten"]);
+    });
+
+    it("shows a chat a phone started among its project's agents without switching to it", async () => {
+        layoutWithSessions();
+        const before = getState().activeSessionId;
+        const { restore } = deps([], [{ ...chat("agent-phone", "phone-key"), cwd: "/elsewhere", model: "opus" }]);
+        await restoreCoreSessions(restore);
+        const state = getState();
+        expect(state.agents["agent-phone"]).toMatchObject({
+            type: "claude",
+            cwd: "/elsewhere",
+            resumeId: "s",
+            permissionMode: "bypass",
+            model: "opus",
+        });
+        expect(state.activeSessionId).toBe(before);
+        const project = Object.values(state.sessions).find((session) => session.cwd === "/elsewhere");
+        expect(project?.kind).toBe("project");
+        expect(state.windowsBySession[project?.id ?? ""]).toContain(agentWindowId(state, "agent-phone"));
     });
 
     it("leaves alone a terminal this page started, such as a popup opened right after launch", async () => {
