@@ -118,6 +118,20 @@ export function attachSession(d: StoreState, session: Session, windows: Window[]
     d.pickerOpen = false;
 }
 
+/** Brings a project's session forward, opening one with a terminal if the project is not open yet. Returns its id. */
+export function openProjectSession(d: StoreState, cwd: string): string {
+    const existing = d.sessionOrder.map((id) => d.sessions[id]).find((s) => s.cwd === cwd && s.kind === "project");
+    if (!existing) {
+        const windows = [makeWindow(cwd, "Terminal", { role: "term" })];
+        attachSession(d, makeSession("project", basename(cwd), cwd, windows[0].id), windows);
+        return d.activeSessionId;
+    }
+    d.pickerOpen = false;
+    d.zoomedPaneId = null;
+    d.activeSessionId = existing.id;
+    return existing.id;
+}
+
 export function dirtyPathsForWindow(st: StoreState, win: Window | undefined): string[] {
     if (!win) return [];
     return collectPanes(win.root).flatMap((p) => dirtyPathsForPane(st, p.id));

@@ -14,7 +14,7 @@ import { agentWindow } from "../agentWindow";
 import { newId } from "../layout";
 import type { Agent, AgentEffort, AgentPermissionMode, AgentType, AgentWorktree, ProviderProfile } from "../types";
 import { selectSession } from "./sessions";
-import { withActiveSession } from "./shared";
+import { openProjectSession, withActiveSession } from "./shared";
 import { closeWindowById } from "./tabs";
 
 const FALLBACK_AGENT_TITLE_MAX = 13;
@@ -324,6 +324,31 @@ export function setAgentWorktree(id: string, cwd: string, worktree: AgentWorktre
         const winId = agentWindowId(d, id);
         const root = winId ? d.windows[winId]?.root : undefined;
         if (root?.type === "pane") root.cwd = cwd;
+    });
+}
+
+/** Moves a chat that has not started yet into another project, opening the project if it is not open. */
+export function moveAgentToProject(id: string, cwd: string): void {
+    mutate((d) => {
+        const agent = d.agents[id];
+        const winId = agentWindowId(d, id);
+        const fromId = winId ? ownerSessionId(d, winId) : null;
+        if (!agent || !winId || !fromId || agent.resumeId || agent.worktree) return;
+        const toId = openProjectSession(d as unknown as StoreState, cwd);
+        if (toId === fromId) return;
+        const from = d.sessions[fromId];
+        const left = d.windowsBySession[fromId].filter((wid) => wid !== winId);
+        d.windowsBySession[fromId] = left;
+        if (from.activeWindowId === winId) from.activeWindowId = left[left.length - 1] ?? "";
+        d.windowsBySession[toId] = [...(d.windowsBySession[toId] ?? []), winId];
+        d.sessions[toId].activeWindowId = winId;
+        agent.cwd = cwd;
+        const root = d.windows[winId].root;
+        if (root.type === "pane") root.cwd = cwd;
+        const configPath = agent.profileId ? d.providerProfiles.find((profile) => profile.id === agent.profileId)?.configPath : undefined;
+        const known = peekResource(agentSessionsR, agent.type, cwd, configPath)?.map((row) => row.id);
+        if (known) agent.baselineSessionIds = [...new Set(known)];
+        else delete agent.baselineSessionIds;
     });
 }
 

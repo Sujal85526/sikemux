@@ -5,7 +5,7 @@ import { RAIL_GROUP_ORDER, railGroupOf } from "../railGroups";
 import { filesApi } from "../../api/files";
 import { lsp } from "../../api/lsp";
 import { sshApi } from "../../api/ssh";
-import { basename, dirname } from "../../lib/paths";
+import { dirname } from "../../lib/paths";
 import { sshStartup } from "../../terminal/sshStartup";
 import { taskPtyBindings } from "../../tasks/nativeRuntime";
 import { getState, mutate, setState, type StoreState } from "../store";
@@ -22,25 +22,14 @@ import {
     guardStopAgents,
     makeSession,
     makeWindow,
+    openProjectSession,
     pruneWindowViews,
     withActiveSession,
 } from "./shared";
 
-function projectWindows(cwd: string): Window[] {
-    return [makeWindow(cwd, "Terminal", { role: "term" })];
-}
-
 export function createProjectSession(cwd: string): void {
     mutate((d) => {
-        const existing = d.sessionOrder.map((id) => d.sessions[id]).find((s) => s.cwd === cwd && s.kind === "project");
-        if (existing) {
-            d.pickerOpen = false;
-            d.zoomedPaneId = null;
-            d.activeSessionId = existing.id;
-            return;
-        }
-        const windows = projectWindows(cwd);
-        attachSession(d as unknown as StoreState, makeSession("project", basename(cwd), cwd, windows[0].id), windows);
+        openProjectSession(d as unknown as StoreState, cwd);
     });
 }
 
