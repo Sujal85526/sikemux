@@ -180,6 +180,7 @@ Internal crates in `src-tauri/crates/`:
 | `sikemux-markdown`   | Parses markdown into the block tree the chat transcript draws (`markdown_parse`)            |
 | `sikemux-keychain`   | Reads and writes secrets in the system keychain; used by the GitHub, Bitbucket and SigNoz plugins |
 | `sikemux-pty`        | The terminal engine without Tauri: the per-PTY screen, shell integration, the configured shell and login-shell environment, the `SIKEMUX_*` environment, task checks, task output paging, and `agent_detection/`, which reads an agent's screen against `manifests/*.json` to tell working, blocked or idle |
+| `sikemux-core`       | The background process `sikemux core` runs so terminals outlive the window: a Unix-socket server that spawns and owns PTYs through `sikemux-pty`, its wire protocol, and the client the app will use. The app does not use it yet |
 
 ## Plugins
 
