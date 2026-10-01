@@ -81,6 +81,14 @@ pub fn login_shell_environment() -> &'static HashMap<String, String> {
     }
 }
 
+/// The locale variables from `login_shell_environment`, for processes that
+/// otherwise get only the app's own environment, which has no locale.
+pub fn login_shell_locale() -> impl Iterator<Item = (&'static String, &'static String)> {
+    login_shell_environment()
+        .iter()
+        .filter(|(key, _)| *key == "LANG" || key.starts_with("LC_"))
+}
+
 /// What one run of the user's login shell told us: the `PATH` it resolves and
 /// everything else it exports. Both come out of the same `env -0` payload, so
 /// startup pays for one interactive shell rather than two.
@@ -141,12 +149,27 @@ fn capture_login_shell() -> LoginShellCapture {
     // and one process for the life of the app. That is bounded — this runs
     // exactly once — and the alternative is process-group teardown for a case
     // that ends the moment the user fixes their profile.
-    match receiver.recv_timeout(LOGIN_ENV_TIMEOUT) {
+    let mut capture = match receiver.recv_timeout(LOGIN_ENV_TIMEOUT) {
         Ok(Some(output)) if output.status.success() => LoginShellCapture {
             path: parse_login_shell_path(&output.stdout),
             environment: parse_login_shell_environment(&output.stdout),
         },
         _ => LoginShellCapture::default(),
+    };
+    ensure_utf8_locale(&mut capture.environment);
+    capture
+}
+
+/// Terminals set a UTF-8 locale when the shell leaves it unset, and tools
+/// such as Ruby fall back to ASCII without one. macOS's own zsh profile picks
+/// `C.UTF-8`, so a shell that sets nothing gets the same.
+#[cfg(unix)]
+fn ensure_utf8_locale(environment: &mut HashMap<String, String>) {
+    let has_locale = ["LC_ALL", "LC_CTYPE", "LANG"]
+        .iter()
+        .any(|key| environment.get(*key).is_some_and(|value| !value.is_empty()));
+    if !has_locale {
+        environment.insert("LANG".to_string(), "C.UTF-8".to_string());
     }
 }
 
@@ -439,6 +462,26 @@ mod tests {
             );
         }
         assert_eq!(parsed.get("KEEP").map(String::as_str), Some("yes"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_shell_without_a_locale_gets_a_utf8_one() {
+        let mut environment = HashMap::from([("LANG".to_string(), String::new())]);
+        ensure_utf8_locale(&mut environment);
+        assert_eq!(environment.get("LANG").map(String::as_str), Some("C.UTF-8"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_shell_locale_is_kept() {
+        let mut environment = HashMap::from([("LC_CTYPE".to_string(), "fr_FR.UTF-8".to_string())]);
+        ensure_utf8_locale(&mut environment);
+        assert!(!environment.contains_key("LANG"));
+        assert_eq!(
+            environment.get("LC_CTYPE").map(String::as_str),
+            Some("fr_FR.UTF-8")
+        );
     }
 
     /// A shell that fails, or output with no sentinel at all, must degrade to

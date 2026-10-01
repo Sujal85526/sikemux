@@ -125,6 +125,7 @@ pub(super) async fn run(
     let launch = chat.launch.clone();
     let config = AcpAgentConfig::new(&launch.program)
         .args(launch.args.iter().cloned())
+        .envs(sikemux_pty::user_shell::login_shell_locale())
         .envs(launch.env.clone());
     let agent = AcpAgent::new(config);
     let provider = launch.provider.clone();
