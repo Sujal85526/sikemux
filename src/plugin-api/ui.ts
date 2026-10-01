@@ -11,3 +11,6 @@ export { useMouseActive } from "../hooks/useMouseActive";
 export { rankBy } from "../lib/fuzzy";
 export { FILE_MANAGER_NAME, IS_MACOS, PRIMARY_SHORTCUT } from "../lib/platform";
 export { currentShortcutLabel, useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
+export { SendToAgentMenu, sendToAgentItems, useAgentChoices } from "../agents/SendToAgentMenu";
+export { codeFence, type AgentChoice } from "../agents/agentTargets";
+export type { AgentDelivery } from "../agents/agentInbox";

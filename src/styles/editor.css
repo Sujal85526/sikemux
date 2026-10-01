@@ -226,6 +226,11 @@
     background: color-mix(in srgb, var(--danger) 12%, transparent);
     color: var(--danger);
 }
+.tree-ctx-icon {
+    display: flex;
+    flex: none;
+    margin-right: -4px;
+}
 .tree-ctx-label {
     flex: 1 1 auto;
     min-width: 0;

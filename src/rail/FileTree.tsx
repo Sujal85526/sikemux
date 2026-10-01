@@ -55,6 +55,7 @@ const TREE_VIRTUALIZE_AFTER = 150;
 export interface CtxItem {
     label?: string;
     hint?: string;
+    icon?: ReactNode;
     danger?: boolean;
     disabled?: boolean;
     sep?: boolean;
@@ -949,6 +950,7 @@ export function TreeContextMenu({
                                 onClose();
                                 it.run?.();
                             }}>
+                            {it.icon && <span className="tree-ctx-icon">{it.icon}</span>}
                             <span className="tree-ctx-label" title={it.label}>
                                 {it.label}
                             </span>
