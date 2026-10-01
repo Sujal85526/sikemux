@@ -12,7 +12,7 @@ import { performanceTelemetry } from "../lib/performance";
 import { subscribePtyShellMetadata, type PtyShellMetadataEvent } from "../api/ptyShell";
 import { taskPtyBindings, type TaskPtyBinding } from "../tasks/nativeRuntime";
 import { coreSessionsApi } from "../api/coreSessions";
-import { takeResumableSession } from "./sessionResume";
+import { noteSpawnedSession, takeResumableSession } from "./sessionResume";
 
 type NativeChannel = Channel<ArrayBuffer>;
 export type NativePtyController = PtyLifecycleController<NativeChannel, PtyContext>;
@@ -60,7 +60,11 @@ function decodeAttachResponse(body: ArrayBuffer): PtyAttachResult {
 }
 
 const nativePtyApi: PtyApi<NativeChannel, PtyContext> = {
-    spawn: (request) => invoke<number>("pty_spawn", { ...request }),
+    spawn: async (request) => {
+        const id = await invoke<number>("pty_spawn", { ...request });
+        noteSpawnedSession(id);
+        return id;
+    },
     write: (id, data) => invoke<void>("pty_write", { id, data }),
     resize: (id, cols, rows) => invoke<void>("pty_resize", { id, cols, rows }),
     kill: (id) => invoke<void>("pty_kill", { id }),

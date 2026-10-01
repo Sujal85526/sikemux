@@ -6,7 +6,7 @@ import { notify } from "../state/toast";
 import { adoptCoreTasks, type TaskAdoptionTargets } from "../tasks/adoption";
 import { appTaskRuntime } from "../tasks/application";
 import { NativeTaskExecutionBackend } from "../tasks/nativeRuntime";
-import { offerResumableSessions } from "../terminal/sessionResume";
+import { offerResumableSessions, spawnedThisPage } from "../terminal/sessionResume";
 
 /** Long enough for every pane of a restored layout to have taken its terminal back. */
 export const UNCLAIMED_GRACE_MS = 30_000;
@@ -43,8 +43,8 @@ function defaultDeps(): CoreSessionRestoreDeps {
 /**
  * Takes back what the core kept while the app was closed or reloading:
  * terminal agents still running come back live, tasks rejoin the command deck
- * and the harness, and terminals nothing in the layout names are stopped after
- * a grace, so none of them runs forever unseen.
+ * and the harness, and terminals from before this page that nothing in the
+ * layout names are stopped after a grace, so none of them runs forever unseen.
  */
 export async function restoreCoreSessions(deps: CoreSessionRestoreDeps = defaultDeps()): Promise<void> {
     let sessions: CoreSession[];
@@ -57,13 +57,14 @@ export async function restoreCoreSessions(deps: CoreSessionRestoreDeps = default
     const tasks = await adoptCoreTasks(sessions, deps.tasks);
 
     const claimed = claimedSessionIds(getState());
-    const terminals = sessions.filter((session) => session.kind === "terminal" && session.running && claimed.has(session.id)).length;
+    const earlier = sessions.filter((session) => !spawnedThisPage(session.id));
+    const terminals = earlier.filter((session) => session.kind === "terminal" && session.running && claimed.has(session.id)).length;
     if (terminals + tasks > 0 && !getState().keptRunningNoticeShown) {
         setState({ keptRunningNoticeShown: true });
         notify("info", KEPT_RUNNING_NOTICE, { timeoutMs: 12_000 });
     }
 
-    const candidates = unclaimedTerminals(sessions, claimed);
+    const candidates = unclaimedTerminals(earlier, claimed);
     if (candidates.length === 0) return;
     deps.schedule(() => {
         const stillClaimed = claimedSessionIds(getState());

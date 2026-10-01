@@ -8,7 +8,7 @@ import { getState, setState } from "../state/store";
 import { useToasts } from "../state/toast";
 import { agentWindowId } from "../state/selectors";
 import { withAgents } from "../test/agents";
-import { isResumableSession, takeResumableSession } from "../terminal/sessionResume";
+import { isResumableSession, noteSpawnedSession, takeResumableSession } from "../terminal/sessionResume";
 import { KEPT_RUNNING_NOTICE, UNCLAIMED_GRACE_MS, offerSavedSessions, restoreCoreSessions, type CoreSessionRestoreDeps } from "./restoreCoreSessions";
 
 const initial = getState();
@@ -107,5 +107,14 @@ describe("restoring what the core kept", () => {
         await restoreCoreSessions(deps([terminal(104)]).restore);
         expect(useToasts.getState().toasts).toEqual([]);
         expect(getState().keptRunningNoticeShown).toBe(false);
+    });
+
+    it("leaves alone a terminal this page started, such as a popup opened right after launch", async () => {
+        noteSpawnedSession(201);
+        const { restore, kill, runScheduled } = deps([terminal(201)]);
+        await restoreCoreSessions(restore);
+        runScheduled();
+        expect(kill).not.toHaveBeenCalled();
+        expect(useToasts.getState().toasts).toEqual([]);
     });
 });
