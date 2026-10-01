@@ -49,6 +49,38 @@ export const SCENES = [
     },
   },
   {
+    name: "agents-all-projects",
+    settle: 1200,
+    setup: async (page) => {
+      await openWindow(page, "s-sikemux", "w-agent-rail");
+      await run(page, () => {
+        const state = (kind, minutesAgo) => ({
+          state: kind,
+          backendState: kind === "done" ? "idle" : kind,
+          unread: kind === "done",
+          updatedAt: Date.now() - minutesAgo * 60_000,
+          lastWorkedAt: Date.now() - minutesAgo * 60_000,
+          sequence: 1,
+          source: "acp",
+          confidence: "high",
+          reason: "",
+        });
+        showcase.cmd.setAgentRailAllAgents(true);
+        showcase.cmd.setAgentRailScope("all");
+        showcase.store.setState({
+          agentActivity: {
+            "agent-rail": state("working", 0),
+            "agent-replay": state("blocked", 3),
+            "agent-hero": state("done", 12),
+            "agent-palette": state("working", 1),
+            "agent-notes": state("blocked", 7),
+          },
+        });
+      });
+    },
+    crops: { rail: ".workspace-rail" },
+  },
+  {
     name: "files",
     setup: (page) => openWindow(page, "s-sikemux", "w-sikemux-files"),
     crops: {
