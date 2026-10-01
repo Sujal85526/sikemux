@@ -35,7 +35,8 @@ const cliExecutable = resolve(
       root,
       "src-tauri",
       "target",
-      "release",
+      "e2e",
+      "debug",
       `sikemux-editor${executableSuffix}`,
     ),
 );
@@ -1259,7 +1260,7 @@ async function exerciseQuitAndStopEverything(shell) {
 }
 
 await executableExists(appExecutable, "debug desktop executable");
-await executableExists(cliExecutable, "release editor CLI");
+await executableExists(cliExecutable, "debug editor CLI");
 const fakeAgent = buildFakeAgent();
 
 const temporaryRoot = await mkdtemp(join(tmpdir(), "sikemux-desktop-e2e-"));
