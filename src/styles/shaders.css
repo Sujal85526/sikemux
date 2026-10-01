@@ -85,7 +85,7 @@
 .pane-field-image {
     bottom: auto;
     height: 50%;
-    --shader-field-strength: 0.55;
+    --shader-field-strength: 0.38;
     mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.45) 40%, rgba(0, 0, 0, 0.08) 76%, transparent 100%);
     clip-path: inset(0 round calc(var(--radius-panel) - 1px) calc(var(--radius-panel) - 1px) 0 0);
 }
