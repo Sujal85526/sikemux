@@ -11,6 +11,7 @@ use sikemux_pty::task::{
     task_reclamation_plan, validate_task_request, TaskProcessExit, TaskRetentionCandidate,
     TaskSpawnRequest, MAX_RETAINED_EXITED_TASK_PTYS,
 };
+use sikemux_pty::user_shell::{configured_shell, login_shell_environment};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 
@@ -145,7 +146,7 @@ pub async fn task_spawn(
         rows,
     } = request;
 
-    let shell = crate::system::configured_shell();
+    let shell = configured_shell();
     let mut task_command = CommandBuilder::new(&shell);
     let context = PtyContext {
         session_id: execution_id.clone(),
@@ -172,7 +173,7 @@ pub async fn task_spawn(
         &app.package_info().version.to_string(),
         cli_executable.as_deref(),
         cli_endpoint.as_deref(),
-        crate::system::login_shell_environment(),
+        login_shell_environment(),
     );
     task_command.env("SIKEMUX_TASK_EXECUTION_ID", execution_id);
     task_command.env("SIKEMUX_TASK_TERMINAL_KEY", terminal_key);

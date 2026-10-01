@@ -493,7 +493,7 @@ mod tests {
         let projects: Vec<String> = std::env::var("SIKEMUX_RECENT_PROJECTS")
             .map(|value| value.split(':').map(String::from).collect())
             .unwrap_or_default();
-        crate::system::login_shell_environment();
+        sikemux_pty::user_shell::login_shell_environment();
         let providers = || -> Vec<RecentProvider> {
             [
                 AgentKind::Claude,

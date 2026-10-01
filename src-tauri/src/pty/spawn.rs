@@ -22,6 +22,7 @@ use sikemux_pty::shell::{
 };
 #[cfg(unix)]
 use sikemux_pty::shell::{shell_wants_login_flag, startup_bootstrap};
+use sikemux_pty::user_shell::configured_shell;
 use sikemux_pty::validate_pty_dimensions;
 use tauri::{AppHandle, Manager, State};
 #[cfg(unix)]
@@ -120,7 +121,7 @@ pub async fn pty_spawn(
         }
         _ => None,
     };
-    let shell = crate::system::configured_shell();
+    let shell = configured_shell();
     let direct_profile = direct_command
         .as_ref()
         .and_then(|command| command.profile.clone());

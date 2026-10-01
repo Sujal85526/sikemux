@@ -104,7 +104,7 @@ pub fn run() {
     // concurrent spawns during session restore would serialise behind the
     // same one-time initialisation. An rc file that runs something slow like
     // `fastfetch` makes that delay visible on the first pane.
-    system::warm_login_shell_environment();
+    sikemux_pty::user_shell::warm_login_shell_environment();
     system::import_from_login_shell(&plugins::shell_variables());
 
     let builder = tauri::Builder::default();

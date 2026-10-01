@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
+use sikemux_pty::user_shell::login_shell_environment;
 use tokio::process::Command;
 
 use super::config::{agent_config_root, configured_default_effort, configured_default_model};
@@ -59,7 +60,7 @@ pub(super) fn apply_process_config(command: &mut Command, agent: &str, config_pa
 }
 
 pub(super) fn apply_login_environment(command: &mut Command) {
-    for (key, value) in crate::system::login_shell_environment() {
+    for (key, value) in login_shell_environment() {
         command.env(key, value);
     }
 }

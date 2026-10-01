@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
+use sikemux_pty::user_shell::login_shell_environment;
 
 use super::executable::expand_user_path;
 use super::home_path;
@@ -9,17 +10,15 @@ use super::home_path;
 const MAX_MODEL_LENGTH: usize = 256;
 
 fn environment_path(key: &str) -> Option<PathBuf> {
-    std::env::var_os(key).map(PathBuf::from).or_else(|| {
-        crate::system::login_shell_environment()
-            .get(key)
-            .map(PathBuf::from)
-    })
+    std::env::var_os(key)
+        .map(PathBuf::from)
+        .or_else(|| login_shell_environment().get(key).map(PathBuf::from))
 }
 
 fn environment_string(key: &str) -> Option<String> {
     std::env::var(key)
         .ok()
-        .or_else(|| crate::system::login_shell_environment().get(key).cloned())
+        .or_else(|| login_shell_environment().get(key).cloned())
 }
 
 fn omp_profile_name() -> Option<String> {

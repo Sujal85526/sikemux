@@ -165,7 +165,7 @@ After adding or removing a command, run `pnpm ipc:generate` and commit the three
 | `plugins/`                | The plugin host and the compiled-in plugin list                                                              |
 | `state.rs`                | Saving and loading the app state in SQLite                                                                   |
 | `observability/`          | Bounded spans, counters and latency history, the UI heartbeat and hang watchdog; `autopsy.rs` saves evidence |
-| `system.rs`               | Login-shell `PATH` and environment, the file descriptor limit, finding executables                           |
+| `system.rs`               | Login-shell `PATH`, the file descriptor limit, finding executables                                           |
 | `updates.rs`              | Stable and nightly update checks and installs; `release_credits.rs` reads release notes                      |
 | `voice.rs`                | The voice helper process                                                                                     |
 | `settings.rs`, `ssh.rs`   | Project root scanning and `~/.ssh/config` hosts                                                              |
@@ -179,7 +179,7 @@ Internal crates in `src-tauri/crates/`:
 | `sikemux-process`    | Runs a subprocess with a timeout and an output size limit                                   |
 | `sikemux-markdown`   | Parses markdown into the block tree the chat transcript draws (`markdown_parse`)            |
 | `sikemux-keychain`   | Reads and writes secrets in the system keychain; used by the GitHub, Bitbucket and SigNoz plugins |
-| `sikemux-pty`        | The terminal engine without Tauri: the per-PTY screen, shell integration, the `SIKEMUX_*` environment, task checks, task output paging, and `agent_detection/`, which reads an agent's screen against `manifests/*.json` to tell working, blocked or idle |
+| `sikemux-pty`        | The terminal engine without Tauri: the per-PTY screen, shell integration, the configured shell and login-shell environment, the `SIKEMUX_*` environment, task checks, task output paging, and `agent_detection/`, which reads an agent's screen against `manifests/*.json` to tell working, blocked or idle |
 
 ## Plugins
 

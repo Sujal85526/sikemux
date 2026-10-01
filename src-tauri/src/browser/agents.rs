@@ -12,6 +12,7 @@ use std::time::Duration;
 
 use agent_client_protocol::schema::v1::{EnvVariable, McpServer, McpServerStdio};
 use serde_json::{json, Value};
+use sikemux_pty::user_shell::login_shell_environment;
 use tauri::{AppHandle, Manager};
 
 use super::{browser_state_dir, validate_agent_id, BrowserManager, BrowserMcpLaunch};
@@ -173,7 +174,7 @@ fn codex_browser_args(launch: &BrowserMcpLaunch) -> AppResult<Vec<String>> {
 }
 
 fn inherited_opencode_config() -> Option<String> {
-    crate::system::login_shell_environment()
+    login_shell_environment()
         .get("OPENCODE_CONFIG_CONTENT")
         .cloned()
         .or_else(|| std::env::var("OPENCODE_CONFIG_CONTENT").ok())
@@ -280,7 +281,7 @@ async fn prepare_grok_home(
 }
 
 fn agent_home(variable: &str, default_name: &str) -> PathBuf {
-    crate::system::login_shell_environment()
+    login_shell_environment()
         .get(variable)
         .map(PathBuf::from)
         .unwrap_or_else(|| crate::system::user_home().join(default_name))
