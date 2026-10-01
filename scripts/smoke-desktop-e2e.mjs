@@ -1071,7 +1071,7 @@ async function exerciseUpdateKeepsTerminals(shell, chatSession) {
   await quitDesktop();
   const next = await writeSidecar("sikemux-next", "e2e-next");
   const nextEnvironment = {
-    SIKEMUX_BIN_PATH: next,
+    SIKEMUX_SIDECAR_PATH: next,
     SIKEMUX_BUILD_ID_OVERRIDE: "e2e-next",
   };
   desktop = launchDesktop(nextEnvironment);
@@ -1342,7 +1342,7 @@ const isolatedEnvironment = {
   USERPROFILE: isolatedHome,
   SIKEMUX_CLI_ENDPOINT: endpoint,
   SIKEMUX_CLI_ENDPOINT_PUBLISH: endpoint,
-  SIKEMUX_BIN_PATH: cliExecutable,
+  SIKEMUX_SIDECAR_PATH: cliExecutable,
   SIKEMUX_CORE_SOCKET: coreSocket,
 };
 delete isolatedEnvironment.SIKEMUX_APP_EXECUTABLE;

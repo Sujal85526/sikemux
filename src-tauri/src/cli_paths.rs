@@ -10,8 +10,11 @@ pub fn cli_endpoint_path() -> Option<PathBuf> {
     sikemux_core::cli::endpoint::default_endpoint_path()
 }
 
+/// The sidecar bundled beside this app. `SIKEMUX_BIN_PATH` is not read here:
+/// every Sikemux terminal sets it, so an app started from one would run another
+/// build's sidecar. Tests point the app elsewhere with `SIKEMUX_SIDECAR_PATH`.
 pub fn cli_executable_path() -> Option<PathBuf> {
-    if let Some(path) = std::env::var_os("SIKEMUX_BIN_PATH") {
+    if let Some(path) = std::env::var_os("SIKEMUX_SIDECAR_PATH") {
         let path = PathBuf::from(path);
         if path.is_file() {
             return Some(path);
