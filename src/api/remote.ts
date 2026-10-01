@@ -38,6 +38,24 @@ export interface RemoteStatus {
     readonly pending: readonly PendingDevice[];
 }
 
+/** A project a paired device may start an agent in. */
+export interface PublishedProject {
+    readonly id: string;
+    readonly name: string;
+    readonly path: string;
+}
+
+/** One chat agent the app offers paired devices; the app works out how to run it. */
+export interface LauncherRequest {
+    readonly id: string;
+    readonly provider: string;
+    readonly label: string;
+    readonly configPath?: string;
+    readonly executablePath?: string;
+    readonly environmentKeys: readonly string[];
+    readonly permissionMode: string;
+}
+
 export const REMOTE_STATUS_EVENT = "remote_status_changed";
 
 export const remoteApi = {
@@ -48,6 +66,8 @@ export const remoteApi = {
     openPairing: () => invoke<RemoteStatus>("remote_open_pairing"),
     closePairing: () => invoke<RemoteStatus>("remote_close_pairing"),
     answerPairing: (id: string, allow: boolean, access: DeviceAccess) => invoke<RemoteStatus>("remote_answer_pairing", { id, allow, access }),
+    publishWorkspace: (projects: readonly PublishedProject[], launchers: readonly LauncherRequest[]) =>
+        invoke<void>("remote_publish_workspace", { projects, launchers }),
     subscribe: (listener: (status: RemoteStatus) => void, signal: AbortSignal) =>
         getIpcTransport().subscribe<RemoteStatus>(REMOTE_STATUS_EVENT, (event) => listener(event.payload), { signal }),
 };

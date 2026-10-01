@@ -26,6 +26,7 @@ import { ImageViewer } from "./editor/ImageViewer";
 import { useOccludeNativeViews } from "./state/nativeViews";
 import { TerminalPane } from "./terminal/TerminalPane";
 import { HarnessBridge } from "./shell/HarnessBridge";
+import { RemoteWorkspaceBridge } from "./shell/RemoteWorkspaceBridge";
 import { CliOpenBridge } from "./shell/CliOpenBridge";
 import { DeepLinkBridge } from "./shell/DeepLinkBridge";
 import { git } from "./api/git";
@@ -966,6 +967,7 @@ export default function App() {
             <CliOpenBridge />
             <DeepLinkBridge />
             <HarnessBridge />
+            <RemoteWorkspaceBridge />
             <ProjectBridge />
             <AgentSessionSync />
             <AgentLifecycleManager />
