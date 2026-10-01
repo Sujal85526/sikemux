@@ -4,6 +4,7 @@
 pub mod cli;
 #[cfg(unix)]
 pub mod client;
+pub mod harness;
 pub mod protocol;
 #[cfg(unix)]
 pub mod server;
