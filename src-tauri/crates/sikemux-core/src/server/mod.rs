@@ -682,7 +682,7 @@ pub(crate) async fn run_core(
         tokio::select! {
             accepted = listener.accept(), if accepting => match accepted {
                 Ok((stream, _)) => {
-                    tokio::spawn(connection::serve_client(core.clone(), stream));
+                    tokio::spawn(connection::serve_local(core.clone(), stream));
                 }
                 Err(error) => {
                     eprintln!("sikemux core: accept failed: {error}");

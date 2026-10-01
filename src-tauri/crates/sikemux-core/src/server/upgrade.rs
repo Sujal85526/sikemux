@@ -9,8 +9,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use tokio::io::{AsyncWriteExt, BufWriter};
-use tokio::net::unix::OwnedWriteHalf;
+use tokio::io::AsyncWriteExt;
 
 use crate::protocol::encode_frozen;
 use crate::protocol::frozen::{
@@ -18,7 +17,7 @@ use crate::protocol::frozen::{
 };
 
 use super::chat::{self, ChatRecord};
-use super::connection::blocking;
+use super::connection::{blocking, FrameWriter};
 use super::{handover, session, Core};
 
 /// What anything that asks the core for work hears while it hands itself over.
@@ -35,7 +34,7 @@ const TOOL_SETTLE: Duration = Duration::from_secs(1);
 const TURN_SETTLE: Duration = Duration::from_secs(120);
 const TURN_POLL: Duration = Duration::from_millis(250);
 
-async fn reply(writer: &mut BufWriter<OwnedWriteHalf>, answer: &FrozenReply) {
+async fn reply(writer: &mut FrameWriter, answer: &FrozenReply) {
     if let Ok(frame) = encode_frozen(answer) {
         let _ = writer.write_all(&frame).await;
         let _ = writer.flush().await;
@@ -52,7 +51,7 @@ fn refused(message: impl Into<String>) -> FrozenReply {
 pub(crate) async fn answer(
     core: &Arc<Core>,
     payload: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut FrameWriter,
 ) {
     match serde_json::from_slice::<FrozenRequest>(payload) {
         Ok(FrozenRequest::Upgrade { binary }) => upgrade(core, binary, writer).await,
@@ -70,7 +69,7 @@ pub(crate) async fn answer(
     }
 }
 
-async fn upgrade(core: &Arc<Core>, binary: PathBuf, writer: &mut BufWriter<OwnedWriteHalf>) {
+async fn upgrade(core: &Arc<Core>, binary: PathBuf, writer: &mut FrameWriter) {
     if core
         .upgrading
         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -114,7 +113,7 @@ async fn upgrade(core: &Arc<Core>, binary: PathBuf, writer: &mut BufWriter<Owned
 
 /// The client that asked for a deferred update has its answer and need not
 /// wait for the update itself.
-async fn drop_writer(writer: &mut BufWriter<OwnedWriteHalf>) {
+async fn drop_writer(writer: &mut FrameWriter) {
     let _ = writer.shutdown().await;
 }
 

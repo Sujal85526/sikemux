@@ -4,8 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use sikemux_pty::validate_pty_dimensions;
-use tokio::io::{AsyncWriteExt, BufReader, BufWriter};
-use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::UnixStream;
 use tokio::sync::{mpsc, Notify};
 
@@ -19,6 +18,8 @@ use super::session::{self, PendingStart};
 use super::{agent, chat, harness, upgrade, Core, CoreError, CoreResult};
 
 pub(crate) type ClientId = u64;
+pub(crate) type FrameReader = BufReader<Box<dyn AsyncRead + Send + Unpin>>;
+pub(crate) type FrameWriter = BufWriter<Box<dyn AsyncWrite + Send + Unpin>>;
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 /// A client that stops reading entirely is cut off rather than buffered for.
@@ -100,7 +101,7 @@ impl ClientConn {
     }
 }
 
-async fn write_direct(writer: &mut BufWriter<OwnedWriteHalf>, message: &ServerMessage) {
+async fn write_direct(writer: &mut FrameWriter, message: &ServerMessage) {
     if let Ok(frame) = encode_control(message) {
         let _ = writer.write_all(&frame).await;
         let _ = writer.flush().await;
@@ -109,8 +110,8 @@ async fn write_direct(writer: &mut BufWriter<OwnedWriteHalf>, message: &ServerMe
 
 async fn handshake(
     core: &Arc<Core>,
-    reader: &mut BufReader<OwnedReadHalf>,
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    reader: &mut FrameReader,
+    writer: &mut FrameWriter,
 ) -> bool {
     let frame = match tokio::time::timeout(HANDSHAKE_TIMEOUT, read_frame(reader)).await {
         Ok(Ok(Some(frame))) if frame.kind == FrameKind::Control => frame,
@@ -171,8 +172,16 @@ async fn handshake(
     }
 }
 
-pub(crate) async fn serve_client(core: Arc<Core>, stream: UnixStream) {
+pub(crate) async fn serve_local(core: Arc<Core>, stream: UnixStream) {
     let (read_half, write_half) = stream.into_split();
+    serve_client(core, Box::new(read_half), Box::new(write_half)).await;
+}
+
+pub(crate) async fn serve_client(
+    core: Arc<Core>,
+    read_half: Box<dyn AsyncRead + Send + Unpin>,
+    write_half: Box<dyn AsyncWrite + Send + Unpin>,
+) {
     let mut reader = BufReader::new(read_half);
     let mut writer = BufWriter::with_capacity(64 * 1024, write_half);
     if !handshake(&core, &mut reader, &mut writer).await {
@@ -199,7 +208,7 @@ pub(crate) async fn serve_client(core: Arc<Core>, stream: UnixStream) {
 }
 
 async fn write_frames(
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut FrameWriter,
     mut queue: mpsc::UnboundedReceiver<Arc<[u8]>>,
     client: &ClientConn,
 ) -> std::io::Result<()> {
@@ -219,7 +228,7 @@ async fn write_frames(
 async fn read_requests(
     core: &Arc<Core>,
     client: &Arc<ClientConn>,
-    reader: &mut BufReader<OwnedReadHalf>,
+    reader: &mut FrameReader,
     work: mpsc::UnboundedSender<(RequestId, Request)>,
 ) {
     while let Ok(Some(frame)) = read_frame(reader).await {
