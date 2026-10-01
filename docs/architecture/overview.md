@@ -67,6 +67,13 @@ never loads WebKit. [ADR 0006](./0006-background-core.md) records why.
 - **Crashes.** A terminal agent that dies unexpectedly comes back on its conversation in
   the same pane (`src/agents/tuiRecovery.ts`); a chat agent does the same
   (`src/chat/sessionRecovery.ts`).
+- **Paired devices.** With remote access on (Settings, Devices), the core also listens on
+  an iroh endpoint, and phones that paired with a code reach it from anywhere
+  (`server/remote.rs`, `server/pairing.rs`, `src/pairing.rs`). Each request is checked
+  against what the device may do (`server/access.rs`). The app publishes its projects and
+  how it starts each agent (`server/workspace.rs`, `src/shell/RemoteWorkspaceBridge.tsx`),
+  so a device can start a chat with the window closed. [ADR 0007](./0007-remote-access-over-iroh.md)
+  records the design.
 
 ### The CLI broker
 
