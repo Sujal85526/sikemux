@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use sikemux_core::protocol::BuildIdentity;
 use sikemux_core::server::{self, ServerConfig, ServerError, DEFAULT_IDLE_EXIT};
 
 struct CoreArgs {
@@ -51,6 +52,11 @@ pub fn run() -> i32 {
     match server::run(ServerConfig {
         socket,
         idle_exit: args.idle_exit,
+        build: BuildIdentity {
+            version: env!("CARGO_PKG_VERSION").into(),
+            commit: env!("SIKEMUX_BUILD_COMMIT").into(),
+            built_at: env!("SIKEMUX_BUILD_TIME").parse().unwrap_or(0),
+        },
     }) {
         Ok(()) => 0,
         Err(error @ ServerError::AlreadyRunning { .. }) => {

@@ -22,10 +22,11 @@ use tokio::io::unix::AsyncFd;
 use tokio::sync::{mpsc, Notify};
 
 use crate::protocol::{
-    encode_output, encode_snapshot, AttachHeader, Event, RequestId, SessionId, SessionInfo,
-    SessionKind,
+    encode_output, encode_snapshot, AttachHeader, Event, RequestId, Response, SessionId,
+    SessionInfo, SessionKind,
 };
 
+use super::agent::{self, AgentActivity};
 use super::connection::{ClientConn, ClientId};
 use super::prepare::{Owner, PreparedLaunch};
 use super::{now_ms, CapacityPermit, Core, CoreError, CoreResult};
@@ -95,6 +96,8 @@ pub(crate) struct Session {
     /// tasks stay attachable for a while.
     pub(crate) task_exited_at_ms: AtomicU64,
     stop_reader: Notify,
+    /// Present for a terminal launched for an agent.
+    pub(crate) agent: Option<AgentActivity>,
     _shell_integration: Option<ShellLaunchIntegration>,
     _capacity_permit: CapacityPermit,
 }
@@ -131,6 +134,11 @@ impl Session {
             agent_id: self.owner.agent_id.clone(),
             agent_type: self.owner.agent_type.clone(),
             task_execution_id: self.owner.task_execution_id.clone(),
+            agent_state: self
+                .agent
+                .as_ref()
+                .and_then(AgentActivity::state_label)
+                .map(str::to_string),
         }
     }
 }
@@ -139,8 +147,30 @@ fn os_error() -> CoreError {
     CoreError::from(std::io::Error::last_os_error())
 }
 
-/// Mirrors the app's `spawn_prepared_pty`. Runs on a blocking thread.
-pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreResult<SessionId> {
+/// A session that is listed but whose output is not read yet. Starting it
+/// after the spawn reply is queued means a client hears about the session
+/// before any of its output or its exit.
+pub(crate) struct PendingStart {
+    session: Arc<Session>,
+    input_jobs: mpsc::UnboundedReceiver<InputJob>,
+}
+
+impl PendingStart {
+    pub(crate) fn id(&self) -> SessionId {
+        self.session.id
+    }
+
+    pub(crate) fn start(self, core: &Arc<Core>) {
+        if let Some(agent) = self.session.agent.as_ref() {
+            agent::publish_start(core, agent);
+        }
+        tokio::spawn(write_input(Arc::downgrade(&self.session), self.input_jobs));
+        tokio::spawn(read_output(core.clone(), self.session));
+    }
+}
+
+/// Opens the terminal and starts its process. Runs on a blocking thread.
+pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreResult<PendingStart> {
     validate_pty_dimensions(launch.cols, launch.rows)?;
     core.reclaim_completed_tasks(now_ms());
     let capacity_permit = core.capacity.try_acquire()?;
@@ -159,6 +189,7 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
         kind,
         owner,
         shell_integration,
+        initial_prompt_submitted,
     } = launch;
     let shell_metadata_enabled = shell_integration.is_some();
 
@@ -198,6 +229,11 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
 
     let id = core.next_session_id.fetch_add(1, Ordering::Relaxed);
     let (input, input_jobs) = mpsc::unbounded_channel();
+    let agent = AgentActivity::new(
+        owner.agent_id.as_deref(),
+        owner.agent_type.as_deref(),
+        initial_prompt_submitted,
+    );
     let session = Arc::new(Session {
         id,
         kind,
@@ -226,6 +262,7 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
         }),
         task_exited_at_ms: AtomicU64::new(0),
         stop_reader: Notify::new(),
+        agent,
         _shell_integration: shell_integration,
         _capacity_permit: capacity_permit,
     });
@@ -233,9 +270,10 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
     // Publish before starting the reader, so a command that exits at once
     // cannot prune itself before it was ever inserted.
     core.insert_session(session.clone());
-    tokio::spawn(write_input(Arc::downgrade(&session), input_jobs));
-    tokio::spawn(read_output(core.clone(), session));
-    Ok(id)
+    Ok(PendingStart {
+        session,
+        input_jobs,
+    })
 }
 
 async fn write_all_async(io: &AsyncFd<File>, mut data: &[u8]) -> std::io::Result<()> {
@@ -463,6 +501,9 @@ pub(crate) fn report_exit(core: &Core, session: &Session, status: Option<&ExitSt
         signal,
         killed: session.killed.load(Ordering::Acquire),
     });
+    if let Some(agent) = session.agent.as_ref() {
+        agent::note_exit(core, agent, status);
+    }
     if let Some(exited_at) = exited_at {
         core.reclaim_completed_tasks(exited_at);
     }
@@ -481,6 +522,9 @@ fn broadcast_output(core: &Arc<Core>, session: &Session, bytes: &[u8]) {
     session
         .last_activity_ms
         .store(output_now_ms, Ordering::Relaxed);
+    if let Some(agent) = session.agent.as_ref() {
+        agent::note_output(core, agent);
+    }
     let Ok(mut parser) = session.parser.lock() else {
         return;
     };
@@ -494,8 +538,23 @@ fn broadcast_output(core: &Arc<Core>, session: &Session, bytes: &[u8]) {
         .map(|shell| shell.process_for_events(bytes, output_now_ms))
         .unwrap_or_default();
     parser.process(bytes);
+    if let Some(agent) = session.agent.as_ref() {
+        agent.note_parsed();
+    }
     // Frames are queued under the parser lock, the same lock an attach holds
     // while it takes its snapshot, so a client sees every byte exactly once.
+    send_to_subscribers(session, bytes);
+    drop(parser);
+    if let Some(update) = shell_output.ready {
+        core.broadcast_event(&Event::ShellMetadata(PtyShellMetadataEvent::from_update(
+            session.id, update,
+        )));
+    }
+}
+
+/// Callers hold the parser lock, which keeps frames in the order the parser
+/// saw the bytes.
+fn send_to_subscribers(session: &Session, bytes: &[u8]) {
     if let Ok(mut subscribers) = session.subscribers.lock() {
         if !subscribers.is_empty() {
             let frame: Arc<[u8]> = encode_output(session.id, bytes).into();
@@ -508,12 +567,17 @@ fn broadcast_output(core: &Arc<Core>, session: &Session, bytes: &[u8]) {
             });
         }
     }
-    drop(parser);
-    if let Some(update) = shell_output.ready {
-        core.broadcast_event(&Event::ShellMetadata(PtyShellMetadataEvent::from_update(
-            session.id, update,
-        )));
-    }
+}
+
+pub(crate) const RESET_MODES: &[u8] = b"\x1b>\x1b[4l\x1b[?1l\x1b[?6l\x1b[?7h\x1b[?9l\x1b[?45l\x1b[?66l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1004l\x1b[?1005l\x1b[?1006l\x1b[?1015l\x1b[?1016l\x1b[?2004l\x1b[?1049l";
+
+/// Sends the same reset to the screen and every subscriber under the parser
+/// lock, so no output from the program can land between the two.
+pub(crate) fn reset_modes(session: &Session) -> CoreResult<()> {
+    let mut parser = session.parser.lock().map_err(CoreError::poisoned)?;
+    parser.process(RESET_MODES);
+    send_to_subscribers(session, RESET_MODES);
+    Ok(())
 }
 
 pub(crate) fn mark_task_output_noticed(session: &Session) {
@@ -553,6 +617,27 @@ pub(crate) fn attach(
     if !client.send(frame.into()) {
         return Err("client disconnected".into());
     }
+    subscribers.insert(client.id, Subscriber::new(client.clone()));
+    client.note_subscription(session.id, true);
+    drop(subscribers);
+    drop(parser);
+    session.flow_control.notify_waiters();
+    Ok(())
+}
+
+/// Subscribes without a replay. The reply is queued under the parser lock,
+/// so the client knows exactly which output frames come after it.
+pub(crate) fn subscribe(
+    session: &Session,
+    client: &Arc<ClientConn>,
+    request_id: RequestId,
+) -> CoreResult<()> {
+    let parser = session.parser.lock().map_err(CoreError::poisoned)?;
+    let mut subscribers = session.subscribers.lock().map_err(CoreError::poisoned)?;
+    if !subscribers.contains_key(&client.id) && subscribers.len() >= MAX_SUBSCRIBERS_PER_SESSION {
+        return Err("pty: PTY subscriber capacity reached".into());
+    }
+    client.respond(request_id, Ok(Response::Done));
     subscribers.insert(client.id, Subscriber::new(client.clone()));
     client.note_subscription(session.id, true);
     drop(subscribers);
@@ -658,6 +743,9 @@ pub(crate) fn task_output(
 
 pub(crate) fn kill(core: &Core, session: &Session) {
     session.killed.store(true, Ordering::Release);
+    if let Some(agent) = session.agent.as_ref() {
+        agent.silence();
+    }
     let status = match session.child.lock() {
         Ok(mut child) => {
             let force_task_tree = sikemux_pty::task::task_process_needs_force_backstop(
@@ -747,5 +835,93 @@ pub(crate) fn trim_if_idle(session: &Session, now: u64, idle: Duration) {
     }
     if compact_parser_for_idle(&mut parser) {
         session.trimmed.store(true, Ordering::Release);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RESET_MODES;
+    use sikemux_pty::screen::{semantic_parser_with_shell, PARSER_SCROLLBACK};
+
+    // The single-fd design rests on this: after the master is dup'd and
+    // portable_pty's `MasterPty` dropped, the dup keeps the child's terminal
+    // open. The child sleeps before printing, so a hangup on drop would end
+    // the read before the marker arrives.
+    #[test]
+    fn lone_master_dup_keeps_child_alive_after_masterpty_drop() {
+        use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
+        use std::io::Read;
+        use std::os::fd::FromRawFd;
+
+        let pair = NativePtySystem::default()
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("openpty");
+        let mut cmd = CommandBuilder::new("/bin/sh");
+        cmd.arg("-c");
+        cmd.arg("sleep 0.2; printf MARKER");
+        let mut child = pair.slave.spawn_command(cmd).expect("spawn");
+        drop(pair.slave);
+
+        let master_fd = pair.master.as_raw_fd().expect("master fd");
+        // SAFETY: `pair.master` still owns `master_fd`, so it is open; dup only
+        // creates a new fd and touches no memory.
+        let dup_fd = unsafe { libc::dup(master_fd) };
+        assert!(dup_fd >= 0, "dup failed");
+        drop(pair.master);
+
+        // SAFETY: `dup_fd` is a fresh fd, checked above, that nothing else owns,
+        // so the File is its only owner and closes it exactly once.
+        let mut file = unsafe { std::fs::File::from_raw_fd(dup_fd) };
+        let mut got = String::new();
+        let mut buf = [0u8; 256];
+        loop {
+            match file.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    got.push_str(&String::from_utf8_lossy(&buf[..n]));
+                    if got.contains("MARKER") {
+                        break;
+                    }
+                }
+            }
+        }
+        let _ = child.wait();
+        assert!(
+            got.contains("MARKER"),
+            "the child lost its terminal; got {got:?}"
+        );
+    }
+
+    #[test]
+    fn reset_modes_disables_interaction_modes_without_losing_normal_history() {
+        let mut parser = semantic_parser_with_shell(5, 20, PARSER_SCROLLBACK, false);
+        for i in 0..20 {
+            parser.process(format!("line {i:02}\r\n").as_bytes());
+        }
+        parser.process(
+            b"\x1b=\x1b[?1h\x1b[?9h\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1005h\x1b[?1006h\x1b[?2004h\x1b[?1049halt",
+        );
+        parser.process(RESET_MODES);
+
+        assert!(!parser.screen().alternate_screen());
+        assert!(!parser.screen().application_keypad());
+        assert!(!parser.screen().application_cursor());
+        assert!(!parser.screen().bracketed_paste());
+        assert_eq!(
+            parser.screen().mouse_protocol_mode(),
+            vt100::MouseProtocolMode::None
+        );
+        assert_eq!(
+            parser.screen().mouse_protocol_encoding(),
+            vt100::MouseProtocolEncoding::Default
+        );
+        let screen = parser.screen_mut();
+        screen.set_scrollback(usize::MAX);
+        assert!(screen.contents().contains("line 00"));
     }
 }

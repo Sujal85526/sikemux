@@ -50,6 +50,7 @@ pub(crate) struct PreparedLaunch {
     pub kind: SessionKind,
     pub owner: Owner,
     pub shell_integration: Option<ShellLaunchIntegration>,
+    pub initial_prompt_submitted: bool,
 }
 
 fn user_home() -> PathBuf {
@@ -136,6 +137,9 @@ pub(crate) fn prepare_terminal(
         kind: SessionKind::Terminal,
         owner: Owner::from_context(context.as_ref()),
         shell_integration,
+        initial_prompt_submitted: context
+            .as_ref()
+            .is_some_and(|context| context.initial_prompt_submitted),
     })
 }
 
@@ -203,5 +207,6 @@ pub(crate) fn prepare_task(
         kind: SessionKind::Task,
         owner,
         shell_integration: None,
+        initial_prompt_submitted: false,
     })
 }

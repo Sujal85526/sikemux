@@ -1,15 +1,17 @@
 use std::collections::HashMap;
 use std::fs::OpenOptions;
+use std::future::Future;
 use std::io::{self, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::net::UnixStream as StdUnixStream;
 use std::os::unix::process::CommandExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use sikemux_pty::agent_detection::{DetectionExplain, ManifestReloadReport};
 use sikemux_pty::output_log::{OutputPage, OutputQuery};
 use sikemux_pty::shell_protocol::ShellMetadataSnapshot;
 use tokio::io::{AsyncWriteExt, BufReader};
@@ -19,8 +21,9 @@ use tokio::task::JoinHandle;
 
 use crate::protocol::{
     decode_output, decode_snapshot, encode_control, encode_input, read_frame, read_frame_sync,
-    AttachHeader, ClientMessage, Event, FrameKind, LaunchIdentity, Request, RequestId, Response,
-    ServerMessage, SessionId, SessionInfo, SpawnTarget, PROTOCOL, PROTOCOL_VERSION,
+    BuildIdentity, ClientMessage, Event, FrameKind, LaunchIdentity, Request, RequestId, Response,
+    ServerMessage, SessionId, SessionInfo, SpawnTarget, MAX_FRAME_BYTES, PROTOCOL,
+    PROTOCOL_VERSION,
 };
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -52,16 +55,27 @@ pub enum ClientError {
     StartTimeout(Duration),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CoreHello {
     pub pid: u32,
     pub version: u32,
+    pub build: BuildIdentity,
 }
 
 #[derive(Debug)]
 pub enum ClientEvent {
     Output { id: SessionId, bytes: Vec<u8> },
     Event(Event),
+}
+
+/// Receives what the core sends unasked, on the connection's reader task and
+/// in the order it was sent. Reply callbacks run on the same task, so a reply
+/// lands between exactly the output frames it was sent between.
+pub trait EventSink: Send + Sync + 'static {
+    fn output(&self, id: SessionId, bytes: &[u8]);
+    fn event(&self, event: Event);
+    /// The connection is gone. Every pending reply has already failed.
+    fn closed(&self);
 }
 
 /// The replay of an attach. Live output for the session follows it on the
@@ -73,13 +87,17 @@ pub struct Attached {
     pub replay: Vec<u8>,
 }
 
-enum Reply {
+#[derive(Debug)]
+pub enum Reply {
     Response(Response),
-    Error(String),
-    Snapshot(AttachHeader, Vec<u8>),
+    Attached(Attached),
 }
 
-type Pending = Arc<Mutex<Option<HashMap<RequestId, oneshot::Sender<Reply>>>>>;
+type Waiter = Box<dyn FnOnce(Result<Reply, ClientError>) + Send>;
+type Pending = Arc<Mutex<Option<HashMap<RequestId, Waiter>>>>;
+
+/// Room for the request and session ids in front of the bytes of a write.
+const MAX_INPUT_CHUNK: usize = MAX_FRAME_BYTES - 16;
 
 /// One connection to the core. Dropping it disconnects; sessions keep running.
 /// Reconnecting is the caller's job.
@@ -105,7 +123,12 @@ fn hello_reply(message: ServerMessage) -> Result<CoreHello, ClientError> {
             protocol,
             version,
             pid,
-        } if protocol == PROTOCOL => Ok(CoreHello { pid, version }),
+            build,
+        } if protocol == PROTOCOL => Ok(CoreHello {
+            pid,
+            version,
+            build,
+        }),
         ServerMessage::HelloRejected {
             version,
             pid,
@@ -128,13 +151,51 @@ fn hello_frame() -> Result<Vec<u8>, ClientError> {
     })?)
 }
 
+struct ChannelSink(mpsc::UnboundedSender<ClientEvent>);
+
+impl EventSink for ChannelSink {
+    fn output(&self, id: SessionId, bytes: &[u8]) {
+        let _ = self.0.send(ClientEvent::Output {
+            id,
+            bytes: bytes.to_vec(),
+        });
+    }
+
+    fn event(&self, event: Event) {
+        let _ = self.0.send(ClientEvent::Event(event));
+    }
+
+    fn closed(&self) {}
+}
+
+fn fail_pending(pending: &Pending) {
+    let waiters = pending
+        .lock()
+        .ok()
+        .and_then(|mut pending| pending.take())
+        .unwrap_or_default();
+    for (_, waiter) in waiters {
+        waiter(Err(ClientError::Disconnected));
+    }
+}
+
 impl CoreClient {
+    /// Connects with a sink that queues everything on a channel.
     pub async fn connect(
         socket: &Path,
     ) -> Result<(Self, mpsc::UnboundedReceiver<ClientEvent>), ClientError> {
+        let (events, event_queue) = mpsc::unbounded_channel();
+        let client = Self::connect_with(socket, Arc::new(ChannelSink(events))).await?;
+        Ok((client, event_queue))
+    }
+
+    pub async fn connect_with(
+        socket: &Path,
+        sink: Arc<dyn EventSink>,
+    ) -> Result<Self, ClientError> {
         let stream = UnixStream::connect(socket).await?;
         let (read_half, mut write_half) = stream.into_split();
-        let mut reader = BufReader::new(read_half);
+        let mut reader = BufReader::with_capacity(256 * 1024, read_half);
         write_half.write_all(&hello_frame()?).await?;
         let frame = tokio::time::timeout(HANDSHAKE_TIMEOUT, read_frame(&mut reader))
             .await
@@ -146,7 +207,6 @@ impl CoreClient {
         let hello = hello_reply(serde_json::from_slice(&frame.payload)?)?;
 
         let pending: Pending = Arc::new(Mutex::new(Some(HashMap::new())));
-        let (events, event_queue) = mpsc::unbounded_channel();
         let (outgoing, mut outgoing_queue) = mpsc::unbounded_channel::<Vec<u8>>();
         let writer = tokio::spawn(async move {
             while let Some(frame) = outgoing_queue.recv().await {
@@ -158,45 +218,45 @@ impl CoreClient {
         let reader_pending = pending.clone();
         let reader = tokio::spawn(async move {
             while let Ok(Some(frame)) = read_frame(&mut reader).await {
-                dispatch(frame, &reader_pending, &events);
+                dispatch(frame, &reader_pending, sink.as_ref());
             }
-            if let Ok(mut pending) = reader_pending.lock() {
-                pending.take();
-            }
+            fail_pending(&reader_pending);
+            sink.closed();
         });
-        Ok((
-            Self {
-                outgoing,
-                pending,
-                next_request: AtomicU64::new(1),
-                hello,
-                tasks: [reader, writer],
-            },
-            event_queue,
-        ))
+        Ok(Self {
+            outgoing,
+            pending,
+            next_request: AtomicU64::new(1),
+            hello,
+            tasks: [reader, writer],
+        })
     }
 
     pub fn core_pid(&self) -> u32 {
         self.hello.pid
     }
 
-    fn register(&self) -> Result<(RequestId, oneshot::Receiver<Reply>), ClientError> {
-        let request_id = self.next_request.fetch_add(1, Ordering::Relaxed);
-        let (sender, receiver) = oneshot::channel();
-        let mut pending = self.pending.lock().map_err(|_| ClientError::Disconnected)?;
-        pending
-            .as_mut()
-            .ok_or(ClientError::Disconnected)?
-            .insert(request_id, sender);
-        Ok((request_id, receiver))
+    pub fn hello(&self) -> &CoreHello {
+        &self.hello
     }
 
-    async fn exchange(
+    pub fn is_connected(&self) -> bool {
+        !self.tasks[0].is_finished()
+    }
+
+    fn queue(
         &self,
         request_id: RequestId,
-        receiver: oneshot::Receiver<Reply>,
         frame: Vec<u8>,
-    ) -> Result<Reply, ClientError> {
+        waiter: Waiter,
+    ) -> Result<(), ClientError> {
+        {
+            let mut pending = self.pending.lock().map_err(|_| ClientError::Disconnected)?;
+            pending
+                .as_mut()
+                .ok_or(ClientError::Disconnected)?
+                .insert(request_id, waiter);
+        }
         if self.outgoing.send(frame).is_err() {
             if let Ok(mut pending) = self.pending.lock() {
                 if let Some(pending) = pending.as_mut() {
@@ -205,21 +265,54 @@ impl CoreClient {
             }
             return Err(ClientError::Disconnected);
         }
-        match receiver.await.map_err(|_| ClientError::Disconnected)? {
-            Reply::Error(message) => Err(ClientError::Core(message)),
-            reply => Ok(reply),
-        }
+        Ok(())
     }
 
-    async fn request(&self, request: Request) -> Result<Response, ClientError> {
-        let (request_id, receiver) = self.register()?;
+    fn queue_with<T, F>(
+        &self,
+        request_id: RequestId,
+        frame: Vec<u8>,
+        on_reply: F,
+    ) -> Result<impl Future<Output = Result<T, ClientError>> + Send + 'static, ClientError>
+    where
+        T: Send + 'static,
+        F: FnOnce(Result<Reply, ClientError>) -> T + Send + 'static,
+    {
+        let (sender, receiver) = oneshot::channel();
+        self.queue(
+            request_id,
+            frame,
+            Box::new(move |reply| {
+                let _ = sender.send(on_reply(reply));
+            }),
+        )?;
+        Ok(async move { receiver.await.map_err(|_| ClientError::Disconnected) })
+    }
+
+    /// Sends a request now and runs `on_reply` on the reader task when the
+    /// answer arrives, before any frame the core sent after it. The returned
+    /// future yields what `on_reply` returned.
+    pub fn submit<T, F>(
+        &self,
+        request: Request,
+        on_reply: F,
+    ) -> Result<impl Future<Output = Result<T, ClientError>> + Send + 'static, ClientError>
+    where
+        T: Send + 'static,
+        F: FnOnce(Result<Reply, ClientError>) -> T + Send + 'static,
+    {
+        let request_id = self.next_request.fetch_add(1, Ordering::Relaxed);
         let frame = encode_control(&ClientMessage::Request {
             request_id,
             request,
         })?;
-        match self.exchange(request_id, receiver, frame).await? {
+        self.queue_with(request_id, frame, on_reply)
+    }
+
+    async fn request(&self, request: Request) -> Result<Response, ClientError> {
+        match self.submit(request, |reply| reply)?.await?? {
             Reply::Response(response) => Ok(response),
-            _ => Err(ClientError::UnexpectedReply),
+            Reply::Attached(_) => Err(ClientError::UnexpectedReply),
         }
     }
 
@@ -247,13 +340,21 @@ impl CoreClient {
         }
     }
 
+    /// Writes larger than one frame go out as several, in order.
     pub async fn write(&self, id: SessionId, bytes: &[u8]) -> Result<(), ClientError> {
-        let (request_id, receiver) = self.register()?;
-        let frame = encode_input(request_id, id, bytes);
-        match self.exchange(request_id, receiver, frame).await? {
-            Reply::Response(Response::Done) => Ok(()),
-            _ => Err(ClientError::UnexpectedReply),
+        let mut replies = Vec::new();
+        for chunk in bytes.chunks(MAX_INPUT_CHUNK) {
+            let request_id = self.next_request.fetch_add(1, Ordering::Relaxed);
+            let frame = encode_input(request_id, id, chunk);
+            replies.push(self.queue_with(request_id, frame, |reply| reply)?);
         }
+        for reply in replies {
+            match reply.await?? {
+                Reply::Response(Response::Done) => {}
+                _ => return Err(ClientError::UnexpectedReply),
+            }
+        }
+        Ok(())
     }
 
     pub async fn resize(&self, id: SessionId, cols: u16, rows: u16) -> Result<(), ClientError> {
@@ -272,24 +373,27 @@ impl CoreClient {
     }
 
     pub async fn attach(&self, id: SessionId) -> Result<Attached, ClientError> {
-        let (request_id, receiver) = self.register()?;
-        let frame = encode_control(&ClientMessage::Request {
-            request_id,
-            request: Request::Attach { id },
-        })?;
-        match self.exchange(request_id, receiver, frame).await? {
-            Reply::Snapshot(header, replay) => Ok(Attached {
-                alternate_screen: header.alternate_screen,
-                shell: header.shell,
-                replay,
-            }),
-            _ => Err(ClientError::UnexpectedReply),
+        match self
+            .submit(Request::Attach { id }, |reply| reply)?
+            .await??
+        {
+            Reply::Attached(attached) => Ok(attached),
+            Reply::Response(_) => Err(ClientError::UnexpectedReply),
         }
+    }
+
+    /// Live output without a replay, for a client that already has the screen.
+    pub async fn subscribe(&self, id: SessionId) -> Result<(), ClientError> {
+        self.request_done(Request::Subscribe { id }).await
     }
 
     /// No output for the session arrives after this resolves.
     pub async fn detach(&self, id: SessionId) -> Result<(), ClientError> {
         self.request_done(Request::Detach { id }).await
+    }
+
+    pub async fn reset_modes(&self, id: SessionId) -> Result<(), ClientError> {
+        self.request_done(Request::ResetModes { id }).await
     }
 
     /// Reports output bytes this client has finished with. Never answered.
@@ -310,6 +414,46 @@ impl CoreClient {
         }
     }
 
+    async fn manifests(&self, request: Request) -> Result<ManifestReloadReport, ClientError> {
+        match self.request(request).await? {
+            Response::Manifests { report } => Ok(report),
+            _ => Err(ClientError::UnexpectedReply),
+        }
+    }
+
+    pub async fn configure(
+        &self,
+        manifest_dir: Option<PathBuf>,
+    ) -> Result<ManifestReloadReport, ClientError> {
+        self.manifests(Request::Configure { manifest_dir }).await
+    }
+
+    pub async fn list_manifests(&self) -> Result<ManifestReloadReport, ClientError> {
+        self.manifests(Request::ListManifests).await
+    }
+
+    pub async fn reload_manifests(&self) -> Result<ManifestReloadReport, ClientError> {
+        self.manifests(Request::ReloadManifests).await
+    }
+
+    pub async fn explain_agent_detection(
+        &self,
+        agent_id: String,
+    ) -> Result<DetectionExplain, ClientError> {
+        match self
+            .request(Request::ExplainAgentDetection { agent_id })
+            .await?
+        {
+            Response::DetectionExplain { explain } => Ok(*explain),
+            _ => Err(ClientError::UnexpectedReply),
+        }
+    }
+
+    /// Kills every session. The core keeps running.
+    pub async fn stop_all(&self) -> Result<(), ClientError> {
+        self.request_done(Request::StopAll).await
+    }
+
     /// `stop_all` kills every session first; without it the core refuses to
     /// exit while any session is running.
     pub async fn shutdown(&self, stop_all: bool) -> Result<(), ClientError> {
@@ -317,46 +461,44 @@ impl CoreClient {
     }
 }
 
-fn dispatch(
-    frame: crate::protocol::Frame,
-    pending: &Pending,
-    events: &mpsc::UnboundedSender<ClientEvent>,
-) {
-    let resolve = |request_id: RequestId, reply: Reply| {
-        let sender = pending
+fn dispatch(frame: crate::protocol::Frame, pending: &Pending, sink: &dyn EventSink) {
+    let resolve = |request_id: RequestId, reply: Result<Reply, ClientError>| {
+        let waiter = pending
             .lock()
             .ok()
             .and_then(|mut pending| pending.as_mut()?.remove(&request_id));
-        if let Some(sender) = sender {
-            let _ = sender.send(reply);
+        if let Some(waiter) = waiter {
+            waiter(reply);
         }
     };
     match frame.kind {
         FrameKind::Output => {
             if let Some((id, bytes)) = decode_output(&frame.payload) {
-                let _ = events.send(ClientEvent::Output {
-                    id,
-                    bytes: bytes.to_vec(),
-                });
+                sink.output(id, bytes);
             }
         }
         FrameKind::Snapshot => {
             if let Some((request_id, _, header, replay)) = decode_snapshot(&frame.payload) {
-                resolve(request_id, Reply::Snapshot(header, replay.to_vec()));
+                resolve(
+                    request_id,
+                    Ok(Reply::Attached(Attached {
+                        alternate_screen: header.alternate_screen,
+                        shell: header.shell,
+                        replay: replay.to_vec(),
+                    })),
+                );
             }
         }
         FrameKind::Control => match serde_json::from_slice::<ServerMessage>(&frame.payload) {
             Ok(ServerMessage::Response {
                 request_id,
                 response,
-            }) => resolve(request_id, Reply::Response(response)),
+            }) => resolve(request_id, Ok(Reply::Response(response))),
             Ok(ServerMessage::Error {
                 request_id: Some(request_id),
                 message,
-            }) => resolve(request_id, Reply::Error(message)),
-            Ok(ServerMessage::Event { event }) => {
-                let _ = events.send(ClientEvent::Event(event));
-            }
+            }) => resolve(request_id, Err(ClientError::Core(message))),
+            Ok(ServerMessage::Event { event }) => sink.event(event),
             _ => {}
         },
         FrameKind::Input => {}

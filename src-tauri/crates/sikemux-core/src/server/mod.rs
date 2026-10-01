@@ -1,3 +1,4 @@
+mod agent;
 mod connection;
 mod prepare;
 mod session;
@@ -8,8 +9,10 @@ use std::os::fd::AsRawFd;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use sikemux_pty::agent_detection::{ManifestRegistry, ManifestReloadReport};
 
 use sikemux_pty::error::PtyError;
 use sikemux_pty::process::DRAIN_GRACE;
@@ -19,14 +22,14 @@ use sikemux_pty::task::{
 use tokio::sync::watch;
 
 use crate::client::{probe, ProbeError};
-use crate::protocol::{encode_control, Event, ServerMessage, SessionId};
+use crate::protocol::{encode_control, BuildIdentity, Event, ServerMessage, SessionId};
 
 use connection::{ClientConn, ClientId};
 use session::Session;
 
 pub const DEFAULT_IDLE_EXIT: Duration = Duration::from_secs(5 * 60);
 const MAX_ACTIVE_SESSIONS: usize = 256;
-const SHELL_METADATA_POLL: Duration = Duration::from_millis(250);
+const SESSION_POLL: Duration = Duration::from_millis(250);
 const SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 const IDLE_TRIM: Duration = Duration::from_secs(10 * 60);
 const PROBE_TIMEOUT: Duration = Duration::from_secs(1);
@@ -35,6 +38,7 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(1);
 pub struct ServerConfig {
     pub socket: PathBuf,
     pub idle_exit: Duration,
+    pub build: BuildIdentity,
 }
 
 impl ServerConfig {
@@ -42,6 +46,7 @@ impl ServerConfig {
         Self {
             socket,
             idle_exit: DEFAULT_IDLE_EXIT,
+            build: BuildIdentity::default(),
         }
     }
 }
@@ -52,6 +57,8 @@ pub enum ServerError {
     AlreadyRunning { path: PathBuf, pid: Option<u32> },
     #[error("{} is in use by a process that is not a Sikemux core", .0.display())]
     SocketInUse(PathBuf),
+    #[error("the bundled agent detection rules do not load: {0}")]
+    Manifests(String),
     #[error("{0}")]
     Io(#[from] std::io::Error),
 }
@@ -149,13 +156,28 @@ pub(crate) struct Core {
     clients: Mutex<HashMap<ClientId, Arc<ClientConn>>>,
     next_client_id: AtomicU64,
     shutdown: watch::Sender<bool>,
+    pub(crate) build: BuildIdentity,
+    pub(crate) detection: RwLock<ManifestRegistry>,
+    manifest_dir: Mutex<Option<PathBuf>>,
+}
+
+/// Session ids start from the clock, so an id a client still holds from a
+/// core that has since restarted never names a new session.
+fn first_session_id() -> SessionId {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as u64)
+        .unwrap_or(0)
+        .max(1)
 }
 
 impl Core {
-    fn new() -> Arc<Self> {
-        Arc::new(Self {
+    fn new(build: BuildIdentity) -> Result<Arc<Self>, ServerError> {
+        let detection = ManifestRegistry::bundled()
+            .map_err(|error| ServerError::Manifests(error.to_string()))?;
+        Ok(Arc::new(Self {
             sessions: Mutex::new(HashMap::new()),
-            next_session_id: AtomicU64::new(1),
+            next_session_id: AtomicU64::new(first_session_id()),
             capacity: Arc::new(Capacity {
                 active: AtomicUsize::new(0),
                 limit: MAX_ACTIVE_SESSIONS,
@@ -163,6 +185,60 @@ impl Core {
             clients: Mutex::new(HashMap::new()),
             next_client_id: AtomicU64::new(1),
             shutdown: watch::channel(false).0,
+            build,
+            detection: RwLock::new(detection),
+            manifest_dir: Mutex::new(None),
+        }))
+    }
+
+    pub(crate) fn manifest_report(&self) -> CoreResult<ManifestReloadReport> {
+        self.detection
+            .read()
+            .map(|registry| registry.report())
+            .map_err(|_| "agent detection registry lock poisoned".into())
+    }
+
+    /// Rebuilds the detection rules from the bundled ones and the person's
+    /// directory. Blocks while it reads the directory.
+    pub(crate) fn configure_manifests(
+        &self,
+        directory: Option<PathBuf>,
+    ) -> CoreResult<ManifestReloadReport> {
+        *self.manifest_dir.lock().map_err(CoreError::poisoned)? = directory;
+        self.reload_manifests()
+    }
+
+    pub(crate) fn reload_manifests(&self) -> CoreResult<ManifestReloadReport> {
+        let directory = self
+            .manifest_dir
+            .lock()
+            .map_err(CoreError::poisoned)?
+            .clone();
+        let manifests = |error: sikemux_pty::agent_detection::ManifestError| {
+            CoreError::from(format!("agent detection manifests: {error}"))
+        };
+        let mut replacement = match directory {
+            Some(directory) => ManifestRegistry::with_override_dir(directory).map_err(manifests)?,
+            None => ManifestRegistry::bundled().map_err(manifests)?,
+        };
+        let report = replacement.reload().map_err(manifests)?;
+        *self.detection.write().map_err(CoreError::poisoned)? = replacement;
+        // The screens may be unchanged while the rules are not, so every agent
+        // is read again on the next poll.
+        for session in self.all_sessions() {
+            if let Some(agent) = session.agent.as_ref() {
+                agent.invalidate_detection();
+            }
+        }
+        Ok(report)
+    }
+
+    pub(crate) fn agent_session(&self, agent_id: &str) -> Option<Arc<Session>> {
+        self.all_sessions().into_iter().find(|session| {
+            session
+                .agent
+                .as_ref()
+                .is_some_and(|agent| agent.agent_id() == agent_id)
         })
     }
 
@@ -384,13 +460,16 @@ fn claim_socket(socket: &Path) -> Result<(std::os::unix::net::UnixListener, File
     Ok((listener, lock))
 }
 
-async fn flush_shell_metadata(core: Arc<Core>) {
-    let mut ticker = tokio::time::interval(SHELL_METADATA_POLL);
+/// Flushes shell metadata a quiet prompt left coalesced, and reads settled
+/// agent screens.
+async fn poll_sessions(core: Arc<Core>) {
+    let mut ticker = tokio::time::interval(SESSION_POLL);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         ticker.tick().await;
         let now = now_ms();
         for session in core.all_sessions() {
+            agent::poll(&core, &session, now);
             if !session.shell_protocol {
                 continue;
             }
@@ -435,9 +514,9 @@ pub async fn serve(config: ServerConfig) -> Result<(), ServerError> {
         .map_err(std::io::Error::other)??;
     listener.set_nonblocking(true)?;
     let listener = tokio::net::UnixListener::from_std(listener)?;
-    let core = Core::new();
+    let core = Core::new(config.build.clone())?;
     let background = [
-        tokio::spawn(flush_shell_metadata(core.clone())),
+        tokio::spawn(poll_sessions(core.clone())),
         tokio::spawn(sweep(core.clone())),
     ];
     let mut shutdown = core.shutdown.subscribe();
@@ -487,4 +566,50 @@ pub fn run(config: ServerConfig) -> Result<(), ServerError> {
     let result = runtime.block_on(serve(config));
     runtime.shutdown_timeout(Duration::from_millis(100));
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Barrier};
+
+    use super::Capacity;
+
+    #[test]
+    fn session_capacity_is_hard_under_concurrent_admission() {
+        const LIMIT: usize = 7;
+        const CONTENDERS: usize = 64;
+        let capacity = Arc::new(Capacity {
+            active: AtomicUsize::new(0),
+            limit: LIMIT,
+        });
+        let barrier = Arc::new(Barrier::new(CONTENDERS + 1));
+        let results = std::thread::scope(|scope| {
+            let handles = (0..CONTENDERS)
+                .map(|_| {
+                    let capacity = capacity.clone();
+                    let barrier = barrier.clone();
+                    scope.spawn(move || {
+                        barrier.wait();
+                        capacity.try_acquire().ok()
+                    })
+                })
+                .collect::<Vec<_>>();
+            barrier.wait();
+            handles
+                .into_iter()
+                .map(|handle| handle.join().expect("capacity contender"))
+                .collect::<Vec<_>>()
+        });
+        let mut permits = results.into_iter().flatten().collect::<Vec<_>>();
+
+        assert_eq!(permits.len(), LIMIT);
+        assert!(capacity.try_acquire().is_err());
+        permits.pop();
+        let replacement = capacity.try_acquire().expect("released slot is reusable");
+        assert_eq!(capacity.active.load(Ordering::Acquire), LIMIT);
+        drop(replacement);
+        drop(permits);
+        assert_eq!(capacity.active.load(Ordering::Acquire), 0);
+    }
 }

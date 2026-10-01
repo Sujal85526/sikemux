@@ -9,6 +9,7 @@ use std::io::{self, Read};
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+use sikemux_pty::agent_detection::{DetectionExplain, ManifestReloadReport};
 use sikemux_pty::launch::{PtyContext, PtyDirectCommand};
 use sikemux_pty::output_log::{OutputPage, OutputQuery};
 use sikemux_pty::shell_protocol::{PtyShellMetadataEvent, ShellMetadataSnapshot};
@@ -99,10 +100,30 @@ pub enum Request {
     Detach {
         id: SessionId,
     },
+    /// Like `Attach` without the replay: the client already holds the screen.
+    Subscribe {
+        id: SessionId,
+    },
+    /// Turns off the input modes a crashed program may have left on, for the
+    /// core's screen and every attached client alike.
+    ResetModes {
+        id: SessionId,
+    },
     TaskOutput {
         id: SessionId,
         query: OutputQuery,
     },
+    /// Where the person's own agent detection rules live. Loads them at once.
+    Configure {
+        manifest_dir: Option<PathBuf>,
+    },
+    ListManifests,
+    ReloadManifests,
+    ExplainAgentDetection {
+        agent_id: String,
+    },
+    /// Kills every session and keeps running.
+    StopAll,
     Shutdown {
         stop_all: bool,
     },
@@ -153,6 +174,7 @@ pub enum ServerMessage {
         protocol: String,
         version: u32,
         pid: u32,
+        build: BuildIdentity,
     },
     /// Sent instead of `HelloAck` when the client speaks another version; the
     /// core then closes the connection.
@@ -186,6 +208,17 @@ pub enum Response {
     Done,
     Sessions { sessions: Vec<SessionInfo> },
     TaskOutput { page: OutputPage },
+    Manifests { report: ManifestReloadReport },
+    DetectionExplain { explain: Box<DetectionExplain> },
+}
+
+/// Which build of the sidecar a core runs.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BuildIdentity {
+    pub version: String,
+    pub commit: String,
+    pub built_at: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -210,6 +243,8 @@ pub struct SessionInfo {
     pub agent_id: Option<String>,
     pub agent_type: Option<String>,
     pub task_execution_id: Option<String>,
+    /// The last state published for an agent terminal.
+    pub agent_state: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

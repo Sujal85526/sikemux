@@ -5,21 +5,31 @@ use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixStream as StdUnixStream;
 use std::path::{Path, PathBuf};
-use std::sync::Once;
+use std::sync::{Arc, Once};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use sikemux_core::client::{ensure_running, probe, ClientEvent, CoreClient};
+use sikemux_core::client::{ensure_running, probe, ClientEvent, CoreClient, EventSink, Reply};
 use sikemux_core::protocol::{
-    encode_control, read_frame_sync, ClientMessage, Event, LaunchIdentity, Request, ServerMessage,
-    SessionId, SpawnTarget, TerminalSpawn, PROTOCOL, PROTOCOL_VERSION,
+    encode_control, read_frame_sync, AgentStateEvent, BuildIdentity, ClientMessage, Event,
+    LaunchIdentity, Request, Response, ServerMessage, SessionId, SpawnTarget, TerminalSpawn,
+    PROTOCOL, PROTOCOL_VERSION,
 };
 use sikemux_core::server::{self, ServerConfig, ServerError};
+use sikemux_pty::launch::PtyContext;
 use sikemux_pty::output_log::OutputQuery;
 use sikemux_pty::task::{TaskSource, TaskSpawnRequest};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 const WAIT: Duration = Duration::from_secs(10);
+
+fn test_build() -> BuildIdentity {
+    BuildIdentity {
+        version: "0.0.0-test".into(),
+        commit: "abc1234".into(),
+        built_at: 7,
+    }
+}
 
 /// Every shell in these tests is a plain `/bin/sh` with a known prompt, so no
 /// user dotfiles run.
@@ -42,8 +52,9 @@ struct TestCore {
 fn start_core_at(dir: tempfile::TempDir, socket: PathBuf, idle_exit: Duration) -> TestCore {
     init_env();
     let config = ServerConfig {
-        socket: socket.clone(),
         idle_exit,
+        build: test_build(),
+        ..ServerConfig::new(socket.clone())
     };
     let thread = std::thread::spawn(move || server::run(config));
     let deadline = Instant::now() + WAIT;
@@ -119,6 +130,7 @@ struct Stream {
     output: HashMap<SessionId, Vec<u8>>,
     exits: HashMap<SessionId, Event>,
     task_notices: Vec<SessionId>,
+    agent_states: Vec<AgentStateEvent>,
 }
 
 impl Stream {
@@ -128,6 +140,7 @@ impl Stream {
             output: HashMap::new(),
             exits: HashMap::new(),
             task_notices: Vec::new(),
+            agent_states: Vec::new(),
         }
     }
 
@@ -145,6 +158,7 @@ impl Stream {
                 self.exits.insert(id, event);
             }
             ClientEvent::Event(Event::TaskOutput { id }) => self.task_notices.push(id),
+            ClientEvent::Event(Event::AgentState(state)) => self.agent_states.push(state),
             ClientEvent::Event(_) => {}
         }
     }
@@ -155,6 +169,15 @@ impl Stream {
 
     async fn until_output(&mut self, client: &CoreClient, id: SessionId, needle: &str) {
         while !contains(self.output(id), needle) {
+            self.pump(client).await;
+        }
+    }
+
+    async fn until_agent_state(&mut self, client: &CoreClient, state: &str) -> AgentStateEvent {
+        loop {
+            if let Some(event) = self.agent_states.iter().find(|event| event.state == state) {
+                return event.clone();
+            }
             self.pump(client).await;
         }
     }
@@ -267,6 +290,7 @@ async fn handshake_succeeds_and_a_wrong_version_is_rejected() {
     let core = start_core();
     let (client, _stream) = core.connect().await;
     assert_eq!(client.core_pid(), std::process::id());
+    assert_eq!(client.hello().build, test_build());
 
     let mut stream = StdUnixStream::connect(&core.socket).expect("connect");
     stream.set_read_timeout(Some(WAIT)).expect("timeout");
@@ -336,6 +360,62 @@ async fn acked_output_flows_past_the_unacked_budget() {
         started.elapsed() < Duration::from_secs(3),
         "an acking client never waits for the write-off"
     );
+}
+
+#[tokio::test]
+async fn a_client_that_falls_behind_holds_the_program_until_it_acks() {
+    let core = start_core();
+    let (client, mut stream) = core.connect().await;
+    let dir = tempfile::tempdir().expect("task dir");
+    let id = client
+        .spawn(
+            launch(),
+            gated(dir.path(), "head -c 3000000 /dev/zero | tr '\\0' x"),
+        )
+        .await
+        .expect("spawn");
+    client.attach(id).await.expect("attach");
+    open_gate(dir.path());
+    let mut owed = 0;
+    let deadline = Instant::now() + Duration::from_millis(500);
+    while let Ok(Some(event)) = tokio::time::timeout_at(deadline.into(), stream.events.recv()).await
+    {
+        if let ClientEvent::Output { bytes, .. } = event {
+            owed += bytes.len();
+        }
+    }
+    assert!(owed > 0, "nothing arrived");
+    assert!(owed < 1_000_000, "{owed} bytes arrived without an ack");
+    client.ack(id, owed);
+    stream.output.insert(id, vec![b'x'; owed]);
+    stream.until_exit(&client, id).await;
+    assert_eq!(stream.output(id).len(), 3_000_000);
+}
+
+#[tokio::test]
+async fn a_client_that_never_acks_does_not_hold_the_program_forever() {
+    let core = start_core();
+    let (client, mut stream) = core.connect().await;
+    let dir = tempfile::tempdir().expect("task dir");
+    let id = client
+        .spawn(
+            launch(),
+            gated(dir.path(), "head -c 1500000 /dev/zero | tr '\\0' x"),
+        )
+        .await
+        .expect("spawn");
+    client.attach(id).await.expect("attach");
+    open_gate(dir.path());
+    let mut received = 0;
+    loop {
+        match tokio::time::timeout(WAIT, stream.events.recv()).await {
+            Ok(Some(ClientEvent::Output { bytes, .. })) => received += bytes.len(),
+            Ok(Some(ClientEvent::Event(Event::Exited { id: exited, .. }))) if exited == id => break,
+            Ok(Some(_)) => {}
+            _ => panic!("the program stayed held after {received} bytes"),
+        }
+    }
+    assert_eq!(received, 1_500_000);
 }
 
 #[tokio::test]
@@ -648,8 +728,8 @@ fn serve_core_for_ensure_running() {
     if let Some(socket) = std::env::var_os(SERVE_ENV) {
         init_env();
         let _ = server::run(ServerConfig {
-            socket: socket.into(),
             idle_exit: Duration::from_millis(500),
+            ..ServerConfig::new(socket.into())
         });
     }
 }
@@ -688,4 +768,274 @@ fn ensure_running_starts_one_detached_core() {
         assert!(Instant::now() < deadline, "the started core did not exit");
         std::thread::sleep(Duration::from_millis(10));
     }
+}
+
+fn agent_terminal(agent_id: &str, startup: &str) -> SpawnTarget {
+    SpawnTarget::Terminal(TerminalSpawn {
+        cols: 80,
+        rows: 24,
+        cwd: Some(std::env::temp_dir().to_string_lossy().into_owned()),
+        startup: Some(startup.into()),
+        context: Some(PtyContext {
+            session_id: "session-1".into(),
+            session_name: "test".into(),
+            session_kind: "project".into(),
+            project: None,
+            window_id: None,
+            pane_id: None,
+            agent_id: Some(agent_id.into()),
+            agent_type: Some("claude".into()),
+            initial_prompt_submitted: false,
+            shell_integration: false,
+        }),
+        ..TerminalSpawn::default()
+    })
+}
+
+#[tokio::test]
+async fn an_agent_terminal_reports_ready_then_working_on_a_submitted_line_then_stopped() {
+    let core = start_core();
+    let (client, mut stream) = core.connect().await;
+    let id = client
+        .spawn(launch(), agent_terminal("agent-7", "read line; exit 3"))
+        .await
+        .expect("spawn");
+    let ready = stream.until_agent_state(&client, "idle").await;
+    assert_eq!(ready.agent_id, "agent-7");
+    assert_eq!(ready.reason, "agent ready; no prompt submitted");
+    let listed = client.list().await.expect("list");
+    let info = listed.iter().find(|info| info.id == id).expect("listed");
+    assert_eq!(info.agent_state.as_deref(), Some("idle"));
+
+    client.write(id, b"go").await.expect("typing");
+    client.write(id, b"\r").await.expect("submit");
+    let working = stream.until_agent_state(&client, "working").await;
+    assert_eq!(working.reason, "command submitted");
+    assert!(working.sequence > ready.sequence);
+
+    let stopped = stream.until_agent_state(&client, "stopped").await;
+    assert_eq!(stopped.reason, "agent process stopped with code 3");
+    assert!(stopped.sequence > working.sequence);
+}
+
+#[tokio::test]
+async fn a_killed_agent_reports_nothing_more() {
+    let core = start_core();
+    let (client, mut stream) = core.connect().await;
+    let id = client
+        .spawn(launch(), agent_terminal("agent-8", "sleep 1000"))
+        .await
+        .expect("spawn");
+    stream.until_agent_state(&client, "idle").await;
+    client.kill(id).await.expect("kill");
+    stream.until_exit(&client, id).await;
+    client.list().await.expect("list");
+    while let Ok(Some(event)) =
+        tokio::time::timeout(Duration::from_millis(200), stream.events.recv()).await
+    {
+        assert!(
+            !matches!(event, ClientEvent::Event(Event::AgentState(_))),
+            "a killed agent published {event:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn manifests_are_listed_reloaded_and_explained() {
+    let core = start_core();
+    let (client, mut stream) = core.connect().await;
+    let manifests = tempfile::tempdir().expect("manifest dir");
+    let configured = client
+        .configure(Some(manifests.path().to_path_buf()))
+        .await
+        .expect("configure");
+    assert!(!configured.manifests.is_empty());
+    assert_eq!(
+        client.list_manifests().await.expect("list"),
+        client.reload_manifests().await.expect("reload")
+    );
+
+    assert!(client
+        .explain_agent_detection("nobody".into())
+        .await
+        .is_err());
+    let id = client
+        .spawn(launch(), agent_terminal("agent-9", "sleep 1000"))
+        .await
+        .expect("spawn");
+    stream.until_agent_state(&client, "idle").await;
+    let explain = client
+        .explain_agent_detection("agent-9".into())
+        .await
+        .expect("explain");
+    assert!(!explain.manifest_version.is_empty());
+    client.kill(id).await.expect("kill");
+}
+
+#[tokio::test]
+async fn subscribe_streams_only_what_comes_after_it() {
+    let core = start_core();
+    let (client, mut stream) = core.connect().await;
+    let id = client
+        .spawn(
+            launch(),
+            terminal(Some("printf 'before\\n'; read line; echo after-$line")),
+        )
+        .await
+        .expect("spawn");
+    attach_once_printed(&client, id, "before").await;
+    client.detach(id).await.expect("detach");
+    client.subscribe(id).await.expect("subscribe");
+    client.write(id, b"x\n").await.expect("write");
+    stream.until_output(&client, id, "after-x").await;
+    assert!(!contains(stream.output(id), "before"));
+}
+
+#[tokio::test]
+async fn reset_modes_reach_the_screen_and_every_subscriber() {
+    let core = start_core();
+    let (client, mut stream) = core.connect().await;
+    let id = client
+        .spawn(
+            launch(),
+            terminal(Some("printf '\\033[?1049h\\033[?1000h'; sleep 1000")),
+        )
+        .await
+        .expect("spawn");
+    let deadline = Instant::now() + WAIT;
+    loop {
+        let attached = client.attach(id).await.expect("attach");
+        if attached.alternate_screen {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the program never switched screens"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    client.reset_modes(id).await.expect("reset");
+    stream.until_output(&client, id, "\x1b[?1049l").await;
+    assert!(!client.attach(id).await.expect("attach").alternate_screen);
+    assert!(client.reset_modes(id + 1_000_000).await.is_err());
+    client.kill(id).await.expect("kill");
+}
+
+#[tokio::test]
+async fn writes_larger_than_a_frame_arrive_whole() {
+    let core = start_core();
+    let (client, mut stream) = core.connect().await;
+    let dir = tempfile::tempdir().expect("task dir");
+    let id = client
+        .spawn(
+            launch(),
+            task(dir.path(), "stty raw -echo; head -c 17000000 | wc -c"),
+        )
+        .await
+        .expect("spawn");
+    client.attach(id).await.expect("attach");
+    let payload = vec![b'y'; 17_000_000];
+    client.write(id, &payload).await.expect("write");
+    stream.until_exit(&client, id).await;
+    assert!(contains(stream.output(id), "17000000"));
+}
+
+#[tokio::test]
+async fn stop_all_kills_every_session_and_keeps_the_core() {
+    let core = start_core();
+    let (client, mut stream) = core.connect().await;
+    let dir = tempfile::tempdir().expect("task dir");
+    let shell = client.spawn(launch(), terminal(None)).await.expect("spawn");
+    let task = client
+        .spawn(launch(), task(dir.path(), "sleep 1000"))
+        .await
+        .expect("task");
+    client.stop_all().await.expect("stop all");
+    for id in [shell, task] {
+        let (_, killed) = stream.until_exit(&client, id).await;
+        assert!(killed);
+    }
+    assert!(client.list().await.expect("list").is_empty());
+    client
+        .spawn(launch(), terminal(None))
+        .await
+        .expect("the core still spawns");
+}
+
+#[derive(Default)]
+struct OrderSink(std::sync::Mutex<Vec<String>>);
+
+impl OrderSink {
+    fn note(&self, entry: String) {
+        self.0.lock().expect("order").push(entry);
+    }
+
+    fn entries(&self) -> Vec<String> {
+        self.0.lock().expect("order").clone()
+    }
+}
+
+impl EventSink for OrderSink {
+    fn output(&self, id: SessionId, _bytes: &[u8]) {
+        self.note(format!("output {id}"));
+    }
+
+    fn event(&self, event: Event) {
+        if let Event::Exited { id, .. } = event {
+            self.note(format!("exited {id}"));
+        }
+    }
+
+    fn closed(&self) {}
+}
+
+#[tokio::test]
+async fn a_spawn_reply_comes_before_the_session_exits() {
+    let core = start_core();
+    let sink = Arc::new(OrderSink::default());
+    let client = CoreClient::connect_with(&core.socket, sink.clone())
+        .await
+        .expect("connect");
+    let dir = tempfile::tempdir().expect("task dir");
+    for _ in 0..20 {
+        let noted = sink.clone();
+        let id = client
+            .submit(
+                Request::Spawn {
+                    launch: launch(),
+                    target: Box::new(task(dir.path(), "true")),
+                },
+                move |reply| match reply {
+                    Ok(Reply::Response(Response::Spawned { id })) => {
+                        noted.note(format!("spawned {id}"));
+                        id
+                    }
+                    other => panic!("unexpected reply {other:?}"),
+                },
+            )
+            .expect("submit")
+            .await
+            .expect("reply");
+        let deadline = Instant::now() + WAIT;
+        while !sink.entries().contains(&format!("exited {id}")) {
+            assert!(Instant::now() < deadline, "the task never exited");
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        let entries = sink.entries();
+        let position = |entry: String| entries.iter().position(|seen| *seen == entry);
+        assert!(position(format!("spawned {id}")) < position(format!("exited {id}")));
+    }
+}
+
+#[tokio::test]
+async fn session_ids_start_from_the_clock() {
+    let core = start_core();
+    let (client, _stream) = core.connect().await;
+    let id = client.spawn(launch(), terminal(None)).await.expect("spawn");
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_millis() as u64;
+    assert!(id > now_ms - 600_000 && id <= now_ms);
+    assert!(id < 1 << 53);
 }

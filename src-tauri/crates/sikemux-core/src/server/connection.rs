@@ -15,8 +15,8 @@ use crate::protocol::{
 };
 
 use super::prepare::{prepare_task, prepare_terminal};
-use super::session;
-use super::{Core, CoreError, CoreResult};
+use super::session::{self, PendingStart};
+use super::{agent, Core, CoreError, CoreResult};
 
 pub(crate) type ClientId = u64;
 
@@ -62,7 +62,7 @@ impl ClientConn {
         }
     }
 
-    fn respond(&self, request_id: RequestId, result: CoreResult<Response>) {
+    pub(crate) fn respond(&self, request_id: RequestId, result: CoreResult<Response>) {
         self.send_message(&match result {
             Ok(response) => ServerMessage::Response {
                 request_id,
@@ -108,6 +108,7 @@ async fn write_direct(writer: &mut BufWriter<OwnedWriteHalf>, message: &ServerMe
 }
 
 async fn handshake(
+    core: &Core,
     reader: &mut BufReader<OwnedReadHalf>,
     writer: &mut BufWriter<OwnedWriteHalf>,
 ) -> bool {
@@ -126,6 +127,7 @@ async fn handshake(
                     protocol: PROTOCOL.into(),
                     version: PROTOCOL_VERSION,
                     pid,
+                    build: core.build.clone(),
                 },
             )
             .await;
@@ -164,7 +166,7 @@ pub(crate) async fn serve_client(core: Arc<Core>, stream: UnixStream) {
     let (read_half, write_half) = stream.into_split();
     let mut reader = BufReader::new(read_half);
     let mut writer = BufWriter::with_capacity(64 * 1024, write_half);
-    if !handshake(&mut reader, &mut writer).await {
+    if !handshake(&core, &mut reader, &mut writer).await {
         return;
     }
     let (frames, queue) = mpsc::unbounded_channel();
@@ -244,6 +246,7 @@ async fn read_requests(
                     client.respond(request_id, Err("invalid argument: pty not found".into()));
                     continue;
                 };
+                agent::note_input(core, &target, bytes);
                 let reply_to = client.clone();
                 session::queue_input(
                     &target,
@@ -287,8 +290,13 @@ async fn run_requests(
         match request {
             Request::Spawn { launch, target } => {
                 tokio::spawn(async move {
-                    let result = spawn(core, launch, target).await;
-                    client.respond(request_id, result.map(|id| Response::Spawned { id }));
+                    match spawn(core.clone(), launch, target).await {
+                        Ok(pending) => {
+                            client.respond(request_id, Ok(Response::Spawned { id: pending.id() }));
+                            pending.start(&core);
+                        }
+                        Err(error) => client.respond(request_id, Err(error)),
+                    }
                 });
             }
             Request::Kill { id } => {
@@ -319,6 +327,63 @@ async fn run_requests(
             Request::Shutdown { stop_all } => {
                 tokio::spawn(shutdown(core, client, request_id, stop_all));
             }
+            Request::StopAll => {
+                tokio::spawn(async move {
+                    let draining = core.clone();
+                    let result = blocking(move || {
+                        draining.drain();
+                        Ok(())
+                    })
+                    .await;
+                    client.respond(request_id, result.map(|()| Response::Done));
+                });
+            }
+            Request::Configure { manifest_dir } => {
+                tokio::spawn(async move {
+                    let result = blocking(move || core.configure_manifests(manifest_dir)).await;
+                    client.respond(
+                        request_id,
+                        result.map(|report| Response::Manifests { report }),
+                    );
+                });
+            }
+            Request::ReloadManifests => {
+                tokio::spawn(async move {
+                    let result = blocking(move || core.reload_manifests()).await;
+                    client.respond(
+                        request_id,
+                        result.map(|report| Response::Manifests { report }),
+                    );
+                });
+            }
+            Request::ListManifests => {
+                let result = core.manifest_report();
+                client.respond(
+                    request_id,
+                    result.map(|report| Response::Manifests { report }),
+                );
+            }
+            Request::ExplainAgentDetection { agent_id } => {
+                let result = match core.agent_session(&agent_id) {
+                    Some(target) => {
+                        let explaining = core.clone();
+                        blocking(move || {
+                            let registry = explaining.detection.read().map_err(|_| {
+                                CoreError::from("agent detection registry lock poisoned")
+                            })?;
+                            agent::explain(&registry, &target)
+                        })
+                        .await
+                    }
+                    None => Err("invalid argument: agent has no live terminal".into()),
+                };
+                client.respond(
+                    request_id,
+                    result.map(|explain| Response::DetectionExplain {
+                        explain: Box::new(explain),
+                    }),
+                );
+            }
             Request::Attach { id } => {
                 let result = match session_or_missing(&core, id) {
                     Ok(target) => {
@@ -330,6 +395,25 @@ async fn run_requests(
                 if let Err(error) = result {
                     client.respond(request_id, Err(error));
                 }
+            }
+            Request::Subscribe { id } => {
+                let result = match session_or_missing(&core, id) {
+                    Ok(target) => {
+                        let subscriber = client.clone();
+                        blocking(move || session::subscribe(&target, &subscriber, request_id)).await
+                    }
+                    Err(error) => Err(error),
+                };
+                if let Err(error) = result {
+                    client.respond(request_id, Err(error));
+                }
+            }
+            Request::ResetModes { id } => {
+                let result = match session_or_missing(&core, id) {
+                    Ok(target) => blocking(move || session::reset_modes(&target)).await,
+                    Err(error) => Err(error),
+                };
+                client.respond(request_id, result.map(|()| Response::Done));
             }
             Request::Detach { id } => {
                 if let Some(target) = core.session(id) {
@@ -366,7 +450,7 @@ async fn spawn(
     core: Arc<Core>,
     launch: LaunchIdentity,
     target: Box<SpawnTarget>,
-) -> CoreResult<SessionId> {
+) -> CoreResult<PendingStart> {
     blocking(move || {
         let prepared = match *target {
             SpawnTarget::Terminal(spawn) => prepare_terminal(&launch, spawn)?,
