@@ -112,6 +112,7 @@ export function HostArea({ paneId, section, repo, branch, cwd, active }: Props) 
                             item={view.item}
                             composing={view.composing === "issue"}
                             page={view.page}
+                            cwd={cwd}
                             active={active}
                         />
                     ) : section === "releases" ? (

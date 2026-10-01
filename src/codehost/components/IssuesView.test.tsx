@@ -10,6 +10,9 @@ const api = vi.hoisted(() => ({
     createIssue: vi.fn(),
 }));
 
+const work = vi.hoisted(() => ({ workOnIssue: vi.fn(async () => {}) }));
+vi.mock("../workOnIssue", () => work);
+
 import { invalidate } from "../../plugin-api/resources";
 import { useToasts } from "../../state/toast";
 import { resetView, showItem, updateView, useHostView, viewOf } from "../state";
@@ -41,7 +44,7 @@ const pageOf = (issues: Issue[], overrides: Partial<IssuePage> = {}): IssuePage 
 
 const toasts = () => useToasts.getState().toasts.map((toast) => toast.text);
 
-function Pane() {
+function Pane({ cwd = null }: { cwd?: string | null }) {
     const view = useHostView("pane");
     return (
         <IssuesView
@@ -51,15 +54,16 @@ function Pane() {
             item={view.item}
             composing={view.composing === "issue"}
             page={view.page}
+            cwd={cwd}
             active
         />
     );
 }
 
-async function renderIssues() {
+async function renderIssues(cwd: string | null = null) {
     const view = render(
         <InHost host={host}>
-            <Pane />
+            <Pane cwd={cwd} />
         </InHost>,
     );
     await act(async () => {});
@@ -258,5 +262,29 @@ describe("opening an issue", () => {
         fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
         expect(viewOf("pane").composing).toBeNull();
         expect(screen.getByText("The log jumps")).toBeTruthy();
+    });
+
+    describe("work on this", () => {
+        it("starts an agent on an open issue from its row and from its page", async () => {
+            await renderIssues("/repo");
+            fireEvent.click(within(list()).getByRole("button", { name: "Work on #5" }));
+            expect(work.workOnIssue).toHaveBeenCalledWith(repo, 5, "/repo");
+
+            fireEvent.click(within(list()).getByText("The log jumps"));
+            await act(async () => {});
+            fireEvent.click(within(right()).getByRole("button", { name: /Work on this/ }));
+            expect(work.workOnIssue).toHaveBeenCalledTimes(2);
+        });
+
+        it("is not offered for a repository that is not the project's own", async () => {
+            await renderIssues(null);
+            expect(screen.queryByRole("button", { name: "Work on #5" })).not.toBeInTheDocument();
+        });
+
+        it("is not offered on a closed issue's row", async () => {
+            api.issues.mockResolvedValue(pageOf([makeIssue({ state: "closed" })]));
+            await renderIssues("/repo");
+            expect(screen.queryByRole("button", { name: "Work on #5" })).not.toBeInTheDocument();
+        });
     });
 });

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { notify, reportError } from "../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
 import { EmptyState, IconInfo, IconPlus, SkeletonRows, Tooltip } from "../../plugin-api/ui";
@@ -10,29 +11,53 @@ import { Comments, Labels, PageHead, StateMark, stateLabel, Who } from "./Bits";
 import { CommentThread } from "./CommentThread";
 import { useBusy, useNow } from "./hooks";
 import { NewIssueForm } from "./NewIssueForm";
+import { IconAgent } from "../../ui/Icons";
+import { workOnIssue } from "../workOnIssue";
 
 const LIST_STATES = ["open", "closed", "all"];
 
-function IssueRow({ issue, now, selected, onOpen }: { issue: Issue; now: number; selected: boolean; onOpen: () => void }) {
+/** Starts a chat in the project with this issue in its input. Only offered where the issue's repository is the project's own. */
+function WorkOnThis({ repo, number, cwd, compact = false }: { repo: RepoRef; number: number; cwd: string; compact?: boolean }) {
+    const [busy, runBusy] = useBusy();
+    const start = () => runBusy(() => workOnIssue(repo, number, cwd));
+    if (compact)
+        return (
+            <Tooltip label="Work on this">
+                <button type="button" className="gha-icon-btn gha-work-on" aria-label={`Work on #${number}`} disabled={busy} onClick={start}>
+                    <IconAgent size={13} />
+                </button>
+            </Tooltip>
+        );
     return (
-        <button type="button" className="gha-item-row" data-on={selected ? "1" : "0"} onClick={onOpen}>
-            <StateMark kind="issue" state={issue.state} reason={issue.stateReason} />
-            <span className="gha-item-head">
-                <span className="gha-item-title">{issue.title}</span>
-                <Labels labels={issue.labels} />
-            </span>
-            <Comments count={issue.comments} />
-            <span className="gha-item-sub">
-                <span className="gha-item-number">#{issue.number}</span>
-                {issue.author && <Who login={issue.author} avatarUrl={issue.avatarUrl} />}
-                {issue.assignees.length > 0 && <span>→ {issue.assignees.join(", ")}</span>}
-            </span>
-            <span className="gha-item-when">{formatAgo(issue.updatedAt, now)}</span>
+        <button type="button" className="gha-btn" disabled={busy} onClick={start}>
+            <IconAgent size={12} /> Work on this
         </button>
     );
 }
 
-export function IssueDetail({ repo, number, active }: { repo: RepoRef; number: number; active: boolean }) {
+function IssueRow({ issue, now, selected, onOpen, work }: { issue: Issue; now: number; selected: boolean; onOpen: () => void; work: ReactNode }) {
+    return (
+        <div className="gha-item-line">
+            <button type="button" className="gha-item-row" data-on={selected ? "1" : "0"} onClick={onOpen}>
+                <StateMark kind="issue" state={issue.state} reason={issue.stateReason} />
+                <span className="gha-item-head">
+                    <span className="gha-item-title">{issue.title}</span>
+                    <Labels labels={issue.labels} />
+                </span>
+                <Comments count={issue.comments} />
+                <span className="gha-item-sub">
+                    <span className="gha-item-number">#{issue.number}</span>
+                    {issue.author && <Who login={issue.author} avatarUrl={issue.avatarUrl} />}
+                    {issue.assignees.length > 0 && <span>→ {issue.assignees.join(", ")}</span>}
+                </span>
+                <span className="gha-item-when">{formatAgo(issue.updatedAt, now)}</span>
+            </button>
+            {work}
+        </div>
+    );
+}
+
+export function IssueDetail({ repo, number, active, cwd = null }: { repo: RepoRef; number: number; active: boolean; cwd?: string | null }) {
     const issue = useResourceEnabled(active, issueR, repo, number);
     const now = useNow(false);
     const [busy, runBusy] = useBusy();
@@ -60,7 +85,8 @@ export function IssueDetail({ repo, number, active }: { repo: RepoRef; number: n
                 mark={<StateMark kind="issue" state={found.state} reason={found.stateReason} size={14} />}
                 title={found.title}
                 number={found.number}
-                url={found.url}>
+                url={found.url}
+                actions={cwd && <WorkOnThis repo={repo} number={found.number} cwd={cwd} />}>
                 <span
                     className="gha-state-word"
                     data-kind="issue"
@@ -103,10 +129,12 @@ interface Props {
     item: number | null;
     composing: boolean;
     page: number;
+    /** The project folder, when the issues are its own repository's, so an agent can be started on one there. */
+    cwd: string | null;
     active: boolean;
 }
 
-export function IssuesView({ paneId, repo, listState, item, composing, page, active }: Props) {
+export function IssuesView({ paneId, repo, listState, item, composing, page, cwd, active }: Props) {
     const issues = useResourceEnabled(active && !composing, issuesR, repo, listState, page);
     const now = useNow(false);
 
@@ -158,6 +186,7 @@ export function IssuesView({ paneId, repo, listState, item, composing, page, act
                             now={now}
                             selected={issue.number === item}
                             onOpen={() => showItem(paneId, issue.number)}
+                            work={cwd && issue.state === "open" && <WorkOnThis repo={repo} number={issue.number} cwd={cwd} compact />}
                         />
                     ))
                 )}
@@ -180,7 +209,7 @@ export function IssuesView({ paneId, repo, listState, item, composing, page, act
             <EmptyState icon={<IconInfo size={20} />} message="Pick an issue to read it." />
         ) : (
             <div className="issue-page">
-                <IssueDetail repo={repo} number={item} active={active} />
+                <IssueDetail repo={repo} number={item} active={active} cwd={cwd} />
             </div>
         );
     return <GitColumns paneId={paneId} left={list} right={right} />;
