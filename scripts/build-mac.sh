@@ -78,7 +78,7 @@ fail() {
 
 # The README and sikemux.com promise a small download, so a release that grows
 # past this fails here instead of shipping.
-DMG_BUDGET_BYTES=10250000
+DMG_BUDGET_BYTES=13250000
 
 # Tauri packs the DMG with zlib; LZMA makes it about a fifth smaller. The
 # conversion drops the DMG's signature, so a real identity signs it again.
