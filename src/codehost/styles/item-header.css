@@ -76,7 +76,6 @@
 .gha-item-sub .gha-who-name {
     overflow: hidden;
     text-overflow: ellipsis;
-    font-weight: var(--weight-normal);
     color: inherit;
 }
 .gha-tl-actor {

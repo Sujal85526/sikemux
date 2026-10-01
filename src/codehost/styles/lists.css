@@ -196,5 +196,4 @@
 }
 .gha-item-row[data-unread="0"] .gha-item-title {
     color: var(--text-secondary);
-    font-weight: var(--weight-normal);
 }

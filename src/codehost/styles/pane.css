@@ -9,7 +9,12 @@
     color: var(--text-primary);
     font-family: var(--ui);
     font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
     container-type: inline-size;
+}
+:where(.gha-pane) :where(button) {
+    font-weight: inherit;
+    letter-spacing: inherit;
 }
 .gha-cols {
     display: flex;

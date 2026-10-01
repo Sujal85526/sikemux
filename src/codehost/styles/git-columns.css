@@ -55,7 +55,6 @@
 }
 .pr-number {
     color: var(--text-tertiary);
-    font-weight: var(--weight-normal);
 }
 /* The merge box sits inside the card, so it drops its own frame and keeps only the rules between its parts. */
 .pr-card .gha-merge-box {
@@ -138,7 +137,6 @@ button.git-file-row {
 }
 .pr-right > .git-detail .pr-number {
     color: var(--text-tertiary);
-    font-weight: var(--weight-normal);
 }
 .pr-right > .git-detail .gha-branch > span {
     font-size: var(--text-2xs);
