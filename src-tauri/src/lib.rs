@@ -88,6 +88,8 @@ fn main_window_navigation_guard<R: tauri::Runtime>() -> tauri::plugin::TauriPlug
         .build()
 }
 
+static MAIN_PAGE_LOADED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 pub fn run() {
     install_tls_crypto();
     system::normalize_user_environment();
@@ -163,9 +165,11 @@ pub fn run() {
             // native window, so React cleanup never runs. Terminals and chat
             // agents keep running in the core and the new page reattaches them.
             // Browser tabs are webviews too, and a page loading in one of
-            // them is not the app reloading.
+            // them is not the app reloading. Nor is the window's first page:
+            // an agent may already have opened a tab before it commits.
             if webview.label() == "main"
                 && payload.event() == tauri::webview::PageLoadEvent::Started
+                && MAIN_PAGE_LOADED.swap(true, std::sync::atomic::Ordering::AcqRel)
             {
                 use tauri::Manager;
                 autopsy::forget_web_content_pid();
