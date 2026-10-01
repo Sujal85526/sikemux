@@ -9,13 +9,14 @@ import { type ResourceHandle, useResource, useResourceEnabled } from "../state/r
 import { agentCatalogR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { activeAgentId, agentIdsOf, agentsAwaitingInput } from "../state/selectors";
-import { type Agent, type AgentType } from "../state/types";
+import { type Agent, type AgentType, type ProviderProfile, type ProviderProfileSelection } from "../state/types";
 import { AgentIcon, IconClose, IconInbox, IconPlus, IconRefresh, IconSearch } from "../ui/Icons";
 import { AgentStateIndicator } from "../agents/AgentStateIndicator";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
 import { AgentContextMenu } from "../workspace/AgentContextMenu";
 import { sortByAttention } from "../state/agentStatus";
 import { Tooltip } from "../ui/Tooltip";
+import { Dropdown } from "../ui/Dropdown";
 import { Panel, PanelHeader } from "../ui/Panel";
 import { animate, type Box, contentBox, EASE_LEAVE, glideSelection, leavingRef } from "../lib/motion";
 import { CountUp } from "../ui/RollingText";
@@ -98,7 +99,10 @@ export function AgentRailBody() {
     const profileSelections = useStore((s) => s.selectedProviderProfileIds);
     const runtimeProfiles = useMemo(() => selectedAgentRuntimeProfiles(profiles, profileSelections), [profiles, profileSelections]);
     const catalog = useResource(agentCatalogR, runtimeProfiles);
-    const catalogAgents = useMemo(() => catalog.data ?? [], [catalog.data]);
+    // Switching account re-detects the CLIs; the last answer holds the rail steady meanwhile.
+    const [lastCatalog, setLastCatalog] = useState<AgentInfo[]>([]);
+    if (catalog.data && catalog.data !== lastCatalog) setLastCatalog(catalog.data);
+    const catalogAgents = catalog.data ?? lastCatalog;
     const availableAgents = useMemo(() => catalogAgents.filter((agent) => agent.available !== false), [catalogAgents]);
     const availableTypes = useMemo(() => new Set(availableAgents.map((a) => a.type)), [availableAgents]);
     const claudeDetected = availableTypes.has("claude");
@@ -315,6 +319,8 @@ export function AgentRailBody() {
                         provider={selectedType}
                         usage={selectedUsage}
                         label={availableAgents.find((a) => a.type === selectedType)?.label}
+                        profiles={profiles}
+                        selections={profileSelections}
                     />
                 )}
             </>
@@ -451,7 +457,13 @@ export function AgentRailBody() {
             {/* The rail's footer: plan limits sit under the agents they apply
                 to, out of the way of the list you came here to use. */}
             {!allAgents && isUsageAgent(selectedType) && selectedUsage && (
-                <AgentUsagePanel provider={selectedType} usage={selectedUsage} label={availableAgents.find((a) => a.type === selectedType)?.label} />
+                <AgentUsagePanel
+                    provider={selectedType}
+                    usage={selectedUsage}
+                    label={availableAgents.find((a) => a.type === selectedType)?.label}
+                    profiles={profiles}
+                    selections={profileSelections}
+                />
             )}
         </>
     );
@@ -552,7 +564,56 @@ function planLabel(plan: string): string {
         .join(" ");
 }
 
-function AgentUsagePanel({ provider, usage, label }: { provider: UsageAgentType; usage: ResourceHandle<AgentUsage>; label?: string }) {
+const MANAGE_ACCOUNTS = "manage-accounts";
+
+function AccountPicker({
+    provider,
+    providerLabel,
+    profiles,
+    selections,
+}: {
+    provider: UsageAgentType;
+    providerLabel: string;
+    profiles: readonly ProviderProfile[];
+    selections: ProviderProfileSelection;
+}) {
+    const accounts = useMemo(() => profiles.filter((profile) => profile.provider === provider), [profiles, provider]);
+    if (accounts.length < 2) return null;
+    const current = selectedProviderProfile(provider, profiles, selections) ?? accounts[0];
+    return (
+        <div className="agent-usage-account">
+            <Dropdown
+                label={`${providerLabel} account`}
+                title={`New ${providerLabel} agents use this account`}
+                value={current.id}
+                align="right"
+                menuWidth={180}
+                options={[
+                    ...accounts.map((profile) => ({ value: profile.id, label: profile.name, detail: profile.configPath })),
+                    { value: MANAGE_ACCOUNTS, label: "Manage accounts…", className: "agent-usage-manage" },
+                ]}
+                onChange={(value) => {
+                    if (value === MANAGE_ACCOUNTS) cmd.openSettings("agents");
+                    else cmd.selectProviderProfile(provider, value);
+                }}
+            />
+        </div>
+    );
+}
+
+function AgentUsagePanel({
+    provider,
+    usage,
+    label,
+    profiles,
+    selections,
+}: {
+    provider: UsageAgentType;
+    usage: ResourceHandle<AgentUsage>;
+    label?: string;
+    profiles: readonly ProviderProfile[];
+    selections: ProviderProfileSelection;
+}) {
     const [now, setNow] = useState(() => Date.now());
     useEffect(() => {
         const timer = window.setInterval(() => setNow(Date.now()), 60_000);
@@ -573,6 +634,7 @@ function AgentUsagePanel({ provider, usage, label }: { provider: UsageAgentType;
             <div className="panel-head agent-usage-head">
                 <span className="panel-label">Limits</span>
                 <span className="panel-rule" />
+                <AccountPicker provider={provider} providerLabel={providerLabel} profiles={profiles} selections={selections} />
                 {usage.data?.plan && <span className="agent-usage-plan">{planLabel(usage.data.plan)}</span>}
                 <Tooltip label={`Refresh ${providerLabel} plan limits`}>
                     <button

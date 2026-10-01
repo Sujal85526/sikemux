@@ -564,6 +564,29 @@
     text-transform: uppercase;
     white-space: nowrap;
 }
+.agent-usage-account {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+.agent-usage-account .dd {
+    min-width: 0;
+}
+.agent-usage-account .dd-btn {
+    max-width: 112px;
+    height: 18px;
+    gap: 4px;
+    padding: 0 5px 0 6px;
+    border-color: transparent;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: var(--text-2xs);
+}
+.agent-usage-account .dd-btn:hover:not(:disabled) {
+    color: var(--text-primary);
+}
+.agent-usage-manage {
+    color: var(--text-secondary);
+}
 .agent-usage-head .rail-group-add:disabled {
     opacity: 0.35;
     cursor: default;
