@@ -208,6 +208,19 @@ impl StreamTable {
         .unwrap_or_default()
     }
 
+    /// Forgets every session without telling anyone it ended, returning the
+    /// ones the core was streaming to the app.
+    pub(super) fn release_all(&self) -> Vec<SessionId> {
+        self.with(|guard| {
+            std::mem::take(&mut *guard.sessions)
+                .into_iter()
+                .filter(|(_, streams)| streams.core_subscribed)
+                .map(|(id, _)| id)
+                .collect()
+        })
+        .unwrap_or_default()
+    }
+
     pub(super) fn subscriber_count(&self) -> usize {
         self.with(|guard| {
             guard
@@ -439,6 +452,18 @@ mod tests {
         assert!(delivery.is_empty());
         let (again, _) = table.exited(9);
         assert!(again.is_none());
+        assert!(table.take_all().is_empty());
+    }
+
+    #[test]
+    fn releasing_everything_names_only_what_the_core_streams_to_the_app() {
+        let table = StreamTable::default();
+        let _ = attached(&table, 4);
+        table.lock().expect("lock").register_task(
+            8,
+            tauri::ipc::Channel::<sikemux_pty::task::TaskProcessExit>::new(|_| Ok(())),
+        );
+        assert_eq!(table.release_all(), vec![4]);
         assert!(table.take_all().is_empty());
     }
 

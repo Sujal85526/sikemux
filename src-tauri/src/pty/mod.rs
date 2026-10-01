@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use sikemux_core::client::{ensure_running, ClientError, CoreClient};
-use sikemux_core::protocol::{SessionId, SessionInfo, SessionKind};
+use sikemux_core::protocol::{Request, SessionId, SessionInfo, SessionKind};
 use tauri::{AppHandle, Manager};
 
 use crate::error::{AppError, AppResult};
@@ -214,14 +214,26 @@ impl PtyManager {
         drop(self.streams.take_all());
     }
 
-    /// Stops every terminal and task and waits for them, so a reloaded page or
-    /// a closed window leaves nothing running.
-    pub fn stop_all(&self) {
-        self.block_on_core(|client| async move { client.stop_all().await });
+    /// The page went away with every channel it held. Terminals and tasks keep
+    /// running in the core, which stops sending what nobody will show.
+    pub fn detach_all(&self) {
+        let subscribed = self.streams.release_all();
+        let Some(client) = self.current() else {
+            return;
+        };
+        for id in subscribed {
+            let _ = client.submit(Request::Detach { id }, |_| ());
+        }
     }
 
-    /// Stops everything and lets the core exit with the app.
-    pub fn shutdown(&self) {
+    /// The app is leaving and its sessions stay with the core.
+    pub fn release(&self) {
+        self.closing.store(true, Ordering::Release);
+        self.detach_all();
+    }
+
+    /// Stops every session and lets the core exit with the app.
+    pub fn stop_everything(&self) {
         self.closing.store(true, Ordering::Release);
         self.block_on_core(|client| async move { client.shutdown(true).await });
     }
@@ -284,10 +296,60 @@ impl PtyManager {
     }
 }
 
+/// "Quit and Stop Everything": every terminal, agent and task in the core
+/// ends with the app.
+pub(crate) fn quit_and_stop_everything(app: &AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        if let Some(manager) = app.try_state::<PtyManager>() {
+            manager.stop_everything();
+        }
+        app.exit(0);
+    });
+}
+
 #[cfg(test)]
 mod tests {
-    use super::core_error;
+    use std::sync::atomic::Ordering;
+    use std::sync::{Arc, Mutex};
+
+    use super::{core_error, PtyManager};
     use sikemux_core::client::ClientError;
+
+    fn recorded() -> (tauri::ipc::Channel<tauri::ipc::Response>, Arc<Mutex<usize>>) {
+        let messages = Arc::new(Mutex::new(0));
+        let counter = messages.clone();
+        let channel = tauri::ipc::Channel::new(move |_| {
+            *counter.lock().expect("count") += 1;
+            Ok(())
+        });
+        (channel, messages)
+    }
+
+    #[test]
+    fn leaving_detaches_without_telling_any_pane_its_process_ended() {
+        let manager = PtyManager::default();
+        let (channel, messages) = recorded();
+        {
+            let mut guard = manager.streams.lock().expect("lock");
+            guard.begin_attach(3).expect("begin");
+            guard.finish_attach(3, channel).expect("attach");
+        }
+        manager.detach_all();
+        assert_eq!(manager.streams.subscriber_count(), 0);
+        assert_eq!(*messages.lock().expect("count"), 0);
+        assert!(!manager.closing.load(Ordering::Acquire));
+
+        manager.release();
+        assert!(manager.closing.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn stopping_everything_without_a_core_still_marks_the_app_as_leaving() {
+        let manager = PtyManager::default();
+        manager.stop_everything();
+        assert!(manager.closing.load(Ordering::Acquire));
+    }
 
     #[test]
     fn core_errors_keep_the_categories_and_messages_the_frontend_reads() {

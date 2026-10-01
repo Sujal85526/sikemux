@@ -433,6 +433,11 @@ pub async fn task_watch(
 }
 
 #[tauri::command]
+pub fn app_quit_and_stop_everything(app: AppHandle) {
+    super::quit_and_stop_everything(&app);
+}
+
+#[tauri::command]
 pub async fn harness_task_output(
     manager: State<'_, PtyManager>,
     id: SessionId,

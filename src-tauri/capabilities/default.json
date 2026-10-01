@@ -39,6 +39,7 @@
     "allow-listening-ports",
     "allow-pty-sessions",
     "allow-task-watch",
+    "allow-app-quit-and-stop-everything",
     "allow-agent-detection-explain",
     "allow-agent-detection-manifests",
     "allow-agent-detection-reload",

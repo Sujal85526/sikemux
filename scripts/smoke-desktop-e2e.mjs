@@ -6,6 +6,7 @@ import { connect } from "node:net";
 import {
   mkdtemp,
   mkdir,
+  readFile,
   realpath,
   rm,
   stat,
@@ -216,7 +217,7 @@ function openCore(path) {
       frame.kind === CORE_FRAME.control ? JSON.parse(frame.payload) : null;
     socket.once("connect", async () => {
       socket.write(
-        coreControl({ type: "hello", protocol: "sikemux-core", version: 1 }),
+        coreControl({ type: "hello", protocol: "sikemux-core", version: 2 }),
       );
       const hello = await next((frame) => control(frame)?.type === "helloAck");
       if (!hello) {
@@ -255,6 +256,24 @@ function openCore(path) {
               control(frame)?.requestId === attachId,
           );
           return reply?.kind === CORE_FRAME.snapshot;
+        },
+        async attachReplay(id) {
+          const attachId = ++requestId;
+          socket.write(
+            coreControl({
+              type: "request",
+              requestId: attachId,
+              request: { op: "attach", id },
+            }),
+          );
+          const reply = await next(
+            (frame) =>
+              frame.kind === CORE_FRAME.snapshot &&
+              frame.payload.readBigUInt64BE(0) === BigInt(attachId),
+          );
+          if (!reply) return "";
+          const headerLength = reply.payload.readUInt32BE(16);
+          return reply.payload.subarray(20 + headerLength).toString("utf8");
         },
         write(id, text) {
           const header = Buffer.alloc(16);
@@ -512,6 +531,172 @@ async function exerciseBrowserTools(harnessEnv) {
   );
 }
 
+// Clicks an item in the app's own menu through Accessibility, addressed by
+// the process id, so no other app can receive it. False when this machine
+// does not let scripts drive menus.
+function clickAppMenuItem(pid, title) {
+  if (process.platform !== "darwin") return false;
+  const script = [
+    'tell application "System Events"',
+    `  tell (first process whose unix id is ${pid})`,
+    `    click (first menu item of menu 1 of menu bar item 2 of menu bar 1 whose name starts with "${title}")`,
+    "  end tell",
+    "end tell",
+  ].join("\n");
+  const clicked = run("osascript", ["-e", script], process.env, 10_000);
+  if (clicked.status !== 0)
+    console.warn(
+      `! osascript could not click "${title}": ${(clicked.stderr || clicked.error?.message || "").trim()}`,
+    );
+  return clicked.status === 0;
+}
+
+async function exitOf(child, timeout) {
+  if (child.exitCode !== null || child.signalCode !== null) return true;
+  return Promise.race([
+    new Promise((resolveExit) => child.once("exit", () => resolveExit(true))),
+    delay(timeout).then(() => false),
+  ]);
+}
+
+function processAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function stateMentions(text) {
+  const contents = await Promise.all(
+    [stateDatabase, `${stateDatabase}-wal`].map((path) =>
+      readFile(path).catch(() => Buffer.alloc(0)),
+    ),
+  );
+  return contents.some((bytes) => bytes.includes(text));
+}
+
+async function coreSession(core, id) {
+  const listed = await core.request({ op: "list" }, 5_000);
+  return (listed?.response?.sessions ?? []).find(
+    (session) => session.id === id,
+  );
+}
+
+// Quit leaves a terminal running in the core and the next launch shows it in
+// the same pane. Runs while that pane is the one on screen.
+async function exerciseQuitKeepsTerminals() {
+  const core = await openCore(coreSocket).catch((error) =>
+    fail(
+      `the app did not start its terminal core: ${error.message}`,
+      desktopLog,
+    ),
+  );
+  let shell;
+  await waitFor("a terminal pane in the core", PERSIST_TIMEOUT_MS, async () => {
+    const listed = await core.request({ op: "list" }, 5_000);
+    shell = (listed?.response?.sessions ?? []).find(
+      (session) =>
+        session.kind === "terminal" && session.running && session.paneId,
+    );
+    return Boolean(shell);
+  });
+  if (!(await core.attach(shell.id)))
+    fail("could not attach to the project terminal", desktopLog);
+  core.write(shell.id, "echo kept-$((5*9))\r");
+  if (!(await core.output(shell.id, "kept-45", 10_000)))
+    fail("the project terminal did not print before quitting", desktopLog);
+  core.close();
+  await waitFor(
+    "the pane's terminal saved in the layout",
+    PERSIST_TIMEOUT_MS,
+    () => stateMentions(`"ptyId":${shell.id}`),
+  );
+
+  // The same request ⌘Q makes: AppKit asks the app to terminate, so Tauri
+  // runs its exit hooks.
+  const quit = run(
+    "osascript",
+    [
+      "-l",
+      "JavaScript",
+      "-e",
+      `ObjC.import("AppKit"); $.NSRunningApplication.runningApplicationWithProcessIdentifier(${desktop.pid}).terminate`,
+    ],
+    process.env,
+    10_000,
+  );
+  if (quit.status !== 0) fail(`could not ask the app to quit: ${quit.stderr}`);
+  if (!(await exitOf(desktop, 15_000)))
+    fail("the app did not quit", desktopLog);
+
+  const afterQuit = await openCore(coreSocket).catch(() =>
+    fail("the core went away when the app quit", desktopLog),
+  );
+  const kept = await coreSession(afterQuit, shell.id);
+  if (!kept?.running || kept.pid !== shell.pid || !processAlive(shell.pid))
+    fail("the terminal did not keep running after Quit", desktopLog);
+  afterQuit.close();
+
+  desktop = launchDesktop();
+  await waitForBroker(desktop);
+  const watcher = await openCore(coreSocket);
+  const deadline = Date.now() + READY_TIMEOUT_MS;
+  for (;;) {
+    const session = await coreSession(watcher, shell.id);
+    if (session?.running && session.attached > 0) break;
+    if (Date.now() > deadline) {
+      const sessions = await watcher.request({ op: "list" }, 5_000);
+      fail(
+        `the pane did not take its terminal back: ${JSON.stringify(sessions?.response?.sessions)}`,
+        desktopLog,
+      );
+    }
+    await delay(100);
+  }
+  const relisted = await watcher.request({ op: "list" }, 5_000);
+  const panes = (relisted?.response?.sessions ?? []).filter(
+    (session) => session.kind === "terminal" && session.paneId === shell.paneId,
+  );
+  if (panes.length !== 1)
+    fail(
+      `the pane started ${panes.length - 1} new terminal(s) instead of taking its own back`,
+      desktopLog,
+    );
+  const replay = await watcher.attachReplay(shell.id);
+  if (!replay.includes("kept-45"))
+    fail("the reattached terminal lost its earlier output", desktopLog);
+  watcher.close();
+  console.log(
+    `Quit and relaunch passed: terminal ${shell.id} (pid ${shell.pid}) kept running and its pane took it back with its output`,
+  );
+  return shell;
+}
+
+// Quit and Stop Everything ends what Quit left running, and the core with it.
+async function exerciseQuitAndStopEverything(shell) {
+  const stopByMenu = clickAppMenuItem(desktop.pid, "Quit and Stop Everything");
+  if (!stopByMenu) {
+    console.warn(
+      "! Could not drive the app menu; stopping the core the way Quit and Stop Everything does",
+    );
+    await stopCore(coreSocket);
+    desktop.kill("SIGTERM");
+  }
+  if (!(await exitOf(desktop, 15_000)))
+    fail("the app did not quit after Quit and Stop Everything", desktopLog);
+  await waitFor("the terminal to stop", 10_000, () => !processAlive(shell.pid));
+  const gone = await openCore(coreSocket).catch(() => null);
+  if (gone) {
+    gone.close();
+    fail("the core kept running after Quit and Stop Everything", desktopLog);
+  }
+  console.log(
+    `Quit and Stop Everything passed${stopByMenu ? "" : " (by the core, not the menu)"}: terminal ${shell.id} and the core stopped`,
+  );
+}
+
 await executableExists(appExecutable, "debug desktop executable");
 await executableExists(cliExecutable, "release editor CLI");
 
@@ -584,28 +769,31 @@ delete isolatedEnvironment.SIKEMUX_APP_EXECUTABLE;
 
 let desktopLog = "";
 let desktopSpawnError = "";
-const desktop = spawn(appExecutable, [], {
-  cwd: project,
-  env: isolatedEnvironment,
-  stdio: ["ignore", "pipe", "pipe"],
-  windowsHide: true,
-});
-desktop.stdout.on("data", (chunk) => {
-  desktopLog = boundedAppend(desktopLog, chunk);
-});
-desktop.stderr.on("data", (chunk) => {
-  desktopLog = boundedAppend(desktopLog, chunk);
-});
-desktop.on("error", (error) => {
-  desktopSpawnError = error.message;
-});
+function launchDesktop() {
+  const child = spawn(appExecutable, [], {
+    cwd: project,
+    env: isolatedEnvironment,
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
+  });
+  child.stdout.on("data", (chunk) => {
+    desktopLog = boundedAppend(desktopLog, chunk);
+  });
+  child.stderr.on("data", (chunk) => {
+    desktopLog = boundedAppend(desktopLog, chunk);
+  });
+  child.on("error", (error) => {
+    desktopSpawnError = error.message;
+  });
+  return child;
+}
 
-try {
+async function waitForBroker(child) {
   await waitFor("authenticated desktop CLI broker", READY_TIMEOUT_MS, () => {
     if (desktopSpawnError) fail(desktopSpawnError, desktopLog);
-    if (desktop.exitCode !== null || desktop.signalCode !== null) {
+    if (child.exitCode !== null || child.signalCode !== null) {
       fail(
-        `desktop exited before becoming ready (${desktop.exitCode ?? desktop.signalCode})`,
+        `desktop exited before becoming ready (${child.exitCode ?? child.signalCode})`,
         desktopLog,
       );
     }
@@ -614,6 +802,12 @@ try {
       status.status === 0 && /^Sikemux \S+ is running\s*$/u.test(status.stdout)
     );
   });
+}
+
+let desktop = launchDesktop();
+
+try {
+  await waitForBroker(desktop);
 
   // The native broker starts during Tauri setup, before React has necessarily
   // hydrated. Initial persistence is queued only once the WebView is writable,
@@ -624,6 +818,12 @@ try {
     async () => {
       return (await latestStateWriteTime()) > 0;
     },
+  );
+  const keptShell = await exerciseQuitKeepsTerminals();
+  await waitFor(
+    "WebView boot and persistence after relaunch",
+    PERSIST_TIMEOUT_MS,
+    async () => (await latestStateWriteTime()) > 0,
   );
   const stateWriteBeforeOpen = await latestStateWriteTime();
 
@@ -841,8 +1041,10 @@ try {
     );
   }
 
+  await exerciseQuitAndStopEverything(keptShell);
+
   console.log(
-    "✓ Desktop E2E smoke passed: process → broker → Tauri event/commands → WebView editor → SQLite",
+    "✓ Desktop E2E smoke passed: process → broker → Tauri event/commands → WebView editor → SQLite → quit and relaunch",
   );
 } finally {
   await stopExactChild(desktop);

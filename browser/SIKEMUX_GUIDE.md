@@ -56,7 +56,7 @@ This page is what to know before your first call. Call `guide` again with a
 Pass one of these as `topic`:
 
 - `config` — writing or fixing `sikemux.json`, and what `configStatus` means
-- `tasks` — launching, trust prompts, `readyWhen`, restarting, stopping, and what a reload loses
+- `tasks` — launching, trust prompts, `readyWhen`, restarting, stopping, and what survives a reload
 - `output` — `task_read` paging, `plain`, `tail`, `search`, and `events_wait`
 - `ui` — `ui_open` for files, diffs, terminals and the preview
 - `browser-reading` — page state, report modes, element numbers and lines, `browser_find`, frames
@@ -144,13 +144,17 @@ person's focus. To bring the person to it, call `ui_open` with
 its process tree. A `taskId` instead stops that task's latest execution. It
 does not stop a task started from the command deck.
 
-### What does not survive
+### What survives a reload or restart
 
-Run history and idempotency keys live for the current frontend session, capped
-at 128 runs and 256 keys. Restarting the app does not resume commands, and
-reloading the Sikemux window stops every task and loses run handles;
-`task_read` then says the task was started before the reload. Closing the project stops its harness
-tasks.
+Tasks keep running when the Sikemux window reloads or the app quits. When
+Sikemux opens again it takes them back with their terminals, and `task_read`,
+`task_stop` and `task_restart` work on them by `taskId` or `executionId`. A
+task that ended while Sikemux was closed stays readable for about ten minutes.
+Idempotency keys and `events_wait` cursors do not survive, so pass a new key
+and take a fresh cursor from `workspace_inspect`. "Quit and Stop Everything"
+(⌥⌘Q) stops every task, after which `task_read` says the task was started
+earlier and its run is gone. Run history is capped at 128 runs and 256 keys.
+Closing the project stops its harness tasks.
 
 If you hit a capacity error on either cap, the person needs to restart Sikemux;
 you cannot clear it yourself.

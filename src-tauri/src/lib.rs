@@ -107,7 +107,11 @@ pub fn run() {
 
     let builder = tauri::Builder::default();
     #[cfg(target_os = "macos")]
-    let builder = builder.menu(app_menu::build);
+    let builder = builder.menu(app_menu::build).on_menu_event(|app, event| {
+        if event.id() == app_menu::QUIT_AND_STOP_EVERYTHING {
+            pty::quit_and_stop_everything(app);
+        }
+    });
     builder
         // Must be the first plugin: subsequent GUI launches focus the primary
         // process instead of creating a second workspace/CLI broker.
@@ -129,17 +133,16 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .on_window_event(|window, event| {
-            // Stop every terminal on close so we don't leave orphan
-            // shells, agents, or `tail`s alive after the user quits.
-            // The OS reaps eventually, but explicit kill avoids the
-            // "still using AI tokens" surprise from a backgrounded agent.
+            // Terminals, terminal agents and tasks live in the core and keep
+            // running after the window closes; the next launch reattaches
+            // them. Chat agents are still children of the app and stop here.
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 use tauri::Manager;
                 if let Some(watchdog) = window.try_state::<UiWatchdogState>() {
                     watchdog.suspend();
                 }
                 if let Some(mgr) = window.try_state::<PtyManager>() {
-                    mgr.stop_all();
+                    mgr.detach_all();
                 }
                 if let Some(browser) = window.try_state::<BrowserManager>() {
                     browser.drain();
@@ -155,8 +158,8 @@ pub fn run() {
         })
         .on_page_load(|webview, payload| {
             // Context-menu reload starts a new page without closing the
-            // native window, so React cleanup is not a reliable place to
-            // kill PTYs. Initial startup has no PTYs yet; reload does.
+            // native window, so React cleanup never runs. Terminals keep
+            // running in the core and the new page reattaches them.
             // Browser tabs are webviews too, and a page loading in one of
             // them is not the app reloading.
             if webview.label() == "main"
@@ -169,7 +172,7 @@ pub fn run() {
                     watchdog.suspend();
                 }
                 if let Some(mgr) = webview.try_state::<PtyManager>() {
-                    mgr.stop_all();
+                    mgr.detach_all();
                 }
                 if let Some(browser) = webview.try_state::<BrowserManager>() {
                     browser.drain();
@@ -249,6 +252,7 @@ pub fn run() {
             ports::listening_ports,
             pty::commands::pty_sessions,
             pty::commands::task_watch,
+            pty::commands::app_quit_and_stop_everything,
             pty::commands::agent_detection_explain,
             pty::commands::agent_detection_manifests,
             pty::commands::agent_detection_reload,
@@ -433,15 +437,10 @@ pub fn run() {
             if let tauri::RunEvent::Opened { urls } = &event {
                 deep_link::receive(app_handle, urls);
             }
-            // The window-close and reload hooks above only fire on their
-            // specific events. An in-app update relaunches via the process
-            // plugin's `relaunch()` → `app.restart()`, which raises
-            // RunEvent::ExitRequested then RunEvent::Exit but NO window
-            // CloseRequested — so without this hook an update would restart
-            // the process while every live shell/agent is abandoned to the
-            // kernel's PTY hangup (and anything ignoring SIGHUP would leak).
-            // RunEvent::Exit fires on EVERY teardown route — quit, `exit()`,
-            // and restart — and runs before the process is actually replaced.
+            // RunEvent::Exit fires on every teardown route: quit, `exit()`,
+            // and the restart after an in-app update, which raises no window
+            // CloseRequested. Terminals stay in the core on all of them; only
+            // "Quit and Stop Everything" stops them, before it exits.
             if let tauri::RunEvent::Exit = event {
                 use tauri::Manager;
                 if let Some(watchdog) = app_handle.try_state::<UiWatchdogState>() {
@@ -453,7 +452,7 @@ pub fn run() {
                     }
                 }
                 if let Some(mgr) = app_handle.try_state::<PtyManager>() {
-                    mgr.shutdown();
+                    mgr.release();
                 }
                 if let Some(browser) = app_handle.try_state::<BrowserManager>() {
                     browser.drain();

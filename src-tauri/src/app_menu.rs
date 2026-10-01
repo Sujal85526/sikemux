@@ -1,9 +1,12 @@
-use tauri::menu::{AboutMetadata, Menu, PredefinedMenuItem, Submenu};
+use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Runtime};
+
+pub const QUIT_AND_STOP_EVERYTHING: &str = "quit-and-stop-everything";
 
 /// Tauri's default macOS menu without "Close Window". Its ⌘W would close the
 /// only window, and every shell and agent with it, whenever the page did not
 /// claim the key first; ⌘W belongs to the page, which closes the pane in front.
+/// ⌘Q leaves terminals running in the core; ⌥⌘Q stops them too.
 pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let info = app.package_info();
     let about = AboutMetadata {
@@ -30,6 +33,13 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
                     &PredefinedMenuItem::hide_others(app, None)?,
                     &separator()?,
                     &PredefinedMenuItem::quit(app, None)?,
+                    &MenuItem::with_id(
+                        app,
+                        QUIT_AND_STOP_EVERYTHING,
+                        "Quit and Stop Everything",
+                        true,
+                        Some("Alt+CmdOrCtrl+Q"),
+                    )?,
                 ],
             )?,
             &Submenu::with_items(

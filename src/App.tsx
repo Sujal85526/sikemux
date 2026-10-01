@@ -42,6 +42,8 @@ import { filesApi } from "./api/files";
 import { emit } from "./state/bus";
 import * as cmd from "./state/commands";
 import { offerSavedSessions, restoreCoreSessions } from "./workspace/restoreCoreSessions";
+import { coreSessionsApi } from "./api/coreSessions";
+import { IS_MACOS } from "./lib/platform";
 import { applyHydrate, canFlushPersist, flushPersist, hydrationAllowsPersistence, subscribePersist, type HydrationResult } from "./state/persist";
 import {
     dispatchFolder,
@@ -369,6 +371,11 @@ function ProjectBridge() {
  * command executed, for a list nobody was looking at. Mounting it with the
  * palette means the shell above stops subscribing to any of its inputs.
  */
+async function quitAndStopEverything(): Promise<void> {
+    if (canFlushPersist()) await flushPersist().catch(() => false);
+    await coreSessionsApi.quitAndStopEverything().catch(reportError("quit and stop everything"));
+}
+
 function ApplicationCommandPalette() {
     const keybindingOverrides = useStore((s) => s.keybindingOverrides);
     const customCommands = useStore((s) => s.customCommands);
@@ -625,6 +632,14 @@ function ApplicationCommandPalette() {
                   } satisfies StandaloneCommand,
               ]
             : []),
+        {
+            id: "app.quit-and-stop-everything",
+            title: "Quit and Stop Everything",
+            detail: "Stop every terminal, terminal agent and task, then quit. Plain Quit leaves them running.",
+            category: "Application",
+            shortcut: IS_MACOS ? "⌥⌘Q" : undefined,
+            execute: runStandalone("app.quit-and-stop-everything", () => void quitAndStopEverything()),
+        },
         {
             id: "agents.reload-manifests",
             title: "Reload agent manifests",

@@ -22,6 +22,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "listening_ports",
     "pty_sessions",
     "task_watch",
+    "app_quit_and_stop_everything",
     "agent_detection_explain",
     "agent_detection_manifests",
     "agent_detection_reload",
