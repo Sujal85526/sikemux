@@ -27,7 +27,6 @@ done
 
 BUILD_ARGS=("$@")
 BUILD_ARGS+=(--config "$ROOT/src-tauri/tauri.sidecar.conf.json")
-BUILD_ARGS+=(--config "$ROOT/src-tauri/tauri.voice.conf.json")
 # Normal developer builds do not have the updater private key, so avoid asking
 # Tauri to create an updater archive it cannot sign.
 if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
@@ -121,8 +120,15 @@ CLI_EXECUTABLE="$APP_PATH/Contents/MacOS/sikemux-editor"
 CLI_ARCHS="$(/usr/bin/lipo -archs "$CLI_EXECUTABLE")"
 [[ "$CLI_ARCHS" == "$ARCHS" ]] || fail "CLI sidecar architecture ($CLI_ARCHS) differs from app ($ARCHS)"
 [[ -s "$APP_PATH/Contents/Resources/sikemux_pi_tools.ts" ]] || fail "bundled Pi browser extension is missing"
-VOICE_EXECUTABLE="$APP_PATH/Contents/MacOS/sikemux-voice"
-[[ -x "$VOICE_EXECUTABLE" ]] || fail "bundled voice helper is missing or not executable"
+# The voice helper is published beside the release and downloaded with the
+# speech model, so it must be built and signed but stay out of the app.
+VOICE_TARGET="${TARGET:-$(rustc -vV | sed -n 's/^host: //p')}"
+VOICE_EXECUTABLE="$ROOT/src-tauri/binaries/sikemux-voice-$VOICE_TARGET"
+[[ -x "$VOICE_EXECUTABLE" ]] || fail "voice helper is missing or not executable"
+[[ ! -e "$APP_PATH/Contents/MacOS/sikemux-voice" ]] || fail "the voice helper is bundled in the app"
+/usr/bin/codesign --verify --strict "$VOICE_EXECUTABLE" || fail "voice helper signature is invalid"
+VOICE_SIGNATURE="$(/usr/bin/codesign -dv "$VOICE_EXECUTABLE" 2>&1)"
+grep -q 'flags=.*runtime' <<<"$VOICE_SIGNATURE" || fail "voice helper lacks the hardened runtime"
 VOICE_ARCHS="$(/usr/bin/lipo -archs "$VOICE_EXECUTABLE")"
 sorted_archs() { tr ' ' '\n' <<<"$1" | sort | tr '\n' ' '; }
 [[ "$(sorted_archs "$VOICE_ARCHS")" == "$(sorted_archs "$ARCHS")" ]] || fail "voice helper architecture ($VOICE_ARCHS) differs from app ($ARCHS)"
@@ -156,9 +162,9 @@ if ! grep -Fq "Missing SIKEMUX_TOOLS_AGENT_ID" <<<"$TOOLS_START"; then
   fail "bundled tools MCP server does not start"
 fi
 
-# The same proof for the voice helper: the signed copy must still start.
+# The signed voice helper must still start under the hardened runtime.
 if [[ "$VOICE_ARCHS" == *"$(uname -m)"* ]]; then
-  "$VOICE_EXECUTABLE" --version | grep -Fq "sikemux-voice" || fail "bundled voice helper does not start"
+  "$VOICE_EXECUTABLE" --version | grep -Fq "sikemux-voice" || fail "signed voice helper does not start"
 fi
 
 # Every normal build is ad-hoc signed when no Apple identity is configured.
@@ -177,6 +183,8 @@ if [[ "${REQUIRE_SIGNED_APP:-0}" == "1" ]]; then
   SIGNING_INFO="$(/usr/bin/codesign -dv --verbose=4 "$APP_PATH" 2>&1)"
   grep -q '^Authority=' <<<"$SIGNING_INFO" || fail "release app has no certificate authority (ad-hoc signature)"
   grep -q '^TeamIdentifier=' <<<"$SIGNING_INFO" || fail "release app has no TeamIdentifier"
+  VOICE_SIGNING_INFO="$(/usr/bin/codesign -dv --verbose=4 "$VOICE_EXECUTABLE" 2>&1)"
+  grep -q '^Authority=' <<<"$VOICE_SIGNING_INFO" || fail "release voice helper has no certificate authority (ad-hoc signature)"
 fi
 
 echo ""
@@ -185,3 +193,4 @@ echo "  app: $APP_PATH"
 echo "  version: $APP_VERSION"
 echo "  architectures: $ARCHS"
 echo "  cli: $CLI_EXECUTABLE ($CLI_ARCHS)"
+echo "  voice helper: $VOICE_EXECUTABLE ($VOICE_ARCHS)"

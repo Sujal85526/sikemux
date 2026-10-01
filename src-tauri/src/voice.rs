@@ -1,10 +1,11 @@
-//! Push-to-talk dictation. Speech is recorded and transcribed by the bundled
+//! Push-to-talk dictation. Speech is recorded and transcribed by the
 //! `sikemux-voice` helper, which runs NVIDIA Parakeet on the Neural Engine.
+//! Released builds download it with the speech model; dev builds run their own.
 //! This module starts the helper, forwards commands to it as JSON lines, and
 //! relays everything it reports to the window as `voice` events.
 
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -83,7 +84,7 @@ impl VoiceManager {
         let manager = self.clone();
         let app = app.clone();
         *download = Some(tauri::async_runtime::spawn(async move {
-            let fetched = voice_models::ensure(&dir, |fraction| {
+            let fetched = voice_models::ensure(&dir, local_helper().is_none(), |fraction| {
                 let _ = app.emit_to(
                     "main",
                     VOICE_EVENT,
@@ -130,7 +131,7 @@ impl VoiceManager {
     }
 
     fn spawn(&self, app: &AppHandle) -> AppResult<Helper> {
-        let executable = helper_executable()
+        let executable = helper_executable(&models_dir(app)?)
             .ok_or_else(|| AppError::Other("the voice helper is missing from this build".into()))?;
         let mut command = Command::new(executable);
         for variable in MODEL_FETCH_VARIABLES {
@@ -169,15 +170,22 @@ impl VoiceManager {
     }
 }
 
-fn helper_executable() -> Option<PathBuf> {
+/// A helper built alongside the app, as `make dev` does, rather than downloaded.
+fn local_helper() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("SIKEMUX_VOICE_EXECUTABLE") {
         return Some(PathBuf::from(path));
     }
-    let bundled = std::env::current_exe()
+    let beside = std::env::current_exe()
         .ok()?
         .parent()?
         .join("sikemux-voice");
-    bundled.is_file().then_some(bundled)
+    beside.is_file().then_some(beside)
+}
+
+fn helper_executable(models_dir: &Path) -> Option<PathBuf> {
+    local_helper().or_else(|| {
+        voice_models::helper_is_published().then(|| voice_models::helper_path(models_dir))
+    })
 }
 
 fn models_dir(app: &AppHandle) -> AppResult<PathBuf> {
@@ -199,8 +207,7 @@ fn unsupported_reason() -> Option<String> {
     if !NSProcessInfo::processInfo().isOperatingSystemAtLeastVersion(minimum) {
         return Some("Dictation needs macOS 14 or later.".into());
     }
-    helper_executable()
-        .is_none()
+    (local_helper().is_none() && !voice_models::helper_is_published())
         .then(|| "This build does not include the voice helper.".into())
 }
 
@@ -214,7 +221,7 @@ pub async fn voice_status(app: AppHandle) -> AppResult<VoiceStatus> {
     let reason = unsupported_reason();
     Ok(VoiceStatus {
         supported: reason.is_none(),
-        installed: voice_models::installed(&models_dir(&app)?),
+        installed: voice_models::installed(&models_dir(&app)?, local_helper().is_none()),
         reason,
     })
 }

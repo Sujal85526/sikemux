@@ -41,6 +41,8 @@ signoz = ["dep:sikemux-plugin-signoz"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+sha2 = "0.11"
+hex = "0.4"
 
 [dependencies]
 tauri = { version = "2", default-features = false, features = ["macos-private-api", "wry", "unstable", "compression"] }

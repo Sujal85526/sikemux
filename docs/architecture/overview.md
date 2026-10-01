@@ -18,13 +18,15 @@ sends events and byte streams back.
 | App web view              | `src/main.tsx`, window label `main`                          | The React UI. It loads `dist/` in builds and `http://localhost:1420` in dev. A guard in `lib.rs` stops it from ever navigating anywhere else.                                                                                               |
 | Browser tabs              | `src-tauri/src/browser/`                                     | Each tab is a native child web view placed over the main window. React draws only the tab chrome and reports where the page area is. `without_page_script.rs` keeps the app's own page scripts out of these tabs.                          |
 | `sikemux-editor`          | `src-tauri/src/bin/sikemux-editor/` → `cli_client.rs`        | The `sikemux` and `sikemux-editor` launchers, which ask the running app to open files and projects. With `--tools-mcp` it is the MCP server (Model Context Protocol) agents launch over stdio.                                              |
-| `sikemux-voice`           | `src-tauri/voice/` (Swift package)                           | Speech-to-text helper. `voice.rs` starts it, writes JSON lines to its stdin and relays what it reports as `voice` events.                                                                                                                   |
+| `sikemux-voice`           | `src-tauri/voice/` (Swift package)                           | Speech-to-text helper, downloaded with the speech model. `voice.rs` starts it, writes JSON lines to its stdin and relays its `voice` events.                                                                                                |
 | Shells, agents, LSPs      | spawned by `pty/`, `acp/`, `lsp/`                            | Ordinary child processes. When the main web view reloads or the window closes, `lib.rs` drains all of them.                                                                                                                                 |
 
-The helper binaries ship as Tauri sidecars, meaning extra executables bundled next to
-the app. `scripts/build-cli-sidecar.mjs` builds the Rust ones into `src-tauri/binaries/`,
-`scripts/build-voice-helper.mjs` builds the Swift one, `tauri.sidecar.conf.json` and
-`tauri.voice.conf.json` add them to the bundle, and `pnpm sidecar:dev` builds them for dev.
+`sikemux-editor` ships as a Tauri sidecar, meaning an extra executable bundled next to
+the app. `scripts/build-cli-sidecar.mjs` builds it into `src-tauri/binaries/` and
+`tauri.sidecar.conf.json` adds it to the bundle. `scripts/build-voice-helper.mjs` builds
+and signs `sikemux-voice` there too, but it stays out of the app: each release publishes
+it as an asset, `build.rs` records its hash, and `voice_models.rs` downloads it with the
+speech model. `pnpm sidecar:dev` builds both beside the dev app, which runs them in place.
 
 ### The CLI broker
 
