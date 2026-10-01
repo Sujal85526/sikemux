@@ -67,7 +67,14 @@
     min-width: 0;
     height: 34px;
     padding-inline: 6px;
+    border-bottom: 1px solid var(--border);
     background: transparent;
+}
+
+/* One hairline between the desk's chrome and what it shows: on a page it runs
+   under the address row instead of between the tabs and the address. */
+.desk:has(> .desk-body > .desk-page:not([hidden])) .tabbar.v-desk {
+    border-bottom-color: transparent;
 }
 
 /* A width, not a share of the strip or a flex basis. The tab list is as wide
@@ -157,6 +164,7 @@
     gap: 2px;
     min-width: 0;
     padding: 0 6px 4px;
+    border-bottom: 1px solid var(--border);
     background: transparent;
 }
 
