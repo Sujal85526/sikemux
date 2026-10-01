@@ -1439,7 +1439,7 @@ describe("AgentChatPane", () => {
 
         const editor = screen.getByRole("textbox", { name: "Message agent" });
         expect(dispatchPathDrop(editor, ["/repo/src/App.tsx"])).toBe(true);
-        expect(await screen.findByText("App.tsx")).toBeInTheDocument();
+        expect(await screen.findByRole("button", { name: "Remove App.tsx" })).toBeInTheDocument();
 
         fireEvent.change(editor, { target: { value: "Review this" } });
         fireEvent.click(screen.getByRole("button", { name: "Send message" }));

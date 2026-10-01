@@ -109,7 +109,7 @@ function SentAttachment({ path }: { path: string }) {
     const preview = useImagePreview(path);
     const file = useFileRef(path);
     if (preview) return <ChatImage src={preview} path={path} className="chat-attachment-thumb" />;
-    if (file) return <ChatFileRef refers={file.ref} state={file.state} label={basename(path)} />;
+    if (file) return <ChatFileRef refers={file.ref} state={file.state} label={basename(path)} size={34} className="chat-attachment-file" tile />;
     return (
         <span title={path}>
             <IconFile size={12} />

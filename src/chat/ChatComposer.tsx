@@ -9,8 +9,8 @@ import { registerPathDrop } from "../state/dropRegistry";
 import { registerTextInsert } from "../state/textInsertRegistry";
 import type { Agent, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
-import { IconArrowUp, IconClose, IconFile, IconFolder, IconPlus } from "../ui/Icons";
-import { FileIcon } from "../ui/FileIcon";
+import { IconArrowUp, IconClose, IconFolder, IconPlus } from "../ui/Icons";
+import { FileIcon, FileTypeIcon } from "../ui/FileIcon";
 import { useResourceEnabled } from "../state/resources";
 import { filesListR } from "../state/resources.defs";
 import { usePathRoots } from "./FileRef";
@@ -34,23 +34,12 @@ import { contextChip } from "./promptContext";
 
 function ComposerAttachment({ path, onRemove }: { path: string; onRemove: () => void }) {
     const preview = useImagePreview(path);
-    const remove = (
-        <button type="button" aria-label={`Remove ${basename(path)}`} onClick={onRemove}>
-            <IconClose size={11} />
-        </button>
-    );
-    if (preview)
-        return (
-            <span className="image" title={path}>
-                <img alt={basename(path)} src={preview} />
-                {remove}
-            </span>
-        );
     return (
-        <span title={path}>
-            <IconFile size={14} />
-            <span>{basename(path)}</span>
-            {remove}
+        <span className={preview ? "image" : "file"} title={path}>
+            {preview ? <img alt={basename(path)} src={preview} /> : <FileTypeIcon name={basename(path)} size={34} />}
+            <button type="button" aria-label={`Remove ${basename(path)}`} onClick={onRemove}>
+                <IconClose size={10} />
+            </button>
         </span>
     );
 }

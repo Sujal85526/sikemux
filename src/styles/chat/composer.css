@@ -62,7 +62,53 @@
     padding: 6px 6px 0;
 }
 
-.chat-attachments > span {
+.chat-attachments > .file,
+.chat-attachments > .image {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 58px;
+    height: 58px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: color-mix(in srgb, var(--void) 48%, transparent);
+    transition: border-color var(--dur-1) var(--ease-out);
+}
+
+.chat-attachments > .file:hover,
+.chat-attachments > .image:hover {
+    border-color: var(--border-selected);
+}
+
+.chat-attachments > .image {
+    width: 76px;
+}
+
+.chat-attachments > .image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.chat-attachments > .file > button,
+.chat-attachments > .image > button {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 18px;
+    height: 18px;
+    opacity: 0;
+    transition: opacity var(--dur-1) var(--ease-out);
+}
+
+.chat-attachments > .file:hover > button,
+.chat-attachments > .image:hover > button,
+.chat-attachments button:focus-visible {
+    opacity: 1;
+}
+
+.chat-context-chip {
     display: grid;
     grid-template-columns: 16px minmax(0, 1fr) 20px;
     align-items: center;
@@ -76,32 +122,11 @@
     color: var(--ink-dim);
 }
 
-.chat-attachments > span > span {
+.chat-context-chip > span:not(.chat-context-mark) {
     overflow: hidden;
     font-size: calc(10.5px * var(--chat-text-em, 1));
     text-overflow: ellipsis;
     white-space: nowrap;
-}
-
-.chat-attachments > span.image {
-    display: block;
-    position: relative;
-    width: 76px;
-    height: 58px;
-    padding: 0;
-    overflow: hidden;
-}
-
-.chat-attachments > span.image img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
-.chat-attachments > span.image button {
-    position: absolute;
-    top: 3px;
-    right: 3px;
 }
 
 .chat-attachments button {

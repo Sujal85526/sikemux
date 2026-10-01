@@ -90,3 +90,21 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+
+.chat-attachment-file {
+    display: grid;
+    place-items: center;
+    width: 58px;
+    height: 58px;
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-control);
+    background: color-mix(in srgb, var(--void) 48%, transparent);
+    transition:
+        border-color var(--dur-1) var(--ease-out),
+        background-color var(--dur-1) var(--ease-out);
+}
+
+.chat-attachment-file:hover {
+    border-color: var(--border-selected);
+    background: color-mix(in srgb, var(--acc) 7%, var(--void));
+}
