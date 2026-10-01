@@ -35,7 +35,7 @@ export function useSavedUsage({
             .sessionContext(type, cwd, resumeId, configPath)
             .then((saved) => {
                 if (!current || !saved) return;
-                const size = saved.size ?? guessClaudeWindow(setupRef.current, agentRef.current.model);
+                const size = saved.size ?? guessClaudeWindow(setupRef.current, agentRef.current.model, saved.used);
                 dispatch({ type: "saved_usage", usage: { used: saved.used, size } });
             })
             .catch(() => {});

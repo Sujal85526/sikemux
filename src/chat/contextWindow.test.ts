@@ -16,6 +16,11 @@ describe("guessClaudeWindow", () => {
         expect(guessClaudeWindow({}, "sonnet")).toBe(200_000);
     });
 
+    it("gives a session already past the standard window the long one", () => {
+        expect(guessClaudeWindow({}, "claude-opus-5-5", 515_222)).toBe(1_000_000);
+        expect(guessClaudeWindow({}, "claude-opus-5-5", 150_000)).toBe(200_000);
+    });
+
     it("gives every other model the standard window", () => {
         expect(guessClaudeWindow(models("sonnet", [{ value: "sonnet", name: "Sonnet 5" }]))).toBe(200_000);
         expect(guessClaudeWindow({})).toBe(200_000);
