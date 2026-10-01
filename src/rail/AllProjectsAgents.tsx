@@ -4,8 +4,9 @@ import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { activeAgentId, agentIdsOf } from "../state/selectors";
 import type { Agent, AgentPresentationState } from "../state/types";
-import { AgentIcon } from "../ui/Icons";
+import { AgentIcon, IconClose } from "../ui/Icons";
 import { Panel, PanelHeader } from "../ui/Panel";
+import { Tooltip } from "../ui/Tooltip";
 
 type Bucket = "blocked" | "working" | "done" | "idle";
 
@@ -62,17 +63,31 @@ export function AllProjectsAgents() {
                     <Panel key={id} variant="group" className={`agent-group${id === "blocked" ? " agent-attention" : ""}`}>
                         <PanelHeader label={`${label} ${rows.length}`} rule />
                         {rows.map(({ agent, state, bucket, sessionName }) => (
-                            <button
-                                key={agent.id}
-                                className={`agent-row${agent.id === shownAgentId ? " active" : ""}`}
-                                title={`${sessionName} — ${agent.title}`}
-                                onClick={() => cmd.revealAgent(agent.id)}>
-                                <span className={`agent-glyph ${agent.type}`}>
-                                    <AgentIcon type={agent.type} size={20} />
-                                </span>
-                                <span className="agent-title">{agent.title}</span>
-                                {bucket !== "idle" && <AgentStateIndicator state={state} />}
-                            </button>
+                            <div key={agent.id} className="agent-row-wrap">
+                                <button
+                                    className={`agent-row${agent.id === shownAgentId ? " active" : ""}`}
+                                    title={`${sessionName} — ${agent.title}`}
+                                    onClick={() => cmd.revealAgent(agent.id)}>
+                                    <span className={`agent-glyph ${agent.type}`}>
+                                        <AgentIcon type={agent.type} size={20} />
+                                    </span>
+                                    <span className="agent-title">{agent.title}</span>
+                                </button>
+                                {bucket !== "idle" && (
+                                    <span className="row-status">
+                                        <AgentStateIndicator state={state} />
+                                    </span>
+                                )}
+                                <Tooltip label={`Close ${agent.title}`}>
+                                    <button
+                                        type="button"
+                                        className="row-x"
+                                        aria-label={`Close ${agent.title}`}
+                                        onClick={() => cmd.closeAgent(agent.id)}>
+                                        <IconClose size={11} />
+                                    </button>
+                                </Tooltip>
+                            </div>
                         ))}
                     </Panel>
                 );

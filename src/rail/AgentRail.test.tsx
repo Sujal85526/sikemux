@@ -346,6 +346,16 @@ describe("agent rail", () => {
         expect(agentIdsOf(getState(), "sess-other").map((id) => getState().agents[id].resumeId)).toContain("there");
     });
 
+    it("closes an open agent from the all projects list", async () => {
+        openAgent("Ship the fix");
+        const user = userEvent.setup();
+        render(<AgentRailBody />);
+
+        await user.click(await screen.findByRole("tab", { name: /All projects/ }));
+        await user.click(screen.getByRole("button", { name: "Close Ship the fix" }));
+        await waitFor(() => expect(agentIdsOf(getState(), "sess-project")).not.toContain("agent-open"));
+    });
+
     it("asks for the next page as the list scrolls to its end", async () => {
         mocks.saved.mockReturnValue(Array.from({ length: 30 }, (_, index) => ({ id: `s${index}`, title: `Chat ${index}`, mtime: 1000 - index })));
         render(<AgentRailBody />);
