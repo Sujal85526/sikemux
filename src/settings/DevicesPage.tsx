@@ -83,7 +83,7 @@ export function DevicesPage() {
                 <SettingsRows>
                     <SettingsRow
                         label="Allow paired devices"
-                        desc="While this is on, the background process stays running after you quit, so your devices can reach this Mac until it restarts."
+                        desc="While this is on, the background process keeps running after you quit and starts again when you log in, so your devices can always reach this Mac."
                         asLabel
                         control={
                             <Switch
