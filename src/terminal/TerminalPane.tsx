@@ -11,6 +11,9 @@ import type { PtyContext, PtyDirectCommand } from "../state/types";
 import { applyPtyShellMetadataEvent, type PtyShellMetadataEvent } from "../api/ptyShell";
 import type { PtyShellMetadataSnapshot } from "./ptyController";
 import { basename } from "../lib/paths";
+import { SendToAgentMenu } from "../agents/SendToAgentMenu";
+import { getState } from "../state/store";
+import { terminalName, terminalSelectionDelivery } from "./selectionDelivery";
 
 export const TERMINAL_RENDERER_RETENTION = Object.freeze({ keepaliveMs: 15_000, maxHidden: 3 });
 const hiddenRendererEvictions = new Map<symbol, () => void>();
@@ -65,6 +68,7 @@ export function TerminalPane({
     const [findOptions, setFindOptions] = useState<TerminalSearchOptions>({ caseSensitive: false, regex: false, wholeWord: false });
     const [findResult, setFindResult] = useState<ISearchResultChangeEvent>({ resultIndex: -1, resultCount: 0 });
     const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+    const [sendMenu, setSendMenu] = useState<{ x: number; y: number; selection: string } | null>(null);
     const [shellMetadata, setShellMetadata] = useState<PtyShellMetadataSnapshot | null>(null);
     const hostRef = useRef<HTMLDivElement>(null);
     const rendererTokenRef = useRef(Symbol("terminal-renderer"));
@@ -155,6 +159,7 @@ export function TerminalPane({
         if (visible) return;
         setFindOpen(false);
         setMenu(null);
+        setSendMenu(null);
         controller.clearSearch();
     }, [visible, controller]);
 
@@ -200,7 +205,25 @@ export function TerminalPane({
                     onClose={closeFind}
                 />
             )}
-            {menu && <TerminalContextMenu x={menu.x} y={menu.y} controller={controller} onFind={openFind} onClose={() => setMenu(null)} />}
+            {menu && (
+                <TerminalContextMenu
+                    x={menu.x}
+                    y={menu.y}
+                    controller={controller}
+                    onFind={openFind}
+                    onSendSelection={context?.sessionKind === "project" ? (selection) => setSendMenu({ ...menu, selection }) : undefined}
+                    onClose={() => setMenu(null)}
+                />
+            )}
+            {sendMenu && (
+                <SendToAgentMenu
+                    x={sendMenu.x}
+                    y={sendMenu.y}
+                    sessionId={context?.sessionId}
+                    delivery={() => terminalSelectionDelivery(sendMenu.selection, terminalName(getState(), context), shellMetadata?.cwd ?? cwd)}
+                    onClose={() => setSendMenu(null)}
+                />
+            )}
         </div>
     );
 }
