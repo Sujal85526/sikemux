@@ -82,7 +82,6 @@ export interface PersistedPrefs {
     agentNotifications?: boolean;
     voiceDictation?: boolean;
     notificationsIntroduced?: boolean;
-    autoResumeAgents?: boolean;
     railDensity?: RailDensity;
     agentRailAllAgents?: boolean;
     agentRailScope?: AgentRailScope;
