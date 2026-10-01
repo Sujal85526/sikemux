@@ -285,6 +285,9 @@ impl PtyManager {
                         streams.channels(id).send(&[]);
                     }
                 }
+                // A dropped connection is not the session ending; the next
+                // reconnect deals with it.
+                Err(ClientError::Disconnected) => {}
                 _ => sink::report_exited(&streams, id, sink::task_exit(None, None)),
             });
             if let Ok(replied) = submitted {
