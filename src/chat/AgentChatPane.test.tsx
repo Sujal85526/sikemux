@@ -201,6 +201,14 @@ async function openWithCompactCommand(): Promise<HTMLElement> {
     return screen.getByRole("textbox", { name: "Message agent" });
 }
 
+function findToolRow(selector: string): Promise<HTMLElement> {
+    return waitFor(() => {
+        const row = document.querySelector<HTMLElement>(selector);
+        expect(row).not.toBeNull();
+        return row as HTMLElement;
+    });
+}
+
 describe("AgentChatPane", () => {
     it("keeps receiving hidden session updates while freezing transcript rendering", async () => {
         const props = { agent, cwd: "/repo", active: true, visible: true, onBusyChange: () => {} };
@@ -889,13 +897,15 @@ describe("AgentChatPane", () => {
             },
         });
 
-        const rows = await screen.findAllByTitle(/shaderField|BrowserPane/);
+        const rows = await waitFor(() => {
+            const found = [...document.querySelectorAll<HTMLElement>(".chat-tool")];
+            expect(found).toHaveLength(2);
+            return found;
+        });
         expect(rows[0]).toHaveTextContent("run");
         expect(rows[0]).toHaveTextContent("pnpm vitest run src/lib/shaderField.test.ts");
-        // A path shows the name it ends in; the whole path stays in the tooltip.
         expect(rows[1]).toHaveTextContent("BrowserPane.tsx");
         expect(rows[1]).not.toHaveTextContent("src/components");
-        expect(rows[1]).toHaveAttribute("title", "src/components/browser/BrowserPane.tsx");
     });
 
     it("puts the file a call touched on the desk, opens it in the editor on a double click, and still opens what the call did", async () => {
@@ -969,7 +979,7 @@ describe("AgentChatPane", () => {
             },
         });
 
-        const edit = await screen.findByTitle("src/styles/stage.css");
+        const edit = await findToolRow(".chat-tool[data-kind='edit']");
         expect(edit).toHaveTextContent("+1");
         expect(edit).toHaveTextContent("−1");
         expect(screen.queryByText(/background: transparent;/)).not.toBeInTheDocument();
@@ -981,7 +991,7 @@ describe("AgentChatPane", () => {
         expect(added.querySelector("mark")).toHaveTextContent("transparent");
         expect(document.querySelector(".chat-diff-line.del")).toHaveTextContent("background: var(--pane);");
 
-        fireEvent.click(screen.getByTitle("pnpm vitest run"));
+        fireEvent.click(document.querySelector(".chat-tool.status-failed") as HTMLElement);
         expect(await screen.findByText(/1 failed/)).toBeInTheDocument();
     });
 
@@ -1001,7 +1011,7 @@ describe("AgentChatPane", () => {
 
         const header = await screen.findByRole("button", { name: /Build the site/ });
         expect(header).toHaveClass("live");
-        expect(document.querySelector(".chat-tool.live")).toHaveAttribute("title", "pnpm build");
+        expect(document.querySelector(".chat-tool.live")).not.toBeNull();
 
         emit("session_update", {
             sessionId: "session-1",
@@ -1027,7 +1037,7 @@ describe("AgentChatPane", () => {
             },
         });
 
-        const row = await screen.findByTitle(/python3 - <<'EOF'/);
+        const row = await findToolRow(".chat-tool");
         expect(row).toHaveTextContent("python3 - <<'EOF'");
         expect(row).not.toHaveTextContent("print('hi')");
 

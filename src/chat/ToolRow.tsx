@@ -150,7 +150,7 @@ export function ToolRow({ part }: { part: Extract<ChatPart, { kind: "tool" }> })
             {opens && <IconChevron size={10} className={`chat-tool-chevron${quiet ? " quiet" : ""}`} />}
         </>
     );
-    const rowProps = { className: `chat-tool status-${status}${running ? " live" : ""}`, "data-kind": rowKind, title: tool.title };
+    const rowProps = { className: `chat-tool status-${status}${running ? " live" : ""}`, "data-kind": rowKind };
     return (
         <div className="chat-tool-node">
             {/* A row whose target opens a file or a page cannot itself be a
