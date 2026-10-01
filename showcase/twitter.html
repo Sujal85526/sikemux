@@ -9,14 +9,26 @@
         margin: 0;
         height: 100%;
         overflow: hidden;
+        background: #111;
+      }
+
+      /* Every download is cut from this one 16:9 stage, saved at 3x. Here it is scaled to fit the browser. */
+      .stage {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 1440px;
+        height: 810px;
+        overflow: hidden;
         background: #000 url("/__showcase/wallpaper") center / cover no-repeat;
+        transform: translate(-50%, -50%) scale(var(--fit, 1));
       }
 
       iframe {
-        position: fixed;
-        inset: 56px 96px;
-        width: calc(100% - 192px);
-        height: calc(100% - 112px);
+        position: absolute;
+        inset: 20px 86px;
+        width: calc(100% - 172px);
+        height: calc(100% - 40px);
         border: 0;
         border-radius: 12px;
         box-shadow:
@@ -33,6 +45,10 @@
         gap: 8px;
       }
 
+      .is-capturing .controls {
+        display: none;
+      }
+
       button {
         padding: 6px 12px;
         border: 1px solid rgba(255, 255, 255, 0.18);
@@ -46,22 +62,34 @@
       input {
         display: none;
       }
-
-      .is-capturing .controls {
-        visibility: hidden;
-      }
     </style>
   </head>
   <body>
-    <iframe src="/showcase/?play" title="Sikemux"></iframe>
+    <div class="stage">
+      <iframe src="/showcase/?play" title="Sikemux"></iframe>
+    </div>
     <div class="controls">
       <button type="button" class="wallpaper">Wallpaper</button>
-      <button type="button" class="download">Download</button>
+      <button type="button" data-layout="landscape">Landscape</button>
+      <button type="button" data-layout="thirds">Thirds</button>
       <input type="file" accept="image/*" />
     </div>
     <script type="module">
-      const button = document.querySelector(".download");
+      const stage = document.querySelector(".stage");
       const picker = document.querySelector("input");
+      const app = document.querySelector("iframe").contentWindow;
+
+      if (location.search.includes("capture")) {
+        document.documentElement.classList.add("is-capturing");
+      } else {
+        const fit = () =>
+          stage.style.setProperty(
+            "--fit",
+            Math.min((innerWidth - 32) / 1440, (innerHeight - 96) / 810),
+          );
+        addEventListener("resize", fit);
+        fit();
+      }
 
       // The server keeps the picture, so its own Chrome paints the same wallpaper into each download.
       document.querySelector(".wallpaper").addEventListener("click", () =>
@@ -71,40 +99,38 @@
         const [file] = picker.files;
         if (!file) return;
         await fetch("/__showcase/wallpaper", { method: "POST", body: file });
-        document.body.style.backgroundImage = `url("/__showcase/wallpaper?v=${Date.now()}")`;
+        stage.style.backgroundImage = `url("/__showcase/wallpaper?v=${Date.now()}")`;
         picker.value = "";
       });
-      const app = document.querySelector("iframe").contentWindow;
 
       // A page cannot screenshot itself, so the showcase server renders this view in its own Chrome.
-      async function saveOnServer() {
+      async function saveOnServer(layout) {
         const response = await fetch("/__showcase/snapshot", {
           method: "POST",
-          body: JSON.stringify({
-            state: app.showcase.store.getState(),
-            width: innerWidth,
-            height: innerHeight,
-          }),
+          body: JSON.stringify({ state: app.showcase.store.getState(), layout }),
         });
         const saved = await response.json();
         if (!response.ok) throw new Error(saved.error);
         return saved;
       }
 
-      button.addEventListener("click", async () => {
-        button.disabled = true;
-        try {
-          const saved = await saveOnServer();
-          button.textContent = `Saved ${saved}`;
-        } catch (error) {
-          button.textContent = "Not saved";
-          console.warn(error);
-        }
-        setTimeout(() => {
-          button.textContent = "Download";
-          button.disabled = false;
-        }, 1600);
-      });
+      for (const button of document.querySelectorAll("[data-layout]")) {
+        const label = button.textContent;
+        button.addEventListener("click", async () => {
+          button.disabled = true;
+          try {
+            const saved = await saveOnServer(button.dataset.layout);
+            button.textContent = `Saved ${saved.length > 1 ? `${saved.length} images` : saved[0]}`;
+          } catch (error) {
+            button.textContent = "Not saved";
+            console.warn(error);
+          }
+          setTimeout(() => {
+            button.textContent = label;
+            button.disabled = false;
+          }, 1600);
+        });
+      }
     </script>
   </body>
 </html>

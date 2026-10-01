@@ -245,22 +245,22 @@ let snapshotBrowser: Promise<Browser> | null = null;
 
 async function snapshot(
   origin: string,
-  { state, width, height }: Record<string, unknown>,
-): Promise<string> {
+  { state, layout }: Record<string, unknown>,
+): Promise<string[]> {
   snapshotBrowser ??= import("playwright-core").then(({ chromium }) =>
     chromium.launch({ channel: "chrome" }),
   );
   const context = await (
     await snapshotBrowser
   ).newContext({
-    viewport: { width: Number(width), height: Number(height) },
-    deviceScaleFactor: 2,
+    viewport: { width: 1440, height: 810 },
+    deviceScaleFactor: 3,
     colorScheme: "dark",
   });
   try {
     await context.clock.setFixedTime(new Date("2026-09-26T09:41:00"));
     const page = await context.newPage();
-    await page.goto(`${origin}/showcase/twitter.html`);
+    await page.goto(`${origin}/showcase/twitter.html?capture`);
     await page.frameLocator("iframe").locator(".shell").waitFor();
     const app = page.frames()[1];
     await app.waitForFunction(() => "showcase" in window);
@@ -275,12 +275,20 @@ async function snapshot(
       while (showcase.backend.stepLive() >= 0);
     }, state);
     await page.waitForTimeout(1500);
-    await page.evaluate(() =>
-      document.documentElement.classList.add("is-capturing"),
-    );
-    const name = `sikemux-${new Date().toLocaleString("sv").replace(/[ :]/g, "-")}.png`;
-    await page.screenshot({ path: join(homedir(), "Downloads", name) });
-    return name;
+    const stamp = new Date().toLocaleString("sv").replace(/[ :]/g, "-");
+    if (layout !== "thirds") {
+      const name = `sikemux-${stamp}.png`;
+      await page.screenshot({ path: join(homedir(), "Downloads", name) });
+      return [name];
+    }
+    const names = [1, 2, 3].map((slice) => `sikemux-${stamp}-${slice}.png`);
+    for (const [index, name] of names.entries()) {
+      await page.screenshot({
+        path: join(homedir(), "Downloads", name),
+        clip: { x: index * 480, y: 0, width: 480, height: 810 },
+      });
+    }
+    return names;
   } finally {
     await context.close();
   }
