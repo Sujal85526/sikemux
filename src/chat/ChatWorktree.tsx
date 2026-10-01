@@ -16,8 +16,6 @@ function titleOf(state: ShownSwitch): string {
             return `${state.step}…`;
         case "in":
             return `Working in worktree ${state.branch} at ${state.path}`;
-        case "locked":
-            return "A chat picks its worktree before its first message. Start a new chat to work in one.";
     }
 }
 

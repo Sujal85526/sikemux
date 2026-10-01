@@ -31,6 +31,7 @@ import { BOTTOM_SLACK, useStickToBottom } from "./useStickToBottom";
 
 const ChatFind = lazy(() => import("./ChatFind"));
 const WorktreeNote = lazy(() => import("./ChatWorktree").then(({ WorktreeNote }) => ({ default: WorktreeNote })));
+const ProjectStrip = lazy(() => import("./ProjectStrip").then(({ ProjectStrip }) => ({ default: ProjectStrip })));
 
 export function AgentChatPane({
     agent,
@@ -142,11 +143,12 @@ export function AgentChatPane({
         dispatch,
         onError: setComposerError,
     });
+    const started = state.messages.length > 0 || Boolean(agent.resumeId);
     const worktree = useChatWorktree({
         agent,
         cwd,
         visible,
-        started: state.messages.length > 0 || Boolean(agent.resumeId),
+        started,
         connection: state.connection,
         running: state.running,
         send,
@@ -385,6 +387,11 @@ export function AgentChatPane({
                                     onDrop={drop}
                                 />
                             </div>
+                        )}
+                        {!started && !agent.worktree && worktree.step === null && (
+                            <Suspense fallback={null}>
+                                <ProjectStrip agentId={agent.id} cwd={cwd} worktree={worktree} />
+                            </Suspense>
                         )}
                         <ChatComposer
                             agent={agent}

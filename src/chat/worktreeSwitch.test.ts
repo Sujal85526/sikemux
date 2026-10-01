@@ -11,10 +11,10 @@ describe("worktreeSwitchState", () => {
         expect(worktreeSwitchState({ ...base, on: true })).toEqual({ kind: "choosing", on: true });
     });
 
-    it("hides outside a repository and locks once the chat has started", () => {
+    it("hides outside a repository and once the chat has started", () => {
         expect(worktreeSwitchState({ ...base, isRepo: false })).toEqual({ kind: "hidden" });
         expect(worktreeSwitchState({ ...base, isRepo: null })).toEqual({ kind: "hidden" });
-        expect(worktreeSwitchState({ ...base, started: true })).toEqual({ kind: "locked" });
+        expect(worktreeSwitchState({ ...base, started: true })).toEqual({ kind: "hidden" });
     });
 
     it("reports the setup step, then the branch the agent works on", () => {

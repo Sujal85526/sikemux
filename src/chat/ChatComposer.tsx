@@ -614,7 +614,7 @@ export function ChatComposer({
                         }
                     />
                 )}
-                {worktree && worktree.state.kind !== "hidden" && (
+                {(worktree?.state.kind === "preparing" || worktree?.state.kind === "in") && (
                     <Suspense fallback={null}>
                         <WorktreeToggle state={worktree.state} onToggle={worktree.toggle} />
                     </Suspense>

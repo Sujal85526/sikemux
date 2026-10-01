@@ -1,11 +1,7 @@
 import type { AgentWorktree } from "../state/types";
 
 export type WorktreeSwitchState =
-    | { kind: "hidden" }
-    | { kind: "choosing"; on: boolean }
-    | { kind: "preparing"; step: string }
-    | { kind: "in"; branch: string; path: string }
-    | { kind: "locked" };
+    { kind: "hidden" } | { kind: "choosing"; on: boolean } | { kind: "preparing"; step: string } | { kind: "in"; branch: string; path: string };
 
 export function worktreeSwitchState({
     worktree,
@@ -23,7 +19,6 @@ export function worktreeSwitchState({
 }): WorktreeSwitchState {
     if (preparing !== null) return { kind: "preparing", step: preparing };
     if (worktree) return { kind: "in", branch: worktree.branch, path: worktree.path };
-    if (!isRepo) return { kind: "hidden" };
-    if (started) return { kind: "locked" };
+    if (!isRepo || started) return { kind: "hidden" };
     return { kind: "choosing", on };
 }

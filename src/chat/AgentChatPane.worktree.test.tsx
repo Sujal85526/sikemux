@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../api/agents", () => ({ agentApi: { sessionContext: async () => null, available: async () => [] } }));
 vi.mock("../api/fs", () => ({ fsapi: { pathKinds: async (paths: string[]) => paths.map(() => null) } }));
-vi.mock("../api/git", () => ({ git: { worktrees: mocks.worktrees } }));
+vi.mock("../api/git", () => ({ git: { worktrees: mocks.worktrees, overview: async () => ({ status: { branch: "main" } }) } }));
 vi.mock("../agents/agentWorktree", () => ({ createAgentWorktree: mocks.create }));
 vi.mock("../api/acp", () => ({
     acpApi: {

@@ -41,8 +41,8 @@ export function useChatWorktree({
     onError: (message: string | null) => void;
 }) {
     const projectDefault = useStore((s) => s.agentWorktreeDefaults[cwd] === true);
-    const [choice, setChoice] = useState<boolean | null>(null);
-    const on = choice ?? projectDefault;
+    const [choice, setChoice] = useState<{ cwd: string; on: boolean } | null>(null);
+    const on = choice?.cwd === cwd ? choice.on : projectDefault;
     const [step, setStep] = useState<string | null>(null);
     const pending = useRef<PendingSend | null>(null);
     const checkouts = useResourceEnabled(visible && !agent.worktree && !started, gitWorktreesR, cwd);
@@ -51,7 +51,7 @@ export function useChatWorktree({
 
     const toggle = () => {
         if (state.kind !== "choosing") return;
-        setChoice(!on);
+        setChoice({ cwd, on: !on });
         cmd.setAgentWorktreeDefault(cwd, !on);
     };
 

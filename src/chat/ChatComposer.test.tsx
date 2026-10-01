@@ -201,19 +201,9 @@ describe("ChatComposer Worktree switch", () => {
         expect(screen.queryByRole("button", { name: "worktree" })).not.toBeInTheDocument();
     });
 
-    it("toggles while a fresh chat is choosing", async () => {
+    it("leaves the choice to the project strip above it", () => {
         renderComposer({ state: { kind: "choosing", on: false }, toggle });
-        const button = await screen.findByRole("button", { name: "worktree" });
-        expect(button).toHaveAttribute("aria-pressed", "false");
-        fireEvent.click(button);
-        expect(toggle).toHaveBeenCalledTimes(1);
-    });
-
-    it("locks once the chat has started, and says why", async () => {
-        renderComposer({ state: { kind: "locked" }, toggle });
-        const button = await screen.findByRole("button", { name: "worktree" });
-        expect(button).toBeDisabled();
-        expect(button.title).toMatch(/before its first message/);
+        expect(screen.queryByRole("button", { name: "worktree" })).not.toBeInTheDocument();
     });
 
     it("names the branch of an agent already in a worktree", async () => {
