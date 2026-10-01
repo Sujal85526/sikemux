@@ -63,7 +63,7 @@ fn reserve_counter_slot(
     error: impl FnOnce() -> AppError,
 ) -> AppResult<()> {
     counter
-        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+        .try_update(Ordering::AcqRel, Ordering::Acquire, |current| {
             (current < limit).then_some(current + 1)
         })
         .map(|_| ())
@@ -74,7 +74,7 @@ pub(super) fn release_counter_slots(counter: &AtomicUsize, count: usize) {
     if count == 0 {
         return;
     }
-    let released = counter.fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+    let released = counter.try_update(Ordering::AcqRel, Ordering::Acquire, |current| {
         current.checked_sub(count)
     });
     debug_assert!(released.is_ok(), "LSP resource counter underflow");

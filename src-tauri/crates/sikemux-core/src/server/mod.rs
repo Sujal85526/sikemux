@@ -162,7 +162,7 @@ pub(crate) struct CapacityPermit(Arc<Capacity>);
 impl Capacity {
     fn try_acquire(self: &Arc<Self>) -> CoreResult<CapacityPermit> {
         self.active
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |active| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |active| {
                 (active < self.limit).then_some(active + 1)
             })
             .map(|_| CapacityPermit(self.clone()))

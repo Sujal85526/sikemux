@@ -58,7 +58,7 @@ impl Subscriber {
     fn release(&self, bytes: usize) {
         let _ = self
             .unacked
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |outstanding| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |outstanding| {
                 Some(outstanding.saturating_sub(bytes))
             });
     }

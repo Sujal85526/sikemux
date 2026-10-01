@@ -127,7 +127,7 @@ impl ToolEndpoint {
                     continue;
                 };
                 if counted
-                    .fetch_update(Ordering::AcqRel, Ordering::Acquire, |count| {
+                    .try_update(Ordering::AcqRel, Ordering::Acquire, |count| {
                         (count < MAX_CONNECTIONS).then_some(count + 1)
                     })
                     .is_err()
