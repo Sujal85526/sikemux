@@ -164,7 +164,13 @@ async function stopExactChild(child) {
   }
 }
 
-const CORE_FRAME = { control: 0, output: 1, snapshot: 2, input: 3 };
+const CORE_FRAME = {
+  control: 0,
+  output: 1,
+  snapshot: 2,
+  input: 3,
+  frozen: 0x46,
+};
 
 function coreFrame(kind, payload) {
   const frame = Buffer.alloc(5 + payload.length);
@@ -308,6 +314,38 @@ function openCore(path) {
         close: () => socket.destroy(),
       });
     });
+  });
+}
+
+// The request every core answers whatever protocol it speaks, sent instead
+// of a hello and answered once.
+function frozenRequest(path, body) {
+  return new Promise((resolveReply) => {
+    const socket = connect(path);
+    let buffered = Buffer.alloc(0);
+    const finish = (reply) => {
+      socket.destroy();
+      resolveReply(reply);
+    };
+    const timer = setTimeout(() => finish(null), 20_000);
+    socket.once("error", () => finish(null));
+    socket.once("close", () => {
+      clearTimeout(timer);
+      resolveReply(null);
+    });
+    socket.on("data", (chunk) => {
+      buffered = Buffer.concat([buffered, chunk]);
+      if (buffered.length < 4) return;
+      const length = buffered.readUInt32BE(0);
+      if (buffered.length < 4 + length) return;
+      clearTimeout(timer);
+      finish(JSON.parse(buffered.subarray(5, 4 + length)));
+    });
+    socket.once("connect", () =>
+      socket.write(
+        coreFrame(CORE_FRAME.frozen, Buffer.from(JSON.stringify(body))),
+      ),
+    );
   });
 }
 
@@ -756,6 +794,100 @@ async function exerciseQuitKeepsTerminals() {
   return shell;
 }
 
+// A sidecar that reports another build, so the core has something newer to
+// update to.
+async function writeSidecar(name, build) {
+  const path = join(temporaryRoot, name);
+  await writeFile(
+    path,
+    `#!/bin/sh\nSIKEMUX_BUILD_ID_OVERRIDE='${build}' exec '${cliExecutable}' "$@"\n`,
+    { mode: 0o755 },
+  );
+  return path;
+}
+
+async function coreBuild() {
+  const core = await openCore(coreSocket).catch(() => null);
+  core?.close();
+  return core?.hello ?? null;
+}
+
+// Waits until the app is streaming the terminal again, then checks the core
+// still holds its earlier output and the shell still answers.
+async function expectTerminalKept(shell, corePid, build, marker) {
+  await waitFor(
+    `the core to run ${build}`,
+    READY_TIMEOUT_MS,
+    async () => (await coreBuild())?.build?.commit === build,
+  );
+  const hello = await coreBuild();
+  if (hello.pid !== corePid)
+    fail(
+      `the update started a new core (${hello.pid}) instead of keeping ${corePid}`,
+      desktopLog,
+    );
+  const watcher = await openCore(coreSocket);
+  await waitFor(
+    "the pane to take its terminal back after the update",
+    READY_TIMEOUT_MS,
+    async () => {
+      const session = await coreSession(watcher, shell.id);
+      return session?.running && session.attached > 0;
+    },
+  );
+  const session = await coreSession(watcher, shell.id);
+  if (session.pid !== shell.pid || !processAlive(shell.pid))
+    fail("the shell did not survive the update", desktopLog);
+  const replay = await watcher.attachReplay(shell.id);
+  if (!replay.includes(marker))
+    fail("the updated core lost the terminal's earlier output", desktopLog);
+  watcher.write(shell.id, "echo after-$((9*9))\r");
+  if (!(await watcher.output(shell.id, "after-81", 10_000)))
+    fail("the shell did not answer after the update", desktopLog);
+  watcher.close();
+}
+
+// A newer app updates the core in place, and so does a core updated while
+// the app is open: the same process keeps the shell, and the pane takes it
+// back with its output.
+async function exerciseUpdateKeepsTerminals(shell) {
+  const before = await openCore(coreSocket);
+  const corePid = before.hello.pid;
+  if (!(await before.attach(shell.id)))
+    fail("could not attach before the update", desktopLog);
+  before.write(shell.id, "echo updated-$((8*8))\r");
+  if (!(await before.output(shell.id, "updated-64", 10_000)))
+    fail("the terminal did not print before the update", desktopLog);
+  before.close();
+
+  await quitDesktop();
+  const next = await writeSidecar("sikemux-next", "e2e-next");
+  const nextEnvironment = {
+    SIKEMUX_BIN_PATH: next,
+    SIKEMUX_BUILD_ID_OVERRIDE: "e2e-next",
+  };
+  desktop = launchDesktop(nextEnvironment);
+  await waitForBroker(desktop);
+  await expectTerminalKept(shell, corePid, "e2e-next", "updated-64");
+  console.log(
+    `Update on launch passed: core ${corePid} now runs e2e-next and terminal ${shell.id} (pid ${shell.pid}) kept running with its output`,
+  );
+
+  const other = await writeSidecar("sikemux-other", "e2e-other");
+  const reply = await frozenRequest(coreSocket, {
+    op: "upgrade",
+    binary: other,
+  });
+  if (reply?.status !== "accepted")
+    fail(`the core refused an update: ${JSON.stringify(reply)}`, desktopLog);
+  // The open app finds its core on another build and moves it back to its
+  // own sidecar, in the same process again.
+  await expectTerminalKept(shell, corePid, "e2e-next", "updated-64");
+  console.log(
+    `Update while open passed: the app reconnected to core ${corePid}, updated it back to its own build and took terminal ${shell.id} back`,
+  );
+}
+
 // Quit and Stop Everything ends what Quit left running, and the core with it.
 async function exerciseQuitAndStopEverything(shell) {
   const stopByMenu = clickAppMenuItem(desktop.pid, "Quit and Stop Everything");
@@ -852,10 +984,10 @@ delete isolatedEnvironment.SIKEMUX_APP_EXECUTABLE;
 
 let desktopLog = "";
 let desktopSpawnError = "";
-function launchDesktop() {
+function launchDesktop(environment = {}) {
   const child = spawn(appExecutable, [], {
     cwd: project,
-    env: isolatedEnvironment,
+    env: { ...isolatedEnvironment, ...environment },
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   });
@@ -908,6 +1040,7 @@ try {
     },
   );
   const keptShell = await exerciseQuitKeepsTerminals();
+  await exerciseUpdateKeepsTerminals(keptShell);
   await waitFor(
     "WebView boot and persistence after relaunch",
     PERSIST_TIMEOUT_MS,
@@ -1135,7 +1268,7 @@ try {
   await exerciseQuitAndStopEverything(keptShell);
 
   console.log(
-    "✓ Desktop E2E smoke passed: process → core endpoint → Tauri event/commands → WebView editor → SQLite → quit and relaunch",
+    "✓ Desktop E2E smoke passed: process → core endpoint → Tauri event/commands → WebView editor → SQLite → quit and relaunch → update in place",
   );
 } finally {
   await stopExactChild(desktop);
