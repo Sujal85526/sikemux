@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { Browser } from "playwright-core";
 import { mergeConfig, type PluginOption } from "vite";
 import base from "../vite.config.ts";
 import { DEMO_PROJECTS, PANE_IMAGE } from "./world/projects.ts";
@@ -238,11 +239,59 @@ function send(response: ServerResponse, status: number, value: unknown) {
   response.end(JSON.stringify(value));
 }
 
+let snapshotBrowser: Promise<Browser> | null = null;
+
+async function snapshot(
+  origin: string,
+  { state, width, height }: Record<string, unknown>,
+): Promise<string> {
+  snapshotBrowser ??= import("playwright-core").then(({ chromium }) =>
+    chromium.launch({ channel: "chrome" }),
+  );
+  const context = await (
+    await snapshotBrowser
+  ).newContext({
+    viewport: { width: Number(width), height: Number(height) },
+    deviceScaleFactor: 2,
+    colorScheme: "dark",
+  });
+  try {
+    await context.clock.setFixedTime(new Date("2026-09-26T09:41:00"));
+    const page = await context.newPage();
+    await page.goto(`${origin}/showcase/twitter.html`);
+    await page.frameLocator("iframe").locator(".shell").waitFor();
+    const app = page.frames()[1];
+    await app.waitForFunction(() => "showcase" in window);
+    await app.evaluate((restored) => {
+      const { showcase } = window as unknown as {
+        showcase: {
+          store: { setState: (state: object) => void };
+          backend: { stepLive: () => number };
+        };
+      };
+      showcase.store.setState(restored as object);
+      while (showcase.backend.stepLive() >= 0);
+    }, state);
+    await page.waitForTimeout(1500);
+    await page.evaluate(() =>
+      document.documentElement.classList.add("is-capturing"),
+    );
+    const name = `sikemux-${new Date().toLocaleString("sv").replace(/[ :]/g, "-")}.png`;
+    await page.screenshot({ path: join(homedir(), "Downloads", name) });
+    return name;
+  } finally {
+    await context.close();
+  }
+}
+
 function demoFileSystem(): PluginOption {
   return {
     name: "sikemux-showcase-fs",
     configureServer(server) {
-      server.httpServer?.on("close", () => markdownParser?.stop());
+      server.httpServer?.on("close", () => {
+        markdownParser?.stop();
+        void snapshotBrowser?.then((browser) => browser.close());
+      });
       server.middlewares.use("/__showcase", async (request, response) => {
         if (request.url === `/preview/${encodeURIComponent(PANE_IMAGE)}`) {
           response.setHeader("Content-Type", "image/jpeg");
@@ -288,6 +337,15 @@ function demoFileSystem(): PluginOption {
                 response,
                 200,
                 gitLog(input.project as string, Number(input.count ?? 60)),
+              );
+            case "/snapshot":
+              return send(
+                response,
+                200,
+                await snapshot(
+                  `http://localhost:${server.config.server.port}`,
+                  input,
+                ),
               );
             case "/markdown":
               return send(

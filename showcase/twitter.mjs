@@ -1,55 +1,13 @@
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
-import { parseArgs } from "node:util";
-import { chromium } from "playwright-core";
+import { execFileSync } from "node:child_process";
+import { resolve } from "node:path";
 import { createServer } from "vite";
 
-const root = resolve(import.meta.dirname, "..");
-const { values: options } = parseArgs({
-  options: {
-    out: { type: "string", default: join(homedir(), "Downloads") },
-    width: { type: "string", default: "1600" },
-    height: { type: "string", default: "900" },
-  },
-});
-
 const server = await createServer({
-  configFile: resolve(root, "showcase/vite.config.ts"),
+  configFile: resolve(import.meta.dirname, "vite.config.ts"),
   logLevel: "warn",
 });
 await server.listen();
 
-const browser = await chromium.launch({
-  channel: "chrome",
-  headless: false,
-  args: [`--window-size=${options.width},${Number(options.height) + 90}`],
-});
-const context = await browser.newContext({
-  viewport: { width: Number(options.width), height: Number(options.height) },
-  deviceScaleFactor: 2,
-  colorScheme: "dark",
-});
-await context.clock.setFixedTime(new Date("2026-09-26T09:41:00"));
-await context.exposeBinding("showcaseDownload", async ({ page }) => {
-  const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-");
-  const name = `sikemux-${stamp}.png`;
-  await page.evaluate(() =>
-    document.documentElement.classList.add("is-capturing"),
-  );
-  await page.screenshot({ path: join(options.out, name) });
-  await page.evaluate(() =>
-    document.documentElement.classList.remove("is-capturing"),
-  );
-  console.log(`saved ${join(options.out, name)}`);
-  return name;
-});
-
-const page = await context.newPage();
 const url = `http://localhost:${server.config.server.port}/showcase/twitter.html`;
-// Vite aborts the first load when it reloads after bundling dependencies.
-await page.goto(url).catch(() => page.goto(url));
-console.log("Pick a view and press Download. Close the window to stop.");
-
-await new Promise((done) => page.on("close", done));
-await browser.close();
-await server.close();
+execFileSync("open", [url]);
+console.log(`${url}\nPick a view and press Download; it saves to ~/Downloads.`);

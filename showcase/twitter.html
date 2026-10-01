@@ -48,44 +48,27 @@
     <button type="button">Download</button>
     <script type="module">
       const button = document.querySelector("button");
-      const nextFrame = () =>
-        new Promise((done) =>
-          requestAnimationFrame(() => requestAnimationFrame(done)),
-        );
+      const app = document.querySelector("iframe").contentWindow;
 
-      // Outside `pnpm showcase:twitter` there is no saver, so the browser shares this tab and downloads one frame of it.
-      async function downloadFromTab() {
-        const stream = await navigator.mediaDevices.getDisplayMedia({
-          video: { displaySurface: "browser" },
-          preferCurrentTab: true,
+      // A page cannot screenshot itself, so the showcase server renders this view in its own Chrome.
+      async function saveOnServer() {
+        const response = await fetch("/__showcase/snapshot", {
+          method: "POST",
+          body: JSON.stringify({
+            state: app.showcase.store.getState(),
+            width: innerWidth,
+            height: innerHeight,
+          }),
         });
-        const video = document.createElement("video");
-        video.srcObject = stream;
-        await video.play();
-        document.documentElement.classList.add("is-capturing");
-        await nextFrame();
-        await new Promise((done) => setTimeout(done, 300));
-        const canvas = document.createElement("canvas");
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        canvas.getContext("2d").drawImage(video, 0, 0);
-        stream.getTracks().forEach((track) => track.stop());
-        document.documentElement.classList.remove("is-capturing");
-        const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-");
-        const link = document.createElement("a");
-        link.download = `sikemux-${stamp}.png`;
-        link.href = URL.createObjectURL(
-          await new Promise((done) => canvas.toBlob(done, "image/png")),
-        );
-        link.click();
-        return link.download;
+        const saved = await response.json();
+        if (!response.ok) throw new Error(saved.error);
+        return saved;
       }
 
       button.addEventListener("click", async () => {
         button.disabled = true;
         try {
-          const saved = await (window.showcaseDownload?.() ??
-            downloadFromTab());
+          const saved = await saveOnServer();
           button.textContent = `Saved ${saved}`;
         } catch (error) {
           button.textContent = "Not saved";
