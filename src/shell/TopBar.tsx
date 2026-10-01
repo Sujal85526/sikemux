@@ -17,6 +17,7 @@ import { Tooltip } from "../ui/Tooltip";
 import { RollingText } from "../ui/RollingText";
 import { remoteRepoR } from "../codehost/project";
 import { codeHost } from "../codehost/registry";
+import { PortsChip } from "../ports/PortsChip";
 
 const time2 = (n: number) => String(n).padStart(2, "0");
 
@@ -184,6 +185,7 @@ export const TopBar = memo(function TopBar() {
                     </span>
                 )}
                 {isProject && session.cwd && <GitChip repo={session.cwd} />}
+                {isProject && session.cwd && <PortsChip sessionId={session.id} />}
                 {plugins.map(({ id, TopBarItem }) =>
                     TopBarItem ? <TopBarItem key={id} projectCwd={isProject ? session.cwd || null : null} stripHovered={stripHovered} /> : null,
                 )}

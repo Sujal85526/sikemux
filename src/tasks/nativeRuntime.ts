@@ -1,6 +1,7 @@
 import { Channel, type InvokeArgs } from "@tauri-apps/api/core";
 import { invokeCommand } from "../api/invoke";
 import { createItemId, type ItemId } from "../workbench/registry";
+import { taskProcessChanged } from "./processSignal";
 import type {
     TaskExecutionBackend,
     TaskExecutionRequest,
@@ -123,6 +124,7 @@ export class NativeTaskExecutionBackend implements TaskExecutionBackend {
             settled = true;
             exitChannel.onmessage = NOOP;
             resolveCompletion(exit);
+            taskProcessChanged();
         };
 
         let result: NativeTaskSpawnResult;
@@ -135,7 +137,9 @@ export class NativeTaskExecutionBackend implements TaskExecutionBackend {
             throw error;
         }
 
-        return Object.freeze({ ptyId: requirePtyId(result?.ptyId), completion });
+        const ptyId = requirePtyId(result?.ptyId);
+        taskProcessChanged();
+        return Object.freeze({ ptyId, completion });
     }
 
     stop(ptyId: number): Promise<void> {
