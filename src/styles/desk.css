@@ -79,10 +79,11 @@
     min-width: 120px;
 }
 
-/* Desk tabs carry no outline of their own; only the one on show is marked. */
+/* Desk tabs sit on the same faint fill as the address field under them, with
+   no outline; only the one on show is edged. */
 .desk .tabbar.v-desk .tab-wrap {
     height: 24px;
-    background-color: transparent;
+    background-color: color-mix(in srgb, var(--ink) 5%, transparent);
     box-shadow: none;
 }
 
