@@ -4,9 +4,11 @@
 //! so a phone that found an impostor's advert learns it before it says
 //! anything.
 
+#[cfg(any(target_os = "macos", test))]
 pub(crate) const SERVICE: &str = "_sikemux._udp";
 
 /// `core=<key>` as one length-prefixed TXT string.
+#[cfg(any(target_os = "macos", test))]
 pub(crate) fn txt_record(core_id: &str) -> Vec<u8> {
     let entry = format!("core={core_id}");
     let mut record = Vec::with_capacity(entry.len() + 1);
