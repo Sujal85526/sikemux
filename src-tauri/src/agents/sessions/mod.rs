@@ -40,7 +40,7 @@ fn read_agent_sessions(
     match agent {
         AgentKind::Claude => claude_sessions(cwd, config_path),
         AgentKind::Codex => codex_sessions(cwd, config_path),
-        AgentKind::Hermes => hermes_sessions(),
+        AgentKind::Hermes => hermes_sessions(cwd),
         AgentKind::Pi => pi_sessions(cwd),
         AgentKind::Opencode => opencode_sessions(cwd),
         AgentKind::Omp => omp_sessions(cwd),

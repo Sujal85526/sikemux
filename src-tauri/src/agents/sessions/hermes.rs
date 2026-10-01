@@ -9,51 +9,14 @@ use crate::agents::executable::apply_login_environment;
 use crate::agents::AgentSession;
 
 // ---- hermes — `sessions` table in ~/.hermes/state.db (SQLite) -----------
-pub(super) fn hermes_sessions() -> Vec<AgentSession> {
-    let Ok(home) = std::env::var("HOME") else {
-        return Vec::new();
-    };
+fn hermes_db() -> Option<Connection> {
+    let home = std::env::var("HOME").ok()?;
     let db = PathBuf::from(&home).join(".hermes/state.db");
-    if !db.exists() {
-        return Vec::new();
-    }
-
-    let conn = match Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_ONLY) {
-        Ok(c) => c,
-        Err(_) => return Vec::new(),
-    };
-    let mut stmt = match conn.prepare(
-        "SELECT id, \
-         COALESCE(NULLIF(TRIM(title), ''), substr(id, 1, 13)) AS title, \
-         CAST(COALESCE(started_at, 0) AS INTEGER) AS mtime \
-         FROM sessions ORDER BY started_at DESC LIMIT 400",
-    ) {
-        Ok(s) => s,
-        Err(_) => return Vec::new(),
-    };
-    let rows = stmt.query_map([], |row| {
-        Ok(AgentSession {
-            id: row.get::<_, String>(0)?,
-            title: row.get::<_, String>(1)?,
-            mtime: row.get::<_, i64>(2).unwrap_or(0) as u64,
-        })
-    });
-    match rows {
-        Ok(iter) => iter.filter_map(|r| r.ok()).collect(),
-        Err(_) => Vec::new(),
-    }
+    Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_ONLY).ok()
 }
 
-/// Hermes records the folder each session ran in, so the page asks only for these projects.
-pub(super) fn hermes_recent(scan: &PageScan<'_>) -> Vec<Hit> {
-    let Ok(home) = std::env::var("HOME") else {
-        return Vec::new();
-    };
-    let db = PathBuf::from(&home).join(".hermes/state.db");
-    let Ok(conn) = Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_ONLY) else {
-        return Vec::new();
-    };
-    let projects: Vec<&String> = scan.projects().collect();
+/// Sessions that ran in any of these folders, newest first.
+fn hermes_sessions_in(conn: &Connection, projects: &[&str]) -> Vec<Found> {
     if projects.is_empty() {
         return Vec::new();
     }
@@ -63,7 +26,7 @@ pub(super) fn hermes_recent(scan: &PageScan<'_>) -> Vec<Hit> {
          COALESCE(NULLIF(TRIM(title), ''), substr(id, 1, 13)) AS title, \
          CAST(COALESCE(started_at, 0) AS INTEGER) AS mtime, \
          cwd \
-         FROM sessions WHERE cwd IN ({placeholders})"
+         FROM sessions WHERE cwd IN ({placeholders}) ORDER BY started_at DESC"
     );
     let Ok(mut stmt) = conn.prepare(&sql) else {
         return Vec::new();
@@ -80,8 +43,27 @@ pub(super) fn hermes_recent(scan: &PageScan<'_>) -> Vec<Hit> {
     }) else {
         return Vec::new();
     };
-    let listed = rows
-        .filter_map(Result::ok)
+    rows.filter_map(Result::ok).collect()
+}
+
+pub(super) fn hermes_sessions(cwd: &str) -> Vec<AgentSession> {
+    let Some(conn) = hermes_db() else {
+        return Vec::new();
+    };
+    hermes_sessions_in(&conn, &[cwd])
+        .into_iter()
+        .take(400)
+        .map(|found| found.session)
+        .collect()
+}
+
+pub(super) fn hermes_recent(scan: &PageScan<'_>) -> Vec<Hit> {
+    let Some(conn) = hermes_db() else {
+        return Vec::new();
+    };
+    let projects: Vec<&str> = scan.projects().map(String::as_str).collect();
+    let listed = hermes_sessions_in(&conn, &projects)
+        .into_iter()
         .map(|found| Listed {
             at_ms: found.session.mtime * 1000,
             key: found.session.id.clone(),
@@ -128,4 +110,34 @@ pub(super) async fn rename_hermes_session(
         "Hermes could not rename the chat: {}",
         reason.trim_start_matches("Error: ")
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sessions_are_listed_only_for_the_folder_they_ran_in() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE sessions (id TEXT, title TEXT, started_at REAL, cwd TEXT);
+             INSERT INTO sessions VALUES ('a', 'Here', 200, '/repo');
+             INSERT INTO sessions VALUES ('b', 'Elsewhere', 300, '/other');
+             INSERT INTO sessions VALUES ('c', '', 100, '/repo');",
+        )
+        .unwrap();
+        let ids = |projects: &[&str]| {
+            hermes_sessions_in(&conn, projects)
+                .into_iter()
+                .map(|found| (found.session.id, found.project))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            ids(&["/repo"]),
+            vec![("a".into(), "/repo".into()), ("c".into(), "/repo".into())]
+        );
+        assert_eq!(ids(&["/repo", "/other"]).len(), 3);
+        assert!(ids(&[]).is_empty());
+        assert_eq!(hermes_sessions_in(&conn, &["/repo"])[1].session.title, "c");
+    }
 }
