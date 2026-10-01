@@ -1,17 +1,16 @@
-# Sikemux v0.4.3-nightly.3
+# Sikemux v0.4.3-nightly.4
 
-The third nightly on the 0.4.3 line. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
+The fourth nightly on the 0.4.3 line. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
 
-## New since nightly.2
+## New since nightly.3
 
-- **Shortcuts.** ⌘N starts an agent, ⌘T a terminal where you are, ⌘J the nearest desk, and Option takes you back to the terminal. ⌘W no longer closes the window and quits every agent, and closing a project or a working agent asks first.
-- **Previews.** PDFs, audio, video, fonts and binaries open in a preview, and Office and iWork documents open through Quick Look.
-- **The desk's browser.** ⌘L opens the address over the middle of the page, suggests the sites you visit most and the pages you have been to, and Escape puts it away. The address bar leads with the site, and ⌘W closes the page rather than the whole desk.
-- **Agents.** Rename a chat from its header, its menu or the agent rail. The agent rail has an All agents tab, saved chats page across providers and projects, and a `sikemux://` link reopens an agent's conversation.
-- **Tabs.** Drag a pane's tab out of its split to give it a tab of its own, and grab a tab anywhere without dragging the window.
-- **Leaner agent tools.** An agent is offered only the plugin tools that work in its repository, SigNoz answers through five tools instead of twelve, and the browser's tools answer in less.
-- Panes share one dithered picture in place of the grain, and an empty workspace always offers somewhere to go.
+- **Send anything to an agent.** Pick which agent gets it, then hand over a terminal selection, a problem from the editor, SigNoz log lines or a pull request's diff lines. Start a new chat agent on an issue straight from the Git pane.
+- **The composer.** `@` attaches a project file or folder, and `#` hands over an issue or pull request.
+- **The chat.** Find text in a conversation with ⌘F, and Escape stops the running turn. Each prompt shows when it was sent, and its answer shows when it finished and how long it took. A chat whose agent died can be resumed, a session says why it ended, and a resumed session past 200K tokens gets the 1M window.
+- **Switch accounts** for Claude or Codex from the limits footer in the rail.
+- **Under 10 MB again.** The download drops from 11.5 MB to about 10 MB. The voice helper is no longer bundled: Sikemux downloads it the first time you dictate, checked against the exact build it expects, the same way it fetches the speech model.
+- The up and down arrows bring back sent messages only from an empty composer, and agents can be closed from the all projects list.
 
-Thanks to Sujal Rajput for renaming chats.
+Thanks to Ankit Patidar for find in conversation, Escape to stop, and the timing on each turn.
 
-For the complete patch history, compare [`v0.4.3-nightly.2...v0.4.3-nightly.3`](https://github.com/nodelike/sikemux/compare/v0.4.3-nightly.2...v0.4.3-nightly.3).
+For the complete patch history, compare [`v0.4.3-nightly.3...v0.4.3-nightly.4`](https://github.com/nodelike/sikemux/compare/v0.4.3-nightly.3...v0.4.3-nightly.4).
