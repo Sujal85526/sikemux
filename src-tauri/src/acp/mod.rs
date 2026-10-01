@@ -16,8 +16,8 @@ use serde_json::{json, Value};
 use sikemux_core::acp::{bounded_text, native};
 use sikemux_core::client::{ClientError, CoreClient, Reply};
 use sikemux_core::protocol::{
-    ChatAttachment, ChatContext, ChatEvent, ChatEventKind, ChatInfo, ChatLaunch, ChatStart,
-    Request, Response,
+    ChatAttachment, ChatContext, ChatEvent, ChatEventKind, ChatInfo, ChatLaunch, ChatLauncher,
+    ChatStart, Request, Response,
 };
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -247,6 +247,15 @@ fn adapter_spec(provider: &str) -> Result<AdapterSpec, String> {
     }
 }
 
+fn adapter_root(app: &AppHandle, spec: AdapterSpec) -> Result<PathBuf, String> {
+    Ok(app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| format!("ACP adapter cache is unavailable: {error}"))?
+        .join("acp-adapters")
+        .join(spec.package_dir))
+}
+
 fn installed_adapter(root: &Path, spec: AdapterSpec) -> PathBuf {
     root.join("node_modules").join(spec.executable)
 }
@@ -273,12 +282,7 @@ async fn ensure_adapter(
     cancellation: crate::bounded_process::ProcessCancellation,
 ) -> Result<PathBuf, String> {
     let spec = adapter_spec(provider)?;
-    let root = app
-        .path()
-        .app_cache_dir()
-        .map_err(|error| format!("ACP adapter cache is unavailable: {error}"))?
-        .join("acp-adapters")
-        .join(spec.package_dir);
+    let root = adapter_root(app, spec)?;
     let executable = installed_adapter(&root, spec);
     if executable.is_file() {
         return Ok(executable);
@@ -478,6 +482,55 @@ async fn prepare(
         .env
         .insert(crate::ports::AGENT_ID_ENV.into(), agent_id.to_owned());
     Ok(program)
+}
+
+/// One way to start a chat agent that the app offers paired devices.
+pub(crate) struct LauncherSpec {
+    pub id: String,
+    pub provider: String,
+    pub label: String,
+    pub config_path: Option<String>,
+    pub executable_path: Option<String>,
+    pub environment_keys: Vec<String>,
+    pub permission_mode: String,
+}
+
+/// What [`acp_start`] would run for `spec`, for the core to start without
+/// the window. Never installs an adapter: one this Mac has not used yet is
+/// left out until it has.
+pub(crate) async fn launcher(app: &AppHandle, spec: LauncherSpec) -> Result<ChatLauncher, String> {
+    let executable =
+        crate::agents::resolve_agent_executable(&spec.provider, spec.executable_path.as_deref())
+            .await?;
+    let program = match native::arguments(&spec.provider) {
+        Some(arguments) => native_program(&executable, arguments, &spec.environment_keys),
+        None => {
+            let adapter_spec = adapter_spec(&spec.provider)?;
+            let adapter = installed_adapter(&adapter_root(app, adapter_spec)?, adapter_spec);
+            if !adapter.is_file() {
+                return Err(format!(
+                    "{} has not been started on this Mac yet",
+                    spec.label
+                ));
+            }
+            adapter_program(
+                &spec.provider,
+                &adapter,
+                spec.config_path.as_deref(),
+                Some(&executable.to_string_lossy()),
+                &spec.environment_keys,
+            )?
+        }
+    };
+    Ok(ChatLauncher {
+        id: spec.id,
+        provider: spec.provider,
+        label: spec.label,
+        program: program.program,
+        args: program.args,
+        env: program.env,
+        permission_mode: spec.permission_mode,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]

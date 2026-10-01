@@ -232,6 +232,12 @@ impl PtyManager {
             .await
             .map_err(core_error)?;
         client.register_window().await.map_err(core_error)?;
+        if let Some(published) = settings
+            .app
+            .try_state::<crate::remote::PublishedWorkspace>()
+        {
+            crate::remote::republish(&published, &client).await;
+        }
         self.core_pid.store(client.core_pid(), Ordering::Release);
         if let Ok(mut current) = self.client.lock() {
             *current = Some(client.clone());

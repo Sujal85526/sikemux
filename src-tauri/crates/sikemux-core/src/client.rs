@@ -24,9 +24,10 @@ use crate::protocol::frozen::{FrozenReply, FrozenRequest};
 use crate::protocol::{
     decode_output, decode_snapshot, encode_control, encode_frozen, encode_input, read_frame,
     read_frame_sync, BuildIdentity, CallId, ChatAttachment, ChatContext, ChatInfo, ChatLaunch,
-    ChatStart, ClientMessage, DeviceAccess, Event, FrameKind, LaunchIdentity, RemoteStatus,
-    Request, RequestId, Response, RunSelector, ServerMessage, SessionId, SessionInfo, SpawnTarget,
-    WindowAnswer, WindowCall, MAX_FRAME_BYTES, PROTOCOL, PROTOCOL_VERSION,
+    ChatLauncher, ChatStart, ClientMessage, DeviceAccess, Event, FrameKind, LaunchIdentity,
+    ProjectInfo, RemoteStatus, Request, RequestId, Response, RunSelector, ServerMessage, SessionId,
+    SessionInfo, SpawnTarget, WindowAnswer, WindowCall, Workspace, MAX_FRAME_BYTES, PROTOCOL,
+    PROTOCOL_VERSION,
 };
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -662,6 +663,46 @@ impl CoreClient {
 
     pub async fn revoke_device(&self, id: String) -> Result<RemoteStatus, ClientError> {
         self.remote_request(Request::RevokeDevice { id }).await
+    }
+
+    pub async fn publish_workspace(
+        &self,
+        projects: Vec<ProjectInfo>,
+        launchers: Vec<ChatLauncher>,
+    ) -> Result<(), ClientError> {
+        self.request_done(Request::PublishWorkspace {
+            projects,
+            launchers,
+        })
+        .await
+    }
+
+    pub async fn workspace(&self) -> Result<Workspace, ClientError> {
+        match self.request(Request::Workspace).await? {
+            Response::Workspace { workspace } => Ok(workspace),
+            _ => Err(ClientError::UnexpectedReply),
+        }
+    }
+
+    /// Starts a chat agent in one of the app's projects. Answers with the
+    /// agent's id once its session is ready; its events follow.
+    pub async fn start_chat(
+        &self,
+        launcher: String,
+        project: String,
+        model: Option<String>,
+    ) -> Result<(String, ChatStart), ClientError> {
+        let request = Request::StartChat {
+            launcher,
+            project,
+            permission_mode: None,
+            model,
+            effort: None,
+        };
+        match self.request(request).await? {
+            Response::ChatBegun { agent_id, start } => Ok((agent_id, start)),
+            _ => Err(ClientError::UnexpectedReply),
+        }
     }
 
     pub async fn open_pairing(&self) -> Result<RemoteStatus, ClientError> {

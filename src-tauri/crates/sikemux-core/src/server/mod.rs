@@ -12,6 +12,7 @@ mod session;
 mod tools;
 mod upgrade;
 mod window;
+mod workspace;
 
 pub use entry::main;
 
@@ -259,6 +260,7 @@ pub(crate) struct Core {
     pub(crate) tools: Mutex<Option<tools::ToolEndpoint>>,
     pub(crate) chats: chat::Chats,
     pub(crate) remote: remote::Remote,
+    pub(crate) workspaces: workspace::Workspaces,
 }
 
 /// Session and window call ids start from the clock, so an id a client still
@@ -298,6 +300,7 @@ impl Core {
             tools: Mutex::new(None),
             chats: chat::Chats::default(),
             remote: remote::Remote::default(),
+            workspaces: workspace::Workspaces::default(),
         }))
     }
 

@@ -11,8 +11,8 @@ use serde_json::json;
 use sikemux_core::client::{probe, ClientError, ClientEvent, CoreClient};
 use sikemux_core::pairing::{self, PairError, PairingRequest};
 use sikemux_core::protocol::{
-    BuildIdentity, DeviceAccess, Event, LaunchIdentity, RemoteStatus, SessionId, SpawnTarget,
-    TerminalSpawn,
+    BuildIdentity, ChatEventKind, ChatLauncher, DeviceAccess, Event, LaunchIdentity, ProjectInfo,
+    RemoteStatus, SessionId, SpawnTarget, TerminalSpawn,
 };
 use sikemux_core::remote::{self, SecretKey};
 use sikemux_core::server::{self, ServerConfig, ServerError};
@@ -492,4 +492,114 @@ async fn pairing_needs_an_open_code_and_remote_access_on() {
     app.set_remote_access(false).await.expect("turn off");
     let refused = app.open_pairing().await;
     assert!(refusal(refused).contains("turn on remote access"));
+}
+
+const FAKE_AGENT: &str = env!("CARGO_BIN_EXE_sikemux-fake-acp-agent");
+
+async fn publish_fake_agent(app: &CoreClient) {
+    let launcher = ChatLauncher {
+        id: "opencode".into(),
+        provider: "opencode".into(),
+        label: "OpenCode".into(),
+        program: FAKE_AGENT.into(),
+        args: vec!["acp".into()],
+        env: [("SECRET_TOKEN".to_owned(), "do-not-share".to_owned())].into(),
+        permission_mode: "bypass".into(),
+    };
+    let project = ProjectInfo {
+        id: "sess-tmp".into(),
+        name: "tmp".into(),
+        path: std::env::temp_dir(),
+    };
+    app.publish_workspace(vec![project], vec![launcher])
+        .await
+        .expect("publish");
+}
+
+async fn until_said(events: &mut UnboundedReceiver<ClientEvent>, agent: &str, needle: &str) {
+    let mut said = String::new();
+    while !said.contains(needle) {
+        let event = tokio::time::timeout(WAIT, events.recv())
+            .await
+            .expect("timed out waiting for the agent")
+            .expect("the device's connection closed");
+        let ClientEvent::Event(Event::Chat { agent_id, event }) = event else {
+            continue;
+        };
+        if agent_id != agent || event.kind != ChatEventKind::SessionUpdate {
+            continue;
+        }
+        said.push_str(&event.payload.to_string());
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_device_starts_a_chat_agent_the_app_published_and_talks_to_it() {
+    let core_key = SecretKey::generate();
+    let phone = Device::new("Phone", DeviceAccess::Full);
+    let core = start_core(&core_key, &[&phone]);
+    let (app, _app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    publish_fake_agent(&app).await;
+    let status = listening(&app).await;
+    drop(app);
+
+    let endpoint = phone.endpoint().await;
+    let (client, mut events) = remote::connect(&endpoint, core_addr(&status))
+        .await
+        .expect("the phone connects");
+    let workspace = client.workspace().await.expect("workspace");
+    assert_eq!(workspace.projects[0].name, "tmp");
+    assert_eq!(workspace.launchers[0].label, "OpenCode");
+    assert!(!format!("{workspace:?}").contains("do-not-share"));
+
+    let (agent_id, start) = client
+        .start_chat("opencode".into(), "sess-tmp".into(), None)
+        .await
+        .expect("the phone starts a chat");
+    assert!(!start.session_id.is_empty());
+    client
+        .acp_prompt(
+            agent_id.clone(),
+            "hello from the phone".into(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .expect("prompt");
+    until_said(&mut events, &agent_id, "hello from the phone").await;
+
+    let chats = client.acp_list().await.expect("list chats");
+    let chat = chats
+        .iter()
+        .find(|chat| chat.agent_id == agent_id)
+        .expect("the chat");
+    assert_eq!(chat.started_by, Some(phone.id()));
+    assert_eq!(chat.cwd, std::env::temp_dir());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_watching_device_cannot_start_a_chat() {
+    let core_key = SecretKey::generate();
+    let watcher = Device::new("Watcher", DeviceAccess::Watch);
+    let core = start_core(&core_key, &[&watcher]);
+    let (app, _app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    publish_fake_agent(&app).await;
+    let status = listening(&app).await;
+
+    let endpoint = watcher.endpoint().await;
+    let (client, _events) = remote::connect(&endpoint, core_addr(&status))
+        .await
+        .expect("the watcher connects");
+    assert_eq!(
+        client.workspace().await.expect("workspace").projects.len(),
+        1
+    );
+    let refused = client
+        .start_chat("opencode".into(), "sess-tmp".into(), None)
+        .await;
+    assert!(refusal(refused).contains("watch"));
+    assert!(
+        refusal(client.publish_workspace(Vec::new(), Vec::new()).await)
+            .contains("only Sikemux on this Mac")
+    );
 }

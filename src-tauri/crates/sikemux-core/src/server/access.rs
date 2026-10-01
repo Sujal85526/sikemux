@@ -36,7 +36,8 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::TaskOutput { .. }
         | Request::AcpList
         | Request::AcpAttach { .. }
-        | Request::AcpPermissionReply { .. } => Needs::Watch,
+        | Request::AcpPermissionReply { .. }
+        | Request::Workspace => Needs::Watch,
         Request::Spawn { .. }
         | Request::Resize { .. }
         | Request::Kill { .. }
@@ -48,7 +49,8 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::AcpStopTask { .. }
         | Request::AcpStop { .. }
         | Request::AcpSetPermissionMode { .. }
-        | Request::AcpSetConfig { .. } => Needs::Full,
+        | Request::AcpSetConfig { .. }
+        | Request::StartChat { .. } => Needs::Full,
         Request::Configure { .. }
         | Request::ListManifests
         | Request::ReloadManifests
@@ -64,7 +66,8 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::RevokeDevice { .. }
         | Request::OpenPairing
         | Request::ClosePairing
-        | Request::AnswerPairing { .. } => Needs::Local,
+        | Request::AnswerPairing { .. }
+        | Request::PublishWorkspace { .. } => Needs::Local,
     }
 }
 

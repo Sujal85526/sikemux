@@ -47,6 +47,7 @@
     "allow-remote-open-pairing",
     "allow-remote-close-pairing",
     "allow-remote-answer-pairing",
+    "allow-remote-publish-workspace",
     "allow-task-watch",
     "allow-app-quit-and-stop-everything",
     "allow-agent-detection-explain",

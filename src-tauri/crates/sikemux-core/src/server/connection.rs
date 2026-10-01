@@ -16,7 +16,7 @@ use crate::protocol::{
 use super::access::{self, Needs, Peer};
 use super::prepare::{prepare_task, prepare_terminal};
 use super::session::{self, PendingStart};
-use super::{agent, chat, harness, remote, upgrade, Core, CoreError, CoreResult};
+use super::{agent, chat, harness, remote, upgrade, workspace, Core, CoreError, CoreResult};
 
 pub(crate) type ClientId = u64;
 pub(crate) type FrameReader = BufReader<Box<dyn AsyncRead + Send + Unpin>>;
@@ -607,6 +607,37 @@ async fn run_requests(
             Request::SetDeviceAccess { id, access } => {
                 let result = remote::set_access(&core, &id, access);
                 client.respond(request_id, result.map(|status| Response::Remote { status }));
+            }
+            Request::PublishWorkspace {
+                projects,
+                launchers,
+            } => {
+                let result = core.workspaces.publish(projects, launchers);
+                client.respond(request_id, result.map(|()| Response::Done));
+            }
+            Request::Workspace => {
+                client.respond(
+                    request_id,
+                    Ok(Response::Workspace {
+                        workspace: core.workspaces.view(),
+                    }),
+                );
+            }
+            Request::StartChat {
+                launcher,
+                project,
+                permission_mode,
+                model,
+                effort,
+            } => {
+                let choice = workspace::ChatChoice {
+                    launcher,
+                    project,
+                    permission_mode,
+                    model,
+                    effort,
+                };
+                workspace::start_chat(&core, &client, request_id, choice);
             }
             Request::OpenPairing => {
                 let result = core.remote.open_offer().map(|()| remote::announce(&core));

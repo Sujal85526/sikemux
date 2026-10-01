@@ -335,6 +335,23 @@ pub enum Request {
         allow: bool,
         access: DeviceAccess,
     },
+    /// The projects the app has open and how it starts each chat agent,
+    /// replacing what it published before. Kept in memory only, since a
+    /// launcher's environment may hold secrets; the app publishes again
+    /// whenever it connects.
+    PublishWorkspace {
+        projects: Vec<ProjectInfo>,
+        launchers: Vec<ChatLauncher>,
+    },
+    Workspace,
+    /// Starts a chat agent the way the app would, in one of its projects.
+    StartChat {
+        launcher: String,
+        project: String,
+        permission_mode: Option<String>,
+        model: Option<String>,
+        effort: Option<String>,
+    },
 }
 
 /// Everything the core needs to start a chat agent, resolved by the app: the
@@ -597,6 +614,47 @@ pub enum Response {
     Steered { outcome: String },
     ChatConfig { value: Value },
     Remote { status: RemoteStatus },
+    Workspace { workspace: Workspace },
+    ChatBegun { agent_id: String, start: ChatStart },
+}
+
+/// A project the app has open.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectInfo {
+    pub id: String,
+    pub name: String,
+    pub path: PathBuf,
+}
+
+/// How the app starts one kind of chat agent, short of the agent's own id.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatLauncher {
+    pub id: String,
+    pub provider: String,
+    pub label: String,
+    pub program: PathBuf,
+    pub args: Vec<String>,
+    pub env: BTreeMap<String, String>,
+    pub permission_mode: String,
+}
+
+/// What a device learns about a launcher: never its program or environment.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LauncherInfo {
+    pub id: String,
+    pub provider: String,
+    pub label: String,
+    pub permission_mode: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Workspace {
+    pub projects: Vec<ProjectInfo>,
+    pub launchers: Vec<LauncherInfo>,
 }
 
 /// What a paired device was approved to do.
