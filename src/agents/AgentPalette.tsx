@@ -78,10 +78,8 @@ export function AgentPalette() {
             };
         }
 
-        // Hermes history is global rather than project-scoped, so showing it
-        // here leaks unrelated projects into a picker opened for one checkout.
-        const projectScopedAgents = agents.filter((agent) => agent.available !== false && agent.type !== "hermes");
-        const sessionArgs = projectScopedAgents.map((agent) => [agent.type, origin.current.cwd, agent.configPath ?? undefined] as const);
+        const availableAgents = agents.filter((agent) => agent.available !== false);
+        const sessionArgs = availableAgents.map((agent) => [agent.type, origin.current.cwd, agent.configPath ?? undefined] as const);
 
         /* The open agents already keep these listings warm, so the picker opens
            on what they last read and swaps in the fresh scan when it lands. */

@@ -57,7 +57,7 @@ beforeEach(() => {
     ]);
     mocks.sessions.mockImplementation((type: string) => {
         if (type === "codex") return Promise.resolve([{ id: "codex-old", title: "Fix terminal tabs", mtime: 200 }]);
-        if (type === "hermes") return Promise.resolve([{ id: "hermes-global", title: "Unrelated Hermes project", mtime: 300 }]);
+        if (type === "hermes") return Promise.resolve([{ id: "hermes-old", title: "Generate a commit message", mtime: 300 }]);
         return Promise.resolve([{ id: "pi-old", title: "Review picker", mtime: 100 }]);
     });
     invalidate((kind) => kind === "agents.catalog" || kind === "agents.sessions");
@@ -69,7 +69,7 @@ afterEach(() => {
 });
 
 describe("AgentPalette", () => {
-    it("restores the historical searchable picker and excludes Hermes project history", async () => {
+    it("restores the historical searchable picker with every agent's project history", async () => {
         const opener = document.createElement("button");
         document.body.append(opener);
         opener.focus();
@@ -81,8 +81,8 @@ describe("AgentPalette", () => {
         expect(screen.getByRole("button", { name: "+ new Hermes in Normal mode" })).toBeInTheDocument();
         expect(await screen.findByRole("button", { name: "Fix terminal tabs in Normal mode" })).toBeInTheDocument();
         expect(screen.getByRole("button", { name: "Review picker in Normal mode" })).toBeInTheDocument();
-        expect(screen.queryByText("Unrelated Hermes project")).not.toBeInTheDocument();
-        expect(mocks.sessions).not.toHaveBeenCalledWith("hermes", expect.anything());
+        expect(screen.getByRole("button", { name: "Generate a commit message in Normal mode" })).toBeInTheDocument();
+        expect(mocks.sessions).toHaveBeenCalledWith("hermes", "/code/sikemux", undefined);
         expect(screen.getByRole("radio", { name: "safe" })).toBeChecked();
         expect(screen.getByRole("radio", { name: "yolo" })).not.toBeChecked();
 
@@ -237,7 +237,7 @@ describe("AgentPalette", () => {
         fireEvent.keyDown(search, { key: "ArrowDown" });
         expect(screen.getByRole("button", { name: "+ new Hermes in YOLO mode" })).toHaveClass("sel");
         fireEvent.keyDown(search, { key: "ArrowDown" });
-        expect(await screen.findByRole("button", { name: "Fix terminal tabs in YOLO mode" })).toHaveClass("sel");
+        expect(await screen.findByRole("button", { name: "Generate a commit message in YOLO mode" })).toHaveClass("sel");
     });
 
     it("filters sessions and opens the selected row with Enter", async () => {
