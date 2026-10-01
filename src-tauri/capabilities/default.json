@@ -18,6 +18,8 @@
     "core:window:allow-set-badge-count",
     "core:window:allow-request-user-attention",
     "allow-acp-start",
+    "allow-acp-attach",
+    "allow-acp-list",
     "allow-acp-prompt",
     "allow-acp-set-permission-mode",
     "allow-acp-set-config",

@@ -10,6 +10,7 @@ import { withAgents } from "../test/agents";
 vi.mock("../api/acp", () => ({
     acpApi: {
         subscribe: vi.fn(async () => () => {}),
+        attach: vi.fn(async () => ({ status: "missing" })),
         start: vi.fn(() => new Promise(() => {})),
         stop: vi.fn(async () => {}),
         prompt: vi.fn(async () => {}),

@@ -22,6 +22,7 @@ vi.mock("../agents/agentWorktree", () => ({ createAgentWorktree: mocks.create })
 vi.mock("../api/acp", () => ({
     acpApi: {
         subscribe: vi.fn(async () => () => {}),
+        attach: vi.fn(async () => ({ status: "missing" })),
         start: mocks.start,
         setPermissionMode: vi.fn(async () => {}),
         setConfig: vi.fn(),

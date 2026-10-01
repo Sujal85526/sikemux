@@ -142,9 +142,9 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .on_window_event(|window, event| {
-            // Terminals, terminal agents and tasks live in the core and keep
-            // running after the window closes; the next launch reattaches
-            // them. Chat agents are still children of the app and stop here.
+            // Terminals, terminal agents, tasks and chat agents live in the
+            // core and keep running after the window closes; the next launch
+            // reattaches them.
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 use tauri::Manager;
                 if let Some(watchdog) = window.try_state::<UiWatchdogState>() {
@@ -162,16 +162,13 @@ pub fn run() {
                 if let Some(plugins) = window.try_state::<PluginHost>() {
                     plugins.drain();
                 }
-                if let Some(acp) = window.try_state::<AcpManager>() {
-                    acp.drain();
-                }
                 lsp::drain_all();
             }
         })
         .on_page_load(|webview, payload| {
             // Context-menu reload starts a new page without closing the
-            // native window, so React cleanup never runs. Terminals keep
-            // running in the core and the new page reattaches them.
+            // native window, so React cleanup never runs. Terminals and chat
+            // agents keep running in the core and the new page reattaches them.
             // Browser tabs are webviews too, and a page loading in one of
             // them is not the app reloading.
             if webview.label() == "main"
@@ -195,9 +192,6 @@ pub fn run() {
                 }
                 if let Some(plugins) = webview.try_state::<PluginHost>() {
                     plugins.drain();
-                }
-                if let Some(acp) = webview.try_state::<AcpManager>() {
-                    acp.drain();
                 }
                 lsp::drain_all();
             }
@@ -241,6 +235,8 @@ pub fn run() {
         .register_asynchronous_uri_scheme_protocol(preview::SCHEME, preview::handle)
         .invoke_handler(tauri::generate_handler![
             acp::acp_start,
+            acp::acp_attach,
+            acp::acp_list,
             acp::acp_prompt,
             acp::acp_set_permission_mode,
             acp::acp_set_config,
@@ -450,8 +446,9 @@ pub fn run() {
             }
             // RunEvent::Exit fires on every teardown route: quit, `exit()`,
             // and the restart after an in-app update, which raises no window
-            // CloseRequested. Terminals stay in the core on all of them; only
-            // "Quit and Stop Everything" stops them, before it exits.
+            // CloseRequested. Terminals and chat agents stay in the core on
+            // all of them; only "Quit and Stop Everything" stops them, before
+            // it exits.
             if let tauri::RunEvent::Exit = event {
                 use tauri::Manager;
                 if let Some(watchdog) = app_handle.try_state::<UiWatchdogState>() {

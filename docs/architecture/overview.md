@@ -214,12 +214,15 @@ An agent runs on one of two transports.
   Sikemux tells its state from the screen (`sikemux-pty`'s `agent_detection/`) and finds its saved
   sessions on disk (`agents/sessions/<agent>.rs`). Every agent type supports this.
 - **Chat (ACP).** [ACP](https://agentclientprotocol.com), the Agent Client Protocol, is
-  JSON-RPC over stdio between an editor and an agent. `src-tauri/src/acp/mod.rs`
-  starts the agent, sends prompts and permission answers, and emits `acp_event`.
-  Claude and Codex are reached through adapter packages Sikemux installs. OpenCode,
-  OMP, Grok and Hermes speak ACP themselves (`acp/native.rs`). `acp/air.rs` adds the
-  Claude adapter's background task and subagent updates. On the UI side,
-  `src/chat/useAcpSession.ts` and `reducer.ts` turn events into a transcript.
+  JSON-RPC over stdio between an editor and an agent. Chat agents run in the background
+  core, so a turn keeps going through a reload or a quit. `src-tauri/src/acp/mod.rs`
+  prepares the launch (the adapter, the agent binary, the browser tools, the environment)
+  and forwards prompts and permission answers to the core; `sikemux-core`'s
+  `server/chat/` runs the session and keeps what it said, so a page that attaches later
+  replays it. Claude and Codex are reached through adapter packages Sikemux installs.
+  OpenCode, OMP, Grok and Hermes speak ACP themselves (`sikemux-core`'s `acp/native.rs`).
+  `acp/air.rs` adds the Claude adapter's background task and subagent updates. On the UI
+  side, `src/chat/useAcpSession.ts` and `reducer.ts` turn events into a transcript.
   `CHAT_AGENT_TYPES` in `src/agents/agentLaunch.ts` lists the chat-capable agents, and
   `src/chat/AgentSurface.tsx` switches one agent between chat and terminal views.
 

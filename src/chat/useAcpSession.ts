@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch } from "react";
-import { acpApi, type AcpEvent } from "../api/acp";
-import type { Agent, ProviderProfile } from "../state/types";
+import { acpApi, type AcpEvent, type AcpStartResponse } from "../api/acp";
+import type { Agent, AgentPermissionMode, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
 import type { FoldMemory } from "./longText";
 import { eventMessage, permissionRequest, recordOf, statusFromEvent } from "./acpEvents";
 import { permissionModeOf } from "./chatStatus";
 import { afterSessionEnd, sessionEndOf, type Recovery } from "./sessionRecovery";
+import { claimChat } from "./chatClaims";
 import type { ChatAction, ChatState } from "./types";
 
 const UPDATE_FLUSH_FALLBACK_MS = 250;
@@ -40,6 +41,9 @@ export function useAcpSession({
     agentRef.current = agent;
     const sessionIdRef = useRef<string | null>(null);
     const lifecycleRef = useRef<Promise<unknown>>(Promise.resolve());
+    /* Set when the core came back still running this chat: the session is
+       taken up again rather than stopped and started. */
+    const reattachingRef = useRef(false);
     const [changingPermissions, setChangingPermissions] = useState(false);
     const [appliedPermissionMode, setAppliedPermissionMode] = useState<string | null>(null);
     const environmentKeys = JSON.stringify(profile?.environmentKeys ?? []);
@@ -64,7 +68,9 @@ export function useAcpSession({
         if (!active) return;
         const controller = new AbortController();
         let mounted = true;
-        const hold = Boolean(agentRef.current.resumeId);
+        const reattaching = reattachingRef.current;
+        reattachingRef.current = false;
+        const hold = Boolean(agentRef.current.resumeId) || reattaching;
         dispatch({ type: "reset", hold });
         if (!hold) {
             foldMemory.streamed.clear();
@@ -153,33 +159,53 @@ export function useAcpSession({
                 const request = permissionRequest(event.payload);
                 if (request) dispatch({ type: "permission_requested", request });
             } else if (event.kind === "error") dispatch({ type: "error", message: eventMessage(event) });
+            else if (event.kind === "reattach") {
+                reattachingRef.current = true;
+                setRestartKey((value) => value + 1);
+            }
         };
 
         const lifecycle = lifecycleRef.current
             .catch(() => {})
             .then(async () => {
                 if (!mounted) return;
+                claimChat(agentRef.current.id);
                 await acpApi.subscribe(handleEvent, controller.signal);
                 if (!mounted) return;
                 const current = agentRef.current;
-                const initialMode = permissionModeOf(current);
-                const response = await acpApi.start({
-                    agentId: current.id,
-                    provider: current.type,
-                    cwd,
-                    resumeId: current.resumeId,
-                    permissionMode: initialMode,
-                    configPath: profile?.configPath,
-                    executablePath: profile?.executablePath || current.executablePath,
-                    model: current.model,
-                    effort: current.effort,
-                    environmentKeys: JSON.parse(environmentKeys) as string[],
-                });
+                /* A chat the core kept running through a reload or a quit is
+                   taken up where it is: its replay rebuilds the transcript the
+                   same way a resumed session's history does. */
+                const attached = await acpApi.attach({ agentId: current.id, provider: current.type, cwd, configPath: profile?.configPath });
+                if (!mounted) return;
+                let response: AcpStartResponse;
+                let appliedMode: AgentPermissionMode;
+                if (attached.status === "live") {
+                    response = attached.start;
+                    appliedMode = attached.permissionMode;
+                    if (attached.turned && current.resumeId !== response.sessionId) cmd.attachAgentSession(current.id, response.sessionId);
+                } else {
+                    if (attached.status === "restart") await acpApi.stop(current.id);
+                    if (!mounted) return;
+                    appliedMode = permissionModeOf(current);
+                    response = await acpApi.start({
+                        agentId: current.id,
+                        provider: current.type,
+                        cwd,
+                        resumeId: current.resumeId,
+                        permissionMode: appliedMode,
+                        configPath: profile?.configPath,
+                        executablePath: profile?.executablePath || current.executablePath,
+                        model: current.model,
+                        effort: current.effort,
+                        environmentKeys: JSON.parse(environmentKeys) as string[],
+                    });
+                }
                 if (!mounted) return;
                 sessionIdRef.current = response.sessionId;
                 flushUpdates();
                 dispatch({ type: "ready", capabilities: response.capabilities, setup: response.setup });
-                setAppliedPermissionMode(initialMode);
+                setAppliedPermissionMode(appliedMode);
             })
             .catch((error: unknown) => {
                 if (!controller.signal.aborted && mounted) {
@@ -199,7 +225,7 @@ export function useAcpSession({
             updateTimerRef.current = null;
             queuedUpdatesRef.current = [];
             controller.abort();
-            lifecycleRef.current = lifecycle.finally(() => acpApi.stop(agent.id).catch(() => {}));
+            lifecycleRef.current = reattachingRef.current ? lifecycle : lifecycle.finally(() => acpApi.stop(agent.id).catch(() => {}));
         };
     }, [
         active,

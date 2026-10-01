@@ -459,19 +459,25 @@ fn launch(core: &Arc<Core>, chat: &Arc<Chat>, queue: mpsc::UnboundedReceiver<Cha
     }
 }
 
-/// Starts a chat agent, with `subscriber` hearing it from its first event,
-/// and answers once its session is ready.
-pub(crate) async fn start(
+/// Starts a chat agent, with `subscriber` hearing it from its first event.
+/// The chat is known to the core when this returns, so a stop asked for
+/// next finds it.
+pub(crate) fn begin(
     core: &Arc<Core>,
     launch_spec: ChatLaunch,
     subscriber: Option<&Arc<ClientConn>>,
-) -> CoreResult<ChatStart> {
+) -> CoreResult<Arc<Chat>> {
     validate(&launch_spec)?;
     let (chat, queue) = core.chats.insert(launch_spec)?;
     if let Some(client) = subscriber {
         chat.feed.subscribe(client);
     }
     launch(core, &chat, queue);
+    Ok(chat)
+}
+
+/// Answers once the chat's session is ready, or says why it never got there.
+pub(crate) async fn until_started(core: &Arc<Core>, chat: Arc<Chat>) -> CoreResult<ChatStart> {
     match tokio::time::timeout(START_TIMEOUT, chat.until_ready()).await {
         Ok(result) => result.map_err(CoreError::from),
         Err(_) => {

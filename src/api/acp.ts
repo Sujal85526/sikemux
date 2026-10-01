@@ -21,6 +21,39 @@ export interface AcpStartResponse {
     setup: Record<string, unknown>;
 }
 
+/** Whether the background core still runs a chat for the agent. A live one
+    replays what it said so far as `acp_event`s before any new event. */
+export type AcpAttachment =
+    | {
+          status: "live";
+          start: AcpStartResponse;
+          permissionMode: AgentPermissionMode;
+          running: boolean;
+          /** A turn ran in this session, so the provider keeps it. */
+          turned: boolean;
+      }
+    | { status: "missing" }
+    /* It said more than the core keeps, so it starts again from the provider's history. */
+    | { status: "restart" };
+
+export interface AcpAttachOptions {
+    agentId: string;
+    provider: AgentType;
+    cwd: string;
+    configPath?: string;
+}
+
+/** A chat agent the background core runs. */
+export interface AcpChat {
+    agentId: string;
+    provider: string;
+    cwd: string;
+    sessionId: string | null;
+    state: "starting" | "ready";
+    running: boolean;
+    pendingPermissions: string[];
+}
+
 /** Something read elsewhere and handed to the agent whole, such as an issue and its comments. */
 export interface PromptContext {
     uri: string;
@@ -30,7 +63,8 @@ export interface PromptContext {
 
 export interface AcpEvent {
     agentId: string;
-    kind: "status" | "ready" | "session_update" | "turn_started" | "turn_completed" | "permission_request" | "error";
+    /** `reattach`: the core came back with this chat still running, so take it up again. */
+    kind: "status" | "ready" | "session_update" | "turn_started" | "turn_completed" | "permission_request" | "error" | "reattach";
     /** A `session_update` carries `updates`: a frame's worth of them at once. */
     payload: Record<string, unknown>;
 }
@@ -49,6 +83,14 @@ export const acpApi = {
             effort: options.effort ?? null,
             environmentKeys: options.environmentKeys ?? [],
         }),
+    attach: (options: AcpAttachOptions): Promise<AcpAttachment> =>
+        invoke<AcpAttachment>("acp_attach", {
+            agentId: options.agentId,
+            provider: options.provider,
+            cwd: options.cwd,
+            configPath: options.configPath ?? null,
+        }),
+    list: (): Promise<AcpChat[]> => invoke<AcpChat[]>("acp_list"),
     setPermissionMode: (agentId: string, permissionMode: AgentPermissionMode): Promise<void> =>
         invoke<void>("acp_set_permission_mode", { agentId, permissionMode }),
     setConfig: (agentId: string, configId: string, value: string): Promise<Record<string, unknown>> =>

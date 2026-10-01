@@ -258,10 +258,17 @@ impl PtyManager {
                 return;
             };
             match manager.client().await {
-                Ok(client) if client.core_pid() == previous => manager.reattach(&client).await,
-                Ok(_) => sink::report_all_exited(&manager.streams),
+                Ok(client) if client.core_pid() == previous => {
+                    manager.reattach(&client).await;
+                    crate::acp::reconnected(&app, Some(&client)).await;
+                }
+                Ok(_) => {
+                    sink::report_all_exited(&manager.streams);
+                    crate::acp::reconnected(&app, None).await;
+                }
                 Err(error) => {
                     sink::report_all_exited(&manager.streams);
+                    crate::acp::reconnected(&app, None).await;
                     eprintln!("Sikemux could not restart its terminal core: {error}");
                 }
             }

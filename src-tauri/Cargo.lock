@@ -4293,7 +4293,6 @@ dependencies = [
 name = "sikemux"
 version = "0.4.3-nightly.4"
 dependencies = [
- "agent-client-protocol",
  "base64 0.23.1",
  "block2",
  "dashmap",

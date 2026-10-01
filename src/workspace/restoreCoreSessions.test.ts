@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
+import type { AcpChat } from "../api/acp";
 import type { CoreSession } from "../api/coreSessions";
+import { claimChat } from "../chat/chatClaims";
 import * as cmd from "../state/commands";
 import { getState, setState } from "../state/store";
 import { useToasts } from "../state/toast";
@@ -17,19 +19,25 @@ function terminal(id: number, running = true): CoreSession {
     return { id, kind: "terminal", pid: 1, running, project: null, paneId: null, agentId: null, agentType: null, task: null, exit: null };
 }
 
-function deps(sessions: CoreSession[]) {
+function chat(agentId: string): AcpChat {
+    return { agentId, provider: "claude", cwd: "/repo", sessionId: "s", state: "ready", running: true, pendingPermissions: [] };
+}
+
+function deps(sessions: CoreSession[], chats: AcpChat[] = []) {
     const scheduled: Array<() => void> = [];
     const kill = vi.fn(async (_id: number) => {});
+    const stopChat = vi.fn(async (_agentId: string) => {});
     const restore: CoreSessionRestoreDeps = {
         list: async () => sessions,
         kill,
+        chats: { list: async () => chats, stop: stopChat },
         tasks: { watch: vi.fn(), adoptDeckTask: vi.fn(), showHarnessTerminal: vi.fn() },
         schedule: (callback, delay) => {
             expect(delay).toBe(UNCLAIMED_GRACE_MS);
             scheduled.push(callback);
         },
     };
-    return { restore, kill, runScheduled: () => scheduled.splice(0).forEach((callback) => callback()) };
+    return { restore, kill, stopChat, runScheduled: () => scheduled.splice(0).forEach((callback) => callback()) };
 }
 
 function layoutWithSessions() {
@@ -107,6 +115,17 @@ describe("restoring what the core kept", () => {
         await restoreCoreSessions(deps([terminal(104)]).restore);
         expect(useToasts.getState().toasts).toEqual([]);
         expect(getState().keptRunningNoticeShown).toBe(false);
+    });
+
+    it("stops the chats no chat pane took back after the grace", async () => {
+        layoutWithSessions();
+        const { restore, stopChat, runScheduled } = deps([], [chat("agent-ended"), chat("agent-shown"), chat("agent-forgotten")]);
+        await restoreCoreSessions(restore);
+        expect(useToasts.getState().toasts.map((toast) => toast.text)).toEqual([KEPT_RUNNING_NOTICE]);
+        claimChat("agent-shown");
+        expect(stopChat).not.toHaveBeenCalled();
+        runScheduled();
+        expect(stopChat.mock.calls.map(([id]) => id).sort()).toEqual(["agent-ended", "agent-forgotten"]);
     });
 
     it("leaves alone a terminal this page started, such as a popup opened right after launch", async () => {

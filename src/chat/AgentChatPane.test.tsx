@@ -49,6 +49,7 @@ vi.mock("../api/acp", () => ({
                 mocks.eventListener = null;
             };
         }),
+        attach: vi.fn(async () => ({ status: "missing" })),
         start: mocks.start,
         setPermissionMode: mocks.setPermissionMode,
         setConfig: mocks.setConfig,

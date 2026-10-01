@@ -12,6 +12,7 @@ import { withAgents } from "../test/agents";
 vi.mock("../api/acp", () => ({
     acpApi: {
         subscribe: vi.fn(async () => () => {}),
+        attach: vi.fn(async () => ({ status: "missing" })),
         start: vi.fn(async () => ({ sessionId: "session-only", capabilities: {}, setup: {} })),
         setPermissionMode: vi.fn(async () => {}),
         stop: vi.fn(async () => {}),

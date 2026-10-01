@@ -493,15 +493,18 @@ async fn run_requests(
                 sessions.sort_by_key(|info| info.id);
                 client.respond(request_id, Ok(Response::Sessions { sessions }));
             }
-            Request::AcpStart { launch } => {
-                tokio::spawn(async move {
-                    let result = chat::start(&core, *launch, Some(&client)).await;
-                    client.respond(
-                        request_id,
-                        result.map(|start| Response::ChatStarted { start }),
-                    );
-                });
-            }
+            Request::AcpStart { launch } => match chat::begin(&core, *launch, Some(&client)) {
+                Ok(started) => {
+                    tokio::spawn(async move {
+                        let result = chat::until_started(&core, started).await;
+                        client.respond(
+                            request_id,
+                            result.map(|start| Response::ChatStarted { start }),
+                        );
+                    });
+                }
+                Err(error) => client.respond(request_id, Err(error)),
+            },
             Request::AcpAttach { agent_id } => {
                 tokio::spawn(async move {
                     chat::attach(&core, &client, request_id, &agent_id).await;

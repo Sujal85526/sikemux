@@ -156,7 +156,9 @@ panes, `sikemux.json` tasks and ports need the window. Starting a new run,
 `ui_open` and the browser tools need the window too; with it closed they fail
 and say so. While Sikemux updates its background process a call can fail for
 a moment saying so; call it again. When Sikemux opens again the tasks'
-terminals come back. A task that ended stays readable for about ten minutes.
+terminals come back. Chat agents keep running too: a turn in progress goes
+on while the window is closed, and a permission it asks for waits for the
+person. A task that ended stays readable for about ten minutes.
 Event cursors stay valid across reloads, restarts and updates, so keep the one
 you have.
 

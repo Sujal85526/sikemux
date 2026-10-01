@@ -22,7 +22,61 @@ afterEach(() => {
     vi.useRealTimers();
 });
 
+/* Times say when this side saw something happen, so they differ between a
+   client that watched and one that replayed. */
+function withoutTimes(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(withoutTimes);
+    if (typeof value !== "object" || value === null) return value;
+    return Object.fromEntries(
+        Object.entries(value)
+            .filter(([key]) => !/At$|^stream/.test(key))
+            .map(([key, entry]) => [key, withoutTimes(entry)]),
+    );
+}
+
 describe("chat reducer", () => {
+    it("rebuilds from a core's replay, with streamed text joined, the transcript a watching client built", () => {
+        const say = (kind: string, text: string) => ({ sessionUpdate: kind, content: { type: "text", text } });
+        const tool = { sessionUpdate: "tool_call", toolCallId: "call-1", title: "Read file", status: "in_progress" };
+        const toolDone = { sessionUpdate: "tool_call_update", toolCallId: "call-1", status: "completed" };
+        const watch = (state: ChatState, steps: Array<Record<string, unknown> | "turn_started" | "turn_completed">) =>
+            steps.reduce(
+                (current, step) =>
+                    step === "turn_started"
+                        ? chatReducer(current, { type: "turn_started" })
+                        : step === "turn_completed"
+                          ? chatReducer(current, { type: "turn_completed", stopReason: "end_turn" })
+                          : update(current, step),
+                state,
+            );
+        const watched = watch(initialChatState, [
+            say("user_message_chunk", "Look"),
+            "turn_started",
+            say("agent_thought_chunk", "Hm"),
+            say("agent_thought_chunk", "m."),
+            say("agent_message_chunk", "Rea"),
+            say("agent_message_chunk", "ding."),
+            tool,
+            toolDone,
+            say("agent_message_chunk", "Do"),
+            say("agent_message_chunk", "ne."),
+            "turn_completed",
+        ]);
+        const replayed = watch(chatReducer({ ...initialChatState, messages: watched.messages }, { type: "reset", hold: true }), [
+            say("user_message_chunk", "Look"),
+            "turn_started",
+            say("agent_thought_chunk", "Hmm."),
+            say("agent_message_chunk", "Reading."),
+            tool,
+            toolDone,
+            say("agent_message_chunk", "Done."),
+            "turn_completed",
+        ]);
+        expect(withoutTimes(replayed.messages)).toEqual(withoutTimes(watched.messages));
+        expect(replayed.running).toBe(false);
+        expect(replayed.awaitingReplay).toBe(false);
+    });
+
     it("keeps the context window the agent reports and ignores a malformed one", () => {
         const claude = update(initialChatState, {
             sessionUpdate: "usage_update",
