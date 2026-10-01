@@ -3,6 +3,7 @@
 //!
 //! As the Mac, against a core's socket:
 //!   remote mac <socket> on | off | code | allow | status
+//!   remote mac <socket> spawn
 //! As a device, keeping its key in `<key-file>`:
 //!   remote device <key-file> pair <core-id> <code>
 //!   remote device <key-file> sessions <core-id>
@@ -14,7 +15,7 @@ use iroh::endpoint::presets;
 use iroh::{Endpoint, EndpointAddr};
 use sikemux_core::client::CoreClient;
 use sikemux_core::pairing::{self, PairingRequest};
-use sikemux_core::protocol::DeviceAccess;
+use sikemux_core::protocol::{DeviceAccess, LaunchIdentity, SpawnTarget, TerminalSpawn};
 use sikemux_core::remote::{self, SecretKey};
 
 type Failure = Box<dyn std::error::Error>;
@@ -24,10 +25,11 @@ async fn main() -> Result<(), Failure> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let words: Vec<&str> = args.iter().map(String::as_str).collect();
     match words.as_slice() {
+        ["mac", socket, "spawn"] => spawn(Path::new(socket)).await,
         ["mac", socket, action] => mac(Path::new(socket), action).await,
         ["device", key, "pair", core, code] => pair(Path::new(key), core, code).await,
         ["device", key, "sessions", core] => sessions(Path::new(key), core).await,
-        _ => Err("usage: remote mac <socket> on|off|code|allow|status | remote device <key-file> pair <core-id> <code> | remote device <key-file> sessions <core-id>".into()),
+        _ => Err("usage: remote mac <socket> on|off|code|allow|status|spawn | remote device <key-file> pair <core-id> <code> | remote device <key-file> sessions <core-id>".into()),
     }
 }
 
@@ -48,6 +50,22 @@ async fn mac(socket: &Path, action: &str) -> Result<(), Failure> {
         other => return Err(format!("unknown action {other}").into()),
     };
     println!("{}", serde_json::to_string_pretty(&status)?);
+    Ok(())
+}
+
+async fn spawn(socket: &Path) -> Result<(), Failure> {
+    let (client, _events) = CoreClient::connect(socket).await?;
+    let launch = LaunchIdentity {
+        version: env!("CARGO_PKG_VERSION").into(),
+        ..LaunchIdentity::default()
+    };
+    let terminal = SpawnTarget::Terminal(TerminalSpawn {
+        cols: 80,
+        rows: 24,
+        cwd: Some(std::env::temp_dir().to_string_lossy().into_owned()),
+        ..TerminalSpawn::default()
+    });
+    println!("terminal {}", client.spawn(launch, terminal).await?);
     Ok(())
 }
 
