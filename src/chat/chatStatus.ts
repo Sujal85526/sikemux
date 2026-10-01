@@ -1,10 +1,6 @@
 import type { Agent, AgentBackendState } from "../state/types";
 import type { ChatState } from "./types";
 
-/* A session that drops comes back on its own. The waits grow so an agent that
-   cannot come back stops trying and hands the decision over. */
-export const RECONNECT_DELAYS = [700, 2_000, 5_000, 12_000];
-
 export function permissionModeOf(agent: Agent) {
     return agent.permissionMode ?? (agent.skipPermissions ? "bypass" : "workspace-write");
 }
@@ -59,14 +55,14 @@ export function activityText(
 
 export function composerPlaceholder(
     state: Pick<ChatState, "connection" | "running">,
-    { reconnecting, disconnected }: { reconnecting: boolean; disconnected: boolean },
+    { resuming, disconnected }: { resuming: boolean; disconnected: boolean },
 ): string {
     return state.connection === "ready"
         ? state.running
             ? "Send to queue behind the running turn"
             : "Ask about this project, or type / for commands"
-        : reconnecting
-          ? "Reconnecting — this message sends as soon as the session is back"
+        : resuming
+          ? "Resuming — this message sends as soon as the session is back"
           : disconnected
             ? "Reconnect to continue this conversation"
             : state.connection === "installing"

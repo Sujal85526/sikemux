@@ -1146,31 +1146,112 @@ describe("AgentChatPane", () => {
         expect(document.querySelector(".chat-tool-spinner")).toBeNull();
     });
 
-    it("shows adapter progress and starts a failed adapter again on its own", async () => {
+    it("shows adapter progress and waits to be asked before starting a failed adapter again", async () => {
         render(<AgentChatPane agent={agent} cwd="/repo" active profile={undefined} onBusyChange={() => {}} />);
         await waitFor(() => expect(mocks.eventListener).not.toBeNull());
 
         emit("status", { state: "installing" });
         expect(screen.getAllByText("Installing structured-session adapter…")[0]).toBeInTheDocument();
+        emit("status", { state: "error", reason: "failed", message: "adapter failed" });
         emit("error", { message: "adapter failed" });
-        const callsBeforeRetry = mocks.start.mock.calls.length;
-        expect(screen.getAllByText("Reconnecting…")[0]).toBeInTheDocument();
+        expect(screen.getByText("Structured session unavailable.")).toBeInTheDocument();
+        expect(mocks.start).toHaveBeenCalledTimes(1);
 
-        await waitFor(() => expect(mocks.start.mock.calls.length).toBeGreaterThan(callsBeforeRetry), { timeout: 3_000 });
+        fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
+        await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(2));
     });
 
-    it("sends a message written while the session is down once it is back", async () => {
-        render(<AgentChatPane agent={agent} cwd="/repo" active visible profile={undefined} onBusyChange={() => {}} />);
-        await waitFor(() => expect(mocks.eventListener).not.toBeNull());
-        emit("ready", { capabilities: {}, setup: {} });
-        emit("status", { state: "stopped" });
+    describe("an agent that dies under the chat", () => {
+        const saved = { ...agent, resumeId: "session-1" };
 
-        const editor = screen.getByRole("textbox", { name: "Message agent" });
-        fireEvent.change(editor, { target: { value: "carry on" } });
-        fireEvent.keyDown(editor, { key: "Enter" });
-        expect(mocks.prompt).not.toHaveBeenCalled();
+        async function openReady(chatAgent: Agent) {
+            render(<AgentChatPane agent={chatAgent} cwd="/repo" active visible profile={undefined} onBusyChange={() => {}} />);
+            await waitFor(() => expect(mocks.eventListener).not.toBeNull());
+            await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(1));
+            emit("ready", { capabilities: {}, setup: {} });
+        }
 
-        await waitFor(() => expect(mocks.prompt).toHaveBeenCalledWith(agent.id, "carry on", []), { timeout: 3_000 });
+        it("resumes on its saved session and says so quietly", async () => {
+            let resumed!: () => void;
+            mocks.start.mockImplementationOnce(async () => ({ sessionId: "session-1", capabilities: {}, setup: {} }));
+            mocks.start.mockImplementationOnce(
+                () =>
+                    new Promise((resolve) => {
+                        resumed = () => resolve({ sessionId: "session-1", capabilities: {}, setup: {} });
+                    }),
+            );
+            await openReady(saved);
+            emit("status", { state: "stopped", reason: "exited" });
+
+            await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(2));
+            expect(mocks.start).toHaveBeenLastCalledWith(expect.objectContaining({ resumeId: "session-1" }));
+            expect(screen.getByText("Resuming…")).toBeInTheDocument();
+            expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+            await act(async () => resumed());
+            await waitFor(() => expect(screen.queryByText("Resuming…")).not.toBeInTheDocument());
+        });
+
+        it("never resumes a stop that was asked for", async () => {
+            await openReady(saved);
+            emit("status", { state: "stopped", reason: "requested" });
+            await act(async () => {});
+            expect(mocks.start).toHaveBeenCalledTimes(1);
+            expect(screen.queryByText("Resuming…")).not.toBeInTheDocument();
+        });
+
+        it("gives up on a second death soon after, with the detail and a retry", async () => {
+            await openReady(saved);
+            emit("status", { state: "stopped", reason: "exited" });
+            await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(2));
+            await waitFor(() => expect(screen.queryByText("Resuming…")).not.toBeInTheDocument());
+
+            emit("status", { state: "error", reason: "exited", message: "Process exited with 1: out of memory" });
+            expect(screen.getByText("Couldn't resume this chat")).toBeInTheDocument();
+            expect(screen.getByText("Process exited with 1: out of memory")).toHaveClass("chat-recovery-detail");
+            await act(async () => {});
+            expect(mocks.start).toHaveBeenCalledTimes(2);
+
+            fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+            await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(3));
+            expect(mocks.start).toHaveBeenLastCalledWith(expect.objectContaining({ resumeId: "session-1" }));
+        });
+
+        it("gives up when the resume itself fails to start", async () => {
+            mocks.start.mockImplementationOnce(async () => ({ sessionId: "session-1", capabilities: {}, setup: {} }));
+            mocks.start.mockImplementationOnce(async () => {
+                throw new Error("session not found");
+            });
+            await openReady(saved);
+            emit("status", { state: "stopped", reason: "exited" });
+
+            expect(await screen.findByText("Couldn't resume this chat")).toBeInTheDocument();
+            expect(screen.getByText("session not found")).toBeInTheDocument();
+            expect(mocks.start).toHaveBeenCalledTimes(2);
+        });
+
+        it("cannot resume a chat with no saved session, and retries with a fresh one", async () => {
+            await openReady(agent);
+            emit("status", { state: "stopped", reason: "exited" });
+            expect(screen.getByText("Couldn't resume this chat")).toBeInTheDocument();
+            await act(async () => {});
+            expect(mocks.start).toHaveBeenCalledTimes(1);
+
+            fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+            await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(2));
+            expect(mocks.start).toHaveBeenLastCalledWith(expect.objectContaining({ resumeId: undefined }));
+        });
+
+        it("sends a message written while it resumes once it is back", async () => {
+            await openReady(saved);
+            emit("status", { state: "stopped", reason: "exited" });
+
+            const editor = screen.getByRole("textbox", { name: "Message agent" });
+            fireEvent.change(editor, { target: { value: "carry on" } });
+            fireEvent.keyDown(editor, { key: "Enter" });
+
+            await waitFor(() => expect(mocks.prompt).toHaveBeenCalledWith(agent.id, "carry on", []));
+        });
     });
 
     it("shows permission requests even when the adapter omits the optional tool title", async () => {

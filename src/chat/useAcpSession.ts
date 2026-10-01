@@ -4,7 +4,8 @@ import type { Agent, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
 import type { FoldMemory } from "./longText";
 import { eventMessage, permissionRequest, recordOf, statusFromEvent } from "./acpEvents";
-import { permissionModeOf, RECONNECT_DELAYS } from "./chatStatus";
+import { permissionModeOf } from "./chatStatus";
+import { afterSessionEnd, sessionEndOf, type Recovery } from "./sessionRecovery";
 import type { ChatAction, ChatState } from "./types";
 
 const UPDATE_FLUSH_FALLBACK_MS = 250;
@@ -29,7 +30,9 @@ export function useAcpSession({
     onError: (message: string | null) => void;
 }) {
     const [restartKey, setRestartKey] = useState(0);
-    const [reconnectAttempt, setReconnectAttempt] = useState(0);
+    const [recovery, setRecovery] = useState<Recovery | null>(null);
+    const recoveryRef = useRef<Recovery | null>(null);
+    const lastResumeAtRef = useRef<number | null>(null);
     const queuedUpdatesRef = useRef<[string, Record<string, unknown>][]>([]);
     const updateFrameRef = useRef<number | null>(null);
     const updateTimerRef = useRef<number | null>(null);
@@ -42,27 +45,20 @@ export function useAcpSession({
     const environmentKeys = JSON.stringify(profile?.environmentKeys ?? []);
     const permissionMode = permissionModeOf(agent);
 
-    /* A session drops when its adapter exits — a rate limit, a crash, a laptop
-       waking up. It resumes itself so the conversation is there to carry on
-       with, and only asks once the waits have run out. */
-    useEffect(() => {
-        if (connection === "ready") setReconnectAttempt(0);
-    }, [connection]);
-
-    useEffect(() => {
-        const dropped = connection === "error" || connection === "stopped";
-        if (!active || !dropped || reconnectAttempt >= RECONNECT_DELAYS.length) return;
-        const timer = window.setTimeout(() => {
-            setReconnectAttempt((value) => value + 1);
-            setRestartKey((value) => value + 1);
-        }, RECONNECT_DELAYS[reconnectAttempt]);
-        return () => window.clearTimeout(timer);
-    }, [active, reconnectAttempt, connection]);
-
-    const reconnect = useCallback(() => {
-        setReconnectAttempt(0);
-        setRestartKey((value) => value + 1);
+    const updateRecovery = useCallback((next: Recovery | null) => {
+        recoveryRef.current = next;
+        setRecovery(next);
     }, []);
+
+    useEffect(() => {
+        if (connection === "ready") updateRecovery(null);
+    }, [connection, updateRecovery]);
+
+    const retry = useCallback(() => {
+        lastResumeAtRef.current = Date.now();
+        updateRecovery(agentRef.current.resumeId ? { phase: "resuming" } : null);
+        setRestartKey((value) => value + 1);
+    }, [updateRecovery]);
 
     useEffect(() => {
         if (!active) return;
@@ -100,11 +96,35 @@ export function useAcpSession({
             if (!document.hidden && updateFrameRef.current === null) updateFrameRef.current = window.requestAnimationFrame(flushUpdates);
         };
 
+        /* An agent that dies under the chat — a crash, a rate limit, a laptop
+           waking up — comes back on its saved session. */
+        const noteEnd = (event: AcpEvent) => {
+            const end = sessionEndOf(event);
+            if (!end) return;
+            const now = Date.now();
+            const next = afterSessionEnd({
+                end,
+                resumeId: agentRef.current.resumeId,
+                resuming: recoveryRef.current?.phase === "resuming",
+                lastResumeAt: lastResumeAtRef.current,
+                now,
+            });
+            if (next === "resume") {
+                lastResumeAtRef.current = now;
+                updateRecovery({ phase: "resuming" });
+                setRestartKey((value) => value + 1);
+            } else if (next === "give-up") {
+                updateRecovery({ phase: "failed", detail: typeof event.payload.message === "string" ? event.payload.message : null });
+            }
+        };
+
         const handleEvent = (event: AcpEvent) => {
             if (!mounted || event.agentId !== agent.id) return;
             if (event.kind !== "session_update") flushUpdates();
-            if (event.kind === "status") dispatch({ type: "status", state: statusFromEvent(event) });
-            else if (event.kind === "ready") {
+            if (event.kind === "status") {
+                dispatch({ type: "status", state: statusFromEvent(event) });
+                noteEnd(event);
+            } else if (event.kind === "ready") {
                 dispatch({
                     type: "ready",
                     capabilities: recordOf(event.payload.capabilities) ?? {},
@@ -163,7 +183,9 @@ export function useAcpSession({
             })
             .catch((error: unknown) => {
                 if (!controller.signal.aborted && mounted) {
-                    dispatch({ type: "error", message: error instanceof Error ? error.message : String(error) });
+                    const message = error instanceof Error ? error.message : String(error);
+                    dispatch({ type: "error", message });
+                    if (recoveryRef.current?.phase === "resuming") updateRecovery({ phase: "failed", detail: message });
                 }
             });
 
@@ -192,6 +214,7 @@ export function useAcpSession({
         restartKey,
         foldMemory,
         dispatch,
+        updateRecovery,
     ]);
 
     useEffect(() => {
@@ -221,5 +244,5 @@ export function useAcpSession({
             });
     }, [agent.id, connection, permissionMode, appliedPermissionMode, changingPermissions, onError]);
 
-    return { agentRef, sessionIdRef, reconnectAttempt, reconnect, changingPermissions, appliedPermissionMode, permissionMode };
+    return { agentRef, sessionIdRef, recovery, retry, changingPermissions, appliedPermissionMode, permissionMode };
 }

@@ -88,7 +88,7 @@ describe("activityText", () => {
 });
 
 describe("composerPlaceholder", () => {
-    const quiet = { reconnecting: false, disconnected: false };
+    const quiet = { resuming: false, disconnected: false };
 
     it("invites a prompt, or a queued one mid-turn, when ready", () => {
         expect(composerPlaceholder({ connection: "ready", running: false }, quiet)).toBe("Ask about this project, or type / for commands");
@@ -96,10 +96,10 @@ describe("composerPlaceholder", () => {
     });
 
     it("explains a dropped session", () => {
-        expect(composerPlaceholder({ connection: "error", running: false }, { reconnecting: true, disconnected: true })).toBe(
-            "Reconnecting — this message sends as soon as the session is back",
+        expect(composerPlaceholder({ connection: "error", running: false }, { resuming: true, disconnected: true })).toBe(
+            "Resuming — this message sends as soon as the session is back",
         );
-        expect(composerPlaceholder({ connection: "stopped", running: false }, { reconnecting: false, disconnected: true })).toBe(
+        expect(composerPlaceholder({ connection: "stopped", running: false }, { resuming: false, disconnected: true })).toBe(
             "Reconnect to continue this conversation",
         );
     });

@@ -15,7 +15,7 @@ import { FoldMemoryContext, newFoldMemory } from "./longText";
 import { sentPrompts } from "./promptHistory";
 import { activeToolLabel } from "./toolLabels";
 import { formatDetail, runningSubagents } from "./transcript";
-import { activityText, backendState, composerPlaceholder as placeholderFor, connectingLabel, knownEffort, RECONNECT_DELAYS } from "./chatStatus";
+import { activityText, backendState, composerPlaceholder as placeholderFor, connectingLabel, knownEffort } from "./chatStatus";
 import { ChatAgentContext } from "./chatAgent";
 import { ChatMessageRow } from "./ChatMessageRow";
 import { ChatActivity } from "./ChatActivity";
@@ -100,7 +100,7 @@ export function AgentChatPane({
 
     useEffect(() => onBusyChange(state.running), [onBusyChange, state.running]);
 
-    const { agentRef, sessionIdRef, reconnectAttempt, reconnect, changingPermissions, appliedPermissionMode, permissionMode } = useAcpSession({
+    const { agentRef, sessionIdRef, recovery, retry, changingPermissions, appliedPermissionMode, permissionMode } = useAcpSession({
         active,
         agent,
         profile,
@@ -222,9 +222,10 @@ export function AgentChatPane({
     const subagents = useMemo(() => runningSubagents(displayState.messages), [displayState.messages]);
     const plan = useMemo(() => (displayState.plan === null ? null : formatDetail(displayState.plan)), [displayState.plan]);
     const connecting = connectingLabel(displayState.connection);
-    const activity = activityText(displayState, activeTool);
+    const activity = recovery === null ? activityText(displayState, activeTool) : null;
     const disconnected = displayState.connection === "error" || displayState.connection === "stopped";
-    const reconnecting = disconnected && reconnectAttempt < RECONNECT_DELAYS.length;
+    const resuming = recovery?.phase === "resuming";
+    const failure = recovery?.phase === "failed" ? recovery : null;
     const welcoming = displayState.messages.length === 0 && displayState.connection === "ready";
     const startNewChat = () =>
         cmd.addAgent(agent.type, undefined, undefined, {
@@ -234,7 +235,20 @@ export function AgentChatPane({
             cwd,
         });
     const chatAgent = useMemo(() => ({ id: agent.id, type: agent.type }), [agent.id, agent.type]);
-    const composerPlaceholder = placeholderFor(state, { reconnecting, disconnected });
+    const composerPlaceholder = placeholderFor(state, { resuming, disconnected });
+    const sessionActions = (
+        <div className="chat-connection-actions">
+            <button type="button" onClick={retry}>
+                {failure ? "Retry" : "Reconnect"}
+            </button>
+            {agent.resumeId && (
+                <button type="button" onClick={startNewChat}>
+                    Start new chat
+                </button>
+            )}
+        </div>
+    );
+    const failureDetail = failure?.detail && <span className="chat-recovery-detail">{failure.detail}</span>;
 
     return (
         <PathRootsProvider cwd={cwd} home={home} agentId={chatAgent.id}>
@@ -268,25 +282,17 @@ export function AgentChatPane({
                             {welcoming && <ChatWelcome cwd={cwd} agentType={agent.type} />}
                             {displayState.messages.length === 0 && !welcoming && (
                                 <div className={`chat-connection-state ${displayState.connection}`} role="status">
-                                    {(connecting || reconnecting) && <span className="chat-activity-loader" aria-hidden="true" />}
+                                    {(connecting || resuming) && <span className="chat-activity-loader" aria-hidden="true" />}
                                     <span>
-                                        {reconnecting
-                                            ? "Reconnecting…"
-                                            : (connecting ??
-                                              (displayState.connection === "error" ? "Structured session unavailable." : "Agent session stopped."))}
+                                        {resuming
+                                            ? "Resuming…"
+                                            : failure
+                                              ? "Couldn't resume this chat"
+                                              : (connecting ??
+                                                (displayState.connection === "error" ? "Structured session unavailable." : "Agent session stopped."))}
                                     </span>
-                                    {disconnected && !reconnecting && (
-                                        <div className="chat-connection-actions">
-                                            <button type="button" onClick={reconnect}>
-                                                Reconnect
-                                            </button>
-                                            {agent.resumeId && (
-                                                <button type="button" onClick={startNewChat}>
-                                                    Start new chat
-                                                </button>
-                                            )}
-                                        </div>
-                                    )}
+                                    {failureDetail}
+                                    {disconnected && !resuming && sessionActions}
                                 </div>
                             )}
                             <FoldMemoryContext value={foldMemory}>
@@ -328,28 +334,18 @@ export function AgentChatPane({
                                     onReply={(optionId) => void replyPermission(request.requestId, optionId)}
                                 />
                             ))}
-                            {displayState.error && (
+                            {displayState.error && recovery === null && (
                                 <div className="chat-error" role="alert">
                                     <IconWarning size={14} />
                                     <span>{displayState.error}</span>
                                 </div>
                             )}
-                            {displayState.messages.length > 0 && disconnected && (
+                            {displayState.messages.length > 0 && (resuming || disconnected) && (
                                 <div className="chat-reconnect" role="status">
-                                    {reconnecting ? <span className="chat-activity-loader" aria-hidden="true" /> : <IconPlug size={13} />}
-                                    <span>{reconnecting ? "Reconnecting…" : "This session dropped."}</span>
-                                    {!reconnecting && (
-                                        <div className="chat-connection-actions">
-                                            <button type="button" onClick={reconnect}>
-                                                Reconnect
-                                            </button>
-                                            {agent.resumeId && (
-                                                <button type="button" onClick={startNewChat}>
-                                                    Start new chat
-                                                </button>
-                                            )}
-                                        </div>
-                                    )}
+                                    {resuming ? <span className="chat-activity-loader" aria-hidden="true" /> : <IconPlug size={13} />}
+                                    <span>{resuming ? "Resuming…" : failure ? "Couldn't resume this chat" : "This session dropped."}</span>
+                                    {failureDetail}
+                                    {!resuming && sessionActions}
                                 </div>
                             )}
                         </div>

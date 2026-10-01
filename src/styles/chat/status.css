@@ -175,6 +175,20 @@
     font-size: var(--text-2xs);
 }
 
+.chat-recovery-detail {
+    flex-basis: 100%;
+    max-width: 100%;
+    max-height: 9em;
+    overflow: auto;
+    color: var(--ink-dim);
+    font-family: var(--mono);
+    text-align: center;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+    user-select: text;
+    cursor: text;
+}
+
 .chat-error {
     display: flex;
     align-items: center;
