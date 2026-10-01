@@ -239,6 +239,8 @@ function send(response: ServerResponse, status: number, value: unknown) {
   response.end(JSON.stringify(value));
 }
 
+let chosenWallpaper: Buffer | null = null;
+
 let snapshotBrowser: Promise<Browser> | null = null;
 
 async function snapshot(
@@ -297,9 +299,14 @@ function demoFileSystem(): PluginOption {
           response.setHeader("Content-Type", "image/jpeg");
           return response.end(readFileSync(PANE_IMAGE_FILE));
         }
-        if (request.url === "/wallpaper") {
-          response.setHeader("Content-Type", "image/png");
-          return response.end(readFileSync(WALLPAPER_FILE));
+        if (request.url?.split("?")[0] === "/wallpaper") {
+          if (request.method === "POST") {
+            const chunks: Buffer[] = [];
+            for await (const chunk of request) chunks.push(chunk as Buffer);
+            chosenWallpaper = Buffer.concat(chunks);
+            return response.end();
+          }
+          return response.end(chosenWallpaper ?? readFileSync(WALLPAPER_FILE));
         }
         try {
           const input = await body(request);

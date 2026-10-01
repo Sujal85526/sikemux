@@ -25,10 +25,15 @@
           0 8px 24px rgba(0, 0, 0, 0.35);
       }
 
-      button {
+      .controls {
         position: fixed;
         right: 16px;
         bottom: 14px;
+        display: flex;
+        gap: 8px;
+      }
+
+      button {
         padding: 6px 12px;
         border: 1px solid rgba(255, 255, 255, 0.18);
         border-radius: 6px;
@@ -38,16 +43,37 @@
         cursor: pointer;
       }
 
-      .is-capturing button {
+      input {
+        display: none;
+      }
+
+      .is-capturing .controls {
         visibility: hidden;
       }
     </style>
   </head>
   <body>
     <iframe src="/showcase/?play" title="Sikemux"></iframe>
-    <button type="button">Download</button>
+    <div class="controls">
+      <button type="button" class="wallpaper">Wallpaper</button>
+      <button type="button" class="download">Download</button>
+      <input type="file" accept="image/*" />
+    </div>
     <script type="module">
-      const button = document.querySelector("button");
+      const button = document.querySelector(".download");
+      const picker = document.querySelector("input");
+
+      // The server keeps the picture, so its own Chrome paints the same wallpaper into each download.
+      document.querySelector(".wallpaper").addEventListener("click", () =>
+        picker.click(),
+      );
+      picker.addEventListener("change", async () => {
+        const [file] = picker.files;
+        if (!file) return;
+        await fetch("/__showcase/wallpaper", { method: "POST", body: file });
+        document.body.style.backgroundImage = `url("/__showcase/wallpaper?v=${Date.now()}")`;
+        picker.value = "";
+      });
       const app = document.querySelector("iframe").contentWindow;
 
       // A page cannot screenshot itself, so the showcase server renders this view in its own Chrome.
