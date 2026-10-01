@@ -18,3 +18,43 @@ export function SettingsSection({ title, meta, sub, children }: { title: ReactNo
         </section>
     );
 }
+
+export function SettingsRows({ children }: { children: ReactNode }) {
+    return <div className="settings-rows">{children}</div>;
+}
+
+/**
+ * The shape every labelled setting takes: a name, an optional line of help, and
+ * one control. Pass `asLabel` when the control is a switch or checkbox, so the
+ * whole row is clickable; `wide` when the control should fill the right column.
+ */
+export function SettingsRow({
+    label,
+    desc,
+    wide = false,
+    stack = false,
+    asLabel = false,
+    control,
+    children,
+}: {
+    label: ReactNode;
+    desc?: ReactNode;
+    wide?: boolean;
+    stack?: boolean;
+    asLabel?: boolean;
+    control?: ReactNode;
+    children?: ReactNode;
+}) {
+    const Tag = asLabel ? "label" : "div";
+    return (
+        <Tag
+            className={`settings-row${wide ? " wide" : ""}${stack ? " stack" : ""}`}
+            data-settings-target={typeof label === "string" ? label : undefined}>
+            <span className="settings-row-copy">
+                <span className="settings-row-label">{label}</span>
+                {desc && <span className="settings-row-desc">{desc}</span>}
+            </span>
+            <span className="settings-row-control">{control ?? children}</span>
+        </Tag>
+    );
+}

@@ -256,6 +256,8 @@ html.is-transparent
         .custom-command-list,
         .cli-paths,
         .cli-usage,
+        .pairing-code,
+        .pairing-request,
         .provider-profile-layout,
         .provider-profile-editor,
         .theme-editor,

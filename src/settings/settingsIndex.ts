@@ -1,10 +1,11 @@
 import { IS_MACOS } from "../lib/platform";
 
-export type SettingsPageId = "general" | "appearance" | "keybindings" | "activity" | "about" | "agents" | "actions" | "cli" | "cloud" | "plugins";
+export type SettingsPageId =
+    "general" | "appearance" | "keybindings" | "activity" | "about" | "agents" | "actions" | "cli" | "devices" | "cloud" | "plugins";
 
 export const SETTINGS_GROUPS: { label: string; pages: SettingsPageId[] }[] = [
     { label: "App", pages: ["general", "appearance", "keybindings", "activity", "about"] },
-    { label: "Tools", pages: ["agents", "actions", "cli", "cloud", "plugins"] },
+    { label: "Tools", pages: ["agents", "actions", "cli", "devices", "cloud", "plugins"] },
 ];
 
 export const SETTINGS_PAGE_ORDER: SettingsPageId[] = SETTINGS_GROUPS.flatMap((group) => group.pages);
@@ -18,6 +19,7 @@ export const SETTINGS_PAGE_NAMES: Record<SettingsPageId, string> = {
     agents: "Agents",
     actions: "Actions",
     cli: "Command line",
+    devices: "Devices",
     cloud: "Cloud",
     plugins: "Plugins",
 };
@@ -114,6 +116,11 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
 
     section("cli", "Shell integration", "install terminal path sikemux-editor"),
     section("cli", "Usage", "editor git commit open"),
+
+    section("devices", "Remote access", "phone mobile iphone android remote away connect"),
+    row("devices", "Remote access", "Allow paired devices", "phone mobile remote enable turn on off background"),
+    section("devices", "Pair a device", "phone mobile code pairing add connect"),
+    section("devices", "Paired devices", "phone mobile revoke remove forget access watch"),
 
     section("cloud", "Single sign-on", "sso aws gcp login"),
     row("cloud", "Single sign-on", "Browser app", "chrome safari firefox arc"),

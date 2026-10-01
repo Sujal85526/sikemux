@@ -29,6 +29,7 @@ mod ports;
 mod preview;
 mod pty;
 mod release_credits;
+mod remote;
 mod search;
 mod settings;
 mod ssh;
@@ -257,6 +258,13 @@ pub fn run() {
             pty::commands::pty_kill,
             ports::listening_ports,
             pty::commands::pty_sessions,
+            remote::remote_status,
+            remote::remote_set_enabled,
+            remote::remote_set_device_access,
+            remote::remote_revoke_device,
+            remote::remote_open_pairing,
+            remote::remote_close_pairing,
+            remote::remote_answer_pairing,
             pty::commands::task_watch,
             pty::commands::app_quit_and_stop_everything,
             pty::commands::agent_detection_explain,

@@ -204,6 +204,12 @@ export const IconPlug = makeSvgIcon(
         <path d="M8 11v2.8" />
     </>,
 );
+export const IconPhone = makeSvgIcon(
+    <>
+        <rect x="4.6" y="1.8" width="6.8" height="12.4" rx="1.6" />
+        <path d="M7.2 11.8h1.6" />
+    </>,
+);
 export const IconLock = makeSvgIcon(
     <>
         <rect x="3.5" y="7" width="9" height="6.5" rx="1.5" />
