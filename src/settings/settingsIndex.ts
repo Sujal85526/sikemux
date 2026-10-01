@@ -92,6 +92,11 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     row("agents", "Provider profiles", "Profile directory", "config account home"),
     row("agents", "Provider profiles", "Claude default", "profile"),
     row("agents", "Provider profiles", "Codex default", "profile"),
+    section(
+        "agents",
+        "Model providers",
+        "openrouter baseten together fireworks groq cerebras deepseek moonshot kimi mistral vercel api key hosted open models opencode pi omp",
+    ),
     section("agents", "Sessions"),
     row("agents", "Sessions", "Restore agent tabs", "resume reopen startup"),
     row("agents", "Sessions", "Notify when an agent needs you", "notification alert badge dock permission finished"),

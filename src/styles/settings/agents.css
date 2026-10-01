@@ -154,3 +154,16 @@
 .provider-profile-editor .settings-row.wide {
     grid-template-columns: minmax(0, 1fr) minmax(0, 220px);
 }
+
+.model-provider-key {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+}
+.model-provider-key .settings-input {
+    flex: 1 1 auto;
+}
+.model-provider-failure {
+    color: var(--danger);
+}

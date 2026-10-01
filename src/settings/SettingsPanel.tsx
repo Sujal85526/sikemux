@@ -65,6 +65,7 @@ import { useBuiltPlugins } from "../plugins/enabled";
 import { frontendPlugin, pluginSurface } from "../plugins/registry";
 import { ActivityPage } from "../shell/ActivityPage";
 import { DevicesPage } from "./DevicesPage";
+import { ModelProvidersSection } from "./ModelProvidersSection";
 import { SettingsPage, SettingsRow, SettingsRows, SettingsSection } from "./SettingsLayout";
 import { useVoice, type VoiceState } from "../voice/dictation";
 import "../styles/settings.css";
@@ -534,7 +535,7 @@ function AgentsPage() {
             <SettingsSection
                 title="Provider profiles"
                 meta={`${profiles.length} configured`}
-                sub="Which local executable a launch uses. Credentials are never saved by Sikemux.">
+                sub="Which local executable a launch uses. Profiles never hold credentials.">
                 <div className="provider-profile-layout">
                     <div className="provider-profile-list">
                         {profiles.map((profile) => (
@@ -650,6 +651,8 @@ function AgentsPage() {
                     ))}
                 </SettingsRows>
             </SettingsSection>
+
+            <ModelProvidersSection />
 
             <SettingsSection title="Sessions">
                 <SettingsRows>
