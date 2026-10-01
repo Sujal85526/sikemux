@@ -1,7 +1,16 @@
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import "./showcase.css";
+import { PANE_IMAGE } from "./world/projects";
 
 mockWindows("main");
+Object.assign(
+  (window as unknown as { __SHOWCASE_TAURI_INTERNALS__: object })
+    .__SHOWCASE_TAURI_INTERNALS__,
+  {
+    convertFileSrc: (path: string, protocol: string) =>
+      `/__showcase/${protocol}/${encodeURIComponent(path)}`,
+  },
+);
 mockIPC(
   (command) => {
     if (command === "plugin:app|version") return "0.4.2";
@@ -23,6 +32,7 @@ const [commands, store, gitWorkbench, git] = await Promise.all([
   import("../src/state/gitWorkbench"),
   import("./world/git"),
 ]);
+store.useStore.setState({ paneImage: PANE_IMAGE });
 for (const [repo, draft] of Object.entries(git.COMMIT_DRAFT)) {
   gitWorkbench.setGitDraft(repo, draft);
 }

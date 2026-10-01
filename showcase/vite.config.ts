@@ -6,13 +6,18 @@ import { createInterface } from "node:readline";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { mergeConfig, type PluginOption } from "vite";
 import base from "../vite.config.ts";
-import { DEMO_PROJECTS } from "./world/projects.ts";
+import { DEMO_PROJECTS, PANE_IMAGE } from "./world/projects.ts";
 
 const LOCAL_ROOTS: Record<string, string> = {
   sikemux: resolve(import.meta.dirname, ".."),
   "sikemux-front": join(homedir(), "projects/personal/sikemux-front"),
   "moodboard-studio": join(homedir(), "projects/personal/moodboard-studio"),
 };
+
+const PANE_IMAGE_FILE = join(
+  homedir(),
+  "wallpaper/old/jinx-graffiti-5120x2880-19975.jpg",
+);
 
 const MAX_FILE_BYTES = 400_000;
 const HIDDEN_FOLDERS = new Set([
@@ -234,6 +239,10 @@ function demoFileSystem(): PluginOption {
     configureServer(server) {
       server.httpServer?.on("close", () => markdownParser?.stop());
       server.middlewares.use("/__showcase", async (request, response) => {
+        if (request.url === `/preview/${encodeURIComponent(PANE_IMAGE)}`) {
+          response.setHeader("Content-Type", "image/jpeg");
+          return response.end(readFileSync(PANE_IMAGE_FILE));
+        }
         try {
           const input = await body(request);
           switch (request.url) {

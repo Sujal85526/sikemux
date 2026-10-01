@@ -24,7 +24,12 @@ import {
   brunoDir,
 } from "./world/bruno";
 import { BROWSER_TABS, placeBrowserPage } from "./browserPage";
-import { DEMO_HOME, DEMO_PROJECTS, SIKEMUX } from "./world/projects";
+import {
+  DEMO_HOME,
+  DEMO_PROJECTS,
+  PANE_IMAGE,
+  SIKEMUX,
+} from "./world/projects";
 import { terminalReplay } from "./world/terminals";
 import { demoSnapshot } from "./world/workspace";
 
@@ -218,6 +223,9 @@ export class ShowcaseBackend implements IpcTransport {
       (path as string).startsWith(BRUNO_COLLECTION)
         ? brunoDir(path as string)
         : [],
+    );
+    this.on("preview_file", ({ path }) =>
+      path === PANE_IMAGE ? { mime: "image/jpeg", size: 0, modified: 0 } : null,
     );
     this.on("read_file_versioned", async ({ path }) => ({
       content: await server<string>("read_file", { path }),
