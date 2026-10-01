@@ -447,6 +447,26 @@ describe("AgentChatPane", () => {
         expect(acpApi.cancel).not.toHaveBeenCalled();
     });
 
+    it("leaves Escape pressed anywhere but the composer to whatever has focus", async () => {
+        render(
+            <>
+                <input aria-label="A form in the browser" />
+                <AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />
+            </>,
+        );
+        const editor = screen.getByRole("textbox", { name: "Message agent" });
+        await waitFor(() => expect(editor).toBeEnabled());
+        fireEvent.change(editor, { target: { value: "First" } });
+        fireEvent.keyDown(editor, { key: "Enter" });
+
+        const form = screen.getByRole("textbox", { name: "A form in the browser" });
+        form.focus();
+        fireEvent.keyDown(form, { key: "Escape" });
+        fireEvent.keyDown(window, { key: "Escape" });
+
+        expect(acpApi.cancel).not.toHaveBeenCalled();
+    });
+
     it("holds a message written mid-turn until the running turn ends", async () => {
         render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
         const editor = screen.getByRole("textbox", { name: "Message agent" });
