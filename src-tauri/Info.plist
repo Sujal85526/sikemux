@@ -16,6 +16,12 @@
       </array>
     </dict>
   </array>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>Sikemux lets the phones you pair find this Mac and reach its terminals and agents on your network.</string>
+  <key>NSBonjourServices</key>
+  <array>
+    <string>_sikemux._udp</string>
+  </array>
   <key>NSMicrophoneUsageDescription</key>
   <string>Sikemux listens while you hold right Option, so you can dictate to your agents. Speech is transcribed on this Mac.</string>
 </dict>
