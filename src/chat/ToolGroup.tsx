@@ -28,6 +28,10 @@ const foldToolBody = leavingRef<HTMLDivElement>((body) => {
     );
 });
 
+/* Rows past these arrive with the group's own fade; stepping every row would
+   keep the end of a long run hidden for seconds. */
+const STEPPED_ROWS = 8;
+
 /* Opening grows the calls in and steps them down one after another. Only a
    change of state animates: a group the list remounts on scroll just shows. */
 function useToolGroupUnfold(group: RefObject<HTMLDivElement | null>, open: boolean): void {
@@ -50,7 +54,7 @@ function useToolGroupUnfold(group: RefObject<HTMLDivElement | null>, open: boole
         const settle = () => (body.style.overflow = "");
         if (run) run.finished.then(settle, settle);
         else settle();
-        [...body.children].forEach((row, i) =>
+        [...body.children].slice(0, STEPPED_ROWS).forEach((row, i) =>
             animate(
                 row,
                 [
