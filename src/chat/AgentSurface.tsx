@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { receiveForAgent } from "../agents/agentInbox";
 import { contextAsText } from "./promptContext";
 import { dispatchPaths, resolvePathDropTarget } from "../state/dropRegistry";
@@ -19,6 +19,8 @@ import { YoloToggle } from "./YoloToggle";
 import "../styles/chat.css";
 
 type AgentView = "gui" | "tui";
+
+const WorktreeHeader = lazy(() => import("./WorktreeHeader"));
 
 function DeskButton({ agent }: { agent: Agent }) {
     const open = useStore((state) => shownDeskPaneId(state, agent.id) !== null);
@@ -119,6 +121,11 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                     </span>
                 )}
                 <AgentMenuButton agent={agent} session={session} onRename={() => setRenaming(true)} />
+                {agent.worktree && (
+                    <Suspense fallback={null}>
+                        <WorktreeHeader agentId={agent.id} worktree={agent.worktree} visible={visible} />
+                    </Suspense>
+                )}
                 {view === "tui" && cmd.agentSupportsSkipPermissions(agent.type) && <YoloToggle agent={agent} relaunches />}
                 <div className="agent-view-switch" role="group" aria-label="Agent view">
                     <button

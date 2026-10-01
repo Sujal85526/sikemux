@@ -85,3 +85,20 @@ export function pullsByBranch(pulls: readonly Pull[], repo: RepoRef): ReadonlyMa
     }
     return byBranch;
 }
+
+/** A branch's pull request: the open one when there is one, or else the newest it had. */
+export function pullForBranch(pulls: readonly Pull[], repo: RepoRef, branch: string): Pull | null {
+    const own = pulls.filter((pull) => pull.head === branch && isOwnBranch(pull, repo));
+    return own.find((pull) => pull.state === "open") ?? own[0] ?? null;
+}
+
+export function pullMerged(pull: Pick<Pull, "state" | "mergedAt"> | null): boolean {
+    return !!pull && (pull.state === "merged" || !!pull.mergedAt);
+}
+
+/** One branch's pull request in any state, once someone is signed in to its host. */
+export function useBranchPull(repo: RepoRef | null, branch: string, enabled: boolean): Pull | null {
+    const status = useResourceEnabled(enabled && !!repo, hostStatusR, repo?.provider ?? "", repo?.account ?? null);
+    const pulls = useResourceEnabled(enabled && !!repo && !!status.data?.ok, pullsR, repo ?? NO_REPO, "all");
+    return useMemo(() => (repo && pulls.data ? pullForBranch(pulls.data, repo, branch) : null), [repo, pulls.data, branch]);
+}

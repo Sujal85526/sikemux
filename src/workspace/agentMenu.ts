@@ -27,6 +27,15 @@ export function agentMenu(
         ...(agent.resumeId && agent.launchState !== "dormant"
             ? [{ label: agent.keepAlive ? "Allow Auto-Sleep" : "Keep Alive", run: () => cmd.setAgentKeepAlive(agent.id, !agent.keepAlive) }]
             : []),
+        ...(agent.worktree
+            ? [
+                  { sep: true },
+                  {
+                      label: "Remove worktree…",
+                      run: () => void import("../agents/agentWorktree").then(({ removeAgentWorktree }) => removeAgentWorktree(agent.id)),
+                  },
+              ]
+            : []),
         { sep: true },
         { label: "Close", hint: hints.close, run: () => cmd.closeAgent(agent.id) },
         { label: "Close Others", disabled: others.length === 0, run: () => others.forEach((x) => cmd.closeAgent(x.id)) },
