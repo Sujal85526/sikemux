@@ -22,6 +22,8 @@ Download the latest `.dmg` from [sikemux.com](https://sikemux.com) or [Releases]
 
 - **Projects** with a code editor, terminals, Git, and search, all in one working directory
 - **Coding agents**: Claude, Codex, Hermes, Pi and OpenCode, several at once, each with its own browser tabs, and one list of every agent and recent chat across your open projects
+- **Chats that know your work**: `@` attaches project files, `#` hands over GitHub or Bitbucket issues and pull requests, and an optional worktree gives a chat its own branch. Terminal selections, problems, logs and pull request lines can be sent to any agent
+- **Nothing stops when you quit**: terminals, agents and tasks keep running in the background and come back where they were. Quit and Stop Everything (`⌥⌘Q`) ends them
 - **Panels** for AWS, GitHub, Bitbucket, Rundeck, SigNoz and Bruno
 - **SSH** sessions, nine themes and a custom theme editor
 
@@ -62,13 +64,14 @@ EDITOR=sikemux-editor git commit
 
 ## Shortcuts
 
-| Key   | Action                        |     | Key   | Action       |
-| ----- | ----------------------------- | --- | ----- | ------------ |
-| `⌘N`  | New agent                     |     | `⌘T`  | New terminal |
-| `⌘⇧N` | Choose or resume an agent     |     | `⌘D`  | Split pane   |
-| `⌘J`  | Show or hide the agent's desk |     | `⌘P`  | Open file    |
-| `⌘O`  | Open project                  |     | `⌘⇧P` | Command deck |
-| `⌘⇧S` | Connect to an SSH host        |     | `⌘,`  | Settings     |
+| Key   | Action                        |     | Key   | Action                   |
+| ----- | ----------------------------- | --- | ----- | ------------------------ |
+| `⌘N`  | New agent                     |     | `⌘T`  | New terminal             |
+| `⌘⇧N` | Choose or resume an agent     |     | `⌘D`  | Split pane               |
+| `⌘J`  | Show or hide the agent's desk |     | `⌘P`  | Open file                |
+| `⌘O`  | Open project                  |     | `⌘⇧P` | Command deck             |
+| `⌘⇧S` | Connect to an SSH host        |     | `⌘,`  | Settings                 |
+| `⌘Q`  | Quit, leaving work running    |     | `⌥⌘Q` | Quit and Stop Everything |
 
 Settings → Keybindings lists and rebinds every shortcut.
 

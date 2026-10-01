@@ -4,7 +4,7 @@ Thanks for taking the time to contribute. Sikemux is a Tauri + Rust + React desk
 
 ## Getting started
 
-**Prerequisites:** [Rust](https://www.rust-lang.org/tools/install) (stable), Node.js 22+, and pnpm 10.33.0 (the version pinned in `package.json`). macOS bundles require Xcode; Windows development requires Microsoft C++ Build Tools and WebView2. Published releases target Apple Silicon. Windows is not a current target and CI no longer builds or tests it, so the NSIS installer is best-effort and only as good as the last manual `pnpm build:windows` on a Windows machine.
+**Prerequisites:** [Rust](https://www.rust-lang.org/tools/install) (stable), Node.js 22+, and pnpm 10.33.0 (the version pinned in `package.json`). macOS bundles require Xcode; Windows development requires Microsoft C++ Build Tools and WebView2. Published releases target Apple Silicon. Windows is not a current target: the background core that owns terminals and agents is Unix-only, so the app no longer builds there and `pnpm build:windows` does not work.
 
 ```bash
 git clone git@github.com:nodelike/sikemux.git
@@ -18,22 +18,26 @@ are about to push. Install it by hand in an existing clone with `make hooks`.
 
 ## Project layout
 
-| Path                  | What lives there                                                           |
-| --------------------- | -------------------------------------------------------------------------- |
-| `src/`                | React UI: components, Zustand state, editor, terminal, themes, keymap      |
-| `src/state/commands/` | Every action that changes app state, one module per area                   |
-| `src/api/`            | Thin wrappers over Tauri `invoke` commands                                 |
-| `src/plugin-api/`     | The only part of the app a plugin's frontend may import                    |
-| `src/plugins/`        | Plugin frontends (AWS, Bitbucket, Bruno, GitHub, Rundeck, SigNoz)          |
-| `src-tauri/src/`      | Rust core: PTY, git, LSP, file watchers, browser tabs, agents, diagnostics |
-| `src-tauri/crates/`   | Shared Rust crates: plugin API, process runner, keychain, markdown         |
-| `src-tauri/plugins/`  | Plugin backends, one crate per plugin behind a Cargo feature               |
-| `browser/`            | Agent tool declarations (`tools.json`) and the guide agents read           |
-| `showcase/`           | Demo data and scenes for README and site screenshots                       |
-| `scripts/`            | Code generators, CI checks, icon pipeline and release tooling              |
-| `docs/architecture/`  | How the app fits together, and the decisions behind it                     |
+| Path                  | What lives there                                                                                             |
+| --------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `src/`                | React UI: components, Zustand state, editor, terminal, themes, keymap                                        |
+| `src/state/commands/` | Every action that changes app state, one module per area                                                     |
+| `src/api/`            | Thin wrappers over Tauri `invoke` commands                                                                   |
+| `src/plugin-api/`     | The only part of the app a plugin's frontend may import                                                      |
+| `src/plugins/`        | Plugin frontends (AWS, Bitbucket, Bruno, GitHub, Rundeck, SigNoz)                                            |
+| `src-tauri/src/`      | Rust core: PTY, git, LSP, file watchers, browser tabs, agents, diagnostics                                   |
+| `src-tauri/crates/`   | Shared Rust crates: the terminal engine, the background core, plugin API, process runner, keychain, markdown |
+| `src-tauri/plugins/`  | Plugin backends, one crate per plugin behind a Cargo feature                                                 |
+| `browser/`            | Agent tool declarations (`tools.json`) and the guide agents read                                             |
+| `showcase/`           | Demo data and scenes for README and site screenshots                                                         |
+| `scripts/`            | Code generators, CI checks, icon pipeline and release tooling                                                |
+| `docs/architecture/`  | How the app fits together, and the decisions behind it                                                       |
 
 Read [the architecture overview](docs/architecture/overview.md) before a large change, and the decision records beside it before proposing to undo one.
+
+### The background core in development
+
+Terminals, agents and tasks run in a separate process, the core (`sikemux core`), which keeps running after the app quits. `make dev` builds the sidecar it runs from. After changing core code, rebuild the sidecar (`pnpm sidecar:dev`) and reload the window: the dev app updates its core in place and your terminals stay open. The dev core listens on `~/.config/sikemux/core.dev.sock` and logs to `core.log` in the dev app's log directory. Quit and Stop Everything (`⌥⌘Q`) stops it. If you touch the launch, quit or update paths, run `pnpm test:e2e:desktop`.
 
 ## Before you open a PR
 
