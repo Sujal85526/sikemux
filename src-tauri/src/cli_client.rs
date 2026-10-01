@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use uuid::Uuid;
 
-use crate::cli_protocol::{
+use sikemux_core::cli::protocol::{
     CliClientCommand, CliClientHello, CliCloseReason, CliEndpointDescriptor, CliOpenRequest,
     CliOpenTarget, CliServerResponse, CliTargetKind, CLI_PROTOCOL_VERSION, MAX_CLI_RESPONSE_BYTES,
 };
@@ -469,7 +469,7 @@ fn session(descriptor: &CliEndpointDescriptor) -> Result<BufReader<TcpStream>, S
         .set_read_timeout(Some(PROBE_TIMEOUT))
         .map_err(|error| format!("cannot configure CLI connection: {error}"))?;
     let mut reader = BufReader::new(stream);
-    let nonce = crate::cli_auth::new_nonce();
+    let nonce = sikemux_core::cli::auth::new_nonce();
     write_command(
         reader.get_mut(),
         &CliClientHello::Hello {
@@ -477,10 +477,11 @@ fn session(descriptor: &CliEndpointDescriptor) -> Result<BufReader<TcpStream>, S
             nonce: nonce.clone(),
         },
     )?;
-    let expected = crate::cli_auth::server_proof(&descriptor.token, descriptor.port, &nonce);
+    let expected =
+        sikemux_core::cli::auth::server_proof(&descriptor.token, descriptor.port, &nonce);
     match read_response(&mut reader) {
         Ok(CliServerResponse::Hello { proof })
-            if crate::cli_auth::same_secret(&proof, &expected) =>
+            if sikemux_core::cli::auth::same_secret(&proof, &expected) =>
         {
             Ok(reader)
         }
@@ -596,7 +597,7 @@ fn execute_tool(args: &[String]) -> Result<i32, String> {
             .to_string_lossy()
             .into_owned()
     });
-    let request = crate::harness::HarnessRequest {
+    let request = sikemux_core::cli::protocol::HarnessRequest {
         id: Uuid::new_v4().to_string(),
         project,
         agent_id: env::var("SIKEMUX_AGENT_ID").ok(),
@@ -640,7 +641,7 @@ mod tests {
             let Ok(CliClientHello::Hello { nonce, .. }) = serde_json::from_str(&hello) else {
                 panic!("the client did not open with a hello: {hello}");
             };
-            let proof = crate::cli_auth::server_proof(token, port, &nonce);
+            let proof = sikemux_core::cli::auth::server_proof(token, port, &nonce);
             let mut reply = serde_json::to_vec(&CliServerResponse::Hello { proof }).unwrap();
             reply.push(b'\n');
             (&stream).write_all(&reply).unwrap();

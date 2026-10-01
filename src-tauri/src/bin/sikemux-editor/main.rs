@@ -2,8 +2,6 @@
 //! the same binary with `--tools-mcp` to reach their browser and workspace tools,
 //! and `sikemux core` runs the background process that owns terminals.
 
-#[path = "../../cli_auth.rs"]
-mod cli_auth;
 #[cfg(unix)]
 mod core_mode;
 mod tools_mcp;

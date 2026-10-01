@@ -83,17 +83,17 @@ pub fn relay(
         .and_then(|()| stream.set_read_timeout(Some(REPLY_TIMEOUT)))
         .map_err(|error| format!("cannot configure the Sikemux connection: {error}"))?;
     let mut reader = BufReader::new(&stream);
-    let nonce = crate::cli_auth::new_nonce();
+    let nonce = sikemux_core::cli::auth::new_nonce();
     let mut hello = json!({ "command": "hello", "protocol": protocol, "nonce": nonce }).to_string();
     hello.push('\n');
     send(&stream, hello.as_bytes())?;
-    let expected = crate::cli_auth::server_proof(token, port, &nonce);
+    let expected = sikemux_core::cli::auth::server_proof(token, port, &nonce);
     let proven = receive(&mut reader).ok().is_some_and(|reply| {
         reply.get("status").and_then(Value::as_str) == Some("hello")
             && reply
                 .get("proof")
                 .and_then(Value::as_str)
-                .is_some_and(|proof| crate::cli_auth::same_secret(proof, &expected))
+                .is_some_and(|proof| sikemux_core::cli::auth::same_secret(proof, &expected))
     });
     if !proven {
         return Err("The program on Sikemux's CLI port is not Sikemux; restart Sikemux".into());

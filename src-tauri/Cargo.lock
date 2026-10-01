@@ -4363,14 +4363,17 @@ dependencies = [
 name = "sikemux-core"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "libc",
  "portable-pty",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "sikemux-pty",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
+ "uuid",
  "vt100",
 ]
 

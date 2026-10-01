@@ -8,7 +8,7 @@ use tauri::{AppHandle, Manager, Webview};
 
 use super::viewport::Viewport;
 use super::{BrowserManager, BLANK_URL};
-use crate::harness::HarnessRequest;
+use sikemux_core::cli::protocol::HarnessRequest;
 
 const PAGE_SCRIPT: &str = include_str!("page.js");
 const RECORDS_SCRIPT: &str = include_str!("records.js");
@@ -33,12 +33,7 @@ const NARROW_VIEWPORT: u64 = 700;
 /// How long a page may take to answer before WebKit is asked whether it hangs.
 const SLOW_ANSWER: Duration = Duration::from_secs(1);
 
-use crate::generated_agent_tools::BROWSER_METHODS as METHODS;
 use native::Mouse;
-
-pub fn is_browser_method(method: &str) -> bool {
-    METHODS.contains(&method)
-}
 
 /// Runs on a CLI broker thread, so blocking on the async runtime is safe.
 pub fn execute(app: &AppHandle, request: &HarnessRequest) -> Result<Value, String> {

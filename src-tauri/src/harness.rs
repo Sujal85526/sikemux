@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::sync::{mpsc, Mutex};
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
+pub use sikemux_core::cli::protocol::HarnessRequest;
 use tauri::{Emitter, State};
 
 use crate::cli_server::CliBrokerState;
@@ -12,44 +12,6 @@ mod tool_calls;
 
 pub const MAX_PENDING: usize = 64;
 const REPLY_TIMEOUT: Duration = Duration::from_secs(65);
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct HarnessRequest {
-    pub id: String,
-    pub project: String,
-    pub agent_id: Option<String>,
-    pub method: String,
-    pub params: Value,
-}
-
-impl HarnessRequest {
-    pub fn validate(&self) -> Result<(), String> {
-        if self.id.is_empty() || self.id.len() > 128 {
-            return Err("request ID must contain 1 to 128 bytes".into());
-        }
-        if self.project.len() > 4096 || !std::path::Path::new(&self.project).is_absolute() {
-            return Err("project must be an absolute path".into());
-        }
-        if self
-            .agent_id
-            .as_ref()
-            .is_some_and(|id| id.is_empty() || id.len() > 128)
-        {
-            return Err("invalid agent ID".into());
-        }
-        if !crate::generated_agent_tools::HARNESS_METHODS.contains(&self.method.as_str())
-            && !crate::browser::tools::is_browser_method(&self.method)
-            && !crate::plugins::agent::is_agent_method(&self.method)
-        {
-            return Err("unknown harness method".into());
-        }
-        if !self.params.is_object() {
-            return Err("params must be an object".into());
-        }
-        Ok(())
-    }
-}
 
 struct Pending {
     request: HarnessRequest,
@@ -146,7 +108,7 @@ fn run(
         .map_err(|error| error.to_string())?
         .to_string_lossy()
         .into_owned();
-    if crate::browser::tools::is_browser_method(&request.method) {
+    if sikemux_core::cli::protocol::is_browser_method(&request.method) {
         return crate::browser::tools::execute(app, &request);
     }
     if crate::plugins::agent::is_agent_method(&request.method) {

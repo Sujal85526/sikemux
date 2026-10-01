@@ -235,7 +235,7 @@ agent → sikemux-editor --tools-mcp → CLI broker → harness.rs
                                    src/harness/service.ts → harness_reply
 ```
 
-`pnpm agent-tools:generate` writes `src-tauri/src/generated_agent_tools.rs` and checks
+`pnpm agent-tools:generate` writes `src-tauri/crates/sikemux-core/src/cli/methods.rs` and checks
 that every declared method has a handler in `browser/tools.rs` or
 `src/harness/service.ts`, and that no handler lacks a declaration. The README's
 [Agent harness tools](../../README.md#agent-harness-tools) section describes the tools

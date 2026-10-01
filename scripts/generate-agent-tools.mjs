@@ -7,7 +7,10 @@ import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const manifestPath = resolve(root, "browser/tools.json");
-const rustOutputPath = resolve(root, "src-tauri/src/generated_agent_tools.rs");
+const rustOutputPath = resolve(
+  root,
+  "src-tauri/crates/sikemux-core/src/cli/methods.rs",
+);
 const browserHandlersPath = resolve(root, "src-tauri/src/browser/tools.rs");
 const harnessHandlersPath = resolve(root, "src/harness/service.ts");
 const check = process.argv.includes("--check");

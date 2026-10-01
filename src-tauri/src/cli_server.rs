@@ -11,12 +11,12 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 use uuid::Uuid;
 
-use crate::cli_protocol::{
+use crate::error::{AppError, AppResult};
+use sikemux_core::cli::protocol::{
     CliClientCommand, CliClientHello, CliCloseReason, CliEndpointDescriptor, CliFrontendRequest,
     CliOpenFailure, CliOpenRequest, CliOpenResult, CliServerResponse, CliTargetKind,
     CLI_PROTOCOL_VERSION, MAX_CLI_FRAME_BYTES, MAX_CLI_RESPONSE_BYTES, MAX_CLI_TARGETS,
 };
-use crate::error::{AppError, AppResult};
 
 const CLI_EVENT: &str = "cli-open-available";
 const FRONTEND_ACCEPT_TIMEOUT: Duration = Duration::from_secs(60);
@@ -155,7 +155,7 @@ impl CliBroker {
                     Err("invalid CLI hello".into())
                 } else {
                     Ok(CliServerResponse::Hello {
-                        proof: crate::cli_auth::server_proof(
+                        proof: sikemux_core::cli::auth::server_proof(
                             &self.inner.descriptor.token,
                             self.inner.descriptor.port,
                             &nonce,
@@ -311,7 +311,7 @@ impl CliBroker {
                 "CLI protocol mismatch (client {protocol}, app {CLI_PROTOCOL_VERSION}); update or restart Sikemux"
             ));
         }
-        if !crate::cli_auth::same_secret(token, &self.inner.descriptor.token) {
+        if !sikemux_core::cli::auth::same_secret(token, &self.inner.descriptor.token) {
             return Err("CLI authentication failed".into());
         }
         Ok(())
@@ -872,7 +872,7 @@ mod tests {
             id: "request".into(),
             cwd: project_root.clone(),
             wait: true,
-            targets: vec![crate::cli_protocol::CliOpenTarget {
+            targets: vec![sikemux_core::cli::protocol::CliOpenTarget {
                 id: "target".into(),
                 kind: CliTargetKind::File,
                 path: file,

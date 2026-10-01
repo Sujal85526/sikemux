@@ -35,7 +35,7 @@ fn fake_app(proving_token: &'static str, answer: Value) -> FakeSikemux {
         reader.read_line(&mut hello).expect("a hello frame");
         let hello: Value = serde_json::from_str(&hello).expect("the hello is JSON");
         assert_eq!(hello["command"], json!("hello"));
-        let proof = crate::cli_auth::server_proof(
+        let proof = sikemux_core::cli::auth::server_proof(
             proving_token,
             port,
             hello["nonce"].as_str().expect("a nonce"),

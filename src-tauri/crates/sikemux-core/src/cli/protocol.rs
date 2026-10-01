@@ -1,4 +1,10 @@
+//! What the `sikemux` CLI and the agents' tool server send to Sikemux's tool
+//! endpoint: one JSON object per line over a loopback TCP connection.
+
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+use super::methods::{BROWSER_METHODS, HARNESS_METHODS};
 
 pub const CLI_PROTOCOL_VERSION: u16 = 2;
 pub const MAX_CLI_FRAME_BYTES: u64 = 64 * 1024;
@@ -59,7 +65,7 @@ pub enum CliClientCommand {
     Harness {
         protocol: u16,
         token: String,
-        request: crate::harness::HarnessRequest,
+        request: HarnessRequest,
     },
     Ping {
         protocol: u16,
@@ -127,4 +133,81 @@ pub struct CliOpenResult {
     pub pane_id: Option<String>,
     pub path: String,
     pub error: Option<String>,
+}
+
+pub const PLUGIN_METHODS: &[&str] = &["plugins.tools", "plugins.call"];
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HarnessRequest {
+    pub id: String,
+    pub project: String,
+    pub agent_id: Option<String>,
+    pub method: String,
+    pub params: Value,
+}
+
+pub fn is_browser_method(method: &str) -> bool {
+    BROWSER_METHODS.contains(&method)
+}
+
+pub fn is_plugin_method(method: &str) -> bool {
+    PLUGIN_METHODS.contains(&method)
+}
+
+impl HarnessRequest {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.id.is_empty() || self.id.len() > 128 {
+            return Err("request ID must contain 1 to 128 bytes".into());
+        }
+        if self.project.len() > 4096 || !std::path::Path::new(&self.project).is_absolute() {
+            return Err("project must be an absolute path".into());
+        }
+        if self
+            .agent_id
+            .as_ref()
+            .is_some_and(|id| id.is_empty() || id.len() > 128)
+        {
+            return Err("invalid agent ID".into());
+        }
+        if !HARNESS_METHODS.contains(&self.method.as_str())
+            && !is_browser_method(&self.method)
+            && !is_plugin_method(&self.method)
+        {
+            return Err("unknown harness method".into());
+        }
+        if !self.params.is_object() {
+            return Err("params must be an object".into());
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn request(method: &str) -> HarnessRequest {
+        HarnessRequest {
+            id: "one".into(),
+            project: "/tmp".into(),
+            agent_id: None,
+            method: method.into(),
+            params: serde_json::json!({}),
+        }
+    }
+
+    #[test]
+    fn only_declared_methods_with_object_params_are_valid() {
+        assert!(request("workspace.inspect").validate().is_ok());
+        assert!(request("browser.click").validate().is_ok());
+        assert!(request("plugins.call").validate().is_ok());
+        assert!(request("pty_kill").validate().is_err());
+        let mut relative = request("task.read");
+        relative.project = "project".into();
+        assert!(relative.validate().is_err());
+        let mut list = request("task.read");
+        list.params = serde_json::json!([]);
+        assert!(list.validate().is_err());
+    }
 }
