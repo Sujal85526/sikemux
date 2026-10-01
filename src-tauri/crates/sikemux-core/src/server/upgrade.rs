@@ -110,7 +110,7 @@ fn check_binary(binary: &Path, own: &crate::protocol::BuildIdentity) -> Result<(
             info.resume_format
         ));
     }
-    if info.build() == *own {
+    if info.build().same_build(own) {
         return Err(format!(
             "{} is the build this core already runs",
             binary.display()

@@ -128,11 +128,13 @@ impl CoreProcess {
             version: env!("CARGO_PKG_VERSION").into(),
             commit: from.into(),
             built_at: 0,
+            source: from.into(),
         };
-        let hello = tokio::task::spawn_blocking(move || await_upgrade(&socket, pid, &old, WAIT))
-            .await
-            .expect("join")
-            .unwrap_or_else(|error| panic!("{error}\n{}", self.log()));
+        let hello =
+            tokio::task::spawn_blocking(move || await_upgrade(&socket, pid, Some(&old), WAIT))
+                .await
+                .expect("join")
+                .unwrap_or_else(|error| panic!("{error}\n{}", self.log()));
         assert_eq!(hello.pid, self.pid());
         hello.build
     }

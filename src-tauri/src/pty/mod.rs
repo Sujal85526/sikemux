@@ -9,12 +9,15 @@ mod streams;
 
 use std::ffi::OsString;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
-use sikemux_core::client::{ensure_running, ClientError, CoreClient};
-use sikemux_core::protocol::{Request, SessionId, SessionInfo, SessionKind};
+use sikemux_core::client::{
+    await_upgrade, ensure_running, frozen_request, Attached, ClientError, CoreClient, Reply,
+};
+use sikemux_core::protocol::frozen::{FrozenReply, FrozenRequest};
+use sikemux_core::protocol::{BuildIdentity, Request, SessionId, SessionInfo, SessionKind};
 use tauri::{AppHandle, Manager};
 
 use crate::error::{AppError, AppResult};
@@ -28,6 +31,12 @@ const MAIN_WEBVIEW: &str = "main";
 /// Long enough for the core's shared kill grace plus reaping a few hundred
 /// sessions.
 const STOP_TIMEOUT: Duration = Duration::from_secs(5);
+/// The core first checks that the sidecar starts, which can take a while the
+/// first time macOS sees a new binary.
+const UPGRADE_ANSWER_TIMEOUT: Duration = Duration::from_secs(15);
+const UPGRADE_RETURN_TIMEOUT: Duration = Duration::from_secs(20);
+/// `ESC c`, which clears a pane's screen and history before its replay.
+const FULL_RESET: &[u8] = b"\x1bc";
 
 struct CoreSettings {
     app: AppHandle,
@@ -49,6 +58,11 @@ pub struct PtyManager {
     /// Set once the app is leaving, so a core that goes away is not started
     /// again.
     closing: AtomicBool,
+    /// The process of the core last connected to. A core that comes back in
+    /// the same process after an update still has every session.
+    core_pid: AtomicU32,
+    /// A core this app could neither update nor talk to, already reported.
+    noticed: AtomicU32,
 }
 
 pub(crate) fn core_error(error: ClientError) -> AppError {
@@ -174,12 +188,31 @@ impl PtyManager {
         if let Some(directory) = log.parent() {
             let _ = std::fs::create_dir_all(directory);
         }
-        tauri::async_runtime::spawn_blocking(move || {
-            ensure_running(&socket, &binary, &log, &core_args)
+        let starting = binary.clone();
+        let found = tauri::async_runtime::spawn_blocking(move || {
+            ensure_running(&socket, &starting, &log, &core_args)
         })
         .await
-        .map_err(|error| AppError::Pty(format!("core start join: {error}")))?
-        .map_err(core_error)?;
+        .map_err(|error| AppError::Pty(format!("core start join: {error}")))?;
+        match found {
+            Ok(hello) if hello.build.same_build(&crate::build_identity()) => {}
+            Ok(hello) => {
+                if let Err(message) =
+                    upgrade_core(settings, binary, hello.pid, Some(hello.build)).await
+                {
+                    eprintln!("Sikemux keeps its terminal core as it is: {message}");
+                }
+            }
+            Err(ClientError::VersionMismatch { pid, message, .. }) => {
+                if let Err(reason) = upgrade_core(settings, binary, pid, None).await {
+                    self.notice_incompatible(settings, pid);
+                    return Err(AppError::Pty(format!(
+                        "{message}, and it could not be updated: {reason}"
+                    )));
+                }
+            }
+            Err(error) => return Err(core_error(error)),
+        }
         let sink = Arc::new(AppSink::new(settings.app.clone(), self.streams.clone()));
         let client = Arc::new(
             CoreClient::connect_with(&settings.socket, sink)
@@ -191,28 +224,160 @@ impl PtyManager {
             .await
             .map_err(core_error)?;
         client.register_window().await.map_err(core_error)?;
+        self.core_pid.store(client.core_pid(), Ordering::Release);
         if let Ok(mut current) = self.client.lock() {
             *current = Some(client.clone());
         }
         Ok(client)
     }
 
-    /// The core went away: every session the app knew is gone with it.
+    /// The core went away. One that answers again from the same process was
+    /// updated in place and still has every session, so the panes take theirs
+    /// back; otherwise every session the app knew is gone with it.
     fn disconnected(&self) {
-        sink::report_all_exited(&self.streams);
-        if self.closing.load(Ordering::Acquire) {
+        let settings = self.settings.get();
+        if self.closing.load(Ordering::Acquire) || settings.is_none() {
+            sink::report_all_exited(&self.streams);
             return;
         }
-        if let Some(settings) = self.settings.get() {
-            let app = settings.app.clone();
-            tauri::async_runtime::spawn(async move {
-                if let Some(manager) = app.try_state::<PtyManager>() {
-                    if let Err(error) = manager.client().await {
-                        eprintln!("Sikemux could not restart its terminal core: {error}");
+        let Some(settings) = settings else {
+            return;
+        };
+        let previous = self.core_pid.load(Ordering::Acquire);
+        let app = settings.app.clone();
+        tauri::async_runtime::spawn(async move {
+            let Some(manager) = app.try_state::<PtyManager>() else {
+                return;
+            };
+            match manager.client().await {
+                Ok(client) if client.core_pid() == previous => manager.reattach(&client).await,
+                Ok(_) => sink::report_all_exited(&manager.streams),
+                Err(error) => {
+                    sink::report_all_exited(&manager.streams);
+                    eprintln!("Sikemux could not restart its terminal core: {error}");
+                }
+            }
+        });
+    }
+
+    /// Sends every pane its screen again from the updated core, followed by
+    /// the live output, and tells tasks that ended meanwhile.
+    async fn reattach(&self, client: &Arc<CoreClient>) {
+        for id in self.streams.core_subscribed() {
+            let streams = self.streams.clone();
+            let submitted = client.submit(Request::Attach { id }, move |reply| match reply {
+                Ok(Reply::Attached(Attached {
+                    alternate_screen,
+                    exited,
+                    replay,
+                    ..
+                })) => {
+                    streams.restart(id);
+                    // An alternate screen repaints itself in full and leaves
+                    // the pane's own normal-screen history alone.
+                    let mut screen = Vec::with_capacity(replay.len() + FULL_RESET.len());
+                    if !alternate_screen {
+                        screen.extend_from_slice(FULL_RESET);
+                    }
+                    screen.extend_from_slice(&replay);
+                    sink::deliver(&streams, id, &screen);
+                    if exited {
+                        streams.channels(id).send(&[]);
                     }
                 }
+                _ => sink::report_exited(&streams, id, sink::task_exit(None, None)),
             });
+            if let Ok(replied) = submitted {
+                let _ = replied.await;
+            }
         }
+        let watched = self.streams.watched_tasks();
+        if watched.is_empty() {
+            return;
+        }
+        let Ok(sessions) = client.list().await else {
+            return;
+        };
+        for id in watched {
+            let session = sessions.iter().find(|session| session.id == id);
+            if session.is_some_and(|session| session.running) {
+                continue;
+            }
+            let exit = session.and_then(|session| session.exit.clone());
+            let exit_channel = self
+                .streams
+                .lock()
+                .ok()
+                .and_then(|mut guard| guard.take_task_exit(id));
+            if let Some(channel) = exit_channel {
+                let (code, signal) = exit.map_or((None, None), |exit| (exit.code, exit.signal));
+                let _ = channel.send(sink::task_exit(code, signal));
+            }
+        }
+    }
+
+    /// A page load is a quiet moment to move the core to the sidecar's build,
+    /// for a sidecar rebuilt while the app runs.
+    pub fn update_core_if_stale(&self) {
+        let Some(settings) = self.settings.get() else {
+            return;
+        };
+        let app = settings.app.clone();
+        tauri::async_runtime::spawn(async move {
+            let Some(manager) = app.try_state::<PtyManager>() else {
+                return;
+            };
+            let Some(settings) = manager.settings.get() else {
+                return;
+            };
+            let _connecting = manager.connecting.lock().await;
+            let Some(client) = manager.current() else {
+                return;
+            };
+            let build = client.hello().build.clone();
+            let (Some(binary), false) = (
+                settings.binary.clone(),
+                build.same_build(&crate::build_identity()),
+            ) else {
+                return;
+            };
+            if let Err(message) =
+                upgrade_core(settings, binary, client.core_pid(), Some(build)).await
+            {
+                eprintln!("Sikemux keeps its terminal core as it is: {message}");
+            }
+        });
+    }
+
+    /// Says once per core that this app cannot use it, and offers to end it.
+    fn notice_incompatible(&self, settings: &CoreSettings, pid: u32) {
+        if self.noticed.swap(pid, Ordering::AcqRel) == pid {
+            return;
+        }
+        use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+        let app = settings.app.clone();
+        let socket = settings.socket.clone();
+        settings
+            .app
+            .dialog()
+            .message(format!(
+                "Sikemux's background process (pid {pid}) belongs to another version of Sikemux and could not be updated, so terminals, agents and tasks cannot open in this window.\n\nQuit and Stop Everything ends that process and everything running in it. Sikemux starts a new one when you open it again."
+            ))
+            .title("Terminals are unavailable")
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Quit and Stop Everything".into(),
+                "Not Now".into(),
+            ))
+            .show(move |stop| {
+                if !stop {
+                    return;
+                }
+                std::thread::spawn(move || {
+                    stop_core_process(&socket, pid);
+                    app.exit(0);
+                });
+            });
     }
 
     fn block_on_core<F>(&self, work: impl FnOnce(Arc<CoreClient>) -> F)
@@ -312,6 +477,48 @@ impl PtyManager {
             blocked_agents: agents("blocked"),
             idle_agents: agents("idle"),
             unknown_agents: agents("unknown"),
+        }
+    }
+}
+
+/// Asks the core at `socket` to replace itself with `binary`, and waits for
+/// it to answer from the same process again. Without `old`, the core speaks
+/// another protocol and could not say which build it runs.
+async fn upgrade_core(
+    settings: &CoreSettings,
+    binary: PathBuf,
+    pid: u32,
+    old: Option<BuildIdentity>,
+) -> Result<(), String> {
+    let socket = settings.socket.clone();
+    let upgraded = tauri::async_runtime::spawn_blocking(move || {
+        let request = FrozenRequest::Upgrade { binary };
+        match frozen_request(&socket, &request, UPGRADE_ANSWER_TIMEOUT) {
+            Ok(FrozenReply::Accepted) => {
+                await_upgrade(&socket, pid, old.as_ref(), UPGRADE_RETURN_TIMEOUT)
+                    .map_err(|error| error.to_string())
+            }
+            Ok(FrozenReply::Refused { message }) => Err(message),
+            Err(error) => Err(error.to_string()),
+        }
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    eprintln!(
+        "Sikemux updated its terminal core (pid {pid}) to {} {}",
+        upgraded.build.version, upgraded.build.commit
+    );
+    Ok(())
+}
+
+/// Ends a core this app cannot talk to, with everything running in it.
+fn stop_core_process(socket: &std::path::Path, pid: u32) {
+    let stopped = frozen_request(socket, &FrozenRequest::StopEverything, STOP_TIMEOUT);
+    if !matches!(stopped, Ok(FrozenReply::Accepted)) && pid > 1 {
+        // SAFETY: kill only takes integers; the pid is a single process above
+        // init, so this never signals a group or every process.
+        unsafe {
+            libc::kill(pid as libc::pid_t, libc::SIGTERM);
         }
     }
 }

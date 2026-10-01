@@ -106,6 +106,7 @@ pub mod frozen {
         pub version: String,
         pub commit: String,
         pub built_at: u64,
+        pub source: String,
         pub resume_format: u32,
     }
 
@@ -115,6 +116,7 @@ pub mod frozen {
                 version: build.version.clone(),
                 commit: build.commit.clone(),
                 built_at: build.built_at,
+                source: build.source.clone(),
                 resume_format: RESUME_FORMAT,
             }
         }
@@ -124,6 +126,7 @@ pub mod frozen {
                 version: self.version.clone(),
                 commit: self.commit.clone(),
                 built_at: self.built_at,
+                source: self.source.clone(),
             }
         }
     }
@@ -384,33 +387,45 @@ pub enum Response {
     DetectionExplain { explain: Box<DetectionExplain> },
 }
 
-/// Which build of the sidecar a core runs.
+/// Which build of the sidecar a core runs. `source` fingerprints the code
+/// the core is compiled from, so two compilations of the same code are the
+/// same build although they finished at different times.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BuildIdentity {
     pub version: String,
     pub commit: String,
     pub built_at: u64,
+    pub source: String,
 }
 
 /// Makes a build pass for another one, so tests can upgrade a core to the
-/// binary it already runs: the value replaces the commit and the build time.
+/// binary it already runs: the value replaces the commit and the source, and
+/// the build time is zero.
 pub const BUILD_ID_OVERRIDE_ENV: &str = "SIKEMUX_BUILD_ID_OVERRIDE";
 
 impl BuildIdentity {
-    pub fn new(version: &str, commit: &str, built_at: u64) -> Self {
+    pub fn new(version: &str, commit: &str, built_at: u64, source: &str) -> Self {
         match std::env::var(BUILD_ID_OVERRIDE_ENV) {
-            Ok(commit) if !commit.is_empty() => Self {
+            Ok(id) if !id.is_empty() => Self {
                 version: version.into(),
-                commit,
+                commit: id.clone(),
                 built_at: 0,
+                source: id,
             },
             _ => Self {
                 version: version.into(),
                 commit: commit.into(),
                 built_at,
+                source: source.into(),
             },
         }
+    }
+
+    /// Whether both run the same code, whenever and from whichever commit
+    /// each was compiled.
+    pub fn same_build(&self, other: &Self) -> bool {
+        self.version == other.version && self.source == other.source
     }
 }
 

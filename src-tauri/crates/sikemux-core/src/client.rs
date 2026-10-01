@@ -607,11 +607,12 @@ pub fn frozen_request(
 /// Waits for the core at `socket`, which accepted an upgrade while it was
 /// `pid` running `old`, to answer again from the same process with another
 /// build. The same build answering means the upgrade failed and the old core
-/// carried on.
+/// carried on. Without `old`, the old core spoke another protocol, so any
+/// answer from the same process is the new build.
 pub fn await_upgrade(
     socket: &Path,
     pid: u32,
-    old: &BuildIdentity,
+    old: Option<&BuildIdentity>,
     timeout: Duration,
 ) -> Result<CoreHello, ClientError> {
     let deadline = Instant::now() + timeout;
@@ -623,7 +624,7 @@ pub fn await_upgrade(
                     hello.pid
                 )))
             }
-            Ok(hello) if hello.build != *old => return Ok(hello),
+            Ok(hello) if old.is_none_or(|old| !hello.build.same_build(old)) => return Ok(hello),
             Ok(_) => {
                 return Err(ClientError::Core(
                     "the core could not replace itself and carried on as it was".into(),

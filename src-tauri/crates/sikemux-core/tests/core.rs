@@ -28,6 +28,7 @@ fn test_build() -> BuildIdentity {
         version: "0.0.0-test".into(),
         commit: "abc1234".into(),
         built_at: 7,
+        source: "f00d".into(),
     }
 }
 

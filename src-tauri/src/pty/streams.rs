@@ -221,6 +221,41 @@ impl StreamTable {
         .unwrap_or_default()
     }
 
+    /// Sessions the core was streaming to the app.
+    pub(super) fn core_subscribed(&self) -> Vec<SessionId> {
+        self.with(|guard| {
+            guard
+                .sessions
+                .iter()
+                .filter(|(_, streams)| streams.core_subscribed)
+                .map(|(id, _)| *id)
+                .collect()
+        })
+        .unwrap_or_default()
+    }
+
+    /// Tasks whose exit a channel waits for.
+    pub(super) fn watched_tasks(&self) -> Vec<SessionId> {
+        self.with(|guard| {
+            guard
+                .sessions
+                .iter()
+                .filter(|(_, streams)| streams.task_exit.is_some())
+                .map(|(id, _)| *id)
+                .collect()
+        })
+        .unwrap_or_default()
+    }
+
+    /// A new connection streams the session afresh and owes nothing yet.
+    pub(super) fn restart(&self, id: SessionId) {
+        self.with(|guard| {
+            if let Some(streams) = guard.sessions.get_mut(&id) {
+                streams.core_unacked = 0;
+            }
+        });
+    }
+
     pub(super) fn subscriber_count(&self) -> usize {
         self.with(|guard| {
             guard
@@ -479,6 +514,29 @@ mod tests {
         assert!(guard.take_task_exit(6).is_none());
         drop(guard);
         assert!(table.take_all().is_empty());
+    }
+
+    #[test]
+    fn a_reconnect_finds_what_the_core_streamed_and_the_tasks_still_watched() {
+        let table = StreamTable::default();
+        let (fast, _) = attached(&table, 2);
+        let _ = attached(&table, 4);
+        table.lock().expect("lock").register_task(
+            9,
+            tauri::ipc::Channel::<sikemux_pty::task::TaskProcessExit>::new(|_| Ok(())),
+        );
+        table.output(2, &[0; 10]);
+        let mut streamed = table.core_subscribed();
+        streamed.sort_unstable();
+        assert_eq!(streamed, vec![2, 4]);
+        assert_eq!(table.watched_tasks(), vec![9]);
+
+        table.restart(2);
+        assert_eq!(
+            table.ack(2, fast, 10),
+            None,
+            "a new connection is owed nothing from before it"
+        );
     }
 
     #[test]

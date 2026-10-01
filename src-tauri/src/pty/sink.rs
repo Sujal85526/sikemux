@@ -54,7 +54,7 @@ pub(super) fn task_exit(code: Option<u32>, signal: Option<String>) -> TaskProces
     }
 }
 
-fn deliver(streams: &StreamTable, id: SessionId, bytes: &[u8]) {
+pub(super) fn deliver(streams: &StreamTable, id: SessionId, bytes: &[u8]) {
     let delivery = streams.output(id, bytes);
     if delivery.is_empty() {
         return;
@@ -68,7 +68,7 @@ fn deliver(streams: &StreamTable, id: SessionId, bytes: &[u8]) {
 }
 
 /// An empty chunk is the frontend's sign that the process is gone.
-fn report_exited(streams: &StreamTable, id: SessionId, exit: TaskProcessExit) {
+pub(super) fn report_exited(streams: &StreamTable, id: SessionId, exit: TaskProcessExit) {
     let (exit_channel, delivery) = streams.exited(id);
     if let Some(channel) = exit_channel {
         let _ = channel.send(exit);

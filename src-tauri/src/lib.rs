@@ -59,6 +59,7 @@ pub fn build_identity() -> sikemux_core::protocol::BuildIdentity {
         env!("CARGO_PKG_VERSION"),
         env!("SIKEMUX_BUILD_COMMIT"),
         env!("SIKEMUX_BUILD_TIME").parse().unwrap_or(0),
+        env!("SIKEMUX_BUILD_SOURCE"),
     )
 }
 
@@ -184,6 +185,7 @@ pub fn run() {
                 }
                 if let Some(mgr) = webview.try_state::<PtyManager>() {
                     mgr.detach_all();
+                    mgr.update_core_if_stale();
                 }
                 if let Some(harness) = webview.try_state::<harness::HarnessBroker>() {
                     harness.fail_all("Sikemux's window reloaded before it answered");
