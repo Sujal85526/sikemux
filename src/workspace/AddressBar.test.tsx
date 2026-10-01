@@ -1,7 +1,6 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { browserApi, type AddressSuggestions } from "../api/browser";
-import { useNativeViewHoles } from "../state/nativeViews";
 import { AddressBar } from "./AddressBar";
 
 vi.mock("../api/browser", async () => {
@@ -25,20 +24,8 @@ const youtube: AddressSuggestions = {
 };
 
 const onGo = vi.fn();
-let holes: ReturnType<typeof useNativeViewHoles> = [];
-
-function Holes() {
-    holes = useNativeViewHoles();
-    return null;
-}
-
 function renderBar(pageAddress = "https://example.com/") {
-    render(
-        <>
-            <AddressBar tabId="tab-one" pageAddress={pageAddress} onGo={onGo} />
-            <Holes />
-        </>,
-    );
+    render(<AddressBar tabId="tab-one" pageAddress={pageAddress} onGo={onGo} />);
     return screen.getByRole("textbox", { name: "Address and search" }) as HTMLInputElement;
 }
 
@@ -85,7 +72,6 @@ describe("AddressBar", () => {
             "you — Google Search",
         ]);
         expect(options[0]).toHaveAttribute("aria-selected", "true");
-        expect(holes).toHaveLength(1);
     });
 
     it("walks the list with the arrow keys and opens the one chosen", async () => {
@@ -100,7 +86,6 @@ describe("AddressBar", () => {
         fireEvent.keyDown(input, { key: "Enter" });
         expect(onGo).toHaveBeenCalledWith("https://www.youtube.com/watch?v=abc");
         expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
-        expect(holes).toEqual([]);
     });
 
     it("closes the list when a click lands anywhere else, even on something that takes no focus", async () => {
@@ -114,7 +99,6 @@ describe("AddressBar", () => {
         expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
         expect(input).not.toHaveFocus();
         expect(input).toHaveValue("https://example.com/");
-        expect(holes).toEqual([]);
     });
 
     it("closes the list when a click on the page takes the window's focus", async () => {

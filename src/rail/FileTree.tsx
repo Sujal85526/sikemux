@@ -2,7 +2,6 @@ import { renameEditorPath } from "../state/editorPaths";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { setNativeViewHoles } from "../state/nativeViews";
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { fsapi, type DirEntry } from "../api/fs";
 import { type GitFile } from "../api/git";
@@ -881,16 +880,6 @@ export function TreeContextMenu({
         if (top + r.height > window.innerHeight - pad) top = Math.max(pad, window.innerHeight - r.height - pad);
         setPos({ left, top });
     }, [x, y, alignRight]);
-
-    /* A browser page stays where it is and only gives up the menu's own box. Its
-       layout box, not its bounding one, so the hole is whole while it animates in. */
-    useLayoutEffect(() => {
-        const el = ref.current;
-        if (!el) return;
-        const radius = parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0;
-        setNativeViewHoles(ref, [{ x: pos.left, y: pos.top, width: el.offsetWidth, height: el.offsetHeight, radius }]);
-    }, [pos]);
-    useEffect(() => () => setNativeViewHoles(ref, []), []);
 
     /* A click on the page lands in the page, never on the scrim, but it takes the
        window's focus with it, so losing focus closes the menu as a click away would. */

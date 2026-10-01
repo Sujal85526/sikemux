@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { browserApi, takeKeyboardFromPages, type AddressSuggestions } from "../api/browser";
-import { setNativeViewHoles } from "../state/nativeViews";
 import { swallow } from "../state/toast";
 import { IconLock, IconSearch } from "../ui/Icons";
 import { SiteIcon } from "../ui/SiteIcon";
@@ -181,16 +180,6 @@ export function AddressBar({
             previous && previous.left === next.left && previous.top === next.top && previous.width === next.width ? previous : next,
         );
     }, [open, floating, rows.length]);
-
-    /* The page under the list is a native view that paints over the app, so it
-       gives up the list's box for as long as the list is open. */
-    useLayoutEffect(() => {
-        const menu = menuRef.current;
-        if (!menu || !place) return setNativeViewHoles(menuRef, []);
-        const radius = parseFloat(getComputedStyle(menu).borderBottomLeftRadius) || 0;
-        setNativeViewHoles(menuRef, [{ x: place.left, y: place.top, width: menu.offsetWidth, height: menu.offsetHeight, radius }]);
-    }, [place, rows.length]);
-    useEffect(() => () => setNativeViewHoles(menuRef, []), []);
 
     /* The field's own blur misses some ways of going elsewhere: a click on
        something that takes no focus, and a click on the page, which is a view of

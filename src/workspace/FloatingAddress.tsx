@@ -1,6 +1,5 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { setNativeViewHoles } from "../state/nativeViews";
 import { AddressBar } from "./AddressBar";
 
 interface Place {
@@ -69,15 +68,6 @@ export function FloatingAddress({
             width,
         };
     }, [area, height]);
-
-    /* The page is a native view that paints over the app, so it gives up the panel's box. */
-    useLayoutEffect(() => {
-        const panel = panelRef.current;
-        if (!panel || !place) return;
-        const radius = parseFloat(getComputedStyle(panel).borderTopLeftRadius) || 0;
-        setNativeViewHoles(panelRef, [{ x: place.left, y: place.top, width: place.width, height, radius }]);
-    }, [place, height]);
-    useEffect(() => () => setNativeViewHoles(panelRef, []), []);
 
     return createPortal(
         <div

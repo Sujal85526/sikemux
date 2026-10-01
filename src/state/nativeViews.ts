@@ -1,4 +1,5 @@
 import { useEffect, useSyncExternalStore } from "react";
+import { mergeHoles, watchOverlays } from "./overlayHoles";
 
 /* Native child views (the browser pages) paint above every DOM element, so an
    overlay that must show over them asks for them to step aside while it is
@@ -46,8 +47,9 @@ export function useOccludeNativeViews(active: boolean): void {
 }
 
 /* A toast or a menu is too small to send a page away for, so the page leaves
-   a hole where it sits instead. Each overlay owns its own holes and the page
-   cuts all of them. Rects are in the window's CSS pixels. */
+   a hole where it sits instead. The holes are found by watching the DOM for
+   anything floating, for as long as a page is reading them. Rects are in the
+   window's CSS pixels. */
 export interface NativeViewHole {
     x: number;
     y: number;
@@ -60,11 +62,18 @@ const NO_HOLES: NativeViewHole[] = [];
 const holesByOwner = new Map<object, NativeViewHole[]>();
 let holes = NO_HOLES;
 const holeListeners = new Set<() => void>();
+const OVERLAYS = {};
+let stopWatching: (() => void) | null = null;
 
 function subscribeHoles(listener: () => void) {
     holeListeners.add(listener);
+    stopWatching ??= watchOverlays((next) => setNativeViewHoles(OVERLAYS, next));
     return () => {
         holeListeners.delete(listener);
+        if (holeListeners.size || !stopWatching) return;
+        const stop = stopWatching;
+        stopWatching = null;
+        stop();
     };
 }
 
@@ -78,7 +87,7 @@ export function setNativeViewHoles(owner: object, next: NativeViewHole[]): void 
     if (next.length === previous.length && next.every((hole, i) => sameHole(hole, previous[i]))) return;
     if (next.length) holesByOwner.set(owner, next);
     else holesByOwner.delete(owner);
-    holes = holesByOwner.size ? [...holesByOwner.values()].flat() : NO_HOLES;
+    holes = holesByOwner.size ? mergeHoles([...holesByOwner.values()].flat()) : NO_HOLES;
     for (const listener of holeListeners) listener();
 }
 

@@ -19,6 +19,11 @@ if (!("ResizeObserver" in globalThis)) {
     } as unknown as typeof ResizeObserver;
 }
 
+// jsdom has no Web Animations, so nothing is ever part way through one.
+if (!Element.prototype.getAnimations) {
+    Element.prototype.getAnimations = () => [];
+}
+
 mockConvertFileSrc("macos");
 
 vi.mock("../api/markdown", async () => {

@@ -71,6 +71,7 @@ export function RailPeek({ edge, children }: RailPeekProps) {
             ref={rootRef}
             className={`rail-peek rail-peek--${edge}`}
             data-testid={`rail-peek-${edge}`}
+            data-overlay
             onPointerEnter={open}
             onPointerLeave={() => close()}
             onFocusCapture={open}

@@ -470,7 +470,7 @@ describe("DeskHost", () => {
             toJSON: () => ({}),
         });
         await act(async () => {
-            frames.shift()?.(0);
+            for (const frame of frames.splice(0)) frame(0);
         });
         expect(browserApi.setBounds).toHaveBeenLastCalledWith("agent-one", { ...placed, x: 240 });
 
@@ -513,19 +513,19 @@ describe("DeskHost", () => {
 
         pageLeft = 200;
         await act(async () => {
-            frames.shift()?.(0);
+            for (const frame of frames.splice(0)) frame(0);
         });
         expect(browserApi.setBounds).toHaveBeenLastCalledWith("agent-one", { ...placed, x: 200, clipLeft: 100 });
 
         pageLeft = 1000;
         await act(async () => {
-            frames.shift()?.(0);
+            for (const frame of frames.splice(0)) frame(0);
         });
         expect(browserApi.setBounds).toHaveBeenLastCalledWith("agent-one", { ...placed, x: 1000, clipRight: 280 });
 
         pageLeft = -300;
         await act(async () => {
-            frames.shift()?.(0);
+            for (const frame of frames.splice(0)) frame(0);
         });
         expect(browserApi.setBounds).toHaveBeenLastCalledWith("agent-one", null);
     });
