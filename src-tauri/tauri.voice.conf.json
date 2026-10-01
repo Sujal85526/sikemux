@@ -3,7 +3,6 @@
   "bundle": {
     "externalBin": [
       "binaries/sikemux-editor",
-      "binaries/sikemux-tools-mcp",
       "binaries/sikemux-voice"
     ]
   }

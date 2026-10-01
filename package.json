@@ -11,7 +11,7 @@
     "prepare": "git config core.hooksPath .githooks || true",
     "dev": "vite",
     "dev:desktop": "pnpm sidecar:dev && node scripts/dev-desktop.mjs",
-    "sidecar:dev": "cargo build --manifest-path src-tauri/Cargo.toml --bin sikemux-tools-mcp && node scripts/build-voice-helper.mjs --dev",
+    "sidecar:dev": "cargo build --manifest-path src-tauri/Cargo.toml --bin sikemux-editor && node scripts/build-voice-helper.mjs --dev",
     "build": "tsc --noEmit && vite build && pnpm bundle:check",
     "bundle:check": "node scripts/check-bundle-globals.mjs",
     "preview": "vite preview",

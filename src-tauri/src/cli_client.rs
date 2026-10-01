@@ -14,6 +14,8 @@ use crate::cli_protocol::{
     CliOpenTarget, CliServerResponse, CliTargetKind, CLI_PROTOCOL_VERSION, MAX_CLI_RESPONSE_BYTES,
 };
 
+/// Starts this binary as the MCP server agents use to reach their tools, instead of the editor.
+pub const TOOLS_MCP_FLAG: &str = "--tools-mcp";
 const APP_START_TIMEOUT: Duration = Duration::from_secs(15);
 const PROBE_TIMEOUT: Duration = Duration::from_millis(900);
 const ACCEPT_TIMEOUT: Duration = Duration::from_secs(60);

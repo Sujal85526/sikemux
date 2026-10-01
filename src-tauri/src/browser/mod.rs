@@ -1025,44 +1025,17 @@ impl BrowserManager {
         }
     }
 
-    pub fn mcp_launch(&self, app: &AppHandle) -> AppResult<BrowserMcpLaunch> {
-        if let Some(command) = std::env::var_os("SIKEMUX_TOOLS_MCP_EXECUTABLE") {
-            return Ok(BrowserMcpLaunch {
-                command: std::path::PathBuf::from(command)
-                    .to_string_lossy()
-                    .into_owned(),
-                args: Vec::new(),
-            });
-        }
-        let executable_name = if cfg!(windows) {
-            "sikemux-tools-mcp.exe"
-        } else {
-            "sikemux-tools-mcp"
-        };
-        if let Ok(current) = std::env::current_exe() {
-            if let Some(parent) = current.parent() {
-                let bundled = parent.join(executable_name);
-                if bundled.is_file() {
-                    return Ok(BrowserMcpLaunch {
-                        command: bundled.to_string_lossy().into_owned(),
-                        args: Vec::new(),
-                    });
-                }
-            }
-        }
-        if let Ok(resource_dir) = app.path().resource_dir() {
-            let bundled = resource_dir.join(executable_name);
-            if bundled.is_file() {
-                return Ok(BrowserMcpLaunch {
-                    command: bundled.to_string_lossy().into_owned(),
-                    args: Vec::new(),
-                });
-            }
-        }
-        Err(AppError::Other(
-            "browser MCP sidecar is missing; build it with node scripts/build-cli-sidecar.mjs"
-                .into(),
-        ))
+    pub fn mcp_launch(&self) -> AppResult<BrowserMcpLaunch> {
+        let executable = crate::cli_server::cli_executable_path().ok_or_else(|| {
+            AppError::Other(
+                "the sikemux-editor sidecar is missing; build it with node scripts/build-cli-sidecar.mjs"
+                    .into(),
+            )
+        })?;
+        Ok(BrowserMcpLaunch {
+            command: executable.to_string_lossy().into_owned(),
+            args: vec![crate::cli_client::TOOLS_MCP_FLAG.into()],
+        })
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, AgentBrowser>> {

@@ -3,8 +3,6 @@
 //! tabs the person sees in the agent's pane. The one exception is the guide,
 //! which this binary carries and serves on its own.
 
-#[path = "../../cli_auth.rs"]
-mod cli_auth;
 mod harness;
 mod manifest;
 
@@ -26,11 +24,7 @@ const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &[
 ];
 const PARENT_CHECK_INTERVAL: Duration = Duration::from_secs(2);
 
-fn main() {
-    std::process::exit(run());
-}
-
-fn run() -> i32 {
+pub fn run() -> i32 {
     let agent_id = match agent_id() {
         Ok(agent_id) => agent_id,
         Err(message) => {

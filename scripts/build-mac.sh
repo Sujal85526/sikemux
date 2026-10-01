@@ -120,10 +120,6 @@ CLI_EXECUTABLE="$APP_PATH/Contents/MacOS/sikemux-editor"
 [[ -x "$CLI_EXECUTABLE" ]] || fail "bundled CLI sidecar is missing or not executable"
 CLI_ARCHS="$(/usr/bin/lipo -archs "$CLI_EXECUTABLE")"
 [[ "$CLI_ARCHS" == "$ARCHS" ]] || fail "CLI sidecar architecture ($CLI_ARCHS) differs from app ($ARCHS)"
-BROWSER_EXECUTABLE="$APP_PATH/Contents/MacOS/sikemux-tools-mcp"
-[[ -x "$BROWSER_EXECUTABLE" ]] || fail "bundled browser MCP sidecar is missing or not executable"
-BROWSER_ARCHS="$(/usr/bin/lipo -archs "$BROWSER_EXECUTABLE")"
-[[ "$BROWSER_ARCHS" == "$ARCHS" ]] || fail "browser sidecar architecture ($BROWSER_ARCHS) differs from app ($ARCHS)"
 [[ -s "$APP_PATH/Contents/Resources/sikemux_pi_tools.ts" ]] || fail "bundled Pi browser extension is missing"
 VOICE_EXECUTABLE="$APP_PATH/Contents/MacOS/sikemux-voice"
 [[ -x "$VOICE_EXECUTABLE" ]] || fail "bundled voice helper is missing or not executable"
@@ -149,20 +145,15 @@ if grep -Eq '^[[:space:]]+(/opt/homebrew|/usr/local|/opt/local)/' <<<"$VOICE_DYN
   echo "$VOICE_DYNAMIC_LIBS" >&2
   fail "voice helper links to a package-manager library"
 fi
-BROWSER_DYNAMIC_LIBS="$(/usr/bin/otool -L "$BROWSER_EXECUTABLE")"
-if grep -Eq '^[[:space:]]+(/opt/homebrew|/usr/local|/opt/local)/' <<<"$BROWSER_DYNAMIC_LIBS"; then
-  echo "$BROWSER_DYNAMIC_LIBS" >&2
-  fail "browser sidecar links to a package-manager library"
-fi
 
 # Bundling is what gives the sidecar the hardened runtime, so only starting the
 # bundled copy proves it survives signing: the copy built beside it is signed
 # without the hardened runtime and starts whether or not the bundle would. An
-# empty agent id is the earliest thing it checks.
-BROWSER_START="$(SIKEMUX_TOOLS_AGENT_ID='' "$BROWSER_EXECUTABLE" 2>&1 || true)"
-if ! grep -Fq "Missing SIKEMUX_TOOLS_AGENT_ID" <<<"$BROWSER_START"; then
-  echo "$BROWSER_START" >&2
-  fail "bundled browser sidecar does not start"
+# empty agent id is the earliest thing its tools MCP server checks.
+TOOLS_START="$(SIKEMUX_TOOLS_AGENT_ID='' "$CLI_EXECUTABLE" --tools-mcp 2>&1 || true)"
+if ! grep -Fq "Missing SIKEMUX_TOOLS_AGENT_ID" <<<"$TOOLS_START"; then
+  echo "$TOOLS_START" >&2
+  fail "bundled tools MCP server does not start"
 fi
 
 # The same proof for the voice helper: the signed copy must still start.

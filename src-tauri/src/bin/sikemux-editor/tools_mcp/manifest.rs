@@ -4,8 +4,8 @@
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
-const MANIFEST: &str = include_str!("../../../../browser/tools.json");
-const GUIDE: &str = include_str!("../../../../browser/SIKEMUX_GUIDE.md");
+const MANIFEST: &str = include_str!("../../../../../browser/tools.json");
+const GUIDE: &str = include_str!("../../../../../browser/SIKEMUX_GUIDE.md");
 
 /// A tool from browser/tools.json, or one a plugin offers, which the app
 /// describes in the same shape.

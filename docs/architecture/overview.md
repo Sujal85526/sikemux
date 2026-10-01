@@ -17,8 +17,7 @@ sends events and byte streams back.
 | Main process              | `src-tauri/src/main.rs` → `lib.rs::run()`                    | Owns every shell, Git call, language server, watcher, agent connection and browser tab. `lib.rs` registers the managed state and every IPC command.                                                                                         |
 | App web view              | `src/main.tsx`, window label `main`                          | The React UI. It loads `dist/` in builds and `http://localhost:1420` in dev. A guard in `lib.rs` stops it from ever navigating anywhere else.                                                                                               |
 | Browser tabs              | `src-tauri/src/browser/`                                     | Each tab is a native child web view placed over the main window. React draws only the tab chrome and reports where the page area is. `without_page_script.rs` keeps the app's own page scripts out of these tabs.                          |
-| `sikemux-editor`          | `src-tauri/src/bin/sikemux-editor.rs` → `cli_client.rs`      | The `sikemux` and `sikemux-editor` command-line launchers. They connect to the running app to open files and projects.                                                                                                                      |
-| `sikemux-tools-mcp`       | `src-tauri/src/bin/sikemux-tools-mcp/`                       | The MCP server (Model Context Protocol, how coding agents discover tools) that agents launch over stdio. It forwards each tool call to the app.                                                                                              |
+| `sikemux-editor`          | `src-tauri/src/bin/sikemux-editor/` → `cli_client.rs`        | The `sikemux` and `sikemux-editor` launchers, which ask the running app to open files and projects. With `--tools-mcp` it is the MCP server (Model Context Protocol) agents launch over stdio.                                              |
 | `sikemux-voice`           | `src-tauri/voice/` (Swift package)                           | Speech-to-text helper. `voice.rs` starts it, writes JSON lines to its stdin and relays what it reports as `voice` events.                                                                                                                   |
 | Shells, agents, LSPs      | spawned by `pty/`, `acp/`, `lsp/`                            | Ordinary child processes. When the main web view reloads or the window closes, `lib.rs` drains all of them.                                                                                                                                 |
 
@@ -31,7 +30,7 @@ the app. `scripts/build-cli-sidecar.mjs` builds the Rust ones into `src-tauri/bi
 
 `cli_server.rs` listens on a local TCP port guarded by a random token, and writes the
 port and token to `~/.config/sikemux/cli.json` (`cli.dev.json` in debug builds). Both
-the `sikemux` launcher and `sikemux-tools-mcp` find the app through that file, or
+the `sikemux` launcher and the tools MCP server find the app through that file, or
 through `SIKEMUX_CLI_ENDPOINT`, which every terminal Sikemux starts receives. File-open
 requests reach the UI as a `cli-open-available` event, handled by
 `src/shell/CliOpenBridge.tsx`. Agent tool calls go through the harness, described under
@@ -220,13 +219,13 @@ An agent runs on one of two transports.
   `src/chat/AgentSurface.tsx` switches one agent between chat and terminal views.
 
 **Harness tools.** Agents on both transports get Sikemux's tools through
-`sikemux-tools-mcp`. `src-tauri/src/browser/agents.rs` knows how to register it with
+`sikemux-editor --tools-mcp`. `src-tauri/src/browser/agents.rs` knows how to register it with
 each agent host. Tools are declared once in `browser/tools.json`, one-line descriptions
 only. The protocol details live in `browser/SIKEMUX_GUIDE.md`, which agents fetch with
 the `guide` tool. The MCP binary compiles both files in. A tool call travels:
 
 ```
-agent → sikemux-tools-mcp → CLI broker → harness.rs
+agent → sikemux-editor --tools-mcp → CLI broker → harness.rs
   browser.*                      → browser/tools.rs (Rust)
   plugins.tools / plugins.call   → plugins/agent.rs (Rust)
   everything else                → harness-request event → HarnessBridge →
