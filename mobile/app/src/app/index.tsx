@@ -31,10 +31,10 @@ export default function Home() {
         <Text style={common.label}>Macs</Text>
         {macs.length === 0 && <Text style={common.text}>No Mac yet.</Text>}
         {macs.map((mac) => (
-          <View key={mac.core} style={styles.mac}>
+          <Pressable key={mac.core} style={styles.mac} onPress={() => router.push(`/mac/${mac.core}`)}>
             <Text style={common.key}>Mac {shortKey(mac.core)}</Text>
             <Text style={styles.access}>{mac.access === 'full' ? 'Full access' : 'Watch only'}</Text>
-          </View>
+          </Pressable>
         ))}
         <Pressable style={common.button} onPress={() => router.push('/pair')}>
           <Text style={common.buttonText}>Pair with a Mac</Text>
