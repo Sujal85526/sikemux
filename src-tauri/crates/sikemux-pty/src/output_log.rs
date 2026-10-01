@@ -12,7 +12,7 @@ pub struct OutputLog {
     end: u64,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct OutputQuery {
     pub cursor: u64,
@@ -23,7 +23,7 @@ pub struct OutputQuery {
     pub plain: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OutputPage {
     pub bytes: Vec<u8>,
@@ -31,7 +31,7 @@ pub struct OutputPage {
     pub end: u64,
     pub truncated: bool,
     pub has_more: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub matches: Option<usize>,
 }
 

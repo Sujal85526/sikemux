@@ -8,7 +8,7 @@ const MAX_SHELL_PATH_BYTES: usize = 4 * 1024;
 const MAX_SHELL_EXIT_CODE_BYTES: usize = 11;
 const SHELL_EVENT_MIN_INTERVAL: Duration = Duration::from_millis(100);
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ShellPhase {
     #[default]
@@ -19,7 +19,7 @@ pub enum ShellPhase {
     Finished,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShellMetadataSnapshot {
     pub revision: u64,
@@ -28,9 +28,9 @@ pub struct ShellMetadataSnapshot {
     pub last_exit_code: Option<i32>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum ShellBoundary {
+pub enum ShellBoundary {
     Cwd,
     PromptStart,
     CommandStart,
@@ -99,20 +99,20 @@ pub struct ShellProtocolOutput {
     pub dropped: usize,
 }
 
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PtyShellMetadataEvent {
-    pty_id: u32,
-    revision: u64,
-    boundary: ShellBoundary,
-    cwd: Option<String>,
-    phase: ShellPhase,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    exit_code: Option<i32>,
+pub struct PtyShellMetadataEvent<Id = u32> {
+    pub pty_id: Id,
+    pub revision: u64,
+    pub boundary: ShellBoundary,
+    pub cwd: Option<String>,
+    pub phase: ShellPhase,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
 }
 
-impl PtyShellMetadataEvent {
-    pub fn from_update(pty_id: u32, update: ShellProtocolUpdate) -> Self {
+impl<Id> PtyShellMetadataEvent<Id> {
+    pub fn from_update(pty_id: Id, update: ShellProtocolUpdate) -> Self {
         let exit_code = (update.boundary == ShellBoundary::CommandFinished)
             .then_some(update.metadata.last_exit_code)
             .flatten();

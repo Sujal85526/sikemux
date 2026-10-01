@@ -6,7 +6,7 @@ use portable_pty::CommandBuilder;
 use crate::error::{PtyError, PtyResult};
 use crate::shell::{detect_shell_kind, ShellKind};
 
-#[derive(Clone, Debug, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PtyContext {
     pub session_id: String,
@@ -25,7 +25,7 @@ pub struct PtyContext {
     pub shell_integration: bool,
 }
 
-#[derive(Clone, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PtyAgentProfile {
     pub config_path: Option<String>,
@@ -33,7 +33,7 @@ pub struct PtyAgentProfile {
     environment_keys: Vec<String>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PtyDirectCommand {
     pub program: String,

@@ -20,7 +20,7 @@ const MAX_TASK_SIGNAL_BYTES: usize = 128;
 const TASK_EXIT_RETENTION: Duration = Duration::from_secs(10 * 60);
 pub const MAX_RETAINED_EXITED_TASK_PTYS: usize = 128;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum TaskSource {
     BuiltIn,
@@ -38,7 +38,7 @@ impl TaskSource {
     }
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TaskSpawnRequest {
     pub execution_id: String,
@@ -54,12 +54,12 @@ pub struct TaskSpawnRequest {
     pub rows: u16,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskProcessExit {
-    code: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    signal: Option<String>,
+    pub code: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signal: Option<String>,
 }
 
 impl TaskProcessExit {
