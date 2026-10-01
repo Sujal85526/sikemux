@@ -42,6 +42,8 @@ export interface TaskExecutionRequest {
     readonly env: Readonly<Record<string, string>>;
     readonly cols: number;
     readonly rows: number;
+    /** The agent whose desk shows the task. */
+    readonly agentId?: string;
 }
 
 export interface TaskProcessExit {
@@ -74,6 +76,8 @@ export interface TaskTerminalOpenRequest {
     readonly cwd: string;
     /** The agent that started the task, whose desk shows its terminal. */
     readonly agentId?: string;
+    /** Opened without taking focus, for a task taken back when the app starts. */
+    readonly background?: boolean;
     /** Cancels pending presentation on stop/failure; it never requests closing an opened terminal. */
     readonly signal: AbortSignal;
 }
@@ -355,7 +359,31 @@ export class HeadlessPtyTaskRunner implements TaskRunner {
         return this.createHandle(request, ptyId, processCompletion);
     }
 
-    private createHandle(request: TaskExecutionRequest, ptyId: number, processCompletion: Promise<TaskProcessExit>): TaskRunnerHandle {
+    /** A run the core kept going while no page watched it; its terminal opens without taking focus. */
+    adopt(task: ResolvedTaskDefinition, executionId: string, started: TaskExecutionStart): TaskRunnerHandle {
+        const stableTerminalKey = terminalKey(task);
+        const request: TaskExecutionRequest = Object.freeze({
+            executionId,
+            terminalKey: stableTerminalKey,
+            taskId: task.id,
+            label: task.label,
+            project: task.project,
+            source: task.source,
+            command: task.command,
+            cwd: task.cwd,
+            env: copyEnvironment(task.env),
+            cols: this.cols,
+            rows: this.rows,
+        });
+        return this.createHandle(request, requirePtyId(started.ptyId), requireCompletion(started.completion), true);
+    }
+
+    private createHandle(
+        request: TaskExecutionRequest,
+        ptyId: number,
+        processCompletion: Promise<TaskProcessExit>,
+        background = false,
+    ): TaskRunnerHandle {
         const abort = new AbortController();
         let state: RunState = "active";
         let surfaceOpened = false;
@@ -441,6 +469,7 @@ export class HeadlessPtyTaskRunner implements TaskRunner {
             project: request.project,
             source: request.source,
             cwd: request.cwd,
+            ...(background ? { background } : {}),
             signal: abort.signal,
         });
         void callAsPromise(() => this.openTerminal(surfaceRequest)).then(
@@ -514,6 +543,18 @@ export class TaskRuntime {
             return rejected(error);
         }
         return this.trackRecent(controller.run(task), task);
+    }
+
+    /** Shows a task the core kept running as this project's running task, so it can be stopped and restarted. */
+    adopt(task: ResolvedTaskDefinition, executionId: string, started: TaskExecutionStart): Promise<void> {
+        if (this.disposed) return rejected(new TaskRuntimeDisposedError());
+        let controller: TaskController;
+        try {
+            controller = this.controllerFor(requireProject(task.project));
+        } catch (error) {
+            return rejected(error);
+        }
+        return controller.adopt(task, () => this.runner.adopt(task, executionId, started));
     }
 
     restart(projectInput: string, taskId?: string): Promise<void> {

@@ -40,6 +40,10 @@ function boundedString(value: unknown, maxLength: number, allowEmpty = false): v
     return typeof value === "string" && value.length <= maxLength && (allowEmpty || value.length > 0);
 }
 
+export function isCoreSessionId(value: unknown): value is number {
+    return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
 function isPersistedTab(value: unknown, maxLength: number): boolean {
     return (
         isRecord(value) &&
@@ -82,6 +86,8 @@ export function validatePersistedLayout(value: unknown, limits: LayoutValidation
                 return { ok: false, reason: "pane startup is invalid" };
             if (current.value.tab !== undefined && !isPersistedTab(current.value.tab, limits.maxStringLength))
                 return { ok: false, reason: "pane tab is invalid" };
+            if (current.value.ptyId !== undefined && !isCoreSessionId(current.value.ptyId))
+                return { ok: false, reason: "pane terminal session is invalid" };
             paneIds.push(current.value.id);
             continue;
         }

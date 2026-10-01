@@ -230,7 +230,7 @@ impl PtyManager {
         self.current().map(|client| client.core_pid())
     }
 
-    async fn sessions(&self) -> AppResult<Vec<SessionInfo>> {
+    pub(crate) async fn sessions(&self) -> AppResult<Vec<SessionInfo>> {
         self.client().await?.list().await.map_err(core_error)
     }
 

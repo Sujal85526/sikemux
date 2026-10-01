@@ -37,6 +37,8 @@
     "allow-pty-reset-modes",
     "allow-pty-kill",
     "allow-listening-ports",
+    "allow-pty-sessions",
+    "allow-task-watch",
     "allow-agent-detection-explain",
     "allow-agent-detection-manifests",
     "allow-agent-detection-reload",

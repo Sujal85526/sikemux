@@ -41,6 +41,7 @@ import { useBrowserStrips } from "./state/browserStrips";
 import { filesApi } from "./api/files";
 import { emit } from "./state/bus";
 import * as cmd from "./state/commands";
+import { offerSavedSessions, restoreCoreSessions } from "./workspace/restoreCoreSessions";
 import { applyHydrate, canFlushPersist, flushPersist, hydrationAllowsPersistence, subscribePersist, type HydrationResult } from "./state/persist";
 import {
     dispatchFolder,
@@ -746,6 +747,7 @@ export default function App() {
                     applyEditorTextScale(st.editorTextScale);
                     cmd.setWindowBlur(st.windowBlur);
                     if (hydrationAllowsPersistence(hydrationResult)) {
+                        offerSavedSessions();
                         if (!st.onboardingComplete) cmd.openOnboarding();
                         else if (st.lastReleaseNotes && st.lastSeenVersion !== st.lastReleaseNotes.version) cmd.openWhatsNew();
                         performanceTelemetry.endSpan(hydrateSpan, { outcome: "success" });
@@ -781,6 +783,7 @@ export default function App() {
                     unsub = subscribePersist();
                     setBootReady(true);
                     introduceNotifications();
+                    void restoreCoreSessions();
                 }
                 finishBoot(disposed ? "cancelled" : writable ? "success" : "error");
             });

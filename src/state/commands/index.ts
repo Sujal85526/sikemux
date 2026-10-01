@@ -4,6 +4,7 @@ export { mergePinnedIntoRoots, normaliseProjectRoots } from "./settingsLogic";
 export * from "./agents";
 export * from "./appearance";
 export * from "./cliOpen";
+export * from "./coreSessions";
 export * from "./customCommands";
 export * from "./deepLink";
 export * from "./desk";

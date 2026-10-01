@@ -247,6 +247,8 @@ pub fn run() {
             pty::commands::pty_reset_modes,
             pty::commands::pty_kill,
             ports::listening_ports,
+            pty::commands::pty_sessions,
+            pty::commands::task_watch,
             pty::commands::agent_detection_explain,
             pty::commands::agent_detection_manifests,
             pty::commands::agent_detection_reload,

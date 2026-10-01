@@ -81,6 +81,8 @@ export interface DomainState {
     agentNotifications: boolean;
     voiceDictation: boolean;
     notificationsIntroduced: boolean;
+    /** The person was told once that terminals keep running after Sikemux quits. */
+    keptRunningNoticeShown: boolean;
     railDensity: RailDensity;
     /** The agent rail shows every CLI's chats instead of one provider's. */
     agentRailAllAgents: boolean;
@@ -245,6 +247,7 @@ export const useStore = create<StoreState>(() => {
         agentNotifications: true,
         voiceDictation: false,
         notificationsIntroduced: false,
+        keptRunningNoticeShown: false,
         railDensity: "comfortable",
         agentRailAllAgents: false,
         agentRailScope: "project",

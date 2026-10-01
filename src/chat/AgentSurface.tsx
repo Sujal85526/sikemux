@@ -7,6 +7,7 @@ import type { Agent, ProviderProfile, Session } from "../state/types";
 import { acpApi } from "../api/acp";
 import { agentSupportsChat } from "../agents/agentLaunch";
 import { TerminalPane } from "../terminal/TerminalPane";
+import { isResumableSession } from "../terminal/sessionResume";
 import { AgentIcon, IconAgent, IconCommand, IconMoreVertical, IconPanelRight } from "../ui/Icons";
 import { useStore } from "../state/store";
 import { shownDeskPaneId } from "../state/selectors";
@@ -65,7 +66,8 @@ function AgentMenuButton({ agent, session, onRename }: { agent: Agent; session: 
 
 export function AgentSurface({ agent, session, profile, visible }: { agent: Agent; session: Session; profile?: ProviderProfile; visible: boolean }) {
     const supportsGui = agentSupportsChat(agent.type);
-    const [view, setView] = useState<AgentView>(supportsGui ? "gui" : "tui");
+    /* A terminal agent that kept running while the app was closed comes back in its terminal. */
+    const [view, setView] = useState<AgentView>(supportsGui && !isResumableSession(agent.ptyId) ? "gui" : "tui");
     const [switching, setSwitching] = useState(false);
     const [chatBusy, setChatBusy] = useState(false);
     const [renaming, setRenaming] = useState(false);
@@ -173,6 +175,8 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                             active={visible}
                             visible={visible}
                             spawnWhen={visible}
+                            resumePtyId={agent.ptyId}
+                            onPtySession={(id) => cmd.setAgentPty(agent.id, id)}
                             context={{
                                 sessionId: session.id,
                                 sessionName: session.name,

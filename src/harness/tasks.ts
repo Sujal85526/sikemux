@@ -1,4 +1,4 @@
-import type { TaskExecutionBackend, TaskExecutionRequest, TaskTerminalSurface } from "../tasks/runtime";
+import type { TaskExecutionBackend, TaskExecutionRequest, TaskExecutionStart, TaskTerminalSurface } from "../tasks/runtime";
 import type { HarnessEvents } from "./events";
 
 export interface HarnessRun {
@@ -15,7 +15,16 @@ export interface HarnessRun {
     previewUrl?: string;
 }
 
-export type HarnessLaunchRequest = Omit<TaskExecutionRequest, "executionId" | "terminalKey">;
+export type HarnessLaunchRequest = Omit<TaskExecutionRequest, "executionId" | "terminalKey" | "agentId">;
+
+/** A run the core kept going while no page watched it. */
+export interface HarnessAdoption {
+    readonly executionId: string;
+    readonly terminalKey: string;
+    readonly request: HarnessLaunchRequest;
+    readonly agentId?: string;
+    readonly running: boolean;
+}
 
 export interface HarnessPrepared {
     request: HarnessLaunchRequest;
@@ -53,13 +62,17 @@ function readHistory(history: HarnessHistory | undefined): string[] {
     }
 }
 
+export function harnessTerminalKey(project: string, taskId: string): string {
+    return JSON.stringify(["harness", project, taskId]);
+}
+
 export class HarnessTasks {
     private readonly entries = new Map<string, Entry>();
     private readonly keys = new Map<string, { taskId: string; executionId: string }>();
     private readonly earlier: ReadonlySet<string>;
     private readonly started: Set<string>;
 
-    /** `history` outlives a reload of the window, which stops every task and forgets its runs. */
+    /** `history` outlives a reload of the window, which forgets every run the core no longer has. */
     constructor(
         private readonly backend: TaskExecutionBackend,
         private readonly surface: TaskTerminalSurface,
@@ -70,7 +83,7 @@ export class HarnessTasks {
         this.started = new Set(this.earlier);
     }
 
-    startedBeforeReload(project: string, taskId: string): boolean {
+    startedEarlier(project: string, taskId: string): boolean {
         return this.earlier.has(JSON.stringify([project, taskId])) && !this.latest(project, taskId);
     }
 
@@ -169,26 +182,15 @@ export class HarnessTasks {
         const request: TaskExecutionRequest = {
             ...prepared.request,
             executionId: run.executionId,
-            terminalKey: JSON.stringify(["harness", run.project, run.taskId]),
+            terminalKey: harnessTerminalKey(run.project, run.taskId),
+            ...(entry.agentId ? { agentId: entry.agentId } : {}),
         };
         try {
             const started = await this.backend.start(request);
             run.ptyId = started.ptyId;
             run.status = "running";
             this.publish(run);
-            void Promise.resolve(started.completion).then(
-                (exit) => {
-                    run.exitCode = exit.code;
-                    run.signal = exit.signal;
-                    if (run.status !== "stopped") run.status = run.status === "stopping" ? "stopped" : exit.code === 0 ? "completed" : "failed";
-                    this.publish(run);
-                },
-                () => {
-                    run.status = "failed";
-                    run.error = "Task completion could not be observed";
-                    this.publish(run);
-                },
-            );
+            this.observe(run, started);
             await this.surface.open({ ...request, ptyId: started.ptyId, agentId: entry.agentId, signal: entry.abort.signal });
             return { ...run };
         } catch (error) {
@@ -201,6 +203,54 @@ export class HarnessTasks {
             this.publish(run);
             throw error;
         }
+    }
+
+    private observe(run: HarnessRun, started: TaskExecutionStart): void {
+        void Promise.resolve(started.completion).then(
+            (exit) => {
+                run.exitCode = exit.code;
+                run.signal = exit.signal;
+                if (run.status !== "stopped") run.status = run.status === "stopping" ? "stopped" : exit.code === 0 ? "completed" : "failed";
+                this.publish(run);
+            },
+            () => {
+                run.status = "failed";
+                run.error = "Task completion could not be observed";
+                this.publish(run);
+            },
+        );
+    }
+
+    /** Takes back a run the core kept, so task_read, task_stop and its terminal work as before. */
+    adopt(adoption: HarnessAdoption, started: TaskExecutionStart): void {
+        const { executionId, request, agentId } = adoption;
+        if (this.entries.has(executionId) || this.entries.size >= 128) return;
+        const run: HarnessRun = {
+            executionId,
+            taskId: request.taskId,
+            project: request.project,
+            status: "running",
+            label: request.label,
+            command: request.command,
+            ptyId: started.ptyId,
+        };
+        const entry: Entry = { run, agentId, request, abort: new AbortController(), started: Promise.resolve(run) };
+        this.entries.set(executionId, entry);
+        this.remember(run.project, run.taskId);
+        this.publish(run);
+        this.observe(run, started);
+        if (!adoption.running) return;
+        void Promise.resolve(
+            this.surface.open({
+                ...request,
+                executionId,
+                terminalKey: adoption.terminalKey,
+                ptyId: started.ptyId,
+                agentId,
+                background: true,
+                signal: entry.abort.signal,
+            }),
+        ).catch(() => {});
     }
 
     stop(project: string, executionId: string): Promise<HarnessRun> {

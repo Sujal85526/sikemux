@@ -24,7 +24,7 @@ export async function exportActiveSession(): Promise<void> {
         .filter((agent): agent is Agent => !!agent?.resumeId)
         .map(({ type, title, resumeId }) => ({ type, title, resumeId }));
     const payload = JSON.stringify({ format: "sikemux-session", version: 1, session, windows, agents }, (key, value) =>
-        key === "secretVars" || key === "drafts" || key === "startup" || key === "baselineSessionIds" ? undefined : value,
+        key === "secretVars" || key === "drafts" || key === "startup" || key === "baselineSessionIds" || key === "ptyId" ? undefined : value,
     );
     await copyText(payload);
     notify("success", `Copied ${session.name} session bundle (secrets and startup commands stripped)`);

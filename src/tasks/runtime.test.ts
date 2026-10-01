@@ -263,6 +263,29 @@ describe("HeadlessPtyTaskRunner", () => {
 });
 
 describe("TaskRuntime", () => {
+    it("shows a task the core kept as running, opens its terminal quietly, and stops that exact process", async () => {
+        const { runtime, open, stop } = runtimeHarness([definition("dev")]);
+        const exit = deferred<TaskProcessExit>();
+        await runtime.adopt(resolvedTask("dev", { env: {} }), "kept-execution", { ptyId: 555, completion: exit.promise });
+        await flushPromises();
+
+        expect(runtime.getSnapshot("/workspace/project")).toMatchObject({ status: "running", task: { id: "dev" } });
+        expect(open).toHaveBeenCalledWith(expect.objectContaining({ ptyId: 555, executionId: "kept-execution", background: true }));
+
+        await runtime.stop("/workspace/project");
+        expect(stop).toHaveBeenCalledWith(555);
+        expect(runtime.getSnapshot("/workspace/project")?.status).toBe("idle");
+    });
+
+    it("lets a kept task finish on its own", async () => {
+        const { runtime } = runtimeHarness([definition("dev")]);
+        const exit = deferred<TaskProcessExit>();
+        await runtime.adopt(resolvedTask("dev"), "kept-execution", { ptyId: 9, completion: exit.promise });
+        exit.resolve({ code: 0 });
+        await flushPromises();
+        expect(runtime.getSnapshot("/workspace/project")?.status).toBe("idle");
+    });
+
     it("runs one task per project, records recency after start, and observes completion", async () => {
         const harness = runtimeHarness([definition("build"), definition("test")]);
 

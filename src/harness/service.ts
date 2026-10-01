@@ -120,9 +120,9 @@ function executionFor(project: string, params: Record<string, unknown>): string 
     if (!taskId) throw new Error("executionId or taskId is required");
     const latest = harnessTasks.latest(project, taskId);
     if (latest) return latest.executionId;
-    if (harnessTasks.startedBeforeReload(project, taskId))
+    if (harnessTasks.startedEarlier(project, taskId))
         throw new Error(
-            `Task ${taskId} was started before the Sikemux window reloaded; a reload stops every task and forgets its runs. Start it again with task_start.`,
+            `Task ${taskId} was started earlier, but its run is gone: it ended a while ago or was stopped with Quit and Stop Everything. Start it again with task_start.`,
         );
     throw new Error(
         `Task ${taskId} has not been started since Sikemux opened; call workspace_inspect to see the runs it knows about, or start it with task_start`,
@@ -250,8 +250,8 @@ function launchCommand(request: HarnessRequest, launch: HarnessLaunchRequest, ke
 function earlierCommand(project: string, taskId: string): HarnessLaunchRequest {
     const launch = harnessTasks.launchRequest(project, taskId);
     if (launch) return launch;
-    if (harnessTasks.startedBeforeReload(project, taskId))
-        throw new Error(`Task ${taskId} was started before the Sikemux window reloaded, which forgot its command; start it again with command`);
+    if (harnessTasks.startedEarlier(project, taskId))
+        throw new Error(`Task ${taskId} was started earlier, but its run and command are gone; start it again with command`);
     throw new Error(`Task ${taskId} has not been started since Sikemux opened; start it with command`);
 }
 

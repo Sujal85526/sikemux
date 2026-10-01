@@ -35,6 +35,8 @@ export interface PtyApi<ChannelTransport, Context = unknown> {
     detach(id: number, subId: number): Promise<void>;
     /** Reports bytes this subscription has finished writing to its renderer. */
     ack(id: number, subId: number, bytes: number): Promise<void>;
+    /** Whether a process this page did not start may be taken over instead of spawning one. */
+    resume?(id: number): Promise<boolean>;
 }
 
 export interface PtyChannelBinding<ChannelTransport> {
@@ -110,6 +112,10 @@ export interface PtyLifecycleControllerOptions<ChannelTransport, Context = unkno
     readonly channels: PtyChannelAdapter<ChannelTransport>;
     /** Existing native PTY retained and stopped by another runtime owner. */
     readonly existingPtyId?: number;
+    /** A process this controller's owner ran before the page loaded, taken over if it is still there. */
+    readonly resumePtyId?: number;
+    /** The process this controller owns, whether spawned or taken over. */
+    readonly onProcess?: (id: number) => void;
     readonly cwd?: string;
     readonly startup?: string;
     readonly directCommand?: PtyDirectCommand;
@@ -372,6 +378,8 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
     private initialInputAttempted = false;
     private initialInputTimer: unknown | null = null;
     private externalPtyId: number | null;
+    private resumePtyId: number | null;
+    private readonly onProcess?: (id: number) => void;
     private ptyId: number | null = null;
     private ptyGeneration = 0;
     private startPromise: Promise<number> | null = null;
@@ -392,6 +400,8 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         this.channels = options.channels;
         this.externalPtyId = options.existingPtyId === undefined ? null : requirePtyId("existingPtyId", options.existingPtyId);
         this.processOwnership = this.externalPtyId === null ? "controller" : "external";
+        this.resumePtyId = options.resumePtyId === undefined || this.externalPtyId !== null ? null : requirePtyId("resumePtyId", options.resumePtyId);
+        this.onProcess = options.onProcess;
         if (this.externalPtyId !== null) this.ptyGeneration = 1;
         this.cols = requirePositiveInteger("cols", options.cols ?? DEFAULT_COLS, 65_535);
         this.rows = requirePositiveInteger("rows", options.rows ?? DEFAULT_ROWS, 65_535);
@@ -454,7 +464,11 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         this.failureOperation = null;
         this.spawnAttempts += 1;
         this.emitState();
-        const spawned = callAsPromise(() => this.api.spawn(this.spawnRequest));
+        let resumed = false;
+        const spawned = this.resumeOrSpawn().then((outcome) => {
+            resumed = outcome.resumed;
+            return outcome.id;
+        });
         const attempt = spawned
             .then(async (id) => {
                 if (!isPtyId(id)) throw new TypeError("PTY spawn returned an invalid runtime ID");
@@ -470,7 +484,9 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
                 }
                 this.status = "running";
                 this.failureOperation = null;
+                if (resumed) this.skipInitialInput();
                 this.emitState();
+                this.notifyProcess(id);
                 this.scheduleInitialInput(id);
                 return id;
             })
@@ -491,6 +507,31 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         );
         this.startPromise = tracked;
         return tracked;
+    }
+
+    /** A taken-over process already had its first input, so it never gets it twice. */
+    private async resumeOrSpawn(): Promise<{ id: number; resumed: boolean }> {
+        const candidate = this.resumePtyId;
+        this.resumePtyId = null;
+        if (candidate !== null && this.api.resume) {
+            const available = await callAsPromise(() => this.api.resume!(candidate)).catch(() => false);
+            if (available) return { id: candidate, resumed: true };
+        }
+        return { id: await callAsPromise(() => this.api.spawn(this.spawnRequest)), resumed: false };
+    }
+
+    private skipInitialInput(): void {
+        this.initialPasteChunks = null;
+        this.initialInputAttempted = true;
+        if (this.initialInputStatus === "pending") this.initialInputStatus = "none";
+    }
+
+    private notifyProcess(id: number): void {
+        try {
+            this.onProcess?.(id);
+        } catch (error) {
+            this.reportError("spawn", error);
+        }
     }
 
     private startExternalPty(): Promise<number> {

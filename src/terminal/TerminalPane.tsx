@@ -39,6 +39,8 @@ export function TerminalPane({
     context,
     externallyOwned = false,
     retainPtyOnUnmount = false,
+    resumePtyId,
+    onPtySession,
     onTitleChange,
     onExit,
 }: {
@@ -58,6 +60,10 @@ export function TerminalPane({
     externallyOwned?: boolean;
     /** Item controllers set this; transient/embedded terminals remain local. */
     retainPtyOnUnmount?: boolean;
+    /** The terminal this pane showed before the app last closed, taken back if it still runs. */
+    resumePtyId?: number;
+    /** Hears which terminal this pane shows, so it can be found again after a restart. */
+    onPtySession?: (id: number) => void;
     onTitleChange?: (title: string) => void;
     /** Fires when the shell process ends. Remount with a fresh key to respawn. */
     onExit?: () => void;
@@ -97,6 +103,8 @@ export function TerminalPane({
         externallyOwned,
         onShellMetadata: shellIntegration ? applyShellEvent : undefined,
         durableItemId: retainPtyOnUnmount ? context?.paneId : undefined,
+        resumePtyId,
+        onPtySession,
     });
 
     useEffect(() => {

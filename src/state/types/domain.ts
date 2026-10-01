@@ -20,6 +20,8 @@ export interface PaneNode {
     startup?: string;
     /** The tab this pane had before it was split into another, which it takes back when it moves out. */
     tab?: { name: string; role: WindowRole };
+    /** The terminal core session this pane shows, which outlives the app. */
+    ptyId?: number;
     /** Runtime-only marker: this pane borrows a process owned outside its renderer. */
     externalPty?: true;
     /** Runtime-only stable task identity used to reuse its presentation window. */
@@ -128,6 +130,8 @@ export interface Agent {
     renamed?: boolean;
     /** The git worktree this chat was moved into before its first message. */
     worktree?: AgentWorktree;
+    /** The terminal core session running this agent's TUI, which outlives the app. */
+    ptyId?: number;
 }
 
 export interface AgentWorktree {

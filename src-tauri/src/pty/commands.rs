@@ -2,7 +2,8 @@ use std::time::Duration;
 
 use sikemux_core::client::{Attached, ClientError, Reply};
 use sikemux_core::protocol::{
-    LaunchIdentity, Request, Response as CoreResponse, SessionId, SpawnTarget, TerminalSpawn,
+    LaunchIdentity, Request, Response as CoreResponse, SessionExit, SessionId, SessionInfo,
+    SpawnTarget, TerminalSpawn,
 };
 use sikemux_pty::agent_detection::{DetectionExplain, ManifestReloadReport};
 use sikemux_pty::launch::{PtyContext, PtyDirectCommand};
@@ -392,6 +393,43 @@ pub async fn pty_kill(manager: State<'_, PtyManager>, id: SessionId) -> AppResul
     manager.streams.channels(id).send(&[]);
     let client = manager.client().await?;
     client.kill(id).await.map_err(core_error)
+}
+
+/// Every session the core holds, running or kept after it ended.
+#[tauri::command]
+pub async fn pty_sessions(manager: State<'_, PtyManager>) -> AppResult<Vec<SessionInfo>> {
+    manager.sessions().await
+}
+
+/// Takes over a task this page did not start: `on_exit` hears how it ends,
+/// at once if it already has.
+#[tauri::command]
+pub async fn task_watch(
+    manager: State<'_, PtyManager>,
+    id: SessionId,
+    on_exit: Channel<TaskProcessExit>,
+) -> AppResult<()> {
+    manager.streams.lock()?.register_task(id, on_exit);
+    let session = manager
+        .sessions()
+        .await?
+        .into_iter()
+        .find(|session| session.id == id);
+    let ended = match session {
+        Some(session) if session.running => return Ok(()),
+        Some(session) => session.exit.unwrap_or(SessionExit {
+            code: None,
+            signal: None,
+        }),
+        None => SessionExit {
+            code: None,
+            signal: None,
+        },
+    };
+    if let Some(channel) = manager.streams.lock()?.take_task_exit(id) {
+        let _ = channel.send(super::sink::task_exit(ended.code, ended.signal));
+    }
+    Ok(())
 }
 
 #[tauri::command]

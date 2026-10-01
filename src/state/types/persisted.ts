@@ -37,6 +37,7 @@ export type PersistedAgent = Pick<
     | "keepAlive"
     | "renamed"
     | "worktree"
+    | "ptyId"
 >;
 
 export interface PersistedSnapshot {
@@ -83,6 +84,7 @@ export interface PersistedPrefs {
     agentNotifications?: boolean;
     voiceDictation?: boolean;
     notificationsIntroduced?: boolean;
+    keptRunningNoticeShown?: boolean;
     railDensity?: RailDensity;
     agentRailAllAgents?: boolean;
     agentRailScope?: AgentRailScope;

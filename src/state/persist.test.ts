@@ -105,7 +105,7 @@ describe("frontend persistence", () => {
         expect(
             applyHydrate(
                 JSON.stringify({
-                    version: 18,
+                    version: 19,
                     sessions: [],
                     itemStates: {},
                 }),
@@ -403,6 +403,48 @@ describe("frontend persistence", () => {
         expect(getState().deskRestores).toEqual({});
     });
 
+    it("saves the core terminal each pane and terminal agent shows, and takes them back", async () => {
+        const sid = getState().activeSessionId;
+        const terminalWindowId = getState().sessions[sid].activeWindowId;
+        const paneId = getState().windows[terminalWindowId].activePaneId;
+        cmd.setPanePty(paneId, 1_759_300_000_001);
+        const agent: Agent = { id: "agent-tui", type: "pi", title: "pi in its terminal", startup: "pi" };
+        setState((s) => {
+            const slices = withAgents(s, sid, [agent]);
+            return { ...slices, sessions: { ...s.sessions, [sid]: { ...s.sessions[sid], kind: "project" } } };
+        });
+        cmd.setAgentPty(agent.id, 1_759_300_000_002);
+        invoke.mockResolvedValue(undefined);
+
+        expect(await flushPersist()).toBe(true);
+        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
+        expect(saved.agents).toEqual([expect.objectContaining({ id: agent.id, ptyId: 1_759_300_000_002 })]);
+        expect(saved.agents[0]).not.toHaveProperty("resumeId");
+
+        applyHydrate(JSON.stringify(saved));
+        expect(collectPanes(getState().windows[terminalWindowId].root)[0].ptyId).toBe(1_759_300_000_001);
+        expect(getState().agents[agent.id]).toMatchObject({ ptyId: 1_759_300_000_002, launchState: "dormant" });
+        expect(agentIdsOf(getState(), sid)).toEqual([agent.id]);
+    });
+
+    it("forgets terminals saved before v18, which died with the app", async () => {
+        const sid = getState().activeSessionId;
+        const terminalWindowId = getState().sessions[sid].activeWindowId;
+        invoke.mockResolvedValue(undefined);
+        expect(await flushPersist()).toBe(true);
+        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
+        saved.version = 17;
+        saved.windowsBySession[sid][0].root.ptyId = 42;
+
+        expect(applyHydrate(JSON.stringify(saved))).toBe("applied");
+        expect(collectPanes(getState().windows[terminalWindowId].root)[0].ptyId).toBeUndefined();
+
+        saved.version = 18;
+        saved.windowsBySession[sid][0].root.ptyId = -1;
+        applyHydrate(JSON.stringify(saved));
+        expect(getState().windows[terminalWindowId]).toBeUndefined();
+    });
+
     it("closes a v16 GitHub session, which lives in the git pane now", async () => {
         const sid = getState().activeSessionId;
         invoke.mockResolvedValue(undefined);
@@ -641,7 +683,7 @@ describe("frontend persistence", () => {
 
         await expect(flushPersist()).resolves.toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.version).toBe(17);
+        expect(saved.version).toBe(18);
         expect(saved.editorViews).toBeUndefined();
         expect(saved.itemStates).toEqual({
             [editorPane.id]: {
@@ -781,7 +823,7 @@ describe("frontend persistence", () => {
         const migrated = invoke.mock.calls[0][1].data as string;
         expect(migrated).not.toContain("legacy-secret");
         expect(migrated).not.toContain("agentBookmarks");
-        expect(JSON.parse(migrated).version).toBe(17);
+        expect(JSON.parse(migrated).version).toBe(18);
     });
 
     /*
@@ -814,7 +856,7 @@ describe("frontend persistence", () => {
         invoke.mockResolvedValue(undefined);
         expect(await flushPersist()).toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.version).toBe(17);
+        expect(saved.version).toBe(18);
         expect(saved.agents.map((agent: { id: string }) => agent.id)).toEqual(["a1", "a2"]);
         expect(saved).not.toHaveProperty("agentsBySession");
         expect(saved.sessions[0]).not.toHaveProperty("view");

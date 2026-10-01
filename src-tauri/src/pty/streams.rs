@@ -232,6 +232,12 @@ impl StreamGuard<'_> {
         self.sessions.entry(id).or_default().task_exit = Some(exit);
     }
 
+    pub(super) fn take_task_exit(&mut self, id: SessionId) -> Option<Channel<TaskProcessExit>> {
+        let exit = self.sessions.get_mut(&id)?.task_exit.take();
+        self.forget_if_unused(id);
+        exit
+    }
+
     pub(super) fn is_core_subscribed(&self, id: SessionId) -> bool {
         self.sessions
             .get(&id)
@@ -433,6 +439,20 @@ mod tests {
         assert!(delivery.is_empty());
         let (again, _) = table.exited(9);
         assert!(again.is_none());
+        assert!(table.take_all().is_empty());
+    }
+
+    #[test]
+    fn a_watched_task_exit_is_taken_once() {
+        let table = StreamTable::default();
+        let mut guard = table.lock().expect("lock");
+        guard.register_task(
+            6,
+            tauri::ipc::Channel::<sikemux_pty::task::TaskProcessExit>::new(|_| Ok(())),
+        );
+        assert!(guard.take_task_exit(6).is_some());
+        assert!(guard.take_task_exit(6).is_none());
+        drop(guard);
         assert!(table.take_all().is_empty());
     }
 

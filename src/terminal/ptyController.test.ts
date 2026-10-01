@@ -346,6 +346,44 @@ describe("PtyLifecycleController process ownership", () => {
         expect(controller.getSnapshot()).toMatchObject({ status: "disposed", attachmentCount: 0, initialInput: "cancelled" });
     });
 
+    it("takes back a process that is still there instead of spawning, without sending its first input again", async () => {
+        const timer = new FakeTimer();
+        const onProcess = vi.fn();
+        const resume = vi.fn(async (_id: number) => true);
+        const { fakes, options } = controllerOptions({ resumePtyId: 1_759_300_000_005, initialInput: "Build it.", timer, onProcess });
+        const controller = new PtyLifecycleController({ ...options, api: { ...fakes.api, resume } });
+
+        await expect(controller.start()).resolves.toBe(1_759_300_000_005);
+        timer.runAll();
+        expect(resume).toHaveBeenCalledWith(1_759_300_000_005);
+        expect(fakes.spawn).not.toHaveBeenCalled();
+        expect(fakes.write).not.toHaveBeenCalled();
+        expect(onProcess).toHaveBeenCalledWith(1_759_300_000_005);
+        expect(controller.getSnapshot()).toMatchObject({ status: "running", processOwnership: "controller", initialInput: "none" });
+
+        await controller.dispose();
+        expect(fakes.kill).toHaveBeenCalledWith(1_759_300_000_005);
+    });
+
+    it("spawns a fresh process when the saved one is gone or cannot be checked", async () => {
+        for (const resume of [vi.fn(async () => false), vi.fn(async () => Promise.reject(new Error("core unreachable")))]) {
+            const onProcess = vi.fn();
+            const { fakes, options } = controllerOptions({ resumePtyId: 9, onProcess });
+            const controller = new PtyLifecycleController({ ...options, api: { ...fakes.api, resume } });
+            await expect(controller.start()).resolves.toBe(42);
+            expect(fakes.spawn).toHaveBeenCalledOnce();
+            expect(onProcess).toHaveBeenCalledWith(42);
+        }
+    });
+
+    it("never takes over a process for a controller borrowing another owner's", async () => {
+        const resume = vi.fn(async () => true);
+        const { fakes, options } = controllerOptions({ existingPtyId: 73, resumePtyId: 9 });
+        const controller = new PtyLifecycleController({ ...options, api: { ...fakes.api, resume } });
+        await expect(controller.start()).resolves.toBe(73);
+        expect(resume).not.toHaveBeenCalled();
+    });
+
     it("delivers initial input at most once and reports successful delivery", async () => {
         const timer = new FakeTimer();
         const delivered = vi.fn();

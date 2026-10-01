@@ -151,12 +151,40 @@ describe("managed harness tasks", () => {
         const backend = { start: vi.fn(() => ({ ptyId: 1, completion: new Promise<TaskProcessExit>(() => {}) })), stop: vi.fn(async () => {}) };
         const before = new HarnessTasks(backend, { open: async () => {} }, new HarnessEvents(), history);
         await start(before, request, "key");
-        expect(before.startedBeforeReload("/one", "dev")).toBe(false);
+        expect(before.startedEarlier("/one", "dev")).toBe(false);
         const after = new HarnessTasks(backend, { open: async () => {} }, new HarnessEvents(), history);
-        expect(after.startedBeforeReload("/one", "dev")).toBe(true);
-        expect(after.startedBeforeReload("/one", "other")).toBe(false);
-        expect(after.startedBeforeReload("/two", "dev")).toBe(false);
+        expect(after.startedEarlier("/one", "dev")).toBe(true);
+        expect(after.startedEarlier("/one", "other")).toBe(false);
+        expect(after.startedEarlier("/two", "dev")).toBe(false);
         await start(after, request, "key");
-        expect(after.startedBeforeReload("/one", "dev")).toBe(false);
+        expect(after.startedEarlier("/one", "dev")).toBe(false);
+    });
+    it("takes back a run the core kept, quietly, so it can be read, stopped and found by task id", async () => {
+        const { tasks, backend, surface } = fixture();
+        const exit = deferred<TaskProcessExit>();
+        tasks.adopt(
+            { executionId: "kept", terminalKey: JSON.stringify(["harness", "/one", "dev"]), request, agentId: "agent-1", running: true },
+            { ptyId: 77, completion: exit.promise },
+        );
+        expect(tasks.latest("/one", "dev")).toMatchObject({ executionId: "kept", status: "running", ptyId: 77, command: "echo test" });
+        expect(surface.open).toHaveBeenCalledWith(expect.objectContaining({ ptyId: 77, agentId: "agent-1", background: true }));
+        expect(tasks.startedEarlier("/one", "dev")).toBe(false);
+        expect(tasks.launchRequest("/one", "dev")).toEqual(request);
+
+        await expect(tasks.stop("/one", "kept")).resolves.toMatchObject({ status: "stopped" });
+        expect(backend.stop).toHaveBeenCalledWith(77);
+        expect(backend.start).not.toHaveBeenCalled();
+    });
+
+    it("takes back a run that ended while the app was closed without opening its terminal", async () => {
+        const { tasks, surface } = fixture();
+        tasks.adopt(
+            { executionId: "done", terminalKey: JSON.stringify(["harness", "/one", "dev"]), request, running: false },
+            { ptyId: 5, completion: Promise.resolve({ code: 2 }) },
+        );
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(tasks.get("/one", "done")).toMatchObject({ status: "failed", exitCode: 2 });
+        expect(surface.open).not.toHaveBeenCalled();
     });
 });

@@ -50,6 +50,8 @@ export interface TaskTerminalPresentationRequest {
     readonly source: TaskTerminalOpenRequest["source"];
     readonly cwd: string;
     readonly agentId?: string;
+    /** Opened without taking focus, for a task taken back when the app starts. */
+    readonly background?: boolean;
     readonly signal: AbortSignal;
 }
 
@@ -107,6 +109,34 @@ export class NativeTaskExecutionBackend implements TaskExecutionBackend {
     }
 
     async start(request: TaskExecutionRequest): Promise<TaskExecutionStart> {
+        const observed = this.observeExit();
+        let result: NativeTaskSpawnResult;
+        try {
+            result = await this.invoke<NativeTaskSpawnResult>("task_spawn", { request, onExit: observed.channel });
+        } catch (error) {
+            observed.fail(error);
+            throw error;
+        }
+
+        const ptyId = requirePtyId(result?.ptyId);
+        taskProcessChanged();
+        return Object.freeze({ ptyId, completion: observed.completion });
+    }
+
+    /** Takes over a task the core kept running while this page was not there. */
+    async watch(ptyIdInput: number): Promise<TaskExecutionStart> {
+        const ptyId = requirePtyId(ptyIdInput);
+        const observed = this.observeExit();
+        try {
+            await this.invoke<void>("task_watch", { id: ptyId, onExit: observed.channel });
+        } catch (error) {
+            observed.fail(error);
+            throw error;
+        }
+        return Object.freeze({ ptyId, completion: observed.completion });
+    }
+
+    private observeExit(): { channel: TaskExitChannel; completion: Promise<TaskProcessExit>; fail: (error: unknown) => void } {
         const exitChannel = this.createExitChannel();
         if (!exitChannel || typeof exitChannel !== "object") throw new TypeError("task exit channel factory returned an invalid channel");
 
@@ -126,20 +156,12 @@ export class NativeTaskExecutionBackend implements TaskExecutionBackend {
             resolveCompletion(exit);
             taskProcessChanged();
         };
-
-        let result: NativeTaskSpawnResult;
-        try {
-            result = await this.invoke<NativeTaskSpawnResult>("task_spawn", { request, onExit: exitChannel });
-        } catch (error) {
+        const fail = (error: unknown) => {
             settled = true;
             exitChannel.onmessage = NOOP;
             rejectCompletion(error);
-            throw error;
-        }
-
-        const ptyId = requirePtyId(result?.ptyId);
-        taskProcessChanged();
-        return Object.freeze({ ptyId, completion });
+        };
+        return { channel: exitChannel, completion, fail };
     }
 
     stop(ptyId: number): Promise<void> {
@@ -266,6 +288,7 @@ export class WorkbenchTaskTerminalSurface implements TaskTerminalSurface {
             source: request.source,
             cwd: request.cwd,
             agentId: request.agentId,
+            background: request.background,
             signal: request.signal,
         });
         const paneId = await this.present(presentation);

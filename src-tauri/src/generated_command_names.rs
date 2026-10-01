@@ -20,6 +20,8 @@ pub const IPC_COMMANDS: &[&str] = &[
     "pty_reset_modes",
     "pty_kill",
     "listening_ports",
+    "pty_sessions",
+    "task_watch",
     "agent_detection_explain",
     "agent_detection_manifests",
     "agent_detection_reload",

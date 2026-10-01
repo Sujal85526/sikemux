@@ -19,7 +19,7 @@ import { agentDirectCommand, agentStartup } from "./commands";
 import { agentWindow } from "./agentWindow";
 import { getState, setState, useStore, type StoreState } from "./store";
 import { errMessage, notify } from "./toast";
-import { isSessionKind, validatePersistedLayout } from "./persistValidation";
+import { isCoreSessionId, isSessionKind, validatePersistedLayout } from "./persistValidation";
 import { isPluginId, isPluginKind } from "../plugins/kinds";
 import { createWorkbenchItemRef, workbenchItemRegistry, workbenchItemRefFromPane, type BuiltinWorkbenchItemState } from "../workbench/registry";
 import type {
@@ -53,7 +53,7 @@ function deriveRole(w: Window): WindowRole {
     return "named";
 }
 
-export const VERSION = 17;
+export const VERSION = 18;
 const MIN_SUPPORTED_VERSION = 3;
 const ONBOARDING_MIGRATION_VERSION = 6;
 const AGENT_PERMISSION_DEFAULT_MIGRATION_VERSION = 9;
@@ -65,6 +65,7 @@ const BRUNO_PLUGIN_MIGRATION_VERSION = 14;
 const RUNDECK_GROUPS_MIGRATION_VERSION = 15;
 const DESK_MIGRATION_VERSION = 16;
 const GITHUB_IN_GIT_PANE_MIGRATION_VERSION = 17;
+const CORE_SESSION_MIGRATION_VERSION = 18;
 const RETRY_MS = 1500;
 let lastSaved = "";
 let activeSnapshot: string | null = null;
@@ -111,6 +112,7 @@ const PERSISTED_KEYS = [
     "agentNotifications",
     "voiceDictation",
     "notificationsIntroduced",
+    "keptRunningNoticeShown",
     "railDensity",
     "agentRailAllAgents",
     "agentRailScope",
@@ -171,6 +173,7 @@ function packPrefs(s: StoreState): PersistedPrefs {
         agentNotifications: s.agentNotifications,
         voiceDictation: s.voiceDictation,
         notificationsIntroduced: s.notificationsIntroduced,
+        keptRunningNoticeShown: s.keptRunningNoticeShown,
         railDensity: s.railDensity,
         agentRailAllAgents: s.agentRailAllAgents,
         agentRailScope: s.agentRailScope,
@@ -362,8 +365,13 @@ function toAgentWorktree(value: unknown): AgentWorktree | undefined {
 const AGENT_EFFORTS = new Set(["off", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]);
 function toPersistedAgent(value: unknown): PersistedAgent | null {
     if (!isRecord(value) || typeof value.id !== "string" || !value.id || !AGENT_TYPES.has(value.type as AgentType)) return null;
-    if (typeof value.title !== "string" || !value.title.trim() || typeof value.resumeId !== "string" || !value.resumeId.trim()) return null;
-    const agent: PersistedAgent = { id: value.id, type: value.type as AgentType, title: value.title.slice(0, 200), resumeId: value.resumeId };
+    if (typeof value.title !== "string" || !value.title.trim()) return null;
+    const resumeId = typeof value.resumeId === "string" && value.resumeId.trim() ? value.resumeId : undefined;
+    const ptyId = isCoreSessionId(value.ptyId) ? value.ptyId : undefined;
+    if (!resumeId && ptyId === undefined) return null;
+    const agent: PersistedAgent = { id: value.id, type: value.type as AgentType, title: value.title.slice(0, 200) };
+    if (resumeId) agent.resumeId = resumeId;
+    if (ptyId !== undefined) agent.ptyId = ptyId;
     const requestedPermissionMode = isAgentPermissionMode(value.permissionMode)
         ? value.permissionMode
         : value.skipPermissions === true
@@ -412,6 +420,7 @@ function persistedAgent(agent: Agent): PersistedAgent {
         ...(agent.keepAlive ? { keepAlive: true } : {}),
         ...(agent.renamed ? { renamed: true } : {}),
         ...(agent.worktree ? { worktree: agent.worktree } : {}),
+        ...(agent.ptyId !== undefined ? { ptyId: agent.ptyId } : {}),
     };
 }
 
@@ -433,15 +442,15 @@ function withoutEmptyDesks(window: Window): Window | null {
 }
 
 /**
- * A window worth writing. A task terminal is runtime-only, and an agent that
- * has not yet earned a resume id could not be brought back, so neither goes to
- * disk.
+ * A window worth writing. A task terminal is runtime-only, and an agent with
+ * neither a resume id nor a terminal in the core could not be brought back, so
+ * neither goes to disk.
  */
 function durableWindow(s: StoreState, id: string): Window | null {
     const window = s.windows[id];
     if (!window || window.transient) return null;
-    const agentPane = window.role === "agent" ? agentPaneId(window) : null;
-    if (window.role === "agent" && !s.agents[agentPane ?? ""]?.resumeId) return null;
+    const agent = window.role === "agent" ? s.agents[agentPaneId(window) ?? ""] : null;
+    if (window.role === "agent" && !agent?.resumeId && agent?.ptyId === undefined) return null;
     return withoutEmptyDesks(window);
 }
 
@@ -575,6 +584,26 @@ export function flushPersist(): Promise<boolean> {
     lastSlices = takeSlices(getState());
     queueSnapshot(snapshot());
     return startSaveLoop();
+}
+
+/** Before v18 terminals died with the app, so a saved session id names nothing that could still run. */
+function forgetCoreSessions(decoded: Record<string, unknown>): void {
+    const windowsBySession = isRecord(decoded.windowsBySession) ? decoded.windowsBySession : {};
+    for (const rows of Object.values(windowsBySession)) {
+        for (const row of Array.isArray(rows) ? rows : []) {
+            const pending: unknown[] = isRecord(row) ? [row.root] : [];
+            for (let node = pending.pop(); node !== undefined; node = pending.pop()) {
+                if (!isRecord(node)) continue;
+                delete node.ptyId;
+                if (Array.isArray(node.children)) pending.push(...node.children);
+            }
+        }
+    }
+    const agentRows = [
+        ...(Array.isArray(decoded.agents) ? decoded.agents : []),
+        ...Object.values(isRecord(decoded.agentsBySession) ? decoded.agentsBySession : {}).flatMap((rows) => (Array.isArray(rows) ? rows : [])),
+    ];
+    for (const row of agentRows) if (isRecord(row)) delete row.ptyId;
 }
 
 /** Before v16 an agent's side pane held only its browser, as a "browser" pane whose saved state had no files. */
@@ -794,6 +823,7 @@ export function applyHydrate(raw: string): HydrationResult {
     if (decoded.version < RUNDECK_GROUPS_MIGRATION_VERSION) reshapeRundeckSettings(decoded);
     if (decoded.version < DESK_MIGRATION_VERSION) moveBrowserPanesOntoDesks(decoded);
     if (decoded.version < GITHUB_IN_GIT_PANE_MIGRATION_VERSION) closeGithubSessions(decoded);
+    if (decoded.version < CORE_SESSION_MIGRATION_VERSION) forgetCoreSessions(decoded);
 
     const sessions: Record<string, Session> = {};
     for (const row of decoded.sessions) {
@@ -854,9 +884,11 @@ export function applyHydrate(raw: string): HydrationResult {
             if (sid !== null && sessions[sid]?.kind !== "project") continue;
             const saved = toPersistedAgent(row);
             if (!saved || agents[saved.id]) continue;
-            const claim = `${saved.type}\0${saved.resumeId}`;
-            if (claimedResumeIds.has(claim)) continue;
-            claimedResumeIds.add(claim);
+            if (saved.resumeId) {
+                const claim = `${saved.type}\0${saved.resumeId}`;
+                if (claimedResumeIds.has(claim)) continue;
+                claimedResumeIds.add(claim);
+            }
             const permissionMode = normalizePermissionMode(
                 saved.type,
                 saved.permissionMode ?? (saved.skipPermissions ? "bypass" : "workspace-write"),
@@ -1012,6 +1044,7 @@ export function applyHydrate(raw: string): HydrationResult {
         agentNotifications: typeof prefs.agentNotifications === "boolean" ? prefs.agentNotifications : cur.agentNotifications,
         voiceDictation: prefs.voiceDictation === true,
         notificationsIntroduced: prefs.notificationsIntroduced === true,
+        keptRunningNoticeShown: prefs.keptRunningNoticeShown === true,
         railDensity: prefs.railDensity === "compact" || prefs.railDensity === "comfortable" ? prefs.railDensity : cur.railDensity,
         agentRailAllAgents: prefs.agentRailAllAgents === true,
         agentRailScope: prefs.agentRailScope === "all" ? "all" : "project",

@@ -51,10 +51,11 @@ export function openTaskTerminal(request: TaskTerminalPresentationRequest): stri
             pane.title = label;
             candidate.name = label;
             candidate.activePaneId = pane.id;
+            paneId = pane.id;
+            if (request.background) return;
             owner.activeWindowId = candidate.id;
             d.activeSessionId = owner.id;
             d.zoomedPaneId = null;
-            paneId = pane.id;
             return;
         }
 
@@ -66,10 +67,11 @@ export function openTaskTerminal(request: TaskTerminalPresentationRequest): stri
         created.root.taskTerminalKey = terminalKey;
         d.windows[created.id] = created;
         d.windowsBySession[owner.id] = [...windowIds, created.id];
+        paneId = created.root.id;
+        if (request.background) return;
         owner.activeWindowId = created.id;
         d.activeSessionId = owner.id;
         d.zoomedPaneId = null;
-        paneId = created.root.id;
     });
     if (!paneId) throw new Error("Task project is no longer open");
     return paneId;
