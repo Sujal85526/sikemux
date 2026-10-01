@@ -189,13 +189,15 @@ const budgets = [
     // The chat pane has since grown rows the budget predates: subagent
     // transcripts, background tasks, queued messages, the reconnect states,
     // code block copy buttons, the composer microphone, a tool call's output,
-    // context chips and the resuming states, a terminal agent's among them. It is one lazily loaded sheet behind an agent pane, so this buys
-    // those rows room without touching what the app loads at startup.
+    // context chips, the resuming states, a terminal agent's among them, and
+    // attached files drawn as cards. It is one lazily loaded sheet behind an
+    // agent pane, so this buys those rows room without touching what the app
+    // loads at startup.
     // Lightning CSS, Vite's minifier, keeps the spaces inside color-mix().
     label: "ACP chat CSS",
     pattern: /^AgentSurface-.*\.css$/,
-    raw: 46_500,
-    gzip: 8_700,
+    raw: 47_500,
+    gzip: 8_800,
   },
   {
     // Includes the JetBrainsMono Nerd Font @font-face rules: a base face per
