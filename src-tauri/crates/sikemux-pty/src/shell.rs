@@ -35,7 +35,38 @@ pub enum ShellKind {
 /// Lifetime guard for startup files. Fish and PowerShell use argv hooks and
 /// therefore have no directory, but still return a guard to mark parsing active.
 pub struct ShellLaunchIntegration {
-    _files: Option<tempfile::TempDir>,
+    files: Option<IntegrationFiles>,
+}
+
+enum IntegrationFiles {
+    Created(tempfile::TempDir),
+    Adopted(AdoptedDirectory),
+}
+
+/// A startup directory made by an earlier process, removed when dropped.
+struct AdoptedDirectory(PathBuf);
+
+impl Drop for AdoptedDirectory {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+impl ShellLaunchIntegration {
+    /// Where the startup files live, if this shell has any.
+    pub fn files_directory(&self) -> Option<&Path> {
+        match self.files.as_ref()? {
+            IntegrationFiles::Created(directory) => Some(directory.path()),
+            IntegrationFiles::Adopted(directory) => Some(&directory.0),
+        }
+    }
+
+    /// Takes over the guard of a shell that another process launched.
+    pub fn adopt(files_directory: Option<PathBuf>) -> Self {
+        Self {
+            files: files_directory.map(|path| IntegrationFiles::Adopted(AdoptedDirectory(path))),
+        }
+    }
 }
 
 const BASH_INTEGRATION: &str = r#"# Sikemux ephemeral shell integration; generated per PTY.
@@ -253,7 +284,7 @@ pub fn configure_shell_integration(
             cmd.arg("--rcfile");
             cmd.arg(path);
             Ok(Some(ShellLaunchIntegration {
-                _files: Some(directory),
+                files: Some(IntegrationFiles::Created(directory)),
             }))
         }
         ShellKind::Fish => {
@@ -261,12 +292,12 @@ pub fn configure_shell_integration(
             // Fish's native init command runs after its normal configuration
             // chain, preserving user/vendor conf.d scripts and autoload paths.
             cmd.args(["--init-command", FISH_INTEGRATION]);
-            Ok(Some(ShellLaunchIntegration { _files: None }))
+            Ok(Some(ShellLaunchIntegration { files: None }))
         }
         ShellKind::PowerShell => {
             cmd.env("SIKEMUX_SHELL_INTEGRATION", "1");
             cmd.args(["-NoExit", "-Command", POWERSHELL_INTEGRATION]);
-            Ok(Some(ShellLaunchIntegration { _files: None }))
+            Ok(Some(ShellLaunchIntegration { files: None }))
         }
     }
 }

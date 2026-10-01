@@ -20,11 +20,12 @@ use tokio::net::UnixStream;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
+use crate::protocol::frozen::{FrozenReply, FrozenRequest};
 use crate::protocol::{
-    decode_output, decode_snapshot, encode_control, encode_input, read_frame, read_frame_sync,
-    BuildIdentity, CallId, ClientMessage, Event, FrameKind, LaunchIdentity, Request, RequestId,
-    Response, RunSelector, ServerMessage, SessionId, SessionInfo, SpawnTarget, WindowAnswer,
-    WindowCall, MAX_FRAME_BYTES, PROTOCOL, PROTOCOL_VERSION,
+    decode_output, decode_snapshot, encode_control, encode_frozen, encode_input, read_frame,
+    read_frame_sync, BuildIdentity, CallId, ClientMessage, Event, FrameKind, LaunchIdentity,
+    Request, RequestId, Response, RunSelector, ServerMessage, SessionId, SessionInfo, SpawnTarget,
+    WindowAnswer, WindowCall, MAX_FRAME_BYTES, PROTOCOL, PROTOCOL_VERSION,
 };
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -543,7 +544,7 @@ fn dispatch(frame: crate::protocol::Frame, pending: &Pending, sink: &dyn EventSi
             Ok(ServerMessage::WindowCall { call_id, call }) => sink.window_call(call_id, call),
             _ => {}
         },
-        FrameKind::Input => {}
+        FrameKind::Input | FrameKind::Frozen => {}
     }
 }
 
@@ -579,6 +580,74 @@ pub fn probe(socket: &Path, timeout: Duration) -> Result<CoreHello, ProbeError> 
             Err(ProbeError::Rejected { version, pid })
         }
         Err(error) => Err(unanswered(&error)),
+    }
+}
+
+/// Sends one of the requests every core answers, whatever protocol it speaks.
+/// An upgrade is answered before the core replaces itself.
+pub fn frozen_request(
+    socket: &Path,
+    request: &FrozenRequest,
+    timeout: Duration,
+) -> Result<FrozenReply, ClientError> {
+    let mut stream = StdUnixStream::connect(socket)?;
+    stream.set_read_timeout(Some(timeout))?;
+    stream.set_write_timeout(Some(timeout))?;
+    stream.write_all(&encode_frozen(request)?)?;
+    let frame = read_frame_sync(&mut stream)?
+        .ok_or_else(|| ClientError::Handshake("the core closed without answering".into()))?;
+    if frame.kind != FrameKind::Frozen {
+        return Err(ClientError::Handshake(
+            "the core answered with another kind of frame".into(),
+        ));
+    }
+    Ok(serde_json::from_slice(&frame.payload)?)
+}
+
+/// Waits for the core at `socket`, which accepted an upgrade while it was
+/// `pid` running `old`, to answer again from the same process with another
+/// build. The same build answering means the upgrade failed and the old core
+/// carried on.
+pub fn await_upgrade(
+    socket: &Path,
+    pid: u32,
+    old: &BuildIdentity,
+    timeout: Duration,
+) -> Result<CoreHello, ClientError> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        match probe(socket, PROBE_TIMEOUT) {
+            Ok(hello) if hello.pid != pid => {
+                return Err(ClientError::Core(format!(
+                    "a new core (pid {}) answered instead of the upgraded one (pid {pid})",
+                    hello.pid
+                )))
+            }
+            Ok(hello) if hello.build != *old => return Ok(hello),
+            Ok(_) => {
+                return Err(ClientError::Core(
+                    "the core could not replace itself and carried on as it was".into(),
+                ))
+            }
+            Err(ProbeError::Rejected {
+                pid: answered,
+                version,
+            }) if answered == pid && version != PROTOCOL_VERSION => {
+                return Err(ClientError::VersionMismatch {
+                    version,
+                    pid,
+                    message: format!(
+                        "the upgraded core speaks protocol version {version}, not {PROTOCOL_VERSION}"
+                    ),
+                })
+            }
+            Err(_) if Instant::now() >= deadline => {
+                return Err(ClientError::Core(format!(
+                    "the core did not come back within {timeout:?} of accepting an upgrade"
+                )))
+            }
+            Err(_) => std::thread::sleep(START_POLL),
+        }
     }
 }
 

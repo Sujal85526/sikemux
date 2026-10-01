@@ -1,12 +1,12 @@
 //! The tasks agents started through the harness, and the idempotency keys that
 //! name them.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub const MAX_RUNS: usize = 128;
 pub const MAX_KEYS: usize = 256;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RunStatus {
     AwaitingTrust,
@@ -40,7 +40,7 @@ impl RunStatus {
 }
 
 /// What a `command` task runs, so the same task id can start it again.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommandLaunch {
     pub command: String,
     /// Relative to the project; empty for the project root.
@@ -49,7 +49,7 @@ pub struct CommandLaunch {
 }
 
 /// Where the window got to with launching a run.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Launch {
     #[default]
     Pending,
@@ -107,11 +107,81 @@ impl Run {
     }
 }
 
-struct Key {
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Key {
     project: String,
     key: String,
     task_id: String,
     execution_id: String,
+}
+
+/// A run with every field, for handing over to a replacement core.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunRecord {
+    pub execution_id: String,
+    pub task_id: String,
+    pub project: String,
+    pub status: RunStatus,
+    pub label: Option<String>,
+    pub command: Option<String>,
+    pub pty_id: Option<u64>,
+    pub exit_code: Option<u32>,
+    pub signal: Option<String>,
+    pub error: Option<String>,
+    pub preview_url: Option<String>,
+    pub agent_id: Option<String>,
+    pub launch_spec: Option<CommandLaunch>,
+    pub launch: Launch,
+}
+
+impl From<&Run> for RunRecord {
+    fn from(run: &Run) -> Self {
+        let run = run.clone();
+        Self {
+            execution_id: run.execution_id,
+            task_id: run.task_id,
+            project: run.project,
+            status: run.status,
+            label: run.label,
+            command: run.command,
+            pty_id: run.pty_id,
+            exit_code: run.exit_code,
+            signal: run.signal,
+            error: run.error,
+            preview_url: run.preview_url,
+            agent_id: run.agent_id,
+            launch_spec: run.launch_spec,
+            launch: run.launch,
+        }
+    }
+}
+
+impl From<RunRecord> for Run {
+    fn from(record: RunRecord) -> Self {
+        Self {
+            execution_id: record.execution_id,
+            task_id: record.task_id,
+            project: record.project,
+            status: record.status,
+            label: record.label,
+            command: record.command,
+            pty_id: record.pty_id,
+            exit_code: record.exit_code,
+            signal: record.signal,
+            error: record.error,
+            preview_url: record.preview_url,
+            agent_id: record.agent_id,
+            launch_spec: record.launch_spec,
+            launch: record.launch,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct RunsRecord {
+    pub runs: Vec<RunRecord>,
+    pub keys: Vec<Key>,
 }
 
 /// Runs in the order they started. Room is made by forgetting the oldest
@@ -125,6 +195,24 @@ pub struct Runs {
 pub const NOT_IN_PROJECT: &str = "Task execution does not belong to this project";
 
 impl Runs {
+    pub fn record(&self) -> RunsRecord {
+        RunsRecord {
+            runs: self.runs.iter().map(RunRecord::from).collect(),
+            keys: self.keys.clone(),
+        }
+    }
+
+    pub fn restored(record: RunsRecord) -> Self {
+        Self {
+            runs: record.runs.into_iter().map(Run::from).collect(),
+            keys: record.keys,
+        }
+    }
+
+    pub fn all_mut(&mut self) -> impl Iterator<Item = &mut Run> {
+        self.runs.iter_mut()
+    }
+
     pub fn get(&self, project: &str, execution_id: &str) -> Result<&Run, String> {
         self.runs
             .iter()

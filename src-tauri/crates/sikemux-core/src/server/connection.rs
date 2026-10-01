@@ -16,7 +16,7 @@ use crate::protocol::{
 
 use super::prepare::{prepare_task, prepare_terminal};
 use super::session::{self, PendingStart};
-use super::{agent, harness, Core, CoreError, CoreResult};
+use super::{agent, harness, upgrade, Core, CoreError, CoreResult};
 
 pub(crate) type ClientId = u64;
 
@@ -92,7 +92,7 @@ impl ClientConn {
             .unwrap_or_default()
     }
 
-    async fn wait_flushed(&self, limit: Duration) {
+    pub(crate) async fn wait_flushed(&self, limit: Duration) {
         let deadline = Instant::now() + limit;
         while self.queued.load(Ordering::Acquire) > 0 && Instant::now() < deadline {
             tokio::time::sleep(Duration::from_millis(5)).await;
@@ -108,14 +108,23 @@ async fn write_direct(writer: &mut BufWriter<OwnedWriteHalf>, message: &ServerMe
 }
 
 async fn handshake(
-    core: &Core,
+    core: &Arc<Core>,
     reader: &mut BufReader<OwnedReadHalf>,
     writer: &mut BufWriter<OwnedWriteHalf>,
 ) -> bool {
     let frame = match tokio::time::timeout(HANDSHAKE_TIMEOUT, read_frame(reader)).await {
         Ok(Ok(Some(frame))) if frame.kind == FrameKind::Control => frame,
+        Ok(Ok(Some(frame))) if frame.kind == FrameKind::Frozen => {
+            upgrade::answer(core, &frame.payload, writer).await;
+            return false;
+        }
         _ => return false,
     };
+    // A client that connected while the core hands itself over talks to the
+    // replacement instead.
+    if core.is_frozen() {
+        return false;
+    }
     let pid = std::process::id();
     match serde_json::from_slice::<ClientMessage>(&frame.payload) {
         Ok(ClientMessage::Hello { protocol, version })
@@ -248,6 +257,10 @@ async fn read_requests(
                 let Some((request_id, id, bytes)) = decode_input(&frame.payload) else {
                     return;
                 };
+                if core.is_frozen() {
+                    client.respond(request_id, Err(upgrade::UPDATING.into()));
+                    continue;
+                }
                 let Some(target) = core.session(id) else {
                     client.respond(request_id, Err("invalid argument: pty not found".into()));
                     continue;
@@ -265,7 +278,7 @@ async fn read_requests(
                     }),
                 );
             }
-            FrameKind::Output | FrameKind::Snapshot => return,
+            FrameKind::Output | FrameKind::Snapshot | FrameKind::Frozen => return,
         }
     }
 }
@@ -293,6 +306,10 @@ async fn run_requests(
     while let Some((request_id, request)) = queue.recv().await {
         let core = core.clone();
         let client = client.clone();
+        if core.is_frozen() {
+            client.respond(request_id, Err(upgrade::UPDATING.into()));
+            continue;
+        }
         match request {
             Request::Spawn { launch, target } => {
                 tokio::spawn(async move {

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use portable_pty::CommandBuilder;
+use serde::{Deserialize, Serialize};
 use sikemux_pty::launch::{
     apply_agent_profile, configure_interactive_command, configure_pty_environment,
     validate_direct_command, PtyContext,
@@ -18,7 +19,8 @@ use crate::protocol::{LaunchIdentity, SessionKind, TaskSessionInfo, TerminalSpaw
 
 use super::CoreResult;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct Owner {
     pub project: Option<String>,
     pub pane_id: Option<String>,

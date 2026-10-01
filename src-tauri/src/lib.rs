@@ -52,6 +52,16 @@ use sikemux_process as bounded_process;
 use tauri::Manager;
 use voice::VoiceManager;
 
+/// The build of this app and of the sidecar bundled with it, which runs the
+/// background core. Both are compiled with the same build script output.
+pub fn build_identity() -> sikemux_core::protocol::BuildIdentity {
+    sikemux_core::protocol::BuildIdentity::new(
+        env!("CARGO_PKG_VERSION"),
+        env!("SIKEMUX_BUILD_COMMIT"),
+        env!("SIKEMUX_BUILD_TIME").parse().unwrap_or(0),
+    )
+}
+
 // reqwest is built without a TLS crypto backend of its own, so every HTTP
 // client in the app and its plugins uses the one installed here.
 pub(crate) fn install_tls_crypto() {

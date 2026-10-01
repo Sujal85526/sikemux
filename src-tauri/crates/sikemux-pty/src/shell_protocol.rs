@@ -171,6 +171,14 @@ impl ShellProtocolParser {
         self.metadata.clone()
     }
 
+    /// Carries on from a snapshot another parser took.
+    pub fn restored(metadata: ShellMetadataSnapshot) -> Self {
+        Self {
+            metadata,
+            ..Self::default()
+        }
+    }
+
     fn process(&mut self, bytes: &[u8]) -> ShellProtocolBatch {
         let mut batch = ShellProtocolBatch::default();
         for &byte in bytes {

@@ -64,7 +64,7 @@ impl Subscriber {
     }
 }
 
-struct InputJob {
+pub(crate) struct InputJob {
     bytes: Vec<u8>,
     reply: Box<dyn FnOnce(std::io::Result<()>) + Send>,
 }
@@ -100,11 +100,116 @@ pub(crate) struct Session {
     stop_reader: Notify,
     /// Present for a terminal launched for an agent.
     pub(crate) agent: Option<AgentActivity>,
-    _shell_integration: Option<ShellLaunchIntegration>,
+    /// The reader stopped for a hand-over that then failed, so it has to be
+    /// started again.
+    reader_frozen: AtomicBool,
+    shell_integration: Option<ShellLaunchIntegration>,
     _capacity_permit: CapacityPermit,
 }
 
+/// Everything a session is made of besides its process handle and terminal,
+/// for a session spawned here or adopted from an earlier core.
+pub(crate) struct SessionParts {
+    pub id: SessionId,
+    pub kind: SessionKind,
+    pub pid: Option<u32>,
+    pub owner: Owner,
+    pub parser: SemanticParser,
+    pub shell_protocol: bool,
+    pub last_activity_ms: u64,
+    pub trimmed: bool,
+    pub killed: bool,
+    pub exit: Option<SessionExit>,
+    pub exited_at_ms: u64,
+    pub task_log: Option<OutputLog>,
+    pub agent: Option<AgentActivity>,
+    pub shell_integration: Option<ShellLaunchIntegration>,
+}
+
 impl Session {
+    pub(crate) fn assemble(
+        parts: SessionParts,
+        io: AsyncFd<File>,
+        child: Box<dyn Child + Send + Sync>,
+        capacity_permit: CapacityPermit,
+    ) -> (Arc<Self>, mpsc::UnboundedReceiver<InputJob>) {
+        let (input, input_jobs) = mpsc::unbounded_channel();
+        let reported = parts.exit.is_some();
+        let session = Arc::new(Session {
+            id: parts.id,
+            kind: parts.kind,
+            io,
+            input,
+            child: Mutex::new(child),
+            pid: parts.pid,
+            owner: parts.owner,
+            parser: Mutex::new(parts.parser),
+            shell_protocol: parts.shell_protocol,
+            subscribers: Mutex::new(HashMap::new()),
+            flow_control: Notify::new(),
+            last_activity_ms: AtomicU64::new(parts.last_activity_ms),
+            trimmed: AtomicBool::new(parts.trimmed),
+            killed: AtomicBool::new(parts.killed),
+            exit_reported: AtomicBool::new(reported),
+            exited: AtomicBool::new(reported),
+            task: parts.task_log.map(|log| TaskOutput {
+                log: Mutex::new(log),
+                notice_pending: AtomicBool::new(false),
+            }),
+            exited_at_ms: AtomicU64::new(parts.exited_at_ms),
+            exit: Mutex::new(parts.exit),
+            stop_reader: Notify::new(),
+            agent: parts.agent,
+            reader_frozen: AtomicBool::new(false),
+            shell_integration: parts.shell_integration,
+            _capacity_permit: capacity_permit,
+        });
+        (session, input_jobs)
+    }
+
+    pub(crate) fn owner(&self) -> &Owner {
+        &self.owner
+    }
+
+    pub(crate) fn pid(&self) -> Option<u32> {
+        self.pid
+    }
+
+    pub(crate) fn fd(&self) -> std::os::fd::RawFd {
+        self.io.get_ref().as_raw_fd()
+    }
+
+    pub(crate) fn shell_files(&self) -> Option<&std::path::Path> {
+        self.shell_integration
+            .as_ref()
+            .and_then(ShellLaunchIntegration::files_directory)
+    }
+
+    pub(crate) fn is_killed(&self) -> bool {
+        self.killed.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn exit_reported(&self) -> bool {
+        self.exit_reported.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn exit(&self) -> Option<SessionExit> {
+        self.exit.lock().ok().and_then(|exit| exit.clone())
+    }
+
+    /// Holds the process handle so nothing reaps or signals it, unless a
+    /// waiter already holds it.
+    pub(crate) fn hold_child(
+        &self,
+    ) -> Option<std::sync::MutexGuard<'_, Box<dyn Child + Send + Sync>>> {
+        self.child.try_lock().ok()
+    }
+
+    pub(crate) fn task_log(&self) -> Option<(Vec<u8>, u64)> {
+        let task = self.task.as_ref()?;
+        task.log.lock().ok().map(|log| log.contents())
+    }
+
     pub(crate) fn is_task(&self) -> bool {
         self.task.is_some()
     }
@@ -177,9 +282,33 @@ impl PendingStart {
     }
 }
 
+/// Starts a session adopted from an earlier core. One whose exit was already
+/// reported has nothing left to read.
+pub(crate) fn start_adopted(
+    core: &Arc<Core>,
+    session: Arc<Session>,
+    input_jobs: mpsc::UnboundedReceiver<InputJob>,
+) {
+    tokio::spawn(write_input(Arc::downgrade(&session), input_jobs));
+    if !session.exit_reported() {
+        tokio::spawn(read_output(core.clone(), session));
+    }
+}
+
+/// Starts the readers a failed hand-over stopped.
+pub(crate) fn thaw(core: &Arc<Core>, session: Arc<Session>) {
+    if session.reader_frozen.swap(false, Ordering::AcqRel) {
+        tokio::spawn(read_output(core.clone(), session));
+    }
+}
+
 /// Opens the terminal and starts its process. Runs on a blocking thread.
 pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreResult<PendingStart> {
     validate_pty_dimensions(launch.cols, launch.rows)?;
+    let _launching = core.launching.enter();
+    if core.is_frozen() {
+        return Err(super::upgrade::UPDATING.into());
+    }
     core.reclaim_exited_sessions(now_ms());
     let capacity_permit = core.capacity.try_acquire()?;
     let pair = NativePtySystem::default()
@@ -224,8 +353,8 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
     // One fd serves both directions: the dup shares the master's open file
     // description, so dropping portable_pty's master keeps the terminal alive.
     // SAFETY: `pair.master` is dropped only after this line, so `master_fd` is
-    // still open; dup creates a new fd and touches no memory.
-    let dup_fd = unsafe { libc::dup(master_fd) };
+    // still open; F_DUPFD_CLOEXEC creates a new fd and touches no memory.
+    let dup_fd = unsafe { libc::fcntl(master_fd, libc::F_DUPFD_CLOEXEC, 0) };
     if dup_fd < 0 {
         return Err(os_error());
     }
@@ -236,45 +365,37 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
     let io = AsyncFd::new(io_file)?;
 
     let id = core.next_session_id.fetch_add(1, Ordering::Relaxed);
-    let (input, input_jobs) = mpsc::unbounded_channel();
     let agent = AgentActivity::new(
         owner.agent_id.as_deref(),
         owner.agent_type.as_deref(),
         initial_prompt_submitted,
     );
-    let session = Arc::new(Session {
-        id,
-        kind,
+    let (session, input_jobs) = Session::assemble(
+        SessionParts {
+            id,
+            kind,
+            pid,
+            owner,
+            parser: semantic_parser_with_shell(
+                rows,
+                cols,
+                PARSER_SCROLLBACK,
+                shell_metadata_enabled,
+            ),
+            shell_protocol: shell_metadata_enabled,
+            last_activity_ms: now_ms(),
+            trimmed: false,
+            killed: false,
+            exit: None,
+            exited_at_ms: 0,
+            task_log: (kind == SessionKind::Task).then(OutputLog::default),
+            agent,
+            shell_integration,
+        },
         io,
-        input,
-        child: Mutex::new(child.into_inner()),
-        pid,
-        owner,
-        parser: Mutex::new(semantic_parser_with_shell(
-            rows,
-            cols,
-            PARSER_SCROLLBACK,
-            shell_metadata_enabled,
-        )),
-        shell_protocol: shell_metadata_enabled,
-        subscribers: Mutex::new(HashMap::new()),
-        flow_control: Notify::new(),
-        last_activity_ms: AtomicU64::new(now_ms()),
-        trimmed: AtomicBool::new(false),
-        killed: AtomicBool::new(false),
-        exit_reported: AtomicBool::new(false),
-        exited: AtomicBool::new(false),
-        task: (kind == SessionKind::Task).then(|| TaskOutput {
-            log: Mutex::new(OutputLog::default()),
-            notice_pending: AtomicBool::new(false),
-        }),
-        exited_at_ms: AtomicU64::new(0),
-        exit: Mutex::new(None),
-        stop_reader: Notify::new(),
-        agent,
-        _shell_integration: shell_integration,
-        _capacity_permit: capacity_permit,
-    });
+        child.into_inner(),
+        capacity_permit,
+    );
 
     // Publish before starting the reader, so a command that exits at once
     // cannot prune itself before it was ever inserted.
@@ -379,20 +500,41 @@ fn read_once(
     }
 }
 
+enum PumpEnd {
+    Eof,
+    /// The core is handing itself over: every byte read so far reached the
+    /// screen and the subscribers, and nothing more was read.
+    Frozen,
+}
+
 /// Reads until EOF. The first byte goes out at once; after that, small writes
 /// are gathered for up to 2 ms into one parser pass and one frame.
-async fn pump_output(core: &Arc<Core>, session: &Session) {
+async fn pump_output(core: &Arc<Core>, session: &Session) -> PumpEnd {
+    let mut frozen = core.frozen.subscribe();
+    let _pumping = core.pumping.enter();
     let mut buf = vec![0u8; OUTPUT_BATCH_BYTES];
     let mut batch = Vec::with_capacity(OUTPUT_BATCH_BYTES);
     loop {
-        if !await_subscriber_credit(session).await {
-            forgive_unacked(session);
+        if *frozen.borrow_and_update() {
+            return PumpEnd::Frozen;
+        }
+        tokio::select! {
+            credit = await_subscriber_credit(session) => {
+                if !credit {
+                    forgive_unacked(session);
+                }
+            }
+            _ = frozen.changed() => continue,
         }
         batch.clear();
         let mut eof = false;
         loop {
-            let Ok(mut guard) = session.io.readable().await else {
-                return;
+            let ready = tokio::select! {
+                ready = session.io.readable() => ready,
+                _ = frozen.changed() => return PumpEnd::Frozen,
+            };
+            let Ok(mut guard) = ready else {
+                return PumpEnd::Eof;
             };
             match read_once(&mut guard, &mut buf) {
                 ReadOutcome::Bytes(n) => {
@@ -412,6 +554,7 @@ async fn pump_output(core: &Arc<Core>, session: &Session) {
             loop {
                 tokio::select! {
                     _ = &mut deadline => break,
+                    _ = frozen.changed() => break,
                     ready = session.io.readable() => {
                         let Ok(mut guard) = ready else {
                             eof = true;
@@ -438,18 +581,23 @@ async fn pump_output(core: &Arc<Core>, session: &Session) {
             broadcast_output(core, session, &batch);
         }
         if eof {
-            return;
+            return PumpEnd::Eof;
         }
     }
 }
 
 async fn read_output(core: Arc<Core>, session: Arc<Session>) {
-    let stopped = tokio::select! {
-        _ = pump_output(&core, &session) => false,
-        _ = session.stop_reader.notified() => true,
+    let ended = tokio::select! {
+        ended = pump_output(&core, &session) => Some(ended),
+        _ = session.stop_reader.notified() => None,
     };
-    if stopped {
-        return;
+    match ended {
+        None => return,
+        Some(PumpEnd::Frozen) => {
+            session.reader_frozen.store(true, Ordering::Release);
+            return;
+        }
+        Some(PumpEnd::Eof) => {}
     }
     // Terminals leave when their output ends, unless nobody was watching:
     // then the next client to open one sees how it ended. Completed tasks

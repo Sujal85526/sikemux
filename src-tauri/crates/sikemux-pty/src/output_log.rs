@@ -50,6 +50,22 @@ impl OutputLog {
         }
     }
 
+    /// The bytes still held, and the offset just past the last of them.
+    pub fn contents(&self) -> (Vec<u8>, u64) {
+        (self.bytes.iter().copied().collect(), self.end)
+    }
+
+    /// A log holding `bytes` as the newest output, ending at `end`.
+    pub fn restored(bytes: &[u8], end: u64) -> Self {
+        let kept = bytes
+            .get(bytes.len().saturating_sub(MAX_OUTPUT)..)
+            .unwrap_or_default();
+        Self {
+            bytes: kept.iter().copied().collect(),
+            end: end.max(kept.len() as u64),
+        }
+    }
+
     fn start(&self) -> u64 {
         self.end - self.bytes.len() as u64
     }
@@ -316,6 +332,17 @@ fn fit_from_end(lines: &[terminal_text::Line], limit: usize) -> (String, usize) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_restored_log_keeps_its_cursors() {
+        let mut log = OutputLog::default();
+        log.push(b"first ");
+        log.push(b"second");
+        let (bytes, end) = log.contents();
+        let restored = OutputLog::restored(&bytes, end);
+        assert_eq!(restored.read(6, 100).unwrap().bytes, b"second");
+        assert_eq!(restored.read(0, 100).unwrap().end, 12);
+    }
 
     #[test]
     fn output_pages_preserve_split_utf8() {

@@ -56,6 +56,15 @@ impl Window {
         }
     }
 
+    pub(crate) fn call_mark(&self) -> CallId {
+        self.next_call.load(Ordering::Acquire)
+    }
+
+    /// Carries on from the call ids an earlier core handed out.
+    pub(crate) fn continue_calls(&self, mark: CallId) {
+        self.next_call.fetch_max(mark, Ordering::AcqRel);
+    }
+
     pub(crate) fn is_open(&self) -> bool {
         self.inner.lock().is_ok_and(|inner| inner.client.is_some())
     }

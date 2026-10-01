@@ -1,10 +1,15 @@
 mod agent;
 mod connection;
+mod entry;
+mod handover;
 mod harness;
 mod prepare;
 mod session;
 mod tools;
+mod upgrade;
 mod window;
+
+pub use entry::main;
 
 use std::collections::HashMap;
 use std::fs::{DirBuilder, File, OpenOptions};
@@ -22,7 +27,7 @@ use sikemux_pty::process::DRAIN_GRACE;
 use sikemux_pty::task::{
     task_reclamation_plan, TaskRetentionCandidate, MAX_RETAINED_EXITED_TASK_PTYS,
 };
-use tokio::sync::watch;
+use tokio::sync::{watch, Notify};
 
 use crate::client::{probe, ProbeError};
 use crate::protocol::{encode_control, BuildIdentity, Event, ServerMessage, SessionId};
@@ -125,9 +130,19 @@ impl From<serde_json::Error> for CoreError {
 
 pub(crate) type CoreResult<T> = Result<T, CoreError>;
 
+static EPOCH: OnceLock<Instant> = OnceLock::new();
+
 fn epoch() -> Instant {
-    static EPOCH: OnceLock<Instant> = OnceLock::new();
     *EPOCH.get_or_init(Instant::now)
+}
+
+/// A core that replaced an earlier one keeps its clock, so the times the
+/// earlier one stamped on sessions still mean the same moment.
+pub(crate) fn continue_clock(uptime_ms: u64) {
+    let start = Instant::now()
+        .checked_sub(Duration::from_millis(uptime_ms))
+        .unwrap_or_else(Instant::now);
+    let _ = EPOCH.set(start);
 }
 
 pub(crate) fn now_ms() -> u64 {
@@ -160,6 +175,58 @@ impl Drop for CapacityPermit {
     }
 }
 
+/// Counts work in progress that a hand-over waits for, and wakes it when the
+/// count drops.
+#[derive(Default)]
+pub(crate) struct Gauge {
+    count: AtomicUsize,
+    idle: Notify,
+}
+
+pub(crate) struct GaugeGuard<'a>(&'a Gauge);
+
+impl Gauge {
+    pub(crate) fn enter(&self) -> GaugeGuard<'_> {
+        self.count.fetch_add(1, Ordering::AcqRel);
+        GaugeGuard(self)
+    }
+
+    pub(crate) fn is_idle(&self) -> bool {
+        self.count.load(Ordering::Acquire) == 0
+    }
+
+    /// False when the work did not finish in time.
+    pub(crate) async fn settle(&self, limit: Duration) -> bool {
+        let deadline = tokio::time::Instant::now() + limit;
+        loop {
+            let idle = self.idle.notified();
+            tokio::pin!(idle);
+            idle.as_mut().enable();
+            if self.is_idle() {
+                return true;
+            }
+            if tokio::time::timeout_at(deadline, idle).await.is_err() {
+                return self.is_idle();
+            }
+        }
+    }
+}
+
+impl Drop for GaugeGuard<'_> {
+    fn drop(&mut self) {
+        self.0.count.fetch_sub(1, Ordering::AcqRel);
+        self.0.idle.notify_waiters();
+    }
+}
+
+/// What this core listens on and was started with, which a hand-over passes
+/// to its replacement.
+pub(crate) struct Listening {
+    pub config: ServerConfig,
+    pub listener_fd: std::os::fd::RawFd,
+    pub lock_fd: std::os::fd::RawFd,
+}
+
 pub(crate) struct Core {
     sessions: Mutex<HashMap<SessionId, Arc<Session>>>,
     next_session_id: AtomicU64,
@@ -172,6 +239,16 @@ pub(crate) struct Core {
     manifest_dir: Mutex<Option<PathBuf>>,
     pub(crate) harness: harness::Harness,
     pub(crate) window: window::Window,
+    /// True while the core hands itself over to a newer binary: it takes no
+    /// new work and its readers stop at the next whole chunk.
+    pub(crate) frozen: watch::Sender<bool>,
+    pub(crate) upgrading: std::sync::atomic::AtomicBool,
+    /// Readers that hold output not yet fed to their screen.
+    pub(crate) pumping: Gauge,
+    /// Sessions being spawned that are not in the table yet.
+    pub(crate) launching: Gauge,
+    pub(crate) listening: OnceLock<Listening>,
+    pub(crate) tools: Mutex<Option<tools::ToolEndpoint>>,
 }
 
 /// Session and window call ids start from the clock, so an id a client still
@@ -203,7 +280,34 @@ impl Core {
             manifest_dir: Mutex::new(None),
             harness: harness::Harness::new(data_dir),
             window: window::Window::new(first_session_id()),
+            frozen: watch::channel(false).0,
+            upgrading: std::sync::atomic::AtomicBool::new(false),
+            pumping: Gauge::default(),
+            launching: Gauge::default(),
+            listening: OnceLock::new(),
+            tools: Mutex::new(None),
         }))
+    }
+
+    pub(crate) fn is_frozen(&self) -> bool {
+        *self.frozen.borrow()
+    }
+
+    /// Resolves once the core starts handing itself over.
+    pub(crate) async fn until_frozen(&self) {
+        let mut frozen = self.frozen.subscribe();
+        let _ = frozen.wait_for(|frozen| *frozen).await;
+    }
+
+    pub(crate) fn manifest_dir(&self) -> Option<PathBuf> {
+        self.manifest_dir.lock().ok().and_then(|dir| dir.clone())
+    }
+
+    fn clients(&self) -> Vec<Arc<ClientConn>> {
+        self.clients
+            .lock()
+            .map(|clients| clients.values().cloned().collect())
+            .unwrap_or_default()
     }
 
     pub(crate) fn manifest_report(&self) -> CoreResult<ManifestReloadReport> {
@@ -341,12 +445,7 @@ impl Core {
             return;
         };
         let frame: Arc<[u8]> = frame.into();
-        let clients: Vec<Arc<ClientConn>> = self
-            .clients
-            .lock()
-            .map(|clients| clients.values().cloned().collect())
-            .unwrap_or_default();
-        for client in clients {
+        for client in self.clients() {
             client.send(frame.clone());
         }
     }
@@ -527,19 +626,35 @@ pub async fn serve(config: ServerConfig) -> Result<(), ServerError> {
     let (listener, lock) = tokio::task::spawn_blocking(move || claim_socket(&socket))
         .await
         .map_err(std::io::Error::other)??;
+    let core = Core::new(config.build.clone(), config.data_dir.as_deref())?;
+    if let Some(path) = config.cli_endpoint.clone() {
+        match tools::ToolEndpoint::start(core.clone(), path).await {
+            Ok(tools) => {
+                if let Ok(mut slot) = core.tools.lock() {
+                    *slot = Some(tools);
+                }
+            }
+            Err(error) => eprintln!("sikemux core: agents' tools are unavailable: {error}"),
+        }
+    }
+    run_core(core, listener, lock, config).await
+}
+
+/// The accept loop of a core, whether it started fresh or took over from an
+/// earlier one.
+pub(crate) async fn run_core(
+    core: Arc<Core>,
+    listener: std::os::unix::net::UnixListener,
+    lock: File,
+    config: ServerConfig,
+) -> Result<(), ServerError> {
+    let _ = core.listening.set(Listening {
+        config: config.clone(),
+        listener_fd: listener.as_raw_fd(),
+        lock_fd: lock.as_raw_fd(),
+    });
     listener.set_nonblocking(true)?;
     let listener = tokio::net::UnixListener::from_std(listener)?;
-    let core = Core::new(config.build.clone(), config.data_dir.as_deref())?;
-    let tools = match config.cli_endpoint.clone() {
-        Some(path) => match tools::ToolEndpoint::start(core.clone(), path).await {
-            Ok(tools) => Some(tools),
-            Err(error) => {
-                eprintln!("sikemux core: agents' tools are unavailable: {error}");
-                None
-            }
-        },
-        None => None,
-    };
     let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
     let background = [
@@ -547,14 +662,18 @@ pub async fn serve(config: ServerConfig) -> Result<(), ServerError> {
         tokio::spawn(sweep(core.clone())),
     ];
     let mut shutdown = core.shutdown.subscribe();
+    let mut frozen = core.frozen.subscribe();
     let mut ticker = tokio::time::interval(
         (config.idle_exit / 10).clamp(Duration::from_millis(10), Duration::from_secs(1)),
     );
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut idle_since: Option<Instant> = None;
     loop {
+        // While the core hands itself over, connections wait in the socket's
+        // backlog for its replacement.
+        let accepting = !*frozen.borrow_and_update();
         tokio::select! {
-            accepted = listener.accept() => match accepted {
+            accepted = listener.accept(), if accepting => match accepted {
                 Ok((stream, _)) => {
                     tokio::spawn(connection::serve_client(core.clone(), stream));
                 }
@@ -563,11 +682,12 @@ pub async fn serve(config: ServerConfig) -> Result<(), ServerError> {
                     tokio::time::sleep(Duration::from_millis(50)).await;
                 }
             },
+            _ = frozen.changed() => {}
             _ = shutdown.changed() => break,
             _ = terminate.recv() => break,
             _ = interrupt.recv() => break,
             _ = ticker.tick() => {
-                if core.is_idle() {
+                if core.is_idle() && !core.is_frozen() {
                     let since = *idle_since.get_or_insert_with(Instant::now);
                     if since.elapsed() >= config.idle_exit {
                         break;
@@ -581,6 +701,7 @@ pub async fn serve(config: ServerConfig) -> Result<(), ServerError> {
     for task in background {
         task.abort();
     }
+    let tools = core.tools.lock().ok().and_then(|mut tools| tools.take());
     if let Some(tools) = tools {
         tools.stop();
     }

@@ -142,7 +142,49 @@ impl ProjectJournal {
     }
 }
 
+/// One project's journal as kept in memory, for handing over to a
+/// replacement core.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JournalRecord {
+    pub project: String,
+    pub last_seq: u64,
+    pub size: u64,
+    pub events: Vec<JournalEntry>,
+}
+
 impl Journals {
+    pub fn record(&self) -> Vec<JournalRecord> {
+        self.projects
+            .iter()
+            .map(|(project, journal)| JournalRecord {
+                project: project.clone(),
+                last_seq: journal.last_seq,
+                size: journal.size,
+                events: journal.events.iter().cloned().collect(),
+            })
+            .collect()
+    }
+
+    pub fn restore(&mut self, records: Vec<JournalRecord>) {
+        for record in records {
+            let path = self
+                .directory
+                .as_deref()
+                .map(|directory| directory.join(journal_file_name(&record.project)));
+            let skip = record.events.len().saturating_sub(RETAINED_EVENTS);
+            self.projects.insert(
+                record.project,
+                ProjectJournal {
+                    path,
+                    last_seq: record.last_seq,
+                    size: record.size,
+                    events: record.events.into_iter().skip(skip).collect(),
+                },
+            );
+        }
+    }
+
     pub fn new(directory: Option<PathBuf>) -> Self {
         Self {
             directory,

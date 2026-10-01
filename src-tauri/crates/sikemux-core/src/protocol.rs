@@ -39,6 +39,8 @@ pub enum FrameKind {
     /// Client to core, a write: request id (u64 BE), session id (u64 BE), then
     /// the bytes for the terminal. Answered like any other request.
     Input = 3,
+    /// See [`frozen`]: sent instead of a hello, and answered once.
+    Frozen = 0x46,
 }
 
 impl FrameKind {
@@ -48,9 +50,90 @@ impl FrameKind {
             1 => Some(Self::Output),
             2 => Some(Self::Snapshot),
             3 => Some(Self::Input),
+            0x46 => Some(Self::Frozen),
             _ => None,
         }
     }
+}
+
+/// Requests every core answers, whatever protocol version it speaks, so an app
+/// can ask a core it cannot otherwise talk to to replace itself or stop.
+///
+/// The shape of everything in this module is fixed for good: a client sends
+/// one [`FrameKind::Frozen`] frame holding a [`FrozenRequest`] as its first
+/// frame, the core answers with one [`FrameKind::Frozen`] frame holding a
+/// [`FrozenReply`], and closes the connection. Add new requests as new `op`
+/// values; never change or remove a field.
+pub mod frozen {
+    use std::path::PathBuf;
+
+    use serde::{Deserialize, Serialize};
+
+    use super::BuildIdentity;
+
+    /// The format of the state a core hands to its replacement. A core only
+    /// replaces itself with a binary that reads its format.
+    pub const RESUME_FORMAT: u32 = 1;
+
+    /// The argument that makes a core binary print its [`UpgradeInfo`].
+    pub const UPGRADE_INFO_ARG: &str = "--upgrade-info";
+
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(tag = "op", rename_all = "camelCase", rename_all_fields = "camelCase")]
+    pub enum FrozenRequest {
+        /// Replace this core with `binary` in the same process, keeping every
+        /// session.
+        Upgrade { binary: PathBuf },
+        /// Stop every session and exit.
+        StopEverything,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(
+        tag = "status",
+        rename_all = "camelCase",
+        rename_all_fields = "camelCase"
+    )]
+    pub enum FrozenReply {
+        Accepted,
+        Refused { message: String },
+    }
+
+    /// What `<binary> core --upgrade-info` prints, as one JSON object.
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct UpgradeInfo {
+        pub version: String,
+        pub commit: String,
+        pub built_at: u64,
+        pub resume_format: u32,
+    }
+
+    impl UpgradeInfo {
+        pub fn of(build: &BuildIdentity) -> Self {
+            Self {
+                version: build.version.clone(),
+                commit: build.commit.clone(),
+                built_at: build.built_at,
+                resume_format: RESUME_FORMAT,
+            }
+        }
+
+        pub fn build(&self) -> BuildIdentity {
+            BuildIdentity {
+                version: self.version.clone(),
+                commit: self.commit.clone(),
+                built_at: self.built_at,
+            }
+        }
+    }
+}
+
+pub fn encode_frozen<T: Serialize>(message: &T) -> serde_json::Result<Vec<u8>> {
+    Ok(encode_frame(
+        FrameKind::Frozen,
+        &[&serde_json::to_vec(message)?],
+    ))
 }
 
 #[derive(Debug)]
@@ -308,6 +391,27 @@ pub struct BuildIdentity {
     pub version: String,
     pub commit: String,
     pub built_at: u64,
+}
+
+/// Makes a build pass for another one, so tests can upgrade a core to the
+/// binary it already runs: the value replaces the commit and the build time.
+pub const BUILD_ID_OVERRIDE_ENV: &str = "SIKEMUX_BUILD_ID_OVERRIDE";
+
+impl BuildIdentity {
+    pub fn new(version: &str, commit: &str, built_at: u64) -> Self {
+        match std::env::var(BUILD_ID_OVERRIDE_ENV) {
+            Ok(commit) if !commit.is_empty() => Self {
+                version: version.into(),
+                commit,
+                built_at: 0,
+            },
+            _ => Self {
+                version: version.into(),
+                commit: commit.into(),
+                built_at,
+            },
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

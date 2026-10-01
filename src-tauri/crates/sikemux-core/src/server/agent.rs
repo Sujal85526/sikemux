@@ -4,6 +4,7 @@ use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use portable_pty::ExitStatus;
+use serde::{Deserialize, Serialize};
 use sikemux_pty::agent_detection::{
     AgentDetection, AgentDetectionState, AgentKind, DetectionConfidence, DetectionExplain,
     DetectionInput, ManifestRegistry,
@@ -31,10 +32,7 @@ fn state_label(state: u8) -> &'static str {
     }
 }
 
-/// Every agent's events share one ordering, so a late event from a replaced
-/// terminal never overwrites a newer one. It starts from the clock so a core
-/// that restarts under a running app keeps counting upwards.
-fn next_sequence() -> u64 {
+fn sequence() -> &'static AtomicU64 {
     static NEXT: OnceLock<AtomicU64> = OnceLock::new();
     NEXT.get_or_init(|| {
         let micros = SystemTime::now()
@@ -43,7 +41,33 @@ fn next_sequence() -> u64 {
             .unwrap_or(1);
         AtomicU64::new(micros.max(1))
     })
-    .fetch_add(1, Ordering::AcqRel)
+}
+
+/// Every agent's events share one ordering, so a late event from a replaced
+/// terminal never overwrites a newer one. It starts from the clock so a core
+/// that restarts under a running app keeps counting upwards.
+fn next_sequence() -> u64 {
+    sequence().fetch_add(1, Ordering::AcqRel)
+}
+
+pub(crate) fn sequence_mark() -> u64 {
+    sequence().load(Ordering::Acquire)
+}
+
+/// Carries on from the sequence an earlier core reached.
+pub(crate) fn continue_sequence(mark: u64) {
+    sequence().fetch_max(mark, Ordering::AcqRel);
+}
+
+/// The part of an agent's activity a replacement core carries on from.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AgentRecord {
+    armed: bool,
+    state: u8,
+    silenced: bool,
+    last_published: u64,
+    idle_confirmations: u8,
 }
 
 /// What the core infers about an agent running in a terminal, so its state is
@@ -84,6 +108,35 @@ impl AgentActivity {
             last_detection_fingerprint: AtomicU64::new(0),
             last_detection_revision: AtomicU64::new(0),
         })
+    }
+
+    pub(crate) fn record(&self) -> AgentRecord {
+        AgentRecord {
+            armed: self.armed.load(Ordering::Acquire),
+            state: self.state.load(Ordering::Acquire),
+            silenced: self.silenced.load(Ordering::Acquire),
+            last_published: self.last_published.load(Ordering::Acquire),
+            idle_confirmations: self.idle_confirmations.load(Ordering::Acquire),
+        }
+    }
+
+    /// The screen is read again on the next poll, as the rules may differ.
+    pub(crate) fn restored(
+        agent_id: Option<&str>,
+        agent_type: Option<&str>,
+        record: &AgentRecord,
+    ) -> Option<Self> {
+        let activity = Self::new(agent_id, agent_type, record.armed)?;
+        activity.state.store(record.state, Ordering::Release);
+        activity.silenced.store(record.silenced, Ordering::Release);
+        activity
+            .last_published
+            .store(record.last_published, Ordering::Release);
+        activity
+            .idle_confirmations
+            .store(record.idle_confirmations, Ordering::Release);
+        activity.revision.store(1, Ordering::Release);
+        Some(activity)
     }
 
     pub(crate) fn agent_id(&self) -> &str {

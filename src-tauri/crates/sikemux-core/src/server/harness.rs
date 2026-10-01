@@ -16,8 +16,8 @@ use tokio::time::Instant;
 
 use crate::cli::protocol::{is_browser_method, is_plugin_method, HarnessRequest};
 use crate::harness::command::{command_cwd, command_label, command_task_id, COMMAND_TASK_PREFIX};
-use crate::harness::journal::Journals;
-use crate::harness::runs::{CommandLaunch, Launch, Run, RunStatus, Runs};
+use crate::harness::journal::{JournalRecord, Journals};
+use crate::harness::runs::{CommandLaunch, Launch, Run, RunStatus, Runs, RunsRecord};
 use crate::protocol::{RunSelector, SessionId, TaskSessionInfo, WindowCall};
 
 use super::connection::blocking;
@@ -44,6 +44,16 @@ const WINDOW_GONE: &str = "Sikemux's window closed before it answered";
 const AWAITING_TRUST_NOTE: &str = "Waiting for the person to trust this project's sikemux.json in Sikemux. Call task_start again with the same idempotencyKey, or events_wait with this executionId, to see when it starts.";
 const STARTING_NOTE: &str = "Still starting. Call task_start again with the same idempotencyKey, or events_wait with this executionId, to see when it runs.";
 const NOT_READY_NOTE: &str = "The task is running but readyWhen has not appeared yet. Wait with events_wait on this executionId, or task_read with search.";
+
+const LAUNCH_CUT_SHORT: &str = "Sikemux's background process was updated while the window was starting this task; start it again";
+
+/// The harness as a replacement core takes it over.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct HarnessRecord {
+    runs: RunsRecord,
+    journals: Vec<JournalRecord>,
+}
 
 struct State {
     runs: Runs,
@@ -178,6 +188,40 @@ impl Harness {
             };
             let execution_id = run.execution_id.clone();
             state.set_status(&execution_id, next);
+        });
+    }
+
+    pub(crate) fn record(&self) -> HarnessRecord {
+        self.read(|state| HarnessRecord {
+            runs: state.runs.record(),
+            journals: state.journals.record(),
+        })
+    }
+
+    /// Takes over an earlier core's runs, keys and journals. A launch the
+    /// window was in the middle of answered the earlier core, so it is over.
+    pub(crate) fn restore(&self, record: HarnessRecord) {
+        self.change(|state| {
+            state.runs = Runs::restored(record.runs);
+            state.journals.restore(record.journals);
+            let mut cut_short = Vec::new();
+            for run in state.runs.all_mut() {
+                if run.launch != Launch::Pending {
+                    continue;
+                }
+                if run.pty_id.is_some() {
+                    run.launch = Launch::Done;
+                    continue;
+                }
+                run.launch = Launch::Failed(LAUNCH_CUT_SHORT.into());
+                run.error.get_or_insert_with(|| LAUNCH_CUT_SHORT.into());
+                if run.status.is_active() {
+                    cut_short.push(run.execution_id.clone());
+                }
+            }
+            for execution_id in cut_short {
+                state.set_status(&execution_id, RunStatus::Failed);
+            }
         });
     }
 

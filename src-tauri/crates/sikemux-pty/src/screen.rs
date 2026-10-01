@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use crate::error::{PtyError, PtyResult};
-use crate::shell_protocol::ShellProtocolParser;
+use crate::shell_protocol::{ShellMetadataSnapshot, ShellProtocolParser};
 
 // Scrollback held in the headless vt100 parser. This only has to cover what
 // a reattaching xterm replays; anything the user scrolled past before the
@@ -252,6 +252,34 @@ pub fn attach_snapshot_with_compaction(
     Ok(snapshot.bytes)
 }
 
+/// The bytes that rebuild this screen and its history in a fresh parser,
+/// bounded like an attach, without trimming the parser itself.
+pub fn replay_snapshot(parser: &mut SemanticParser) -> PtyResult<Vec<u8>> {
+    Ok(bounded_attach_snapshot(parser.screen_mut(), MAX_ATTACH_SNAPSHOT_BYTES)?.bytes)
+}
+
+/// A parser rebuilt from [`replay_snapshot`] bytes, with the shell state and
+/// title the replay cannot carry.
+pub fn restored_parser(
+    rows: u16,
+    cols: u16,
+    replay: &[u8],
+    shell: Option<ShellMetadataSnapshot>,
+    window_title: String,
+) -> SemanticParser {
+    let mut parser = SemanticParser::new_with_callbacks(
+        rows,
+        cols,
+        PARSER_SCROLLBACK,
+        SemanticCallbacks::default(),
+    );
+    parser.process(replay);
+    let callbacks = parser.callbacks_mut();
+    callbacks.window_title = window_title;
+    callbacks.shell = shell.map(ShellProtocolParser::restored);
+    parser
+}
+
 pub fn compact_parser_for_idle(parser: &mut SemanticParser) -> bool {
     if parser.screen().alternate_screen() {
         return false;
@@ -267,6 +295,39 @@ mod tests {
         screen_scrollback_len, semantic_parser,
     };
     use super::{IDLE_SCROLLBACK, MAX_ATTACH_SNAPSHOT_BYTES, PARSER_SCROLLBACK};
+
+    #[test]
+    fn a_restored_parser_shows_the_same_screen_history_and_shell_state() {
+        let mut original = super::semantic_parser_with_shell(5, 20, PARSER_SCROLLBACK, true);
+        for i in 0..12 {
+            original.process(format!("row {i:02}\r\n").as_bytes());
+        }
+        original.process(b"\x1b]2;Busy\x07$ ");
+        let shell = crate::shell_protocol::ShellMetadataSnapshot {
+            revision: 4,
+            cwd: Some("/tmp".into()),
+            phase: crate::shell_protocol::ShellPhase::Prompt,
+            last_exit_code: Some(2),
+        };
+        let replay = super::replay_snapshot(&mut original).unwrap();
+        let mut restored =
+            super::restored_parser(5, 20, &replay, Some(shell.clone()), "Busy".into());
+
+        assert_eq!(restored.screen().contents(), original.screen().contents());
+        assert_eq!(
+            screen_scrollback_len(restored.screen_mut()),
+            screen_scrollback_len(original.screen_mut())
+        );
+        assert_eq!(restored.callbacks().window_title, "Busy");
+        assert_eq!(
+            restored
+                .callbacks()
+                .shell
+                .as_ref()
+                .map(|shell| shell.snapshot()),
+            Some(shell)
+        );
+    }
 
     #[test]
     fn semantic_parser_captures_and_sanitizes_osc_title() {

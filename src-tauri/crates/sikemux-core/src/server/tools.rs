@@ -4,6 +4,7 @@
 //! core prove it holds the same one.
 
 use std::net::{Ipv4Addr, SocketAddrV4};
+use std::os::fd::{AsRawFd, RawFd};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -36,6 +37,8 @@ const OPEN_ACCEPT_TIMEOUT: Duration = Duration::from_secs(60);
 pub(crate) struct ToolEndpoint {
     path: PathBuf,
     token: String,
+    fd: RawFd,
+    open: Arc<AtomicUsize>,
     task: JoinHandle<()>,
 }
 
@@ -47,36 +50,83 @@ impl Drop for Slot {
     }
 }
 
+fn new_token() -> String {
+    format!(
+        "{}{}",
+        uuid::Uuid::new_v4().simple(),
+        uuid::Uuid::new_v4().simple()
+    )
+}
+
+fn descriptor(core: &Core, port: u16, token: &str) -> CliEndpointDescriptor {
+    CliEndpointDescriptor {
+        protocol: CLI_PROTOCOL_VERSION,
+        pid: std::process::id(),
+        port,
+        token: token.to_owned(),
+        version: core.build.version.clone(),
+    }
+}
+
 impl ToolEndpoint {
     /// Listens on a free loopback port and publishes it at `path`.
     pub(crate) async fn start(core: Arc<Core>, path: PathBuf) -> std::io::Result<Self> {
         let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)).await?;
         let port = listener.local_addr()?.port();
-        let token = format!(
-            "{}{}",
-            uuid::Uuid::new_v4().simple(),
-            uuid::Uuid::new_v4().simple()
-        );
-        let descriptor = CliEndpointDescriptor {
-            protocol: CLI_PROTOCOL_VERSION,
-            pid: std::process::id(),
-            port,
-            token: token.clone(),
-            version: core.build.version.clone(),
-        };
+        let token = new_token();
+        let published = descriptor(&core, port, &token);
         let publish = path.clone();
-        tokio::task::spawn_blocking(move || write_endpoint(&publish, &descriptor))
+        tokio::task::spawn_blocking(move || write_endpoint(&publish, &published))
             .await
             .map_err(std::io::Error::other)??;
+        Ok(Self::serve(core, listener, path, port, token))
+    }
+
+    /// Keeps serving a listener an earlier core handed over, with its port and
+    /// token, and publishes it again if the endpoint file no longer says so.
+    pub(crate) async fn adopt(
+        core: Arc<Core>,
+        listener: std::net::TcpListener,
+        path: PathBuf,
+        token: String,
+    ) -> std::io::Result<Self> {
+        listener.set_nonblocking(true)?;
+        let listener = TcpListener::from_std(listener)?;
+        let port = listener.local_addr()?.port();
+        let published = descriptor(&core, port, &token);
+        let publish = path.clone();
+        tokio::task::spawn_blocking(move || {
+            let current = std::fs::read(&publish)
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<CliEndpointDescriptor>(&bytes).ok());
+            if current.as_ref() == Some(&published) {
+                return Ok(());
+            }
+            write_endpoint(&publish, &published)
+        })
+        .await
+        .map_err(std::io::Error::other)??;
+        Ok(Self::serve(core, listener, path, port, token))
+    }
+
+    fn serve(
+        core: Arc<Core>,
+        listener: TcpListener,
+        path: PathBuf,
+        port: u16,
+        token: String,
+    ) -> Self {
+        let fd = listener.as_raw_fd();
         let secret: Arc<str> = token.clone().into();
+        let open = Arc::new(AtomicUsize::new(0));
+        let counted = open.clone();
         let task = tokio::spawn(async move {
-            let open = Arc::new(AtomicUsize::new(0));
             loop {
                 let Ok((stream, _)) = listener.accept().await else {
                     tokio::time::sleep(Duration::from_millis(50)).await;
                     continue;
                 };
-                if open
+                if counted
                     .fetch_update(Ordering::AcqRel, Ordering::Acquire, |count| {
                         (count < MAX_CONNECTIONS).then_some(count + 1)
                     })
@@ -84,7 +134,7 @@ impl ToolEndpoint {
                 {
                     continue;
                 }
-                let slot = Slot(open.clone());
+                let slot = Slot(counted.clone());
                 let core = core.clone();
                 let secret = secret.clone();
                 tokio::spawn(async move {
@@ -93,7 +143,30 @@ impl ToolEndpoint {
                 });
             }
         });
-        Ok(Self { path, token, task })
+        Self {
+            path,
+            token,
+            fd,
+            open,
+            task,
+        }
+    }
+
+    pub(crate) fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+
+    pub(crate) fn token(&self) -> &str {
+        &self.token
+    }
+
+    pub(crate) fn fd(&self) -> RawFd {
+        self.fd
+    }
+
+    /// How many calls are being answered right now.
+    pub(crate) fn open_calls(&self) -> Arc<AtomicUsize> {
+        self.open.clone()
     }
 
     /// Stops listening and removes the endpoint file, unless another process
@@ -159,6 +232,16 @@ fn authenticate(protocol: u16, token: &str, secret: &str) -> Result<(), String> 
 
 async fn serve(core: Arc<Core>, stream: TcpStream, secret: &str, port: u16) {
     let (read_half, mut writer) = stream.into_split();
+    if core.is_frozen() {
+        write(
+            &mut writer,
+            &CliServerResponse::Error {
+                message: super::upgrade::UPDATING.into(),
+            },
+        )
+        .await;
+        return;
+    }
     let mut reader = BufReader::new(read_half);
     let deadline = Instant::now() + REQUEST_READ_DEADLINE;
     let hello = match read_line::<CliClientHello>(&mut reader, deadline).await {
@@ -204,10 +287,16 @@ async fn serve(core: Arc<Core>, stream: TcpStream, secret: &str, port: u16) {
             token,
             request,
         } => match authenticate(protocol, &token, secret) {
-            Ok(()) => Ok(match harness::call(&core, request).await {
-                Ok(value) => CliServerResponse::Result { value },
-                Err(message) => CliServerResponse::Error { message },
-            }),
+            Ok(()) => {
+                let answer = tokio::select! {
+                    answer = harness::call(&core, request) => answer,
+                    () = core.until_frozen() => Err(super::upgrade::UPDATING.into()),
+                };
+                Ok(match answer {
+                    Ok(value) => CliServerResponse::Result { value },
+                    Err(message) => CliServerResponse::Error { message },
+                })
+            }
             Err(message) => Err(message),
         },
         CliClientCommand::Open {
@@ -221,7 +310,19 @@ async fn serve(core: Arc<Core>, stream: TcpStream, secret: &str, port: u16) {
                 write(&mut writer, &CliServerResponse::Error { message }).await;
                 return;
             }
-            open(&core, &mut writer, request).await;
+            let closed = tokio::select! {
+                () = open(&core, &mut writer, request) => false,
+                () = core.until_frozen() => true,
+            };
+            if closed {
+                write(
+                    &mut writer,
+                    &CliServerResponse::Error {
+                        message: super::upgrade::UPDATING.into(),
+                    },
+                )
+                .await;
+            }
             return;
         }
     };
