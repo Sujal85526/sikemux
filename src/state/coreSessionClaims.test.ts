@@ -17,6 +17,7 @@ function session(id: number, overrides: Partial<CoreSession> = {}): CoreSession 
         task: null,
         exit: null,
         killed: false,
+        startedBy: null,
         ...overrides,
     };
 }
@@ -47,7 +48,14 @@ describe("core session claims", () => {
     });
 
     it("stops only terminals nobody names, and leaves tasks to be taken over", () => {
-        const sessions = [session(11), session(12), session(13), session(14, { kind: "task" }), session(15, { running: false })];
+        const sessions = [
+            session(11),
+            session(12),
+            session(13),
+            session(14, { kind: "task" }),
+            session(15, { running: false }),
+            session(16, { startedBy: "phone-key" }),
+        ];
         expect(unclaimedTerminals(sessions, new Set([11, 12]))).toEqual([13, 15]);
     });
 

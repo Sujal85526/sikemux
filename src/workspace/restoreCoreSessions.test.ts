@@ -16,11 +16,24 @@ import { KEPT_RUNNING_NOTICE, UNCLAIMED_GRACE_MS, offerSavedSessions, restoreCor
 const initial = getState();
 
 function terminal(id: number, running = true, exit: CoreSession["exit"] = running ? null : { code: 0, signal: null }): CoreSession {
-    return { id, kind: "terminal", pid: 1, running, project: null, paneId: null, agentId: null, agentType: null, task: null, exit, killed: false };
+    return {
+        id,
+        kind: "terminal",
+        pid: 1,
+        running,
+        project: null,
+        paneId: null,
+        agentId: null,
+        agentType: null,
+        task: null,
+        exit,
+        killed: false,
+        startedBy: null,
+    };
 }
 
-function chat(agentId: string): AcpChat {
-    return { agentId, provider: "claude", cwd: "/repo", sessionId: "s", state: "ready", running: true, pendingPermissions: [] };
+function chat(agentId: string, startedBy: string | null = null): AcpChat {
+    return { agentId, provider: "claude", cwd: "/repo", sessionId: "s", state: "ready", running: true, pendingPermissions: [], startedBy };
 }
 
 function deps(sessions: CoreSession[], chats: AcpChat[] = []) {
@@ -144,7 +157,10 @@ describe("restoring what the core kept", () => {
 
     it("stops the chats no chat pane took back after the grace", async () => {
         layoutWithSessions();
-        const { restore, stopChat, runScheduled } = deps([], [chat("agent-ended"), chat("agent-shown"), chat("agent-forgotten")]);
+        const { restore, stopChat, runScheduled } = deps(
+            [],
+            [chat("agent-ended"), chat("agent-shown"), chat("agent-forgotten"), chat("agent-phone", "phone-key")],
+        );
         await restoreCoreSessions(restore);
         expect(useToasts.getState().toasts.map((toast) => toast.text)).toEqual([KEPT_RUNNING_NOTICE]);
         claimChat("agent-shown");

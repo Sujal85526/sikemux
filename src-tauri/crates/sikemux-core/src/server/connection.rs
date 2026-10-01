@@ -335,7 +335,8 @@ async fn run_requests(
         match request {
             Request::Spawn { launch, target } => {
                 tokio::spawn(async move {
-                    match spawn(core.clone(), launch, target).await {
+                    let started_by = client.peer.device_id();
+                    match spawn(core.clone(), launch, target, started_by).await {
                         Ok(pending) => {
                             let id = pending.id();
                             client.respond(request_id, Ok(Response::Spawned { id }));
@@ -648,12 +649,14 @@ async fn spawn(
     core: Arc<Core>,
     launch: LaunchIdentity,
     target: Box<SpawnTarget>,
+    started_by: Option<String>,
 ) -> CoreResult<PendingStart> {
     blocking(move || {
-        let prepared = match *target {
+        let mut prepared = match *target {
             SpawnTarget::Terminal(spawn) => prepare_terminal(&launch, spawn)?,
             SpawnTarget::Task { request } => prepare_task(&launch, request)?,
         };
+        prepared.owner.started_by = started_by;
         session::spawn_session(&core, prepared)
     })
     .await

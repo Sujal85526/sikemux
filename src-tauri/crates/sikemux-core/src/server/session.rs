@@ -247,6 +247,7 @@ impl Session {
                 .and_then(AgentActivity::state_label)
                 .map(str::to_string),
             task: self.owner.task.clone(),
+            started_by: self.owner.started_by.clone(),
             exit: self.exit.lock().ok().and_then(|exit| exit.clone()),
             killed: self.is_killed(),
         }

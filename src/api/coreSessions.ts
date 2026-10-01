@@ -33,6 +33,8 @@ export interface CoreSession {
     readonly exit: CoreSessionExit | null;
     /** Sikemux asked for its process to end. */
     readonly killed: boolean;
+    /** The paired device that started it; null when this app did. */
+    readonly startedBy: string | null;
 }
 
 export const coreSessionsApi = {

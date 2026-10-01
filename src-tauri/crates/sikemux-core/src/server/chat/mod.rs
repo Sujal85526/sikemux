@@ -77,6 +77,7 @@ struct PendingPermission {
 
 pub(crate) struct Chat {
     pub launch: ChatLaunch,
+    pub started_by: Option<String>,
     generation: u64,
     commands: mpsc::UnboundedSender<ChatCommand>,
     task: Mutex<Option<tokio::task::JoinHandle<()>>>,
@@ -251,6 +252,7 @@ impl Chat {
             },
             running: self.turn_running(),
             pending_permissions: self.pending_permissions(),
+            started_by: self.started_by.clone(),
         }
     }
 
@@ -274,7 +276,10 @@ impl Chat {
         launch.effort = effort_id
             .and_then(|id| current_choice(setup, &id))
             .or(launch.effort);
-        Some(ChatRecord { launch })
+        Some(ChatRecord {
+            launch,
+            started_by: self.started_by.clone(),
+        })
     }
 }
 
@@ -284,6 +289,7 @@ impl Chat {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ChatRecord {
     pub launch: ChatLaunch,
+    pub started_by: Option<String>,
 }
 
 #[derive(Default)]
@@ -391,6 +397,7 @@ impl Chats {
     fn insert(
         &self,
         launch: ChatLaunch,
+        started_by: Option<String>,
     ) -> CoreResult<(Arc<Chat>, mpsc::UnboundedReceiver<ChatCommand>)> {
         let mut chats = self.chats.lock().map_err(CoreError::poisoned)?;
         if chats.contains_key(&launch.agent_id) {
@@ -409,6 +416,7 @@ impl Chats {
             turned: AtomicBool::new(false),
             approving: AtomicBool::new(crate::acp::approves_for_user(&launch.permission_mode)),
             launch,
+            started_by,
         });
         chats.insert(chat.agent_id().to_owned(), chat.clone());
         Ok((chat, queue))
@@ -468,7 +476,8 @@ pub(crate) fn begin(
     subscriber: Option<&Arc<ClientConn>>,
 ) -> CoreResult<Arc<Chat>> {
     validate(&launch_spec)?;
-    let (chat, queue) = core.chats.insert(launch_spec)?;
+    let started_by = subscriber.and_then(|client| client.peer.device_id());
+    let (chat, queue) = core.chats.insert(launch_spec, started_by)?;
     if let Some(client) = subscriber {
         chat.feed.subscribe(client);
     }
@@ -496,7 +505,7 @@ pub(crate) fn resume(core: &Arc<Core>, record: ChatRecord) {
         eprintln!("sikemux core: chat {agent_id} was not resumed after the update: {error}");
         return;
     }
-    match core.chats.insert(record.launch) {
+    match core.chats.insert(record.launch, record.started_by) {
         Ok((chat, queue)) => launch(core, &chat, queue),
         Err(error) => {
             eprintln!("sikemux core: chat {agent_id} was not resumed after the update: {error}")

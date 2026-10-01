@@ -28,6 +28,9 @@ pub(crate) struct Owner {
     pub agent_type: Option<String>,
     pub task_execution_id: Option<String>,
     pub task: Option<TaskSessionInfo>,
+    /// The paired device that started the session, which the app leaves
+    /// running although nothing in its layout names it.
+    pub started_by: Option<String>,
 }
 
 impl Owner {
@@ -43,6 +46,7 @@ impl Owner {
             agent_type: present(&context.agent_type),
             task_execution_id: None,
             task: None,
+            started_by: None,
         }
     }
 }

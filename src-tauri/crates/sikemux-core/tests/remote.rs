@@ -239,6 +239,14 @@ async fn a_paired_device_drives_a_terminal_over_the_network() {
         .expect("the phone starts a terminal");
     client.attach(id).await.expect("the phone attaches");
     until_output(&client, &mut events, id, "remote-hello").await;
+    let session = app
+        .list()
+        .await
+        .expect("list")
+        .into_iter()
+        .find(|session| session.id == id)
+        .expect("the phone's terminal");
+    assert_eq!(session.started_by, Some(phone.id()));
     client.kill(id).await.expect("the phone ends the terminal");
 
     let status = app.remote_status().await.expect("status");
@@ -264,7 +272,8 @@ async fn a_watching_device_reads_but_cannot_drive_or_reach_the_core() {
         .await
         .expect("the watcher connects");
     let sessions = client.list().await.expect("the watcher lists sessions");
-    assert!(sessions.iter().any(|session| session.id == id));
+    let session = sessions.iter().find(|session| session.id == id);
+    assert_eq!(session.expect("the app's terminal").started_by, None);
     assert!(refusal(client.kill(id).await).contains("watch"));
     assert!(refusal(client.write(id, b"exit\n").await).contains("watch"));
     assert!(refusal(client.stop_all().await).contains("only Sikemux on this Mac"));

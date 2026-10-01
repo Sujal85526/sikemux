@@ -52,6 +52,8 @@ export interface AcpChat {
     state: "starting" | "ready";
     running: boolean;
     pendingPermissions: string[];
+    /** The paired device that started it; null when this app did. */
+    startedBy: string | null;
 }
 
 /** Something read elsewhere and handed to the agent whole, such as an issue and its comments. */

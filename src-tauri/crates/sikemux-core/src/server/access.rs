@@ -73,6 +73,13 @@ impl Peer {
         matches!(self, Peer::Local)
     }
 
+    pub(crate) fn device_id(&self) -> Option<String> {
+        match self {
+            Peer::Local => None,
+            Peer::Device { id } => Some(id.clone()),
+        }
+    }
+
     pub(crate) fn is_device(&self, id: &str) -> bool {
         matches!(self, Peer::Device { id: own } if own == id)
     }

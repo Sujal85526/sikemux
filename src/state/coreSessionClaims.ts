@@ -45,7 +45,9 @@ function crashed(session: CoreSession, resumeId: string | undefined): boolean {
     return afterAgentExit({ exit, resumeId, lastResumeAt: null, now: 0 }) === "resume";
 }
 
-/** Terminals nothing in the workspace refers to. Tasks are taken over separately. */
+/** Terminals this app started that nothing in the workspace refers to. Tasks are taken over separately. */
 export function unclaimedTerminals(sessions: readonly CoreSession[], claimed: ReadonlySet<number>): number[] {
-    return sessions.filter((session) => session.kind === "terminal" && !claimed.has(session.id)).map((session) => session.id);
+    return sessions
+        .filter((session) => session.kind === "terminal" && session.startedBy === null && !claimed.has(session.id))
+        .map((session) => session.id);
 }

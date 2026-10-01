@@ -90,6 +90,6 @@ export async function restoreCoreSessions(deps: CoreSessionRestoreDeps = default
     deps.schedule(() => {
         const stillClaimed = claimedSessionIds(getState());
         for (const id of candidates) if (!stillClaimed.has(id)) void deps.kill(id).catch(() => {});
-        for (const chat of chats) if (!chatClaimed(chat.agentId)) void deps.chats.stop(chat.agentId).catch(() => {});
+        for (const chat of chats) if (chat.startedBy === null && !chatClaimed(chat.agentId)) void deps.chats.stop(chat.agentId).catch(() => {});
     }, UNCLAIMED_GRACE_MS);
 }

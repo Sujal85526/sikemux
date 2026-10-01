@@ -73,10 +73,10 @@ pub mod frozen {
 
     /// The format of the state a core hands to its replacement. A core only
     /// replaces itself with a binary that reads its format.
-    pub const RESUME_FORMAT: u32 = 2;
+    pub const RESUME_FORMAT: u32 = 3;
 
     /// Every hand-over format a core of this build takes over from.
-    pub const READS_FORMATS: [u32; 2] = [1, RESUME_FORMAT];
+    pub const READS_FORMATS: [u32; 3] = [1, 2, RESUME_FORMAT];
 
     /// The argument that makes a core binary print its [`UpgradeInfo`].
     pub const UPGRADE_INFO_ARG: &str = "--upgrade-info";
@@ -432,6 +432,8 @@ pub struct ChatInfo {
     pub state: ChatState,
     pub running: bool,
     pub pending_permissions: Vec<String>,
+    /// The paired device that started it. The app started the rest.
+    pub started_by: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -729,6 +731,8 @@ pub struct SessionInfo {
     pub exit: Option<SessionExit>,
     /// A client asked for the process to end.
     pub killed: bool,
+    /// The paired device that started it. The app started the rest.
+    pub started_by: Option<String>,
 }
 
 /// A task's launch request without its environment.
