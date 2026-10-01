@@ -98,12 +98,10 @@ pub fn run() {
     cli_server::put_cli_on_path();
 
     // Warm the profile-environment cache here, on the startup thread, while
-    // we are already paying for a login shell. It is first *needed* inside
-    // `pty_spawn`, which is an async command — initialising it there would
-    // block an async runtime worker for up to the capture deadline, and
-    // concurrent spawns during session restore would serialise behind the
-    // same one-time initialisation. An rc file that runs something slow like
-    // `fastfetch` makes that delay visible on the first pane.
+    // we are already paying for a login shell. Agent and browser launches
+    // read it from async commands, where initialising it would block an
+    // async runtime worker for up to the capture deadline. An rc file that
+    // runs something slow like `fastfetch` makes that delay visible.
     sikemux_pty::user_shell::warm_login_shell_environment();
     system::import_from_login_shell(&plugins::shell_variables());
 
@@ -131,7 +129,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .on_window_event(|window, event| {
-            // Drain every live PTY on close so we don't leave orphan
+            // Stop every terminal on close so we don't leave orphan
             // shells, agents, or `tail`s alive after the user quits.
             // The OS reaps eventually, but explicit kill avoids the
             // "still using AI tokens" surprise from a backgrounded agent.
@@ -141,7 +139,7 @@ pub fn run() {
                     watchdog.suspend();
                 }
                 if let Some(mgr) = window.try_state::<PtyManager>() {
-                    mgr.drain();
+                    mgr.stop_all();
                 }
                 if let Some(browser) = window.try_state::<BrowserManager>() {
                     browser.drain();
@@ -171,7 +169,7 @@ pub fn run() {
                     watchdog.suspend();
                 }
                 if let Some(mgr) = webview.try_state::<PtyManager>() {
-                    mgr.drain();
+                    mgr.stop_all();
                 }
                 if let Some(browser) = webview.try_state::<BrowserManager>() {
                     browser.drain();
@@ -200,6 +198,7 @@ pub fn run() {
                 }
             };
             _app.manage(cli_server::CliBrokerState(cli_broker));
+            _app.state::<PtyManager>().start(_app.handle());
             // See-through window — same recipe as nackle (NSWindow opaque=NO,
             // CGS background blur via private API). No NSVisualEffectView
             // because its frosted look is heavier than the gaussian CGS blur
@@ -237,20 +236,20 @@ pub fn run() {
             acp::acp_stop_task,
             acp::acp_permission_reply,
             acp::acp_stop,
-            pty::spawn::pty_spawn,
-            pty::task::task_spawn,
-            pty::output::pty_subscribe,
-            pty::output::pty_unsubscribe,
-            pty::output::pty_ack,
-            pty::attach::pty_attach,
-            pty::io::pty_write,
-            pty::io::pty_resize,
-            pty::attach::pty_reset_modes,
-            pty::process::pty_kill,
+            pty::commands::pty_spawn,
+            pty::commands::task_spawn,
+            pty::commands::pty_subscribe,
+            pty::commands::pty_unsubscribe,
+            pty::commands::pty_ack,
+            pty::commands::pty_attach,
+            pty::commands::pty_write,
+            pty::commands::pty_resize,
+            pty::commands::pty_reset_modes,
+            pty::commands::pty_kill,
             ports::listening_ports,
-            pty::agent_state::agent_detection_explain,
-            pty::agent_state::agent_detection_manifests,
-            pty::agent_state::agent_detection_reload,
+            pty::commands::agent_detection_explain,
+            pty::commands::agent_detection_manifests,
+            pty::commands::agent_detection_reload,
             browser::browser_snapshot,
             browser::browser_new_tab,
             browser::browser_close_agent,
@@ -409,7 +408,7 @@ pub fn run() {
             harness::harness_resolve_path,
             harness::harness_claim,
             harness::harness_reply,
-            pty::task::harness_task_output,
+            pty::commands::harness_task_output,
             cli_server::cli_frontend_ready,
             cli_server::cli_claim_open_requests,
             cli_server::cli_open_result,
@@ -452,7 +451,7 @@ pub fn run() {
                     }
                 }
                 if let Some(mgr) = app_handle.try_state::<PtyManager>() {
-                    mgr.drain();
+                    mgr.shutdown();
                 }
                 if let Some(browser) = app_handle.try_state::<BrowserManager>() {
                     browser.drain();

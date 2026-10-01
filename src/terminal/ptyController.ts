@@ -197,7 +197,7 @@ const DEFAULT_MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024;
 const DEFAULT_MAX_LISTENER_ERRORS = 8;
 const DEFAULT_MAX_STATE_LISTENERS = 32;
 const DEFAULT_MAX_ATTACHMENTS = 16;
-const MAX_RUNTIME_ID = 0xffff_ffff;
+const MAX_SUBSCRIPTION_ID = 0xffff_ffff;
 const MAX_SHELL_CWD_BYTES = 4_096;
 const UTF8_ENCODER = new TextEncoder();
 const SHELL_PHASES = new Set<PtyShellPhase>(["unknown", "prompt", "input", "running", "finished"]);
@@ -220,12 +220,16 @@ function requireNonNegativeNumber(name: string, value: number): number {
     return value;
 }
 
-function isRuntimeId(value: unknown): value is number {
-    return Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) <= MAX_RUNTIME_ID;
+function isSubscriptionId(value: unknown): value is number {
+    return Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) <= MAX_SUBSCRIPTION_ID;
 }
 
-function requireRuntimeId(name: string, value: unknown): number {
-    if (!isRuntimeId(value)) throw new RangeError(`${name} must be an unsigned 32-bit integer`);
+function isPtyId(value: unknown): value is number {
+    return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
+function requirePtyId(name: string, value: unknown): number {
+    if (!isPtyId(value)) throw new RangeError(`${name} must be a non-negative safe integer`);
     return value;
 }
 
@@ -311,7 +315,7 @@ export function parsePtyShellMetadataSnapshot(value: unknown): PtyShellMetadataS
 }
 
 function validateAttachResult(result: PtyAttachResult, maxSnapshotBytes: number): PtyShellMetadataSnapshot | null {
-    if (!isRuntimeId(result.subId)) throw new TypeError("PTY attach returned an invalid subscription ID");
+    if (!isSubscriptionId(result.subId)) throw new TypeError("PTY attach returned an invalid subscription ID");
     if (!(result.snapshot instanceof Uint8Array) || result.snapshot.length > maxSnapshotBytes) {
         throw new TypeError("PTY attach returned an invalid or oversized snapshot");
     }
@@ -386,7 +390,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
     constructor(options: PtyLifecycleControllerOptions<ChannelTransport, Context>) {
         this.api = options.api;
         this.channels = options.channels;
-        this.externalPtyId = options.existingPtyId === undefined ? null : requireRuntimeId("existingPtyId", options.existingPtyId);
+        this.externalPtyId = options.existingPtyId === undefined ? null : requirePtyId("existingPtyId", options.existingPtyId);
         this.processOwnership = this.externalPtyId === null ? "controller" : "external";
         if (this.externalPtyId !== null) this.ptyGeneration = 1;
         this.cols = requirePositiveInteger("cols", options.cols ?? DEFAULT_COLS, 65_535);
@@ -453,7 +457,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         const spawned = callAsPromise(() => this.api.spawn(this.spawnRequest));
         const attempt = spawned
             .then(async (id) => {
-                if (!isRuntimeId(id)) throw new TypeError("PTY spawn returned an invalid runtime ID");
+                if (!isPtyId(id)) throw new TypeError("PTY spawn returned an invalid runtime ID");
                 this.ptyGeneration += 1;
                 this.ptyId = id;
                 if (this.disposeRequested) {
@@ -523,7 +527,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
     adoptExistingPty(idInput: number): Promise<number> {
         let id: number;
         try {
-            id = requireRuntimeId("existingPtyId", idInput);
+            id = requirePtyId("existingPtyId", idInput);
         } catch (error) {
             return containRejection(Promise.reject(error));
         }
@@ -659,7 +663,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         let shell: PtyShellMetadataSnapshot | null;
         try {
             attached = await nativeAttach;
-            if (isRuntimeId(attached.subId)) state.subId = attached.subId;
+            if (isSubscriptionId(attached.subId)) state.subId = attached.subId;
             shell = validateAttachResult(attached, this.maxSnapshotBytes);
         } catch (error) {
             const stale = this.isStaleAttachment(state);
@@ -1004,7 +1008,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         state.detachPromise = containRejection(
             state.nativeAttach.then(
                 async (attached) => {
-                    if (!isRuntimeId(attached.subId)) return;
+                    if (!isSubscriptionId(attached.subId)) return;
                     state.subId = attached.subId;
                     try {
                         await this.api.detach(state.ptyId, attached.subId);

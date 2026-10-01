@@ -16,7 +16,7 @@ const MAX_ANCESTRY: usize = 64;
 pub enum PortOwner {
     #[serde(rename_all = "camelCase")]
     Pty {
-        pty_id: u32,
+        pty_id: u64,
         #[serde(flatten)]
         owner: PtyOwner,
     },
@@ -125,8 +125,11 @@ fn attribute(
 }
 
 #[cfg(target_os = "macos")]
-fn scan(app_pid: u32, ptys: Vec<PtyProcess>) -> Vec<ListeningPort> {
-    let parents = darwin::descendants(app_pid);
+fn scan(app_pid: u32, core_pid: Option<u32>, ptys: Vec<PtyProcess>) -> Vec<ListeningPort> {
+    let mut parents = darwin::descendants(app_pid);
+    if let Some(core_pid) = core_pid {
+        parents.extend(darwin::descendants(core_pid));
+    }
     let listeners = parents
         .keys()
         .flat_map(|&pid| {
@@ -146,16 +149,18 @@ fn scan(app_pid: u32, ptys: Vec<PtyProcess>) -> Vec<ListeningPort> {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn scan(_app_pid: u32, _ptys: Vec<PtyProcess>) -> Vec<ListeningPort> {
+fn scan(_app_pid: u32, _core_pid: Option<u32>, _ptys: Vec<PtyProcess>) -> Vec<ListeningPort> {
     Vec::new()
 }
 
 /// TCP ports that terminals, tasks and chat agents (or anything they started)
-/// are listening on.
+/// are listening on. Chat agents are the app's children; terminals and tasks
+/// are the terminal core's.
 #[tauri::command]
 pub async fn listening_ports(manager: State<'_, PtyManager>) -> AppResult<Vec<ListeningPort>> {
-    let ptys = manager.live_processes();
-    tauri::async_runtime::spawn_blocking(move || scan(std::process::id(), ptys))
+    let ptys = manager.live_processes().await?;
+    let core_pid = manager.core_pid();
+    tauri::async_runtime::spawn_blocking(move || scan(std::process::id(), core_pid, ptys))
         .await
         .map_err(|error| AppError::Pty(format!("listening_ports join: {error}")))
 }
@@ -418,7 +423,7 @@ mod tests {
         Listener { pid, port, address }
     }
 
-    fn pty(pid: u32, pty_id: u32, agent_id: Option<&str>) -> PtyProcess {
+    fn pty(pid: u32, pty_id: u64, agent_id: Option<&str>) -> PtyProcess {
         PtyProcess {
             pid,
             pty_id,

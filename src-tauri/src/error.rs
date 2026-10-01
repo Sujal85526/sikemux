@@ -39,6 +39,10 @@ pub enum AppError {
     #[error("invalid argument: {0}")]
     BadArg(&'static str),
 
+    /// A bad argument reported by another process, such as the terminal core.
+    #[error("invalid argument: {0}")]
+    BadArgText(String),
+
     #[error("pty: {0}")]
     Pty(String),
 
@@ -142,7 +146,7 @@ impl AppError {
             AppError::LspServerMissing { .. } => "lsp-server-missing",
             AppError::Http(_) => "http",
             AppError::Plugin { .. } => "plugin",
-            AppError::BadArg(_) => "bad-arg",
+            AppError::BadArg(_) | AppError::BadArgText(_) => "bad-arg",
             AppError::Pty(_) => "pty",
             AppError::Search(_) => "search",
             AppError::Fs(_) => "fs",

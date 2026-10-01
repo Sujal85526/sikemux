@@ -309,10 +309,10 @@ pub struct RuntimeDiagnostics {
     fd_count: Option<usize>,
     fd_limit_soft: Option<u64>,
     fd_limit_hard: Option<u64>,
+    pty_core_pid: Option<u32>,
     ptys: usize,
     pty_subscribers: usize,
-    pty_output_reads: u64,
-    pty_output_broadcasts: u64,
+    pty_output_frames: u64,
     pty_output_bytes: u64,
     agent_ptys_working: usize,
     agent_ptys_blocked: usize,
@@ -368,18 +368,17 @@ pub async fn runtime_diagnostics(
     })
     .await
     .unwrap_or((None, None, None));
-    let (pty_count, pty_subscribers) = ptys.counts();
-    let pty_diagnostics = ptys.diagnostics();
+    let pty_diagnostics = ptys.diagnostics().await;
     let (lsp_open_documents, lsp_idle_servers) = crate::lsp::document_counts();
     Ok(RuntimeDiagnostics {
         pid: std::process::id(),
         fd_count,
         fd_limit_soft,
         fd_limit_hard,
-        ptys: pty_count,
-        pty_subscribers,
-        pty_output_reads: pty_diagnostics.output_reads,
-        pty_output_broadcasts: pty_diagnostics.output_broadcasts,
+        pty_core_pid: pty_diagnostics.core_pid,
+        ptys: pty_diagnostics.ptys,
+        pty_subscribers: pty_diagnostics.subscribers,
+        pty_output_frames: pty_diagnostics.output_frames,
         pty_output_bytes: pty_diagnostics.output_bytes,
         agent_ptys_working: pty_diagnostics.working_agents,
         agent_ptys_blocked: pty_diagnostics.blocked_agents,

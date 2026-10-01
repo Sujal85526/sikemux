@@ -18,7 +18,7 @@ export const TASK_RUNTIME_LIMITS = Object.freeze({
     defaultRows: 24,
     maxColumns: 1_000,
     maxRows: 1_000,
-    maxPtyId: 0xffff_ffff,
+    maxPtyId: Number.MAX_SAFE_INTEGER,
     maxSignalLength: 128,
 });
 

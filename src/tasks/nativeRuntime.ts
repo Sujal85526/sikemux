@@ -79,7 +79,7 @@ function requirePositiveInteger(name: string, value: number | undefined, fallbac
 }
 
 function requirePtyId(value: unknown): number {
-    if (!Number.isSafeInteger(value) || (value as number) < 0 || (value as number) > 0xffff_ffff) {
+    if (!Number.isSafeInteger(value) || (value as number) < 0) {
         throw new TypeError("native task spawn returned an invalid PTY ID");
     }
     return value as number;

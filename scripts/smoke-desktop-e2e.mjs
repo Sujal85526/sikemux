@@ -2,6 +2,7 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
+import { connect } from "node:net";
 import {
   mkdtemp,
   mkdir,
@@ -160,6 +161,142 @@ async function stopExactChild(child) {
     child.kill("SIGKILL");
     await new Promise((resolveExit) => child.once("exit", resolveExit));
   }
+}
+
+const CORE_FRAME = { control: 0, output: 1, snapshot: 2, input: 3 };
+
+function coreFrame(kind, payload) {
+  const frame = Buffer.alloc(5 + payload.length);
+  frame.writeUInt32BE(payload.length + 1, 0);
+  frame[4] = kind;
+  payload.copy(frame, 5);
+  return frame;
+}
+
+function coreControl(message) {
+  return coreFrame(CORE_FRAME.control, Buffer.from(JSON.stringify(message)));
+}
+
+// A minimal client of the terminal core's socket protocol, enough to see
+// that the app started its own core and that its terminals run there.
+function openCore(path) {
+  return new Promise((resolveOpen, rejectOpen) => {
+    const socket = connect(path);
+    let buffered = Buffer.alloc(0);
+    const frames = [];
+    let wake = () => {};
+    socket.on("data", (chunk) => {
+      buffered = Buffer.concat([buffered, chunk]);
+      while (buffered.length >= 4) {
+        const length = buffered.readUInt32BE(0);
+        if (buffered.length < 4 + length) break;
+        frames.push({
+          kind: buffered[4],
+          payload: buffered.subarray(5, 4 + length),
+        });
+        buffered = buffered.subarray(4 + length);
+      }
+      wake();
+    });
+    socket.once("error", rejectOpen);
+    const next = async (accept, timeout = 5_000) => {
+      const deadline = Date.now() + timeout;
+      for (;;) {
+        const index = frames.findIndex(accept);
+        if (index >= 0) return frames.splice(index, 1)[0];
+        const left = deadline - Date.now();
+        if (left <= 0) return null;
+        await new Promise((resolveWake) => {
+          wake = resolveWake;
+          setTimeout(resolveWake, left);
+        });
+      }
+    };
+    const control = (frame) =>
+      frame.kind === CORE_FRAME.control ? JSON.parse(frame.payload) : null;
+    socket.once("connect", async () => {
+      socket.write(
+        coreControl({ type: "hello", protocol: "sikemux-core", version: 1 }),
+      );
+      const hello = await next((frame) => control(frame)?.type === "helloAck");
+      if (!hello) {
+        socket.destroy();
+        rejectOpen(new Error("the core did not answer its hello"));
+        return;
+      }
+      let requestId = 0;
+      const request = async (body, timeout) => {
+        const id = ++requestId;
+        socket.write(
+          coreControl({ type: "request", requestId: id, request: body }),
+        );
+        const reply = await next(
+          (frame) => control(frame)?.requestId === id,
+          timeout,
+        );
+        return reply && control(reply);
+      };
+      resolveOpen({
+        hello: control(hello),
+        request,
+        async attach(id) {
+          const attachId = ++requestId;
+          socket.write(
+            coreControl({
+              type: "request",
+              requestId: attachId,
+              request: { op: "attach", id },
+            }),
+          );
+          const reply = await next(
+            (frame) =>
+              (frame.kind === CORE_FRAME.snapshot &&
+                frame.payload.readBigUInt64BE(0) === BigInt(attachId)) ||
+              control(frame)?.requestId === attachId,
+          );
+          return reply?.kind === CORE_FRAME.snapshot;
+        },
+        write(id, text) {
+          const header = Buffer.alloc(16);
+          header.writeBigUInt64BE(BigInt(++requestId), 0);
+          header.writeBigUInt64BE(BigInt(id), 8);
+          socket.write(
+            coreFrame(
+              CORE_FRAME.input,
+              Buffer.concat([header, Buffer.from(text)]),
+            ),
+          );
+        },
+        async output(id, needle, timeout) {
+          let seen = "";
+          const deadline = Date.now() + timeout;
+          while (!seen.includes(needle) && Date.now() < deadline) {
+            const frame = await next(
+              (candidate) =>
+                candidate.kind === CORE_FRAME.output ||
+                candidate.kind === CORE_FRAME.snapshot,
+              deadline - Date.now(),
+            );
+            if (!frame) break;
+            if (
+              frame.kind === CORE_FRAME.output &&
+              frame.payload.readBigUInt64BE(0) === BigInt(id)
+            )
+              seen += frame.payload.subarray(8).toString("utf8");
+          }
+          return seen.includes(needle);
+        },
+        close: () => socket.destroy(),
+      });
+    });
+  });
+}
+
+async function stopCore(path) {
+  const core = await openCore(path).catch(() => null);
+  if (!core) return;
+  await core.request({ op: "shutdown", stopAll: true }, 5_000);
+  core.close();
 }
 
 function serveFixture() {
@@ -383,6 +520,7 @@ const isolatedHome = join(temporaryRoot, "home");
 const project = join(temporaryRoot, "project");
 const source = join(project, "smoke.ts");
 const endpoint = join(temporaryRoot, "cli-endpoint.json");
+const coreSocket = join(temporaryRoot, "core.sock");
 const stateDatabase = join(
   isolatedHome,
   ".config",
@@ -440,6 +578,7 @@ const isolatedEnvironment = {
   SIKEMUX_CLI_ENDPOINT: endpoint,
   SIKEMUX_CLI_ENDPOINT_PUBLISH: endpoint,
   SIKEMUX_BIN_PATH: cliExecutable,
+  SIKEMUX_CORE_SOCKET: coreSocket,
 };
 delete isolatedEnvironment.SIKEMUX_APP_EXECUTABLE;
 
@@ -519,6 +658,37 @@ try {
     async () => {
       return (await latestStateWriteTime()) > stateWriteBeforeOpen;
     },
+  );
+
+  const core = await openCore(coreSocket).catch((error) =>
+    fail(
+      `the app did not start its terminal core: ${error.message}`,
+      desktopLog,
+    ),
+  );
+  if (!core.hello.build?.commit)
+    fail("the terminal core did not report its build", desktopLog);
+  let terminals = [];
+  await waitFor(
+    "a project terminal in the core",
+    PERSIST_TIMEOUT_MS,
+    async () => {
+      const listed = await core.request({ op: "list" }, 5_000);
+      terminals = (listed?.response?.sessions ?? []).filter(
+        (session) => session.kind === "terminal" && session.running,
+      );
+      return terminals.length > 0;
+    },
+  );
+  const shell = terminals[0];
+  if (!(await core.attach(shell.id)))
+    fail("could not attach to the project terminal", desktopLog);
+  core.write(shell.id, "echo core-$((6*7))\r");
+  if (!(await core.output(shell.id, "core-42", 10_000)))
+    fail("the project terminal did not run a command in the core", desktopLog);
+  core.close();
+  console.log(
+    `Terminal core passed: pid ${core.hello.pid}, build ${core.hello.build.commit}, ${terminals.length} terminal(s)`,
   );
 
   const harnessEnv = { ...isolatedEnvironment, SIKEMUX_PROJECT: project };
@@ -676,6 +846,7 @@ try {
   );
 } finally {
   await stopExactChild(desktop);
+  await stopCore(coreSocket);
   await rm(temporaryRoot, {
     recursive: true,
     force: true,

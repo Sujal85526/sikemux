@@ -722,7 +722,9 @@ describe("PtyLifecycleController safety boundaries", () => {
         const controller = new PtyLifecycleController(options);
 
         expect(() => new PtyLifecycleController({ ...options, existingPtyId: -1 })).toThrow(RangeError);
-        expect(() => new PtyLifecycleController({ ...options, existingPtyId: 0x1_0000_0000 })).toThrow(RangeError);
+        expect(() => new PtyLifecycleController({ ...options, existingPtyId: Number.MAX_SAFE_INTEGER + 1 })).toThrow(RangeError);
+        expect(() => new PtyLifecycleController({ ...options, existingPtyId: 1.5 })).toThrow(RangeError);
+        expect(() => new PtyLifecycleController({ ...options, existingPtyId: 1_759_300_000_123 })).not.toThrow();
         await expect(controller.resize(0, 24)).rejects.toThrow(RangeError);
         await expect(controller.resize(80, 65_536)).rejects.toThrow(RangeError);
         await expect(controller.adoptExistingPty(42)).rejects.toThrow("controller-owned PTY");
