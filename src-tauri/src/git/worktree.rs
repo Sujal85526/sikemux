@@ -371,6 +371,35 @@ mod tests {
     }
 
     #[test]
+    fn worktree_create_accepts_a_folder_beside_the_repository() {
+        let td = init_repo();
+        commit_base(td.path());
+        let repo = td.path().to_str().expect("repo path");
+        let name = td.path().file_name().expect("repo name").to_string_lossy();
+        let target = td
+            .path()
+            .with_file_name(format!("{name}.worktrees"))
+            .join("fix-flaky-pty-test");
+
+        let created = create_worktree(
+            repo,
+            target.to_str().expect("target path"),
+            "sikemux/fix-flaky-pty-test",
+            true,
+            Some("HEAD".into()),
+        )
+        .expect("a sibling folder is outside the repository");
+        assert_eq!(
+            created.branch.as_deref(),
+            Some("sikemux/fix-flaky-pty-test")
+        );
+        assert!(target.join("f.txt").is_file());
+
+        remove_worktree(repo, target.to_str().expect("target path"), false).expect("remove");
+        fs::remove_dir_all(target.parent().expect("worktrees folder")).expect("clean up");
+    }
+
+    #[test]
     fn worktree_uses_existing_branch_and_tracks_current_context() {
         let td = init_repo();
         commit_base(td.path());
