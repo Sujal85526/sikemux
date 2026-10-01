@@ -607,6 +607,22 @@ async fn run_requests(
                 let result = remote::set_access(&core, &id, access);
                 client.respond(request_id, result.map(|status| Response::Remote { status }));
             }
+            Request::OpenPairing => {
+                let result = core.remote.open_offer().map(|()| remote::announce(&core));
+                client.respond(request_id, result.map(|status| Response::Remote { status }));
+            }
+            Request::ClosePairing => {
+                core.remote.close_offer();
+                let status = remote::announce(&core);
+                client.respond(request_id, Ok(Response::Remote { status }));
+            }
+            Request::AnswerPairing { id, allow, access } => {
+                let result = core
+                    .remote
+                    .answer(&id, allow.then_some(access))
+                    .map(|()| remote::announce(&core));
+                client.respond(request_id, result.map(|status| Response::Remote { status }));
+            }
             Request::RevokeDevice { id } => {
                 let result = remote::revoke(&core, &id);
                 client.respond(request_id, result.map(|status| Response::Remote { status }));

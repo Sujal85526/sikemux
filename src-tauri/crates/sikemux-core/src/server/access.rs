@@ -61,7 +61,10 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::RemoteStatus
         | Request::SetRemoteAccess { .. }
         | Request::SetDeviceAccess { .. }
-        | Request::RevokeDevice { .. } => Needs::Local,
+        | Request::RevokeDevice { .. }
+        | Request::OpenPairing
+        | Request::ClosePairing
+        | Request::AnswerPairing { .. } => Needs::Local,
     }
 }
 
@@ -125,6 +128,12 @@ mod tests {
             Request::Configure { manifest_dir: None },
             Request::SetRemoteAccess { enabled: false },
             Request::RevokeDevice { id: "other".into() },
+            Request::OpenPairing,
+            Request::AnswerPairing {
+                id: "request".into(),
+                allow: true,
+                access: DeviceAccess::Full,
+            },
         ] {
             assert_eq!(refusal(Some(DeviceAccess::Full), &request), LOCAL_ONLY);
         }

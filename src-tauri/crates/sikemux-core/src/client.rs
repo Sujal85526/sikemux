@@ -663,6 +663,24 @@ impl CoreClient {
     pub async fn revoke_device(&self, id: String) -> Result<RemoteStatus, ClientError> {
         self.remote_request(Request::RevokeDevice { id }).await
     }
+
+    pub async fn open_pairing(&self) -> Result<RemoteStatus, ClientError> {
+        self.remote_request(Request::OpenPairing).await
+    }
+
+    pub async fn close_pairing(&self) -> Result<RemoteStatus, ClientError> {
+        self.remote_request(Request::ClosePairing).await
+    }
+
+    pub async fn answer_pairing(
+        &self,
+        id: String,
+        allow: bool,
+        access: DeviceAccess,
+    ) -> Result<RemoteStatus, ClientError> {
+        self.remote_request(Request::AnswerPairing { id, allow, access })
+            .await
+    }
 }
 
 fn dispatch(frame: crate::protocol::Frame, pending: &Pending, sink: &dyn EventSink) {

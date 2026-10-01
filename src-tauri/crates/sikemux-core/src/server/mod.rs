@@ -5,6 +5,7 @@ mod connection;
 mod entry;
 mod handover;
 mod harness;
+mod pairing;
 mod prepare;
 mod remote;
 mod session;

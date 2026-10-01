@@ -325,6 +325,16 @@ pub enum Request {
     RevokeDevice {
         id: String,
     },
+    /// Shows a new pairing code, replacing any open one. Remote access must
+    /// be on.
+    OpenPairing,
+    ClosePairing,
+    /// The person's answer to a device that entered the right code.
+    AnswerPairing {
+        id: String,
+        allow: bool,
+        access: DeviceAccess,
+    },
 }
 
 /// Everything the core needs to start a chat agent, resolved by the app: the
@@ -622,6 +632,28 @@ pub struct RemoteStatus {
     pub devices: Vec<DeviceInfo>,
     /// Ids of the devices connected now.
     pub connected: Vec<String>,
+    pub pairing: Option<PairingOffer>,
+    /// Devices that entered the code and wait for the person to answer.
+    pub pending: Vec<PendingDevice>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PairingOffer {
+    pub code: String,
+    /// Milliseconds since the Unix epoch.
+    pub expires_at: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingDevice {
+    /// Names this request in `AnswerPairing`.
+    pub id: String,
+    pub device_id: String,
+    /// What the device calls itself. Nothing vouches for it.
+    pub name: String,
+    pub platform: String,
 }
 
 /// Which build of the sidecar a core runs. `source` fingerprints the code

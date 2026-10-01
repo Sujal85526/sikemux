@@ -15,9 +15,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use iroh::endpoint::{presets, Incoming};
 use iroh::{Endpoint, SecretKey};
 use serde::{Deserialize, Serialize};
+use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
-use crate::protocol::{DeviceAccess, DeviceInfo, Event, RemoteStatus};
+use crate::pairing::{CODE_DIGITS, PAIR_ALPN};
+use crate::protocol::{DeviceAccess, DeviceInfo, Event, PairingOffer, PendingDevice, RemoteStatus};
 use crate::remote::CORE_ALPN;
 
 use super::access::Peer;
@@ -25,6 +27,9 @@ use super::connection::{blocking, serve_client};
 use super::{Core, CoreError, CoreResult};
 
 const NOT_PAIRED: u32 = 1;
+const OFFER_LIFETIME_MS: u64 = 5 * 60 * 1000;
+/// Wrong codes one pairing code survives before it is withdrawn.
+const OFFER_ATTEMPTS: u8 = 5;
 
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -39,6 +44,17 @@ struct Running {
     accept: JoinHandle<()>,
 }
 
+struct Offer {
+    code: String,
+    expires_at: u64,
+    attempts_left: u8,
+}
+
+struct Pending {
+    device: PendingDevice,
+    answer: oneshot::Sender<Option<DeviceAccess>>,
+}
+
 #[derive(Default)]
 struct Inner {
     path: Option<PathBuf>,
@@ -47,6 +63,16 @@ struct Inner {
     stored: Stored,
     running: Option<Running>,
     connected: HashMap<String, usize>,
+    offer: Option<Offer>,
+    pending: Vec<Pending>,
+}
+
+impl Inner {
+    fn live_offer(&self) -> Option<&Offer> {
+        self.offer
+            .as_ref()
+            .filter(|offer| offer.attempts_left > 0 && offer.expires_at > unix_ms())
+    }
 }
 
 #[derive(Default)]
@@ -60,7 +86,7 @@ pub(crate) fn file_path(socket: &Path) -> PathBuf {
     PathBuf::from(path)
 }
 
-fn unix_ms() -> u64 {
+pub(super) fn unix_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|elapsed| elapsed.as_millis() as u64)
@@ -154,7 +180,90 @@ impl Remote {
             addresses,
             devices: inner.stored.devices.clone(),
             connected,
+            pairing: inner.live_offer().map(|offer| PairingOffer {
+                code: offer.code.clone(),
+                expires_at: offer.expires_at,
+            }),
+            pending: inner
+                .pending
+                .iter()
+                .map(|pending| pending.device.clone())
+                .collect(),
         }
+    }
+
+    pub(super) fn core_id(&self) -> Option<String> {
+        self.lock()
+            .secret
+            .as_ref()
+            .map(|secret| secret.public().to_string())
+    }
+
+    pub(super) fn open_offer(&self) -> CoreResult<()> {
+        let mut inner = self.lock();
+        if !inner.stored.enabled {
+            return Err("turn on remote access before pairing a device".into());
+        }
+        let code = uuid::Uuid::new_v4().as_u128() % 10u128.pow(CODE_DIGITS as u32);
+        inner.offer = Some(Offer {
+            code: format!("{code:0width$}", width = CODE_DIGITS),
+            expires_at: unix_ms() + OFFER_LIFETIME_MS,
+            attempts_left: OFFER_ATTEMPTS,
+        });
+        Ok(())
+    }
+
+    pub(super) fn close_offer(&self) {
+        self.lock().offer = None;
+    }
+
+    /// The open code, spending one of its attempts.
+    pub(super) fn attempt(&self) -> Option<String> {
+        let mut inner = self.lock();
+        inner.live_offer()?;
+        let offer = inner.offer.as_mut()?;
+        offer.attempts_left -= 1;
+        Some(offer.code.clone())
+    }
+
+    /// Withdraws `code` once a device has used it, unless another replaced it.
+    pub(super) fn spend_offer(&self, code: &str) {
+        let mut inner = self.lock();
+        if inner.offer.as_ref().is_some_and(|offer| offer.code == code) {
+            inner.offer = None;
+        }
+    }
+
+    pub(super) fn ask(&self, device: PendingDevice) -> oneshot::Receiver<Option<DeviceAccess>> {
+        let (answer, answered) = oneshot::channel();
+        self.lock().pending.push(Pending { device, answer });
+        answered
+    }
+
+    pub(super) fn answer(&self, id: &str, access: Option<DeviceAccess>) -> CoreResult<()> {
+        let mut inner = self.lock();
+        let index = inner
+            .pending
+            .iter()
+            .position(|pending| pending.device.id == id)
+            .ok_or_else(|| CoreError::from("that device is no longer waiting"))?;
+        let pending = inner.pending.remove(index);
+        let _ = pending.answer.send(access);
+        Ok(())
+    }
+
+    pub(super) fn forget_pending(&self, id: &str) {
+        self.lock()
+            .pending
+            .retain(|pending| pending.device.id != id);
+    }
+
+    pub(super) fn add_device(&self, device: DeviceInfo) -> CoreResult<()> {
+        self.change(|stored| {
+            stored.devices.retain(|known| known.id != device.id);
+            stored.devices.push(device);
+            Ok(())
+        })
     }
 
     fn save(&self, inner: &Inner) -> CoreResult<()> {
@@ -260,7 +369,7 @@ async fn listen(core: &Arc<Core>) -> CoreResult<()> {
     };
     let endpoint = builder
         .secret_key(secret)
-        .alpns(vec![CORE_ALPN.to_vec()])
+        .alpns(vec![CORE_ALPN.to_vec(), PAIR_ALPN.to_vec()])
         .bind()
         .await
         .map_err(|error| CoreError::from(format!("remote access did not start: {error}")))?;
@@ -275,7 +384,12 @@ async fn listen(core: &Arc<Core>) -> CoreResult<()> {
 }
 
 pub(crate) async fn stop(core: &Arc<Core>) {
-    let running = core.remote.lock().running.take();
+    let running = {
+        let mut inner = core.remote.lock();
+        inner.offer = None;
+        inner.pending.clear();
+        inner.running.take()
+    };
     core.close_device_clients(None);
     if let Some(running) = running {
         running.accept.abort();
@@ -347,6 +461,10 @@ async fn serve_device(core: Arc<Core>, incoming: Incoming) {
     let Ok(connection) = incoming.await else {
         return;
     };
+    if connection.alpn() == PAIR_ALPN {
+        super::pairing::serve(core, connection).await;
+        return;
+    }
     let id = connection.remote_id().to_string();
     if core.remote.access_of(&id).is_none() {
         connection.close(

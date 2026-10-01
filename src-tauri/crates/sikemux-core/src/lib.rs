@@ -7,6 +7,8 @@ pub mod cli;
 #[cfg(unix)]
 pub mod client;
 pub mod harness;
+#[cfg(unix)]
+pub mod pairing;
 pub mod protocol;
 #[cfg(unix)]
 pub mod remote;
