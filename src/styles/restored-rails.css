@@ -41,7 +41,7 @@
     background: none;
     border-left: 1px solid var(--tree-spine);
     border-bottom: 1px solid var(--tree-tick);
-    border-bottom-left-radius: 3px;
+    border-bottom-left-radius: 4px;
 }
 .side-rail .proj-child:last-child .proj-child-tick {
     background: none;
