@@ -318,10 +318,17 @@ async fn tools_answer_without_a_window_and_say_when_they_need_one() {
     .await
     .unwrap_err()
     .contains("invalid"));
-    assert_eq!(
-        call(&endpoint, &project, "workspace.inspect", json!({})).await,
-        Err("Sikemux's window is not open — open Sikemux to inspect the workspace".into())
-    );
+    let inspect = call(&endpoint, &project, "workspace.inspect", json!({}))
+        .await
+        .unwrap();
+    assert_eq!(inspect["project"], project.to_string_lossy().as_ref());
+    assert_eq!(inspect["window"], Value::Null);
+    assert_eq!(inspect["runs"], json!([]));
+    assert_eq!(inspect["cursor"], "0");
+    assert!(inspect["note"]
+        .as_str()
+        .unwrap()
+        .contains("need the window open"));
     assert!(call(
         &endpoint,
         &project,
@@ -438,10 +445,12 @@ async fn a_task_started_through_the_window_is_read_and_stopped_after_the_window_
         kinds(&woken).contains(&"task.stopping".to_owned()),
         "{woken}"
     );
-    assert!(call(&endpoint, &project, "workspace.inspect", json!({}))
+    let inspect = call(&endpoint, &project, "workspace.inspect", json!({}))
         .await
-        .unwrap_err()
-        .contains("window is not open"));
+        .unwrap();
+    assert_eq!(inspect["window"], Value::Null);
+    assert_eq!(inspect["runs"][0]["executionId"], execution_id.as_str());
+    assert_eq!(inspect["runs"][0]["status"], "stopped");
 }
 
 #[tokio::test(flavor = "multi_thread")]

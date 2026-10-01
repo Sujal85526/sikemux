@@ -41,6 +41,7 @@ const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 const TOOL_CALLS_FILE: &str = "agent-tool-calls.json";
 const WINDOW_GONE: &str = "Sikemux's window closed before it answered";
 
+const WINDOW_CLOSED_NOTE: &str = "Sikemux's window is closed, so this lists only the runs you started and the event cursor. Panes, the tasks in sikemux.json and listening ports need the window open.";
 const AWAITING_TRUST_NOTE: &str = "Waiting for the person to trust this project's sikemux.json in Sikemux. Call task_start again with the same idempotencyKey, or events_wait with this executionId, to see when it starts.";
 const STARTING_NOTE: &str = "Still starting. Call task_start again with the same idempotencyKey, or events_wait with this executionId, to see when it runs.";
 const NOT_READY_NOTE: &str = "The task is running but readyWhen has not appeared yet. Wait with events_wait on this executionId, or task_read with search.";
@@ -382,7 +383,24 @@ async fn dispatch(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value
         "task.restart" => task_start(core, &request, true).await,
         "workspace.inspect" => {
             let project = request.project.clone();
-            let mut value = forward(core, request).await?;
+            let agent_id = request.agent_id.clone();
+            let closed = || {
+                json!({
+                    "project": project,
+                    "agentId": agent_id,
+                    "window": null,
+                    "note": WINDOW_CLOSED_NOTE,
+                })
+            };
+            let mut value = if core.window.is_open() {
+                match forward(core, request).await {
+                    Ok(value) => value,
+                    Err(_) if !core.window.is_open() => closed(),
+                    Err(message) => return Err(message),
+                }
+            } else {
+                closed()
+            };
             if let Some(object) = value.as_object_mut() {
                 core.harness.read(|state| {
                     object.insert(

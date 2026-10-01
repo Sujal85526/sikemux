@@ -657,9 +657,16 @@ async function exerciseHarnessWithWindowClosed(harnessEnv) {
   );
   if (!events.events.some((event) => event.kind === "task.stopped"))
     fail(`events.wait missed the stop: ${JSON.stringify(events)}`);
-  const inspect = tool("workspace.inspect");
-  if (inspect.status === 0 || !/window is not open/u.test(inspect.stderr))
-    fail(`inspect did not say the window is closed: ${inspect.stderr}`);
+  const inspected = json(
+    tool("workspace.inspect"),
+    "workspace.inspect with the window closed",
+  );
+  if (
+    inspected.window !== null ||
+    !inspected.note ||
+    !inspected.runs.some((run) => run.executionId === started.executionId)
+  )
+    fail(`inspect with the window closed: ${JSON.stringify(inspected)}`);
 
   desktop = launchDesktop();
   await waitForBroker(desktop);
@@ -670,7 +677,7 @@ async function exerciseHarnessWithWindowClosed(harnessEnv) {
   if (!resumed.events.some((event) => event.kind === "task.stopped"))
     fail("an event cursor did not survive the relaunch");
   console.log(
-    "Harness with the window closed passed: task.read, task.stop and events.wait answered by the core, inspect refused, cursor kept across relaunch",
+    "Harness with the window closed passed: task.read, task.stop, events.wait and inspect answered by the core, cursor kept across relaunch",
   );
 }
 

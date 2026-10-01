@@ -148,13 +148,17 @@ does not stop a task started from the command deck.
 ### What survives a reload or restart
 
 Tasks, their runs and idempotency keys live in Sikemux's background process,
-so they survive the window reloading and the app quitting. While the window is
-closed, `task_read`, `task_stop`, `events_wait` and `task_start` with a key
-you already used keep working. Starting a new run, `workspace_inspect`,
-`ui_open` and the browser tools need the window; with it closed they fail and
-say so. When Sikemux opens again the tasks' terminals come back. A task that
-ended stays readable for about ten minutes. Event cursors stay valid across
-reloads and restarts, so keep the one you have.
+so they survive the window reloading, the app quitting and Sikemux updating.
+While the window is closed, `task_read`, `task_stop`, `events_wait` and
+`task_start` with a key you already used keep working, and `workspace_inspect`
+returns your runs and an event cursor with `window: null` and a `note`; its
+panes, `sikemux.json` tasks and ports need the window. Starting a new run,
+`ui_open` and the browser tools need the window too; with it closed they fail
+and say so. While Sikemux updates its background process a call can fail for
+a moment saying so; call it again. When Sikemux opens again the tasks'
+terminals come back. A task that ended stays readable for about ten minutes.
+Event cursors stay valid across reloads, restarts and updates, so keep the one
+you have.
 
 "Quit and Stop Everything" (⌥⌘Q) stops every task and the background process,
 and its runs and keys go with it; `task_read` then says the task was started
