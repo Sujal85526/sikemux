@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getState, setState } from "../state/store";
 import type { Session, SessionKind } from "../state/types";
 import "../plugins/builtin";
+import { useLeaveSettingsOnNavigation } from "../settings/leaveSettings";
 import { SideRail } from "./SideRail";
 
 const initial = getState();
@@ -123,6 +124,11 @@ describe("plugins group", () => {
     });
 });
 
+function SettingsOpenBeside() {
+    useLeaveSettingsOnNavigation();
+    return null;
+}
+
 describe("leaving settings from the rail", () => {
     for (const [what, name] of [
         ["switching project", "beta"],
@@ -132,7 +138,12 @@ describe("leaving settings from the rail", () => {
     ] as const) {
         it(`closes settings when ${what}`, () => {
             setState({ settingsOpen: true });
-            render(<SideRail />);
+            render(
+                <>
+                    <SettingsOpenBeside />
+                    <SideRail />
+                </>,
+            );
 
             fireEvent.click(screen.getByRole("button", { name }));
 

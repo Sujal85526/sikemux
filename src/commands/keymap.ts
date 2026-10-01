@@ -58,12 +58,14 @@ function hasOpenModal(st: StoreState): boolean {
         st.onboardingOpen ||
         st.diagnosticsOpen ||
         st.whatsNewOpen ||
-        st.settingsOpen ||
         pluginOverlayOpen()
     );
 }
 
 const MODAL_ACTIONS = new Set<KeybindingActionId>(["palette.commands", "palette.files", "search.global", "settings.toggle"]);
+const KEEPS_SETTINGS = new Set<KeybindingActionId>([...MODAL_ACTIONS, "text.sizeIncrease", "text.sizeDecrease", "text.sizeReset"]);
+// Closing is what these mean while settings covers the workspace, not closing something hidden behind it.
+const CLOSES_SETTINGS = new Set<KeybindingActionId>(["pane.close", "session.close"]);
 
 function releaseModifierForEvent(event: KeyboardEvent): KeyModifier | null {
     if (event.altKey) return "Alt";
@@ -359,6 +361,14 @@ export function useKeymap(): void {
             // behind it may, including the ones other modals let through.
             if (st.onboardingOpen) return;
             if (hasOpenModal(st) && !(action && MODAL_ACTIONS.has(action))) return;
+            if (st.settingsOpen) {
+                if (!action) return;
+                if (!KEEPS_SETTINGS.has(action)) cmd.closeSettings();
+                if (CLOSES_SETTINGS.has(action)) {
+                    consume(event);
+                    return;
+                }
+            }
             // Option belongs to what is being typed into: shells read it as Meta, other layouts type with it.
             if (event.altKey && !event.metaKey && !event.ctrlKey && typingTarget(target)) return;
             if (action && runMeasuredAction(action, "keymap", () => runKeybindingAction(action, event, st))) {

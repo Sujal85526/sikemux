@@ -25,6 +25,7 @@ import { AllProjectsAgents } from "./AllProjectsAgents";
 import { RecentChatList } from "./RecentChatList";
 import { ScopeTrack } from "./ScopeTrack";
 import { useRecentChats } from "./useRecentChats";
+import { LEAVES_SETTINGS } from "../settings/leaveSettings";
 
 const USAGE_REFRESH_MS = 5 * 60_000;
 type UsageAgentType = "claude" | "codex";
@@ -79,7 +80,7 @@ function arriveRow(wrap: HTMLElement): void {
 export const AgentRail = memo(function AgentRail() {
     const density = useStore((s) => s.railDensity);
     return (
-        <aside ref={leavingRail} className="workspace-rail agent-rail" aria-label="Agents" data-density={density}>
+        <aside ref={leavingRail} className="workspace-rail agent-rail" aria-label="Agents" data-density={density} {...LEAVES_SETTINGS}>
             <AgentRailBody />
         </aside>
     );

@@ -231,6 +231,37 @@ describe("command popup modality", () => {
     });
 });
 
+describe("shortcuts while settings is open", () => {
+    it("leaves settings for the place the shortcut goes", () => {
+        render(<KeymapHarness />);
+        setState({ settingsOpen: true });
+
+        pressAction("session.lastUsed");
+        pressAction("window.agents");
+
+        expect(getState().settingsOpen).toBe(false);
+    });
+
+    it("closes settings instead of the pane hidden behind it", () => {
+        render(<KeymapHarness />);
+        setState({ settingsOpen: true });
+
+        pressAction("pane.close");
+
+        expect(getState().settingsOpen).toBe(false);
+        expect(getState().sessions.one).toBeTruthy();
+    });
+
+    it("keeps settings open for the command palette", () => {
+        render(<KeymapHarness />);
+        setState({ settingsOpen: true });
+
+        pressAction("palette.commands");
+
+        expect(getState()).toMatchObject({ settingsOpen: true, commandPaletteOpen: true });
+    });
+});
+
 describe("onboarding modality", () => {
     it("leaves every binding to the tour, including the ones other modals let through", () => {
         render(<KeymapHarness />);

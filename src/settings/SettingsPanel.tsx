@@ -25,6 +25,7 @@ import { useStore } from "../state/store";
 import { cloneTheme, newCustomThemeId, THEME_GROUPS, THEMES, themeFromColours, type Theme, type ThemeGroupKey } from "../themes";
 import { wallpaperPixels, wallpaperTheme } from "../themes/wallpaper";
 import { ThemePicker } from "./ThemePicker";
+import { useLeaveSettingsOnNavigation } from "./leaveSettings";
 import {
     IconActivity,
     IconAgent,
@@ -131,6 +132,8 @@ export function SettingsPanel() {
     );
     const results = useMemo(() => searchSettings(query, entries), [query, entries]);
     const searching = query.trim().length > 0;
+
+    useLeaveSettingsOnNavigation();
 
     useEffect(() => {
         searchRef.current?.focus();

@@ -30,6 +30,7 @@ import { useInstalledPlugins } from "../plugins/installed";
 import { railGroupOf, type RailGroup } from "../state/railGroups";
 import { isPluginKind, pluginIdOf } from "../plugins/kinds";
 import { leavingRail } from "./railMotion";
+import { LEAVES_SETTINGS } from "../settings/leaveSettings";
 
 function kindIcon(kind: SessionKind): ReactNode {
     if (kind === "project") return <IconFolder size={13} />;
@@ -718,7 +719,7 @@ export const SideRail = memo(function SideRail() {
 
     return (
         <RailContext.Provider value={rail}>
-            <aside ref={leavingRail} className="side-rail" onClickCapture={settingsOpen ? cmd.closeSettings : undefined}>
+            <aside ref={leavingRail} className="side-rail" {...LEAVES_SETTINGS}>
                 <RailMasthead />
                 <div className="rail-scroll">
                     <Group

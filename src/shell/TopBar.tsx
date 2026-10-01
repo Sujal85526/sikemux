@@ -10,6 +10,7 @@ import { useInstalledPlugins } from "../plugins/installed";
 import { useStore } from "../state/store";
 import { IconBattery, IconFocus, IconGit, IconMic, IconZoom } from "../ui/Icons";
 import { WorkspaceTabs } from "../workspace/Workspace";
+import { LEAVES_SETTINGS } from "../settings/leaveSettings";
 import { useVoice } from "../voice/dictation";
 import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
 import { Tooltip } from "../ui/Tooltip";
@@ -68,7 +69,7 @@ function GitChip({ repo }: { repo: string }) {
 
     return (
         <>
-            <span className="tb-git" data-no-window-drag>
+            <span className="tb-git" data-no-window-drag {...LEAVES_SETTINGS}>
                 <Tooltip label={title}>
                     <button className="tb-git-chip" onClick={cmd.openGitPane} aria-label={title}>
                         {host ? (
@@ -170,7 +171,7 @@ export const TopBar = memo(function TopBar() {
         <header className="top-bar" onMouseDown={startWindowDragFromTopBar}>
             <div className="tb-left" />
 
-            <div className="tb-center">
+            <div className="tb-center" {...LEAVES_SETTINGS}>
                 <WorkspaceTabs />
             </div>
 
