@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 
 use sikemux_core::client::{ensure_running, probe, ClientEvent, CoreClient, EventSink, Reply};
 use sikemux_core::protocol::{
-    encode_control, read_frame_sync, AgentStateEvent, BuildIdentity, ClientMessage, Event,
-    LaunchIdentity, Request, Response, ServerMessage, SessionExit, SessionId, SpawnTarget,
+    encode_control, read_frame_sync, AgentStateEvent, BuildIdentity, ClientMessage, Continuation,
+    Event, LaunchIdentity, Request, Response, ServerMessage, SessionExit, SessionId, SpawnTarget,
     TerminalSpawn, PROTOCOL, PROTOCOL_VERSION,
 };
 use sikemux_core::server::{self, ServerConfig, ServerError};
@@ -1086,6 +1086,62 @@ async fn a_watched_terminal_leaves_when_it_ends_and_an_attach_before_the_exit_he
         assert!(Instant::now() < deadline, "the watched terminal stayed");
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
+}
+
+#[tokio::test]
+async fn an_agent_that_ends_while_watched_stays_and_a_continuation_starts_below_its_screen() {
+    let core = start_core();
+    let (client, mut stream) = core.connect().await;
+    let ended = client
+        .spawn(
+            launch(),
+            agent_terminal(
+                "agent-9",
+                "printf '\\033[?1000h'; echo before-$((1+1)); exit 7",
+            ),
+        )
+        .await
+        .expect("spawn");
+    let attached = client.attach(ended).await.expect("attach");
+    assert!(!attached.exited);
+    assert_eq!(stream.until_exit(&client, ended).await, (Some(7), false));
+    let kept = client
+        .list()
+        .await
+        .expect("list")
+        .into_iter()
+        .find(|session| session.id == ended)
+        .expect("a watched agent terminal is kept after it ends");
+    assert!(!kept.running && !kept.killed);
+
+    let SpawnTarget::Terminal(mut resumed) =
+        agent_terminal("agent-9", "echo after-$((2+2)); sleep 100")
+    else {
+        unreachable!()
+    };
+    resumed.continues = Some(Continuation {
+        session: ended,
+        note: "\u{2014} Resuming Claude \u{2014}\u{7}".into(),
+    });
+    let id = client
+        .spawn(launch(), SpawnTarget::Terminal(resumed))
+        .await
+        .expect("spawn the continuation");
+    let replay = attach_once_printed(&client, id, "after-4").await;
+    let text = String::from_utf8_lossy(&replay);
+    let before = text.find("before-2").expect("the old screen is carried");
+    let note = text
+        .find("\u{2014} Resuming Claude \u{2014}")
+        .expect("the note follows it");
+    let after = text.find("after-4").expect("the new program prints below");
+    assert!(before < note && note < after);
+    assert!(!text.contains('\u{7}'));
+    assert!(!contains(&replay, "\x1b[?1000h"));
+    let sessions = client.list().await.expect("list");
+    assert!(sessions.iter().all(|session| session.id != ended));
+    client.kill(id).await.expect("kill");
+    let (_, killed) = stream.until_exit(&client, id).await;
+    assert!(killed);
 }
 
 #[tokio::test]

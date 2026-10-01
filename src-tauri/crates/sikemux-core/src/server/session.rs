@@ -10,9 +10,9 @@ use portable_pty::{Child, ExitStatus, NativePtySystem, PtySize, PtySystem};
 use sikemux_pty::output_log::OutputLog;
 use sikemux_pty::process::SpawnedChildGuard;
 use sikemux_pty::screen::{
-    attach_snapshot_with_compaction, compact_parser_for_idle, reseed_parser, screen_scrollback_len,
-    semantic_parser_with_shell, SemanticParser, IDLE_SCROLLBACK, MAX_ATTACH_SNAPSHOT_BYTES,
-    PARSER_SCROLLBACK,
+    attach_snapshot_with_compaction, compact_parser_for_idle, replay_snapshot, reseed_parser,
+    screen_scrollback_len, semantic_parser_with_shell, SemanticParser, IDLE_SCROLLBACK,
+    MAX_ATTACH_SNAPSHOT_BYTES, PARSER_SCROLLBACK,
 };
 use sikemux_pty::shell::ShellLaunchIntegration;
 use sikemux_pty::shell_protocol::{PtyShellMetadataEvent, ShellProtocolParser};
@@ -22,8 +22,8 @@ use tokio::io::unix::AsyncFd;
 use tokio::sync::{mpsc, Notify};
 
 use crate::protocol::{
-    encode_output, encode_snapshot, AttachHeader, Event, RequestId, Response, SessionExit,
-    SessionId, SessionInfo, SessionKind,
+    encode_output, encode_snapshot, AttachHeader, Continuation, Event, RequestId, Response,
+    SessionExit, SessionId, SessionInfo, SessionKind,
 };
 
 use super::agent::{self, AgentActivity};
@@ -248,6 +248,7 @@ impl Session {
                 .map(str::to_string),
             task: self.owner.task.clone(),
             exit: self.exit.lock().ok().and_then(|exit| exit.clone()),
+            killed: self.is_killed(),
         }
     }
 }
@@ -311,14 +312,6 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
     }
     core.reclaim_exited_sessions(now_ms());
     let capacity_permit = core.capacity.try_acquire()?;
-    let pair = NativePtySystem::default()
-        .openpty(PtySize {
-            rows: launch.rows,
-            cols: launch.cols,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .map_err(CoreError::pty)?;
     let PreparedLaunch {
         cols,
         rows,
@@ -327,7 +320,22 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
         owner,
         shell_integration,
         initial_prompt_submitted,
+        continues,
     } = launch;
+    let carried = continues
+        .as_ref()
+        .and_then(|continuation| carried_screen(core, continuation));
+    let (rows, cols) = carried
+        .as_ref()
+        .map_or((rows, cols), |carried| (carried.rows, carried.cols));
+    let pair = NativePtySystem::default()
+        .openpty(PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .map_err(CoreError::pty)?;
     let shell_metadata_enabled = shell_integration.is_some();
 
     let child = pair.slave.spawn_command(command).map_err(CoreError::pty)?;
@@ -370,18 +378,18 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
         owner.agent_type.as_deref(),
         initial_prompt_submitted,
     );
+    let mut parser =
+        semantic_parser_with_shell(rows, cols, PARSER_SCROLLBACK, shell_metadata_enabled);
+    if let Some(carried) = carried.as_ref() {
+        parser.process(&carried.prelude);
+    }
     let (session, input_jobs) = Session::assemble(
         SessionParts {
             id,
             kind,
             pid,
             owner,
-            parser: semantic_parser_with_shell(
-                rows,
-                cols,
-                PARSER_SCROLLBACK,
-                shell_metadata_enabled,
-            ),
+            parser,
             shell_protocol: shell_metadata_enabled,
             last_activity_ms: now_ms(),
             trimmed: false,
@@ -400,9 +408,63 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
     // Publish before starting the reader, so a command that exits at once
     // cannot prune itself before it was ever inserted.
     core.insert_session(session.clone());
+    if let Some(carried) = carried {
+        core.remove_session(&carried.from);
+    }
     Ok(PendingStart {
         session,
         input_jobs,
+    })
+}
+
+struct CarriedScreen {
+    from: Arc<Session>,
+    rows: u16,
+    cols: u16,
+    prelude: Vec<u8>,
+}
+
+const MAX_CONTINUATION_NOTE_CHARS: usize = 120;
+
+/// The ended terminal's screen and history, then a dim line with the note
+/// below everything it showed. The old program's modes and scroll region are
+/// reset first, so nothing it turned on reaches the new one.
+fn carried_screen(core: &Core, continuation: &Continuation) -> Option<CarriedScreen> {
+    let from = core.session(continuation.session)?;
+    if from.is_task() || from.is_running() {
+        return None;
+    }
+    let mut parser = from.parser.lock().ok()?;
+    parser.process(RESET_MODES);
+    parser.process(b"\x1b[r");
+    let (rows, cols) = parser.screen().size();
+    let (cursor_row, _) = parser.screen().cursor_position();
+    let last_written = parser
+        .screen()
+        .rows(0, cols)
+        .enumerate()
+        .filter(|(_, row)| !row.trim().is_empty())
+        .map(|(index, _)| index as u16)
+        .last();
+    let mut prelude = replay_snapshot(&mut parser).ok()?;
+    drop(parser);
+    let row = last_written.map_or(cursor_row, |row| row.max(cursor_row));
+    prelude.extend_from_slice(
+        format!("\x1b[{};1H\x1b[0m\x1b[?25h\r\n\x1b[38;5;245m", row + 1).as_bytes(),
+    );
+    let note: String = continuation
+        .note
+        .chars()
+        .filter(|character| !character.is_control())
+        .take(MAX_CONTINUATION_NOTE_CHARS)
+        .collect();
+    prelude.extend_from_slice(note.as_bytes());
+    prelude.extend_from_slice(b"\x1b[0m\r\n");
+    Some(CarriedScreen {
+        from,
+        rows,
+        cols,
+        prelude,
     })
 }
 
@@ -602,8 +664,9 @@ async fn read_output(core: Arc<Core>, session: Arc<Session>) {
     // Terminals leave when their output ends, unless nobody was watching:
     // then the next client to open one sees how it ended. Completed tasks
     // stay, so a command that finished before its spawn reply arrived can
-    // still be read.
-    if !session.is_task() && session.has_subscribers() != Some(false) {
+    // still be read, and so do agents, so one resumed after a crash starts
+    // below its last screen.
+    if !session.is_task() && session.agent.is_none() && session.has_subscribers() != Some(false) {
         core.remove_session(&session);
     }
     let _ = tokio::task::spawn_blocking(move || {

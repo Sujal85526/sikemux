@@ -26,6 +26,19 @@ pub(super) fn output_totals() -> (u64, u64) {
     )
 }
 
+const PTY_EXITED_EVENT: &str = "pty_exited";
+
+/// How a session's process ended, for every session, watched or not, so the
+/// page can bring back an agent that died while its pane was hidden.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PtyExited {
+    id: SessionId,
+    code: Option<u32>,
+    signal: Option<String>,
+    killed: bool,
+}
+
 /// Turns what the core sends into webview channel messages and app events.
 /// Runs on the connection's reader task, in the order the core sent it.
 pub(super) struct AppSink {
@@ -118,8 +131,22 @@ impl EventSink for AppSink {
     fn event(&self, event: Event) {
         match event {
             Event::Exited {
-                id, code, signal, ..
-            } => report_exited(&self.streams, id, task_exit(code, signal)),
+                id,
+                code,
+                signal,
+                killed,
+            } => {
+                self.emit(
+                    PTY_EXITED_EVENT,
+                    PtyExited {
+                        id,
+                        code,
+                        signal: signal.clone(),
+                        killed,
+                    },
+                );
+                report_exited(&self.streams, id, task_exit(code, signal));
+            }
             Event::ShellMetadata(metadata) => self.emit(PTY_SHELL_METADATA_EVENT, metadata),
             Event::TaskOutput { .. } => {}
             Event::AgentState(state) => self.emit("agent_state_changed", state),

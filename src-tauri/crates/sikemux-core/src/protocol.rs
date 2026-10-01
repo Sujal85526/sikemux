@@ -19,7 +19,7 @@ use sikemux_pty::task::{TaskSource, TaskSpawnRequest};
 use crate::cli::protocol::{CliOpenRequest, HarnessRequest};
 
 pub const PROTOCOL: &str = "sikemux-core";
-pub const PROTOCOL_VERSION: u32 = 4;
+pub const PROTOCOL_VERSION: u32 = 5;
 /// Room for the largest attach snapshot plus its header.
 pub const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 
@@ -500,6 +500,16 @@ pub struct TerminalSpawn {
     pub context: Option<PtyContext>,
     #[serde(default)]
     pub env: HashMap<String, String>,
+    pub continues: Option<Continuation>,
+}
+
+/// Starts the new terminal on the screen of an ended one, below a line
+/// saying why, and closes the ended one.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Continuation {
+    pub session: SessionId,
+    pub note: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -633,6 +643,8 @@ pub struct SessionInfo {
     pub task: Option<TaskSessionInfo>,
     /// Set once the process was reaped.
     pub exit: Option<SessionExit>,
+    /// A client asked for the process to end.
+    pub killed: bool,
 }
 
 /// A task's launch request without its environment.

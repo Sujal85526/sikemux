@@ -15,7 +15,7 @@ use sikemux_pty::task::{validate_task_request, TaskSpawnRequest};
 use sikemux_pty::user_shell::{configured_shell, login_shell_environment};
 use sikemux_pty::validate_pty_dimensions;
 
-use crate::protocol::{LaunchIdentity, SessionKind, TaskSessionInfo, TerminalSpawn};
+use crate::protocol::{Continuation, LaunchIdentity, SessionKind, TaskSessionInfo, TerminalSpawn};
 
 use super::CoreResult;
 
@@ -55,6 +55,7 @@ pub(crate) struct PreparedLaunch {
     pub owner: Owner,
     pub shell_integration: Option<ShellLaunchIntegration>,
     pub initial_prompt_submitted: bool,
+    pub continues: Option<Continuation>,
 }
 
 fn user_home() -> PathBuf {
@@ -78,6 +79,7 @@ pub(crate) fn prepare_terminal(
         direct_command,
         context,
         env,
+        continues,
     } = spawn;
     validate_pty_dimensions(cols, rows)?;
     let startup = startup.filter(|value| !value.is_empty());
@@ -144,6 +146,7 @@ pub(crate) fn prepare_terminal(
         initial_prompt_submitted: context
             .as_ref()
             .is_some_and(|context| context.initial_prompt_submitted),
+        continues,
     })
 }
 
@@ -225,5 +228,6 @@ pub(crate) fn prepare_task(
         owner,
         shell_integration: None,
         initial_prompt_submitted: false,
+        continues: None,
     })
 }

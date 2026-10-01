@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use sikemux_core::client::{Attached, ClientError, Reply};
 use sikemux_core::protocol::{
-    LaunchIdentity, Request, Response as CoreResponse, SessionExit, SessionId, SessionInfo,
-    SpawnTarget, TerminalSpawn,
+    Continuation, LaunchIdentity, Request, Response as CoreResponse, SessionExit, SessionId,
+    SessionInfo, SpawnTarget, TerminalSpawn,
 };
 use sikemux_pty::agent_detection::{DetectionExplain, ManifestReloadReport};
 use sikemux_pty::launch::{PtyContext, PtyDirectCommand};
@@ -57,6 +57,7 @@ pub async fn pty_spawn(
     startup: Option<String>,
     direct_command: Option<PtyDirectCommand>,
     context: Option<PtyContext>,
+    continues: Option<Continuation>,
 ) -> AppResult<SessionId> {
     let mut direct_command = direct_command;
     let agent_launch = match (direct_command.as_ref(), context.as_ref()) {
@@ -113,6 +114,7 @@ pub async fn pty_spawn(
                 direct_command,
                 context,
                 env: env.into_iter().collect(),
+                continues,
             }),
         )
         .await
