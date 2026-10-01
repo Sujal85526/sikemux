@@ -17,6 +17,7 @@
     "preview": "vite preview",
     "showcase": "node showcase/capture.mjs",
     "showcase:serve": "vite --config showcase/vite.config.ts",
+    "showcase:twitter": "node showcase/twitter.mjs",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"scripts/*.mjs\" vite.config.ts eslint.config.js package.json README.md CONTRIBUTING.md \".github/workflows/*.{yml,yaml}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"scripts/*.mjs\" vite.config.ts eslint.config.js package.json README.md CONTRIBUTING.md \".github/workflows/*.{yml,yaml}\"",

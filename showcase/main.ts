@@ -39,3 +39,12 @@ for (const [repo, draft] of Object.entries(git.COMMIT_DRAFT)) {
 Object.assign(window, {
   showcase: { backend, cmd: commands, store: store.useStore },
 });
+
+// Captures step agent turns frame by frame; an interactive page plays them in real time.
+if (new URLSearchParams(location.search).has("play")) {
+  const play = () => {
+    const hold = backend.stepLive();
+    setTimeout(play, hold < 0 ? 250 : hold);
+  };
+  play();
+}

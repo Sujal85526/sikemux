@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Sikemux · Twitter</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #000 url("/__showcase/wallpaper") center / cover no-repeat;
+      }
+
+      iframe {
+        position: fixed;
+        inset: 56px 96px;
+        width: calc(100% - 192px);
+        height: calc(100% - 112px);
+        border: 0;
+        border-radius: 12px;
+        box-shadow:
+          0 0 0 1px rgba(255, 255, 255, 0.09),
+          0 30px 80px rgba(0, 0, 0, 0.55),
+          0 8px 24px rgba(0, 0, 0, 0.35);
+      }
+
+      button {
+        position: fixed;
+        right: 16px;
+        bottom: 14px;
+        padding: 6px 12px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.6);
+        color: #fff;
+        font: 500 12px system-ui;
+        cursor: pointer;
+      }
+
+      .is-capturing button {
+        visibility: hidden;
+      }
+    </style>
+  </head>
+  <body>
+    <iframe src="/showcase/?play" title="Sikemux"></iframe>
+    <button type="button">Download</button>
+    <script type="module">
+      const button = document.querySelector("button");
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        button.textContent = `Saved ${await window.showcaseDownload()}`;
+        setTimeout(() => {
+          button.textContent = "Download";
+          button.disabled = false;
+        }, 1600);
+      });
+    </script>
+  </body>
+</html>

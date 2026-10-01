@@ -19,6 +19,11 @@ const PANE_IMAGE_FILE = join(
   "wallpaper/old/jinx-graffiti-5120x2880-19975.jpg",
 );
 
+const WALLPAPER_FILE = join(
+  homedir(),
+  "wallpaper/butterfly-neon-glowing-dark-background-amoled-3840x2160-2171.png",
+);
+
 const MAX_FILE_BYTES = 400_000;
 const HIDDEN_FOLDERS = new Set([
   ".claude",
@@ -242,6 +247,10 @@ function demoFileSystem(): PluginOption {
         if (request.url === `/preview/${encodeURIComponent(PANE_IMAGE)}`) {
           response.setHeader("Content-Type", "image/jpeg");
           return response.end(readFileSync(PANE_IMAGE_FILE));
+        }
+        if (request.url === "/wallpaper") {
+          response.setHeader("Content-Type", "image/png");
+          return response.end(readFileSync(WALLPAPER_FILE));
         }
         try {
           const input = await body(request);
