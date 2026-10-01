@@ -184,9 +184,7 @@ function SubagentPart({ subagent }: { subagent: AcpSubagent }) {
                     <AgentIcon type={agentType} size={18} className={`agent-glyph ${agentType}`} />
                 </span>
                 <span className="chat-subagent-name">{subagent.name}</span>
-                <span className="chat-subagent-task" title={subagent.task || undefined}>
-                    {subagentTask(subagent.task)}
-                </span>
+                <span className="chat-subagent-task">{subagentTask(subagent.task)}</span>
                 <span className="chat-subagent-end">
                     {calls > 0 && (
                         <span className="chat-subagent-calls">
