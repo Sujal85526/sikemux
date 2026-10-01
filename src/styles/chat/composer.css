@@ -321,6 +321,29 @@
     font-style: normal;
 }
 
+.chat-slash-menu.entries button {
+    grid-template-columns: 16px minmax(0, max-content) minmax(0, 1fr);
+}
+
+.chat-slash-menu.entries code {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chat-menu-mark {
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    color: var(--text-tertiary);
+}
+
+.chat-slash-empty {
+    padding: 9px 10px;
+    color: var(--text-tertiary);
+    font-size: calc(10.5px * var(--chat-text-em, 1));
+}
+
 .chat-drop-target {
     position: absolute;
     inset: 10px;
@@ -355,7 +378,7 @@
         padding-inline: 12px;
     }
 
-    .chat-slash-menu button {
+    .chat-slash-menu.commands button {
         grid-template-columns: 100px minmax(0, 1fr);
     }
 

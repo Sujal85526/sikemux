@@ -1,22 +1,26 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { agentSupportsSkipPermissions } from "../state/commands/agentLogic";
 import { ComposerPickers, type SessionConfig } from "./ComposerPickers";
-import { basename } from "../lib/paths";
+import { basename, dirname, joinPath } from "../lib/paths";
 import { animate } from "../lib/motion";
 import { hasPrimaryModifier, PRIMARY_SHORTCUT } from "../lib/platform";
 import { registerPathDrop } from "../state/dropRegistry";
 import { registerTextInsert } from "../state/textInsertRegistry";
 import type { Agent, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
-import { IconArrowUp, IconClose, IconFile, IconPlus } from "../ui/Icons";
+import { IconArrowUp, IconClose, IconFile, IconFolder, IconPlus } from "../ui/Icons";
+import { FileIcon } from "../ui/FileIcon";
+import { useResourceEnabled } from "../state/resources";
+import { filesListR } from "../state/resources.defs";
+import { usePathRoots } from "./FileRef";
 import { useImagePreview } from "./imagePreview";
 import { YoloToggle } from "./YoloToggle";
 import { DictateButton } from "./DictateButton";
 import { ContextMeter } from "./ContextMeter";
 import { imagesInClipboard, savePastedClipboard } from "./pasteImage";
 import { arrowsBrowse, recallPrompt, type HistoryPosition } from "./promptHistory";
-import { mergePaths, slashTokenAt } from "./composerInput";
+import { entryName, mergePaths, projectEntries, rankEntries, removeToken, tokenAt, type ProjectEntry } from "./composerInput";
 import { receiveForAgent } from "../agents/agentInbox";
 import type { AcpAvailableCommand, ChatState, ContextUsage } from "./types";
 
@@ -43,38 +47,46 @@ function ComposerAttachment({ path, onRemove }: { path: string; onRemove: () => 
     );
 }
 
-function SlashCommands({
-    commands,
-    selected,
-    onSelect,
-}: {
-    commands: AcpAvailableCommand[];
-    selected: number;
-    onSelect: (command: AcpAvailableCommand) => void;
-}) {
+interface MenuRow {
+    key: string;
+    content: ReactNode;
+    choose: () => void;
+}
+
+interface ComposerMenuModel {
+    label: string;
+    heading: string;
+    aside: string;
+    variant: "commands" | "entries";
+    rows: MenuRow[];
+    empty: string | null;
+}
+
+function ComposerMenu({ menu, selected }: { menu: ComposerMenuModel; selected: number }) {
     return (
-        <div className="chat-slash-menu" role="listbox" aria-label="Session commands">
+        <div className={`chat-slash-menu ${menu.variant}`} role="listbox" aria-label={menu.label}>
             <div className="chat-slash-heading">
-                <span>Session commands</span>
-                <span>ACP</span>
+                <span>{menu.heading}</span>
+                <span>{menu.aside}</span>
             </div>
-            {commands.map((command, index) => (
+            {menu.rows.length === 0 && menu.empty && <div className="chat-slash-empty">{menu.empty}</div>}
+            {menu.rows.map((row, index) => (
                 <button
-                    key={command.name}
+                    key={row.key}
                     type="button"
                     role="option"
                     aria-selected={index === selected}
                     className={index === selected ? "selected" : ""}
                     onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => onSelect(command)}>
-                    <code>/{command.name}</code>
-                    <span>{command.description}</span>
-                    {command.input?.hint && <em>{command.input.hint}</em>}
+                    onClick={row.choose}>
+                    {row.content}
                 </button>
             ))}
         </div>
     );
 }
+
+const MAX_ENTRIES = 8;
 
 /* The composer keeps the draft to itself: a keystroke redraws these few rows
    rather than the transcript above them. */
@@ -134,9 +146,10 @@ export function ChatComposer({
     const recalledCaret = useRef<"start" | "end" | null>(null);
     const [caret, setCaret] = useState(0);
     const [attachments, setAttachments] = useState<string[]>([]);
-    const [slashSelection, setSlashSelection] = useState(0);
-    const [slashDismissed, setSlashDismissed] = useState(false);
+    const [menuSelection, setMenuSelection] = useState(0);
+    const [menuDismissed, setMenuDismissed] = useState(false);
     const editorRef = useRef<HTMLTextAreaElement>(null);
+    const { cwd } = usePathRoots();
 
     /* The field grows with what is typed until it reaches its CSS max-height,
        and scrolls from there. */
@@ -217,22 +230,11 @@ export function ChatComposer({
         return () => window.cancelAnimationFrame(frame);
     }, [connection, paneRef, visible]);
 
-    const slashToken = slashDismissed ? null : slashTokenAt(draft, caret);
-    const slashCommands = useMemo(() => {
-        if (!slashToken) return [];
-        const needle = slashToken.needle.toLowerCase();
-        return commands.filter((command) => command.name.toLowerCase().includes(needle)).slice(0, 8);
-    }, [commands, slashToken]);
-    const selected = Math.min(slashSelection, Math.max(0, slashCommands.length - 1));
+    const token = menuDismissed ? null : tokenAt(draft, caret);
 
-    const selectCommand = (command: AcpAvailableCommand) => {
-        if (!slashToken) return;
-        const spaced = Boolean(command.input?.hint) && !/^\s/.test(draft.slice(caret));
-        const written = `/${command.name}${spaced ? " " : ""}`;
-        const position = slashToken.start + written.length;
-        setDraft(`${draft.slice(0, slashToken.start)}${written}${draft.slice(caret)}`);
+    const placeCaret = (position: number) => {
         setCaret(position);
-        setSlashDismissed(true);
+        setMenuDismissed(true);
         window.requestAnimationFrame(() => {
             const editor = editorRef.current;
             if (!editor) return;
@@ -240,6 +242,85 @@ export function ChatComposer({
             editor.setSelectionRange(position, position);
         });
     };
+
+    const takeToken = () => {
+        if (!token) return;
+        const next = removeToken(draft, token, caret);
+        setDraft(next.text);
+        placeCaret(next.caret);
+    };
+
+    const slashCommands = useMemo(() => {
+        if (token?.trigger !== "/") return [];
+        const needle = token.needle.toLowerCase();
+        return commands.filter((command) => command.name.toLowerCase().includes(needle)).slice(0, 8);
+    }, [commands, token?.trigger, token?.needle]);
+
+    const files = useResourceEnabled(token?.trigger === "@" && !!cwd, filesListR, cwd);
+    const entries = useMemo(() => projectEntries(files.data ?? []), [files.data]);
+    const entryMatches = useMemo(
+        () => (token?.trigger === "@" ? rankEntries(token.needle, entries, MAX_ENTRIES) : []),
+        [entries, token?.trigger, token?.needle],
+    );
+
+    const selectCommand = (command: AcpAvailableCommand) => {
+        if (!token) return;
+        const spaced = Boolean(command.input?.hint) && !/^\s/.test(draft.slice(caret));
+        const written = `/${command.name}${spaced ? " " : ""}`;
+        setDraft(`${draft.slice(0, token.start)}${written}${draft.slice(caret)}`);
+        placeCaret(token.start + written.length);
+    };
+
+    const selectEntry = (entry: ProjectEntry) => {
+        takeToken();
+        setAttachments((current) => mergePaths(current, [joinPath(cwd, entry.path)]));
+        onError(null);
+    };
+
+    const menu: ComposerMenuModel | null =
+        token?.trigger === "/" && slashCommands.length > 0
+            ? {
+                  label: "Session commands",
+                  heading: "Session commands",
+                  aside: "ACP",
+                  variant: "commands",
+                  empty: null,
+                  rows: slashCommands.map((command) => ({
+                      key: command.name,
+                      choose: () => selectCommand(command),
+                      content: (
+                          <>
+                              <code>/{command.name}</code>
+                              <span>{command.description}</span>
+                              {command.input?.hint && <em>{command.input.hint}</em>}
+                          </>
+                      ),
+                  })),
+              }
+            : token?.trigger === "@" && cwd
+              ? {
+                    label: "Project files",
+                    heading: "Files and folders",
+                    aside: "attach",
+                    variant: "entries",
+                    empty: files.data === undefined ? "Reading the project…" : "Nothing in the project matches",
+                    rows: entryMatches.map((entry) => ({
+                        key: entry.path,
+                        choose: () => selectEntry(entry),
+                        content: (
+                            <>
+                                <span className="chat-menu-mark">
+                                    {entry.folder ? <IconFolder size={13} /> : <FileIcon name={entryName(entry)} size={13} />}
+                                </span>
+                                <code>{entryName(entry)}</code>
+                                <span>{dirname(entry.path.replace(/\/$/, "")) || "."}</span>
+                            </>
+                        ),
+                    })),
+                }
+              : null;
+    const menuRows = menu?.rows ?? [];
+    const selected = Math.min(menuSelection, Math.max(0, menuRows.length - 1));
 
     const blocked = changingConfig || changingPermissions || !permissionApplied;
     const drafted = Boolean(draft.trim()) || attachments.length > 0;
@@ -271,9 +352,9 @@ export function ChatComposer({
         if (!onSend(text, attachments, steerNow)) return;
         setDraft("");
         setCaret(0);
-        setSlashSelection(0);
+        setMenuSelection(0);
         setAttachments([]);
-        setSlashDismissed(false);
+        setMenuDismissed(false);
         setHistoryPosition(null);
     };
 
@@ -290,7 +371,7 @@ export function ChatComposer({
 
     return (
         <div className="chat-composer">
-            {slashCommands.length > 0 && <SlashCommands commands={slashCommands} selected={selected} onSelect={selectCommand} />}
+            {menu && <ComposerMenu menu={menu} selected={selected} />}
             <div className="chat-field">
                 {attachments.length > 0 && (
                     <div className="chat-attachments">
@@ -312,8 +393,8 @@ export function ChatComposer({
                     onChange={(event) => {
                         setDraft(event.target.value);
                         setCaret(event.target.selectionStart);
-                        setSlashSelection(0);
-                        setSlashDismissed(false);
+                        setMenuSelection(0);
+                        setMenuDismissed(false);
                         onError(null);
                     }}
                     onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
@@ -328,26 +409,28 @@ export function ChatComposer({
                             .catch((failure) => onError(failure instanceof Error ? failure.message : String(failure)));
                     }}
                     onKeyDown={(event) => {
-                        if (slashCommands.length > 0) {
-                            if (event.key === "ArrowDown") {
-                                event.preventDefault();
-                                setSlashSelection((current) => (current + 1) % slashCommands.length);
-                                return;
-                            }
-                            if (event.key === "ArrowUp") {
-                                event.preventDefault();
-                                setSlashSelection((current) => (current - 1 + slashCommands.length) % slashCommands.length);
-                                return;
-                            }
-                            if (event.key === "Tab" || event.key === "Enter") {
-                                event.preventDefault();
-                                selectCommand(slashCommands[selected]);
-                                return;
-                            }
+                        if (menu) {
                             if (event.key === "Escape") {
                                 event.preventDefault();
-                                setSlashDismissed(true);
+                                setMenuDismissed(true);
                                 return;
+                            }
+                            if (menuRows.length > 0 && !event.nativeEvent.isComposing) {
+                                if (event.key === "ArrowDown") {
+                                    event.preventDefault();
+                                    setMenuSelection((current) => (current + 1) % menuRows.length);
+                                    return;
+                                }
+                                if (event.key === "ArrowUp") {
+                                    event.preventDefault();
+                                    setMenuSelection((current) => (current - 1 + menuRows.length) % menuRows.length);
+                                    return;
+                                }
+                                if (event.key === "Tab" || event.key === "Enter") {
+                                    event.preventDefault();
+                                    menuRows[selected].choose();
+                                    return;
+                                }
                             }
                         }
                         const plainKey = !event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey && !event.nativeEvent.isComposing;
@@ -368,7 +451,7 @@ export function ChatComposer({
                                 recalledCaret.current = direction === "older" ? "start" : "end";
                                 setHistoryPosition(recalled.position);
                                 setDraft(recalled.draft);
-                                setSlashDismissed(true);
+                                setMenuDismissed(true);
                                 return;
                             }
                         }
