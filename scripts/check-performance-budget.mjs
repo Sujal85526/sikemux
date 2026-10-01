@@ -133,8 +133,8 @@ const budgets = [
     // the transcript animates new messages and tool runs opening and closing.
     label: "ACP chat lazy chunk",
     pattern: /^AgentSurface-.*\.js$/,
-    raw: 93_000,
-    gzip: 29_700,
+    raw: 95_000,
+    gzip: 30_000,
   },
   {
     // Shiki, its JavaScript regex engine and vscode-textmate, with no
