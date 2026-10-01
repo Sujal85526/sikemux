@@ -1,3 +1,4 @@
+mod access;
 mod agent;
 mod chat;
 mod connection;
@@ -5,6 +6,7 @@ mod entry;
 mod handover;
 mod harness;
 mod prepare;
+mod remote;
 mod session;
 mod tools;
 mod upgrade;
@@ -54,6 +56,9 @@ pub struct ServerConfig {
     /// The app's data directory, for the harness journal and tool tally.
     /// Without it they are kept in memory, or not at all.
     pub data_dir: Option<PathBuf>,
+    /// Remote access listens on loopback only, with no relay and without
+    /// publishing the core's address. For tests.
+    pub remote_direct_only: bool,
 }
 
 impl ServerConfig {
@@ -64,6 +69,7 @@ impl ServerConfig {
             build: BuildIdentity::default(),
             cli_endpoint: None,
             data_dir: None,
+            remote_direct_only: false,
         }
     }
 }
@@ -251,6 +257,7 @@ pub(crate) struct Core {
     pub(crate) listening: OnceLock<Listening>,
     pub(crate) tools: Mutex<Option<tools::ToolEndpoint>>,
     pub(crate) chats: chat::Chats,
+    pub(crate) remote: remote::Remote,
 }
 
 /// Session and window call ids start from the clock, so an id a client still
@@ -289,6 +296,7 @@ impl Core {
             listening: OnceLock::new(),
             tools: Mutex::new(None),
             chats: chat::Chats::default(),
+            remote: remote::Remote::default(),
         }))
     }
 
@@ -419,7 +427,8 @@ impl Core {
     }
 
     fn is_idle(&self) -> bool {
-        self.clients.lock().is_ok_and(|clients| clients.is_empty())
+        !self.remote.is_enabled()
+            && self.clients.lock().is_ok_and(|clients| clients.is_empty())
             && self.running_sessions() == 0
             && self.chats.count() == 0
     }
@@ -445,6 +454,14 @@ impl Core {
     }
 
     pub(crate) fn broadcast_event(&self, event: &Event) {
+        self.broadcast_to(event, |_| true);
+    }
+
+    pub(crate) fn broadcast_local(&self, event: &Event) {
+        self.broadcast_to(event, |client| client.peer.is_local());
+    }
+
+    fn broadcast_to(&self, event: &Event, to: impl Fn(&ClientConn) -> bool) {
         let Ok(frame) = encode_control(&ServerMessage::Event {
             event: event.clone(),
         }) else {
@@ -452,8 +469,31 @@ impl Core {
         };
         let frame: Arc<[u8]> = frame.into();
         for client in self.clients() {
-            client.send(frame.clone());
+            if to(&client) {
+                client.send(frame.clone());
+            }
         }
+    }
+
+    /// Ends the connections of one paired device, or of every one.
+    pub(crate) fn close_device_clients(&self, id: Option<&str>) {
+        for client in self.clients() {
+            let closing = match id {
+                Some(id) => client.peer.is_device(id),
+                None => !client.peer.is_local(),
+            };
+            if closing {
+                client.close();
+            }
+        }
+    }
+
+    pub(crate) fn permit(&self, peer: &access::Peer, needs: access::Needs) -> CoreResult<()> {
+        let device_access = match peer {
+            access::Peer::Local => None,
+            access::Peer::Device { id } => self.remote.access_of(id),
+        };
+        access::permit(peer, device_access, needs)
     }
 
     pub(crate) fn schedule_task_output_notice(self: &Arc<Self>, id: SessionId, delay: Duration) {
@@ -662,6 +702,7 @@ pub(crate) async fn run_core(
     });
     listener.set_nonblocking(true)?;
     let listener = tokio::net::UnixListener::from_std(listener)?;
+    remote::start(&core, &config.socket, config.remote_direct_only).await;
     let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
     let background = [
@@ -708,6 +749,7 @@ pub(crate) async fn run_core(
     for task in background {
         task.abort();
     }
+    remote::stop(&core).await;
     let tools = core.tools.lock().ok().and_then(|mut tools| tools.take());
     if let Some(tools) = tools {
         tools.stop();

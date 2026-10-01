@@ -151,6 +151,7 @@ impl EventSink for AppSink {
             Event::TaskOutput { .. } => {}
             Event::AgentState(state) => self.emit("agent_state_changed", state),
             Event::Chat { agent_id, event } => crate::acp::deliver(&self.app, &agent_id, event),
+            Event::Remote { status } => self.emit("remote_status_changed", status),
         }
     }
 

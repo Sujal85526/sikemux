@@ -9,6 +9,8 @@ pub mod client;
 pub mod harness;
 pub mod protocol;
 #[cfg(unix)]
+pub mod remote;
+#[cfg(unix)]
 pub mod server;
 
 use std::path::PathBuf;

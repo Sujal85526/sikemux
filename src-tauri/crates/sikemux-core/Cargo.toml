@@ -16,6 +16,7 @@ url = "2"
 uuid = { version = "1", features = ["v4"] }
 
 [target.'cfg(unix)'.dependencies]
+iroh = { version = "1.3", default-features = false, features = ["tls-ring"] }
 libc = "0.2"
 portable-pty = "0.9"
 tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }

@@ -13,9 +13,10 @@ use crate::protocol::{
     RequestId, Response, ServerMessage, SessionId, SpawnTarget, PROTOCOL, PROTOCOL_VERSION,
 };
 
+use super::access::{self, Needs, Peer};
 use super::prepare::{prepare_task, prepare_terminal};
 use super::session::{self, PendingStart};
-use super::{agent, chat, harness, upgrade, Core, CoreError, CoreResult};
+use super::{agent, chat, harness, remote, upgrade, Core, CoreError, CoreResult};
 
 pub(crate) type ClientId = u64;
 pub(crate) type FrameReader = BufReader<Box<dyn AsyncRead + Send + Unpin>>;
@@ -28,6 +29,7 @@ const SHUTDOWN_FLUSH: Duration = Duration::from_secs(1);
 
 pub(crate) struct ClientConn {
     pub id: ClientId,
+    pub peer: Peer,
     frames: mpsc::UnboundedSender<Arc<[u8]>>,
     queued: AtomicUsize,
     closed: AtomicBool,
@@ -108,10 +110,15 @@ async fn write_direct(writer: &mut FrameWriter, message: &ServerMessage) {
     }
 }
 
-async fn handshake(core: &Arc<Core>, reader: &mut FrameReader, writer: &mut FrameWriter) -> bool {
+async fn handshake(
+    core: &Arc<Core>,
+    peer: &Peer,
+    reader: &mut FrameReader,
+    writer: &mut FrameWriter,
+) -> bool {
     let frame = match tokio::time::timeout(HANDSHAKE_TIMEOUT, read_frame(reader)).await {
         Ok(Ok(Some(frame))) if frame.kind == FrameKind::Control => frame,
-        Ok(Ok(Some(frame))) if frame.kind == FrameKind::Frozen => {
+        Ok(Ok(Some(frame))) if frame.kind == FrameKind::Frozen && peer.is_local() => {
             upgrade::answer(core, &frame.payload, writer).await;
             return false;
         }
@@ -170,22 +177,24 @@ async fn handshake(core: &Arc<Core>, reader: &mut FrameReader, writer: &mut Fram
 
 pub(crate) async fn serve_local(core: Arc<Core>, stream: UnixStream) {
     let (read_half, write_half) = stream.into_split();
-    serve_client(core, Box::new(read_half), Box::new(write_half)).await;
+    serve_client(core, Peer::Local, Box::new(read_half), Box::new(write_half)).await;
 }
 
 pub(crate) async fn serve_client(
     core: Arc<Core>,
+    peer: Peer,
     read_half: Box<dyn AsyncRead + Send + Unpin>,
     write_half: Box<dyn AsyncWrite + Send + Unpin>,
 ) {
     let mut reader = BufReader::new(read_half);
     let mut writer = BufWriter::with_capacity(64 * 1024, write_half);
-    if !handshake(&core, &mut reader, &mut writer).await {
+    if !handshake(&core, &peer, &mut reader, &mut writer).await {
         return;
     }
     let (frames, queue) = mpsc::unbounded_channel();
     let client = Arc::new(ClientConn {
         id: core.next_client_id.fetch_add(1, Ordering::Relaxed),
+        peer,
         frames,
         queued: AtomicUsize::new(0),
         closed: AtomicBool::new(false),
@@ -266,6 +275,10 @@ async fn read_requests(
                     client.respond(request_id, Err(upgrade::UPDATING.into()));
                     continue;
                 }
+                if let Err(refused) = core.permit(&client.peer, Needs::Full) {
+                    client.respond(request_id, Err(refused));
+                    continue;
+                }
                 let Some(target) = core.session(id) else {
                     client.respond(request_id, Err("invalid argument: pty not found".into()));
                     continue;
@@ -313,6 +326,10 @@ async fn run_requests(
         let client = client.clone();
         if core.is_frozen() {
             client.respond(request_id, Err(upgrade::UPDATING.into()));
+            continue;
+        }
+        if let Err(refused) = core.permit(&client.peer, access::needs(&request)) {
+            client.respond(request_id, Err(refused));
             continue;
         }
         match request {
@@ -571,6 +588,28 @@ async fn run_requests(
                     let result = chat::set_permission_mode(&core, &agent_id, mode).await;
                     client.respond(request_id, result.map(|()| Response::Done));
                 });
+            }
+            Request::RemoteStatus => {
+                client.respond(
+                    request_id,
+                    Ok(Response::Remote {
+                        status: core.remote.status(),
+                    }),
+                );
+            }
+            Request::SetRemoteAccess { enabled } => {
+                tokio::spawn(async move {
+                    let result = remote::set_enabled(&core, enabled).await;
+                    client.respond(request_id, result.map(|status| Response::Remote { status }));
+                });
+            }
+            Request::SetDeviceAccess { id, access } => {
+                let result = remote::set_access(&core, &id, access);
+                client.respond(request_id, result.map(|status| Response::Remote { status }));
+            }
+            Request::RevokeDevice { id } => {
+                let result = remote::revoke(&core, &id);
+                client.respond(request_id, result.map(|status| Response::Remote { status }));
             }
             Request::AcpSetConfig {
                 agent_id,

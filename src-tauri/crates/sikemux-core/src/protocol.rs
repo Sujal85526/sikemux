@@ -19,7 +19,7 @@ use sikemux_pty::task::{TaskSource, TaskSpawnRequest};
 use crate::cli::protocol::{CliOpenRequest, HarnessRequest};
 
 pub const PROTOCOL: &str = "sikemux-core";
-pub const PROTOCOL_VERSION: u32 = 5;
+pub const PROTOCOL_VERSION: u32 = 6;
 /// Room for the largest attach snapshot plus its header.
 pub const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 
@@ -311,6 +311,20 @@ pub enum Request {
         config_id: String,
         value: String,
     },
+    RemoteStatus,
+    /// Lets paired devices reach the core from other machines, or stops it
+    /// and disconnects them. Kept across restarts.
+    SetRemoteAccess {
+        enabled: bool,
+    },
+    SetDeviceAccess {
+        id: String,
+        access: DeviceAccess,
+    },
+    /// Forgets a paired device and ends its connections.
+    RevokeDevice {
+        id: String,
+    },
 }
 
 /// Everything the core needs to start a chat agent, resolved by the app: the
@@ -570,6 +584,44 @@ pub enum Response {
     Chats { chats: Vec<ChatInfo> },
     Steered { outcome: String },
     ChatConfig { value: Value },
+    Remote { status: RemoteStatus },
+}
+
+/// What a paired device was approved to do.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DeviceAccess {
+    /// Everything a person at the Mac can do in a session.
+    Full,
+    /// Read sessions and answer agents' permission requests.
+    Watch,
+}
+
+/// A device approved to reach this core from another machine.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceInfo {
+    /// The device's public key, which is what the core recognises it by.
+    pub id: String,
+    pub name: String,
+    pub platform: String,
+    pub access: DeviceAccess,
+    /// Milliseconds since the Unix epoch.
+    pub paired_at: u64,
+    pub last_seen: Option<u64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteStatus {
+    pub enabled: bool,
+    /// The core's public key, which paired devices dial.
+    pub core_id: String,
+    /// Where the core can be reached directly, while remote access is on.
+    pub addresses: Vec<String>,
+    pub devices: Vec<DeviceInfo>,
+    /// Ids of the devices connected now.
+    pub connected: Vec<String>,
 }
 
 /// Which build of the sidecar a core runs. `source` fingerprints the code
@@ -697,6 +749,10 @@ pub enum Event {
     Chat {
         agent_id: String,
         event: ChatEvent,
+    },
+    /// Sent only to clients on this Mac.
+    Remote {
+        status: RemoteStatus,
     },
 }
 

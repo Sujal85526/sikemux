@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use sikemux_pty::agent_detection::{DetectionExplain, ManifestReloadReport};
 use sikemux_pty::output_log::{OutputPage, OutputQuery};
 use sikemux_pty::shell_protocol::ShellMetadataSnapshot;
-use tokio::io::{AsyncWriteExt, BufReader};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -24,9 +24,9 @@ use crate::protocol::frozen::{FrozenReply, FrozenRequest};
 use crate::protocol::{
     decode_output, decode_snapshot, encode_control, encode_frozen, encode_input, read_frame,
     read_frame_sync, BuildIdentity, CallId, ChatAttachment, ChatContext, ChatInfo, ChatLaunch,
-    ChatStart, ClientMessage, Event, FrameKind, LaunchIdentity, Request, RequestId, Response,
-    RunSelector, ServerMessage, SessionId, SessionInfo, SpawnTarget, WindowAnswer, WindowCall,
-    MAX_FRAME_BYTES, PROTOCOL, PROTOCOL_VERSION,
+    ChatStart, ClientMessage, DeviceAccess, Event, FrameKind, LaunchIdentity, RemoteStatus,
+    Request, RequestId, Response, RunSelector, ServerMessage, SessionId, SessionInfo, SpawnTarget,
+    WindowAnswer, WindowCall, MAX_FRAME_BYTES, PROTOCOL, PROTOCOL_VERSION,
 };
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -160,7 +160,7 @@ fn hello_frame() -> Result<Vec<u8>, ClientError> {
     })?)
 }
 
-struct ChannelSink(mpsc::UnboundedSender<ClientEvent>);
+pub(crate) struct ChannelSink(pub(crate) mpsc::UnboundedSender<ClientEvent>);
 
 impl EventSink for ChannelSink {
     fn output(&self, id: SessionId, bytes: &[u8]) {
@@ -207,7 +207,15 @@ impl CoreClient {
         sink: Arc<dyn EventSink>,
     ) -> Result<Self, ClientError> {
         let stream = UnixStream::connect(socket).await?;
-        let (read_half, mut write_half) = stream.into_split();
+        let (read_half, write_half) = stream.into_split();
+        Self::connect_streams(read_half, write_half, sink).await
+    }
+
+    pub async fn connect_streams(
+        read_half: impl AsyncRead + Send + Unpin + 'static,
+        mut write_half: impl AsyncWrite + Send + Unpin + 'static,
+        sink: Arc<dyn EventSink>,
+    ) -> Result<Self, ClientError> {
         let mut reader = BufReader::with_capacity(256 * 1024, read_half);
         write_half.write_all(&hello_frame()?).await?;
         let frame = tokio::time::timeout(HANDSHAKE_TIMEOUT, read_frame(&mut reader))
@@ -625,6 +633,35 @@ impl CoreClient {
             Response::ChatConfig { value } => Ok(value),
             _ => Err(ClientError::UnexpectedReply),
         }
+    }
+
+    async fn remote_request(&self, request: Request) -> Result<RemoteStatus, ClientError> {
+        match self.request(request).await? {
+            Response::Remote { status } => Ok(status),
+            _ => Err(ClientError::UnexpectedReply),
+        }
+    }
+
+    pub async fn remote_status(&self) -> Result<RemoteStatus, ClientError> {
+        self.remote_request(Request::RemoteStatus).await
+    }
+
+    pub async fn set_remote_access(&self, enabled: bool) -> Result<RemoteStatus, ClientError> {
+        self.remote_request(Request::SetRemoteAccess { enabled })
+            .await
+    }
+
+    pub async fn set_device_access(
+        &self,
+        id: String,
+        access: DeviceAccess,
+    ) -> Result<RemoteStatus, ClientError> {
+        self.remote_request(Request::SetDeviceAccess { id, access })
+            .await
+    }
+
+    pub async fn revoke_device(&self, id: String) -> Result<RemoteStatus, ClientError> {
+        self.remote_request(Request::RevokeDevice { id }).await
     }
 }
 
