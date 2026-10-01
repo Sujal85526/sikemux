@@ -51,6 +51,27 @@ struct AcpEvent {
     payload: Value,
 }
 
+/// Why a session ended, so the chat can tell a stop it asked for from an agent
+/// that died under it.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+enum SessionEnd {
+    Requested,
+    Exited,
+    Failed,
+}
+
+fn ended_status(result: &Result<SessionEnd, String>, started: bool) -> Value {
+    match result {
+        Ok(end) => json!({ "state": "stopped", "reason": end }),
+        Err(message) => json!({
+            "state": "error",
+            "reason": if started { SessionEnd::Exited } else { SessionEnd::Failed },
+            "message": message,
+        }),
+    }
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AcpStartResponse {
@@ -706,7 +727,7 @@ async fn run_connection(
     install_cancellation: crate::bounded_process::ProcessCancellation,
     mut commands: mpsc::UnboundedReceiver<AcpCommand>,
     ready: ReadySender,
-) -> Result<(), String> {
+) -> Result<SessionEnd, String> {
     let agent_executable =
         crate::agents::resolve_agent_executable(&provider, executable_path.as_deref()).await?;
     let config = match native::arguments(&provider) {
@@ -1002,12 +1023,13 @@ async fn run_connection(
                 let (stalled_tx, mut stalled_rx) = mpsc::unbounded_channel::<u64>();
                 let cancelled_turn = Arc::new(AtomicU64::new(0));
                 let (broken_tx, mut broken_rx) = mpsc::unbounded_channel::<()>();
-                loop {
+                let end = loop {
                     let command = tokio::select! {
                         command = commands.recv() => match command {
                             Some(command) => command,
-                            None => break,
+                            None => break SessionEnd::Requested,
                         },
+                        () = connection.incoming_closed() => break SessionEnd::Exited,
                         Some(()) = broken_rx.recv() => {
                             emit(
                                 &app,
@@ -1015,7 +1037,7 @@ async fn run_connection(
                                 "error",
                                 json!({ "message": "The agent failed while stopping, so its session was restarted" }),
                             );
-                            break;
+                            break SessionEnd::Exited;
                         }
                         Some(stalled) = stalled_rx.recv() => {
                             if running.load(Ordering::Acquire)
@@ -1027,7 +1049,7 @@ async fn run_connection(
                                     "error",
                                     json!({ "message": "The agent did not stop, so its session was restarted" }),
                                 );
-                                break;
+                                break SessionEnd::Exited;
                             }
                             continue;
                         }
@@ -1255,10 +1277,10 @@ async fn run_connection(
                                 );
                             }
                         }
-                        AcpCommand::Stop => break,
+                        AcpCommand::Stop => break SessionEnd::Requested,
                     }
-                }
-                Ok(())
+                };
+                Ok(end)
             }
         })
         .await
@@ -1327,13 +1349,14 @@ pub async fn acp_start(
             task_ready.clone(),
         )
         .await;
+        let started = task_ready.lock().is_ok_and(|sender| sender.is_none());
+        emit(
+            &task_app,
+            &task_agent_id,
+            "status",
+            ended_status(&result, started),
+        );
         if let Err(error) = &result {
-            emit(
-                &task_app,
-                &task_agent_id,
-                "status",
-                json!({ "state": "error" }),
-            );
             if let Ok(mut sender) = task_ready.lock() {
                 if let Some(sender) = sender.take() {
                     let _ = sender.send(Err(error.clone()));
@@ -1344,13 +1367,6 @@ pub async fn acp_start(
                 &task_agent_id,
                 "error",
                 json!({ "message": error }),
-            );
-        } else {
-            emit(
-                &task_app,
-                &task_agent_id,
-                "status",
-                json!({ "state": "stopped" }),
             );
         }
         task_manager
@@ -1574,6 +1590,26 @@ mod tests {
                 None
             );
         }
+    }
+
+    #[test]
+    fn a_session_says_why_it_ended() {
+        assert_eq!(
+            ended_status(&Ok(SessionEnd::Requested), true),
+            json!({ "state": "stopped", "reason": "requested" })
+        );
+        assert_eq!(
+            ended_status(&Ok(SessionEnd::Exited), true),
+            json!({ "state": "stopped", "reason": "exited" })
+        );
+        assert_eq!(
+            ended_status(&Err("Process exited with 1".into()), true),
+            json!({ "state": "error", "reason": "exited", "message": "Process exited with 1" })
+        );
+        assert_eq!(
+            ended_status(&Err("no adapter".into()), false),
+            json!({ "state": "error", "reason": "failed", "message": "no adapter" })
+        );
     }
 
     #[test]
