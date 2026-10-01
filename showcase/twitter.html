@@ -12,13 +12,13 @@
         background: #111;
       }
 
-      /* Every download is cut from this one 16:9 stage, saved at 3x. Here it is scaled to fit the browser. */
+      /* Every download is cut from this one 16:9 stage, saved at 2.25x. Here it is scaled to fit the browser. */
       .stage {
         position: absolute;
         top: 50%;
         left: 50%;
-        width: 1440px;
-        height: 810px;
+        width: 1920px;
+        height: 1080px;
         overflow: hidden;
         background: #000 url("/__showcase/wallpaper") center / cover no-repeat;
         transform: translate(-50%, -50%) scale(var(--fit, 1));
@@ -26,9 +26,9 @@
 
       iframe {
         position: absolute;
-        inset: 20px 86px;
-        width: calc(100% - 172px);
-        height: calc(100% - 40px);
+        inset: 27px 115px;
+        width: calc(100% - 230px);
+        height: calc(100% - 54px);
         border: 0;
         border-radius: 12px;
         box-shadow:
@@ -85,7 +85,7 @@
         const fit = () =>
           stage.style.setProperty(
             "--fit",
-            Math.min((innerWidth - 32) / 1440, (innerHeight - 96) / 810),
+            Math.min(1, (innerWidth - 32) / 1920, (innerHeight - 96) / 1080),
           );
         addEventListener("resize", fit);
         fit();

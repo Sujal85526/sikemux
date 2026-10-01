@@ -253,8 +253,8 @@ async function snapshot(
   const context = await (
     await snapshotBrowser
   ).newContext({
-    viewport: { width: 1440, height: 810 },
-    deviceScaleFactor: 3,
+    viewport: { width: 1920, height: 1080 },
+    deviceScaleFactor: 2.25,
     colorScheme: "dark",
   });
   try {
@@ -285,7 +285,7 @@ async function snapshot(
     for (const [index, name] of names.entries()) {
       await page.screenshot({
         path: join(homedir(), "Downloads", name),
-        clip: { x: index * 480, y: 0, width: 480, height: 810 },
+        clip: { x: index * 640, y: 0, width: 640, height: 1080 },
       });
     }
     return names;
