@@ -4,7 +4,7 @@
 //! payload. The length counts the kind byte and the payload. Control frames
 //! carry JSON; terminal bytes travel raw in their own frame kinds.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::{self, Read};
 use std::path::PathBuf;
 
@@ -19,7 +19,7 @@ use sikemux_pty::task::{TaskSource, TaskSpawnRequest};
 use crate::cli::protocol::{CliOpenRequest, HarnessRequest};
 
 pub const PROTOCOL: &str = "sikemux-core";
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
 /// Room for the largest attach snapshot plus its header.
 pub const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 
@@ -73,7 +73,10 @@ pub mod frozen {
 
     /// The format of the state a core hands to its replacement. A core only
     /// replaces itself with a binary that reads its format.
-    pub const RESUME_FORMAT: u32 = 1;
+    pub const RESUME_FORMAT: u32 = 2;
+
+    /// Every hand-over format a core of this build takes over from.
+    pub const READS_FORMATS: [u32; 2] = [1, RESUME_FORMAT];
 
     /// The argument that makes a core binary print its [`UpgradeInfo`].
     pub const UPGRADE_INFO_ARG: &str = "--upgrade-info";
@@ -96,7 +99,14 @@ pub mod frozen {
     )]
     pub enum FrozenReply {
         Accepted,
-        Refused { message: String },
+        Refused {
+            message: String,
+        },
+        /// The core replaces itself later, once the chat turns it is running
+        /// end, and goes on serving until then.
+        Deferred {
+            message: String,
+        },
     }
 
     /// What `<binary> core --upgrade-info` prints, as one JSON object.
@@ -107,7 +117,11 @@ pub mod frozen {
         pub commit: String,
         pub built_at: u64,
         pub source: String,
+        /// The oldest hand-over format the binary takes over from. Cores
+        /// that predate `reads_formats` compare their own format with this.
         pub resume_format: u32,
+        #[serde(default)]
+        pub reads_formats: Vec<u32>,
     }
 
     impl UpgradeInfo {
@@ -117,7 +131,17 @@ pub mod frozen {
                 commit: build.commit.clone(),
                 built_at: build.built_at,
                 source: build.source.clone(),
-                resume_format: RESUME_FORMAT,
+                resume_format: READS_FORMATS[0],
+                reads_formats: READS_FORMATS.to_vec(),
+            }
+        }
+
+        /// Whether the binary takes over from a core writing `format`.
+        pub fn reads(&self, format: u32) -> bool {
+            if self.reads_formats.is_empty() {
+                self.resume_format == format
+            } else {
+                self.reads_formats.contains(&format)
             }
         }
 
@@ -238,6 +262,152 @@ pub enum Request {
     Shutdown {
         stop_all: bool,
     },
+    /// Starts a chat agent and answers once its session is ready. The client
+    /// that asks hears the agent's events from the start.
+    AcpStart {
+        launch: Box<ChatLaunch>,
+    },
+    /// Takes up a chat agent the core already runs: the answer replays what
+    /// it said so far, and its events follow.
+    AcpAttach {
+        agent_id: String,
+    },
+    AcpList,
+    AcpPrompt {
+        agent_id: String,
+        text: String,
+        paths: Vec<String>,
+        context: Vec<ChatContext>,
+    },
+    /// Puts a message into the running turn. Answered with `promptRequired`
+    /// when the turn ended first and the message should be a prompt instead.
+    AcpSteer {
+        agent_id: String,
+        text: String,
+        paths: Vec<String>,
+        context: Vec<ChatContext>,
+    },
+    AcpCancel {
+        agent_id: String,
+    },
+    AcpStopTask {
+        agent_id: String,
+        task_id: String,
+    },
+    AcpPermissionReply {
+        agent_id: String,
+        request_id: String,
+        option_id: Option<String>,
+    },
+    AcpStop {
+        agent_id: String,
+    },
+    AcpSetPermissionMode {
+        agent_id: String,
+        mode: String,
+    },
+    AcpSetConfig {
+        agent_id: String,
+        config_id: String,
+        value: String,
+    },
+}
+
+/// Everything the core needs to start a chat agent, resolved by the app: the
+/// program and its environment, and the tool servers the agent is told of.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatLaunch {
+    pub agent_id: String,
+    pub provider: String,
+    pub cwd: PathBuf,
+    pub program: PathBuf,
+    pub args: Vec<String>,
+    pub env: BTreeMap<String, String>,
+    pub mcp_servers: Vec<Value>,
+    /// The provider's session to load instead of opening a new one.
+    pub resume_id: Option<String>,
+    pub permission_mode: String,
+    pub model: Option<String>,
+    pub effort: Option<String>,
+}
+
+/// Something read elsewhere and handed to the agent whole, such as an issue.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatContext {
+    pub uri: String,
+    pub title: String,
+    pub text: String,
+}
+
+/// The app's `acp_start` answer.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatStart {
+    pub session_id: String,
+    pub capabilities: Value,
+    pub setup: Value,
+}
+
+/// The kinds of the app's `acp_event`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChatEventKind {
+    Status,
+    Ready,
+    SessionUpdate,
+    TurnStarted,
+    TurnCompleted,
+    PermissionRequest,
+    Error,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ChatEvent {
+    pub kind: ChatEventKind,
+    pub payload: Value,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(
+    tag = "status",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum ChatAttachment {
+    /// `replay` holds what the agent said since its session started or
+    /// loaded, in order, so a client rebuilds the chat as if it had watched.
+    Live {
+        start: Box<ChatStart>,
+        permission_mode: String,
+        running: bool,
+        /// A turn has run in this session, so the provider keeps it.
+        turned: bool,
+        replay: Vec<ChatEvent>,
+    },
+    Missing,
+    /// The session said more than the core keeps, so the client starts it
+    /// again from the provider's own history.
+    Restart,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ChatState {
+    Starting,
+    Ready,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatInfo {
+    pub agent_id: String,
+    pub provider: String,
+    pub cwd: PathBuf,
+    pub session_id: Option<String>,
+    pub state: ChatState,
+    pub running: bool,
+    pub pending_permissions: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -385,6 +555,11 @@ pub enum Response {
     TaskOutput { page: OutputPage },
     Manifests { report: ManifestReloadReport },
     DetectionExplain { explain: Box<DetectionExplain> },
+    ChatStarted { start: ChatStart },
+    ChatAttached { attachment: ChatAttachment },
+    Chats { chats: Vec<ChatInfo> },
+    Steered { outcome: String },
+    ChatConfig { value: Value },
 }
 
 /// Which build of the sidecar a core runs. `source` fingerprints the code
@@ -506,6 +681,11 @@ pub enum Event {
         id: SessionId,
     },
     AgentState(AgentStateEvent),
+    /// Sent only to the clients that started or attached to the chat.
+    Chat {
+        agent_id: String,
+        event: ChatEvent,
+    },
 }
 
 /// The app's `agent_state_changed` payload.

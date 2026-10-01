@@ -1,4 +1,5 @@
 mod agent;
+mod chat;
 mod connection;
 mod entry;
 mod handover;
@@ -249,6 +250,7 @@ pub(crate) struct Core {
     pub(crate) launching: Gauge,
     pub(crate) listening: OnceLock<Listening>,
     pub(crate) tools: Mutex<Option<tools::ToolEndpoint>>,
+    pub(crate) chats: chat::Chats,
 }
 
 /// Session and window call ids start from the clock, so an id a client still
@@ -286,6 +288,7 @@ impl Core {
             launching: Gauge::default(),
             listening: OnceLock::new(),
             tools: Mutex::new(None),
+            chats: chat::Chats::default(),
         }))
     }
 
@@ -416,7 +419,9 @@ impl Core {
     }
 
     fn is_idle(&self) -> bool {
-        self.clients.lock().is_ok_and(|clients| clients.is_empty()) && self.running_sessions() == 0
+        self.clients.lock().is_ok_and(|clients| clients.is_empty())
+            && self.running_sessions() == 0
+            && self.chats.count() == 0
     }
 
     fn register_client(&self, client: Arc<ClientConn>) {
@@ -428,6 +433,7 @@ impl Core {
     fn unregister_client(&self, client: &ClientConn) {
         client.close();
         self.window.unregister(client.id);
+        self.chats.forget_client(client.id);
         if let Ok(mut clients) = self.clients.lock() {
             clients.remove(&client.id);
         }
@@ -490,6 +496,7 @@ impl Core {
     }
 
     fn drain(&self) {
+        self.chats.stop_all();
         let sessions: Vec<Arc<Session>> = match self.sessions.lock() {
             Ok(mut sessions) => sessions.drain().map(|(_, session)| session).collect(),
             Err(_) => return,

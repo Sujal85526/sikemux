@@ -14,7 +14,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use sikemux_core::client::{
-    await_upgrade, ensure_running, frozen_request, Attached, ClientError, CoreClient, Reply,
+    await_deferred_upgrade, await_upgrade, ensure_running, frozen_request, Attached, ClientError,
+    CoreClient, Reply,
 };
 use sikemux_core::protocol::frozen::{FrozenReply, FrozenRequest};
 use sikemux_core::protocol::{BuildIdentity, Request, SessionId, SessionInfo, SessionKind};
@@ -35,6 +36,9 @@ const STOP_TIMEOUT: Duration = Duration::from_secs(5);
 /// first time macOS sees a new binary.
 const UPGRADE_ANSWER_TIMEOUT: Duration = Duration::from_secs(15);
 const UPGRADE_RETURN_TIMEOUT: Duration = Duration::from_secs(20);
+/// A core with chat turns running updates once they end, which it gives two
+/// minutes.
+const DEFERRED_RETURN_TIMEOUT: Duration = Duration::from_secs(150);
 /// `ESC c`, which clears a pane's screen and history before its replay.
 const FULL_RESET: &[u8] = b"\x1bc";
 
@@ -197,14 +201,18 @@ impl PtyManager {
         match found {
             Ok(hello) if hello.build.same_build(&crate::build_identity()) => {}
             Ok(hello) => {
-                if let Err(message) =
-                    upgrade_core(settings, binary, hello.pid, Some(hello.build)).await
-                {
-                    eprintln!("Sikemux keeps its terminal core as it is: {message}");
+                match upgrade_core(settings, binary, hello.pid, Some(hello.build), false).await {
+                    Ok(Upgrade::Done) => {}
+                    Ok(Upgrade::Deferred) => eprintln!(
+                        "Sikemux's terminal core updates once its chat turns end; using it as it is until then"
+                    ),
+                    Err(message) => {
+                        eprintln!("Sikemux keeps its terminal core as it is: {message}")
+                    }
                 }
             }
             Err(ClientError::VersionMismatch { pid, message, .. }) => {
-                if let Err(reason) = upgrade_core(settings, binary, pid, None).await {
+                if let Err(reason) = upgrade_core(settings, binary, pid, None, true).await {
                     self.notice_incompatible(settings, pid);
                     return Err(AppError::Pty(format!(
                         "{message}, and it could not be updated: {reason}"
@@ -344,10 +352,12 @@ impl PtyManager {
             ) else {
                 return;
             };
-            if let Err(message) =
-                upgrade_core(settings, binary, client.core_pid(), Some(build)).await
-            {
-                eprintln!("Sikemux keeps its terminal core as it is: {message}");
+            match upgrade_core(settings, binary, client.core_pid(), Some(build), false).await {
+                Ok(Upgrade::Done) => {}
+                Ok(Upgrade::Deferred) => {
+                    eprintln!("Sikemux's terminal core updates once its chat turns end")
+                }
+                Err(message) => eprintln!("Sikemux keeps its terminal core as it is: {message}"),
             }
         });
     }
@@ -484,34 +494,53 @@ impl PtyManager {
     }
 }
 
+enum Upgrade {
+    Done,
+    /// The core goes on as it is until its chat turns end, then updates and
+    /// drops its connections, which come back to the updated core.
+    Deferred,
+}
+
 /// Asks the core at `socket` to replace itself with `binary`, and waits for
 /// it to answer from the same process again. Without `old`, the core speaks
-/// another protocol and could not say which build it runs.
+/// another protocol and could not say which build it runs. A core that
+/// defers is waited for only when `wait_if_deferred`.
 async fn upgrade_core(
     settings: &CoreSettings,
     binary: PathBuf,
     pid: u32,
     old: Option<BuildIdentity>,
-) -> Result<(), String> {
+    wait_if_deferred: bool,
+) -> Result<Upgrade, String> {
     let socket = settings.socket.clone();
     let upgraded = tauri::async_runtime::spawn_blocking(move || {
         let request = FrozenRequest::Upgrade { binary };
         match frozen_request(&socket, &request, UPGRADE_ANSWER_TIMEOUT) {
             Ok(FrozenReply::Accepted) => {
                 await_upgrade(&socket, pid, old.as_ref(), UPGRADE_RETURN_TIMEOUT)
+                    .map(Some)
                     .map_err(|error| error.to_string())
             }
+            Ok(FrozenReply::Deferred { .. }) if wait_if_deferred => {
+                await_deferred_upgrade(&socket, pid, old.as_ref(), DEFERRED_RETURN_TIMEOUT)
+                    .map(Some)
+                    .map_err(|error| error.to_string())
+            }
+            Ok(FrozenReply::Deferred { .. }) => Ok(None),
             Ok(FrozenReply::Refused { message }) => Err(message),
             Err(error) => Err(error.to_string()),
         }
     })
     .await
     .map_err(|error| error.to_string())??;
+    let Some(upgraded) = upgraded else {
+        return Ok(Upgrade::Deferred);
+    };
     eprintln!(
         "Sikemux updated its terminal core (pid {pid}) to {} {}",
         upgraded.build.version, upgraded.build.commit
     );
-    Ok(())
+    Ok(Upgrade::Done)
 }
 
 /// Ends a core this app cannot talk to, with everything running in it.

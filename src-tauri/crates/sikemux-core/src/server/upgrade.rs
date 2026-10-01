@@ -17,6 +17,7 @@ use crate::protocol::frozen::{
     FrozenReply, FrozenRequest, UpgradeInfo, RESUME_FORMAT, UPGRADE_INFO_ARG,
 };
 
+use super::chat::{self, ChatRecord};
 use super::connection::blocking;
 use super::{handover, session, Core};
 
@@ -29,6 +30,10 @@ const LAUNCH_SETTLE: Duration = Duration::from_secs(5);
 const READER_SETTLE: Duration = Duration::from_secs(3);
 const CLIENT_FLUSH: Duration = Duration::from_secs(1);
 const TOOL_SETTLE: Duration = Duration::from_secs(1);
+/// How long an update waits for chat turns to end. A turn still running
+/// after that ends with the update, and its chat starts again on its session.
+const TURN_SETTLE: Duration = Duration::from_secs(120);
+const TURN_POLL: Duration = Duration::from_millis(250);
 
 async fn reply(writer: &mut BufWriter<OwnedWriteHalf>, answer: &FrozenReply) {
     if let Ok(frame) = encode_frozen(answer) {
@@ -82,13 +87,35 @@ async fn upgrade(core: &Arc<Core>, binary: PathBuf, writer: &mut BufWriter<Owned
         reply(writer, &refused(error.to_string())).await;
         return;
     }
-    // Frozen before the answer goes out, so a client that hears it never
-    // reaches this core again, only its replacement.
-    core.frozen.send_replace(true);
-    reply(writer, &FrozenReply::Accepted).await;
+    if core.chats.any_turn_running() {
+        reply(
+            writer,
+            &FrozenReply::Deferred {
+                message: "the core updates once its chat turns end".into(),
+            },
+        )
+        .await;
+        drop_writer(writer).await;
+        let deadline = tokio::time::Instant::now() + TURN_SETTLE;
+        while core.chats.any_turn_running() && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(TURN_POLL).await;
+        }
+        core.frozen.send_replace(true);
+    } else {
+        // Frozen before the answer goes out, so a client that hears it never
+        // reaches this core again, only its replacement.
+        core.frozen.send_replace(true);
+        reply(writer, &FrozenReply::Accepted).await;
+    }
     let error = hand_over(core, binary).await;
     eprintln!("sikemux core: UPDATE FAILED, carrying on as before: {error}");
     thaw(core);
+}
+
+/// The client that asked for a deferred update has its answer and need not
+/// wait for the update itself.
+async fn drop_writer(writer: &mut BufWriter<OwnedWriteHalf>) {
+    let _ = writer.shutdown().await;
 }
 
 /// Refuses a binary that is not an executable file, that does not read this
@@ -103,11 +130,10 @@ fn check_binary(binary: &Path, own: &crate::protocol::BuildIdentity) -> Result<(
         return Err(format!("{} is not an executable file", binary.display()));
     }
     let info = upgrade_info(binary)?;
-    if info.resume_format != RESUME_FORMAT {
+    if !info.reads(RESUME_FORMAT) {
         return Err(format!(
-            "{} reads hand-over format {}, this core writes format {RESUME_FORMAT}",
+            "{} does not read hand-over format {RESUME_FORMAT}, which this core writes",
             binary.display(),
-            info.resume_format
         ));
     }
     if info.build().same_build(own) {
@@ -189,14 +215,24 @@ async fn hand_over(core: &Arc<Core>, binary: PathBuf) -> String {
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
     }
+    let chats = core.chats.hand_over().await;
     let replacing = core.clone();
+    let handed = chats.clone();
     let replaced = blocking(move || {
-        Err::<std::convert::Infallible, _>(handover::replace_process(&replacing, &binary))
+        Err::<std::convert::Infallible, _>(handover::replace_process(&replacing, &binary, &handed))
     })
     .await;
+    restart_chats(core, chats);
     match replaced {
         Ok(never) => match never {},
         Err(error) => error.to_string(),
+    }
+}
+
+/// The chats an update stopped start again on their sessions when it fails.
+fn restart_chats(core: &Arc<Core>, chats: Vec<ChatRecord>) {
+    for record in chats {
+        chat::resume(core, record);
     }
 }
 

@@ -4363,6 +4363,7 @@ dependencies = [
 name = "sikemux-core"
 version = "0.1.0"
 dependencies = [
+ "agent-client-protocol",
  "hex",
  "libc",
  "portable-pty",
@@ -4373,6 +4374,7 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
+ "url",
  "uuid",
  "vt100",
 ]

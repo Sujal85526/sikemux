@@ -1,6 +1,8 @@
-//! The background process that owns Sikemux terminals, so they outlive the
-//! window. `sikemux core` runs [`server`]; the app talks to it with [`client`].
+//! The background process that owns Sikemux terminals and chat agents, so
+//! they outlive the window. `sikemux core` runs [`server`]; the app talks to
+//! it with [`client`].
 
+pub mod acp;
 pub mod cli;
 #[cfg(unix)]
 pub mod client;

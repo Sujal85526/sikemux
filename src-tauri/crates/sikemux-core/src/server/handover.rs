@@ -31,6 +31,7 @@ use crate::protocol::frozen::RESUME_FORMAT;
 use crate::protocol::{BuildIdentity, SessionExit, SessionId, SessionKind};
 
 use super::agent::{self, AgentActivity, AgentRecord};
+use super::chat::{self, ChatRecord};
 use super::harness::HarnessRecord;
 use super::prepare::Owner;
 use super::session::{self, Session, SessionParts};
@@ -64,6 +65,9 @@ struct HandoverState {
     /// screen and details.
     sessions: Vec<Value>,
     harness: Value,
+    /// Chats a hand-over stops, which the replacement starts again on their
+    /// provider sessions. Added in format 2.
+    chats: Vec<ChatRecord>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -187,7 +191,7 @@ fn set_close_on_exec(fd: RawFd, close: bool) {
 
 /// Writes everything down and replaces the process with `binary`. Returns
 /// only if that failed, with every descriptor as it was.
-pub(crate) fn replace_process(core: &Core, binary: &Path) -> CoreError {
+pub(crate) fn replace_process(core: &Core, binary: &Path, chats: &[ChatRecord]) -> CoreError {
     let Some(listening) = core.listening.get() else {
         return "the core is not listening yet".into();
     };
@@ -241,6 +245,7 @@ pub(crate) fn replace_process(core: &Core, binary: &Path) -> CoreError {
         agent_sequence: agent::sequence_mark(),
         sessions: records,
         harness: serde_json::to_value(core.harness.record()).unwrap_or(Value::Null),
+        chats: chats.to_vec(),
     };
     let written = serde_json::to_vec(&state)
         .map_err(std::io::Error::other)
@@ -287,8 +292,9 @@ pub(crate) fn replace_process(core: &Core, binary: &Path) -> CoreError {
         set_close_on_exec(*fd, false);
     }
     eprintln!(
-        "sikemux core: handing {} sessions over to {}",
+        "sikemux core: handing {} sessions and {} chats over to {}",
         sessions.len(),
+        chats.len(),
         binary.display()
     );
     let error = command.exec();
@@ -373,6 +379,26 @@ impl Inherited {
     }
 }
 
+/// Brings state an older core wrote up to the current format, one format at
+/// a time.
+fn migrate(mut state: Value) -> Result<Value, String> {
+    loop {
+        let format = state
+            .get("format")
+            .and_then(Value::as_u64)
+            .ok_or("it names no format")?;
+        match format {
+            1 => {
+                // Format 1 cores held no chats.
+                state["chats"] = Value::Array(Vec::new());
+                state["format"] = Value::from(2);
+            }
+            2 => return Ok(state),
+            other => return Err(format!("it is in format {other}, not {RESUME_FORMAT}")),
+        }
+    }
+}
+
 fn read_state(directory: &Path) -> Option<HandoverState> {
     let bytes = match std::fs::read(directory.join(STATE_FILE)) {
         Ok(bytes) => bytes,
@@ -381,15 +407,14 @@ fn read_state(directory: &Path) -> Option<HandoverState> {
             return None;
         }
     };
-    match serde_json::from_slice::<HandoverState>(&bytes) {
-        Ok(state) if state.format == RESUME_FORMAT => Some(state),
-        Ok(state) => {
-            eprintln!(
-                "sikemux core: UPDATE STATE IN FORMAT {} NOT {RESUME_FORMAT}; keeping the sessions named on the command line without their screens",
-                state.format
-            );
-            None
-        }
+    let state = serde_json::from_slice::<Value>(&bytes)
+        .map_err(|error| error.to_string())
+        .and_then(migrate)
+        .and_then(|state| {
+            serde_json::from_value::<HandoverState>(state).map_err(|error| error.to_string())
+        });
+    match state {
+        Ok(state) => Some(state),
         Err(error) => {
             eprintln!("sikemux core: UPDATE STATE DAMAGED ({error}); keeping the sessions named on the command line without their screens");
             None
@@ -644,6 +669,7 @@ pub(crate) async fn resume(recovery: Recovery, build: BuildIdentity) -> Result<(
 
     let mut from = "an unknown build".to_owned();
     let mut tools_record = None;
+    let mut chats = Vec::new();
     if let Some(state) = state {
         from = format!("{} {}", state.from_build.version, state.from_build.commit);
         core.next_session_id
@@ -680,6 +706,7 @@ pub(crate) async fn resume(recovery: Recovery, build: BuildIdentity) -> Result<(
             }
         }
         tools_record = state.tools;
+        chats = state.chats;
     }
     for (id, fd, pid) in recovery.sessions.iter().copied() {
         if inherited.claimed.contains(&fd) || core.session(id).is_some() {
@@ -729,9 +756,13 @@ pub(crate) async fn resume(recovery: Recovery, build: BuildIdentity) -> Result<(
         );
     }
     eprintln!(
-        "sikemux core: took over from {from} with {} sessions",
-        core.all_sessions().len()
+        "sikemux core: took over from {from} with {} sessions and {} chats",
+        core.all_sessions().len(),
+        chats.len()
     );
+    for record in chats {
+        chat::resume(&core, record);
+    }
     run_core(core, listener, lock, config).await
 }
 
@@ -845,5 +876,28 @@ impl Child for AdoptedChild {
 
     fn process_id(&self) -> Option<u32> {
         self.pid
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::migrate;
+
+    #[test]
+    fn format_one_state_gains_an_empty_chat_list() {
+        let migrated = migrate(json!({ "format": 1, "sessions": [] })).expect("migrate");
+        assert_eq!(migrated["format"], 2);
+        assert_eq!(migrated["chats"], json!([]));
+        assert_eq!(migrated["sessions"], json!([]));
+    }
+
+    #[test]
+    fn current_state_is_left_as_it_is_and_unknown_formats_are_refused() {
+        let current = json!({ "format": 2, "chats": [{ "launch": {} }] });
+        assert_eq!(migrate(current.clone()).expect("migrate"), current);
+        assert!(migrate(json!({ "format": 9 })).is_err());
+        assert!(migrate(json!({})).is_err());
     }
 }

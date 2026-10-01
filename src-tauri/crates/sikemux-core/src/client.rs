@@ -23,9 +23,10 @@ use tokio::task::JoinHandle;
 use crate::protocol::frozen::{FrozenReply, FrozenRequest};
 use crate::protocol::{
     decode_output, decode_snapshot, encode_control, encode_frozen, encode_input, read_frame,
-    read_frame_sync, BuildIdentity, CallId, ClientMessage, Event, FrameKind, LaunchIdentity,
-    Request, RequestId, Response, RunSelector, ServerMessage, SessionId, SessionInfo, SpawnTarget,
-    WindowAnswer, WindowCall, MAX_FRAME_BYTES, PROTOCOL, PROTOCOL_VERSION,
+    read_frame_sync, BuildIdentity, CallId, ChatAttachment, ChatContext, ChatInfo, ChatLaunch,
+    ChatStart, ClientMessage, Event, FrameKind, LaunchIdentity, Request, RequestId, Response,
+    RunSelector, ServerMessage, SessionId, SessionInfo, SpawnTarget, WindowAnswer, WindowCall,
+    MAX_FRAME_BYTES, PROTOCOL, PROTOCOL_VERSION,
 };
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -500,6 +501,131 @@ impl CoreClient {
     pub async fn shutdown(&self, stop_all: bool) -> Result<(), ClientError> {
         self.request_done(Request::Shutdown { stop_all }).await
     }
+
+    /// Starts a chat agent. Its events reach this connection from the first.
+    pub async fn acp_start(&self, launch: ChatLaunch) -> Result<ChatStart, ClientError> {
+        match self
+            .request(Request::AcpStart {
+                launch: Box::new(launch),
+            })
+            .await?
+        {
+            Response::ChatStarted { start } => Ok(start),
+            _ => Err(ClientError::UnexpectedReply),
+        }
+    }
+
+    /// Takes up a running chat. Its live events follow the replay on the
+    /// event stream.
+    pub async fn acp_attach(&self, agent_id: String) -> Result<ChatAttachment, ClientError> {
+        match self.request(Request::AcpAttach { agent_id }).await? {
+            Response::ChatAttached { attachment } => Ok(attachment),
+            _ => Err(ClientError::UnexpectedReply),
+        }
+    }
+
+    pub async fn acp_list(&self) -> Result<Vec<ChatInfo>, ClientError> {
+        match self.request(Request::AcpList).await? {
+            Response::Chats { chats } => Ok(chats),
+            _ => Err(ClientError::UnexpectedReply),
+        }
+    }
+
+    pub async fn acp_prompt(
+        &self,
+        agent_id: String,
+        text: String,
+        paths: Vec<String>,
+        context: Vec<ChatContext>,
+    ) -> Result<(), ClientError> {
+        self.request_done(Request::AcpPrompt {
+            agent_id,
+            text,
+            paths,
+            context,
+        })
+        .await
+    }
+
+    pub async fn acp_steer(
+        &self,
+        agent_id: String,
+        text: String,
+        paths: Vec<String>,
+        context: Vec<ChatContext>,
+    ) -> Result<String, ClientError> {
+        match self
+            .request(Request::AcpSteer {
+                agent_id,
+                text,
+                paths,
+                context,
+            })
+            .await?
+        {
+            Response::Steered { outcome } => Ok(outcome),
+            _ => Err(ClientError::UnexpectedReply),
+        }
+    }
+
+    pub async fn acp_cancel(&self, agent_id: String) -> Result<(), ClientError> {
+        self.request_done(Request::AcpCancel { agent_id }).await
+    }
+
+    pub async fn acp_stop_task(
+        &self,
+        agent_id: String,
+        task_id: String,
+    ) -> Result<(), ClientError> {
+        self.request_done(Request::AcpStopTask { agent_id, task_id })
+            .await
+    }
+
+    pub async fn acp_permission_reply(
+        &self,
+        agent_id: String,
+        request_id: String,
+        option_id: Option<String>,
+    ) -> Result<(), ClientError> {
+        self.request_done(Request::AcpPermissionReply {
+            agent_id,
+            request_id,
+            option_id,
+        })
+        .await
+    }
+
+    pub async fn acp_stop(&self, agent_id: String) -> Result<(), ClientError> {
+        self.request_done(Request::AcpStop { agent_id }).await
+    }
+
+    pub async fn acp_set_permission_mode(
+        &self,
+        agent_id: String,
+        mode: String,
+    ) -> Result<(), ClientError> {
+        self.request_done(Request::AcpSetPermissionMode { agent_id, mode })
+            .await
+    }
+
+    pub async fn acp_set_config(
+        &self,
+        agent_id: String,
+        config_id: String,
+        value: String,
+    ) -> Result<serde_json::Value, ClientError> {
+        match self
+            .request(Request::AcpSetConfig {
+                agent_id,
+                config_id,
+                value,
+            })
+            .await?
+        {
+            Response::ChatConfig { value } => Ok(value),
+            _ => Err(ClientError::UnexpectedReply),
+        }
+    }
 }
 
 fn dispatch(frame: crate::protocol::Frame, pending: &Pending, sink: &dyn EventSink) {
@@ -615,8 +741,31 @@ pub fn await_upgrade(
     old: Option<&BuildIdentity>,
     timeout: Duration,
 ) -> Result<CoreHello, ClientError> {
+    wait_for_new_build(socket, pid, old, timeout, false)
+}
+
+/// Like [`await_upgrade`] for an upgrade the core deferred: it goes on
+/// answering as the old build until its chat turns end.
+pub fn await_deferred_upgrade(
+    socket: &Path,
+    pid: u32,
+    old: Option<&BuildIdentity>,
+    timeout: Duration,
+) -> Result<CoreHello, ClientError> {
+    wait_for_new_build(socket, pid, old, timeout, true)
+}
+
+fn wait_for_new_build(
+    socket: &Path,
+    pid: u32,
+    old: Option<&BuildIdentity>,
+    timeout: Duration,
+    deferred: bool,
+) -> Result<CoreHello, ClientError> {
     let deadline = Instant::now() + timeout;
+    let is_old = |hello: &CoreHello| old.is_some_and(|old| hello.build.same_build(old));
     loop {
+        let timed_out = Instant::now() >= deadline;
         match probe(socket, PROBE_TIMEOUT) {
             Ok(hello) if hello.pid != pid => {
                 return Err(ClientError::Core(format!(
@@ -624,8 +773,8 @@ pub fn await_upgrade(
                     hello.pid
                 )))
             }
-            Ok(hello) if old.is_none_or(|old| !hello.build.same_build(old)) => return Ok(hello),
-            Ok(_) => {
+            Ok(hello) if !is_old(&hello) => return Ok(hello),
+            Ok(_) if !deferred || timed_out => {
                 return Err(ClientError::Core(
                     "the core could not replace itself and carried on as it was".into(),
                 ))
@@ -633,7 +782,7 @@ pub fn await_upgrade(
             Err(ProbeError::Rejected {
                 pid: answered,
                 version,
-            }) if answered == pid && version != PROTOCOL_VERSION => {
+            }) if answered == pid && version != PROTOCOL_VERSION && (!deferred || timed_out) => {
                 return Err(ClientError::VersionMismatch {
                     version,
                     pid,
@@ -642,12 +791,12 @@ pub fn await_upgrade(
                     ),
                 })
             }
-            Err(_) if Instant::now() >= deadline => {
+            Err(_) if timed_out => {
                 return Err(ClientError::Core(format!(
                     "the core did not come back within {timeout:?} of accepting an upgrade"
                 )))
             }
-            Err(_) => std::thread::sleep(START_POLL),
+            _ => std::thread::sleep(START_POLL),
         }
     }
 }

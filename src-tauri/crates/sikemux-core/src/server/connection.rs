@@ -16,7 +16,7 @@ use crate::protocol::{
 
 use super::prepare::{prepare_task, prepare_terminal};
 use super::session::{self, PendingStart};
-use super::{agent, harness, upgrade, Core, CoreError, CoreResult};
+use super::{agent, chat, harness, upgrade, Core, CoreError, CoreResult};
 
 pub(crate) type ClientId = u64;
 
@@ -493,6 +493,90 @@ async fn run_requests(
                 sessions.sort_by_key(|info| info.id);
                 client.respond(request_id, Ok(Response::Sessions { sessions }));
             }
+            Request::AcpStart { launch } => {
+                tokio::spawn(async move {
+                    let result = chat::start(&core, *launch, Some(&client)).await;
+                    client.respond(
+                        request_id,
+                        result.map(|start| Response::ChatStarted { start }),
+                    );
+                });
+            }
+            Request::AcpAttach { agent_id } => {
+                tokio::spawn(async move {
+                    chat::attach(&core, &client, request_id, &agent_id).await;
+                });
+            }
+            Request::AcpList => {
+                client.respond(
+                    request_id,
+                    Ok(Response::Chats {
+                        chats: core.chats.list(),
+                    }),
+                );
+            }
+            Request::AcpPrompt {
+                agent_id,
+                text,
+                paths,
+                context,
+            } => {
+                let result = chat::prompt(&core, &agent_id, text, paths, context);
+                client.respond(request_id, result.map(|()| Response::Done));
+            }
+            Request::AcpSteer {
+                agent_id,
+                text,
+                paths,
+                context,
+            } => {
+                tokio::spawn(async move {
+                    let result = chat::steer(&core, &agent_id, text, paths, context).await;
+                    client.respond(
+                        request_id,
+                        result.map(|outcome| Response::Steered { outcome }),
+                    );
+                });
+            }
+            Request::AcpCancel { agent_id } => {
+                let result = chat::cancel(&core, &agent_id);
+                client.respond(request_id, result.map(|()| Response::Done));
+            }
+            Request::AcpStopTask { agent_id, task_id } => {
+                let result = chat::stop_task(&core, &agent_id, task_id);
+                client.respond(request_id, result.map(|()| Response::Done));
+            }
+            Request::AcpPermissionReply {
+                agent_id,
+                request_id: permission,
+                option_id,
+            } => {
+                let result = chat::reply_permission(&core, &agent_id, &permission, option_id);
+                client.respond(request_id, result.map(|()| Response::Done));
+            }
+            Request::AcpStop { agent_id } => {
+                core.chats.stop(&agent_id);
+                client.respond(request_id, Ok(Response::Done));
+            }
+            Request::AcpSetPermissionMode { agent_id, mode } => {
+                tokio::spawn(async move {
+                    let result = chat::set_permission_mode(&core, &agent_id, mode).await;
+                    client.respond(request_id, result.map(|()| Response::Done));
+                });
+            }
+            Request::AcpSetConfig {
+                agent_id,
+                config_id,
+                value,
+            } => {
+                tokio::spawn(async move {
+                    let result = chat::set_config(&core, &agent_id, config_id, value).await;
+                    client.respond(
+                        request_id,
+                        result.map(|value| Response::ChatConfig { value }),
+                    );
+                });
+            }
         }
     }
 }
@@ -521,7 +605,7 @@ async fn shutdown(core: Arc<Core>, client: Arc<ClientConn>, request_id: RequestI
         })
         .await;
     } else {
-        let running = core.running_sessions();
+        let running = core.running_sessions() + core.chats.count();
         if running > 0 {
             client.respond(
                 request_id,

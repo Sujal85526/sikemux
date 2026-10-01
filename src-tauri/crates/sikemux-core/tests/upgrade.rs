@@ -18,11 +18,13 @@ use sikemux_core::cli::protocol::{
     CliClientCommand, CliClientHello, CliEndpointDescriptor, CliServerResponse, HarnessRequest,
     CLI_PROTOCOL_VERSION,
 };
-use sikemux_core::client::{await_upgrade, frozen_request, probe, ClientEvent, CoreClient};
+use sikemux_core::client::{
+    await_deferred_upgrade, await_upgrade, frozen_request, probe, ClientEvent, CoreClient,
+};
 use sikemux_core::protocol::frozen::{FrozenReply, FrozenRequest};
 use sikemux_core::protocol::{
-    BuildIdentity, Event, LaunchIdentity, SessionId, SpawnTarget, TerminalSpawn, WindowCall,
-    BUILD_ID_OVERRIDE_ENV,
+    BuildIdentity, ChatAttachment, ChatEvent, ChatEventKind, ChatLaunch, Event, LaunchIdentity,
+    SessionId, SpawnTarget, TerminalSpawn, WindowCall, BUILD_ID_OVERRIDE_ENV,
 };
 use sikemux_pty::output_log::OutputQuery;
 use sikemux_pty::task::{TaskSource, TaskSpawnRequest};
@@ -544,7 +546,7 @@ async fn an_upgrade_is_refused_for_a_binary_that_cannot_take_over() {
     let core = CoreProcess::start("first");
     let refusal = |reply: FrozenReply| match reply {
         FrozenReply::Refused { message } => message,
-        FrozenReply::Accepted => panic!("accepted"),
+        other => panic!("{other:?}"),
     };
     let plain = core.dir.path().join("plain");
     std::fs::write(&plain, "not a program").expect("write");
@@ -636,4 +638,192 @@ async fn a_damaged_hand_over_keeps_the_sessions_it_can_adopt() {
     let republished = descriptor(&core.endpoint);
     assert_ne!(republished.token, old_token);
     assert_eq!(republished.pid, core.pid());
+}
+
+const FAKE_AGENT: &str = env!("CARGO_BIN_EXE_sikemux-fake-acp-agent");
+
+fn chat_launch(core: &CoreProcess, agent_id: &str) -> ChatLaunch {
+    let history = core.dir.path().join("agent-history");
+    std::fs::create_dir_all(&history).expect("history");
+    ChatLaunch {
+        agent_id: agent_id.into(),
+        provider: "opencode".into(),
+        cwd: core.project.clone(),
+        program: PathBuf::from(FAKE_AGENT),
+        args: vec!["acp".into()],
+        env: [(
+            "FAKE_ACP_DIR".to_owned(),
+            history.to_string_lossy().into_owned(),
+        )]
+        .into(),
+        mcp_servers: Vec::new(),
+        resume_id: None,
+        permission_mode: "workspace-write".into(),
+        model: None,
+        effort: None,
+    }
+}
+
+async fn until_chat(
+    events: &mut UnboundedReceiver<ClientEvent>,
+    mut found: impl FnMut(&ChatEvent) -> bool,
+) -> ChatEvent {
+    loop {
+        let event = tokio::time::timeout(WAIT, events.recv())
+            .await
+            .expect("timed out waiting for the chat")
+            .expect("the core disconnected");
+        if let ClientEvent::Event(Event::Chat { event, .. }) = event {
+            if found(&event) {
+                return event;
+            }
+        }
+    }
+}
+
+fn said(events: &[ChatEvent]) -> String {
+    events
+        .iter()
+        .filter(|event| event.kind == ChatEventKind::SessionUpdate)
+        .flat_map(|event| match event.payload.get("updates") {
+            Some(Value::Array(batch)) => batch.clone(),
+            _ => vec![event.payload.clone()],
+        })
+        .filter_map(|update| {
+            update["update"]["content"]["text"]
+                .as_str()
+                .map(str::to_owned)
+        })
+        .collect::<Vec<_>>()
+        .join("|")
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_upgrade_waits_for_a_chat_turn_and_resumes_the_chat_after() {
+    let core = CoreProcess::start("first");
+    let (client, mut events) = CoreClient::connect(&core.socket).await.expect("connect");
+    let started = client
+        .acp_start(chat_launch(&core, "talker"))
+        .await
+        .expect("start");
+    client
+        .acp_start(chat_launch(&core, "quiet"))
+        .await
+        .expect("start a chat that never talks");
+    client
+        .acp_prompt(
+            "talker".into(),
+            "hello first".into(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .expect("prompt");
+    until_chat(&mut events, |event| {
+        event.kind == ChatEventKind::TurnCompleted
+    })
+    .await;
+    client
+        .acp_prompt("talker".into(), "hold 4000".into(), Vec::new(), Vec::new())
+        .await
+        .expect("prompt");
+    until_chat(&mut events, |event| {
+        event.kind == ChatEventKind::SessionUpdate
+            && said(std::slice::from_ref(event)).contains("holding")
+    })
+    .await;
+
+    let binary = core.binary("second-build", "second", "");
+    let asked = Instant::now();
+    let reply = core
+        .frozen(FrozenRequest::Upgrade {
+            binary: binary.clone(),
+        })
+        .await;
+    assert!(
+        matches!(reply, FrozenReply::Deferred { .. }),
+        "{reply:?}\n{}",
+        core.log()
+    );
+    let completed = until_chat(&mut events, |event| {
+        event.kind == ChatEventKind::TurnCompleted
+    })
+    .await;
+    assert_eq!(completed.payload["stopReason"], "end_turn");
+    let socket = core.socket.clone();
+    let pid = core.pid();
+    let old = BuildIdentity {
+        version: env!("CARGO_PKG_VERSION").into(),
+        commit: "first".into(),
+        built_at: 0,
+        source: "first".into(),
+    };
+    let hello =
+        tokio::task::spawn_blocking(move || await_deferred_upgrade(&socket, pid, Some(&old), WAIT))
+            .await
+            .expect("join")
+            .unwrap_or_else(|error| panic!("{error}\n{}", core.log()));
+    assert_eq!(hello.pid, core.pid());
+    assert_eq!(hello.build.commit, "second");
+    assert!(
+        asked.elapsed() >= Duration::from_millis(500),
+        "the update did not wait for the turn"
+    );
+    drop(client);
+
+    let (client, _events) = CoreClient::connect(&core.socket).await.expect("connect");
+    let chats = client.acp_list().await.expect("list");
+    assert_eq!(
+        chats
+            .iter()
+            .map(|chat| chat.agent_id.as_str())
+            .collect::<Vec<_>>(),
+        ["talker"],
+        "{}",
+        core.log()
+    );
+    let ChatAttachment::Live { start, replay, .. } =
+        client.acp_attach("talker".into()).await.expect("attach")
+    else {
+        panic!("the chat was not resumed\n{}", core.log());
+    };
+    assert_eq!(start.session_id, started.session_id);
+    let history = said(&replay);
+    assert!(history.contains("hello first"), "{history}");
+    assert!(history.contains("hold 4000"), "{history}");
+    assert!(history.contains("holding held"), "{history}");
+    client
+        .acp_prompt(
+            "talker".into(),
+            "after update".into(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .expect("prompt after the update");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_core_takes_over_from_a_format_one_hand_over() {
+    let core = CoreProcess::start("first");
+    let (client, mut stream) = connect(&core).await;
+    let shell = spawn_shell(&client).await;
+    client.attach(shell).await.expect("attach");
+    client
+        .write(shell, b"echo older-$((3*3))\r")
+        .await
+        .expect("write");
+    stream.until_output(&client, shell, "older-9").await;
+
+    let older = core.binary(
+        "older",
+        "second",
+        "sed -e 's/\"format\":2/\"format\":1/' -e 's/,\"chats\":\\[[^]]*\\]//' \"$3/state.json\" > \"$3/older.json\" && mv \"$3/older.json\" \"$3/state.json\" && grep -q '\"format\":1' \"$3/state.json\"",
+    );
+    assert_eq!(core.upgrade(&older, "first").await.commit, "second");
+    assert!(!core.log().contains("DAMAGED"), "{}", core.log());
+
+    let (client, _stream) = connect(&core).await;
+    let replay = client.attach(shell).await.expect("attach").replay;
+    assert!(String::from_utf8_lossy(&replay).contains("older-9"));
 }
