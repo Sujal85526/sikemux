@@ -1,5 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
-import { Device, newDeviceKey } from '@sikemux/native';
+import { Device, newDeviceKey, type DeviceLike } from '@sikemux/native';
 
 const KEY_ITEM = 'sikemux.device-key';
 
@@ -22,10 +22,10 @@ async function deviceKey(): Promise<ArrayBuffer> {
   return key;
 }
 
-let online: Promise<Device> | undefined;
+let online: Promise<DeviceLike> | undefined;
 
 /** This phone on the network, brought online once per launch. */
-export function thisDevice(): Promise<Device> {
+export function thisDevice(): Promise<DeviceLike> {
   online ??= deviceKey().then((key) => Device.create(key));
   return online;
 }
