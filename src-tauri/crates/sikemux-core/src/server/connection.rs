@@ -615,6 +615,14 @@ async fn run_requests(
                 let result = core.workspaces.publish(projects, launchers);
                 client.respond(request_id, result.map(|()| Response::Done));
             }
+            Request::Attentions => {
+                client.respond(
+                    request_id,
+                    Ok(Response::Attentions {
+                        attentions: core.chats.attentions(),
+                    }),
+                );
+            }
             Request::Workspace => {
                 client.respond(
                     request_id,

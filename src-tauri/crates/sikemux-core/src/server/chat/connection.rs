@@ -195,7 +195,7 @@ pub(super) async fn run(
                 if let Some(object) = payload.as_object_mut() {
                     object.insert("requestId".into(), Value::String(request_id.clone()));
                 }
-                if !chat.hold_permission(request_id, option_ids, responder) {
+                if !chat.hold_permission(request_id, option_ids, responder, payload.clone()) {
                     return Ok(());
                 }
                 chat.emit(ChatEventKind::PermissionRequest, payload);

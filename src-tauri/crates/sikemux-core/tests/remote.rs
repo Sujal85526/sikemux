@@ -11,8 +11,8 @@ use serde_json::json;
 use sikemux_core::client::{probe, ClientError, ClientEvent, CoreClient};
 use sikemux_core::pairing::{self, PairError, PairingRequest};
 use sikemux_core::protocol::{
-    BuildIdentity, ChatEventKind, ChatLauncher, DeviceAccess, Event, LaunchIdentity, ProjectInfo,
-    RemoteStatus, SessionId, SpawnTarget, TerminalSpawn,
+    Attention, AttentionKind, BuildIdentity, ChatEventKind, ChatLauncher, DeviceAccess, Event,
+    LaunchIdentity, ProjectInfo, RemoteStatus, SessionId, SpawnTarget, TerminalSpawn,
 };
 use sikemux_core::remote::{self, SecretKey};
 use sikemux_core::server::{self, ServerConfig, ServerError};
@@ -497,6 +497,10 @@ async fn pairing_needs_an_open_code_and_remote_access_on() {
 const FAKE_AGENT: &str = env!("CARGO_BIN_EXE_sikemux-fake-acp-agent");
 
 async fn publish_fake_agent(app: &CoreClient) {
+    publish_fake_agent_asking(app, "bypass").await;
+}
+
+async fn publish_fake_agent_asking(app: &CoreClient, permission_mode: &str) {
     let launcher = ChatLauncher {
         id: "opencode".into(),
         provider: "opencode".into(),
@@ -504,7 +508,7 @@ async fn publish_fake_agent(app: &CoreClient) {
         program: FAKE_AGENT.into(),
         args: vec!["acp".into()],
         env: [("SECRET_TOKEN".to_owned(), "do-not-share".to_owned())].into(),
-        permission_mode: "bypass".into(),
+        permission_mode: permission_mode.into(),
     };
     let project = ProjectInfo {
         id: "sess-tmp".into(),
@@ -602,4 +606,85 @@ async fn a_watching_device_cannot_start_a_chat() {
         refusal(client.publish_workspace(Vec::new(), Vec::new()).await)
             .contains("only Sikemux on this Mac")
     );
+}
+
+async fn next_attention_event(events: &mut UnboundedReceiver<ClientEvent>) -> Event {
+    loop {
+        let event = tokio::time::timeout(WAIT, events.recv())
+            .await
+            .expect("timed out waiting for an attention event")
+            .expect("the watcher's connection closed");
+        if let ClientEvent::Event(
+            event @ (Event::Attention { .. } | Event::AttentionCleared { .. }),
+        ) = event
+        {
+            return event;
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_watching_device_hears_a_permission_request_it_never_attached_to_and_answers_it() {
+    let core_key = SecretKey::generate();
+    let phone = Device::new("Phone", DeviceAccess::Full);
+    let watch = Device::new("Watch", DeviceAccess::Watch);
+    let core = start_core(&core_key, &[&phone, &watch]);
+    let (app, _app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    publish_fake_agent_asking(&app, "workspace-write").await;
+    let status = listening(&app).await;
+
+    let watch_endpoint = watch.endpoint().await;
+    let (watcher, mut watcher_events) = remote::connect(&watch_endpoint, core_addr(&status))
+        .await
+        .expect("the watch connects");
+    let phone_endpoint = phone.endpoint().await;
+    let (driver, mut driver_events) = remote::connect(&phone_endpoint, core_addr(&status))
+        .await
+        .expect("the phone connects");
+    let (agent_id, _) = driver
+        .start_chat("opencode".into(), "sess-tmp".into(), None)
+        .await
+        .expect("start");
+    driver
+        .acp_prompt(agent_id.clone(), "ask".into(), Vec::new(), Vec::new())
+        .await
+        .expect("prompt");
+
+    let Event::Attention { attention } = next_attention_event(&mut watcher_events).await else {
+        panic!("the watch heard the request cleared before it was asked");
+    };
+    let Attention {
+        id,
+        kind,
+        agent_id: waiting,
+        request,
+        ..
+    } = attention;
+    assert_eq!(kind, AttentionKind::Permission);
+    assert_eq!(waiting, agent_id);
+    let listed = watcher.attentions().await.expect("attentions");
+    assert_eq!(
+        listed
+            .iter()
+            .map(|attention| attention.id.clone())
+            .collect::<Vec<_>>(),
+        vec![id.clone()]
+    );
+    let option = request["options"][0]["optionId"]
+        .as_str()
+        .expect("an option")
+        .to_owned();
+
+    watcher
+        .acp_permission_reply(agent_id.clone(), id.clone(), Some(option.clone()))
+        .await
+        .expect("the watch answers");
+    let Event::AttentionCleared { id: cleared, .. } =
+        next_attention_event(&mut watcher_events).await
+    else {
+        panic!("the request was not cleared");
+    };
+    assert_eq!(cleared, id);
+    assert!(watcher.attentions().await.expect("attentions").is_empty());
+    until_said(&mut driver_events, &agent_id, &option).await;
 }

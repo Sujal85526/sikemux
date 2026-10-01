@@ -86,7 +86,7 @@ pub(crate) fn file_path(socket: &Path) -> PathBuf {
     PathBuf::from(path)
 }
 
-pub(super) fn unix_ms() -> u64 {
+pub(crate) fn unix_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|elapsed| elapsed.as_millis() as u64)

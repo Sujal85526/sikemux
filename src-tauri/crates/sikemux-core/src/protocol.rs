@@ -344,6 +344,8 @@ pub enum Request {
         launchers: Vec<ChatLauncher>,
     },
     Workspace,
+    /// What agents wait on a person for now.
+    Attentions,
     /// Starts a chat agent the way the app would, in one of its projects.
     StartChat {
         launcher: String,
@@ -615,6 +617,7 @@ pub enum Response {
     ChatConfig { value: Value },
     Remote { status: RemoteStatus },
     Workspace { workspace: Workspace },
+    Attentions { attentions: Vec<Attention> },
     ChatBegun { agent_id: String, start: ChatStart },
 }
 
@@ -848,6 +851,39 @@ pub enum Event {
     Remote {
         status: RemoteStatus,
     },
+    /// An agent started waiting on a person. Every client hears it, whether
+    /// or not it shows that agent.
+    Attention {
+        attention: Attention,
+    },
+    /// What an agent waited on was answered or withdrawn.
+    AttentionCleared {
+        id: String,
+        agent_id: String,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AttentionKind {
+    /// Answer with `AcpPermissionReply`, naming `id` and one of the options
+    /// in `request`.
+    Permission,
+}
+
+/// Something an agent is waiting on a person for.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Attention {
+    pub id: String,
+    pub kind: AttentionKind,
+    pub agent_id: String,
+    pub provider: String,
+    pub cwd: PathBuf,
+    /// The agent's own request, with what it wants to do and the options.
+    pub request: Value,
+    /// Milliseconds since the Unix epoch.
+    pub at: u64,
 }
 
 /// The app's `agent_state_changed` payload.

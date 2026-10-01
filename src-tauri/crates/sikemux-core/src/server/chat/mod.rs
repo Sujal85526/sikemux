@@ -7,7 +7,7 @@ pub(crate) mod feed;
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
 use agent_client_protocol::schema::v1::{
@@ -20,11 +20,12 @@ use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::acp::{adapter_effort_id, bounded_text, current_choice, native};
 use crate::protocol::{
-    ChatAttachment, ChatContext, ChatEventKind, ChatInfo, ChatLaunch, ChatStart, ChatState,
-    RequestId, Response,
+    Attention, AttentionKind, ChatAttachment, ChatContext, ChatEventKind, ChatInfo, ChatLaunch,
+    ChatStart, ChatState, Event, RequestId, Response,
 };
 
 use super::connection::{ClientConn, ClientId};
+use super::remote::unix_ms;
 use super::{Core, CoreError, CoreResult};
 use feed::{Feed, Standing};
 
@@ -73,11 +74,14 @@ enum Readiness {
 struct PendingPermission {
     option_ids: Vec<String>,
     responder: Responder<RequestPermissionResponse>,
+    request: Value,
+    at: u64,
 }
 
 pub(crate) struct Chat {
     pub launch: ChatLaunch,
     pub started_by: Option<String>,
+    core: Weak<Core>,
     generation: u64,
     commands: mpsc::UnboundedSender<ChatCommand>,
     task: Mutex<Option<tokio::task::JoinHandle<()>>>,
@@ -163,6 +167,7 @@ impl Chat {
         request_id: String,
         option_ids: Vec<String>,
         responder: Responder<RequestPermissionResponse>,
+        request: Value,
     ) -> bool {
         let Ok(mut permissions) = self.permissions.lock() else {
             let _ = responder.respond(RequestPermissionResponse::new(
@@ -170,14 +175,54 @@ impl Chat {
             ));
             return false;
         };
-        permissions.insert(
-            request_id,
-            PendingPermission {
-                option_ids,
-                responder,
-            },
-        );
+        let pending = PendingPermission {
+            option_ids,
+            responder,
+            request,
+            at: unix_ms(),
+        };
+        let attention = self.attention(&request_id, &pending);
+        permissions.insert(request_id, pending);
+        drop(permissions);
+        self.announce(&Event::Attention { attention });
         true
+    }
+
+    fn attention(&self, request_id: &str, pending: &PendingPermission) -> Attention {
+        Attention {
+            id: request_id.to_owned(),
+            kind: AttentionKind::Permission,
+            agent_id: self.launch.agent_id.clone(),
+            provider: self.launch.provider.clone(),
+            cwd: self.launch.cwd.clone(),
+            request: pending.request.clone(),
+            at: pending.at,
+        }
+    }
+
+    fn attentions(&self) -> Vec<Attention> {
+        self.permissions
+            .lock()
+            .map(|permissions| {
+                permissions
+                    .iter()
+                    .map(|(request_id, pending)| self.attention(request_id, pending))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn announce(&self, event: &Event) {
+        if let Some(core) = self.core.upgrade() {
+            core.broadcast_event(event);
+        }
+    }
+
+    fn cleared(&self, request_id: &str) {
+        self.announce(&Event::AttentionCleared {
+            id: request_id.to_owned(),
+            agent_id: self.launch.agent_id.clone(),
+        });
     }
 
     pub(crate) fn cancel_permissions(&self) {
@@ -187,6 +232,7 @@ impl Chat {
         };
         for (request_id, request) in pending {
             self.feed.forget_permission(&request_id);
+            self.cleared(&request_id);
             let _ = request.responder.respond(RequestPermissionResponse::new(
                 RequestPermissionOutcome::Cancelled,
             ));
@@ -222,6 +268,7 @@ impl Chat {
                 .ok_or("ACP permission request is no longer pending")?
         };
         self.feed.forget_permission(request_id);
+        self.cleared(request_id);
         let outcome = match option_id {
             Some(option_id) => {
                 RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id))
@@ -322,6 +369,16 @@ impl Chats {
         self.all().iter().any(|chat| chat.turn_running())
     }
 
+    pub(crate) fn attentions(&self) -> Vec<Attention> {
+        let mut attentions: Vec<Attention> = self
+            .all()
+            .iter()
+            .flat_map(|chat| chat.attentions())
+            .collect();
+        attentions.sort_by_key(|attention| attention.at);
+        attentions
+    }
+
     pub(crate) fn list(&self) -> Vec<ChatInfo> {
         let mut chats: Vec<ChatInfo> = self.all().iter().map(|chat| chat.info()).collect();
         chats.sort_by(|a, b| a.agent_id.cmp(&b.agent_id));
@@ -396,6 +453,7 @@ impl Chats {
 
     fn insert(
         &self,
+        core: &Arc<Core>,
         launch: ChatLaunch,
         started_by: Option<String>,
     ) -> CoreResult<(Arc<Chat>, mpsc::UnboundedReceiver<ChatCommand>)> {
@@ -417,6 +475,7 @@ impl Chats {
             approving: AtomicBool::new(crate::acp::approves_for_user(&launch.permission_mode)),
             launch,
             started_by,
+            core: Arc::downgrade(core),
         });
         chats.insert(chat.agent_id().to_owned(), chat.clone());
         Ok((chat, queue))
@@ -477,7 +536,7 @@ pub(crate) fn begin(
 ) -> CoreResult<Arc<Chat>> {
     validate(&launch_spec)?;
     let started_by = subscriber.and_then(|client| client.peer.device_id());
-    let (chat, queue) = core.chats.insert(launch_spec, started_by)?;
+    let (chat, queue) = core.chats.insert(core, launch_spec, started_by)?;
     if let Some(client) = subscriber {
         chat.feed.subscribe(client);
     }
@@ -505,7 +564,7 @@ pub(crate) fn resume(core: &Arc<Core>, record: ChatRecord) {
         eprintln!("sikemux core: chat {agent_id} was not resumed after the update: {error}");
         return;
     }
-    match core.chats.insert(record.launch, record.started_by) {
+    match core.chats.insert(core, record.launch, record.started_by) {
         Ok((chat, queue)) => launch(core, &chat, queue),
         Err(error) => {
             eprintln!("sikemux core: chat {agent_id} was not resumed after the update: {error}")

@@ -37,7 +37,8 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::AcpList
         | Request::AcpAttach { .. }
         | Request::AcpPermissionReply { .. }
-        | Request::Workspace => Needs::Watch,
+        | Request::Workspace
+        | Request::Attentions => Needs::Watch,
         Request::Spawn { .. }
         | Request::Resize { .. }
         | Request::Kill { .. }

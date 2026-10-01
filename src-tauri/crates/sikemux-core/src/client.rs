@@ -23,11 +23,11 @@ use tokio::task::JoinHandle;
 use crate::protocol::frozen::{FrozenReply, FrozenRequest};
 use crate::protocol::{
     decode_output, decode_snapshot, encode_control, encode_frozen, encode_input, read_frame,
-    read_frame_sync, BuildIdentity, CallId, ChatAttachment, ChatContext, ChatInfo, ChatLaunch,
-    ChatLauncher, ChatStart, ClientMessage, DeviceAccess, Event, FrameKind, LaunchIdentity,
-    ProjectInfo, RemoteStatus, Request, RequestId, Response, RunSelector, ServerMessage, SessionId,
-    SessionInfo, SpawnTarget, WindowAnswer, WindowCall, Workspace, MAX_FRAME_BYTES, PROTOCOL,
-    PROTOCOL_VERSION,
+    read_frame_sync, Attention, BuildIdentity, CallId, ChatAttachment, ChatContext, ChatInfo,
+    ChatLaunch, ChatLauncher, ChatStart, ClientMessage, DeviceAccess, Event, FrameKind,
+    LaunchIdentity, ProjectInfo, RemoteStatus, Request, RequestId, Response, RunSelector,
+    ServerMessage, SessionId, SessionInfo, SpawnTarget, WindowAnswer, WindowCall, Workspace,
+    MAX_FRAME_BYTES, PROTOCOL, PROTOCOL_VERSION,
 };
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -675,6 +675,13 @@ impl CoreClient {
             launchers,
         })
         .await
+    }
+
+    pub async fn attentions(&self) -> Result<Vec<Attention>, ClientError> {
+        match self.request(Request::Attentions).await? {
+            Response::Attentions { attentions } => Ok(attentions),
+            _ => Err(ClientError::UnexpectedReply),
+        }
     }
 
     pub async fn workspace(&self) -> Result<Workspace, ClientError> {
