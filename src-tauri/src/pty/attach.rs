@@ -3,15 +3,14 @@ use std::time::Duration;
 use tauri::ipc::{Channel, Response};
 use tauri::State;
 
+use sikemux_pty::screen::{attach_snapshot_with_compaction, MAX_ATTACH_SNAPSHOT_BYTES};
+use sikemux_pty::shell_protocol::{ShellMetadataSnapshot, ShellProtocolParser};
+
 use crate::error::{AppError, AppResult};
 use crate::observability::{global_observability, Metadata, SpanOutcome};
 
 use super::output::insert_subscriber;
-use super::screen::attach_snapshot_with_compaction;
-use super::shell_protocol::{ShellMetadataSnapshot, ShellProtocolParser};
-use super::{
-    pty_err, Pty, PtyManager, MAX_ATTACH_SNAPSHOT_BYTES, MAX_PTY_SUBSCRIBERS_PER_PTY, NEXT_SUB_ID,
-};
+use super::{pty_err, Pty, PtyManager, MAX_PTY_SUBSCRIBERS_PER_PTY, NEXT_SUB_ID};
 
 /// Everything about an attach except the replay bytes, which follow the
 /// header in the same raw response instead of crossing as JSON numbers.
@@ -155,7 +154,7 @@ fn reset_modes_locked(pty: &Pty) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::{encode_attach_response, AttachResult, RESET_MODES};
-    use crate::pty::PARSER_SCROLLBACK;
+    use sikemux_pty::screen::PARSER_SCROLLBACK;
 
     #[test]
     fn attach_response_frames_the_header_before_the_replay_bytes() {

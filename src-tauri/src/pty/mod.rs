@@ -38,17 +38,11 @@
 pub(crate) mod agent_state;
 pub(crate) mod attach;
 pub(crate) mod io;
-mod launch;
 pub(crate) mod output;
 pub(crate) mod process;
-mod screen;
-mod shell;
-mod shell_protocol;
 pub(crate) mod spawn;
 mod sweeper;
 pub(crate) mod task;
-
-pub(crate) use launch::OPTIONAL_PTY_ENV;
 
 use std::collections::HashMap;
 #[cfg(unix)]
@@ -67,17 +61,19 @@ use tauri::AppHandle;
 #[cfg(unix)]
 use tokio::io::unix::AsyncFd;
 
-use crate::agent_detection::{AgentKind, ManifestRegistry};
+use sikemux_pty::agent_detection::{AgentKind, ManifestRegistry};
+use sikemux_pty::launch::PtyContext;
+use sikemux_pty::process::{
+    child_process_id, kill_and_reap_child, terminate_process_tree, DRAIN_GRACE,
+};
+use sikemux_pty::screen::SemanticParser;
+use sikemux_pty::shell::ShellLaunchIntegration;
+use sikemux_pty::task::{should_signal_process_on_drain, task_process_needs_force_backstop};
+
 use crate::error::{AppError, AppResult};
 
 use output::Subscriber;
-use process::{child_process_id, kill_and_reap_child, terminate_process_tree, DRAIN_GRACE};
-use screen::SemanticParser;
-use shell::ShellLaunchIntegration;
-use task::{
-    notify_task_process_exited, should_signal_process_on_drain, task_process_needs_force_backstop,
-    TaskExitReporter,
-};
+use task::{notify_task_process_exited, TaskExitReporter};
 
 fn pty_err<E: std::fmt::Display>(e: E) -> AppError {
     AppError::Pty(e.to_string())
@@ -157,7 +153,7 @@ struct Pty {
     /// Present only for a durable task PTY. The atomic gate makes natural
     /// exit, explicit kill, and app drain race to one channel delivery.
     task_exit: Option<TaskExitReporter>,
-    harness_output: Mutex<crate::harness::OutputLog>,
+    harness_output: Mutex<sikemux_pty::output_log::OutputLog>,
     harness_output_pending: Arc<AtomicBool>,
     /// Monotonic task completion timestamp. Zero means the task is still
     /// running; completed task snapshots remain attachable for a fixed grace.
@@ -356,15 +352,6 @@ const MAX_PTY_ID_COLLISION_PROBES: usize = 4_096;
 const MAX_ACTIVE_PTYS: usize = 256;
 const MAX_PTY_SUBSCRIBERS_PER_PTY: usize = 16;
 const MAX_SUB_ID_COLLISION_PROBES: usize = MAX_PTY_SUBSCRIBERS_PER_PTY + 1;
-const MAX_ATTACH_SNAPSHOT_BYTES: usize = 8 * 1024 * 1024;
-const MAX_PTY_DIMENSION: u16 = 1_000;
-
-fn validate_pty_dimensions(cols: u16, rows: u16) -> AppResult<()> {
-    if cols == 0 || cols > MAX_PTY_DIMENSION || rows == 0 || rows > MAX_PTY_DIMENSION {
-        return Err(AppError::BadArg("invalid pty terminal dimensions"));
-    }
-    Ok(())
-}
 
 #[derive(serde::Serialize)]
 pub struct PtyDiagnostics {
@@ -412,7 +399,7 @@ pub(crate) struct PtyOwner {
 }
 
 impl PtyOwner {
-    fn from_context(context: Option<&launch::PtyContext>) -> Self {
+    fn from_context(context: Option<&PtyContext>) -> Self {
         let Some(context) = context else {
             return Self::default();
         };
@@ -448,14 +435,6 @@ impl PtyManager {
     }
 }
 
-// Scrollback held in the headless vt100 parser. This only has to cover what
-// a reattaching xterm replays; anything the user scrolled past before the
-// pane was hidden is not worth paying for. A vt100 cell is 32 bytes, so at
-// 200 columns 3k rows is roughly 19 MB per PTY — at 10k rows it was 64 MB.
-// The parser drops to IDLE_SCROLLBACK when the last subscriber detaches, and
-// the sweeper below catches anything silent for IDLE_TRIM.
-pub const PARSER_SCROLLBACK: usize = 3_000;
-const IDLE_SCROLLBACK: usize = 1_000;
 const IDLE_TRIM: Duration = Duration::from_secs(10 * 60);
 const SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 const ACTIVITY_POLL_INTERVAL: Duration = Duration::from_millis(250);
@@ -505,32 +484,9 @@ fn pty_size(cols: u16, rows: u16) -> PtySize {
 
 #[cfg(test)]
 mod tests {
-    use super::launch::PtyContext;
     use super::PtyCapacity;
-    use portable_pty::CommandBuilder;
     use std::sync::atomic::Ordering;
     use std::sync::{Arc, Barrier};
-
-    pub(super) fn env(command: &CommandBuilder, key: &str) -> Option<String> {
-        command
-            .get_env(key)
-            .map(|value| value.to_string_lossy().into_owned())
-    }
-
-    pub(super) fn local_shell_context() -> PtyContext {
-        PtyContext {
-            session_id: "session-1".into(),
-            session_name: "repo".into(),
-            session_kind: "project".into(),
-            project: Some("/repo".into()),
-            window_id: Some("window-1".into()),
-            pane_id: Some("pane-1".into()),
-            agent_id: None,
-            agent_type: None,
-            initial_prompt_submitted: false,
-            shell_integration: true,
-        }
-    }
 
     #[test]
     fn active_pty_capacity_is_hard_under_concurrent_admission() {

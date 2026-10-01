@@ -4340,6 +4340,7 @@ dependencies = [
  "sikemux-plugin-rundeck",
  "sikemux-plugin-signoz",
  "sikemux-process",
+ "sikemux-pty",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
@@ -4479,6 +4480,21 @@ name = "sikemux-process"
 version = "0.1.0"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "sikemux-pty"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "portable-pty",
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "url",
+ "vt100",
 ]
 
 [[package]]

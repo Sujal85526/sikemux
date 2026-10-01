@@ -39,7 +39,7 @@ enum ShellBoundary {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct ShellProtocolUpdate {
+pub struct ShellProtocolUpdate {
     boundary: ShellBoundary,
     metadata: ShellMetadataSnapshot,
 }
@@ -93,15 +93,15 @@ impl ShellEventCoalescer {
 }
 
 #[derive(Default)]
-pub(super) struct ShellProtocolOutput {
-    pub(super) ready: Option<ShellProtocolUpdate>,
-    pub(super) coalesced: usize,
-    pub(super) dropped: usize,
+pub struct ShellProtocolOutput {
+    pub ready: Option<ShellProtocolUpdate>,
+    pub coalesced: usize,
+    pub dropped: usize,
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct PtyShellMetadataEvent {
+pub struct PtyShellMetadataEvent {
     pty_id: u32,
     revision: u64,
     boundary: ShellBoundary,
@@ -112,7 +112,7 @@ pub(super) struct PtyShellMetadataEvent {
 }
 
 impl PtyShellMetadataEvent {
-    pub(super) fn from_update(pty_id: u32, update: ShellProtocolUpdate) -> Self {
+    pub fn from_update(pty_id: u32, update: ShellProtocolUpdate) -> Self {
         let exit_code = (update.boundary == ShellBoundary::CommandFinished)
             .then_some(update.metadata.last_exit_code)
             .flatten();
@@ -141,7 +141,7 @@ enum ShellSignal {
     Boundary(ShellBoundary, ShellPhase, Option<i32>),
 }
 
-pub(super) struct ShellProtocolParser {
+pub struct ShellProtocolParser {
     scan_state: ShellScanState,
     osc: Vec<u8>,
     osc_overflowed: bool,
@@ -167,7 +167,7 @@ impl Default for ShellProtocolParser {
 }
 
 impl ShellProtocolParser {
-    pub(super) fn snapshot(&self) -> ShellMetadataSnapshot {
+    pub fn snapshot(&self) -> ShellMetadataSnapshot {
         self.metadata.clone()
     }
 
@@ -210,7 +210,7 @@ impl ShellProtocolParser {
         batch
     }
 
-    pub(super) fn process_for_events(&mut self, bytes: &[u8], now_ms: u64) -> ShellProtocolOutput {
+    pub fn process_for_events(&mut self, bytes: &[u8], now_ms: u64) -> ShellProtocolOutput {
         let mut batch = self.process(bytes);
         let Some(latest) = batch.latest.take() else {
             return ShellProtocolOutput {
@@ -229,7 +229,7 @@ impl ShellProtocolParser {
         }
     }
 
-    pub(super) fn take_due_event(&mut self, now_ms: u64) -> Option<ShellProtocolUpdate> {
+    pub fn take_due_event(&mut self, now_ms: u64) -> Option<ShellProtocolUpdate> {
         self.events.take_due(now_ms)
     }
 
@@ -361,8 +361,7 @@ mod tests {
         parse_shell_cwd, PtyShellMetadataEvent, ShellBoundary, ShellPhase, ShellProtocolParser,
         MAX_SHELL_OSC_BYTES, MAX_SHELL_PATH_BYTES, SHELL_EVENT_MIN_INTERVAL,
     };
-    use crate::pty::screen::semantic_parser_with_shell;
-    use crate::pty::PARSER_SCROLLBACK;
+    use crate::screen::{semantic_parser_with_shell, PARSER_SCROLLBACK};
     use std::path::PathBuf;
 
     #[cfg(target_os = "macos")]

@@ -151,7 +151,7 @@ After adding or removing a command, run `pnpm ipc:generate` and commit the three
 
 | Module                    | Owns                                                                                                         |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `pty/`                    | Spawning shells and tasks, the per-PTY screen, output fan-out with flow control, the `SIKEMUX_*` environment |
+| `pty/`                    | The PTY commands: spawning shells and tasks, attach, output fan-out with flow control, the idle sweeper      |
 | `git/`, `diff.rs`         | Status, log, branches, stash, worktrees, blame, commits and AI commit messages, mostly through `git2`        |
 | `fs_watch.rs`             | One watcher per repo that emits `git_changed`                                                                |
 | `files.rs`, `fs.rs`       | Cached project file lists for the file palette, and directory listings for the tree                          |
@@ -159,7 +159,6 @@ After adding or removing a command, run `pnpm ipc:generate` and commit the three
 | `lsp/`                    | Language server discovery, processes, JSON-RPC over stdio, documents and diagnostics                         |
 | `acp/`                    | Chat agents over ACP (see [Agents](#agents))                                                                 |
 | `agents/`                 | Finding agent executables, reading their saved sessions, models and usage                                    |
-| `agent_detection/`        | Reads a terminal agent's screen against `manifests/*.json` to tell working, blocked or idle                  |
 | `browser/`                | Browser tabs, the scripts injected into them, the agent browser tools, MCP wiring per agent (`agents.rs`)    |
 | `harness.rs`              | The queue of agent tool calls the UI must answer                                                             |
 | `cli_server.rs`, `cli_*`  | The CLI broker, its wire format, token checks and launcher install                                           |
@@ -180,6 +179,7 @@ Internal crates in `src-tauri/crates/`:
 | `sikemux-process`    | Runs a subprocess with a timeout and an output size limit                                   |
 | `sikemux-markdown`   | Parses markdown into the block tree the chat transcript draws (`markdown_parse`)            |
 | `sikemux-keychain`   | Reads and writes secrets in the system keychain; used by the GitHub, Bitbucket and SigNoz plugins |
+| `sikemux-pty`        | The terminal engine without Tauri: the per-PTY screen, shell integration, the `SIKEMUX_*` environment, task checks, task output paging, and `agent_detection/`, which reads an agent's screen against `manifests/*.json` to tell working, blocked or idle |
 
 ## Plugins
 
@@ -207,8 +207,8 @@ removing it from the build.
 
 An agent runs on one of two transports.
 
-- **Terminal.** The agent's own CLI runs in a PTY like any shell (`pty/launch.rs`).
-  Sikemux tells its state from the screen (`agent_detection/`) and finds its saved
+- **Terminal.** The agent's own CLI runs in a PTY like any shell (`sikemux-pty`'s `launch.rs`).
+  Sikemux tells its state from the screen (`sikemux-pty`'s `agent_detection/`) and finds its saved
   sessions on disk (`agents/sessions/<agent>.rs`). Every agent type supports this.
 - **Chat (ACP).** [ACP](https://agentclientprotocol.com), the Agent Client Protocol, is
   JSON-RPC over stdio between an editor and an agent. `src-tauri/src/acp/mod.rs`

@@ -5,6 +5,7 @@ use std::io::Write;
 use std::os::fd::AsRawFd;
 use std::time::{Duration, Instant};
 
+use sikemux_pty::validate_pty_dimensions;
 use tauri::State;
 #[cfg(unix)]
 use tokio::io::unix::AsyncFd;
@@ -15,7 +16,7 @@ use crate::observability::{global_observability, Metadata, SpanOutcome};
 use super::agent_state::{arm_agent_activity, submits_line};
 #[cfg(windows)]
 use super::pty_size;
-use super::{pty_err, validate_pty_dimensions, Pty, PtyManager};
+use super::{pty_err, Pty, PtyManager};
 
 /// Drive a non-blocking write to completion against a tokio `AsyncFd`.
 /// Loops on EAGAIN via the readiness machinery; returns once every byte

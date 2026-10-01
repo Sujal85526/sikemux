@@ -3,9 +3,10 @@ use std::sync::atomic::Ordering;
 
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::agent_detection::{
+use sikemux_pty::agent_detection::{
     AgentDetection, DetectionExplain, DetectionInput, ManifestRegistry, ManifestReloadReport,
 };
+
 use crate::error::{AppError, AppResult};
 
 use super::{now_ms, Pty, PtyManager, ACTIVITY_WORKING, MAIN_WEBVIEW, NEXT_ACTIVITY_SEQUENCE};

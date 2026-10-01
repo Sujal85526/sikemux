@@ -1,6 +1,5 @@
 mod acp;
 mod activity;
-mod agent_detection;
 mod agents;
 #[cfg(target_os = "macos")]
 mod app_menu;

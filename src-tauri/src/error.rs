@@ -80,6 +80,15 @@ impl From<git2::Error> for AppError {
     }
 }
 
+impl From<sikemux_pty::error::PtyError> for AppError {
+    fn from(e: sikemux_pty::error::PtyError) -> Self {
+        match e {
+            sikemux_pty::error::PtyError::BadArg(message) => AppError::BadArg(message),
+            sikemux_pty::error::PtyError::Pty(message) => AppError::Pty(message),
+        }
+    }
+}
+
 impl From<String> for AppError {
     fn from(s: String) -> Self {
         AppError::Other(s)

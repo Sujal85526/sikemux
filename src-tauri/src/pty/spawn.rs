@@ -8,37 +8,38 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 
 use portable_pty::{CommandBuilder, NativePtySystem, PtySystem};
-use tauri::{AppHandle, Manager, State};
-#[cfg(unix)]
-use tokio::io::unix::AsyncFd;
-
-use crate::agent_detection::AgentKind;
-use crate::error::{AppError, AppResult};
-use crate::observability::global_observability;
-
-use super::agent_state::publish_agent_state;
-use super::launch::{
+use sikemux_pty::agent_detection::AgentKind;
+use sikemux_pty::launch::{
     apply_agent_profile, configure_interactive_command, configure_pty_environment,
     validate_direct_command, PtyContext, PtyDirectCommand,
 };
-use super::output::{
-    await_subscriber_credit, broadcast_output, forgive_unacked, notify_process_exited,
-    subscribers_over_budget,
-};
-use super::process::SpawnedChildGuard;
-use super::screen::semantic_parser_with_shell;
-use super::shell::{
+use sikemux_pty::output_log::OutputLog;
+use sikemux_pty::process::SpawnedChildGuard;
+use sikemux_pty::screen::{semantic_parser_with_shell, PARSER_SCROLLBACK};
+use sikemux_pty::shell::{
     configure_shell_integration, inherited_ssh_environment, shell_integration_requested,
     ShellLaunchIntegration,
 };
 #[cfg(unix)]
-use super::shell::{shell_wants_login_flag, startup_bootstrap};
+use sikemux_pty::shell::{shell_wants_login_flag, startup_bootstrap};
+use sikemux_pty::validate_pty_dimensions;
+use tauri::{AppHandle, Manager, State};
+#[cfg(unix)]
+use tokio::io::unix::AsyncFd;
+
+use crate::error::{AppError, AppResult};
+use crate::observability::global_observability;
+
+use super::agent_state::publish_agent_state;
+use super::output::{
+    await_subscriber_credit, broadcast_output, forgive_unacked, notify_process_exited,
+    subscribers_over_budget,
+};
 use super::sweeper::ensure_sweeper;
 use super::task::{reclaim_completed_task_ptys, stamp_task_process_exited, TaskExitReporter};
 use super::{
-    now_ms, pty_err, pty_size, validate_pty_dimensions, Pty, PtyManager, PtyOwner, ACTIVITY_IDLE,
-    ACTIVITY_UNKNOWN, ACTIVITY_WORKING, MAX_PTY_ID_COLLISION_PROBES, NEXT_PTY_ID, OUTPUT_READS,
-    PARSER_SCROLLBACK,
+    now_ms, pty_err, pty_size, Pty, PtyManager, PtyOwner, ACTIVITY_IDLE, ACTIVITY_UNKNOWN,
+    ACTIVITY_WORKING, MAX_PTY_ID_COLLISION_PROBES, NEXT_PTY_ID, OUTPUT_READS,
 };
 #[cfg(unix)]
 use super::{OUTPUT_BATCH_BYTES, OUTPUT_COALESCE};
@@ -139,7 +140,12 @@ pub async fn pty_spawn(
         cli_endpoint.as_deref(),
         &HashMap::new(),
     );
-    apply_agent_profile(&mut cmd, context.as_ref(), direct_profile.as_ref());
+    apply_agent_profile(
+        &mut cmd,
+        context.as_ref(),
+        direct_profile.as_ref(),
+        &crate::system::user_home(),
+    );
     if let Some(environment) = browser_environment {
         for (key, value) in environment {
             cmd.env(key, value);
@@ -366,7 +372,7 @@ pub(super) async fn spawn_prepared_pty(
         last_detection_revision: AtomicU64::new(0),
         task_exit,
         task_exited_at_ms: AtomicU64::new(0),
-        harness_output: Mutex::new(crate::harness::OutputLog::default()),
+        harness_output: Mutex::new(OutputLog::default()),
         harness_output_pending: Arc::new(AtomicBool::new(false)),
         _shell_integration: shell_integration,
         _capacity_permit: capacity_permit,

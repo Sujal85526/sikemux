@@ -6,20 +6,23 @@ use std::time::{Duration, Instant};
 use tauri::ipc::{Channel, Response};
 use tauri::{Emitter, State};
 
+use sikemux_pty::screen::{
+    compact_parser_for_idle, reseed_parser, screen_scrollback_len, IDLE_SCROLLBACK,
+    PARSER_SCROLLBACK,
+};
+use sikemux_pty::shell_protocol::{
+    PtyShellMetadataEvent, ShellProtocolOutput, ShellProtocolUpdate, PTY_SHELL_METADATA_EVENT,
+};
+
 use crate::error::{AppError, AppResult};
 use crate::observability::{global_observability, Metadata, ScalarValue, SpanOutcome};
 
 use super::agent_state::{note_agent_output, publish_agent_state};
-use super::screen::{compact_parser_for_idle, reseed_parser, screen_scrollback_len};
-use super::shell_protocol::{
-    PtyShellMetadataEvent, ShellProtocolOutput, ShellProtocolUpdate, PTY_SHELL_METADATA_EVENT,
-};
 use super::task::notify_task_process_exited;
 use super::{
-    now_ms, pty_err, Pty, PtyManager, ACTIVITY_STOPPED, FLOW_CONTROL_WAIT, IDLE_SCROLLBACK,
-    MAIN_WEBVIEW, MAX_PTY_SUBSCRIBERS_PER_PTY, MAX_SUB_ID_COLLISION_PROBES, MAX_UNACKED_BYTES,
-    NEXT_SUB_ID, OBSERVED_BROADCASTS, OUTPUT_BROADCASTS, OUTPUT_BYTES, PARSER_SCROLLBACK,
-    SLOW_BROADCAST,
+    now_ms, pty_err, Pty, PtyManager, ACTIVITY_STOPPED, FLOW_CONTROL_WAIT, MAIN_WEBVIEW,
+    MAX_PTY_SUBSCRIBERS_PER_PTY, MAX_SUB_ID_COLLISION_PROBES, MAX_UNACKED_BYTES, NEXT_SUB_ID,
+    OBSERVED_BROADCASTS, OUTPUT_BROADCASTS, OUTPUT_BYTES, SLOW_BROADCAST,
 };
 
 type SubscriberSnapshot = Vec<(u32, Subscriber)>;

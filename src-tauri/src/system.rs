@@ -209,7 +209,7 @@ fn capture_login_shell() -> LoginShellCapture {
             // An rc file that reads stdin sees EOF instead of blocking.
             .stdin(std::process::Stdio::null())
             .stderr(std::process::Stdio::null());
-        for key in crate::pty::OPTIONAL_PTY_ENV {
+        for key in sikemux_pty::launch::OPTIONAL_PTY_ENV {
             command.env_remove(key);
         }
         let _ = sender.send(command.output().ok());

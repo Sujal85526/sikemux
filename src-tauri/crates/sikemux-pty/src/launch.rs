@@ -3,33 +3,32 @@ use std::path::{Path, PathBuf};
 
 use portable_pty::CommandBuilder;
 
-use crate::error::{AppError, AppResult};
-
-use super::shell::{detect_shell_kind, ShellKind};
+use crate::error::{PtyError, PtyResult};
+use crate::shell::{detect_shell_kind, ShellKind};
 
 #[derive(Clone, Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PtyContext {
-    pub(super) session_id: String,
-    pub(super) session_name: String,
-    pub(super) session_kind: String,
-    pub(super) project: Option<String>,
-    pub(super) window_id: Option<String>,
-    pub(super) pane_id: Option<String>,
-    pub(super) agent_id: Option<String>,
-    pub(super) agent_type: Option<String>,
+    pub session_id: String,
+    pub session_name: String,
+    pub session_kind: String,
+    pub project: Option<String>,
+    pub window_id: Option<String>,
+    pub pane_id: Option<String>,
+    pub agent_id: Option<String>,
+    pub agent_type: Option<String>,
     #[serde(default)]
-    pub(super) initial_prompt_submitted: bool,
+    pub initial_prompt_submitted: bool,
     /// Explicit opt-in. Absent/false preserves the exact historical shell
     /// launch path and performs no startup-file or argv injection.
     #[serde(default)]
-    pub(super) shell_integration: bool,
+    pub shell_integration: bool,
 }
 
 #[derive(Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct PtyAgentProfile {
-    pub(super) config_path: Option<String>,
+pub struct PtyAgentProfile {
+    pub config_path: Option<String>,
     #[serde(default)]
     environment_keys: Vec<String>,
 }
@@ -37,15 +36,15 @@ pub(super) struct PtyAgentProfile {
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PtyDirectCommand {
-    pub(super) program: String,
-    pub(super) args: Vec<String>,
-    pub(super) profile: Option<PtyAgentProfile>,
+    pub program: String,
+    pub args: Vec<String>,
+    pub profile: Option<PtyAgentProfile>,
 }
 
-pub(super) fn validate_direct_command(
+pub fn validate_direct_command(
     command: &PtyDirectCommand,
     context: Option<&PtyContext>,
-) -> AppResult<()> {
+) -> PtyResult<()> {
     if context
         .and_then(|value| value.agent_id.as_deref())
         .is_none()
@@ -53,7 +52,7 @@ pub(super) fn validate_direct_command(
             .and_then(|value| value.agent_type.as_deref())
             .is_none()
     {
-        return Err(AppError::BadArg(
+        return Err(PtyError::BadArg(
             "direct PTY commands require an explicit agent context",
         ));
     }
@@ -62,12 +61,12 @@ pub(super) fn validate_direct_command(
         || command.program.contains('\0')
         || command.args.len() > 128
     {
-        return Err(AppError::BadArg("invalid direct PTY command"));
+        return Err(PtyError::BadArg("invalid direct PTY command"));
     }
     let mut total = command.program.len();
     for argument in &command.args {
         if argument.len() > 8_192 || argument.contains('\0') {
-            return Err(AppError::BadArg("invalid direct PTY command argument"));
+            return Err(PtyError::BadArg("invalid direct PTY command argument"));
         }
         total = total.saturating_add(argument.len());
     }
@@ -86,16 +85,16 @@ pub(super) fn validate_direct_command(
                     })
             })
         {
-            return Err(AppError::BadArg("invalid direct PTY agent profile"));
+            return Err(PtyError::BadArg("invalid direct PTY agent profile"));
         }
     }
     if total > 64 * 1_024 {
-        return Err(AppError::BadArg("direct PTY command is too large"));
+        return Err(PtyError::BadArg("direct PTY command is too large"));
     }
     Ok(())
 }
 
-pub(super) fn configure_interactive_command(
+pub fn configure_interactive_command(
     command: &mut CommandBuilder,
     shell: &str,
     launch: &PtyDirectCommand,
@@ -123,15 +122,15 @@ fn quote_shell_word(value: &str, kind: Option<ShellKind>) -> String {
     }
 }
 
-fn agent_profile_config_root(path: &str) -> PathBuf {
+fn agent_profile_config_root(path: &str, home: &Path) -> PathBuf {
     let trimmed = path.trim();
     let expanded = if trimmed == "~" {
-        crate::system::user_home()
+        home.to_path_buf()
     } else if let Some(rest) = trimmed
         .strip_prefix("~/")
         .or_else(|| trimmed.strip_prefix("~\\"))
     {
-        crate::system::user_home().join(rest)
+        home.join(rest)
     } else {
         PathBuf::from(trimmed)
     };
@@ -145,16 +144,17 @@ fn agent_profile_config_root(path: &str) -> PathBuf {
     }
 }
 
-pub(super) fn apply_agent_profile(
+pub fn apply_agent_profile(
     command: &mut CommandBuilder,
     context: Option<&PtyContext>,
     profile: Option<&PtyAgentProfile>,
+    home: &Path,
 ) {
     let Some(root) = profile
         .and_then(|profile| profile.config_path.as_deref())
         .map(str::trim)
         .filter(|path| !path.is_empty())
-        .map(agent_profile_config_root)
+        .map(|path| agent_profile_config_root(path, home))
     else {
         return;
     };
@@ -165,7 +165,7 @@ pub(super) fn apply_agent_profile(
     }
 }
 
-pub(crate) const OPTIONAL_PTY_ENV: &[&str] = &[
+pub const OPTIONAL_PTY_ENV: &[&str] = &[
     "SIKEMUX_SHELL",
     "SIKEMUX_SESSION_ID",
     "SIKEMUX_SESSION_NAME",
@@ -222,7 +222,7 @@ fn editor_command(path: &Path) -> String {
 /// Apply a clean, typed Sikemux identity to a PTY command. Optional fields are
 /// removed before being rebuilt so a terminal can never inherit the identity
 /// of the app's parent terminal (or a Codex thread that launched the app).
-pub(super) fn configure_pty_environment(
+pub fn configure_pty_environment(
     cmd: &mut CommandBuilder,
     context: Option<&PtyContext>,
     version: &str,
@@ -284,7 +284,7 @@ pub(super) fn configure_pty_environment(
 #[cfg(test)]
 mod tests {
     use super::{apply_agent_profile, configure_pty_environment, PtyAgentProfile, PtyContext};
-    use crate::pty::tests::{env, local_shell_context};
+    use crate::tests::{env, local_shell_context};
     use portable_pty::CommandBuilder;
     use std::collections::HashMap;
     use std::path::Path;
@@ -357,12 +357,22 @@ mod tests {
         let mut context = local_shell_context();
         context.agent_id = Some("agent-1".into());
         context.agent_type = Some("codex".into());
-        apply_agent_profile(&mut codex, Some(&context), Some(&profile));
+        apply_agent_profile(
+            &mut codex,
+            Some(&context),
+            Some(&profile),
+            Path::new("/home"),
+        );
         assert_eq!(env(&codex, "CODEX_HOME"), Some("/profiles/work".into()));
 
         let mut claude = CommandBuilder::new("claude");
         context.agent_type = Some("claude".into());
-        apply_agent_profile(&mut claude, Some(&context), Some(&profile));
+        apply_agent_profile(
+            &mut claude,
+            Some(&context),
+            Some(&profile),
+            Path::new("/home"),
+        );
         assert_eq!(
             env(&claude, "CLAUDE_CONFIG_DIR"),
             Some("/profiles/work".into())

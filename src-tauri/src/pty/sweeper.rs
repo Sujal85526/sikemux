@@ -3,11 +3,11 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, Manager};
 
-use crate::agent_detection::{AgentDetectionState, DetectionConfidence, DetectionInput};
+use sikemux_pty::agent_detection::{AgentDetectionState, DetectionConfidence, DetectionInput};
+use sikemux_pty::screen::compact_parser_for_idle;
 
 use super::agent_state::{detection_reason, publish_agent_state, semantic_fingerprint};
 use super::output::publish_shell_metadata;
-use super::screen::compact_parser_for_idle;
 use super::task::reclaim_completed_task_ptys;
 use super::{
     now_ms, Pty, PtyManager, ACTIVITY_BLOCKED, ACTIVITY_IDLE, ACTIVITY_POLL_INTERVAL,

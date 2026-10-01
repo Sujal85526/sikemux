@@ -2,9 +2,8 @@ use std::path::{Path, PathBuf};
 
 use portable_pty::CommandBuilder;
 
-use crate::error::{AppError, AppResult};
-
-use super::launch::PtyContext;
+use crate::error::{PtyError, PtyResult};
+use crate::launch::PtyContext;
 
 /// Execute startup commands before the interactive shell is launched. Sending
 /// text to readline makes it visible in the terminal (and multi-line commands
@@ -12,7 +11,7 @@ use super::launch::PtyContext;
 /// input. Once it returns, replace the bootstrap shell with the normal local
 /// shell so users always land at a usable prompt.
 #[cfg(unix)]
-pub(super) fn startup_bootstrap(startup: &str, login_shell: bool) -> String {
+pub fn startup_bootstrap(startup: &str, login_shell: bool) -> String {
     let login = if login_shell { " -l" } else { "" };
     format!("{startup}\nexec \"$SIKEMUX_SHELL\"{login}")
 }
@@ -21,12 +20,12 @@ pub(super) fn startup_bootstrap(startup: &str, login_shell: bool) -> String {
 /// the way a normal terminal emulator starts them. Shells that do get an
 /// injected rc file are already reading the user's chain through it.
 #[cfg(unix)]
-pub(super) fn shell_wants_login_flag(shell: &str) -> bool {
+pub fn shell_wants_login_flag(shell: &str) -> bool {
     matches!(detect_shell_kind(shell), Some(ShellKind::Zsh))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum ShellKind {
+pub enum ShellKind {
     Zsh,
     Bash,
     Fish,
@@ -35,7 +34,7 @@ pub(super) enum ShellKind {
 
 /// Lifetime guard for startup files. Fish and PowerShell use argv hooks and
 /// therefore have no directory, but still return a guard to mark parsing active.
-pub(super) struct ShellLaunchIntegration {
+pub struct ShellLaunchIntegration {
     _files: Option<tempfile::TempDir>,
 }
 
@@ -114,7 +113,7 @@ function global:prompt {
     return "$sikemux_text$([char]27)]133;B$([char]7)"
 }"#;
 
-pub(super) fn detect_shell_kind(shell: &str) -> Option<ShellKind> {
+pub fn detect_shell_kind(shell: &str) -> Option<ShellKind> {
     let name = shell.rsplit(['/', '\\']).next()?.to_ascii_lowercase();
     let name = name.strip_suffix(".exe").unwrap_or(&name);
     match name {
@@ -142,7 +141,7 @@ fn task_shell_arguments(
     shell: &str,
     command: &str,
     platform: TaskShellPlatform,
-) -> AppResult<Vec<String>> {
+) -> PtyResult<Vec<String>> {
     if matches!(detect_shell_kind(shell), Some(ShellKind::PowerShell)) {
         return Ok(vec![
             "-NoLogo".into(),
@@ -167,16 +166,16 @@ fn task_shell_arguments(
     if matches!(executable.as_str(), "cmd" | "cmd.exe") {
         return Ok(vec!["/D".into(), "/S".into(), "/C".into(), command.into()]);
     }
-    Err(AppError::BadArg(
+    Err(PtyError::BadArg(
         "configured shell does not support task execution",
     ))
 }
 
-pub(super) fn configure_task_command(
+pub fn configure_task_command(
     command: &mut CommandBuilder,
     shell: &str,
     task: &str,
-) -> AppResult<()> {
+) -> PtyResult<()> {
     command.args(task_shell_arguments(
         shell,
         task,
@@ -185,7 +184,7 @@ pub(super) fn configure_task_command(
     Ok(())
 }
 
-pub(super) fn shell_integration_requested(
+pub fn shell_integration_requested(
     context: Option<&PtyContext>,
     has_startup: bool,
     inherited_ssh: bool,
@@ -201,7 +200,7 @@ pub(super) fn shell_integration_requested(
         && matches!(context.session_kind.as_str(), "project" | "command")
 }
 
-pub(super) fn inherited_ssh_environment() -> bool {
+pub fn inherited_ssh_environment() -> bool {
     ["SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"]
         .iter()
         .any(|key| std::env::var_os(key).is_some_and(|value| !value.is_empty()))
@@ -233,7 +232,7 @@ fn write_temporary_shell_file(
     Ok(path)
 }
 
-pub(super) fn configure_shell_integration(
+pub fn configure_shell_integration(
     cmd: &mut CommandBuilder,
     shell: &str,
 ) -> std::io::Result<Option<ShellLaunchIntegration>> {
@@ -282,7 +281,7 @@ mod tests {
         configure_shell_integration, configure_task_command, detect_shell_kind,
         shell_integration_requested, task_shell_arguments, ShellKind, TaskShellPlatform,
     };
-    use crate::pty::tests::{env, local_shell_context};
+    use crate::tests::{env, local_shell_context};
     use portable_pty::CommandBuilder;
 
     #[test]

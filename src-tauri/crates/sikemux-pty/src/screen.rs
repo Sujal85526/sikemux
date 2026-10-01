@@ -1,14 +1,22 @@
 use std::collections::VecDeque;
 
-use crate::error::{AppError, AppResult};
+use crate::error::{PtyError, PtyResult};
+use crate::shell_protocol::ShellProtocolParser;
 
-use super::shell_protocol::ShellProtocolParser;
-use super::{IDLE_SCROLLBACK, PARSER_SCROLLBACK};
+// Scrollback held in the headless vt100 parser. This only has to cover what
+// a reattaching xterm replays; anything the user scrolled past before the
+// pane was hidden is not worth paying for. A vt100 cell is 32 bytes, so at
+// 200 columns 3k rows is roughly 19 MB per PTY — at 10k rows it was 64 MB.
+// The parser drops to IDLE_SCROLLBACK when the last subscriber detaches, and
+// the sweeper catches anything silent for its idle trim window.
+pub const PARSER_SCROLLBACK: usize = 3_000;
+pub const IDLE_SCROLLBACK: usize = 1_000;
+pub const MAX_ATTACH_SNAPSHOT_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Default)]
-pub(super) struct SemanticCallbacks {
-    pub(super) window_title: String,
-    pub(super) shell: Option<ShellProtocolParser>,
+pub struct SemanticCallbacks {
+    pub window_title: String,
+    pub shell: Option<ShellProtocolParser>,
 }
 
 impl vt100::Callbacks for SemanticCallbacks {
@@ -23,14 +31,14 @@ impl vt100::Callbacks for SemanticCallbacks {
     }
 }
 
-pub(super) type SemanticParser = vt100::Parser<SemanticCallbacks>;
+pub type SemanticParser = vt100::Parser<SemanticCallbacks>;
 
 #[cfg(test)]
 fn semantic_parser(rows: u16, cols: u16, scrollback: usize) -> SemanticParser {
     semantic_parser_with_shell(rows, cols, scrollback, false)
 }
 
-pub(super) fn semantic_parser_with_shell(
+pub fn semantic_parser_with_shell(
     rows: u16,
     cols: u16,
     scrollback: usize,
@@ -50,7 +58,7 @@ pub(super) fn semantic_parser_with_shell(
 /// vt100 clamps the requested offset to the history it actually holds, so
 /// asking for the largest possible offset reports the number of history rows.
 /// The view is put back at the live viewport before returning.
-pub(super) fn screen_scrollback_len(screen: &mut vt100::Screen) -> usize {
+pub fn screen_scrollback_len(screen: &mut vt100::Screen) -> usize {
     screen.set_scrollback(usize::MAX);
     let rows = screen.scrollback();
     screen.set_scrollback(0);
@@ -71,7 +79,7 @@ struct BoundedAttachSnapshot {
 fn bounded_attach_snapshot(
     screen: &mut vt100::Screen,
     max_bytes: usize,
-) -> AppResult<BoundedAttachSnapshot> {
+) -> PtyResult<BoundedAttachSnapshot> {
     const ALT_SCREEN_PREFIX: &[u8] = b"\x1b[?1049h";
     const HISTORY_ROW_SUFFIX: &[u8] = b"\x1b[0m\r\n";
 
@@ -85,9 +93,9 @@ fn bounded_attach_snapshot(
     let fixed_bytes = prefix
         .len()
         .checked_add(viewport.len())
-        .ok_or_else(|| AppError::Pty("PTY attach snapshot size overflow".into()))?;
+        .ok_or_else(|| PtyError::Pty("PTY attach snapshot size overflow".into()))?;
     if fixed_bytes > max_bytes {
-        return Err(AppError::Pty(
+        return Err(PtyError::Pty(
             "PTY attach viewport exceeds snapshot capacity".into(),
         ));
     }
@@ -110,7 +118,7 @@ fn bounded_attach_snapshot(
     let (rows, cols) = screen.size();
     let separator_bytes = usize::from(rows.saturating_sub(1))
         .checked_mul(b"\r\n".len())
-        .ok_or_else(|| AppError::Pty("PTY attach snapshot size overflow".into()))?;
+        .ok_or_else(|| PtyError::Pty("PTY attach snapshot size overflow".into()))?;
     let history_budget = max_bytes.saturating_sub(fixed_bytes.saturating_add(separator_bytes));
     let mut retained = VecDeque::<Vec<u8>>::new();
     let mut retained_bytes = 0usize;
@@ -154,7 +162,7 @@ fn bounded_attach_snapshot(
     let final_capacity = fixed_bytes
         .checked_add(retained_bytes)
         .and_then(|size| size.checked_add(final_separator_bytes))
-        .ok_or_else(|| AppError::Pty("PTY attach snapshot size overflow".into()))?;
+        .ok_or_else(|| PtyError::Pty("PTY attach snapshot size overflow".into()))?;
     debug_assert!(final_capacity <= max_bytes);
     let mut bytes = Vec::with_capacity(final_capacity);
     bytes.extend_from_slice(prefix);
@@ -228,15 +236,15 @@ fn reseed_parser_from_snapshot(parser: &mut SemanticParser, snapshot: &[u8], scr
     *parser = fresh;
 }
 
-pub(super) fn reseed_parser(parser: &mut SemanticParser, scrollback: usize) {
+pub fn reseed_parser(parser: &mut SemanticParser, scrollback: usize) {
     let snapshot = attach_snapshot(parser.screen_mut());
     reseed_parser_from_snapshot(parser, &snapshot, scrollback);
 }
 
-pub(super) fn attach_snapshot_with_compaction(
+pub fn attach_snapshot_with_compaction(
     parser: &mut SemanticParser,
     max_bytes: usize,
-) -> AppResult<Vec<u8>> {
+) -> PtyResult<Vec<u8>> {
     let snapshot = bounded_attach_snapshot(parser.screen_mut(), max_bytes)?;
     if snapshot.truncated {
         reseed_parser_from_snapshot(parser, &snapshot.bytes, PARSER_SCROLLBACK);
@@ -244,7 +252,7 @@ pub(super) fn attach_snapshot_with_compaction(
     Ok(snapshot.bytes)
 }
 
-pub(super) fn compact_parser_for_idle(parser: &mut SemanticParser) -> bool {
+pub fn compact_parser_for_idle(parser: &mut SemanticParser) -> bool {
     if parser.screen().alternate_screen() {
         return false;
     }
@@ -258,7 +266,7 @@ mod tests {
         attach_snapshot, attach_snapshot_with_compaction, compact_parser_for_idle, reseed_parser,
         screen_scrollback_len, semantic_parser,
     };
-    use crate::pty::{IDLE_SCROLLBACK, MAX_ATTACH_SNAPSHOT_BYTES, PARSER_SCROLLBACK};
+    use super::{IDLE_SCROLLBACK, MAX_ATTACH_SNAPSHOT_BYTES, PARSER_SCROLLBACK};
 
     #[test]
     fn semantic_parser_captures_and_sanitizes_osc_title() {
