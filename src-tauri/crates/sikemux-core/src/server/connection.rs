@@ -108,11 +108,7 @@ async fn write_direct(writer: &mut FrameWriter, message: &ServerMessage) {
     }
 }
 
-async fn handshake(
-    core: &Arc<Core>,
-    reader: &mut FrameReader,
-    writer: &mut FrameWriter,
-) -> bool {
+async fn handshake(core: &Arc<Core>, reader: &mut FrameReader, writer: &mut FrameWriter) -> bool {
     let frame = match tokio::time::timeout(HANDSHAKE_TIMEOUT, read_frame(reader)).await {
         Ok(Ok(Some(frame))) if frame.kind == FrameKind::Control => frame,
         Ok(Ok(Some(frame))) if frame.kind == FrameKind::Frozen => {

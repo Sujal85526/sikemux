@@ -48,11 +48,7 @@ fn refused(message: impl Into<String>) -> FrozenReply {
 }
 
 /// Answers one frozen request on a connection that sent it instead of a hello.
-pub(crate) async fn answer(
-    core: &Arc<Core>,
-    payload: &[u8],
-    writer: &mut FrameWriter,
-) {
+pub(crate) async fn answer(core: &Arc<Core>, payload: &[u8], writer: &mut FrameWriter) {
     match serde_json::from_slice::<FrozenRequest>(payload) {
         Ok(FrozenRequest::Upgrade { binary }) => upgrade(core, binary, writer).await,
         Ok(FrozenRequest::StopEverything) => {
