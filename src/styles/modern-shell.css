@@ -1100,9 +1100,11 @@ html.is-transparent .rail-peek-panel > .workspace-rail {
  *
  * `.tabbar` is deliberately absent. It was listed here once, but a full-width
  * strip is not a control, and the control corner is not the corner it wants.
- * The workspace strip rounds itself at the panel radius, up with its border. */
+ * The workspace strip rounds itself at the panel radius, up with its border.
+ * Neither is a menu's search field: it runs edge to edge with a line under it,
+ * and a corner would bend that line up at both ends. */
 button,
-input,
+input:not(.chat-picker-menu > input),
 select,
 textarea,
 .shell
@@ -1150,7 +1152,7 @@ textarea,
 /* Every remaining text field by role, so a sheet does not have to be listed
  * above to stop being square. Range, colour, checkbox and radio opt out —
  * their shape is the control. */
-.shell :where(input, textarea, select):not([type="range"], [type="color"], [type="checkbox"], [type="radio"]) {
+.shell :where(input, textarea, select):not([type="range"], [type="color"], [type="checkbox"], [type="radio"], .chat-picker-menu > input) {
     border-radius: var(--radius-2) !important;
 }
 
