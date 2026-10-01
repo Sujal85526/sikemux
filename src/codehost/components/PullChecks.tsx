@@ -1,19 +1,11 @@
 import { useResourceEnabled } from "../../plugin-api/resources";
-import type { RepoRef, Run } from "../api";
+import type { RepoRef } from "../api";
 import { runsR } from "../resources";
-import { checksSummary, elapsedMs, eventLabel, formatDuration, isUnfinished, outcomeOf, OUTCOME_LABEL, type Outcome } from "../runStatus";
+import { checksSummary, elapsedMs, eventLabel, formatDuration, isUnfinished, outcomeOf, OUTCOME_LABEL, overallOutcome } from "../runStatus";
 import { OutcomeIcon } from "./ActionsIcon";
 import { useEvery, useNow } from "./hooks";
 
 const LIVE_REFRESH_MS = 10_000;
-
-function overall(runs: readonly Run[]): Outcome {
-    const outcomes = runs.map(outcomeOf);
-    if (outcomes.includes("failure")) return "failure";
-    if (outcomes.some((outcome) => outcome === "running" || outcome === "queued")) return "running";
-    if (outcomes.includes("blocked")) return "blocked";
-    return "success";
-}
 
 interface Props {
     repo: RepoRef;
@@ -35,7 +27,7 @@ export function PullChecks({ repo, sha, active, onOpenRun }: Props) {
     return (
         <div className="gha-merge-part">
             <div className="gha-merge-row">
-                <OutcomeIcon outcome={overall(runs)} size={12} />
+                <OutcomeIcon outcome={overallOutcome(runs)} size={12} />
                 <span className="gha-merge-title">{summary === "all passed" ? "All checks passed" : `Checks: ${summary}`}</span>
             </div>
             <div className="gha-checks">

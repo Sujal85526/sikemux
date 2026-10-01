@@ -1,7 +1,7 @@
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Pull } from "../api";
+import type { Pull, Run } from "../api";
 
 const api = vi.hoisted(() => ({
     pulls: vi.fn(),
@@ -10,7 +10,7 @@ const api = vi.hoisted(() => ({
     timeline: vi.fn(() => Promise.resolve([])),
     pullCommits: vi.fn(),
     pullFiles: vi.fn(),
-    runs: vi.fn(() => Promise.resolve({ runs: [], total: 0 })),
+    runs: vi.fn(() => Promise.resolve({ runs: [] as Run[], total: 0 })),
     branches: vi.fn(() => Promise.resolve(["main", "feat/run-page"])),
     createPull: vi.fn(() => Promise.resolve({ number: 32 })),
     mergePull: vi.fn(),
@@ -295,6 +295,40 @@ describe("the list", () => {
         await screen.findByText("the run page");
         await waitFor(() => expect(api.image).toHaveBeenCalledWith("https://example.test/g.png"));
         expect(screen.getAllByTitle("4 comments").length).toBeGreaterThan(0);
+    });
+
+    it("shows how CI went on each one's head commit", async () => {
+        const run = (sha: string, conclusion: string): Run => ({
+            id: `${sha}-${conclusion}`,
+            name: "CI",
+            title: "",
+            workflowId: "1",
+            path: null,
+            runNumber: 1,
+            attempt: 1,
+            event: "pull_request",
+            status: "completed",
+            conclusion,
+            branch: null,
+            sha,
+            shortSha: sha,
+            actor: null,
+            avatarUrl: null,
+            createdAt: pull.createdAt,
+            startedAt: null,
+            updatedAt: pull.updatedAt,
+            pullRequests: [],
+            url: "",
+        });
+        api.pulls.mockResolvedValue([
+            { ...pull, headSha: "abc" },
+            { ...pull, number: 32, title: "untested", headSha: "def" },
+        ]);
+        api.runs.mockResolvedValue({ runs: [run("abc", "success"), run("abc", "failure"), run("zzz", "success")], total: 3 });
+        render(view(null));
+        await screen.findByText("the run page");
+        await waitFor(() => expect(document.querySelectorAll(".pr-row-ci")[0]).toHaveTextContent("Failed"));
+        expect(document.querySelectorAll(".pr-row-ci")[1]).toBeEmptyDOMElement();
     });
 });
 

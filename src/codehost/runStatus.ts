@@ -56,6 +56,15 @@ export function checksSummary(runs: readonly Pick<Run, "status" | "conclusion">[
         .join(", ");
 }
 
+/** One outcome for a commit's runs: any failure fails it, then anything still going keeps it running. */
+export function overallOutcome(runs: readonly Pick<Run, "status" | "conclusion">[]): Outcome {
+    const outcomes = runs.map(outcomeOf);
+    if (outcomes.includes("failure")) return "failure";
+    if (outcomes.some((outcome) => outcome === "running" || outcome === "queued")) return "running";
+    if (outcomes.includes("blocked")) return "blocked";
+    return "success";
+}
+
 export const OUTCOME_LABEL: Record<Outcome, string> = {
     running: "Running",
     queued: "Queued",

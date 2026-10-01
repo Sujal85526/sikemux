@@ -25,20 +25,21 @@ import { FileIcon } from "../../ui/FileIcon";
 import { basename, dirname } from "../../lib/paths";
 import { requestOpenFile, setGitView } from "../../state/commands";
 import { useStore } from "../../state/store";
-import { hostApi, failureMessage, type MergeMethod, type Pull, type RepoRef } from "../api";
-import { pullCommitsR, pullFilesR, pullR, pullReviewsR, pullsR, timelineR } from "../resources";
-import { formatAgo, type Outcome } from "../runStatus";
+import { hostApi, failureMessage, type MergeMethod, type Pull, type RepoRef, type Run } from "../api";
+import { pullCommitsR, pullFilesR, pullR, pullReviewsR, pullsR, runsR, timelineR } from "../resources";
+import { checksSummary, formatAgo, isUnfinished, OUTCOME_LABEL, overallOutcome, type Outcome } from "../runStatus";
 import { needsPull } from "../compose";
 import { compose, openRunFrom, setListState, showItem } from "../state";
 import { CommentThread, Face } from "./CommentThread";
 import { OutcomeIcon } from "./ActionsIcon";
 import { Branch, Comments, Labels, StateMark, stateLabel, stateOf, Who } from "./Bits";
-import { useBusy, useNow } from "./hooks";
+import { useBusy, useEvery, useNow } from "./hooks";
 import { NewPullForm } from "./NewPullForm";
 import { PullFiles } from "./PullFiles";
 import { PullChecks } from "./PullChecks";
 
 const LIST_STATES = ["open", "closed", "all"];
+const LIVE_REFRESH_MS = 10_000;
 
 export function reviewVerdict(reviews: readonly { author: string | null; state: string }[]): string | null {
     // Only a person's latest review counts, which is how GitHub scores it too.
@@ -97,15 +98,35 @@ function PullHeadline({
     );
 }
 
-function PullRow({ pull, now, onOpen }: { pull: Pull; now: number; onOpen: () => void }) {
+function PullCi({ runs }: { runs: readonly Run[] }) {
+    const outcome = overallOutcome(runs);
+    const summary = checksSummary(runs);
+    return (
+        <Tooltip label={summary === "all passed" ? "All checks passed" : `Checks: ${summary}`}>
+            <span className="pr-ci" data-outcome={outcome}>
+                <OutcomeIcon outcome={outcome} size={12} />
+                <span className="pr-ci-label">{OUTCOME_LABEL[outcome]}</span>
+            </span>
+        </Tooltip>
+    );
+}
+
+function PullRow({ pull, runs, now, onOpen }: { pull: Pull; runs: readonly Run[] | undefined; now: number; onOpen: () => void }) {
+    const ci = runs ? <PullCi runs={runs} /> : null;
     return (
         <button type="button" className="pr-row pr-headline" onClick={onOpen}>
             <PullHeadline
                 pull={pull}
                 now={now}
                 title={<span className="pr-headline-title">{pull.title}</span>}
-                trailing={<Comments count={pull.comments ?? 0} />}
+                trailing={
+                    <>
+                        {ci}
+                        <Comments count={pull.comments ?? 0} />
+                    </>
+                }
             />
+            <span className="pr-row-ci">{ci}</span>
             <span className="pr-row-reviewers">
                 {pull.reviewers.map((login) => (
                     <Face key={login} login={login} url={pull.avatars[login] ?? null} />
@@ -733,6 +754,14 @@ export function PullsView({ paneId, repo, listState, item, composing, projectBra
     const listing = item === null && !composing;
     const pulls = useResourceEnabled(active, pullsR, repo, listState);
     const open = useResourceEnabled(active && listing && !!projectBranch, pullsR, repo, "open");
+    const recentRuns = useResourceEnabled(active && listing, runsR, { ...repo, perPage: 100 });
+    const runsBySha = useMemo(() => {
+        const bySha = new Map<string, Run[]>();
+        for (const run of recentRuns.data?.runs ?? []) bySha.set(run.sha, [...(bySha.get(run.sha) ?? []), run]);
+        return bySha;
+    }, [recentRuns.data]);
+    const runsLive = active && listing && (recentRuns.data?.runs.some(isUnfinished) ?? false);
+    useEvery(runsLive, LIVE_REFRESH_MS, () => void recentRuns.refresh());
     const now = useNow(false);
     const [commit, setCommit] = useState<{ pull: number; sha: string } | null>(null);
     const [focus, setFocus] = useState<{ pull: number; path: string } | null>(null);
@@ -805,12 +834,19 @@ export function PullsView({ paneId, repo, listState, item, composing, projectBra
                     <div className="pr-rows">
                         <div className="pr-cols" aria-hidden="true">
                             <span>Pull request</span>
+                            <span>CI</span>
                             <span>Reviewers</span>
                             <span>Comments</span>
                             <span>Updated</span>
                         </div>
                         {rows.map((pull) => (
-                            <PullRow key={pull.number} pull={pull} now={now} onOpen={() => showItem(paneId, pull.number)} />
+                            <PullRow
+                                key={pull.number}
+                                pull={pull}
+                                runs={pull.headSha ? runsBySha.get(pull.headSha) : undefined}
+                                now={now}
+                                onOpen={() => showItem(paneId, pull.number)}
+                            />
                         ))}
                     </div>
                 )}
