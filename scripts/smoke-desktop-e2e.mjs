@@ -224,7 +224,7 @@ function openCore(path) {
       frame.kind === CORE_FRAME.control ? JSON.parse(frame.payload) : null;
     socket.once("connect", async () => {
       socket.write(
-        coreControl({ type: "hello", protocol: "sikemux-core", version: 5 }),
+        coreControl({ type: "hello", protocol: "sikemux-core", version: 6 }),
       );
       const hello = await next((frame) => control(frame)?.type === "helloAck");
       if (!hello) {
