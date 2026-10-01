@@ -1,10 +1,11 @@
+use std::collections::HashMap;
 #[cfg(unix)]
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use serde::Serialize;
 
+use sikemux_process::user_environment::UserEnvironment;
 #[cfg(unix)]
 use sikemux_pty::user_shell::login_shell_path;
 use sikemux_pty::user_shell::{configured_shell, login_shell_environment};
@@ -12,6 +13,7 @@ use tauri::async_runtime::spawn_blocking;
 
 use crate::{
     error::{AppError, AppResult},
+    plugins,
     pty::PtyManager,
     state::state_load_sync,
 };
@@ -22,12 +24,25 @@ use crate::{
 /// user actually has tools in. `make dev` works because the dev binary is
 /// launched from a terminal that already has the right PATH.
 ///
-/// Fix: at startup, read `PATH` out of the one login-shell capture the app
-/// already makes, then set it on our own process so every `Command::new(...)`
-/// (hermes, rnd, aws, claude, …) inherits it. Standard "fix-path" pattern
-/// Electron + Tauri apps have used for years.
+/// So every child gets the `PATH` the user's login shell resolves, plus any
+/// variable a plugin reads that the app was not already started with. Reading
+/// the shell takes as long as the user's rc files do, so it runs beside window
+/// creation rather than ahead of it.
+pub fn user_environment() -> UserEnvironment {
+    let shell = login_shell_environment();
+    let mut variables: HashMap<String, String> = plugins::shell_variables()
+        .into_iter()
+        .filter(|name| std::env::var_os(name).is_none())
+        .filter_map(|name| Some((name.clone(), shell.get(&name)?.clone())))
+        .collect();
+    if let Some(path) = user_path() {
+        variables.insert("PATH".to_string(), path);
+    }
+    UserEnvironment { variables }
+}
+
 #[cfg(unix)]
-pub fn fix_path_from_login_shell() {
+fn user_path() -> Option<String> {
     let shell_path = login_shell_path().unwrap_or_default();
 
     // Always-union: even if the shell extraction succeeded, append the
@@ -52,7 +67,13 @@ pub fn fix_path_from_login_shell() {
         "/opt/homebrew/sbin".to_string(),
         "/usr/local/bin".to_string(),
     ];
-    let mut parts: Vec<&str> = shell_path.split(':').filter(|s| !s.is_empty()).collect();
+    let cli = crate::cli_paths::cli_link_directory().and_then(Path::to_str);
+    let mut parts: Vec<&str> = cli.into_iter().collect();
+    for part in shell_path.split(':').filter(|s| !s.is_empty()) {
+        if !parts.contains(&part) {
+            parts.push(part);
+        }
+    }
     for d in &extra {
         if !parts.contains(&d.as_str()) {
             parts.push(d.as_str());
@@ -63,31 +84,18 @@ pub fn fix_path_from_login_shell() {
     if parts.is_empty() {
         parts = vec!["/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"];
     }
-    let new_path = parts.join(":");
-    // SAFETY: called once at startup before any threads spawn — env::set_var
-    // is unsound under multi-threaded mutation but we're single-threaded.
-    unsafe { std::env::set_var("PATH", new_path) };
+    Some(parts.join(":"))
 }
 
-/// Copies the named variables in from the login shell, leaving any the app
-/// was already started with. Launched from the Dock, the app has none of them.
-pub fn import_from_login_shell(names: &[String]) {
-    let shell = login_shell_environment();
-    for name in names {
-        if std::env::var_os(name).is_some() {
-            continue;
-        }
-        if let Some(value) = shell.get(name) {
-            // SAFETY: called once at startup before any threads spawn, like the PATH fix above.
-            unsafe { std::env::set_var(name, value) };
-        }
-    }
-}
-
+/// Windows desktop applications inherit the user's PATH, so only the CLI link
+/// needs adding.
 #[cfg(windows)]
-pub fn fix_path_from_login_shell() {
-    // Windows desktop applications inherit the user's PATH. Unlike macOS,
-    // there is no login-shell environment to recover here.
+fn user_path() -> Option<String> {
+    let directory = crate::cli_paths::cli_link_directory()?;
+    let existing = std::env::var_os("PATH").unwrap_or_default();
+    let paths = std::iter::once(directory.to_path_buf())
+        .chain(std::env::split_paths(&existing).filter(|path| path != directory));
+    std::env::join_paths(paths).ok()?.into_string().ok()
 }
 
 pub fn user_home() -> PathBuf {
@@ -138,7 +146,7 @@ pub fn find_executable_matching(name: &str, predicate: impl Fn(&Path) -> bool) -
 }
 
 pub fn find_executables_matching(name: &str, predicate: impl Fn(&Path) -> bool) -> Vec<PathBuf> {
-    let Some(paths) = std::env::var_os("PATH") else {
+    let Some(paths) = sikemux_process::user_environment::var_os("PATH") else {
         return Vec::new();
     };
     #[cfg(windows)]
@@ -283,7 +291,10 @@ fn zoxide_dirs() -> Vec<String> {
         "/opt/homebrew/bin/zoxide",
         "/usr/local/bin/zoxide",
     ] {
-        if let Ok(out) = Command::new(bin).args(["query", "--list"]).output() {
+        if let Ok(out) = sikemux_process::user_environment::command(bin)
+            .args(["query", "--list"])
+            .output()
+        {
             if out.status.success() {
                 return String::from_utf8_lossy(&out.stdout)
                     .lines()
@@ -429,7 +440,10 @@ fn read_battery_status() -> BatteryStatus {
     }
     #[cfg(target_os = "macos")]
     {
-        let out = match Command::new("pmset").args(["-g", "batt"]).output() {
+        let out = match sikemux_process::user_environment::command("pmset")
+            .args(["-g", "batt"])
+            .output()
+        {
             Ok(o) if o.status.success() => o,
             _ => {
                 return BatteryStatus {

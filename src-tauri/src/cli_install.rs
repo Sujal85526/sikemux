@@ -172,7 +172,7 @@ fn destination_paths(install_dir: &Path) -> (PathBuf, PathBuf) {
 }
 
 fn path_contains(directory: &Path) -> bool {
-    env::var_os("PATH")
+    sikemux_process::user_environment::var_os("PATH")
         .is_some_and(|value| env::split_paths(&value).any(|candidate| candidate == directory))
 }
 

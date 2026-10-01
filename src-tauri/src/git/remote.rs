@@ -208,7 +208,7 @@ fn ssh_hostname(host: &str) -> Option<String> {
     if host.starts_with('-') {
         return None;
     }
-    let output = std::process::Command::new("ssh")
+    let output = sikemux_process::user_environment::command("ssh")
         .args(["-G", host])
         .stdin(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())

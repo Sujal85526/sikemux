@@ -391,7 +391,7 @@ fn run_codex_app_server_candidate(
         .canonicalize()
         .map_err(|error| format!("Could not resolve repository path: {error}"))?;
     let repo = repo.to_string_lossy().into_owned();
-    let mut command = Command::new(bin);
+    let mut command = sikemux_process::user_environment::command(bin);
     command
         .current_dir(&repo)
         .arg("app-server")
@@ -740,7 +740,7 @@ pub(super) fn run_ai_commit_model(
     };
     match provider {
         GitAiProvider::Hermes => run_ai_candidate(provider, on_chunk, |bin| {
-            let mut command = Command::new(bin);
+            let mut command = sikemux_process::user_environment::command(bin);
             command
                 .current_dir(repo)
                 .args(["chat", "-Q", "-m", model, "-t", "safe", "-q", prompt]);
@@ -748,7 +748,7 @@ pub(super) fn run_ai_commit_model(
         }),
         GitAiProvider::Codex => run_codex_app_server(repo, model, prompt, on_chunk),
         GitAiProvider::Claude => run_ai_candidate(provider, on_chunk, |bin| {
-            let mut command = Command::new(bin);
+            let mut command = sikemux_process::user_environment::command(bin);
             command.current_dir(repo).args([
                 "--print",
                 "--model",

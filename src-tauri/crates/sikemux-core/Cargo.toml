@@ -5,6 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
+sikemux-process = { path = "../sikemux-process" }
 agent-client-protocol = "2.0.0"
 hex = "0.4"
 serde = { version = "1", features = ["derive"] }

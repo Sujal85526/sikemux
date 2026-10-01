@@ -5,6 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
+sikemux-process = { path = "../sikemux-process" }
 portable-pty = "0.9"
 vt100 = "0.16"
 regex = "1"

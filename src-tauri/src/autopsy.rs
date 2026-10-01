@@ -9,7 +9,6 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -112,7 +111,7 @@ pub struct SampleCapturer;
 
 impl StackCapturer for SampleCapturer {
     fn capture(&self, pid: i32, seconds: u32, destination: &Path) -> Result<(), String> {
-        let mut command = Command::new(SAMPLE_BINARY);
+        let mut command = sikemux_process::user_environment::command(SAMPLE_BINARY);
         command
             .arg(pid.to_string())
             .arg(seconds.to_string())

@@ -3,7 +3,6 @@
 //! secret ever sits on a command line.
 
 use std::fmt;
-use std::process::Command;
 use std::time::Duration;
 
 const TIMEOUT: Duration = Duration::from_secs(10);
@@ -63,7 +62,7 @@ fn security(args: &[&str], input: Option<&[u8]>) -> KeychainResult<std::process:
         ));
     }
     sikemux_process::run(
-        Command::new("security").args(args),
+        sikemux_process::user_environment::command("security").args(args),
         input,
         TIMEOUT,
         OUTPUT_LIMIT,

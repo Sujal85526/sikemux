@@ -3,7 +3,7 @@ use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Ipv4Addr, SocketAddrV4, TcpStream};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -529,7 +529,7 @@ fn read_response(reader: &mut BufReader<TcpStream>) -> Result<CliServerResponse,
 
 fn launch_app() -> Result<(), String> {
     if let Some(executable) = env::var_os("SIKEMUX_APP_EXECUTABLE") {
-        Command::new(executable)
+        sikemux_process::user_environment::command(executable)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -547,7 +547,7 @@ fn launch_app() -> Result<(), String> {
         if let Ok(value) = fs::read_to_string(pointer) {
             let executable = PathBuf::from(value.trim());
             if executable.is_file() && executable != current {
-                Command::new(executable)
+                sikemux_process::user_environment::command(executable)
                     .stdin(Stdio::null())
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
@@ -566,7 +566,7 @@ fn launch_app() -> Result<(), String> {
             .and_then(Path::parent)
             .filter(|path| path.extension().is_some_and(|extension| extension == "app"))
         {
-            Command::new("/usr/bin/open")
+            sikemux_process::user_environment::command("/usr/bin/open")
                 .arg(bundle)
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
@@ -585,7 +585,7 @@ fn launch_app() -> Result<(), String> {
         } else {
             "sikemux"
         });
-    Command::new(executable)
+    sikemux_process::user_environment::command(executable)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

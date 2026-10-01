@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Read};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -46,7 +46,7 @@ pub(super) fn spawn_server(
 ) -> AppResult<ServerHandle> {
     let (bin, args) = server_command(language)
         .ok_or_else(|| AppError::Lsp(format!("no language server configured for `{language}`")))?;
-    let child = Command::new(&bin)
+    let child = sikemux_process::user_environment::command(&bin)
         .args(&args)
         .current_dir(project)
         .stdin(Stdio::piped())

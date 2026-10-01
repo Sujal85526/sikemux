@@ -4,7 +4,7 @@
 use std::io::Read;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -142,7 +142,7 @@ fn check_binary(binary: &Path, own: &crate::protocol::BuildIdentity) -> Result<(
 
 /// Runs `<binary> core --upgrade-info`, which also proves the binary starts.
 fn upgrade_info(binary: &Path) -> Result<UpgradeInfo, String> {
-    let mut child = Command::new(binary)
+    let mut child = sikemux_process::user_environment::command(binary)
         .args(["core", UPGRADE_INFO_ARG])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

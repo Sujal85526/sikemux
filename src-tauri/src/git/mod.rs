@@ -103,7 +103,7 @@ fn run_command_with_timeout(
 /// Every git process the app starts goes through here. A repo's own config can
 /// name an fsmonitor program, which git would otherwise run on any status read.
 pub(crate) fn git_command(repo: &str) -> Command {
-    let mut command = Command::new("git");
+    let mut command = sikemux_process::user_environment::command("git");
     command
         .env("GIT_TERMINAL_PROMPT", "0")
         .args(["-c", "core.fsmonitor=false", "-C"])
@@ -208,7 +208,7 @@ mod tests {
     }
 
     pub(super) fn git(repo: &Path, args: &[&str]) -> String {
-        let out = Command::new("git")
+        let out = sikemux_process::user_environment::command("git")
             .arg("-C")
             .arg(repo)
             .args(args)
@@ -225,7 +225,7 @@ mod tests {
     }
 
     pub(super) fn git_at(repo: &Path, stamp: &str, args: &[&str]) -> String {
-        let out = Command::new("git")
+        let out = sikemux_process::user_environment::command("git")
             .arg("-C")
             .arg(repo)
             .args(args)
@@ -250,7 +250,7 @@ mod tests {
     #[test]
     fn subprocess_drains_output_before_child_reads_stdin() {
         let input = vec![b'i'; 2 * 1024 * 1024];
-        let mut command = Command::new("sh");
+        let mut command = sikemux_process::user_environment::command("sh");
         command.args([
             "-c",
             "dd if=/dev/zero bs=1048576 count=2 2>/dev/null; cat >/dev/null",
@@ -264,7 +264,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn subprocess_output_is_bounded() {
-        let mut command = Command::new("sh");
+        let mut command = sikemux_process::user_environment::command("sh");
         command.args(["-c", "dd if=/dev/zero bs=1048576 count=33 2>/dev/null"]);
         let error = run_command_with_timeout(&mut command, None, Duration::from_secs(5))
             .expect_err("oversized output must be rejected");

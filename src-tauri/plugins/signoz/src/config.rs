@@ -45,8 +45,8 @@ pub fn load(data_dir: &Path) -> SignozConfig {
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
         .unwrap_or_default();
-    match std::env::var("SIGNOZ_URL") {
-        Ok(url) if !url.trim().is_empty() => with_url_override(config, &url),
+    match sikemux_process::user_environment::var("SIGNOZ_URL") {
+        Some(url) if !url.trim().is_empty() => with_url_override(config, &url),
         _ => config,
     }
 }
@@ -141,8 +141,7 @@ pub fn keychain_delete(service: &str, account: &str) -> SignozResult<()> {
 }
 
 pub fn env_api_key() -> Option<String> {
-    std::env::var("SIGNOZ_API_KEY")
-        .ok()
+    sikemux_process::user_environment::var("SIGNOZ_API_KEY")
         .map(|key| key.trim().to_string())
         .filter(|key| !key.is_empty())
 }

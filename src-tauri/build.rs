@@ -36,6 +36,8 @@ fn record_voice_helper() {
     }
 }
 
+// The build runs in the developer's own shell, which already has their PATH.
+#[allow(clippy::disallowed_methods)]
 fn git(args: &[&str]) -> Option<String> {
     let output = std::process::Command::new("git").args(args).output().ok()?;
     output

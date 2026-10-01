@@ -8,7 +8,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Ipv4Addr, TcpStream};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -51,7 +51,7 @@ impl CoreProcess {
             .join("project");
         std::fs::create_dir(&project).expect("project");
         let log = std::fs::File::create(dir.path().join("core.log")).expect("log");
-        let child = Command::new(CORE)
+        let child = sikemux_process::user_environment::command(CORE)
             .arg("core")
             .arg("--socket")
             .arg(&socket)

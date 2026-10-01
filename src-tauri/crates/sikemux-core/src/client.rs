@@ -7,7 +7,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::net::UnixStream as StdUnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -912,7 +912,7 @@ fn start_detached(socket: &Path, binary: &Path, log: &Path, args: &[OsString]) -
         .append(true)
         .mode(0o600)
         .open(log)?;
-    let mut command = Command::new(binary);
+    let mut command = sikemux_process::user_environment::command(binary);
     command
         .arg("core")
         .arg("--socket")

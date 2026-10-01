@@ -42,7 +42,7 @@ pub struct AwsProfile {
 /// Where the AWS CLI looks, so the profiles listed are the ones it can use.
 fn aws_file(variable: &str, default: &str) -> Option<PathBuf> {
     let home = std::env::var("HOME").ok();
-    match std::env::var(variable).ok().filter(|path| !path.is_empty()) {
+    match sikemux_process::user_environment::var(variable).filter(|path| !path.is_empty()) {
         Some(path) => Some(expand_home(&path, home.as_deref())),
         None => Some(PathBuf::from(home?).join(".aws").join(default)),
     }

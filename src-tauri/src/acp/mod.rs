@@ -7,7 +7,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -307,7 +307,7 @@ async fn ensure_adapter(
             .tempdir_in(parent)
             .map_err(|error| error.to_string())?;
         let install_root = staging.path();
-        let mut command = Command::new("npm");
+        let mut command = sikemux_process::user_environment::command("npm");
         command.stdin(Stdio::null());
         command.args([
             "install",

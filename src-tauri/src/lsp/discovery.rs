@@ -1,7 +1,6 @@
 #[cfg(unix)]
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use crate::error::{AppError, AppResult};
 
@@ -23,7 +22,10 @@ fn executable_in_path(bin: &str) -> Option<PathBuf> {
 }
 
 fn go_env(name: &str) -> Option<String> {
-    let output = Command::new("go").args(["env", name]).output().ok()?;
+    let output = sikemux_process::user_environment::command("go")
+        .args(["env", name])
+        .output()
+        .ok()?;
     if !output.status.success() {
         return None;
     }
@@ -121,7 +123,7 @@ fn install_output_message(stdout: &[u8], stderr: &[u8]) -> String {
 }
 
 pub(super) fn install_gopls() -> AppResult<String> {
-    let output = Command::new("go")
+    let output = sikemux_process::user_environment::command("go")
         .args(["install", "golang.org/x/tools/gopls@latest"])
         .output()
         .map_err(|e| {

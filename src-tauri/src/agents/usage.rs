@@ -150,7 +150,7 @@ async fn run_codex_usage_executable(
     executable: &Path,
     config_path: Option<&str>,
 ) -> Result<AgentUsage, String> {
-    let mut command = Command::new(executable);
+    let mut command = Command::from(sikemux_process::user_environment::command(executable));
     apply_login_environment(&mut command);
     command
         .args(["app-server", "--stdio"])

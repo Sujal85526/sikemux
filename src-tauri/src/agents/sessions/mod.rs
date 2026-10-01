@@ -89,7 +89,7 @@ pub async fn live_agent_sessions(
             })
         })
         .ok_or_else(|| "claude is not available".to_string())?;
-    let mut command = Command::new(executable);
+    let mut command = Command::from(sikemux_process::user_environment::command(executable));
     apply_login_environment(&mut command);
     command
         .args(["agents", "--json"])

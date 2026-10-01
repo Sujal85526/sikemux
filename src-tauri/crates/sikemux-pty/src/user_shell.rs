@@ -123,6 +123,8 @@ fn capture_login_shell() -> LoginShellCapture {
         format!("printf %s '{LOGIN_ENV_SENTINEL}'; env -0; printf %s '{LOGIN_ENV_SENTINEL_END}'");
     let (sender, receiver) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
+        // The user's environment is read from this shell, so it cannot wait for it.
+        #[allow(clippy::disallowed_methods)]
         let mut command = Command::new(&shell);
         command
             .args(["-l", "-i", "-c", &script])

@@ -133,7 +133,7 @@ pub(super) fn shutdown_server(server: ServerHandle) {
 mod tests {
     use super::*;
     use std::io::Write;
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
     use std::thread;
     use std::time::Duration;
 
@@ -150,7 +150,7 @@ mod tests {
             }
         }
 
-        let mut child = Command::new("/bin/sleep")
+        let mut child = sikemux_process::user_environment::command("/bin/sleep")
             .arg("60")
             .stdin(Stdio::piped())
             .stdout(Stdio::null())

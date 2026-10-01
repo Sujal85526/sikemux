@@ -37,7 +37,7 @@ pub fn terminate_process_tree(pid: u32, force: bool) {
     // ConPTY's portable child handle terminates only the direct shell. Use
     // taskkill's tree mode so foreground commands and agent subprocesses do
     // not survive an app close. Child::kill remains the fallback below.
-    let mut command = std::process::Command::new("taskkill");
+    let mut command = sikemux_process::user_environment::command("taskkill");
     let pid = pid.to_string();
     command.args(["/PID", &pid, "/T"]);
     if force {

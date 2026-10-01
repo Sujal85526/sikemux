@@ -626,7 +626,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn the_kernel_reports_a_child_process() {
-        let mut child = std::process::Command::new("/bin/sleep")
+        let mut child = sikemux_process::user_environment::command("/bin/sleep")
             .arg("5")
             .spawn()
             .expect("spawn sleep");

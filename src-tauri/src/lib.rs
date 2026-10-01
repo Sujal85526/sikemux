@@ -100,20 +100,12 @@ pub fn run() {
     // all start failing with "Too many open files".
     system::raise_fd_limit();
 
-    // Inherit the user's shell PATH so spawned subprocesses (hermes for
-    // AI commits, rnd CLI, aws CLI, claude, etc.) resolve the same way
-    // they do in `make dev`. macOS GUI launches otherwise get a minimal
-    // PATH that's missing ~/.local/bin, /opt/homebrew/bin, etc.
-    system::fix_path_from_login_shell();
-    cli_paths::put_cli_on_path();
-
-    // Warm the profile-environment cache here, on the startup thread, while
-    // we are already paying for a login shell. Agent and browser launches
-    // read it from async commands, where initialising it would block an
-    // async runtime worker for up to the capture deadline. An rc file that
-    // runs something slow like `fastfetch` makes that delay visible.
-    sikemux_pty::user_shell::warm_login_shell_environment();
-    system::import_from_login_shell(&plugins::shell_variables());
+    // Children get the user's shell PATH so hermes, rnd, aws, claude, etc.
+    // resolve the way they do in `make dev`. Reading the login shell takes as
+    // long as the user's rc files, so it runs while the window is created.
+    cli_paths::link_cli_for_children();
+    sikemux_process::user_environment::provide(system::user_environment);
+    std::thread::spawn(sikemux_process::user_environment::warm);
 
     let builder = tauri::Builder::default();
     #[cfg(target_os = "macos")]

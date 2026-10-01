@@ -34,8 +34,8 @@ static CLI_ON_PATH: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 
 /// Agents shell out to `sikemux`, but the packaged CLI is named
 /// `sikemux-editor`, so a `sikemux` link to it goes first on PATH for every
-/// process this app launches. Call once at startup, before threads spawn.
-pub fn put_cli_on_path() {
+/// process this app launches. Call once at startup.
+pub fn link_cli_for_children() {
     let Some(executable) = cli_executable_path() else {
         return;
     };
@@ -48,17 +48,13 @@ pub fn put_cli_on_path() {
     }) else {
         return;
     };
-    let Ok(link) = link_cli(&executable, &directory) else {
-        return;
-    };
-    let existing = std::env::var_os("PATH").unwrap_or_default();
-    let paths = std::iter::once(directory.clone())
-        .chain(std::env::split_paths(&existing).filter(|path| *path != directory));
-    if let Ok(joined) = std::env::join_paths(paths) {
-        // SAFETY: called once at startup before any threads spawn.
-        unsafe { std::env::set_var("PATH", joined) };
+    if let Ok(link) = link_cli(&executable, &directory) {
         let _ = CLI_ON_PATH.set(link);
     }
+}
+
+pub fn cli_link_directory() -> Option<&'static Path> {
+    CLI_ON_PATH.get()?.parent()
 }
 
 pub fn cli_command_path() -> Option<PathBuf> {

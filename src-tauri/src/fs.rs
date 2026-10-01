@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use base64::{engine::general_purpose, Engine as _};
@@ -729,11 +728,14 @@ fn reveal_in_finder_sync(path: String) -> AppResult<()> {
     }
     #[cfg(target_os = "macos")]
     {
-        Command::new("open").arg("-R").arg(&p).status()?;
+        sikemux_process::user_environment::command("open")
+            .arg("-R")
+            .arg(&p)
+            .status()?;
     }
     #[cfg(target_os = "windows")]
     {
-        Command::new("explorer.exe")
+        sikemux_process::user_environment::command("explorer.exe")
             .arg("/select,")
             .arg(&p)
             .status()?;
@@ -747,7 +749,9 @@ fn reveal_in_finder_sync(path: String) -> AppResult<()> {
                 .map(|d| d.to_path_buf())
                 .unwrap_or_else(|| p.clone())
         };
-        Command::new("xdg-open").arg(&dir).status()?;
+        sikemux_process::user_environment::command("xdg-open")
+            .arg(&dir)
+            .status()?;
     }
     Ok(())
 }

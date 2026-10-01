@@ -325,7 +325,7 @@ mod tests {
     use crate::git::status::git_status;
     use crate::git::tests::{commit_base, git, init_repo, repo_arg};
     use std::fs;
-    use std::process::Command;
+
     use tempfile::tempdir;
 
     #[tokio::test]
@@ -386,7 +386,7 @@ mod tests {
                 format!("#!/bin/sh\ntouch '{}'\n{body}\n", marker.display()),
             )
             .expect("write script");
-            Command::new("chmod")
+            sikemux_process::user_environment::command("chmod")
                 .arg("+x")
                 .arg(&script)
                 .status()

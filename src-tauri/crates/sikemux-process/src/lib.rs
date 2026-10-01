@@ -7,6 +7,8 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 
+pub mod user_environment;
+
 #[derive(Debug)]
 pub enum ProcessRunError {
     Spawn(io::Error),
@@ -70,7 +72,7 @@ fn kill_group(pid: u32) {
     }
     #[cfg(windows)]
     {
-        let _ = Command::new("taskkill")
+        let _ = crate::user_environment::command("taskkill")
             .args(["/PID", &pid.to_string(), "/T", "/F"])
             .status();
     }
@@ -271,7 +273,7 @@ mod tests {
     /// process exits, not when a timer next fires.
     #[test]
     fn a_slow_child_is_waited_on_not_polled() {
-        let mut command = Command::new("sh");
+        let mut command = crate::user_environment::command("sh");
         command.args(["-c", "sleep 0.3; echo done"]);
         let started = Instant::now();
         let out = run(
@@ -290,7 +292,7 @@ mod tests {
 
     #[test]
     fn a_child_that_outlives_its_deadline_is_killed() {
-        let mut command = Command::new("sh");
+        let mut command = crate::user_environment::command("sh");
         command.args(["-c", "sleep 30"]);
         let error = run(
             &mut command,
@@ -313,7 +315,7 @@ mod tests {
             trigger.cancel();
         });
 
-        let mut command = Command::new("sh");
+        let mut command = crate::user_environment::command("sh");
         command.args(["-c", "sleep 30"]);
         let started = Instant::now();
         let error = run(

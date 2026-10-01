@@ -117,7 +117,7 @@ pub(super) async fn run_model_catalog_executable_without_env(
     config_path: Option<&str>,
     removed_env: &[&str],
 ) -> Result<String, String> {
-    let mut command = Command::new(executable);
+    let mut command = Command::from(sikemux_process::user_environment::command(executable));
     apply_login_environment(&mut command);
     for key in removed_env {
         command.env_remove(key);

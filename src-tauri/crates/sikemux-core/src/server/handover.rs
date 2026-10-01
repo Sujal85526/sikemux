@@ -14,7 +14,6 @@ use std::os::fd::{AsRawFd, FromRawFd, RawFd};
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -255,7 +254,7 @@ pub(crate) fn replace_process(core: &Core, binary: &Path, chats: &[ChatRecord]) 
         return error.into();
     }
 
-    let mut command = Command::new(binary);
+    let mut command = sikemux_process::user_environment::command(binary);
     command
         .arg("core")
         .arg("--resume")

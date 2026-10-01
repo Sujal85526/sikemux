@@ -6,7 +6,7 @@
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, ChildStdin, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -133,7 +133,7 @@ impl VoiceManager {
     fn spawn(&self, app: &AppHandle) -> AppResult<Helper> {
         let executable = helper_executable(&models_dir(app)?)
             .ok_or_else(|| AppError::Other("the voice helper is missing from this build".into()))?;
-        let mut command = Command::new(executable);
+        let mut command = sikemux_process::user_environment::command(executable);
         for variable in MODEL_FETCH_VARIABLES {
             command.env_remove(variable);
         }

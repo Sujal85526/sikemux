@@ -138,20 +138,20 @@ async fn probe_agent_executable_with_timeout(
         executable.extension().and_then(|value| value.to_str()),
         Some(value) if value.eq_ignore_ascii_case("cmd") || value.eq_ignore_ascii_case("bat")
     ) {
-        let mut command = Command::new("cmd.exe");
+        let mut command = Command::from(sikemux_process::user_environment::command("cmd.exe"));
         command
             .args(["/D", "/S", "/C"])
             .arg(executable)
             .args(probe_args);
         command
     } else {
-        let mut command = Command::new(executable);
+        let mut command = Command::from(sikemux_process::user_environment::command(executable));
         command.args(probe_args);
         command
     };
     #[cfg(not(windows))]
     let mut command = {
-        let mut command = Command::new(executable);
+        let mut command = Command::from(sikemux_process::user_environment::command(executable));
         command.args(probe_args);
         command
     };
