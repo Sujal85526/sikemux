@@ -421,3 +421,8 @@
         animation: none;
     }
 }
+
+.chat-menu-mark[data-kind="issue"],
+.chat-menu-mark[data-kind="pull"] {
+    color: var(--live);
+}

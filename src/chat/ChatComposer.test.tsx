@@ -1,16 +1,30 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Agent } from "../state/types";
 import { ChatComposer } from "./ChatComposer";
 import { PathRootsProvider } from "./FileRef";
+import type { TrackedList } from "../codehost/tracked";
+
+const repo = { provider: "github", owner: "o", name: "r", account: null };
 
 const mocks = vi.hoisted(() => ({
     list: vi.fn(async () => ["src/main.ts", "src/lib/util.ts", "README.md"]),
     onSend: vi.fn((): boolean => true),
+    tracked: vi.fn((): TrackedList => ({ state: "loading" })),
+    load: vi.fn(async (_repo: unknown, kind: string, number: number) => ({
+        uri: `https://github.com/o/r/${kind === "issue" ? "issues" : "pull"}/${number}`,
+        title: `#${number} Login crashes`,
+        text: `Issue #${number}: Login crashes`,
+    })),
 }));
 
 vi.mock("../api/files", () => ({ filesApi: { list: mocks.list } }));
+vi.mock("../codehost/tracked", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../codehost/tracked")>()),
+    useTrackedItems: mocks.tracked,
+    loadTrackedContext: mocks.load,
+}));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn(async () => null) }));
 
 const agent: Agent = {
@@ -102,5 +116,64 @@ describe("ChatComposer @ picker", () => {
         type(editor, "mail me@main");
         await act(async () => {});
         expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    });
+});
+
+describe("ChatComposer # picker", () => {
+    const items = [
+        { kind: "issue" as const, number: 12, title: "Login crashes", createdAt: "2026-02-01", url: "https://github.com/o/r/issues/12" },
+        { kind: "pull" as const, number: 9, title: "Faster boot", createdAt: "2026-01-01", url: "https://github.com/o/r/pull/9" },
+    ];
+
+    it("lists open issues and pull requests, filtered by number or words", async () => {
+        mocks.tracked.mockReturnValue({ state: "ready", repo, items });
+        const editor = renderComposer();
+        type(editor, "#");
+        expect(await screen.findByRole("option", { name: /#12.*Login crashes/ })).toBeInTheDocument();
+        expect(screen.getByRole("option", { name: /#9.*Faster boot/ })).toBeInTheDocument();
+        type(editor, "#boot");
+        expect(screen.queryByRole("option", { name: /#12/ })).not.toBeInTheDocument();
+        type(editor, "#1");
+        expect(screen.getByRole("option", { name: /#12/ })).toBeInTheDocument();
+        expect(screen.queryByRole("option", { name: /#9/ })).not.toBeInTheDocument();
+    });
+
+    it("says why there is nothing to pick", async () => {
+        mocks.tracked.mockReturnValue({ state: "unavailable", message: "Sign in to GitHub in the Git pane to pick from its issues" });
+        const editor = renderComposer();
+        type(editor, "fix #");
+        expect(await screen.findByText("Sign in to GitHub in the Git pane to pick from its issues")).toBeInTheDocument();
+    });
+
+    it("adds a chip, and reads the issue in full when the message is sent", async () => {
+        mocks.tracked.mockReturnValue({ state: "ready", repo, items });
+        const editor = renderComposer();
+        type(editor, "fix #12");
+        fireEvent.keyDown(await screen.findByRole("textbox", { name: "Message agent" }), { key: "Enter" });
+        expect(editor).toHaveValue("fix ");
+        expect(screen.getByTitle("https://github.com/o/r/issues/12")).toHaveTextContent("#12 Login crashes");
+
+        fireEvent.keyDown(editor, { key: "Enter" });
+        await waitFor(() =>
+            expect(mocks.onSend).toHaveBeenCalledWith(
+                {
+                    text: "fix",
+                    paths: [],
+                    context: [{ uri: "https://github.com/o/r/issues/12", title: "#12 Login crashes", text: "Issue #12: Login crashes" }],
+                },
+                false,
+            ),
+        );
+        expect(mocks.load).toHaveBeenCalledWith(repo, "issue", 12);
+        await waitFor(() => expect(screen.queryByTitle("https://github.com/o/r/issues/12")).not.toBeInTheDocument());
+    });
+
+    it("lets a chip be removed", async () => {
+        mocks.tracked.mockReturnValue({ state: "ready", repo, items });
+        const editor = renderComposer();
+        type(editor, "#9");
+        fireEvent.keyDown(editor, { key: "Enter" });
+        fireEvent.click(screen.getByRole("button", { name: "Remove #9" }));
+        expect(screen.queryByTitle("https://github.com/o/r/pull/9")).not.toBeInTheDocument();
     });
 });

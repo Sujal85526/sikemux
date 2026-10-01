@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { agentSupportsSkipPermissions } from "../state/commands/agentLogic";
 import { ComposerPickers, type SessionConfig } from "./ComposerPickers";
@@ -24,6 +24,12 @@ import { entryName, mergePaths, projectEntries, rankEntries, removeToken, tokenA
 import { receiveForAgent } from "../agents/agentInbox";
 import type { AcpAvailableCommand, ChatState, ContextUsage } from "./types";
 import type { OutgoingMessage } from "./queuedMessages";
+import type { PromptContext } from "../api/acp";
+import type { RepoRef } from "../codehost/types";
+import type { TrackedItem, TrackedKind } from "../codehost/tracked";
+import type { TrackedMatches } from "./TrackedSource";
+import { ContextMark } from "./ContextChip";
+import { contextChip } from "./promptContext";
 
 function ComposerAttachment({ path, onRemove }: { path: string; onRemove: () => void }) {
     const preview = useImagePreview(path);
@@ -89,6 +95,50 @@ function ComposerMenu({ menu, selected }: { menu: ComposerMenuModel; selected: n
 
 const MAX_ENTRIES = 8;
 
+/** An item to hand over with the message. One picked with `#` is read in full only when the message is sent. */
+interface ComposerContext {
+    uri: string;
+    title: string;
+    text: string | null;
+    tracked: { repo: RepoRef; kind: TrackedKind; number: number } | null;
+}
+
+function mergeContext(current: ComposerContext[], incoming: readonly ComposerContext[]): ComposerContext[] {
+    return [...current, ...incoming.filter((item) => !current.some((other) => other.uri === item.uri))];
+}
+
+function readContext(item: ComposerContext): Promise<PromptContext> {
+    if (item.text !== null) return Promise.resolve({ uri: item.uri, title: item.title, text: item.text });
+    if (!item.tracked) return Promise.reject(new Error(`${item.title} has nothing to send`));
+    const { repo, kind, number } = item.tracked;
+    return Promise.all([import("../codehost/tracked"), import("../codehost/api")]).then(([{ loadTrackedContext }, { failureMessage }]) =>
+        loadTrackedContext(repo, kind, number).catch((failure: unknown) => {
+            throw new Error(`Could not read #${number}: ${failureMessage(failure)}`);
+        }),
+    );
+}
+
+const TrackedSource = lazy(() => import("./TrackedSource"));
+
+function ComposerContextChip({ item, onRemove }: { item: ComposerContext; onRemove: () => void }) {
+    const chip = contextChip(item);
+    const name = chip.number ? `#${chip.number}` : chip.title;
+    return (
+        <span className="chat-context-chip" title={item.uri}>
+            <span className="chat-context-mark" data-kind={chip.kind ?? "other"}>
+                <ContextMark kind={chip.kind} size={14} />
+            </span>
+            <span>
+                {chip.number && <span className="chat-context-number">#{chip.number} </span>}
+                {chip.title}
+            </span>
+            <button type="button" aria-label={`Remove ${name}`} onClick={onRemove}>
+                <IconClose size={11} />
+            </button>
+        </span>
+    );
+}
+
 /* The composer keeps the draft to itself: a keystroke redraws these few rows
    rather than the transcript above them. */
 export function ChatComposer({
@@ -147,6 +197,8 @@ export function ChatComposer({
     const recalledCaret = useRef<"start" | "end" | null>(null);
     const [caret, setCaret] = useState(0);
     const [attachments, setAttachments] = useState<string[]>([]);
+    const [contexts, setContexts] = useState<ComposerContext[]>([]);
+    const [reading, setReading] = useState(false);
     const [menuSelection, setMenuSelection] = useState(0);
     const [menuDismissed, setMenuDismissed] = useState(false);
     const editorRef = useRef<HTMLTextAreaElement>(null);
@@ -264,6 +316,9 @@ export function ChatComposer({
         [entries, token?.trigger, token?.needle],
     );
 
+    const [trackedList, setTrackedList] = useState<TrackedMatches>({ state: "loading" });
+    const trackedMatches = token?.trigger === "#" && trackedList.state === "ready" ? trackedList.matches : [];
+
     const selectCommand = (command: AcpAvailableCommand) => {
         if (!token) return;
         const spaced = Boolean(command.input?.hint) && !/^\s/.test(draft.slice(caret));
@@ -275,6 +330,19 @@ export function ChatComposer({
     const selectEntry = (entry: ProjectEntry) => {
         takeToken();
         setAttachments((current) => mergePaths(current, [joinPath(cwd, entry.path)]));
+        onError(null);
+    };
+
+    const selectTracked = (item: TrackedItem) => {
+        if (trackedList.state !== "ready") return;
+        takeToken();
+        const chosen = {
+            uri: item.url,
+            title: `#${item.number} ${item.title}`,
+            text: null,
+            tracked: { repo: trackedList.repo, kind: item.kind, number: item.number },
+        };
+        setContexts((current) => mergeContext(current, [chosen]));
         onError(null);
     };
 
@@ -319,12 +387,38 @@ export function ChatComposer({
                         ),
                     })),
                 }
-              : null;
+              : token?.trigger === "#"
+                ? {
+                      label: "Issues and pull requests",
+                      heading: "Issues and pull requests",
+                      aside: trackedList.state === "ready" ? `${trackedList.repo.owner}/${trackedList.repo.name}` : "",
+                      variant: "entries",
+                      empty:
+                          trackedList.state === "loading"
+                              ? "Reading open issues and pull requests…"
+                              : trackedList.state === "unavailable"
+                                ? trackedList.message
+                                : "No open issue or pull request matches",
+                      rows: trackedMatches.map((item) => ({
+                          key: `${item.kind}-${item.number}`,
+                          choose: () => selectTracked(item),
+                          content: (
+                              <>
+                                  <span className="chat-menu-mark" data-kind={item.kind}>
+                                      <ContextMark kind={item.kind} size={13} />
+                                  </span>
+                                  <code>#{item.number}</code>
+                                  <span>{item.title}</span>
+                              </>
+                          ),
+                      })),
+                  }
+                : null;
     const menuRows = menu?.rows ?? [];
     const selected = Math.min(menuSelection, Math.max(0, menuRows.length - 1));
 
     const blocked = changingConfig || changingPermissions || !permissionApplied;
-    const drafted = Boolean(draft.trim()) || attachments.length > 0;
+    const drafted = Boolean(draft.trim()) || attachments.length > 0 || contexts.length > 0;
 
     // Send and stop are one button: when it changes job, the new icon turns in rather than swapping in place.
     const stopping = running && !drafted;
@@ -347,16 +441,32 @@ export function ChatComposer({
 
     const canSteerQueued = running && steerable && queuedCount > 0;
 
-    const send = (steerNow = false) => {
-        const text = draft.trim();
-        if ((!text && attachments.length === 0) || blocked) return;
-        if (!onSend({ text, paths: attachments, context: [] }, steerNow)) return;
+    const clear = () => {
         setDraft("");
         setCaret(0);
         setMenuSelection(0);
         setAttachments([]);
+        setContexts([]);
         setMenuDismissed(false);
         setHistoryPosition(null);
+    };
+
+    const send = (steerNow = false) => {
+        const text = draft.trim();
+        if (!drafted || blocked || reading) return;
+        const paths = attachments;
+        if (contexts.every((item) => item.text !== null)) {
+            if (onSend({ text, paths, context: contexts.map((item) => ({ uri: item.uri, title: item.title, text: item.text ?? "" })) }, steerNow))
+                clear();
+            return;
+        }
+        setReading(true);
+        void Promise.all(contexts.map(readContext))
+            .then((context) => {
+                if (onSend({ text, paths, context }, steerNow)) clear();
+            })
+            .catch((failure: unknown) => onError(failure instanceof Error ? failure.message : String(failure)))
+            .finally(() => setReading(false));
     };
 
     const chooseFiles = async () => {
@@ -372,15 +482,27 @@ export function ChatComposer({
 
     return (
         <div className="chat-composer">
+            {token?.trigger === "#" && (
+                <Suspense fallback={null}>
+                    <TrackedSource cwd={cwd} needle={token.needle} limit={MAX_ENTRIES} onMatches={setTrackedList} />
+                </Suspense>
+            )}
             {menu && <ComposerMenu menu={menu} selected={selected} />}
             <div className="chat-field">
-                {attachments.length > 0 && (
+                {(attachments.length > 0 || contexts.length > 0) && (
                     <div className="chat-attachments">
                         {attachments.map((path) => (
                             <ComposerAttachment
                                 key={path}
                                 path={path}
                                 onRemove={() => setAttachments((current) => current.filter((candidate) => candidate !== path))}
+                            />
+                        ))}
+                        {contexts.map((item) => (
+                            <ComposerContextChip
+                                key={item.uri}
+                                item={item}
+                                onRemove={() => setContexts((current) => current.filter((candidate) => candidate.uri !== item.uri))}
                             />
                         ))}
                     </div>
@@ -458,7 +580,7 @@ export function ChatComposer({
                         }
                         if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                             event.preventDefault();
-                            if (hasPrimaryModifier(event.nativeEvent) && !draft.trim() && attachments.length === 0 && canSteerQueued) {
+                            if (hasPrimaryModifier(event.nativeEvent) && !drafted && canSteerQueued) {
                                 onSteerQueued();
                                 return;
                             }
@@ -513,7 +635,7 @@ export function ChatComposer({
                                   ? `Queues behind this turn — ${PRIMARY_SHORTCUT}↵ steers into it`
                                   : undefined
                         }
-                        disabled={blocked || !drafted}
+                        disabled={blocked || reading || !drafted}
                         onClick={() => send()}>
                         <IconArrowUp size={15} />
                     </button>
