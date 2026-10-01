@@ -240,14 +240,32 @@ impl Remote {
         answered
     }
 
+    /// Adds an allowed device before telling it, so the answer the app gets
+    /// back already lists it.
     pub(super) fn answer(&self, id: &str, access: Option<DeviceAccess>) -> CoreResult<()> {
-        let mut inner = self.lock();
-        let index = inner
-            .pending
-            .iter()
-            .position(|pending| pending.device.id == id)
-            .ok_or_else(|| CoreError::from("that device is no longer waiting"))?;
-        let pending = inner.pending.remove(index);
+        let pending = {
+            let mut inner = self.lock();
+            let index = inner
+                .pending
+                .iter()
+                .position(|pending| pending.device.id == id)
+                .ok_or_else(|| CoreError::from("that device is no longer waiting"))?;
+            inner.pending.remove(index)
+        };
+        if let Some(access) = access {
+            let device = &pending.device;
+            if let Err(error) = self.add_device(DeviceInfo {
+                id: device.device_id.clone(),
+                name: device.name.clone(),
+                platform: device.platform.clone(),
+                access,
+                paired_at: unix_ms(),
+                last_seen: None,
+            }) {
+                let _ = pending.answer.send(None);
+                return Err(error);
+            }
+        }
         let _ = pending.answer.send(access);
         Ok(())
     }
@@ -258,7 +276,7 @@ impl Remote {
             .retain(|pending| pending.device.id != id);
     }
 
-    pub(super) fn add_device(&self, device: DeviceInfo) -> CoreResult<()> {
+    fn add_device(&self, device: DeviceInfo) -> CoreResult<()> {
         self.change(|stored| {
             stored.devices.retain(|known| known.id != device.id);
             stored.devices.push(device);

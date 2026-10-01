@@ -395,9 +395,16 @@ async fn a_device_pairs_with_the_code_once_the_person_allows_it() {
     assert!(waiting.pairing.is_none(), "a used code stayed open");
     let request = &waiting.pending[0];
     assert_eq!(request.name, "Kishore's phone");
-    app.answer_pairing(request.id.clone(), true, DeviceAccess::Watch)
+    let answered = app
+        .answer_pairing(request.id.clone(), true, DeviceAccess::Watch)
         .await
         .expect("allow");
+    assert_eq!(
+        answered.devices.len(),
+        1,
+        "the answer did not list the new device"
+    );
+    assert!(answered.pending.is_empty());
 
     let (result, endpoint, phone) = paired.await.expect("pairing task");
     assert_eq!(result.expect("paired"), DeviceAccess::Watch);

@@ -6,9 +6,9 @@ use std::time::Duration;
 use iroh::endpoint::{Connection, SendStream};
 
 use crate::pairing::{self, PairMessage, APPROVAL_TIMEOUT};
-use crate::protocol::{DeviceInfo, PendingDevice};
+use crate::protocol::PendingDevice;
 
-use super::remote::{self, unix_ms};
+use super::remote;
 use super::Core;
 
 const STEP: Duration = Duration::from_secs(15);
@@ -106,19 +106,7 @@ pub(super) async fn serve(core: Arc<Core>, connection: Connection) {
     };
     core.remote.forget_pending(&request.id);
     let outcome = match access {
-        Some(access) => match core.remote.add_device(DeviceInfo {
-            id: device_id,
-            name: request.name,
-            platform: request.platform,
-            access,
-            paired_at: unix_ms(),
-            last_seen: None,
-        }) {
-            Ok(()) => PairMessage::Approved { access },
-            Err(error) => PairMessage::Refused {
-                message: format!("The Mac could not save this device: {error}"),
-            },
-        },
+        Some(access) => PairMessage::Approved { access },
         None => PairMessage::Refused {
             message: DECLINED.into(),
         },
