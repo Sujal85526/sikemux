@@ -1127,6 +1127,7 @@ function openDeepLink(pid, link) {
 
 const TUI_AGENT_RESUME_ID = "e2e-pi";
 const FAKE_PI_MARKER = "fake-pi started";
+const FAKE_PI_SESSION_LINE = `--session ${TUI_AGENT_RESUME_ID}`;
 const RESUME_NOTE = "— Resuming Pi —";
 
 async function tuiAgentSession(core, previous) {
@@ -1156,13 +1157,13 @@ async function expectTuiAgentResumed(core, previous, runs) {
     10_000,
     async () => {
       replay = await core.attachReplay(resumed.id);
-      return count(replay, FAKE_PI_MARKER) === runs;
+      return count(replay, FAKE_PI_SESSION_LINE) === runs;
     },
   );
   if (
     count(replay, RESUME_NOTE) !== runs - 1 ||
     replay.lastIndexOf(RESUME_NOTE) > replay.lastIndexOf(FAKE_PI_MARKER) ||
-    count(replay, `--session ${TUI_AGENT_RESUME_ID}`) !== runs
+    count(replay, FAKE_PI_MARKER) !== runs
   )
     fail(
       `the resumed agent lost its old screen or its conversation: ${JSON.stringify(replay.slice(-2_000))}`,
@@ -1193,7 +1194,7 @@ async function exerciseTerminalAgentResumes() {
   let screen = "";
   await waitFor("the terminal agent to print", 10_000, async () => {
     screen = await core.attachReplay(first.id);
-    return screen.includes(FAKE_PI_MARKER);
+    return screen.includes(FAKE_PI_SESSION_LINE);
   }).catch(() =>
     fail(
       `the terminal agent did not start: ${JSON.stringify(first)} ${JSON.stringify(screen.slice(-1_000))}`,
