@@ -91,7 +91,17 @@
 
 .chat-tool-node:last-child::before {
     bottom: auto;
-    height: 11px;
+    box-sizing: border-box;
+    width: 9px;
+    height: 11.5px;
+    background: none;
+    border-left: 1px solid var(--tree-spine);
+    border-bottom: 1px solid var(--tree-tick);
+    border-bottom-left-radius: 4px;
+}
+
+.chat-tool-node:last-child > .chat-tool > .chat-tool-line > .chat-tool-tick {
+    background: none;
 }
 
 /* The row takes the pointer across the whole width of the run, while the
