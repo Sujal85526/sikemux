@@ -19,7 +19,7 @@ use sikemux_pty::task::{TaskSource, TaskSpawnRequest};
 use crate::cli::protocol::{CliOpenRequest, HarnessRequest};
 
 pub const PROTOCOL: &str = "sikemux-core";
-pub const PROTOCOL_VERSION: u32 = 6;
+pub const PROTOCOL_VERSION: u32 = 7;
 /// Room for the largest attach snapshot plus its header.
 pub const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 
