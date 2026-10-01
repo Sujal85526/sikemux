@@ -4359,6 +4359,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sikemux-core"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "portable-pty",
+ "serde",
+ "serde_json",
+ "sikemux-pty",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
 name = "sikemux-keychain"
 version = "0.1.0"
 dependencies = [
