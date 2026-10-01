@@ -223,7 +223,7 @@ function openCore(path) {
       frame.kind === CORE_FRAME.control ? JSON.parse(frame.payload) : null;
     socket.once("connect", async () => {
       socket.write(
-        coreControl({ type: "hello", protocol: "sikemux-core", version: 4 }),
+        coreControl({ type: "hello", protocol: "sikemux-core", version: 5 }),
       );
       const hello = await next((frame) => control(frame)?.type === "helloAck");
       if (!hello) {
@@ -1097,6 +1097,143 @@ async function exerciseUpdateKeepsTerminals(shell, chatSession) {
   );
 }
 
+// A deep link opens a terminal agent the way the operating system would hand
+// one over: an "open URL" Apple Event sent straight to the app's process.
+function openDeepLink(pid, link) {
+  const sent = run(
+    "osascript",
+    [
+      "-l",
+      "JavaScript",
+      "-e",
+      [
+        'ObjC.import("Foundation");',
+        `const target = $.NSAppleEventDescriptor.descriptorWithProcessIdentifier(${pid});`,
+        "const event = $.NSAppleEventDescriptor.appleEventWithEventClassEventIDTargetDescriptorReturnIDTransactionID(0x4755524c, 0x4755524c, target, -1, 0);",
+        `event.setParamDescriptorForKeyword($.NSAppleEventDescriptor.descriptorWithString(${JSON.stringify(link)}), 0x2d2d2d2d);`,
+        "event.sendEventWithOptionsTimeoutError(1, 10, null);",
+      ].join("\n"),
+    ],
+    process.env,
+    15_000,
+  );
+  if (sent.status !== 0)
+    console.warn(
+      `! osascript could not send ${link}: ${(sent.stderr || sent.error?.message || "").trim()}`,
+    );
+  return sent.status === 0;
+}
+
+const TUI_AGENT_RESUME_ID = "e2e-pi";
+const FAKE_PI_MARKER = "fake-pi started";
+const RESUME_NOTE = "— Resuming Pi —";
+
+async function tuiAgentSession(core, previous) {
+  const listed = await core.request({ op: "list" }, 5_000);
+  return (listed?.response?.sessions ?? []).find(
+    (session) =>
+      session.kind === "terminal" &&
+      session.agentType === "pi" &&
+      session.running &&
+      session.id !== previous,
+  );
+}
+
+async function expectTuiAgentResumed(core, previous, runs) {
+  let resumed;
+  await waitFor(
+    "the terminal agent to come back in a new terminal",
+    READY_TIMEOUT_MS,
+    async () => Boolean((resumed = await tuiAgentSession(core, previous))),
+  );
+  if (await coreSession(core, previous))
+    fail("the crashed agent's old terminal was left behind", desktopLog);
+  const count = (text, marker) => text.split(marker).length - 1;
+  let replay = "";
+  await waitFor(
+    "the resumed agent to print below its old screen",
+    10_000,
+    async () => {
+      replay = await core.attachReplay(resumed.id);
+      return count(replay, FAKE_PI_MARKER) === runs;
+    },
+  );
+  if (
+    count(replay, RESUME_NOTE) !== runs - 1 ||
+    replay.lastIndexOf(RESUME_NOTE) > replay.lastIndexOf(FAKE_PI_MARKER) ||
+    count(replay, `--session ${TUI_AGENT_RESUME_ID}`) !== runs
+  )
+    fail(
+      `the resumed agent lost its old screen or its conversation: ${JSON.stringify(replay.slice(-2_000))}`,
+      desktopLog,
+    );
+  return resumed;
+}
+
+// A terminal agent killed from outside comes back on its conversation in the
+// same pane, below its old screen, whether the app is open or was closed.
+async function exerciseTerminalAgentResumes() {
+  if (
+    !openDeepLink(
+      desktop.pid,
+      `sikemux://agent/pi/${TUI_AGENT_RESUME_ID}?project=${encodeURIComponent(project)}`,
+    )
+  ) {
+    console.warn(
+      "! Could not hand the app a deep link; skipping the terminal agent resume check",
+    );
+    return;
+  }
+  const core = await openCore(coreSocket);
+  let first;
+  await waitFor("the terminal agent to start", READY_TIMEOUT_MS, async () =>
+    Boolean((first = await tuiAgentSession(core))),
+  );
+  let screen = "";
+  await waitFor("the terminal agent to print", 10_000, async () => {
+    screen = await core.attachReplay(first.id);
+    return screen.includes(FAKE_PI_MARKER);
+  }).catch(() =>
+    fail(
+      `the terminal agent did not start: ${JSON.stringify(first)} ${JSON.stringify(screen.slice(-1_000))}`,
+      desktopLog,
+    ),
+  );
+  process.kill(first.pid, "SIGKILL");
+  const second = await expectTuiAgentResumed(core, first.id, 2);
+  core.close();
+  await waitFor(
+    "the resumed agent's terminal saved in the layout",
+    PERSIST_TIMEOUT_MS,
+    () => stateMentions(`"ptyId":${second.id}`),
+  );
+  console.log(
+    `Terminal agent resume passed: agent terminal ${first.id} was killed and came back as ${second.id} below its old screen`,
+  );
+
+  await quitDesktop();
+  const closed = await openCore(coreSocket);
+  process.kill(second.pid, "SIGKILL");
+  await waitFor(
+    "the core to keep the crashed agent's terminal",
+    10_000,
+    async () => {
+      const ended = await coreSession(closed, second.id);
+      return ended && !ended.running && !ended.killed;
+    },
+  );
+  closed.close();
+
+  desktop = launchDesktop();
+  await waitForBroker(desktop);
+  const watcher = await openCore(coreSocket);
+  const third = await expectTuiAgentResumed(watcher, second.id, 3);
+  watcher.close();
+  console.log(
+    `Terminal agent resume with the app closed passed: terminal ${second.id} crashed while Sikemux was closed and the next launch resumed it as ${third.id}`,
+  );
+}
+
 // Quit and Stop Everything ends what Quit left running, and the core with it.
 async function exerciseQuitAndStopEverything(shell) {
   const stopByMenu = clickAppMenuItem(desktop.pid, "Quit and Stop Everything");
@@ -1181,8 +1318,26 @@ if (exerciseHarnessTasks) {
   );
 }
 
+// A stand-in for the Pi CLI: it says it started and which conversation it
+// resumes, then waits, so the smoke can kill it the way a crash would.
+const fakeBin = join(temporaryRoot, "bin");
+await mkdir(fakeBin, { recursive: true });
+await writeFile(
+  join(fakeBin, "pi"),
+  `#!/bin/sh\necho "${FAKE_PI_MARKER}"\necho "--session $(echo "$*" | sed 's/.*--session //')"\nexec sleep 100000\n`,
+  { mode: 0o755 },
+);
+// A login shell puts the system's directories first, so the isolated home's
+// profile puts the stand-in back in front of any real Pi.
+for (const profile of [".zprofile", ".bash_profile", ".profile"])
+  await writeFile(
+    join(isolatedHome, profile),
+    `export PATH='${fakeBin}':"$PATH"\n`,
+  );
+
 const isolatedEnvironment = {
   ...process.env,
+  PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
   HOME: isolatedHome,
   USERPROFILE: isolatedHome,
   SIKEMUX_CLI_ENDPOINT: endpoint,
@@ -1477,6 +1632,7 @@ try {
     );
   }
 
+  await exerciseTerminalAgentResumes();
   await exerciseQuitAndStopEverything(keptShell);
 
   console.log(
