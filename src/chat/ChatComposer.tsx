@@ -17,6 +17,7 @@ import { ContextMeter } from "./ContextMeter";
 import { imagesInClipboard, savePastedClipboard } from "./pasteImage";
 import { arrowsBrowse, recallPrompt, type HistoryPosition } from "./promptHistory";
 import { mergePaths, slashTokenAt } from "./composerInput";
+import { receiveForAgent } from "../agents/agentInbox";
 import type { AcpAvailableCommand, ChatState, ContextUsage } from "./types";
 
 function ComposerAttachment({ path, onRemove }: { path: string; onRemove: () => void }) {
@@ -162,6 +163,22 @@ export function ChatComposer({
             window.requestAnimationFrame(() => editorRef.current?.focus());
         });
     }, [onError, paneRef]);
+
+    useEffect(() => {
+        if (!visible) return;
+        return receiveForAgent(agent.id, ({ text, paths }) => {
+            if (paths?.length) setAttachments((current) => mergePaths(current, paths));
+            const editor = editorRef.current;
+            const current = editor?.value ?? "";
+            const next = text ? `${current.trimEnd()}${current.trim() ? "\n\n" : ""}${text}` : current;
+            setDraft(next);
+            setCaret(next.length);
+            window.requestAnimationFrame(() => {
+                editorRef.current?.focus();
+                editorRef.current?.setSelectionRange(next.length, next.length);
+            });
+        });
+    }, [agent.id, visible]);
 
     useEffect(() => {
         const element = paneRef.current;

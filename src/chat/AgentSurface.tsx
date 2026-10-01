@@ -1,4 +1,7 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { receiveForAgent } from "../agents/agentInbox";
+import { dispatchPaths, resolvePathDropTarget } from "../state/dropRegistry";
+import { insertText, textInsertTargetWithin } from "../state/textInsertRegistry";
 import type { Agent, ProviderProfile, Session } from "../state/types";
 import { acpApi } from "../api/acp";
 import { agentSupportsChat } from "../agents/agentLaunch";
@@ -81,6 +84,20 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
        second should be spent before the user switches to this agent. */
     const guiActive = supportsGui && view === "gui" && !switching;
 
+    /* A terminal agent takes deliveries as typed text, the way a paste would arrive. */
+    const tuiLayer = useRef<HTMLDivElement>(null);
+    const tuiShown = visible && view === "tui" && !switching;
+    useEffect(() => {
+        if (!tuiShown) return;
+        return receiveForAgent(agent.id, ({ text, paths }) => {
+            const target = tuiLayer.current && textInsertTargetWithin(tuiLayer.current);
+            if (!target) return;
+            const drop = paths?.length ? resolvePathDropTarget(target) : null;
+            if (drop && paths) dispatchPaths(drop, paths);
+            if (text) insertText(target, text);
+        });
+    }, [agent.id, tuiShown]);
+
     return (
         <section className="agent-surface">
             <header className="agent-surface-header">
@@ -138,7 +155,7 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                     </div>
                 )}
                 {view === "tui" && !switching && (
-                    <div className="agent-tui-layer">
+                    <div className="agent-tui-layer" ref={tuiLayer}>
                         <TerminalPane
                             key={`${agent.id}:${agent.permissionMode ?? (agent.skipPermissions ? "bypass" : "workspace-write")}`}
                             cwd={agent.cwd || session.cwd || undefined}
