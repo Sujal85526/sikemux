@@ -21,6 +21,13 @@ export interface AcpStartResponse {
     setup: Record<string, unknown>;
 }
 
+/** Something read elsewhere and handed to the agent whole, such as an issue and its comments. */
+export interface PromptContext {
+    uri: string;
+    title: string;
+    text: string;
+}
+
 export interface AcpEvent {
     agentId: string;
     kind: "status" | "ready" | "session_update" | "turn_started" | "turn_completed" | "permission_request" | "error";
@@ -46,8 +53,10 @@ export const acpApi = {
         invoke<void>("acp_set_permission_mode", { agentId, permissionMode }),
     setConfig: (agentId: string, configId: string, value: string): Promise<Record<string, unknown>> =>
         invoke("acp_set_config", { agentId, configId, value }),
-    prompt: (agentId: string, text: string, paths: string[]): Promise<void> => invoke<void>("acp_prompt", { agentId, text, paths }),
-    steer: (agentId: string, text: string, paths: string[]): Promise<string> => invoke<string>("acp_steer", { agentId, text, paths }),
+    prompt: (agentId: string, text: string, paths: string[], context: PromptContext[] = []): Promise<void> =>
+        invoke<void>("acp_prompt", { agentId, text, paths, context }),
+    steer: (agentId: string, text: string, paths: string[], context: PromptContext[] = []): Promise<string> =>
+        invoke<string>("acp_steer", { agentId, text, paths, context }),
     cancel: (agentId: string): Promise<void> => invoke<void>("acp_cancel", { agentId }),
     stopTask: (agentId: string, taskId: string): Promise<void> => invoke<void>("acp_stop_task", { agentId, taskId }),
     permissionReply: (agentId: string, requestId: string, optionId?: string): Promise<void> =>

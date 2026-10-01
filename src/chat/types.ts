@@ -1,5 +1,6 @@
 import type { ToolDiff } from "./diff";
 import type { ToolOutput } from "./toolOutput";
+import type { SentContext } from "./promptContext";
 
 export interface AcpContentBlock {
     type: string;
@@ -96,6 +97,7 @@ export interface ChatMessage {
     role: "user" | "assistant";
     parts: ChatPart[];
     attachments?: string[];
+    context?: SentContext[];
     /* When the first and last characters of a streamed answer landed, and how
        many arrived between them — what the transcript's speed reading is
        worked out from. A replayed message has none of these. */
@@ -134,7 +136,7 @@ export type ChatAction =
     | { type: "config"; options: unknown }
     | { type: "status"; state: ChatState["connection"] }
     | { type: "ready"; capabilities: Record<string, unknown>; setup: Record<string, unknown> }
-    | { type: "local_prompt"; text: string; paths: string[] }
+    | { type: "local_prompt"; text: string; paths: string[]; context?: SentContext[] }
     | { type: "session_update"; sessionId: string; update: Record<string, unknown> }
     | { type: "saved_usage"; usage: ContextUsage }
     | { type: "turn_started" }

@@ -67,3 +67,26 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+
+.chat-context-mark {
+    display: inline-flex;
+    flex: 0 0 auto;
+    color: var(--text-tertiary);
+}
+
+.chat-context-mark[data-kind="issue"],
+.chat-context-mark[data-kind="pull"] {
+    color: var(--live);
+}
+
+.chat-context-number {
+    flex: 0 0 auto;
+    color: var(--text-primary);
+}
+
+.chat-context-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

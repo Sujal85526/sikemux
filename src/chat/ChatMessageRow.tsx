@@ -1,4 +1,4 @@
-import { memo, useContext, useState } from "react";
+import { memo, useContext, useMemo, useState } from "react";
 import { CopyButton } from "../ui/CopyButton";
 import { basename } from "../lib/paths";
 import { AgentIcon, IconCheck, IconChevron, IconClose, IconFile, IconPlug, IconTimer, IconWarning } from "../ui/Icons";
@@ -13,6 +13,39 @@ import { ToolGroup } from "./ToolGroup";
 import { ToolRow } from "./ToolRow";
 import { attachmentName, formatDetail, groupParts, subagentTask } from "./transcript";
 import type { AcpSubagent, AcpTaskNotice, ChatMessage, ChatPart } from "./types";
+import { ContextChipLabel } from "./ContextChip";
+import { splitSentContext, type SentContext } from "./promptContext";
+
+function embeddedContext(content: Extract<ChatPart, { kind: "content" }>["content"]): SentContext | null {
+    if (content.type !== "resource" || !content.resource || typeof content.resource !== "object") return null;
+    const resource = content.resource as { uri?: unknown; text?: unknown };
+    if (typeof resource.uri !== "string") return null;
+    const firstLine = typeof resource.text === "string" ? resource.text.split("\n", 1)[0] : "";
+    return { uri: resource.uri, title: firstLine || resource.uri };
+}
+
+/* What a person sent with a message is shown by name: their own text stays
+   prose, and an issue they handed over stays a chip, not its whole text. */
+function sentParts(message: ChatMessage): { parts: ChatPart[]; context: SentContext[] } {
+    const context = [...(message.context ?? [])];
+    if (message.role !== "user") return { parts: message.parts, context };
+    const parts: ChatPart[] = [];
+    for (const part of message.parts) {
+        const embedded = part.kind === "content" ? embeddedContext(part.content) : null;
+        if (embedded) {
+            context.push(embedded);
+            continue;
+        }
+        if (part.kind !== "text") {
+            parts.push(part);
+            continue;
+        }
+        const split = splitSentContext(part.text);
+        context.push(...split.context);
+        if (split.text) parts.push(split.context.length ? { ...part, text: split.text } : part);
+    }
+    return { parts, context: context.filter((item, index) => context.findIndex((other) => other.uri === item.uri) === index) };
+}
 
 function ResourceLinkPart({ content }: { content: Extract<ChatPart, { kind: "content" }>["content"] }) {
     const uri = typeof content.uri === "string" ? content.uri : undefined;
@@ -191,17 +224,24 @@ export const ChatMessageRow = memo(function ChatMessageRow({
     at: number | null;
     took: number | null;
 }) {
+    const { parts, context } = useMemo(() => sentParts(message), [message]);
+    const attachments = message.attachments ?? [];
     return (
         <article className={`chat-message ${message.role}`}>
             <div className="chat-message-content">
-                {message.attachments && message.attachments.length > 0 && (
+                {(attachments.length > 0 || context.length > 0) && (
                     <div className="chat-message-attachments">
-                        {message.attachments.map((path) => (
+                        {attachments.map((path) => (
                             <SentAttachment key={path} path={path} />
+                        ))}
+                        {context.map((item) => (
+                            <span key={item.uri} className="chat-context-chip" title={item.uri}>
+                                <ContextChipLabel item={item} />
+                            </span>
                         ))}
                     </div>
                 )}
-                <PartGroups parts={message.parts} live={live} typed={message.role === "user"} />
+                <PartGroups parts={parts} live={live} typed={message.role === "user"} />
                 {copyable && (
                     <div className="chat-message-meta">
                         <CopyButton value={copyable} label={message.role === "user" ? "message" : "reply"} size={15} />

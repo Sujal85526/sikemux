@@ -520,6 +520,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
                         sentAt: Date.now(),
                         parts: action.text.trim() ? [{ id: `${id}-text`, kind: "text", text: action.text }] : [],
                         ...(action.paths.length ? { attachments: action.paths } : {}),
+                        ...(action.context?.length ? { context: action.context.map(({ uri, title }) => ({ uri, title })) } : {}),
                     },
                 ],
                 nextId: state.nextId + 1,

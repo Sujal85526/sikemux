@@ -525,6 +525,15 @@ export function IconPullRequest({ size = 14 }: { size?: number }) {
     );
 }
 
+export function IconIssue({ size = 14 }: { size?: number }) {
+    return (
+        <Svg24 size={size}>
+            <circle cx="12" cy="12" r="9" />
+            <circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none" />
+        </Svg24>
+    );
+}
+
 export function IconCommit({ size = 14 }: { size?: number }) {
     return (
         <Svg24 size={size}>

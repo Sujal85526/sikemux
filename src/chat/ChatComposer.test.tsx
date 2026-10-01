@@ -84,7 +84,7 @@ describe("ChatComposer @ picker", () => {
         expect(screen.getByTitle("/repo/src/main.ts")).toBeInTheDocument();
 
         fireEvent.keyDown(editor, { key: "Enter" });
-        expect(mocks.onSend).toHaveBeenCalledWith("look at please", ["/repo/src/main.ts"], false);
+        expect(mocks.onSend).toHaveBeenCalledWith({ text: "look at please", paths: ["/repo/src/main.ts"], context: [] }, false);
     });
 
     it("leaves the @ in place when Escape dismisses the picker", async () => {

@@ -23,6 +23,7 @@ import { arrowsBrowse, recallPrompt, type HistoryPosition } from "./promptHistor
 import { entryName, mergePaths, projectEntries, rankEntries, removeToken, tokenAt, type ProjectEntry } from "./composerInput";
 import { receiveForAgent } from "../agents/agentInbox";
 import type { AcpAvailableCommand, ChatState, ContextUsage } from "./types";
+import type { OutgoingMessage } from "./queuedMessages";
 
 function ComposerAttachment({ path, onRemove }: { path: string; onRemove: () => void }) {
     const preview = useImagePreview(path);
@@ -133,7 +134,7 @@ export function ChatComposer({
     placeholder: string;
     error: string | null;
     onError: (message: string | null) => void;
-    onSend: (text: string, paths: string[], steerNow: boolean) => boolean;
+    onSend: (message: OutgoingMessage, steerNow: boolean) => boolean;
     onSteerQueued: () => void;
     onStop: () => void;
     queuedCount: number;
@@ -349,7 +350,7 @@ export function ChatComposer({
     const send = (steerNow = false) => {
         const text = draft.trim();
         if ((!text && attachments.length === 0) || blocked) return;
-        if (!onSend(text, attachments, steerNow)) return;
+        if (!onSend({ text, paths: attachments, context: [] }, steerNow)) return;
         setDraft("");
         setCaret(0);
         setMenuSelection(0);

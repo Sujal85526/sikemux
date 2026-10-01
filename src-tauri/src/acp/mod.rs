@@ -2,15 +2,16 @@ mod air;
 mod native;
 
 use agent_client_protocol::schema::v1::{
-    CancelNotification, ContentBlock, Implementation, InitializeRequest, LoadSessionRequest,
-    NewSessionRequest, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
-    RequestPermissionResponse, ResourceLink, SelectedPermissionOutcome,
-    SetSessionConfigOptionRequest, SetSessionModeRequest,
+    CancelNotification, ContentBlock, EmbeddedResource, EmbeddedResourceResource, Implementation,
+    InitializeRequest, LoadSessionRequest, NewSessionRequest, PromptRequest,
+    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse, ResourceLink,
+    SelectedPermissionOutcome, SetSessionConfigOptionRequest, SetSessionModeRequest,
+    TextResourceContents,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{AcpAgent, AcpAgentConfig, Agent, ConnectionTo, Responder};
 use dashmap::mapref::entry::Entry;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -28,6 +29,7 @@ const CODEX_ADAPTER: &str = "@agentclientprotocol/codex-acp@1.8.0";
 const MAX_AGENT_ID: usize = 200;
 const MAX_PROMPT_BYTES: usize = 2 * 1024 * 1024;
 const MAX_ATTACHMENTS: usize = 32;
+const MAX_CONTEXT_ITEMS: usize = 16;
 const START_TIMEOUT: Duration = Duration::from_secs(150);
 const INSTALL_TIMEOUT: Duration = Duration::from_secs(120);
 const INSTALL_OUTPUT_LIMIT: usize = 1024 * 1024;
@@ -80,10 +82,19 @@ pub struct AcpStartResponse {
     setup: Value,
 }
 
+/// Something read elsewhere and handed to the agent whole, such as an issue.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PromptContext {
+    uri: String,
+    title: String,
+    text: String,
+}
+
 enum AcpCommand {
     Prompt {
         text: String,
         paths: Vec<String>,
+        context: Vec<PromptContext>,
     },
     SetPermissionMode {
         mode: String,
@@ -97,6 +108,7 @@ enum AcpCommand {
     Steer {
         text: String,
         paths: Vec<String>,
+        context: Vec<PromptContext>,
         reply: oneshot::Sender<Result<String, String>>,
     },
     StopTask {
@@ -529,19 +541,72 @@ fn resource_link(path: &str) -> Result<ContentBlock, String> {
     Ok(ContentBlock::ResourceLink(ResourceLink::new(name, uri)))
 }
 
-fn prompt_blocks(text: String, paths: Vec<String>) -> Result<Vec<ContentBlock>, String> {
-    if text.len() > MAX_PROMPT_BYTES {
-        return Err("prompt is too large".into());
-    }
+/// A context item written into the message itself, for an agent that cannot
+/// take it as an embedded resource. The fence outgrows any run of backticks
+/// in the text so the text cannot close it early.
+fn context_section(item: &PromptContext) -> String {
+    let longest = item
+        .text
+        .split(|character| character != '`')
+        .map(str::len)
+        .max()
+        .unwrap_or(0);
+    let fence = "`".repeat(longest.max(2) + 1);
+    format!(
+        "### {}\n{}\n\n{fence}\n{}\n{fence}",
+        item.title, item.uri, item.text
+    )
+}
+
+fn context_resource(item: PromptContext) -> ContentBlock {
+    ContentBlock::Resource(EmbeddedResource::new(
+        EmbeddedResourceResource::TextResourceContents(
+            TextResourceContents::new(item.text, item.uri).mime_type("text/markdown".to_string()),
+        ),
+    ))
+}
+
+fn prompt_blocks(
+    mut text: String,
+    paths: Vec<String>,
+    context: Vec<PromptContext>,
+    embedded_context: bool,
+) -> Result<Vec<ContentBlock>, String> {
     if paths.len() > MAX_ATTACHMENTS {
         return Err(format!(
             "a prompt can include at most {MAX_ATTACHMENTS} attachments"
         ));
     }
-    let mut blocks = Vec::with_capacity(paths.len() + usize::from(!text.trim().is_empty()));
+    if context.len() > MAX_CONTEXT_ITEMS {
+        return Err(format!(
+            "a prompt can include at most {MAX_CONTEXT_ITEMS} context items"
+        ));
+    }
+    for item in &context {
+        bounded_text("context title", &item.title, 1_024)?;
+        bounded_text("context uri", &item.uri, 4_096)?;
+    }
+    let context_bytes: usize = context.iter().map(|item| item.text.len()).sum();
+    if text.len() + context_bytes > MAX_PROMPT_BYTES {
+        return Err("prompt is too large".into());
+    }
+    let mut resources = Vec::new();
+    if embedded_context {
+        resources.extend(context.into_iter().map(context_resource));
+    } else {
+        for item in &context {
+            if !text.trim().is_empty() {
+                text.push_str("\n\n");
+            }
+            text.push_str(&context_section(item));
+        }
+    }
+    let mut blocks =
+        Vec::with_capacity(paths.len() + resources.len() + usize::from(!text.trim().is_empty()));
     if !text.trim().is_empty() {
         blocks.push(text.into());
     }
+    blocks.extend(resources);
     for path in paths {
         blocks.push(resource_link(&path)?);
     }
@@ -879,6 +944,10 @@ async fn run_connection(
                 let mut capabilities = serde_json::to_value(&initialize.agent_capabilities)?;
                 let initialize_meta = serde_json::to_value(&initialize.meta)?;
                 let steering = air::steering_supported(&initialize_meta);
+                let embedded_context = initialize
+                    .agent_capabilities
+                    .prompt_capabilities
+                    .embedded_context;
                 capabilities["steering"] = json!(steering);
 
                 // The tools this agent can drive its own browser tabs with.
@@ -1055,7 +1124,11 @@ async fn run_connection(
                         }
                     };
                     match command {
-                        AcpCommand::Prompt { text, paths } => {
+                        AcpCommand::Prompt {
+                            text,
+                            paths,
+                            context,
+                        } => {
                             if running.swap(true, Ordering::AcqRel) {
                                 emit(
                                     &app,
@@ -1065,7 +1138,8 @@ async fn run_connection(
                                 );
                                 continue;
                             }
-                            let blocks = match prompt_blocks(text, paths) {
+                            let blocks = match prompt_blocks(text, paths, context, embedded_context)
+                            {
                                 Ok(blocks) => blocks,
                                 Err(error) => {
                                     running.store(false, Ordering::Release);
@@ -1195,13 +1269,18 @@ async fn run_connection(
                             };
                             let _ = reply.send(result);
                         }
-                        AcpCommand::Steer { text, paths, reply } => {
+                        AcpCommand::Steer {
+                            text,
+                            paths,
+                            context,
+                            reply,
+                        } => {
                             let result = if !steering {
                                 Err("this agent cannot take a message mid-turn".to_string())
                             } else if !running.load(Ordering::Acquire) {
                                 Ok("promptRequired".to_string())
                             } else {
-                                match prompt_blocks(text, paths) {
+                                match prompt_blocks(text, paths, context, embedded_context) {
                                     // Answered off the loop, so a stop sent right
                                     // after a steer is never queued behind it.
                                     Ok(blocks) => {
@@ -1425,13 +1504,18 @@ pub fn acp_prompt(
     agent_id: String,
     text: String,
     paths: Vec<String>,
+    context: Vec<PromptContext>,
 ) -> Result<(), String> {
     let Some(connection) = manager.connections.get(&agent_id) else {
         return Err("ACP session is not running".into());
     };
     connection
         .commands
-        .send(AcpCommand::Prompt { text, paths })
+        .send(AcpCommand::Prompt {
+            text,
+            paths,
+            context,
+        })
         .map_err(|_| "ACP session stopped".into())
 }
 
@@ -1443,6 +1527,7 @@ pub async fn acp_steer(
     agent_id: String,
     text: String,
     paths: Vec<String>,
+    context: Vec<PromptContext>,
 ) -> Result<String, String> {
     let (reply, response) = oneshot::channel();
     {
@@ -1451,7 +1536,12 @@ pub async fn acp_steer(
         };
         connection
             .commands
-            .send(AcpCommand::Steer { text, paths, reply })
+            .send(AcpCommand::Steer {
+                text,
+                paths,
+                context,
+                reply,
+            })
             .map_err(|_| "ACP session stopped".to_string())?;
     }
     response
@@ -1705,7 +1795,75 @@ mod tests {
 
     #[test]
     fn prompt_rejects_relative_attachment_paths() {
-        let error = prompt_blocks(String::new(), vec!["relative.txt".into()]).unwrap_err();
+        let error = prompt_blocks(String::new(), vec!["relative.txt".into()], Vec::new(), true)
+            .unwrap_err();
         assert_eq!(error, "attachment paths must be absolute");
+    }
+
+    fn issue_context() -> PromptContext {
+        PromptContext {
+            uri: "https://github.com/o/r/issues/12".into(),
+            title: "#12 Login crashes".into(),
+            text: "Issue #12: Login crashes\n\nIt crashes.".into(),
+        }
+    }
+
+    #[test]
+    fn prompt_embeds_context_when_the_agent_takes_it() {
+        let blocks = prompt_blocks(
+            "fix this".into(),
+            vec!["/tmp/a.txt".into()],
+            vec![issue_context()],
+            true,
+        )
+        .unwrap();
+        let blocks = serde_json::to_value(blocks).unwrap();
+        assert_eq!(blocks[0], json!({ "type": "text", "text": "fix this" }));
+        assert_eq!(
+            blocks[1],
+            json!({
+                "type": "resource",
+                "resource": {
+                    "uri": "https://github.com/o/r/issues/12",
+                    "mimeType": "text/markdown",
+                    "text": "Issue #12: Login crashes\n\nIt crashes.",
+                },
+            })
+        );
+        assert_eq!(blocks[2]["type"], "resource_link");
+    }
+
+    #[test]
+    fn prompt_writes_context_into_the_text_otherwise() {
+        let blocks =
+            prompt_blocks("fix this".into(), Vec::new(), vec![issue_context()], false).unwrap();
+        let blocks = serde_json::to_value(blocks).unwrap();
+        assert_eq!(blocks.as_array().unwrap().len(), 1);
+        assert_eq!(
+            blocks[0]["text"],
+            "fix this\n\n### #12 Login crashes\nhttps://github.com/o/r/issues/12\n\n```\nIssue #12: Login crashes\n\nIt crashes.\n```"
+        );
+    }
+
+    #[test]
+    fn prompt_of_context_alone_is_not_empty() {
+        let blocks =
+            prompt_blocks(String::new(), Vec::new(), vec![issue_context()], false).unwrap();
+        assert!(serde_json::to_value(blocks).unwrap()[0]["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("### #12"));
+        assert!(prompt_blocks(String::new(), Vec::new(), vec![issue_context()], true).is_ok());
+    }
+
+    #[test]
+    fn context_fence_outgrows_backticks_in_the_text() {
+        let item = PromptContext {
+            text: "```rust\nfn main() {}\n```".into(),
+            ..issue_context()
+        };
+        let section = context_section(&item);
+        assert!(section.contains("\n````\n```rust"));
+        assert!(section.ends_with("\n```\n````"));
     }
 }

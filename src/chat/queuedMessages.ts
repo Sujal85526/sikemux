@@ -1,8 +1,17 @@
+import type { PromptContext } from "../api/acp";
 import { basename } from "../lib/paths";
 
-export type QueuedMessage = { id: string; text: string; paths: string[] };
+/** What the composer hands over when the person sends. */
+export interface OutgoingMessage {
+    text: string;
+    paths: string[];
+    context: PromptContext[];
+}
 
-export const queuedLabel = (message: QueuedMessage): string => message.text || message.paths.map(basename).join(", ");
+export type QueuedMessage = OutgoingMessage & { id: string };
+
+export const queuedLabel = (message: QueuedMessage): string =>
+    message.text || [...message.paths.map(basename), ...message.context.map((item) => item.title)].join(", ");
 
 const isCommand = (message: QueuedMessage) => message.text.startsWith("/");
 
@@ -21,5 +30,8 @@ export function combineQueued(messages: QueuedMessage[]): QueuedMessage {
             .filter(Boolean)
             .join("\n\n"),
         paths: [...new Set(messages.flatMap((message) => message.paths))],
+        context: messages
+            .flatMap((message) => message.context)
+            .filter((item, index, all) => all.findIndex((other) => other.uri === item.uri) === index),
     };
 }
