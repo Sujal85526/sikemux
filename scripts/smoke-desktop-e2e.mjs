@@ -223,7 +223,7 @@ function openCore(path) {
       frame.kind === CORE_FRAME.control ? JSON.parse(frame.payload) : null;
     socket.once("connect", async () => {
       socket.write(
-        coreControl({ type: "hello", protocol: "sikemux-core", version: 3 }),
+        coreControl({ type: "hello", protocol: "sikemux-core", version: 4 }),
       );
       const hello = await next((frame) => control(frame)?.type === "helloAck");
       if (!hello) {
@@ -310,6 +310,18 @@ function openCore(path) {
               seen += frame.payload.subarray(8).toString("utf8");
           }
           return seen.includes(needle);
+        },
+        async chatEvent(agentId, accept, timeout = 10_000) {
+          const frame = await next((candidate) => {
+            const message = control(candidate);
+            return (
+              message?.type === "event" &&
+              message.event.kind === "chat" &&
+              message.event.agentId === agentId &&
+              accept(message.event.event)
+            );
+          }, timeout);
+          return frame ? control(frame).event.event : null;
         },
         close: () => socket.destroy(),
       });
@@ -794,6 +806,202 @@ async function exerciseQuitKeepsTerminals() {
   return shell;
 }
 
+// A stand-in chat agent that speaks just enough ACP, so a chat runs in the
+// core without a provider, an account or the network.
+function buildFakeAgent() {
+  const built = run(
+    "cargo",
+    [
+      "build",
+      "--manifest-path",
+      join(root, "src-tauri", "Cargo.toml"),
+      "-p",
+      "sikemux-core",
+      "--bin",
+      "sikemux-fake-acp-agent",
+    ],
+    process.env,
+    600_000,
+  );
+  if (built.status !== 0)
+    fail(`could not build the stand-in chat agent: ${built.stderr}`);
+  return join(
+    process.env.CARGO_TARGET_DIR ?? join(root, "src-tauri", "target"),
+    "debug",
+    `sikemux-fake-acp-agent${executableSuffix}`,
+  );
+}
+
+const CHAT_AGENT_ID = "e2e-chat";
+
+function chatSaid(events) {
+  return JSON.stringify(events);
+}
+
+async function coreChat(core) {
+  const listed = await core.request({ op: "acpList" }, 5_000);
+  return (listed?.response?.chats ?? []).find(
+    (chat) => chat.agentId === CHAT_AGENT_ID,
+  );
+}
+
+async function attachChat(core) {
+  const attached = await core.request(
+    { op: "acpAttach", agentId: CHAT_AGENT_ID },
+    20_000,
+  );
+  const attachment = attached?.response?.attachment;
+  if (attachment?.status !== "live")
+    fail(
+      `the core did not hand the chat back: ${JSON.stringify(attached)}`,
+      desktopLog,
+    );
+  return attachment;
+}
+
+// A chat turn keeps going while the app is closed, a permission request
+// waits for the person, and the next launch replays the chat where it is.
+async function exerciseChatKeepsGoing(fakeAgent) {
+  const history = join(temporaryRoot, "chat-history");
+  await mkdir(history, { recursive: true });
+  const core = await openCore(coreSocket);
+  const started = await core.request(
+    {
+      op: "acpStart",
+      launch: {
+        agentId: CHAT_AGENT_ID,
+        provider: "opencode",
+        cwd: project,
+        program: fakeAgent,
+        args: ["acp"],
+        env: { FAKE_ACP_DIR: history },
+        mcpServers: [],
+        resumeId: null,
+        permissionMode: "workspace-write",
+        model: null,
+        effort: null,
+      },
+    },
+    30_000,
+  );
+  const sessionId = started?.response?.start?.sessionId;
+  if (!sessionId)
+    fail(`the core did not start the chat: ${JSON.stringify(started)}`);
+  await core.request(
+    {
+      op: "acpPrompt",
+      agentId: CHAT_AGENT_ID,
+      text: "hold 3000",
+      paths: [],
+      context: [],
+    },
+    5_000,
+  );
+  if (
+    !(await core.chatEvent(
+      CHAT_AGENT_ID,
+      (event) =>
+        event.kind === "session_update" &&
+        chatSaid(event.payload).includes("holding"),
+    ))
+  )
+    fail("the chat turn did not start", desktopLog);
+  core.close();
+
+  await quitDesktop();
+
+  const closed = await openCore(coreSocket);
+  await waitFor(
+    "the chat turn to finish with the app closed",
+    15_000,
+    async () => (await coreChat(closed))?.running === false,
+  );
+  await closed.request(
+    {
+      op: "acpPrompt",
+      agentId: CHAT_AGENT_ID,
+      text: "ask",
+      paths: [],
+      context: [],
+    },
+    5_000,
+  );
+  await waitFor(
+    "a permission request to wait with the app closed",
+    10_000,
+    async () => (await coreChat(closed))?.pendingPermissions?.length === 1,
+  );
+  closed.close();
+
+  desktop = launchDesktop();
+  await waitForBroker(desktop);
+  const watcher = await openCore(coreSocket);
+  const attachment = await attachChat(watcher);
+  const replay = chatSaid(attachment.replay);
+  if (
+    attachment.start.sessionId !== sessionId ||
+    !attachment.running ||
+    !replay.includes("held")
+  )
+    fail(`the replay lost the chat: ${replay.slice(0, 2_000)}`, desktopLog);
+  const request = attachment.replay.find(
+    (event) => event.kind === "permission_request",
+  );
+  if (!request) fail("the waiting permission request was not replayed");
+  await watcher.request(
+    {
+      op: "acpPermissionReply",
+      agentId: CHAT_AGENT_ID,
+      requestId: request.payload.requestId,
+      optionId: "allow",
+    },
+    5_000,
+  );
+  if (
+    !(await watcher.chatEvent(
+      CHAT_AGENT_ID,
+      (event) =>
+        event.kind === "session_update" &&
+        chatSaid(event.payload).includes("answered allow"),
+    ))
+  )
+    fail("the answered permission did not reach the chat", desktopLog);
+  watcher.close();
+  console.log(
+    `Chat with the app closed passed: chat ${CHAT_AGENT_ID} finished its turn, held a permission request and came back with its replay`,
+  );
+  return sessionId;
+}
+
+// An update starts the chat again on its session in the updated core.
+async function expectChatResumed(sessionId) {
+  const watcher = await openCore(coreSocket);
+  const attachment = await attachChat(watcher);
+  if (
+    attachment.start.sessionId !== sessionId ||
+    !chatSaid(attachment.replay).includes("answered allow")
+  )
+    fail(
+      `the update did not resume the chat on its session: ${JSON.stringify(attachment).slice(0, 2_000)}`,
+      desktopLog,
+    );
+  watcher.close();
+}
+
+// The app stops a chat no pane shows once the launch grace is over.
+async function expectUnshownChatStopped() {
+  const watcher = await openCore(coreSocket);
+  await waitFor(
+    "the app to stop the chat no pane took back",
+    45_000,
+    async () => !(await coreChat(watcher)),
+  );
+  watcher.close();
+  console.log(
+    `Unclaimed chat passed: the app stopped chat ${CHAT_AGENT_ID}, which no pane showed`,
+  );
+}
+
 // A sidecar that reports another build, so the core has something newer to
 // update to.
 async function writeSidecar(name, build) {
@@ -850,7 +1058,7 @@ async function expectTerminalKept(shell, corePid, build, marker) {
 // A newer app updates the core in place, and so does a core updated while
 // the app is open: the same process keeps the shell, and the pane takes it
 // back with its output.
-async function exerciseUpdateKeepsTerminals(shell) {
+async function exerciseUpdateKeepsTerminals(shell, chatSession) {
   const before = await openCore(coreSocket);
   const corePid = before.hello.pid;
   if (!(await before.attach(shell.id)))
@@ -869,8 +1077,9 @@ async function exerciseUpdateKeepsTerminals(shell) {
   desktop = launchDesktop(nextEnvironment);
   await waitForBroker(desktop);
   await expectTerminalKept(shell, corePid, "e2e-next", "updated-64");
+  await expectChatResumed(chatSession);
   console.log(
-    `Update on launch passed: core ${corePid} now runs e2e-next and terminal ${shell.id} (pid ${shell.pid}) kept running with its output`,
+    `Update on launch passed: core ${corePid} now runs e2e-next, terminal ${shell.id} (pid ${shell.pid}) kept running with its output and chat ${CHAT_AGENT_ID} resumed on its session`,
   );
 
   const other = await writeSidecar("sikemux-other", "e2e-other");
@@ -914,6 +1123,7 @@ async function exerciseQuitAndStopEverything(shell) {
 
 await executableExists(appExecutable, "debug desktop executable");
 await executableExists(cliExecutable, "release editor CLI");
+const fakeAgent = buildFakeAgent();
 
 const temporaryRoot = await mkdtemp(join(tmpdir(), "sikemux-desktop-e2e-"));
 const isolatedHome = join(temporaryRoot, "home");
@@ -1040,7 +1250,9 @@ try {
     },
   );
   const keptShell = await exerciseQuitKeepsTerminals();
-  await exerciseUpdateKeepsTerminals(keptShell);
+  const chatSession = await exerciseChatKeepsGoing(fakeAgent);
+  await exerciseUpdateKeepsTerminals(keptShell, chatSession);
+  await expectUnshownChatStopped();
   await waitFor(
     "WebView boot and persistence after relaunch",
     PERSIST_TIMEOUT_MS,
