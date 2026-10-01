@@ -2,16 +2,21 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { Agent, Session } from "../state/types";
 import { AgentSurface } from "./AgentSurface";
+import { deliverToAgent } from "../agents/agentInbox";
 
 const mocks = vi.hoisted(() => ({
     chatPane: vi.fn(() => null),
     toggleDesk: vi.fn(),
     renameAgent: vi.fn(),
+    typed: vi.fn(),
     state: { deskPanes: {} as Record<string, string>, windows: {} as Record<string, unknown>, keybindingOverrides: {} },
 }));
 
 vi.mock("./AgentChatPane", () => ({ AgentChatPane: mocks.chatPane }));
-vi.mock("../terminal/TerminalPane", () => ({ TerminalPane: () => null }));
+vi.mock("../terminal/TerminalPane", async () => {
+    const { registerTextInsert } = await import("../state/textInsertRegistry");
+    return { TerminalPane: () => <div ref={(element) => (element ? registerTextInsert(element, mocks.typed) : undefined)} /> };
+});
 vi.mock("../state/store", () => ({
     useStore: (select: (state: typeof mocks.state) => unknown) => select(mocks.state),
     getState: () => mocks.state,
@@ -99,4 +104,15 @@ it("renames the agent from its title on double-click", () => {
 
     expect(mocks.renameAgent).toHaveBeenCalledWith("agent-1", "Parser rewrite");
     expect(screen.queryByRole("textbox", { name: "Chat name" })).not.toBeInTheDocument();
+});
+
+it("types a delivered issue into a terminal agent as text", () => {
+    render(<AgentSurface agent={{ ...agent, type: "pi", startup: "pi" }} session={session} visible />);
+    deliverToAgent("agent-1", {
+        text: "fix this",
+        context: [{ uri: "https://github.com/o/r/issues/12", title: "#12 Login crashes", text: "Issue #12: Login crashes" }],
+    });
+    expect(mocks.typed).toHaveBeenCalledWith(
+        "fix this\n\n### #12 Login crashes\nhttps://github.com/o/r/issues/12\n\n```\nIssue #12: Login crashes\n```",
+    );
 });

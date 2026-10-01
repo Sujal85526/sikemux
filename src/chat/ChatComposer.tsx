@@ -232,8 +232,15 @@ export function ChatComposer({
 
     useEffect(() => {
         if (!visible) return;
-        return receiveForAgent(agent.id, ({ text, paths }) => {
+        return receiveForAgent(agent.id, ({ text, paths, context }) => {
             if (paths?.length) setAttachments((current) => mergePaths(current, paths));
+            if (context?.length)
+                setContexts((current) =>
+                    mergeContext(
+                        current,
+                        context.map((item) => ({ ...item, tracked: null })),
+                    ),
+                );
             const editor = editorRef.current;
             const current = editor?.value ?? "";
             const next = text ? `${current.trimEnd()}${current.trim() ? "\n\n" : ""}${text}` : current;

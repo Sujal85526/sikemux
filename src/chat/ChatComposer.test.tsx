@@ -5,6 +5,7 @@ import type { Agent } from "../state/types";
 import { ChatComposer } from "./ChatComposer";
 import { PathRootsProvider } from "./FileRef";
 import type { TrackedList } from "../codehost/tracked";
+import { deliverToAgent } from "../agents/agentInbox";
 
 const repo = { provider: "github", owner: "o", name: "r", account: null };
 
@@ -175,5 +176,17 @@ describe("ChatComposer # picker", () => {
         fireEvent.keyDown(editor, { key: "Enter" });
         fireEvent.click(screen.getByRole("button", { name: "Remove #9" }));
         expect(screen.queryByTitle("https://github.com/o/r/pull/9")).not.toBeInTheDocument();
+    });
+});
+
+describe("ChatComposer deliveries", () => {
+    it("shows a delivered issue as a chip and sends it as it came", async () => {
+        const editor = renderComposer();
+        const issue = { uri: "https://github.com/o/r/issues/4", title: "#4 Flaky test", text: "Issue #4: Flaky test" };
+        act(() => deliverToAgent("composer-agent", { context: [issue] }));
+        expect(screen.getByTitle(issue.uri)).toHaveTextContent("#4 Flaky test");
+        fireEvent.keyDown(editor, { key: "Enter" });
+        expect(mocks.onSend).toHaveBeenCalledWith({ text: "", paths: [], context: [issue] }, false);
+        expect(mocks.load).not.toHaveBeenCalled();
     });
 });

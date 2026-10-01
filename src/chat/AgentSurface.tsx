@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { receiveForAgent } from "../agents/agentInbox";
+import { contextAsText } from "./promptContext";
 import { dispatchPaths, resolvePathDropTarget } from "../state/dropRegistry";
 import { insertText, textInsertTargetWithin } from "../state/textInsertRegistry";
 import type { Agent, ProviderProfile, Session } from "../state/types";
@@ -89,12 +90,13 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
     const tuiShown = visible && view === "tui" && !switching;
     useEffect(() => {
         if (!tuiShown) return;
-        return receiveForAgent(agent.id, ({ text, paths }) => {
+        return receiveForAgent(agent.id, ({ text, paths, context }) => {
             const target = tuiLayer.current && textInsertTargetWithin(tuiLayer.current);
             if (!target) return;
             const drop = paths?.length ? resolvePathDropTarget(target) : null;
             if (drop && paths) dispatchPaths(drop, paths);
-            if (text) insertText(target, text);
+            const typed = [text, ...(context ?? []).map(contextAsText)].filter(Boolean).join("\n\n");
+            if (typed) insertText(target, typed);
         });
     }, [agent.id, tuiShown]);
 

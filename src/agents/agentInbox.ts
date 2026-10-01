@@ -1,7 +1,10 @@
-/** Text and files handed to an agent from elsewhere in the app, for the person to send. */
+import type { PromptContext } from "../api/acp";
+
+/** Text, files and context items handed to an agent from elsewhere in the app, for the person to send. */
 export interface AgentDelivery {
     text?: string;
     paths?: string[];
+    context?: PromptContext[];
 }
 
 type Receiver = (delivery: AgentDelivery) => void;
