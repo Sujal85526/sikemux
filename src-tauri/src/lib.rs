@@ -21,6 +21,7 @@ mod fs_watch;
 mod git;
 mod grammars;
 mod harness;
+mod login_item;
 mod lsp;
 mod markdown;
 pub mod observability;

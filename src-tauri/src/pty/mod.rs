@@ -158,6 +158,17 @@ impl PtyManager {
         });
     }
 
+    /// The command a core is started with from here, which the login item repeats.
+    pub(crate) fn core_launch(&self) -> Option<crate::login_item::CoreLaunch> {
+        let settings = self.settings.get()?;
+        Some(crate::login_item::CoreLaunch {
+            binary: settings.binary.clone()?,
+            socket: settings.socket.clone(),
+            log: settings.log.clone(),
+            args: settings.core_args.clone(),
+        })
+    }
+
     pub(crate) fn current_client(&self) -> Option<Arc<CoreClient>> {
         self.current()
     }
@@ -232,12 +243,7 @@ impl PtyManager {
             .await
             .map_err(core_error)?;
         client.register_window().await.map_err(core_error)?;
-        if let Some(published) = settings
-            .app
-            .try_state::<crate::remote::PublishedWorkspace>()
-        {
-            crate::remote::republish(&published, &client).await;
-        }
+        crate::remote::connected(&settings.app, self.core_launch().as_ref(), &client).await;
         self.core_pid.store(client.core_pid(), Ordering::Release);
         if let Ok(mut current) = self.client.lock() {
             *current = Some(client.clone());

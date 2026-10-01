@@ -7,10 +7,11 @@ use std::sync::{Arc, Mutex};
 use serde::Deserialize;
 use sikemux_core::client::CoreClient;
 use sikemux_core::protocol::{ChatLauncher, DeviceAccess, ProjectInfo, RemoteStatus};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::acp::LauncherSpec;
 use crate::error::AppResult;
+use crate::login_item::{self, CoreLaunch};
 use crate::pty::{core_error, PtyManager};
 
 /// What the app last published, sent again to a core it reconnects to: the
@@ -64,13 +65,23 @@ pub async fn remote_publish_workspace(
         .map_err(core_error)
 }
 
-/// Gives a core the app just connected to what it published to the last one.
-pub(crate) async fn republish(published: &PublishedWorkspace, client: &Arc<CoreClient>) {
-    let last = published.0.lock().ok().and_then(|last| last.clone());
+/// Gives a core the app just connected to what it published to the last one,
+/// and keeps the login item in step with its remote access switch.
+pub(crate) async fn connected(
+    app: &AppHandle,
+    launch: Option<&CoreLaunch>,
+    client: &Arc<CoreClient>,
+) {
+    let last = app
+        .try_state::<PublishedWorkspace>()
+        .and_then(|published| published.0.lock().ok().and_then(|last| last.clone()));
     if let Some((projects, launchers)) = last {
         if let Err(error) = client.publish_workspace(projects, launchers).await {
             eprintln!("Sikemux could not tell its core which agents devices may start: {error}");
         }
+    }
+    if let Ok(status) = client.remote_status().await {
+        login_item::sync(&app.config().identifier, launch, status.enabled);
     }
 }
 
@@ -82,11 +93,21 @@ pub async fn remote_status(manager: State<'_, PtyManager>) -> AppResult<RemoteSt
 
 #[tauri::command]
 pub async fn remote_set_enabled(
+    app: AppHandle,
     manager: State<'_, PtyManager>,
     enabled: bool,
 ) -> AppResult<RemoteStatus> {
     let client = manager.client().await?;
-    client.set_remote_access(enabled).await.map_err(core_error)
+    let status = client
+        .set_remote_access(enabled)
+        .await
+        .map_err(core_error)?;
+    login_item::sync(
+        &app.config().identifier,
+        manager.core_launch().as_ref(),
+        status.enabled,
+    );
+    Ok(status)
 }
 
 #[tauri::command]

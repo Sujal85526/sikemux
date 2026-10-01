@@ -54,8 +54,13 @@ sees terminal bytes or prompts.
   devices' trust.
 - Remote connections drop during an in-place update; devices reconnect and take their
   sessions back with a fresh snapshot, as the app does.
-- A core that is not running cannot be reached. After a restart nothing starts it until
-  the app opens.
+- While remote access is on, a LaunchAgent starts the core at login
+  (`src-tauri/src/login_item.rs`), so the Mac is reachable after a restart without
+  Sikemux being opened. It restarts the core only after a crash; turning remote access
+  off removes it.
+- While remote access is on, the core also advertises itself over Bonjour, and a
+  pairing code comes with a QR code holding the core's key, so a phone can find the Mac
+  before it has paired.
 
 ## Alternatives considered
 
