@@ -723,8 +723,10 @@ const WindowLayer = memo(function WindowLayer({
                             {/* The pane is a surface, so it carries its own texture — and only
                                 while it is the one being read, so a screen off stage spends no
                                 WebGL context on a field nobody is looking at. The editor draws
-                                its own, on the code panel beside its file tree, and the desk and plugins have none. */}
-                            {p.kind !== "editor" && p.kind !== "desk" && !isPluginKind(p.kind) && <PaneField enabled={paneShader && live && shown} />}
+                                its own, on the code panel beside its file tree, and the desk, git and plugins have none. */}
+                            {p.kind !== "editor" && p.kind !== "desk" && p.kind !== "git" && !isPluginKind(p.kind) && (
+                                <PaneField enabled={paneShader && live && shown} />
+                            )}
                             <ErrorBoundary label={`${p.kind} pane`}>
                                 {renderWorkbenchItem({ pane: p, session, win, active: paneActive, visible: paneVisible, painted: panePainted })}
                             </ErrorBoundary>
