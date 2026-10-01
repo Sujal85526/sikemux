@@ -14,3 +14,4 @@ export { currentShortcutLabel, useShortcutLabel, withShortcut } from "../command
 export { SendToAgentMenu, sendToAgentItems, useAgentChoices } from "../agents/SendToAgentMenu";
 export { codeFence, type AgentChoice } from "../agents/agentTargets";
 export type { AgentDelivery } from "../agents/agentInbox";
+export { TreeContextMenu as ContextMenu, type CtxItem as ContextMenuItem } from "../rail/FileTree";
