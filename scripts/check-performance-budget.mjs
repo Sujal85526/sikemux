@@ -135,10 +135,11 @@ const budgets = [
     // agent died live here too; the code host part loads only once # is typed.
     // So does the Worktree switch's state; its button, the worktree line in the
     // transcript, the header's pull request badge and the git work load apart.
-    // The project strip over a new chat's composer loads apart too.
+    // The project strip over a new chat's composer loads apart too. A terminal
+    // agent's resuming state and its failed-resume row live here as well.
     label: "ACP chat lazy chunk",
     pattern: /^AgentSurface-.*\.js$/,
-    raw: 109_000,
+    raw: 110_000,
     gzip: 35_000,
   },
   {
@@ -188,13 +189,13 @@ const budgets = [
     // The chat pane has since grown rows the budget predates: subagent
     // transcripts, background tasks, queued messages, the reconnect states,
     // code block copy buttons, the composer microphone, a tool call's output,
-    // context chips and the resuming states. It is one lazily loaded sheet behind an agent pane, so this buys
+    // context chips and the resuming states, a terminal agent's among them. It is one lazily loaded sheet behind an agent pane, so this buys
     // those rows room without touching what the app loads at startup.
     // Lightning CSS, Vite's minifier, keeps the spaces inside color-mix().
     label: "ACP chat CSS",
     pattern: /^AgentSurface-.*\.css$/,
-    raw: 46_000,
-    gzip: 8_600,
+    raw: 46_500,
+    gzip: 8_700,
   },
   {
     // Includes the JetBrainsMono Nerd Font @font-face rules: a base face per
