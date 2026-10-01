@@ -1,23 +1,17 @@
 /*
  * What is still running, stuck to the composer from above: the same fill and
- * the same border, stepped in narrower, with its bottom edge run behind the
- * composer so the two read as one object rather than two that happen to touch.
+ * the same border, stepped in narrower, ending on the composer's top border.
+ * It must not run behind the composer, which shows through a translucent fill.
  */
 .chat-live-stack {
     position: relative;
     z-index: 0;
     width: calc(min(100%, 820px) - var(--chat-step) * 2);
-    margin: 0 auto calc(var(--chat-tuck) * -1);
-    padding-bottom: var(--chat-tuck);
+    margin: 0 auto;
     border: 1px solid var(--border);
     border-bottom: 0;
     border-radius: var(--radius-3) var(--radius-3) 0 0;
     background: var(--chat-composer-fill);
-}
-
-/* The composer sits over the tucked edge rather than under it. */
-.chat-composer {
-    z-index: 1;
 }
 
 .chat-group + .chat-group {
