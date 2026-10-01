@@ -45,9 +45,9 @@ await context.exposeBinding("showcaseDownload", async ({ page }) => {
 });
 
 const page = await context.newPage();
-await page.goto(
-  `http://localhost:${server.config.server.port}/showcase/twitter.html`,
-);
+const url = `http://localhost:${server.config.server.port}/showcase/twitter.html`;
+// Vite aborts the first load when it reloads after bundling dependencies.
+await page.goto(url).catch(() => page.goto(url));
 console.log("Pick a view and press Download. Close the window to stop.");
 
 await new Promise((done) => page.on("close", done));
