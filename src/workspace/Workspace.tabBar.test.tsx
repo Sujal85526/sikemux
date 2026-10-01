@@ -8,6 +8,7 @@ import { acpApi } from "../api/acp";
 import { Workspace, WorkspaceTabs } from "./Workspace";
 import { agentIdsOf, agentWindowId } from "../state/selectors";
 import { withAgents } from "../test/agents";
+import { acceptDialog, useDialogs } from "../state/dialog";
 
 vi.mock("../api/acp", () => ({
     acpApi: {
@@ -216,5 +217,46 @@ describe("stage layers", () => {
         render(<Stage />);
 
         expect(document.querySelectorAll(".window-layer.live")).toHaveLength(1);
+    });
+});
+
+describe("naming a terminal tab", () => {
+    function terminalWindow() {
+        const state = getState();
+        const id = state.windowsBySession[state.activeSessionId].find((winId) => state.windows[winId].role === "term")!;
+        return state.windows[id];
+    }
+
+    it("shows the given name over the terminal's own title, and can go back to it", async () => {
+        const win = terminalWindow();
+        cmd.setTerminalTitle(win.activePaneId, "zsh");
+        render(<Stage />);
+        expect(screen.getByRole("tab", { name: "zsh" })).toBeInTheDocument();
+
+        fireEvent.doubleClick(screen.getByRole("tab", { name: "zsh" }));
+        const dialog = useDialogs.getState().dialog!;
+        expect(dialog).toMatchObject({ kind: "prompt", title: "Rename tab", initial: "zsh" });
+        act(() => acceptDialog(dialog.id, "  api server  "));
+
+        expect(await screen.findByRole("tab", { name: "api server" })).toBeInTheDocument();
+        expect(getState().windows[win.id].customName).toBe("api server");
+
+        act(() => cmd.setTerminalTitle(win.activePaneId, "vim"));
+        expect(screen.getByRole("tab", { name: "api server" })).toBeInTheDocument();
+
+        fireEvent.contextMenu(screen.getByRole("tab", { name: "api server" }));
+        fireEvent.click(screen.getByText("Use Automatic Name"));
+        expect(screen.getByRole("tab", { name: "vim" })).toBeInTheDocument();
+        expect(getState().windows[win.id].customName).toBeUndefined();
+    });
+
+    it("keeps the name a duplicated tab was given", () => {
+        const win = terminalWindow();
+        cmd.renameWindow(win.id, "logs");
+        cmd.duplicateWindow(win.id);
+
+        const names = Object.values(getState().windows).map((w) => w.customName);
+        expect(names).toContain("logs");
+        expect(names).toContain("logs copy");
     });
 });

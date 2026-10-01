@@ -23,6 +23,7 @@ import {
     type SplitSide,
 } from "../state/selectors";
 import { type CtxItem } from "../rail/FileTree";
+import { promptDialog } from "../state/dialog";
 import { ErrorBoundary } from "../ui/ErrorBoundary";
 import { PaneField, PanePaintedContext } from "../ui/ShaderField";
 import { agentMenu } from "./agentMenu";
@@ -204,6 +205,16 @@ const CORE_ROLE_LABEL: Record<Exclude<WindowRole, PluginKind>, string> = {
     agent: "Agent",
 };
 
+async function renameTerminalTab(win: WindowT, reported: string | undefined): Promise<void> {
+    const name = await promptDialog({
+        title: "Rename tab",
+        label: "Name",
+        initial: win.customName ?? reported ?? win.name,
+        confirmLabel: "Rename",
+    });
+    if (name !== null) cmd.renameWindow(win.id, name);
+}
+
 const roleLabel = (role: WindowRole): string => (isPluginKind(role) ? (pluginSurface(role)?.title ?? role) : CORE_ROLE_LABEL[role]);
 
 /** A workspace tab, already carrying the ids the strip and the live layer pair up with. */
@@ -321,7 +332,16 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
     const windowMenu = (win: WindowT): CtxItem[] => {
         const siblings = refs.flatMap((ref) => (ref.doc === undefined ? [windowsById[ref.id]] : [])).filter(Boolean) as WindowT[];
         const others = siblings.filter((t) => t.id !== win.id && !t.fixed && t.role !== "agent");
+        const naming: CtxItem[] =
+            win.role === "term"
+                ? [
+                      { label: "Rename…", run: () => void renameTerminalTab(win, termTitles.get(win.activePaneId)) },
+                      ...(win.customName ? [{ label: "Use Automatic Name", run: () => cmd.renameWindow(win.id, "") }] : []),
+                      { sep: true },
+                  ]
+                : [];
         return [
+            ...naming,
             { label: "Duplicate", run: () => cmd.duplicateWindow(win.id) },
             { label: "Close", hint: closeShortcut, disabled: win.fixed, run: () => cmd.closeWindowById(win.id) },
             { label: "Close Others", disabled: others.length === 0, run: () => others.forEach((t) => cmd.closeWindowById(t.id)) },
@@ -451,7 +471,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                     },
                 ];
             }
-            const label = win.role === "term" ? termTitles.get(win.activePaneId) || win.name : roleLabel(win.role);
+            const label = win.role === "term" ? win.customName || termTitles.get(win.activePaneId) || win.name : roleLabel(win.role);
             return [
                 {
                     id: key,
@@ -484,7 +504,10 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                 if (pane.id === home) {
                     return own.map((tab) => {
                         paneOfTab.set(tab.id, { windowId: win.id, paneId: pane.id });
-                        const kept = pane.id === documentsPane || pane.kind === "agent" ? {} : { ...look(pane), closable: true };
+                        const kept =
+                            pane.id === documentsPane || pane.kind === "agent"
+                                ? {}
+                                : { ...look(pane), ...(win.customName ? { label: win.customName, title: win.customName } : {}), closable: true };
                         return { ...tab, ...kept, active: !!tab.active && win.activePaneId === pane.id, group: win.id };
                     });
                 }
@@ -578,6 +601,10 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                     const ref = refByKey.get(key);
                     const win = ref ? windowsById[ref.id] : undefined;
                     if (win && ref?.doc !== undefined) cmd.keepEditorTab(editorPaneOf(win, getState().editorViews), ref.doc);
+                }}
+                onRename={(key) => {
+                    const win = windowsById[refByKey.get(key)?.id ?? paneOfTab.get(key)?.windowId ?? ""];
+                    if (win?.role === "term") void renameTerminalTab(win, termTitles.get(win.activePaneId));
                 }}
                 onClose={(key) => {
                     const ref = refByKey.get(key);

@@ -104,6 +104,8 @@ interface TabBarProps {
     onClose?: (id: string) => void;
     /** A preview tab was double-clicked, so it should stay. */
     onKeep?: (id: string) => void;
+    /** Any other tab was double-clicked, to rename it. */
+    onRename?: (id: string) => void;
     /** Build the right-click menu for a tab. Omit to disable the context menu. */
     buildMenu?: (id: string) => CtxItem[];
     onAdd?: () => void;
@@ -128,6 +130,7 @@ export function TabBar({
     onSelect,
     onClose,
     onKeep,
+    onRename,
     buildMenu,
     onAdd,
     addIcon,
@@ -355,7 +358,7 @@ export function TabBar({
                             event.currentTarget.focus({ preventScroll: true });
                             onSelect(t.id);
                         }}
-                        onDoubleClick={t.preview && onKeep ? () => onKeep(t.id) : undefined}
+                        onDoubleClick={t.preview && onKeep ? () => onKeep(t.id) : onRename ? () => onRename(t.id) : undefined}
                         onContextMenu={
                             buildMenu
                                 ? (e) => {
