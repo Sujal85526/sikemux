@@ -33,8 +33,10 @@ function defaultDeps(): CoreSessionRestoreDeps {
         tasks: {
             watch: (ptyId) => backend.watch(ptyId),
             adoptDeckTask: (task, executionId, started) => appTaskRuntime.adopt(task, executionId, started),
-            adoptHarnessRun: (adoption, started) =>
-                void import("../harness/service").then(({ harnessTasks }) => harnessTasks.adopt(adoption, started)).catch(() => {}),
+            showHarnessTerminal: (request) =>
+                void import("../harness/service")
+                    .then(({ harnessTerminals }) => harnessTerminals.open({ ...request, background: true, signal: new AbortController().signal }))
+                    .catch(() => {}),
         },
         schedule: (callback, delayMs) => void window.setTimeout(callback, delayMs),
     };
@@ -42,9 +44,10 @@ function defaultDeps(): CoreSessionRestoreDeps {
 
 /**
  * Takes back what the core kept while the app was closed or reloading:
- * terminal agents still running come back live, tasks rejoin the command deck
- * and the harness, and terminals from before this page that nothing in the
- * layout names are stopped after a grace, so none of them runs forever unseen.
+ * terminal agents still running come back live, running tasks rejoin the
+ * command deck or reopen their terminals, and terminals from before this
+ * page that nothing in the layout names are stopped after a grace, so none
+ * of them runs forever unseen.
  */
 export async function restoreCoreSessions(deps: CoreSessionRestoreDeps = defaultDeps()): Promise<void> {
     let sessions: CoreSession[];

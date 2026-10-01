@@ -35,7 +35,8 @@ This page is what to know before your first call. Call `guide` again with a
   the last lines and `search` the matching ones.
 - `events_wait` takes an event cursor from `workspace_inspect` or the last
   wait. **Event cursors are not output cursors**; never mix them. A timeout
-  is normal: wait again with the fresh cursor.
+  is normal: wait again with the fresh cursor. Cursors stay valid after
+  Sikemux reloads or restarts.
 - Browser tools that act report what changed since your last read of the
   page (`report: "changes"`); `"outcome"` is leaner and `"full"` returns the
   whole state. The first read of a new page is always full.
@@ -146,18 +147,21 @@ does not stop a task started from the command deck.
 
 ### What survives a reload or restart
 
-Tasks keep running when the Sikemux window reloads or the app quits. When
-Sikemux opens again it takes them back with their terminals, and `task_read`,
-`task_stop` and `task_restart` work on them by `taskId` or `executionId`. A
-task that ended while Sikemux was closed stays readable for about ten minutes.
-Idempotency keys and `events_wait` cursors do not survive, so pass a new key
-and take a fresh cursor from `workspace_inspect`. "Quit and Stop Everything"
-(⌥⌘Q) stops every task, after which `task_read` says the task was started
-earlier and its run is gone. Run history is capped at 128 runs and 256 keys.
-Closing the project stops its harness tasks.
+Tasks, their runs and idempotency keys live in Sikemux's background process,
+so they survive the window reloading and the app quitting. While the window is
+closed, `task_read`, `task_stop`, `events_wait` and `task_start` with a key
+you already used keep working. Starting a new run, `workspace_inspect`,
+`ui_open` and the browser tools need the window; with it closed they fail and
+say so. When Sikemux opens again the tasks' terminals come back. A task that
+ended stays readable for about ten minutes. Event cursors stay valid across
+reloads and restarts, so keep the one you have.
 
-If you hit a capacity error on either cap, the person needs to restart Sikemux;
-you cannot clear it yourself.
+"Quit and Stop Everything" (⌥⌘Q) stops every task and the background process,
+and its runs and keys go with it; `task_read` then says the task was started
+earlier and its run is gone. Sikemux keeps 128 runs and 256 keys, forgetting
+the oldest finished ones first; only when that many are still running does a
+start fail, and stopping one with `task_stop` makes room. Closing the project
+stops its harness tasks.
 
 ## output: Reading output and waiting
 
@@ -205,8 +209,8 @@ a mistake.
 A timeout is normal: you get an empty event list and a fresh cursor. Wait
 again. Pass an `executionId` to hear only about one task.
 
-Event history holds 256 entries. If a wait comes back `truncated`, stop
-replaying and inspect the workspace again for current state.
+A wait reaches the project's newest 1024 events. If one comes back
+`truncated`, stop replaying and inspect the workspace again for current state.
 
 A wait does not schedule you a future turn. It only holds this call open.
 

@@ -97,6 +97,9 @@ pub enum CliServerResponse {
     Pong {
         protocol: u16,
         version: String,
+        /// Whether the app's window is open. Without it, tools that act on
+        /// the window fail and the CLI's `open` starts the app first.
+        window: bool,
     },
     Accepted {
         request_id: String,
@@ -110,6 +113,14 @@ pub enum CliServerResponse {
     Error {
         message: String,
     },
+}
+
+/// What the window opened of a CLI `open`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CliOpenOutcome {
+    pub opened: Vec<String>,
+    pub failed: Vec<CliOpenFailure>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -133,6 +144,51 @@ pub struct CliOpenResult {
     pub pane_id: Option<String>,
     pub path: String,
     pub error: Option<String>,
+}
+
+impl CliOpenRequest {
+    pub fn validate(&self) -> Result<(), String> {
+        use std::path::Path;
+        if self.id.trim().is_empty() || self.targets.is_empty() {
+            return Err("CLI open request has no targets".into());
+        }
+        if !Path::new(&self.cwd).is_absolute() {
+            return Err("CLI working directory must be an absolute path".into());
+        }
+        if self.targets.len() > MAX_CLI_TARGETS {
+            return Err(format!(
+                "CLI open request exceeds {MAX_CLI_TARGETS} targets"
+            ));
+        }
+        let mut ids = std::collections::HashSet::new();
+        for target in &self.targets {
+            if target.id.trim().is_empty() {
+                return Err("CLI open request has an empty target id".into());
+            }
+            if !ids.insert(&target.id) {
+                return Err("CLI open request has duplicate target ids".into());
+            }
+            if !Path::new(&target.path).is_absolute()
+                || !Path::new(&target.project_root).is_absolute()
+            {
+                return Err("CLI targets and project roots must be absolute paths".into());
+            }
+            if target.kind == CliTargetKind::Directory
+                && (target.line.is_some() || target.column.is_some())
+            {
+                return Err("directory targets cannot include a line or column".into());
+            }
+        }
+        if self.wait
+            && self
+                .targets
+                .iter()
+                .all(|target| target.kind == CliTargetKind::Directory)
+        {
+            return Err("--wait requires at least one file target".into());
+        }
+        Ok(())
+    }
 }
 
 pub const PLUGIN_METHODS: &[&str] = &["plugins.tools", "plugins.call"];
@@ -195,6 +251,30 @@ mod tests {
             method: method.into(),
             params: serde_json::json!({}),
         }
+    }
+
+    #[test]
+    fn open_requests_must_be_absolute_and_bounded() {
+        let request = CliOpenRequest {
+            id: "request".into(),
+            cwd: "/repo".into(),
+            wait: true,
+            targets: vec![CliOpenTarget {
+                id: "target".into(),
+                kind: CliTargetKind::File,
+                path: "/repo/file.rs".into(),
+                project_root: "/repo".into(),
+                line: Some(0),
+                column: Some(0),
+            }],
+        };
+        assert!(request.validate().is_ok());
+        let mut relative = request.clone();
+        relative.targets[0].path = "file.rs".into();
+        assert!(relative.validate().is_err());
+        let mut directory = request.clone();
+        directory.targets[0].kind = CliTargetKind::Directory;
+        assert!(directory.validate().is_err());
     }
 
     #[test]

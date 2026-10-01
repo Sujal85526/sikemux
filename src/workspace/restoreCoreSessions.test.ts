@@ -23,7 +23,7 @@ function deps(sessions: CoreSession[]) {
     const restore: CoreSessionRestoreDeps = {
         list: async () => sessions,
         kill,
-        tasks: { watch: vi.fn(), adoptDeckTask: vi.fn(), adoptHarnessRun: vi.fn() },
+        tasks: { watch: vi.fn(), adoptDeckTask: vi.fn(), showHarnessTerminal: vi.fn() },
         schedule: (callback, delay) => {
             expect(delay).toBe(UNCLAIMED_GRACE_MS);
             scheduled.push(callback);

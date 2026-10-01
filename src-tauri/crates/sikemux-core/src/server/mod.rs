@@ -1,7 +1,10 @@
 mod agent;
 mod connection;
+mod harness;
 mod prepare;
 mod session;
+mod tools;
+mod window;
 
 use std::collections::HashMap;
 use std::fs::{DirBuilder, File, OpenOptions};
@@ -39,6 +42,12 @@ pub struct ServerConfig {
     pub socket: PathBuf,
     pub idle_exit: Duration,
     pub build: BuildIdentity,
+    /// Where to publish the agents' tool endpoint. Without it the core serves
+    /// none.
+    pub cli_endpoint: Option<PathBuf>,
+    /// The app's data directory, for the harness journal and tool tally.
+    /// Without it they are kept in memory, or not at all.
+    pub data_dir: Option<PathBuf>,
 }
 
 impl ServerConfig {
@@ -47,6 +56,8 @@ impl ServerConfig {
             socket,
             idle_exit: DEFAULT_IDLE_EXIT,
             build: BuildIdentity::default(),
+            cli_endpoint: None,
+            data_dir: None,
         }
     }
 }
@@ -159,10 +170,12 @@ pub(crate) struct Core {
     pub(crate) build: BuildIdentity,
     pub(crate) detection: RwLock<ManifestRegistry>,
     manifest_dir: Mutex<Option<PathBuf>>,
+    pub(crate) harness: harness::Harness,
+    pub(crate) window: window::Window,
 }
 
-/// Session ids start from the clock, so an id a client still holds from a
-/// core that has since restarted never names a new session.
+/// Session and window call ids start from the clock, so an id a client still
+/// holds from a core that has since restarted never names a new one.
 fn first_session_id() -> SessionId {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -172,7 +185,7 @@ fn first_session_id() -> SessionId {
 }
 
 impl Core {
-    fn new(build: BuildIdentity) -> Result<Arc<Self>, ServerError> {
+    fn new(build: BuildIdentity, data_dir: Option<&Path>) -> Result<Arc<Self>, ServerError> {
         let detection = ManifestRegistry::bundled()
             .map_err(|error| ServerError::Manifests(error.to_string()))?;
         Ok(Arc::new(Self {
@@ -188,6 +201,8 @@ impl Core {
             build,
             detection: RwLock::new(detection),
             manifest_dir: Mutex::new(None),
+            harness: harness::Harness::new(data_dir),
+            window: window::Window::new(first_session_id()),
         }))
     }
 
@@ -308,6 +323,7 @@ impl Core {
 
     fn unregister_client(&self, client: &ClientConn) {
         client.close();
+        self.window.unregister(client.id);
         if let Ok(mut clients) = self.clients.lock() {
             clients.remove(&client.id);
         }
@@ -343,6 +359,7 @@ impl Core {
                 session::mark_task_output_noticed(&session);
             }
             core.broadcast_event(&Event::TaskOutput { id });
+            harness::note_output(&core, id);
         });
     }
 
@@ -512,7 +529,19 @@ pub async fn serve(config: ServerConfig) -> Result<(), ServerError> {
         .map_err(std::io::Error::other)??;
     listener.set_nonblocking(true)?;
     let listener = tokio::net::UnixListener::from_std(listener)?;
-    let core = Core::new(config.build.clone())?;
+    let core = Core::new(config.build.clone(), config.data_dir.as_deref())?;
+    let tools = match config.cli_endpoint.clone() {
+        Some(path) => match tools::ToolEndpoint::start(core.clone(), path).await {
+            Ok(tools) => Some(tools),
+            Err(error) => {
+                eprintln!("sikemux core: agents' tools are unavailable: {error}");
+                None
+            }
+        },
+        None => None,
+    };
+    let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
     let background = [
         tokio::spawn(poll_sessions(core.clone())),
         tokio::spawn(sweep(core.clone())),
@@ -535,6 +564,8 @@ pub async fn serve(config: ServerConfig) -> Result<(), ServerError> {
                 }
             },
             _ = shutdown.changed() => break,
+            _ = terminate.recv() => break,
+            _ = interrupt.recv() => break,
             _ = ticker.tick() => {
                 if core.is_idle() {
                     let since = *idle_since.get_or_insert_with(Instant::now);
@@ -549,6 +580,9 @@ pub async fn serve(config: ServerConfig) -> Result<(), ServerError> {
     }
     for task in background {
         task.abort();
+    }
+    if let Some(tools) = tools {
+        tools.stop();
     }
     drop(listener);
     let _ = std::fs::remove_file(&config.socket);

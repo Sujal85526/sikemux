@@ -164,6 +164,10 @@ impl PendingStart {
         self.session.id
     }
 
+    pub(crate) fn task(&self) -> Option<&crate::protocol::TaskSessionInfo> {
+        self.session.owner.task.as_ref()
+    }
+
     pub(crate) fn start(self, core: &Arc<Core>) {
         if let Some(agent) = self.session.agent.as_ref() {
             agent::publish_start(core, agent);
@@ -511,10 +515,13 @@ pub(crate) fn report_exit(core: &Core, session: &Session, status: Option<&ExitSt
     core.broadcast_event(&Event::Exited {
         id: session.id,
         code,
-        signal,
+        signal: signal.clone(),
         killed: session.killed.load(Ordering::Acquire),
     });
     drop(parser);
+    if session.is_task() {
+        core.harness.session_exited(session.id, code, signal);
+    }
     if let Some(agent) = session.agent.as_ref() {
         agent::note_exit(core, agent, status);
     }

@@ -7,7 +7,8 @@ mod autopsy;
 mod browser;
 pub mod cli_client;
 mod cli_install;
-mod cli_server;
+mod cli_open;
+mod cli_paths;
 mod deep_link;
 mod diff;
 mod document_preview;
@@ -92,7 +93,7 @@ pub fn run() {
     // they do in `make dev`. macOS GUI launches otherwise get a minimal
     // PATH that's missing ~/.local/bin, /opt/homebrew/bin, etc.
     system::fix_path_from_login_shell();
-    cli_server::put_cli_on_path();
+    cli_paths::put_cli_on_path();
 
     // Warm the profile-environment cache here, on the startup thread, while
     // we are already paying for a login shell. Agent and browser launches
@@ -141,6 +142,9 @@ pub fn run() {
                 if let Some(mgr) = window.try_state::<PtyManager>() {
                     mgr.detach_all();
                 }
+                if let Some(harness) = window.try_state::<harness::HarnessBroker>() {
+                    harness.fail_all("Sikemux's window closed before it answered");
+                }
                 if let Some(browser) = window.try_state::<BrowserManager>() {
                     browser.drain();
                 }
@@ -171,6 +175,9 @@ pub fn run() {
                 if let Some(mgr) = webview.try_state::<PtyManager>() {
                     mgr.detach_all();
                 }
+                if let Some(harness) = webview.try_state::<harness::HarnessBroker>() {
+                    harness.fail_all("Sikemux's window reloaded before it answered");
+                }
                 if let Some(browser) = webview.try_state::<BrowserManager>() {
                     browser.drain();
                 }
@@ -190,14 +197,6 @@ pub fn run() {
                 &_app.package_info().version,
             )?);
             wheel::watch(_app.handle());
-            let cli_broker = match cli_server::CliBroker::start(_app.handle().clone()) {
-                Ok(cli_broker) => Some(cli_broker),
-                Err(error) => {
-                    eprintln!("Sikemux CLI integration is unavailable: {error}");
-                    None
-                }
-            };
-            _app.manage(cli_server::CliBrokerState(cli_broker));
             _app.state::<PtyManager>().start(_app.handle());
             // See-through window — same recipe as nackle (NSWindow opaque=NO,
             // CGS background blur via private API). No NSVisualEffectView
@@ -221,6 +220,8 @@ pub fn run() {
         })
         .manage(deep_link::DeepLinks::default())
         .manage(PtyManager::default())
+        .manage(harness::HarnessBroker::default())
+        .manage(cli_open::CliOpens::default())
         .manage(AcpManager::default())
         .manage(BrowserManager::default())
         .manage(VoiceManager::default())
@@ -411,12 +412,13 @@ pub fn run() {
             harness::harness_resolve_path,
             harness::harness_claim,
             harness::harness_reply,
-            pty::commands::harness_task_output,
-            cli_server::cli_frontend_ready,
-            cli_server::cli_claim_open_requests,
-            cli_server::cli_open_result,
-            cli_server::cli_editor_tabs_closed,
-            cli_server::cli_runtime_info,
+            harness::harness_awaiting_trust,
+            harness::harness_stop_runs,
+            cli_open::cli_frontend_ready,
+            cli_open::cli_claim_open_requests,
+            cli_open::cli_open_result,
+            cli_open::cli_editor_tabs_closed,
+            cli_paths::cli_runtime_info,
             deep_link::take_deep_links,
             cli_install::cli_install_status,
             cli_install::cli_install,
@@ -443,10 +445,11 @@ pub fn run() {
                 if let Some(watchdog) = app_handle.try_state::<UiWatchdogState>() {
                     watchdog.suspend();
                 }
-                if let Some(state) = app_handle.try_state::<cli_server::CliBrokerState>() {
-                    if let Some(broker) = &state.0 {
-                        broker.shutdown();
-                    }
+                if let Some(harness) = app_handle.try_state::<harness::HarnessBroker>() {
+                    harness.fail_all("Sikemux quit before it answered");
+                }
+                if let Some(opens) = app_handle.try_state::<cli_open::CliOpens>() {
+                    opens.shutdown();
                 }
                 if let Some(mgr) = app_handle.try_state::<PtyManager>() {
                     mgr.release();

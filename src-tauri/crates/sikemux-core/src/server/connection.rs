@@ -16,7 +16,7 @@ use crate::protocol::{
 
 use super::prepare::{prepare_task, prepare_terminal};
 use super::session::{self, PendingStart};
-use super::{agent, Core, CoreError, CoreResult};
+use super::{agent, harness, Core, CoreError, CoreResult};
 
 pub(crate) type ClientId = u64;
 
@@ -56,7 +56,7 @@ impl ClientConn {
         self.kick.notify_one();
     }
 
-    fn send_message(&self, message: &ServerMessage) {
+    pub(crate) fn send_message(&self, message: &ServerMessage) {
         if let Ok(frame) = encode_control(message) {
             self.send(frame.into());
         }
@@ -229,6 +229,12 @@ async fn read_requests(
                         return;
                     }
                 }
+                Ok(ClientMessage::WindowReply { call_id, answer }) => {
+                    core.window.answer(client.id, call_id, answer);
+                }
+                Ok(ClientMessage::WindowOpenClosed { call_id }) => {
+                    core.window.open_closed(client.id, call_id);
+                }
                 Ok(ClientMessage::Hello { .. }) => client.send_message(&ServerMessage::Error {
                     request_id: None,
                     message: "the handshake is already done".into(),
@@ -264,7 +270,7 @@ async fn read_requests(
     }
 }
 
-async fn blocking<T: Send + 'static>(
+pub(crate) async fn blocking<T: Send + 'static>(
     work: impl FnOnce() -> CoreResult<T> + Send + 'static,
 ) -> CoreResult<T> {
     tokio::task::spawn_blocking(work)
@@ -292,8 +298,22 @@ async fn run_requests(
                 tokio::spawn(async move {
                     match spawn(core.clone(), launch, target).await {
                         Ok(pending) => {
-                            client.respond(request_id, Ok(Response::Spawned { id: pending.id() }));
+                            let id = pending.id();
+                            client.respond(request_id, Ok(Response::Spawned { id }));
+                            let stopped = pending
+                                .task()
+                                .is_some_and(|task| core.harness.session_started(id, task));
                             pending.start(&core);
+                            if stopped {
+                                if let Some(target) = core.take_session_for_kill(id) {
+                                    let killing = core.clone();
+                                    let _ = blocking(move || {
+                                        session::kill(&killing, &target);
+                                        Ok(())
+                                    })
+                                    .await;
+                                }
+                            }
                         }
                         Err(error) => client.respond(request_id, Err(error)),
                     }
@@ -336,6 +356,20 @@ async fn run_requests(
                     })
                     .await;
                     client.respond(request_id, result.map(|()| Response::Done));
+                });
+            }
+            Request::RegisterWindow => {
+                core.window.register(client.clone());
+                client.respond(request_id, Ok(Response::Done));
+            }
+            Request::HarnessAwaitingTrust { execution_id } => {
+                core.harness.awaiting_trust(&execution_id);
+                client.respond(request_id, Ok(Response::Done));
+            }
+            Request::HarnessStopRuns { selector } => {
+                tokio::spawn(async move {
+                    harness::stop_runs(&core, selector).await;
+                    client.respond(request_id, Ok(Response::Done));
                 });
             }
             Request::Configure { manifest_dir } => {

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use sikemux_core::client::EventSink;
-use sikemux_core::protocol::{Event, SessionId};
+use sikemux_core::protocol::{CallId, Event, SessionId, WindowCall};
 use sikemux_pty::shell_protocol::PTY_SHELL_METADATA_EVENT;
 use sikemux_pty::task::TaskProcessExit;
 use tauri::{AppHandle, Emitter, Manager};
@@ -121,9 +121,13 @@ impl EventSink for AppSink {
                 id, code, signal, ..
             } => report_exited(&self.streams, id, task_exit(code, signal)),
             Event::ShellMetadata(metadata) => self.emit(PTY_SHELL_METADATA_EVENT, metadata),
-            Event::TaskOutput { id } => self.emit("harness-task-output", id),
+            Event::TaskOutput { .. } => {}
             Event::AgentState(state) => self.emit("agent_state_changed", state),
         }
+    }
+
+    fn window_call(&self, call_id: CallId, call: WindowCall) {
+        crate::harness::answer_window_call(&self.app, call_id, call);
     }
 
     fn closed(&self) {

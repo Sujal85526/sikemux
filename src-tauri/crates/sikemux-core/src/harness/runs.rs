@@ -230,6 +230,11 @@ impl Runs {
         Ok(())
     }
 
+    pub fn remove(&mut self, execution_id: &str) {
+        self.runs.retain(|run| run.execution_id != execution_id);
+        self.keys.retain(|entry| entry.execution_id != execution_id);
+    }
+
     /// Adds a run, forgetting the oldest finished one and its keys when full.
     pub fn insert(&mut self, run: Run) -> Result<(), String> {
         if self.runs.len() >= MAX_RUNS {

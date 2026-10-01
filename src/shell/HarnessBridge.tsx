@@ -5,6 +5,7 @@ import type { HarnessRequest } from "../harness/service";
 import { useStore } from "../state/store";
 import { errMessage, swallow } from "../state/toast";
 
+/** Answers the tool calls the core hands to the window, and stops the harness tasks of a project or agent that closes. */
 export function HarnessBridge() {
     useEffect(() => {
         const controller = new AbortController();
@@ -46,30 +47,20 @@ export function HarnessBridge() {
                 },
                 { signal: controller.signal },
             );
-            await getIpcTransport().subscribe<number>(
-                "harness-task-output",
-                (event) => {
-                    if (service) void service.then(({ harnessTasks }) => harnessTasks.output(event.payload)).catch(swallow("harness output"));
-                },
-                {
-                    signal: controller.signal,
-                },
-            );
             if (!controller.signal.aborted) await claim();
         })().catch(swallow("harness bridge"));
+        const stopRuns = (selector: { project: string } | { agentId: string }) =>
+            void invokeCommand("harness_stop_runs", selector).catch(swallow("harness stop"));
         const unsubscribe = useStore.subscribe((state, previous) => {
             for (const session of Object.values(previous.sessions)) {
                 if (
-                    service &&
                     session.kind === "project" &&
                     !Object.values(state.sessions).some((current) => current.kind === "project" && current.cwd === session.cwd)
                 )
-                    void service.then(({ harnessTasks }) => harnessTasks.closeProject(session.cwd)).catch(swallow("harness project close"));
+                    stopRuns({ project: session.cwd });
             }
-            if (!service || state.agents === previous.agents) return;
-            for (const agentId of Object.keys(previous.agents))
-                if (!state.agents[agentId])
-                    void service.then(({ harnessTasks }) => harnessTasks.closeAgent(agentId)).catch(swallow("harness agent close"));
+            if (state.agents === previous.agents) return;
+            for (const agentId of Object.keys(previous.agents)) if (!state.agents[agentId]) stopRuns({ agentId });
         });
         return () => {
             controller.abort();

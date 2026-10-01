@@ -12,10 +12,14 @@ import { useStore, setState } from "../state/store";
 import * as commands from "../state/commands";
 import { appTaskRuntime } from "../tasks/application";
 import { NativeTaskExecutionBackend, WorkbenchTaskTerminalSurface, taskPtyBindings } from "../tasks/nativeRuntime";
+import type { TaskExecutionRequest } from "../tasks/runtime";
 import { appConsole } from "./appConsole";
-import { HarnessEvents } from "./events";
-import { HarnessTasks, type HarnessHistory, type HarnessLaunch, type HarnessLaunchRequest, type HarnessPrepared, type HarnessRun } from "./tasks";
 
+/**
+ * A tool call the core hands to the window because it needs the window: the
+ * layout, `sikemux.json` and its trust prompt, or the panes. The core keeps
+ * the runs, keys and events itself.
+ */
 export interface HarnessRequest {
     id: string;
     project: string;
@@ -23,8 +27,6 @@ export interface HarnessRequest {
     method: string;
     params: Record<string, unknown>;
 }
-
-export const harnessEvents = new HarnessEvents();
 
 function preserveFocus<T>(operation: () => T): T {
     const before = useStore.getState();
@@ -47,26 +49,19 @@ function preserveFocus<T>(operation: () => T): T {
     }
 }
 
+export function harnessTerminalKey(project: string, taskId: string): string {
+    return JSON.stringify(["harness", project, taskId]);
+}
+
 /* A task an agent started goes on that agent's desk. One started with no agent
    behind it, or by one that has since closed, gets a tab in the workspace. */
-export const harnessTasks = new HarnessTasks(
-    new NativeTaskExecutionBackend(),
-    new WorkbenchTaskTerminalSurface(taskPtyBindings, (request) =>
-        request.agentId && useStore.getState().agents[request.agentId]
-            ? commands.openDeskTerminal(request.agentId, request)
-            : preserveFocus(() => commands.openTaskTerminal(request)),
-    ),
-    harnessEvents,
-    sessionHistory(),
+export const harnessTerminals = new WorkbenchTaskTerminalSurface(taskPtyBindings, (request) =>
+    request.agentId && useStore.getState().agents[request.agentId]
+        ? commands.openDeskTerminal(request.agentId, request)
+        : preserveFocus(() => commands.openTaskTerminal(request)),
 );
 
-function sessionHistory(): HarnessHistory | undefined {
-    try {
-        return window.sessionStorage;
-    } catch {
-        return undefined;
-    }
-}
+const backend = new NativeTaskExecutionBackend();
 
 function text(params: Record<string, unknown>, key: string, required = true): string | undefined {
     const value = params[key];
@@ -90,45 +85,6 @@ function projectSession(request: HarnessRequest) {
     return session;
 }
 
-interface OutputQuery {
-    cursor: number;
-    limit: number;
-    tail?: number;
-    search?: string;
-    context: number;
-    plain: boolean;
-}
-
-interface OutputPage {
-    bytes: number[];
-    cursor: number;
-    end: number;
-    hasMore: boolean;
-    truncated: boolean;
-    matches?: number;
-}
-
-function readOutput(ptyId: number, query: OutputQuery): Promise<OutputPage> {
-    return invokeCommand<OutputPage>("harness_task_output", { id: ptyId, query });
-}
-
-function executionFor(project: string, params: Record<string, unknown>): string {
-    const executionId = text(params, "executionId", false);
-    const taskId = text(params, "taskId", false);
-    if (executionId && taskId) throw new Error("Pass either executionId or taskId, not both");
-    if (executionId) return executionId;
-    if (!taskId) throw new Error("executionId or taskId is required");
-    const latest = harnessTasks.latest(project, taskId);
-    if (latest) return latest.executionId;
-    if (harnessTasks.startedEarlier(project, taskId))
-        throw new Error(
-            `Task ${taskId} was started earlier, but its run is gone: it ended a while ago or was stopped with Quit and Stop Everything. Start it again with task_start.`,
-        );
-    throw new Error(
-        `Task ${taskId} has not been started since Sikemux opened; call workspace_inspect to see the runs it knows about, or start it with task_start`,
-    );
-}
-
 async function configuredTask(project: string, taskId: string) {
     const config = await loadProjectConfig(project);
     if (config.status === "absent") throw new Error("Project has no sikemux.json; add one that defines tasks");
@@ -144,201 +100,83 @@ function runsInYoloMode(request: HarnessRequest): boolean {
     return Boolean(request.agentId && useStore.getState().agents[request.agentId]?.permissionMode === "bypass");
 }
 
-async function launchConfigured(request: HarnessRequest, taskId: string, key: string, replace = false): Promise<HarnessLaunch> {
+type Launch = Omit<TaskExecutionRequest, "executionId" | "terminalKey" | "agentId">;
+
+async function configuredLaunch(request: HarnessRequest, executionId: string, taskId: string): Promise<{ launch: Launch; previewUrl?: string }> {
     const { project } = request;
-    const existing = replace ? undefined : harnessTasks.existing(project, taskId, key);
-    if (existing) return existing;
     const { config, task } = await configuredTask(project, taskId);
-    const previous = replace ? harnessTasks.latest(project, taskId) : undefined;
-    const prepare = async (executionId: string, signal: AbortSignal): Promise<HarnessPrepared> => {
-        const trusted =
-            runsInYoloMode(request) ||
-            (await trustProjectConfig(config, (ask) => {
-                harnessTasks.awaitTrust(project, executionId);
-                return confirmDialog(ask);
-            }));
-        if (!trusted) throw new Error("Project configuration was not approved");
-        const fresh = await loadProjectConfig(project);
-        if (fresh.status !== "valid" || fresh.fingerprint !== config.fingerprint) throw new Error("Project configuration changed; inspect and retry");
-        if (signal.aborted) throw signal.reason;
+    const trusted =
+        runsInYoloMode(request) ||
+        (await trustProjectConfig(config, (ask) => {
+            void invokeCommand("harness_awaiting_trust", { executionId }).catch(() => {});
+            return confirmDialog(ask);
+        }));
+    if (!trusted) throw new Error("Project configuration was not approved");
+    const fresh = await loadProjectConfig(project);
+    if (fresh.status !== "valid" || fresh.fingerprint !== config.fingerprint) throw new Error("Project configuration changed; inspect and retry");
+    projectSession(request);
+    const userTask = appTaskRuntime.getSnapshot(project);
+    if (userTask?.task?.id === taskId && ["running", "stopping"].includes(userTask.status))
+        throw new Error("This task is already running through the command deck");
+    return {
+        launch: {
+            taskId,
+            project,
+            source: "project",
+            label: task.label,
+            command: task.command,
+            cwd: task.cwd === "." ? project : joinPath(project, task.cwd),
+            env: task.env,
+            cols: 120,
+            rows: 30,
+        },
+        previewUrl: config.config.preview?.command === task.command ? config.config.preview.url : undefined,
+    };
+}
+
+/* The core has already made the run and checked the command task's directory;
+   this trusts, spawns it through the core under that run's id and shows its
+   terminal. */
+async function startTask(request: HarnessRequest): Promise<{ previewUrl?: string }> {
+    const { params, project } = request;
+    const executionId = text(params, "executionId")!;
+    const taskId = text(params, "taskId")!;
+    const command = text(params, "command", false);
+    let prepared: { launch: Launch; previewUrl?: string };
+    if (command) {
         projectSession(request);
-        const userTask = appTaskRuntime.getSnapshot(project);
-        if (userTask?.task?.id === taskId && ["running", "stopping"].includes(userTask.status))
-            throw new Error("This task is already running through the command deck");
-        if (previous) await harnessTasks.stop(project, previous.executionId);
-        return {
-            request: {
+        prepared = {
+            launch: {
                 taskId,
                 project,
                 source: "project",
-                label: task.label,
-                command: task.command,
-                cwd: task.cwd === "." ? project : joinPath(project, task.cwd),
-                env: task.env,
+                label: text(params, "label")!,
+                command,
+                cwd: text(params, "cwd")!,
+                env: {},
                 cols: 120,
                 rows: 30,
             },
-            previewUrl: config.config.preview?.command === task.command ? config.config.preview.url : undefined,
         };
+    } else prepared = await configuredLaunch(request, executionId, taskId);
+    const { launch, previewUrl } = prepared;
+    const previous = text(params, "previousExecutionId", false);
+    if (previous) await invokeCommand("harness_stop_runs", { executionId: previous });
+    const agentId = request.agentId ?? undefined;
+    const execution: TaskExecutionRequest = {
+        ...launch,
+        executionId,
+        terminalKey: harnessTerminalKey(project, taskId),
+        ...(agentId ? { agentId } : {}),
     };
-    return harnessTasks.start(project, taskId, key, prepare, { agentId: request.agentId ?? undefined, replace });
-}
-
-const COMMAND_TASK_PREFIX = "sh:";
-
-function commandCwd(value: string | undefined): string {
-    const normalized = (value ?? ".").replaceAll("\\", "/").replace(/\/+$/, "");
-    const parts = normalized.split("/").filter((part) => part !== ".");
-    if (
-        normalized.startsWith("/") ||
-        normalized.startsWith("~") ||
-        /^[A-Za-z]:/.test(normalized) ||
-        parts.some((part) => part === "" || part === "..")
-    )
-        throw new Error("cwd must be a directory inside the project, relative to it");
-    return parts.join("/");
-}
-
-/* The id comes from the command and its directory, so starting the same command
-   again while it runs finds that run instead of launching a second copy. */
-function commandTaskId(command: string, cwd: string, label: string | undefined): string {
-    let hash = 0x811c9dc5;
-    for (const byte of new TextEncoder().encode(`${cwd}\0${command}`)) hash = Math.imul(hash ^ byte, 0x01000193);
-    const slug = (label ?? command)
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "")
-        .slice(0, 32)
-        .replace(/-+$/, "");
-    return `${COMMAND_TASK_PREFIX}${slug || "command"}-${(hash >>> 0).toString(16).padStart(8, "0").slice(0, 6)}`;
-}
-
-function commandLaunch(request: HarnessRequest, params: Record<string, unknown>): HarnessLaunchRequest {
-    const command = text(params, "command")!;
-    const label = text(params, "label", false);
-    if (label && label.length > 80) throw new Error("label must be at most 80 characters");
-    const cwd = commandCwd(text(params, "cwd", false));
-    return {
-        taskId: commandTaskId(command, cwd, label),
-        project: request.project,
-        source: "project",
-        label: label ?? (command.length > 80 ? `${command.slice(0, 79)}…` : command),
-        command,
-        cwd: cwd ? joinPath(request.project, cwd) : request.project,
-        env: {},
-        cols: 120,
-        rows: 30,
-    };
-}
-
-function launchCommand(request: HarnessRequest, launch: HarnessLaunchRequest, key: string, replace = false): HarnessLaunch {
-    const { project } = request;
-    const previous = replace ? harnessTasks.latest(project, launch.taskId) : undefined;
-    return harnessTasks.start(
-        project,
-        launch.taskId,
-        key,
-        async () => {
-            projectSession(request);
-            if (previous) await harnessTasks.stop(project, previous.executionId);
-            return { request: launch };
-        },
-        { agentId: request.agentId ?? undefined, replace },
-    );
-}
-
-function earlierCommand(project: string, taskId: string): HarnessLaunchRequest {
-    const launch = harnessTasks.launchRequest(project, taskId);
-    if (launch) return launch;
-    if (harnessTasks.startedEarlier(project, taskId))
-        throw new Error(`Task ${taskId} was started earlier, but its run and command are gone; start it again with command`);
-    throw new Error(`Task ${taskId} has not been started since Sikemux opened; start it with command`);
-}
-
-function launchTask(request: HarnessRequest, key: string): HarnessLaunch | Promise<HarnessLaunch> {
-    const { params, project } = request;
-    const taskId = text(params, "taskId", false);
-    if (taskId && params.command !== undefined) throw new Error("Pass either taskId or command, not both");
-    if (!taskId && params.command === undefined) throw new Error("taskId or command is required");
-    if (!taskId) return launchCommand(request, commandLaunch(request, params), key);
-    if (params.cwd !== undefined || params.label !== undefined) throw new Error("cwd and label go with command; a sikemux.json task sets its own");
-    if (!taskId.startsWith(COMMAND_TASK_PREFIX)) return launchConfigured(request, taskId, key);
-    return harnessTasks.existing(project, taskId, key) ?? launchCommand(request, earlierCommand(project, taskId), key);
-}
-
-/* MCP hosts give up on a tool call after about a minute, and the native bridge
-   after 65 s, so a start answers well before either with whatever state it reached. */
-const START_BUDGET_MS = 30_000;
-
-async function nextEvent(project: string, cursor: string, until: number, executionId: string, done: Promise<unknown>, signal?: AbortSignal) {
-    const local = new AbortController();
-    const forward = () => local.abort(signal?.reason);
-    signal?.addEventListener("abort", forward, { once: true });
+    const started = await backend.start(execution);
     try {
-        await Promise.race([done, harnessEvents.wait(project, cursor, Math.min(Math.max(until - Date.now(), 0), 30_000), executionId, local.signal)]);
-    } finally {
-        signal?.removeEventListener("abort", forward);
-        local.abort();
+        await harnessTerminals.open({ ...execution, ptyId: started.ptyId, agentId, signal: new AbortController().signal });
+    } catch (error) {
+        await Promise.resolve(backend.stop(started.ptyId)).catch(() => {});
+        throw error;
     }
-}
-
-async function settle(project: string, launch: HarnessLaunch, until: number, signal?: AbortSignal): Promise<HarnessRun> {
-    const outcome: { done: boolean; error?: unknown } = { done: false };
-    const done = launch.started.then(
-        () => {
-            outcome.done = true;
-        },
-        (error: unknown) => {
-            outcome.done = true;
-            outcome.error = error ?? new Error("Task could not be started");
-        },
-    );
-    for (;;) {
-        if (signal?.aborted) throw signal.reason;
-        const cursor = harnessEvents.cursor;
-        if (outcome.done) {
-            if (outcome.error) throw outcome.error;
-            return harnessTasks.get(project, launch.executionId);
-        }
-        const run = harnessTasks.get(project, launch.executionId);
-        if (run.status === "awaiting-trust" || Date.now() >= until) return run;
-        await nextEvent(project, cursor, until, launch.executionId, done, signal);
-    }
-}
-
-async function outputAppears(project: string, executionId: string, pattern: string, until: number, signal?: AbortSignal): Promise<boolean> {
-    for (;;) {
-        const cursor = harnessEvents.cursor;
-        const run = harnessTasks.get(project, executionId);
-        if (run.ptyId !== undefined) {
-            const page = await readOutput(run.ptyId, { cursor: 0, limit: 4096, tail: 1, search: pattern, context: 0, plain: false });
-            if (page.matches) return true;
-        }
-        if (!["starting", "running"].includes(run.status) || Date.now() >= until) return false;
-        await nextEvent(project, cursor, until, executionId, new Promise(() => {}), signal);
-        await new Promise((resolve) => setTimeout(resolve, 250));
-    }
-}
-
-const PENDING_NOTES: Partial<Record<HarnessRun["status"], string>> = {
-    "awaiting-trust":
-        "Waiting for the person to trust this project's sikemux.json in Sikemux. Call task_start again with the same idempotencyKey, or events_wait with this executionId, to see when it starts.",
-    starting: "Still starting. Call task_start again with the same idempotencyKey, or events_wait with this executionId, to see when it runs.",
-};
-
-async function answerStart(project: string, launch: HarnessLaunch, until: number, readyWhen: string | undefined, signal?: AbortSignal) {
-    const run = await settle(project, launch, until, signal);
-    const note = PENDING_NOTES[run.status];
-    if (note) return readyWhen ? { ...run, ready: false, note } : { ...run, note };
-    if (!readyWhen) return run;
-    const ready = await outputAppears(project, run.executionId, readyWhen, until, signal);
-    const latest = harnessTasks.get(project, run.executionId);
-    if (ready || latest.status !== "running") return { ...latest, ready };
-    return {
-        ...latest,
-        ready,
-        note: "The task is running but readyWhen has not appeared yet. Wait with events_wait on this executionId, or task_read with search.",
-    };
+    return previewUrl ? { previewUrl } : {};
 }
 
 export async function handleHarnessRequest(request: HarnessRequest, signal?: AbortSignal): Promise<unknown> {
@@ -374,7 +212,6 @@ export async function handleHarnessRequest(request: HarnessRequest, signal?: Abo
                 tasks: config.status === "valid" ? config.config.tasks.map(({ id, label, command, cwd }) => ({ id, label, command, cwd })) : [],
                 configStatus: config.status,
                 configErrors: config.status === "invalid" ? config.errors : undefined,
-                runs: harnessTasks.list(project),
                 userTask: (() => {
                     const task = appTaskRuntime.getSnapshot(project);
                     return task ? { status: task.status, taskId: task.task?.id } : null;
@@ -385,58 +222,10 @@ export async function handleHarnessRequest(request: HarnessRequest, signal?: Abo
                     process,
                     owner: { kind: owner.kind, label: owner.label },
                 })),
-                cursor: harnessEvents.cursor,
             };
         }
-        case "task.start": {
-            const until = Date.now() + START_BUDGET_MS;
-            const key = text(params, "idempotencyKey")!;
-            if (key.length > 128) throw new Error("idempotencyKey must be at most 128 characters");
-            const readyWhen = text(params, "readyWhen", false);
-            return answerStart(project, await launchTask(request, key), until, readyWhen, signal);
-        }
-        case "task.restart": {
-            const until = Date.now() + START_BUDGET_MS;
-            const taskId = text(params, "taskId")!;
-            const key = crypto.randomUUID();
-            const launch = taskId.startsWith(COMMAND_TASK_PREFIX)
-                ? launchCommand(request, earlierCommand(project, taskId), key, true)
-                : await launchConfigured(request, taskId, key, true);
-            return answerStart(project, launch, until, undefined, signal);
-        }
-        case "task.read": {
-            const run = harnessTasks.get(project, executionFor(project, params));
-            if (params.plain !== undefined && typeof params.plain !== "boolean") throw new Error("plain must be a boolean");
-            const query: OutputQuery = {
-                cursor: integer(params, "cursor", 0, Number.MAX_SAFE_INTEGER),
-                limit: integer(params, "limit", 8192, 8192, 4),
-                tail: params.tail === undefined ? undefined : integer(params, "tail", 1, 10_000, 1),
-                search: text(params, "search", false),
-                context: integer(params, "context", 3, 20),
-                plain: params.plain === true,
-            };
-            if (run.ptyId === undefined) return { ...run, output: "", cursor: 0, end: 0, hasMore: false, truncated: false };
-            const output = await readOutput(run.ptyId, query);
-            return {
-                ...run,
-                output: new TextDecoder().decode(new Uint8Array(output.bytes)),
-                cursor: output.cursor,
-                end: output.end,
-                hasMore: output.hasMore,
-                truncated: output.truncated,
-                matches: output.matches,
-            };
-        }
-        case "task.stop":
-            return harnessTasks.stop(project, executionFor(project, params));
-        case "events.wait":
-            return harnessEvents.wait(
-                project,
-                text(params, "cursor")!,
-                integer(params, "timeoutMs", 30_000, 30_000),
-                text(params, "executionId", false),
-                signal,
-            );
+        case "task.start":
+            return startTask(request);
         case "ui.open": {
             const kind = text(params, "kind")!;
             if (params.focus !== undefined && typeof params.focus !== "boolean") throw new Error("focus must be a boolean");
@@ -463,17 +252,16 @@ export async function handleHarnessRequest(request: HarnessRequest, signal?: Abo
                     commands.selectSession(session.id);
                     commands.selectAgent(agentId);
                 }
-                harnessEvents.publish({ project, kind: "ui.opened" });
                 return { kind, agentId, path };
             }
-            const onDesk = kind === "terminal" ? commands.deskTerminalFor(harnessTasks.get(project, text(params, "executionId")!).executionId) : null;
+            const executionId = kind === "terminal" ? text(params, "executionId")! : undefined;
+            const onDesk = executionId ? commands.deskTerminalFor(executionId) : null;
             if (onDesk) {
                 commands.showDeskTerminal(onDesk.agentId, onDesk.id);
                 if (focus) {
                     commands.selectSession(session.id);
                     commands.selectAgent(onDesk.agentId);
                 }
-                harnessEvents.publish({ project, kind: "ui.opened" });
                 return { kind, agentId: onDesk.agentId };
             }
             const path = kind === "file" ? await invokeCommand<string>("harness_resolve_path", { project, path: text(params, "path")! }) : undefined;
@@ -497,20 +285,17 @@ export async function handleHarnessRequest(request: HarnessRequest, signal?: Abo
                     if (failures.some((result) => result.error)) throw new Error(failures.find((result) => result.error)!.error!);
                 } else if (kind === "diff") commands.openDiffPane();
                 else if (kind === "terminal") {
-                    const run = harnessTasks.get(project, text(params, "executionId")!);
                     const window = (useStore.getState().windowsBySession[session.id] ?? [])
                         .map((id) => useStore.getState().windows[id])
                         .find((window) =>
-                            collectPanes(window.root).some((pane) => taskPtyBindings.getSnapshot(pane.id)?.executionId === run.executionId),
+                            collectPanes(window.root).some((pane) => taskPtyBindings.getSnapshot(pane.id)?.executionId === executionId),
                         );
                     if (!window) throw new Error("Task terminal is no longer open");
                     commands.selectWindowId(window.id);
                 } else throw new Error("kind must be file, diff, terminal, or preview");
                 return { kind, windowId: useStore.getState().sessions[session.id].activeWindowId, path };
             };
-            const result = focus ? open() : preserveFocus(open);
-            harnessEvents.publish({ project, kind: "ui.opened" });
-            return result;
+            return focus ? open() : preserveFocus(open);
         }
         case "app.console":
             return appConsole.read(params);

@@ -7,7 +7,6 @@ use sikemux_core::protocol::{
 };
 use sikemux_pty::agent_detection::{DetectionExplain, ManifestReloadReport};
 use sikemux_pty::launch::{PtyContext, PtyDirectCommand};
-use sikemux_pty::output_log::{OutputPage, OutputQuery};
 use sikemux_pty::shell_protocol::ShellMetadataSnapshot;
 use sikemux_pty::task::{TaskProcessExit, TaskSpawnRequest};
 use tauri::ipc::{Channel, Response};
@@ -22,8 +21,8 @@ use super::{core_error, PtyManager};
 fn launch_identity(app: &AppHandle) -> LaunchIdentity {
     LaunchIdentity {
         version: app.package_info().version.to_string(),
-        cli_executable: crate::cli_server::cli_executable_path(),
-        cli_endpoint: crate::cli_server::cli_endpoint_path(),
+        cli_executable: crate::cli_paths::cli_executable_path(),
+        cli_endpoint: crate::cli_paths::cli_endpoint_path(),
     }
 }
 
@@ -435,22 +434,6 @@ pub async fn task_watch(
 #[tauri::command]
 pub fn app_quit_and_stop_everything(app: AppHandle) {
     super::quit_and_stop_everything(&app);
-}
-
-#[tauri::command]
-pub async fn harness_task_output(
-    manager: State<'_, PtyManager>,
-    id: SessionId,
-    query: OutputQuery,
-) -> Result<OutputPage, String> {
-    let client = manager.client().await.map_err(|error| error.to_string())?;
-    client
-        .task_output(id, query)
-        .await
-        .map_err(|error| match error {
-            ClientError::Core(message) => message,
-            other => other.to_string(),
-        })
 }
 
 #[tauri::command]

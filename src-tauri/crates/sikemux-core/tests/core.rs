@@ -159,7 +159,7 @@ impl Stream {
             }
             ClientEvent::Event(Event::TaskOutput { id }) => self.task_notices.push(id),
             ClientEvent::Event(Event::AgentState(state)) => self.agent_states.push(state),
-            ClientEvent::Event(_) => {}
+            ClientEvent::Event(_) | ClientEvent::WindowCall { .. } => {}
         }
     }
 
@@ -747,7 +747,7 @@ fn ensure_running_starts_one_detached_core() {
     .expect("launcher");
     std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755)).expect("chmod");
 
-    let hello = ensure_running(&socket, &binary, &log).expect("core started");
+    let hello = ensure_running(&socket, &binary, &log, &[]).expect("core started");
     assert_ne!(hello.pid, std::process::id());
     // SAFETY: getsid only reads the session id of the given pid.
     let session = unsafe { libc::getsid(hello.pid as libc::pid_t) };
@@ -755,7 +755,7 @@ fn ensure_running_starts_one_detached_core() {
         session, hello.pid as libc::pid_t,
         "the core leads its own session"
     );
-    let again = ensure_running(&socket, &binary, &log).expect("core found");
+    let again = ensure_running(&socket, &binary, &log, &[]).expect("core found");
     assert_eq!(again.pid, hello.pid);
 
     shutdown_sync(&socket);

@@ -217,7 +217,7 @@ function openCore(path) {
       frame.kind === CORE_FRAME.control ? JSON.parse(frame.payload) : null;
     socket.once("connect", async () => {
       socket.write(
-        coreControl({ type: "hello", protocol: "sikemux-core", version: 2 }),
+        coreControl({ type: "hello", protocol: "sikemux-core", version: 3 }),
       );
       const hello = await next((frame) => control(frame)?.type === "helloAck");
       if (!hello) {
@@ -584,6 +584,96 @@ async function coreSession(core, id) {
   );
 }
 
+// The same request ⌘Q makes: AppKit asks the app to terminate, so Tauri
+// runs its exit hooks.
+async function quitDesktop() {
+  const quit = run(
+    "osascript",
+    [
+      "-l",
+      "JavaScript",
+      "-e",
+      `ObjC.import("AppKit"); $.NSRunningApplication.runningApplicationWithProcessIdentifier(${desktop.pid}).terminate`,
+    ],
+    process.env,
+    10_000,
+  );
+  if (quit.status !== 0) fail(`could not ask the app to quit: ${quit.stderr}`);
+  if (!(await exitOf(desktop, 15_000)))
+    fail("the app did not quit", desktopLog);
+}
+
+// Agents keep reading, stopping and waiting on a task while the window is
+// closed: the core answers those calls itself. Calls that need the window say
+// so. A command task needs no trust prompt, so this runs unattended.
+async function exerciseHarnessWithWindowClosed(harnessEnv) {
+  const tool = (method, params = {}) =>
+    run(
+      cliExecutable,
+      ["tool", method, JSON.stringify(params)],
+      harnessEnv,
+      70_000,
+    );
+  const json = (result, what) => {
+    if (result.status !== 0)
+      fail(`${what}: ${result.stderr || result.stdout}`, desktopLog);
+    return JSON.parse(result.stdout);
+  };
+  const started = json(
+    tool("task.start", {
+      command: `node -e "console.log('harness-' + 6 * 7); setInterval(() => {}, 1000)"`,
+      idempotencyKey: "window-closed",
+      readyWhen: "harness-42",
+      label: "Window closed",
+    }),
+    "harness command start",
+  );
+  if (started.status !== "running" || started.ready !== true)
+    fail(`the harness command did not start: ${JSON.stringify(started)}`);
+  const { cursor } = json(tool("workspace.inspect"), "harness inspect");
+
+  await quitDesktop();
+  const status = run(cliExecutable, ["status"], isolatedEnvironment, 2_000);
+  if (!/its window is closed/u.test(status.stdout))
+    fail(`status did not say the window is closed: ${status.stdout}`);
+  const read = json(
+    tool("task.read", { executionId: started.executionId, plain: true }),
+    "task.read with the window closed",
+  );
+  if (!read.output.includes("harness-42"))
+    fail(`task.read lost the output: ${JSON.stringify(read)}`);
+  const stopped = json(
+    tool("task.stop", { taskId: started.taskId }),
+    "task.stop with the window closed",
+  );
+  if (stopped.status !== "stopped") fail("the task did not stop");
+  const events = json(
+    tool("events.wait", {
+      cursor,
+      timeoutMs: 0,
+      executionId: started.executionId,
+    }),
+    "events.wait with the window closed",
+  );
+  if (!events.events.some((event) => event.kind === "task.stopped"))
+    fail(`events.wait missed the stop: ${JSON.stringify(events)}`);
+  const inspect = tool("workspace.inspect");
+  if (inspect.status === 0 || !/window is not open/u.test(inspect.stderr))
+    fail(`inspect did not say the window is closed: ${inspect.stderr}`);
+
+  desktop = launchDesktop();
+  await waitForBroker(desktop);
+  const resumed = json(
+    tool("events.wait", { cursor, timeoutMs: 0 }),
+    "events.wait after relaunch",
+  );
+  if (!resumed.events.some((event) => event.kind === "task.stopped"))
+    fail("an event cursor did not survive the relaunch");
+  console.log(
+    "Harness with the window closed passed: task.read, task.stop and events.wait answered by the core, inspect refused, cursor kept across relaunch",
+  );
+}
+
 // Quit leaves a terminal running in the core and the next launch shows it in
 // the same pane. Runs while that pane is the one on screen.
 async function exerciseQuitKeepsTerminals() {
@@ -614,22 +704,7 @@ async function exerciseQuitKeepsTerminals() {
     () => stateMentions(`"ptyId":${shell.id}`),
   );
 
-  // The same request ⌘Q makes: AppKit asks the app to terminate, so Tauri
-  // runs its exit hooks.
-  const quit = run(
-    "osascript",
-    [
-      "-l",
-      "JavaScript",
-      "-e",
-      `ObjC.import("AppKit"); $.NSRunningApplication.runningApplicationWithProcessIdentifier(${desktop.pid}).terminate`,
-    ],
-    process.env,
-    10_000,
-  );
-  if (quit.status !== 0) fail(`could not ask the app to quit: ${quit.stderr}`);
-  if (!(await exitOf(desktop, 15_000)))
-    fail("the app did not quit", desktopLog);
+  await quitDesktop();
 
   const afterQuit = await openCore(coreSocket).catch(() =>
     fail("the core went away when the app quit", desktopLog),
@@ -687,11 +762,12 @@ async function exerciseQuitAndStopEverything(shell) {
   if (!(await exitOf(desktop, 15_000)))
     fail("the app did not quit after Quit and Stop Everything", desktopLog);
   await waitFor("the terminal to stop", 10_000, () => !processAlive(shell.pid));
-  const gone = await openCore(coreSocket).catch(() => null);
-  if (gone) {
-    gone.close();
-    fail("the core kept running after Quit and Stop Everything", desktopLog);
-  }
+  // The core answers a shutdown before it exits, so give it a moment to go.
+  await waitFor("the core to exit", 10_000, async () => {
+    const gone = await openCore(coreSocket).catch(() => null);
+    gone?.close();
+    return !gone;
+  });
   console.log(
     `Quit and Stop Everything passed${stopByMenu ? "" : " (by the core, not the menu)"}: terminal ${shell.id} and the core stopped`,
   );
@@ -789,19 +865,24 @@ function launchDesktop() {
 }
 
 async function waitForBroker(child) {
-  await waitFor("authenticated desktop CLI broker", READY_TIMEOUT_MS, () => {
-    if (desktopSpawnError) fail(desktopSpawnError, desktopLog);
-    if (child.exitCode !== null || child.signalCode !== null) {
-      fail(
-        `desktop exited before becoming ready (${child.exitCode ?? child.signalCode})`,
-        desktopLog,
+  await waitFor(
+    "the desktop window behind the CLI endpoint",
+    READY_TIMEOUT_MS,
+    () => {
+      if (desktopSpawnError) fail(desktopSpawnError, desktopLog);
+      if (child.exitCode !== null || child.signalCode !== null) {
+        fail(
+          `desktop exited before becoming ready (${child.exitCode ?? child.signalCode})`,
+          desktopLog,
+        );
+      }
+      const status = run(cliExecutable, ["status"], isolatedEnvironment, 2_000);
+      return (
+        status.status === 0 &&
+        /^Sikemux \S+ is running\s*$/u.test(status.stdout)
       );
-    }
-    const status = run(cliExecutable, ["status"], isolatedEnvironment, 2_000);
-    return (
-      status.status === 0 && /^Sikemux \S+ is running\s*$/u.test(status.stdout)
-    );
-  });
+    },
+  );
 }
 
 let desktop = launchDesktop();
@@ -809,8 +890,8 @@ let desktop = launchDesktop();
 try {
   await waitForBroker(desktop);
 
-  // The native broker starts during Tauri setup, before React has necessarily
-  // hydrated. Initial persistence is queued only once the WebView is writable,
+  // The window registers with the core as soon as the app connects to it,
+  // before React has necessarily hydrated. Initial persistence is queued only once the WebView is writable,
   // so this is a durable readiness barrier for the renderer-side bridge.
   await waitFor(
     "WebView boot and initial persistence",
@@ -827,10 +908,11 @@ try {
   );
   const stateWriteBeforeOpen = await latestStateWriteTime();
 
-  // This call returns success only after the native broker emits the request,
-  // the real WebView listener claims it, application state creates/activates
-  // an editor pane at the requested location, and the renderer reports the
-  // exact target result back through a second Tauri command.
+  // This call returns success only after the core hands the request to the
+  // app, the real WebView listener claims it, application state
+  // creates/activates an editor pane at the requested location, and the
+  // renderer reports the exact target result back through a second Tauri
+  // command.
   const opened = run(
     cliExecutable,
     ["open", "--project", project, `${source}:2:3`],
@@ -936,6 +1018,8 @@ try {
     )
   )
     fail("harness UI event was not delivered", desktopLog);
+
+  await exerciseHarnessWithWindowClosed(harnessEnv);
 
   if (exerciseHarnessTasks) {
     const tool = (method, params = {}) => {
@@ -1044,7 +1128,7 @@ try {
   await exerciseQuitAndStopEverything(keptShell);
 
   console.log(
-    "✓ Desktop E2E smoke passed: process → broker → Tauri event/commands → WebView editor → SQLite → quit and relaunch",
+    "✓ Desktop E2E smoke passed: process → core endpoint → Tauri event/commands → WebView editor → SQLite → quit and relaunch",
   );
 } finally {
   await stopExactChild(desktop);

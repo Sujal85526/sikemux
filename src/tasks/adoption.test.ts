@@ -25,7 +25,7 @@ function targets() {
     return {
         watch: vi.fn(async (ptyId: number) => ({ ptyId, completion: new Promise<never>(() => {}) })),
         adoptDeckTask: vi.fn(async (..._args: Parameters<TaskAdoptionTargets["adoptDeckTask"]>) => {}),
-        adoptHarnessRun: vi.fn((..._args: Parameters<TaskAdoptionTargets["adoptHarnessRun"]>) => {}),
+        showHarnessTerminal: vi.fn((..._args: Parameters<TaskAdoptionTargets["showHarnessTerminal"]>) => {}),
     } satisfies TaskAdoptionTargets;
 }
 
@@ -37,7 +37,7 @@ describe("taking back tasks the core kept", () => {
         expect(taskOrigin(taskInfo("task", "dev", { terminalKey: JSON.stringify(["task", "/elsewhere", "dev"]) }))).toBeNull();
     });
 
-    it("returns running deck tasks to the deck and every harness run to the harness", async () => {
+    it("returns running deck tasks to the deck and reopens running harness terminals without taking their runs", async () => {
         const target = targets();
         const running = await adoptCoreTasks(
             [
@@ -50,16 +50,16 @@ describe("taking back tasks the core kept", () => {
             target,
         );
         expect(running).toBe(2);
-        expect(target.watch.mock.calls.map(([id]) => id)).toEqual([1, 3, 4]);
+        expect(target.watch.mock.calls.map(([id]) => id)).toEqual([1]);
         expect(target.adoptDeckTask).toHaveBeenCalledWith(
             expect.objectContaining({ id: "dev", project: "/repo", command: "run dev", env: {} }),
             "exec-dev",
             expect.objectContaining({ ptyId: 1 }),
         );
-        expect(target.adoptHarnessRun.mock.calls.map(([adoption]) => [adoption.request.taskId, adoption.agentId, adoption.running])).toEqual([
-            ["test", "agent-1", true],
-            ["build", undefined, false],
-        ]);
+        expect(target.showHarnessTerminal).toHaveBeenCalledTimes(1);
+        expect(target.showHarnessTerminal).toHaveBeenCalledWith(
+            expect.objectContaining({ executionId: "exec-test", ptyId: 3, taskId: "test", agentId: "agent-1" }),
+        );
     });
 
     it("skips a task whose exit cannot be watched", async () => {

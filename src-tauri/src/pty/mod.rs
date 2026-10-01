@@ -7,6 +7,7 @@ pub(crate) mod commands;
 mod sink;
 mod streams;
 
+use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -34,6 +35,9 @@ struct CoreSettings {
     binary: Option<PathBuf>,
     log: PathBuf,
     manifest_dir: Option<PathBuf>,
+    /// Where a core started from here publishes agents' tool endpoint and
+    /// keeps the harness journal.
+    core_args: Vec<OsString>,
 }
 
 #[derive(Default)]
@@ -47,7 +51,7 @@ pub struct PtyManager {
     closing: AtomicBool,
 }
 
-fn core_error(error: ClientError) -> AppError {
+pub(crate) fn core_error(error: ClientError) -> AppError {
     match error {
         ClientError::Core(message) => {
             if let Some(reason) = message.strip_prefix("invalid argument: ") {
@@ -111,12 +115,20 @@ impl PtyManager {
             .app_config_dir()
             .ok()
             .map(|directory| directory.join("agent-detection"));
+        let mut core_args = Vec::new();
+        if let Some(endpoint) = crate::cli_paths::cli_endpoint_path() {
+            core_args.extend([OsString::from("--cli-endpoint"), endpoint.into()]);
+        }
+        if let Ok(data_dir) = app.path().app_data_dir() {
+            core_args.extend([OsString::from("--data-dir"), data_dir.into()]);
+        }
         let _ = self.settings.set(CoreSettings {
             app: app.clone(),
             socket,
-            binary: crate::cli_server::cli_executable_path(),
+            binary: crate::cli_paths::cli_executable_path(),
             log,
             manifest_dir,
+            core_args,
         });
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
@@ -126,6 +138,10 @@ impl PtyManager {
                 }
             }
         });
+    }
+
+    pub(crate) fn current_client(&self) -> Option<Arc<CoreClient>> {
+        self.current()
     }
 
     fn current(&self) -> Option<Arc<CoreClient>> {
@@ -154,13 +170,16 @@ impl PtyManager {
         })?;
         let socket = settings.socket.clone();
         let log = settings.log.clone();
+        let core_args = settings.core_args.clone();
         if let Some(directory) = log.parent() {
             let _ = std::fs::create_dir_all(directory);
         }
-        tauri::async_runtime::spawn_blocking(move || ensure_running(&socket, &binary, &log))
-            .await
-            .map_err(|error| AppError::Pty(format!("core start join: {error}")))?
-            .map_err(core_error)?;
+        tauri::async_runtime::spawn_blocking(move || {
+            ensure_running(&socket, &binary, &log, &core_args)
+        })
+        .await
+        .map_err(|error| AppError::Pty(format!("core start join: {error}")))?
+        .map_err(core_error)?;
         let sink = Arc::new(AppSink::new(settings.app.clone(), self.streams.clone()));
         let client = Arc::new(
             CoreClient::connect_with(&settings.socket, sink)
@@ -171,6 +190,7 @@ impl PtyManager {
             .configure(settings.manifest_dir.clone())
             .await
             .map_err(core_error)?;
+        client.register_window().await.map_err(core_error)?;
         if let Ok(mut current) = self.client.lock() {
             *current = Some(client.clone());
         }

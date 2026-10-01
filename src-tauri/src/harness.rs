@@ -1,17 +1,24 @@
+//! The window's side of agents' tool calls. The core answers most of them;
+//! the ones that need the window arrive here. Browser and plugin tools are
+//! answered in Rust, and the rest wait in a queue the page claims and answers.
+
 use std::collections::HashMap;
 use std::sync::{mpsc, Mutex};
 use std::time::Duration;
 
 use serde_json::Value;
 pub use sikemux_core::cli::protocol::HarnessRequest;
-use tauri::{Emitter, State};
+use sikemux_core::cli::protocol::{is_browser_method, is_plugin_method};
+use sikemux_core::protocol::{CallId, RunSelector, WindowAnswer, WindowCall};
+use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::cli_server::CliBrokerState;
-
-mod tool_calls;
+use crate::error::AppResult;
+use crate::pty::PtyManager;
 
 pub const MAX_PENDING: usize = 64;
 const REPLY_TIMEOUT: Duration = Duration::from_secs(65);
+/// A launch may wait on the person trusting `sikemux.json`.
+const LAUNCH_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
 struct Pending {
     request: HarnessRequest,
@@ -19,6 +26,7 @@ struct Pending {
     reply: mpsc::Sender<Result<Value, String>>,
 }
 
+/// Calls waiting for the page to claim and answer them.
 #[derive(Default)]
 pub struct HarnessBroker {
     pending: Mutex<HashMap<String, Pending>>,
@@ -29,7 +37,6 @@ impl HarnessBroker {
         &self,
         request: HarnessRequest,
     ) -> Result<mpsc::Receiver<Result<Value, String>>, String> {
-        request.validate()?;
         let mut pending = self.pending.lock().map_err(|_| "harness lock poisoned")?;
         if pending.len() >= MAX_PENDING || pending.contains_key(&request.id) {
             return Err("harness request capacity reached or duplicate request ID".into());
@@ -76,42 +83,46 @@ impl HarnessBroker {
         }
     }
 
-    pub fn shutdown(&self) {
+    /// The page that would have answered is gone.
+    pub fn fail_all(&self, message: &str) {
         if let Ok(mut pending) = self.pending.lock() {
             for (_, entry) in pending.drain() {
-                let _ = entry.reply.send(Err("Sikemux closed".into()));
+                let _ = entry.reply.send(Err(message.into()));
             }
         }
     }
 }
 
-pub fn execute(
-    app: &tauri::AppHandle,
-    broker: &HarnessBroker,
-    request: HarnessRequest,
-) -> Result<Value, String> {
-    request.validate()?;
-    let tool = tool_calls::name_of(&request);
-    let result = run(app, broker, request);
-    if let Some(tool) = tool {
-        tool_calls::record(app, &tool, result.is_ok());
+/// Hands the window's answer back to the core.
+pub(crate) fn answer_core(app: &AppHandle, call_id: CallId, result: Result<Value, String>) {
+    if let Some(client) = app.state::<PtyManager>().current_client() {
+        client.answer_window(call_id, WindowAnswer::from(result));
     }
-    result
 }
 
-fn run(
-    app: &tauri::AppHandle,
-    broker: &HarnessBroker,
-    mut request: HarnessRequest,
-) -> Result<Value, String> {
-    request.project = std::fs::canonicalize(&request.project)
-        .map_err(|error| error.to_string())?
-        .to_string_lossy()
-        .into_owned();
-    if sikemux_core::cli::protocol::is_browser_method(&request.method) {
+/// Answers a call from the core on its own thread, since most answers wait on
+/// the page or a browser tab.
+pub(crate) fn answer_window_call(app: &AppHandle, call_id: CallId, call: WindowCall) {
+    let app = app.clone();
+    let spawned = std::thread::Builder::new()
+        .name("sikemux-window-call".into())
+        .spawn(move || match call {
+            WindowCall::Harness { request } => {
+                let result = run(&app, request);
+                answer_core(&app, call_id, result);
+            }
+            WindowCall::Open { request } => crate::cli_open::answer(&app, call_id, request),
+        });
+    if let Err(error) = spawned {
+        eprintln!("Sikemux could not answer a tool call: {error}");
+    }
+}
+
+fn run(app: &AppHandle, request: HarnessRequest) -> Result<Value, String> {
+    if is_browser_method(&request.method) {
         return crate::browser::tools::execute(app, &request);
     }
-    if crate::plugins::agent::is_agent_method(&request.method) {
+    if is_plugin_method(&request.method) {
         return crate::plugins::agent::execute(
             app,
             &request.project,
@@ -121,61 +132,120 @@ fn run(
     }
     let id = request.id.clone();
     let method = request.method.clone();
-    let inspecting = method == "workspace.inspect";
+    let focus =
+        method == "ui.open" && request.params.get("focus").and_then(Value::as_bool) == Some(true);
+    let broker = app.state::<HarnessBroker>();
     let receiver = broker.enqueue(request)?;
     let _ = app.emit_to("main", "harness-request", ());
+    let limit = if method == "task.start" {
+        LAUNCH_TIMEOUT
+    } else {
+        REPLY_TIMEOUT
+    };
     let result = receiver
-        .recv_timeout(REPLY_TIMEOUT)
+        .recv_timeout(limit)
         .unwrap_or_else(|_| Err(timeout_message(&method)));
     broker.remove(&id);
     match result {
-        Ok(mut value) if inspecting => {
+        Ok(mut value) if method == "workspace.inspect" => {
             if let (Some(object), Some(cli)) =
-                (value.as_object_mut(), crate::cli_server::cli_command_path())
+                (value.as_object_mut(), crate::cli_paths::cli_command_path())
             {
                 object.insert("cli".into(), cli.to_string_lossy().into());
             }
             Ok(value)
         }
-        other => other,
+        Ok(value) => {
+            if focus {
+                bring_forward(app);
+            }
+            Ok(value)
+        }
+        error => error,
+    }
+}
+
+/// An agent must not pull the person's keyboard away from another app they
+/// are typing in, so unless Sikemux is already in front it only asks for
+/// attention.
+fn bring_forward(app: &AppHandle) {
+    if let Some(window) = app.get_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        if window.is_focused().unwrap_or(false) {
+            let _ = window.set_focus();
+        } else {
+            let _ = window.request_user_attention(Some(tauri::UserAttentionType::Informational));
+        }
     }
 }
 
 fn timeout_message(method: &str) -> String {
     let tool = method.replace('.', "_");
-    let seconds = REPLY_TIMEOUT.as_secs();
     if method == "task.start" {
-        format!("{tool} got no answer from Sikemux within {seconds} s; the task may still start. Call task_start again with the same idempotencyKey to see where it got to.")
+        format!(
+            "{tool} got no answer from Sikemux within {} minutes",
+            LAUNCH_TIMEOUT.as_secs() / 60
+        )
     } else {
-        format!("{tool} got no answer from Sikemux within {seconds} s. Check that the Sikemux window is open and responsive, then retry.")
+        format!(
+            "{tool} got no answer from Sikemux within {} s. Check that the Sikemux window is open and responsive, then retry.",
+            REPLY_TIMEOUT.as_secs()
+        )
     }
 }
 
 #[tauri::command]
-pub fn harness_claim(state: State<'_, CliBrokerState>) -> Vec<HarnessRequest> {
-    state
-        .0
-        .as_ref()
-        .map(|broker| broker.harness().claim())
-        .unwrap_or_default()
+pub fn harness_claim(state: State<'_, HarnessBroker>) -> Vec<HarnessRequest> {
+    state.claim()
 }
 
 #[tauri::command]
 pub fn harness_reply(
-    state: State<'_, CliBrokerState>,
+    state: State<'_, HarnessBroker>,
     id: String,
     result: Option<Value>,
     error: Option<String>,
 ) {
-    if let Some(broker) = &state.0 {
-        broker.harness().reply(
-            &id,
-            match error {
-                Some(message) => Err(message),
-                None => Ok(result.unwrap_or(Value::Null)),
-            },
-        );
-    }
+    state.reply(
+        &id,
+        match error {
+            Some(message) => Err(message),
+            None => Ok(result.unwrap_or(Value::Null)),
+        },
+    );
+}
+
+/// The page is asking the person to trust `sikemux.json` before a launch.
+#[tauri::command]
+pub async fn harness_awaiting_trust(
+    manager: State<'_, PtyManager>,
+    execution_id: String,
+) -> AppResult<()> {
+    let client = manager.client().await?;
+    client
+        .harness_awaiting_trust(execution_id)
+        .await
+        .map_err(crate::pty::core_error)
+}
+
+/// Stops the harness runs that match every field given, and waits for them.
+#[tauri::command]
+pub async fn harness_stop_runs(
+    manager: State<'_, PtyManager>,
+    execution_id: Option<String>,
+    project: Option<String>,
+    agent_id: Option<String>,
+) -> AppResult<()> {
+    let client = manager.client().await?;
+    client
+        .harness_stop_runs(RunSelector {
+            execution_id,
+            project,
+            agent_id,
+        })
+        .await
+        .map_err(crate::pty::core_error)
 }
 
 #[tauri::command]
@@ -216,16 +286,21 @@ mod tests {
         broker.reply("one", Ok(Value::Bool(true)));
         assert_eq!(receiver.recv().unwrap().unwrap(), Value::Bool(true));
         assert!(broker.enqueue(request("one")).is_ok());
-        broker.shutdown();
+        broker.fail_all("gone");
     }
     #[test]
-    fn timeouts_name_the_method_and_only_task_start_mentions_the_key() {
-        let start = timeout_message("task.start");
-        assert!(start.starts_with("task_start "));
-        assert!(start.contains("idempotencyKey"));
-        let read = timeout_message("task.read");
-        assert!(read.starts_with("task_read "));
-        assert!(!read.contains("idempotencyKey") && !read.contains("task_start"));
+    fn a_page_that_goes_away_fails_what_it_had_claimed() {
+        let broker = HarnessBroker::default();
+        let receiver = broker.enqueue(request("one")).unwrap();
+        assert_eq!(broker.claim().len(), 1);
+        broker.fail_all("Sikemux reloaded");
+        assert_eq!(receiver.recv().unwrap().unwrap_err(), "Sikemux reloaded");
+    }
+    #[test]
+    fn timeouts_name_the_method() {
+        assert!(timeout_message("task.start").starts_with("task_start "));
+        let inspect = timeout_message("workspace.inspect");
+        assert!(inspect.starts_with("workspace_inspect ") && inspect.contains("65 s"));
     }
     #[test]
     fn file_open_rejects_paths_outside_project() {
@@ -253,13 +328,9 @@ mod tests {
             .is_err());
         }
     }
-
     #[test]
-    fn invalid_requests_and_full_queue_are_rejected() {
+    fn a_full_queue_is_rejected_until_a_slot_frees() {
         let broker = HarnessBroker::default();
-        let mut invalid = request("bad");
-        invalid.method = "pty_kill".into();
-        assert!(broker.enqueue(invalid).is_err());
         for i in 0..MAX_PENDING {
             broker.enqueue(request(&i.to_string())).unwrap();
         }

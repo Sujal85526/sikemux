@@ -11,10 +11,6 @@ use crate::error::AppError;
 const LIST: &str = "plugins.tools";
 const CALL: &str = "plugins.call";
 
-pub fn is_agent_method(method: &str) -> bool {
-    method == LIST || method == CALL
-}
-
 pub fn execute(
     app: &AppHandle,
     project: &str,

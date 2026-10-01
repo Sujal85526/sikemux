@@ -9,19 +9,23 @@ use std::io::{self, Read};
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sikemux_pty::agent_detection::{DetectionExplain, ManifestReloadReport};
 use sikemux_pty::launch::{PtyContext, PtyDirectCommand};
 use sikemux_pty::output_log::{OutputPage, OutputQuery};
 use sikemux_pty::shell_protocol::{PtyShellMetadataEvent, ShellMetadataSnapshot};
 use sikemux_pty::task::{TaskSource, TaskSpawnRequest};
 
+use crate::cli::protocol::{CliOpenRequest, HarnessRequest};
+
 pub const PROTOCOL: &str = "sikemux-core";
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 /// Room for the largest attach snapshot plus its header.
 pub const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 
 pub type SessionId = u64;
 pub type RequestId = u64;
+pub type CallId = u64;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -76,6 +80,15 @@ pub enum ClientMessage {
         id: SessionId,
         bytes: usize,
     },
+    /// The window's answer to a [`ServerMessage::WindowCall`].
+    WindowReply {
+        call_id: CallId,
+        answer: WindowAnswer,
+    },
+    /// Every editor tab a waiting `open` call opened has closed.
+    WindowOpenClosed {
+        call_id: CallId,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -124,9 +137,79 @@ pub enum Request {
     },
     /// Kills every session and keeps running.
     StopAll,
+    /// This connection is the app's window from now on, replacing any other.
+    /// Tool calls that need the window are sent to it.
+    RegisterWindow,
+    /// The window is asking the person to trust the project's tasks before it
+    /// launches this run.
+    HarnessAwaitingTrust {
+        execution_id: String,
+    },
+    /// Stops the active harness runs that match every field given.
+    HarnessStopRuns {
+        selector: RunSelector,
+    },
     Shutdown {
         stop_all: bool,
     },
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunSelector {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
+}
+
+/// Something only the app's window can do, asked of it by the core.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum WindowCall {
+    Harness {
+        request: HarnessRequest,
+    },
+    /// The CLI's `open`. The answer lists what opened; a waiting call is
+    /// later followed by [`ClientMessage::WindowOpenClosed`].
+    Open {
+        request: CliOpenRequest,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(
+    tag = "status",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum WindowAnswer {
+    Value { value: Value },
+    Error { message: String },
+}
+
+impl From<Result<Value, String>> for WindowAnswer {
+    fn from(result: Result<Value, String>) -> Self {
+        match result {
+            Ok(value) => Self::Value { value },
+            Err(message) => Self::Error { message },
+        }
+    }
+}
+
+impl From<WindowAnswer> for Result<Value, String> {
+    fn from(answer: WindowAnswer) -> Self {
+        match answer {
+            WindowAnswer::Value { value } => Ok(value),
+            WindowAnswer::Error { message } => Err(message),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -194,6 +277,12 @@ pub enum ServerMessage {
     },
     Event {
         event: Event,
+    },
+    /// Sent only to the registered window, which answers with
+    /// [`ClientMessage::WindowReply`].
+    WindowCall {
+        call_id: CallId,
+        call: WindowCall,
     },
 }
 

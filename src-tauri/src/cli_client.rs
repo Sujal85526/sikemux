@@ -225,8 +225,16 @@ fn status() -> Result<i32, String> {
         },
     )?;
     match read_response(&mut reader)? {
-        CliServerResponse::Pong { version, .. } => {
+        CliServerResponse::Pong {
+            version,
+            window: true,
+            ..
+        } => {
             println!("Sikemux {version} is running");
+            Ok(0)
+        }
+        CliServerResponse::Pong { version, .. } => {
+            println!("Sikemux {version} is running in the background; its window is closed");
             Ok(0)
         }
         CliServerResponse::Error { message } => Err(message),
@@ -399,9 +407,11 @@ fn endpoint_path() -> Result<PathBuf, String> {
         }))
 }
 
+/// The endpoint once Sikemux's window is open, starting the app first when
+/// it is not running or only its background core is.
 fn connect_or_launch(endpoint_path: &Path) -> Result<CliEndpointDescriptor, String> {
     if let Ok(descriptor) = read_endpoint(endpoint_path) {
-        if probe(&descriptor).is_ok() {
+        if probe(&descriptor) == Ok(true) {
             return Ok(descriptor);
         }
     }
@@ -410,7 +420,7 @@ fn connect_or_launch(endpoint_path: &Path) -> Result<CliEndpointDescriptor, Stri
     let mut delay = Duration::from_millis(40);
     while started.elapsed() < APP_START_TIMEOUT {
         if let Ok(descriptor) = read_endpoint(endpoint_path) {
-            if probe(&descriptor).is_ok() {
+            if probe(&descriptor) == Ok(true) {
                 return Ok(descriptor);
             }
         }
@@ -420,7 +430,8 @@ fn connect_or_launch(endpoint_path: &Path) -> Result<CliEndpointDescriptor, Stri
     Err("Sikemux did not become ready within 15 seconds".into())
 }
 
-fn probe(descriptor: &CliEndpointDescriptor) -> Result<(), String> {
+/// Whether the window is open, once the endpoint answers.
+fn probe(descriptor: &CliEndpointDescriptor) -> Result<bool, String> {
     let mut reader = session(descriptor)?;
     write_command(
         reader.get_mut(),
@@ -430,7 +441,9 @@ fn probe(descriptor: &CliEndpointDescriptor) -> Result<(), String> {
         },
     )?;
     match read_response(&mut reader)? {
-        CliServerResponse::Pong { protocol, .. } if protocol == CLI_PROTOCOL_VERSION => Ok(()),
+        CliServerResponse::Pong {
+            protocol, window, ..
+        } if protocol == CLI_PROTOCOL_VERSION => Ok(window),
         CliServerResponse::Error { message } => Err(message),
         _ => Err("unexpected response from Sikemux".into()),
     }

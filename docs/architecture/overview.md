@@ -30,13 +30,15 @@ speech model. `pnpm sidecar:dev` builds both beside the dev app, which runs them
 
 ### The CLI broker
 
-`cli_server.rs` listens on a local TCP port guarded by a random token, and writes the
-port and token to `~/.config/sikemux/cli.json` (`cli.dev.json` in debug builds). Both
-the `sikemux` launcher and the tools MCP server find the app through that file, or
-through `SIKEMUX_CLI_ENDPOINT`, which every terminal Sikemux starts receives. File-open
-requests reach the UI as a `cli-open-available` event, handled by
-`src/shell/CliOpenBridge.tsx`. Agent tool calls go through the harness, described under
-[Agents](#agents).
+The background core (`sikemux core`, in `crates/sikemux-core`) listens on a local TCP
+port guarded by a random token, and writes the port and token to
+`~/.config/sikemux/cli.json` (`cli.dev.json` in debug builds), removing it when it
+exits. Both the `sikemux` launcher and the tools MCP server find it through that file,
+or through `SIKEMUX_CLI_ENDPOINT`, which every terminal Sikemux starts receives. The app
+registers with the core as the window; calls that need it, such as a file open, are
+sent to the app over the core socket. File-open requests reach the UI as a
+`cli-open-available` event, handled by `src/shell/CliOpenBridge.tsx`. Agent tool calls
+go through the harness, described under [Agents](#agents).
 
 ## Frontend (`src/`)
 
@@ -50,7 +52,7 @@ requests reach the UI as a `cli-open-available` event, handled by
 | `git/`         | The Git pane, diffs, commit review and the graph                                              |
 | `chat/`        | The chat view for agents on ACP                                                               |
 | `agents/`      | Agent launching, the agent picker, lifecycle and saved-session sync                           |
-| `harness/`     | The UI half of the agent harness: tasks, events and `ui.open`                                 |
+| `harness/`     | The window half of the agent harness: inspecting, launching tasks and `ui.open`               |
 | `rail/`        | Side rail, file tree and agent rail                                                           |
 | `palettes/`    | Command, file and new-tab palettes and the session switcher                                   |
 | `settings/`    | The settings page                                                                             |
@@ -160,8 +162,8 @@ After adding or removing a command, run `pnpm ipc:generate` and commit the three
 | `acp/`                    | Chat agents over ACP (see [Agents](#agents))                                                                 |
 | `agents/`                 | Finding agent executables, reading their saved sessions, models and usage                                    |
 | `browser/`                | Browser tabs, the scripts injected into them, the agent browser tools, MCP wiring per agent (`agents.rs`)    |
-| `harness.rs`              | The queue of agent tool calls the UI must answer                                                             |
-| `cli_server.rs`, `cli_*`  | The CLI broker, its wire format, token checks and launcher install                                           |
+| `harness.rs`              | Answering the tool calls the core hands to the window, and the queue of those the UI must answer             |
+| `cli_*`                   | The CLI client, `open` requests the core hands over, the launcher's paths and install                        |
 | `plugins/`                | The plugin host and the compiled-in plugin list                                                              |
 | `state.rs`                | Saving and loading the app state in SQLite                                                                   |
 | `observability/`          | Bounded spans, counters and latency history, the UI heartbeat and hang watchdog; `autopsy.rs` saves evidence |
@@ -228,16 +230,23 @@ only. The protocol details live in `browser/SIKEMUX_GUIDE.md`, which agents fetc
 the `guide` tool. The MCP binary compiles both files in. A tool call travels:
 
 ```
-agent → sikemux-editor --tools-mcp → CLI broker → harness.rs
-  browser.*                      → browser/tools.rs (Rust)
-  plugins.tools / plugins.call   → plugins/agent.rs (Rust)
-  everything else                → harness-request event → HarnessBridge →
-                                   src/harness/service.ts → harness_reply
+agent → sikemux-editor --tools-mcp → the core's tool endpoint
+  task.read / task.stop / events.wait     → answered by the core (server/harness.rs)
+  task.start / task.restart               → the core keeps the run, the window launches it
+  everything else                         → the window: harness.rs in the app
+    browser.*                             → browser/tools.rs (Rust)
+    plugins.tools / plugins.call          → plugins/agent.rs (Rust)
+    the rest                              → harness-request event → HarnessBridge →
+                                            src/harness/service.ts → harness_reply
 ```
 
+The core keeps runs, idempotency keys and an event journal per project
+(`journal/<hash>.jsonl` in the app's data directory), so task tools work with the
+window closed and event cursors survive restarts.
+
 `pnpm agent-tools:generate` writes `src-tauri/crates/sikemux-core/src/cli/methods.rs` and checks
-that every declared method has a handler in `browser/tools.rs` or
-`src/harness/service.ts`, and that no handler lacks a declaration. The README's
+that every declared method has a handler in `browser/tools.rs`, the core's
+harness dispatch or `src/harness/service.ts`, and that no handler lacks a declaration. The README's
 [Agent harness tools](../../README.md#agent-harness-tools) section describes the tools
 from the user's side.
 

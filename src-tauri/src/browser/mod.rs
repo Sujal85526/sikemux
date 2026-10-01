@@ -1026,7 +1026,7 @@ impl BrowserManager {
     }
 
     pub fn mcp_launch(&self) -> AppResult<BrowserMcpLaunch> {
-        let executable = crate::cli_server::cli_executable_path().ok_or_else(|| {
+        let executable = crate::cli_paths::cli_executable_path().ok_or_else(|| {
             AppError::Other(
                 "the sikemux-editor sidecar is missing; build it with node scripts/build-cli-sidecar.mjs"
                     .into(),

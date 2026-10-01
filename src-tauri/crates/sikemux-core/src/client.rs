@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::fs::OpenOptions;
 use std::future::Future;
 use std::io::{self, Write};
@@ -21,9 +22,9 @@ use tokio::task::JoinHandle;
 
 use crate::protocol::{
     decode_output, decode_snapshot, encode_control, encode_input, read_frame, read_frame_sync,
-    BuildIdentity, ClientMessage, Event, FrameKind, LaunchIdentity, Request, RequestId, Response,
-    ServerMessage, SessionId, SessionInfo, SpawnTarget, MAX_FRAME_BYTES, PROTOCOL,
-    PROTOCOL_VERSION,
+    BuildIdentity, CallId, ClientMessage, Event, FrameKind, LaunchIdentity, Request, RequestId,
+    Response, RunSelector, ServerMessage, SessionId, SessionInfo, SpawnTarget, WindowAnswer,
+    WindowCall, MAX_FRAME_BYTES, PROTOCOL, PROTOCOL_VERSION,
 };
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -66,6 +67,7 @@ pub struct CoreHello {
 pub enum ClientEvent {
     Output { id: SessionId, bytes: Vec<u8> },
     Event(Event),
+    WindowCall { call_id: CallId, call: WindowCall },
 }
 
 /// Receives what the core sends unasked, on the connection's reader task and
@@ -74,6 +76,9 @@ pub enum ClientEvent {
 pub trait EventSink: Send + Sync + 'static {
     fn output(&self, id: SessionId, bytes: &[u8]);
     fn event(&self, event: Event);
+    /// The core asks the registered window to do something. Answer with
+    /// [`CoreClient::answer_window`].
+    fn window_call(&self, _call_id: CallId, _call: WindowCall) {}
     /// The connection is gone. Every pending reply has already failed.
     fn closed(&self);
 }
@@ -165,6 +170,10 @@ impl EventSink for ChannelSink {
 
     fn event(&self, event: Event) {
         let _ = self.0.send(ClientEvent::Event(event));
+    }
+
+    fn window_call(&self, call_id: CallId, call: WindowCall) {
+        let _ = self.0.send(ClientEvent::WindowCall { call_id, call });
     }
 
     fn closed(&self) {}
@@ -400,9 +409,7 @@ impl CoreClient {
 
     /// Reports output bytes this client has finished with. Never answered.
     pub fn ack(&self, id: SessionId, bytes: usize) {
-        if let Ok(frame) = encode_control(&ClientMessage::Ack { id, bytes }) {
-            let _ = self.outgoing.send(frame);
-        }
+        self.send(&ClientMessage::Ack { id, bytes });
     }
 
     pub async fn task_output(
@@ -449,6 +456,37 @@ impl CoreClient {
             Response::DetectionExplain { explain } => Ok(*explain),
             _ => Err(ClientError::UnexpectedReply),
         }
+    }
+
+    /// Tool calls that need the window come to this connection from now on.
+    pub async fn register_window(&self) -> Result<(), ClientError> {
+        self.request_done(Request::RegisterWindow).await
+    }
+
+    fn send(&self, message: &ClientMessage) {
+        if let Ok(frame) = encode_control(message) {
+            let _ = self.outgoing.send(frame);
+        }
+    }
+
+    pub fn answer_window(&self, call_id: CallId, answer: WindowAnswer) {
+        self.send(&ClientMessage::WindowReply { call_id, answer });
+    }
+
+    /// Every tab a waiting CLI `open` opened has closed.
+    pub fn window_open_closed(&self, call_id: CallId) {
+        self.send(&ClientMessage::WindowOpenClosed { call_id });
+    }
+
+    pub async fn harness_awaiting_trust(&self, execution_id: String) -> Result<(), ClientError> {
+        self.request_done(Request::HarnessAwaitingTrust { execution_id })
+            .await
+    }
+
+    /// Resolves once every matching run has stopped.
+    pub async fn harness_stop_runs(&self, selector: RunSelector) -> Result<(), ClientError> {
+        self.request_done(Request::HarnessStopRuns { selector })
+            .await
     }
 
     /// Kills every session. The core keeps running.
@@ -502,6 +540,7 @@ fn dispatch(frame: crate::protocol::Frame, pending: &Pending, sink: &dyn EventSi
                 message,
             }) => resolve(request_id, Err(ClientError::Core(message))),
             Ok(ServerMessage::Event { event }) => sink.event(event),
+            Ok(ServerMessage::WindowCall { call_id, call }) => sink.window_call(call_id, call),
             _ => {}
         },
         FrameKind::Input => {}
@@ -543,9 +582,9 @@ pub fn probe(socket: &Path, timeout: Duration) -> Result<CoreHello, ProbeError> 
     }
 }
 
-/// Starts `<binary> core --socket <socket>` in its own session, detached from
-/// the caller, with its output appended to `log`.
-fn start_detached(socket: &Path, binary: &Path, log: &Path) -> io::Result<()> {
+/// Starts `<binary> core --socket <socket> <args>` in its own session,
+/// detached from the caller, with its output appended to `log`.
+fn start_detached(socket: &Path, binary: &Path, log: &Path, args: &[OsString]) -> io::Result<()> {
     let log = OpenOptions::new()
         .create(true)
         .append(true)
@@ -556,6 +595,7 @@ fn start_detached(socket: &Path, binary: &Path, log: &Path) -> io::Result<()> {
         .arg("core")
         .arg("--socket")
         .arg(socket)
+        .args(args)
         .stdin(Stdio::null())
         .stdout(log.try_clone()?)
         .stderr(log);
@@ -579,7 +619,13 @@ fn start_detached(socket: &Path, binary: &Path, log: &Path) -> io::Result<()> {
     Ok(())
 }
 
-pub fn ensure_running(socket: &Path, binary: &Path, log: &Path) -> Result<CoreHello, ClientError> {
+/// Finds the core at `socket`, or starts one with `args` after its socket.
+pub fn ensure_running(
+    socket: &Path,
+    binary: &Path,
+    log: &Path,
+    args: &[OsString],
+) -> Result<CoreHello, ClientError> {
     let reject = |version, pid| {
         ClientError::VersionMismatch {
         version,
@@ -595,7 +641,7 @@ pub fn ensure_running(socket: &Path, binary: &Path, log: &Path) -> Result<CoreHe
         Err(ProbeError::Rejected { version, pid }) => return Err(reject(version, pid)),
         Err(ProbeError::NotRunning(_) | ProbeError::Unanswered(_)) => {}
     }
-    start_detached(socket, binary, log)?;
+    start_detached(socket, binary, log, args)?;
     let deadline = Instant::now() + START_TIMEOUT;
     loop {
         match probe(socket, PROBE_TIMEOUT) {

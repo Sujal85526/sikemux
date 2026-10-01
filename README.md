@@ -48,7 +48,7 @@ Check a `sikemux.json` into a project to add actions, tasks, and a preview to th
 }
 ```
 
-Agents can start, read, and stop these tasks through Sikemux's MCP tools or the `sikemux tool` CLI. [`browser/SIKEMUX_GUIDE.md`](browser/SIKEMUX_GUIDE.md) describes the protocol.
+Agents can start, read, and stop these tasks through Sikemux's MCP tools or the `sikemux tool` CLI. Tasks and their runs live in Sikemux's background process, so agents can read and stop them, and wait on their events, while the window is closed. [`browser/SIKEMUX_GUIDE.md`](browser/SIKEMUX_GUIDE.md) describes the protocol.
 
 ## CLI
 
