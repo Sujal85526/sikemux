@@ -9,6 +9,7 @@ import { adoptCoreTasks, type TaskAdoptionTargets } from "../tasks/adoption";
 import { appTaskRuntime } from "../tasks/application";
 import { NativeTaskExecutionBackend } from "../tasks/nativeRuntime";
 import { offerResumableSessions, spawnedThisPage } from "../terminal/sessionResume";
+import { relaunchTuiAgent } from "../agents/tuiResume";
 
 /** Long enough for every pane of a restored layout to have taken its terminal back. */
 export const UNCLAIMED_GRACE_MS = 30_000;
@@ -23,6 +24,7 @@ export function offerSavedSessions(): void {
 
 export interface CoreSessionRestoreDeps {
     list(): Promise<CoreSession[]>;
+    resume(agentId: string, ptyId: number): Promise<void>;
     kill(id: number): Promise<void>;
     chats: { list(): Promise<AcpChat[]>; stop(agentId: string): Promise<void> };
     tasks: TaskAdoptionTargets;
@@ -33,6 +35,7 @@ function defaultDeps(): CoreSessionRestoreDeps {
     const backend = new NativeTaskExecutionBackend();
     return {
         list: coreSessionsApi.list,
+        resume: relaunchTuiAgent,
         kill: coreSessionsApi.kill,
         chats: { list: acpApi.list, stop: acpApi.stop },
         tasks: {
@@ -49,7 +52,8 @@ function defaultDeps(): CoreSessionRestoreDeps {
 
 /**
  * Takes back what the core kept while the app was closed or reloading:
- * terminal agents still running come back live, running tasks rejoin the
+ * terminal agents still running come back live, ones that crashed meanwhile
+ * are resumed in their pane, running tasks rejoin the
  * command deck or reopen their terminals, chat panes take their chats back
  * as they mount, and terminals from before this page that nothing in the
  * layout names, like chats no pane took back, are stopped after a grace, so
@@ -63,7 +67,12 @@ export async function restoreCoreSessions(deps: CoreSessionRestoreDeps = default
         return;
     }
     const chats = await deps.chats.list().catch((): AcpChat[] => []);
-    cmd.applyAgentSessionPlan(agentSessionPlan(getState(), sessions));
+    const plan = agentSessionPlan(getState(), sessions);
+    cmd.applyAgentSessionPlan(plan);
+    for (const id of plan.resume) {
+        const ptyId = getState().agents[id]?.ptyId;
+        if (ptyId !== undefined) void deps.resume(id, ptyId).catch(() => {});
+    }
     const tasks = await adoptCoreTasks(sessions, deps.tasks);
 
     const claimed = claimedSessionIds(getState());

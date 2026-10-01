@@ -18,7 +18,7 @@ function taskInfo(kind: string, taskId: string, overrides: Partial<CoreTaskInfo>
 }
 
 function taskSession(id: number, task: CoreTaskInfo, running = true): CoreSession {
-    return { id, kind: "task", pid: 1, running, project: "/repo", paneId: null, agentId: null, agentType: null, task, exit: null };
+    return { id, kind: "task", pid: 1, running, project: "/repo", paneId: null, agentId: null, agentType: null, task, exit: null, killed: false };
 }
 
 function targets() {

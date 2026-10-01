@@ -8,7 +8,7 @@ import { acpApi } from "../api/acp";
 import { agentSupportsChat } from "../agents/agentLaunch";
 import { TerminalPane } from "../terminal/TerminalPane";
 import { isResumableSession } from "../terminal/sessionResume";
-import { AgentIcon, IconAgent, IconCommand, IconMoreVertical, IconPanelRight } from "../ui/Icons";
+import { AgentIcon, IconAgent, IconCommand, IconMoreVertical, IconPanelRight, IconPlug } from "../ui/Icons";
 import { useStore } from "../state/store";
 import { shownDeskPaneId } from "../state/selectors";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
@@ -17,6 +17,8 @@ import * as cmd from "../state/commands";
 import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
 import { AgentChatPane } from "./AgentChatPane";
 import { YoloToggle } from "./YoloToggle";
+import { agentCwd, agentPtyContext } from "../agents/agentPtyContext";
+import { clearTuiRecovery, relaunchTuiAgent, useTuiResume } from "../agents/tuiResume";
 import "../styles/chat.css";
 
 type AgentView = "gui" | "tui";
@@ -64,6 +66,36 @@ function AgentMenuButton({ agent, session, onRename }: { agent: Agent; session: 
     );
 }
 
+/* Matches the chat's failed-resume row, so both kinds of agent read the same. */
+function TuiRecoveryNotice({ agent, profile, cwd, detail }: { agent: Agent; profile?: ProviderProfile; cwd?: string; detail: string | null }) {
+    const startNewChat = () =>
+        cmd.addAgent(agent.type, undefined, undefined, {
+            permissionMode: agent.permissionMode,
+            profileId: agent.profileId,
+            detectedExecutablePath: profile?.executablePath || agent.executablePath,
+            cwd,
+        });
+    return (
+        <div className="agent-tui-recovery">
+            <div className="chat-reconnect" role="status">
+                <IconPlug size={13} />
+                <span>Couldn&apos;t resume this agent</span>
+                {detail && <span className="chat-recovery-detail">{detail}</span>}
+                <div className="chat-connection-actions">
+                    <button type="button" onClick={() => void relaunchTuiAgent(agent.id, agent.ptyId)}>
+                        Retry
+                    </button>
+                    {agent.resumeId && (
+                        <button type="button" onClick={startNewChat}>
+                            Start new chat
+                        </button>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export function AgentSurface({ agent, session, profile, visible }: { agent: Agent; session: Session; profile?: ProviderProfile; visible: boolean }) {
     const supportsGui = agentSupportsChat(agent.type);
     /* A terminal agent that kept running while the app was closed comes back in its terminal. */
@@ -71,12 +103,15 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
     const [switching, setSwitching] = useState(false);
     const [chatBusy, setChatBusy] = useState(false);
     const [renaming, setRenaming] = useState(false);
+    const { recovery, generation } = useTuiResume(agent.id);
+    const cwd = agentCwd(agent, session);
 
     const switchView = useCallback(
         async (next: AgentView) => {
             if (next === view || switching || (view === "gui" && chatBusy)) return;
             setSwitching(true);
             if (view === "gui") await acpApi.stop(agent.id).catch(() => {});
+            clearTuiRecovery(agent.id);
             setView(next);
             window.requestAnimationFrame(() => setSwitching(false));
         },
@@ -123,6 +158,12 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                     </span>
                 )}
                 <AgentMenuButton agent={agent} session={session} onRename={() => setRenaming(true)} />
+                {view === "tui" && recovery?.phase === "resuming" && (
+                    <span className="agent-surface-resuming" role="status">
+                        <span className="chat-activity-loader" aria-hidden="true" />
+                        Resuming…
+                    </span>
+                )}
                 {agent.worktree && (
                     <Suspense fallback={null}>
                         <WorktreeHeader agentId={agent.id} worktree={agent.worktree} visible={visible} />
@@ -168,8 +209,8 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                 {view === "tui" && !switching && (
                     <div className="agent-tui-layer" ref={tuiLayer}>
                         <TerminalPane
-                            key={`${agent.id}:${agent.permissionMode ?? (agent.skipPermissions ? "bypass" : "workspace-write")}`}
-                            cwd={agent.cwd || session.cwd || undefined}
+                            key={`${agent.id}:${agent.permissionMode ?? (agent.skipPermissions ? "bypass" : "workspace-write")}:${generation}`}
+                            cwd={cwd}
                             startup={agent.startup}
                             directCommand={agent.directCommand}
                             active={visible}
@@ -177,15 +218,9 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                             spawnWhen={visible}
                             resumePtyId={agent.ptyId}
                             onPtySession={(id) => cmd.setAgentPty(agent.id, id)}
-                            context={{
-                                sessionId: session.id,
-                                sessionName: session.name,
-                                sessionKind: session.kind,
-                                ...(session.kind === "project" && (agent.cwd || session.cwd) ? { project: agent.cwd || session.cwd } : {}),
-                                agentId: agent.id,
-                                agentType: agent.type,
-                            }}
+                            context={agentPtyContext(agent, session)}
                         />
+                        {recovery?.phase === "failed" && <TuiRecoveryNotice agent={agent} profile={profile} cwd={cwd} detail={recovery.detail} />}
                     </div>
                 )}
                 {switching && (

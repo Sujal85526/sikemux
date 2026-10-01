@@ -16,6 +16,7 @@ function session(id: number, overrides: Partial<CoreSession> = {}): CoreSession 
         agentType: null,
         task: null,
         exit: null,
+        killed: false,
         ...overrides,
     };
 }
@@ -61,9 +62,31 @@ describe("core session claims", () => {
                     chat: agent("chat", { resumeId: "r5" }),
                 },
             },
-            [session(1), session(2, { running: false }), session(4, { running: false })],
+            [
+                session(1),
+                session(2, { running: false, exit: { code: 0, signal: null } }),
+                session(4, { running: false, exit: { code: 0, signal: null } }),
+            ],
         );
-        expect(plan).toEqual({ live: ["live"], gone: ["ended", "missing"], dropped: ["fresh"] });
+        expect(plan).toEqual({ live: ["live"], gone: ["ended", "missing"], dropped: ["fresh"], resume: [] });
+    });
+
+    it("resumes agents whose terminal crashed while the app was closed, but not ones Sikemux stopped or that have nothing to resume", () => {
+        const ended = (id: number, code: number | null, signal: string | null, killed = false) =>
+            session(id, { running: false, exit: { code, signal }, killed });
+        const plan = agentSessionPlan(
+            {
+                agents: {
+                    crashed: agent("crashed", { ptyId: 1, resumeId: "r1" }),
+                    failed: agent("failed", { ptyId: 2, resumeId: "r2" }),
+                    stopped: agent("stopped", { ptyId: 3, resumeId: "r3" }),
+                    interrupted: agent("interrupted", { ptyId: 4, resumeId: "r4" }),
+                    fresh: agent("fresh", { ptyId: 5 }),
+                },
+            },
+            [ended(1, 1, "Killed: 9"), ended(2, 1, null), ended(3, 1, "Hangup", true), ended(4, 130, null), ended(5, 1, "Killed: 9")],
+        );
+        expect(plan).toEqual({ live: [], gone: ["stopped", "interrupted"], dropped: ["fresh"], resume: ["crashed", "failed"] });
     });
 
     it("gives a copied pane its own terminal", () => {

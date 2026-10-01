@@ -280,3 +280,26 @@
     font-family: var(--ui);
     font-size: var(--text-xs);
 }
+
+.agent-surface-resuming {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 6px;
+    color: var(--ink-faint);
+    font-family: var(--ui);
+    font-size: var(--text-2xs);
+}
+
+.agent-tui-recovery {
+    position: absolute;
+    inset: auto 0 12px;
+    pointer-events: none;
+}
+
+.agent-tui-recovery .chat-reconnect {
+    margin-top: 0;
+    background: var(--surface-overlay);
+    font-family: var(--ui);
+    pointer-events: auto;
+}

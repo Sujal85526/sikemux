@@ -22,10 +22,14 @@ export function setAgentPty(agentId: string, ptyId: number): void {
     });
 }
 
-/** Terminal agents still running in the core come back live; the rest stay asleep without their old terminal. */
+/**
+ * Terminal agents still running in the core come back live, and so do ones
+ * whose terminal crashed, to be resumed in it; the rest stay asleep without
+ * their old terminal.
+ */
 export function applyAgentSessionPlan(plan: AgentSessionPlan): void {
     mutate((d) => {
-        for (const id of plan.live) {
+        for (const id of [...plan.live, ...plan.resume]) {
             const agent = d.agents[id];
             if (agent) agent.launchState = "live";
         }

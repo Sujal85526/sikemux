@@ -11,6 +11,7 @@ import { AgentRail } from "./rail/AgentRail";
 import { RailPeek } from "./rail/RailPeek";
 import { RailResizer, useRailWidthVars } from "./rail/RailResizer";
 import { AgentSessionSync } from "./agents/AgentSessionSync";
+import { watchTerminalAgentExits } from "./agents/tuiResume";
 import { AgentLifecycleManager } from "./agents/AgentLifecycleManager";
 import { AgentPalettePortal as AgentPalette } from "./agents/AgentPalettePortal";
 import { FilePalette } from "./palettes/FilePalette";
@@ -821,6 +822,8 @@ export default function App() {
     );
 
     useEffect(() => recordAgentTurns(), []);
+
+    useEffect(() => watchTerminalAgentExits(), []);
 
     useEffect(() => {
         let disposed = false;

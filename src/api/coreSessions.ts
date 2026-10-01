@@ -31,6 +31,8 @@ export interface CoreSession {
     readonly agentType: string | null;
     readonly task: CoreTaskInfo | null;
     readonly exit: CoreSessionExit | null;
+    /** Sikemux asked for its process to end. */
+    readonly killed: boolean;
 }
 
 export const coreSessionsApi = {

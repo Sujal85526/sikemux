@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { activityApi, type ActivityDay, type ActivityShare, type ActivitySummary, type ActivityTotals } from "../api/activity";
 import { calendarColumns, dayDate, levelOf, levelThresholds, localDay, streaks } from "../lib/activityCalendar";
 import { basename, prettyPath } from "../lib/paths";
+import { AGENT_NAMES } from "../agents/agentLaunch";
 import { useStore } from "../state/store";
 import type { AgentType } from "../state/types";
 import { AgentIcon, IconFolder } from "../ui/Icons";
@@ -16,16 +17,6 @@ const METRICS: { id: Metric; label: string }[] = [
     { id: "agentMs", label: "Agent time" },
     { id: "sessions", label: "Sessions" },
 ];
-
-const AGENT_NAMES: Record<AgentType, string> = {
-    claude: "Claude",
-    codex: "Codex",
-    hermes: "Hermes",
-    pi: "Pi",
-    opencode: "OpenCode",
-    omp: "Oh My Pi",
-    grok: "Grok",
-};
 
 // Token counts read as K, M and B everywhere; some locales would write lakh and crore.
 const COMPACT = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });

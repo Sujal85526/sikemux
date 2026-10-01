@@ -158,7 +158,9 @@ and say so. While Sikemux updates its background process a call can fail for
 a moment saying so; call it again. When Sikemux opens again the tasks'
 terminals come back. Chat agents keep running too: a turn in progress goes
 on while the window is closed, and a permission it asks for waits for the
-person. A task that ended stays readable for about ten minutes.
+person. A terminal agent whose process dies, other than by the person quitting
+it or Sikemux stopping it, is started again on its saved conversation in the
+same pane. A task that ended stays readable for about ten minutes.
 Event cursors stay valid across reloads, restarts and updates, so keep the one
 you have.
 

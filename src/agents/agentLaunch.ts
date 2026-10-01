@@ -9,6 +9,16 @@ export interface AgentLaunchOptions {
 
 export const MAX_AGENT_MODEL_LENGTH = 256;
 
+export const AGENT_NAMES: Readonly<Record<AgentType, string>> = {
+    claude: "Claude",
+    codex: "Codex",
+    hermes: "Hermes",
+    pi: "Pi",
+    opencode: "OpenCode",
+    omp: "Oh My Pi",
+    grok: "Grok",
+};
+
 const AGENT_EFFORTS: Readonly<Record<AgentType, readonly AgentEffort[]>> = {
     claude: ["low", "medium", "high", "xhigh", "max"],
     codex: ["minimal", "low", "medium", "high", "xhigh", "max"],
