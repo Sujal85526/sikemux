@@ -133,10 +133,12 @@ const budgets = [
     // the transcript animates new messages and tool runs opening and closing.
     // The composer's @ and # pickers, context chips, and resuming a chat whose
     // agent died live here too; the code host part loads only once # is typed.
+    // So does the Worktree switch's state; its button, the worktree line in the
+    // transcript, the header's pull request badge and the git work load apart.
     label: "ACP chat lazy chunk",
     pattern: /^AgentSurface-.*\.js$/,
-    raw: 105_000,
-    gzip: 34_000,
+    raw: 108_500,
+    gzip: 35_000,
   },
   {
     // Shiki, its JavaScript regex engine and vscode-textmate, with no
@@ -158,13 +160,14 @@ const budgets = [
     // Rolldown reaches CommonJS exports such as React's jsx through
     // `(0, ns.jsx)(...)` at every call site, which Rollup did not. The app's
     // motion (glides, rows opening and closing, overlays fading) lives here too.
+    // Chat agents in their own worktrees added a few small lazy chunks.
     label:
       "default-path JavaScript except the highlighter and its grammar chunks",
     pattern: new RegExp(
       `^(?!(?:highlighter|paper-shaders|xterm-webgl|${diffLanguageChunkNames.join("|")})-).*\\.js$`,
     ),
     raw: 3_400_000,
-    gzip: 1_095_000,
+    gzip: 1_100_000,
   },
   {
     label: "opt-in shader renderer",
