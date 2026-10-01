@@ -44,6 +44,15 @@ export function nearestProjectSessionId(state: Pick<StoreState, "sessions" | "se
     return state.sessionOrder.find(isProject) ?? null;
 }
 
+/** The open project in this folder, or else the nearest one. */
+export function projectSessionForCwd(
+    state: Pick<StoreState, "sessions" | "sessionOrder" | "activeSessionId" | "lastSessionId">,
+    cwd: string | null,
+): string | null {
+    const own = cwd ? state.sessionOrder.find((id) => state.sessions[id]?.kind === "project" && state.sessions[id].cwd === cwd) : undefined;
+    return own ?? nearestProjectSessionId(state);
+}
+
 /** A Markdown code block that still closes when the text itself contains backticks. */
 export function codeFence(text: string, language = ""): string {
     const longest = Math.max(0, ...[...text.matchAll(/`+/g)].map((run) => run[0].length));

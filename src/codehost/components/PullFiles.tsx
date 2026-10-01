@@ -1,8 +1,15 @@
 import { memo, useEffect, useMemo, useState } from "react";
 import { DiffView } from "../../git/DiffView";
+import { SendToAgentMenu } from "../../agents/SendToAgentMenu";
+import { projectSessionForCwd } from "../../agents/agentTargets";
+import { TreeContextMenu } from "../../rail/FileTree";
+import { getState } from "../../state/store";
+import { diffLinesDelivery, pickedRows, type PullRef } from "../diffSelection";
 import { requestOpenFile } from "../../state/commands";
 import { currentTheme, subscribeTheme } from "../../themes/bus";
 import { joinPath } from "../../lib/paths";
+import { copyText } from "../../lib/clipboard";
+import { reportError } from "../../state/toast";
 import { useResourceEnabled } from "../../plugin-api/resources";
 import { EmptyState, SkeletonRows } from "../../plugin-api/ui";
 import { FileReviewList } from "../../git/FileReviewList";
@@ -26,24 +33,67 @@ function useDarkTheme(): boolean {
     return dark;
 }
 
-const FileDiff = memo(function FileDiff({ file, dark }: { file: ChangedFile; dark: boolean }) {
+interface LinesMenu {
+    x: number;
+    y: number;
+    from: number;
+    to: number;
+    sending: boolean;
+}
+
+const FileDiff = memo(function FileDiff({ file, dark, pull, cwd }: { file: ChangedFile; dark: boolean; pull: PullRef; cwd: string | null }) {
     const rows = useMemo(() => (file.patch ? patchToRows(file.patch) : []), [file.patch]);
+    const [menu, setMenu] = useState<LinesMenu | null>(null);
     if (!file.patch)
         return (
             <div className="merge-review-content gha-side-empty">
                 The host did not send a diff for this file, which it does for very large or binary ones.
             </div>
         );
+    const picked = menu ? rows.slice(menu.from, menu.to + 1) : [];
     return (
-        <div className="merge-review-content">
+        <div
+            className="merge-review-content"
+            onContextMenu={(event) => {
+                const range = pickedRows(event.currentTarget, window.getSelection(), event.target);
+                if (!range) return;
+                event.preventDefault();
+                setMenu({ x: event.clientX, y: event.clientY, from: range[0], to: range[1], sending: false });
+            }}>
             <DiffView rows={rows} path={file.path} tinted={dark} />
+            {menu && !menu.sending && (
+                <TreeContextMenu
+                    x={menu.x}
+                    y={menu.y}
+                    onClose={() => setMenu(null)}
+                    items={[
+                        {
+                            label: "Copy Lines",
+                            run: () => void copyText(picked.map((row) => row[2]).join("\n")).catch(reportError("copy")),
+                        },
+                        {
+                            label: picked.length === 1 ? "Send Line to Agent…" : "Send Lines to Agent…",
+                            run: () => setMenu({ ...menu, sending: true }),
+                        },
+                    ]}
+                />
+            )}
+            {menu?.sending && (
+                <SendToAgentMenu
+                    x={menu.x}
+                    y={menu.y}
+                    sessionId={projectSessionForCwd(getState(), cwd)}
+                    delivery={() => diffLinesDelivery(pull, file.path, picked)}
+                    onClose={() => setMenu(null)}
+                />
+            )}
         </div>
     );
 });
 
 interface Props {
     repo: RepoRef;
-    number: number;
+    pull: PullRef;
     /** The project folder, when the pull request is on its own repository, so a file can open in the editor. */
     cwd: string | null;
     active: boolean;
@@ -52,8 +102,8 @@ interface Props {
 }
 
 /** A pull request's changed files, reviewed the way the git pane reviews local changes. */
-export function PullFiles({ repo, number, cwd, active, focusPath }: Props) {
-    const files = useResourceEnabled(active, pullFilesR, repo, number);
+export function PullFiles({ repo, pull, cwd, active, focusPath }: Props) {
+    const files = useResourceEnabled(active, pullFilesR, repo, pull.number);
     const dark = useDarkTheme();
     const byPath = useMemo(() => new Map((files.data ?? []).map((file) => [file.path, file])), [files.data]);
     const paths = useMemo(() => (files.data ?? []).map((file) => file.path), [files.data]);
@@ -92,7 +142,7 @@ export function PullFiles({ repo, number, cwd, active, focusPath }: Props) {
                 }}
                 body={(path) => {
                     const file = byPath.get(path);
-                    return file ? <FileDiff file={file} dark={dark} /> : null;
+                    return file ? <FileDiff file={file} dark={dark} pull={pull} cwd={cwd} /> : null;
                 }}
             />
         </section>

@@ -1,8 +1,11 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChangedFile } from "../api";
 
 const api = vi.hoisted(() => ({ pullFiles: vi.fn() }));
+vi.mock("../../agents/SendToAgentMenu", () => ({
+    SendToAgentMenu: ({ delivery }: { delivery: () => { text?: string } }) => <pre data-testid="send-menu">{delivery().text}</pre>,
+}));
 
 import { invalidate } from "../../plugin-api/resources";
 import { InHost, registerTestHost, TEST_HOST } from "../testHost";
@@ -23,7 +26,7 @@ const file = (path: string, status: string, extra: Partial<ChangedFile> = {}): C
 const show = (number = 5) =>
     render(
         <InHost host={host}>
-            <PullFiles repo={repo} number={number} cwd="/repo" active />
+            <PullFiles repo={repo} pull={{ number, title: "Fix", url: `https://github.com/o/r/pull/${number}` }} cwd="/repo" active />
         </InHost>,
     );
 
@@ -72,5 +75,15 @@ describe("PullFiles", () => {
         ]);
         expect(screen.getAllByText("+1")).toHaveLength(5);
         expect(await screen.findByText(/did not send a diff for this file/)).toBeInTheDocument();
+    });
+
+    it("sends the line right-clicked in a diff to an agent", async () => {
+        api.pullFiles.mockResolvedValue([file("a.ts", "modified")]);
+        show(4);
+        fireEvent.contextMenu(await screen.findByText("b"));
+        fireEvent.click(screen.getByRole("menuitem", { name: "Send Line to Agent…" }));
+        expect(screen.getByTestId("send-menu").textContent).toBe(
+            'From pull request #4 "Fix" (https://github.com/o/r/pull/4), a.ts, new line 1:\n\n```diff\n+b\n```\n',
+        );
     });
 });

@@ -581,7 +581,7 @@ export function PullRight({
                     <EmptyState message="This repository is not checked out here, so its commits cannot be opened." />
                 )
             ) : (
-                <PullFiles repo={repo} number={found.number} cwd={cwd} active={active} focusPath={focus ?? undefined} />
+                <PullFiles repo={repo} pull={found} cwd={cwd} active={active} focusPath={focus ?? undefined} />
             )}
         </div>
     );

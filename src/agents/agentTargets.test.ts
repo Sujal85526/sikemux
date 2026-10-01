@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentInfo } from "../api/agents";
 import type { Agent, Session, Window } from "../state/types";
-import { agentChoices, codeFence, nearestProjectSessionId, sessionOfPane } from "./agentTargets";
+import { agentChoices, codeFence, nearestProjectSessionId, projectSessionForCwd, sessionOfPane } from "./agentTargets";
 
 function agentWindow(id: string, agentId: string): Window {
     return { id, name: id, role: "agent", activePaneId: agentId, root: { type: "pane", id: agentId, cwd: "/repo", kind: "agent", title: agentId } };
@@ -63,5 +63,15 @@ describe("sessionOfPane", () => {
     it("finds the session holding the pane's window", () => {
         expect(sessionOfPane({ ...state, sessionOrder: ["s1"] }, "a1")).toBe("s1");
         expect(sessionOfPane({ ...state, sessionOrder: ["s1"] }, "nope")).toBeNull();
+    });
+});
+
+describe("projectSessionForCwd", () => {
+    it("picks the project open in that folder over the one in front", () => {
+        const sessions = { p1: project, p2: { ...project, id: "p2", cwd: "/other" } };
+        const base = { sessions, sessionOrder: ["p1", "p2"], activeSessionId: "p1", lastSessionId: null };
+        expect(projectSessionForCwd(base, "/other")).toBe("p2");
+        expect(projectSessionForCwd(base, "/nowhere")).toBe("p1");
+        expect(projectSessionForCwd(base, null)).toBe("p1");
     });
 });

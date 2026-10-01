@@ -220,16 +220,16 @@ export function DiffView({
                             />
                         );
                     }
-                    return <DiffLine key={index} row={row} tokens={tokens?.[index]} />;
+                    return <DiffLine key={index} index={index} row={row} tokens={tokens?.[index]} />;
                 })}
             </div>
         </div>
     );
 }
 
-const DiffLine = memo(function DiffLine({ row, tokens }: { row: DiffRow; tokens: CodeLine | undefined }) {
+const DiffLine = memo(function DiffLine({ index, row, tokens }: { index: number; row: DiffRow; tokens: CodeLine | undefined }) {
     return (
-        <div className="diff-row" data-kind={KIND[row[0]]}>
+        <div className="diff-row" data-kind={KIND[row[0]]} data-row={index}>
             <span className="diff-num">{row[1]}</span>
             <span className="diff-code">{tokens ? <CodeRun tokens={tokens} /> : row[2]}</span>
         </div>
