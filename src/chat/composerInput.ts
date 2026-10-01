@@ -50,13 +50,13 @@ export interface ProjectEntry {
     folder: boolean;
 }
 
-/** Every file the project lists, and every folder that holds one. */
+/** Every file the project lists, then every folder that holds one, so a file wins when names tie. */
 export function projectEntries(files: readonly string[]): ProjectEntry[] {
     const folders = new Set<string>();
     for (const file of files) {
         for (let slash = file.indexOf("/"); slash > 0; slash = file.indexOf("/", slash + 1)) folders.add(file.slice(0, slash + 1));
     }
-    return [...[...folders].sort().map((path) => ({ path, folder: true })), ...files.map((path) => ({ path, folder: false }))];
+    return [...files.map((path) => ({ path, folder: false })), ...[...folders].sort().map((path) => ({ path, folder: true }))];
 }
 
 export function entryName(entry: ProjectEntry): string {

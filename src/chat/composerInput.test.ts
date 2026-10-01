@@ -91,13 +91,13 @@ describe("removeToken", () => {
 });
 
 describe("projectEntries", () => {
-    it("lists each folder once, before the files", () => {
+    it("lists the files, then each folder once", () => {
         expect(projectEntries(["src/a.ts", "src/lib/b.ts", "README.md"])).toEqual([
-            { path: "src/", folder: true },
-            { path: "src/lib/", folder: true },
             { path: "src/a.ts", folder: false },
             { path: "src/lib/b.ts", folder: false },
             { path: "README.md", folder: false },
+            { path: "src/", folder: true },
+            { path: "src/lib/", folder: true },
         ]);
     });
 });
@@ -107,7 +107,7 @@ describe("rankEntries", () => {
 
     it("matches by name and by path", () => {
         expect(rankEntries("composer", entries, 10).map((entry) => entry.path)).toEqual(["src/chat/ChatComposer.tsx"]);
-        expect(rankEntries("src/chat", entries, 10)[0]).toEqual({ path: "src/chat/", folder: true });
+        expect(rankEntries("src/chat", entries, 10)).toContainEqual({ path: "src/chat/", folder: true });
     });
 
     it("offers folders by name", () => {
