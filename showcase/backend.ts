@@ -433,7 +433,11 @@ export class ShowcaseBackend implements IpcTransport {
     }));
     this.on("remote_open_pairing", () => ({
       ...Object.assign(remote, {
-        pairing: { code: "482913", expiresAt: Date.now() + 5 * 60_000 },
+        pairing: {
+          code: "482913",
+          expiresAt: Date.now() + 5 * 60_000,
+          link: "sikemux://pair?core=7d3f9c2ae0b54d18a6f1c39e85b27d0c4fa16e93b2d8c05a7e14f69b3c2d8a50&code=482913",
+        },
       }),
     }));
     this.on("remote_close_pairing", () => ({

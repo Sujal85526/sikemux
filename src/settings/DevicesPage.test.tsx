@@ -55,7 +55,9 @@ describe("DevicesPage", () => {
         const user = userEvent.setup();
         const expiresAt = Date.now() + 4 * 60_000;
         transport.register("remote_status", () => status());
-        transport.register("remote_open_pairing", () => status({ pairing: { code: "482913", expiresAt } }));
+        transport.register("remote_open_pairing", () =>
+            status({ pairing: { code: "482913", expiresAt, link: "sikemux://pair?core=core&code=482913" } }),
+        );
         const answer = vi.fn(() =>
             status({
                 devices: [{ id: PHONE, name: "Kishore's phone", platform: "ios", access: "watch", pairedAt: 1, lastSeen: null }],
@@ -66,6 +68,7 @@ describe("DevicesPage", () => {
 
         await user.click(await screen.findByRole("button", { name: "Pair a device" }));
         expect(await screen.findByText("482 913")).toBeInTheDocument();
+        expect(screen.getByRole("img", { name: "Pairing QR code" })).toBeInTheDocument();
         expect(screen.getByText(/Expires in 4:00/)).toBeInTheDocument();
 
         transport.emit(REMOTE_STATUS_EVENT, status({ pending: [{ id: "request-1", deviceId: PHONE, name: "Kishore's phone", platform: "ios" }] }));

@@ -4,6 +4,7 @@ import { reportError } from "../state/toast";
 import { Dropdown } from "../ui/Dropdown";
 import { Switch } from "../ui/Controls";
 import { IconTrash } from "../ui/Icons";
+import { PairingQr } from "./PairingQr";
 import { SettingsPage, SettingsRow, SettingsRows, SettingsSection } from "./SettingsLayout";
 
 const ACCESS_OPTIONS = [
@@ -61,6 +62,7 @@ function useNow(running: boolean): number {
     const [now, setNow] = useState(() => Date.now());
     useEffect(() => {
         if (!running) return;
+        setNow(Date.now());
         const timer = window.setInterval(() => setNow(Date.now()), 1000);
         return () => window.clearInterval(timer);
     }, [running]);
@@ -100,15 +102,20 @@ export function DevicesPage() {
                 </SettingsRows>
             </SettingsSection>
 
-            <SettingsSection title="Pair a device" sub="Open Sikemux on your phone, choose this Mac, and type the code shown here.">
+            <SettingsSection
+                title="Pair a device"
+                sub="Scan the code with Sikemux on your phone, or choose this Mac from the phones on the same network and type the digits.">
                 {!status?.enabled ? (
                     <p className="settings-hint">Turn on remote access to pair a device.</p>
                 ) : pairing ? (
                     <div className="pairing-code">
-                        <span className="pairing-code-digits" aria-label={`Pairing code ${pairing.code.split("").join(" ")}`}>
-                            {spacedCode(pairing.code)}
+                        <PairingQr link={pairing.link} />
+                        <span className="pairing-code-copy">
+                            <span className="pairing-code-digits" aria-label={`Pairing code ${pairing.code.split("").join(" ")}`}>
+                                {spacedCode(pairing.code)}
+                            </span>
+                            <span className="pairing-code-note">Expires in {countdown(pairing.expiresAt, now)}. Each code pairs one device.</span>
                         </span>
-                        <span className="pairing-code-note">Expires in {countdown(pairing.expiresAt, now)}. Each code pairs one device.</span>
                     </div>
                 ) : (
                     <p className="settings-hint">A code lasts five minutes and is withdrawn after five wrong tries.</p>

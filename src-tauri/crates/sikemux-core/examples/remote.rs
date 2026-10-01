@@ -2,7 +2,7 @@
 //! app will, over the real network.
 //!
 //! As the Mac, against a core's socket:
-//!   remote mac <socket> on | code | allow | status
+//!   remote mac <socket> on | off | code | allow | status
 //! As a device, keeping its key in `<key-file>`:
 //!   remote device <key-file> pair <core-id> <code>
 //!   remote device <key-file> sessions <core-id>
@@ -27,7 +27,7 @@ async fn main() -> Result<(), Failure> {
         ["mac", socket, action] => mac(Path::new(socket), action).await,
         ["device", key, "pair", core, code] => pair(Path::new(key), core, code).await,
         ["device", key, "sessions", core] => sessions(Path::new(key), core).await,
-        _ => Err("usage: remote mac <socket> on|code|allow|status | remote device <key-file> pair <core-id> <code> | remote device <key-file> sessions <core-id>".into()),
+        _ => Err("usage: remote mac <socket> on|off|code|allow|status | remote device <key-file> pair <core-id> <code> | remote device <key-file> sessions <core-id>".into()),
     }
 }
 
@@ -35,6 +35,7 @@ async fn mac(socket: &Path, action: &str) -> Result<(), Failure> {
     let (client, _events) = CoreClient::connect(socket).await?;
     let status = match action {
         "on" => client.set_remote_access(true).await?,
+        "off" => client.set_remote_access(false).await?,
         "code" => client.open_pairing().await?,
         "allow" => {
             let status = client.remote_status().await?;

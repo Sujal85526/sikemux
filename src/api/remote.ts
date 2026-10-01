@@ -17,6 +17,8 @@ export interface PairedDevice {
 export interface PairingOffer {
     readonly code: string;
     readonly expiresAt: number;
+    /** The Mac's key and the code as one `sikemux://pair` link, which the QR code holds. */
+    readonly link: string;
 }
 
 /** A device that typed the right code and waits for the person to answer. */

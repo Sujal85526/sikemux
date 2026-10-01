@@ -18,11 +18,12 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
-use crate::pairing::{CODE_DIGITS, PAIR_ALPN};
+use crate::pairing::{PairingLink, CODE_DIGITS, PAIR_ALPN};
 use crate::protocol::{DeviceAccess, DeviceInfo, Event, PairingOffer, PendingDevice, RemoteStatus};
 use crate::remote::CORE_ALPN;
 
 use super::access::Peer;
+use super::bonjour;
 use super::connection::{blocking, serve_client};
 use super::{Core, CoreError, CoreResult};
 
@@ -42,6 +43,7 @@ struct Stored {
 struct Running {
     endpoint: Endpoint,
     accept: JoinHandle<()>,
+    _advert: Option<bonjour::Advert>,
 }
 
 struct Offer {
@@ -180,10 +182,18 @@ impl Remote {
             addresses,
             devices: inner.stored.devices.clone(),
             connected,
-            pairing: inner.live_offer().map(|offer| PairingOffer {
-                code: offer.code.clone(),
-                expires_at: offer.expires_at,
-            }),
+            pairing: inner
+                .live_offer()
+                .zip(inner.secret.as_ref())
+                .map(|(offer, secret)| PairingOffer {
+                    code: offer.code.clone(),
+                    expires_at: offer.expires_at,
+                    link: PairingLink {
+                        core: secret.public(),
+                        code: offer.code.clone(),
+                    }
+                    .to_url(),
+                }),
             pending: inner
                 .pending
                 .iter()
@@ -392,12 +402,26 @@ async fn listen(core: &Arc<Core>) -> CoreResult<()> {
         .await
         .map_err(|error| CoreError::from(format!("remote access did not start: {error}")))?;
     let accept = tokio::spawn(accept(core.clone(), endpoint.clone()));
+    let advert = if direct_only {
+        None
+    } else {
+        let port = endpoint
+            .bound_sockets()
+            .iter()
+            .find(|address| address.is_ipv4())
+            .map(|address| address.port());
+        port.and_then(|port| bonjour::advertise(&endpoint.id().to_string(), port))
+    };
     let mut inner = core.remote.lock();
     if inner.running.is_some() {
         accept.abort();
         return Ok(());
     }
-    inner.running = Some(Running { endpoint, accept });
+    inner.running = Some(Running {
+        endpoint,
+        accept,
+        _advert: advert,
+    });
     Ok(())
 }
 

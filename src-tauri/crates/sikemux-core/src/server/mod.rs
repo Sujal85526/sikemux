@@ -1,5 +1,6 @@
 mod access;
 mod agent;
+mod bonjour;
 mod chat;
 mod connection;
 mod entry;

@@ -76,6 +76,39 @@ pub fn normalize_code(code: &str) -> String {
     code.chars().filter(char::is_ascii_digit).collect()
 }
 
+/// What the Mac's pairing QR code holds: the core's key and the open code.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PairingLink {
+    pub core: iroh::PublicKey,
+    pub code: String,
+}
+
+impl PairingLink {
+    pub fn to_url(&self) -> String {
+        format!("sikemux://pair?core={}&code={}", self.core, self.code)
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        let url = url::Url::parse(text.trim()).ok()?;
+        if url.scheme() != "sikemux" || url.host_str() != Some("pair") {
+            return None;
+        }
+        let value = |name: &str| {
+            url.query_pairs()
+                .find(|(key, _)| key == name)
+                .map(|(_, value)| value.into_owned())
+        };
+        let code = normalize_code(&value("code")?);
+        if code.len() != CODE_DIGITS {
+            return None;
+        }
+        Some(Self {
+            core: value("core")?.parse().ok()?,
+            code,
+        })
+    }
+}
+
 pub(crate) type Exchange = Spake2<Ed25519Group>;
 
 fn identities(device_id: &str, core_id: &str) -> (Identity, Identity) {
@@ -245,6 +278,27 @@ mod tests {
         let core_key = core.finish(&to_core).unwrap();
         let device_key = device.finish(&to_device).unwrap();
         assert!(!core_confirms(&device_key, &core_confirmation(&core_key)));
+    }
+
+    #[test]
+    fn a_pairing_link_holds_the_core_and_the_code() {
+        let core = iroh::SecretKey::generate().public();
+        let link = PairingLink {
+            core,
+            code: "482913".into(),
+        };
+        let url = link.to_url();
+        assert!(url.starts_with("sikemux://pair?core="));
+        assert_eq!(PairingLink::parse(&url), Some(link));
+        assert_eq!(PairingLink::parse("sikemux://pair?code=482913"), None);
+        assert_eq!(
+            PairingLink::parse(&format!("sikemux://pair?core={core}&code=12")),
+            None
+        );
+        assert_eq!(
+            PairingLink::parse(&format!("https://pair?core={core}&code=482913")),
+            None
+        );
     }
 
     #[test]

@@ -706,6 +706,8 @@ pub struct PairingOffer {
     pub code: String,
     /// Milliseconds since the Unix epoch.
     pub expires_at: u64,
+    /// The core's key and the code as one `sikemux://pair` link, for a QR code.
+    pub link: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
