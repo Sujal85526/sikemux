@@ -80,10 +80,16 @@ jobs:
       - name: Setup Rust
         run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)" --profile minimal --component clippy --component rustfmt --no-self-update
 
+      # Cargo.toml builds dependencies at full speed so `make dev` feels fast. CI
+      # only runs tests on them, and level 1 compiles in about half the time.
+      - name: Build dependencies with light optimisation
+        run: printf '[profile.dev.package."*"]\nopt-level = 1\n' >>"${CARGO_HOME:-$HOME/.cargo}/config.toml"
+
       - name: Cache cargo
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri
+          cache-on-failure: true
 
       - name: Audit Rust dependencies
         uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2.0.0
@@ -132,10 +138,16 @@ jobs:
       - name: Setup Rust
         run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)" --profile minimal --component clippy --component rustfmt --no-self-update
 
+      # Cargo.toml builds dependencies at full speed so `make dev` feels fast. CI
+      # only runs tests on them, and level 1 compiles in about half the time.
+      - name: Build dependencies with light optimisation
+        run: printf '[profile.dev.package."*"]\nopt-level = 1\n' >>"${CARGO_HOME:-$HOME/.cargo}/config.toml"
+
       - name: Cache cargo
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          workspaces: src-tauri
+          workspaces: src-tauri -> target/e2e
+          cache-on-failure: true
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
