@@ -24,7 +24,8 @@ This page is what to know before your first call. Call `guide` again with a
 
 - `workspace_inspect` comes first. It returns the open project, the tasks in
   `sikemux.json`, the runs you already started and an event cursor. Task ids
-  come from there; do not guess one.
+  come from there; do not guess one. Its `ports` lists the TCP ports the
+  project's terminals, tasks and agents listen on, preview first.
 - `task_start` takes an `idempotencyKey` you choose and either a `taskId` or a
   `command`. Reusing a key returns the original run, so pick one key per
   attempt and reuse it when a call fails or you are unsure it landed. Use

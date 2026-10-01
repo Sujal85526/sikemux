@@ -1,9 +1,11 @@
 import { invokeCommand } from "../api/invoke";
 import { browserApi } from "../api/browser";
+import { portsApi } from "../api/ports";
 import { loadProjectConfig } from "../projects/projectConfig";
 import { trustProjectConfig } from "../projects/projectConfigRuntime";
 import { confirmDialog } from "../state/dialog";
 import { joinPath } from "../lib/paths";
+import { projectPorts } from "../ports/projectPorts";
 import { collectPanes } from "../state/layout";
 import { agentIdsOf } from "../state/selectors";
 import { useStore, setState } from "../state/store";
@@ -345,8 +347,9 @@ export async function handleHarnessRequest(request: HarnessRequest, signal?: Abo
     const { params, project } = request;
     switch (request.method) {
         case "workspace.inspect": {
+            const [config, listening] = await Promise.all([loadProjectConfig(project), portsApi.listening().catch(() => [])]);
             const state = useStore.getState();
-            const config = await loadProjectConfig(project);
+            const previewUrl = config.status === "valid" ? config.config.preview?.url : undefined;
             return {
                 project,
                 sessionId: session.id,
@@ -376,6 +379,12 @@ export async function handleHarnessRequest(request: HarnessRequest, signal?: Abo
                     const task = appTaskRuntime.getSnapshot(project);
                     return task ? { status: task.status, taskId: task.task?.id } : null;
                 })(),
+                ports: projectPorts(state, session.id, listening, previewUrl).map(({ port, address, process, owner }) => ({
+                    port,
+                    address,
+                    process,
+                    owner: { kind: owner.kind, label: owner.label },
+                })),
                 cursor: harnessEvents.cursor,
             };
         }

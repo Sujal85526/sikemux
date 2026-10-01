@@ -695,7 +695,7 @@
     {
       "name": "workspace_inspect",
       "method": "workspace.inspect",
-      "description": "Inspect the open project: tasks, runs and the event cursor.",
+      "description": "Inspect the open project: tasks, runs, listening ports and the event cursor.",
       "properties": {},
       "required": []
     },
