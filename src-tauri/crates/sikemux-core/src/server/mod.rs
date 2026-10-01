@@ -346,28 +346,26 @@ impl Core {
         });
     }
 
-    pub(crate) fn reclaim_completed_tasks(&self, now: u64) {
-        let tasks: Vec<Arc<Session>> = self
-            .all_sessions()
-            .into_iter()
-            .filter(|session| session.is_task())
-            .collect();
-        let candidates = tasks
+    /// Drops the oldest exited sessions nobody is watching once there are too
+    /// many or they have been kept long enough.
+    pub(crate) fn reclaim_exited_sessions(&self, now: u64) {
+        let sessions = self.all_sessions();
+        let candidates = sessions
             .iter()
             .enumerate()
             .filter_map(|(index, session)| {
                 Some(TaskRetentionCandidate {
                     id: index as u32,
-                    exited_at_ms: session.task_exited_at_ms.load(Ordering::Acquire),
+                    exited_at_ms: session.exited_at_ms.load(Ordering::Acquire),
                     has_subscribers: session.has_subscribers()?,
                 })
             })
             .collect();
         for index in task_reclamation_plan(candidates, now, MAX_RETAINED_EXITED_TASK_PTYS) {
-            let Some(session) = tasks.get(index as usize) else {
+            let Some(session) = sessions.get(index as usize) else {
                 continue;
             };
-            if session.task_exited_at_ms.load(Ordering::Acquire) != 0
+            if session.exited_at_ms.load(Ordering::Acquire) != 0
                 && session.has_subscribers() == Some(false)
             {
                 self.remove_session(session);
@@ -498,7 +496,7 @@ async fn sweep(core: Arc<Core>) {
     loop {
         ticker.tick().await;
         let now = now_ms();
-        core.reclaim_completed_tasks(now);
+        core.reclaim_exited_sessions(now);
         for session in core.all_sessions() {
             session::trim_if_idle(&session, now, IDLE_TRIM);
         }

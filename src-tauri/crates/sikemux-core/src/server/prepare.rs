@@ -14,7 +14,7 @@ use sikemux_pty::task::{validate_task_request, TaskSpawnRequest};
 use sikemux_pty::user_shell::{configured_shell, login_shell_environment};
 use sikemux_pty::validate_pty_dimensions;
 
-use crate::protocol::{LaunchIdentity, SessionKind, TerminalSpawn};
+use crate::protocol::{LaunchIdentity, SessionKind, TaskSessionInfo, TerminalSpawn};
 
 use super::CoreResult;
 
@@ -25,6 +25,7 @@ pub(crate) struct Owner {
     pub agent_id: Option<String>,
     pub agent_type: Option<String>,
     pub task_execution_id: Option<String>,
+    pub task: Option<TaskSessionInfo>,
 }
 
 impl Owner {
@@ -39,6 +40,7 @@ impl Owner {
             agent_id: present(&context.agent_id),
             agent_type: present(&context.agent_type),
             task_execution_id: None,
+            task: None,
         }
     }
 }
@@ -155,14 +157,26 @@ pub(crate) fn prepare_task(
         terminal_key,
         task_id,
         label,
-        project: _,
+        project,
         source,
         command,
-        cwd: _,
+        cwd,
         env,
         cols,
         rows,
+        agent_id,
     } = request;
+    let task = TaskSessionInfo {
+        execution_id: execution_id.clone(),
+        terminal_key: terminal_key.clone(),
+        task_id: task_id.clone(),
+        label: label.clone(),
+        project,
+        source,
+        command: command.clone(),
+        cwd,
+        agent_id,
+    };
 
     let shell = configured_shell();
     let mut task_command = CommandBuilder::new(&shell);
@@ -181,6 +195,7 @@ pub(crate) fn prepare_task(
     let owner = Owner {
         project: context.project.clone(),
         task_execution_id: Some(execution_id.clone()),
+        task: Some(task),
         ..Owner::default()
     };
     configure_pty_environment(

@@ -13,10 +13,10 @@ use sikemux_pty::agent_detection::{DetectionExplain, ManifestReloadReport};
 use sikemux_pty::launch::{PtyContext, PtyDirectCommand};
 use sikemux_pty::output_log::{OutputPage, OutputQuery};
 use sikemux_pty::shell_protocol::{PtyShellMetadataEvent, ShellMetadataSnapshot};
-use sikemux_pty::task::TaskSpawnRequest;
+use sikemux_pty::task::{TaskSource, TaskSpawnRequest};
 
 pub const PROTOCOL: &str = "sikemux-core";
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 /// Room for the largest attach snapshot plus its header.
 pub const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 
@@ -245,6 +245,34 @@ pub struct SessionInfo {
     pub task_execution_id: Option<String>,
     /// The last state published for an agent terminal.
     pub agent_state: Option<String>,
+    /// What a task session was started as, so a client that did not start it
+    /// can take it over.
+    pub task: Option<TaskSessionInfo>,
+    /// Set once the process was reaped.
+    pub exit: Option<SessionExit>,
+}
+
+/// A task's launch request without its environment.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskSessionInfo {
+    pub execution_id: String,
+    pub terminal_key: String,
+    pub task_id: String,
+    pub label: String,
+    pub project: String,
+    pub source: TaskSource,
+    pub command: String,
+    pub cwd: String,
+    pub agent_id: Option<String>,
+}
+
+/// `code` is absent when the status could not be read.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionExit {
+    pub code: Option<u32>,
+    pub signal: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -291,6 +319,9 @@ pub struct AgentStateEvent {
 pub struct AttachHeader {
     pub alternate_screen: bool,
     pub shell: Option<ShellMetadataSnapshot>,
+    /// The session's `Exited` event was sent before this snapshot, so the
+    /// client will not hear of the exit again.
+    pub exited: bool,
 }
 
 pub fn encode_frame(kind: FrameKind, parts: &[&[u8]]) -> Vec<u8> {
@@ -440,6 +471,7 @@ mod tests {
         let header = AttachHeader {
             alternate_screen: true,
             shell: None,
+            exited: true,
         };
         let frame = encode_snapshot(3, 9, &header, b"\xff\x00replay").unwrap();
         let parsed = read_frame_sync(&mut &frame[..]).unwrap().unwrap();

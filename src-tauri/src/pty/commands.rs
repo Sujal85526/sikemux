@@ -223,9 +223,16 @@ pub async fn pty_attach(
                     Ok(Reply::Attached(Attached {
                         alternate_screen,
                         shell,
+                        exited,
                         replay,
                     })) => {
-                        let sub_id = guard.finish_attach(id, on_event)?;
+                        let sub_id = guard.finish_attach(id, on_event.clone())?;
+                        // The exit went out before this replay, so only this
+                        // channel has yet to hear of it, and it hears after
+                        // the replay is shown.
+                        if exited {
+                            let _ = on_event.send(Response::new(Vec::new()));
+                        }
                         encode_attach_response(
                             &AttachResult {
                                 sub_id,

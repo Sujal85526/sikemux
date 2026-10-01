@@ -84,6 +84,8 @@ pub trait EventSink: Send + Sync + 'static {
 pub struct Attached {
     pub alternate_screen: bool,
     pub shell: Option<ShellMetadataSnapshot>,
+    /// The client already heard this session exit.
+    pub exited: bool,
     pub replay: Vec<u8>,
 }
 
@@ -484,6 +486,7 @@ fn dispatch(frame: crate::protocol::Frame, pending: &Pending, sink: &dyn EventSi
                     Ok(Reply::Attached(Attached {
                         alternate_screen: header.alternate_screen,
                         shell: header.shell,
+                        exited: header.exited,
                         replay: replay.to_vec(),
                     })),
                 );

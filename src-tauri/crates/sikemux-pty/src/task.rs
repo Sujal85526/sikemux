@@ -52,6 +52,9 @@ pub struct TaskSpawnRequest {
     pub env: HashMap<String, String>,
     pub cols: u16,
     pub rows: u16,
+    /// The agent whose desk shows the task.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -183,6 +186,13 @@ pub fn validate_task_request(request: &TaskSpawnRequest) -> PtyResult<ValidatedT
     {
         return Err(PtyError::BadArg("invalid task working directory"));
     }
+    if request
+        .agent_id
+        .as_ref()
+        .is_some_and(|agent_id| !valid_task_text(agent_id, MAX_TASK_ID_BYTES, false))
+    {
+        return Err(PtyError::BadArg("invalid task agent id"));
+    }
     validate_pty_dimensions(request.cols, request.rows)?;
     validate_task_environment(&request.env, cfg!(windows))?;
     let project = std::fs::canonicalize(&request.project)
@@ -265,6 +275,7 @@ mod tests {
             env: HashMap::from([("TOKEN".into(), "not-logged".into())]),
             cols: 120,
             rows: 40,
+            agent_id: None,
         }
     }
 

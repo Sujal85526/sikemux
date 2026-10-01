@@ -22,8 +22,8 @@ use tokio::io::unix::AsyncFd;
 use tokio::sync::{mpsc, Notify};
 
 use crate::protocol::{
-    encode_output, encode_snapshot, AttachHeader, Event, RequestId, Response, SessionId,
-    SessionInfo, SessionKind,
+    encode_output, encode_snapshot, AttachHeader, Event, RequestId, Response, SessionExit,
+    SessionId, SessionInfo, SessionKind,
 };
 
 use super::agent::{self, AgentActivity};
@@ -92,9 +92,11 @@ pub(crate) struct Session {
     exit_reported: AtomicBool,
     exited: AtomicBool,
     task: Option<TaskOutput>,
-    /// Zero while a task is running; when it was reaped otherwise. Completed
-    /// tasks stay attachable for a while.
-    pub(crate) task_exited_at_ms: AtomicU64,
+    /// Zero while the process runs; when it was reaped otherwise. Completed
+    /// tasks, and terminals that ended with nobody watching, stay attachable
+    /// for a while.
+    pub(crate) exited_at_ms: AtomicU64,
+    exit: Mutex<Option<SessionExit>>,
     stop_reader: Notify,
     /// Present for a terminal launched for an agent.
     pub(crate) agent: Option<AgentActivity>,
@@ -139,6 +141,8 @@ impl Session {
                 .as_ref()
                 .and_then(AgentActivity::state_label)
                 .map(str::to_string),
+            task: self.owner.task.clone(),
+            exit: self.exit.lock().ok().and_then(|exit| exit.clone()),
         }
     }
 }
@@ -172,7 +176,7 @@ impl PendingStart {
 /// Opens the terminal and starts its process. Runs on a blocking thread.
 pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreResult<PendingStart> {
     validate_pty_dimensions(launch.cols, launch.rows)?;
-    core.reclaim_completed_tasks(now_ms());
+    core.reclaim_exited_sessions(now_ms());
     let capacity_permit = core.capacity.try_acquire()?;
     let pair = NativePtySystem::default()
         .openpty(PtySize {
@@ -260,7 +264,8 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
             log: Mutex::new(OutputLog::default()),
             notice_pending: AtomicBool::new(false),
         }),
-        task_exited_at_ms: AtomicU64::new(0),
+        exited_at_ms: AtomicU64::new(0),
+        exit: Mutex::new(None),
         stop_reader: Notify::new(),
         agent,
         _shell_integration: shell_integration,
@@ -442,9 +447,11 @@ async fn read_output(core: Arc<Core>, session: Arc<Session>) {
     if stopped {
         return;
     }
-    // Terminals leave when their output ends. Completed tasks stay, so a
-    // command that finished before its spawn reply arrived can still be read.
-    if !session.is_task() {
+    // Terminals leave when their output ends, unless nobody was watching:
+    // then the next client to open one sees how it ended. Completed tasks
+    // stay, so a command that finished before its spawn reply arrived can
+    // still be read.
+    if !session.is_task() && session.has_subscribers() != Some(false) {
         core.remove_session(&session);
     }
     let _ = tokio::task::spawn_blocking(move || {
@@ -453,7 +460,7 @@ async fn read_output(core: Arc<Core>, session: Arc<Session>) {
                 let status = child.wait().ok();
                 // Stamped under the child lock, so a concurrent kill or drain
                 // never signals a pid that may already be reused.
-                stamp_task_exited(&session);
+                stamp_exited(&session);
                 status
             }
             Err(_) => None,
@@ -463,15 +470,12 @@ async fn read_output(core: Arc<Core>, session: Arc<Session>) {
     .await;
 }
 
-pub(crate) fn stamp_task_exited(session: &Session) -> Option<u64> {
-    session.task.as_ref()?;
+pub(crate) fn stamp_exited(session: &Session) -> Option<u64> {
     let exited_at = now_ms().max(1);
-    match session.task_exited_at_ms.compare_exchange(
-        0,
-        exited_at,
-        Ordering::AcqRel,
-        Ordering::Acquire,
-    ) {
+    match session
+        .exited_at_ms
+        .compare_exchange(0, exited_at, Ordering::AcqRel, Ordering::Acquire)
+    {
         Ok(_) => {
             session.last_activity_ms.store(exited_at, Ordering::Release);
             Some(exited_at)
@@ -481,13 +485,10 @@ pub(crate) fn stamp_task_exited(session: &Session) -> Option<u64> {
 }
 
 /// Tells every client the process is gone. Natural exit, kill and shutdown can
-/// race here; only the first one is reported.
+/// race here; only the first one is reported. The event goes out under the
+/// parser lock, so an attach knows whether its snapshot came after it.
 pub(crate) fn report_exit(core: &Core, session: &Session, status: Option<&ExitStatus>) {
-    let exited_at = stamp_task_exited(session);
-    session.exited.store(true, Ordering::Release);
-    if session.exit_reported.swap(true, Ordering::AcqRel) {
-        return;
-    }
+    let exited_at = stamp_exited(session);
     let (code, signal) = match status {
         Some(status) => {
             let exit = TaskProcessExit::from_status(Some(status));
@@ -495,17 +496,30 @@ pub(crate) fn report_exit(core: &Core, session: &Session, status: Option<&ExitSt
         }
         None => (None, None),
     };
+    let parser = session.parser.lock();
+    if session.exit_reported.swap(true, Ordering::AcqRel) {
+        session.exited.store(true, Ordering::Release);
+        return;
+    }
+    if let Ok(mut exit) = session.exit.lock() {
+        *exit = Some(SessionExit {
+            code,
+            signal: signal.clone(),
+        });
+    }
+    session.exited.store(true, Ordering::Release);
     core.broadcast_event(&Event::Exited {
         id: session.id,
         code,
         signal,
         killed: session.killed.load(Ordering::Acquire),
     });
+    drop(parser);
     if let Some(agent) = session.agent.as_ref() {
         agent::note_exit(core, agent, status);
     }
     if let Some(exited_at) = exited_at {
-        core.reclaim_completed_tasks(exited_at);
+        core.reclaim_exited_sessions(exited_at);
     }
 }
 
@@ -611,6 +625,7 @@ pub(crate) fn attach(
         &AttachHeader {
             alternate_screen,
             shell,
+            exited: session.exit_reported.load(Ordering::Acquire),
         },
         &replay,
     )?;
@@ -742,6 +757,12 @@ pub(crate) fn task_output(
 }
 
 pub(crate) fn kill(core: &Core, session: &Session) {
+    // A terminal kept after its process ended has nothing left to signal, and
+    // its pid may belong to someone else by now.
+    if !session.is_task() && !session.is_running() {
+        session.stop_reader.notify_one();
+        return;
+    }
     session.killed.store(true, Ordering::Release);
     if let Some(agent) = session.agent.as_ref() {
         agent.silence();
@@ -750,11 +771,11 @@ pub(crate) fn kill(core: &Core, session: &Session) {
         Ok(mut child) => {
             let force_task_tree = sikemux_pty::task::task_process_needs_force_backstop(
                 session.is_task(),
-                session.task_exited_at_ms.load(Ordering::Acquire),
+                session.exited_at_ms.load(Ordering::Acquire),
             );
             let status =
                 sikemux_pty::process::terminate_and_reap_child(&mut child, force_task_tree);
-            stamp_task_exited(session);
+            stamp_exited(session);
             status
         }
         Err(_) => None,
@@ -773,7 +794,7 @@ pub(crate) fn signal_for_drain(session: &Session) {
     if let Ok(child) = session.child.lock() {
         if sikemux_pty::task::should_signal_process_on_drain(
             session.is_task(),
-            session.task_exited_at_ms.load(Ordering::Acquire),
+            session.exited_at_ms.load(Ordering::Acquire),
         ) {
             if let Some(pid) = child.process_id() {
                 sikemux_pty::process::terminate_process_tree(pid, false);
@@ -789,7 +810,7 @@ pub(crate) fn finish_drain(core: &Core, session: &Session) {
     let status = match session.child.lock() {
         Ok(mut child) => {
             let is_task = session.is_task();
-            let exited_at = session.task_exited_at_ms.load(Ordering::Acquire);
+            let exited_at = session.exited_at_ms.load(Ordering::Acquire);
             let status = if !should_signal_process_on_drain(is_task, exited_at) {
                 child.try_wait().ok().flatten()
             } else if task_process_needs_force_backstop(is_task, exited_at) {
@@ -807,7 +828,7 @@ pub(crate) fn finish_drain(core: &Core, session: &Session) {
                 let pid = child_process_id(&mut child);
                 kill_and_reap_child(&mut child, pid)
             };
-            stamp_task_exited(session);
+            stamp_exited(session);
             status
         }
         Err(_) => None,

@@ -12,8 +12,8 @@ use std::time::{Duration, Instant};
 use sikemux_core::client::{ensure_running, probe, ClientEvent, CoreClient, EventSink, Reply};
 use sikemux_core::protocol::{
     encode_control, read_frame_sync, AgentStateEvent, BuildIdentity, ClientMessage, Event,
-    LaunchIdentity, Request, Response, ServerMessage, SessionId, SpawnTarget, TerminalSpawn,
-    PROTOCOL, PROTOCOL_VERSION,
+    LaunchIdentity, Request, Response, ServerMessage, SessionExit, SessionId, SpawnTarget,
+    TerminalSpawn, PROTOCOL, PROTOCOL_VERSION,
 };
 use sikemux_core::server::{self, ServerConfig, ServerError};
 use sikemux_pty::launch::PtyContext;
@@ -230,6 +230,7 @@ fn task(dir: &Path, command: &str) -> SpawnTarget {
             env: HashMap::new(),
             cols: 80,
             rows: 24,
+            agent_id: Some("agent-1".into()),
         },
     }
 }
@@ -445,11 +446,6 @@ async fn exit_codes_are_reported() {
         .await
         .expect("spawn");
     assert_eq!(stream.until_exit(&client, id).await, (Some(7), false));
-    let sessions = client.list().await.expect("list");
-    assert!(
-        sessions.iter().all(|session| session.id != id),
-        "an exited terminal leaves the core"
-    );
 }
 
 #[tokio::test]
@@ -1038,4 +1034,81 @@ async fn session_ids_start_from_the_clock() {
         .as_millis() as u64;
     assert!(id > now_ms - 600_000 && id <= now_ms);
     assert!(id < 1 << 53);
+}
+
+#[tokio::test]
+async fn a_terminal_that_ends_unwatched_stays_to_show_how_it_ended() {
+    let core = start_core();
+    let (client, mut stream) = core.connect().await;
+    let id = client
+        .spawn(launch(), terminal(Some("echo farewell-$((40+2)); exit 3")))
+        .await
+        .expect("spawn");
+    let (code, killed) = stream.until_exit(&client, id).await;
+    assert_eq!((code, killed), (Some(3), false));
+
+    let (later, _stream) = core.connect().await;
+    let session = later
+        .list()
+        .await
+        .expect("list")
+        .into_iter()
+        .find(|session| session.id == id)
+        .expect("the ended terminal is kept");
+    assert!(!session.running);
+    assert_eq!(
+        session.exit,
+        Some(SessionExit {
+            code: Some(3),
+            signal: None
+        })
+    );
+    let attached = later.attach(id).await.expect("attach the ended terminal");
+    assert!(attached.exited);
+    assert!(contains(&attached.replay, "farewell-42"));
+
+    later.kill(id).await.expect("close it");
+    assert!(later.list().await.expect("list").is_empty());
+}
+
+#[tokio::test]
+async fn a_watched_terminal_leaves_when_it_ends_and_an_attach_before_the_exit_hears_it() {
+    let core = start_core();
+    let (client, mut stream) = core.connect().await;
+    let id = client.spawn(launch(), terminal(None)).await.expect("spawn");
+    let attached = client.attach(id).await.expect("attach");
+    assert!(!attached.exited);
+    client.write(id, b"exit 0\n").await.expect("write");
+    stream.until_exit(&client, id).await;
+    let deadline = Instant::now() + WAIT;
+    while !client.list().await.expect("list").is_empty() {
+        assert!(Instant::now() < deadline, "the watched terminal stayed");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+#[tokio::test]
+async fn a_task_session_says_what_it_was_started_as_and_how_it_ended() {
+    let core = start_core();
+    let (client, mut stream) = core.connect().await;
+    let dir = tempfile::tempdir().expect("task dir");
+    let id = client
+        .spawn(launch(), task(dir.path(), "exit 4"))
+        .await
+        .expect("spawn");
+    stream.until_exit(&client, id).await;
+    let session = client
+        .list()
+        .await
+        .expect("list")
+        .into_iter()
+        .find(|session| session.id == id)
+        .expect("listed");
+    let task = session.task.expect("task info");
+    assert_eq!(task.execution_id, "exec-1");
+    assert_eq!(task.terminal_key, "terminal-1");
+    assert_eq!(task.task_id, "test");
+    assert_eq!(task.command, "exit 4");
+    assert_eq!(task.agent_id.as_deref(), Some("agent-1"));
+    assert_eq!(session.exit.and_then(|exit| exit.code), Some(4));
 }
