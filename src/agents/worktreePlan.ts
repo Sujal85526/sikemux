@@ -65,31 +65,3 @@ export function cwdOutsideWorktree(worktree: AgentWorktree, agentCwd: string): s
 export function branchMergedLocally(tip: string | null, startSha: string, unmergedCommits: number): boolean {
     return !!tip && tip !== startSha && unmergedCommits === 0;
 }
-
-export type WorktreeSwitchState =
-    | { kind: "hidden" }
-    | { kind: "choosing"; on: boolean }
-    | { kind: "preparing"; step: string }
-    | { kind: "in"; branch: string; path: string }
-    | { kind: "locked" };
-
-export function worktreeSwitchState({
-    worktree,
-    isRepo,
-    started,
-    preparing,
-    on,
-}: {
-    worktree: AgentWorktree | undefined;
-    isRepo: boolean | null;
-    /** The chat has a turn or a saved session to come back to. */
-    started: boolean;
-    preparing: string | null;
-    on: boolean;
-}): WorktreeSwitchState {
-    if (preparing !== null) return { kind: "preparing", step: preparing };
-    if (worktree) return { kind: "in", branch: worktree.branch, path: worktree.path };
-    if (!isRepo) return { kind: "hidden" };
-    if (started) return { kind: "locked" };
-    return { kind: "choosing", on };
-}

@@ -26,9 +26,11 @@ import { useMessageArrival } from "./useMessageArrival";
 import { useAcpSession } from "./useAcpSession";
 import { useSavedUsage } from "./useSavedUsage";
 import { usePromptQueue } from "./usePromptQueue";
+import { useChatWorktree } from "./useChatWorktree";
 import { BOTTOM_SLACK, useStickToBottom } from "./useStickToBottom";
 
 const ChatFind = lazy(() => import("./ChatFind"));
+const WorktreeNote = lazy(() => import("./ChatWorktree").then(({ WorktreeNote }) => ({ default: WorktreeNote })));
 
 export function AgentChatPane({
     agent,
@@ -138,6 +140,16 @@ export function AgentChatPane({
         commands: state.commands,
         steerable,
         dispatch,
+        onError: setComposerError,
+    });
+    const worktree = useChatWorktree({
+        agent,
+        cwd,
+        visible,
+        started: state.messages.length > 0 || Boolean(agent.resumeId),
+        connection: state.connection,
+        running: state.running,
+        send,
         onError: setComposerError,
     });
     const sentHistory = useMemo(
@@ -279,6 +291,11 @@ export function AgentChatPane({
                         onKeyDown={noteGesture}
                         onScroll={onScroll}>
                         <div className="chat-scroll-content" ref={scrollContentRef}>
+                            {(worktree.step !== null || agent.worktree) && (
+                                <Suspense fallback={null}>
+                                    <WorktreeNote step={worktree.step} worktree={agent.worktree} home={home} />
+                                </Suspense>
+                            )}
                             {welcoming && <ChatWelcome cwd={cwd} agentType={agent.type} />}
                             {displayState.messages.length === 0 && !welcoming && (
                                 <div className={`chat-connection-state ${displayState.connection}`} role="status">
@@ -387,7 +404,7 @@ export function AgentChatPane({
                             placeholder={composerPlaceholder}
                             error={composerError}
                             onError={setComposerError}
-                            onSend={send}
+                            onSend={worktree.sendMessage}
                             onSteerQueued={() => {
                                 if (queued.length > 0) void steer(queued);
                             }}
@@ -396,6 +413,7 @@ export function AgentChatPane({
                             usage={state.usage}
                             onConfig={changeConfig}
                             history={sentHistory}
+                            worktree={worktree}
                         />
                     </div>
                     <div className="chat-drop-target" aria-hidden="true">

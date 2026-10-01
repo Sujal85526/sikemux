@@ -6,6 +6,7 @@ import { ChatComposer } from "./ChatComposer";
 import { PathRootsProvider } from "./FileRef";
 import type { TrackedList } from "../codehost/tracked";
 import { deliverToAgent } from "../agents/agentInbox";
+import type { WorktreeSwitchState } from "./worktreeSwitch";
 
 const repo = { provider: "github", owner: "o", name: "r", account: null };
 
@@ -37,7 +38,7 @@ const agent: Agent = {
     launchState: "live",
 };
 
-function renderComposer() {
+function renderComposer(worktree?: { state: WorktreeSwitchState; toggle: () => void }) {
     render(
         <PathRootsProvider cwd="/repo">
             <ChatComposer
@@ -64,6 +65,7 @@ function renderComposer() {
                 usage={null}
                 onConfig={() => {}}
                 history={[]}
+                worktree={worktree}
             />
         </PathRootsProvider>,
     );
@@ -188,5 +190,45 @@ describe("ChatComposer deliveries", () => {
         fireEvent.keyDown(editor, { key: "Enter" });
         expect(mocks.onSend).toHaveBeenCalledWith({ text: "", paths: [], context: [issue] }, false);
         expect(mocks.load).not.toHaveBeenCalled();
+    });
+});
+
+describe("ChatComposer Worktree switch", () => {
+    const toggle = vi.fn();
+
+    it("is absent outside a git repository", () => {
+        renderComposer({ state: { kind: "hidden" }, toggle });
+        expect(screen.queryByRole("button", { name: "worktree" })).not.toBeInTheDocument();
+    });
+
+    it("toggles while a fresh chat is choosing", async () => {
+        renderComposer({ state: { kind: "choosing", on: false }, toggle });
+        const button = await screen.findByRole("button", { name: "worktree" });
+        expect(button).toHaveAttribute("aria-pressed", "false");
+        fireEvent.click(button);
+        expect(toggle).toHaveBeenCalledTimes(1);
+    });
+
+    it("locks once the chat has started, and says why", async () => {
+        renderComposer({ state: { kind: "locked" }, toggle });
+        const button = await screen.findByRole("button", { name: "worktree" });
+        expect(button).toBeDisabled();
+        expect(button.title).toMatch(/before its first message/);
+    });
+
+    it("names the branch of an agent already in a worktree", async () => {
+        renderComposer({ state: { kind: "in", branch: "sikemux/fix-pty", path: "/code/app.worktrees/fix-pty" }, toggle });
+        const button = await screen.findByRole("button", { name: "sikemux/fix-pty" });
+        expect(button).toBeDisabled();
+        expect(button).toHaveAttribute("aria-pressed", "true");
+        expect(button.title).toContain("/code/app.worktrees/fix-pty");
+    });
+
+    it("holds the message back while the worktree is being set up", async () => {
+        const editor = renderComposer({ state: { kind: "preparing", step: "Running Install" }, toggle });
+        type(editor, "hello");
+        fireEvent.keyDown(editor, { key: "Enter" });
+        expect(mocks.onSend).not.toHaveBeenCalled();
+        expect((await screen.findByRole("button", { name: "worktree" })).title).toBe("Running Install…");
     });
 });

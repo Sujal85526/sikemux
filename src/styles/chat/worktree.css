@@ -1,0 +1,44 @@
+.worktree-toggle.on {
+    color: var(--ink);
+}
+
+/* Locked on: it still says where the chat works, so it does not fade out. */
+.worktree-toggle.on:disabled {
+    opacity: 1;
+}
+
+.worktree-branch {
+    max-width: 180px;
+    overflow: hidden;
+    font-family: var(--mono);
+    letter-spacing: 0;
+    text-overflow: ellipsis;
+    text-transform: none;
+    white-space: nowrap;
+}
+
+/* Lines up with the text in a message, like the activity line below it. */
+.chat-worktree-note {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: min(calc(100% - 44px), 756px);
+    min-width: 0;
+    margin-inline: auto;
+    padding-top: 10px;
+    color: var(--ink-faint);
+    font-size: var(--text-2xs);
+}
+
+.chat-worktree-note code {
+    color: var(--ink-dim);
+    font-family: var(--mono);
+}
+
+.chat-worktree-path {
+    min-width: 0;
+    overflow: hidden;
+    font-family: var(--mono);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

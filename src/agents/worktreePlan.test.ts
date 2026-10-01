@@ -6,7 +6,6 @@ import {
     cwdOutsideWorktree,
     pickWorktreeTarget,
     worktreeCandidates,
-    worktreeSwitchState,
     worktreesFolder,
 } from "./worktreePlan";
 
@@ -64,26 +63,5 @@ describe("branchMergedLocally", () => {
         expect(branchMergedLocally("def", "abc", 2)).toBe(false);
         expect(branchMergedLocally("def", "abc", 0)).toBe(true);
         expect(branchMergedLocally(null, "abc", 0)).toBe(false);
-    });
-});
-
-describe("worktreeSwitchState", () => {
-    const base = { worktree: undefined, isRepo: true, started: false, preparing: null, on: false };
-
-    it("offers the choice on a fresh chat in a repository", () => {
-        expect(worktreeSwitchState(base)).toEqual({ kind: "choosing", on: false });
-        expect(worktreeSwitchState({ ...base, on: true })).toEqual({ kind: "choosing", on: true });
-    });
-
-    it("hides outside a repository and locks once the chat has started", () => {
-        expect(worktreeSwitchState({ ...base, isRepo: false })).toEqual({ kind: "hidden" });
-        expect(worktreeSwitchState({ ...base, isRepo: null })).toEqual({ kind: "hidden" });
-        expect(worktreeSwitchState({ ...base, started: true })).toEqual({ kind: "locked" });
-    });
-
-    it("reports the setup step, then the branch the agent works on", () => {
-        expect(worktreeSwitchState({ ...base, on: true, preparing: "Creating worktree" })).toEqual({ kind: "preparing", step: "Creating worktree" });
-        expect(worktreeSwitchState({ ...base, worktree, preparing: "Running Install" })).toEqual({ kind: "preparing", step: "Running Install" });
-        expect(worktreeSwitchState({ ...base, started: true, worktree })).toEqual({ kind: "in", branch: "sikemux/fix-pty", path: worktree.path });
     });
 });

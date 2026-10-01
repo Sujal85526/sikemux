@@ -16,6 +16,7 @@ import { filesListR } from "../state/resources.defs";
 import { usePathRoots } from "./FileRef";
 import { useImagePreview } from "./imagePreview";
 import { YoloToggle } from "./YoloToggle";
+import type { WorktreeSwitchState } from "./worktreeSwitch";
 import { DictateButton } from "./DictateButton";
 import { ContextMeter } from "./ContextMeter";
 import { imagesInClipboard, savePastedClipboard } from "./pasteImage";
@@ -119,6 +120,7 @@ function readContext(item: ComposerContext): Promise<PromptContext> {
 }
 
 const TrackedSource = lazy(() => import("./TrackedSource"));
+const WorktreeToggle = lazy(() => import("./ChatWorktree").then(({ WorktreeToggle }) => ({ default: WorktreeToggle })));
 
 function ComposerContextChip({ item, onRemove }: { item: ComposerContext; onRemove: () => void }) {
     const chip = contextChip(item);
@@ -166,6 +168,7 @@ export function ChatComposer({
     usage,
     onConfig,
     history,
+    worktree,
 }: {
     agent: Agent;
     profile?: ProviderProfile;
@@ -191,6 +194,7 @@ export function ChatComposer({
     usage: ContextUsage | null;
     onConfig: (config: SessionConfig, value: string) => void;
     history: readonly string[];
+    worktree?: { state: WorktreeSwitchState; toggle: () => void };
 }) {
     const [draft, setDraft] = useState("");
     const [historyPosition, setHistoryPosition] = useState<HistoryPosition | null>(null);
@@ -424,7 +428,7 @@ export function ChatComposer({
     const menuRows = menu?.rows ?? [];
     const selected = Math.min(menuSelection, Math.max(0, menuRows.length - 1));
 
-    const blocked = changingConfig || changingPermissions || !permissionApplied;
+    const blocked = changingConfig || changingPermissions || !permissionApplied || worktree?.state.kind === "preparing";
     const drafted = Boolean(draft.trim()) || attachments.length > 0 || contexts.length > 0;
 
     // Send and stop are one button: when it changes job, the new icon turns in rather than swapping in place.
@@ -609,6 +613,11 @@ export function ChatComposer({
                             connection !== "ready" || changingConfig || running || awaitingPermission || changingPermissions || !permissionApplied
                         }
                     />
+                )}
+                {worktree && worktree.state.kind !== "hidden" && (
+                    <Suspense fallback={null}>
+                        <WorktreeToggle state={worktree.state} onToggle={worktree.toggle} />
+                    </Suspense>
                 )}
                 <ComposerPickers
                     agent={agent}
