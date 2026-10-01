@@ -813,7 +813,7 @@ async fn run_connection(
             )?
         }
     };
-    let agent = AcpAgent::new(config);
+    let agent = AcpAgent::new(config.env(crate::ports::AGENT_ID_ENV, agent_id.clone()));
     let approving = Arc::new(AtomicBool::new(approves_for_user(&permission_mode)));
     let permission_approving = approving.clone();
     let event_app = app.clone();

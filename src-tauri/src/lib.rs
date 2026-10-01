@@ -28,6 +28,7 @@ mod lsp;
 mod markdown;
 pub mod observability;
 mod plugins;
+mod ports;
 mod preview;
 mod pty;
 mod release_credits;
@@ -247,6 +248,7 @@ pub fn run() {
             pty::io::pty_resize,
             pty::attach::pty_reset_modes,
             pty::process::pty_kill,
+            ports::listening_ports,
             pty::agent_state::agent_detection_explain,
             pty::agent_state::agent_detection_manifests,
             pty::agent_state::agent_detection_reload,

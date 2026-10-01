@@ -14,7 +14,7 @@ use crate::observability::{global_observability, Metadata, SpanOutcome};
 use super::launch::{configure_pty_environment, PtyContext};
 use super::shell::configure_task_command;
 use super::spawn::{spawn_prepared_pty, PreparedPtyLaunch};
-use super::{now_ms, validate_pty_dimensions, Pty, PtyManager};
+use super::{now_ms, validate_pty_dimensions, Pty, PtyManager, PtyOwner};
 
 const MAX_TASK_EXECUTION_ID_BYTES: usize = 8 * 1024;
 const MAX_TASK_TERMINAL_KEY_BYTES: usize = 8 * 1024;
@@ -389,6 +389,11 @@ pub async fn task_spawn(
         initial_prompt_submitted: false,
         shell_integration: false,
     };
+    let owner = PtyOwner {
+        project: context.project.clone(),
+        task_execution_id: Some(execution_id.clone()),
+        ..PtyOwner::default()
+    };
     let cli_executable = crate::cli_server::cli_executable_path();
     let cli_endpoint = crate::cli_server::cli_endpoint_path();
     configure_pty_environment(
@@ -422,6 +427,7 @@ pub async fn task_spawn(
             cols,
             rows,
             command: task_command,
+            owner,
             context: None,
             shell_integration: None,
             task_exit: Some(TaskExitReporter::new(on_exit)),

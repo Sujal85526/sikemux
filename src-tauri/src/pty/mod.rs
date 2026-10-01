@@ -112,6 +112,8 @@ struct Pty {
     #[cfg(windows)]
     writer: Mutex<Box<dyn Write + Send>>,
     child: Mutex<Box<dyn Child + Send + Sync>>,
+    pid: Option<u32>,
+    owner: PtyOwner,
     /// Tracks the current screen grid + scrollback. Always up to date,
     /// even when no one's subscribed — that's the whole point.
     parser: Mutex<SemanticParser>,
@@ -395,6 +397,54 @@ impl PtyManager {
             idle_agents: count_state(ACTIVITY_IDLE),
             unknown_agents: count_state(ACTIVITY_UNKNOWN),
         }
+    }
+}
+
+/// What a PTY was opened for, so a process found under it can be traced back
+/// to a terminal pane, an agent or a task.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PtyOwner {
+    pub project: Option<String>,
+    pub pane_id: Option<String>,
+    pub agent_id: Option<String>,
+    pub task_execution_id: Option<String>,
+}
+
+impl PtyOwner {
+    fn from_context(context: Option<&launch::PtyContext>) -> Self {
+        let Some(context) = context else {
+            return Self::default();
+        };
+        let present = |value: &Option<String>| value.clone().filter(|value| !value.is_empty());
+        Self {
+            project: present(&context.project),
+            pane_id: present(&context.pane_id),
+            agent_id: present(&context.agent_id),
+            task_execution_id: None,
+        }
+    }
+}
+
+pub(crate) struct PtyProcess {
+    pub pid: u32,
+    pub pty_id: u32,
+    pub owner: PtyOwner,
+}
+
+impl PtyManager {
+    pub(crate) fn live_processes(&self) -> Vec<PtyProcess> {
+        self.ptys
+            .iter()
+            .filter(|entry| entry.task_exited_at_ms.load(Ordering::Acquire) == 0)
+            .filter_map(|entry| {
+                Some(PtyProcess {
+                    pid: entry.pid?,
+                    pty_id: entry.id,
+                    owner: entry.owner.clone(),
+                })
+            })
+            .collect()
     }
 }
 

@@ -19,6 +19,7 @@ export const IPC_COMMANDS = [
     "pty_resize",
     "pty_reset_modes",
     "pty_kill",
+    "listening_ports",
     "agent_detection_explain",
     "agent_detection_manifests",
     "agent_detection_reload",

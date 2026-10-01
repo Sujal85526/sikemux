@@ -36,7 +36,7 @@ use super::shell::{shell_wants_login_flag, startup_bootstrap};
 use super::sweeper::ensure_sweeper;
 use super::task::{reclaim_completed_task_ptys, stamp_task_process_exited, TaskExitReporter};
 use super::{
-    now_ms, pty_err, pty_size, validate_pty_dimensions, Pty, PtyManager, ACTIVITY_IDLE,
+    now_ms, pty_err, pty_size, validate_pty_dimensions, Pty, PtyManager, PtyOwner, ACTIVITY_IDLE,
     ACTIVITY_UNKNOWN, ACTIVITY_WORKING, MAX_PTY_ID_COLLISION_PROBES, NEXT_PTY_ID, OUTPUT_READS,
     PARSER_SCROLLBACK,
 };
@@ -202,6 +202,7 @@ pub async fn pty_spawn(
             cols,
             rows,
             command: cmd,
+            owner: PtyOwner::from_context(context.as_ref()),
             context,
             shell_integration,
             task_exit: None,
@@ -226,6 +227,7 @@ pub(super) struct PreparedPtyLaunch {
     pub(super) cols: u16,
     pub(super) rows: u16,
     pub(super) command: CommandBuilder,
+    pub(super) owner: PtyOwner,
     pub(super) context: Option<PtyContext>,
     pub(super) shell_integration: Option<ShellLaunchIntegration>,
     pub(super) task_exit: Option<TaskExitReporter>,
@@ -251,6 +253,7 @@ pub(super) async fn spawn_prepared_pty(
         cols,
         rows,
         command,
+        owner,
         context,
         shell_integration,
         task_exit,
@@ -258,6 +261,7 @@ pub(super) async fn spawn_prepared_pty(
     let shell_metadata_enabled = shell_integration.is_some();
 
     let child = pair.slave.spawn_command(command).map_err(pty_err)?;
+    let pid = child.process_id();
     let child = SpawnedChildGuard::new(child);
     drop(pair.slave);
 
@@ -337,6 +341,8 @@ pub(super) async fn spawn_prepared_pty(
         #[cfg(windows)]
         writer: Mutex::new(writer),
         child: Mutex::new(child.into_inner()),
+        pid,
+        owner,
         parser: Mutex::new(semantic_parser_with_shell(
             rows,
             cols,

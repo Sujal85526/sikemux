@@ -36,6 +36,7 @@
     "allow-pty-resize",
     "allow-pty-reset-modes",
     "allow-pty-kill",
+    "allow-listening-ports",
     "allow-agent-detection-explain",
     "allow-agent-detection-manifests",
     "allow-agent-detection-reload",
