@@ -480,6 +480,9 @@ async fn prepare(
     };
     program
         .env
+        .extend(crate::model_providers::environment(provider).await);
+    program
+        .env
         .insert(crate::ports::AGENT_ID_ENV.into(), agent_id.to_owned());
     Ok(program)
 }
@@ -502,7 +505,7 @@ pub(crate) async fn launcher(app: &AppHandle, spec: LauncherSpec) -> Result<Chat
     let executable =
         crate::agents::resolve_agent_executable(&spec.provider, spec.executable_path.as_deref())
             .await?;
-    let program = match native::arguments(&spec.provider) {
+    let mut program = match native::arguments(&spec.provider) {
         Some(arguments) => native_program(&executable, arguments, &spec.environment_keys),
         None => {
             let adapter_spec = adapter_spec(&spec.provider)?;
@@ -522,6 +525,9 @@ pub(crate) async fn launcher(app: &AppHandle, spec: LauncherSpec) -> Result<Chat
             )?
         }
     };
+    program
+        .env
+        .extend(crate::model_providers::environment(&spec.provider).await);
     Ok(ChatLauncher {
         id: spec.id,
         provider: spec.provider,

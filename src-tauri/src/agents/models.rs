@@ -133,6 +133,7 @@ pub(super) async fn run_model_catalog_executable_without_env(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
     apply_process_config(&mut command, agent, config_path);
+    command.envs(crate::model_providers::environment(agent).await);
     let mut child = command
         .spawn()
         .map_err(|_| format!("Could not start {agent} model lookup"))?;

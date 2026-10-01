@@ -80,7 +80,7 @@ pub async fn pty_spawn(
     // An agent can only reach the browser tools if its own host is told they
     // exist, and every host is told differently (see browser::agents). A host
     // that cannot be told still launches, without them.
-    let env: Vec<(String, String)> = match (direct_command.as_mut(), context.as_ref()) {
+    let mut env: Vec<(String, String)> = match (direct_command.as_mut(), context.as_ref()) {
         (Some(command), Some(context)) => {
             match (context.agent_id.as_deref(), context.agent_type.as_deref()) {
                 (Some(agent_id), Some(agent_type))
@@ -102,6 +102,14 @@ pub async fn pty_spawn(
         }
         _ => Default::default(),
     };
+    if let (Some(_), Some(agent_type)) = (
+        direct_command.as_ref(),
+        context
+            .as_ref()
+            .and_then(|context| context.agent_type.as_deref()),
+    ) {
+        env.extend(crate::model_providers::environment(agent_type).await);
+    }
     let client = manager.client().await?;
     let id = client
         .spawn(

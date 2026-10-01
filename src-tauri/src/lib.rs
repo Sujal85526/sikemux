@@ -24,6 +24,7 @@ mod harness;
 mod login_item;
 mod lsp;
 mod markdown;
+mod model_providers;
 pub mod observability;
 mod plugins;
 mod ports;
@@ -196,6 +197,7 @@ pub fn run() {
         })
         .setup(|_app| {
             _app.manage(UiWatchdogState::start()?);
+            model_providers::init(_app.path().app_data_dir()?.join("model-providers.json"));
             _app.manage(PluginHost::with_builtins(
                 &_app.path().app_data_dir()?.join("plugins"),
                 &_app.package_info().version,
@@ -406,6 +408,9 @@ pub fn run() {
             files::list_project_files,
             files::list_project_files_snapshot,
             settings::scan_project_roots,
+            model_providers::model_providers,
+            model_providers::model_provider_connect,
+            model_providers::model_provider_disconnect,
             settings::expand_path,
             settings::is_directory,
             wallpaper::wallpaper_image,

@@ -84,6 +84,7 @@ sikemux-plugin-bruno = { path = "plugins/bruno", optional = true }
 sikemux-plugin-github = { path = "plugins/github", optional = true }
 sikemux-plugin-rundeck = { path = "plugins/rundeck", optional = true }
 sikemux-plugin-signoz = { path = "plugins/signoz", optional = true }
+sikemux-keychain = { path = "crates/sikemux-keychain" }
 sikemux-process = { path = "crates/sikemux-process" }
 sikemux-markdown = { path = "crates/sikemux-markdown" }
 sikemux-pty = { path = "crates/sikemux-pty" }
