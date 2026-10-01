@@ -325,6 +325,17 @@ bundles them. Add a new file to the bundling file, not to `styles.css`:
 Read [DESIGN.md](../../DESIGN.md) before changing anything visual, and the UI rules in
 [AGENTS.md](../../AGENTS.md).
 
+## Mobile app (`mobile/`)
+
+The phone app pairs with a Mac's core and drives it over iroh (see
+[The background core](#the-background-core)). It is an Expo app (`mobile/app`) that calls
+the core's own client through `@sikemux/native` (`mobile/native`), a Turbo Module that
+`uniffi-bindgen-react-native` generates from `src-tauri/crates/sikemux-mobile`. That crate
+wraps `sikemux-core`'s `client`, `pairing` and `remote` modules: requests and answers cross
+as the core's protocol JSON, terminal bytes as bytes, and the device's key stays in the
+phone's secure store. `mobile/` is a pnpm workspace of its own so the desktop build never
+installs it. [ADR 0008](./0008-mobile-app-expo-and-rust-client.md) records the choices.
+
 ## Quality ratchets
 
 These limits only move in one direction. All of them run in `pnpm check` and the

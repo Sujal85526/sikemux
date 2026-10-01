@@ -20,6 +20,19 @@
 - Do not leave random markdown files in the codebase that are meant to be some way to deliver information to me. If you want to write a markdown file write it in a temporary file, and give me the path and chat and I can read it
 - Never write code that is explicitly backwards compatible. Systems should handle backwards compatibility (like migrations), not logic. If there is some logic that needs to be written otherwise it would appear it would break older users, you MUST make the assumption that no users have ran that code yet and its unreleased, so it would not make sense to consider the side effects that code would produce. This is a safe assumption because the maintainers of this codebase always ensure code that gets shipped is compatbile with the systems that allow for us to not have to explicitly hardcode backwards compatibility
 
+## Mobile app
+
+- The phone app is in `mobile/` (Expo, `mobile/app`) with the core's Rust client bridged
+  in `mobile/native` from `src-tauri/crates/sikemux-mobile`. `mobile/` is its own pnpm
+  workspace: never add it to the root install, scripts or checks.
+- The phone and the core share `sikemux-core`'s protocol. A protocol change must keep
+  `sikemux-mobile` building, and bumps `PROTOCOL_VERSION` once anything already released
+  speaks the old shape.
+- Phone builds need rustup's Rust first on `PATH`; Homebrew's Rust ignores
+  `rust-toolchain.toml` and has no phone targets.
+- The bindings `uniffi-bindgen-react-native` generates are build output; do not commit or
+  hand-edit them.
+
 ## Website
 
 - sikemux.com is a separate Astro repo, `nodelike/sikemux-front`, checked out at
