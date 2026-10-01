@@ -99,6 +99,19 @@ export function newWindow(): void {
     });
 }
 
+export const MAX_TAB_NAME_LENGTH = 72;
+
+/** Names a tab, or with an empty name lets it go back to the title its terminal reports. */
+export function renameWindow(id: string, name: string): void {
+    mutate((d) => {
+        const win = d.windows[id];
+        if (!win) return;
+        const customName = name.trim().slice(0, MAX_TAB_NAME_LENGTH);
+        if (customName) win.customName = customName;
+        else delete win.customName;
+    });
+}
+
 export function duplicateWindow(id: string): void {
     mutate((d) => {
         const source = d.windows[id];
@@ -110,6 +123,7 @@ export function duplicateWindow(id: string): void {
             ...source,
             id: newId("win"),
             name: `${source.name} copy`,
+            ...(source.customName ? { customName: `${source.customName} copy` } : {}),
             root,
             activePaneId: activePane.id,
             fixed: false,

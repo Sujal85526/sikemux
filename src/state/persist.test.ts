@@ -244,6 +244,20 @@ describe("frontend persistence", () => {
         expect(getState().activeSpaceId).toBe(work);
     });
 
+    it("keeps the name given to a terminal tab", async () => {
+        const state = getState();
+        const id = state.windowsBySession[state.activeSessionId].find((winId) => state.windows[winId].role === "term")!;
+        cmd.renameWindow(id, "api server");
+        invoke.mockResolvedValue(undefined);
+
+        await expect(flushPersist()).resolves.toBe(true);
+        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
+        cmd.renameWindow(id, "");
+        applyHydrate(JSON.stringify(saved));
+
+        expect(getState().windows[id].customName).toBe("api server");
+    });
+
     it("persists rail widths and pulls stored ones back inside their bounds", async () => {
         setState({ sideRailWidth: 320, agentRailWidth: 400 });
         invoke.mockResolvedValue(undefined);

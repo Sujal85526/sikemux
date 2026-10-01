@@ -123,6 +123,7 @@ export function validatePersistedWindow(
     if (!boundedString(value.activePaneId, limits.maxStringLength)) return null;
     if (value.transient !== undefined) return null;
     if (value.fixed !== undefined && typeof value.fixed !== "boolean") return null;
+    if (value.customName !== undefined && !boundedString(value.customName, limits.maxStringLength)) return null;
     const layout = validatePersistedLayout(value.root, limits);
     if (!layout.ok || !layout.value.paneIds.includes(value.activePaneId)) return null;
     return { window: value as unknown as Window, layout: layout.value };

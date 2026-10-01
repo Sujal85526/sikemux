@@ -49,6 +49,8 @@ export interface Window {
     root: LayoutNode;
     activePaneId: string;
     fixed?: boolean;
+    /** The name the person gave this tab, shown instead of the title its terminal reports. */
+    customName?: string;
     /** Runtime-only windows are deliberately omitted from persistence. */
     transient?: true;
 }
