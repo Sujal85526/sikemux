@@ -29,10 +29,8 @@ const context = await browser.newContext({
   deviceScaleFactor: 2,
   colorScheme: "dark",
 });
-const page = await context.newPage();
-await page.clock.setFixedTime(new Date("2026-09-26T09:41:00"));
-
-await page.exposeFunction("showcaseDownload", async () => {
+await context.clock.setFixedTime(new Date("2026-09-26T09:41:00"));
+await context.exposeBinding("showcaseDownload", async ({ page }) => {
   const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-");
   const name = `sikemux-${stamp}.png`;
   await page.evaluate(() =>
@@ -46,6 +44,7 @@ await page.exposeFunction("showcaseDownload", async () => {
   return name;
 });
 
+const page = await context.newPage();
 await page.goto(
   `http://localhost:${server.config.server.port}/showcase/twitter.html`,
 );
