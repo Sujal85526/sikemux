@@ -131,10 +131,12 @@ const budgets = [
     // chunk of its own, fetched only once a block that can use it settles.
     // Tool calls also carry what they printed now, opened under the row, and
     // the transcript animates new messages and tool runs opening and closing.
+    // The composer's @ and # pickers, context chips, and resuming a chat whose
+    // agent died live here too; the code host part loads only once # is typed.
     label: "ACP chat lazy chunk",
     pattern: /^AgentSurface-.*\.js$/,
-    raw: 95_000,
-    gzip: 30_000,
+    raw: 105_000,
+    gzip: 34_000,
   },
   {
     // Shiki, its JavaScript regex engine and vscode-textmate, with no
@@ -161,8 +163,8 @@ const budgets = [
     pattern: new RegExp(
       `^(?!(?:highlighter|paper-shaders|xterm-webgl|${diffLanguageChunkNames.join("|")})-).*\\.js$`,
     ),
-    raw: 3_380_000,
-    gzip: 1_085_000,
+    raw: 3_400_000,
+    gzip: 1_095_000,
   },
   {
     label: "opt-in shader renderer",
@@ -179,14 +181,14 @@ const budgets = [
   {
     // The chat pane has since grown rows the budget predates: subagent
     // transcripts, background tasks, queued messages, the reconnect states,
-    // code block copy buttons, the composer microphone, and a tool call's
-    // output. It is one lazily loaded sheet behind an agent pane, so this buys
+    // code block copy buttons, the composer microphone, a tool call's output,
+    // context chips and the resuming states. It is one lazily loaded sheet behind an agent pane, so this buys
     // those rows room without touching what the app loads at startup.
     // Lightning CSS, Vite's minifier, keeps the spaces inside color-mix().
     label: "ACP chat CSS",
     pattern: /^AgentSurface-.*\.css$/,
-    raw: 45_000,
-    gzip: 8_400,
+    raw: 46_000,
+    gzip: 8_600,
   },
   {
     // Includes the JetBrainsMono Nerd Font @font-face rules: a base face per
