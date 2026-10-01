@@ -135,9 +135,10 @@ const budgets = [
     // agent died live here too; the code host part loads only once # is typed.
     // So does the Worktree switch's state; its button, the worktree line in the
     // transcript, the header's pull request badge and the git work load apart.
+    // The project strip over a new chat's composer loads apart too.
     label: "ACP chat lazy chunk",
     pattern: /^AgentSurface-.*\.js$/,
-    raw: 108_500,
+    raw: 109_000,
     gzip: 35_000,
   },
   {
