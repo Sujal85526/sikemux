@@ -3,8 +3,11 @@
 Releases publish from the **Release** GitHub Actions workflow, never from a laptop. Commit the version bump and a `RELEASE_NOTES.md` headed `# Sikemux v<version>`, then push the matching tag. Tag a commit already on `main` for a nightly, or on its `release/<major.minor>` branch for stable. Only the owner can push a `v*` tag, so only the owner can start a release:
 
 ```bash
+make preflight
 git tag v0.4.1 && git push origin v0.4.1
 ```
+
+`make preflight` runs the two checks the pre-push hook does not: it launches the real app the way CI's desktop E2E job does, and builds the DMG against its size limit. Either failing would otherwise surface only in the Release run.
 
 A run is titled with its tag, so the approval names what it will publish, and it stops if the tag disagrees with `package.json`. The workflow reads the version from `package.json`, runs the full CI suite, then builds, verifies, and publishes with `scripts/release.sh`. A prerelease version goes to the nightly channel and any other version to stable. Only one release runs at a time, and each run keeps its built artifacts.
 

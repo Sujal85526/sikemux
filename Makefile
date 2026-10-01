@@ -1,4 +1,7 @@
-.PHONY: dev showcase build run icons format format-check lint test test-coverage tsc rust-fmt rust-clippy rust-test rust-audit shell-lint release-check hooks prepush check ci clean clean-dev
+.PHONY: dev showcase build e2e preflight run icons format format-check lint test test-coverage tsc rust-fmt rust-clippy rust-test rust-audit shell-lint release-check hooks prepush check ci clean clean-dev
+
+# Homebrew's Rust ignores rust-toolchain.toml, so rustup's proxies must come first.
+export PATH := $(HOME)/.cargo/bin:$(PATH)
 
 icons:
 	./scripts/icons.sh
@@ -14,6 +17,13 @@ showcase:
 # supported release machine).
 build: icons
 	./scripts/build-mac.sh
+
+# Launches the real app the way CI's desktop E2E job does.
+e2e:
+	pnpm test:e2e:desktop --browser
+
+# Before tagging a release: the checks only the Release workflow would otherwise reach.
+preflight: e2e build
 
 run:
 	./src-tauri/target/release/sikemux
