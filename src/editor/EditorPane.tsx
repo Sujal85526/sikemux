@@ -1155,6 +1155,7 @@ export function EditorPane({
                         controller={diagnostics}
                         visible={visible}
                         onNavigate={(path, line, character) => nav.push({ path, line, character })}
+                        paneId={paneId}
                     />
                 )}
                 {tabs.length === 0 && !bare && (

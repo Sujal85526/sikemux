@@ -1,6 +1,7 @@
 import type { AgentInfo } from "../api/agents";
 import type { StoreState } from "../state/store";
-import { activeAgentId, agentIdsOf } from "../state/selectors";
+import { collectPanes } from "../state/layout";
+import { activeAgentId, agentIdsOf, ownerSessionId } from "../state/selectors";
 import type { AgentType } from "../state/types";
 import type { AgentTarget } from "./sendToAgent";
 
@@ -48,4 +49,10 @@ export function codeFence(text: string, language = ""): string {
     const longest = Math.max(0, ...[...text.matchAll(/`+/g)].map((run) => run[0].length));
     const fence = "`".repeat(Math.max(3, longest + 1));
     return `${fence}${language}\n${text.replace(/\n+$/, "")}\n${fence}`;
+}
+
+/** The session whose windows hold this pane. */
+export function sessionOfPane(state: Pick<StoreState, "sessionOrder" | "windowsBySession" | "windows">, paneId: string): string | null {
+    const win = Object.values(state.windows).find((candidate) => collectPanes(candidate.root).some((pane) => pane.id === paneId));
+    return win ? ownerSessionId(state, win.id) : null;
 }

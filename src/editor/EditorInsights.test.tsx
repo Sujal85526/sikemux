@@ -4,6 +4,8 @@ import { lsp } from "../api/lsp";
 import { DiagnosticsController } from "../workbench/diagnosticsController";
 import { EditorInsights } from "./EditorInsights";
 
+vi.mock("../api/agents", () => ({ agentApi: { available: vi.fn(async () => []) } }));
+
 const PROJECT = "/repo";
 const PATH = "/repo/src/app.ts";
 
@@ -47,6 +49,15 @@ describe("EditorInsights", () => {
         fireEvent.click(screen.getByRole("button", { name: /Expected a value/ }));
         expect(onNavigate).toHaveBeenCalledWith(PATH, 3, 4);
         expect(screen.getByText("src/app.ts:4:5")).toBeInTheDocument();
+    });
+
+    it("offers to send a problem to an agent from its row's menu", () => {
+        render(<EditorInsights project={PROJECT} path={PATH} controller={controllerWithProblem()} visible onNavigate={vi.fn()} />);
+        fireEvent.click(screen.getByRole("button", { name: "Problems 1" }));
+        fireEvent.contextMenu(screen.getByRole("button", { name: /Expected a value/ }));
+        fireEvent.click(screen.getByRole("menuitem", { name: "Send to Agent…" }));
+        expect(screen.getByRole("menu")).toBeInTheDocument();
+        expect(screen.queryByRole("menuitem", { name: "Go to Problem" })).not.toBeInTheDocument();
     });
 
     it("loads a hierarchical outline only after the tab opens", async () => {

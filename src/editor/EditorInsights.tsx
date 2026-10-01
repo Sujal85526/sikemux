@@ -1,8 +1,15 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { languageFromPath, lsp, type LspDocumentSymbol } from "../api/lsp";
-import { basename, relativePath } from "../lib/paths";
 import type { DiagnosticProblem, DiagnosticsController } from "../workbench/diagnosticsController";
 import { VirtualPanelRows } from "../git/VirtualPanelRows";
+import { TreeContextMenu } from "../rail/FileTree";
+import { SendToAgentMenu } from "../agents/SendToAgentMenu";
+import { sessionOfPane } from "../agents/agentTargets";
+import { getState } from "../state/store";
+import { copyText } from "../lib/clipboard";
+import { basename } from "../lib/paths";
+import { reportError } from "../state/toast";
+import { problemDelivery, problemLocation } from "./problemDelivery";
 
 export type EditorInsightsTab = "problems" | "outline";
 
@@ -12,6 +19,16 @@ interface EditorInsightsProps {
     controller: DiagnosticsController | null;
     visible: boolean;
     onNavigate: (path: string, line: number, column: number) => void;
+    /** Its project's agents are the ones a problem can be sent to. */
+    paneId?: string;
+}
+
+interface ProblemMenu {
+    x: number;
+    y: number;
+    problem: DiagnosticProblem;
+    sending: boolean;
+    sessionId?: string | null;
 }
 
 interface FlatSymbol {
@@ -85,13 +102,9 @@ function problemKey(problem: DiagnosticProblem, index: number): string {
     ].join(":");
 }
 
-function locationLabel(project: string, path: string, line: number, column: number): string {
-    const relative = relativePath(path, project);
-    return `${relative || basename(path)}:${line + 1}:${column + 1}`;
-}
-
-export function EditorInsights({ project, path, controller, visible, onNavigate }: EditorInsightsProps) {
+export function EditorInsights({ project, path, controller, visible, onNavigate, paneId }: EditorInsightsProps) {
     const [expanded, setExpanded] = useState(false);
+    const [problemMenu, setProblemMenu] = useState<ProblemMenu | null>(null);
     const [tab, setTab] = useState<EditorInsightsTab>("problems");
     const [outline, setOutline] = useState<OutlineState>(EMPTY_OUTLINE);
     const [outlineRequest, setOutlineRequest] = useState(0);
@@ -182,13 +195,21 @@ export function EditorInsights({ project, path, controller, visible, onNavigate 
                                     type="button"
                                     className="editor-insights-row problem"
                                     onClick={() => onNavigate(problem.path, problem.range.start.line, problem.range.start.character)}
+                                    onContextMenu={(event) => {
+                                        event.preventDefault();
+                                        setProblemMenu({
+                                            x: event.clientX,
+                                            y: event.clientY,
+                                            problem,
+                                            sending: false,
+                                            sessionId: paneId ? sessionOfPane(getState(), paneId) : undefined,
+                                        });
+                                    }}
                                     title={problem.message}>
                                     <span className={`editor-insights-severity ${problem.severity ?? "unknown"}`} aria-hidden="true" />
                                     <span className="editor-insights-message">{problem.message}</span>
                                     {problem.code && <span className="editor-insights-code">{problem.code}</span>}
-                                    <span className="editor-insights-location">
-                                        {locationLabel(project, problem.path, problem.range.start.line, problem.range.start.character)}
-                                    </span>
+                                    <span className="editor-insights-location">{problemLocation(project, problem)}</span>
                                 </button>
                             )}
                         />
@@ -227,6 +248,32 @@ export function EditorInsights({ project, path, controller, visible, onNavigate 
                         />
                     )}
                 </div>
+            )}
+            {problemMenu && !problemMenu.sending && (
+                <TreeContextMenu
+                    x={problemMenu.x}
+                    y={problemMenu.y}
+                    onClose={() => setProblemMenu(null)}
+                    items={[
+                        {
+                            label: "Go to Problem",
+                            run: () =>
+                                onNavigate(problemMenu.problem.path, problemMenu.problem.range.start.line, problemMenu.problem.range.start.character),
+                        },
+                        { label: "Copy Message", run: () => void copyText(problemMenu.problem.message).catch(reportError("copy")) },
+                        { sep: true },
+                        { label: "Send to Agent…", run: () => setProblemMenu({ ...problemMenu, sending: true }) },
+                    ]}
+                />
+            )}
+            {problemMenu?.sending && (
+                <SendToAgentMenu
+                    x={problemMenu.x}
+                    y={problemMenu.y}
+                    sessionId={problemMenu.sessionId}
+                    delivery={() => problemDelivery(project, problemMenu.problem)}
+                    onClose={() => setProblemMenu(null)}
+                />
             )}
         </section>
     );
