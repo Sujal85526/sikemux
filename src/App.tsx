@@ -110,7 +110,6 @@ const WhatsNewOverlay = lazy(() => import("./shell/WhatsNewOverlay").then((modul
 interface BootInfo {
     home: string;
     state: string;
-    recent: string[];
 }
 
 export interface ActiveTaskControls {

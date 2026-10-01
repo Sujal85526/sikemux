@@ -300,7 +300,6 @@ fn zoxide_dirs() -> Vec<String> {
 pub struct BootInfo {
     home: String,
     state: String,
-    recent: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -505,7 +504,6 @@ pub async fn boot_init() -> AppResult<BootInfo> {
     spawn_blocking(|| BootInfo {
         home: home_dir(),
         state: state_load_sync(),
-        recent: zoxide_dirs(),
     })
     .await
     .map_err(|error| AppError::Other(format!("boot_init join: {error}")))
