@@ -36,6 +36,7 @@ export type PersistedAgent = Pick<
     | "skipPermissions"
     | "keepAlive"
     | "renamed"
+    | "worktree"
 >;
 
 export interface PersistedSnapshot {
@@ -98,4 +99,5 @@ export interface PersistedPrefs {
     defaultAgentPermissionMode?: AgentPermissionMode;
     lastAgentType?: AgentType | null;
     languageServerTrust?: Record<string, boolean>;
+    agentWorktreeDefaults?: Record<string, boolean>;
 }

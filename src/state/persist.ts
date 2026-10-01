@@ -25,6 +25,7 @@ import { createWorkbenchItemRef, workbenchItemRegistry, workbenchItemRefFromPane
 import type {
     Agent,
     AgentPermissionMode,
+    AgentWorktree,
     AgentProvider,
     AgentType,
     CorePaneKind,
@@ -125,6 +126,7 @@ const PERSISTED_KEYS = [
     "defaultAgentPermissionMode",
     "lastAgentType",
     "languageServerTrust",
+    "agentWorktreeDefaults",
 ] as const satisfies readonly (keyof StoreState)[];
 type PersistedKey = (typeof PERSISTED_KEYS)[number];
 type SliceShot = { [K in PersistedKey]: StoreState[K] };
@@ -184,6 +186,7 @@ function packPrefs(s: StoreState): PersistedPrefs {
         defaultAgentPermissionMode: s.defaultAgentPermissionMode === "bypass" ? "bypass" : "workspace-write",
         lastAgentType: s.lastAgentType,
         languageServerTrust: s.languageServerTrust,
+        agentWorktreeDefaults: s.agentWorktreeDefaults,
     };
 }
 
@@ -346,6 +349,16 @@ function boundedOptionalString(value: unknown, max: number): string | undefined 
     return typeof value === "string" && value.trim() && !/[\0\r\n]/.test(value) ? value.slice(0, max) : undefined;
 }
 
+function toAgentWorktree(value: unknown): AgentWorktree | undefined {
+    if (!isRecord(value)) return undefined;
+    const repo = boundedOptionalString(value.repo, 4096);
+    const path = boundedOptionalString(value.path, 4096);
+    const branch = boundedOptionalString(value.branch, 255);
+    const startSha = boundedOptionalString(value.startSha, 64);
+    if (!repo || !path || !branch || !startSha) return undefined;
+    return { repo, path, branch, base: boundedOptionalString(value.base, 255) ?? null, startSha };
+}
+
 const AGENT_EFFORTS = new Set(["off", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]);
 function toPersistedAgent(value: unknown): PersistedAgent | null {
     if (!isRecord(value) || typeof value.id !== "string" || !value.id || !AGENT_TYPES.has(value.type as AgentType)) return null;
@@ -372,6 +385,8 @@ function toPersistedAgent(value: unknown): PersistedAgent | null {
     if (typeof value.effort === "string" && AGENT_EFFORTS.has(value.effort)) agent.effort = value.effort as PersistedAgent["effort"];
     if (value.keepAlive === true) agent.keepAlive = true;
     if (value.renamed === true) agent.renamed = true;
+    const worktree = toAgentWorktree(value.worktree);
+    if (worktree) agent.worktree = worktree;
     return agent;
 }
 
@@ -396,6 +411,7 @@ function persistedAgent(agent: Agent): PersistedAgent {
         ...(agent.effort ? { effort: agent.effort } : {}),
         ...(agent.keepAlive ? { keepAlive: true } : {}),
         ...(agent.renamed ? { renamed: true } : {}),
+        ...(agent.worktree ? { worktree: agent.worktree } : {}),
     };
 }
 
@@ -742,7 +758,7 @@ function mergeBrunoSessions(decoded: Record<string, unknown>): void {
     if (closed.has(decoded.activeSessionId)) decoded.activeSessionId = kept.id;
 }
 
-function normaliseLanguageServerTrust(value: unknown): Record<string, boolean> {
+function booleansByPath(value: unknown): Record<string, boolean> {
     if (!isRecord(value)) return {};
     return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, boolean] => typeof entry[1] === "boolean"));
 }
@@ -1036,7 +1052,8 @@ export function applyHydrate(raw: string): HydrationResult {
                   ? "bypass"
                   : "workspace-write",
         lastAgentType: AGENT_TYPES.has(prefs.lastAgentType as AgentType) ? (prefs.lastAgentType as AgentType) : null,
-        languageServerTrust: normaliseLanguageServerTrust(prefs.languageServerTrust),
+        languageServerTrust: booleansByPath(prefs.languageServerTrust),
+        agentWorktreeDefaults: booleansByPath(prefs.agentWorktreeDefaults),
     });
     pruneOnDemandWindows();
     registerCustomThemes(getState().customThemes);

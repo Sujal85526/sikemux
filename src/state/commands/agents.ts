@@ -12,7 +12,7 @@ import { agentDirectCommand, agentStartup } from "./agentLaunchCommand";
 import { activeAgentId, agentIdsOf, agentWindowId, ownerSessionId } from "../selectors";
 import { agentWindow } from "../agentWindow";
 import { newId } from "../layout";
-import type { Agent, AgentEffort, AgentPermissionMode, AgentType, ProviderProfile } from "../types";
+import type { Agent, AgentEffort, AgentPermissionMode, AgentType, AgentWorktree, ProviderProfile } from "../types";
 import { selectSession } from "./sessions";
 import { withActiveSession } from "./shared";
 import { closeWindowById } from "./tabs";
@@ -310,6 +310,20 @@ export function attachAgentSession(id: string, resumeId: string): void {
             launchOptions,
         );
         delete agent.baselineSessionIds;
+    });
+}
+
+/** Moves an agent's working directory, and with it the worktree it belongs to, or none. */
+export function setAgentWorktree(id: string, cwd: string, worktree: AgentWorktree | null): void {
+    mutate((d) => {
+        const agent = d.agents[id];
+        if (!agent) return;
+        agent.cwd = cwd;
+        if (worktree) agent.worktree = worktree;
+        else delete agent.worktree;
+        const winId = agentWindowId(d, id);
+        const root = winId ? d.windows[winId]?.root : undefined;
+        if (root?.type === "pane") root.cwd = cwd;
     });
 }
 

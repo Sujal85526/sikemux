@@ -205,6 +205,20 @@ describe("frontend persistence", () => {
         expect(getState().languageServerTrust).toEqual({ "/trusted": true, "/refused": false });
     });
 
+    it("remembers each project's Worktree switch default", async () => {
+        setState({ agentWorktreeDefaults: { "/code/app": true } });
+        invoke.mockResolvedValue(undefined);
+
+        await expect(flushPersist()).resolves.toBe(true);
+        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
+        expect(saved.prefs.agentWorktreeDefaults).toEqual({ "/code/app": true });
+
+        setState({ agentWorktreeDefaults: {} });
+        saved.prefs.agentWorktreeDefaults["/odd"] = 1;
+        applyHydrate(JSON.stringify(saved));
+        expect(getState().agentWorktreeDefaults).toEqual({ "/code/app": true });
+    });
+
     it("persists rail widths and pulls stored ones back inside their bounds", async () => {
         setState({ sideRailWidth: 320, agentRailWidth: 400 });
         invoke.mockResolvedValue(undefined);
@@ -261,6 +275,7 @@ describe("frontend persistence", () => {
             launchState: "live" as const,
             keepAlive: true,
             renamed: true,
+            worktree: { repo: "/repo", path: "/repo.worktrees/fix", branch: "sikemux/fix", base: "main", startSha: "abc123" },
         };
         setState((s) => {
             const slices = withAgents(s, sid, [agent]);
@@ -283,6 +298,7 @@ describe("frontend persistence", () => {
                 permissionMode: "workspace-write",
                 keepAlive: true,
                 renamed: true,
+                worktree: agent.worktree,
             },
         ]);
         expect(saved.windowsBySession[sid].map((w: { role: string }) => w.role)).toContain("agent");
@@ -290,7 +306,7 @@ describe("frontend persistence", () => {
         saved.agents[0].startup = "still malicious";
         applyHydrate(JSON.stringify(saved));
         const restored = getState().agents[agent.id];
-        expect(restored).toMatchObject({ launchState: "dormant", keepAlive: true, renamed: true });
+        expect(restored).toMatchObject({ launchState: "dormant", keepAlive: true, renamed: true, worktree: agent.worktree });
         expect(restored.startup).toMatch(/^codex resume\b/);
         expect(restored.startup).toContain("session-123");
         expect(restored.startup).not.toContain("still malicious");

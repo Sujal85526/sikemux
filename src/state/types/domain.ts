@@ -126,6 +126,18 @@ export interface Agent {
     keepAlive?: boolean;
     /** The user named this agent, so titles from the provider no longer replace it. */
     renamed?: boolean;
+    /** The git worktree this chat was moved into before its first message. */
+    worktree?: AgentWorktree;
+}
+
+export interface AgentWorktree {
+    /** The main checkout, which git commands about the worktree run against. */
+    repo: string;
+    path: string;
+    branch: string;
+    /** The branch the project was on when the worktree was cut, if it was on one. */
+    base: string | null;
+    startSha: string;
 }
 
 export interface PtyDirectCommand {

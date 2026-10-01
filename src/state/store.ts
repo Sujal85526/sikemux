@@ -100,6 +100,8 @@ export interface DomainState {
     lastAgentType: AgentType | null;
     /** Whether each project, by root path, may start its language servers. A project absent here has not been asked. */
     languageServerTrust: Record<string, boolean>;
+    /** Whether a new chat in each project, by root path, starts with its Worktree switch on. */
+    agentWorktreeDefaults: Record<string, boolean>;
 }
 
 export type UpdateOperationState = "available" | "preparing" | "downloading" | "installing" | "restarting" | "error";
@@ -258,6 +260,7 @@ export const useStore = create<StoreState>(() => {
         defaultAgentPermissionMode: "bypass",
         lastAgentType: null,
         languageServerTrust: {},
+        agentWorktreeDefaults: {},
 
         home: "",
         pluginManifests: [],
