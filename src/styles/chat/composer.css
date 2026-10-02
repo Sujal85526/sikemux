@@ -184,9 +184,9 @@
     border-color: transparent;
     background: none;
     transition:
-        background-color var(--dur-2) var(--ease-out),
-        border-color var(--dur-2) var(--ease-out),
-        color var(--dur-2) var(--ease-out);
+        background-color 200ms var(--ease-out),
+        border-color 200ms var(--ease-out),
+        color 200ms var(--ease-out);
 }
 
 .chat-composer-bar .yolo-toggle:hover:not(:disabled) {
@@ -417,7 +417,11 @@
 @media (prefers-reduced-motion: reduce) {
     .agent-surface-menu,
     .agent-view-switch button,
-    .yolo-toggle {
+    .yolo-toggle,
+    .chat-picker-trigger,
+    .chat-project-trigger,
+    .chat-composer-bar .yolo-toggle,
+    .chat-project-strip .worktree-toggle {
         transition: none;
     }
 
