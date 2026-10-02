@@ -46,6 +46,7 @@ export function newBrowserTab(forAgentId?: string): boolean {
     openDesk(agentId);
     setDeskActive(agentId, BROWSER_ACTIVE);
     void browserApi.newTab(agentId).catch(reportError("open browser tab"));
+    openDeskAddress(agentId);
     return true;
 }
 
@@ -279,10 +280,14 @@ export function focusBrowserAddress(): boolean {
     openDesk(agentId);
     setDeskActive(agentId, BROWSER_ACTIVE);
     if (!hasPage) void browserApi.newTab(agentId).catch(reportError("open browser address"));
+    openDeskAddress(agentId);
+    return true;
+}
+
+function openDeskAddress(agentId: string): void {
     mutate((d) => {
         d.deskAddressOpen = agentId;
     });
-    return true;
 }
 
 export function closeDeskAddress(): void {

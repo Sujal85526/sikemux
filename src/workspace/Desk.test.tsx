@@ -109,7 +109,7 @@ beforeEach(() => {
         y: 96,
         toJSON: () => ({}),
     });
-    setState({ browserStrips: {}, deskRestores: {}, desks: {}, editorViews: {} } as never);
+    setState({ browserStrips: {}, deskRestores: {}, desks: {}, editorViews: {}, deskAddressOpen: null } as never);
     vi.mocked(browserApi.snapshot).mockResolvedValue(snapshot);
     vi.mocked(browserApi.subscribeTabs).mockResolvedValue(vi.fn());
     vi.mocked(browserApi.suggest).mockResolvedValue({ completion: null, pages: [], searches: false, searchUrl: "" });
@@ -174,10 +174,14 @@ describe("DeskHost", () => {
         await waitFor(() => expect(screen.getByRole("tab", { name: "Example" })).toBeInTheDocument());
         expect(screen.getByRole("region", { name: "codex desk" })).toBeInTheDocument();
 
-        fireEvent.click(screen.getByRole("button", { name: /New browser tab/ }));
+        act(() => {
+            fireEvent.click(screen.getByRole("button", { name: /New browser tab/ }));
+        });
         expect(browserApi.newTab).toHaveBeenCalledWith("agent-one");
 
-        const address = screen.getByRole("textbox", { name: "Address and search" });
+        const panel = await screen.findByRole("dialog", { name: "Open address" });
+        const address = within(panel).getByRole("textbox", { name: "Address and search" });
+        await waitFor(() => expect(address).toHaveFocus());
         fireEvent.change(address, { target: { value: "openai.com" } });
         fireEvent.keyDown(address, { key: "Enter" });
         expect(browserApi.navigate).toHaveBeenCalledWith("agent-one", "openai.com");
