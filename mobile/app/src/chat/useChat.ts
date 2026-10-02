@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useReducer, useRef, useState } from 'react';
 import { ChatAttachment, MobileError, type ChatMark } from '@sikemux/native';
 
 import { permissionRequest, promptAction, recordOf, statusFromEvent } from '@mac/chat/acpEvents';
@@ -88,9 +88,24 @@ export function useChat(core: string, agentId: string): ChatView {
   const [attempt, setAttempt] = useState(0);
   const connection = live.status === 'open' ? live.connection : undefined;
   const connectionRef = useRef(connection);
-  connectionRef.current = connection;
   /** Where this chat's events got to, so a reconnect asks only for what it missed. */
   const mark = useRef<ChatMark | undefined>(undefined);
+  const [resumable, setResumable] = useState(false);
+
+  const [run, setRun] = useState({ connection, core, agentId, attempt });
+  if (run.connection !== connection || run.core !== core || run.agentId !== agentId || run.attempt !== attempt) {
+    setRun({ connection, core, agentId, attempt });
+    const sameChat = run.agentId === agentId;
+    if (!sameChat) setResumable(false);
+    if (connection) {
+      if (!(sameChat && resumable)) setAttached('attaching');
+      setProblem(null);
+    }
+  }
+
+  useEffect(() => {
+    connectionRef.current = connection;
+  }, [connection]);
 
   useEffect(() => {
     mark.current = undefined;
@@ -112,13 +127,13 @@ export function useChat(core: string, agentId: string): ChatView {
       change({ type: 'apply', actions: batch });
     };
     const take = (deliveries: ChatDelivery[]) => {
-      const after = mark.current?.seq ?? -1n;
+      const after = mark.current?.seq ?? BigInt(-1);
       for (const delivery of deliveries) {
         if (delivery.seq <= after) continue;
         pending.push(...actions(JSON.parse(delivery.eventJson) as CoreChatEvent));
         if (mark.current) mark.current = { ...mark.current, seq: delivery.seq };
       }
-      frame ??= requestAnimationFrame(flush);
+      if (frame === undefined) frame = requestAnimationFrame(flush);
     };
 
     const off = onChatEvents(core, (deliveries) => {
@@ -129,8 +144,6 @@ export function useChat(core: string, agentId: string): ChatView {
       else take(mine);
     });
 
-    if (!mark.current) setAttached('attaching');
-    setProblem(null);
     // A chat the Mac put to sleep starts again first; one already running answers at once.
     connection
       .wakeChat(agentId)
@@ -148,9 +161,11 @@ export function useChat(core: string, agentId: string): ChatView {
           setReplayed(new Set(reduceAll(initialChatState, replay).messages.map((message) => message.id)));
           change({ type: 'replace', state: rebuilt });
           mark.current = inner.mark;
+          setResumable(true);
         } else if (ChatAttachment.Resumed.instanceOf(attachment)) {
           pending.push(...parsed(attachment.inner.eventsJson));
           mark.current = attachment.inner.mark;
+          setResumable(true);
         } else {
           setProblem(ChatAttachment.Restart.instanceOf(attachment) ? TOO_LONG : null);
           setAttached('missing');
@@ -185,9 +200,8 @@ export function useChat(core: string, agentId: string): ChatView {
     return open;
   }, []);
 
-  const prompt = useCallback(
+  const deliver = useCallback(
     (text: string) => {
-      change({ type: 'apply', actions: [{ type: 'local_prompt', text, paths: [] }] });
       Promise.resolve()
         .then(() => withConnection().prompt(agentId, text))
         .catch((error: unknown) => fail('Not sent', error));
@@ -195,12 +209,25 @@ export function useChat(core: string, agentId: string): ChatView {
     [agentId, fail, withConnection],
   );
 
+  const prompt = useCallback(
+    (text: string) => {
+      change({ type: 'apply', actions: [{ type: 'local_prompt', text, paths: [] }] });
+      deliver(text);
+    },
+    [deliver],
+  );
+
   const running = state.running;
-  useEffect(() => {
-    if (running || queued === null) return;
+  const [outbox, setOutbox] = useState<{ text: string } | null>(null);
+  if (!running && queued !== null) {
     setQueued(null);
-    prompt(queued);
-  }, [running, queued, prompt]);
+    change({ type: 'apply', actions: [{ type: 'local_prompt', text: queued, paths: [] }] });
+    setOutbox({ text: queued });
+  }
+  const deliverQueued = useEffectEvent((text: string) => deliver(text));
+  useEffect(() => {
+    if (outbox) deliverQueued(outbox.text);
+  }, [outbox]);
 
   const send = useCallback(
     (text: string) => {
@@ -241,6 +268,7 @@ export function useChat(core: string, agentId: string): ChatView {
 
   const retry = useCallback(() => {
     mark.current = undefined;
+    setResumable(false);
     setAttempt((count) => count + 1);
   }, []);
 
