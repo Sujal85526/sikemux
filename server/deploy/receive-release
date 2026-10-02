@@ -32,6 +32,10 @@ done
 chmod -R a+rX,go-w "$incoming"
 
 target="$RELEASES/$commit"
+if [ "$(readlink "$ROOT/current" 2>/dev/null)" = "$target" ]; then
+  say "$commit is already live"
+  exit 0
+fi
 rm -rf "$target"
 mv "$incoming" "$target"
 trap '[ "$(readlink "$ROOT/current" 2>/dev/null)" = "$target" ] || rm -rf "$target"' EXIT
