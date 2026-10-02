@@ -697,6 +697,57 @@ pub fn snapshot_jpeg(
     };
 }
 
+/// The page as it stands, as a JPEG at the screen's own resolution, for the app
+/// to slide in its place while the stage moves. The image is taken off the main
+/// thread before it is compressed, so the capture costs the window no frame.
+pub fn still_jpeg(pointer: *mut c_void, done: Box<dyn FnOnce(Option<Vec<u8>>) + Send>) {
+    let (Some(webview), Some(mtm)) = (webview_from(pointer), MainThreadMarker::new()) else {
+        done(None);
+        return;
+    };
+    // SAFETY: main thread, as `mtm` proves.
+    let configuration = unsafe { WKSnapshotConfiguration::new(mtm) };
+    let done = std::sync::Mutex::new(Some(done));
+    let block = RcBlock::new(move |image: *mut NSImage, _error: *mut NSError| {
+        let Some(done) = done.lock().ok().and_then(|mut slot| slot.take()) else {
+            return;
+        };
+        // SAFETY: WebKit passes a live image or nil; `retain` takes our own reference.
+        let Some(image) = (unsafe { Retained::retain(image) }) else {
+            done(None);
+            return;
+        };
+        // SAFETY: a null rect asks for the whole image, and no context or hints are needed.
+        let picture =
+            unsafe { image.CGImageForProposedRect_context_hints(std::ptr::null_mut(), None, None) };
+        let Some(picture) = picture else {
+            done(None);
+            return;
+        };
+        std::thread::spawn(move || {
+            // SAFETY: allocating an image rep has no thread requirement; AppKit's
+            // bindings only mark the class main-thread for its drawing methods.
+            let blank: objc2::rc::Allocated<NSBitmapImageRep> =
+                unsafe { msg_send![NSBitmapImageRep::class(), alloc] };
+            let bitmap = NSBitmapImageRep::initWithCGImage(blank, &picture);
+            let quality = NSNumber::numberWithDouble(0.8);
+            let properties: Retained<NSDictionary<NSString, AnyObject>> =
+                // SAFETY: an immutable constant string AppKit sets up when it loads.
+                NSDictionary::from_slices(&[unsafe { NSImageCompressionFactor }], &[&*quality]);
+            // SAFETY: NSBitmapImageRep works off the main thread, and `properties` maps the
+            // compression key to an NSNumber as AppKit expects.
+            let jpeg = unsafe {
+                bitmap.representationUsingType_properties(NSBitmapImageFileType::JPEG, &properties)
+            };
+            done(jpeg.map(|data| data.to_vec()));
+        });
+    });
+    // SAFETY: main thread; WebKit copies the block and holds `configuration` for the call.
+    unsafe {
+        webview.takeSnapshotWithConfiguration_completionHandler(Some(&configuration), &block)
+    };
+}
+
 /// Where a script runs. The page world is the page's own, where scripts see
 /// and can change each other's globals. The helper world shares the page's DOM
 /// but none of its JavaScript, so the page cannot tamper with what runs there.

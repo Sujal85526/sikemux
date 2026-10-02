@@ -1272,6 +1272,8 @@ fn place(view: &Webview, layout: viewport::Layout, _awake: bool) {
 }
 
 const MAX_HOLES: usize = 32;
+#[cfg(target_os = "macos")]
+const STILL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
 fn validate_bounds(bounds: &BrowserBounds) -> AppResult<()> {
     let finite = [
@@ -1486,6 +1488,40 @@ pub async fn browser_set_bounds(
     bounds: Option<BrowserBounds>,
 ) -> AppResult<()> {
     manager.set_bounds(&agent_id, bounds)
+}
+
+/// A picture of the agent's page as it stands, which the app slides in the
+/// page's place while the stage moves: a native view cannot keep step with it.
+#[tauri::command]
+pub async fn browser_page_still(
+    manager: State<'_, BrowserManager>,
+    agent_id: String,
+) -> AppResult<tauri::ipc::Response> {
+    let (_, view) = manager.active_view(&agent_id)?;
+    #[cfg(target_os = "macos")]
+    {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        view.with_webview(move |platform| {
+            macos::still_jpeg(
+                platform.inner(),
+                Box::new(move |jpeg| {
+                    let _ = sender.send(jpeg);
+                }),
+            )
+        })
+        .map_err(window_error)?;
+        match tokio::time::timeout(STILL_TIMEOUT, receiver).await {
+            Ok(Ok(Some(jpeg))) => Ok(tauri::ipc::Response::new(jpeg)),
+            _ => Err(AppError::Window("the page could not be captured".into())),
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = view;
+        Err(AppError::Window(
+            "page stills are only taken on macOS".into(),
+        ))
+    }
 }
 
 #[cfg(test)]

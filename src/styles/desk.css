@@ -311,6 +311,19 @@
     background: color-mix(in srgb, var(--pane) calc(var(--window-opacity, 1) * 100%), transparent);
 }
 
+/* Fitted the way the live page is: never scaled up, and along the top of the
+   area when a fixed viewport leaves room around it. */
+.browser-still {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: scale-down;
+    object-position: top center;
+    pointer-events: none;
+    user-select: none;
+}
+
 /* A page that is there is shaded natively; a blank one has only this. */
 .browser-dim {
     position: absolute;

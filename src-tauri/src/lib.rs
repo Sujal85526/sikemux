@@ -296,6 +296,7 @@ pub fn run() {
             browser::browser_forward,
             browser::browser_reload,
             browser::browser_set_bounds,
+            browser::browser_page_still,
             system::home_dir,
             system::recent_dirs,
             system::boot_init,

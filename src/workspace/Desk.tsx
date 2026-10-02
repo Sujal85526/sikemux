@@ -10,6 +10,7 @@ import { FileIcon } from "../ui/FileIcon";
 import { SiteIcon } from "../ui/SiteIcon";
 import { AddressBar } from "./AddressBar";
 import { FloatingAddress } from "./FloatingAddress";
+import { forgetPageStill, usePageStill, useStillUpkeep } from "./pageStills";
 import { TabBar, type TabDescriptor } from "./TabBar";
 import { getState, useStore } from "../state/store";
 import { refreshBrowserStrip } from "../state/browserStrips";
@@ -64,6 +65,25 @@ function holesOver(placement: Placement, holes: NativeViewHole[]): BrowserHole[]
                 hole.y + hole.height > placement.y,
         )
         .map((hole) => ({ ...hole, x: hole.x - placement.x, y: hole.y - placement.y }));
+}
+
+/**
+ * The live page while its picture travels in its place: masked away entirely,
+ * and already where its screen will come to rest, so the stage stopping only
+ * has to lift the mask. It stays shown the whole time, because a page shown
+ * again after being hidden can draw a blank frame before it repaints.
+ */
+function maskedWhereItLands(host: HTMLElement, placement: Placement): BrowserBounds {
+    const layer = host.closest(".window-layer")?.getBoundingClientRect();
+    const stage = host.closest(".window-area")?.getBoundingClientRect();
+    const travelled = layer && stage ? layer.left - stage.left : 0;
+    return {
+        ...placement,
+        x: Math.round(host.getBoundingClientRect().left - travelled),
+        clipLeft: placement.width,
+        clipRight: 0,
+        holes: [],
+    };
 }
 
 /** Where the page area sits in the window, less whatever pokes past its pane's or the stage's sides. */
@@ -404,11 +424,19 @@ function BrowserPage({
     const activeTab = useMemo(() => snapshot.tabs.find((tab) => tab.id === snapshot.activeTabId) ?? snapshot.tabs[0], [snapshot]);
     const blank = activeTab?.url === BLANK_URL;
     const hasTab = !!activeTab;
+    const still = usePageStill(agentId, activeTab?.id);
+    const hasStill = !!still;
+    useStillUpkeep(
+        agentId,
+        activeTab?.id,
+        visible && !hidden && !occluded && !blank && !moving,
+        `${activeTab?.url}|${activeTab?.title}|${activeTab?.loading}|${activeTab?.acting}`,
+    );
 
     const pageAddress = blank ? "" : (activeTab?.url ?? "");
     const addressFloating = useStore((state) => state.deskAddressOpen === agentId) && visible && !hidden;
 
-    const inputs = { paneId, agentId, visible, painted, hidden, occluded, blank, hasTab, appHoles, addressFloating };
+    const inputs = { paneId, agentId, visible, painted, hidden, occluded, blank, hasTab, hasStill, appHoles, addressFloating };
     const inputsRef = useRef(inputs);
     inputsRef.current = inputs;
 
@@ -422,8 +450,12 @@ function BrowserPage({
         let sent = "";
         const place = () => {
             frame = 0;
-            const { paneId, agentId, visible, painted, hidden, occluded, blank, hasTab, appHoles, addressFloating } = inputsRef.current;
+            const { paneId, visible, painted, hidden, occluded, blank, hasTab, hasStill, appHoles, addressFloating } = inputsRef.current;
             const placement = measurePage(host);
+            if (stageMoving() && hasStill && painted && !hidden && !occluded && !blank && hasTab) {
+                send(maskedWhereItLands(host, placement));
+                return;
+            }
             /* A screen sliding on or off stage is on the window without being the
                screen the session is on, and its page travels with it rather than
                waiting off screen for it to land. Only a painting screen may: one
@@ -441,10 +473,13 @@ function BrowserPage({
                       ...(opacity < 1 ? { opacity } : {}),
                   }
                 : null;
+            send(bounds);
+        };
+        const send = (bounds: BrowserBounds | null) => {
             const key = JSON.stringify(bounds);
             if (key === sent) return;
             sent = key;
-            void browserApi.setBounds(agentId, bounds).catch(reportError("place browser page"));
+            void browserApi.setBounds(inputsRef.current.agentId, bounds).catch(reportError("place browser page"));
         };
         /* Layout settles once per frame; a divider drag fires far more often. */
         const schedule = () => {
@@ -467,7 +502,7 @@ function BrowserPage({
         };
     }, []);
 
-    useEffect(() => placeRef.current(), [agentId, visible, painted, hidden, occluded, blank, hasTab, appHoles, addressFloating]);
+    useEffect(() => placeRef.current(), [agentId, visible, painted, hidden, occluded, blank, hasTab, hasStill, appHoles, addressFloating]);
 
     /* Nothing reports the stage sliding the way a scroll or a resize would, so
        the page area is read again on every frame of the travel, and once more
@@ -481,6 +516,7 @@ function BrowserPage({
     useEffect(
         () => () => {
             void browserApi.setBounds(agentId, null).catch(() => {});
+            forgetPageStill(agentId);
         },
         [agentId],
     );
@@ -519,6 +555,10 @@ function BrowserPage({
                 <AddressBar tabId={activeTab?.id} pageAddress={pageAddress} onGo={go} vacant={addressFloating} />
             </div>
             <div ref={viewportRef} className="browser-viewport" tabIndex={-1}>
+                {/* Under the live page, where it shows only while the stage moves. */}
+                {still && !blank && (
+                    <img className="browser-still" src={still} srcSet={`${still} ${window.devicePixelRatio || 1}x`} alt="" draggable={false} />
+                )}
                 {blank && <div className="browser-blank" aria-label="Blank browser page" />}
                 {blank && addressFloating && <div className="browser-dim" style={{ opacity: UNDER_ADDRESS_DIM }} />}
             </div>

@@ -103,6 +103,8 @@ export const browserApi = {
     reload: (agentId: string) => invoke<void>("browser_reload", { agentId }),
     /** `null` parks the agent's page off screen until the pane places it again. */
     setBounds: (agentId: string, bounds: BrowserBounds | null) => invoke<void>("browser_set_bounds", { agentId, bounds }),
+    /** The agent's page as it stands now, as a JPEG at the screen's resolution. */
+    pageStill: (agentId: string) => invoke<ArrayBuffer>("browser_page_still", { agentId }),
     subscribeTabs: (listener: () => void, signal: AbortSignal) => getIpcTransport().subscribe("browser-tabs-changed", listener, { signal }),
     subscribeShortcuts: (listener: (shortcut: BrowserShortcut) => void, signal: AbortSignal) =>
         getIpcTransport().subscribe<BrowserShortcut>("browser-shortcut", (event) => listener(event.payload), { signal }),
