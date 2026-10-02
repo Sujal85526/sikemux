@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
-import { pasteLink } from '@/devices/pairing';
+import { pasteFoundLink } from '@/devices/foundLinks';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Button, Dot, NeedsYou, useBottomGap, Working } from '@/ui/parts';
 import { defaultPalette as colors, fonts, typeFor } from '@/ui/theme';
@@ -100,7 +100,7 @@ export function Welcome() {
       </View>
       <View style={[styles.actions, { paddingBottom: bottom }]}>
         <Button kind="primary" title="Scan the code on your Mac" onPress={() => router.push('/scan')} />
-        <Pressable onPress={() => pasteLink()} style={styles.paste} accessibilityRole="button">
+        <Pressable onPress={() => pasteFoundLink()} style={styles.paste} accessibilityRole="button">
           <Text style={styles.pasteText}>Paste a pairing link</Text>
         </Pressable>
       </View>

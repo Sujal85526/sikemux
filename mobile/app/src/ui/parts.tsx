@@ -48,12 +48,12 @@ export function Screen({ children, style }: { children: ReactNode; style?: Style
   );
 }
 
-export function Nav({ back, title, end }: { back?: string; title?: ReactNode; end?: ReactNode }) {
+export function Nav({ back, title, end, onBack }: { back?: string; title?: ReactNode; end?: ReactNode; onBack?: () => void }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
   return (
     <View style={styles.nav}>
-      <Pressable style={styles.back} onPress={() => router.back()} hitSlop={8} accessibilityRole="button">
+      <Pressable style={styles.back} onPress={onBack ?? (() => router.back())} hitSlop={8} accessibilityRole="button">
         <View style={styles.backChevron}>
           <Icon name="IconChevron" size={18} color={colors.secondary} />
         </View>

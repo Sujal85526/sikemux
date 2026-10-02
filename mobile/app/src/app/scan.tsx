@@ -1,11 +1,11 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { parsePairingLink } from '@sikemux/native';
 
-import { openPairing, pasteLink } from '@/devices/pairing';
+import { openFoundLink, pasteFoundLink } from '@/devices/foundLinks';
 import { Icon } from '@/ui/Icon';
 import { Button, useBottomGap } from '@/ui/parts';
 import { fonts, type Palette, useStyles } from '@/ui/theme';
@@ -15,7 +15,8 @@ const FINDER = 236;
 export default function Scan() {
   const styles = useStyles(makeStyles);
   const [permission, requestPermission] = useCameraPermissions();
-  const found = useRef(false);
+  const handled = useRef(false);
+  const [found, setFound] = useState(false);
 
   const bottom = useBottomGap();
   return (
@@ -24,12 +25,17 @@ export default function Scan() {
         <CameraView
           style={StyleSheet.absoluteFill}
           barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-          onBarcodeScanned={({ data }) => {
-            const link = parsePairingLink(data);
-            if (!link || found.current) return;
-            found.current = true;
-            openPairing(link);
-          }}
+          onBarcodeScanned={
+            found
+              ? undefined
+              : ({ data }) => {
+                  const link = parsePairingLink(data);
+                  if (!link || handled.current) return;
+                  handled.current = true;
+                  setFound(true);
+                  openFoundLink(link);
+                }
+          }
         />
       ) : null}
       <View style={styles.shade} pointerEvents="none">
@@ -57,7 +63,7 @@ export default function Scan() {
         {permission && !permission.granted && permission.canAskAgain ? (
           <Button kind="primary" title="Allow the camera" onPress={requestPermission} style={{ marginBottom: 8 }} />
         ) : null}
-        <Button title="Paste a pairing link instead" onPress={() => pasteLink('replace')} style={styles.glass} />
+        <Button title="Paste a pairing link instead" onPress={() => pasteFoundLink('replace')} style={styles.glass} />
       </View>
     </View>
   );

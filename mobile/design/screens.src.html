@@ -545,7 +545,7 @@
 <!-- ================================================================ -->
 <section class="flow">
   <h2>Pairing</h2>
-  <p>A phone reaches a Mac only after someone at the Mac approves it. Scanning the code on the Mac's Devices page with the iPhone's own Camera opens Sikemux straight into "Approve this phone".</p>
+  <p>A phone reaches a Mac only after someone at the Mac approves it. A code scanned or a link pasted inside Sikemux goes straight to "Approve on your Mac". A link opened from anywhere else, such as the iPhone's own Camera, first asks whether to pair.</p>
   <div class="phones">
 
     <figure><div class="phone"><div class="island"></div>
@@ -622,6 +622,23 @@
       <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Cancel</span></div>
         <div class="pairing">
+          <h2>Pair with this Mac?</h2>
+          <p>Only go on if your Mac shows this code right now.</p>
+          <div class="digits locked"><span>4</span><span>8</span><span>1</span><span class="gap"></span><span>2</span><span>0</span><span>7</span></div>
+          <span class="m" style="margin-top:16px">Mac 5f0c21ab</span>
+        </div>
+        <div style="flex:1"></div>
+        <div class="footer"><div class="btn primary">Pair</div></div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>A link from outside</b><div class="note">Any app can open a pairing link, so one that did not come from this app's scanner or paste waits for a tap. The code and the start of the Mac's key are there to check against the Mac's screen.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}Cancel</span></div>
+        <div class="pairing">
           <h2>Approve on MacBook Pro</h2>
           <p>Check the Mac shows this code, then choose what this iPhone may do.</p>
           <div class="digits locked"><span>4</span><span>8</span><span>1</span><span class="gap"></span><span>2</span><span>0</span><span>7</span></div>
@@ -648,7 +665,7 @@
         <div class="footer"><div class="btn primary">Scan again</div></div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Pairing failed</b><div class="note">Same place, same tiles, edged red. Every failure reads this way, its cause in one line: wrong code, refused on the Mac, timed out, or out of reach.</div></figcaption>
+      <figcaption><b>Pairing failed</b><div class="note">Same place, same tiles, edged red. Every failure reads this way, its cause in one line: wrong code, refused on the Mac, out of reach, or two minutes with no answer, when the clock reaches 0:00.</div></figcaption>
     </figure>
 
   </div>
