@@ -2,6 +2,7 @@
 //! can start one with the window closed. Held in memory only: a launcher's
 //! environment may carry the person's API keys.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
@@ -22,6 +23,8 @@ const MAX_PROJECTS: usize = 512;
 const MAX_LAUNCHERS: usize = 64;
 const MAX_CHATS: usize = 1024;
 const MAX_TITLE_CHARS: usize = 200;
+const MAX_COLOURS: usize = 64;
+const MAX_COLOUR_CHARS: usize = 64;
 /// Long enough for an agent's adapter and CLI to come back up.
 const WAKE_WAIT: Duration = Duration::from_secs(30);
 
@@ -30,6 +33,7 @@ struct Published {
     projects: Vec<ProjectInfo>,
     launchers: Vec<ChatLauncher>,
     chats: Vec<PublishedChat>,
+    palette: BTreeMap<String, String>,
 }
 
 #[derive(Default)]
@@ -66,6 +70,17 @@ impl Workspaces {
         let mut published = self.lock();
         published.projects = projects;
         published.launchers = launchers;
+        Ok(())
+    }
+
+    pub(crate) fn publish_palette(&self, palette: BTreeMap<String, String>) -> CoreResult<()> {
+        let oversized = palette
+            .iter()
+            .any(|(name, value)| name.len() > MAX_COLOUR_CHARS || value.len() > MAX_COLOUR_CHARS);
+        if palette.len() > MAX_COLOURS || oversized {
+            return Err("the app published more theme colours than the core keeps".into());
+        }
+        self.lock().palette = palette;
         Ok(())
     }
 
@@ -144,6 +159,7 @@ impl Workspaces {
                     permission_mode: launcher.permission_mode.clone(),
                 })
                 .collect(),
+            palette: published.palette.clone(),
         }
     }
 

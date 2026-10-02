@@ -32,6 +32,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "remote_answer_pairing",
     "remote_publish_workspace",
     "remote_publish_chats",
+    "remote_publish_palette",
     "task_watch",
     "app_quit_and_stop_everything",
     "agent_detection_explain",

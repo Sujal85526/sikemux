@@ -347,6 +347,11 @@ pub enum Request {
         projects: Vec<ProjectInfo>,
         launchers: Vec<ChatLauncher>,
     },
+    /// The colours of the app's theme, by name, so devices draw in them.
+    /// Replaces what it published before.
+    PublishPalette {
+        palette: BTreeMap<String, String>,
+    },
     /// The chats the app lists, so devices show them under the app's names,
     /// sleeping ones included. Replaces what it published before.
     PublishChats {
@@ -696,6 +701,8 @@ pub struct LauncherInfo {
 pub struct Workspace {
     pub projects: Vec<ProjectInfo>,
     pub launchers: Vec<LauncherInfo>,
+    /// The app's theme colours by name; empty until the app publishes them.
+    pub palette: BTreeMap<String, String>,
 }
 
 /// What a paired device was approved to do.

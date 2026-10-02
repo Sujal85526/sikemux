@@ -233,6 +233,7 @@ pub fn run() {
         .manage(AcpManager::default())
         .manage(remote::PublishedWorkspace::default())
         .manage(remote::PublishedChats::default())
+        .manage(remote::PublishedPalette::default())
         .manage(BrowserManager::default())
         .manage(VoiceManager::default())
         .manage(preview::Previews::default())
@@ -270,6 +271,7 @@ pub fn run() {
             remote::remote_answer_pairing,
             remote::remote_publish_workspace,
             remote::remote_publish_chats,
+            remote::remote_publish_palette,
             pty::commands::task_watch,
             pty::commands::app_quit_and_stop_everything,
             pty::commands::agent_detection_explain,

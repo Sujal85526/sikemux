@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { remoteApi, type PublishedChat } from "../api/remote";
+import { readPalette } from "../remote/palette";
 import { remoteChats, remoteWorkspace } from "../remote/workspace";
+import { subscribeTheme } from "../themes/bus";
 import { swallow } from "../state/toast";
 import { useStore } from "../state/store";
 
 /** Long enough that opening or renaming several projects publishes once. */
 export const PUBLISH_DELAY_MS = 400;
 
-/** While remote access is on, tells the core which projects and agents paired devices may start, and the chats they can open. */
+/** While remote access is on, tells the core which projects and agents paired devices may start, the chats they can open, and the theme to draw them in. */
 export function RemoteWorkspaceBridge() {
     const [enabled, setEnabled] = useState(false);
+    const [themeChanges, setThemeChanges] = useState(0);
     const sessions = useStore((s) => s.sessions);
     const sessionOrder = useStore((s) => s.sessionOrder);
     const profiles = useStore((s) => s.providerProfiles);
@@ -39,6 +42,16 @@ export function RemoteWorkspaceBridge() {
             });
         return () => controller.abort();
     }, []);
+
+    useEffect(() => subscribeTheme(() => setThemeChanges((count) => count + 1)), []);
+
+    useEffect(() => {
+        if (!enabled) return;
+        const timer = window.setTimeout(() => {
+            remoteApi.publishPalette(readPalette()).catch(swallow("publish the theme to paired devices"));
+        }, PUBLISH_DELAY_MS);
+        return () => window.clearTimeout(timer);
+    }, [enabled, themeChanges]);
 
     useEffect(() => {
         if (!enabled) return;

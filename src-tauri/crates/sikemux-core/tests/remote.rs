@@ -668,6 +668,17 @@ async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
         .expect("listed");
     assert!(!sleepy.asleep);
 
+    app.publish_palette([("ground".to_owned(), "#0f0f13".to_owned())].into())
+        .await
+        .expect("publish palette");
+    let workspace = client.workspace().await.expect("workspace");
+    assert_eq!(
+        workspace.palette.get("ground").map(String::as_str),
+        Some("#0f0f13")
+    );
+    let refused = client.publish_palette(Default::default()).await;
+    assert!(refusal(refused).contains("only Sikemux on this Mac"));
+
     let refused = client.publish_chats(Vec::new()).await;
     assert!(refusal(refused).contains("only Sikemux on this Mac"));
     let refused = client.acp_wake("agent-failed".into()).await;

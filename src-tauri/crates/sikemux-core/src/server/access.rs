@@ -71,7 +71,8 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::ClosePairing
         | Request::AnswerPairing { .. }
         | Request::PublishWorkspace { .. }
-        | Request::PublishChats { .. } => Needs::Local,
+        | Request::PublishChats { .. }
+        | Request::PublishPalette { .. } => Needs::Local,
     }
 }
 

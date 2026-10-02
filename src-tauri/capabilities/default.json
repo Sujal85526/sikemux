@@ -49,6 +49,7 @@
     "allow-remote-answer-pairing",
     "allow-remote-publish-workspace",
     "allow-remote-publish-chats",
+    "allow-remote-publish-palette",
     "allow-task-watch",
     "allow-app-quit-and-stop-everything",
     "allow-agent-detection-explain",

@@ -80,6 +80,7 @@ export const remoteApi = {
     publishWorkspace: (projects: readonly PublishedProject[], launchers: readonly LauncherRequest[]) =>
         invoke<void>("remote_publish_workspace", { projects, launchers }),
     publishChats: (chats: readonly PublishedChat[]) => invoke<void>("remote_publish_chats", { chats }),
+    publishPalette: (palette: Readonly<Record<string, string>>) => invoke<void>("remote_publish_palette", { palette }),
     subscribe: (listener: (status: RemoteStatus) => void, signal: AbortSignal) =>
         getIpcTransport().subscribe<RemoteStatus>(REMOTE_STATUS_EVENT, (event) => listener(event.payload), { signal }),
 };

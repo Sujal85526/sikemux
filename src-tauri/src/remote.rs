@@ -2,6 +2,7 @@
 //! and agents the app offers paired devices. The core keeps the state; these
 //! commands forward to it.
 
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use serde::Deserialize;
@@ -20,6 +21,10 @@ use crate::pty::{core_error, PtyManager};
 /// core keeps it in memory only.
 #[derive(Default)]
 pub struct PublishedWorkspace(Mutex<Option<(Vec<ProjectInfo>, Vec<ChatLauncher>)>>);
+
+/// The theme colours the app last published, sent again like the workspace.
+#[derive(Default)]
+pub struct PublishedPalette(Mutex<BTreeMap<String, String>>);
 
 /// The chats the app last listed, sent again like the workspace.
 #[derive(Default)]
@@ -72,6 +77,19 @@ pub async fn remote_publish_workspace(
 }
 
 #[tauri::command]
+pub async fn remote_publish_palette(
+    manager: State<'_, PtyManager>,
+    published: State<'_, PublishedPalette>,
+    palette: BTreeMap<String, String>,
+) -> AppResult<()> {
+    if let Ok(mut last) = published.0.lock() {
+        *last = palette.clone();
+    }
+    let client = manager.client().await?;
+    client.publish_palette(palette).await.map_err(core_error)
+}
+
+#[tauri::command]
 pub async fn remote_publish_chats(
     manager: State<'_, PtyManager>,
     published: State<'_, PublishedChats>,
@@ -97,6 +115,15 @@ pub(crate) async fn connected(
     if let Some((projects, launchers)) = last {
         if let Err(error) = client.publish_workspace(projects, launchers).await {
             eprintln!("Sikemux could not tell its core which agents devices may start: {error}");
+        }
+    }
+    let palette = app
+        .try_state::<PublishedPalette>()
+        .and_then(|published| published.0.lock().ok().map(|last| last.clone()))
+        .filter(|palette| !palette.is_empty());
+    if let Some(palette) = palette {
+        if let Err(error) = client.publish_palette(palette).await {
+            eprintln!("Sikemux could not tell its core the theme's colours: {error}");
         }
     }
     let chats = app
