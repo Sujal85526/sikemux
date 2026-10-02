@@ -285,7 +285,20 @@ async fn a_client_that_attaches_replays_what_another_watched() {
     assert!(turned);
     assert_eq!(permission_mode, "workspace-write");
     assert!(start.session_id.starts_with("fake-"));
-    assert_eq!(as_replayed(&replay), as_replayed(&watched.heard));
+    let (prompts, rest): (Vec<_>, Vec<_>) = replay
+        .iter()
+        .cloned()
+        .partition(|event| event.kind == ChatEventKind::Prompt);
+    let sent: Vec<_> = prompts
+        .iter()
+        .map(|event| event.payload["text"].clone())
+        .collect();
+    assert_eq!(
+        sent,
+        ["stream 25", "hello there", "stream 7"],
+        "the watcher sent these, so it never heard them back"
+    );
+    assert_eq!(as_replayed(&rest), as_replayed(&watched.heard));
     assert!(said(&replay).contains("echo: hello there"));
     assert!(
         replay.len() < watched.heard.len(),

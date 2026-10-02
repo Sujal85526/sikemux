@@ -3,7 +3,7 @@ import { acpApi, type AcpEvent, type AcpStartResponse } from "../api/acp";
 import type { Agent, AgentPermissionMode, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
 import type { FoldMemory } from "./longText";
-import { eventMessage, permissionRequest, recordOf, statusFromEvent } from "./acpEvents";
+import { eventMessage, permissionRequest, promptAction, recordOf, statusFromEvent } from "./acpEvents";
 import { permissionModeOf } from "./chatStatus";
 import { afterSessionEnd, sessionEndOf, type Recovery } from "./sessionRecovery";
 import { claimChat } from "./chatClaims";
@@ -145,6 +145,9 @@ export function useAcpSession({
                     const sessionId = typeof row.sessionId === "string" ? row.sessionId : null;
                     if (update && sessionId) queueUpdate(sessionId, update);
                 }
+            } else if (event.kind === "prompt") {
+                const prompted = promptAction(event.payload);
+                if (prompted) dispatch(prompted);
             } else if (event.kind === "turn_started") {
                 if (sessionIdRef.current && agentRef.current.resumeId !== sessionIdRef.current) {
                     cmd.attachAgentSession(agent.id, sessionIdRef.current);

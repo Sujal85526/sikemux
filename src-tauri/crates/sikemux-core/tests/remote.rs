@@ -11,8 +11,9 @@ use serde_json::json;
 use sikemux_core::client::{probe, ClientError, ClientEvent, CoreClient};
 use sikemux_core::pairing::{self, PairError, PairingRequest};
 use sikemux_core::protocol::{
-    Attention, AttentionKind, BuildIdentity, ChatEventKind, ChatLauncher, DeviceAccess, Event,
-    LaunchIdentity, ProjectInfo, RemoteStatus, SessionId, SpawnTarget, TerminalSpawn,
+    Attention, AttentionKind, BuildIdentity, ChatAttachment, ChatEventKind, ChatLauncher,
+    DeviceAccess, Event, LaunchIdentity, ProjectInfo, RemoteStatus, SessionId, SpawnTarget,
+    TerminalSpawn,
 };
 use sikemux_core::remote::{self, SecretKey};
 use sikemux_core::server::{self, ServerConfig, ServerError};
@@ -525,6 +526,69 @@ async fn publish_fake_agent_asking(app: &CoreClient, permission_mode: &str) {
     app.publish_workspace(vec![project], vec![launcher])
         .await
         .expect("publish");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_prompt_reaches_everyone_watching_but_its_sender_and_stays_in_the_replay() {
+    let core_key = SecretKey::generate();
+    let phone = Device::new("Phone", DeviceAccess::Full);
+    let core = start_core(&core_key, &[&phone]);
+    let (app, mut app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    publish_fake_agent(&app).await;
+    let status = listening(&app).await;
+    let endpoint = phone.endpoint().await;
+    let (client, mut events) = remote::connect(&endpoint, core_addr(&status))
+        .await
+        .expect("the phone connects");
+    let (agent_id, _) = client
+        .start_chat("opencode".into(), "sess-tmp".into(), None)
+        .await
+        .expect("the phone starts a chat");
+    app.acp_attach(agent_id.clone())
+        .await
+        .expect("the app watches");
+
+    client
+        .acp_prompt(
+            agent_id.clone(),
+            "from the phone".into(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .expect("prompt");
+    let prompt = loop {
+        let event = tokio::time::timeout(WAIT, app_events.recv())
+            .await
+            .expect("the app never heard the prompt")
+            .expect("the app's connection closed");
+        if let ClientEvent::Event(Event::Chat { event, .. }) = event {
+            if event.kind == ChatEventKind::Prompt {
+                break event;
+            }
+        }
+    };
+    assert_eq!(prompt.payload["text"], "from the phone");
+
+    until_said(&mut events, &agent_id, "from the phone").await;
+    while let Ok(event) = events.try_recv() {
+        if let ClientEvent::Event(Event::Chat { event, .. }) = event {
+            assert_ne!(
+                event.kind,
+                ChatEventKind::Prompt,
+                "the sender already shows its prompt"
+            );
+        }
+    }
+
+    let ChatAttachment::Live { replay, .. } = app.acp_attach(agent_id).await.expect("attach")
+    else {
+        panic!("the chat is running");
+    };
+    assert!(replay
+        .iter()
+        .any(|event| event.kind == ChatEventKind::Prompt
+            && event.payload["text"] == "from the phone"));
 }
 
 async fn until_said(events: &mut UnboundedReceiver<ClientEvent>, agent: &str, needle: &str) {

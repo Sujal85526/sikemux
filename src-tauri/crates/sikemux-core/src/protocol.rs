@@ -401,6 +401,8 @@ pub enum ChatEventKind {
     Status,
     Ready,
     SessionUpdate,
+    /// What a person sent the agent, for everyone watching but the sender.
+    Prompt,
     TurnStarted,
     TurnCompleted,
     PermissionRequest,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AcpEvent } from "../api/acp";
-import { eventMessage, permissionRequest, recordOf, statusFromEvent } from "./acpEvents";
+import { eventMessage, permissionRequest, promptAction, recordOf, statusFromEvent } from "./acpEvents";
 
 const event = (kind: AcpEvent["kind"], payload: Record<string, unknown>): AcpEvent => ({ agentId: "a1", kind, payload });
 
@@ -83,5 +83,19 @@ describe("permissionRequest", () => {
         expect(permissionRequest({ ...valid, toolCall: null })).toBeNull();
         expect(permissionRequest({ ...valid, toolCall: { title: "no id" } })).toBeNull();
         expect(permissionRequest({ ...valid, options: "allow" })).toBeNull();
+    });
+});
+
+describe("promptAction", () => {
+    it("shows a prompt from another device the way a typed one shows", () => {
+        expect(promptAction({ text: "fix the test", paths: ["/tmp/a.ts", 3] })).toEqual({
+            type: "local_prompt",
+            text: "fix the test",
+            paths: ["/tmp/a.ts"],
+        });
+    });
+
+    it("ignores a prompt with no text", () => {
+        expect(promptAction({ paths: [] })).toBeNull();
     });
 });

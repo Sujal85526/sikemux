@@ -71,7 +71,8 @@ export interface PromptContext {
 export interface AcpEvent {
     agentId: string;
     /** `reattach`: the core came back with this chat still running, so take it up again. */
-    kind: "status" | "ready" | "session_update" | "turn_started" | "turn_completed" | "permission_request" | "error" | "reattach";
+    /** `prompt`: what someone on another device sent the agent. */
+    kind: "status" | "ready" | "session_update" | "prompt" | "turn_started" | "turn_completed" | "permission_request" | "error" | "reattach";
     /** A `session_update` carries `updates`: a frame's worth of them at once. */
     payload: Record<string, unknown>;
 }

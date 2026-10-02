@@ -1,5 +1,5 @@
 import type { AcpEvent } from "../api/acp";
-import type { AcpPermissionRequest } from "./types";
+import type { AcpPermissionRequest, ChatAction } from "./types";
 
 export function recordOf(value: unknown): Record<string, unknown> | null {
     return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
@@ -33,4 +33,11 @@ export function statusFromEvent(event: AcpEvent): "connecting" | "installing" | 
     return value === "installing" || value === "starting" || value === "initializing" || value === "ready" || value === "stopped" || value === "error"
         ? value
         : "connecting";
+}
+
+/** A prompt sent from another device, shown as if it had been typed here. */
+export function promptAction(payload: Record<string, unknown>): ChatAction | null {
+    if (typeof payload.text !== "string") return null;
+    const paths = Array.isArray(payload.paths) ? payload.paths.filter((path): path is string => typeof path === "string") : [];
+    return { type: "local_prompt", text: payload.text, paths };
 }

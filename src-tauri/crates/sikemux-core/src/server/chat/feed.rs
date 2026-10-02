@@ -241,6 +241,16 @@ impl Feed {
     }
 
     fn broadcast(&self, inner: &mut Inner, kind: ChatEventKind, payload: Value) {
+        self.broadcast_except(inner, kind, payload, None);
+    }
+
+    fn broadcast_except(
+        &self,
+        inner: &mut Inner,
+        kind: ChatEventKind,
+        payload: Value,
+        except: Option<ClientId>,
+    ) {
         if inner.subscribers.is_empty() {
             return;
         }
@@ -255,7 +265,7 @@ impl Feed {
         let frame: Arc<[u8]> = frame.into();
         inner
             .subscribers
-            .retain(|_, client| client.send(frame.clone()));
+            .retain(|id, client| Some(*id) == except || client.send(frame.clone()));
     }
 
     fn flush_locked(&self, inner: &mut Inner) {
@@ -302,6 +312,18 @@ impl Feed {
         }
         self.flush_locked(&mut inner);
         self.broadcast(&mut inner, kind, payload);
+    }
+
+    /// The client that sent a prompt already shows it; everyone else, and every
+    /// later replay, learns it here.
+    pub(crate) fn prompted(&self, from: ClientId, text: &str, paths: &[String]) {
+        let Ok(mut inner) = self.inner.lock() else {
+            return;
+        };
+        let payload = json!({ "text": text, "paths": paths });
+        inner.replay.push(ChatEventKind::Prompt, &payload);
+        self.flush_locked(&mut inner);
+        self.broadcast_except(&mut inner, ChatEventKind::Prompt, payload, Some(from));
     }
 
     pub(crate) fn subscribe(&self, client: &Arc<ClientConn>) {

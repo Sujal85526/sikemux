@@ -627,12 +627,15 @@ pub(crate) async fn attach(
 
 pub(crate) fn prompt(
     core: &Core,
+    from: ClientId,
     agent_id: &str,
     text: String,
     paths: Vec<String>,
     context: Vec<ChatContext>,
 ) -> CoreResult<()> {
-    core.chats.running(agent_id)?.send(ChatCommand::Prompt {
+    let chat = core.chats.running(agent_id)?;
+    chat.feed.prompted(from, &text, &paths);
+    chat.send(ChatCommand::Prompt {
         text,
         paths,
         context,
@@ -641,13 +644,16 @@ pub(crate) fn prompt(
 
 pub(crate) async fn steer(
     core: &Core,
+    from: ClientId,
     agent_id: &str,
     text: String,
     paths: Vec<String>,
     context: Vec<ChatContext>,
 ) -> CoreResult<String> {
     let (reply, answer) = oneshot::channel();
-    core.chats.running(agent_id)?.send(ChatCommand::Steer {
+    let chat = core.chats.running(agent_id)?;
+    chat.feed.prompted(from, &text, &paths);
+    chat.send(ChatCommand::Steer {
         text,
         paths,
         context,

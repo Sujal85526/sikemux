@@ -550,7 +550,7 @@ async fn run_requests(
                 paths,
                 context,
             } => {
-                let result = chat::prompt(&core, &agent_id, text, paths, context);
+                let result = chat::prompt(&core, client.id, &agent_id, text, paths, context);
                 client.respond(request_id, result.map(|()| Response::Done));
             }
             Request::AcpSteer {
@@ -560,7 +560,8 @@ async fn run_requests(
                 context,
             } => {
                 tokio::spawn(async move {
-                    let result = chat::steer(&core, &agent_id, text, paths, context).await;
+                    let result =
+                        chat::steer(&core, client.id, &agent_id, text, paths, context).await;
                     client.respond(
                         request_id,
                         result.map(|outcome| Response::Steered { outcome }),

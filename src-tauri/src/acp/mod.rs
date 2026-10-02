@@ -144,6 +144,7 @@ fn kind_name(kind: ChatEventKind) -> &'static str {
         ChatEventKind::Status => "status",
         ChatEventKind::Ready => "ready",
         ChatEventKind::SessionUpdate => "session_update",
+        ChatEventKind::Prompt => "prompt",
         ChatEventKind::TurnStarted => "turn_started",
         ChatEventKind::TurnCompleted => "turn_completed",
         ChatEventKind::PermissionRequest => "permission_request",
