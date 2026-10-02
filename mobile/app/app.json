@@ -30,6 +30,7 @@
       "expo-secure-store",
       "expo-web-browser",
       "@clerk/expo",
+      "@clerk/expo-google-signin",
       "./plugins/link-system-configuration",
       "./plugins/rustls-platform-verifier",
       "./plugins/small-apk",

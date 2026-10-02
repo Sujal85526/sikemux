@@ -3,6 +3,8 @@ import { AccessibilityInfo, Animated, Easing, Pressable, StyleSheet, Text, View 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useSSO } from '@clerk/expo';
+import { useSignInWithGoogle } from '@clerk/expo/google';
+import Constants from 'expo-constants';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
@@ -90,19 +92,26 @@ function Reel() {
   );
 }
 
-/** Signs in through the provider's own page in the browser, which hands back to this app. */
+/** Builds with their own Google clients sign in natively; the others use Google's page in an in-app sheet. */
+const NATIVE_GOOGLE = Boolean(Constants.expoConfig?.extra?.EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID);
+
+/**
+ * Google signs in with the system's account picker where this build can; GitHub, which has no
+ * native sign-in, opens its page in a sheet inside the app that hands back when done.
+ */
 function useProviderSignIn() {
   const { startSSOFlow } = useSSO();
+  const { startGoogleAuthenticationFlow } = useSignInWithGoogle();
   const [busy, setBusy] = useState<Provider>();
   const [problem, setProblem] = useState<string>();
   const start = async (strategy: Provider) => {
     setBusy(strategy);
     setProblem(undefined);
     try {
-      const { createdSessionId, setActive } = await startSSOFlow({
-        strategy,
-        redirectUrl: AuthSession.makeRedirectUri({ path: 'sso-callback' }),
-      });
+      const { createdSessionId, setActive } =
+        strategy === 'oauth_google' && NATIVE_GOOGLE
+          ? await startGoogleAuthenticationFlow()
+          : await startSSOFlow({ strategy, redirectUrl: AuthSession.makeRedirectUri({ path: 'sso-callback' }) });
       if (createdSessionId && setActive) await setActive({ session: createdSessionId });
     } catch (error) {
       setProblem(error instanceof Error ? error.message : String(error));

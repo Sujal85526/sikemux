@@ -21,7 +21,10 @@ importers:
     dependencies:
       '@clerk/expo':
         specifier: ^4.8.0
-        version: 4.8.0(@types/react@19.2.18)(expo-auth-session@57.0.13(expo@57.0.26)(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3))(expo-constants@57.0.20)(expo-crypto@57.0.3(expo@57.0.26))(expo-secure-store@57.0.4(expo@57.0.26))(expo-web-browser@57.0.3(expo@57.0.26)(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3)))(expo@57.0.26)(react-dom@19.2.3(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)(typescript@6.0.3)(zod@3.25.76)
+        version: 4.8.0(@clerk/expo-google-signin@1.0.4(expo@57.0.26))(@types/react@19.2.18)(expo-auth-session@57.0.13(expo@57.0.26)(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3))(expo-constants@57.0.20)(expo-crypto@57.0.3(expo@57.0.26))(expo-secure-store@57.0.4(expo@57.0.26))(expo-web-browser@57.0.3(expo@57.0.26)(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3)))(expo@57.0.26)(react-dom@19.2.3(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)(typescript@6.0.3)(zod@3.25.76)
+      '@clerk/expo-google-signin':
+        specifier: ^1.0.4
+        version: 1.0.4(expo@57.0.26)
       '@expo-google-fonts/figtree':
         specifier: ^0.4.1
         version: 0.4.1
@@ -565,6 +568,11 @@ packages:
   '@clerk/clerk-js@6.37.0':
     resolution: {integrity: sha512-MQsjepR/tJ0lqXui/rdCBXDB0weIwGY01Pq29o3H0wPY/na6JTo2PAlY/+36eMr6HXbi7CoXqGDqAyKCqtzAjw==}
     engines: {node: '>=20.9.0'}
+
+  '@clerk/expo-google-signin@1.0.4':
+    resolution: {integrity: sha512-199AjkR7dCXfh3xTKLcLVLMrFc4VRz80h6uyzjLY6OwdwigVj9czHqOQjaPLCFmCrrI5QLh8AliTwmd7wVF86A==}
+    peerDependencies:
+      expo: '>=54 <58'
 
   '@clerk/expo@4.8.0':
     resolution: {integrity: sha512-kj2NvKO/udNgeBrDDcehD/XTlvTExCVElUkGQmSP1xxHrre0mPoPi5q2qdDnfIc1RtN/PrQeYTYfrfll+jpThQ==}
@@ -5417,7 +5425,11 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@clerk/expo@4.8.0(@types/react@19.2.18)(expo-auth-session@57.0.13(expo@57.0.26)(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3))(expo-constants@57.0.20)(expo-crypto@57.0.3(expo@57.0.26))(expo-secure-store@57.0.4(expo@57.0.26))(expo-web-browser@57.0.3(expo@57.0.26)(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3)))(expo@57.0.26)(react-dom@19.2.3(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)(typescript@6.0.3)(zod@3.25.76)':
+  '@clerk/expo-google-signin@1.0.4(expo@57.0.26)':
+    dependencies:
+      expo: 57.0.26(@babel/core@7.29.7)(@expo/dom-webview@57.0.1)(@expo/metro-runtime@57.0.16)(expo-router@57.0.24)(react-dom@19.2.3(react@19.2.3))(react-native-web@0.21.3(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-native-worklets@0.13.0(@babel/core@7.29.7)(@react-native/metro-config@0.87.1(@babel/core@7.29.7))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)(typescript@6.0.3)
+
+  '@clerk/expo@4.8.0(@clerk/expo-google-signin@1.0.4(expo@57.0.26))(@types/react@19.2.18)(expo-auth-session@57.0.13(expo@57.0.26)(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3))(expo-constants@57.0.20)(expo-crypto@57.0.3(expo@57.0.26))(expo-secure-store@57.0.4(expo@57.0.26))(expo-web-browser@57.0.3(expo@57.0.26)(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3)))(expo@57.0.26)(react-dom@19.2.3(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)(typescript@6.0.3)(zod@3.25.76)':
     dependencies:
       '@clerk/clerk-js': 6.37.0(@types/react@19.2.18)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@6.0.3)(zod@3.25.76)
       '@clerk/react': 6.17.5(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
@@ -5429,6 +5441,7 @@ snapshots:
       react-native-url-polyfill: 4.0.0(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))
       tslib: 2.8.1
     optionalDependencies:
+      '@clerk/expo-google-signin': 1.0.4(expo@57.0.26)
       expo-auth-session: 57.0.13(expo@57.0.26)(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)
       expo-constants: 57.0.20(expo@57.0.26)(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))
       expo-crypto: 57.0.3(expo@57.0.26)
