@@ -140,7 +140,7 @@ function useDeskEntrance(section: RefObject<HTMLElement | null>, paneId: string)
                 { opacity: 0, transform: `translateX(${ENTRANCE_SLIDE}px)` },
                 { opacity: 1, transform: "none" },
             ],
-            { duration: 200, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" },
+            { duration: 500, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" },
         );
         if (!slide) return;
         const release = holdStageMotion();
