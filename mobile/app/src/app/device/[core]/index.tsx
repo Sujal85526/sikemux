@@ -14,6 +14,9 @@ import { fonts, type Palette, radius, typeFor, useColors, useStyles, useType, tr
 
 type Tab = 'agents' | 'terminals';
 
+/** The New chat pill's height, which the list leaves room for below its last row. */
+const NEW_CHAT_HEIGHT = 52;
+
 function projectName(snapshot: Snapshot, cwd: string): string {
   return snapshot.workspace.projects.find((project) => project.path === cwd)?.name ?? folder(cwd);
 }
@@ -205,6 +208,7 @@ export default function Device() {
   const snapshot = live.snapshot;
   const [picking, setPicking] = useState(false);
   const [options, setOptions] = useState(false);
+  const starts = device?.access === 'full' && !away && tab === 'agents';
   const bottom = useBottomGap();
   const scope = snapshot?.workspace.projects.find((project) => project.id === device?.project);
   const asking = snapshot?.chats.filter((chat) => chat.pendingPermissions.length && (!scope || inProject(scope, chat.cwd))).length ?? 0;
@@ -218,16 +222,7 @@ export default function Device() {
       <Nav
         back="Devices"
         end={
-          <View style={styles.navEnd}>
-            {device?.access === 'full' && !away ? (
-              <IconButton
-                name="IconPlus"
-                label="New chat"
-                onPress={() => router.push(scope ? `/device/${core}/new?project=${encodeURIComponent(scope.id)}` : `/device/${core}/new`)}
-              />
-            ) : null}
-            {device ? <IconButton name="IconMore" label="Options" onPress={() => setOptions(true)} /> : null}
-          </View>
+          device ? <IconButton name="IconMore" label="Options" onPress={() => setOptions(true)} /> : null
         }
       />
       {device ? <ForgetSheet device={device} visible={options} onClose={() => setOptions(false)} /> : null}
@@ -281,7 +276,7 @@ export default function Device() {
               ]}
             />
           </View>
-          <ScrollView contentContainerStyle={[styles.body, { paddingBottom: bottom + 24 }]}>
+          <ScrollView contentContainerStyle={[styles.body, { paddingBottom: bottom + (starts ? NEW_CHAT_HEIGHT + 24 : 24) }]}>
             {snapshot ? (
               tab === 'agents' ? (
                 <Agents core={core} snapshot={snapshot} scope={scope} />
@@ -290,6 +285,16 @@ export default function Device() {
               )
             ) : null}
           </ScrollView>
+          {starts ? (
+            <Pressable
+              onPress={() => router.push(scope ? `/device/${core}/new?project=${encodeURIComponent(scope.id)}` : `/device/${core}/new`)}
+              style={({ pressed }) => [styles.newChat, { bottom }, pressed && { opacity: 0.85 }]}
+              accessibilityRole="button"
+              accessibilityLabel="New chat">
+              <Icon name="IconPlus" size={18} color={colors.ground} />
+              <Text style={styles.newChatText}>New chat</Text>
+            </Pressable>
+          ) : null}
           {snapshot ? (
             <ProjectSheet
               visible={picking}
@@ -318,7 +323,24 @@ const makeStyles = (colors: Palette) => {
     presenceOff: { backgroundColor: colors.ground, borderColor: colors.rest },
     name: { ...type.title },
     body: { paddingHorizontal: 16 },
-    navEnd: { flexDirection: 'row', alignItems: 'center' },
+    newChat: {
+      position: 'absolute',
+      right: 16,
+      height: NEW_CHAT_HEIGHT,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingLeft: 16,
+      paddingRight: 20,
+      borderRadius: NEW_CHAT_HEIGHT / 2,
+      backgroundColor: colors.ink,
+      shadowColor: '#000',
+      shadowOpacity: 0.45,
+      shadowRadius: 18,
+      shadowOffset: { width: 0, height: 8 },
+      elevation: 8,
+    },
+    newChatText: { fontFamily: fonts.uiSemibold, fontSize: 15, color: colors.ground },
     scope: { flexDirection: 'row', paddingHorizontal: 16, paddingBottom: 12 },
     pill: {
       flexDirection: 'row',
