@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Modal, Platform, Pressable, StyleSheet, Text, TextInput, View, type TextStyle } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { pickerSlots, sessionConfigs, type SessionConfig } from '@mac/chat/sessionConfig';
@@ -8,6 +8,7 @@ import type { AcpPermissionRequest, ChatState } from '@mac/chat/types';
 import { providerName } from '@/devices/words';
 import { AgentIcon, Icon, isProvider } from '@/ui/Icon';
 import { Track } from '@/ui/parts';
+import { ComposerInput } from './ComposerInput';
 import { brand, colors, fonts } from '@/ui/theme';
 
 function current(config?: SessionConfig): string | undefined {
@@ -202,18 +203,13 @@ export function Composer({
     <SafeAreaView edges={['bottom']} style={styles.wrap}>
       {request ? <PermissionDock request={request} provider={provider} onAnswer={(option) => onAnswer(request.requestId, option)} /> : null}
       <View style={[styles.composer, focused && { borderColor: colors.borderSelected }]}>
-        <TextInput
+        <ComposerInput
           ref={input}
           value={draft}
           onChangeText={setDraft}
           placeholder={placeholder}
-          placeholderTextColor={colors.inkFaint}
-          multiline
-          style={styles.input}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          selectionColor={colors.accent}
-          keyboardAppearance="dark"
         />
         <View style={styles.bar}>
           <View style={styles.yolo}>
@@ -270,23 +266,9 @@ export function Composer({
   );
 }
 
-export const composerInput: TextStyle = {
-  minHeight: 44,
-  maxHeight: 160,
-  paddingHorizontal: 10,
-  paddingTop: 9,
-  paddingBottom: 4,
-  fontFamily: fonts.ui,
-  fontSize: 16,
-  color: colors.ink,
-  // Android pads a field by the font's full height and adds line height above each line, so the cursor misses the text.
-  ...Platform.select({ ios: { lineHeight: 22 }, android: { includeFontPadding: false, textAlignVertical: 'top' } }),
-};
-
 const styles = StyleSheet.create({
   wrap: { paddingHorizontal: 10, paddingTop: 8 },
   composer: { padding: 6, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.composer },
-  input: composerInput,
   bar: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingTop: 6 },
   yolo: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 34, paddingHorizontal: 8 },
   yoloText: { fontFamily: fonts.uiSemibold, fontSize: 11, letterSpacing: 0.9, textTransform: 'uppercase', color: colors.inkFaint },

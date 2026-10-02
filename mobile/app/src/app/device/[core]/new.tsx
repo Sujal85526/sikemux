@@ -4,7 +4,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router';
 
 import { composerPlaceholder } from '@mac/chat/chatStatus';
-import { composerInput } from '@/chat/Composer';
+import { ComposerInput } from '@/chat/ComposerInput';
 import type { LauncherInfo, ProjectInfo } from '@/core/protocol';
 import { useLive } from '@/devices/hub';
 import { AgentIcon, Icon } from '@/ui/Icon';
@@ -154,17 +154,7 @@ export default function NewChat() {
             </Pressable>
           ) : null}
           <View style={styles.composer}>
-            <TextInput
-              value={draft}
-              onChangeText={setDraft}
-              placeholder={IDLE}
-              placeholderTextColor={colors.inkFaint}
-              multiline
-              style={styles.input}
-              selectionColor={colors.accent}
-              keyboardAppearance="dark"
-              editable={!starting}
-            />
+            <ComposerInput value={draft} onChangeText={setDraft} placeholder={IDLE} editable={!starting} />
             <View style={styles.bar}>
               <View style={styles.yolo}>
                 <Icon name={yolo ? 'IconShieldBolt' : 'IconShield'} size={13} color={yolo ? colors.accent : colors.inkFaint} />
@@ -233,7 +223,6 @@ const styles = StyleSheet.create({
   },
   stripName: { fontFamily: fonts.uiMedium, fontSize: 13.5, color: colors.ink },
   composer: { padding: 6, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.composer },
-  input: composerInput,
   bar: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingTop: 6 },
   yolo: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 34, paddingHorizontal: 8 },
   yoloText: { fontFamily: fonts.uiSemibold, fontSize: 11, letterSpacing: 0.9, textTransform: 'uppercase', color: colors.inkFaint },
