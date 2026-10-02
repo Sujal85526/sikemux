@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 
 import type { ChatInfo, SessionInfo, Snapshot } from '@/core/protocol';
 import { useDevices, useLive } from '@/devices/hub';
 import { deviceKind, deviceName } from '@/devices/paired';
 import { chatState, chatTitle, folder } from '@/devices/words';
 import { AgentIcon, DeviceIcon, Icon } from '@/ui/Icon';
-import { Group, Nav, NeedsYou, Row, Screen, SectionLabel, Track, Working } from '@/ui/parts';
+import { Group, IconButton, Nav, NeedsYou, Row, Screen, SectionLabel, Track, Working } from '@/ui/parts';
 import { colors, fonts, radius, type } from '@/ui/theme';
 
 type Tab = 'agents' | 'terminals';
@@ -22,12 +22,13 @@ function ChatEnd({ chat }: { chat: ChatInfo }) {
   return null;
 }
 
-function Agents({ snapshot }: { snapshot: Snapshot }) {
+function Agents({ core, snapshot }: { core: string; snapshot: Snapshot }) {
+  const open = (agentId: string) => router.push(`/device/${core}/chat/${agentId}`);
   const [filter, setFilter] = useState<string>('all');
   const providers = useMemo(() => [...new Set(snapshot.chats.map((chat) => chat.provider))], [snapshot.chats]);
   const chats = snapshot.chats.filter((chat) => filter === 'all' || chat.provider === filter);
   const asking = chats.filter((chat) => chat.pendingPermissions.length);
-  const open = chats.filter((chat) => !chat.pendingPermissions.length);
+  const idle = chats.filter((chat) => !chat.pendingPermissions.length);
 
   return (
     <>
@@ -48,7 +49,7 @@ function Agents({ snapshot }: { snapshot: Snapshot }) {
         </View>
       ) : null}
       {asking.map((chat) => (
-        <View key={chat.agentId} style={styles.ask}>
+        <Pressable key={chat.agentId} style={styles.ask} onPress={() => open(chat.agentId)}>
           <AgentIcon provider={chat.provider} size={22} />
           <View style={{ flex: 1 }}>
             <Text style={styles.askTitle} numberOfLines={1}>
@@ -59,19 +60,20 @@ function Agents({ snapshot }: { snapshot: Snapshot }) {
             </Text>
           </View>
           <NeedsYou />
-        </View>
+        </Pressable>
       ))}
-      {open.length ? (
+      {idle.length ? (
         <>
           <SectionLabel>Open</SectionLabel>
           <Group>
-            {open.map((chat) => (
+            {idle.map((chat) => (
               <Row
                 key={chat.agentId}
                 mark={<AgentIcon provider={chat.provider} size={22} />}
                 title={chatTitle(chat)}
                 detail={`${projectName(snapshot, chat.cwd)} · ${chatState(chat)}`}
                 end={<ChatEnd chat={chat} />}
+                onPress={() => open(chat.agentId)}
               />
             ))}
           </Group>
@@ -145,7 +147,14 @@ export default function Device() {
 
   return (
     <Screen>
-      <Nav back="Devices" />
+      <Nav
+        back="Devices"
+        end={
+          device?.access === 'full' && !away ? (
+            <IconButton name="IconPlus" label="New chat" onPress={() => router.push(`/device/${core}/new`)} />
+          ) : null
+        }
+      />
       <View style={styles.header}>
         <View style={styles.glyph}>
           <DeviceIcon kind={deviceKind(device?.model)} color={away ? colors.tertiary : colors.ink} />
@@ -182,7 +191,7 @@ export default function Device() {
             />
           </View>
           <ScrollView contentContainerStyle={styles.body}>
-            {snapshot ? tab === 'agents' ? <Agents snapshot={snapshot} /> : <Terminals snapshot={snapshot} /> : null}
+            {snapshot ? tab === 'agents' ? <Agents core={core} snapshot={snapshot} /> : <Terminals snapshot={snapshot} /> : null}
           </ScrollView>
         </>
       )}

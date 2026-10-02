@@ -22,6 +22,7 @@ export type ChatInfo = {
   state: 'starting' | 'ready';
   running: boolean;
   pendingPermissions: string[];
+  permissionMode: string;
   model: string | null;
 };
 
