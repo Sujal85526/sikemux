@@ -108,6 +108,12 @@ function moving(el: Element): boolean {
     });
 }
 
+/* A swipe writes the stage's transform on every frame. Rescanning for overlays
+   on each of those would force a layout per frame for nothing that floats. */
+function stageMotion(record: MutationRecord): boolean {
+    return record.attributeName === "style" && record.target instanceof Element && record.target.classList.contains("window-track");
+}
+
 /** Report the holes every floating surface needs, now and whenever they change, until stopped. */
 export function watchOverlays(report: (holes: NativeViewHole[]) => void): () => void {
     const selectorNow = () => [PORTALS, MARKED, ...fixedSelectors()].join(", ");
@@ -133,7 +139,7 @@ export function watchOverlays(report: (holes: NativeViewHole[]) => void): () => 
         if (records.some((record) => record.target === document.head || record.target.parentNode === document.head)) {
             selector = selectorNow();
         }
-        schedule();
+        if (records.some((record) => !stageMotion(record))) schedule();
     });
     const restyled = (event: Event) => {
         if (!(event.target instanceof HTMLLinkElement)) return;
@@ -149,8 +155,11 @@ export function watchOverlays(report: (holes: NativeViewHole[]) => void): () => 
     });
     window.addEventListener("resize", schedule);
     window.addEventListener("scroll", schedule, { capture: true, passive: true });
+    const transitioned = (event: Event) => {
+        if (!(event.target instanceof Element && event.target.classList.contains("window-track"))) schedule();
+    };
     window.addEventListener("animationstart", schedule, true);
-    window.addEventListener("transitionrun", schedule, true);
+    window.addEventListener("transitionrun", transitioned, true);
     measure();
 
     return () => {
@@ -159,7 +168,7 @@ export function watchOverlays(report: (holes: NativeViewHole[]) => void): () => 
         window.removeEventListener("resize", schedule);
         window.removeEventListener("scroll", schedule, { capture: true });
         window.removeEventListener("animationstart", schedule, true);
-        window.removeEventListener("transitionrun", schedule, true);
+        window.removeEventListener("transitionrun", transitioned, true);
         if (frame) cancelAnimationFrame(frame);
         report([]);
     };
