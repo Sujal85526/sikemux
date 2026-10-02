@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Platform, Pressable, StyleSheet, Text, TextInput, View, type TextStyle } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { pickerSlots, sessionConfigs, type SessionConfig } from '@mac/chat/sessionConfig';
@@ -270,10 +270,23 @@ export function Composer({
   );
 }
 
+export const composerInput: TextStyle = {
+  minHeight: 44,
+  maxHeight: 160,
+  paddingHorizontal: 10,
+  paddingTop: 9,
+  paddingBottom: 4,
+  fontFamily: fonts.ui,
+  fontSize: 16,
+  color: colors.ink,
+  // Android pads a field by the font's full height and adds line height above each line, so the cursor misses the text.
+  ...Platform.select({ ios: { lineHeight: 22 }, android: { includeFontPadding: false, textAlignVertical: 'top' } }),
+};
+
 const styles = StyleSheet.create({
   wrap: { paddingHorizontal: 10, paddingTop: 8 },
   composer: { padding: 6, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.composer },
-  input: { minHeight: 44, maxHeight: 160, paddingHorizontal: 10, paddingTop: 9, paddingBottom: 4, fontFamily: fonts.ui, fontSize: 16, lineHeight: 22, color: colors.ink },
+  input: composerInput,
   bar: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingTop: 6 },
   yolo: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 34, paddingHorizontal: 8 },
   yoloText: { fontFamily: fonts.uiSemibold, fontSize: 11, letterSpacing: 0.9, textTransform: 'uppercase', color: colors.inkFaint },
