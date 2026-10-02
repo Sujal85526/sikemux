@@ -54,6 +54,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "browser_forward",
     "browser_reload",
     "browser_set_bounds",
+    "browser_page_still",
     "home_dir",
     "recent_dirs",
     "boot_init",
