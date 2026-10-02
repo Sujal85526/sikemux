@@ -528,8 +528,10 @@ the site's API returns what the signed-in person would get.
 ## simulator: Driving the iOS Simulator
 
 The `sim_*` tools drive the iOS simulators that Xcode installs on this Mac.
-They are listed only when this Mac has Xcode. Simulator.app does not need to
-be open.
+They are listed only when this Mac has Xcode. They work with no simulator
+window open. When the person wants to watch the device, open Xcode's own
+viewer: DeviceHub (`open -b com.apple.dt.Devices`) from Xcode 27, Simulator.app
+before it. Its absence does not mean Xcode is broken.
 
 `sim_attach` comes first. It takes a device name or udid from `sim_devices`,
 boots the device if it is off, and waits until its screen can be read.
