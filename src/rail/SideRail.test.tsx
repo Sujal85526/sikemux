@@ -1,10 +1,12 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getState, setState } from "../state/store";
 import type { Session, SessionKind } from "../state/types";
 import "../plugins/builtin";
 import { useLeaveSettingsOnNavigation } from "../settings/leaveSettings";
 import { SideRail } from "./SideRail";
+import * as cmd from "../state/commands";
+import { acceptDialog, useDialogs } from "../state/dialog";
 
 const initial = getState();
 
@@ -158,5 +160,75 @@ describe("leaving settings from the rail", () => {
 
         expect(getState().settingsOpen).toBe(false);
         expect(getState().activeSessionId).toBe("beta");
+    });
+});
+
+describe("project spaces", () => {
+    function withSpaces() {
+        const work = cmd.createSpace("Work", "💼")!;
+        const home = cmd.createSpace("Home")!;
+        cmd.setProjectSpace("/alpha", work);
+        cmd.setProjectSpace("/beta", home);
+        return { work, home };
+    }
+
+    it("shows only the projects put in the chosen space, and every project under All", () => {
+        withSpaces();
+        setState({ activeSessionId: "beta" });
+        render(<SideRail />);
+
+        fireEvent.click(screen.getByRole("radio", { name: "Work" }));
+
+        expect(screen.getByRole("button", { name: "alpha" })).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "beta" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "gamma" })).not.toBeInTheDocument();
+        expect(getState().sessions.beta).toBeDefined();
+        expect(getState().sessionOrder).toEqual(["alpha", "ssh", "beta", "command", "gamma"]);
+        expect(getState().activeSessionId).toBe("alpha");
+
+        fireEvent.click(screen.getByRole("radio", { name: "All" }));
+        expect(screen.getByRole("button", { name: "beta" })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "gamma" })).toBeInTheDocument();
+    });
+
+    it("creates a space from the switch and shows it", async () => {
+        render(<SideRail />);
+        expect(screen.queryByRole("radiogroup", { name: "Projects shown" })).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole("button", { name: "Create space" }));
+        const dialog = useDialogs.getState().dialog!;
+        expect(dialog).toMatchObject({ kind: "prompt", title: "Create space" });
+        await act(async () => acceptDialog(dialog.id, "Client A"));
+
+        expect(getState().spaces.map((space) => space.name)).toEqual(["Client A"]);
+        expect(screen.getByRole("radio", { name: "Client A" })).toHaveAttribute("aria-checked", "true");
+    });
+
+    it("moves a project between spaces from its right-click menu", () => {
+        const { home } = withSpaces();
+        render(<SideRail />);
+
+        fireEvent.contextMenu(screen.getByRole("button", { name: "gamma" }));
+        fireEvent.click(screen.getByText("H Home"));
+        expect(getState().projectSpaces["/gamma"]).toBe(home);
+
+        fireEvent.contextMenu(screen.getByRole("button", { name: "gamma" }));
+        fireEvent.click(screen.getByText("No Space"));
+        expect(getState().projectSpaces["/gamma"]).toBeUndefined();
+    });
+
+    it("deletes a space from its menu after asking, leaving its projects in no space", async () => {
+        const { work } = withSpaces();
+        cmd.showSpace(work);
+        render(<SideRail />);
+
+        fireEvent.contextMenu(screen.getByRole("radio", { name: "Work" }));
+        fireEvent.click(screen.getByText("Delete Space…"));
+        await act(async () => acceptDialog(useDialogs.getState().dialog!.id));
+
+        expect(getState().spaces.map((space) => space.name)).toEqual(["Home"]);
+        expect(getState().projectSpaces["/alpha"]).toBeUndefined();
+        expect(getState().activeSpaceId).toBeNull();
+        expect(screen.getByRole("button", { name: "beta" })).toBeInTheDocument();
     });
 });

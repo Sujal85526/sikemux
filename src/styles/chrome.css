@@ -847,3 +847,65 @@
     background: var(--acc);
     opacity: 1;
 }
+.space-switch {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin: 0 0 6px;
+}
+.space-options {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    gap: 2px;
+    padding: 2px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    border-radius: 6px;
+    background: var(--surface-hover);
+}
+.space-options > button {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 5px;
+    max-width: 140px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+    transition:
+        color 0.12s,
+        background 0.12s;
+}
+.space-options > button:hover,
+.space-add:hover {
+    color: var(--text-primary);
+}
+.space-options > button.active {
+    color: var(--text-primary);
+    background: var(--surface);
+    box-shadow: 0 0 0 1px var(--border);
+}
+.space-badge {
+    flex: none;
+    line-height: 1;
+}
+.space-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.space-add {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 6px;
+    border-radius: 4px;
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+}
+.space-switch.empty .space-add {
+    padding-left: 2px;
+}
