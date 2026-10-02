@@ -21,6 +21,12 @@ final class RequestTests: XCTestCase {
         XCTAssertEqual(try parse(#"{"id":1,"type":"devices"}"#).command, .devices)
         XCTAssertEqual(try parse(#"{"id":2,"type":"boot","udid":"A"}"#).command, .boot(udid: "A"))
         XCTAssertEqual(
+            try parse(#"{"id":2,"type":"screenshot","udid":"A","path":"/tmp/a.png"}"#).command,
+            .screenshot(udid: "A", path: "/tmp/a.png", format: .png, pointSize: false))
+        XCTAssertEqual(
+            try parse(#"{"id":2,"type":"screenshot","udid":"A","path":"/tmp/a.jpg","format":"jpeg","pointSize":true}"#).command,
+            .screenshot(udid: "A", path: "/tmp/a.jpg", format: .jpeg, pointSize: true))
+        XCTAssertEqual(
             try parse(#"{"id":3,"type":"tap","udid":"A","x":10,"y":20.5}"#).command,
             .tap(udid: "A", at: Point(x: 10, y: 20.5), duration: nil))
         XCTAssertEqual(
@@ -45,6 +51,9 @@ final class RequestTests: XCTestCase {
         XCTAssertEqual(failure(#"{"id":6,"type":"tap","udid":"A","x":"1","y":2}"#), RequestError(id: 6, description: #""x" has the wrong type"#))
         XCTAssertEqual(failure(#"{"id":7,"type":"tap","udid":"A","x":-1,"y":2}"#)?.id, 7)
         XCTAssertEqual(failure(#"{"id":8,"type":"openUrl","udid":"A","url":"not a url"}"#)?.id, 8)
+        XCTAssertEqual(
+            failure(#"{"id":9,"type":"screenshot","udid":"A","path":"/tmp/a","format":"gif"}"#)?.description,
+            "format must be png or jpeg")
         XCTAssertTrue(failure(#"{"id":9,"type":"button","udid":"A","button":"turbo"}"#)?.description.contains("home") ?? false)
     }
 

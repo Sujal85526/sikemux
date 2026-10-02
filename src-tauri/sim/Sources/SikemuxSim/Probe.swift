@@ -11,7 +11,7 @@ enum Probe {
             try await step("home button") { try await simulators.handle(.button(udid: udid, button: .home)) }
             try await waitFor("the home screen") { try await onHomeScreen(simulators, udid) }
             let path = FileManager.default.temporaryDirectory.appendingPathComponent("sikemux-sim-probe.png").path
-            let shot = try await step("screenshot") { try await simulators.handle(.screenshot(udid: udid, path: path)) }
+            let shot = try await step("screenshot") { try await simulators.handle(.screenshot(udid: udid, path: path, format: .png, pointSize: false)) }
             report("  \(shot["width"] ?? 0)x\(shot["height"] ?? 0) px at \(path)")
             try await step("read the screen") { try await simulators.handle(.state(udid: udid)) }
             try await step("tap \"Settings\" by label") { try await simulators.handle(.tapElement(udid: udid, label: "Settings")) }

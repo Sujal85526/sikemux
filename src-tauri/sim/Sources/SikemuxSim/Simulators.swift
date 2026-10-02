@@ -53,8 +53,12 @@ final class Simulators {
             nonisolated(unsafe) let set = control.set
             if simulator.state != .shutdown { try await set.shutdown(simulator) }
             return [:]
-        case let .screenshot(_, path):
-            let shot = try await requireBooted(simulator).screenshot.take(configuration: ScreenshotConfiguration())
+        case let .screenshot(_, path, format, pointSize):
+            let scale = pointSize ? Double(simulator.screenInfo?.scale ?? 1) : 1
+            let configuration = ScreenshotConfiguration(
+                encoding: format == .jpeg ? .jpeg(quality: 0.8) : .png,
+                scale: scale > 1 ? .factor(1 / scale) : .native)
+            let shot = try await requireBooted(simulator).screenshot.take(configuration: configuration)
             try shot.imageData.write(to: URL(fileURLWithPath: path))
             return ["path": path, "width": Int(shot.size.width), "height": Int(shot.size.height)]
         case let .tap(_, at, duration):

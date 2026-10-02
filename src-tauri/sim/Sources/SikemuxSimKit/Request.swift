@@ -14,11 +14,16 @@ public enum Button: String, Decodable, CaseIterable, Sendable {
     case home, lock, side, siri, volumeUp, volumeDown, applePay
 }
 
+public enum ImageFormat: String, Sendable {
+    case png, jpeg
+}
+
 public enum Command: Equatable, Sendable {
     case devices
     case boot(udid: String)
     case shutdown(udid: String)
-    case screenshot(udid: String, path: String)
+    /// `pointSize` captures one pixel per point, a third of a 3x screen, which is plenty to read it.
+    case screenshot(udid: String, path: String, format: ImageFormat, pointSize: Bool)
     case tap(udid: String, at: Point, duration: Double?)
     case swipe(udid: String, from: Point, to: Point, duration: Double)
     case type(udid: String, text: String)
@@ -34,7 +39,7 @@ public enum Command: Equatable, Sendable {
         switch self {
         case .devices: nil
         case let .boot(udid), let .shutdown(udid), let .state(udid): udid
-        case let .screenshot(udid, _), let .type(udid, _), let .button(udid, _), let .tapElement(udid, _),
+        case let .screenshot(udid, _, _, _), let .type(udid, _), let .button(udid, _), let .tapElement(udid, _),
             let .terminate(udid, _), let .install(udid, _), let .openUrl(udid, _):
             udid
         case let .tap(udid, _, _), let .swipe(udid, _, _, _), let .launch(udid, _, _, _): udid
@@ -79,7 +84,11 @@ public struct Request: Equatable, Sendable {
         case "shutdown":
             return .shutdown(udid: try fields.required("udid"))
         case "screenshot":
-            return .screenshot(udid: try fields.required("udid"), path: try fields.required("path"))
+            let format: String = try fields.optional("format") ?? "png"
+            guard let imageFormat = ImageFormat(rawValue: format) else { throw FieldError("format must be png or jpeg") }
+            return .screenshot(
+                udid: try fields.required("udid"), path: try fields.required("path"),
+                format: imageFormat, pointSize: try fields.optional("pointSize") ?? false)
         case "tap":
             return .tap(udid: try fields.required("udid"), at: try fields.point("x", "y"), duration: try fields.optional("duration"))
         case "swipe":
