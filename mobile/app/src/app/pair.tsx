@@ -41,7 +41,7 @@ export default function Pair() {
       <View style={styles.block}>
         <Text style={styles.title}>{failed ? failed.title : 'Approve on your Mac'}</Text>
         <Text style={styles.detail}>
-          {failed ? failed.detail : 'Check the Mac shows this code, then choose what this iPhone may do.'}
+          {failed ? failed.detail : 'Check the Mac shows this code, then choose what this phone may do.'}
         </Text>
         <View style={styles.tiles}>
           <CodeTiles code={code} state={failed ? 'failed' : 'locked'} />

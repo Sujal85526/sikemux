@@ -1,4 +1,6 @@
 ---
+# The module's own name: the package's default, "Native", clashes with React Native's NativeModule on Android.
+name: sikemux-client
 rust:
   directory: ../../src-tauri
   manifestPath: crates/sikemux-mobile/Cargo.toml

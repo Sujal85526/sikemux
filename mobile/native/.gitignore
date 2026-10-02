@@ -3,6 +3,6 @@
 /ios/
 /android/
 /src/
-/Native.podspec
+/*.podspec
 /*.xcframework
 /build/

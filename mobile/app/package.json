@@ -17,6 +17,7 @@
     "@expo-google-fonts/jetbrains-mono": "^0.4.1",
     "@sikemux/native": "workspace:*",
     "expo": "~57.0.26",
+    "expo-build-properties": "~57.0.22",
     "expo-camera": "~57.0.6",
     "expo-clipboard": "~57.0.2",
     "expo-constants": "~57.0.20",

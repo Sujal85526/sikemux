@@ -39,7 +39,7 @@
     "type": "modules",
     "jsSrcsDir": "src",
     "android": {
-      "javaPackageName": "com.sikemux.native"
+      "javaPackageName": "com.sikemux.client"
     }
   }
 }
