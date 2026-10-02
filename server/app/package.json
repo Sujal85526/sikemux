@@ -9,6 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@clerk/react": "^6.17.5",
+    "@clerk/ui": "^1.38.1",
     "@sikemux/protocol": "workspace:*",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"

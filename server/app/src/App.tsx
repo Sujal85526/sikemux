@@ -1,37 +1,28 @@
-import type { Health } from "@sikemux/protocol";
-import { useEffect, useState } from "react";
+import { Show, SignIn, UserButton } from "@clerk/react";
 
-const API_URL = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:4000";
-
-type Reach =
-  { state: "checking" } | { state: "up"; health: Health } | { state: "down" };
+import { Devices } from "./Devices.tsx";
 
 export function App() {
-  const [reach, setReach] = useState<Reach>({ state: "checking" });
-
-  useEffect(() => {
-    const controller = new AbortController();
-    fetch(`${API_URL}/v1/health`, { signal: controller.signal })
-      .then((response) => response.json() as Promise<Health>)
-      .then((health) => setReach({ state: "up", health }))
-      .catch(() => {
-        if (!controller.signal.aborted) setReach({ state: "down" });
-      });
-    return () => controller.abort();
-  }, []);
-
   return (
-    <main>
-      <h1>Sikemux</h1>
-      <p>
-        Your account, and the devices signed in to it, will be managed here.
-      </p>
-      <p className="status">
-        {reach.state === "checking" && "checking the API…"}
-        {reach.state === "down" && "the API cannot be reached"}
-        {reach.state === "up" &&
-          `api ${reach.health.status} · ${reach.health.version.slice(0, 8)}`}
-      </p>
-    </main>
+    <div className="shell">
+      <header className="top">
+        <span className="wordmark">Sikemux</span>
+        <Show when="signed-in">
+          <UserButton />
+        </Show>
+      </header>
+      <main>
+        <Show when="signed-out">
+          <section className="welcome">
+            <h1>Your Sikemux account</h1>
+            <p>Sign in to see the Macs and phones on your account.</p>
+            <SignIn routing="hash" />
+          </section>
+        </Show>
+        <Show when="signed-in">
+          <Devices />
+        </Show>
+      </main>
+    </div>
   );
 }

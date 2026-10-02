@@ -3,7 +3,7 @@
   background: #0b0b0d;
   color: #e7e7ea;
   font:
-    15px/1.5 system-ui,
+    14px/1.5 system-ui,
     -apple-system,
     "Segoe UI",
     sans-serif;
@@ -11,28 +11,100 @@
 
 body {
   margin: 0;
-  min-height: 100vh;
+}
+
+.shell {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 1.25rem 1.25rem 3rem;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 2.5rem;
+  margin-bottom: 2rem;
+}
+
+.wordmark {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.welcome {
   display: grid;
-  place-items: center;
+  justify-items: center;
+  gap: 0.5rem;
+  text-align: center;
 }
 
-main {
-  max-width: 28rem;
-  padding: 2rem;
-}
-
-h1 {
+.welcome h1 {
   font-size: 1.25rem;
   font-weight: 600;
+  margin: 0;
+}
+
+.welcome p,
+.quiet {
+  color: #a1a1aa;
+  margin: 0 0 1rem;
+}
+
+.problem {
+  color: #f87171;
+}
+
+.group + .group {
+  margin-top: 2rem;
+}
+
+.group h2 {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #a1a1aa;
   margin: 0 0 0.5rem;
 }
 
-p {
-  margin: 0 0 0.75rem;
-  color: #a1a1aa;
+.count {
+  color: #71717a;
+  font-weight: 400;
 }
 
-.status {
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.375rem;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 1rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid #27272a;
+  border-radius: 8px;
+}
+
+.name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail {
+  grid-column: 1;
+  color: #a1a1aa;
+  font-size: 0.8125rem;
+}
+
+.key {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 0.75rem;
   color: #71717a;
