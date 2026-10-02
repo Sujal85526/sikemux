@@ -40,8 +40,8 @@ function ToolRow({ part, last, untimed }: { part: ToolPart; last: boolean; untim
   const spent = !untimed && part.startedAt && part.endedAt && part.endedAt > part.startedAt ? durationLabel(part.endedAt - part.startedAt) : null;
   return (
     <View style={styles.tool}>
-      <View style={[styles.spine, last && styles.spineLast]} />
-      <View style={[styles.tick, last && styles.elbow]} />
+      <View style={last ? styles.elbow : styles.spine} />
+      <View style={[styles.tick, last && { backgroundColor: 'transparent' }]} />
       <Icon name={failed ? 'IconWarning' : icon} size={12} color={failed ? colors.danger : color} />
       <Text style={[styles.kind, { color: failed ? colors.danger : color }]}>{kind}</Text>
       <Text style={[styles.target, running && { color: colors.inkDim }]} numberOfLines={1}>
@@ -188,6 +188,9 @@ export function Activity({ provider, label, since }: { provider: string; label: 
   );
 }
 
+const SPINE = '#5f4a8a';
+const TICK = 'rgba(162, 119, 255, 0.72)';
+
 const styles = StyleSheet.create({
   userRow: { alignItems: 'flex-end', marginTop: 14, marginBottom: 6 },
   bubble: {
@@ -211,18 +214,22 @@ const styles = StyleSheet.create({
   summaryChevron: { opacity: 0.7 },
   toolsBody: { marginLeft: 6, paddingVertical: 2 },
   tool: { flexDirection: 'row', alignItems: 'center', minHeight: 26, gap: 8 },
-  spine: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 1, backgroundColor: '#5f4a8a' },
-  spineLast: { bottom: '50%' },
-  tick: { width: 10, height: 1, backgroundColor: 'rgba(162, 119, 255, 0.72)' },
+  spine: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 1, backgroundColor: SPINE },
+  // The last row's spine bends into its tick, ending on the row's middle like the Mac's.
   elbow: {
-    height: 9,
-    marginTop: -9,
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: '50%',
+    width: 10,
+    marginBottom: -0.5,
     borderLeftWidth: 1,
     borderBottomWidth: 1,
     borderBottomLeftRadius: 4,
-    borderColor: 'rgba(162, 119, 255, 0.72)',
-    backgroundColor: 'transparent',
+    borderLeftColor: SPINE,
+    borderBottomColor: TICK,
   },
+  tick: { width: 10, height: 1, backgroundColor: TICK },
   kind: { fontFamily: fonts.mono, fontSize: 12 },
   target: { flex: 1, fontFamily: fonts.mono, fontSize: 12, color: colors.ink },
   toolEnd: { flexDirection: 'row', gap: 6 },
