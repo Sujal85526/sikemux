@@ -1,4 +1,4 @@
-import { SvgXml } from 'react-native-svg';
+import { parse, SvgAst, type JsxAST } from 'react-native-svg';
 
 import { ICONS, type IconName } from './icons.generated';
 import { brand, type Provider, useColors } from './theme';
@@ -13,15 +13,22 @@ const DRAWN_ICONS = {
 
 export type DeviceKind = 'laptop' | 'desktop' | 'mini';
 
+const parsed = new Map<string, JsxAST | null>();
+
+function svg(xml: string): JsxAST | null {
+  if (!parsed.has(xml)) parsed.set(xml, parse(xml));
+  return parsed.get(xml) ?? null;
+}
+
 export function Icon({ name, size = 16, color }: { name: IconName; size?: number; color?: string }) {
   const colors = useColors();
-  return <SvgXml xml={ICONS[name]} width={size} height={size} color={color ?? colors.secondary} />;
+  return <SvgAst ast={svg(ICONS[name])} override={{ width: size, height: size, color: color ?? colors.secondary }} />;
 }
 
 export function DrawnIcon({ name, size = 16, color }: { name: keyof typeof DRAWN_ICONS; size?: number; color?: string }) {
   const colors = useColors();
   const xml = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${DRAWN_ICONS[name]}</svg>`;
-  return <SvgXml xml={xml} width={size} height={size} color={color ?? colors.secondary} />;
+  return <SvgAst ast={svg(xml)} override={{ width: size, height: size, color: color ?? colors.secondary }} />;
 }
 
 export function DeviceIcon({ kind, size = 30, color }: { kind: DeviceKind; size?: number; color?: string }) {
