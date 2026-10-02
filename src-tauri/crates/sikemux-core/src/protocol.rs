@@ -336,7 +336,7 @@ pub enum Request {
     RevokeDevice {
         id: String,
     },
-    /// A paired device forgetting this Mac: removes it from the paired
+    /// A paired device forgetting this host: removes it from the paired
     /// devices and closes its connection once answered.
     Unpair,
     /// Signs the text that registers this core with an account, built by
@@ -345,7 +345,7 @@ pub enum Request {
         nonce: String,
         user_id: String,
     },
-    /// The account this Mac is signed in to, or none after signing out.
+    /// The account this host is signed in to, or none after signing out.
     /// Kept across restarts.
     SetOwner {
         owner: Option<String>,
@@ -788,7 +788,7 @@ pub struct BackdropImage {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DeviceAccess {
-    /// Everything a person at the Mac can do in a session.
+    /// Everything a person at the host can do in a session.
     Full,
     /// Read sessions and answer agents' permission requests.
     Watch,
@@ -808,7 +808,7 @@ pub struct HostInfo {
 }
 
 /// Which kind of Sikemux build a core belongs to. Each keeps its own key and
-/// paired devices, so one Mac can show up once per channel.
+/// paired devices, so one host can show up once per channel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum BuildChannel {
@@ -845,7 +845,7 @@ pub struct RemoteStatus {
     pub pairing: Option<PairingOffer>,
     /// Devices that entered the code and wait for the person to answer.
     pub pending: Vec<PendingDevice>,
-    /// The account this Mac is signed in to.
+    /// The account this host is signed in to.
     pub owner: Option<String>,
 }
 
@@ -1001,26 +1001,26 @@ pub enum Event {
         seq: u64,
         event: ChatEvent,
     },
-    /// Sent only to paired devices: what they show of this Mac, whole, when
+    /// Sent only to paired devices: what they show of this host, whole, when
     /// they connect and whenever any of it changes.
     DeviceView {
         view: DeviceView,
     },
-    /// Sent only to clients on this Mac.
+    /// Sent only to clients on this host.
     Remote {
         status: RemoteStatus,
     },
-    /// An agent started waiting on a person. Every client on this Mac hears
+    /// An agent started waiting on a person. Every client on this host hears
     /// it, whether or not it shows that agent; devices see it in their view.
     Attention {
         attention: Attention,
     },
-    /// A paired device started a chat. Sent only to clients on this Mac,
+    /// A paired device started a chat. Sent only to clients on this host,
     /// which show it beside their own.
     ChatBegun {
         chat: ChatInfo,
     },
-    /// A device opened a sleeping chat. Sent only to clients on this Mac,
+    /// A device opened a sleeping chat. Sent only to clients on this host,
     /// which start it again.
     WakeChat {
         agent_id: String,

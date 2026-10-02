@@ -1,5 +1,5 @@
 //! Who is on the other end of a connection, and what each request needs from
-//! them. The app on this Mac may do anything. A paired device does what it
+//! them. The app on this host may do anything. A paired device does what it
 //! is approved for at the moment it asks, and never touches the core itself.
 
 use crate::protocol::{DeviceAccess, Request};
@@ -22,10 +22,10 @@ pub(crate) enum Needs {
     Local,
 }
 
-pub(crate) const LOCAL_ONLY: &str = "only Sikemux on this Mac can do that";
+pub(crate) const LOCAL_ONLY: &str = "only Sikemux on this host can do that";
 pub(crate) const WATCH_ONLY: &str =
     "this device can watch and answer permission requests, not drive sessions";
-pub(crate) const UNPAIRED: &str = "this device is no longer paired with this Mac";
+pub(crate) const UNPAIRED: &str = "this device is no longer paired with this host";
 
 pub(crate) fn needs(request: &Request) -> Needs {
     match request {

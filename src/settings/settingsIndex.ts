@@ -122,7 +122,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     section("cli", "Shell integration", "install terminal path sikemux-editor"),
     section("cli", "Usage", "editor git commit open"),
 
-    section("devices", "Remote access", "phone mobile iphone android remote away connect"),
+    section("devices", "Remote access", "phone mobile iphone android remote away connect host"),
     row("devices", "Remote access", "Allow paired devices", "phone mobile remote enable turn on off background"),
     section("devices", "Your account", "account sign in login google github email phones find"),
     row("devices", "Your account", "Not signed in", "sign in log in account google github email"),

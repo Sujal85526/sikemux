@@ -209,13 +209,13 @@ impl Workspaces {
             .iter()
             .find(|launcher| launcher.id == choice.launcher)
             .ok_or_else(|| {
-                CoreError::from("that agent is not one Sikemux on this Mac can start; open Sikemux on the Mac once so it can say which it can")
+                CoreError::from("that agent is not one Sikemux on this host can start; open Sikemux on the host once so it can say which it can")
             })?;
         let project = published
             .projects
             .iter()
             .find(|project| project.id == choice.project)
-            .ok_or_else(|| CoreError::from("that project is not open in Sikemux on this Mac"))?;
+            .ok_or_else(|| CoreError::from("that project is not open in Sikemux on this host"))?;
         let mut env = launcher.env.clone();
         env.insert("SIKEMUX_AGENT_ID".into(), agent_id.to_owned());
         Ok(ChatLaunch {
@@ -266,16 +266,16 @@ pub(crate) async fn wake_chat(core: &Arc<Core>, agent_id: String) -> CoreResult<
         return Ok(Response::Done);
     }
     match core.workspaces.published(&agent_id) {
-        None => return Err("that chat is no longer open in Sikemux on this Mac".into()),
+        None => return Err("that chat is no longer open in Sikemux on this host".into()),
         Some(false) => {
             return Err(
-                "this chat stopped on the Mac; open it in Sikemux there to start it again".into(),
+                "this chat stopped on the host; open it in Sikemux there to start it again".into(),
             )
         }
         Some(true) => {}
     }
     if !core.has_local_client() {
-        return Err("open Sikemux on the Mac to wake this chat".into());
+        return Err("open Sikemux on the host to wake this chat".into());
     }
     core.broadcast_local(&Event::WakeChat {
         agent_id: agent_id.clone(),
@@ -287,7 +287,7 @@ pub(crate) async fn wake_chat(core: &Arc<Core>, agent_id: String) -> CoreResult<
             return Ok(Response::Done);
         }
     }
-    Err("the chat did not wake; open it in Sikemux on the Mac".into())
+    Err("the chat did not wake; open it in Sikemux on the host".into())
 }
 
 /// Starts the chat and answers `client` once its session is ready. The chat

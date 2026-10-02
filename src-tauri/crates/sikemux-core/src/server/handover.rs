@@ -393,7 +393,7 @@ fn migrate(mut state: Value) -> Result<Value, String> {
                 state["format"] = Value::from(2);
             }
             2 => {
-                // Format 2 cores were reached only by the app on this Mac.
+                // Format 2 cores were reached only by the app on this host.
                 for list in ["sessions", "chats"] {
                     let entries = state.get_mut(list).and_then(Value::as_array_mut);
                     for entry in entries.into_iter().flatten() {

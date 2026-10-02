@@ -1,4 +1,4 @@
-//! Pairing a device with a core. The person reads a short code off the Mac
+//! Pairing a device with a core. The person reads a short code off the host
 //! and types it on the device. Both sides run SPAKE2 on the code, bound to
 //! both keys, so the code never crosses the wire, a guess costs one live
 //! attempt, and a device that dialled an impostor finds out before it says
@@ -17,7 +17,7 @@ use crate::protocol::{encode_control, read_frame_within, DeviceAccess, FrameKind
 
 pub const PAIR_ALPN: &[u8] = b"sikemux/pair/1";
 pub const CODE_DIGITS: usize = 6;
-/// How long the core waits for the person at the Mac to answer.
+/// How long the core waits for the person at the host to answer.
 pub const APPROVAL_TIMEOUT: Duration = Duration::from_secs(120);
 const STEP_TIMEOUT: Duration = Duration::from_secs(15);
 /// Every pairing message is a few hundred bytes. Either side reads them
@@ -48,7 +48,7 @@ pub enum PairMessage {
     Confirm {
         confirm: String,
     },
-    /// Core to device: the person at the Mac is being asked.
+    /// Core to device: the person at the host is being asked.
     Waiting,
     Approved {
         access: DeviceAccess,
@@ -62,9 +62,9 @@ pub enum PairMessage {
 pub enum PairError {
     #[error("{0}")]
     Refused(String),
-    #[error("the code does not match the one on the Mac")]
+    #[error("the code does not match the one on the host")]
     WrongCode,
-    #[error("could not reach the Mac: {0}")]
+    #[error("could not reach the host: {0}")]
     Connection(String),
 }
 
@@ -79,7 +79,7 @@ pub fn normalize_code(code: &str) -> String {
     code.chars().filter(char::is_ascii_digit).collect()
 }
 
-/// What the Mac's pairing QR code holds: the core's key and the open code.
+/// What the host's pairing QR code holds: the core's key and the open code.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PairingLink {
     pub core: iroh::PublicKey,
@@ -184,7 +184,7 @@ fn connection_error(error: impl std::fmt::Display) -> PairError {
 }
 
 /// Pairs this device with the core at `core`, waiting while the person at the
-/// Mac decides. Answers with what the device was approved to do.
+/// host decides. Answers with what the device was approved to do.
 pub async fn pair(
     endpoint: &Endpoint,
     core: EndpointAddr,
@@ -214,7 +214,11 @@ pub async fn pair(
     {
         PairMessage::Challenge { spake, confirm } => (spake, confirm),
         PairMessage::Refused { message } => return Err(PairError::Refused(message)),
-        _ => return Err(PairError::Connection("the Mac answered out of turn".into())),
+        _ => {
+            return Err(PairError::Connection(
+                "the host answered out of turn".into(),
+            ))
+        }
     };
     let inbound = hex::decode(spake).map_err(connection_error)?;
     let key = exchange
@@ -244,7 +248,11 @@ pub async fn pair(
                 return Ok(access);
             }
             PairMessage::Refused { message } => return Err(PairError::Refused(message)),
-            _ => return Err(PairError::Connection("the Mac answered out of turn".into())),
+            _ => {
+                return Err(PairError::Connection(
+                    "the host answered out of turn".into(),
+                ))
+            }
         }
     }
 }

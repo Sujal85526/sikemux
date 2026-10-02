@@ -498,7 +498,7 @@ impl Feed {
             .unwrap_or_default()
     }
 
-    /// What the agent last called this session, as the Mac's rail shows it.
+    /// What the agent last called this session, as the host's rail shows it.
     pub(crate) fn title(&self) -> Option<String> {
         self.inner.lock().ok()?.title.clone()
     }

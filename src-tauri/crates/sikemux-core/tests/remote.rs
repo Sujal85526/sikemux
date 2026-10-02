@@ -277,8 +277,8 @@ async fn a_watching_device_reads_but_cannot_drive_or_reach_the_core() {
     assert_eq!(session.expect("the app's terminal").started_by, None);
     assert!(refusal(client.kill(id).await).contains("watch"));
     assert!(refusal(client.write(id, b"exit\n").await).contains("watch"));
-    assert!(refusal(client.stop_all().await).contains("only Sikemux on this Mac"));
-    assert!(refusal(client.set_remote_access(false).await).contains("only Sikemux on this Mac"));
+    assert!(refusal(client.stop_all().await).contains("only Sikemux on this host"));
+    assert!(refusal(client.set_remote_access(false).await).contains("only Sikemux on this host"));
     assert!(app.list().await.expect("list").iter().any(|s| s.id == id));
 }
 
@@ -717,12 +717,12 @@ async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
     let refused = app.unpair().await;
     assert!(refusal(refused).contains("only a paired device"));
     let refused = client.publish_palette(Default::default()).await;
-    assert!(refusal(refused).contains("only Sikemux on this Mac"));
+    assert!(refusal(refused).contains("only Sikemux on this host"));
 
     let refused = client.publish_chats(Vec::new()).await;
-    assert!(refusal(refused).contains("only Sikemux on this Mac"));
+    assert!(refusal(refused).contains("only Sikemux on this host"));
     let refused = client.acp_wake("agent-failed".into()).await;
-    assert!(refusal(refused).contains("stopped on the Mac"));
+    assert!(refusal(refused).contains("stopped on the host"));
     let refused = client.acp_wake("agent-gone".into()).await;
     assert!(refusal(refused).contains("no longer open"));
 }
@@ -842,7 +842,7 @@ async fn a_watching_device_cannot_start_a_chat() {
     assert!(refusal(refused).contains("watch"));
     assert!(
         refusal(client.publish_workspace(Vec::new(), Vec::new()).await)
-            .contains("only Sikemux on this Mac")
+            .contains("only Sikemux on this host")
     );
 }
 

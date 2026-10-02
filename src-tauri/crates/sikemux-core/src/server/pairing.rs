@@ -21,9 +21,9 @@ const NAME_LIMIT: usize = 64;
 static IN_PROGRESS: Semaphore = Semaphore::const_new(4);
 const PLATFORM_LIMIT: usize = 16;
 const NO_CODE: &str =
-    "No pairing code is open on this Mac. Open Settings, then Devices, and choose Pair a device.";
-const UNREADABLE: &str = "The Mac could not read this device's pairing message.";
-const DECLINED: &str = "The Mac did not approve this device.";
+    "No pairing code is open on this host. Open Settings, then Devices, and choose Pair a device.";
+const UNREADABLE: &str = "The host could not read this device's pairing message.";
+const DECLINED: &str = "The host did not approve this device.";
 
 fn clean(text: &str, limit: usize) -> String {
     let kept: String = text

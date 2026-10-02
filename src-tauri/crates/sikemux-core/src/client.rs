@@ -51,7 +51,7 @@ pub enum ClientError {
     Core(String),
     #[error("the connection to the Sikemux core closed")]
     Disconnected,
-    #[error("this device is no longer paired with this Mac")]
+    #[error("this device is no longer paired with this host")]
     NotPaired,
     #[error("the Sikemux core sent a reply of the wrong kind")]
     UnexpectedReply,

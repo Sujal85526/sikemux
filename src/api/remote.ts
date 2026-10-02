@@ -3,7 +3,7 @@ import { getIpcTransport } from "./transport";
 
 export type DeviceAccess = "full" | "watch";
 
-/** A phone or other machine approved to reach this Mac's terminals and agents. */
+/** A device approved to reach this host's terminals and agents. */
 export interface PairedDevice {
     /** The device's public key. */
     readonly id: string;
@@ -17,7 +17,7 @@ export interface PairedDevice {
 export interface PairingOffer {
     readonly code: string;
     readonly expiresAt: number;
-    /** The Mac's key and the code as one `sikemux://pair` link, which the QR code holds. */
+    /** The host's key and the code as one `sikemux://pair` link, which the QR code holds. */
     readonly link: string;
 }
 
@@ -38,7 +38,7 @@ export interface RemoteStatus {
     readonly connected: readonly string[];
     readonly pairing: PairingOffer | null;
     readonly pending: readonly PendingDevice[];
-    /** The account this Mac is signed in to. */
+    /** The account this host is signed in to. */
     readonly owner: string | null;
 }
 

@@ -37,7 +37,7 @@ function phoneChat(): AcpChat {
 }
 
 describe("RemoteChatBridge", () => {
-    it("adds a chat a phone starts to the Mac without taking the screen, once", async () => {
+    it("adds a chat a phone starts to the host without taking the screen, once", async () => {
         const view = render(<RemoteChatBridge />);
         const before = getState().activeSessionId;
         await act(async () => {

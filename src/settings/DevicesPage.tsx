@@ -80,11 +80,11 @@ export function DevicesPage() {
             <SettingsSection
                 title="Remote access"
                 meta={status ? (status.enabled ? `${status.connected.length} connected` : "off") : "checking"}
-                sub="Lets the phones you pair reach this Mac's terminals and agents. Connections are encrypted end to end and go direct when the network allows.">
+                sub="Lets the devices you pair reach this host's terminals and agents. Connections are encrypted end to end and go direct when the network allows.">
                 <SettingsRows>
                     <SettingsRow
                         label="Allow paired devices"
-                        desc="While this is on, the background process keeps running after you quit and starts again when you log in, so your devices can always reach this Mac."
+                        desc="While this is on, the background process keeps running after you quit and starts again when you log in, so your devices can always reach this host."
                         asLabel
                         control={
                             <Switch
@@ -96,7 +96,7 @@ export function DevicesPage() {
                         }
                     />
                     {status?.coreId && (
-                        <SettingsRow label="This Mac" desc="Your devices recognise this Mac by its key.">
+                        <SettingsRow label="This host" desc="Your devices recognise this host by its key.">
                             <code className="device-key">{shortKey(status.coreId)}</code>
                         </SettingsRow>
                     )}
@@ -107,7 +107,7 @@ export function DevicesPage() {
 
             <SettingsSection
                 title="Pair a device"
-                sub="Scan the code with Sikemux on your phone, or choose this Mac from the phones on the same network and type the digits.">
+                sub="Scan the code with Sikemux on your phone, or, on the same network, choose this host in the app and type the digits.">
                 {!status?.enabled ? (
                     <p className="settings-hint">Turn on remote access to pair a device.</p>
                 ) : pairing ? (
@@ -205,12 +205,12 @@ function AccountSection() {
         <SettingsSection
             title="Your account"
             meta={account ? (account.signedIn ? "signed in" : "signed out") : "checking"}
-            sub="Phones signed in to the same Sikemux account find this Mac without a code. Each still needs your approval here before it can reach anything.">
+            sub="Devices signed in to the same Sikemux account find this host without a code. Each still needs your approval here before it can reach anything.">
             <SettingsRows>
                 {account?.signedIn ? (
                     <SettingsRow
                         label={account.email ?? "Signed in"}
-                        desc="Signing out keeps the devices already paired; it stops new phones finding this Mac through the account.">
+                        desc="Signing out keeps the devices already paired; it stops new devices finding this host through the account.">
                         <button className="settings-btn" type="button" onClick={() => void signOut()}>
                             Sign out
                         </button>

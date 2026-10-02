@@ -1,5 +1,5 @@
 //! Tells phones on the same network that this core is here, as a
-//! `_sikemux._udp` service under the Mac's own name, with its key in the TXT
+//! `_sikemux._udp` service under the host's own name, with its key in the TXT
 //! record. Nothing here is trusted: pairing binds the key into the code check,
 //! so a phone that found an impostor's advert learns it before it says
 //! anything.
@@ -64,7 +64,7 @@ mod native {
         let txt = super::txt_record(core_id);
         let mut service: ServiceRef = std::ptr::null_mut();
         // SAFETY: every pointer is valid for the call; a null name picks the
-        // Mac's own name, null domain and host pick the defaults, and a null
+        // computer's own name, null domain and host pick the defaults, and a null
         // callback is allowed when no answer is wanted.
         let status = unsafe {
             DNSServiceRegister(

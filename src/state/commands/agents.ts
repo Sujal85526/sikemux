@@ -201,7 +201,7 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
 }
 
 /**
- * Shows a chat a paired device started among its project's agents, so the Mac
+ * Shows a chat a paired device started among its project's agents, so the host
  * can follow it. Leaves the screen where it is: the phone started it, not you.
  */
 export function adoptChat(chat: AcpChat): boolean {

@@ -1,5 +1,5 @@
 //! While remote access is on, the background core starts when the person logs
-//! in, so a paired phone reaches this Mac after a restart without Sikemux
+//! in, so a paired device reaches this host after a restart without Sikemux
 //! being opened. A LaunchAgent in `~/Library/LaunchAgents` runs the same
 //! command the app starts the core with; turning remote access off removes it.
 

@@ -42,7 +42,7 @@ impl From<core::LauncherInfo> for LauncherInfo {
     }
 }
 
-/// What the Mac draws behind its panes: the moving grain, or the picture
+/// What the host draws behind its panes: the moving grain, or the picture
 /// [`crate::Connection::save_backdrop`] fetches by `image`.
 #[derive(uniffi::Record)]
 pub struct Backdrop {
@@ -54,7 +54,7 @@ pub struct Backdrop {
 pub struct Workspace {
     pub projects: Vec<ProjectInfo>,
     pub launchers: Vec<LauncherInfo>,
-    /// The Mac's theme colours by name; empty until its app publishes them.
+    /// The host's theme colours by name; empty until its app publishes them.
     pub palette: HashMap<String, String>,
     pub backdrop: Backdrop,
 }
@@ -215,7 +215,7 @@ impl From<core::Attention> for Attention {
     }
 }
 
-/// Everything the phone shows of one Mac.
+/// Everything the phone shows of one host.
 #[derive(uniffi::Record)]
 pub struct DeviceView {
     pub workspace: Workspace,
@@ -292,7 +292,7 @@ impl From<ChatMark> for core::ChatMark {
 }
 
 /// A chat's events cross as JSON, `{ kind, payload }` each: the chat screen
-/// reads them with the Mac app's own chat code.
+/// reads them with the host app's own chat code.
 #[derive(uniffi::Enum)]
 pub enum ChatAttachment {
     /// Live events follow, numbered from `mark.seq + 1`.
@@ -312,7 +312,7 @@ pub enum ChatAttachment {
         mark: ChatMark,
     },
     Missing,
-    /// The chat said more than the Mac keeps; the Mac app has to open it.
+    /// The chat said more than the host keeps; the host app has to open it.
     Restart,
 }
 
@@ -350,7 +350,7 @@ impl From<core::ChatAttachment> for ChatAttachment {
     }
 }
 
-/// What the Mac sends without being asked.
+/// What the host sends without being asked.
 #[derive(uniffi::Enum)]
 pub enum CoreEvent {
     /// One of a chat's events, as `{ kind, payload }` JSON.

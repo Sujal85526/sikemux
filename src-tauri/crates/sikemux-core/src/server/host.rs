@@ -10,8 +10,8 @@ use crate::protocol::{BuildChannel, HostInfo};
 pub(crate) fn info() -> HostInfo {
     static HOST: OnceLock<HostInfo> = OnceLock::new();
     HOST.get_or_init(|| HostInfo {
-        name: computer_name().unwrap_or_else(|| "Mac".into()),
-        model: model_name().unwrap_or_else(|| "Mac".into()),
+        name: computer_name().unwrap_or_else(|| "Host".into()),
+        model: model_name().unwrap_or_else(|| "Host".into()),
         version: VERSION.into(),
         channel: channel(cfg!(debug_assertions), VERSION),
     })

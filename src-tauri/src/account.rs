@@ -1,4 +1,4 @@
-//! Signing this Mac in to a Sikemux account, so phones on the same account
+//! Signing this host in to a Sikemux account, so devices on the same account
 //! find it. Sign-in happens in the person's browser (OAuth with PKCE), which
 //! hands back to a one-time listener on 127.0.0.1. The refresh token stays in
 //! the Keychain; the core keeps which account owns it.
@@ -45,7 +45,7 @@ fn key_account() -> &'static str {
     }
 }
 
-/// Dev builds talk to a server on this Mac, or to `SIKEMUX_API_URL`.
+/// Dev builds talk to a server on this computer, or to `SIKEMUX_API_URL`.
 fn api(path: &str) -> String {
     let base = if cfg!(debug_assertions) {
         std::env::var("SIKEMUX_API_URL").unwrap_or_else(|_| "http://127.0.0.1:4000".into())
@@ -144,7 +144,7 @@ pub async fn account_status() -> AppResult<AccountStatus> {
     })
 }
 
-/// Opens sign-in in the browser, waits for it, then registers this Mac's
+/// Opens sign-in in the browser, waits for it, then registers this host's
 /// core with the account and records the account as its owner.
 #[tauri::command]
 pub async fn account_sign_in(
@@ -166,7 +166,7 @@ pub async fn account_sign_in(
     let user_id = subject(&tokens.access_token)?;
     let email = email(&tokens.access_token).await;
     let refresh_token = tokens.refresh_token.ok_or_else(|| {
-        AppError::Other("the sign-in did not give this Mac a way to stay signed in".into())
+        AppError::Other("the sign-in did not give this host a way to stay signed in".into())
     })?;
     let core = manager.client().await?;
     register_host(&core, &tokens.access_token, &user_id).await?;
@@ -194,7 +194,7 @@ pub fn account_cancel_sign_in(pending: State<'_, PendingSignIn>) {
     pending.replace(None);
 }
 
-/// Forgets the account on this Mac. Paired phones stay: they are the Mac's
+/// Forgets the account on this host. Paired devices stay: they are the host's
 /// own list, approved one by one.
 #[tauri::command]
 pub async fn account_sign_out(manager: State<'_, PtyManager>) -> AppResult<AccountStatus> {

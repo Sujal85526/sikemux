@@ -48,7 +48,7 @@ const SESSION_POLL: Duration = Duration::from_millis(250);
 const SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 const IDLE_TRIM: Duration = Duration::from_secs(10 * 60);
 const PROBE_TIMEOUT: Duration = Duration::from_secs(1);
-/// How soon a paired device sees a change to what it shows of this Mac.
+/// How soon a paired device sees a change to what it shows of this host.
 const DEVICE_VIEW_INTERVAL: Duration = Duration::from_millis(400);
 
 #[derive(Clone, Debug)]
@@ -496,7 +496,7 @@ impl Core {
         .ok()
     }
 
-    /// Sends every paired device what it shows of this Mac, when that changed
+    /// Sends every paired device what it shows of this host, when that changed
     /// since they were last sent it.
     pub(crate) fn publish_device_view(&self) {
         let devices: Vec<_> = self

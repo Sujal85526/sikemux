@@ -1,9 +1,9 @@
-//! What the phone app calls to pair with a Mac and talk to its core. The
+//! What the phone app calls to pair with a host and talk to its core. The
 //! connection, pairing and wire format are the core's own (`sikemux-core`),
-//! so the phone and the Mac cannot drift apart; this crate only exposes them
+//! so the phone and the host cannot drift apart; this crate only exposes them
 //! through UniFFI, as typed calls and records.
 //!
-//! A chat's events cross as JSON, since the phone reads them with the Mac
+//! A chat's events cross as JSON, since the phone reads them with the host
 //! app's chat code. Terminal bytes cross as bytes.
 
 use std::collections::HashSet;
@@ -32,16 +32,16 @@ mod android;
 
 uniffi::setup_scaffolding!();
 
-/// Long enough to find a Mac through a relay on a slow network; past it the
-/// app shows the Mac as unreachable and tries again.
+/// Long enough to find a host through a relay on a slow network; past it the
+/// app shows the host as unreachable and tries again.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
-/// Long enough for a long chat's replay over a relay. A Mac that has not
+/// Long enough for a long chat's replay over a relay. A host that has not
 /// answered by then has most likely gone, though the connection has not
 /// noticed yet.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// iroh and the core's client both need a Tokio runtime, which the phone's
-/// JavaScript thread does not have. The phone talks to a few Macs at most, so
+/// JavaScript thread does not have. The phone talks to a few hosts at most, so
 /// two threads are plenty.
 static RUNTIME: LazyLock<Result<tokio::runtime::Runtime, String>> = LazyLock::new(|| {
     tokio::runtime::Builder::new_multi_thread()
@@ -81,17 +81,17 @@ async fn on_runtime<T: Send + 'static>(
 pub enum MobileError {
     #[error("{message}")]
     Refused { message: String },
-    #[error("the code does not match the one on the Mac")]
+    #[error("the code does not match the one on the host")]
     WrongCode,
     #[error("{message}")]
     Connection { message: String },
     #[error("{message}")]
     Invalid { message: String },
-    /// The Mac and this app speak different versions of the core's protocol.
-    #[error("this Mac and this app need the same Sikemux release")]
+    /// The host and this app speak different versions of the core's protocol.
+    #[error("this host and this app need the same Sikemux release")]
     Outdated { mac_is_older: bool },
-    /// The Mac forgot this phone, so it has to pair again.
-    #[error("this Mac no longer knows this phone; pair with it again")]
+    /// The host forgot this phone, so it has to pair again.
+    #[error("this host no longer knows this phone; pair with it again")]
     Unpaired,
 }
 
@@ -127,7 +127,7 @@ impl From<PairError> for MobileError {
 }
 
 /// A new device key. The app keeps it in the Keychain or Keystore; it is the
-/// device's identity to every Mac it pairs with.
+/// device's identity to every host it pairs with.
 #[uniffi::export]
 pub fn new_device_key() -> Vec<u8> {
     SecretKey::generate().to_bytes().to_vec()
@@ -139,7 +139,7 @@ pub struct PairingLink {
     pub code: String,
 }
 
-/// Reads the link a Mac's pairing QR code holds.
+/// Reads the link a host's pairing QR code holds.
 #[uniffi::export]
 pub fn parse_pairing_link(text: String) -> Option<PairingLink> {
     pairing::PairingLink::parse(&text).map(|link| PairingLink {
@@ -148,7 +148,7 @@ pub fn parse_pairing_link(text: String) -> Option<PairingLink> {
     })
 }
 
-/// The endpoint and the Macs it has reached.
+/// The endpoint and the hosts it has reached.
 struct Online {
     endpoint: Endpoint,
     generation: u64,
@@ -163,7 +163,7 @@ pub struct Device {
     renewing: tokio::sync::Mutex<()>,
 }
 
-/// The phone looks Macs up but never publishes its own addresses: no Mac
+/// The phone looks hosts up but never publishes its own addresses: no host
 /// dials a phone, and publishing would announce where the phone is.
 async fn bind(key: SecretKey) -> Result<Endpoint, MobileError> {
     on_runtime(async move {
@@ -215,7 +215,7 @@ impl Device {
         }))
     }
 
-    /// The key Macs know this phone by.
+    /// The key hosts know this phone by.
     pub fn id(&self) -> String {
         self.key.public().to_string()
     }
@@ -226,7 +226,7 @@ impl Device {
         sign_registration(&self.key, &nonce, &user_id)
     }
 
-    /// Pairs with the Mac whose key is `core`, waiting while the person
+    /// Pairs with the host whose key is `core`, waiting while the person
     /// there decides. Answers with the access they gave: `full` or `watch`.
     pub async fn pair(
         &self,
@@ -249,10 +249,10 @@ impl Device {
         serde_json::to_value(access)
             .ok()
             .and_then(|value| value.as_str().map(str::to_owned))
-            .ok_or_else(|| invalid("the Mac gave an access this app does not know"))
+            .ok_or_else(|| invalid("the host gave an access this app does not know"))
     }
 
-    /// Opens a session with a Mac this phone paired with. Everything the core
+    /// Opens a session with a host this phone paired with. Everything the core
     /// sends unasked arrives on `listener`, in order, off the network's threads.
     pub async fn connect(
         &self,
@@ -300,7 +300,7 @@ impl Device {
             Err(_) => {
                 self.renew_after_failing(&core, generation).await;
                 return Err(MobileError::Connection {
-                    message: "this Mac did not answer in time".into(),
+                    message: "this host did not answer in time".into(),
                 });
             }
         };
@@ -321,9 +321,9 @@ impl Device {
         (online.endpoint.clone(), online.generation)
     }
 
-    /// Once a connection to a Mac closes, iroh 1.3 can leave the endpoint
-    /// unable to reach that Mac again, while a new endpoint with the same key
-    /// reaches it at once. A Mac this endpoint never reached is most likely
+    /// Once a connection to a host closes, iroh 1.3 can leave the endpoint
+    /// unable to reach that host again, while a new endpoint with the same key
+    /// reaches it at once. A host this endpoint never reached is most likely
     /// just away, so it keeps the endpoint. Connections still open on the old
     /// endpoint keep it alive until they end.
     async fn renew_after_failing(&self, core: &str, generation: u64) {
@@ -444,7 +444,7 @@ pub struct AttachedScreen {
     pub exited: bool,
 }
 
-/// An open session with one Mac's core.
+/// An open session with one host's core.
 #[derive(uniffi::Object)]
 pub struct Connection {
     client: Mutex<Option<Arc<CoreClient>>>,
@@ -452,12 +452,12 @@ pub struct Connection {
 
 fn not_answered() -> MobileError {
     MobileError::Connection {
-        message: "the Mac stopped answering".into(),
+        message: "the host stopped answering".into(),
     }
 }
 
 fn unexpected() -> MobileError {
-    invalid("the Mac answered with something this app did not ask for")
+    invalid("the host answered with something this app did not ask for")
 }
 
 impl Connection {
@@ -467,7 +467,7 @@ impl Connection {
             .ok()
             .and_then(|client| client.clone())
             .ok_or(MobileError::Connection {
-                message: "the connection to the Mac is closed".into(),
+                message: "the connection to the host is closed".into(),
             })
     }
 
@@ -508,8 +508,8 @@ impl Connection {
         }
     }
 
-    /// Writes the Mac's backdrop picture into `dir` and answers with its path,
-    /// or nothing when the Mac shows none.
+    /// Writes the host's backdrop picture into `dir` and answers with its path,
+    /// or nothing when the host shows none.
     pub async fn save_backdrop(
         &self,
         dir: String,
@@ -531,11 +531,11 @@ impl Connection {
             tokio::fs::write(&written, bytes).await
         })
         .await?
-        .map_err(|error| invalid(format!("could not save the Mac's backdrop: {error}")))?;
+        .map_err(|error| invalid(format!("could not save the host's backdrop: {error}")))?;
         Ok(Some(path.display().to_string()))
     }
 
-    /// Starts a chat the Mac's app put to sleep. Answers once it runs.
+    /// Starts a chat the host's app put to sleep. Answers once it runs.
     pub async fn wake_chat(&self, agent_id: String) -> Result<(), MobileError> {
         self.done(Request::AcpWake { agent_id }).await
     }
@@ -609,7 +609,7 @@ impl Connection {
         }
     }
 
-    /// Starts a chat the way the Mac's app would, in one of its projects, and
+    /// Starts a chat the way the host's app would, in one of its projects, and
     /// answers with the chat's agent id.
     pub async fn start_chat(
         &self,
@@ -629,7 +629,7 @@ impl Connection {
         }
     }
 
-    /// Asks the Mac to forget this phone. The Mac closes the connection after.
+    /// Asks the host to forget this phone. The host closes the connection after.
     pub async fn unpair(&self) -> Result<(), MobileError> {
         self.done(Request::Unpair).await
     }
@@ -670,7 +670,7 @@ impl Connection {
         self.client().is_ok_and(|client| client.is_connected())
     }
 
-    /// What the phone already sent still reaches the Mac.
+    /// What the phone already sent still reaches the host.
     pub fn close(&self) {
         if let Ok(mut client) = self.client.lock() {
             client.take();
@@ -681,7 +681,7 @@ impl Connection {
 /// The picture inside a `data:image/...;base64,` URL, and the file extension
 /// for its kind.
 fn decode_data_url(url: &str) -> Result<(&'static str, Vec<u8>), MobileError> {
-    let unreadable = || invalid("the Mac's backdrop is not a picture this app can read");
+    let unreadable = || invalid("the host's backdrop is not a picture this app can read");
     let rest = url.strip_prefix("data:image/").ok_or_else(unreadable)?;
     let (kind, data) = rest.split_once(";base64,").ok_or_else(unreadable)?;
     let extension = match kind {
@@ -698,7 +698,7 @@ fn decode_data_url(url: &str) -> Result<(&'static str, Vec<u8>), MobileError> {
     Ok((extension, bytes))
 }
 
-/// The Mac names the picture, so the name keeps only characters that cannot
+/// The host names the picture, so the name keeps only characters that cannot
 /// lead out of `dir`.
 fn backdrop_path(dir: &Path, id: &str, extension: &str) -> PathBuf {
     let name: String = id
