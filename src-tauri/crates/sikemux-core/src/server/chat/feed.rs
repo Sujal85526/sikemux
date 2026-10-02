@@ -52,6 +52,18 @@ fn only_keys(object: &serde_json::Map<String, Value>, allowed: &[&str]) -> bool 
     object.keys().all(|key| allowed.contains(&key.as_str()))
 }
 
+fn session_title(payload: &Value) -> Option<&str> {
+    let update = payload.get("update")?;
+    if update.get("sessionUpdate")?.as_str()? != "session_info_update" {
+        return None;
+    }
+    update
+        .get("title")?
+        .as_str()
+        .map(str::trim)
+        .filter(|title| !title.is_empty())
+}
+
 fn chunk(payload: &Value) -> Option<Chunk<'_>> {
     let notification = payload.as_object()?;
     if !only_keys(notification, &["sessionId", "update"]) {
@@ -198,6 +210,7 @@ struct Inner {
     flush_scheduled: bool,
     start: Option<ChatStart>,
     permission_mode: String,
+    title: Option<String>,
     /// The session ended, so nobody new is let in to wait for events that
     /// will not come.
     closed: bool,
@@ -221,6 +234,7 @@ impl Feed {
                 flush_scheduled: false,
                 start: None,
                 permission_mode,
+                title: None,
                 closed: false,
             }),
         })
@@ -272,6 +286,9 @@ impl Feed {
         };
         inner.replay.push(kind, &payload);
         if kind == ChatEventKind::SessionUpdate {
+            if let Some(title) = session_title(&payload) {
+                inner.title = Some(title.to_owned());
+            }
             inner.pending.push(payload);
             if !inner.flush_scheduled {
                 inner.flush_scheduled = true;
@@ -364,6 +381,11 @@ impl Feed {
             .unwrap_or_default()
     }
 
+    /// What the agent last called this session, as the Mac's rail shows it.
+    pub(crate) fn title(&self) -> Option<String> {
+        self.inner.lock().ok()?.title.clone()
+    }
+
     pub(crate) fn start(&self) -> Option<ChatStart> {
         self.inner.lock().ok()?.start.clone()
     }
@@ -392,6 +414,25 @@ mod tests {
 
     fn kinds(replay: &Replay) -> Vec<ChatEventKind> {
         replay.events().iter().map(|event| event.kind).collect()
+    }
+
+    #[test]
+    fn the_title_is_the_last_one_the_agent_named() {
+        let info = |title: &str| {
+            serde_json::json!({
+                "sessionId": "s",
+                "update": { "sessionUpdate": "session_info_update", "title": title },
+            })
+        };
+        assert_eq!(
+            session_title(&info("Fix the flaky test")),
+            Some("Fix the flaky test")
+        );
+        assert_eq!(session_title(&info("  ")), None);
+        assert_eq!(
+            session_title(&text("agent_message_chunk", None, "hi")),
+            None
+        );
     }
 
     #[test]

@@ -448,6 +448,8 @@ pub enum ChatState {
 pub struct ChatInfo {
     pub agent_id: String,
     pub provider: String,
+    /// What the agent named the session, once it has.
+    pub title: Option<String>,
     pub cwd: PathBuf,
     pub session_id: Option<String>,
     pub state: ChatState,

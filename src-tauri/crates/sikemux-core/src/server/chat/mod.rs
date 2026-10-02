@@ -298,6 +298,7 @@ impl Chat {
         ChatInfo {
             agent_id: self.launch.agent_id.clone(),
             provider: self.launch.provider.clone(),
+            title: self.feed.title(),
             cwd: self.launch.cwd.clone(),
             session_id: start.as_ref().map(|start| start.session_id.clone()),
             state: if start.is_some() {
