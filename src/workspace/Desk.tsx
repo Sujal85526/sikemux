@@ -321,11 +321,7 @@ function DeskSession({
                 )}
                 {desk.simulators.map((simulator) => {
                     const showing = shown === simulatorKey(simulator.udid);
-                    return (
-                        <div key={simulator.udid} className="desk-simulator-slot" hidden={!showing}>
-                            <SimulatorView simulator={simulator} live={visible && showing} />
-                        </div>
-                    );
+                    return <SimulatorView key={simulator.udid} simulator={simulator} hidden={!showing} live={visible && showing} />;
                 })}
                 {desk.terminals.map((terminal) => {
                     const showing = shown === terminalKey(terminal.id);

@@ -41,7 +41,7 @@ export function typedText(event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKe
     return [...event.key].length === 1 ? event.key : null;
 }
 
-export function SimulatorView({ simulator, live }: { simulator: DeskSimulator; live: boolean }) {
+export function SimulatorView({ simulator, hidden, live }: { simulator: DeskSimulator; hidden?: boolean; live: boolean }) {
     const { udid, screen } = simulator;
     const [frame, setFrame] = useState<number | null>(null);
     const [failure, setFailure] = useState<string | null>(null);
@@ -123,7 +123,7 @@ export function SimulatorView({ simulator, live }: { simulator: DeskSimulator; l
 
     const label = `${simulator.name} (${simulator.os})`;
     return (
-        <div className="desk-simulator">
+        <div className="desk-simulator" hidden={hidden}>
             <div className="simulator-toolbar">
                 <span className="simulator-device" title={udid}>
                     {label}
