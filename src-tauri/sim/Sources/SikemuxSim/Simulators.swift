@@ -16,6 +16,7 @@ final class Simulators {
     private let control: SimulatorControlBootstrap
     private let logger: any ControlCoreLogger
     private var connections: [String: SimulatorHID] = [:]
+    private var streams: [String: FrameStream] = [:]
 
     init() throws {
         logger = FBControlCoreLoggerFactory.systemLoggerWriting(toStderr: false, withDebugLogging: false)
@@ -49,6 +50,7 @@ final class Simulators {
             return describe(simulator)
         case .shutdown:
             connections[simulator.udid] = nil
+            streams.removeValue(forKey: simulator.udid)?.stop()
             // idb does not mark its device set Sendable; every call to it here is made from the main actor.
             nonisolated(unsafe) let set = control.set
             if simulator.state != .shutdown { try await set.shutdown(simulator) }
@@ -97,6 +99,14 @@ final class Simulators {
             return ["bundleId": installed.bundle.identifier]
         case let .openUrl(_, url):
             try await requireBooted(simulator).lifecycle.open(url)
+            return [:]
+        case .stream:
+            if let running = streams[simulator.udid] { return ["url": running.address] }
+            let stream = try await FrameStream.start(requireBooted(simulator), logger: logger)
+            streams[simulator.udid] = stream
+            return ["url": stream.address]
+        case .stopStream:
+            streams.removeValue(forKey: simulator.udid)?.stop()
             return [:]
         }
     }

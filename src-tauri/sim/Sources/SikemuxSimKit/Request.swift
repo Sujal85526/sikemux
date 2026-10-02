@@ -34,11 +34,14 @@ public enum Command: Equatable, Sendable {
     case terminate(udid: String, bundleId: String)
     case install(udid: String, path: String)
     case openUrl(udid: String, url: URL)
+    /// A live MJPEG view of the screen at a local address, shared by everyone who opens it.
+    case stream(udid: String)
+    case stopStream(udid: String)
 
     public var udid: String? {
         switch self {
         case .devices: nil
-        case let .boot(udid), let .shutdown(udid), let .state(udid): udid
+        case let .boot(udid), let .shutdown(udid), let .state(udid), let .stream(udid), let .stopStream(udid): udid
         case let .screenshot(udid, _, _, _), let .type(udid, _), let .button(udid, _), let .tapElement(udid, _),
             let .terminate(udid, _), let .install(udid, _), let .openUrl(udid, _):
             udid
@@ -123,6 +126,10 @@ public struct Request: Equatable, Sendable {
             let text: String = try fields.required("url")
             guard let url = URL(string: text), url.scheme != nil else { throw FieldError("\"\(text)\" is not a URL") }
             return .openUrl(udid: try fields.required("udid"), url: url)
+        case "stream":
+            return .stream(udid: try fields.required("udid"))
+        case "stopStream":
+            return .stopStream(udid: try fields.required("udid"))
         default:
             throw FieldError("unknown request type \"\(type)\"")
         }

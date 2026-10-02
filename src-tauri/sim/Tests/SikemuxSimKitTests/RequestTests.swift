@@ -20,6 +20,8 @@ final class RequestTests: XCTestCase {
     func testParsesEachCommand() throws {
         XCTAssertEqual(try parse(#"{"id":1,"type":"devices"}"#).command, .devices)
         XCTAssertEqual(try parse(#"{"id":2,"type":"boot","udid":"A"}"#).command, .boot(udid: "A"))
+        XCTAssertEqual(try parse(#"{"id":2,"type":"stream","udid":"A"}"#).command, .stream(udid: "A"))
+        XCTAssertEqual(try parse(#"{"id":2,"type":"stopStream","udid":"A"}"#).command, .stopStream(udid: "A"))
         XCTAssertEqual(
             try parse(#"{"id":2,"type":"screenshot","udid":"A","path":"/tmp/a.png"}"#).command,
             .screenshot(udid: "A", path: "/tmp/a.png", format: .png, pointSize: false))
