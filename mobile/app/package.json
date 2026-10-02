@@ -7,8 +7,10 @@
   "scripts": {
     "postinstall": "node scripts/generate-icons.mjs",
     "start": "expo start --dev-client",
-    "ios": "expo run:ios",
-    "android": "expo run:android",
+    "ios": "node scripts/run.mjs ios development",
+    "ios:release": "node scripts/run.mjs ios production --configuration Release",
+    "android": "node scripts/run.mjs android development",
+    "android:release": "node scripts/run.mjs android production --variant release",
     "prebuild": "expo prebuild",
     "typecheck": "tsc --noEmit"
   },

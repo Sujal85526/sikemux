@@ -9,6 +9,8 @@
     "native:android:release": "pnpm --filter @sikemux/native ubrn:android:release",
     "ios": "pnpm --filter sikemux-app ios",
     "android": "pnpm --filter sikemux-app android",
+    "ios:release": "pnpm --filter sikemux-app ios:release",
+    "android:release": "pnpm --filter sikemux-app android:release",
     "start": "pnpm --filter sikemux-app start",
     "typecheck": "pnpm -r typecheck"
   }
