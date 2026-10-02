@@ -37,7 +37,7 @@ function ToolRow({ part, last }: { part: ToolPart; last: boolean }) {
   const { icon, color } = look(kind);
   const failed = part.tool.status === 'failed';
   const running = toolRunning(part.tool);
-  const spent = part.startedAt && part.endedAt ? durationLabel(part.endedAt - part.startedAt) : null;
+  const spent = part.startedAt && part.endedAt && part.endedAt > part.startedAt ? durationLabel(part.endedAt - part.startedAt) : null;
   return (
     <View style={styles.tool}>
       <View style={[styles.spine, last && styles.spineLast]} />
@@ -73,7 +73,7 @@ function ToolGroup({ parts }: { parts: ToolPart[] }) {
         <Text style={styles.summaryText}>
           {parts.length} tool call{parts.length === 1 ? '' : 's'}
         </Text>
-        {started && ended ? <Text style={styles.summaryTime}>{durationLabel(ended - started)}</Text> : null}
+        {started && ended && ended > started ? <Text style={styles.summaryTime}>{durationLabel(ended - started)}</Text> : null}
         <View style={[styles.summaryChevron, open && { transform: [{ rotate: '90deg' }] }]}>
           <Icon name="IconChevron" size={11} color={colors.inkDim} />
         </View>

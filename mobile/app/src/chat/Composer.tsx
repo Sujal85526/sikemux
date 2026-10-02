@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { pickerSlots, sessionConfigs, type SessionConfig } from '@mac/chat/sessionConfig';
 import { toolKind, toolTarget } from '@mac/chat/toolLabels';
@@ -83,10 +83,12 @@ function ConfigSheet({
   const slots = pickerSlots(configs, provider as never);
   const model = slots[0]?.config;
   const effort = slots[1]?.config;
+  // A modal measures no safe area of its own, so the screen behind it lends its inset.
+  const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.scrim} onPress={onClose} accessibilityLabel="Close" />
-      <SafeAreaView edges={['bottom']} style={styles.sheet}>
+      <View style={[styles.sheet, { paddingBottom: insets.bottom + 12 }]}>
         <View style={styles.grabber} />
         <View style={styles.sheetHead}>
           <AgentIcon provider={provider} size={20} />
@@ -139,7 +141,7 @@ function ConfigSheet({
             </View>
           </View>
         ) : null}
-      </SafeAreaView>
+      </View>
     </Modal>
   );
 }
@@ -167,6 +169,7 @@ export function Composer({
 }) {
   const [draft, setDraft] = useState('');
   const [focused, setFocused] = useState(false);
+  const input = useRef<TextInput>(null);
   const [sheet, setSheet] = useState(false);
   const configs = sessionConfigs(state.setup);
   const slots = pickerSlots(configs, provider as never);
@@ -190,6 +193,8 @@ export function Composer({
     const text = draft.trim();
     if (!text) return;
     onSend(text);
+    // Clearing the state alone leaves text the keyboard is still composing.
+    input.current?.clear();
     setDraft('');
   };
 
@@ -198,6 +203,7 @@ export function Composer({
       {request ? <PermissionDock request={request} provider={provider} onAnswer={(option) => onAnswer(request.requestId, option)} /> : null}
       <View style={[styles.composer, focused && { borderColor: colors.borderSelected }]}>
         <TextInput
+          ref={input}
           value={draft}
           onChangeText={setDraft}
           placeholder={placeholder}

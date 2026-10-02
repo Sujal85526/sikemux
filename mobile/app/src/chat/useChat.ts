@@ -75,13 +75,14 @@ export function useChat(core: string, agentId: string): ChatView {
   useEffect(() => {
     if (!connection) return;
     let current = true;
-    let early: CoreChatEvent[] | null = [];
+    // The core sends a chat's events in order with the attach answer, and the
+    // replay holds everything sent before it, so events ahead of it are dropped.
+    let attaching = true;
     apply([{ type: 'reset' }]);
     const off = onEvent(core, (json) => {
       const event = JSON.parse(json) as { kind: string; agentId?: string; event?: CoreChatEvent };
       if (event.kind !== 'chat' || event.agentId !== agentId || !event.event) return;
-      if (early) early.push(event.event);
-      else apply(actions(event.event));
+      if (!attaching) apply(actions(event.event));
     });
     connection
       .request(JSON.stringify({ op: 'acpAttach', agentId }))
@@ -98,9 +99,8 @@ export function useChat(core: string, agentId: string): ChatView {
           ...replay,
           { type: 'ready', capabilities: recordOf(attachment.start.capabilities) ?? {}, setup: recordOf(attachment.start.setup) ?? {} },
           ...(attachment.running ? [{ type: 'turn_started' } as const] : []),
-          ...(early ?? []).flatMap(actions),
         ]);
-        early = null;
+        attaching = false;
         setAttached('live');
       })
       .catch(() => current && setAttached('missing'));

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 
 import { composerPlaceholder } from '@mac/chat/chatStatus';
@@ -17,13 +17,15 @@ function home(path: string): string {
 }
 
 function Sheet({ visible, onClose, tall, children }: { visible: boolean; onClose: () => void; tall?: boolean; children: React.ReactNode }) {
+  // A modal measures no safe area of its own, so the screen behind it lends its inset.
+  const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.scrim} onPress={onClose} accessibilityLabel="Close" />
-      <SafeAreaView edges={['bottom']} style={[styles.sheet, tall && { height: '82%' }]}>
+      <View style={[styles.sheet, tall && { height: '82%' }, { paddingBottom: insets.bottom + 12 }]}>
         <View style={styles.grabber} />
         {children}
-      </SafeAreaView>
+      </View>
     </Modal>
   );
 }
