@@ -1282,7 +1282,9 @@ textarea,
         .aws-live i,
         .rnd-live,
         .rnd-live i,
-        .chat-send
+        .chat-send,
+        .chat-project-trigger,
+        .chat-project-strip .worktree-toggle
     ) {
     border-radius: var(--radius-full) !important;
 }
