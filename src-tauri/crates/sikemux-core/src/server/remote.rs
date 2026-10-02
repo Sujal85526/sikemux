@@ -37,6 +37,7 @@ struct Stored {
     secret_key: Option<String>,
     enabled: bool,
     devices: Vec<DeviceInfo>,
+    owner: Option<String>,
 }
 
 struct Running {
@@ -198,7 +199,26 @@ impl Remote {
                 .iter()
                 .map(|pending| pending.device.clone())
                 .collect(),
+            owner: inner.stored.owner.clone(),
         }
+    }
+
+    /// The core's key and its signature over the registration text for
+    /// `nonce` and `user_id`, which must be a challenge and an account.
+    pub(super) fn sign_registration(
+        &self,
+        nonce: &str,
+        user_id: &str,
+    ) -> CoreResult<(String, String)> {
+        crate::accounts::check_registration(nonce, user_id).map_err(CoreError::from)?;
+        let inner = self.lock();
+        let secret = inner
+            .secret
+            .as_ref()
+            .ok_or_else(|| CoreError::from("the core's key has not loaded"))?;
+        let key = secret.public().to_string();
+        let message = crate::accounts::registration_message(nonce, user_id, &key);
+        Ok((key, hex::encode(secret.sign(message.as_bytes()).to_bytes())))
     }
 
     pub(super) fn core_id(&self) -> Option<String> {
@@ -470,6 +490,17 @@ pub(crate) fn set_access(core: &Core, id: &str, access: DeviceAccess) -> CoreRes
     Ok(announce(core))
 }
 
+pub(crate) fn set_owner(core: &Core, owner: Option<String>) -> CoreResult<RemoteStatus> {
+    if let Some(owner) = &owner {
+        crate::accounts::check_user_id(owner).map_err(CoreError::from)?;
+    }
+    core.remote.change(|stored| {
+        stored.owner = owner;
+        Ok(())
+    })?;
+    Ok(announce(core))
+}
+
 pub(crate) fn revoke(core: &Core, id: &str) -> CoreResult<RemoteStatus> {
     core.remote.change(|stored| {
         stored.devices.retain(|device| device.id != id);
@@ -551,6 +582,7 @@ mod tests {
         let stored = Stored {
             secret_key: Some(hex::encode(secret.to_bytes())),
             enabled: true,
+            owner: Some("user_2abc".into()),
             devices: vec![DeviceInfo {
                 id: SecretKey::generate().public().to_string(),
                 name: "Phone".into(),
@@ -564,11 +596,44 @@ mod tests {
         let read = read_stored(&path).unwrap();
         assert!(read.enabled);
         assert_eq!(read.devices, stored.devices);
+        assert_eq!(read.owner.as_deref(), Some("user_2abc"));
         let key = secret_from_hex(read.secret_key.as_deref().unwrap()).unwrap();
         assert_eq!(key.public(), secret.public());
         use std::os::unix::fs::PermissionsExt;
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
+    }
+
+    /// The same vector the server's tests verify, so both sides sign and
+    /// check exactly the same text.
+    #[test]
+    fn registrations_sign_the_text_the_server_checks() {
+        let vector: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../../server/protocol/vectors/registration.json"
+        ))
+        .unwrap();
+        let text = |name: &str| vector[name].as_str().unwrap().to_owned();
+        let remote = Remote::default();
+        remote.lock().secret = secret_from_hex(&text("secretKey"));
+        let (key, signature) = remote
+            .sign_registration(&text("nonce"), &text("userId"))
+            .unwrap();
+        assert_eq!(key, text("key"));
+        assert_eq!(
+            crate::accounts::registration_message(&text("nonce"), &text("userId"), &key),
+            text("message")
+        );
+        assert_eq!(signature, text("signature"));
+    }
+
+    #[test]
+    fn registrations_refuse_text_that_is_not_a_challenge() {
+        let remote = Remote::default();
+        remote.lock().secret = Some(SecretKey::generate());
+        assert!(remote.sign_registration("hello", "user_2abc").is_err());
+        assert!(remote
+            .sign_registration(&"a".repeat(64), "user_2abc|extra")
+            .is_err());
     }
 
     #[test]

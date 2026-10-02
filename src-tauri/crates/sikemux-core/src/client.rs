@@ -25,9 +25,9 @@ use crate::protocol::{
     decode_output, decode_snapshot, encode_control, encode_frozen, encode_input, read_frame,
     read_frame_sync, Attention, BackdropImage, BuildIdentity, CallId, ChatAttachment, ChatContext,
     ChatInfo, ChatLaunch, ChatLauncher, ChatMark, ChatStart, ClientMessage, DeviceAccess, Event,
-    FrameKind, LaunchIdentity, ProjectInfo, PublishedChat, RemoteStatus, Request, RequestId,
-    Response, RunSelector, ServerMessage, SessionId, SessionInfo, SpawnTarget, WindowAnswer,
-    WindowCall, Workspace, MAX_FRAME_BYTES, PROTOCOL, PROTOCOL_VERSION,
+    FrameKind, HostRegistration, LaunchIdentity, ProjectInfo, PublishedChat, RemoteStatus, Request,
+    RequestId, Response, RunSelector, ServerMessage, SessionId, SessionInfo, SpawnTarget,
+    WindowAnswer, WindowCall, Workspace, MAX_FRAME_BYTES, PROTOCOL, PROTOCOL_VERSION,
 };
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -659,6 +659,25 @@ impl CoreClient {
             Response::Remote { status } => Ok(status),
             _ => Err(ClientError::UnexpectedReply),
         }
+    }
+
+    /// Signs the registration text for the accounts server with the core's key.
+    pub async fn sign_registration(
+        &self,
+        nonce: String,
+        user_id: String,
+    ) -> Result<HostRegistration, ClientError> {
+        match self
+            .request(Request::SignRegistration { nonce, user_id })
+            .await?
+        {
+            Response::Registration { registration } => Ok(registration),
+            _ => Err(ClientError::UnexpectedReply),
+        }
+    }
+
+    pub async fn set_owner(&self, owner: Option<String>) -> Result<RemoteStatus, ClientError> {
+        self.remote_request(Request::SetOwner { owner }).await
     }
 
     pub async fn remote_status(&self) -> Result<RemoteStatus, ClientError> {

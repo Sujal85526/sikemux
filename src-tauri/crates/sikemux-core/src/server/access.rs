@@ -73,6 +73,8 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::OpenPairing
         | Request::ClosePairing
         | Request::AnswerPairing { .. }
+        | Request::SignRegistration { .. }
+        | Request::SetOwner { .. }
         | Request::PublishWorkspace { .. }
         | Request::PublishChats { .. }
         | Request::PublishPalette { .. }
@@ -152,6 +154,13 @@ mod tests {
                 id: "request".into(),
                 allow: true,
                 access: DeviceAccess::Full,
+            },
+            Request::SignRegistration {
+                nonce: "a".repeat(64),
+                user_id: "user_attacker".into(),
+            },
+            Request::SetOwner {
+                owner: Some("user_attacker".into()),
             },
         ] {
             assert_eq!(refusal(Some(DeviceAccess::Full), &request), LOCAL_ONLY);

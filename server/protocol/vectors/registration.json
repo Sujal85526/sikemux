@@ -1,0 +1,9 @@
+{
+  "description": "A registration signed by the key whose secret is 32 bytes of 7. Rust and TypeScript both check it.",
+  "secretKey": "0707070707070707070707070707070707070707070707070707070707070707",
+  "key": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+  "nonce": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+  "userId": "user_2vectorTest",
+  "message": "sikemux-register|9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08|user_2vectorTest|ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+  "signature": "92723e6d4f7881274f2a8182b4690b9a31392b3a450a478b07f3dbd0e211ba94804f667fbb3239aa7c6ef15ced7f615878069a198155385e48a7aba937bb330f"
+}

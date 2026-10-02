@@ -339,6 +339,17 @@ pub enum Request {
     /// A paired device forgetting this Mac: removes it from the paired
     /// devices and closes its connection once answered.
     Unpair,
+    /// Signs the text that registers this core with an account, built by
+    /// `accounts::registration_message` from the server's challenge.
+    SignRegistration {
+        nonce: String,
+        user_id: String,
+    },
+    /// The account this Mac is signed in to, or none after signing out.
+    /// Kept across restarts.
+    SetOwner {
+        owner: Option<String>,
+    },
     /// Shows a new pairing code, replacing any open one. Remote access must
     /// be on.
     OpenPairing,
@@ -697,6 +708,19 @@ pub enum Response {
     ChatBegun { agent_id: String, start: ChatStart },
     Host { host: HostInfo },
     BackdropImage { data_url: Option<String> },
+    Registration { registration: HostRegistration },
+}
+
+/// What the app sends the accounts server to register this core as a host.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostRegistration {
+    /// The core's public key, the same one paired devices dial.
+    pub key: String,
+    pub name: String,
+    pub channel: BuildChannel,
+    /// The key's Ed25519 signature over the registration text, in hex.
+    pub signature: String,
 }
 
 /// A project the app has open.
@@ -821,6 +845,8 @@ pub struct RemoteStatus {
     pub pairing: Option<PairingOffer>,
     /// Devices that entered the code and wait for the person to answer.
     pub pending: Vec<PendingDevice>,
+    /// The account this Mac is signed in to.
+    pub owner: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

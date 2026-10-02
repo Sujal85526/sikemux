@@ -3,6 +3,38 @@
 
 pub mod protocol;
 
+/// What a device signs to register with an account. It binds the server's
+/// one-time challenge, the account and the key, so the signature proves
+/// nothing else. The server checks exactly this text.
+pub fn registration_message(nonce: &str, user_id: &str, key: &str) -> String {
+    format!("sikemux-register|{nonce}|{user_id}|{key}")
+}
+
+/// Accepts only a challenge and a Clerk user id, so a request to sign a
+/// registration cannot make the core sign any other text.
+pub fn check_registration(nonce: &str, user_id: &str) -> Result<(), &'static str> {
+    let is_challenge = nonce.len() == 64
+        && nonce
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+    if !is_challenge {
+        return Err("the challenge is 64 lowercase hex characters");
+    }
+    check_user_id(user_id)
+}
+
+/// Clerk user ids look like `user_2abcXYZ`.
+pub fn check_user_id(user_id: &str) -> Result<(), &'static str> {
+    let valid = user_id.strip_prefix("user_").is_some_and(|rest| {
+        !rest.is_empty() && rest.len() <= 64 && rest.bytes().all(|b| b.is_ascii_alphanumeric())
+    });
+    if valid {
+        Ok(())
+    } else {
+        Err("the account is a Clerk user id like user_2abc")
+    }
+}
+
 #[cfg(test)]
 type RoundTrip = serde_json::Result<serde_json::Value>;
 
@@ -43,6 +75,17 @@ mod tests {
         }
         assert!(checked > 0, "no fixtures under {}", fixtures.display());
         Ok(())
+    }
+
+    #[test]
+    fn registration_text_is_only_ever_a_challenge_and_an_account() {
+        let nonce = "a".repeat(64);
+        assert!(super::check_registration(&nonce, "user_2abc").is_ok());
+        assert!(super::check_registration("short", "user_2abc").is_err());
+        assert!(super::check_registration(&"A".repeat(64), "user_2abc").is_err());
+        assert!(super::check_registration(&nonce, "user_").is_err());
+        assert!(super::check_registration(&nonce, "org_2abc").is_err());
+        assert!(super::check_registration(&nonce, "user_2abc|anything").is_err());
     }
 
     #[test]

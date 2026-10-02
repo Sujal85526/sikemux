@@ -9,8 +9,8 @@ use tokio::net::UnixStream;
 use tokio::sync::{mpsc, Notify};
 
 use crate::protocol::{
-    decode_input, encode_control, fits, read_frame, ClientMessage, FrameKind, LaunchIdentity,
-    Request, RequestId, Response, ServerMessage, SessionId, SpawnTarget, PROTOCOL,
+    decode_input, encode_control, fits, read_frame, ClientMessage, FrameKind, HostRegistration,
+    LaunchIdentity, Request, RequestId, Response, ServerMessage, SessionId, SpawnTarget, PROTOCOL,
     PROTOCOL_VERSION,
 };
 
@@ -744,6 +744,31 @@ async fn run_requests(
                         eprintln!("sikemux core: could not unpair {id}: {error}");
                     }
                 });
+            }
+            Request::SignRegistration { nonce, user_id } => {
+                let signed = core.remote.sign_registration(&nonce, &user_id);
+                tokio::spawn(async move {
+                    let result = match signed {
+                        Ok((key, signature)) => {
+                            blocking(|| Ok(host::info()))
+                                .await
+                                .map(|host| Response::Registration {
+                                    registration: HostRegistration {
+                                        key,
+                                        name: host.name,
+                                        channel: host.channel,
+                                        signature,
+                                    },
+                                })
+                        }
+                        Err(error) => Err(error),
+                    };
+                    client.respond(request_id, result);
+                });
+            }
+            Request::SetOwner { owner } => {
+                let result = remote::set_owner(&core, owner);
+                client.respond(request_id, result.map(|status| Response::Remote { status }));
             }
             Request::RevokeDevice { id } => {
                 let result = remote::revoke(&core, &id);
