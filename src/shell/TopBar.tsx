@@ -7,6 +7,7 @@ import { useResource } from "../state/resources";
 import { swallow } from "../state/toast";
 import { gitOverviewR } from "../state/resources.defs";
 import { useInstalledPlugins } from "../plugins/installed";
+import { selectFocusMode } from "../state/selectors";
 import { useStore } from "../state/store";
 import { IconBattery, IconFocus, IconGit, IconMic, IconZoom } from "../ui/Icons";
 import { WorkspaceTabs } from "../workspace/Workspace";
@@ -159,7 +160,7 @@ function ClockChip() {
 export const TopBar = memo(function TopBar() {
     const session = useStore((s) => s.sessions[s.activeSessionId]);
     const zoomed = useStore((s) => s.zoomedPaneId != null);
-    const zen = useStore((s) => s.zenMode);
+    const zen = useStore(selectFocusMode);
     const focusShortcut = useShortcutLabel("view.focusMode");
     const settingsShortcut = useShortcutLabel("settings.toggle");
     const [stripHovered, setStripHovered] = useState(false);

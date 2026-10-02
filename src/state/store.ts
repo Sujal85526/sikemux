@@ -73,7 +73,6 @@ export interface DomainState {
     sideRailWidth: number;
     agentRailWidth: number;
     diffTarget: Record<string, DiffTarget | null>;
-    zenMode: boolean;
     /** Each plugin's own settings, by plugin id, in whatever shape the plugin decodes. */
     pluginSettings: Readonly<Record<string, unknown>>;
     /** Plugins switched off in Settings; they are built in but act as if absent. */
@@ -246,7 +245,6 @@ export const useStore = create<StoreState>(() => {
         sideRailWidth: RAIL_WIDTH.start.initial,
         agentRailWidth: RAIL_WIDTH.end.initial,
         diffTarget: {},
-        zenMode: false,
         pluginSettings: {},
         disabledPlugins: [],
         restoreAgentTabs: true,

@@ -78,7 +78,6 @@ export interface PersistedPrefs {
     agentRailOpen: boolean;
     sideRailWidth?: number;
     agentRailWidth?: number;
-    zenMode: boolean;
     pluginSettings?: Record<string, unknown>;
     disabledPlugins?: string[];
     restoreAgentTabs?: boolean;

@@ -305,7 +305,6 @@ export function demoSnapshot(): PersistedSnapshot {
       cloudBrowserShortcut: "",
       sideRailOpen: true,
       agentRailOpen: true,
-      zenMode: false,
       onboardingComplete: true,
       notificationsIntroduced: true,
       agentNotifications: false,

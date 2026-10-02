@@ -1,5 +1,6 @@
 import { clampRailWidth, type RailEdge } from "../../lib/railWidths";
 import { invalidate } from "../resources";
+import { selectFocusMode } from "../selectors";
 import { getState, mutate, setState } from "../store";
 import type { SettingsPageId } from "../../settings/settingsIndex";
 import type { PickerMode } from "../types";
@@ -49,10 +50,12 @@ export const setSettingsPage = (page: SettingsPageId): void => setState({ settin
 export const closeSettings = (): void => setState({ settingsOpen: false });
 export const toggleSettings = (): void => setState((s) => ({ settingsOpen: !s.settingsOpen }));
 
-// Focus mode hides both rails, so asking for one back has to leave focus mode.
-export const toggleSideRail = (): void => setState((s) => (s.zenMode ? { zenMode: false, sideRailOpen: true } : { sideRailOpen: !s.sideRailOpen }));
-export const toggleAgentRail = (): void =>
-    setState((s) => (s.zenMode ? { zenMode: false, agentRailOpen: true } : { agentRailOpen: !s.agentRailOpen }));
+export const toggleSideRail = (): void => setState((s) => ({ sideRailOpen: !s.sideRailOpen }));
+export const toggleAgentRail = (): void => setState((s) => ({ agentRailOpen: !s.agentRailOpen }));
 export const setRailWidth = (edge: RailEdge, px: number): void =>
     setState(edge === "start" ? { sideRailWidth: clampRailWidth(edge, px) } : { agentRailWidth: clampRailWidth(edge, px) });
-export const toggleZen = (): void => setState((s) => ({ zenMode: !s.zenMode, sideRailOpen: s.zenMode, agentRailOpen: s.zenMode }));
+export const toggleZen = (): void =>
+    setState((s) => {
+        const showRails = selectFocusMode(s);
+        return { sideRailOpen: showRails, agentRailOpen: showRails };
+    });

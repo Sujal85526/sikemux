@@ -4,6 +4,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 
 import { toggleAgentRail, toggleSideRail, toggleZen } from "./commands";
+import { selectFocusMode } from "./selectors";
 import { getState, setState } from "./store";
 
 const initial = getState();
@@ -13,34 +14,38 @@ beforeEach(() => {
 });
 
 describe("rail toggles", () => {
-    it("toggles a rail on its own when focus mode is off", () => {
-        setState({ zenMode: false, sideRailOpen: true, agentRailOpen: false });
+    it("toggles each rail on its own", () => {
+        setState({ sideRailOpen: true, agentRailOpen: true });
 
         toggleSideRail();
-        expect(getState()).toMatchObject({ zenMode: false, sideRailOpen: false, agentRailOpen: false });
-
-        toggleAgentRail();
-        expect(getState()).toMatchObject({ zenMode: false, sideRailOpen: false, agentRailOpen: true });
-    });
-
-    it("leaves focus mode and shows the rail that was asked for", () => {
-        setState({ zenMode: true, sideRailOpen: true, agentRailOpen: false });
+        expect(getState()).toMatchObject({ sideRailOpen: false, agentRailOpen: true });
 
         toggleSideRail();
-        expect(getState()).toMatchObject({ zenMode: false, sideRailOpen: true, agentRailOpen: false });
-
-        setState({ zenMode: true, sideRailOpen: false, agentRailOpen: false });
-        toggleAgentRail();
-        expect(getState()).toMatchObject({ zenMode: false, sideRailOpen: false, agentRailOpen: true });
+        expect(getState()).toMatchObject({ sideRailOpen: true, agentRailOpen: true });
     });
 
-    it("focus mode hides both rails and leaving it shows both, whatever each was before", () => {
-        setState({ zenMode: false, sideRailOpen: true, agentRailOpen: false });
+    it("is in focus mode exactly when both rails are hidden", () => {
+        setState({ sideRailOpen: true, agentRailOpen: true });
+
+        toggleSideRail();
+        expect(selectFocusMode(getState())).toBe(false);
+
+        toggleAgentRail();
+        expect(selectFocusMode(getState())).toBe(true);
+
+        toggleAgentRail();
+        expect(selectFocusMode(getState())).toBe(false);
+    });
+
+    it("entering focus mode hides both rails and leaving it shows both", () => {
+        setState({ sideRailOpen: true, agentRailOpen: false });
 
         toggleZen();
-        expect(getState()).toMatchObject({ zenMode: true, sideRailOpen: false, agentRailOpen: false });
+        expect(getState()).toMatchObject({ sideRailOpen: false, agentRailOpen: false });
+        expect(selectFocusMode(getState())).toBe(true);
 
         toggleZen();
-        expect(getState()).toMatchObject({ zenMode: false, sideRailOpen: true, agentRailOpen: true });
+        expect(getState()).toMatchObject({ sideRailOpen: true, agentRailOpen: true });
+        expect(selectFocusMode(getState())).toBe(false);
     });
 });
