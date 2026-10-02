@@ -9,7 +9,7 @@ import { useDeviceId } from '@/device/identity';
 import { chatTitle, ago } from '@/devices/words';
 import { AgentIcon, DeviceIcon, Icon } from '@/ui/Icon';
 import { IconButton, NeedsYou, Screen, useBottomGap, Working } from '@/ui/parts';
-import { colors, fonts, type } from '@/ui/theme';
+import { fonts, type Palette, typeFor, useColors, useStyles, useType } from '@/ui/theme';
 
 function summary(snapshot: Snapshot): string {
   const agents = snapshot.chats.length;
@@ -21,6 +21,8 @@ function summary(snapshot: Snapshot): string {
 }
 
 function DeviceCard({ device }: { device: PairedDevice }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
   const live = useLive(device.core);
   const away = live.status === 'closed';
   const snapshot = live.snapshot;
@@ -88,6 +90,9 @@ function DeviceCard({ device }: { device: PairedDevice }) {
 }
 
 export function DevicesList({ devices }: { devices: PairedDevice[] }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  const type = useType();
   const id = useDeviceId();
   const bottom = useBottomGap();
   return (
@@ -110,55 +115,58 @@ export function DevicesList({ devices }: { devices: PairedDevice[] }) {
   );
 }
 
-const styles = StyleSheet.create({
-  nav: { height: 46, flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 8 },
-  title: { ...type.title, fontSize: 26, paddingHorizontal: 16, paddingBottom: 14 },
-  list: { paddingHorizontal: 16, gap: 10, paddingBottom: 24 },
-  card: { borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.raised, overflow: 'hidden' },
-  away: { backgroundColor: 'transparent' },
-  head: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, paddingLeft: 16, paddingRight: 14 },
-  glyph: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
-  presence: { position: 'absolute', right: -1, bottom: 3, width: 10, height: 10, borderRadius: 5, borderWidth: 2.5 },
-  presenceOn: { backgroundColor: colors.live, borderColor: colors.raised },
-  presenceOff: { backgroundColor: colors.ground, borderColor: colors.rest },
-  name: { ...type.heading },
-  meta: { ...type.meta, marginTop: 2 },
-  ask: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginHorizontal: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    backgroundColor: colors.overlay,
-  },
-  askTitle: { fontFamily: fonts.uiMedium, fontSize: 13.5, color: colors.ink },
-  askDetail: { ...type.meta, fontSize: 12.5, marginTop: 1 },
-  work: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 14 },
-  faces: { flexDirection: 'row' },
-  face: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    marginRight: -6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.overlay,
-    borderWidth: 2,
-    borderColor: colors.raised,
-  },
-  workText: { flex: 1, marginLeft: 6, fontFamily: fonts.ui, fontSize: 13, color: colors.secondary },
-  phone: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginHorizontal: 16,
-    paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  phoneText: { ...type.meta },
-});
+const makeStyles = (colors: Palette) => {
+  const type = typeFor(colors);
+  return StyleSheet.create({
+    nav: { height: 46, flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 8 },
+    title: { ...type.title, fontSize: 26, paddingHorizontal: 16, paddingBottom: 14 },
+    list: { paddingHorizontal: 16, gap: 10, paddingBottom: 24 },
+    card: { borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.raised, overflow: 'hidden' },
+    away: { backgroundColor: 'transparent' },
+    head: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, paddingLeft: 16, paddingRight: 14 },
+    glyph: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
+    presence: { position: 'absolute', right: -1, bottom: 3, width: 10, height: 10, borderRadius: 5, borderWidth: 2.5 },
+    presenceOn: { backgroundColor: colors.live, borderColor: colors.raised },
+    presenceOff: { backgroundColor: colors.ground, borderColor: colors.rest },
+    name: { ...type.heading },
+    meta: { ...type.meta, marginTop: 2 },
+    ask: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      marginHorizontal: 8,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.borderStrong,
+      backgroundColor: colors.overlay,
+    },
+    askTitle: { fontFamily: fonts.uiMedium, fontSize: 13.5, color: colors.ink },
+    askDetail: { ...type.meta, fontSize: 12.5, marginTop: 1 },
+    work: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 14 },
+    faces: { flexDirection: 'row' },
+    face: {
+      width: 26,
+      height: 26,
+      borderRadius: 13,
+      marginRight: -6,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.overlay,
+      borderWidth: 2,
+      borderColor: colors.raised,
+    },
+    workText: { flex: 1, marginLeft: 6, fontFamily: fonts.ui, fontSize: 13, color: colors.secondary },
+    phone: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginHorizontal: 16,
+      paddingTop: 14,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+    },
+    phoneText: { ...type.meta },
+  });
+};

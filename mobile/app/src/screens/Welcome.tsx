@@ -7,7 +7,10 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { pasteLink } from '@/devices/pairing';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Button, Dot, NeedsYou, useBottomGap, Working } from '@/ui/parts';
-import { colors, fonts, type } from '@/ui/theme';
+import { defaultPalette as colors, fonts, typeFor } from '@/ui/theme';
+
+// Shown before any Mac is paired, so it is drawn in the default theme.
+const type = typeFor(colors);
 
 /** What the app is for, before there is anything of the person's to show: the rail, drifting past. */
 const REEL = [

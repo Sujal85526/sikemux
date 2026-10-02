@@ -11,11 +11,13 @@ import { ProjectSheet } from '@/devices/ProjectSheet';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Nav, Screen, Working } from '@/ui/parts';
 import { Sheet, SheetLabel } from '@/ui/Sheet';
-import { colors, fonts, type } from '@/ui/theme';
+import { fonts, type Palette, useColors, useStyles, useType } from '@/ui/theme';
 
 const IDLE = composerPlaceholder({ connection: 'ready', running: false }, { resuming: false, disconnected: false });
 
 function AgentSheet({ visible, onClose, launchers, chosen, onChoose }: { visible: boolean; onClose: () => void; launchers: LauncherInfo[]; chosen?: LauncherInfo; onChoose: (launcher: LauncherInfo) => void }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
   return (
     <Sheet visible={visible} onClose={onClose}>
       <SheetLabel>Agent</SheetLabel>
@@ -37,6 +39,9 @@ function AgentSheet({ visible, onClose, launchers, chosen, onChoose }: { visible
 }
 
 export default function NewChat() {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  const type = useType();
   const { core, project: linkedProject } = useLocalSearchParams<{ core: string; project?: string }>();
   const live = useLive(core);
   const workspace = live.snapshot?.workspace;
@@ -97,7 +102,7 @@ export default function NewChat() {
             <View style={styles.bar}>
               <View style={styles.yolo}>
                 <Icon name={yolo ? 'IconShieldBolt' : 'IconShield'} size={13} color={yolo ? colors.accent : colors.inkFaint} />
-                <Text style={[styles.yoloText, yolo && { color: '#c9a7ff' }]}>{yolo ? 'yolo' : 'safe'}</Text>
+                <Text style={[styles.yoloText, yolo && { color: colors.accent }]}>{yolo ? 'yolo' : 'safe'}</Text>
               </View>
               {launcher ? (
                 <Pressable style={styles.picker} onPress={() => setSheet('agent')} accessibilityRole="button" accessibilityLabel="Agent">
@@ -140,37 +145,39 @@ export default function NewChat() {
   );
 }
 
-const styles = StyleSheet.create({
-  welcome: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 28, borderTopWidth: 1, borderTopColor: colors.border },
-  welcomeTitle: { fontFamily: fonts.uiSemibold, fontSize: 20, letterSpacing: -0.55, color: colors.ink },
-  problem: { fontFamily: fonts.ui, fontSize: 13.5, color: colors.danger, textAlign: 'center' },
-  wrap: { paddingHorizontal: 10, paddingTop: 8, paddingBottom: 6 },
-  strip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    marginHorizontal: 14,
-    marginBottom: -1,
-    paddingVertical: 9,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderBottomWidth: 0,
-    borderColor: colors.border,
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
-    backgroundColor: colors.composer,
-  },
-  stripName: { fontFamily: fonts.uiMedium, fontSize: 13.5, color: colors.ink },
-  composer: { padding: 6, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.composer },
-  bar: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingTop: 6 },
-  yolo: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 34, paddingHorizontal: 8 },
-  yoloText: { fontFamily: fonts.uiSemibold, fontSize: 11, letterSpacing: 0.9, textTransform: 'uppercase', color: colors.inkFaint },
-  picker: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 34, paddingHorizontal: 7 },
-  pickerText: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.accent },
-  send: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
+const makeStyles = (colors: Palette) => {
+  return StyleSheet.create({
+    welcome: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 28, borderTopWidth: 1, borderTopColor: colors.border },
+    welcomeTitle: { fontFamily: fonts.uiSemibold, fontSize: 20, letterSpacing: -0.55, color: colors.ink },
+    problem: { fontFamily: fonts.ui, fontSize: 13.5, color: colors.danger, textAlign: 'center' },
+    wrap: { paddingHorizontal: 10, paddingTop: 8, paddingBottom: 6 },
+    strip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 7,
+      marginHorizontal: 14,
+      marginBottom: -1,
+      paddingVertical: 9,
+      paddingHorizontal: 12,
+      borderWidth: 1,
+      borderBottomWidth: 0,
+      borderColor: colors.border,
+      borderTopLeftRadius: 12,
+      borderTopRightRadius: 12,
+      backgroundColor: colors.composer,
+    },
+    stripName: { fontFamily: fonts.uiMedium, fontSize: 13.5, color: colors.ink },
+    composer: { padding: 6, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.composer },
+    bar: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingTop: 6 },
+    yolo: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 34, paddingHorizontal: 8 },
+    yoloText: { fontFamily: fonts.uiSemibold, fontSize: 11, letterSpacing: 0.9, textTransform: 'uppercase', color: colors.inkFaint },
+    picker: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 34, paddingHorizontal: 7 },
+    pickerText: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.accent },
+    send: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
 
-  agents: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  agent: { width: '23.6%', height: 66, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.raised, alignItems: 'center', justifyContent: 'center', gap: 6 },
-  agentOn: { backgroundColor: colors.active, borderColor: colors.borderStrong },
-  agentText: { fontFamily: fonts.ui, fontSize: 12, color: colors.tertiary },
-});
+    agents: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+    agent: { width: '23.6%', height: 66, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.raised, alignItems: 'center', justifyContent: 'center', gap: 6 },
+    agentOn: { backgroundColor: colors.active, borderColor: colors.borderStrong },
+    agentText: { fontFamily: fonts.ui, fontSize: 12, color: colors.tertiary },
+  });
+};

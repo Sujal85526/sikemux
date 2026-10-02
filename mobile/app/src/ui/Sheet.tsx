@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Animated, Dimensions, Easing, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, fonts } from './theme';
+import { fonts, type Palette, useStyles } from './theme';
 
 const OPEN_MS = 260;
 const CLOSE_MS = 180;
@@ -12,6 +12,7 @@ const CLOSE_MS = 180;
  * the dimmed screen closes it. The modal stays mounted until the sheet is down.
  */
 export function Sheet({ visible, onClose, tall, children }: { visible: boolean; onClose: () => void; tall?: boolean; children: ReactNode }) {
+  const styles = useStyles(makeStyles);
   // A modal measures no safe area of its own, so the screen behind it lends its inset.
   const insets = useSafeAreaInsets();
   const [mounted, setMounted] = useState(visible);
@@ -47,22 +48,25 @@ export function Sheet({ visible, onClose, tall, children }: { visible: boolean; 
 }
 
 export function SheetLabel({ children }: { children: ReactNode }) {
+  const styles = useStyles(makeStyles);
   return <Text style={styles.label}>{children}</Text>;
 }
 
-const styles = StyleSheet.create({
-  scrim: { backgroundColor: 'rgba(9, 9, 11, 0.62)' },
-  dock: { flex: 1, justifyContent: 'flex-end' },
-  sheet: {
-    backgroundColor: colors.overlay,
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    borderTopWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 12,
-  },
-  grabber: { alignSelf: 'center', width: 36, height: 5, borderRadius: 3, backgroundColor: colors.borderStrong, marginBottom: 12 },
-  label: { fontFamily: fonts.uiSemibold, fontSize: 13, color: colors.tertiary, paddingTop: 14, paddingBottom: 8, paddingHorizontal: 6 },
-});
+const makeStyles = (colors: Palette) => {
+  return StyleSheet.create({
+    scrim: { backgroundColor: 'rgba(9, 9, 11, 0.62)' },
+    dock: { flex: 1, justifyContent: 'flex-end' },
+    sheet: {
+      backgroundColor: colors.overlay,
+      borderTopLeftRadius: 22,
+      borderTopRightRadius: 22,
+      borderTopWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 16,
+      paddingTop: 8,
+      paddingBottom: 12,
+    },
+    grabber: { alignSelf: 'center', width: 36, height: 5, borderRadius: 3, backgroundColor: colors.borderStrong, marginBottom: 12 },
+    label: { fontFamily: fonts.uiSemibold, fontSize: 13, color: colors.tertiary, paddingTop: 14, paddingBottom: 8, paddingHorizontal: 6 },
+  });
+};

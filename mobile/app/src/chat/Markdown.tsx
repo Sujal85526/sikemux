@@ -1,7 +1,7 @@
 import { Fragment, type ReactNode } from 'react';
 import { ScrollView, StyleSheet, Text, View, type TextStyle } from 'react-native';
 
-import { colors, fonts } from '@/ui/theme';
+import { fonts, type Palette, useStyles } from '@/ui/theme';
 
 type Block =
   | { kind: 'paragraph'; text: string }
@@ -49,7 +49,7 @@ function blocks(source: string): Block[] {
 }
 
 /** `code` as the Mac's purple chip, **bold** as semibold; everything else as written. */
-function inline(text: string): ReactNode[] {
+function inline(text: string, styles: Styles): ReactNode[] {
   return text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g).map((piece, index) => {
     if (piece.startsWith('`') && piece.endsWith('`') && piece.length > 1) {
       return (
@@ -70,6 +70,7 @@ function inline(text: string): ReactNode[] {
 }
 
 export function Markdown({ text, style }: { text: string; style: TextStyle }) {
+  const styles = useStyles(makeStyles);
   return (
     <View style={styles.stack}>
       {blocks(text).map((block, index) => {
@@ -83,20 +84,20 @@ export function Markdown({ text, style }: { text: string; style: TextStyle }) {
           case 'heading':
             return (
               <Text key={index} style={[style, styles.bold]}>
-                {inline(block.text)}
+                {inline(block.text, styles)}
               </Text>
             );
           case 'item':
             return (
               <View key={index} style={styles.item}>
                 <Text style={[style, styles.marker]}>{block.marker}</Text>
-                <Text style={[style, { flex: 1 }]}>{inline(block.text)}</Text>
+                <Text style={[style, { flex: 1 }]}>{inline(block.text, styles)}</Text>
               </View>
             );
           default:
             return (
               <Text key={index} style={style}>
-                {inline(block.text)}
+                {inline(block.text, styles)}
               </Text>
             );
         }
@@ -105,12 +106,15 @@ export function Markdown({ text, style }: { text: string; style: TextStyle }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
   stack: { gap: 10 },
-  chip: { fontFamily: fonts.mono, fontSize: 13, color: '#c9b4ff', backgroundColor: colors.accentSoft },
+  chip: { fontFamily: fonts.mono, fontSize: 13, color: colors.accent, backgroundColor: colors.accentSoft },
   bold: { fontFamily: fonts.uiSemibold, color: colors.ink },
   item: { flexDirection: 'row', gap: 8, paddingLeft: 2 },
   marker: { color: colors.tertiary, minWidth: 14 },
   code: { borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.sunken },
   codeText: { fontFamily: fonts.mono, fontSize: 12, lineHeight: 18, color: colors.ink },
 });
+
+type Styles = ReturnType<typeof makeStyles>;

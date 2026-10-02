@@ -1,7 +1,7 @@
 import { useState, type Ref } from 'react';
 import { Platform, StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
 
-import { colors, fonts } from '@/ui/theme';
+import { fonts, type Palette, useColors, useStyles } from '@/ui/theme';
 
 type Props = Omit<TextInputProps, 'style' | 'placeholder'> & { placeholder: string; ref?: Ref<TextInput> };
 
@@ -10,6 +10,8 @@ type Props = Omit<TextInputProps, 'style' | 'placeholder'> & { placeholder: stri
  * would cut off a placeholder that wraps; a hidden copy of the placeholder sets its height.
  */
 export function ComposerInput({ placeholder, value, ref, ...props }: Props) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
   const [placeholderHeight, setPlaceholderHeight] = useState(0);
   const empty = !value;
   return (
@@ -40,18 +42,20 @@ export function ComposerInput({ placeholder, value, ref, ...props }: Props) {
 
 const MIN_HEIGHT = 44;
 
-const styles = StyleSheet.create({
-  input: {
-    minHeight: MIN_HEIGHT,
-    maxHeight: 160,
-    paddingHorizontal: 10,
-    paddingTop: 9,
-    paddingBottom: 4,
-    fontFamily: fonts.ui,
-    fontSize: 15,
-    color: colors.ink,
-    // Android pads a field by the font's full height and adds line height above each line, so the cursor misses the text.
-    ...Platform.select({ ios: { lineHeight: 21 }, android: { includeFontPadding: false, textAlignVertical: 'top' } }),
-  },
-  measure: { position: 'absolute', left: 0, right: 0, opacity: 0 },
-});
+const makeStyles = (colors: Palette) => {
+  return StyleSheet.create({
+    input: {
+      minHeight: MIN_HEIGHT,
+      maxHeight: 160,
+      paddingHorizontal: 10,
+      paddingTop: 9,
+      paddingBottom: 4,
+      fontFamily: fonts.ui,
+      fontSize: 15,
+      color: colors.ink,
+      // Android pads a field by the font's full height and adds line height above each line, so the cursor misses the text.
+      ...Platform.select({ ios: { lineHeight: 21 }, android: { includeFontPadding: false, textAlignVertical: 'top' } }),
+    },
+    measure: { position: 'absolute', left: 0, right: 0, opacity: 0 },
+  });
+};

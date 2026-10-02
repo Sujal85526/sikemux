@@ -6,35 +6,37 @@ import { toolKind, toolRunning, toolTarget } from '@mac/chat/toolLabels';
 import type { ChatMessage, ChatPart } from '@mac/chat/types';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import type { IconName } from '@/ui/icons.generated';
-import { colors, fonts } from '@/ui/theme';
+import { fonts, type Palette, useColors, useStyles } from '@/ui/theme';
 import { Markdown } from './Markdown';
 
 type ToolPart = Extract<ChatPart, { kind: 'tool' }>;
 
 /** The verb, icon and colour of each kind of call, as the Mac's tool rows draw them. */
-function look(kind: string): { icon: IconName; color: string } {
+function look(kind: string, colors: Palette): { icon: IconName; color: string } {
   switch (kind) {
     case 'run':
-      return { icon: 'IconCommand', color: '#d966ae' };
+      return { icon: 'IconCommand', color: colors.toolRun };
     case 'read':
-      return { icon: 'IconFile', color: '#7183c0' };
+      return { icon: 'IconFile', color: colors.toolRead };
     case 'search':
-      return { icon: 'IconSearch', color: '#7183c0' };
+      return { icon: 'IconSearch', color: colors.toolRead };
     case 'fetch':
-      return { icon: 'IconGlobe', color: '#7183c0' };
+      return { icon: 'IconGlobe', color: colors.toolRead };
     case 'edit':
     case 'move':
-      return { icon: 'IconPencil', color: '#cdaf86' };
+      return { icon: 'IconPencil', color: colors.toolEdit };
     case 'delete':
-      return { icon: 'IconPencil', color: '#c25e4b' };
+      return { icon: 'IconPencil', color: colors.toolDelete };
     default:
       return { icon: 'IconAgent', color: colors.inkDim };
   }
 }
 
 function ToolRow({ part, last, untimed }: { part: ToolPart; last: boolean; untimed: boolean }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
   const kind = toolKind(part.tool);
-  const { icon, color } = look(kind);
+  const { icon, color } = look(kind, colors);
   const failed = part.tool.status === 'failed';
   const running = toolRunning(part.tool);
   const spent = !untimed && part.startedAt && part.endedAt && part.endedAt > part.startedAt ? durationLabel(part.endedAt - part.startedAt) : null;
@@ -60,6 +62,8 @@ function ToolRow({ part, last, untimed }: { part: ToolPart; last: boolean; untim
 }
 
 function ToolGroup({ parts, untimed }: { parts: ToolPart[]; untimed: boolean }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
   const working = parts.some((part) => toolRunning(part.tool));
   const [open, setOpen] = useState(working);
   useEffect(() => {
@@ -94,6 +98,7 @@ function userText(message: ChatMessage): string {
 }
 
 function Assistant({ message, untimed }: { message: ChatMessage; untimed: boolean }) {
+  const styles = useStyles(makeStyles);
   const runs: (ChatPart | ToolPart[])[] = [];
   for (const part of message.parts) {
     const previous = runs[runs.length - 1];
@@ -136,6 +141,7 @@ function Assistant({ message, untimed }: { message: ChatMessage; untimed: boolea
 }
 
 export function Message({ message, untimed = false }: { message: ChatMessage; untimed?: boolean }) {
+  const styles = useStyles(makeStyles);
   if (message.role === 'user') {
     return (
       <View style={styles.userRow}>
@@ -149,6 +155,7 @@ export function Message({ message, untimed = false }: { message: ChatMessage; un
 }
 
 export function Queued({ text }: { text: string }) {
+  const styles = useStyles(makeStyles);
   return (
     <View style={styles.userRow}>
       <View style={[styles.bubble, { opacity: 0.55 }]}>
@@ -161,6 +168,7 @@ export function Queued({ text }: { text: string }) {
 
 /** The working line: the agent's logo breathing beside what it is doing, and for how long. */
 export function Activity({ provider, label, since }: { provider: string; label: string; since: number }) {
+  const styles = useStyles(makeStyles);
   const breath = useRef(new Animated.Value(1)).current;
   const [seconds, setSeconds] = useState(0);
   useEffect(() => {
@@ -188,53 +196,52 @@ export function Activity({ provider, label, since }: { provider: string; label: 
   );
 }
 
-const SPINE = '#5f4a8a';
-const TICK = 'rgba(162, 119, 255, 0.72)';
-
-const styles = StyleSheet.create({
-  userRow: { alignItems: 'flex-end', marginTop: 14, marginBottom: 6 },
-  bubble: {
-    maxWidth: '84%',
-    paddingVertical: 9,
-    paddingHorizontal: 13,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(36, 36, 43, 0.8)',
-    backgroundColor: 'rgba(25, 25, 30, 0.72)',
-  },
-  userText: { fontFamily: fonts.ui, fontSize: 15, lineHeight: 24, color: colors.ink },
-  queuedLabel: { fontFamily: fonts.ui, fontSize: 11.5, color: colors.inkFaint, marginTop: 4 },
-  prose: { fontFamily: fonts.ui, fontSize: 15.5, lineHeight: 25, color: colors.ink },
-  thought: { fontFamily: fonts.uiItalic, fontSize: 13.5, lineHeight: 21, color: colors.inkFaint, marginVertical: 8 },
-  note: { fontFamily: fonts.ui, fontSize: 13, color: colors.inkDim, marginVertical: 6 },
-  tools: { marginVertical: 6 },
-  summary: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 26, alignSelf: 'flex-start' },
-  summaryText: { fontFamily: fonts.ui, fontSize: 13, color: colors.inkDim },
-  summaryTime: { fontFamily: fonts.mono, fontSize: 11.5, color: colors.inkDim },
-  summaryChevron: { opacity: 0.7 },
-  toolsBody: { marginLeft: 6, paddingVertical: 2 },
-  tool: { flexDirection: 'row', alignItems: 'center', minHeight: 26, gap: 8 },
-  spine: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 1, backgroundColor: SPINE },
-  // The last row's spine bends into its tick, ending on the row's middle like the Mac's.
-  elbow: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: '50%',
-    width: 10,
-    marginBottom: -0.5,
-    borderLeftWidth: 1,
-    borderBottomWidth: 1,
-    borderBottomLeftRadius: 4,
-    borderLeftColor: SPINE,
-    borderBottomColor: TICK,
-  },
-  tick: { width: 10, height: 1, backgroundColor: TICK },
-  kind: { fontFamily: fonts.mono, fontSize: 12 },
-  target: { flex: 1, fontFamily: fonts.mono, fontSize: 12, color: colors.ink },
-  toolEnd: { flexDirection: 'row', gap: 6 },
-  endText: { fontFamily: fonts.mono, fontSize: 11, color: colors.inkDim },
-  activity: { flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 14, marginBottom: 6 },
-  activityText: { fontFamily: fonts.ui, fontSize: 13, color: colors.inkFaint },
-  activityTime: { fontFamily: fonts.mono, fontSize: 10.5, color: 'rgba(115, 111, 128, 0.68)' },
-});
+const makeStyles = (colors: Palette) => {
+  return StyleSheet.create({
+    userRow: { alignItems: 'flex-end', marginTop: 14, marginBottom: 6 },
+    bubble: {
+      maxWidth: '84%',
+      paddingVertical: 9,
+      paddingHorizontal: 13,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.raised,
+    },
+    userText: { fontFamily: fonts.ui, fontSize: 15, lineHeight: 24, color: colors.ink },
+    queuedLabel: { fontFamily: fonts.ui, fontSize: 11.5, color: colors.inkFaint, marginTop: 4 },
+    prose: { fontFamily: fonts.ui, fontSize: 15.5, lineHeight: 25, color: colors.ink },
+    thought: { fontFamily: fonts.uiItalic, fontSize: 13.5, lineHeight: 21, color: colors.inkFaint, marginVertical: 8 },
+    note: { fontFamily: fonts.ui, fontSize: 13, color: colors.inkDim, marginVertical: 6 },
+    tools: { marginVertical: 6 },
+    summary: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 26, alignSelf: 'flex-start' },
+    summaryText: { fontFamily: fonts.ui, fontSize: 13, color: colors.inkDim },
+    summaryTime: { fontFamily: fonts.mono, fontSize: 11.5, color: colors.inkDim },
+    summaryChevron: { opacity: 0.7 },
+    toolsBody: { marginLeft: 6, paddingVertical: 2 },
+    tool: { flexDirection: 'row', alignItems: 'center', minHeight: 26, gap: 8 },
+    spine: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 1, backgroundColor: colors.treeSpine },
+    // The last row's spine bends into its tick, ending on the row's middle like the Mac's.
+    elbow: {
+      position: 'absolute',
+      left: 0,
+      top: 0,
+      bottom: '50%',
+      width: 10,
+      marginBottom: -0.5,
+      borderLeftWidth: 1,
+      borderBottomWidth: 1,
+      borderBottomLeftRadius: 4,
+      borderLeftColor: colors.treeSpine,
+      borderBottomColor: colors.treeTick,
+    },
+    tick: { width: 10, height: 1, backgroundColor: colors.treeTick },
+    kind: { fontFamily: fonts.mono, fontSize: 12 },
+    target: { flex: 1, fontFamily: fonts.mono, fontSize: 12, color: colors.ink },
+    toolEnd: { flexDirection: 'row', gap: 6 },
+    endText: { fontFamily: fonts.mono, fontSize: 11, color: colors.inkDim },
+    activity: { flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 14, marginBottom: 6 },
+    activityText: { fontFamily: fonts.ui, fontSize: 13, color: colors.inkFaint },
+    activityTime: { fontFamily: fonts.mono, fontSize: 10.5, color: colors.inkFaint },
+  });
+};

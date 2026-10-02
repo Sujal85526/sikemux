@@ -11,11 +11,12 @@ import {
 } from '@expo-google-fonts/figtree';
 import { JetBrainsMono_400Regular } from '@expo-google-fonts/jetbrains-mono';
 
-import { colors } from '@/ui/theme';
+import { useColors } from '@/ui/theme';
 
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
+  const colors = useColors();
   const [loaded, failed] = useFonts({
     Figtree_400Regular,
     Figtree_400Regular_Italic,

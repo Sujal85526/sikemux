@@ -9,7 +9,7 @@ import { ProjectSheet } from '@/devices/ProjectSheet';
 import { chatState, chatTitle, folder } from '@/devices/words';
 import { AgentIcon, DeviceIcon, Icon } from '@/ui/Icon';
 import { Group, IconButton, Nav, NeedsYou, Row, Screen, SectionLabel, Track, useBottomGap, Working } from '@/ui/parts';
-import { colors, fonts, radius, type } from '@/ui/theme';
+import { fonts, type Palette, radius, typeFor, useColors, useStyles, useType } from '@/ui/theme';
 
 type Tab = 'agents' | 'terminals';
 
@@ -27,6 +27,9 @@ function plural(count: number, word: string): string {
 
 /** What runs in a project, as its row in the project sheet shows it. */
 function ProjectTail({ snapshot, project }: { snapshot: Snapshot; project: ProjectInfo }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  const type = useType();
   const chats = snapshot.chats.filter((chat) => inProject(project, chat.cwd));
   const terminals = snapshot.sessions.filter((session) => session.project === project.id && session.running).length;
   const waiting = chats.some((chat) => chat.pendingPermissions.length);
@@ -59,6 +62,8 @@ function ChatEnd({ chat }: { chat: ChatInfo }) {
 }
 
 function Agents({ core, snapshot, scope }: { core: string; snapshot: Snapshot; scope?: ProjectInfo }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
   const open = (agentId: string) => router.push(`/device/${core}/chat/${agentId}`);
   const [filter, setFilter] = useState<string>('all');
   const scoped = snapshot.chats.filter((chat) => !scope || inProject(scope, chat.cwd));
@@ -136,6 +141,9 @@ function terminalDetail(session: SessionInfo): string {
 }
 
 function Terminals({ snapshot, scope }: { snapshot: Snapshot; scope?: ProjectInfo }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  const type = useType();
   const groups = new Map<string, SessionInfo[]>();
   for (const session of snapshot.sessions) {
     if (scope && session.project !== scope.id) continue;
@@ -173,6 +181,9 @@ function summary(snapshot?: Snapshot): string {
 }
 
 export default function Device() {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  const type = useType();
   const { core, tab: linkedTab } = useLocalSearchParams<{ core: string; tab?: Tab }>();
   const { devices } = useDevices();
   const device = devices.find((known) => known.core === core);
@@ -291,60 +302,63 @@ export default function Device() {
   );
 }
 
-const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 18, paddingTop: 4, paddingBottom: 16 },
-  glyph: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
-  presence: { position: 'absolute', right: -1, bottom: 3, width: 10, height: 10, borderRadius: 5, borderWidth: 2.5 },
-  presenceOn: { backgroundColor: colors.live, borderColor: colors.ground },
-  presenceOff: { backgroundColor: colors.ground, borderColor: colors.rest },
-  name: { ...type.title },
-  body: { paddingHorizontal: 16 },
-  scope: { flexDirection: 'row', paddingHorizontal: 16, paddingBottom: 12 },
-  pill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    height: 32,
-    maxWidth: '100%',
-    paddingHorizontal: 11,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.raised,
-  },
-  pillText: { fontFamily: fonts.uiMedium, fontSize: 13.5, color: colors.ink, flexShrink: 1 },
-  tail: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  faces: { flexDirection: 'row' },
-  face: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.overlay,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  termCount: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  filters: { flexDirection: 'row', gap: 6, paddingTop: 12 },
-  filter: { height: 32, minWidth: 40, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
-  filterOn: { backgroundColor: colors.active, borderColor: colors.borderStrong },
-  filterText: { fontFamily: fonts.ui, fontSize: 13, color: colors.secondary },
-  ask: {
-    marginTop: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 14,
-    borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    backgroundColor: colors.overlay,
-  },
-  askTitle: { fontFamily: fonts.uiMedium, fontSize: 15.5, color: colors.ink },
-  askDetail: { ...type.meta, marginTop: 2 },
-  empty: { ...type.meta, textAlign: 'center', paddingTop: 40 },
-  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.live },
-  away: { flex: 1, justifyContent: 'center', paddingHorizontal: 32, paddingBottom: 120 },
-  trying: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 16 },
-});
+const makeStyles = (colors: Palette) => {
+  const type = typeFor(colors);
+  return StyleSheet.create({
+    header: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 18, paddingTop: 4, paddingBottom: 16 },
+    glyph: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
+    presence: { position: 'absolute', right: -1, bottom: 3, width: 10, height: 10, borderRadius: 5, borderWidth: 2.5 },
+    presenceOn: { backgroundColor: colors.live, borderColor: colors.ground },
+    presenceOff: { backgroundColor: colors.ground, borderColor: colors.rest },
+    name: { ...type.title },
+    body: { paddingHorizontal: 16 },
+    scope: { flexDirection: 'row', paddingHorizontal: 16, paddingBottom: 12 },
+    pill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 7,
+      height: 32,
+      maxWidth: '100%',
+      paddingHorizontal: 11,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.raised,
+    },
+    pillText: { fontFamily: fonts.uiMedium, fontSize: 13.5, color: colors.ink, flexShrink: 1 },
+    tail: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    faces: { flexDirection: 'row' },
+    face: {
+      width: 26,
+      height: 26,
+      borderRadius: 13,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.overlay,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    termCount: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    filters: { flexDirection: 'row', gap: 6, paddingTop: 12 },
+    filter: { height: 32, minWidth: 40, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+    filterOn: { backgroundColor: colors.active, borderColor: colors.borderStrong },
+    filterText: { fontFamily: fonts.ui, fontSize: 13, color: colors.secondary },
+    ask: {
+      marginTop: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      padding: 14,
+      borderRadius: radius.card,
+      borderWidth: 1,
+      borderColor: colors.borderStrong,
+      backgroundColor: colors.overlay,
+    },
+    askTitle: { fontFamily: fonts.uiMedium, fontSize: 15.5, color: colors.ink },
+    askDetail: { ...type.meta, marginTop: 2 },
+    empty: { ...type.meta, textAlign: 'center', paddingTop: 40 },
+    liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.live },
+    away: { flex: 1, justifyContent: 'center', paddingHorizontal: 32, paddingBottom: 120 },
+    trying: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 16 },
+  });
+};

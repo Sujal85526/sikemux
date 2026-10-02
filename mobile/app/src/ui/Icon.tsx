@@ -1,7 +1,7 @@
 import { SvgXml } from 'react-native-svg';
 
 import { ICONS, type IconName } from './icons.generated';
-import { brand, colors, type Provider } from './theme';
+import { brand, type Provider, useColors } from './theme';
 
 /** Glyphs the Mac app has no icon for, drawn on its 16px grid and 1.4 stroke. */
 const DRAWN_ICONS = {
@@ -13,17 +13,20 @@ const DRAWN_ICONS = {
 
 export type DeviceKind = 'laptop' | 'desktop' | 'mini';
 
-export function Icon({ name, size = 16, color = colors.secondary }: { name: IconName; size?: number; color?: string }) {
-  return <SvgXml xml={ICONS[name]} width={size} height={size} color={color} />;
+export function Icon({ name, size = 16, color }: { name: IconName; size?: number; color?: string }) {
+  const colors = useColors();
+  return <SvgXml xml={ICONS[name]} width={size} height={size} color={color ?? colors.secondary} />;
 }
 
-export function DrawnIcon({ name, size = 16, color = colors.secondary }: { name: keyof typeof DRAWN_ICONS; size?: number; color?: string }) {
+export function DrawnIcon({ name, size = 16, color }: { name: keyof typeof DRAWN_ICONS; size?: number; color?: string }) {
+  const colors = useColors();
   const xml = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${DRAWN_ICONS[name]}</svg>`;
-  return <SvgXml xml={xml} width={size} height={size} color={color} />;
+  return <SvgXml xml={xml} width={size} height={size} color={color ?? colors.secondary} />;
 }
 
-export function DeviceIcon({ kind, size = 30, color = colors.ink }: { kind: DeviceKind; size?: number; color?: string }) {
-  return <DrawnIcon name={kind} size={size} color={color} />;
+export function DeviceIcon({ kind, size = 30, color }: { kind: DeviceKind; size?: number; color?: string }) {
+  const colors = useColors();
+  return <DrawnIcon name={kind} size={size} color={color ?? colors.ink} />;
 }
 
 const PROVIDER_ICONS: Record<Provider, IconName> = {
@@ -42,6 +45,7 @@ export function isProvider(name: string): name is Provider {
 
 /** An agent's logo in its brand colour, as the Mac's AgentIcon draws it. */
 export function AgentIcon({ provider, size = 20 }: { provider: string; size?: number }) {
+  const colors = useColors();
   if (!isProvider(provider)) return <Icon name="IconAgent" size={size} color={colors.secondary} />;
   return <Icon name={PROVIDER_ICONS[provider]} size={size} color={brand[provider]} />;
 }

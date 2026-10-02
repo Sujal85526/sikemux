@@ -10,7 +10,7 @@ import { AgentIcon, Icon, isProvider } from '@/ui/Icon';
 import { Track } from '@/ui/parts';
 import { Sheet } from '@/ui/Sheet';
 import { ComposerInput } from './ComposerInput';
-import { brand, colors, fonts } from '@/ui/theme';
+import { brand, fonts, type Palette, useColors, useStyles } from '@/ui/theme';
 
 function current(config?: SessionConfig): string | undefined {
   if (!config) return undefined;
@@ -27,6 +27,8 @@ function askTitle(request: AcpPermissionRequest): string {
 
 /** Docked on the composer until it is answered: the Mac's permission card, with the agent's own options. */
 function PermissionDock({ request, provider, onAnswer }: { request: AcpPermissionRequest; provider: string; onAnswer: (optionId: string | null) => void }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
   const rejects = request.options.filter((option) => option.kind.startsWith('reject'));
   const always = request.options.filter((option) => option.kind === 'allow_always');
   const once = request.options.filter((option) => option.kind === 'allow_once');
@@ -43,7 +45,7 @@ function PermissionDock({ request, provider, onAnswer }: { request: AcpPermissio
       </View>
       <View style={styles.dockCmd}>
         <Text style={styles.dockCmdText} numberOfLines={3}>
-          {toolKind(request.toolCall) === 'run' ? <Text style={{ color: '#d966ae' }}>$ </Text> : null}
+          {toolKind(request.toolCall) === 'run' ? <Text style={{ color: colors.toolRun }}>$ </Text> : null}
           {toolTarget(request.toolCall)}
         </Text>
       </View>
@@ -82,6 +84,8 @@ function ConfigSheet({
   usage: ChatState['usage'];
   onPick: (config: SessionConfig, value: string) => void;
 }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
   const slots = pickerSlots(configs, provider as never);
   const model = slots[0]?.config;
   const effort = slots[1]?.config;
@@ -163,6 +167,8 @@ export function Composer({
   onAnswer: (requestId: string, optionId: string | null) => void;
   onConfig: (configId: string, value: string) => void;
 }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
   const [draft, setDraft] = useState('');
   const [focused, setFocused] = useState(false);
   const input = useRef<TextInput>(null);
@@ -209,7 +215,7 @@ export function Composer({
         <View style={styles.bar}>
           <View style={styles.yolo}>
             <Icon name={yolo ? 'IconShieldBolt' : 'IconShield'} size={13} color={yolo ? colors.accent : colors.inkFaint} />
-            <Text style={[styles.yoloText, yolo && { color: '#c9a7ff' }]}>{yolo ? 'yolo' : 'safe'}</Text>
+            <Text style={[styles.yoloText, yolo && { color: colors.accent }]}>{yolo ? 'yolo' : 'safe'}</Text>
           </View>
           {model ? (
             <Pressable style={styles.picker} onPress={() => setSheet(true)} accessibilityRole="button" accessibilityLabel="Model and effort">
@@ -261,52 +267,54 @@ export function Composer({
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: { paddingHorizontal: 10, paddingTop: 8, paddingBottom: 6 },
-  composer: { padding: 6, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.composer },
-  bar: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingTop: 6 },
-  yolo: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 34, paddingHorizontal: 8 },
-  yoloText: { fontFamily: fonts.uiSemibold, fontSize: 11, letterSpacing: 0.9, textTransform: 'uppercase', color: colors.inkFaint },
-  picker: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 34, paddingHorizontal: 7, borderRadius: 7, maxWidth: 160 },
-  pickerText: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.inkDim },
-  send: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
-  stop: { width: 10, height: 10, borderRadius: 2, backgroundColor: colors.ground },
-  watch: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14 },
-  watchText: { flex: 1, fontFamily: fonts.ui, fontSize: 13.5, lineHeight: 19, color: colors.inkDim },
+const makeStyles = (colors: Palette) => {
+  return StyleSheet.create({
+    wrap: { paddingHorizontal: 10, paddingTop: 8, paddingBottom: 6 },
+    composer: { padding: 6, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.composer },
+    bar: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingTop: 6 },
+    yolo: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 34, paddingHorizontal: 8 },
+    yoloText: { fontFamily: fonts.uiSemibold, fontSize: 11, letterSpacing: 0.9, textTransform: 'uppercase', color: colors.inkFaint },
+    picker: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 34, paddingHorizontal: 7, borderRadius: 7, maxWidth: 160 },
+    pickerText: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.inkDim },
+    send: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
+    stop: { width: 10, height: 10, borderRadius: 2, backgroundColor: colors.ground },
+    watch: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14 },
+    watchText: { flex: 1, fontFamily: fonts.ui, fontSize: 13.5, lineHeight: 19, color: colors.inkDim },
 
-  dock: {
-    marginHorizontal: 10,
-    marginBottom: -1,
-    padding: 12,
-    borderWidth: 1,
-    borderBottomWidth: 0,
-    borderColor: colors.borderStrong,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    backgroundColor: colors.overlay,
-  },
-  dockHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  dockTitle: { fontFamily: fonts.uiSemibold, fontSize: 15, letterSpacing: -0.2, color: colors.ink },
-  dockDetail: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.tertiary, marginTop: 1 },
-  dockCmd: { marginTop: 10, paddingVertical: 9, paddingHorizontal: 11, borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.sunken },
-  dockCmdText: { fontFamily: fonts.mono, fontSize: 12.5, lineHeight: 18, color: colors.ink },
-  dockActs: { flexDirection: 'row', gap: 6, marginTop: 10 },
-  act: { flex: 1, height: 38, borderRadius: 10, borderWidth: 1, borderColor: colors.borderStrong, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
-  actGo: { backgroundColor: colors.ink, borderColor: colors.ink },
-  actText: { fontFamily: fonts.uiMedium, fontSize: 14, color: colors.ink },
-  actGoText: { fontFamily: fonts.uiSemibold, color: colors.ground },
+    dock: {
+      marginHorizontal: 10,
+      marginBottom: -1,
+      padding: 12,
+      borderWidth: 1,
+      borderBottomWidth: 0,
+      borderColor: colors.borderStrong,
+      borderTopLeftRadius: 16,
+      borderTopRightRadius: 16,
+      backgroundColor: colors.overlay,
+    },
+    dockHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+    dockTitle: { fontFamily: fonts.uiSemibold, fontSize: 15, letterSpacing: -0.2, color: colors.ink },
+    dockDetail: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.tertiary, marginTop: 1 },
+    dockCmd: { marginTop: 10, paddingVertical: 9, paddingHorizontal: 11, borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.sunken },
+    dockCmdText: { fontFamily: fonts.mono, fontSize: 12.5, lineHeight: 18, color: colors.ink },
+    dockActs: { flexDirection: 'row', gap: 6, marginTop: 10 },
+    act: { flex: 1, height: 38, borderRadius: 10, borderWidth: 1, borderColor: colors.borderStrong, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+    actGo: { backgroundColor: colors.ink, borderColor: colors.ink },
+    actText: { fontFamily: fonts.uiMedium, fontSize: 14, color: colors.ink },
+    actGoText: { fontFamily: fonts.uiSemibold, color: colors.ground },
 
-  sheetHead: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4 },
-  sheetTitle: { fontFamily: fonts.uiSemibold, fontSize: 17, letterSpacing: -0.35, color: colors.ink },
-  sheetLabel: { fontFamily: fonts.uiSemibold, fontSize: 13, color: colors.tertiary, paddingTop: 18, paddingBottom: 8, paddingHorizontal: 6 },
-  group: { borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.raised, overflow: 'hidden' },
-  option: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 52, paddingHorizontal: 14 },
-  optionDivided: { borderTopWidth: 1, borderTopColor: colors.border },
-  optionText: { flex: 1, fontFamily: fonts.uiMedium, fontSize: 15.5, color: colors.secondary },
-  context: { marginTop: 20, paddingHorizontal: 4 },
-  contextTop: { flexDirection: 'row', justifyContent: 'space-between' },
-  contextLabel: { fontFamily: fonts.uiSemibold, fontSize: 13, color: colors.tertiary },
-  contextValue: { fontFamily: fonts.mono, fontSize: 12, color: colors.tertiary },
-  contextBar: { marginTop: 8, height: 4, borderRadius: 2, backgroundColor: colors.border, overflow: 'hidden' },
-  contextFill: { height: 4, borderRadius: 2 },
-});
+    sheetHead: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4 },
+    sheetTitle: { fontFamily: fonts.uiSemibold, fontSize: 17, letterSpacing: -0.35, color: colors.ink },
+    sheetLabel: { fontFamily: fonts.uiSemibold, fontSize: 13, color: colors.tertiary, paddingTop: 18, paddingBottom: 8, paddingHorizontal: 6 },
+    group: { borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.raised, overflow: 'hidden' },
+    option: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 52, paddingHorizontal: 14 },
+    optionDivided: { borderTopWidth: 1, borderTopColor: colors.border },
+    optionText: { flex: 1, fontFamily: fonts.uiMedium, fontSize: 15.5, color: colors.secondary },
+    context: { marginTop: 20, paddingHorizontal: 4 },
+    contextTop: { flexDirection: 'row', justifyContent: 'space-between' },
+    contextLabel: { fontFamily: fonts.uiSemibold, fontSize: 13, color: colors.tertiary },
+    contextValue: { fontFamily: fonts.mono, fontSize: 12, color: colors.tertiary },
+    contextBar: { marginTop: 8, height: 4, borderRadius: 2, backgroundColor: colors.border, overflow: 'hidden' },
+    contextFill: { height: 4, borderRadius: 2 },
+  });
+};

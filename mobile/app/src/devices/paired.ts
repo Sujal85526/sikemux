@@ -15,6 +15,8 @@ export type PairedDevice = {
   channel?: BuildChannel;
   /** The project the device screen is scoped to; absent shows them all. */
   project?: string;
+  /** The Mac's theme colours as last seen, so its screens open in them before it connects. */
+  palette?: Record<string, string>;
   lastSeen?: number;
 };
 

@@ -40,7 +40,8 @@ export type ProjectInfo = { id: string; name: string; path: string };
 
 export type LauncherInfo = { id: string; provider: string; label: string; permissionMode: string };
 
-export type Workspace = { projects: ProjectInfo[]; launchers: LauncherInfo[] };
+/** `palette` holds the Mac's theme colours by name; empty until its app publishes them. */
+export type Workspace = { projects: ProjectInfo[]; launchers: LauncherInfo[]; palette: Record<string, string> };
 
 export type BuildChannel = 'dev' | 'nightly' | 'stable';
 export type HostInfo = { name: string; model: string; version: string; channel: BuildChannel };

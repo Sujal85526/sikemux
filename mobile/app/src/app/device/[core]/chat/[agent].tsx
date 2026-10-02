@@ -11,7 +11,7 @@ import { useDevices, useLive } from '@/devices/hub';
 import { chatTitle, providerName } from '@/devices/words';
 import { AgentIcon } from '@/ui/Icon';
 import { Nav, Screen, useBottomGap, Working } from '@/ui/parts';
-import { colors, fonts, type } from '@/ui/theme';
+import { fonts, type Palette, typeFor, useStyles, useType } from '@/ui/theme';
 
 /** When the running turn began, as this phone saw it, for the working line's clock. */
 function useTurnStart(running: boolean): number {
@@ -29,6 +29,8 @@ function capitalised(text: string): string {
 }
 
 export default function Chat() {
+  const styles = useStyles(makeStyles);
+  const type = useType();
   const { core, agent } = useLocalSearchParams<{ core: string; agent: string }>();
   const live = useLive(core);
   const { devices } = useDevices();
@@ -98,11 +100,14 @@ export default function Chat() {
   );
 }
 
-const styles = StyleSheet.create({
-  title: { fontFamily: fonts.uiSemibold, fontSize: 16, letterSpacing: -0.25, color: colors.ink, flexShrink: 1 },
-  transcript: { flex: 1, borderTopWidth: 1, borderTopColor: colors.border },
-  content: { paddingHorizontal: 18, paddingTop: 6, paddingBottom: 12, flexGrow: 1, justifyContent: 'flex-end' },
-  attaching: { flexDirection: 'row', alignItems: 'center', gap: 10, alignSelf: 'center', paddingVertical: 24 },
-  gone: { ...type.meta, textAlign: 'center', paddingVertical: 24 },
-  error: { fontFamily: fonts.ui, fontSize: 13.5, color: colors.danger, marginTop: 10 },
-});
+const makeStyles = (colors: Palette) => {
+  const type = typeFor(colors);
+  return StyleSheet.create({
+    title: { fontFamily: fonts.uiSemibold, fontSize: 16, letterSpacing: -0.25, color: colors.ink, flexShrink: 1 },
+    transcript: { flex: 1, borderTopWidth: 1, borderTopColor: colors.border },
+    content: { paddingHorizontal: 18, paddingTop: 6, paddingBottom: 12, flexGrow: 1, justifyContent: 'flex-end' },
+    attaching: { flexDirection: 'row', alignItems: 'center', gap: 10, alignSelf: 'center', paddingVertical: 24 },
+    gone: { ...type.meta, textAlign: 'center', paddingVertical: 24 },
+    error: { fontFamily: fonts.ui, fontSize: 13.5, color: colors.danger, marginTop: 10 },
+  });
+};

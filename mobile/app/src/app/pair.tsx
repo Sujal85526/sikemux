@@ -4,7 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 
 import { failure, pair, type Failure } from '@/devices/pairing';
 import { Button, CodeTiles, Nav, Screen, useBottomGap, Working } from '@/ui/parts';
-import { colors, fonts, radius, type } from '@/ui/theme';
+import { fonts, type Palette, radius, typeFor, useStyles, useType } from '@/ui/theme';
 
 /** How long the Mac keeps a pairing request open (sikemux_core::pairing::APPROVAL_TIMEOUT). */
 const APPROVAL_SECONDS = 120;
@@ -14,6 +14,8 @@ function clock(seconds: number): string {
 }
 
 export default function Pair() {
+  const styles = useStyles(makeStyles);
+  const type = useType();
   const { core, code } = useLocalSearchParams<{ core: string; code: string }>();
   const [failed, setFailed] = useState<Failure>();
   const [left, setLeft] = useState(APPROVAL_SECONDS);
@@ -62,22 +64,25 @@ export default function Pair() {
   );
 }
 
-const styles = StyleSheet.create({
-  block: { flex: 1, paddingTop: 40, paddingHorizontal: 28, alignItems: 'center' },
-  title: { ...type.title, fontSize: 22, textAlign: 'center' },
-  detail: { ...type.body, textAlign: 'center', marginTop: 8, minHeight: 44 },
-  tiles: { marginTop: 32 },
-  footer: { paddingHorizontal: 16, paddingTop: 12 },
-  waiting: {
-    minHeight: 52,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    borderRadius: radius.row,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.raised,
-  },
-  waitingText: { flex: 1, fontFamily: fonts.ui, fontSize: 15, color: colors.secondary },
-});
+const makeStyles = (colors: Palette) => {
+  const type = typeFor(colors);
+  return StyleSheet.create({
+    block: { flex: 1, paddingTop: 40, paddingHorizontal: 28, alignItems: 'center' },
+    title: { ...type.title, fontSize: 22, textAlign: 'center' },
+    detail: { ...type.body, textAlign: 'center', marginTop: 8, minHeight: 44 },
+    tiles: { marginTop: 32 },
+    footer: { paddingHorizontal: 16, paddingTop: 12 },
+    waiting: {
+      minHeight: 52,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingHorizontal: 16,
+      borderRadius: radius.row,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.raised,
+    },
+    waitingText: { flex: 1, fontFamily: fonts.ui, fontSize: 15, color: colors.secondary },
+  });
+};
