@@ -63,7 +63,7 @@ if ! grep -q '^# sikemux: begin' "$PG_CONF/pg_hba.conf"; then
   cat >"$rules" <<'EOF'
 # sikemux: begin
 # Only the sikemux service and its deploy user reach the sikemux database, as the sikemux role,
-# through the local socket. These come first so the trust rules below never apply to it.
+# through the local socket. These come first, so no broader rule below applies to it.
 local   sikemux         sikemux                                 peer map=sikemux
 local   sikemux         all                                     reject
 host    sikemux         all             all                     reject
