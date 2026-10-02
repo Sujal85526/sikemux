@@ -23,8 +23,8 @@ const SETTLE_READS: usize = 12;
 const STATUS_BAR_HEIGHT: f64 = 60.0;
 /// How many reads, a step apart, to wait for an action to change the screen.
 const CHANGE_READS: usize = 5;
-/// iOS reads a touch that starts this close to an edge as a system gesture.
-const EDGE: f64 = 4.0;
+/// A swipe that starts this close to an edge is sent as a system gesture, as the helper decides.
+const EDGE: f64 = 10.0;
 const MAX_ELEMENTS: usize = 200;
 /// Tells the window an agent attached a simulator, so its desk can show it.
 pub const ATTACHED_EVENT: &str = "simulator-attached";

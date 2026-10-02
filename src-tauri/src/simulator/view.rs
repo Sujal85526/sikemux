@@ -140,17 +140,11 @@ pub async fn simulator_view_close(
     rename_all_fields = "camelCase"
 )]
 pub enum Input {
-    Tap {
+    /// One step of a finger moving live; the window sends them one after another.
+    Touch {
+        phase: TouchPhase,
         x: f64,
         y: f64,
-        duration: Option<f64>,
-    },
-    Swipe {
-        from_x: f64,
-        from_y: f64,
-        to_x: f64,
-        to_y: f64,
-        duration: Option<f64>,
     },
     Button {
         button: String,
@@ -160,6 +154,14 @@ pub enum Input {
     },
 }
 
+#[derive(Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TouchPhase {
+    Down,
+    Move,
+    Up,
+}
+
 #[tauri::command]
 pub async fn simulator_input(
     simulators: State<'_, SimulatorManager>,
@@ -167,17 +169,7 @@ pub async fn simulator_input(
     input: Input,
 ) -> AppResult<()> {
     let (kind, mut fields) = match input {
-        Input::Tap { x, y, duration } => ("tap", json!({ "x": x, "y": y, "duration": duration })),
-        Input::Swipe {
-            from_x,
-            from_y,
-            to_x,
-            to_y,
-            duration,
-        } => (
-            "swipe",
-            json!({ "fromX": from_x, "fromY": from_y, "toX": to_x, "toY": to_y, "duration": duration }),
-        ),
+        Input::Touch { phase, x, y } => ("touch", json!({ "phase": phase, "x": x, "y": y })),
         Input::Button { button } => ("button", json!({ "button": button })),
         Input::Type { text } => ("type", json!({ "text": text })),
     };

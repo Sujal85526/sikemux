@@ -555,9 +555,9 @@ touch, for a long press.
 `sim_type` types into the focused field, so tap the field first. It types
 the characters of a US keyboard; other characters fail and are named.
 `sim_swipe` drags from one point to another; a swipe that starts within
-4 points of a screen edge becomes a system gesture (home, Notification
-Center, Control Center or back) and its result carries a `warning`. Scroll
-from inside the content instead. `sim_button` presses `home`, `lock`,
+10 points of a screen edge is a system gesture: up from the bottom goes home,
+in from the left goes back, down from the top opens Notification Center. Its
+result carries a `warning` saying so; to scroll, start inside the content. `sim_button` presses `home`, `lock`,
 `side`, `siri`, `volumeUp`, `volumeDown` or `applePay`.
 
 Acting tools wait until two reads of the screen agree before they return, so
