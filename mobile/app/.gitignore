@@ -44,3 +44,4 @@ example
 
 # generated from the Mac app's icons on install
 /src/ui/icons.generated.ts
+/src/ui/vertexShader.generated.ts

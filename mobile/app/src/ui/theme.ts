@@ -39,6 +39,8 @@ export const defaultPalette = {
   toolEdit: '#cdaf86',
   toolDelete: '#c25e4b',
   toolRun: '#d966ae',
+  /** The pane grain's dots: the raised surface on a dark theme. */
+  shaderDot: '#19191e',
 };
 
 export type Palette = Record<keyof typeof defaultPalette, string>;

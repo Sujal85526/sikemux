@@ -14,6 +14,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
+import { Backdrop } from './Backdrop';
 import { Icon } from './Icon';
 import { fonts, type Palette, radius, typeFor, useColors, useStyles, useType } from './theme';
 
@@ -26,6 +27,7 @@ export function Screen({ children, style }: { children: ReactNode; style?: Style
   const styles = useStyles(makeStyles);
   return (
     <SafeAreaView style={[styles.screen, style]} edges={['top', 'left', 'right']}>
+      <Backdrop />
       {children}
     </SafeAreaView>
   );

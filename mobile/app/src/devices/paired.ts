@@ -17,6 +17,8 @@ export type PairedDevice = {
   project?: string;
   /** The Mac's theme colours as last seen, so its screens open in them before it connects. */
   palette?: Record<string, string>;
+  /** The Mac's pane backdrop as last seen, its picture saved on the phone. */
+  backdrop?: { texture: boolean; image?: { id: string; uri: string } };
   lastSeen?: number;
 };
 
