@@ -379,3 +379,86 @@ done
         assert_eq!(back["app"], json!("Home Screen"));
     }
 }
+
+mod view {
+    use std::io::{BufReader, Cursor, Read, Write};
+    use std::net::TcpListener;
+
+    use crate::simulator::view::relay;
+
+    fn part(jpeg: &[u8]) -> Vec<u8> {
+        let mut part = format!(
+            "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: {}\r\n\r\n",
+            jpeg.len()
+        )
+        .into_bytes();
+        part.extend_from_slice(jpeg);
+        part.extend_from_slice(b"\r\n");
+        part
+    }
+
+    fn stream(parts: &[&[u8]]) -> Vec<u8> {
+        let mut body =
+            b"HTTP/1.1 200 OK\r\nContent-Type: multipart/x-mixed-replace; boundary=frame\r\n\r\n"
+                .to_vec();
+        for jpeg in parts {
+            body.extend(part(jpeg));
+        }
+        body
+    }
+
+    #[test]
+    fn hands_over_each_frame_whole_until_the_stream_ends() {
+        let mut frames = Vec::new();
+        let body = stream(&[
+            b"\xff\xd8one\xff\xd9",
+            b"\xff\xd8\r\n\r\ntwo with blank lines\xff\xd9",
+        ]);
+        relay(BufReader::new(Cursor::new(body)), |frame| {
+            frames.push(frame)
+        })
+        .expect("a clean end");
+        assert_eq!(
+            frames,
+            vec![
+                b"\xff\xd8one\xff\xd9".to_vec(),
+                b"\xff\xd8\r\n\r\ntwo with blank lines\xff\xd9".to_vec()
+            ]
+        );
+    }
+
+    #[test]
+    fn refuses_a_stream_that_was_not_found() {
+        let body = b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n".to_vec();
+        let error = relay(BufReader::new(Cursor::new(body)), |_| panic!("no frames")).unwrap_err();
+        assert!(error.to_string().contains("404"), "{error}");
+    }
+
+    #[test]
+    fn refuses_a_frame_too_large_to_be_a_screen() {
+        let mut body = stream(&[]);
+        body.extend_from_slice(b"--frame\r\nContent-Length: 999999999999\r\n\r\n");
+        assert!(relay(BufReader::new(Cursor::new(body)), |_| panic!("no frames")).is_err());
+    }
+
+    #[test]
+    fn reads_frames_from_a_local_stream_server() {
+        let server = TcpListener::bind("127.0.0.1:0").expect("a port");
+        let port = server.local_addr().unwrap().port();
+        let serving = std::thread::spawn(move || {
+            let (mut socket, _) = server.accept().expect("a viewer");
+            let mut request = [0u8; 256];
+            let read = socket.read(&mut request).unwrap();
+            assert!(String::from_utf8_lossy(&request[..read]).starts_with("GET /token HTTP/1.1"));
+            socket.write_all(&stream(&[b"first", b"second"])).unwrap();
+        });
+        let mut socket = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+        socket
+            .write_all(b"GET /token HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+            .unwrap();
+        let mut frames = Vec::new();
+        relay(BufReader::new(socket), |frame| frames.push(frame)).expect("a clean end");
+        serving.join().unwrap();
+        assert_eq!(frames, vec![b"first".to_vec(), b"second".to_vec()]);
+    }
+}

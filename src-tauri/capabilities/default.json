@@ -229,6 +229,9 @@
     "allow-voice-start",
     "allow-voice-stop",
     "allow-voice-cancel",
-    "allow-voice-shutdown"
+    "allow-voice-shutdown",
+    "allow-simulator-view-open",
+    "allow-simulator-view-close",
+    "allow-simulator-input"
   ]
 }

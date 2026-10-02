@@ -237,8 +237,10 @@ pub fn run() {
         .manage(BrowserManager::default())
         .manage(VoiceManager::default())
         .manage(SimulatorManager::default())
+        .manage(simulator::view::Views::default())
         .manage(preview::Previews::default())
         .register_asynchronous_uri_scheme_protocol(preview::SCHEME, preview::handle)
+        .register_asynchronous_uri_scheme_protocol(simulator::view::SCHEME, simulator::view::handle)
         .invoke_handler(tauri::generate_handler![
             acp::acp_start,
             acp::acp_attach,
@@ -453,6 +455,9 @@ pub fn run() {
             voice::voice_stop,
             voice::voice_cancel,
             voice::voice_shutdown,
+            simulator::view::simulator_view_open,
+            simulator::view::simulator_view_close,
+            simulator::view::simulator_input,
         ])
         .build(tauri::generate_context!())
         .expect("error while building sikemux")

@@ -213,4 +213,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "voice_stop",
     "voice_cancel",
     "voice_shutdown",
+    "simulator_view_open",
+    "simulator_view_close",
+    "simulator_input",
 ];

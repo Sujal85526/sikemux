@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use base64::Engine;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use super::SimulatorManager;
 use sikemux_core::cli::protocol::HarnessRequest;
@@ -26,19 +26,38 @@ const CHANGE_READS: usize = 5;
 /// iOS reads a touch that starts this close to an edge as a system gesture.
 const EDGE: f64 = 4.0;
 const MAX_ELEMENTS: usize = 200;
+/// Tells the window an agent attached a simulator, so its desk can show it.
+pub const ATTACHED_EVENT: &str = "simulator-attached";
 
 pub fn execute(app: &AppHandle, request: &HarnessRequest) -> Result<Value, String> {
     let agent_id = request
         .agent_id
         .as_deref()
         .ok_or("simulator tools need the agent's id")?;
-    run(
-        &app.state::<SimulatorManager>(),
+    let manager = app.state::<SimulatorManager>();
+    let result = run(
+        &manager,
         agent_id,
         &request.project,
         &request.method,
         &request.params,
-    )
+    );
+    if request.method == "sim.attach" && result.is_ok() {
+        if let Some(device) = manager.attached(agent_id) {
+            let _ = app.emit_to(
+                "main",
+                ATTACHED_EVENT,
+                json!({
+                    "agentId": agent_id,
+                    "udid": device.udid,
+                    "name": device.name,
+                    "os": device.os,
+                    "screen": device.screen.map(|(width, height)| json!({ "width": width, "height": height })),
+                }),
+            );
+        }
+    }
+    result
 }
 
 pub(super) fn run(

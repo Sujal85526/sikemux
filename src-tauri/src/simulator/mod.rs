@@ -16,6 +16,7 @@ use serde_json::{Map, Value};
 use tools::{Device, Element};
 
 pub mod tools;
+pub mod view;
 
 const HELPER: &str = "sikemux-sim";
 /// Installed by Xcode; the helper drives simulators through it.
