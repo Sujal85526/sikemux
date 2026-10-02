@@ -442,9 +442,11 @@
         ":host { all: initial; }",
         ".layer { position: fixed; inset: 0; pointer-events: none; z-index: 2147483647; font: 600 12px/1.3 -apple-system, system-ui, sans-serif; }",
         ".layer.quiet .pointer, .layer.quiet .ripple { visibility: hidden; }",
-        ".pointer { position: absolute; left: 0; top: 0; width: 18px; height: 18px; margin: -3px 0 0 -3px; transition: transform 220ms cubic-bezier(.2,.7,.3,1), opacity 400ms; opacity: 0; }",
+        ".pointer { position: absolute; left: 0; top: 0; width: 18px; height: 18px; margin: -2.1px 0 0 -2.1px; transition: transform 220ms cubic-bezier(.2,.7,.3,1), opacity 400ms; opacity: 0; }",
         ".pointer.shown { opacity: 1; }",
-        ".ripple { position: absolute; width: 36px; height: 36px; margin: -18px 0 0 -18px; border-radius: 50%; border: 2px solid #ff4f7b; animation: ripple 520ms ease-out forwards; }",
+        // The shadow falls along the arrow's own diagonal; a straight-down one makes it look lopsided.
+        ".pointer svg { display: block; overflow: visible; filter: drop-shadow(1px 1px 2px rgba(0, 0, 0, .28)); }",
+        ".ripple { position: absolute; width: 36px; height: 36px; margin: -18px 0 0 -18px; border-radius: 50%; border: 2px solid #a277ff; background: rgba(162, 119, 255, .1); animation: ripple 520ms ease-out forwards; }",
         "@keyframes ripple { from { transform: scale(.3); opacity: 1; } to { transform: scale(1.4); opacity: 0; } }",
         ".box { position: absolute; border: 2px solid #ff4f7b; border-radius: 3px; }",
         ".box.marks { border-width: 1px; }",
@@ -453,7 +455,8 @@
         ".caption { position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); max-width: 80%; padding: 10px 16px; border-radius: 8px; background: rgba(17, 17, 20, .86); color: #fff; font-size: 15px; font-weight: 500; text-align: center; }",
     ].join("\n");
     const POINTER_SVG =
-        '<svg viewBox="0 0 18 18" width="18" height="18"><path d="M2 1.5 L2 15 L5.8 11.4 L8.4 17 L10.9 15.9 L8.4 10.5 L13.6 10.5 Z" fill="#ff4f7b" stroke="#fff" stroke-width="1.3" stroke-linejoin="round"/></svg>';
+        '<svg viewBox="0 0 20 20" width="18" height="18"><defs><linearGradient id="fill" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c3a3ff"/><stop offset="1" stop-color="#7c4dff"/></linearGradient></defs>' +
+        '<path d="M2.4 3.3 Q1.8 1.8 3.3 2.4 L15.8 7.3 Q18.2 8.3 15.6 8.8 L11.6 9.7 Q10 10 9.7 11.6 L8.8 15.6 Q8.3 18.2 7.3 15.8 Z" fill="url(#fill)" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg>';
     let overlay = null;
     const layer = () => {
         if (overlay && overlay.host.isConnected) return overlay;
