@@ -42,6 +42,6 @@ example
 /ios
 /android
 
-# generated from the Mac app's icons on install
+# written by scripts/generate.mjs
 /src/ui/icons.generated.ts
 /src/ui/vertexShader.generated.ts
