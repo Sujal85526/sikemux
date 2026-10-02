@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 
 import type { Snapshot } from '@/core/protocol';
 import { useLive } from '@/devices/hub';
-import { deviceKind, deviceName, shortKey, type PairedDevice } from '@/devices/paired';
+import { channelLabel, deviceKind, deviceName, shortKey, type PairedDevice } from '@/devices/paired';
 import { phoneName } from '@/devices/pairing';
 import { useDeviceId } from '@/device/identity';
 import { chatTitle, ago } from '@/devices/words';
@@ -28,7 +28,13 @@ function DeviceCard({ device }: { device: PairedDevice }) {
   const asking = !away && snapshot ? snapshot.attentions[0] : undefined;
   const askingChat = asking ? snapshot?.chats.find((chat) => chat.agentId === asking.agentId) : undefined;
   const working = !away && snapshot ? snapshot.chats.filter((chat) => chat.running) : [];
-  const meta = away
+  const channel = channelLabel(device.channel);
+  const behind = live.status === 'closed' ? live.outdated : undefined;
+  const meta = behind
+    ? behind === 'mac'
+      ? 'Needs a newer Sikemux'
+      : 'Update this app to connect'
+    : away
     ? `Asleep or offline${device.lastSeen ? ` · seen ${ago(device.lastSeen)}` : ''}`
     : snapshot
       ? summary(snapshot)
@@ -46,6 +52,7 @@ function DeviceCard({ device }: { device: PairedDevice }) {
         <View style={{ flex: 1 }}>
           <Text style={[styles.name, away && { color: colors.tertiary }]} numberOfLines={1}>
             {deviceName(device)}
+            {channel ? <Text style={styles.channel}> · {channel}</Text> : null}
           </Text>
           <Text style={styles.meta} numberOfLines={1}>
             {meta}
@@ -116,6 +123,7 @@ const styles = StyleSheet.create({
   presenceOn: { backgroundColor: colors.live, borderColor: colors.raised },
   presenceOff: { backgroundColor: colors.ground, borderColor: colors.rest },
   name: { ...type.heading },
+  channel: { color: colors.inkDim },
   meta: { ...type.meta, marginTop: 2 },
   ask: {
     flexDirection: 'row',

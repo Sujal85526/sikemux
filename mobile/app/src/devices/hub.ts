@@ -9,7 +9,10 @@ import { pairedDevices, updateDevice, type PairedDevice } from './paired';
 export type Live =
   | { status: 'connecting'; snapshot?: Snapshot }
   | { status: 'open'; connection: ConnectionLike; snapshot?: Snapshot }
-  | { status: 'closed'; problem: string; snapshot?: Snapshot };
+  | { status: 'closed'; problem: string; outdated?: Outdated; snapshot?: Snapshot };
+
+/** Which side needs a newer Sikemux before the two can talk. */
+export type Outdated = 'mac' | 'phone';
 
 /** Many events arrive together while an agent works; one refresh covers them. */
 const REFRESH_AFTER_MS = 250;
@@ -59,6 +62,11 @@ function set(core: string, live: Live) {
   changed();
 }
 
+function outdated(error: unknown): Outdated | undefined {
+  if (!MobileError.Outdated.instanceOf(error)) return undefined;
+  return error.inner.macIsOlder ? 'mac' : 'phone';
+}
+
 function problem(error: unknown): string {
   if (MobileError.Refused.instanceOf(error)) return error.inner.message;
   if (MobileError.Connection.instanceOf(error)) return error.inner.message;
@@ -87,11 +95,11 @@ function stopTimers(found: Entry) {
   clearTimeout(found.retrying);
 }
 
-function drop(core: string, reason: string) {
+function drop(core: string, reason: string, behind?: Outdated) {
   const found = entry(core);
   stopTimers(found);
   if (found.live.status === 'open') found.live.connection.close();
-  set(core, { status: 'closed', problem: reason, snapshot: found.live.snapshot });
+  set(core, { status: 'closed', problem: reason, outdated: behind, snapshot: found.live.snapshot });
   if (found.watchers > 0) {
     const wait = RETRY_MS[Math.min(found.attempt, RETRY_MS.length - 1)];
     found.attempt += 1;
@@ -126,11 +134,11 @@ async function open(core: string) {
     found.polling = setInterval(() => refresh(core, connection), POLL_MS);
     refresh(core, connection);
     host(connection)
-      .then((info) => updateDevice(core, { name: info.name, model: info.model, lastSeen: Date.now() }))
+      .then((info) => updateDevice(core, { name: info.name, model: info.model, channel: info.channel, lastSeen: Date.now() }))
       .then(reloadDevices)
       .catch(() => {});
   } catch (error) {
-    drop(core, problem(error));
+    drop(core, problem(error), outdated(error));
   }
 }
 

@@ -41,7 +41,8 @@ export type LauncherInfo = { id: string; provider: string; label: string; permis
 
 export type Workspace = { projects: ProjectInfo[]; launchers: LauncherInfo[] };
 
-export type HostInfo = { name: string; model: string };
+export type BuildChannel = 'dev' | 'nightly' | 'stable';
+export type HostInfo = { name: string; model: string; version: string; channel: BuildChannel };
 
 type Response =
   | { kind: 'sessions'; sessions: SessionInfo[] }

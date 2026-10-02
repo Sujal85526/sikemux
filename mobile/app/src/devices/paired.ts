@@ -1,5 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 
+import type { BuildChannel } from '@/core/protocol';
 import type { DeviceKind } from '@/ui/Icon';
 
 export type Access = 'full' | 'watch';
@@ -11,6 +12,7 @@ export type PairedDevice = {
   pairedAt: number;
   name?: string;
   model?: string;
+  channel?: BuildChannel;
   lastSeen?: number;
 };
 
@@ -45,6 +47,13 @@ export function shortKey(key: string): string {
 
 export function deviceName(device: Pick<PairedDevice, 'name' | 'core'>): string {
   return device.name ?? `Mac ${shortKey(device.core)}`;
+}
+
+/** Builds other than the stable release are named, since one Mac pairs once per channel. */
+export function channelLabel(channel: BuildChannel | undefined): string | null {
+  if (channel === 'dev') return 'Dev';
+  if (channel === 'nightly') return 'Nightly';
+  return null;
 }
 
 export function deviceKind(model: string | undefined): DeviceKind {

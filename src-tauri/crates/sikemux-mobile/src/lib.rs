@@ -13,7 +13,7 @@ use iroh::endpoint::presets;
 use iroh::{Endpoint, EndpointAddr, SecretKey};
 use sikemux_core::client::{ClientError, CoreClient, EventSink, Reply};
 use sikemux_core::pairing::{self, PairError, PairingRequest};
-use sikemux_core::protocol::{CallId, Event, Request, SessionId, WindowCall};
+use sikemux_core::protocol::{CallId, Event, Request, SessionId, WindowCall, PROTOCOL_VERSION};
 use sikemux_core::remote;
 
 #[cfg(target_os = "android")]
@@ -50,6 +50,9 @@ pub enum MobileError {
     Connection { message: String },
     #[error("{message}")]
     Invalid { message: String },
+    /// The Mac and this app speak different versions of the core's protocol.
+    #[error("this Mac and this app need the same Sikemux release")]
+    Outdated { mac_is_older: bool },
 }
 
 fn invalid(message: impl ToString) -> MobileError {
@@ -62,6 +65,9 @@ impl From<ClientError> for MobileError {
     fn from(error: ClientError) -> Self {
         match error {
             ClientError::Core(message) => MobileError::Refused { message },
+            ClientError::VersionMismatch { version, .. } => MobileError::Outdated {
+                mac_is_older: version < PROTOCOL_VERSION,
+            },
             other => MobileError::Connection {
                 message: other.to_string(),
             },

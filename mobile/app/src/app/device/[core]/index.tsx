@@ -4,7 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 
 import type { ChatInfo, SessionInfo, Snapshot } from '@/core/protocol';
 import { useDevices, useLive } from '@/devices/hub';
-import { deviceKind, deviceName } from '@/devices/paired';
+import { channelLabel, deviceKind, deviceName } from '@/devices/paired';
 import { chatState, chatTitle, folder } from '@/devices/words';
 import { AgentIcon, DeviceIcon, Icon } from '@/ui/Icon';
 import { Group, IconButton, Nav, NeedsYou, Row, Screen, SectionLabel, Track, Working } from '@/ui/parts';
@@ -142,6 +142,14 @@ export default function Device() {
     if (linkedTab === 'agents' || linkedTab === 'terminals') setTab(linkedTab);
   }, [linkedTab]);
   const away = live.status === 'closed';
+  const channel = channelLabel(device?.channel);
+  const behind = live.status === 'closed' ? live.outdated : undefined;
+  const unreachable =
+    behind === 'mac'
+      ? { title: 'This Mac needs a newer Sikemux', body: 'Update Sikemux on the Mac, then come back here.' }
+      : behind === 'phone'
+        ? { title: 'Update this app', body: 'This Mac runs a newer Sikemux than this app understands.' }
+        : { title: "Can't reach this Mac", body: 'It may be asleep, offline, or have remote access turned off.' };
   const snapshot = live.snapshot;
   const asking = snapshot?.chats.filter((chat) => chat.pendingPermissions.length).length ?? 0;
 
@@ -163,20 +171,21 @@ export default function Device() {
         <View style={{ flex: 1 }}>
           <Text style={styles.name} numberOfLines={1}>
             {device ? deviceName(device) : 'Mac'}
+            {channel ? <Text style={styles.channel}> · {channel}</Text> : null}
           </Text>
-          <Text style={type.meta}>{away ? 'Asleep or offline' : summary(snapshot)}</Text>
+          <Text style={type.meta}>{behind ? 'Needs an update' : away ? 'Asleep or offline' : summary(snapshot)}</Text>
         </View>
       </View>
       {away && !snapshot ? (
         <View style={styles.away}>
-          <Text style={[type.title, { fontSize: 20, textAlign: 'center' }]}>Can't reach this Mac</Text>
-          <Text style={[type.body, { textAlign: 'center', marginTop: 8 }]}>
-            It may be asleep, offline, or have remote access turned off.
-          </Text>
-          <View style={styles.trying}>
-            <Working />
-            <Text style={type.meta}>Trying again</Text>
-          </View>
+          <Text style={[type.title, { fontSize: 20, textAlign: 'center' }]}>{unreachable.title}</Text>
+          <Text style={[type.body, { textAlign: 'center', marginTop: 8 }]}>{unreachable.body}</Text>
+          {behind ? null : (
+            <View style={styles.trying}>
+              <Working />
+              <Text style={type.meta}>Trying again</Text>
+            </View>
+          )}
         </View>
       ) : (
         <>
@@ -206,6 +215,7 @@ const styles = StyleSheet.create({
   presenceOn: { backgroundColor: colors.live, borderColor: colors.ground },
   presenceOff: { backgroundColor: colors.ground, borderColor: colors.rest },
   name: { ...type.title },
+  channel: { color: colors.inkDim },
   body: { paddingHorizontal: 16, paddingBottom: 40 },
   filters: { flexDirection: 'row', gap: 6, paddingTop: 12 },
   filter: { height: 32, minWidth: 40, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
