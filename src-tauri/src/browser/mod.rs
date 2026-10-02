@@ -309,6 +309,9 @@ struct AgentBrowser {
     /// The size of the page area the last time it showed a page.
     seen: Option<(f64, f64)>,
     viewports: HashMap<String, viewport::Viewport>,
+    /// What each tab's view was last given, so a swipe moving one page every
+    /// frame does not also re-place every tab parked behind it.
+    applied: HashMap<String, (viewport::Layout, bool)>,
 }
 
 impl AgentBrowser {
@@ -932,14 +935,30 @@ impl BrowserManager {
     /// Show the active tab inside the pane's page area and park the rest.
     fn relayout(&self, agent_id: &str) {
         let plan: Vec<(Webview, viewport::Layout, bool)> = {
-            let agents = self.lock();
-            let Some(agent) = agents.get(agent_id) else {
+            let mut agents = self.lock();
+            let Some(agent) = agents.get_mut(agent_id) else {
                 return;
             };
-            agent
+            let wanted: Vec<(String, Webview, viewport::Layout, bool)> = agent
                 .views
                 .iter()
-                .map(|(id, view)| (view.clone(), agent.layout_of(id), agent.strip.awake(id)))
+                .map(|(id, view)| {
+                    let layout = agent.layout_of(id);
+                    (id.clone(), view.clone(), layout, agent.strip.awake(id))
+                })
+                .collect();
+            let views = &agent.views;
+            agent.applied.retain(|id, _| views.contains_key(id));
+            wanted
+                .into_iter()
+                .filter_map(|(id, view, layout, awake)| {
+                    let next = (layout.clone(), awake);
+                    if agent.applied.get(&id) == Some(&next) {
+                        return None;
+                    }
+                    agent.applied.insert(id, next);
+                    Some((view, layout, awake))
+                })
                 .collect()
         };
         for (view, layout, awake) in plan {

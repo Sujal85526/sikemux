@@ -78,6 +78,12 @@ impl Drop for NativeTab {
     }
 }
 
+/// What a page is cut to: its visible part alone, or that less the holes over it.
+enum PageMask {
+    Rect(Retained<CALayer>),
+    Shape(Retained<CAShapeLayer>),
+}
+
 thread_local! {
     static TABS: RefCell<HashMap<String, NativeTab>> = RefCell::new(HashMap::new());
     static SHORTCUT_MONITOR: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
@@ -85,6 +91,7 @@ thread_local! {
     static OPEN_DIALOGS: RefCell<HashMap<String, OpenDialog>> = RefCell::new(HashMap::new());
     static HOLES: RefCell<HashMap<usize, Vec<NSRect>>> = RefCell::new(HashMap::new());
     static SHADES: RefCell<HashMap<usize, Retained<CALayer>>> = RefCell::new(HashMap::new());
+    static MASKS: RefCell<HashMap<usize, PageMask>> = RefCell::new(HashMap::new());
     static PAGE_HIT_TEST: std::cell::Cell<Option<Imp>> = const { std::cell::Cell::new(None) };
     /// WebKit tears a named world down once nothing holds it, and the element
     /// numbers the agent was given go with it.
@@ -201,6 +208,7 @@ pub fn forget(tab_id: &str) {
         if let Some(tab) = tabs.borrow_mut().remove(tab_id) {
             HOLES.with(|holes| holes.borrow_mut().remove(&view_key(&tab.webview)));
             SHADES.with(|shades| shades.borrow_mut().remove(&view_key(&tab.webview)));
+            MASKS.with(|masks| masks.borrow_mut().remove(&view_key(&tab.webview)));
         }
     });
 }
@@ -424,34 +432,65 @@ pub fn clip(pointer: *mut c_void, clip_left: f64, clip_right: f64, holes: Vec<(N
             )
         }
     };
+    let key = view_key(&webview);
     CATransaction::begin();
     CATransaction::setDisableActions(true);
-    if visible == whole && holes.is_empty() {
-        // SAFETY: main thread, and `layer` is retained for the whole function.
-        unsafe { layer.setMask(None) };
-    } else {
-        let path = CGMutablePath::new();
-        // SAFETY: a null transform means none, and `path` is a fresh path only we hold.
-        unsafe {
-            CGMutablePath::add_rect(Some(&path), std::ptr::null(), flip(visible));
-            for (hole, radius) in &holes {
-                CGMutablePath::add_rounded_rect(
-                    Some(&path),
-                    std::ptr::null(),
-                    flip(*hole),
-                    *radius,
-                    *radius,
-                );
-            }
+    MASKS.with(|masks| {
+        let mut masks = masks.borrow_mut();
+        if visible == whole && holes.is_empty() {
+            masks.remove(&key);
+            // SAFETY: main thread, and `layer` is retained for the whole function.
+            unsafe { layer.setMask(None) };
+            return;
         }
-        let mask = CAShapeLayer::new();
-        mask.setFrame(layer.bounds());
-        // SAFETY: an immutable constant string QuartzCore sets up when it loads.
-        mask.setFillRule(unsafe { kCAFillRuleEvenOdd });
-        mask.setPath(Some(&path));
-        // SAFETY: main thread, and the layer retains `mask` from here on.
-        unsafe { layer.setMask(Some(&mask)) };
-    }
+        /* A swipe clips the page on every frame it is partly off stage. The mask
+        is kept and moved rather than rebuilt, and a plain rectangle is a layer's
+        frame rather than a path that has to be drawn again. */
+        let mask: &CALayer = if holes.is_empty() {
+            if !matches!(masks.get(&key), Some(PageMask::Rect(_))) {
+                let rect = CALayer::new();
+                rect.setBackgroundColor(Some(&CGColor::new_generic_gray(0.0, 1.0)));
+                masks.insert(key, PageMask::Rect(rect));
+            }
+            let Some(PageMask::Rect(rect)) = masks.get(&key) else {
+                return;
+            };
+            rect.setFrame(flip(visible));
+            rect
+        } else {
+            let path = CGMutablePath::new();
+            // SAFETY: a null transform means none, and `path` is a fresh path only we hold.
+            unsafe {
+                CGMutablePath::add_rect(Some(&path), std::ptr::null(), flip(visible));
+                for (hole, radius) in &holes {
+                    CGMutablePath::add_rounded_rect(
+                        Some(&path),
+                        std::ptr::null(),
+                        flip(*hole),
+                        *radius,
+                        *radius,
+                    );
+                }
+            }
+            if !matches!(masks.get(&key), Some(PageMask::Shape(_))) {
+                let shape = CAShapeLayer::new();
+                // SAFETY: an immutable constant string QuartzCore sets up when it loads.
+                shape.setFillRule(unsafe { kCAFillRuleEvenOdd });
+                masks.insert(key, PageMask::Shape(shape));
+            }
+            let Some(PageMask::Shape(shape)) = masks.get(&key) else {
+                return;
+            };
+            shape.setFrame(layer.bounds());
+            shape.setPath(Some(&path));
+            shape
+        };
+        let current = layer.mask();
+        if current.as_deref().map(|layer| layer as *const CALayer) != Some(mask as *const CALayer) {
+            // SAFETY: main thread, and the layer retains `mask` from here on.
+            unsafe { layer.setMask(Some(mask)) };
+        }
+    });
     CATransaction::commit();
 }
 
