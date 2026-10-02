@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 const [platform, variant, ...rest] = process.argv.slice(2);
@@ -10,6 +11,9 @@ if (!['ios', 'android'].includes(platform) || !['development', 'production'].inc
 }
 
 const env = { ...process.env, APP_VARIANT: variant };
+// A clean prebuild deletes android/local.properties, which is where Gradle found the SDK.
+const androidStudioSdk = join(homedir(), 'Library/Android/sdk');
+if (!env.ANDROID_HOME && existsSync(androidStudioSdk)) env.ANDROID_HOME = androidStudioSdk;
 const expo = (...args) => execFileSync('npx', ['expo', ...args], { stdio: 'inherit', env });
 
 // The native project is generated per variant, so switching variants regenerates it.
