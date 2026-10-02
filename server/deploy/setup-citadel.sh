@@ -95,7 +95,7 @@ install -d -m 755 /etc/caddy/sites
 install -m 644 "$here/sikemux.caddy" /etc/caddy/sites/sikemux.caddy
 grep -qx 'import /etc/caddy/sites/\*.caddy' /etc/caddy/Caddyfile ||
   printf '\nimport /etc/caddy/sites/*.caddy\n' >>/etc/caddy/Caddyfile
-caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
+sudo -u caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
 systemctl reload caddy
 
 step "done"
