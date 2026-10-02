@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { pickerSlots, sessionConfigs, type SessionConfig } from '@mac/chat/sessionConfig';
 import { toolKind, toolTarget } from '@mac/chat/toolLabels';
@@ -8,6 +8,7 @@ import type { AcpPermissionRequest, ChatState } from '@mac/chat/types';
 import { providerName } from '@/devices/words';
 import { AgentIcon, Icon, isProvider } from '@/ui/Icon';
 import { Track } from '@/ui/parts';
+import { Sheet } from '@/ui/Sheet';
 import { ComposerInput } from './ComposerInput';
 import { brand, colors, fonts } from '@/ui/theme';
 
@@ -84,66 +85,60 @@ function ConfigSheet({
   const slots = pickerSlots(configs, provider as never);
   const model = slots[0]?.config;
   const effort = slots[1]?.config;
-  // A modal measures no safe area of its own, so the screen behind it lends its inset.
-  const insets = useSafeAreaInsets();
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.scrim} onPress={onClose} accessibilityLabel="Close" />
-      <View style={[styles.sheet, { paddingBottom: insets.bottom + 12 }]}>
-        <View style={styles.grabber} />
-        <View style={styles.sheetHead}>
-          <AgentIcon provider={provider} size={20} />
-          <Text style={styles.sheetTitle}>{providerName(provider)}</Text>
-        </View>
-        {model ? (
-          <>
-            <Text style={styles.sheetLabel}>Model</Text>
-            <View style={styles.group}>
-              {model.options.map((option, index) => {
-                const on = option.value === model.currentValue;
-                return (
-                  <Pressable key={option.value} onPress={() => onPick(model, option.value)} style={[styles.option, on && { backgroundColor: colors.active }, index > 0 && styles.optionDivided]}>
-                    <AgentIcon provider={provider} size={18} />
-                    <Text style={[styles.optionText, on && { color: colors.ink }]} numberOfLines={1}>
-                      {option.label}
-                    </Text>
-                    {on ? <Icon name="IconCheck" size={17} color={colors.ink} /> : null}
-                  </Pressable>
-                );
-              })}
-            </View>
-          </>
-        ) : null}
-        {effort ? (
-          <>
-            <Text style={styles.sheetLabel}>Effort</Text>
-            <Track
-              value={effort.currentValue}
-              onChange={(value) => onPick(effort, value)}
-              options={effort.options.map((option) => ({ value: option.value, label: option.label }))}
-            />
-          </>
-        ) : null}
-        {usage ? (
-          <View style={styles.context}>
-            <View style={styles.contextTop}>
-              <Text style={styles.contextLabel}>Context</Text>
-              <Text style={styles.contextValue}>
-                {Math.round(usage.used / 1000)}k of {Math.round(usage.size / 1000)}k
-              </Text>
-            </View>
-            <View style={styles.contextBar}>
-              <View
-                style={[
-                  styles.contextFill,
-                  { width: `${Math.min(100, (usage.used / usage.size) * 100)}%`, backgroundColor: isProvider(provider) ? brand[provider] : colors.accent },
-                ]}
-              />
-            </View>
-          </View>
-        ) : null}
+    <Sheet visible={visible} onClose={onClose}>
+      <View style={styles.sheetHead}>
+        <AgentIcon provider={provider} size={20} />
+        <Text style={styles.sheetTitle}>{providerName(provider)}</Text>
       </View>
-    </Modal>
+      {model ? (
+        <>
+          <Text style={styles.sheetLabel}>Model</Text>
+          <View style={styles.group}>
+            {model.options.map((option, index) => {
+              const on = option.value === model.currentValue;
+              return (
+                <Pressable key={option.value} onPress={() => onPick(model, option.value)} style={[styles.option, on && { backgroundColor: colors.active }, index > 0 && styles.optionDivided]}>
+                  <AgentIcon provider={provider} size={18} />
+                  <Text style={[styles.optionText, on && { color: colors.ink }]} numberOfLines={1}>
+                    {option.label}
+                  </Text>
+                  {on ? <Icon name="IconCheck" size={17} color={colors.ink} /> : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        </>
+      ) : null}
+      {effort ? (
+        <>
+          <Text style={styles.sheetLabel}>Effort</Text>
+          <Track
+            value={effort.currentValue}
+            onChange={(value) => onPick(effort, value)}
+            options={effort.options.map((option) => ({ value: option.value, label: option.label }))}
+          />
+        </>
+      ) : null}
+      {usage ? (
+        <View style={styles.context}>
+          <View style={styles.contextTop}>
+            <Text style={styles.contextLabel}>Context</Text>
+            <Text style={styles.contextValue}>
+              {Math.round(usage.used / 1000)}k of {Math.round(usage.size / 1000)}k
+            </Text>
+          </View>
+          <View style={styles.contextBar}>
+            <View
+              style={[
+                styles.contextFill,
+                { width: `${Math.min(100, (usage.used / usage.size) * 100)}%`, backgroundColor: isProvider(provider) ? brand[provider] : colors.accent },
+              ]}
+            />
+          </View>
+        </View>
+      ) : null}
+    </Sheet>
   );
 }
 
@@ -301,9 +296,6 @@ const styles = StyleSheet.create({
   actText: { fontFamily: fonts.uiMedium, fontSize: 14, color: colors.ink },
   actGoText: { fontFamily: fonts.uiSemibold, color: colors.ground },
 
-  scrim: { flex: 1, backgroundColor: 'rgba(9, 9, 11, 0.62)' },
-  sheet: { backgroundColor: colors.overlay, borderTopLeftRadius: 22, borderTopRightRadius: 22, borderTopWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
-  grabber: { alignSelf: 'center', width: 36, height: 5, borderRadius: 3, backgroundColor: colors.borderStrong, marginBottom: 10 },
   sheetHead: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4 },
   sheetTitle: { fontFamily: fonts.uiSemibold, fontSize: 17, letterSpacing: -0.35, color: colors.ink },
   sheetLabel: { fontFamily: fonts.uiSemibold, fontSize: 13, color: colors.tertiary, paddingTop: 18, paddingBottom: 8, paddingHorizontal: 6 },
