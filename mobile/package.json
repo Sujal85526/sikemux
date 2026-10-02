@@ -16,11 +16,12 @@
     "android:release": "pnpm --filter sikemux-app android:release",
     "start": "pnpm --filter sikemux-app start",
     "typecheck": "pnpm -r typecheck",
-    "lint": "pnpm -r --if-present lint",
+    "lint": "node scripts/check-mac-imports.mjs && pnpm -r --if-present lint",
     "test": "pnpm -r --if-present test",
     "format": "pnpm -r --if-present format",
     "format:check": "pnpm -r --if-present format:check",
     "design": "node design/build.mjs --serve",
-    "doctor": "node scripts/doctor.mjs"
+    "doctor": "node scripts/doctor.mjs",
+    "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test"
   }
 }
