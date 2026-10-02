@@ -3,6 +3,14 @@ name: CI
 on:
   push:
     branches: [main]
+    # README.md and CONTRIBUTING.md stay out of this list because format:check covers them.
+    paths-ignore:
+      - "docs/**"
+      - AGENTS.md
+      - CLA.md
+      - CLAUDE.md
+      - DESIGN.md
+      - RELEASE_NOTES.md
   pull_request:
   workflow_dispatch:
   workflow_call:
