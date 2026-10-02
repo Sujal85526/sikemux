@@ -24,8 +24,15 @@ use tokio::sync::oneshot;
 use crate::error::{AppError, AppResult};
 use crate::pty::{core_error, PtyManager};
 
-/// The Clerk instance accounts live in, and this app's OAuth client there.
+/// The Clerk instance accounts live in, and this app's OAuth client there. Dev builds use
+/// Clerk's development instance, which the accounts server on this computer trusts.
+#[cfg(not(debug_assertions))]
+const CLERK: &str = "https://clerk.sikemux.com";
+#[cfg(not(debug_assertions))]
+const CLIENT_ID: &str = "I4QXaIf3c7zntZR8";
+#[cfg(debug_assertions)]
 const CLERK: &str = "https://immense-llama-6668.clerk.accounts.dev";
+#[cfg(debug_assertions)]
 const CLIENT_ID: &str = "IfRz79s1n2WGOt3J";
 const SCOPES: &str = "email profile offline_access";
 const SIGN_IN_TIMEOUT: Duration = Duration::from_secs(5 * 60);

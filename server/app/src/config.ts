@@ -7,6 +7,5 @@ export const config = import.meta.env.DEV
     }
   : {
       apiUrl: "https://api.sikemux.com",
-      clerkPublishableKey:
-        "pk_test_aW1tZW5zZS1sbGFtYS02NjY4LmNsZXJrLmFjY291bnRzLmRldiQ",
+      clerkPublishableKey: "pk_live_Y2xlcmsuc2lrZW11eC5jb20k",
     };

@@ -1,7 +1,12 @@
 import Constants from 'expo-constants';
 
-/** Clerk's publishable key is public: it names the instance accounts live in. */
-export const CLERK_PUBLISHABLE_KEY = 'pk_test_aW1tZW5zZS1sbGFtYS02NjY4LmNsZXJrLmFjY291bnRzLmRldiQ';
+/**
+ * Clerk's publishable key is public: it names the instance accounts live in. Development builds use
+ * Clerk's development instance, which the accounts server on the Mac trusts.
+ */
+export const CLERK_PUBLISHABLE_KEY = __DEV__
+  ? 'pk_test_aW1tZW5zZS1sbGFtYS02NjY4LmNsZXJrLmFjY291bnRzLmRldiQ'
+  : 'pk_live_Y2xlcmsuc2lrZW11eC5jb20k';
 
 /**
  * Release builds use api.sikemux.com. A development build uses the accounts server on the Mac
