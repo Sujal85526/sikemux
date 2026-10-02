@@ -59,7 +59,7 @@ Rebuild with `pnpm native:ios:sim` after changing `sikemux-mobile` or the protoc
 
 #### Designing phone screens
 
-Every phone screen is drawn first in `mobile/design/screens.src.html`, with the Mac app's own icons and fonts. A design change starts there, before the app: run `pnpm design` in `mobile/` and open http://127.0.0.1:8791/mobile/design/screens.html, which rebuilds on each reload. In the PR, add a screenshot of each screen you changed or added from that page, so the design is reviewed before the code. `{{IconName}}` or `{{IconName:size}}` in the file draws one of the app's icons.
+Every phone screen is drawn first in `mobile/design/screens.src.html`, with the Mac app's own icons and fonts. A design change starts there, before the app: run `pnpm design` in `mobile/` and open http://127.0.0.1:8791/mobile/design/screens.html, which rebuilds on each reload. In the PR, add a screenshot of each screen you changed or added from that page, so the design is reviewed before the code. `{{IconName}}` or `{{IconName:size}}` in the file draws one of the app's icons. The glyphs the phone draws itself live in `mobile/app/src/ui/drawnIcons.ts`, which the app and the page both read.
 
 ## Before you open a PR
 
