@@ -21,6 +21,8 @@ const STILL_MS = 2500;
 
 type Uniform = number | boolean | number[];
 
+type Loop = { start: () => void; stop: () => void };
+
 /** The Mac's `ambient` and `image` presets from src/lib/shaderField.ts. */
 function preset(colors: Palette, image: boolean): { fragment: string; speed: number; uniforms: Record<string, Uniform> } {
   const sizing = { u_originX: 0.5, u_originY: 0.5, u_worldWidth: 0, u_worldHeight: 0, u_rotation: 0, u_offsetX: 0, u_offsetY: 0 };
@@ -175,10 +177,9 @@ export function Backdrop() {
   const still = useStill();
   const [aspect, setAspect] = useState<number>();
   const picture = backdrop?.texture ? backdrop.image : undefined;
-  // Each GL surface runs its own frames and reads this to know whether to draw them.
-  const moving = useRef(false);
-  moving.current = !picture && focused && active && !still;
-  const stops = useRef(new Set<() => void>());
+  const moving = !picture && focused && active && !still;
+  const loops = useRef(new Set<Loop>());
+  const movingNow = useRef(moving);
 
   useEffect(() => {
     if (!picture) return;
@@ -186,8 +187,13 @@ export function Backdrop() {
   }, [picture]);
 
   useEffect(() => {
-    const running = stops.current;
-    return () => running.forEach((stop) => stop());
+    movingNow.current = moving;
+    loops.current.forEach((loop) => (moving ? loop.start() : loop.stop()));
+  }, [moving]);
+
+  useEffect(() => {
+    const running = loops.current;
+    return () => running.forEach((loop) => loop.stop());
   }, []);
 
   if (!backdrop?.texture || (picture && !aspect)) return null;
@@ -198,8 +204,8 @@ export function Backdrop() {
   const ready = (gl: ExpoWebGLRenderingContext) => {
     const extra: Record<string, Uniform> = picture && aspect ? { u_imageAspectRatio: aspect, u_image: 0 } : {};
     // Only the newest surface is on screen; one a remount left behind stops drawing.
-    stops.current.forEach((stop) => stop());
-    stops.current.clear();
+    loops.current.forEach((loop) => loop.stop());
+    loops.current.clear();
     const surface = mount(gl, fragment, { ...uniforms, ...extra });
     if (!surface) return;
     if (picture) {
@@ -216,13 +222,22 @@ export function Backdrop() {
     draw(surface, still ? STILL_MS * speed : (Date.now() - ORIGIN) * speed);
     if (picture) return;
     // The loop holds this surface itself: a screen can mount more than one before settling on one.
-    let timer: ReturnType<typeof setTimeout>;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const tick = () => {
-      if (moving.current) draw(surface, (Date.now() - ORIGIN) * speed);
+      draw(surface, (Date.now() - ORIGIN) * speed);
       timer = setTimeout(tick, FRAME_MS);
     };
-    timer = setTimeout(tick, FRAME_MS);
-    stops.current.add(() => clearTimeout(timer));
+    const loop: Loop = {
+      start: () => {
+        timer ??= setTimeout(tick, FRAME_MS);
+      },
+      stop: () => {
+        clearTimeout(timer);
+        timer = undefined;
+      },
+    };
+    loops.current.add(loop);
+    if (movingNow.current) loop.start();
   };
 
   return (
