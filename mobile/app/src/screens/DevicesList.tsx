@@ -1,15 +1,20 @@
+import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
+import { useUser } from '@clerk/expo';
+import type { Device } from '@protocol';
+
+import { AccountSheet } from '@/account/AccountSheet';
+import { useAccountMacs } from '@/account/session';
+import { pasteFoundLink } from '@/devices/foundLinks';
 
 import type { Snapshot } from '@/core/protocol';
 import { useLive } from '@/devices/hub';
-import { channelLabel, deviceKind, deviceName, shortKey, type PairedDevice } from '@/devices/paired';
-import { phoneName } from '@/devices/pairing';
-import { useDeviceId } from '@/device/identity';
+import { channelLabel, deviceKind, deviceName, type PairedDevice } from '@/devices/paired';
 import { chatTitle, ago } from '@/devices/words';
 import { AgentIcon, DeviceIcon, Icon } from '@/ui/Icon';
-import { IconButton, NeedsYou, Screen, useBottomGap, Working } from '@/ui/parts';
-import { fonts, type Palette, typeFor, useColors, useStyles, useType } from '@/ui/theme';
+import { Button, IconButton, NeedsYou, Screen, useBottomGap, Working } from '@/ui/parts';
+import { fonts, type Palette, typeFor, useColors, useStyles } from '@/ui/theme';
 
 function summary(snapshot: Snapshot): string {
   const agents = snapshot.chats.length;
@@ -90,28 +95,89 @@ function DeviceCard({ device }: { device: PairedDevice }) {
   );
 }
 
+/** A Mac signed in to the same account that this phone has not paired with: it pairs with that Mac's code. */
+function AccountMacCard({ mac }: { mac: Device }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  const channel = channelLabel(mac.channel);
+  return (
+    <Pressable
+      onPress={() => router.push({ pathname: '/pair-code', params: { core: mac.key, name: mac.name } })}
+      accessibilityRole="button"
+      accessibilityHint="Pairs with this Mac's code"
+      style={({ pressed }) => [styles.card, styles.away, pressed && { opacity: 0.85 }]}>
+      <View style={styles.head}>
+        <View style={styles.glyph}>
+          <DeviceIcon kind="laptop" color={colors.tertiary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.name, { color: colors.tertiary }]} numberOfLines={1}>
+            {mac.name}
+          </Text>
+          <Text style={styles.meta} numberOfLines={1}>
+            {channel ? `${channel} · ` : ''}On your account · not paired yet
+          </Text>
+        </View>
+        <Icon name="IconChevron" size={14} color={colors.rest} />
+      </View>
+    </Pressable>
+  );
+}
+
+function Empty() {
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={styles.empty}>
+      <Text style={styles.emptyTitle}>No Macs yet</Text>
+      <Text style={styles.emptyBody}>
+        In Sikemux on your Mac, open Settings → Devices and sign in to this account, or pair with the code it shows.
+      </Text>
+      <Button kind="primary" title="Scan the code on your Mac" onPress={() => router.push('/scan')} style={styles.emptyButton} />
+      <Pressable onPress={() => pasteFoundLink()} style={styles.paste} accessibilityRole="button">
+        <Text style={styles.pasteText}>Paste a pairing link</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 export function DevicesList({ devices }: { devices: PairedDevice[] }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
-  const type = useType();
-  const id = useDeviceId();
   const bottom = useBottomGap();
+  const { user } = useUser();
+  const [account, setAccount] = useState(false);
+  const macs = useAccountMacs();
+  const unpaired = macs.filter((mac) => !devices.some((device) => device.core === mac.key));
   return (
     <Screen>
       <View style={styles.nav}>
         <IconButton name="IconPlus" label="Pair another device" onPress={() => router.push('/scan')} />
       </View>
       <Text style={styles.title}>Devices</Text>
-      <ScrollView contentContainerStyle={styles.list}>
-        {devices.map((device) => (
-          <DeviceCard key={device.core} device={device} />
-        ))}
-      </ScrollView>
-      <View style={[styles.phone, { paddingBottom: bottom }]}>
-        <Icon name="IconPhone" size={15} color={colors.tertiary} />
-        <Text style={styles.phoneText}>{phoneName()}</Text>
-        {id ? <Text style={[type.mono, { marginLeft: 'auto' }]}>{shortKey(id)}</Text> : null}
-      </View>
+      {devices.length || unpaired.length ? (
+        <ScrollView contentContainerStyle={styles.list}>
+          {devices.map((device) => (
+            <DeviceCard key={device.core} device={device} />
+          ))}
+          {unpaired.map((mac) => (
+            <AccountMacCard key={mac.key} mac={mac} />
+          ))}
+        </ScrollView>
+      ) : (
+        <Empty />
+      )}
+      <Pressable
+        onPress={() => setAccount(true)}
+        accessibilityRole="button"
+        accessibilityLabel="Account"
+        style={[styles.phone, { paddingBottom: bottom }]}>
+        <Icon name="IconUser" size={15} color={colors.tertiary} />
+        <Text style={styles.phoneText} numberOfLines={1}>
+          {user?.primaryEmailAddress?.emailAddress ?? 'Account'}
+        </Text>
+        <Icon name="IconChevron" size={13} color={colors.rest} />
+      </Pressable>
+      <AccountSheet visible={account} onClose={() => setAccount(false)} />
     </Screen>
   );
 }
@@ -169,5 +235,11 @@ const makeStyles = (colors: Palette) => {
       borderTopColor: colors.border,
     },
     phoneText: { ...type.meta },
+    empty: { flex: 1, justifyContent: 'center', paddingHorizontal: 28, paddingBottom: 60 },
+    emptyTitle: { ...type.title, fontSize: 20, textAlign: 'center' },
+    emptyBody: { ...type.body, textAlign: 'center', marginTop: 8 },
+    emptyButton: { marginTop: 24 },
+    paste: { height: 44, alignItems: 'center', justifyContent: 'center' },
+    pasteText: { fontFamily: fonts.uiMedium, fontSize: 15, color: colors.secondary },
   });
 };

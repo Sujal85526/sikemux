@@ -5,18 +5,10 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "paths": {
-      "@/*": [
-        "./src/*"
-      ],
-      "@mac/*": [
-        "../../src/*"
-      ]
+      "@/*": ["./src/*"],
+      "@mac/*": ["../../src/*"],
+      "@protocol": ["../../server/protocol/generated/types.ts"]
     }
   },
-  "include": [
-    "**/*.ts",
-    "**/*.tsx",
-    ".expo/types/**/*.ts",
-    "expo-env.d.ts"
-  ]
+  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"]
 }

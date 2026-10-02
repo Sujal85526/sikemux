@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
+import { useAuth } from '@clerk/expo';
 
 import { reloadDevices, useDevices } from '@/devices/hub';
 import { DevicesList } from '@/screens/DevicesList';
@@ -23,10 +24,13 @@ function Unreadable({ problem }: { problem: string }) {
 }
 
 export default function Home() {
+  const { isLoaded, isSignedIn } = useAuth();
   const { devices, loaded, problem } = useDevices();
+  if (!isLoaded) return null;
+  if (!isSignedIn) return <Welcome />;
   if (problem) return <Unreadable problem={problem} />;
   if (!loaded) return null;
-  return devices.length ? <DevicesList devices={devices} /> : <Welcome />;
+  return <DevicesList devices={devices} />;
 }
 
 const makeStyles = (colors: Palette) => {

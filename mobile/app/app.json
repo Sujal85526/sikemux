@@ -12,9 +12,7 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSLocalNetworkUsageDescription": "Sikemux finds the Macs on your network that you can pair with.",
-        "NSBonjourServices": [
-          "_sikemux._udp"
-        ]
+        "NSBonjourServices": ["_sikemux._udp"]
       },
       "icon": "../../src-tauri/icons/sikemux.icon"
     },
@@ -30,6 +28,8 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
+      "expo-web-browser",
+      "@clerk/expo",
       "./plugins/link-system-configuration",
       "./plugins/rustls-platform-verifier",
       "./plugins/small-apk",

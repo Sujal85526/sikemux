@@ -2,12 +2,19 @@ import { useEffect, useState } from 'react';
 import { AccessibilityInfo, Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { useSSO } from '@clerk/expo';
+import * as AuthSession from 'expo-auth-session';
+import * as WebBrowser from 'expo-web-browser';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
-import { pasteFoundLink } from '@/devices/foundLinks';
+import { GitHubMark, GoogleG } from '@/ui/brands';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Button, Dot, NeedsYou, useBottomGap, Working } from '@/ui/parts';
 import { defaultPalette as colors, fonts, typeFor } from '@/ui/theme';
+
+WebBrowser.maybeCompleteAuthSession();
+
+type Provider = 'oauth_google' | 'oauth_github';
 
 // Shown before any Mac is paired, so it is drawn in the default theme.
 const type = typeFor(colors);
@@ -83,8 +90,32 @@ function Reel() {
   );
 }
 
+/** Signs in through the provider's own page in the browser, which hands back to this app. */
+function useProviderSignIn() {
+  const { startSSOFlow } = useSSO();
+  const [busy, setBusy] = useState<Provider>();
+  const [problem, setProblem] = useState<string>();
+  const start = async (strategy: Provider) => {
+    setBusy(strategy);
+    setProblem(undefined);
+    try {
+      const { createdSessionId, setActive } = await startSSOFlow({
+        strategy,
+        redirectUrl: AuthSession.makeRedirectUri({ path: 'sso-callback' }),
+      });
+      if (createdSessionId && setActive) await setActive({ session: createdSessionId });
+    } catch (error) {
+      setProblem(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(undefined);
+    }
+  };
+  return { start, busy, problem };
+}
+
 export function Welcome() {
   const bottom = useBottomGap();
+  const provider = useProviderSignIn();
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
       <Reel />
@@ -97,10 +128,24 @@ export function Welcome() {
         <Text style={styles.body}>Watch them work, answer what they ask, and open the Mac&apos;s terminals.</Text>
       </View>
       <View style={[styles.actions, { paddingBottom: bottom }]}>
-        <Button kind="primary" title="Scan the code on your Mac" onPress={() => router.push('/scan')} />
-        <Pressable onPress={() => pasteFoundLink()} style={styles.paste} accessibilityRole="button">
-          <Text style={styles.pasteText}>Paste a pairing link</Text>
+        <Button
+          title="Continue with Google"
+          icon={<GoogleG />}
+          disabled={provider.busy !== undefined}
+          onPress={() => provider.start('oauth_google')}
+          style={styles.provider}
+        />
+        <Button
+          title="Continue with GitHub"
+          icon={<GitHubMark color={colors.ink} />}
+          disabled={provider.busy !== undefined}
+          onPress={() => provider.start('oauth_github')}
+          style={styles.provider}
+        />
+        <Pressable onPress={() => router.push('/sign-in')} style={styles.paste} accessibilityRole="button">
+          <Text style={styles.pasteText}>Continue with email</Text>
         </Pressable>
+        {provider.problem ? <Text style={styles.problem}>{provider.problem}</Text> : null}
       </View>
     </SafeAreaView>
   );
@@ -118,7 +163,9 @@ const styles = StyleSheet.create({
   markText: { fontFamily: fonts.uiSemibold, fontSize: 15, color: colors.ink, letterSpacing: -0.2 },
   title: { marginTop: 18, fontFamily: fonts.uiSemibold, fontSize: 34, lineHeight: 37, letterSpacing: -1.2, color: colors.ink },
   body: { ...type.body, fontSize: 16, lineHeight: 24, marginTop: 12, maxWidth: 300 },
-  actions: { paddingHorizontal: 16, paddingTop: 28, gap: 4 },
+  actions: { paddingHorizontal: 16, paddingTop: 28, gap: 12 },
+  provider: { backgroundColor: colors.raised },
+  problem: { ...type.meta, color: colors.danger, textAlign: 'center' },
   paste: { height: 44, alignItems: 'center', justifyContent: 'center' },
   pasteText: { fontFamily: fonts.uiMedium, fontSize: 15, color: colors.secondary },
 });

@@ -7,8 +7,10 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
   type StyleProp,
+  type TextInputProps,
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
@@ -95,12 +97,15 @@ export function Button({
   onPress,
   kind = 'neutral',
   disabled,
+  icon,
   style,
 }: {
   title: string;
   onPress?: () => void;
   kind?: ButtonKind;
   disabled?: boolean;
+  /** Drawn before the title, such as a sign-in provider's logo. */
+  icon?: ReactNode;
   style?: StyleProp<ViewStyle>;
 }) {
   const styles = useStyles(makeStyles);
@@ -113,8 +118,33 @@ export function Button({
       accessibilityRole="button"
       accessibilityState={{ disabled }}
       style={({ pressed }) => [styles.button, fill[kind], pressed && styles.pressed, disabled && styles.disabled, style]}>
+      {icon}
       <Text style={[styles.buttonText, ink[kind]]}>{title}</Text>
     </Pressable>
+  );
+}
+
+/** A text box in the app's controls: sunken, rounded, edged in the accent while typing in it. */
+export function Field(props: TextInputProps) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  const [focused, setFocused] = useState(false);
+  return (
+    <TextInput
+      placeholderTextColor={colors.tertiary}
+      selectionColor={colors.accent}
+      keyboardAppearance="dark"
+      {...props}
+      onFocus={(event) => {
+        setFocused(true);
+        props.onFocus?.(event);
+      }}
+      onBlur={(event) => {
+        setFocused(false);
+        props.onBlur?.(event);
+      }}
+      style={[styles.field, focused && styles.fieldFocused, props.style]}
+    />
   );
 }
 
@@ -344,11 +374,25 @@ const makeStyles = (colors: Palette) => {
       paddingVertical: 8,
       borderRadius: radius.row,
       borderWidth: 1,
+      flexDirection: 'row',
+      gap: 10,
       alignItems: 'center',
       justifyContent: 'center',
       paddingHorizontal: 16,
     },
     buttonText: { fontFamily: fonts.uiSemibold, fontSize: 16 },
+    field: {
+      height: 50,
+      borderRadius: radius.row,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.sunken,
+      paddingHorizontal: 14,
+      fontFamily: fonts.ui,
+      fontSize: 16,
+      color: colors.ink,
+    },
+    fieldFocused: { borderColor: colors.borderSelected },
     pressed: { opacity: 0.75 },
     disabled: { opacity: 0.5 },
 
