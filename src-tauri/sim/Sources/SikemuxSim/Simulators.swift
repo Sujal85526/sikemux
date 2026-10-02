@@ -17,6 +17,11 @@ final class Simulators {
     private let logger: any ControlCoreLogger
     private var connections: [String: SimulatorHID] = [:]
     private var streams: [String: FrameStream] = [:]
+    /// The edge a live touch started at, kept for its moves and release, by device.
+    private var touchEdges: [String: SimulatorHIDEdge] = [:]
+    /// The latest live touch step sent to each device; the next one waits for it, so a move never
+    /// overtakes its touch-down.
+    private var touchSteps: [String: Task<Void, Error>] = [:]
 
     init() throws {
         logger = FBControlCoreLoggerFactory.systemLoggerWriting(toStderr: false, withDebugLogging: false)
@@ -67,8 +72,28 @@ final class Simulators {
             let event: SimulatorHIDEvent = if let duration { .tapAt(x: at.x, y: at.y, duration: duration) } else { .tapAt(x: at.x, y: at.y) }
             try await send(event, to: simulator)
             return [:]
+        case let .touch(_, phase, at):
+            let edge: SimulatorHIDEdge
+            if phase == .down {
+                edge = edgeAt(at, of: simulator)
+                touchEdges[simulator.udid] = edge
+            } else {
+                edge = touchEdges[simulator.udid] ?? .none
+            }
+            if phase == .up { touchEdges[simulator.udid] = nil }
+            let step = SimulatorHIDEvent.touch(direction: phase == .up ? .up : .down, x: at.x, y: at.y, edge: edge)
+            let previous = touchSteps[simulator.udid]
+            let sent = Task { @MainActor in
+                _ = await previous?.result
+                try await self.send(step, to: simulator)
+            }
+            touchSteps[simulator.udid] = sent
+            try await sent.value
+            return [:]
         case let .swipe(_, from, to, duration):
-            try await send(.swipe(from.x, yStart: from.y, xEnd: to.x, yEnd: to.y, delta: 0, duration: duration), to: simulator)
+            let swipe = SimulatorHIDEvent.swipe(
+                from.x, yStart: from.y, xEnd: to.x, yEnd: to.y, delta: 0, duration: duration, edge: edgeAt(from, of: simulator))
+            try await send(swipe, to: simulator)
             return [:]
         case let .type(_, text):
             let strokes = try Keyboard.strokes(for: text).get()
@@ -169,6 +194,20 @@ final class Simulators {
             device["screen"] = ["width": size.width, "height": size.height, "scale": size.scale]
         }
         return device
+    }
+
+    /// A touch starting at a side of the screen is tagged with it, so iOS treats it as the system
+    /// gesture a finger there would make: home, back, Notification Center or Control Center.
+    private func edgeAt(_ point: Point, of simulator: Simulator) -> SimulatorHIDEdge {
+        guard let size = Self.screenSize(simulator),
+            let edge = ScreenEdge.of(point, width: size.width, height: size.height)
+        else { return .none }
+        switch edge {
+        case .top: return .top
+        case .left: return .left
+        case .bottom: return .bottom
+        case .right: return .right
+        }
     }
 
     /// The screen in points, the unit every coordinate here is in.
