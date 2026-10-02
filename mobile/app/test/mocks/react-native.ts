@@ -1,6 +1,8 @@
 type Listener = (state: string) => void;
 
-const appStateListeners = new Set<Listener>();
+/** Outlives `vi.resetModules`, so a test can move the app that a freshly imported module listens to. */
+const shared = globalThis as { sikemuxAppState?: Set<Listener> };
+const appStateListeners = (shared.sikemuxAppState ??= new Set<Listener>());
 
 export const Platform = {
   OS: 'ios' as 'ios' | 'android',

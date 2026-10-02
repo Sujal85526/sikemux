@@ -1,4 +1,4 @@
-import * as SecureStore from 'expo-secure-store';
+import { File, Paths } from 'expo-file-system';
 
 import type { BuildChannel } from '@/core/protocol';
 import type { DeviceKind } from '@/ui/Icon';
@@ -22,29 +22,44 @@ export type PairedDevice = {
   lastSeen?: number;
 };
 
-const DEVICES_ITEM = 'sikemux.paired-devices';
+/** Nothing here is secret (a Mac's key is public), so it lives in a file rather than the Keychain. */
+const store = new File(Paths.document, 'paired-devices.json');
+
+let cached: PairedDevice[] | undefined;
+let writing: Promise<unknown> = Promise.resolve();
+
+async function load(): Promise<PairedDevice[]> {
+  cached ??= store.exists ? (JSON.parse(await store.text()) as PairedDevice[]) : [];
+  return cached;
+}
 
 export async function pairedDevices(): Promise<PairedDevice[]> {
-  const stored = await SecureStore.getItemAsync(DEVICES_ITEM);
-  return stored ? (JSON.parse(stored) as PairedDevice[]) : [];
+  await writing;
+  return load();
 }
 
-async function save(devices: PairedDevice[]) {
-  await SecureStore.setItemAsync(DEVICES_ITEM, JSON.stringify(devices));
+/** Changes run one after another on the latest list, so two at once never undo each other. */
+function change(edit: (devices: PairedDevice[]) => PairedDevice[]): Promise<void> {
+  const next = writing.then(async () => {
+    const devices = edit(await load());
+    store.write(JSON.stringify(devices));
+    cached = devices;
+  });
+  writing = next.catch(() => {});
+  return next;
 }
 
-export async function rememberDevice(device: PairedDevice): Promise<void> {
-  const others = (await pairedDevices()).filter((known) => known.core !== device.core);
-  await save([...others, device]);
+export function rememberDevice(device: PairedDevice): Promise<void> {
+  return change((devices) => [...devices.filter((known) => known.core !== device.core), device]);
 }
 
-export async function updateDevice(core: string, change: Partial<PairedDevice>): Promise<void> {
-  const devices = await pairedDevices();
-  await save(devices.map((device) => (device.core === core ? { ...device, ...change } : device)));
+/** Changes a Mac still paired; one forgotten in the meantime stays forgotten. */
+export function updateDevice(core: string, update: Partial<PairedDevice>): Promise<void> {
+  return change((devices) => devices.map((device) => (device.core === core ? { ...device, ...update } : device)));
 }
 
-export async function forgetDevice(core: string): Promise<void> {
-  await save((await pairedDevices()).filter((known) => known.core !== core));
+export function forgetDevice(core: string): Promise<void> {
+  return change((devices) => devices.filter((known) => known.core !== core));
 }
 
 export function shortKey(key: string): string {

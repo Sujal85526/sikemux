@@ -1,18 +1,12 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { ChatAttachment, MobileError, type ChatMark } from '@sikemux/native';
 
 import { permissionRequest, promptAction, recordOf, statusFromEvent } from '@mac/chat/acpEvents';
 import { chatReducer, initialChatState } from '@mac/chat/reducer';
 import type { ChatAction, ChatState } from '@mac/chat/types';
-import { MobileError } from '@sikemux/native';
 
-import { onEvent, useLive } from '@/devices/hub';
-
-type CoreChatEvent = { kind: string; payload: Record<string, unknown> };
-
-type Attachment =
-  | { status: 'live'; start: { sessionId: string; capabilities: unknown; setup: unknown }; running: boolean; replay: CoreChatEvent[] }
-  | { status: 'missing' }
-  | { status: 'restart' };
+import type { CoreChatEvent } from '@/core/protocol';
+import { onChatEvents, problem as problemOf, useLive, type ChatDelivery } from '@/devices/hub';
 
 /** The same mapping the Mac's useAcpSession does from a core chat event to the reducer. */
 function actions(event: CoreChatEvent): ChatAction[] {
@@ -51,6 +45,16 @@ function actions(event: CoreChatEvent): ChatAction[] {
   }
 }
 
+function parsed(json: string): ChatAction[] {
+  return (JSON.parse(json) as CoreChatEvent[]).flatMap(actions);
+}
+
+type Change = { type: 'apply'; actions: ChatAction[] } | { type: 'replace'; state: ChatState };
+
+function reduce(state: ChatState, change: Change): ChatState {
+  return change.type === 'replace' ? change.state : change.actions.reduce(chatReducer, state);
+}
+
 function reduceAll(state: ChatState, batch: ChatAction[]): ChatState {
   return batch.reduce(chatReducer, state);
 }
@@ -60,6 +64,8 @@ export type ChatView = {
   /** Messages rebuilt from the replay, which carries no times. */
   replayed: ReadonlySet<string>;
   attached: 'attaching' | 'live' | 'missing';
+  /** The Mac is reachable, so what the person sends can arrive. */
+  connected: boolean;
   /** Why the chat could not be opened, in the Mac's words. */
   problem: string | null;
   queued: string | null;
@@ -67,78 +73,126 @@ export type ChatView = {
   cancel: () => void;
   answer: (requestId: string, optionId: string | null) => void;
   setConfig: (configId: string, value: string) => void;
+  retry: () => void;
 };
+
+const TOO_LONG = 'This chat is longer than the Mac keeps for the phone. Open it on the Mac to carry on.';
 
 export function useChat(core: string, agentId: string): ChatView {
   const live = useLive(core);
-  const [state, apply] = useReducer(reduceAll, initialChatState);
+  const [state, change] = useReducer(reduce, initialChatState);
   const [attached, setAttached] = useState<ChatView['attached']>('attaching');
   const [problem, setProblem] = useState<string | null>(null);
   const [queued, setQueued] = useState<string | null>(null);
   const [replayed, setReplayed] = useState<ReadonlySet<string>>(new Set());
+  const [attempt, setAttempt] = useState(0);
   const connection = live.status === 'open' ? live.connection : undefined;
   const connectionRef = useRef(connection);
   connectionRef.current = connection;
+  /** Where this chat's events got to, so a reconnect asks only for what it missed. */
+  const mark = useRef<ChatMark | undefined>(undefined);
+
+  useEffect(() => {
+    mark.current = undefined;
+  }, [agentId]);
 
   useEffect(() => {
     if (!connection) return;
     let current = true;
-    // The core sends a chat's events in order with the attach answer, and the
-    // replay holds everything sent before it, so events ahead of it are dropped.
-    let attaching = true;
-    apply([{ type: 'reset' }]);
-    const off = onEvent(core, (json) => {
-      const event = JSON.parse(json) as { kind: string; agentId?: string; event?: CoreChatEvent };
-      if (event.kind !== 'chat' || event.agentId !== agentId || !event.event) return;
-      if (!attaching) apply(actions(event.event));
+    let held: ChatDelivery[] | undefined = [];
+    let pending: ChatAction[] = [];
+    let frame: number | undefined;
+
+    // A stream of tokens is drawn once a frame, not once an event.
+    const flush = () => {
+      frame = undefined;
+      if (!current || !pending.length) return;
+      const batch = pending;
+      pending = [];
+      change({ type: 'apply', actions: batch });
+    };
+    const take = (deliveries: ChatDelivery[]) => {
+      const after = mark.current?.seq ?? -1n;
+      for (const delivery of deliveries) {
+        if (delivery.seq <= after) continue;
+        pending.push(...actions(JSON.parse(delivery.eventJson) as CoreChatEvent));
+        if (mark.current) mark.current = { ...mark.current, seq: delivery.seq };
+      }
+      frame ??= requestAnimationFrame(flush);
+    };
+
+    const off = onChatEvents(core, (deliveries) => {
+      const mine = deliveries.filter((delivery) => delivery.agentId === agentId);
+      if (!mine.length) return;
+      // Until the attach answer says where the replay ends, events wait.
+      if (held) held.push(...mine);
+      else take(mine);
     });
+
+    if (!mark.current) setAttached('attaching');
+    setProblem(null);
     // A chat the Mac put to sleep starts again first; one already running answers at once.
     connection
-      .request(JSON.stringify({ op: 'acpWake', agentId }))
-      .then(() => connection.request(JSON.stringify({ op: 'acpAttach', agentId })))
-      .then((text) => {
+      .wakeChat(agentId)
+      .then(() => connection.attachChat(agentId, mark.current))
+      .then((attachment) => {
         if (!current) return;
-        const response = JSON.parse(text) as { kind: string; attachment?: Attachment };
-        const attachment = response.attachment;
-        if (response.kind !== 'chatAttached' || !attachment || attachment.status !== 'live') {
+        if (ChatAttachment.Live.instanceOf(attachment)) {
+          const { inner } = attachment;
+          const replay = parsed(inner.replayJson);
+          const rebuilt = reduceAll(initialChatState, [
+            ...replay,
+            { type: 'ready', capabilities: recordOf(JSON.parse(inner.capabilitiesJson)) ?? {}, setup: recordOf(JSON.parse(inner.setupJson)) ?? {} },
+            ...(inner.running ? [{ type: 'turn_started' } as const] : []),
+          ]);
+          setReplayed(new Set(reduceAll(initialChatState, replay).messages.map((message) => message.id)));
+          change({ type: 'replace', state: rebuilt });
+          mark.current = inner.mark;
+        } else if (ChatAttachment.Resumed.instanceOf(attachment)) {
+          pending.push(...parsed(attachment.inner.eventsJson));
+          mark.current = attachment.inner.mark;
+        } else {
+          setProblem(ChatAttachment.Restart.instanceOf(attachment) ? TOO_LONG : null);
           setAttached('missing');
           return;
         }
-        const replay = attachment.replay.flatMap(actions);
-        setReplayed(new Set(reduceAll(initialChatState, replay).messages.map((message) => message.id)));
-        apply([
-          ...replay,
-          { type: 'ready', capabilities: recordOf(attachment.start.capabilities) ?? {}, setup: recordOf(attachment.start.setup) ?? {} },
-          ...(attachment.running ? [{ type: 'turn_started' } as const] : []),
-        ]);
-        attaching = false;
+        const waiting = held ?? [];
+        held = undefined;
+        take(waiting);
         setAttached('live');
       })
       .catch((error: unknown) => {
         if (!current) return;
-        setProblem(MobileError.Refused.instanceOf(error) ? error.inner.message : null);
+        setProblem(MobileError.Refused.instanceOf(error) ? error.inner.message : problemOf(error));
         setAttached('missing');
       });
+
     return () => {
       current = false;
       off();
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      if (connection.isOpen()) connection.detachChat(agentId).catch(() => {});
     };
-  }, [connection, core, agentId]);
+  }, [connection, core, agentId, attempt]);
 
-  const request = useCallback((body: Record<string, unknown>) => {
+  const fail = useCallback((what: string, error: unknown) => {
+    change({ type: 'apply', actions: [{ type: 'error', message: `${what}: ${problemOf(error)}` }] });
+  }, []);
+
+  const withConnection = useCallback(() => {
     const open = connectionRef.current;
-    if (!open) return Promise.reject(new Error('Not connected'));
-    return open.request(JSON.stringify(body)).then((text) => JSON.parse(text) as Record<string, unknown>);
+    if (!open) throw new Error('the Mac is not connected');
+    return open;
   }, []);
 
   const prompt = useCallback(
     (text: string) => {
-      apply([{ type: 'local_prompt', text, paths: [] }]);
-      request({ op: 'acpPrompt', agentId, text, paths: [], context: [] }).catch((error: unknown) =>
-        apply([{ type: 'error', message: String(error) }]),
-      );
+      change({ type: 'apply', actions: [{ type: 'local_prompt', text, paths: [] }] });
+      Promise.resolve()
+        .then(() => withConnection().prompt(agentId, text))
+        .catch((error: unknown) => fail('Not sent', error));
     },
-    [agentId, request],
+    [agentId, fail, withConnection],
   );
 
   const running = state.running;
@@ -157,30 +211,38 @@ export function useChat(core: string, agentId: string): ChatView {
   );
 
   const cancel = useCallback(() => {
-    request({ op: 'acpCancel', agentId }).catch(() => {});
-  }, [agentId, request]);
+    Promise.resolve()
+      .then(() => withConnection().cancel(agentId))
+      .catch((error: unknown) => fail('Could not stop the turn', error));
+  }, [agentId, fail, withConnection]);
 
   const answer = useCallback(
     (requestId: string, optionId: string | null) => {
-      apply([{ type: 'permission_cleared', requestId }]);
-      request({ op: 'acpPermissionReply', agentId, requestId, optionId }).catch((error: unknown) =>
-        apply([{ type: 'error', message: String(error) }]),
-      );
+      Promise.resolve()
+        .then(() => withConnection().answerPermission(agentId, requestId, optionId ?? undefined))
+        .then(() => change({ type: 'apply', actions: [{ type: 'permission_cleared', requestId }] }))
+        .catch((error: unknown) => fail('The answer did not reach the Mac', error));
     },
-    [agentId, request],
+    [agentId, fail, withConnection],
   );
 
   const setConfig = useCallback(
     (configId: string, value: string) => {
-      request({ op: 'acpSetConfig', agentId, configId, value })
-        .then((response) => {
-          const options = recordOf(response.value)?.configOptions;
-          if (options) apply([{ type: 'config', options }]);
+      Promise.resolve()
+        .then(() => withConnection().setChatConfig(agentId, configId, value))
+        .then((json) => {
+          const options = recordOf(JSON.parse(json))?.configOptions;
+          if (options) change({ type: 'apply', actions: [{ type: 'config', options }] });
         })
-        .catch((error: unknown) => apply([{ type: 'error', message: String(error) }]));
+        .catch((error: unknown) => fail('Could not change the setting', error));
     },
-    [agentId, request],
+    [agentId, fail, withConnection],
   );
 
-  return { state, replayed, attached, problem, queued, send, cancel, answer, setConfig };
+  const retry = useCallback(() => {
+    mark.current = undefined;
+    setAttempt((count) => count + 1);
+  }, []);
+
+  return { state, replayed, attached, connected: connection !== undefined, problem, queued, send, cancel, answer, setConfig, retry };
 }

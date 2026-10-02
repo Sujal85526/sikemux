@@ -1,19 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ChatInfo } from '@/core/protocol';
+import { ChatState, type ChatInfo } from '@/core/protocol';
 import { ago, chatState, chatTitle, folder, providerName } from '@/devices/words';
 
 function chat(overrides: Partial<ChatInfo> = {}): ChatInfo {
   return {
     agentId: 'agent-1',
     provider: 'claude',
-    title: null,
     cwd: '/Users/me/project',
-    state: 'ready',
+    state: ChatState.Ready,
     running: false,
     pendingPermissions: [],
     permissionMode: 'default',
-    model: null,
     asleep: false,
     ...overrides,
   };
@@ -60,14 +58,14 @@ describe('chatState', () => {
   });
 
   it('says a sleeping chat is asleep even when stopped', () => {
-    expect(chatState(chat({ asleep: true, state: 'stopped' }))).toBe('Sleeping');
+    expect(chatState(chat({ asleep: true, state: ChatState.Stopped }))).toBe('Sleeping');
   });
 
   it('follows the agent through its lifecycle', () => {
-    expect(chatState(chat({ state: 'starting' }))).toBe('Starting…');
-    expect(chatState(chat({ state: 'ready', running: true }))).toBe('Working');
-    expect(chatState(chat({ state: 'ready' }))).toBe('Ready');
-    expect(chatState(chat({ state: 'stopped', running: true }))).toBe('Stopped');
+    expect(chatState(chat({ state: ChatState.Starting }))).toBe('Starting…');
+    expect(chatState(chat({ state: ChatState.Ready, running: true }))).toBe('Working');
+    expect(chatState(chat({ state: ChatState.Ready }))).toBe('Ready');
+    expect(chatState(chat({ state: ChatState.Stopped, running: true }))).toBe('Stopped');
   });
 });
 

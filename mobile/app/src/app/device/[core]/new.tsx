@@ -7,7 +7,7 @@ import * as Haptics from 'expo-haptics';
 import { composerPlaceholder } from '@mac/chat/chatStatus';
 import { ComposerInput } from '@/chat/ComposerInput';
 import type { LauncherInfo, ProjectInfo } from '@/core/protocol';
-import { useLive } from '@/devices/hub';
+import { problem as problemOf, useLive } from '@/devices/hub';
 import { ProjectSheet } from '@/devices/ProjectSheet';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Nav, Screen, useKeyboardShown, Working } from '@/ui/parts';
@@ -68,19 +68,13 @@ export default function NewChat() {
     try {
       let agentId = started;
       if (!agentId) {
-        const begun = JSON.parse(
-          await live.connection.request(
-            JSON.stringify({ op: 'startChat', launcher: launcher.id, project: project.id, permissionMode: null, model: null, effort: null }),
-          ),
-        ) as { kind: string; agentId?: string };
-        if (!begun.agentId) throw new Error('The Mac did not start the agent.');
-        agentId = begun.agentId;
+        agentId = await live.connection.startChat(launcher.id, project.id);
         setStarted(agentId);
       }
-      await live.connection.request(JSON.stringify({ op: 'acpPrompt', agentId, text, paths: [], context: [] }));
+      await live.connection.prompt(agentId, text);
       router.replace(`/device/${core}/chat/${agentId}`);
     } catch (error) {
-      setProblem(error instanceof Error ? error.message : String(error));
+      setProblem(problemOf(error));
       setStarting(false);
     }
   };

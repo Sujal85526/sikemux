@@ -1,3 +1,5 @@
+export const WHEN_UNLOCKED_THIS_DEVICE_ONLY = 'WHEN_UNLOCKED_THIS_DEVICE_ONLY';
+
 const store = new Map<string, string>();
 
 export const getItemAsync = async (key: string) => store.get(key) ?? null;

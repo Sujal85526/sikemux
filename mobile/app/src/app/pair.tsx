@@ -1,14 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import type { PairingLink } from '@sikemux/native';
 
-import { thisDevice } from '@/device/identity';
 import { wasFound } from '@/devices/foundLinks';
-import { reloadDevices } from '@/devices/hub';
-import { rememberDevice, shortKey, type Access } from '@/devices/paired';
-import { failure, phoneName, type Failure } from '@/devices/pairing';
+import { shortKey } from '@/devices/paired';
+import { failure, pair, type Failure } from '@/devices/pairing';
 import { Button, CodeTiles, Nav, Screen, useBottomGap, Working } from '@/ui/parts';
 import { fonts, type Palette, radius, typeFor, useStyles, useType } from '@/ui/theme';
 
@@ -20,13 +17,6 @@ const BROKEN: Failure = { title: 'That link is incomplete', detail: 'Scan the co
 
 function clock(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
-}
-
-async function pairWith(link: PairingLink, signal: AbortSignal) {
-  const device = await thisDevice();
-  const access = await device.pair(link.core, link.code, phoneName(), Platform.OS, { signal });
-  await rememberDevice({ core: link.core, access: access as Access, pairedAt: Date.now() });
-  await reloadDevices();
 }
 
 export default function Pair() {
@@ -46,7 +36,7 @@ export default function Pair() {
     if (!confirmed || !core || !code) return;
     const controller = new AbortController();
     pairing.current = controller;
-    pairWith({ core, code }, controller.signal)
+    pair({ core, code }, controller.signal)
       .then(() => {
         if (controller.signal.aborted) return;
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

@@ -156,6 +156,7 @@ export function Composer({
   placeholder,
   permissionMode,
   watchOnly,
+  offline,
   onSend,
   onStop,
   onAnswer,
@@ -166,6 +167,8 @@ export function Composer({
   placeholder: string;
   permissionMode: string;
   watchOnly: boolean;
+  /** The Mac is out of reach, so a message is kept until it is back. */
+  offline: boolean;
   onSend: (text: string) => void;
   onStop: () => void;
   onAnswer: (requestId: string, optionId: string | null) => void;
@@ -198,7 +201,7 @@ export function Composer({
 
   const send = () => {
     const text = draft.trim();
-    if (!text) return;
+    if (!text || offline) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onSend(text);
     // Clearing the state alone leaves text the keyboard is still composing.
@@ -246,9 +249,11 @@ export function Composer({
           {draft.trim() || !state.running ? (
             <Pressable
               onPress={send}
-              style={[styles.send, !draft.trim() && { opacity: 0.28 }]}
+              style={[styles.send, (!draft.trim() || offline) && { opacity: 0.28 }]}
+              disabled={offline}
               accessibilityRole="button"
-              accessibilityLabel="Send">
+              accessibilityLabel="Send"
+              accessibilityState={{ disabled: offline || !draft.trim() }}>
               <Icon name="IconArrowUp" size={16} color={colors.ground} />
             </Pressable>
           ) : (

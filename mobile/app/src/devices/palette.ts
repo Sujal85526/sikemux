@@ -22,13 +22,14 @@ export function useDevicePalette(core: string): Palette {
   const live = useLive(core);
   const { devices } = useDevices();
   const remembered = devices.find((device) => device.core === core)?.palette;
-  const published = live.snapshot?.workspace.palette;
-  const current = published && Object.keys(published).length ? published : remembered;
+  const colours = live.snapshot?.workspace.palette;
+  const published = useMemo(() => (colours?.size ? Object.fromEntries(colours) : undefined), [colours]);
+  const current = published ?? remembered;
 
   useEffect(() => {
-    if (!published || !Object.keys(published).length) return;
+    if (!published) return;
     if (JSON.stringify(published) === JSON.stringify(remembered)) return;
-    updateDevice(core, { palette: published }).then(reloadDevices);
+    updateDevice(core, { palette: published }).then(reloadDevices, () => {});
   }, [core, published, remembered]);
 
   return useMemo(() => stable(current), [current]);

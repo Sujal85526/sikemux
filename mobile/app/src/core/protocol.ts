@@ -1,95 +1,30 @@
-import type { ConnectionLike } from '@sikemux/native';
+import { BuildChannel as NativeChannel, type DeviceView } from '@sikemux/native';
 
-/** The parts of the core's protocol (`sikemux_core::protocol`) the phone reads. */
+/** The core's protocol as the Rust client hands it over: typed records built from the core's own types. */
+export type {
+  Attention,
+  Backdrop,
+  ChatAttachment,
+  ChatInfo,
+  ChatMark,
+  LauncherInfo,
+  ProjectInfo,
+  SessionInfo,
+  Workspace,
+} from '@sikemux/native';
+export { ChatState, SessionKind } from '@sikemux/native';
 
-export type SessionInfo = {
-  id: number;
-  kind: 'terminal' | 'task';
-  running: boolean;
-  project: string | null;
-  agentType: string | null;
-  agentState: string | null;
-  startedBy: string | null;
-  task: { label: string; command: string; cwd: string } | null;
-  exit: { code: number | null; signal: string | null } | null;
-};
+/** Everything the phone shows of one Mac, as it last sent it. */
+export type Snapshot = DeviceView;
 
-export type ChatInfo = {
-  agentId: string;
-  provider: string;
-  title: string | null;
-  cwd: string;
-  state: 'starting' | 'ready' | 'stopped';
-  running: boolean;
-  pendingPermissions: string[];
-  permissionMode: string;
-  model: string | null;
-  asleep: boolean;
-};
-
-export type Attention = {
-  id: string;
-  kind: 'permission';
-  agentId: string;
-  provider: string;
-  cwd: string;
-  at: number;
-};
-
-export type ProjectInfo = { id: string; name: string; path: string };
-
-export type LauncherInfo = { id: string; provider: string; label: string; permissionMode: string };
-
-/** `palette` holds the Mac's theme colours by name; empty until its app publishes them. */
-export type Workspace = { projects: ProjectInfo[]; launchers: LauncherInfo[]; palette: Record<string, string>; backdrop: Backdrop };
-
-/** What the Mac draws behind its panes: the moving grain, or a picture `backdropImage` fetches by id. */
-export type Backdrop = { texture: boolean; image: string | null };
-
+/** Kept with the paired Mac, so it is a name rather than the native enum's number. */
 export type BuildChannel = 'dev' | 'nightly' | 'stable';
-export type HostInfo = { name: string; model: string; version: string; channel: BuildChannel };
 
-type Response =
-  | { kind: 'sessions'; sessions: SessionInfo[] }
-  | { kind: 'chats'; chats: ChatInfo[] }
-  | { kind: 'attentions'; attentions: Attention[] }
-  | { kind: 'workspace'; workspace: Workspace }
-  | { kind: 'host'; host: HostInfo };
-
-type Answer<K extends Response['kind']> = Extract<Response, { kind: K }>;
-
-async function ask<K extends Response['kind']>(
-  connection: ConnectionLike,
-  op: string,
-  kind: K,
-): Promise<Answer<K>> {
-  const response = JSON.parse(await connection.request(JSON.stringify({ op }))) as Response;
-  if (response.kind !== kind) throw new Error(`the Mac answered ${op} with ${response.kind}`);
-  return response as Answer<K>;
+export function channelName(channel: NativeChannel): BuildChannel {
+  if (channel === NativeChannel.Dev) return 'dev';
+  if (channel === NativeChannel.Nightly) return 'nightly';
+  return 'stable';
 }
 
-export type Snapshot = {
-  workspace: Workspace;
-  sessions: SessionInfo[];
-  chats: ChatInfo[];
-  attentions: Attention[];
-};
-
-export async function snapshot(connection: ConnectionLike): Promise<Snapshot> {
-  const [workspace, sessions, chats, attentions] = await Promise.all([
-    ask(connection, 'workspace', 'workspace'),
-    ask(connection, 'list', 'sessions'),
-    ask(connection, 'acpList', 'chats'),
-    ask(connection, 'attentions', 'attentions'),
-  ]);
-  return {
-    workspace: workspace.workspace,
-    sessions: sessions.sessions,
-    chats: chats.chats,
-    attentions: attentions.attentions,
-  };
-}
-
-export async function host(connection: ConnectionLike): Promise<HostInfo> {
-  return (await ask(connection, 'host', 'host')).host;
-}
+/** A chat event as the Mac app's chat code reads it. */
+export type CoreChatEvent = { kind: string; payload: Record<string, unknown> };

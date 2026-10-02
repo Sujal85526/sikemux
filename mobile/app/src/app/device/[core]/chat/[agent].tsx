@@ -12,7 +12,7 @@ import { useChat } from '@/chat/useChat';
 import { useDevices, useLive } from '@/devices/hub';
 import { chatTitle, providerName } from '@/devices/words';
 import { AgentIcon, Icon } from '@/ui/Icon';
-import { Nav, Screen, useBottomGap, Working } from '@/ui/parts';
+import { Button, Nav, Screen, useBottomGap, Working } from '@/ui/parts';
 import { fonts, type Palette, typeFor, useColors, useStyles, useType } from '@/ui/theme';
 
 /** How near the end, as a share of the transcript's height, still counts as reading the latest. */
@@ -61,7 +61,10 @@ export default function Chat() {
   const title = state.title ?? (info ? chatTitle(info) : providerName(provider));
   const status =
     chat.attached === 'missing' ? (
-      <Text style={styles.gone}>{chat.problem ? capitalised(chat.problem) : 'This chat is no longer running on the Mac.'}</Text>
+      <View style={styles.missing}>
+        <Text style={styles.gone}>{chat.problem ? capitalised(chat.problem) : 'This chat is no longer running on the Mac.'}</Text>
+        <Button title="Try again" onPress={chat.retry} />
+      </View>
     ) : chat.attached === 'attaching' ? (
       <View style={styles.attaching}>
         <Working />
@@ -126,6 +129,7 @@ export default function Chat() {
             placeholder={composerPlaceholder(state, { resuming: false, disconnected: live.status !== 'open' })}
             permissionMode={info?.permissionMode ?? ''}
             watchOnly={access === 'watch'}
+            offline={!chat.connected}
             onSend={send}
             onStop={chat.cancel}
             onAnswer={chat.answer}
@@ -163,7 +167,8 @@ const makeStyles = (colors: Palette) => {
       elevation: 6,
     },
     attaching: { flexDirection: 'row', alignItems: 'center', gap: 10, alignSelf: 'center', paddingVertical: 24 },
-    gone: { ...type.meta, textAlign: 'center', paddingVertical: 24 },
+    missing: { gap: 16, paddingHorizontal: 18, paddingVertical: 24 },
+    gone: { ...type.meta, textAlign: 'center' },
     error: { fontFamily: fonts.ui, fontSize: 13.5, color: colors.danger, marginTop: 10 },
   });
 };

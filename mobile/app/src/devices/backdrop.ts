@@ -7,13 +7,11 @@ import { updateDevice, type PairedDevice } from './paired';
 export type DeviceBackdrop = { texture: boolean; image?: string };
 
 const fetching = new Set<string>();
+/** Pictures the Mac could not hand over; asking again on every change of its view would not help. */
+const missing = new Set<string>();
 
-function save(core: string, id: string, dataUrl: string): string {
-  const folder = new Directory(Paths.document, 'backdrops');
-  folder.create({ idempotent: true });
-  const file = new File(folder, `${core.slice(0, 16)}-${id}.jpg`);
-  file.write(dataUrl.slice(dataUrl.indexOf(',') + 1), { encoding: 'base64' });
-  return file.uri;
+function folder(core: string): Directory {
+  return new Directory(Paths.document, 'backdrops', core.slice(0, 16));
 }
 
 /** Deletes the picture saved for a Mac's backdrop. */
@@ -29,35 +27,40 @@ export function useDeviceBackdrop(core: string): DeviceBackdrop {
   const { devices } = useDevices();
   const remembered = devices.find((device) => device.core === core)?.backdrop;
   const published = live.snapshot?.workspace.backdrop;
+  const texture = published?.texture;
+  const wanted = published ? (published.image ?? null) : undefined;
   const connection = live.status === 'open' ? live.connection : undefined;
 
   useEffect(() => {
-    if (!published) return;
-    const wanted = published.image;
+    if (texture === undefined || wanted === undefined) return;
     if (wanted && wanted !== remembered?.image?.id) {
-      if (!connection || fetching.has(core)) return;
+      const key = `${core}/${wanted}`;
+      if (!connection || fetching.has(core) || missing.has(key)) return;
       fetching.add(core);
+      // The Rust client decodes and writes the picture, so megabytes of it never pass through JavaScript.
+      const dir = decodeURIComponent(folder(core).uri.replace(/^file:\/\//, ''));
       connection
-        .request(JSON.stringify({ op: 'backdropImage' }))
-        .then((text) => {
-          const answer = JSON.parse(text) as { dataUrl?: string | null };
-          if (!answer.dataUrl) return;
-          const uri = save(core, wanted, answer.dataUrl);
+        .saveBackdrop(dir, wanted)
+        .then((path) => {
+          if (!path) {
+            missing.add(key);
+            return;
+          }
           forgetBackdrop(remembered);
-          return updateDevice(core, { backdrop: { texture: published.texture, image: { id: wanted, uri } } }).then(reloadDevices);
+          return updateDevice(core, { backdrop: { texture, image: { id: wanted, uri: new File(`file://${path}`).uri } } }).then(reloadDevices);
         })
-        .catch(() => {})
+        .catch(() => missing.add(key))
         .finally(() => fetching.delete(core));
       return;
     }
     if (!wanted && remembered?.image) forgetBackdrop(remembered);
-    if (published.texture !== remembered?.texture || (!wanted && remembered?.image)) {
-      updateDevice(core, { backdrop: { texture: published.texture, image: wanted ? remembered?.image : undefined } }).then(reloadDevices);
+    if (texture !== remembered?.texture || (!wanted && remembered?.image)) {
+      updateDevice(core, { backdrop: { texture, image: wanted ? remembered?.image : undefined } }).then(reloadDevices, () => {});
     }
-  }, [core, connection, published, remembered]);
+  }, [core, connection, texture, wanted, remembered]);
 
-  const texture = published?.texture ?? remembered?.texture ?? false;
-  const current = published ? published.image : remembered?.image?.id;
+  const shown = texture ?? remembered?.texture ?? false;
+  const current = wanted === undefined ? remembered?.image?.id : wanted;
   const image = current && remembered?.image?.id === current ? remembered.image.uri : undefined;
-  return { texture, image };
+  return { texture: shown, image };
 }

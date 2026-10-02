@@ -5,11 +5,18 @@
 //! warnings go to logcat under the tag `sikemux`.
 
 use std::ffi::c_void;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::OnceLock;
 
 use jni::sys::{jint, JNI_VERSION_1_6};
 use jni::{jni_sig, jni_str, Env, JavaVM};
 
-fn hand_over(env: &mut Env) -> jni::errors::Result<()> {
+static VM: OnceLock<JavaVM> = OnceLock::new();
+static HANDED_OVER: AtomicBool = AtomicBool::new(false);
+
+/// Answers whether the app's context could be handed over yet: Android has
+/// none while the library loads before the app finishes starting.
+fn hand_over(env: &mut Env) -> jni::errors::Result<bool> {
     let app = env
         .call_static_method(
             jni_str!("android/app/ActivityThread"),
@@ -19,7 +26,7 @@ fn hand_over(env: &mut Env) -> jni::errors::Result<()> {
         )?
         .l()?;
     if app.is_null() {
-        return Ok(());
+        return Ok(false);
     }
     let context = env.new_global_ref(&app)?;
     // SAFETY: both pointers stay valid for the life of the process: the VM is
@@ -31,7 +38,29 @@ fn hand_over(env: &mut Env) -> jni::errors::Result<()> {
         );
     }
     std::mem::forget(context);
-    rustls_platform_verifier::android::init_with_env(env, app)
+    rustls_platform_verifier::android::init_with_env(env, app)?;
+    Ok(true)
+}
+
+fn try_hand_over(vm: &JavaVM) -> Result<(), String> {
+    match vm.attach_current_thread(hand_over) {
+        Ok(true) => {
+            HANDED_OVER.store(true, Ordering::Release);
+            Ok(())
+        }
+        Ok(false) => Err("Android has not finished starting the app".into()),
+        Err(error) => Err(format!("the app's context is out of reach: {error}")),
+    }
+}
+
+/// iroh panics without the app's context, so the phone stays offline until
+/// it has been handed over.
+pub(crate) fn ensure_context() -> Result<(), String> {
+    if HANDED_OVER.load(Ordering::Acquire) {
+        return Ok(());
+    }
+    let vm = VM.get().ok_or("Android never loaded the network library")?;
+    try_hand_over(vm)
 }
 
 /// Raise the level to see why a connection stalls: iroh traces each path it tries.
@@ -50,6 +79,9 @@ pub extern "system" fn JNI_OnLoad(vm: *mut jni::sys::JavaVM, _reserved: *mut c_v
     // SAFETY: Android passes the VM that is loading this library.
     let vm = unsafe { JavaVM::from_raw(vm) };
     log_to_logcat();
-    let _ = vm.attach_current_thread(hand_over);
+    if let Err(error) = try_hand_over(&vm) {
+        tracing::warn!("{error}; trying again when the phone comes online");
+    }
+    let _ = VM.set(vm);
     JNI_VERSION_1_6
 }
