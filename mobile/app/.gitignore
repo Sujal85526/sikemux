@@ -41,3 +41,6 @@ example
 # generated native folders
 /ios
 /android
+
+# generated from the Mac app's icons on install
+/src/ui/icons.generated.ts

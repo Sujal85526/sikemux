@@ -5,6 +5,7 @@
   "private": true,
   "license": "SEE LICENSE IN ../../LICENSE",
   "scripts": {
+    "postinstall": "node scripts/generate-icons.mjs",
     "start": "expo start --dev-client",
     "ios": "expo run:ios",
     "android": "expo run:android",
@@ -12,11 +13,16 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@expo-google-fonts/figtree": "^0.4.1",
+    "@expo-google-fonts/jetbrains-mono": "^0.4.1",
     "@sikemux/native": "workspace:*",
     "expo": "~57.0.26",
+    "expo-camera": "~57.0.6",
+    "expo-clipboard": "~57.0.2",
     "expo-constants": "~57.0.20",
     "expo-dev-client": "~57.0.19",
     "expo-device": "~57.0.2",
+    "expo-font": "~57.0.4",
     "expo-linking": "~57.0.11",
     "expo-router": "~57.0.24",
     "expo-secure-store": "~57.0.4",
@@ -26,10 +32,12 @@
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
     "react-native-safe-area-context": "~5.7.0",
-    "react-native-screens": "~4.26.0"
+    "react-native-screens": "~4.26.0",
+    "react-native-svg": "15.15.4"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "esbuild": "^0.28.2",
     "typescript": "~6.0.3"
   }
 }
