@@ -315,6 +315,7 @@ impl Chat {
             permission_mode: self.feed.permission_mode(),
             model: self.launch.model.clone(),
             effort: self.launch.effort.clone(),
+            asleep: false,
         }
     }
 

@@ -36,6 +36,7 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::TaskOutput { .. }
         | Request::AcpList
         | Request::AcpAttach { .. }
+        | Request::AcpWake { .. }
         | Request::AcpPermissionReply { .. }
         | Request::Workspace
         | Request::Attentions
@@ -70,7 +71,7 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::ClosePairing
         | Request::AnswerPairing { .. }
         | Request::PublishWorkspace { .. }
-        | Request::PublishChatTitles { .. } => Needs::Local,
+        | Request::PublishChats { .. } => Needs::Local,
     }
 }
 

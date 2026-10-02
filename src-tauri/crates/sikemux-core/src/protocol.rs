@@ -19,7 +19,7 @@ use sikemux_pty::task::{TaskSource, TaskSpawnRequest};
 use crate::cli::protocol::{CliOpenRequest, HarnessRequest};
 
 pub const PROTOCOL: &str = "sikemux-core";
-pub const PROTOCOL_VERSION: u32 = 7;
+pub const PROTOCOL_VERSION: u32 = 8;
 /// Room for the largest attach snapshot plus its header.
 pub const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 
@@ -273,6 +273,10 @@ pub enum Request {
         agent_id: String,
     },
     AcpList,
+    /// Asks the app to start a chat it put to sleep. Answers once it runs.
+    AcpWake {
+        agent_id: String,
+    },
     AcpPrompt {
         agent_id: String,
         text: String,
@@ -343,10 +347,10 @@ pub enum Request {
         projects: Vec<ProjectInfo>,
         launchers: Vec<ChatLauncher>,
     },
-    /// What the app calls each running chat, by agent id, so devices list
-    /// chats under the names the app shows. Replaces what it published before.
-    PublishChatTitles {
-        titles: BTreeMap<String, String>,
+    /// The chats the app lists, so devices show them under the app's names,
+    /// sleeping ones included. Replaces what it published before.
+    PublishChats {
+        chats: Vec<PublishedChat>,
     },
     Workspace,
     /// What agents wait on a person for now.
@@ -380,6 +384,18 @@ pub struct ChatLaunch {
     pub permission_mode: String,
     pub model: Option<String>,
     pub effort: Option<String>,
+}
+
+/// A chat as the app lists it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublishedChat {
+    pub agent_id: String,
+    pub provider: String,
+    /// Absent while the chat has no name beyond its agent's.
+    pub title: Option<String>,
+    pub cwd: PathBuf,
+    pub asleep: bool,
 }
 
 /// Something read elsewhere and handed to the agent whole, such as an issue.
@@ -469,6 +485,8 @@ pub struct ChatInfo {
     pub permission_mode: String,
     pub model: Option<String>,
     pub effort: Option<String>,
+    /// The app stopped its agent while idle; `AcpWake` starts it again.
+    pub asleep: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -902,6 +920,11 @@ pub enum Event {
     /// which show it beside their own.
     ChatBegun {
         chat: ChatInfo,
+    },
+    /// A device opened a sleeping chat. Sent only to clients on this Mac,
+    /// which start it again.
+    WakeChat {
+        agent_id: String,
     },
     /// What an agent waited on was answered or withdrawn.
     AttentionCleared {

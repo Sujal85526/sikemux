@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { remoteApi } from "../api/remote";
-import { remoteTitles, remoteWorkspace } from "../remote/workspace";
+import { remoteApi, type PublishedChat } from "../api/remote";
+import { remoteChats, remoteWorkspace } from "../remote/workspace";
 import { swallow } from "../state/toast";
 import { useStore } from "../state/store";
 
 /** Long enough that opening or renaming several projects publishes once. */
 export const PUBLISH_DELAY_MS = 400;
 
-/** While remote access is on, tells the core which projects and agents paired devices may start, and what each chat is called. */
+/** While remote access is on, tells the core which projects and agents paired devices may start, and the chats they can open. */
 export function RemoteWorkspaceBridge() {
     const [enabled, setEnabled] = useState(false);
     const sessions = useStore((s) => s.sessions);
@@ -19,7 +19,12 @@ export function RemoteWorkspaceBridge() {
         [sessions, sessionOrder, profiles, permissionMode],
     );
     const agents = useStore((s) => s.agents);
-    const titles = useMemo(() => JSON.stringify(remoteTitles(agents)), [agents]);
+    const windows = useStore((s) => s.windows);
+    const windowsBySession = useStore((s) => s.windowsBySession);
+    const chats = useMemo(
+        () => JSON.stringify(remoteChats({ agents, windows, sessions, sessionOrder, windowsBySession })),
+        [agents, windows, sessions, sessionOrder, windowsBySession],
+    );
 
     useEffect(() => {
         const controller = new AbortController();
@@ -47,12 +52,10 @@ export function RemoteWorkspaceBridge() {
     useEffect(() => {
         if (!enabled) return;
         const timer = window.setTimeout(() => {
-            remoteApi
-                .publishChatTitles(JSON.parse(titles) as Record<string, string>)
-                .catch(swallow("publish chat titles to paired devices"));
+            remoteApi.publishChats(JSON.parse(chats) as PublishedChat[]).catch(swallow("publish chats to paired devices"));
         }, PUBLISH_DELAY_MS);
         return () => window.clearTimeout(timer);
-    }, [enabled, titles]);
+    }, [enabled, chats]);
 
     return null;
 }

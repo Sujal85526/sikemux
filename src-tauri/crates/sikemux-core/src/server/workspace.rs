@@ -2,16 +2,16 @@
 //! can start one with the window closed. Held in memory only: a launcher's
 //! environment may carry the person's API keys.
 
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 
 use agent_client_protocol::schema::v1::{EnvVariable, McpServer, McpServerStdio};
 use serde_json::Value;
 
 use crate::protocol::{
-    ChatInfo, ChatLaunch, ChatLauncher, Event, LauncherInfo, ProjectInfo, RequestId, Response,
-    Workspace,
+    ChatInfo, ChatLaunch, ChatLauncher, ChatState, Event, LauncherInfo, ProjectInfo, PublishedChat,
+    RequestId, Response, Workspace,
 };
 
 use super::chat;
@@ -20,14 +20,16 @@ use super::{Core, CoreError, CoreResult};
 
 const MAX_PROJECTS: usize = 512;
 const MAX_LAUNCHERS: usize = 64;
-const MAX_TITLES: usize = 1024;
+const MAX_CHATS: usize = 1024;
 const MAX_TITLE_CHARS: usize = 200;
+/// Long enough for an agent's adapter and CLI to come back up.
+const WAKE_WAIT: Duration = Duration::from_secs(30);
 
 #[derive(Default)]
 struct Published {
     projects: Vec<ProjectInfo>,
     launchers: Vec<ChatLauncher>,
-    titles: BTreeMap<String, String>,
+    chats: Vec<PublishedChat>,
 }
 
 #[derive(Default)]
@@ -67,29 +69,64 @@ impl Workspaces {
         Ok(())
     }
 
-    /// What the app calls each chat, replacing what it published before.
-    pub(crate) fn publish_titles(&self, titles: BTreeMap<String, String>) -> CoreResult<()> {
-        if titles.len() > MAX_TITLES
-            || titles
-                .values()
-                .any(|title| title.chars().count() > MAX_TITLE_CHARS)
-        {
-            return Err("the app published more chat titles than the core keeps".into());
+    pub(crate) fn publish_chats(&self, chats: Vec<PublishedChat>) -> CoreResult<()> {
+        let too_long = |chat: &PublishedChat| {
+            chat.title
+                .as_ref()
+                .is_some_and(|title| title.chars().count() > MAX_TITLE_CHARS)
+        };
+        if chats.len() > MAX_CHATS || chats.iter().any(too_long) {
+            return Err("the app published more chats than the core keeps".into());
         }
-        self.lock().titles = titles;
+        self.lock().chats = chats;
         Ok(())
     }
 
-    /// The app's name for a chat wins over the agent's: it includes the
-    /// agent's own unless the person renamed the chat.
-    pub(crate) fn titled(&self, mut chats: Vec<ChatInfo>) -> Vec<ChatInfo> {
+    /// The running chats under the app's names, which include the agent's own
+    /// unless the person renamed the chat, then the ones the app put to sleep.
+    pub(crate) fn listed(&self, mut running: Vec<ChatInfo>) -> Vec<ChatInfo> {
         let published = self.lock();
-        for chat in &mut chats {
-            if let Some(title) = published.titles.get(&chat.agent_id) {
-                chat.title = Some(title.clone());
+        for chat in &mut running {
+            let title = published
+                .chats
+                .iter()
+                .find(|known| known.agent_id == chat.agent_id)
+                .and_then(|known| known.title.clone());
+            if title.is_some() {
+                chat.title = title;
             }
         }
-        chats
+        let asleep: Vec<ChatInfo> = published
+            .chats
+            .iter()
+            .filter(|chat| chat.asleep)
+            .filter(|chat| !running.iter().any(|live| live.agent_id == chat.agent_id))
+            .map(|chat| ChatInfo {
+                agent_id: chat.agent_id.clone(),
+                provider: chat.provider.clone(),
+                title: chat.title.clone(),
+                cwd: chat.cwd.clone(),
+                session_id: None,
+                state: ChatState::Ready,
+                running: false,
+                pending_permissions: Vec::new(),
+                started_by: None,
+                launcher: None,
+                permission_mode: String::new(),
+                model: None,
+                effort: None,
+                asleep: true,
+            })
+            .collect();
+        running.extend(asleep);
+        running
+    }
+
+    fn asleep(&self, agent_id: &str) -> bool {
+        self.lock()
+            .chats
+            .iter()
+            .any(|chat| chat.asleep && chat.agent_id == agent_id)
     }
 
     pub(crate) fn view(&self) -> Workspace {
@@ -163,6 +200,37 @@ fn tools_server(agent_id: &str, endpoint: &Path) -> Option<Value> {
 
 fn cli_endpoint(core: &Core) -> Option<PathBuf> {
     core.listening.get()?.config.cli_endpoint.clone()
+}
+
+fn running(core: &Core, agent_id: &str) -> bool {
+    core.chats
+        .list()
+        .iter()
+        .any(|chat| chat.agent_id == agent_id)
+}
+
+/// Has the app start a chat it put to sleep, and waits for it to run.
+pub(crate) async fn wake_chat(core: &Arc<Core>, agent_id: String) -> CoreResult<Response> {
+    if running(core, &agent_id) {
+        return Ok(Response::Done);
+    }
+    if !core.workspaces.asleep(&agent_id) {
+        return Err("that chat is no longer open in Sikemux on this Mac".into());
+    }
+    if !core.has_local_client() {
+        return Err("open Sikemux on the Mac to wake this chat".into());
+    }
+    core.broadcast_local(&Event::WakeChat {
+        agent_id: agent_id.clone(),
+    });
+    let deadline = tokio::time::Instant::now() + WAKE_WAIT;
+    while tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        if running(core, &agent_id) {
+            return Ok(Response::Done);
+        }
+    }
+    Err("the chat did not wake; open it in Sikemux on the Mac".into())
 }
 
 /// Starts the chat and answers `client` once its session is ready. The chat

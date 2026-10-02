@@ -2,12 +2,11 @@
 //! and agents the app offers paired devices. The core keeps the state; these
 //! commands forward to it.
 
-use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use serde::Deserialize;
 use sikemux_core::client::CoreClient;
-use sikemux_core::protocol::{ChatLauncher, DeviceAccess, ProjectInfo, RemoteStatus};
+use sikemux_core::protocol::{ChatLauncher, DeviceAccess, ProjectInfo, PublishedChat, RemoteStatus};
 use tauri::{AppHandle, Manager, State};
 
 use crate::acp::LauncherSpec;
@@ -20,9 +19,9 @@ use crate::pty::{core_error, PtyManager};
 #[derive(Default)]
 pub struct PublishedWorkspace(Mutex<Option<(Vec<ProjectInfo>, Vec<ChatLauncher>)>>);
 
-/// What the app last called each chat, sent again like the workspace.
+/// The chats the app last listed, sent again like the workspace.
 #[derive(Default)]
-pub struct PublishedTitles(Mutex<BTreeMap<String, String>>);
+pub struct PublishedChats(Mutex<Vec<PublishedChat>>);
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -71,17 +70,17 @@ pub async fn remote_publish_workspace(
 }
 
 #[tauri::command]
-pub async fn remote_publish_chat_titles(
+pub async fn remote_publish_chats(
     manager: State<'_, PtyManager>,
-    published: State<'_, PublishedTitles>,
-    titles: BTreeMap<String, String>,
+    published: State<'_, PublishedChats>,
+    chats: Vec<PublishedChat>,
 ) -> AppResult<()> {
     if let Ok(mut last) = published.0.lock() {
-        *last = titles.clone();
+        *last = chats.clone();
     }
     let client = manager.client().await?;
     client
-        .publish_chat_titles(titles)
+        .publish_chats(chats)
         .await
         .map_err(core_error)
 }
@@ -101,13 +100,13 @@ pub(crate) async fn connected(
             eprintln!("Sikemux could not tell its core which agents devices may start: {error}");
         }
     }
-    let titles = app
-        .try_state::<PublishedTitles>()
+    let chats = app
+        .try_state::<PublishedChats>()
         .and_then(|published| published.0.lock().ok().map(|last| last.clone()))
-        .filter(|titles| !titles.is_empty());
-    if let Some(titles) = titles {
-        if let Err(error) = client.publish_chat_titles(titles).await {
-            eprintln!("Sikemux could not tell its core what its chats are called: {error}");
+        .filter(|chats| !chats.is_empty());
+    if let Some(chats) = chats {
+        if let Err(error) = client.publish_chats(chats).await {
+            eprintln!("Sikemux could not tell its core which chats it has: {error}");
         }
     }
     if let Ok(status) = client.remote_status().await {

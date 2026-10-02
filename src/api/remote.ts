@@ -47,6 +47,15 @@ export interface PublishedProject {
     readonly path: string;
 }
 
+/** A chat as the rail lists it, so paired devices show it under the same name. */
+export interface PublishedChat {
+    readonly agentId: string;
+    readonly provider: string;
+    readonly title: string | null;
+    readonly cwd: string;
+    readonly asleep: boolean;
+}
+
 /** One chat agent the app offers paired devices; the app works out how to run it. */
 export interface LauncherRequest {
     readonly id: string;
@@ -70,7 +79,7 @@ export const remoteApi = {
     answerPairing: (id: string, allow: boolean, access: DeviceAccess) => invoke<RemoteStatus>("remote_answer_pairing", { id, allow, access }),
     publishWorkspace: (projects: readonly PublishedProject[], launchers: readonly LauncherRequest[]) =>
         invoke<void>("remote_publish_workspace", { projects, launchers }),
-    publishChatTitles: (titles: Readonly<Record<string, string>>) => invoke<void>("remote_publish_chat_titles", { titles }),
+    publishChats: (chats: readonly PublishedChat[]) => invoke<void>("remote_publish_chats", { chats }),
     subscribe: (listener: (status: RemoteStatus) => void, signal: AbortSignal) =>
         getIpcTransport().subscribe<RemoteStatus>(REMOTE_STATUS_EVENT, (event) => listener(event.payload), { signal }),
 };

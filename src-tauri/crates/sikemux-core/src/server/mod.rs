@@ -320,6 +320,10 @@ impl Core {
         self.manifest_dir.lock().ok().and_then(|dir| dir.clone())
     }
 
+    pub(crate) fn has_local_client(&self) -> bool {
+        self.clients().iter().any(|client| client.peer.is_local())
+    }
+
     fn clients(&self) -> Vec<Arc<ClientConn>> {
         self.clients
             .lock()

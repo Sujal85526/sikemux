@@ -232,7 +232,7 @@ pub fn run() {
         .manage(cli_open::CliOpens::default())
         .manage(AcpManager::default())
         .manage(remote::PublishedWorkspace::default())
-        .manage(remote::PublishedTitles::default())
+        .manage(remote::PublishedChats::default())
         .manage(BrowserManager::default())
         .manage(VoiceManager::default())
         .manage(preview::Previews::default())
@@ -269,7 +269,7 @@ pub fn run() {
             remote::remote_close_pairing,
             remote::remote_answer_pairing,
             remote::remote_publish_workspace,
-            remote::remote_publish_chat_titles,
+            remote::remote_publish_chats,
             pty::commands::task_watch,
             pty::commands::app_quit_and_stop_everything,
             pty::commands::agent_detection_explain,

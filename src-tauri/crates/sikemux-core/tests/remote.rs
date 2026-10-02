@@ -11,9 +11,9 @@ use serde_json::json;
 use sikemux_core::client::{probe, ClientError, ClientEvent, CoreClient};
 use sikemux_core::pairing::{self, PairError, PairingRequest};
 use sikemux_core::protocol::{
-    Attention, AttentionKind, BuildIdentity, ChatAttachment, ChatEventKind, ChatLauncher,
-    DeviceAccess, Event, LaunchIdentity, ProjectInfo, RemoteStatus, SessionId, SpawnTarget,
-    TerminalSpawn,
+    Attention, AttentionKind, BuildIdentity, ChatAttachment, ChatEventKind, ChatLaunch,
+    ChatLauncher, DeviceAccess, Event, LaunchIdentity, ProjectInfo, PublishedChat, RemoteStatus,
+    SessionId, SpawnTarget, TerminalSpawn,
 };
 use sikemux_core::remote::{self, SecretKey};
 use sikemux_core::server::{self, ServerConfig, ServerError};
@@ -592,11 +592,11 @@ async fn a_prompt_reaches_everyone_watching_but_its_sender_and_stays_in_the_repl
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_device_lists_chats_by_the_titles_the_app_shows() {
+async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
     let core_key = SecretKey::generate();
     let phone = Device::new("Phone", DeviceAccess::Full);
     let core = start_core(&core_key, &[&phone]);
-    let (app, _app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    let (app, mut app_events) = CoreClient::connect(&core.socket).await.expect("app");
     publish_fake_agent(&app).await;
     let status = listening(&app).await;
     let endpoint = phone.endpoint().await;
@@ -608,19 +608,83 @@ async fn a_device_lists_chats_by_the_titles_the_app_shows() {
         .await
         .expect("the phone starts a chat");
 
-    let titles = [(agent_id.clone(), "Fix the replay test".to_owned())].into();
-    app.publish_chat_titles(titles)
-        .await
-        .expect("publish titles");
+    let published = |agent_id: &str, title: &str, asleep: bool| PublishedChat {
+        agent_id: agent_id.into(),
+        provider: "opencode".into(),
+        title: Some(title.into()),
+        cwd: std::env::temp_dir(),
+        asleep,
+    };
+    app.publish_chats(vec![
+        published(&agent_id, "Fix the replay test", false),
+        published("agent-sleepy", "Tidy the docs", true),
+    ])
+    .await
+    .expect("publish chats");
     let chats = client.acp_list().await.expect("list chats");
-    let chat = chats
-        .iter()
-        .find(|chat| chat.agent_id == agent_id)
-        .expect("the chat");
-    assert_eq!(chat.title.as_deref(), Some("Fix the replay test"));
+    let titled = |id: &str| {
+        chats
+            .iter()
+            .find(|chat| chat.agent_id == id)
+            .expect("listed")
+    };
+    assert_eq!(
+        titled(&agent_id).title.as_deref(),
+        Some("Fix the replay test")
+    );
+    assert!(!titled(&agent_id).asleep);
+    assert_eq!(
+        titled("agent-sleepy").title.as_deref(),
+        Some("Tidy the docs")
+    );
+    assert!(titled("agent-sleepy").asleep);
 
-    let refused = client.publish_chat_titles(Default::default()).await;
+    let waking = tokio::spawn(async move {
+        let woken = client.acp_wake("agent-sleepy".into()).await;
+        (client, woken)
+    });
+    loop {
+        let event = tokio::time::timeout(WAIT, app_events.recv())
+            .await
+            .expect("the app is asked to wake the chat")
+            .expect("the app's connection closed");
+        if matches!(&event, ClientEvent::Event(Event::WakeChat { agent_id }) if agent_id == "agent-sleepy")
+        {
+            break;
+        }
+    }
+    app.acp_start(fake_launch("agent-sleepy"))
+        .await
+        .expect("the app starts it again");
+    let (client, woken) = waking.await.expect("wake task");
+    woken.expect("the chat wakes");
+    let chats = client.acp_list().await.expect("list chats");
+    let sleepy = chats
+        .iter()
+        .find(|chat| chat.agent_id == "agent-sleepy")
+        .expect("listed");
+    assert!(!sleepy.asleep);
+
+    let refused = client.publish_chats(Vec::new()).await;
     assert!(refusal(refused).contains("only Sikemux on this Mac"));
+    let refused = client.acp_wake("agent-gone".into()).await;
+    assert!(refusal(refused).contains("no longer open"));
+}
+
+fn fake_launch(agent_id: &str) -> ChatLaunch {
+    ChatLaunch {
+        agent_id: agent_id.into(),
+        provider: "opencode".into(),
+        cwd: std::env::temp_dir(),
+        program: FAKE_AGENT.into(),
+        args: vec!["acp".into()],
+        env: Default::default(),
+        mcp_servers: Vec::new(),
+        resume_id: None,
+        permission_mode: "bypass".into(),
+        model: None,
+        effort: None,
+    }
 }
 
 async fn until_said(events: &mut UnboundedReceiver<ClientEvent>, agent: &str, needle: &str) {

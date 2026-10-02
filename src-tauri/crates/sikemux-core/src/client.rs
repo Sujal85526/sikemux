@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs::OpenOptions;
 use std::future::Future;
@@ -25,9 +25,9 @@ use crate::protocol::{
     decode_output, decode_snapshot, encode_control, encode_frozen, encode_input, read_frame,
     read_frame_sync, Attention, BuildIdentity, CallId, ChatAttachment, ChatContext, ChatInfo,
     ChatLaunch, ChatLauncher, ChatStart, ClientMessage, DeviceAccess, Event, FrameKind,
-    LaunchIdentity, ProjectInfo, RemoteStatus, Request, RequestId, Response, RunSelector,
-    ServerMessage, SessionId, SessionInfo, SpawnTarget, WindowAnswer, WindowCall, Workspace,
-    MAX_FRAME_BYTES, PROTOCOL, PROTOCOL_VERSION,
+    LaunchIdentity, ProjectInfo, PublishedChat, RemoteStatus, Request, RequestId, Response,
+    RunSelector, ServerMessage, SessionId, SessionInfo, SpawnTarget, WindowAnswer, WindowCall,
+    Workspace, MAX_FRAME_BYTES, PROTOCOL, PROTOCOL_VERSION,
 };
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -677,12 +677,12 @@ impl CoreClient {
         .await
     }
 
-    pub async fn publish_chat_titles(
-        &self,
-        titles: BTreeMap<String, String>,
-    ) -> Result<(), ClientError> {
-        self.request_done(Request::PublishChatTitles { titles })
-            .await
+    pub async fn publish_chats(&self, chats: Vec<PublishedChat>) -> Result<(), ClientError> {
+        self.request_done(Request::PublishChats { chats }).await
+    }
+
+    pub async fn acp_wake(&self, agent_id: String) -> Result<(), ClientError> {
+        self.request_done(Request::AcpWake { agent_id }).await
     }
 
     pub async fn attentions(&self) -> Result<Vec<Attention>, ClientError> {

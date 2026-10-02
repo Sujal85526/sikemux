@@ -536,11 +536,17 @@ async fn run_requests(
                     chat::attach(&core, &client, request_id, &agent_id).await;
                 });
             }
+            Request::AcpWake { agent_id } => {
+                tokio::spawn(async move {
+                    let result = workspace::wake_chat(&core, agent_id).await;
+                    client.respond(request_id, result);
+                });
+            }
             Request::AcpList => {
                 client.respond(
                     request_id,
                     Ok(Response::Chats {
-                        chats: core.workspaces.titled(core.chats.list()),
+                        chats: core.workspaces.listed(core.chats.list()),
                     }),
                 );
             }
@@ -619,8 +625,8 @@ async fn run_requests(
                 let result = core.workspaces.publish(projects, launchers);
                 client.respond(request_id, result.map(|()| Response::Done));
             }
-            Request::PublishChatTitles { titles } => {
-                let result = core.workspaces.publish_titles(titles);
+            Request::PublishChats { chats } => {
+                let result = core.workspaces.publish_chats(chats);
                 client.respond(request_id, result.map(|()| Response::Done));
             }
             Request::Attentions => {
