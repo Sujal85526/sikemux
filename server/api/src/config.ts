@@ -6,6 +6,10 @@ export interface Config {
   databaseUrl: string;
   /** The web app's origin, the only page allowed to call the API from a browser. */
   appOrigin: string;
+  /** The Clerk instance whose sign-ins the API accepts, such as https://clerk.sikemux.com. */
+  clerkIssuer: string;
+  /** The Mac app's Clerk OAuth client, the only one whose access tokens are accepted. */
+  macClientId: string;
   logLevel: Level;
 }
 
@@ -39,6 +43,18 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
   if (appOrigin && URL.parse(appOrigin)?.origin !== appOrigin)
     problems.push("APP_ORIGIN is not an origin like https://app.sikemux.com");
 
+  const clerkIssuer = read("CLERK_ISSUER");
+  if (
+    clerkIssuer &&
+    (URL.parse(clerkIssuer)?.origin !== clerkIssuer ||
+      !clerkIssuer.startsWith("https://"))
+  )
+    problems.push(
+      "CLERK_ISSUER is not an https origin like https://clerk.sikemux.com",
+    );
+
+  const macClientId = read("CLERK_MAC_CLIENT_ID");
+
   const logLevel = read("LOG_LEVEL", "info") as Level;
   if (!LEVELS.includes(logLevel))
     problems.push(`LOG_LEVEL is not one of ${LEVELS.join(", ")}`);
@@ -50,6 +66,8 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     port,
     databaseUrl,
     appOrigin,
+    clerkIssuer,
+    macClientId,
     logLevel,
   };
 }

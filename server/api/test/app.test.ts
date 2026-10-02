@@ -1,15 +1,8 @@
 import { Hono } from "hono";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { createApp } from "../src/app.ts";
 import { ApiFailure, type Env } from "../src/http.ts";
-import {
-  APP_ORIGIN,
-  body,
-  log,
-  testApp,
-  unreachableDatabase,
-} from "./support.ts";
+import { APP_ORIGIN, body, testApp, unreachableDatabase } from "./support.ts";
 
 const database = unreachableDatabase();
 afterAll(() => database.close());
@@ -63,7 +56,7 @@ describe("browsers", () => {
 
 describe("failures", () => {
   function appWith(route: (app: Hono<Env>) => void) {
-    const app = createApp({ database, log, appOrigin: APP_ORIGIN });
+    const app = testApp(database);
     const extra = new Hono<Env>();
     route(extra);
     app.route("/v1/test", extra);

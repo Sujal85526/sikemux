@@ -1,11 +1,41 @@
-import { Kysely, PostgresDialect, sql } from "kysely";
+import {
+  Kysely,
+  PostgresDialect,
+  sql,
+  type ColumnType,
+  type Generated,
+} from "kysely";
 import pg from "pg";
 
 import type { Logger } from "./log.ts";
 
+type CreatedAt = ColumnType<Date, never, never>;
+
 /** The tables the API reads and writes. Each one arrives with the migration that creates it. */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- no tables yet
-export interface Tables {}
+export interface Tables {
+  users: { id: string; created_at: CreatedAt };
+  devices: {
+    key: string;
+    user_id: string;
+    role: string;
+    name: string;
+    platform: string;
+    channel: string | null;
+    created_at: CreatedAt;
+    updated_at: ColumnType<Date, never, Date>;
+    last_seen_at: Date | null;
+  };
+  challenges: { nonce: string; user_id: string; expires_at: Date };
+  audit: {
+    id: Generated<string>;
+    user_id: string | null;
+    actor: string;
+    action: string;
+    subject: string | null;
+    detail: ColumnType<unknown, string | undefined, never>;
+    at: CreatedAt;
+  };
+}
 
 export interface Database {
   pool: pg.Pool;

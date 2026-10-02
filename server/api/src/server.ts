@@ -2,6 +2,7 @@ import { serve } from "@hono/node-server";
 import type { Server } from "node:http";
 
 import { createApp } from "./app.ts";
+import { clerkVerifier } from "./auth.ts";
 import type { Config } from "./config.ts";
 import { openDatabase } from "./db.ts";
 import type { Logger } from "./log.ts";
@@ -11,7 +12,17 @@ const DRAIN_MS = 25_000;
 
 export function startServer(config: Config, log: Logger) {
   const database = openDatabase(config.databaseUrl, log);
-  const app = createApp({ database, log, appOrigin: config.appOrigin });
+  const verifier = clerkVerifier({
+    issuer: config.clerkIssuer,
+    macClientId: config.macClientId,
+    authorizedParties: [config.appOrigin],
+  });
+  const app = createApp({
+    database,
+    log,
+    appOrigin: config.appOrigin,
+    verifier,
+  });
   const server = serve(
     { fetch: app.fetch, hostname: config.host, port: config.port },
     (address) =>

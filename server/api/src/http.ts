@@ -1,4 +1,9 @@
-import type { ApiError, ErrorCode } from "@sikemux/protocol";
+import {
+  validator,
+  type ApiError,
+  type Definitions,
+  type ErrorCode,
+} from "@sikemux/protocol";
 import type { Context, MiddlewareHandler } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 
@@ -54,4 +59,27 @@ export function requestContext(log: Logger): MiddlewareHandler<Env> {
       "request",
     );
   };
+}
+
+const protocol = validator();
+
+/** Reads a JSON body and checks it against the named protocol definition before any handler sees it. */
+export async function readBody<Name extends keyof Definitions & string>(
+  c: Context,
+  name: Name,
+): Promise<Definitions[Name]> {
+  let value: unknown;
+  try {
+    value = await c.req.json();
+  } catch {
+    throw new ApiFailure(400, "bad_request", "The body is not JSON.");
+  }
+  const result = protocol.validate(name, value);
+  if (!result.ok)
+    throw new ApiFailure(
+      400,
+      "bad_request",
+      `The body is not a valid ${name}: ${result.problems.join("; ")}.`,
+    );
+  return result.value;
 }

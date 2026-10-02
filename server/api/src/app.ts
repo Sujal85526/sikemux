@@ -2,23 +2,42 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 
+import type { Verifier } from "./auth.ts";
 import type { Database } from "./db.ts";
+import { deviceRoutes } from "./devices/routes.ts";
 import { healthRoutes } from "./health/routes.ts";
 import { ApiFailure, errorResponse, requestContext, type Env } from "./http.ts";
+import { limit, RateLimiter } from "./limits.ts";
 import type { Logger } from "./log.ts";
 
 export interface Services {
   database: Database;
   log: Logger;
   appOrigin: string;
+  verifier: Verifier;
+  limiter?: RateLimiter;
 }
 
 const MAX_BODY_BYTES = 64 * 1024;
 
-export function createApp({ database, log, appOrigin }: Services) {
+export function createApp({
+  database,
+  log,
+  appOrigin,
+  verifier,
+  limiter = new RateLimiter(),
+}: Services) {
   const app = new Hono<Env>();
 
   app.use(requestContext(log));
+  app.use(
+    limit<Env>(
+      limiter,
+      "address",
+      600,
+      (c) => c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || "local",
+    ),
+  );
   app.use(
     cors({
       origin: appOrigin,
@@ -42,6 +61,7 @@ export function createApp({ database, log, appOrigin }: Services) {
   );
 
   app.route("/v1/health", healthRoutes(database));
+  app.route("/v1/devices", deviceRoutes(database, verifier, limiter));
 
   app.notFound((c) =>
     errorResponse(

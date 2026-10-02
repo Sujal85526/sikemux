@@ -5,11 +5,14 @@ import { inject } from "vitest";
 
 import { createApp } from "../src/app.ts";
 import { openDatabase, type Database } from "../src/db.ts";
+import { RateLimiter } from "../src/limits.ts";
 import { createLogger } from "../src/log.ts";
+import { APP_ORIGIN, verifier } from "./tokens.ts";
+
+export { APP_ORIGIN };
 
 export const log = createLogger("silent");
 export const protocol = validator();
-export const APP_ORIGIN = "https://app.sikemux.test";
 
 /** Reads a response body, failing the test unless it matches the named definition. */
 export async function body<Name extends keyof Definitions & string>(
@@ -46,8 +49,8 @@ export async function freshDatabase(): Promise<{
   };
 }
 
-export function testApp(database: Database) {
-  return createApp({ database, log, appOrigin: APP_ORIGIN });
+export function testApp(database: Database, limiter = new RateLimiter()) {
+  return createApp({ database, log, appOrigin: APP_ORIGIN, verifier, limiter });
 }
 
 /** A database whose server is not there, for checking how the API copes without one. */

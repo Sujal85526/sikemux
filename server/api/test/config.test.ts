@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { loadConfig } from "../src/config.ts";
 
-const minimal = { DATABASE_URL: "postgresql://sikemux@localhost/sikemux" };
+const minimal = {
+  DATABASE_URL: "postgresql://sikemux@localhost/sikemux",
+  CLERK_ISSUER: "https://clerk.sikemux.com",
+  CLERK_MAC_CLIENT_ID: "mac_client",
+};
 
 describe("loadConfig", () => {
   it("listens only on this machine unless told otherwise", () => {
@@ -11,6 +15,8 @@ describe("loadConfig", () => {
       port: 4000,
       databaseUrl: minimal.DATABASE_URL,
       appOrigin: "https://app.sikemux.com",
+      clerkIssuer: "https://clerk.sikemux.com",
+      macClientId: "mac_client",
       logLevel: "info",
     });
   });
@@ -20,10 +26,11 @@ describe("loadConfig", () => {
       loadConfig({
         PORT: "eighty",
         APP_ORIGIN: "https://app.sikemux.com/",
+        CLERK_ISSUER: "http://clerk.sikemux.com",
         LOG_LEVEL: "loud",
       }),
     ).toThrow(
-      "The API cannot start: DATABASE_URL is not set; PORT is not a port number; APP_ORIGIN is not an origin like https://app.sikemux.com; LOG_LEVEL is not one of fatal, error, warn, info, debug, trace.",
+      "The API cannot start: DATABASE_URL is not set; PORT is not a port number; APP_ORIGIN is not an origin like https://app.sikemux.com; CLERK_ISSUER is not an https origin like https://clerk.sikemux.com; CLERK_MAC_CLIENT_ID is not set; LOG_LEVEL is not one of fatal, error, warn, info, debug, trace.",
     );
   });
 });

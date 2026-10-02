@@ -44,6 +44,8 @@ HOST=127.0.0.1
 PORT=4000
 DATABASE_URL=postgresql://sikemux@%2Fvar%2Frun%2Fpostgresql/sikemux
 APP_ORIGIN=https://app.sikemux.com
+CLERK_ISSUER=https://immense-llama-6668.clerk.accounts.dev
+CLERK_MAC_CLIENT_ID=IfRz79s1n2WGOt3J
 LOG_LEVEL=info
 EOF
 fi

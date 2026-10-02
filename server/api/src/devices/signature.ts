@@ -1,0 +1,36 @@
+import { createPublicKey, verify } from "node:crypto";
+
+/** The DER prefix that turns a raw 32-byte Ed25519 key into the form Node reads. */
+const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
+
+/** What a device signs to register: binding the challenge, the account and the key together. */
+export function registrationMessage(
+  nonce: string,
+  userId: string,
+  key: string,
+): string {
+  return `sikemux-register|${nonce}|${userId}|${key}`;
+}
+
+/** Whether `signature` (hex) is `key`'s (hex) Ed25519 signature over `message`. */
+export function signedBy(
+  key: string,
+  message: string,
+  signature: string,
+): boolean {
+  try {
+    const publicKey = createPublicKey({
+      key: Buffer.concat([ED25519_SPKI_PREFIX, Buffer.from(key, "hex")]),
+      format: "der",
+      type: "spki",
+    });
+    return verify(
+      null,
+      Buffer.from(message, "utf8"),
+      publicKey,
+      Buffer.from(signature, "hex"),
+    );
+  } catch {
+    return false;
+  }
+}
