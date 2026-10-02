@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 
 import { Button } from '@/ui/parts';
 import { Sheet } from '@/ui/Sheet';
@@ -34,6 +35,7 @@ export function ForgetSheet({ device, visible, onClose }: { device: PairedDevice
     try {
       forgetBackdrop(device.backdrop);
     } catch {}
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     onClose();
     router.replace('/');
   };

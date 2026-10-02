@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { KeyboardAvoidingView, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 
 import { composerPlaceholder } from '@mac/chat/chatStatus';
 import { ComposerInput } from '@/chat/ComposerInput';
@@ -61,6 +62,7 @@ export default function NewChat() {
   const start = async () => {
     const text = draft.trim();
     if (!text || !launcher || !project || live.status !== 'open') return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setStarting(true);
     setProblem(undefined);
     try {

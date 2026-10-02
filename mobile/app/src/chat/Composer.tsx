@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
 
 import { pickerSlots, sessionConfigs, type SessionConfig } from '@mac/chat/sessionConfig';
 import { toolKind, toolTarget } from '@mac/chat/toolLabels';
@@ -55,7 +56,10 @@ function PermissionDock({ request, provider, onAnswer }: { request: AcpPermissio
           return (
             <Pressable
               key={option.optionId || option.name}
-              onPress={() => onAnswer(option.optionId || null)}
+              onPress={() => {
+                Haptics.selectionAsync();
+                onAnswer(option.optionId || null);
+              }}
               style={({ pressed }) => [styles.act, go && styles.actGo, pressed && { opacity: 0.8 }]}
               accessibilityRole="button">
               <Text style={[styles.actText, go && styles.actGoText, option.kind.startsWith('reject') && { color: colors.secondary }]} numberOfLines={1}>
@@ -195,6 +199,7 @@ export function Composer({
   const send = () => {
     const text = draft.trim();
     if (!text) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onSend(text);
     // Clearing the state alone leaves text the keyboard is still composing.
     input.current?.clear();

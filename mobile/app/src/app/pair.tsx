@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import type { PairingLink } from '@sikemux/native';
 
 import { thisDevice } from '@/device/identity';
@@ -47,7 +48,9 @@ export default function Pair() {
     pairing.current = controller;
     pairWith({ core, code }, controller.signal)
       .then(() => {
-        if (!controller.signal.aborted) router.replace(`/device/${core}`);
+        if (controller.signal.aborted) return;
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        router.replace(`/device/${core}`);
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setFailed(failure(error));
