@@ -693,6 +693,227 @@
       ]
     },
     {
+      "name": "sim_devices",
+      "method": "sim.devices",
+      "offered": "simulator",
+      "description": "List the iOS simulators Xcode has, and which one you are attached to.",
+      "properties": {},
+      "required": []
+    },
+    {
+      "name": "sim_attach",
+      "method": "sim.attach",
+      "offered": "simulator",
+      "description": "Attach an iOS simulator by name or udid, booting it if needed, and read its screen. Without a device, uses the booted iPhone or one on the newest iOS.",
+      "properties": {
+        "device": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "required": []
+    },
+    {
+      "name": "sim_state",
+      "method": "sim.state",
+      "offered": "simulator",
+      "description": "Read the attached simulator's screen: the frontmost app and numbered elements with their centre points.",
+      "properties": {},
+      "required": []
+    },
+    {
+      "name": "sim_tap",
+      "method": "sim.tap",
+      "offered": "simulator",
+      "description": "Tap an element by number or label, or a point in device points. A duration makes it a long press.",
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "x": {
+          "type": "number",
+          "minimum": 0
+        },
+        "y": {
+          "type": "number",
+          "minimum": 0
+        },
+        "duration": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        }
+      },
+      "required": []
+    },
+    {
+      "name": "sim_swipe",
+      "method": "sim.swipe",
+      "offered": "simulator",
+      "description": "Swipe between two points in device points. Starting at a screen edge makes a system gesture.",
+      "properties": {
+        "fromX": {
+          "type": "number",
+          "minimum": 0
+        },
+        "fromY": {
+          "type": "number",
+          "minimum": 0
+        },
+        "toX": {
+          "type": "number",
+          "minimum": 0
+        },
+        "toY": {
+          "type": "number",
+          "minimum": 0
+        },
+        "duration": {
+          "type": "number",
+          "minimum": 0.05,
+          "maximum": 5
+        }
+      },
+      "required": [
+        "fromX",
+        "fromY",
+        "toX",
+        "toY"
+      ]
+    },
+    {
+      "name": "sim_type",
+      "method": "sim.type",
+      "offered": "simulator",
+      "description": "Type text into the focused field on the attached simulator.",
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "text"
+      ]
+    },
+    {
+      "name": "sim_button",
+      "method": "sim.button",
+      "offered": "simulator",
+      "description": "Press a hardware button on the attached simulator.",
+      "properties": {
+        "button": {
+          "enum": [
+            "home",
+            "lock",
+            "side",
+            "siri",
+            "volumeUp",
+            "volumeDown",
+            "applePay"
+          ]
+        }
+      },
+      "required": [
+        "button"
+      ]
+    },
+    {
+      "name": "sim_screenshot",
+      "method": "sim.screenshot",
+      "offered": "simulator",
+      "description": "Capture the attached simulator's screen at its size in points.",
+      "properties": {},
+      "required": []
+    },
+    {
+      "name": "sim_launch",
+      "method": "sim.launch",
+      "offered": "simulator",
+      "description": "Launch an installed app by bundle id, relaunching it if it runs, and read the screen.",
+      "properties": {
+        "bundleId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "arguments": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "maxItems": 50
+        },
+        "environment": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        }
+      },
+      "required": [
+        "bundleId"
+      ]
+    },
+    {
+      "name": "sim_terminate",
+      "method": "sim.terminate",
+      "offered": "simulator",
+      "description": "Quit an app on the attached simulator by bundle id.",
+      "properties": {
+        "bundleId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        }
+      },
+      "required": [
+        "bundleId"
+      ]
+    },
+    {
+      "name": "sim_install",
+      "method": "sim.install",
+      "offered": "simulator",
+      "description": "Install a built .app on the attached simulator. A relative path is read from the project.",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "path"
+      ]
+    },
+    {
+      "name": "sim_open_url",
+      "method": "sim.openUrl",
+      "offered": "simulator",
+      "description": "Open a URL or deep link on the attached simulator.",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        }
+      },
+      "required": [
+        "url"
+      ]
+    },
+    {
       "name": "workspace_inspect",
       "method": "workspace.inspect",
       "description": "Inspect the open project: tasks, runs, listening ports and the event cursor.",

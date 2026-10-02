@@ -1,0 +1,523 @@
+//! The agent's `sim_*` tools. Each agent attaches one simulator and acts on it
+//! in device points; a person watching the same device sees every step.
+
+use std::path::Path;
+use std::time::Duration;
+
+use base64::Engine;
+use serde_json::{json, Value};
+use tauri::{AppHandle, Manager};
+
+use super::SimulatorManager;
+use sikemux_core::cli::protocol::HarnessRequest;
+
+/// The sidecar stops waiting at 70 s, so a cold boot that runs longer is
+/// reported as still going and finishes in the background.
+const BOOT_TIMEOUT: Duration = Duration::from_secs(60);
+const ACTION_TIMEOUT: Duration = Duration::from_secs(20);
+const INSTALL_TIMEOUT: Duration = Duration::from_secs(60);
+const SETTLE_STEP: Duration = Duration::from_millis(300);
+const SETTLE_READS: usize = 6;
+/// How many reads, a step apart, to wait for an action to change the screen.
+const CHANGE_READS: usize = 5;
+/// iOS reads a touch that starts this close to an edge as a system gesture.
+const EDGE: f64 = 4.0;
+const MAX_ELEMENTS: usize = 200;
+
+pub fn execute(app: &AppHandle, request: &HarnessRequest) -> Result<Value, String> {
+    let agent_id = request
+        .agent_id
+        .as_deref()
+        .ok_or("simulator tools need the agent's id")?;
+    run(
+        &app.state::<SimulatorManager>(),
+        agent_id,
+        &request.project,
+        &request.method,
+        &request.params,
+    )
+}
+
+pub(super) fn run(
+    manager: &SimulatorManager,
+    agent_id: &str,
+    project: &str,
+    method: &str,
+    params: &Value,
+) -> Result<Value, String> {
+    let text = |key: &str| params.get(key).and_then(Value::as_str);
+    let number = |key: &str| params.get(key).and_then(Value::as_f64);
+    match method {
+        "sim.devices" => {
+            let attached = manager.attached(agent_id).map(|device| device.udid);
+            let devices = list_devices(manager)?;
+            Ok(json!({
+                "devices": devices
+                    .iter()
+                    .map(|device| json!({
+                        "udid": device.udid,
+                        "name": device.name,
+                        "os": device.os,
+                        "booted": device.booted,
+                        "attached": attached.as_deref() == Some(device.udid.as_str()),
+                    }))
+                    .collect::<Vec<_>>(),
+            }))
+        }
+        "sim.attach" => {
+            let devices = list_devices(manager)?;
+            let device = choose_device(&devices, text("device"))?.clone();
+            let booted = manager.request("boot", json!({ "udid": device.udid }), BOOT_TIMEOUT);
+            if let Err(error) = booted {
+                if error.starts_with("the simulator did not answer") {
+                    return Err(format!(
+                        "{} is still booting; call sim_attach again in a moment",
+                        device.name
+                    ));
+                }
+                return Err(error);
+            }
+            manager.attach(agent_id, device);
+            settled_state(manager, agent_id, None)
+        }
+        "sim.state" => settled_state(manager, agent_id, None),
+        "sim.tap" => {
+            let device = attached(manager, agent_id)?;
+            let before = read_screen(manager, &device)?;
+            let mut fields = json!({ "udid": device.udid });
+            if let Some(label) = text("label") {
+                manager.request(
+                    "tapElement",
+                    json!({ "udid": device.udid, "label": label }),
+                    ACTION_TIMEOUT,
+                )?;
+            } else {
+                let point = tap_point(
+                    &manager.elements(agent_id),
+                    params.get("index").and_then(Value::as_u64),
+                    number("x"),
+                    number("y"),
+                )?;
+                fields["x"] = point.0.into();
+                fields["y"] = point.1.into();
+                if let Some(duration) = number("duration") {
+                    fields["duration"] = duration.into();
+                }
+                manager.request("tap", fields, ACTION_TIMEOUT)?;
+            }
+            settled_state(manager, agent_id, Some(before))
+        }
+        "sim.swipe" => {
+            let device = attached(manager, agent_id)?;
+            let before = read_screen(manager, &device)?;
+            let from = (
+                number("fromX").ok_or("fromX is required")?,
+                number("fromY").ok_or("fromY is required")?,
+            );
+            let to = (
+                number("toX").ok_or("toX is required")?,
+                number("toY").ok_or("toY is required")?,
+            );
+            let mut fields = json!({ "udid": device.udid, "fromX": from.0, "fromY": from.1, "toX": to.0, "toY": to.1 });
+            if let Some(duration) = number("duration") {
+                fields["duration"] = duration.into();
+            }
+            manager.request("swipe", fields, ACTION_TIMEOUT)?;
+            let mut state = settled_state(manager, agent_id, Some(before))?;
+            if let Some(warning) = edge_warning(device.screen, from) {
+                state["warning"] = warning.into();
+            }
+            Ok(state)
+        }
+        "sim.type" => {
+            let device = attached(manager, agent_id)?;
+            let before = read_screen(manager, &device)?;
+            let typed = text("text").ok_or("text is required")?;
+            manager.request(
+                "type",
+                json!({ "udid": device.udid, "text": typed }),
+                ACTION_TIMEOUT,
+            )?;
+            settled_state(manager, agent_id, Some(before))
+        }
+        "sim.button" => {
+            let device = attached(manager, agent_id)?;
+            let before = read_screen(manager, &device)?;
+            let button = text("button").ok_or("button is required")?;
+            manager.request(
+                "button",
+                json!({ "udid": device.udid, "button": button }),
+                ACTION_TIMEOUT,
+            )?;
+            settled_state(manager, agent_id, Some(before))
+        }
+        "sim.screenshot" => {
+            let device = attached(manager, agent_id)?;
+            let file = tempfile::Builder::new()
+                .prefix("sikemux-sim-")
+                .suffix(".jpg")
+                .tempfile()
+                .map_err(|error| format!("no room for a screenshot: {error}"))?;
+            let shot = manager.request(
+                "screenshot",
+                json!({ "udid": device.udid, "path": file.path(), "format": "jpeg", "pointSize": true }),
+                ACTION_TIMEOUT,
+            )?;
+            let bytes = std::fs::read(file.path())
+                .map_err(|error| format!("could not read the screenshot: {error}"))?;
+            Ok(json!({
+                "data": base64::engine::general_purpose::STANDARD.encode(bytes),
+                "mimeType": "image/jpeg",
+                "title": format!("{} ({})", device.name, device.os),
+                "width": shot["width"],
+                "height": shot["height"],
+            }))
+        }
+        "sim.launch" => {
+            let device = attached(manager, agent_id)?;
+            let before = read_screen(manager, &device)?;
+            let mut fields = json!({ "udid": device.udid, "bundleId": text("bundleId").ok_or("bundleId is required")? });
+            for key in ["arguments", "environment"] {
+                if let Some(value) = params.get(key) {
+                    fields[key] = value.clone();
+                }
+            }
+            let launched = manager.request("launch", fields, ACTION_TIMEOUT)?;
+            let mut state = settled_state(manager, agent_id, Some(before))?;
+            state["pid"] = launched["pid"].clone();
+            Ok(state)
+        }
+        "sim.terminate" => {
+            let device = attached(manager, agent_id)?;
+            let before = read_screen(manager, &device)?;
+            let bundle = text("bundleId").ok_or("bundleId is required")?;
+            manager.request(
+                "terminate",
+                json!({ "udid": device.udid, "bundleId": bundle }),
+                ACTION_TIMEOUT,
+            )?;
+            settled_state(manager, agent_id, Some(before))
+        }
+        "sim.install" => {
+            let device = attached(manager, agent_id)?;
+            let path = Path::new(project).join(text("path").ok_or("path is required")?);
+            if !path.exists() {
+                return Err(format!("no app at {}", path.display()));
+            }
+            manager.request(
+                "install",
+                json!({ "udid": device.udid, "path": path }),
+                INSTALL_TIMEOUT,
+            )
+        }
+        "sim.openUrl" => {
+            let device = attached(manager, agent_id)?;
+            let before = read_screen(manager, &device)?;
+            let url = text("url").ok_or("url is required")?;
+            manager.request(
+                "openUrl",
+                json!({ "udid": device.udid, "url": url }),
+                ACTION_TIMEOUT,
+            )?;
+            settled_state(manager, agent_id, Some(before))
+        }
+        other => Err(format!("unknown simulator method {other}")),
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct Device {
+    pub udid: String,
+    pub name: String,
+    pub os: String,
+    pub booted: bool,
+    /// Width and height in points.
+    pub screen: Option<(f64, f64)>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct Element {
+    pub role: String,
+    pub label: String,
+    pub value: String,
+    pub identifier: String,
+    pub enabled: bool,
+    pub center: (f64, f64),
+    /// Scrolled out of view, or under the screen's edge, so it cannot be tapped.
+    pub offscreen: bool,
+}
+
+fn list_devices(manager: &SimulatorManager) -> Result<Vec<Device>, String> {
+    let reply = manager.request("devices", json!({}), ACTION_TIMEOUT)?;
+    Ok(reply["devices"]
+        .as_array()
+        .map(|devices| devices.iter().filter_map(device_from).collect())
+        .unwrap_or_default())
+}
+
+fn device_from(value: &Value) -> Option<Device> {
+    let screen = value.get("screen").and_then(|screen| {
+        Some((
+            screen.get("width")?.as_f64()?,
+            screen.get("height")?.as_f64()?,
+        ))
+    });
+    Some(Device {
+        udid: value.get("udid")?.as_str()?.to_owned(),
+        name: value.get("name")?.as_str()?.to_owned(),
+        os: value
+            .get("os")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
+        booted: value
+            .get("booted")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        screen,
+    })
+}
+
+/// A named device by udid or name, newest iOS first when a name repeats; with no
+/// name, the iPhone already booted, else an iPhone on the newest iOS.
+pub(super) fn choose_device<'a>(
+    devices: &'a [Device],
+    wanted: Option<&str>,
+) -> Result<&'a Device, String> {
+    let newest = |candidates: Vec<&'a Device>| {
+        candidates.into_iter().max_by(|a, b| {
+            (a.booted, os_version(&a.os))
+                .partial_cmp(&(b.booted, os_version(&b.os)))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+    };
+    let chosen = match wanted {
+        Some(wanted) => devices
+            .iter()
+            .find(|device| device.udid == wanted)
+            .or_else(|| {
+                newest(
+                    devices
+                        .iter()
+                        .filter(|device| device.name == wanted)
+                        .collect(),
+                )
+            }),
+        None => newest(
+            devices
+                .iter()
+                .filter(|device| device.name.starts_with("iPhone"))
+                .collect(),
+        ),
+    };
+    chosen.ok_or_else(|| match wanted {
+        Some(wanted) => format!(
+            "no simulator is named {wanted}; sim_devices lists them, and Xcode's Devices and Simulators window adds more"
+        ),
+        None => "no iPhone simulator is installed; add one in Xcode's Devices and Simulators window".into(),
+    })
+}
+
+fn os_version(os: &str) -> Vec<u32> {
+    os.rsplit(' ')
+        .next()
+        .unwrap_or_default()
+        .split('.')
+        .filter_map(|part| part.parse().ok())
+        .collect()
+}
+
+fn attached(manager: &SimulatorManager, agent_id: &str) -> Result<Device, String> {
+    manager
+        .attached(agent_id)
+        .ok_or_else(|| "no simulator is attached; call sim_attach first".into())
+}
+
+type Screen = (String, Vec<Element>);
+
+fn read_screen(manager: &SimulatorManager, device: &Device) -> Result<Screen, String> {
+    let reply = manager.request("state", json!({ "udid": device.udid }), ACTION_TIMEOUT)?;
+    Ok(elements_from(&reply, device.screen))
+}
+
+/// Reads the screen until two reads agree, so an animation has finished before
+/// the agent is told what is on screen. After an action it first waits for the
+/// screen to change from `before`, because an app can take a moment to start
+/// leaving and would otherwise read as settled on its way out.
+fn settled_state(
+    manager: &SimulatorManager,
+    agent_id: &str,
+    before: Option<Screen>,
+) -> Result<Value, String> {
+    let device = attached(manager, agent_id)?;
+    let mut latest = read_screen(manager, &device)?;
+    if let Some(before) = before {
+        for _ in 0..CHANGE_READS {
+            if latest != before {
+                break;
+            }
+            std::thread::sleep(SETTLE_STEP);
+            latest = read_screen(manager, &device)?;
+        }
+    }
+    for _ in 1..SETTLE_READS {
+        std::thread::sleep(SETTLE_STEP);
+        let next = read_screen(manager, &device)?;
+        let settled = next == latest;
+        latest = next;
+        if settled {
+            break;
+        }
+    }
+    let (app, elements) = latest;
+    let lines = element_lines(&elements);
+    manager.remember_elements(agent_id, elements);
+    let mut state = json!({
+        "device": format!("{} ({})", device.name, device.os),
+        "app": if app.is_empty() { "Home Screen".to_owned() } else { app },
+        "elements": lines,
+    });
+    if let Some((width, height)) = device.screen {
+        state["screen"] = json!({ "width": width, "height": height });
+    }
+    Ok(state)
+}
+
+/// The frontmost app's name and its elements, from one accessibility read.
+pub(super) fn elements_from(reply: &Value, screen: Option<(f64, f64)>) -> (String, Vec<Element>) {
+    let mut app = String::new();
+    let mut elements = Vec::new();
+    for value in reply["elements"].as_array().into_iter().flatten() {
+        let text = |key: &str| {
+            value
+                .get(key)
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .trim()
+                .to_owned()
+        };
+        let role = text("type");
+        if role == "Application" {
+            app = text("AXLabel");
+            continue;
+        }
+        let frame = &value["frame"];
+        let (Some(x), Some(y), Some(width), Some(height)) = (
+            frame["x"].as_f64(),
+            frame["y"].as_f64(),
+            frame["width"].as_f64(),
+            frame["height"].as_f64(),
+        ) else {
+            continue;
+        };
+        if width <= 0.0 || height <= 0.0 {
+            continue;
+        }
+        let label = text("AXLabel");
+        let value_text = match value.get("AXValue") {
+            Some(Value::String(text)) => text.trim().to_owned(),
+            Some(Value::Number(number)) => number.to_string(),
+            _ => String::new(),
+        };
+        if label.is_empty() && value_text.is_empty() && role == "GenericElement" {
+            continue;
+        }
+        elements.push(Element {
+            role,
+            label,
+            value: value_text,
+            identifier: text("AXUniqueId"),
+            enabled: value
+                .get("enabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(true),
+            center: ((x + width / 2.0).round(), (y + height / 2.0).round()),
+            offscreen: screen.is_some_and(|(screen_width, screen_height)| {
+                let (center_x, center_y) = (x + width / 2.0, y + height / 2.0);
+                center_x < 0.0
+                    || center_y < 0.0
+                    || center_x > screen_width
+                    || center_y > screen_height
+            }),
+        });
+    }
+    (app, elements)
+}
+
+/// One line per element: `3 Button "General" at (201, 418)`.
+pub(super) fn element_lines(elements: &[Element]) -> Vec<String> {
+    let mut lines: Vec<String> = elements
+        .iter()
+        .take(MAX_ELEMENTS)
+        .enumerate()
+        .map(|(index, element)| {
+            let mut line = format!("{index} {}", element.role);
+            if !element.label.is_empty() {
+                line.push_str(&format!(" {:?}", element.label));
+            }
+            if !element.value.is_empty() && element.value != element.label {
+                line.push_str(&format!(" value={:?}", element.value));
+            }
+            if !element.identifier.is_empty() && element.identifier != element.label {
+                line.push_str(&format!(" id={:?}", element.identifier));
+            }
+            if !element.enabled {
+                line.push_str(" [disabled]");
+            }
+            if element.offscreen {
+                line.push_str(" [offscreen]");
+            }
+            line.push_str(&format!(" at ({}, {})", element.center.0, element.center.1));
+            line
+        })
+        .collect();
+    if elements.len() > MAX_ELEMENTS {
+        lines.push(format!(
+            "… {} more; tap by label to reach them",
+            elements.len() - MAX_ELEMENTS
+        ));
+    }
+    lines
+}
+
+/// Where to tap: an element number from the latest read, or a point.
+pub(super) fn tap_point(
+    elements: &[Element],
+    index: Option<u64>,
+    x: Option<f64>,
+    y: Option<f64>,
+) -> Result<(f64, f64), String> {
+    if let Some(index) = index {
+        let element = elements.get(index as usize).ok_or_else(|| {
+            format!("no element {index} in the latest read; call sim_state for current numbers")
+        })?;
+        if element.offscreen {
+            return Err(format!(
+                "element {index} is off the screen; scroll it into view, then read again"
+            ));
+        }
+        return Ok(element.center);
+    }
+    match (x, y) {
+        (Some(x), Some(y)) => Ok((x, y)),
+        _ => Err("give an element index, a label, or both x and y".into()),
+    }
+}
+
+pub(super) fn edge_warning(screen: Option<(f64, f64)>, from: (f64, f64)) -> Option<String> {
+    let (width, height) = screen?;
+    let edge = if from.1 >= height - EDGE {
+        "bottom"
+    } else if from.1 <= EDGE {
+        "top"
+    } else if from.0 <= EDGE {
+        "left"
+    } else if from.0 >= width - EDGE {
+        "right"
+    } else {
+        return None;
+    };
+    Some(format!(
+        "the swipe started at the {edge} edge, which iOS treats as a system gesture (home, Notification Center, Control Center or back) rather than scrolling"
+    ))
+}

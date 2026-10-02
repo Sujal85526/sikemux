@@ -65,6 +65,7 @@ Pass one of these as `topic`:
 - `browser-pages` — navigating, reloading, waiting, local files, viewport sizes, tabs
 - `browser-evidence` — `browser_screenshot`, `browser_annotate`, `browser_record`
 - `browser-debugging` — `browser_network`, loads, `browser_console`, `app_console`, `browser_evaluate`
+- `simulator` — the iOS Simulator: attaching, reading the screen, tapping, typing, apps
 - `shell` — the `sikemux tool` CLI for scripts and tasks
 
 ## config: Writing sikemux.json
@@ -523,6 +524,51 @@ input, and `browser_wait` for waiting, rather than a polling loop in a script.
 A script that reloads or leaves the page loses its result; use
 `browser_navigate` with `go: "reload"` for that. It runs with the page's own session, so `fetch` of
 the site's API returns what the signed-in person would get.
+
+## simulator: Driving the iOS Simulator
+
+The `sim_*` tools drive the iOS simulators that Xcode installs on this Mac.
+They are listed only when this Mac has Xcode. Simulator.app does not need to
+be open.
+
+`sim_attach` comes first. It takes a device name or udid from `sim_devices`,
+boots the device if it is off, and waits until its screen can be read.
+Without a `device` it takes the iPhone that is already booted, else an iPhone
+on the newest iOS. A cold boot can take a minute; when it runs past the reply
+time the boot carries on, so call `sim_attach` again. Each agent attaches
+its own device, and every other `sim_*` tool acts on that one.
+
+`sim_state` reads the screen: the frontmost `app` (`Home Screen` when no app
+is open) and numbered `elements`, each with its role, label, value, identifier
+and centre point, as in `3 Button "General" at (201, 418)`. Coordinates are
+device points, the same for every tool. Element numbers belong to the latest
+read only; every tool that acts returns a fresh read, so use its numbers.
+
+`sim_tap` takes an element `index`, a `label`, or `x` and `y`. A `label`
+matches the accessibility label or identifier, exact matches first, and fails
+when two elements match equally; tap one of them by number instead. Prefer a
+number or label over a point read off a screenshot. `duration` holds the
+touch, for a long press.
+
+`sim_type` types into the focused field, so tap the field first. It types
+the characters of a US keyboard; other characters fail and are named.
+`sim_swipe` drags from one point to another; a swipe that starts within
+4 points of a screen edge becomes a system gesture (home, Notification
+Center, Control Center or back) and its result carries a `warning`. Scroll
+from inside the content instead. `sim_button` presses `home`, `lock`,
+`side`, `siri`, `volumeUp`, `volumeDown` or `applePay`.
+
+Acting tools wait until two reads of the screen agree before they return, so
+an animation has finished. `sim_screenshot` returns the screen as an image at
+its size in points; read `sim_state` rather than a screenshot to decide what
+to tap.
+
+To try an app: build it for the simulator with a task (`xcodebuild` with
+`-sdk iphonesimulator`), then `sim_install` the `.app` it produced (a
+relative path is read from the project) and `sim_launch` it by bundle id,
+with optional `arguments` and `environment`. `sim_launch` relaunches an app
+that is running. `sim_terminate` quits it, and `sim_open_url` opens a URL or
+a deep link.
 
 ## shell: The same operations from a shell
 

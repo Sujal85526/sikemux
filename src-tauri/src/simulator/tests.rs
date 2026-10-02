@@ -1,0 +1,366 @@
+use std::os::unix::fs::PermissionsExt;
+use std::time::{Duration, Instant};
+
+use serde_json::json;
+use tempfile::TempDir;
+
+use super::SimulatorManager;
+
+const SECOND: Duration = Duration::from_secs(1);
+/// Long enough for a shell helper to start when every test starts one at once.
+const PROMPT: Duration = Duration::from_secs(5);
+
+/// Answers the way sikemux-sim does: `{"id":…,"ok":true,"result":{…}}` per request line.
+const FAKE_HELPER: &str = r#"#!/bin/sh
+echo '{"type":"ready","version":"sikemux-sim test"}'
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -E 's/.*"id":([0-9]+).*/\1/')
+  kind=$(printf '%s' "$line" | sed -E 's/.*"type":"([a-zA-Z]+)".*/\1/')
+  case "$kind" in
+    fail) echo "{\"id\":$id,\"ok\":false,\"error\":\"no simulator NOPE\"}" ;;
+    crash) exit 3 ;;
+    stall) sleep 30 ;;
+    slow) (sleep 1; echo "{\"id\":$id,\"ok\":true,\"result\":{\"kind\":\"slow\",\"pid\":$$}}") & ;;
+    *) echo "noise that is not JSON"; echo "{\"id\":$id,\"ok\":true,\"result\":{\"kind\":\"$kind\",\"pid\":$$}}" ;;
+  esac
+done
+"#;
+
+const UNAVAILABLE_HELPER: &str = r#"#!/bin/sh
+echo '{"type":"unavailable","message":"CoreSimulator could not be loaded from the Xcode at /Library/Developer/CommandLineTools"}'
+read -r line
+exit 1
+"#;
+
+fn helper(script: &str) -> (TempDir, SimulatorManager) {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("sikemux-sim");
+    std::fs::write(&path, script).expect("write helper");
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    (dir, SimulatorManager::with_executable(Some(path)))
+}
+
+#[test]
+fn answers_a_request_with_its_result() {
+    let (_dir, manager) = helper(FAKE_HELPER);
+    let result = manager
+        .request("devices", json!({}), PROMPT)
+        .expect("reply");
+    assert_eq!(result["kind"], json!("devices"));
+}
+
+#[test]
+fn sends_the_fields_alongside_the_type() {
+    let (_dir, manager) = helper(FAKE_HELPER);
+    let result = manager
+        .request("tap", json!({ "udid": "A", "x": 1, "y": 2 }), PROMPT)
+        .expect("reply");
+    assert_eq!(result["kind"], json!("tap"));
+}
+
+#[test]
+fn reports_the_helpers_error() {
+    let (_dir, manager) = helper(FAKE_HELPER);
+    assert_eq!(
+        manager.request("fail", json!({}), PROMPT),
+        Err("no simulator NOPE".into())
+    );
+}
+
+#[test]
+fn each_thread_gets_its_own_reply() {
+    let (_dir, manager) = helper(FAKE_HELPER);
+    std::thread::scope(|scope| {
+        let slow = scope.spawn(|| manager.request("slow", json!({}), 2 * PROMPT));
+        std::thread::sleep(Duration::from_millis(100));
+        let quick = manager
+            .request("state", json!({}), PROMPT)
+            .expect("quick reply");
+        assert_eq!(quick["kind"], json!("state"));
+        assert_eq!(
+            slow.join().unwrap().expect("slow reply")["kind"],
+            json!("slow")
+        );
+    });
+}
+
+#[test]
+fn a_crash_fails_the_waiting_request_and_the_next_one_restarts_the_helper() {
+    let (_dir, manager) = helper(FAKE_HELPER);
+    let first = manager
+        .request("devices", json!({}), PROMPT)
+        .expect("reply")["pid"]
+        .clone();
+    let started = Instant::now();
+    assert_eq!(
+        manager.request("crash", json!({}), 10 * SECOND),
+        Err("the simulator helper stopped".into())
+    );
+    assert!(
+        started.elapsed() < 5 * SECOND,
+        "the crash was noticed only at the timeout"
+    );
+    let second = manager
+        .request("devices", json!({}), PROMPT)
+        .expect("reply after restart")["pid"]
+        .clone();
+    assert_ne!(first, second);
+}
+
+#[test]
+fn gives_up_on_a_request_that_is_never_answered() {
+    let (_dir, manager) = helper(FAKE_HELPER);
+    let error = manager
+        .request("stall", json!({}), Duration::from_millis(300))
+        .unwrap_err();
+    assert_eq!(error, "the simulator did not answer stall within 0 s");
+    manager.drain();
+}
+
+#[test]
+fn passes_on_why_the_simulator_is_unavailable() {
+    let (_dir, manager) = helper(UNAVAILABLE_HELPER);
+    let error = manager
+        .request("devices", json!({}), 5 * SECOND)
+        .unwrap_err();
+    assert!(
+        error.starts_with("CoreSimulator could not be loaded"),
+        "{error}"
+    );
+}
+
+#[test]
+fn says_when_this_build_has_no_helper() {
+    let manager = SimulatorManager::with_executable(None);
+    let error = manager.request("devices", json!({}), PROMPT).unwrap_err();
+    assert_eq!(
+        error,
+        "this build of Sikemux does not include the iOS Simulator helper"
+    );
+}
+
+#[test]
+fn rejects_fields_that_are_not_an_object() {
+    let (_dir, manager) = helper(FAKE_HELPER);
+    assert!(manager.request("tap", json!([1, 2]), PROMPT).is_err());
+}
+
+/// Talks to a real helper and Xcode: `SIKEMUX_SIM_EXECUTABLE=… cargo test --lib simulator -- --ignored`.
+#[test]
+#[ignore = "needs the sikemux-sim helper and Xcode's simulators"]
+fn lists_the_real_simulators() {
+    let manager = SimulatorManager::default();
+    let devices = manager
+        .request("devices", json!({}), PROMPT)
+        .expect("devices");
+    let devices = devices["devices"].as_array().expect("a list of devices");
+    assert!(!devices.is_empty(), "Xcode has no simulators");
+    assert!(devices
+        .iter()
+        .all(|device| device["udid"].is_string() && device["booted"].is_boolean()));
+}
+
+mod tools {
+    use serde_json::json;
+
+    use super::helper;
+    use crate::simulator::tools::{
+        choose_device, edge_warning, element_lines, elements_from, run, tap_point, Device,
+    };
+
+    fn device(name: &str, os: &str, booted: bool) -> Device {
+        Device {
+            udid: format!("{name}-{os}"),
+            name: name.into(),
+            os: os.into(),
+            booted,
+            screen: Some((402.0, 874.0)),
+        }
+    }
+
+    fn home_screen() -> serde_json::Value {
+        let element = |kind: &str, label: &str, x: f64, y: f64| {
+            json!({ "type": kind, "AXLabel": label, "AXValue": "", "AXUniqueId": label, "enabled": true,
+                    "frame": { "x": x, "y": y, "width": 68, "height": 90 } })
+        };
+        json!({ "elements": [
+            { "type": "Application", "AXLabel": " ", "frame": { "x": 0, "y": 0, "width": 402, "height": 874 } },
+            element("Button", "Settings", 306.0, 389.0),
+            element("Button", "Safari", 24.0, 700.0),
+            { "type": "GenericElement", "AXLabel": null, "frame": { "x": 0, "y": 0, "width": 10, "height": 10 } },
+            { "type": "TextField", "AXLabel": "Search", "AXValue": "cats", "enabled": false,
+              "frame": { "x": 10, "y": 10, "width": 100, "height": 30 } },
+            element("Button", "Camera", 0.0, -60.0),
+        ]})
+    }
+
+    #[test]
+    fn picks_the_named_device_on_the_newest_ios_and_prefers_a_booted_one() {
+        let devices = [
+            device("iPhone 17", "iOS 26.0", false),
+            device("iPhone 17", "iOS 27.0", false),
+            device("iPad Air", "iOS 27.0", true),
+        ];
+        assert_eq!(
+            choose_device(&devices, Some("iPhone 17")).unwrap().os,
+            "iOS 27.0"
+        );
+        assert_eq!(
+            choose_device(&devices, Some("iPhone 17-iOS 26.0"))
+                .unwrap()
+                .os,
+            "iOS 26.0"
+        );
+        let booted = [
+            device("iPhone 17", "iOS 27.0", false),
+            device("iPhone 16e", "iOS 26.0", true),
+        ];
+        assert_eq!(choose_device(&booted, None).unwrap().name, "iPhone 16e");
+        assert_eq!(
+            choose_device(&devices, None).unwrap().udid,
+            "iPhone 17-iOS 27.0"
+        );
+        assert!(choose_device(&devices, Some("Pixel 9"))
+            .unwrap_err()
+            .contains("sim_devices"));
+        assert!(choose_device(&[device("iPad Air", "iOS 27.0", true)], None).is_err());
+    }
+
+    #[test]
+    fn numbers_the_elements_a_person_could_act_on() {
+        let (app, elements) = elements_from(&home_screen(), Some((402.0, 874.0)));
+        assert_eq!(app, "");
+        assert_eq!(
+            element_lines(&elements),
+            vec![
+                "0 Button \"Settings\" at (340, 434)",
+                "1 Button \"Safari\" at (58, 745)",
+                "2 TextField \"Search\" value=\"cats\" [disabled] at (60, 25)",
+                "3 Button \"Camera\" [offscreen] at (34, -15)",
+            ]
+        );
+    }
+
+    #[test]
+    fn taps_an_element_by_number_or_a_point() {
+        let (_, elements) = elements_from(&home_screen(), Some((402.0, 874.0)));
+        assert_eq!(tap_point(&elements, Some(1), None, None), Ok((58.0, 745.0)));
+        assert_eq!(
+            tap_point(&elements, None, Some(3.0), Some(4.0)),
+            Ok((3.0, 4.0))
+        );
+        assert!(tap_point(&elements, Some(9), None, None)
+            .unwrap_err()
+            .contains("sim_state"));
+        assert!(tap_point(&elements, None, Some(3.0), None).is_err());
+    }
+
+    #[test]
+    fn warns_when_a_swipe_starts_at_an_edge() {
+        let screen = Some((402.0, 874.0));
+        assert!(edge_warning(screen, (200.0, 873.0))
+            .unwrap()
+            .contains("bottom"));
+        assert!(edge_warning(screen, (1.0, 400.0)).unwrap().contains("left"));
+        assert_eq!(edge_warning(screen, (200.0, 600.0)), None);
+    }
+
+    /// Answers each request type with a canned reply and records every request line.
+    fn recording_helper(log: &std::path::Path) -> String {
+        let state = home_screen().to_string().replace('"', "\\\"");
+        format!(
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> '{log}'
+  id=$(printf '%s' "$line" | sed -E 's/.*"id":([0-9]+).*/\1/')
+  case "$line" in
+    *'"type":"devices"'*) echo "{{\"id\":$id,\"ok\":true,\"result\":{{\"devices\":[{{\"udid\":\"U1\",\"name\":\"iPhone 17\",\"os\":\"iOS 27.0\",\"booted\":false,\"screen\":{{\"width\":402,\"height\":874}}}}]}}}}" ;;
+    *'"type":"state"'*) echo "{{\"id\":$id,\"ok\":true,\"result\":{state}}}" ;;
+    *) echo "{{\"id\":$id,\"ok\":true,\"result\":{{}}}}" ;;
+  esac
+done
+"#,
+            log = log.display()
+        )
+    }
+
+    #[test]
+    fn an_agent_attaches_reads_and_taps_by_number() {
+        let log_dir = tempfile::tempdir().unwrap();
+        let log = log_dir.path().join("requests");
+        let (_dir, manager) = helper(&recording_helper(&log));
+        let call = |method: &str, params: serde_json::Value| {
+            run(&manager, "agent-1", "/tmp", method, &params)
+        };
+
+        assert_eq!(
+            call("sim.tap", json!({ "index": 0 })).unwrap_err(),
+            "no simulator is attached; call sim_attach first"
+        );
+        let attached = call("sim.attach", json!({})).expect("attach");
+        assert_eq!(attached["device"], json!("iPhone 17 (iOS 27.0)"));
+        assert_eq!(attached["app"], json!("Home Screen"));
+        assert_eq!(
+            attached["elements"][0],
+            json!("0 Button \"Settings\" at (340, 434)")
+        );
+
+        call("sim.tap", json!({ "index": 0 })).expect("tap");
+        let devices = call("sim.devices", json!({})).expect("devices");
+        assert_eq!(devices["devices"][0]["attached"], json!(true));
+        let other_agent = run(&manager, "agent-2", "/tmp", "sim.state", &json!({}));
+        assert!(other_agent.is_err(), "attachments belong to one agent");
+
+        let requests = std::fs::read_to_string(&log).unwrap();
+        assert!(
+            requests.contains(r#""type":"boot""#) && requests.contains(r#""udid":"U1""#),
+            "{requests}"
+        );
+        let tap = requests
+            .lines()
+            .find(|line| line.contains(r#""type":"tap""#))
+            .expect("a tap was sent");
+        let tap: serde_json::Value = serde_json::from_str(tap).unwrap();
+        assert_eq!(
+            (tap["x"].as_f64(), tap["y"].as_f64()),
+            (Some(340.0), Some(434.0))
+        );
+    }
+
+    /// An agent's whole round on a real simulator:
+    /// `SIKEMUX_SIM_EXECUTABLE=… cargo test --lib simulator -- --ignored`.
+    #[test]
+    #[ignore = "needs the sikemux-sim helper and Xcode's simulators"]
+    fn an_agent_drives_a_real_simulator() {
+        let manager = crate::simulator::SimulatorManager::default();
+        let call = |method: &str, params: serde_json::Value| {
+            run(&manager, "agent-real", "/tmp", method, &params)
+                .unwrap_or_else(|error| panic!("{method}: {error}"))
+        };
+        let attached = call(
+            "sim.attach",
+            json!({ "device": std::env::var("SIKEMUX_SIM_DEVICE").unwrap_or("iPhone 18 Pro".into()) }),
+        );
+        println!("attached: {}", attached["device"]);
+        let home = call("sim.button", json!({ "button": "home" }));
+        assert_eq!(home["app"], json!("Home Screen"), "{home}");
+        let settings = call("sim.tap", json!({ "label": "Settings" }));
+        assert_eq!(settings["app"], json!("Settings"), "{settings}");
+        println!(
+            "{}",
+            settings["elements"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .take(5)
+                .map(|line| line.to_string())
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        let shot = call("sim.screenshot", json!({}));
+        assert_eq!(shot["mimeType"], json!("image/jpeg"));
+        assert!(shot["data"].as_str().unwrap().len() > 1000);
+        let back = call("sim.button", json!({ "button": "home" }));
+        assert_eq!(back["app"], json!("Home Screen"));
+    }
+}

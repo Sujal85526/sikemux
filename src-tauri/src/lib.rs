@@ -34,6 +34,7 @@ mod release_credits;
 mod remote;
 mod search;
 mod settings;
+mod simulator;
 mod ssh;
 mod state;
 mod system;
@@ -52,6 +53,7 @@ use observability::UiWatchdogState;
 use plugins::PluginHost;
 use pty::PtyManager;
 use sikemux_process as bounded_process;
+use simulator::SimulatorManager;
 use tauri::Manager;
 use voice::VoiceManager;
 
@@ -234,6 +236,7 @@ pub fn run() {
         .manage(remote::PublishedWorkspace::default())
         .manage(BrowserManager::default())
         .manage(VoiceManager::default())
+        .manage(SimulatorManager::default())
         .manage(preview::Previews::default())
         .register_asynchronous_uri_scheme_protocol(preview::SCHEME, preview::handle)
         .invoke_handler(tauri::generate_handler![
@@ -485,6 +488,9 @@ pub fn run() {
                 }
                 if let Some(voice) = app_handle.try_state::<VoiceManager>() {
                     voice.drain();
+                }
+                if let Some(simulator) = app_handle.try_state::<SimulatorManager>() {
+                    simulator.drain();
                 }
                 lsp::drain_all();
             }

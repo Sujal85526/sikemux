@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use serde_json::Value;
 pub use sikemux_core::cli::protocol::HarnessRequest;
-use sikemux_core::cli::protocol::{is_browser_method, is_plugin_method};
+use sikemux_core::cli::protocol::{is_browser_method, is_plugin_method, is_sim_method};
 use sikemux_core::protocol::{CallId, RunSelector, WindowAnswer, WindowCall};
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -121,6 +121,9 @@ pub(crate) fn answer_window_call(app: &AppHandle, call_id: CallId, call: WindowC
 fn run(app: &AppHandle, request: HarnessRequest) -> Result<Value, String> {
     if is_browser_method(&request.method) {
         return crate::browser::tools::execute(app, &request);
+    }
+    if is_sim_method(&request.method) {
+        return crate::simulator::tools::execute(app, &request);
     }
     if is_plugin_method(&request.method) {
         return crate::plugins::agent::execute(
