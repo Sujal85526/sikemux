@@ -695,6 +695,19 @@ pub struct HostInfo {
     pub name: String,
     /// The kind of computer, such as "MacBook Pro" or "Mac mini".
     pub model: String,
+    /// The Sikemux release running there, such as "0.4.3-nightly.5".
+    pub version: String,
+    pub channel: BuildChannel,
+}
+
+/// Which kind of Sikemux build a core belongs to. Each keeps its own key and
+/// paired devices, so one Mac can show up once per channel.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BuildChannel {
+    Dev,
+    Nightly,
+    Stable,
 }
 
 /// A device approved to reach this core from another machine.

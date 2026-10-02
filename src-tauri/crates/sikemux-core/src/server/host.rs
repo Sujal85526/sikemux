@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 
 use sikemux_process::user_environment;
 
-use crate::protocol::HostInfo;
+use crate::protocol::{BuildChannel, HostInfo};
 
 /// Read once: asking System Information for the model takes a moment.
 pub(crate) fn info() -> HostInfo {
@@ -12,8 +12,22 @@ pub(crate) fn info() -> HostInfo {
     HOST.get_or_init(|| HostInfo {
         name: computer_name().unwrap_or_else(|| "Mac".into()),
         model: model_name().unwrap_or_else(|| "Mac".into()),
+        version: VERSION.into(),
+        channel: channel(cfg!(debug_assertions), VERSION),
     })
     .clone()
+}
+
+const VERSION: &str = env!("SIKEMUX_VERSION");
+
+fn channel(debug: bool, version: &str) -> BuildChannel {
+    if debug {
+        BuildChannel::Dev
+    } else if version.contains("-nightly") {
+        BuildChannel::Nightly
+    } else {
+        BuildChannel::Stable
+    }
 }
 
 fn output(program: &str, args: &[&str]) -> Option<String> {
@@ -56,5 +70,12 @@ mod tests {
         let profile = "Hardware:\n\n    Hardware Overview:\n\n      Model Name: MacBook Pro\n      Model Identifier: Mac17,2\n";
         assert_eq!(model_from_profile(profile).as_deref(), Some("MacBook Pro"));
         assert_eq!(model_from_profile("nothing useful"), None);
+    }
+
+    #[test]
+    fn the_channel_follows_the_build() {
+        assert_eq!(channel(true, "0.4.3"), BuildChannel::Dev);
+        assert_eq!(channel(false, "0.4.3-nightly.5"), BuildChannel::Nightly);
+        assert_eq!(channel(false, "0.4.3"), BuildChannel::Stable);
     }
 }
