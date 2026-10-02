@@ -750,6 +750,13 @@ textarea:focus,
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--acc) 28%, var(--border));
 }
 
+/* Registered so the tint can fade; a gradient on its own snaps between states. */
+@property --tab-tint {
+    syntax: "<color>";
+    inherits: false;
+    initial-value: transparent;
+}
+
 /*
  * Every tab sits on the same ground as the rails; only the selected one is tinted.
  *
@@ -764,6 +771,7 @@ textarea:focus,
     border-right: 0;
     border-radius: var(--radius-2);
     background: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
+    background-image: linear-gradient(var(--tab-tint), var(--tab-tint));
     /* Full strength rather than 62%: the strip used to sit against the screen
        card's lit top edge, and now it sits against the wallpaper, where a
        hairline at two thirds of --border stopped reading as an edge at all. */
@@ -771,16 +779,25 @@ textarea:focus,
     color: var(--text-tertiary);
     overflow: hidden;
     transition:
-        background var(--dur-1) linear,
-        box-shadow var(--dur-1) linear,
-        color var(--dur-1) linear;
+        --tab-tint 200ms var(--ease-out),
+        box-shadow 200ms var(--ease-out),
+        color 200ms var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tabbar.v-agent .tab-wrap,
+    .tabbar.v-editor .tab-wrap,
+    .tabbar.v-desk .tab-wrap,
+    .tabbar.v-stack .tab-wrap {
+        transition: none;
+    }
 }
 
 .tabbar.v-agent .tab-wrap:hover,
 .tabbar.v-editor .tab-wrap:hover,
 .tabbar.v-desk .tab-wrap:hover,
 .tabbar.v-stack .tab-wrap:hover {
-    background-image: linear-gradient(var(--surface-hover), var(--surface-hover));
+    --tab-tint: var(--surface-hover);
     box-shadow: inset 0 0 0 1px var(--border);
     color: var(--text-secondary);
 }
@@ -789,7 +806,7 @@ textarea:focus,
 .tabbar.v-editor .tab-wrap.active,
 .tabbar.v-desk .tab-wrap.active,
 .tabbar.v-stack .tab-wrap.active {
-    background-image: linear-gradient(var(--surface-selected), var(--surface-selected));
+    --tab-tint: var(--surface-selected);
     box-shadow: inset 0 0 0 1px var(--border-selected);
     color: var(--text-primary);
 }
