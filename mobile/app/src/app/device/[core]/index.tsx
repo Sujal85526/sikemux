@@ -171,9 +171,10 @@ export default function Device() {
         <View style={{ flex: 1 }}>
           <Text style={styles.name} numberOfLines={1}>
             {device ? deviceName(device) : 'Mac'}
-            {channel ? <Text style={styles.channel}> · {channel}</Text> : null}
           </Text>
-          <Text style={type.meta}>{behind ? 'Needs an update' : away ? 'Asleep or offline' : summary(snapshot)}</Text>
+          <Text style={type.meta} numberOfLines={1}>
+            {[channel, behind ? 'Needs an update' : away ? 'Asleep or offline' : summary(snapshot)].filter(Boolean).join(' · ')}
+          </Text>
         </View>
       </View>
       {away && !snapshot ? (
@@ -215,7 +216,6 @@ const styles = StyleSheet.create({
   presenceOn: { backgroundColor: colors.live, borderColor: colors.ground },
   presenceOff: { backgroundColor: colors.ground, borderColor: colors.rest },
   name: { ...type.title },
-  channel: { color: colors.inkDim },
   body: { paddingHorizontal: 16, paddingBottom: 40 },
   filters: { flexDirection: 'row', gap: 6, paddingTop: 12 },
   filter: { height: 32, minWidth: 40, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },

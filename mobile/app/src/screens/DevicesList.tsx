@@ -1,5 +1,5 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
 import type { Snapshot } from '@/core/protocol';
@@ -52,10 +52,9 @@ function DeviceCard({ device }: { device: PairedDevice }) {
         <View style={{ flex: 1 }}>
           <Text style={[styles.name, away && { color: colors.tertiary }]} numberOfLines={1}>
             {deviceName(device)}
-            {channel ? <Text style={styles.channel}> · {channel}</Text> : null}
           </Text>
           <Text style={styles.meta} numberOfLines={1}>
-            {meta}
+            {channel ? `${channel} · ${meta}` : meta}
           </Text>
         </View>
         <Icon name="IconChevron" size={14} color={colors.rest} />
@@ -91,6 +90,7 @@ function DeviceCard({ device }: { device: PairedDevice }) {
 
 export function DevicesList({ devices }: { devices: PairedDevice[] }) {
   const id = useDeviceId();
+  const insets = useSafeAreaInsets();
   return (
     <Screen>
       <View style={styles.nav}>
@@ -102,11 +102,11 @@ export function DevicesList({ devices }: { devices: PairedDevice[] }) {
           <DeviceCard key={device.core} device={device} />
         ))}
       </ScrollView>
-      <SafeAreaView edges={['bottom']} style={styles.phone}>
+      <View style={[styles.phone, { paddingBottom: insets.bottom + 14 }]}>
         <Icon name="IconPhone" size={15} color={colors.tertiary} />
         <Text style={styles.phoneText}>{phoneName()}</Text>
         {id ? <Text style={[type.mono, { marginLeft: 'auto' }]}>{shortKey(id)}</Text> : null}
-      </SafeAreaView>
+      </View>
     </Screen>
   );
 }
@@ -123,7 +123,6 @@ const styles = StyleSheet.create({
   presenceOn: { backgroundColor: colors.live, borderColor: colors.raised },
   presenceOff: { backgroundColor: colors.ground, borderColor: colors.rest },
   name: { ...type.heading },
-  channel: { color: colors.inkDim },
   meta: { ...type.meta, marginTop: 2 },
   ask: {
     flexDirection: 'row',
