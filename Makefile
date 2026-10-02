@@ -12,7 +12,8 @@ dev: icons
 
 # Stops the dev build's core and the terminals and agents it runs.
 dev-stop:
-	cargo run --quiet --manifest-path src-tauri/Cargo.toml --bin sikemux-editor -- core stop
+	@test -x src-tauri/target/debug/sikemux-editor || { echo "No dev build yet; run make dev first."; exit 1; }
+	src-tauri/target/debug/sikemux-editor core stop
 
 showcase:
 	pnpm showcase:serve --open /showcase/
