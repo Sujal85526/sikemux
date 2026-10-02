@@ -1,6 +1,8 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { animate } from "../lib/motion";
+import { takeDeskEntrance } from "../state/deskEntrance";
 import { browserApi, BLANK_URL, type BrowserBounds, type BrowserHole, type BrowserSnapshot } from "../api/browser";
-import { onStageFrame, useNativeViewHoles, useNativeViewsOccluded, useStageMoving, type NativeViewHole } from "../state/nativeViews";
+import { holdStageMotion, onStageFrame, useNativeViewHoles, useNativeViewsOccluded, useStageMoving, type NativeViewHole } from "../state/nativeViews";
 import type { AgentType, PtyContext, Session, Window as WindowT } from "../state/types";
 import { reportError } from "../state/toast";
 import { AgentIcon, IconChevron, IconPlus, IconRefresh, WindowIcon } from "../ui/Icons";
@@ -121,6 +123,29 @@ export function DeskHost({
             onEmpty={onEmpty}
         />
     );
+}
+
+const ENTRANCE_SLIDE = 16;
+
+/* The agent beside it takes its new width at once, as it does for a rail;
+   only the desk moves. Its page is a native view placed by measuring, so the
+   stage is held as moving for the slide and the page is placed every frame. */
+function useDeskEntrance(section: RefObject<HTMLElement | null>, paneId: string): void {
+    useLayoutEffect(() => {
+        if (!takeDeskEntrance(paneId)) return;
+        const pane = section.current?.closest<HTMLElement>(".pane") ?? section.current;
+        const slide = animate(
+            pane,
+            [
+                { opacity: 0, transform: `translateX(${ENTRANCE_SLIDE}px)` },
+                { opacity: 1, transform: "none" },
+            ],
+            { duration: 200, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" },
+        );
+        if (!slide) return;
+        const release = holdStageMotion();
+        void slide.finished.catch(() => {}).finally(release);
+    }, [paneId, section]);
 }
 
 function DeskSession({
@@ -261,8 +286,11 @@ function DeskSession({
         agentType,
     });
 
+    const sectionRef = useRef<HTMLElement>(null);
+    useDeskEntrance(sectionRef, paneId);
+
     return (
-        <section className={`desk ${agentType}`} data-desk data-agent-id={agentId} aria-label={`${agentType} desk`}>
+        <section ref={sectionRef} className={`desk ${agentType}`} data-desk data-agent-id={agentId} aria-label={`${agentType} desk`}>
             <TabBar
                 variant="desk"
                 ariaLabel="Desk tabs"

@@ -17,6 +17,7 @@ import {
     type DeskItem,
 } from "../desks";
 import { reportError } from "../toast";
+import { expectDeskEntrance } from "../deskEntrance";
 import { activeAgentId, shownDeskPaneId } from "../selectors";
 import { collectPanes, makePane, newId, removePane, splitPane } from "../layout";
 import type { Desk } from "../types";
@@ -91,6 +92,7 @@ export function showDeskBrowser(agentId: string): void {
  */
 export function openDesk(agentId: string, opts: { focus?: boolean } = {}): void {
     const focus = opts.focus ?? true;
+    let created: string | null = null;
     mutate((d) => {
         const existing = Object.entries(d.deskPanes).find(([, owner]) => owner === agentId);
         const windowId = Object.keys(d.windows).find((id) => collectPanes(d.windows[id].root).some((pane) => pane.id === agentId));
@@ -107,7 +109,9 @@ export function openDesk(agentId: string, opts: { focus?: boolean } = {}): void 
         if (focus) win.activePaneId = pane.id;
         d.deskPanes[pane.id] = agentId;
         d.zoomedPaneId = null;
+        created = pane.id;
     });
+    if (created) expectDeskEntrance(created);
 }
 
 /** Hides the desk. Its files are only held by the editor on screen, so unsaved ones are asked about first. */

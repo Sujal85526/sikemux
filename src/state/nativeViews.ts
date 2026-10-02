@@ -159,12 +159,37 @@ export function whenStageStill(still: () => void): () => void {
     };
 }
 
+/* A swipe and a pane sliding in can overlap, so each says it is moving on its own. */
+let panning = false;
+let holds = 0;
+
+function refreshStageMoving() {
+    setStageMoving(panning || holds > 0);
+}
+
 /** Say that the stage is travelling for as long as `active` stays true. */
 export function useStageMotion(active: boolean): void {
     useEffect(() => {
-        setStageMoving(active);
-        return () => setStageMoving(false);
+        panning = active;
+        refreshStageMoving();
+        return () => {
+            panning = false;
+            refreshStageMoving();
+        };
     }, [active]);
+}
+
+/** Say that something on the stage is moving until the returned release is called. */
+export function holdStageMotion(): () => void {
+    holds += 1;
+    refreshStageMoving();
+    let released = false;
+    return () => {
+        if (released) return;
+        released = true;
+        holds -= 1;
+        refreshStageMoving();
+    };
 }
 
 /** Run `follow` on every frame the stage is travelling. */
