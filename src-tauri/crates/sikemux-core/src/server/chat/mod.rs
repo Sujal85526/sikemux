@@ -39,6 +39,7 @@ const STOP_SETTLE: Duration = Duration::from_secs(2);
 
 pub(crate) enum ChatCommand {
     Prompt {
+        from: ClientId,
         text: String,
         paths: Vec<String>,
         context: Vec<ChatContext>,
@@ -53,6 +54,7 @@ pub(crate) enum ChatCommand {
         reply: oneshot::Sender<Result<Value, String>>,
     },
     Steer {
+        from: ClientId,
         text: String,
         paths: Vec<String>,
         context: Vec<ChatContext>,
@@ -633,9 +635,8 @@ pub(crate) fn prompt(
     paths: Vec<String>,
     context: Vec<ChatContext>,
 ) -> CoreResult<()> {
-    let chat = core.chats.running(agent_id)?;
-    chat.feed.prompted(from, &text, &paths);
-    chat.send(ChatCommand::Prompt {
+    core.chats.running(agent_id)?.send(ChatCommand::Prompt {
+        from,
         text,
         paths,
         context,
@@ -651,9 +652,8 @@ pub(crate) async fn steer(
     context: Vec<ChatContext>,
 ) -> CoreResult<String> {
     let (reply, answer) = oneshot::channel();
-    let chat = core.chats.running(agent_id)?;
-    chat.feed.prompted(from, &text, &paths);
-    chat.send(ChatCommand::Steer {
+    core.chats.running(agent_id)?.send(ChatCommand::Steer {
+        from,
         text,
         paths,
         context,

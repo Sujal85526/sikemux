@@ -255,6 +255,40 @@ async fn a_chat_starts_and_streams_a_turn() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_prompt_turned_away_mid_turn_is_not_kept() {
+    let core = TestCore::start();
+    let (sender, mut heard) = core.connect().await;
+    sender
+        .acp_start(chat_launch("agent-c", "workspace-write"))
+        .await
+        .expect("start");
+    sender
+        .acp_prompt("agent-c".into(), "hold 400".into(), Vec::new(), Vec::new())
+        .await
+        .expect("prompt");
+    heard.until_kind(ChatEventKind::TurnStarted).await;
+    sender
+        .acp_prompt("agent-c".into(), "too soon".into(), Vec::new(), Vec::new())
+        .await
+        .expect("prompt");
+    heard.until_kind(ChatEventKind::Error).await;
+    heard.until_kind(ChatEventKind::TurnCompleted).await;
+
+    let (late, _) = core.connect().await;
+    let ChatAttachment::Live { replay, .. } =
+        late.acp_attach("agent-c".into()).await.expect("attach")
+    else {
+        panic!("the chat was not live");
+    };
+    let sent: Vec<_> = replay
+        .iter()
+        .filter(|event| event.kind == ChatEventKind::Prompt)
+        .map(|event| event.payload["text"].clone())
+        .collect();
+    assert_eq!(sent, ["hold 400"]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_client_that_attaches_replays_what_another_watched() {
     let core = TestCore::start();
     let (watcher, mut watched) = core.connect().await;

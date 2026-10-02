@@ -185,6 +185,43 @@ fn run_turn(agent: &Agent, session_id: &str, text: &str) -> &'static str {
             }
             reason
         }
+        // A turn shaped like real work: a thought, then a read, a command and an
+        // edit, each started and finished, then an answer.
+        "work" => {
+            agent.say(
+                session_id,
+                "agent_thought_chunk",
+                "Reading the test before changing anything.",
+            );
+            let calls = [
+                ("read-1", "read", "Read src/app.ts", json!([])),
+                (
+                    "run-1",
+                    "execute",
+                    "pnpm test src/app",
+                    json!([{ "type": "content", "content": { "type": "text", "text": "3 passed" } }]),
+                ),
+                (
+                    "edit-1",
+                    "edit",
+                    "Edit src/app.ts",
+                    json!([{ "type": "diff", "path": "/tmp/src/app.ts", "oldText": "a\nb\n", "newText": "a\nc\nd\n" }]),
+                ),
+            ];
+            for (id, kind, title, content) in calls {
+                agent.update(
+                    session_id,
+                    json!({ "sessionUpdate": "tool_call", "toolCallId": id, "title": title, "kind": kind, "status": "in_progress" }),
+                );
+                std::thread::sleep(Duration::from_millis(argument.unwrap_or(300)));
+                agent.update(
+                    session_id,
+                    json!({ "sessionUpdate": "tool_call_update", "toolCallId": id, "status": "completed", "content": content }),
+                );
+            }
+            say("Done. The test reads the file once now.");
+            "end_turn"
+        }
         "exit" => std::process::exit(argument.unwrap_or(1) as i32),
         _ => {
             say(&format!("echo: {text}"));

@@ -349,6 +349,7 @@ pub(super) async fn run(
                     };
                     match command {
                         ChatCommand::Prompt {
+                            from,
                             text,
                             paths,
                             context,
@@ -360,9 +361,13 @@ pub(super) async fn run(
                                 );
                                 continue;
                             }
+                            let said = (text.clone(), paths.clone());
                             let blocks = match prompt_blocks(text, paths, context, embedded_context)
                             {
-                                Ok(blocks) => blocks,
+                                Ok(blocks) => {
+                                    chat.feed.prompted(from, &said.0, &said.1);
+                                    blocks
+                                }
                                 Err(error) => {
                                     chat.running.store(false, Ordering::Release);
                                     chat.emit(ChatEventKind::Error, error_message(error));
@@ -473,6 +478,7 @@ pub(super) async fn run(
                             let _ = reply.send(result);
                         }
                         ChatCommand::Steer {
+                            from,
                             text,
                             paths,
                             context,
@@ -483,10 +489,12 @@ pub(super) async fn run(
                             } else if !chat.running.load(Ordering::Acquire) {
                                 Ok("promptRequired".to_string())
                             } else {
+                                let said = (text.clone(), paths.clone());
                                 match prompt_blocks(text, paths, context, embedded_context) {
                                     // Answered off the loop, so a stop sent right
                                     // after a steer is never queued behind it.
                                     Ok(blocks) => {
+                                        chat.feed.prompted(from, &said.0, &said.1);
                                         let _ = connection
                                             .send_request(air::Steer::new(
                                                 session_id.clone(),
