@@ -11,7 +11,7 @@
     "ios:release": "node scripts/run.mjs ios production --configuration Release",
     "android": "node scripts/run.mjs android development",
     "android:release": "node scripts/run.mjs android production --variant release",
-    "prebuild": "expo prebuild",
+    "prebuild": "node scripts/run.mjs prebuild",
     "typecheck": "node ../scripts/require-bindings.mjs && node scripts/generate.mjs && tsc --noEmit"
   },
   "dependencies": {
