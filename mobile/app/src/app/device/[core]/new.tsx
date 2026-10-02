@@ -51,6 +51,7 @@ export default function NewChat() {
   const [sheet, setSheet] = useState<'agent' | 'project'>();
   const [starting, setStarting] = useState(false);
   const [problem, setProblem] = useState<string>();
+  const [started, setStarted] = useState<string>();
   const typing = useKeyboardShown();
   const launcher = useMemo(() => workspace?.launchers.find((known) => known.id === launcherId) ?? workspace?.launchers[0], [workspace, launcherId]);
   const project = useMemo(() => workspace?.projects.find((known) => known.id === projectId) ?? workspace?.projects[0], [workspace, projectId]);
@@ -62,14 +63,19 @@ export default function NewChat() {
     setStarting(true);
     setProblem(undefined);
     try {
-      const begun = JSON.parse(
-        await live.connection.request(
-          JSON.stringify({ op: 'startChat', launcher: launcher.id, project: project.id, permissionMode: null, model: null, effort: null }),
-        ),
-      ) as { kind: string; agentId?: string };
-      if (!begun.agentId) throw new Error('The Mac did not start the agent.');
-      await live.connection.request(JSON.stringify({ op: 'acpPrompt', agentId: begun.agentId, text, paths: [], context: [] }));
-      router.replace(`/device/${core}/chat/${begun.agentId}`);
+      let agentId = started;
+      if (!agentId) {
+        const begun = JSON.parse(
+          await live.connection.request(
+            JSON.stringify({ op: 'startChat', launcher: launcher.id, project: project.id, permissionMode: null, model: null, effort: null }),
+          ),
+        ) as { kind: string; agentId?: string };
+        if (!begun.agentId) throw new Error('The Mac did not start the agent.');
+        agentId = begun.agentId;
+        setStarted(agentId);
+      }
+      await live.connection.request(JSON.stringify({ op: 'acpPrompt', agentId, text, paths: [], context: [] }));
+      router.replace(`/device/${core}/chat/${agentId}`);
     } catch (error) {
       setProblem(error instanceof Error ? error.message : String(error));
       setStarting(false);
@@ -90,7 +96,7 @@ export default function NewChat() {
         </View>
         <SafeAreaView edges={typing ? [] : ['bottom']} style={styles.wrap}>
           {project ? (
-            <Pressable style={styles.strip} onPress={() => setSheet('project')} accessibilityRole="button" accessibilityLabel="Project">
+            <Pressable style={styles.strip} onPress={() => setSheet('project')} disabled={Boolean(started)} accessibilityRole="button" accessibilityLabel="Project">
               <Icon name="IconFolder" size={13} color={colors.live} />
               <Text style={styles.stripName}>{project.name}</Text>
               <View style={{ transform: [{ rotate: '90deg' }] }}>
@@ -106,7 +112,7 @@ export default function NewChat() {
                 <Text style={[styles.yoloText, yolo && { color: colors.accent }]}>{yolo ? 'yolo' : 'safe'}</Text>
               </View>
               {launcher ? (
-                <Pressable style={styles.picker} onPress={() => setSheet('agent')} accessibilityRole="button" accessibilityLabel="Agent">
+                <Pressable style={styles.picker} onPress={() => setSheet('agent')} disabled={Boolean(started)} accessibilityRole="button" accessibilityLabel="Agent">
                   <AgentIcon provider={launcher.provider} size={16} />
                   <Text style={styles.pickerText}>{launcher.label}</Text>
                   <View style={{ transform: [{ rotate: '90deg' }], opacity: 0.6 }}>
