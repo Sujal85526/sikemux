@@ -126,6 +126,12 @@ debug = "line-tables-only"
 [profile.dev.package."*"]
 opt-level = 3
 
+# The phone app's build: as fast as release, but a panic in one background
+# task fails that task instead of closing the whole app.
+[profile.mobile]
+inherits = "release"
+panic = "unwind"
+
 [profile.release]
 # Sikemux is latency-sensitive (PTY parsing, Git walks, serialization). The
 # complete app is already small enough that runtime speed wins over a few MB.

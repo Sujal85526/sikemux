@@ -16,6 +16,9 @@ use sikemux_core::pairing::{self, PairError, PairingRequest};
 use sikemux_core::protocol::{CallId, Event, Request, SessionId, WindowCall};
 use sikemux_core::remote;
 
+#[cfg(target_os = "android")]
+mod android;
+
 uniffi::setup_scaffolding!();
 
 /// iroh and the core's client both need a Tokio runtime, which the phone's

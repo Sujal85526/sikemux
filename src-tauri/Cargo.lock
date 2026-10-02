@@ -5675,6 +5675,9 @@ name = "sikemux-mobile"
 version = "0.1.0"
 dependencies = [
  "iroh",
+ "jni 0.22.4",
+ "ndk-context",
+ "rustls-platform-verifier",
  "serde_json",
  "sikemux-core",
  "thiserror 1.0.69",

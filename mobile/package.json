@@ -5,6 +5,8 @@
   "scripts": {
     "native:ios": "pnpm --filter @sikemux/native ubrn:ios",
     "native:android": "pnpm --filter @sikemux/native ubrn:android",
+    "native:ios:release": "pnpm --filter @sikemux/native ubrn:ios:release",
+    "native:android:release": "pnpm --filter @sikemux/native ubrn:android:release",
     "ios": "pnpm --filter sikemux-app ios",
     "android": "pnpm --filter sikemux-app android",
     "start": "pnpm --filter sikemux-app start",

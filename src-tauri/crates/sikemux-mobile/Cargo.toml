@@ -18,3 +18,10 @@ uniffi = "0.31"
 
 [lints.clippy]
 undocumented_unsafe_blocks = "deny"
+
+# iroh's DNS resolver, network watcher and relay certificate check reach the
+# Android runtime through these; android.rs hands them the app's context.
+[target.'cfg(target_os = "android")'.dependencies]
+jni = { version = "0.22", default-features = false }
+ndk-context = "0.1"
+rustls-platform-verifier = "0.7"
