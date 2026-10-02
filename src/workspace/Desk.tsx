@@ -1,8 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { animate } from "../lib/motion";
-import { takeDeskEntrance } from "../state/deskEntrance";
+import { DESK_OPEN_MS, takeDeskEntrance } from "../state/deskEntrance";
 import { browserApi, BLANK_URL, type BrowserBounds, type BrowserHole, type BrowserSnapshot } from "../api/browser";
-import { holdStageMotion, onStageFrame, useNativeViewHoles, useNativeViewsOccluded, useStageMoving, type NativeViewHole } from "../state/nativeViews";
+import { onStageFrame, useNativeViewHoles, useNativeViewsOccluded, useStageMoving, type NativeViewHole } from "../state/nativeViews";
 import type { AgentType, PtyContext, Session, Window as WindowT } from "../state/types";
 import { reportError } from "../state/toast";
 import { AgentIcon, IconChevron, IconPlus, IconRefresh, WindowIcon } from "../ui/Icons";
@@ -66,10 +66,23 @@ function holesOver(placement: Placement, holes: NativeViewHole[]): BrowserHole[]
         .map((hole) => ({ ...hole, x: hole.x - placement.x, y: hole.y - placement.y }));
 }
 
-function sameBounds(a: Placement | null, b: Placement): boolean {
-    return (
-        !!a && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height && a.clipLeft === b.clipLeft && a.clipRight === b.clipRight
-    );
+/** Where the page area sits in the window, less whatever pokes past the stage's sides. */
+function measurePage(host: HTMLElement): Placement {
+    const rect = host.getBoundingClientRect();
+    const stage = host.closest(".window-area")?.getBoundingClientRect();
+    const x = Math.round(rect.left);
+    const width = Math.max(1, Math.round(rect.width));
+    const left = stage ? Math.round(stage.left) : -Infinity;
+    const right = stage ? Math.round(stage.right) : Infinity;
+    const clipLeft = Math.min(width, Math.max(0, left - x));
+    return {
+        x,
+        y: Math.round(rect.top),
+        width,
+        height: Math.max(1, Math.round(rect.height)),
+        clipLeft,
+        clipRight: Math.min(width - clipLeft, Math.max(0, x + width - right)),
+    };
 }
 
 /**
@@ -125,26 +138,13 @@ export function DeskHost({
     );
 }
 
-const ENTRANCE_SLIDE = 16;
-
-/* The agent beside it takes its new width at once, as it does for a rail;
-   only the desk moves. Its page is a native view placed by measuring, so the
-   stage is held as moving for the slide and the page is placed every frame. */
+/* The desk fades in while the split makes room for it, so it is not drawn squeezed at the start. */
 function useDeskEntrance(section: RefObject<HTMLElement | null>, paneId: string): void {
     useLayoutEffect(() => {
         if (!takeDeskEntrance(paneId)) return;
-        const pane = section.current?.closest<HTMLElement>(".pane") ?? section.current;
-        const slide = animate(
-            pane,
-            [
-                { opacity: 0, transform: `translateX(${ENTRANCE_SLIDE}px)` },
-                { opacity: 1, transform: "none" },
-            ],
-            { duration: 500, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" },
-        );
-        if (!slide) return;
-        const release = holdStageMotion();
-        void slide.finished.catch(() => {}).finally(release);
+        animate(section.current?.closest<HTMLElement>(".pane") ?? section.current, [{ opacity: 0 }, { opacity: 1 }], {
+            duration: DESK_OPEN_MS,
+        });
     }, [paneId, section]);
 }
 
@@ -372,53 +372,54 @@ function BrowserPage({
     const forwardShortcut = useShortcutLabel("browser.forward");
     const reloadShortcut = useShortcutLabel("browser.reload");
     const viewportRef = useRef<HTMLDivElement>(null);
-    const measureRef = useRef<() => void>(() => {});
-    const [placement, setPlacement] = useState<Placement | null>(null);
+    const placeRef = useRef<() => void>(() => {});
     const occluded = useNativeViewsOccluded();
     const appHoles = useNativeViewHoles();
     const moving = useStageMoving();
     const activeTab = useMemo(() => snapshot.tabs.find((tab) => tab.id === snapshot.activeTabId) ?? snapshot.tabs[0], [snapshot]);
     const blank = activeTab?.url === BLANK_URL;
-    /* A screen sliding on or off stage is on the window without being the screen
-       the session is on, and its page travels with it rather than waiting off
-       screen for it to land. Only a painting screen may: one parked off stage
-       still measures a rect over the window, and the stage moves for all of them
-       at once. */
-    const travelling = moving && painted && !!placement && placement.clipLeft + placement.clipRight < placement.width;
-    const shown = (visible || travelling) && !hidden && !occluded && !blank && !!activeTab;
+    const hasTab = !!activeTab;
 
     const pageAddress = blank ? "" : (activeTab?.url ?? "");
     const addressFloating = useStore((state) => state.deskAddressOpen === agentId) && visible && !hidden;
 
+    const inputs = { agentId, visible, painted, hidden, occluded, blank, hasTab, appHoles, addressFloating };
+    const inputsRef = useRef(inputs);
+    inputsRef.current = inputs;
+
+    /* The page is placed straight from a measurement, never through React state:
+       while the stage slides that runs every frame, and a render plus an effect
+       in between would leave the page a frame or more behind its pane. */
     useLayoutEffect(() => {
         const host = viewportRef.current;
         if (!host) return;
         let frame = 0;
-        const measure = () => {
+        let sent = "";
+        const place = () => {
             frame = 0;
-            const rect = host.getBoundingClientRect();
-            const stage = host.closest(".window-area")?.getBoundingClientRect();
-            const x = Math.round(rect.left);
-            const width = Math.max(1, Math.round(rect.width));
-            const left = stage ? Math.round(stage.left) : -Infinity;
-            const right = stage ? Math.round(stage.right) : Infinity;
-            const clipLeft = Math.min(width, Math.max(0, left - x));
-            const next = {
-                x,
-                y: Math.round(rect.top),
-                width,
-                height: Math.max(1, Math.round(rect.height)),
-                clipLeft,
-                clipRight: Math.min(width - clipLeft, Math.max(0, x + width - right)),
-            };
-            setPlacement((previous) => (sameBounds(previous, next) ? previous : next));
+            const { agentId, visible, painted, hidden, occluded, blank, hasTab, appHoles, addressFloating } = inputsRef.current;
+            const placement = measurePage(host);
+            /* A screen sliding on or off stage is on the window without being the
+               screen the session is on, and its page travels with it rather than
+               waiting off screen for it to land. Only a painting screen may: one
+               parked off stage still measures a rect over the window, and the stage
+               moves for all of them at once. */
+            const travelling = stageMoving() && painted && placement.clipLeft + placement.clipRight < placement.width;
+            const shown = (visible || travelling) && !hidden && !occluded && !blank && hasTab;
+            const bounds: BrowserBounds | null = shown
+                ? { ...placement, holes: holesOver(placement, appHoles), ...(addressFloating ? { dim: UNDER_ADDRESS_DIM } : {}) }
+                : null;
+            const key = JSON.stringify(bounds);
+            if (key === sent) return;
+            sent = key;
+            void browserApi.setBounds(agentId, bounds).catch(reportError("place browser page"));
         };
         /* Layout settles once per frame; a divider drag fires far more often. */
         const schedule = () => {
-            if (!frame) frame = window.requestAnimationFrame(measure);
+            if (!frame) frame = window.requestAnimationFrame(place);
         };
-        measureRef.current = measure;
-        measure();
+        placeRef.current = place;
+        place();
         const observer = new ResizeObserver(schedule);
         observer.observe(host);
         const scrollers = scrollParents(host);
@@ -434,21 +435,16 @@ function BrowserPage({
         };
     }, []);
 
+    useEffect(() => placeRef.current(), [agentId, visible, painted, hidden, occluded, blank, hasTab, appHoles, addressFloating]);
+
     /* Nothing reports the stage sliding the way a scroll or a resize would, so
        the page area is read again on every frame of the travel, and once more
        where it lands. */
     useEffect(() => {
-        measureRef.current();
+        placeRef.current();
         if (!moving) return;
-        return onStageFrame(() => measureRef.current());
+        return onStageFrame(() => placeRef.current());
     }, [moving]);
-
-    const holesKey = JSON.stringify(placement ? holesOver(placement, appHoles) : []);
-    const holes = useMemo<BrowserHole[]>(() => JSON.parse(holesKey), [holesKey]);
-    useEffect(() => {
-        const dim = addressFloating ? { dim: UNDER_ADDRESS_DIM } : {};
-        void browserApi.setBounds(agentId, shown && placement ? { ...placement, holes, ...dim } : null).catch(reportError("place browser page"));
-    }, [agentId, placement, holes, shown, addressFloating]);
 
     useEffect(
         () => () => {

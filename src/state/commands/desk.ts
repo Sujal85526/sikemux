@@ -17,10 +17,11 @@ import {
     type DeskItem,
 } from "../desks";
 import { reportError } from "../toast";
-import { expectDeskEntrance } from "../deskEntrance";
+import { DESK_OPEN_MS, expectDeskEntrance } from "../deskEntrance";
+import { prefersReducedMotion } from "../../lib/motion";
 import { activeAgentId, shownDeskPaneId } from "../selectors";
-import { collectPanes, makePane, newId, removePane, splitPane } from "../layout";
-import type { Desk } from "../types";
+import { collectPanes, makePane, newId, findSplit, removePane, setSplitSizes, splitPane } from "../layout";
+import type { Desk, LayoutNode, SplitNode } from "../types";
 import { setEditorView } from "./editor";
 import { dirtyPathsForPane, dropDeskPaneState, guardDiscardDirty } from "./shared";
 
@@ -92,7 +93,7 @@ export function showDeskBrowser(agentId: string): void {
  */
 export function openDesk(agentId: string, opts: { focus?: boolean } = {}): void {
     const focus = opts.focus ?? true;
-    let created: string | null = null;
+    let created = null as { paneId: string; windowId: string } | null;
     mutate((d) => {
         const existing = Object.entries(d.deskPanes).find(([, owner]) => owner === agentId);
         const windowId = Object.keys(d.windows).find((id) => collectPanes(d.windows[id].root).some((pane) => pane.id === agentId));
@@ -109,9 +110,63 @@ export function openDesk(agentId: string, opts: { focus?: boolean } = {}): void 
         if (focus) win.activePaneId = pane.id;
         d.deskPanes[pane.id] = agentId;
         d.zoomedPaneId = null;
-        created = pane.id;
+        created = { paneId: pane.id, windowId };
     });
-    if (created) expectDeskEntrance(created);
+    if (!created) return;
+    expectDeskEntrance(created.paneId);
+    widenDesk(created.windowId, created.paneId);
+}
+
+function splitHolding(node: LayoutNode, paneId: string): SplitNode | null {
+    if (node.type === "pane") return null;
+    if (node.children.some((child) => child.type === "pane" && child.id === paneId)) return node;
+    for (const child of node.children) {
+        const found = splitHolding(child, paneId);
+        if (found) return found;
+    }
+    return null;
+}
+
+/* The desk opens the way a divider drag would: it starts as a sliver at the
+   agent's edge and takes its share while the agent gives the same up, so the
+   two read as one movement rather than a snap and a slide. */
+function widenDesk(windowId: string, paneId: string): void {
+    if (prefersReducedMotion()) return;
+    const split = splitHolding(getState().windows[windowId].root, paneId);
+    const index = split?.children.findIndex((child) => child.type === "pane" && child.id === paneId) ?? -1;
+    if (!split || index < 1) return;
+    const target = split.sizes.slice();
+    const start = target.slice();
+    /* Not zero: a saved layout may not hold an empty pane, and this one can be saved mid-way. */
+    const sliver = Math.min(0.01, start[index]);
+    start[index - 1] += start[index] - sliver;
+    start[index] = sliver;
+    let last = start;
+    const at = (t: number) => {
+        const eased = 1 - (1 - t) ** 4;
+        return target.map((size, i) => start[i] + (size - start[i]) * eased);
+    };
+    const begun = performance.now();
+    const step = (now: number) => {
+        const current = findSplitIn(windowId, split.id);
+        /* A divider drag or a closed desk took over, so it stops where it was put. */
+        if (!current || current.sizes.some((size, i) => size !== last[i])) return;
+        const t = Math.min(1, Math.max(0, (now - begun) / DESK_OPEN_MS));
+        last = t === 1 ? target : at(t);
+        mutate((d) => {
+            d.windows[windowId].root = setSplitSizes(d.windows[windowId].root, split.id, last);
+        });
+        if (t < 1) requestAnimationFrame(step);
+    };
+    mutate((d) => {
+        d.windows[windowId].root = setSplitSizes(d.windows[windowId].root, split.id, start);
+    });
+    requestAnimationFrame(step);
+}
+
+function findSplitIn(windowId: string, splitId: string): SplitNode | null {
+    const root = getState().windows[windowId]?.root;
+    return root ? findSplit(root, splitId) : null;
 }
 
 /** Hides the desk. Its files are only held by the editor on screen, so unsaved ones are asked about first. */

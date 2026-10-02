@@ -1,5 +1,7 @@
-/* Only a desk someone just opened slides in. One restored with the window draws in place. */
+/* Only a desk someone just opened animates in. One restored with the window draws in place. */
 const entering = new Set<string>();
+
+export const DESK_OPEN_MS = 600;
 
 export function expectDeskEntrance(paneId: string): void {
     entering.add(paneId);
