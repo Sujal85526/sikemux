@@ -103,7 +103,9 @@ async fn publish(socket: &Path) -> Result<(), Failure> {
         name: "tmp".into(),
         path: std::env::temp_dir(),
     };
-    client.publish_workspace(vec![project], vec![launcher]).await?;
+    client
+        .publish_workspace(vec![project], vec![launcher])
+        .await?;
     println!("published the fake agent");
     Ok(())
 }
