@@ -89,11 +89,13 @@ export function Button({
   title,
   onPress,
   kind = 'neutral',
+  disabled,
   style,
 }: {
   title: string;
   onPress?: () => void;
   kind?: ButtonKind;
+  disabled?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
   const styles = useStyles(makeStyles);
@@ -102,8 +104,10 @@ export function Button({
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       accessibilityRole="button"
-      style={({ pressed }) => [styles.button, fill[kind], pressed && styles.pressed, style]}>
+      accessibilityState={{ disabled }}
+      style={({ pressed }) => [styles.button, fill[kind], pressed && styles.pressed, disabled && styles.disabled, style]}>
       <Text style={[styles.buttonText, ink[kind]]}>{title}</Text>
     </Pressable>
   );
@@ -331,6 +335,7 @@ const makeStyles = (colors: Palette) => {
     button: { height: 50, borderRadius: radius.row, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
     buttonText: { fontFamily: fonts.uiSemibold, fontSize: 16 },
     pressed: { opacity: 0.75 },
+    disabled: { opacity: 0.5 },
 
     sectionLabel: { ...type.label, paddingTop: 20, paddingBottom: 8, paddingHorizontal: 6 },
     group: { borderRadius: radius.card, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.raised, overflow: 'hidden' },
