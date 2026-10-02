@@ -66,7 +66,7 @@ export function AccountSheet({ visible, onClose }: { visible: boolean; onClose: 
           </Text>
         </View>
       </View>
-      <Text style={styles.note}>Signing out takes this phone off your account and forgets every Mac paired with it.</Text>
+      <Text style={styles.note}>Signing out takes this phone off your account and forgets every host paired with it.</Text>
       <Button kind="danger" title={leaving ? 'Signing out…' : 'Sign out'} disabled={leaving} onPress={() => void leave()} />
     </Sheet>
   );

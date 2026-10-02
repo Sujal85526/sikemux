@@ -9,14 +9,14 @@ import { failure, pair, type Failure } from '@/devices/pairing';
 import { Button, CodeTiles, Nav, Screen, useBottomGap, Working } from '@/ui/parts';
 import { fonts, type Palette, radius, typeFor, useStyles, useType } from '@/ui/theme';
 
-/** How long the Mac keeps a pairing request open (sikemux_core::pairing::APPROVAL_TIMEOUT). */
+/** How long the host keeps a pairing request open (sikemux_core::pairing::APPROVAL_TIMEOUT). */
 const APPROVAL_SECONDS = 120;
 
 const EXPIRED: Failure = {
-  title: 'The Mac did not answer',
-  detail: 'Pairing waits two minutes for someone at the Mac. Scan the code again to retry.',
+  title: 'The host did not answer',
+  detail: 'Pairing waits two minutes for someone at the host. Scan the code again to retry.',
 };
-const BROKEN: Failure = { title: 'That link is incomplete', detail: 'Scan the code on the Mac, or copy its pairing link again.' };
+const BROKEN: Failure = { title: 'That link is incomplete', detail: 'Scan the code on the host, or copy its pairing link again.' };
 
 function clock(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
@@ -72,18 +72,18 @@ export default function Pair() {
     <Screen>
       <Nav back={problem ? 'Back' : 'Cancel'} onBack={leave} />
       <View style={styles.block}>
-        <Text style={styles.title}>{problem ? problem.title : confirmed ? 'Approve on your Mac' : 'Pair with this Mac?'}</Text>
+        <Text style={styles.title}>{problem ? problem.title : confirmed ? 'Approve on your host' : 'Pair with this host?'}</Text>
         <Text style={styles.detail}>
           {problem
             ? problem.detail
             : confirmed
-              ? 'Check the Mac shows this code, then choose what this phone may do.'
-              : 'Only go on if your Mac shows this code right now.'}
+              ? 'Check the host shows this code, then choose what this phone may do.'
+              : 'Only go on if your host shows this code right now.'}
         </Text>
         <View style={styles.tiles}>
           <CodeTiles code={code} state={problem ? 'failed' : 'locked'} />
         </View>
-        {confirmed || problem ? null : <Text style={[type.mono, styles.key]}>Mac {shortKey(core)}</Text>}
+        {confirmed || problem ? null : <Text style={[type.mono, styles.key]}>Host {shortKey(core)}</Text>}
       </View>
       <View style={[styles.footer, { paddingBottom: bottom }]}>
         {problem ? (
@@ -91,7 +91,7 @@ export default function Pair() {
         ) : confirmed ? (
           <View style={styles.waiting}>
             <Working />
-            <Text style={styles.waitingText}>Waiting for your Mac</Text>
+            <Text style={styles.waitingText}>Waiting for your host</Text>
             <Text style={type.mono}>{clock(left)}</Text>
           </View>
         ) : (

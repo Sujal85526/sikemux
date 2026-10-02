@@ -183,7 +183,7 @@ export function Composer({
   placeholder: string;
   permissionMode: string;
   watchOnly: boolean;
-  /** The Mac is out of reach, so a message is kept until it is back. */
+  /** The host is out of reach, so a message is kept until it is back. */
   offline: boolean;
   onSend: (text: string) => void;
   onStop: () => void;
@@ -209,7 +209,7 @@ export function Composer({
       <SafeAreaView edges={typing ? [] : ['bottom']} style={styles.wrap}>
         <View style={[styles.composer, styles.watch]}>
           <Icon name="IconEye" size={17} color={colors.inkDim} />
-          <Text style={styles.watchText}>Watching. This phone can answer permission requests; the Mac can give it full access.</Text>
+          <Text style={styles.watchText}>Watching. This phone can answer permission requests; the host can give it full access.</Text>
         </View>
       </SafeAreaView>
     );

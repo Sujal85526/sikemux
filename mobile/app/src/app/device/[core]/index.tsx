@@ -209,11 +209,11 @@ export default function Device() {
   const channel = channelLabel(device?.channel);
   const behind = live.status === 'closed' ? live.outdated : undefined;
   const unreachable =
-    behind === 'mac'
-      ? { title: 'This Mac needs a newer Sikemux', body: 'Update Sikemux on the Mac, then come back here.' }
+    behind === 'host'
+      ? { title: 'This host needs a newer Sikemux', body: 'Update Sikemux on the host, then come back here.' }
       : behind === 'phone'
-        ? { title: 'Update this app', body: 'This Mac runs a newer Sikemux than this app understands.' }
-        : { title: "Can't reach this Mac", body: 'It may be asleep, offline, or have remote access turned off.' };
+        ? { title: 'Update this app', body: 'This host runs a newer Sikemux than this app understands.' }
+        : { title: "Can't reach this host", body: 'It may be asleep, offline, or have remote access turned off.' };
   const snapshot = live.snapshot;
   const [picking, setPicking] = useState(false);
   const [options, setOptions] = useState(false);
@@ -237,7 +237,7 @@ export default function Device() {
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.name} numberOfLines={1}>
-            {device ? deviceName(device) : 'Mac'}
+            {device ? deviceName(device) : 'Host'}
           </Text>
           <Text style={type.meta} numberOfLines={1}>
             {[channel, behind ? 'Needs an update' : away ? 'Asleep or offline' : snapshot ? summary(snapshot) : null]

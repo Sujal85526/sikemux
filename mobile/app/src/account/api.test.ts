@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { accountMacs, AccountProblem, registerPhone, removePhone } from './api';
+import { accountHosts, AccountProblem, registerPhone, removePhone } from './api';
 import { errorCode, explain } from './clerkErrors';
 
 const identity = vi.hoisted(() => ({
@@ -84,12 +84,12 @@ describe('removePhone', () => {
   });
 });
 
-describe('accountMacs', () => {
+describe('accountHosts', () => {
   it('lists the hosts on the account', async () => {
     answers.push({ status: 200, body: { devices: [{ key: 'cd'.repeat(32), role: 'host', name: 'Studio' }] } });
-    const macs = await accountMacs(token);
+    const hosts = await accountHosts(token);
     expect(calls[0]?.url).toBe('https://api.test/v1/devices?role=host');
-    expect(macs.map((mac) => mac.name)).toEqual(['Studio']);
+    expect(hosts.map((host) => host.name)).toEqual(['Studio']);
   });
 });
 

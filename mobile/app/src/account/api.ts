@@ -49,7 +49,7 @@ export async function removePhone(token: TokenSource): Promise<void> {
   await call<null>(token, `/v1/devices/${device.id()}`, { method: 'DELETE' });
 }
 
-/** The Macs signed in to the account. */
-export async function accountMacs(token: TokenSource): Promise<Device[]> {
+/** The hosts signed in to the account. */
+export async function accountHosts(token: TokenSource): Promise<Device[]> {
   return (await call<DeviceList>(token, '/v1/devices?role=host')).devices;
 }

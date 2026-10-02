@@ -7,21 +7,21 @@ import { updateDevice, type PairedDevice } from './paired';
 export type DeviceBackdrop = { texture: boolean; image?: string };
 
 const fetching = new Set<string>();
-/** Pictures the Mac could not hand over; asking again on every change of its view would not help. */
+/** Pictures the host could not hand over; asking again on every change of its view would not help. */
 const missing = new Set<string>();
 
 function folder(core: string): Directory {
   return new Directory(Paths.document, 'backdrops', core.slice(0, 16));
 }
 
-/** Deletes the picture saved for a Mac's backdrop. */
+/** Deletes the picture saved for a host's backdrop. */
 export function forgetBackdrop(saved: PairedDevice['backdrop']) {
   if (!saved?.image) return;
   const file = new File(saved.image.uri);
   if (file.exists) file.delete();
 }
 
-/** What a Mac draws behind its panes: as it publishes it, or as last seen. Its picture is fetched only when it changes. */
+/** What a host draws behind its panes: as it publishes it, or as last seen. Its picture is fetched only when it changes. */
 export function useDeviceBackdrop(core: string): DeviceBackdrop {
   const live = useLive(core);
   const { devices } = useDevices();

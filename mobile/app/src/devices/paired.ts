@@ -15,14 +15,14 @@ export type PairedDevice = {
   channel?: BuildChannel;
   /** The project the device screen is scoped to; absent shows them all. */
   project?: string;
-  /** The Mac's theme colours as last seen, so its screens open in them before it connects. */
+  /** The host's theme colours as last seen, so its screens open in them before it connects. */
   palette?: Record<string, string>;
-  /** The Mac's pane backdrop as last seen, its picture saved on the phone. */
+  /** The host's pane backdrop as last seen, its picture saved on the phone. */
   backdrop?: { texture: boolean; image?: { id: string; uri: string } };
   lastSeen?: number;
 };
 
-/** Nothing here is secret (a Mac's key is public), so it lives in a file rather than the Keychain. */
+/** Nothing here is secret (a host's key is public), so it lives in a file rather than the Keychain. */
 const store = new File(Paths.document, 'paired-devices.json');
 
 let cached: PairedDevice[] | undefined;
@@ -53,7 +53,7 @@ export function rememberDevice(device: PairedDevice): Promise<void> {
   return change((devices) => [...devices.filter((known) => known.core !== device.core), device]);
 }
 
-/** Changes a Mac still paired; one forgotten in the meantime stays forgotten. */
+/** Changes a host still paired; one forgotten in the meantime stays forgotten. */
 export function updateDevice(core: string, update: Partial<PairedDevice>): Promise<void> {
   return change((devices) => devices.map((device) => (device.core === core ? { ...device, ...update } : device)));
 }
@@ -67,10 +67,10 @@ export function shortKey(key: string): string {
 }
 
 export function deviceName(device: Pick<PairedDevice, 'name' | 'core'>): string {
-  return device.name ?? `Mac ${shortKey(device.core)}`;
+  return device.name ?? `Host ${shortKey(device.core)}`;
 }
 
-/** Builds other than the stable release are named, since one Mac pairs once per channel. */
+/** Builds other than the stable release are named, since one host pairs once per channel. */
 export function channelLabel(channel: BuildChannel | undefined): string | null {
   if (channel === 'dev') return 'Dev';
   if (channel === 'nightly') return 'Nightly';

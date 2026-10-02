@@ -109,7 +109,7 @@ export default function NewChat() {
           {launcher ? <AgentIcon provider={launcher.provider} size={40} /> : null}
           <Text style={styles.welcomeTitle}>{project?.name ?? 'New chat'}</Text>
           {workspace && !workspace.launchers.length ? (
-            <Text style={[type.meta, { textAlign: 'center' }]}>Open Sikemux on the Mac so it can offer its agents.</Text>
+            <Text style={[type.meta, { textAlign: 'center' }]}>Open Sikemux on the host so it can offer its agents.</Text>
           ) : null}
           {problem ? <Text style={styles.problem}>{problem}</Text> : null}
         </View>

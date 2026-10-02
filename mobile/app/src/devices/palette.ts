@@ -17,7 +17,7 @@ function stable(colours: Record<string, string> | undefined): Palette {
   return palette;
 }
 
-/** The theme of the Mac a device screen belongs to: as it publishes it, or as last seen. */
+/** The theme of the host a device screen belongs to: as it publishes it, or as last seen. */
 export function useDevicePalette(core: string): Palette {
   const live = useLive(core);
   const { devices } = useDevices();

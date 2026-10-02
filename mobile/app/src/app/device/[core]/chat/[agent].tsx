@@ -62,7 +62,7 @@ export default function Chat() {
   const status =
     chat.attached === 'missing' ? (
       <View style={styles.missing}>
-        <Text style={styles.gone}>{chat.problem ? capitalised(chat.problem) : 'This chat is no longer running on the Mac.'}</Text>
+        <Text style={styles.gone}>{chat.problem ? capitalised(chat.problem) : 'This chat is no longer running on the host.'}</Text>
         <Button title="Try again" onPress={chat.retry} />
       </View>
     ) : chat.attached === 'attaching' ? (

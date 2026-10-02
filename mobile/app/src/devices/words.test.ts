@@ -18,7 +18,7 @@ function chat(overrides: Partial<ChatInfo> = {}): ChatInfo {
 }
 
 describe('providerName', () => {
-  it('names the agents the Mac knows', () => {
+  it('names the agents the host knows', () => {
     expect(providerName('claude')).toBe('Claude Code');
     expect(providerName('omp')).toBe('OMP');
   });

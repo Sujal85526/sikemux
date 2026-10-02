@@ -45,7 +45,7 @@ export const defaultPalette = {
 
 export type Palette = Record<keyof typeof defaultPalette, string>;
 
-/** The palette a Mac published, over the default for any colour it left out. */
+/** The palette a host published, over the default for any colour it left out. */
 export function paletteFrom(published: Readonly<Record<string, string>> | undefined): Palette {
   if (!published) return defaultPalette;
   const palette: Palette = { ...defaultPalette };
@@ -74,7 +74,7 @@ export function isLight(palette: Palette): boolean {
 
 const PaletteContext = createContext<Palette>(defaultPalette);
 
-/** Draws everything under it in a palette; a device's screens use that Mac's. */
+/** Draws everything under it in a palette; a device's screens use that host's. */
 export const PaletteProvider = PaletteContext.Provider;
 
 export function useColors(): Palette {

@@ -11,7 +11,7 @@ beforeEach(async () => {
   paired = await import('./paired');
 });
 
-describe('the paired Macs', () => {
+describe('the paired hosts', () => {
   it('keeps every change made at once', async () => {
     await paired.rememberDevice({ core: 'a', access: 'full', pairedAt: 1 });
     await Promise.all([
@@ -25,7 +25,7 @@ describe('the paired Macs', () => {
     ]);
   });
 
-  it('does not bring back a Mac forgotten while an update was on its way', async () => {
+  it('does not bring back a host forgotten while an update was on its way', async () => {
     await paired.rememberDevice({ core: 'a', access: 'full', pairedAt: 1 });
     await Promise.all([paired.forgetDevice('a'), paired.updateDevice('a', { name: 'late' })]);
     expect(await paired.pairedDevices()).toEqual([]);

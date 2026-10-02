@@ -62,27 +62,27 @@ afterEach(() => {
 });
 
 describe('the hub', () => {
-  it('opens one connection however many screens watch a Mac at once', async () => {
-    hub.watch('mac');
-    hub.watch('mac');
-    hub.watch('mac');
+  it('opens one connection however many screens watch a host at once', async () => {
+    hub.watch('host');
+    hub.watch('host');
+    hub.watch('host');
     await vi.waitFor(() => expect(fake.device.connect).toHaveBeenCalledTimes(1));
     fake.calls[0].settle(new FakeConnection());
-    await vi.waitFor(() => expect(hub.liveOf('mac').status).toBe('open'));
-    hub.watch('mac');
+    await vi.waitFor(() => expect(hub.liveOf('host').status).toBe('open'));
+    hub.watch('host');
     expect(fake.device.connect).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps the view the Mac sends before the connection is handed over', async () => {
-    hub.watch('mac');
+  it('keeps the view the host sends before the connection is handed over', async () => {
+    hub.watch('host');
     await vi.waitFor(() => expect(fake.calls).toHaveLength(1));
     fake.calls[0].listener.events([CoreEvent.View.new({ view: VIEW })] as never);
     fake.calls[0].settle(new FakeConnection());
-    await vi.waitFor(() => expect(hub.liveOf('mac').status).toBe('open'));
-    expect(hub.liveOf('mac').snapshot).toBe(VIEW);
+    await vi.waitFor(() => expect(hub.liveOf('host').status).toBe('open'));
+    expect(hub.liveOf('host').snapshot).toBe(VIEW);
   });
 
-  it('stops trying a Mac that forgot this phone, and tries an unreachable one again', async () => {
+  it('stops trying a host that forgot this phone, and tries an unreachable one again', async () => {
     hub.watch('forgot');
     hub.watch('away');
     await vi.waitFor(() => expect(fake.calls).toHaveLength(2));
@@ -96,39 +96,39 @@ describe('the hub', () => {
   });
 
   it('hands chat events over in batches, and one failing screen does not starve the others', async () => {
-    hub.watch('mac');
+    hub.watch('host');
     await vi.waitFor(() => expect(fake.calls).toHaveLength(1));
     fake.calls[0].settle(new FakeConnection());
     const heard: number[] = [];
-    hub.onChatEvents('mac', () => {
+    hub.onChatEvents('host', () => {
       throw new Error('a broken screen');
     });
-    hub.onChatEvents('mac', (deliveries) => heard.push(deliveries.length));
+    hub.onChatEvents('host', (deliveries) => heard.push(deliveries.length));
     const chat = (seq: bigint) => CoreEvent.Chat.new({ agentId: 'a', seq, eventJson: '{}' });
     fake.calls[0].listener.events([chat(1n), chat(2n), chat(3n)] as never);
     expect(heard).toEqual([3]);
   });
 
-  it('asks the Mac to unpair when forgotten, and never reconnects to it', async () => {
-    hub.watch('mac');
+  it('asks the host to unpair when forgotten, and never reconnects to it', async () => {
+    hub.watch('host');
     await vi.waitFor(() => expect(fake.calls).toHaveLength(1));
     const connection = new FakeConnection();
     fake.calls[0].settle(connection);
-    await vi.waitFor(() => expect(hub.liveOf('mac').status).toBe('open'));
-    await hub.forget('mac');
+    await vi.waitFor(() => expect(hub.liveOf('host').status).toBe('open'));
+    await hub.forget('host');
     expect(connection.unpair).toHaveBeenCalled();
     expect(connection.closed).toBe(true);
-    hub.retry('mac');
+    hub.retry('host');
     await vi.advanceTimersByTimeAsync(60_000);
     expect(fake.device.connect).toHaveBeenCalledTimes(1);
   });
 
   it('lets connections go once the app has been away a while, and comes back with it', async () => {
-    hub.watch('mac');
+    hub.watch('host');
     await vi.waitFor(() => expect(fake.calls).toHaveLength(1));
     const connection = new FakeConnection();
     fake.calls[0].settle(connection);
-    await vi.waitFor(() => expect(hub.liveOf('mac').status).toBe('open'));
+    await vi.waitFor(() => expect(hub.liveOf('host').status).toBe('open'));
 
     AppState.emit('background');
     await vi.advanceTimersByTimeAsync(2_000);

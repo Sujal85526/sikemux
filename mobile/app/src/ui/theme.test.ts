@@ -3,11 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { defaultPalette, isLight, paletteFrom, translucent } from '@/ui/theme';
 
 describe('paletteFrom', () => {
-  it('is the default palette when the Mac published none', () => {
+  it('is the default palette when the host published none', () => {
     expect(paletteFrom(undefined)).toBe(defaultPalette);
   });
 
-  it("takes the Mac's colours over the default", () => {
+  it("takes the host's colours over the default", () => {
     const palette = paletteFrom({ accent: '#00ff00', ground: '#ffffff' });
     expect(palette.accent).toBe('#00ff00');
     expect(palette.ground).toBe('#ffffff');

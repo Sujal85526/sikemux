@@ -13,7 +13,7 @@ function home(path: string): string {
 type Props = {
   visible: boolean;
   onClose: () => void;
-  /** The Mac the projects are open on, named beside the title. */
+  /** The host the projects are open on, named beside the title. */
   device?: string;
   projects: ProjectInfo[];
   /** The chosen project's id, or null for every project. */
@@ -25,7 +25,7 @@ type Props = {
   tail?: (project: ProjectInfo) => ReactNode;
 };
 
-/** The Mac's project switcher: the projects open in its app, searched by name or path. */
+/** The host's project switcher: the projects open in its app, searched by name or path. */
 export function ProjectSheet({ visible, onClose, device, projects, chosen, onChoose, all, tail }: Props) {
   const colors = useColors();
   const styles = useStyles(makeStyles);

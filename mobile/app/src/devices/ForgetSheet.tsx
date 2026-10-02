@@ -10,7 +10,7 @@ import { forgetBackdrop } from './backdrop';
 import { forget } from './hub';
 import { deviceName, type PairedDevice } from './paired';
 
-/** The device screen's options: for now, forgetting the Mac. */
+/** The device screen's options: for now, forgetting the host. */
 export function ForgetSheet({ device, visible, onClose }: { device: PairedDevice; visible: boolean; onClose: () => void }) {
   const styles = useStyles(makeStyles);
   const type = useType();
@@ -47,13 +47,13 @@ export function ForgetSheet({ device, visible, onClose }: { device: PairedDevice
           {name}
         </Text>
         <Text style={type.body}>
-          Forgetting removes this Mac from the phone and, if it can be reached, removes this phone from the Mac&apos;s paired devices. To
+          Forgetting removes this host from the phone and, if it can be reached, removes this phone from the host&apos;s paired devices. To
           use it again, pair with its code.
         </Text>
         {problem ? <Text style={styles.problem}>{problem}</Text> : null}
         <Button
           kind="danger"
-          title={forgetting ? 'Forgetting…' : 'Forget this Mac'}
+          title={forgetting ? 'Forgetting…' : 'Forget this host'}
           onPress={leave}
           disabled={forgetting}
           style={styles.button}

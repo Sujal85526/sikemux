@@ -10,7 +10,7 @@ import { useColors, type Palette } from './theme';
 import { uploadPicture } from './picture';
 import { vertexShaderSource } from './vertexShader.generated';
 
-/** What the Mac a screen belongs to draws behind its panes; absent outside a device's screens. */
+/** What the host a screen belongs to draws behind its panes; absent outside a device's screens. */
 export const BackdropContext = createContext<DeviceBackdrop | undefined>(undefined);
 
 /** Every backdrop reads one clock, so the grain carries on across screens instead of restarting. */

@@ -18,7 +18,7 @@ WebBrowser.maybeCompleteAuthSession();
 
 type Provider = 'oauth_google' | 'oauth_github';
 
-// Shown before any Mac is paired, so it is drawn in the default theme.
+// Shown before any host is paired, so it is drawn in the default theme.
 const type = typeFor(colors);
 
 /** What the app is for, before there is anything of the person's to show: the rail, drifting past. */
@@ -134,7 +134,7 @@ export function Welcome() {
           <Text style={styles.markText}>Sikemux</Text>
         </View>
         <Text style={styles.title}>Your agents,{'\n'}on your phone.</Text>
-        <Text style={styles.body}>Watch them work, answer what they ask, and open the Mac&apos;s terminals.</Text>
+        <Text style={styles.body}>Watch them work, answer what they ask, and open the host&apos;s terminals.</Text>
       </View>
       <View style={[styles.actions, { paddingBottom: bottom }]}>
         <Button

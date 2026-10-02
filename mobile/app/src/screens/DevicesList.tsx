@@ -5,7 +5,7 @@ import { useUser } from '@clerk/expo';
 import type { Device } from '@protocol';
 
 import { AccountSheet } from '@/account/AccountSheet';
-import { useAccountMacs } from '@/account/session';
+import { useAccountHosts } from '@/account/session';
 import { pasteFoundLink } from '@/devices/foundLinks';
 
 import type { Snapshot } from '@/core/protocol';
@@ -37,7 +37,7 @@ function DeviceCard({ device }: { device: PairedDevice }) {
   const channel = channelLabel(device.channel);
   const behind = live.status === 'closed' ? live.outdated : undefined;
   const meta = behind
-    ? behind === 'mac'
+    ? behind === 'host'
       ? 'Needs a newer Sikemux'
       : 'Update this app to connect'
     : away
@@ -95,16 +95,16 @@ function DeviceCard({ device }: { device: PairedDevice }) {
   );
 }
 
-/** A Mac signed in to the same account that this phone has not paired with: it pairs with that Mac's code. */
-function AccountMacCard({ mac }: { mac: Device }) {
+/** A host signed in to the same account that this phone has not paired with: it pairs with that host's code. */
+function AccountHostCard({ host }: { host: Device }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
-  const channel = channelLabel(mac.channel);
+  const channel = channelLabel(host.channel);
   return (
     <Pressable
-      onPress={() => router.push({ pathname: '/pair-code', params: { core: mac.key, name: mac.name } })}
+      onPress={() => router.push({ pathname: '/pair-code', params: { core: host.key, name: host.name } })}
       accessibilityRole="button"
-      accessibilityHint="Pairs with this Mac's code"
+      accessibilityHint="Pairs with this host's code"
       style={({ pressed }) => [styles.card, styles.away, pressed && { opacity: 0.85 }]}>
       <View style={styles.head}>
         <View style={styles.glyph}>
@@ -112,7 +112,7 @@ function AccountMacCard({ mac }: { mac: Device }) {
         </View>
         <View style={{ flex: 1 }}>
           <Text style={[styles.name, { color: colors.tertiary }]} numberOfLines={1}>
-            {mac.name}
+            {host.name}
           </Text>
           <Text style={styles.meta} numberOfLines={1}>
             {channel ? `${channel} · ` : ''}On your account · not paired yet
@@ -128,11 +128,11 @@ function Empty() {
   const styles = useStyles(makeStyles);
   return (
     <View style={styles.empty}>
-      <Text style={styles.emptyTitle}>No Macs yet</Text>
+      <Text style={styles.emptyTitle}>No hosts yet</Text>
       <Text style={styles.emptyBody}>
-        In Sikemux on your Mac, open Settings → Devices and sign in to this account, or pair with the code it shows.
+        In Sikemux on your host, open Settings → Devices and sign in to this account, or pair with the code it shows.
       </Text>
-      <Button kind="primary" title="Scan the code on your Mac" onPress={() => router.push('/scan')} style={styles.emptyButton} />
+      <Button kind="primary" title="Scan the code on your host" onPress={() => router.push('/scan')} style={styles.emptyButton} />
       <Pressable onPress={() => pasteFoundLink()} style={styles.paste} accessibilityRole="button">
         <Text style={styles.pasteText}>Paste a pairing link</Text>
       </Pressable>
@@ -146,8 +146,8 @@ export function DevicesList({ devices }: { devices: PairedDevice[] }) {
   const bottom = useBottomGap();
   const { user } = useUser();
   const [account, setAccount] = useState(false);
-  const macs = useAccountMacs();
-  const unpaired = macs.filter((mac) => !devices.some((device) => device.core === mac.key));
+  const hosts = useAccountHosts();
+  const unpaired = hosts.filter((host) => !devices.some((device) => device.core === host.key));
   return (
     <Screen>
       <View style={styles.nav}>
@@ -159,8 +159,8 @@ export function DevicesList({ devices }: { devices: PairedDevice[] }) {
           {devices.map((device) => (
             <DeviceCard key={device.core} device={device} />
           ))}
-          {unpaired.map((mac) => (
-            <AccountMacCard key={mac.key} mac={mac} />
+          {unpaired.map((host) => (
+            <AccountHostCard key={host.key} host={host} />
           ))}
         </ScrollView>
       ) : (

@@ -6,7 +6,7 @@ import { useDevicePalette } from '@/devices/palette';
 import { BackdropContext } from '@/ui/Backdrop';
 import { isLight, PaletteProvider } from '@/ui/theme';
 
-/** A Mac's screens, drawn in that Mac's theme and over its pane backdrop. */
+/** A host's screens, drawn in that host's theme and over its pane backdrop. */
 export default function DeviceLayout() {
   const { core } = useLocalSearchParams<{ core: string }>();
   const palette = useDevicePalette(core);

@@ -7,10 +7,10 @@ import { CodeEntry } from '@/ui/CodeEntry';
 import { Nav, Screen } from '@/ui/parts';
 import { type Palette, typeFor, useStyles } from '@/ui/theme';
 
-/** The code for a Mac this phone already knows the key of, as one on the same account. */
+/** The code for a host this phone already knows the key of, as one on the same account. */
 export default function PairCode() {
   const styles = useStyles(makeStyles);
-  const { core = '', name = 'your Mac' } = useLocalSearchParams<{ core?: string; name?: string }>();
+  const { core = '', name = 'your host' } = useLocalSearchParams<{ core?: string; name?: string }>();
   const [code, setCode] = useState('');
 
   const type = (typed: string) => {
@@ -23,7 +23,7 @@ export default function PairCode() {
       <Nav back="Back" />
       <View style={styles.block}>
         <Text style={styles.title}>Enter the code from {name}</Text>
-        <Text style={styles.detail}>On that Mac, open Settings → Devices and choose Pair a device.</Text>
+        <Text style={styles.detail}>On that host, open Settings → Devices and choose Pair a device.</Text>
         <View style={styles.tiles}>
           <CodeEntry code={code} onChange={type} />
         </View>

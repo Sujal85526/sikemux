@@ -62,9 +62,9 @@ export type ChatView = {
   /** Messages rebuilt from the replay, which carries no times. */
   replayed: ReadonlySet<string>;
   attached: 'attaching' | 'live' | 'missing';
-  /** The Mac is reachable, so what the person sends can arrive. */
+  /** The host is reachable, so what the person sends can arrive. */
   connected: boolean;
-  /** Why the chat could not be opened, in the Mac's words. */
+  /** Why the chat could not be opened, in the host's words. */
   problem: string | null;
   queued: string | null;
   send: (text: string) => void;
@@ -74,7 +74,7 @@ export type ChatView = {
   retry: () => void;
 };
 
-const TOO_LONG = 'This chat is longer than the Mac keeps for the phone. Open it on the Mac to carry on.';
+const TOO_LONG = 'This chat is longer than the host keeps for the phone. Open it on the host to carry on.';
 
 export function useChat(core: string, agentId: string): ChatView {
   const live = useLive(core);
@@ -142,7 +142,7 @@ export function useChat(core: string, agentId: string): ChatView {
       else take(mine);
     });
 
-    // A chat the Mac put to sleep starts again first; one already running answers at once.
+    // A chat the host put to sleep starts again first; one already running answers at once.
     connection
       .wakeChat(agentId)
       .then(() => connection.attachChat(agentId, mark.current))
@@ -198,7 +198,7 @@ export function useChat(core: string, agentId: string): ChatView {
 
   const withConnection = useCallback(() => {
     const open = connectionRef.current;
-    if (!open) throw new Error('the Mac is not connected');
+    if (!open) throw new Error('the host is not connected');
     return open;
   }, []);
 
@@ -250,7 +250,7 @@ export function useChat(core: string, agentId: string): ChatView {
       Promise.resolve()
         .then(() => withConnection().answerPermission(agentId, requestId, optionId ?? undefined))
         .then(() => change({ type: 'apply', actions: [{ type: 'permission_cleared', requestId }] }))
-        .catch((error: unknown) => fail('The answer did not reach the Mac', error));
+        .catch((error: unknown) => fail('The answer did not reach the host', error));
     },
     [agentId, fail, withConnection],
   );

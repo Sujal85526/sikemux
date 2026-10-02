@@ -14,10 +14,10 @@ export type {
 } from '@sikemux/native';
 export { ChatState, SessionKind } from '@sikemux/native';
 
-/** Everything the phone shows of one Mac, as it last sent it. */
+/** Everything the phone shows of one host, as it last sent it. */
 export type Snapshot = DeviceView;
 
-/** Kept with the paired Mac, so it is a name rather than the native enum's number. */
+/** Kept with the paired host, so it is a name rather than the native enum's number. */
 export type BuildChannel = 'dev' | 'nightly' | 'stable';
 
 export function channelName(channel: NativeChannel): BuildChannel {

@@ -47,7 +47,7 @@ export default function Scan() {
         <Text style={styles.hint}>
           {permission && !permission.granted && !permission.canAskAgain
             ? 'Allow the camera for Sikemux in Settings, or paste the pairing link.'
-            : 'On your Mac, open Settings → Devices and point the camera at the code.'}
+            : 'On your host, open Settings → Devices and point the camera at the code.'}
         </Text>
       </View>
       <SafeAreaView edges={['top']} style={styles.top}>

@@ -12,15 +12,15 @@ export type Live =
   | { status: 'closed'; problem: string; outdated?: Outdated; unpaired?: boolean; snapshot?: Snapshot };
 
 /** Which side needs a newer Sikemux before the two can talk. */
-export type Outdated = 'mac' | 'phone';
+export type Outdated = 'host' | 'phone';
 
-/** One of a chat's events as the Mac numbered it. */
+/** One of a chat's events as the host numbered it. */
 export type ChatDelivery = { agentId: string; seq: bigint; eventJson: string };
 
 /** A device nobody is looking at keeps its connection this long, for a quick return. */
 const LINGER_MS = 30_000;
 const RETRY_MS = [1000, 3000, 8000, 15_000, 30_000];
-/** A Mac that does not answer the unpair in this time is forgotten on the phone anyway. */
+/** A host that does not answer the unpair in this time is forgotten on the phone anyway. */
 const UNPAIR_WAIT_MS = 3000;
 /** Glancing at another app keeps the connections; staying away longer lets them go. */
 const AWAY_MS = 10_000;
@@ -72,17 +72,17 @@ function set(found: Entry, live: Live) {
 
 function outdated(error: unknown): Outdated | undefined {
   if (!MobileError.Outdated.instanceOf(error)) return undefined;
-  return error.inner.macIsOlder ? 'mac' : 'phone';
+  return error.inner.macIsOlder ? 'host' : 'phone';
 }
 
 export function problem(error: unknown): string {
   if (MobileError.Refused.instanceOf(error)) return error.inner.message;
   if (MobileError.Connection.instanceOf(error)) return error.inner.message;
-  if (MobileError.Unpaired.instanceOf(error)) return 'This Mac no longer knows this phone. Pair with it again.';
+  if (MobileError.Unpaired.instanceOf(error)) return 'This host no longer knows this phone. Pair with it again.';
   return error instanceof Error ? error.message : String(error);
 }
 
-/** Macs left for good; a screen still open on one must not reconnect to it. */
+/** Hosts left for good; a screen still open on one must not reconnect to it. */
 const forgotten = new Set<string>();
 
 export async function reloadDevices() {
@@ -110,7 +110,7 @@ function scheduleRetry(core: string, found: Entry) {
   if (found.watchers === 0 || away) return;
   const wait = RETRY_MS[Math.min(found.attempt, RETRY_MS.length - 1)];
   found.attempt += 1;
-  // Spread out so several Macs, or a Mac and its relay, are not all asked at once.
+  // Spread out so several hosts, or a host and its relay, are not all asked at once.
   found.retrying = setTimeout(() => open(core), wait * (0.8 + Math.random() * 0.4));
 }
 
@@ -133,7 +133,7 @@ function listener(core: string, found: Entry, attempt: object): CoreListener {
       const chats: ChatDelivery[] = [];
       for (const event of events) {
         if (CoreEvent.Chat.instanceOf(event)) chats.push(event.inner);
-        // The Mac sends its view as soon as it lets the phone in, which can be before `connect` answers.
+        // The host sends its view as soon as it lets the phone in, which can be before `connect` answers.
         else if (CoreEvent.View.instanceOf(event) && found.current === attempt) {
           set(found, { ...found.live, snapshot: event.inner.view });
         }
@@ -262,7 +262,7 @@ export function useLive(core: string): Live {
   return useSyncExternalStore(subscribe, () => liveOf(core));
 }
 
-/** Leaves a Mac for good: asks it to unpair this phone while it can, then drops the connection and forgets it. */
+/** Leaves a host for good: asks it to unpair this phone while it can, then drops the connection and forgets it. */
 export async function forget(core: string) {
   forgotten.add(core);
   const found = entry(core);
@@ -284,7 +284,7 @@ export function retry(core: string) {
   open(core);
 }
 
-/** A chat's events from this Mac, in the batches they arrived in. */
+/** A chat's events from this host, in the batches they arrived in. */
 export function onChatEvents(core: string, listen: (deliveries: ChatDelivery[]) => void) {
   const found = entry(core);
   found.chats.add(listen);
