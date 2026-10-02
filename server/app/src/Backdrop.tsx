@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-/** The Mac's ambient grain: Bayer dots over drifting noise, in Aura Noir's raised tone. */
+/** The desktop app's ambient grain: Bayer dots over drifting noise, in Aura Noir's raised tone. */
 export function Backdrop() {
   const host = useRef<HTMLDivElement>(null);
 

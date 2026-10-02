@@ -60,13 +60,13 @@ export function Devices({ ready }: { ready: boolean }) {
   return (
     <div className="groups">
       <DeviceGroup
-        title="Macs"
-        empty="No Macs yet. In Sikemux on your Mac, open Settings, then Devices, and sign in."
+        title="Hosts"
+        empty="No hosts yet. In Sikemux on your computer, open Settings, then Devices, and sign in."
         devices={devices?.filter((device) => device.role === "host") ?? null}
       />
       <DeviceGroup
-        title="Phones"
-        empty="No phones yet. Sign in to Sikemux on your phone."
+        title="Clients"
+        empty="No clients yet. Sign in to Sikemux on your phone."
         devices={devices?.filter((device) => device.role === "client") ?? null}
       />
     </div>

@@ -72,8 +72,8 @@ function Account({ ready }: { ready: boolean }) {
       <main>
         <h1>Your devices</h1>
         <p className="lede">
-          Macs and phones signed in to this account. A phone still connects to a
-          Mac only after someone at the Mac allows it.
+          Hosts and clients signed in to this account. A client still connects
+          to a host only after someone at the host allows it.
         </p>
         <Devices ready={ready} />
       </main>

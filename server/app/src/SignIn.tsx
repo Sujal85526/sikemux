@@ -183,8 +183,8 @@ export function SignIn({ ready }: { ready: boolean }) {
         </div>
         <h1>Sign in to Sikemux</h1>
         <p className="lede">
-          One account for your Macs and your phone. Sign in on each, and your
-          phone finds your Macs.
+          One account for every device you use with Sikemux. Sign in on each,
+          and they find each other.
         </p>
         <div className="providers">
           <button

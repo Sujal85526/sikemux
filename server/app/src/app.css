@@ -13,7 +13,7 @@
   font-display: swap;
 }
 
-/* Aura Noir, the Mac app's default theme, with its ramp mixed the same way (see DESIGN.md). */
+/* Aura Noir, the desktop app's default theme, with its ramp mixed the same way (see DESIGN.md). */
 :root {
   --bg: #0f0f13;
   --bg-dim: #09090b;
