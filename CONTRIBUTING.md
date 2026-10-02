@@ -44,18 +44,17 @@ Terminals, agents and tasks run in a separate process, the core (`sikemux core`)
 
 The phone app lives in `mobile/`, a pnpm workspace of its own, so nothing in it is installed or checked with the desktop app. `mobile/app` is the Expo app and `mobile/native` is `@sikemux/native`, a Turbo Module that `uniffi-bindgen-react-native` generates from `src-tauri/crates/sikemux-mobile`: the core's own client, pairing and iroh connection. [ADR 0008](docs/architecture/0008-mobile-app-expo-and-rust-client.md) records why.
 
-You need rustup's Rust first on your `PATH` (Homebrew's Rust has no phone targets), Xcode, and for Android the NDK and `cargo-ndk`:
+You need rustup's Rust (Homebrew's Rust ignores `rust-toolchain.toml` and has no phone targets), Xcode, and for Android the NDK and `cargo-ndk`. `rust-toolchain.toml` lists the phone targets, so rustup installs them with the toolchain:
 
 ```bash
-rustup target add aarch64-apple-ios aarch64-apple-ios-sim aarch64-linux-android x86_64-linux-android
 cargo install cargo-ndk     # Android only
 cd mobile
 pnpm install
-pnpm native:ios             # builds the Rust client and generates its bindings
+pnpm native:ios:sim         # builds the Rust client for the simulator and generates its bindings
 pnpm ios                    # builds the development app and runs it in the simulator
 ```
 
-Rebuild with `pnpm native:ios` or `pnpm native:android` after changing `sikemux-mobile` or the protocol in `sikemux-core`. The generated bindings and native libraries are build output and are not committed. The app needs a development build; Expo Go cannot load `@sikemux/native`. To pair the simulator with your Mac, turn on Settings, Devices in a dev build of Sikemux.
+Rebuild with `pnpm native:ios:sim` after changing `sikemux-mobile` or the protocol in `sikemux-core`; it builds only the simulator slice, which is the quickest loop. `pnpm native:ios` adds the device slice, `pnpm native:android` builds for Android, and the `:release` variants build with the small `mobile` profile that release runs require. These scripts put `~/.cargo/bin` first on `PATH` themselves and stop if the toolchain or a target is missing. `pnpm clean` deletes the generated native projects and bindings. The generated bindings and native libraries are build output and are not committed. The app needs a development build; Expo Go cannot load `@sikemux/native`. To pair the simulator with your Mac, turn on Settings, Devices in a dev build of Sikemux.
 
 #### Designing phone screens
 
