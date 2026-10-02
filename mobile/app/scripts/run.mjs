@@ -45,9 +45,28 @@ if (variant === 'production') {
   }
 }
 
+/** The Play upload key: the keystore from ~/.config/sikemux/release and its password from the Keychain. */
+function uploadKey() {
+  const keystore = process.env.SIKEMUX_UPLOAD_KEYSTORE ?? join(homedir(), '.config/sikemux/release/upload.keystore');
+  if (!existsSync(keystore)) stop(`A release build is signed with the upload key, but there is no keystore at ${keystore}.`);
+  let password = process.env.SIKEMUX_UPLOAD_PASSWORD;
+  if (!password) {
+    try {
+      password = execFileSync('security', ['find-generic-password', '-s', 'Sikemux Android upload key', '-w'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+    } catch {
+      stop('A release build needs the upload key password: it is not in the Keychain as "Sikemux Android upload key".');
+    }
+  }
+  return { SIKEMUX_UPLOAD_KEYSTORE: keystore, SIKEMUX_UPLOAD_PASSWORD: password };
+}
+
 await generate();
 
 const env = { ...process.env, APP_VARIANT: variant };
+if (platform === 'android' && variant === 'production' && !prebuildOnly) Object.assign(env, uploadKey());
 // A clean prebuild deletes android/local.properties, which is where Gradle found the SDK.
 const androidStudioSdk = join(homedir(), 'Library/Android/sdk');
 if (!env.ANDROID_HOME && existsSync(androidStudioSdk)) env.ANDROID_HOME = androidStudioSdk;

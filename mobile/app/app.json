@@ -34,6 +34,7 @@
       "./plugins/link-system-configuration",
       "./plugins/rustls-platform-verifier",
       "./plugins/small-apk",
+      "./plugins/release-signing",
       [
         "expo-splash-screen",
         {
