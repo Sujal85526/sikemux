@@ -3,13 +3,13 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 
 import type { ChatInfo, ProjectInfo, SessionInfo, Snapshot } from '@/core/protocol';
-import { reloadDevices, useDevices, useLive } from '@/devices/hub';
+import { reloadDevices, retry, useDevices, useLive } from '@/devices/hub';
 import { channelLabel, deviceKind, deviceName, updateDevice } from '@/devices/paired';
 import { ForgetSheet } from '@/devices/ForgetSheet';
 import { ProjectSheet } from '@/devices/ProjectSheet';
 import { chatState, chatTitle, folder } from '@/devices/words';
 import { AgentIcon, DeviceIcon, Icon } from '@/ui/Icon';
-import { Group, IconButton, Nav, NeedsYou, Row, Screen, SectionLabel, Track, useBottomGap, Working } from '@/ui/parts';
+import { Button, Group, IconButton, Nav, NeedsYou, Row, Screen, SectionLabel, Track, useBottomGap, Working } from '@/ui/parts';
 import { fonts, type Palette, radius, typeFor, useColors, useStyles, useType, translucent } from '@/ui/theme';
 
 type Tab = 'agents' | 'terminals';
@@ -178,8 +178,7 @@ function Terminals({ snapshot, scope }: { snapshot: Snapshot; scope?: ProjectInf
   );
 }
 
-function summary(snapshot?: Snapshot): string {
-  if (!snapshot) return 'Connecting…';
+function summary(snapshot: Snapshot): string {
   const terminals = snapshot.sessions.filter((session) => session.running).length;
   return `${snapshot.chats.length} agent${snapshot.chats.length === 1 ? '' : 's'} · ${terminals} terminal${terminals === 1 ? '' : 's'}`;
 }
@@ -236,7 +235,7 @@ export default function Device() {
             {device ? deviceName(device) : 'Mac'}
           </Text>
           <Text style={type.meta} numberOfLines={1}>
-            {[channel, behind ? 'Needs an update' : away ? 'Asleep or offline' : summary(snapshot)].filter(Boolean).join(' · ')}
+            {[channel, behind ? 'Needs an update' : away ? 'Asleep or offline' : snapshot ? summary(snapshot) : null].filter(Boolean).join(' · ')}
           </Text>
         </View>
       </View>
@@ -245,11 +244,21 @@ export default function Device() {
           <Text style={[type.title, { fontSize: 20, textAlign: 'center' }]}>{unreachable.title}</Text>
           <Text style={[type.body, { textAlign: 'center', marginTop: 8 }]}>{unreachable.body}</Text>
           {behind ? null : (
-            <View style={styles.trying}>
-              <Working />
-              <Text style={type.meta}>Trying again</Text>
-            </View>
+            <>
+              <View style={styles.trying}>
+                <Working />
+                <Text style={type.meta}>Trying again</Text>
+              </View>
+              <Button title="Try now" onPress={() => retry(core)} style={styles.retry} />
+            </>
           )}
+        </View>
+      ) : !snapshot ? (
+        <View style={styles.away}>
+          <View style={styles.trying}>
+            <Working />
+            <Text style={type.meta}>Connecting…</Text>
+          </View>
         </View>
       ) : (
         <>
@@ -389,5 +398,6 @@ const makeStyles = (colors: Palette) => {
     liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.live },
     away: { flex: 1, justifyContent: 'center', paddingHorizontal: 32, paddingBottom: 120 },
     trying: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 16 },
+    retry: { marginTop: 24 },
   });
 };

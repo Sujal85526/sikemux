@@ -56,6 +56,7 @@ export default function NewChat() {
   const launcher = useMemo(() => workspace?.launchers.find((known) => known.id === launcherId) ?? workspace?.launchers[0], [workspace, launcherId]);
   const project = useMemo(() => workspace?.projects.find((known) => known.id === projectId) ?? workspace?.projects[0], [workspace, projectId]);
   const yolo = launcher?.permissionMode === 'bypass' || launcher?.permissionMode === 'bypassPermissions';
+  const sendable = Boolean(draft.trim() && launcher && project && live.status === 'open' && !starting);
 
   const start = async () => {
     const text = draft.trim();
@@ -121,7 +122,13 @@ export default function NewChat() {
                 </Pressable>
               ) : null}
               <View style={{ flex: 1 }} />
-              <Pressable onPress={start} style={[styles.send, (!draft.trim() || starting) && { opacity: 0.28 }]} accessibilityRole="button" accessibilityLabel="Start">
+              <Pressable
+                onPress={start}
+                disabled={!sendable}
+                style={[styles.send, !sendable && { opacity: 0.28 }]}
+                accessibilityRole="button"
+                accessibilityLabel="Start"
+                accessibilityState={{ disabled: !sendable }}>
                 {starting ? <Working /> : <Icon name="IconArrowUp" size={16} color={colors.ground} />}
               </Pressable>
             </View>
