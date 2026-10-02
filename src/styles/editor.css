@@ -267,6 +267,7 @@
 }
 /* Only the tabs scroll; the add button after them stays at the end of the strip. */
 .tabbar-tabs {
+    position: relative;
     display: flex;
     flex: 0 1 auto;
     align-self: stretch;

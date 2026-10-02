@@ -202,20 +202,35 @@ export function TabBar({
     useLayoutEffect(() => {
         const strip = scrollRef.current;
         if (!strip) return;
+        // Where the tabs end in layout, not scrollWidth: the selection glide's copy and a dragged tab's
+        // transform both reach past the last tab for a moment, and nothing resizes when they go.
         const mark = () => {
-            const hidden = strip.scrollWidth - strip.clientWidth;
+            let end = 0;
+            for (const child of strip.children) {
+                if (!(child instanceof HTMLElement) || child.classList.contains("selection-glide")) continue;
+                end = Math.max(end, child.offsetLeft + child.offsetWidth);
+            }
+            const hidden = end - strip.clientWidth;
             strip.toggleAttribute("data-fade-start", strip.scrollLeft > 1);
             strip.toggleAttribute("data-fade-end", hidden - strip.scrollLeft > 1);
         };
-        mark();
-        strip.addEventListener("scroll", mark, { passive: true });
         const resize = new ResizeObserver(mark);
-        resize.observe(strip);
+        const watch = () => {
+            resize.disconnect();
+            resize.observe(strip);
+            for (const child of strip.children) resize.observe(child);
+            mark();
+        };
+        watch();
+        const children = new MutationObserver(watch);
+        children.observe(strip, { childList: true });
+        strip.addEventListener("scroll", mark, { passive: true });
         return () => {
             strip.removeEventListener("scroll", mark);
+            children.disconnect();
             resize.disconnect();
         };
-    }, [tabs.length]);
+    }, []);
 
     useLayoutEffect(() => {
         if (activeId === undefined) return;
