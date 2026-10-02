@@ -6,7 +6,9 @@ use std::sync::{Arc, Mutex};
 
 use serde::Deserialize;
 use sikemux_core::client::CoreClient;
-use sikemux_core::protocol::{ChatLauncher, DeviceAccess, ProjectInfo, PublishedChat, RemoteStatus};
+use sikemux_core::protocol::{
+    ChatLauncher, DeviceAccess, ProjectInfo, PublishedChat, RemoteStatus,
+};
 use tauri::{AppHandle, Manager, State};
 
 use crate::acp::LauncherSpec;
@@ -79,10 +81,7 @@ pub async fn remote_publish_chats(
         *last = chats.clone();
     }
     let client = manager.client().await?;
-    client
-        .publish_chats(chats)
-        .await
-        .map_err(core_error)
+    client.publish_chats(chats).await.map_err(core_error)
 }
 
 /// Gives a core the app just connected to what it published to the last one,
