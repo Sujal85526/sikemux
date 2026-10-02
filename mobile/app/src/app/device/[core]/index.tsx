@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 
-import type { ChatInfo, SessionInfo, Snapshot } from '@/core/protocol';
-import { useDevices, useLive } from '@/devices/hub';
-import { channelLabel, deviceKind, deviceName } from '@/devices/paired';
+import type { ChatInfo, ProjectInfo, SessionInfo, Snapshot } from '@/core/protocol';
+import { reloadDevices, useDevices, useLive } from '@/devices/hub';
+import { channelLabel, deviceKind, deviceName, updateDevice } from '@/devices/paired';
+import { ProjectSheet } from '@/devices/ProjectSheet';
 import { chatState, chatTitle, folder } from '@/devices/words';
 import { AgentIcon, DeviceIcon, Icon } from '@/ui/Icon';
 import { Group, IconButton, Nav, NeedsYou, Row, Screen, SectionLabel, Track, Working } from '@/ui/parts';
@@ -16,17 +17,55 @@ function projectName(snapshot: Snapshot, cwd: string): string {
   return snapshot.workspace.projects.find((project) => project.path === cwd)?.name ?? folder(cwd);
 }
 
+function inProject(project: ProjectInfo, cwd: string): boolean {
+  return cwd === project.path || cwd.startsWith(`${project.path}/`);
+}
+
+function plural(count: number, word: string): string {
+  return `${count} ${word}${count === 1 ? '' : 's'}`;
+}
+
+/** What runs in a project, as its row in the project sheet shows it. */
+function ProjectTail({ snapshot, project }: { snapshot: Snapshot; project: ProjectInfo }) {
+  const chats = snapshot.chats.filter((chat) => inProject(project, chat.cwd));
+  const terminals = snapshot.sessions.filter((session) => session.project === project.id && session.running).length;
+  const waiting = chats.some((chat) => chat.pendingPermissions.length);
+  if (!chats.length && !terminals) return null;
+  return (
+    <View style={styles.tail}>
+      {waiting ? <NeedsYou /> : null}
+      {chats.length ? (
+        <View style={styles.faces}>
+          {chats.slice(0, 3).map((chat, index) => (
+            <View key={chat.agentId} style={[styles.face, index > 0 && { marginLeft: -7 }]}>
+              <AgentIcon provider={chat.provider} size={14} />
+            </View>
+          ))}
+        </View>
+      ) : (
+        <View style={styles.termCount}>
+          <Icon name="IconCommand" size={13} color={colors.tertiary} />
+          <Text style={type.meta}>{terminals}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
 function ChatEnd({ chat }: { chat: ChatInfo }) {
   if (chat.pendingPermissions.length) return <NeedsYou />;
   if (chat.running) return <Working />;
   return null;
 }
 
-function Agents({ core, snapshot }: { core: string; snapshot: Snapshot }) {
+function Agents({ core, snapshot, scope }: { core: string; snapshot: Snapshot; scope?: ProjectInfo }) {
   const open = (agentId: string) => router.push(`/device/${core}/chat/${agentId}`);
   const [filter, setFilter] = useState<string>('all');
-  const providers = useMemo(() => [...new Set(snapshot.chats.map((chat) => chat.provider))], [snapshot.chats]);
-  const chats = snapshot.chats.filter((chat) => filter === 'all' || chat.provider === filter);
+  const scoped = snapshot.chats.filter((chat) => !scope || inProject(scope, chat.cwd));
+  const providers = [...new Set(scoped.map((chat) => chat.provider))];
+  const shown = providers.includes(filter) ? filter : 'all';
+  const chats = scoped.filter((chat) => shown === 'all' || chat.provider === shown);
+  const where = (chat: ChatInfo, state: string) => (scope ? state : `${projectName(snapshot, chat.cwd)} · ${state}`);
   const asking = chats.filter((chat) => chat.pendingPermissions.length);
   const idle = chats.filter((chat) => !chat.pendingPermissions.length);
 
@@ -34,14 +73,14 @@ function Agents({ core, snapshot }: { core: string; snapshot: Snapshot }) {
     <>
       {providers.length > 1 ? (
         <View style={styles.filters}>
-          <Pressable onPress={() => setFilter('all')} style={[styles.filter, filter === 'all' && styles.filterOn]}>
-            <Text style={[styles.filterText, filter === 'all' && { color: colors.ink }]}>All</Text>
+          <Pressable onPress={() => setFilter('all')} style={[styles.filter, shown === 'all' && styles.filterOn]}>
+            <Text style={[styles.filterText, shown === 'all' && { color: colors.ink }]}>All</Text>
           </Pressable>
           {providers.map((provider) => (
             <Pressable
               key={provider}
               onPress={() => setFilter(provider)}
-              style={[styles.filter, filter === provider && styles.filterOn]}
+              style={[styles.filter, shown === provider && styles.filterOn]}
               accessibilityLabel={provider}>
               <AgentIcon provider={provider} size={17} />
             </Pressable>
@@ -56,7 +95,7 @@ function Agents({ core, snapshot }: { core: string; snapshot: Snapshot }) {
               {chatTitle(chat)}
             </Text>
             <Text style={styles.askDetail} numberOfLines={1}>
-              Needs input · {projectName(snapshot, chat.cwd)}
+              {where(chat, 'Needs input')}
             </Text>
           </View>
           <NeedsYou />
@@ -71,7 +110,7 @@ function Agents({ core, snapshot }: { core: string; snapshot: Snapshot }) {
                 key={chat.agentId}
                 mark={<AgentIcon provider={chat.provider} size={22} />}
                 title={chatTitle(chat)}
-                detail={`${projectName(snapshot, chat.cwd)} · ${chatState(chat)}`}
+                detail={where(chat, chatState(chat))}
                 end={<ChatEnd chat={chat} />}
                 onPress={() => open(chat.agentId)}
               />
@@ -79,7 +118,7 @@ function Agents({ core, snapshot }: { core: string; snapshot: Snapshot }) {
           </Group>
         </>
       ) : null}
-      {!snapshot.chats.length ? <Text style={styles.empty}>No agents running.</Text> : null}
+      {!scoped.length ? <Text style={styles.empty}>{scope ? `No agents in ${scope.name}.` : 'No agents running.'}</Text> : null}
     </>
   );
 }
@@ -96,18 +135,19 @@ function terminalDetail(session: SessionInfo): string {
   return session.exit?.code != null ? `exited ${session.exit.code}` : 'exited';
 }
 
-function Terminals({ snapshot }: { snapshot: Snapshot }) {
+function Terminals({ snapshot, scope }: { snapshot: Snapshot; scope?: ProjectInfo }) {
   const groups = new Map<string, SessionInfo[]>();
   for (const session of snapshot.sessions) {
+    if (scope && session.project !== scope.id) continue;
     const project = snapshot.workspace.projects.find((known) => known.id === session.project)?.name ?? 'Other';
     groups.set(project, [...(groups.get(project) ?? []), session]);
   }
-  if (!snapshot.sessions.length) return <Text style={styles.empty}>No terminals open.</Text>;
+  if (!groups.size) return <Text style={styles.empty}>{scope ? `No terminals in ${scope.name}.` : 'No terminals open.'}</Text>;
   return (
     <>
       {[...groups].map(([project, sessions]) => (
         <View key={project}>
-          <SectionLabel>{project}</SectionLabel>
+          {scope ? <View style={{ height: 14 }} /> : <SectionLabel>{project}</SectionLabel>}
           <Group>
             {sessions.map((session) => (
               <Row
@@ -151,7 +191,13 @@ export default function Device() {
         ? { title: 'Update this app', body: 'This Mac runs a newer Sikemux than this app understands.' }
         : { title: "Can't reach this Mac", body: 'It may be asleep, offline, or have remote access turned off.' };
   const snapshot = live.snapshot;
-  const asking = snapshot?.chats.filter((chat) => chat.pendingPermissions.length).length ?? 0;
+  const [picking, setPicking] = useState(false);
+  const scope = snapshot?.workspace.projects.find((project) => project.id === device?.project);
+  const asking = snapshot?.chats.filter((chat) => chat.pendingPermissions.length && (!scope || inProject(scope, chat.cwd))).length ?? 0;
+  const scopeTo = (project: string | null) => {
+    setPicking(false);
+    updateDevice(core, { project: project ?? undefined }).then(reloadDevices);
+  };
 
   return (
     <Screen>
@@ -159,7 +205,11 @@ export default function Device() {
         back="Devices"
         end={
           device?.access === 'full' && !away ? (
-            <IconButton name="IconPlus" label="New chat" onPress={() => router.push(`/device/${core}/new`)} />
+            <IconButton
+              name="IconPlus"
+              label="New chat"
+              onPress={() => router.push(scope ? `/device/${core}/new?project=${encodeURIComponent(scope.id)}` : `/device/${core}/new`)}
+            />
           ) : null
         }
       />
@@ -190,6 +240,19 @@ export default function Device() {
         </View>
       ) : (
         <>
+          {snapshot?.workspace.projects.length ? (
+            <View style={styles.scope}>
+              <Pressable onPress={() => setPicking(true)} style={styles.pill} accessibilityRole="button" accessibilityLabel="Project">
+                <Icon name="IconFolder" size={14} color={colors.live} />
+                <Text style={styles.pillText} numberOfLines={1}>
+                  {scope?.name ?? 'All projects'}
+                </Text>
+                <View style={{ transform: [{ rotate: '90deg' }] }}>
+                  <Icon name="IconChevron" size={10} color={colors.inkFaint} />
+                </View>
+              </Pressable>
+            </View>
+          ) : null}
           <View style={{ paddingHorizontal: 16 }}>
             <Track<Tab>
               value={tab}
@@ -201,8 +264,26 @@ export default function Device() {
             />
           </View>
           <ScrollView contentContainerStyle={styles.body}>
-            {snapshot ? tab === 'agents' ? <Agents core={core} snapshot={snapshot} /> : <Terminals snapshot={snapshot} /> : null}
+            {snapshot ? (
+              tab === 'agents' ? (
+                <Agents core={core} snapshot={snapshot} scope={scope} />
+              ) : (
+                <Terminals snapshot={snapshot} scope={scope} />
+              )
+            ) : null}
           </ScrollView>
+          {snapshot ? (
+            <ProjectSheet
+              visible={picking}
+              onClose={() => setPicking(false)}
+              device={device ? deviceName(device) : undefined}
+              projects={snapshot.workspace.projects}
+              chosen={scope?.id ?? null}
+              onChoose={scopeTo}
+              all={summary(snapshot)}
+              tail={(project) => <ProjectTail snapshot={snapshot} project={project} />}
+            />
+          ) : null}
         </>
       )}
     </Screen>
@@ -217,6 +298,33 @@ const styles = StyleSheet.create({
   presenceOff: { backgroundColor: colors.ground, borderColor: colors.rest },
   name: { ...type.title },
   body: { paddingHorizontal: 16, paddingBottom: 40 },
+  scope: { flexDirection: 'row', paddingHorizontal: 16, paddingBottom: 12 },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    height: 32,
+    maxWidth: '100%',
+    paddingHorizontal: 11,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.raised,
+  },
+  pillText: { fontFamily: fonts.uiMedium, fontSize: 13.5, color: colors.ink, flexShrink: 1 },
+  tail: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  faces: { flexDirection: 'row' },
+  face: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.overlay,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  termCount: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   filters: { flexDirection: 'row', gap: 6, paddingTop: 12 },
   filter: { height: 32, minWidth: 40, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
   filterOn: { backgroundColor: colors.active, borderColor: colors.borderStrong },

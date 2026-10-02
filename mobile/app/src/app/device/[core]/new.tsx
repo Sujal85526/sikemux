@@ -1,40 +1,24 @@
 import { useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyboardAvoidingView, Pressable, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 
 import { composerPlaceholder } from '@mac/chat/chatStatus';
 import { ComposerInput } from '@/chat/ComposerInput';
 import type { LauncherInfo, ProjectInfo } from '@/core/protocol';
 import { useLive } from '@/devices/hub';
+import { ProjectSheet } from '@/devices/ProjectSheet';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Nav, Screen, Working } from '@/ui/parts';
+import { Sheet, SheetLabel } from '@/ui/Sheet';
 import { colors, fonts, type } from '@/ui/theme';
 
 const IDLE = composerPlaceholder({ connection: 'ready', running: false }, { resuming: false, disconnected: false });
 
-function home(path: string): string {
-  return path.replace(/^\/Users\/[^/]+/, '~');
-}
-
-function Sheet({ visible, onClose, tall, children }: { visible: boolean; onClose: () => void; tall?: boolean; children: React.ReactNode }) {
-  // A modal measures no safe area of its own, so the screen behind it lends its inset.
-  const insets = useSafeAreaInsets();
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.scrim} onPress={onClose} accessibilityLabel="Close" />
-      <View style={[styles.sheet, tall && { height: '82%' }, { paddingBottom: insets.bottom + 12 }]}>
-        <View style={styles.grabber} />
-        {children}
-      </View>
-    </Modal>
-  );
-}
-
 function AgentSheet({ visible, onClose, launchers, chosen, onChoose }: { visible: boolean; onClose: () => void; launchers: LauncherInfo[]; chosen?: LauncherInfo; onChoose: (launcher: LauncherInfo) => void }) {
   return (
     <Sheet visible={visible} onClose={onClose}>
-      <Text style={styles.sheetLabel}>Agent</Text>
+      <SheetLabel>Agent</SheetLabel>
       <View style={styles.agents}>
         {launchers.map((launcher) => {
           const on = launcher.id === chosen?.id;
@@ -52,57 +36,12 @@ function AgentSheet({ visible, onClose, launchers, chosen, onChoose }: { visible
   );
 }
 
-function ProjectSheet({ visible, onClose, projects, chosen, onChoose }: { visible: boolean; onClose: () => void; projects: ProjectInfo[]; chosen?: ProjectInfo; onChoose: (project: ProjectInfo) => void }) {
-  const [query, setQuery] = useState('');
-  const found = projects.filter((project) => `${project.name} ${project.path}`.toLowerCase().includes(query.trim().toLowerCase()));
-  return (
-    <Sheet visible={visible} onClose={onClose} tall>
-      <View style={[styles.search, query ? { borderColor: colors.borderSelected } : null]}>
-        <Icon name="IconSearch" size={16} color={colors.tertiary} />
-        <TextInput
-          value={query}
-          onChangeText={setQuery}
-          placeholder="Search projects…"
-          placeholderTextColor={colors.tertiary}
-          style={styles.searchInput}
-          autoCorrect={false}
-          autoCapitalize="none"
-          keyboardAppearance="dark"
-          returnKeyType="go"
-          onSubmitEditing={() => found[0] && onChoose(found[0])}
-        />
-      </View>
-      {!query ? <Text style={styles.sheetLabel}>Open</Text> : <View style={{ height: 12 }} />}
-      <ScrollView keyboardShouldPersistTaps="handled">
-        <View style={styles.group}>
-          {found.map((project, index) => {
-            const on = project.id === chosen?.id;
-            return (
-              <Pressable key={project.id} onPress={() => onChoose(project)} style={[styles.project, on && { backgroundColor: colors.active }, index > 0 && styles.divided]}>
-                <Icon name="IconFolder" size={16} color={on ? colors.live : colors.tertiary} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.projectName, on && { color: colors.ink }]}>{project.name}</Text>
-                  <Text style={styles.projectPath} numberOfLines={1} ellipsizeMode="head">
-                    {home(project.path)}
-                  </Text>
-                </View>
-                {on ? <Icon name="IconCheck" size={16} color={colors.ink} /> : null}
-              </Pressable>
-            );
-          })}
-        </View>
-        {!found.length ? <Text style={[type.meta, { textAlign: 'center', paddingTop: 24 }]}>No open project matches.</Text> : null}
-      </ScrollView>
-    </Sheet>
-  );
-}
-
 export default function NewChat() {
-  const { core } = useLocalSearchParams<{ core: string }>();
+  const { core, project: linkedProject } = useLocalSearchParams<{ core: string; project?: string }>();
   const live = useLive(core);
   const workspace = live.snapshot?.workspace;
   const [launcherId, setLauncherId] = useState<string>();
-  const [projectId, setProjectId] = useState<string>();
+  const [projectId, setProjectId] = useState<string | undefined>(linkedProject);
   const [draft, setDraft] = useState('');
   const [sheet, setSheet] = useState<'agent' | 'project'>();
   const [starting, setStarting] = useState(false);
@@ -191,9 +130,9 @@ export default function NewChat() {
         visible={sheet === 'project'}
         onClose={() => setSheet(undefined)}
         projects={workspace?.projects ?? []}
-        chosen={project}
+        chosen={project?.id ?? null}
         onChoose={(next) => {
-          setProjectId(next.id);
+          if (next) setProjectId(next);
           setSheet(undefined);
         }}
       />
@@ -230,19 +169,8 @@ const styles = StyleSheet.create({
   pickerText: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.accent },
   send: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
 
-  scrim: { flex: 1, backgroundColor: 'rgba(9, 9, 11, 0.62)' },
-  sheet: { backgroundColor: colors.overlay, borderTopLeftRadius: 22, borderTopRightRadius: 22, borderTopWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
-  grabber: { alignSelf: 'center', width: 36, height: 5, borderRadius: 3, backgroundColor: colors.borderStrong, marginBottom: 12 },
-  sheetLabel: { fontFamily: fonts.uiSemibold, fontSize: 13, color: colors.tertiary, paddingTop: 14, paddingBottom: 8, paddingHorizontal: 6 },
   agents: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   agent: { width: '23.6%', height: 66, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.raised, alignItems: 'center', justifyContent: 'center', gap: 6 },
   agentOn: { backgroundColor: colors.active, borderColor: colors.borderStrong },
   agentText: { fontFamily: fonts.ui, fontSize: 12, color: colors.tertiary },
-  search: { flexDirection: 'row', alignItems: 'center', gap: 10, height: 44, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.sunken },
-  searchInput: { flex: 1, fontFamily: fonts.ui, fontSize: 15.5, color: colors.ink },
-  group: { borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.raised, overflow: 'hidden' },
-  project: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 54, paddingHorizontal: 14, paddingVertical: 8 },
-  divided: { borderTopWidth: 1, borderTopColor: colors.border },
-  projectName: { fontFamily: fonts.uiMedium, fontSize: 15, color: colors.secondary },
-  projectPath: { fontFamily: fonts.mono, fontSize: 11.5, color: colors.tertiary, marginTop: 1 },
 });

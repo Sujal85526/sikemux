@@ -13,6 +13,8 @@ export type PairedDevice = {
   name?: string;
   model?: string;
   channel?: BuildChannel;
+  /** The project the device screen is scoped to; absent shows them all. */
+  project?: string;
   lastSeen?: number;
 };
 

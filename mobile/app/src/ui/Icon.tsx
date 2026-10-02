@@ -3,22 +3,27 @@ import { SvgXml } from 'react-native-svg';
 import { ICONS, type IconName } from './icons.generated';
 import { brand, colors, type Provider } from './theme';
 
-/** Devices the Mac app has no icon for, drawn on its 16px grid and 1.4 stroke. */
-const DEVICE_ICONS = {
+/** Glyphs the Mac app has no icon for, drawn on its 16px grid and 1.4 stroke. */
+const DRAWN_ICONS = {
   laptop: '<rect x="3" y="3.2" width="10" height="7.3" rx="1.2"/><path d="M1.6 12.6h12.8"/>',
   desktop: '<rect x="1.9" y="2.4" width="12.2" height="8.6" rx="1.3"/><path d="M8 11v2.4M5.8 13.6h4.4"/>',
   mini: '<rect x="1.9" y="5.6" width="12.2" height="4.8" rx="1.7"/><path d="M4.4 12.4h7.2"/>',
+  folders: '<path d="M4 3h3l1.3 1.6H14v6"/><path d="M2 5.6h3.6l1.4 1.8H12v6H2z"/>',
 } as const;
 
-export type DeviceKind = keyof typeof DEVICE_ICONS;
+export type DeviceKind = 'laptop' | 'desktop' | 'mini';
 
 export function Icon({ name, size = 16, color = colors.secondary }: { name: IconName; size?: number; color?: string }) {
   return <SvgXml xml={ICONS[name]} width={size} height={size} color={color} />;
 }
 
-export function DeviceIcon({ kind, size = 30, color = colors.ink }: { kind: DeviceKind; size?: number; color?: string }) {
-  const xml = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${DEVICE_ICONS[kind]}</svg>`;
+export function DrawnIcon({ name, size = 16, color = colors.secondary }: { name: keyof typeof DRAWN_ICONS; size?: number; color?: string }) {
+  const xml = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${DRAWN_ICONS[name]}</svg>`;
   return <SvgXml xml={xml} width={size} height={size} color={color} />;
+}
+
+export function DeviceIcon({ kind, size = 30, color = colors.ink }: { kind: DeviceKind; size?: number; color?: string }) {
+  return <DrawnIcon name={kind} size={size} color={color} />;
 }
 
 const PROVIDER_ICONS: Record<Provider, IconName> = {
