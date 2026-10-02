@@ -6,7 +6,7 @@ import * as Haptics from 'expo-haptics';
 
 import { composerPlaceholder } from '@mac/chat/chatStatus';
 import { ComposerInput } from '@/chat/ComposerInput';
-import type { LauncherInfo, ProjectInfo } from '@/core/protocol';
+import type { LauncherInfo } from '@/core/protocol';
 import { problem as problemOf, useLive } from '@/devices/hub';
 import { ProjectSheet } from '@/devices/ProjectSheet';
 import { AgentIcon, Icon } from '@/ui/Icon';

@@ -12,7 +12,7 @@ function Unreadable({ problem }: { problem: string }) {
   return (
     <Screen>
       <View style={styles.block}>
-        <Text style={styles.title}>Couldn't read your paired Macs</Text>
+        <Text style={styles.title}>Couldn&apos;t read your paired Macs</Text>
         <Text style={styles.body}>{problem}</Text>
       </View>
       <View style={[styles.footer, { paddingBottom: bottom }]}>

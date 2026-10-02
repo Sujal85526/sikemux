@@ -96,7 +96,7 @@ export function Welcome() {
           <Text style={styles.markText}>Sikemux</Text>
         </View>
         <Text style={styles.title}>Your agents,{'\n'}on your phone.</Text>
-        <Text style={styles.body}>Watch them work, answer what they ask, and open the Mac's terminals.</Text>
+        <Text style={styles.body}>Watch them work, answer what they ask, and open the Mac&apos;s terminals.</Text>
       </View>
       <View style={[styles.actions, { paddingBottom: bottom }]}>
         <Button kind="primary" title="Scan the code on your Mac" onPress={() => router.push('/scan')} />

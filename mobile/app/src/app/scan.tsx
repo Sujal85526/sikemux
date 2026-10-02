@@ -8,12 +8,11 @@ import { parsePairingLink } from '@sikemux/native';
 import { openFoundLink, pasteFoundLink } from '@/devices/foundLinks';
 import { Icon } from '@/ui/Icon';
 import { Button, useBottomGap } from '@/ui/parts';
-import { fonts, type Palette, useStyles } from '@/ui/theme';
+import { fonts } from '@/ui/theme';
 
 const FINDER = 236;
 
 export default function Scan() {
-  const styles = useStyles(makeStyles);
   const [permission, requestPermission] = useCameraPermissions();
   const handled = useRef(false);
   const [found, setFound] = useState(false);
@@ -69,8 +68,7 @@ export default function Scan() {
   );
 }
 
-const makeStyles = (colors: Palette) => {
-  return StyleSheet.create({
+const styles = StyleSheet.create({
     screen: { flex: 1, backgroundColor: '#101013' },
     shade: { ...StyleSheet.absoluteFill, alignItems: 'center', paddingTop: '62%' },
     finder: { width: FINDER, height: FINDER, marginTop: -FINDER / 2 },
@@ -85,6 +83,5 @@ const makeStyles = (colors: Palette) => {
     backText: { color: '#fff', fontFamily: fonts.ui, fontSize: 16, marginLeft: 2 },
     bottom: { position: 'absolute', left: 16, right: 16 },
     glass: { backgroundColor: 'rgba(28, 28, 34, 0.82)', borderColor: 'rgba(255, 255, 255, 0.12)' },
-  });
-};
+});
 

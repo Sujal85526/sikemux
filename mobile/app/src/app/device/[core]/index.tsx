@@ -25,10 +25,6 @@ function inProject(project: ProjectInfo, cwd: string): boolean {
   return cwd === project.path || cwd.startsWith(`${project.path}/`);
 }
 
-function plural(count: number, word: string): string {
-  return `${count} ${word}${count === 1 ? '' : 's'}`;
-}
-
 /** What runs in a project, as its row in the project sheet shows it. */
 function ProjectTail({ snapshot, project }: { snapshot: Snapshot; project: ProjectInfo }) {
   const colors = useColors();

@@ -47,7 +47,7 @@ export function ForgetSheet({ device, visible, onClose }: { device: PairedDevice
           {name}
         </Text>
         <Text style={type.body}>
-          Forgetting removes this Mac from the phone and, if it can be reached, removes this phone from the Mac's paired devices. To
+          Forgetting removes this Mac from the phone and, if it can be reached, removes this phone from the Mac&apos;s paired devices. To
           use it again, pair with its code.
         </Text>
         {problem ? <Text style={styles.problem}>{problem}</Text> : null}
