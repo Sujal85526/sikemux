@@ -31,10 +31,10 @@
     "@ubjs/core": "0.31.0-6"
   },
   "devDependencies": {
-    "@types/react": "^19.2.0",
+    "@types/react": "catalog:",
     "react": "19.2.3",
     "react-native": "0.86.3",
-    "typescript": "^6.0.3",
+    "typescript": "catalog:",
     "uniffi-bindgen-react-native": "0.31.0-6"
   },
   "codegenConfig": {
