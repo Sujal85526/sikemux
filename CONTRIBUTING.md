@@ -78,7 +78,7 @@ pnpm install
 pnpm check                  # schema drift, Prettier, ESLint, types, tests and builds
 ```
 
-The API's tests need Postgres 16 or newer installed (`brew install postgresql@17`); they start a throwaway server of their own, or use `TEST_DATABASE_URL` when it is set. To run the API and the web app locally, put `DATABASE_URL=postgresql://localhost/sikemux` (a database you created) in `server/api/.env`, run `pnpm --filter @sikemux/api migrate`, then `pnpm dev`.
+The API's tests need Postgres 16 or newer installed (`brew install postgresql@17`); they start a throwaway server of their own, or use `TEST_DATABASE_URL` when it is set. To run the API and the web app locally, put `DATABASE_URL=postgresql://localhost/sikemux` (a database you created) in `server/api/.env`, run `pnpm --filter @sikemux/api migrate`, then `pnpm dev`. Development builds of the Mac app and the phone use that local API too: the Mac at 127.0.0.1:4000, the phone at port 4000 of the Mac running Metro, so start the API with `HOST=0.0.0.0` in that `.env` when testing on a phone. Either can be pointed elsewhere, the Mac with `SIKEMUX_API_URL` and the phone with `EXPO_PUBLIC_API_URL`.
 
 Merging a change under `server/` to `main` deploys it: `.github/workflows/server.yml` runs `pnpm check`, sends the release to the server over SSH, migrates the database, restarts the API, and switches back to the previous release if the new one does not report itself healthy.
 
