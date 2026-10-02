@@ -63,6 +63,18 @@
           "body": "DeviceList"
         }
       }
+    },
+    {
+      "method": "delete",
+      "path": "/v1/devices/{key}",
+      "operationId": "removeDevice",
+      "summary": "Take one of your devices off your account",
+      "auth": "session",
+      "responses": {
+        "204": {
+          "description": "The device is no longer on your account."
+        }
+      }
     }
   ]
 }

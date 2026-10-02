@@ -172,6 +172,39 @@ export function deviceRoutes(
       );
       return c.json(toDevice(row), added ? 201 : 200);
     })
+    .delete("/:key", perUser("remove", 30), async (c) => {
+      const { userId, via } = c.get("identity");
+      const key = c.req.param("key");
+      const removed = await db.transaction().execute(async (trx) => {
+        const row = await trx
+          .deleteFrom("devices")
+          .where("key", "=", key)
+          .where("user_id", "=", userId)
+          .returning(["key", "role", "name"])
+          .executeTakeFirst();
+        if (row) {
+          await trx
+            .insertInto("audit")
+            .values({
+              user_id: userId,
+              actor: `user:${userId}`,
+              action: "device.removed",
+              subject: key,
+              detail: JSON.stringify({ role: row.role, name: row.name, via }),
+            })
+            .execute();
+        }
+        return row;
+      });
+      if (!removed)
+        throw new ApiFailure(
+          404,
+          "not_found",
+          "None of your devices has that key.",
+        );
+      c.get("log").info({ key, role: removed.role }, "removed a device");
+      return c.body(null, 204);
+    })
     .get("/", perUser("list", 120), async (c) => {
       const { userId } = c.get("identity");
       const role = c.req.query("role");

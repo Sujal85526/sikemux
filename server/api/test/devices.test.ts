@@ -334,6 +334,47 @@ describe("listing devices", () => {
   });
 });
 
+describe("removing a device", () => {
+  it("takes one of your devices off the account and records it", async () => {
+    const token = await macToken("user_a");
+    const mac = newDevice();
+    await call("/v1/devices", token, {
+      method: "POST",
+      json: await registration(mac, "user_a", token),
+    });
+    const response = await call(`/v1/devices/${mac.key}`, token, {
+      method: "DELETE",
+    });
+    expect(response.status).toBe(204);
+    const list = await body(await call("/v1/devices", token), "DeviceList");
+    expect(list.devices).toEqual([]);
+    const { rows } = await database.pool.query(
+      "select action from audit order by id",
+    );
+    expect(rows.map((row) => row.action)).toEqual([
+      "device.registered",
+      "device.removed",
+    ]);
+  });
+
+  it("cannot remove someone else's device", async () => {
+    const theirs = await macToken("user_b");
+    const mac = newDevice();
+    await call("/v1/devices", theirs, {
+      method: "POST",
+      json: await registration(mac, "user_b", theirs),
+    });
+    const response = await call(
+      `/v1/devices/${mac.key}`,
+      await macToken("user_a"),
+      { method: "DELETE" },
+    );
+    expect(response.status).toBe(404);
+    const list = await body(await call("/v1/devices", theirs), "DeviceList");
+    expect(list.devices).toHaveLength(1);
+  });
+});
+
 describe("rate limits", () => {
   it("caps challenges per user", async () => {
     app = testApp(database, new RateLimiter());

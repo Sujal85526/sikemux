@@ -129,6 +129,31 @@
           }
         }
       }
+    },
+    "/v1/devices/{key}": {
+      "delete": {
+        "operationId": "removeDevice",
+        "summary": "Take one of your devices off your account",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "204": { "description": "The device is no longer on your account." },
+          "default": {
+            "description": "Something went wrong.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
