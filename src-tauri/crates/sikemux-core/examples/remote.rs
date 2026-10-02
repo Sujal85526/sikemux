@@ -23,8 +23,8 @@ use iroh::{Endpoint, EndpointAddr};
 use sikemux_core::client::{ClientEvent, CoreClient};
 use sikemux_core::pairing::{self, PairingRequest};
 use sikemux_core::protocol::{
-    BackdropImage, ChatLaunch, ChatLauncher, DeviceAccess, Event, LaunchIdentity, ProjectInfo, PublishedChat,
-    SpawnTarget, TerminalSpawn,
+    BackdropImage, ChatLaunch, ChatLauncher, DeviceAccess, Event, LaunchIdentity, ProjectInfo,
+    PublishedChat, SpawnTarget, TerminalSpawn,
 };
 use sikemux_core::remote::{self, SecretKey};
 

@@ -329,6 +329,9 @@ pub enum Request {
     RevokeDevice {
         id: String,
     },
+    /// A paired device forgetting this Mac: removes it from the paired
+    /// devices and closes its connection once answered.
+    Unpair,
     /// Shows a new pairing code, replacing any open one. Remote access must
     /// be on.
     OpenPairing,

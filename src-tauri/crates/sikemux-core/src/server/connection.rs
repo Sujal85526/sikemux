@@ -703,6 +703,23 @@ async fn run_requests(
                     .map(|()| remote::announce(&core));
                 client.respond(request_id, result.map(|status| Response::Remote { status }));
             }
+            Request::Unpair => {
+                let Peer::Device { id } = &client.peer else {
+                    client.respond(
+                        request_id,
+                        Err("only a paired device can unpair itself".into()),
+                    );
+                    continue;
+                };
+                let id = id.clone();
+                tokio::spawn(async move {
+                    client.respond(request_id, Ok(Response::Done));
+                    client.wait_flushed(SHUTDOWN_FLUSH).await;
+                    if let Err(error) = remote::revoke(&core, &id) {
+                        eprintln!("sikemux core: could not unpair {id}: {error}");
+                    }
+                });
+            }
             Request::RevokeDevice { id } => {
                 let result = remote::revoke(&core, &id);
                 client.respond(request_id, result.map(|status| Response::Remote { status }));

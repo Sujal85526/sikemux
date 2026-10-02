@@ -677,6 +677,11 @@ impl CoreClient {
         .await
     }
 
+    /// Removes this device from the core's paired devices.
+    pub async fn unpair(&self) -> Result<(), ClientError> {
+        self.request_done(Request::Unpair).await
+    }
+
     pub async fn publish_backdrop(
         &self,
         texture: bool,

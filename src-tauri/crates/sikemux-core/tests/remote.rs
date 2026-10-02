@@ -303,6 +303,26 @@ async fn a_device_the_core_never_paired_with_is_turned_away() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_device_that_forgets_the_mac_is_unpaired() {
+    let core_key = SecretKey::generate();
+    let phone = Device::new("Phone", DeviceAccess::Watch);
+    let core = start_core(&core_key, &[&phone]);
+    let (app, _app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    let status = listening(&app).await;
+    let endpoint = phone.endpoint().await;
+    let (client, _events) = remote::connect(&endpoint, core_addr(&status))
+        .await
+        .expect("the phone connects");
+
+    client.unpair().await.expect("unpair");
+    until_disconnected(&client).await;
+    let status = app.remote_status().await.expect("status");
+    assert!(status.devices.is_empty());
+    let again = remote::connect(&endpoint, core_addr(&status)).await;
+    assert!(again.is_err(), "an unpaired device reconnected");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn revoking_or_narrowing_a_device_takes_effect_on_its_open_connection() {
     let core_key = SecretKey::generate();
     let phone = Device::new("Phone", DeviceAccess::Full);
@@ -694,6 +714,8 @@ async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
     };
     let refused = app.publish_backdrop(true, Some(not_a_picture)).await;
     assert!(refusal(refused).contains("not an image"));
+    let refused = app.unpair().await;
+    assert!(refusal(refused).contains("only a paired device"));
     let refused = client.publish_palette(Default::default()).await;
     assert!(refusal(refused).contains("only Sikemux on this Mac"));
 

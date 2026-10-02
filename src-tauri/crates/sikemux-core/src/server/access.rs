@@ -38,6 +38,7 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::AcpAttach { .. }
         | Request::AcpWake { .. }
         | Request::BackdropImage
+        | Request::Unpair
         | Request::AcpPermissionReply { .. }
         | Request::Workspace
         | Request::Attentions
