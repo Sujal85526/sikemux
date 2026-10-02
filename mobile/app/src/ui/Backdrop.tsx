@@ -7,6 +7,7 @@ import { ditheringFragmentShader, getShaderColorFromString, imageDitheringFragme
 
 import type { DeviceBackdrop } from '@/devices/backdrop';
 import { useColors, type Palette } from './theme';
+import { uploadPicture } from './picture';
 import { vertexShaderSource } from './vertexShader.generated';
 
 /** What the Mac a screen belongs to draws behind its panes; absent outside a device's screens. */
@@ -220,11 +221,12 @@ export function Backdrop() {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      // expo-gl uploads a file straight from its URI.
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, { localUri: picture } as never);
+      const loading = uploadPicture(gl, picture);
+      if (loading) loading.then(() => draw(surface, 0));
+      else draw(surface, 0);
+      return;
     }
     draw(surface, still ? STILL_MS * speed : (Date.now() - ORIGIN) * speed);
-    if (picture) return;
     // The loop holds this surface itself: a screen can mount more than one before settling on one.
     let timer: ReturnType<typeof setTimeout> | undefined;
     const tick = () => {
