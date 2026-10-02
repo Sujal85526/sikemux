@@ -1,123 +1,83 @@
 import { useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import * as ExpoDevice from 'expo-device';
-import { MobileError, parsePairingLink, type PairingLink } from '@sikemux/native';
 
-import { thisDevice } from '@/device/identity';
-import { rememberMac, type Access } from '@/macs/paired';
-import { colors, common } from '@/theme';
+import { failure, pair, type Failure } from '@/devices/pairing';
+import { Button, CodeTiles, Nav, Screen, Working } from '@/ui/parts';
+import { colors, fonts, radius, type } from '@/ui/theme';
 
-type Step =
-  | { state: 'entering'; problem?: string }
-  | { state: 'waiting'; link: PairingLink }
-  | { state: 'failed'; message: string };
+/** How long the Mac keeps a pairing request open (sikemux_core::pairing::APPROVAL_TIMEOUT). */
+const APPROVAL_SECONDS = 120;
 
-function phoneName(): string {
-  return ExpoDevice.deviceName ?? ExpoDevice.modelName ?? 'Phone';
-}
-
-function pairingProblem(error: unknown): string {
-  if (MobileError.WrongCode.instanceOf(error)) {
-    return 'That code is not the one on the Mac. Show a new code on the Mac and scan it again.';
-  }
-  if (MobileError.Refused.instanceOf(error)) return error.inner.message;
-  if (MobileError.Connection.instanceOf(error)) {
-    return `Could not reach the Mac: ${error.inner.message}`;
-  }
-  return String(error);
-}
-
-function spaced(code: string): string {
-  return `${code.slice(0, 3)} ${code.slice(3)}`;
+function clock(seconds: number): string {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
 export default function Pair() {
-  const params = useLocalSearchParams<{ core?: string; code?: string }>();
-  const linked = params.core && params.code ? { core: params.core, code: params.code } : undefined;
-  const [step, setStep] = useState<Step>(linked ? { state: 'waiting', link: linked } : { state: 'entering' });
-  const [typed, setTyped] = useState('');
+  const { core, code } = useLocalSearchParams<{ core: string; code: string }>();
+  const [failed, setFailed] = useState<Failure>();
+  const [left, setLeft] = useState(APPROVAL_SECONDS);
   const started = useRef<string>(undefined);
 
-  const link = step.state === 'waiting' ? step.link : undefined;
   useEffect(() => {
-    if (!link) return;
-    const attempt = `${link.core}/${link.code}`;
+    const attempt = `${core}/${code}`;
     if (started.current === attempt) return;
     started.current = attempt;
-    thisDevice()
-      .then((device) => device.pair(link.core, link.code, phoneName(), Platform.OS))
-      .then(async (access) => {
-        await rememberMac({ core: link.core, access: access as Access, pairedAt: Date.now() });
-        router.replace('/');
-      })
-      .catch((error: unknown) => setStep({ state: 'failed', message: pairingProblem(error) }));
-  }, [link]);
+    pair({ core, code })
+      .then(() => router.replace(`/device/${core}`))
+      .catch((error: unknown) => setFailed(failure(error)));
+  }, [core, code]);
 
-  const submit = () => {
-    const parsed = parsePairingLink(typed.trim());
-    setStep(parsed ? { state: 'waiting', link: parsed } : { state: 'entering', problem: 'That is not a Sikemux pairing link.' });
-  };
+  useEffect(() => {
+    if (failed) return;
+    const tick = setInterval(() => setLeft((seconds) => Math.max(0, seconds - 1)), 1000);
+    return () => clearInterval(tick);
+  }, [failed]);
 
   return (
-    <SafeAreaView style={common.screen}>
-      <View style={common.body}>
-        <Text style={common.title}>Pair with a Mac</Text>
-        {step.state === 'entering' && (
-          <>
-            <Text style={common.text}>
-              On your Mac, open Settings, then Devices, and scan the QR code with your camera. Or paste the
-              pairing link here.
-            </Text>
-            <TextInput
-              style={styles.input}
-              value={typed}
-              onChangeText={setTyped}
-              placeholder="sikemux://pair?…"
-              placeholderTextColor={colors.muted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              onSubmitEditing={submit}
-            />
-            {step.problem && <Text style={styles.problem}>{step.problem}</Text>}
-            <Pressable style={common.button} onPress={submit}>
-              <Text style={common.buttonText}>Pair</Text>
-            </Pressable>
-          </>
-        )}
-        {step.state === 'waiting' && (
-          <>
-            <Text style={common.text}>Approve this phone on your Mac.</Text>
-            <Text style={common.label}>Code</Text>
-            <Text style={common.key}>{spaced(step.link.code)}</Text>
-          </>
-        )}
-        {step.state === 'failed' && (
-          <>
-            <Text style={styles.problem}>{step.message}</Text>
-            <Pressable style={common.button} onPress={() => setStep({ state: 'entering' })}>
-              <Text style={common.buttonText}>Try again</Text>
-            </Pressable>
-          </>
-        )}
+    <Screen>
+      <Nav back={failed ? 'Back' : 'Cancel'} />
+      <View style={styles.block}>
+        <Text style={styles.title}>{failed ? failed.title : 'Approve on your Mac'}</Text>
+        <Text style={styles.detail}>
+          {failed ? failed.detail : 'Check the Mac shows this code, then choose what this iPhone may do.'}
+        </Text>
+        <View style={styles.tiles}>
+          <CodeTiles code={code} state={failed ? 'failed' : 'locked'} />
+        </View>
       </View>
-    </SafeAreaView>
+      <SafeAreaView edges={['bottom']} style={styles.footer}>
+        {failed ? (
+          <Button kind="primary" title="Scan again" onPress={() => router.replace('/scan')} />
+        ) : (
+          <View style={styles.waiting}>
+            <Working />
+            <Text style={styles.waitingText}>Waiting for your Mac</Text>
+            <Text style={type.mono}>{clock(left)}</Text>
+          </View>
+        )}
+      </SafeAreaView>
+    </Screen>
   );
 }
 
-const styles = {
-  input: {
-    marginTop: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 12,
+const styles = StyleSheet.create({
+  block: { flex: 1, paddingTop: 40, paddingHorizontal: 28, alignItems: 'center' },
+  title: { ...type.title, fontSize: 22, textAlign: 'center' },
+  detail: { ...type.body, textAlign: 'center', marginTop: 8, minHeight: 44 },
+  tiles: { marginTop: 32 },
+  footer: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 },
+  waiting: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    borderRadius: radius.row,
     borderWidth: 1,
-    borderColor: colors.line,
+    borderColor: colors.border,
     backgroundColor: colors.raised,
-    color: colors.ink,
-    fontFamily: 'Menlo',
-    fontSize: 14,
   },
-  problem: { color: colors.danger, fontSize: 15, lineHeight: 21, marginTop: 12 },
-} as const;
+  waitingText: { flex: 1, fontFamily: fonts.ui, fontSize: 15, color: colors.secondary },
+});

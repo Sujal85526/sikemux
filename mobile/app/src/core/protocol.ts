@@ -10,11 +10,14 @@ export type SessionInfo = {
   agentType: string | null;
   agentState: string | null;
   startedBy: string | null;
+  task: { label: string; command: string; cwd: string } | null;
+  exit: { code: number | null; signal: string | null } | null;
 };
 
 export type ChatInfo = {
   agentId: string;
   provider: string;
+  title: string | null;
   cwd: string;
   state: 'starting' | 'ready';
   running: boolean;
@@ -37,11 +40,14 @@ export type LauncherInfo = { id: string; provider: string; label: string; permis
 
 export type Workspace = { projects: ProjectInfo[]; launchers: LauncherInfo[] };
 
+export type HostInfo = { name: string; model: string };
+
 type Response =
   | { kind: 'sessions'; sessions: SessionInfo[] }
   | { kind: 'chats'; chats: ChatInfo[] }
   | { kind: 'attentions'; attentions: Attention[] }
-  | { kind: 'workspace'; workspace: Workspace };
+  | { kind: 'workspace'; workspace: Workspace }
+  | { kind: 'host'; host: HostInfo };
 
 type Answer<K extends Response['kind']> = Extract<Response, { kind: K }>;
 
@@ -75,4 +81,8 @@ export async function snapshot(connection: ConnectionLike): Promise<Snapshot> {
     chats: chats.chats,
     attentions: attentions.attentions,
   };
+}
+
+export async function host(connection: ConnectionLike): Promise<HostInfo> {
+  return (await ask(connection, 'host', 'host')).host;
 }

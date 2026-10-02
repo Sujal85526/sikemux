@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { Device, newDeviceKey, type DeviceLike } from '@sikemux/native';
 
@@ -28,4 +29,15 @@ let online: Promise<DeviceLike> | undefined;
 export function thisDevice(): Promise<DeviceLike> {
   online ??= deviceKey().then((key) => Device.create(key));
   return online;
+}
+
+/** This phone's key, once it is online. */
+export function useDeviceId(): string | undefined {
+  const [id, setId] = useState<string>();
+  useEffect(() => {
+    thisDevice()
+      .then((device) => setId(device.id()))
+      .catch(() => {});
+  }, []);
+  return id;
 }
