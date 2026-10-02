@@ -24,8 +24,7 @@ export interface SimulatorFrame {
 
 /** What the person does on the screen, in device points. */
 export type SimulatorInput =
-    | { type: "tap"; x: number; y: number; duration?: number }
-    | { type: "swipe"; fromX: number; fromY: number; toX: number; toY: number; duration?: number }
+    | { type: "touch"; phase: "down" | "move" | "up"; x: number; y: number }
     | { type: "button"; button: "home" | "lock" }
     | { type: "type"; text: string };
 

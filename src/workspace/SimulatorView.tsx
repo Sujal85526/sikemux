@@ -4,10 +4,6 @@ import type { DeskSimulator } from "../state/types";
 import { reportError } from "../state/toast";
 import { IconHome, IconLock } from "../ui/Icons";
 
-/** A press that moves less than this, in window pixels, is a tap rather than a swipe. */
-const TAP_SLOP = 6;
-const LONG_PRESS_SECONDS = 0.5;
-
 interface Box {
     left: number;
     top: number;
@@ -18,16 +14,21 @@ interface Box {
 /**
  * Where a point in the window lands on the device, in points, or null when it
  * misses the screen. The screen is drawn at its own aspect ratio, centred in
- * `stage`, so any margins around it are not part of it.
+ * `stage`, so any margins around it are not part of it. With `clamp`, a point
+ * off the screen lands on its nearest edge instead, as a finger dragged past
+ * the side of a phone stays on the glass.
  */
-export function toDevicePoint(stage: Box, screen: SimulatorScreen, clientX: number, clientY: number): { x: number; y: number } | null {
+export function toDevicePoint(stage: Box, screen: SimulatorScreen, clientX: number, clientY: number, clamp = false): { x: number; y: number } | null {
     const scale = Math.min(stage.width / screen.width, stage.height / screen.height);
     if (!(scale > 0)) return null;
     const left = stage.left + (stage.width - screen.width * scale) / 2;
     const top = stage.top + (stage.height - screen.height * scale) / 2;
-    const x = (clientX - left) / scale;
-    const y = (clientY - top) / scale;
-    if (x < 0 || y < 0 || x > screen.width || y > screen.height) return null;
+    let x = (clientX - left) / scale;
+    let y = (clientY - top) / scale;
+    const outside = x < 0 || y < 0 || x > screen.width || y > screen.height;
+    if (outside && !clamp) return null;
+    x = Math.min(Math.max(x, 0), screen.width);
+    y = Math.min(Math.max(y, 0), screen.height);
     return { x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 };
 }
 
@@ -45,7 +46,9 @@ export function SimulatorView({ simulator, live }: { simulator: DeskSimulator; l
     const [frame, setFrame] = useState<number | null>(null);
     const [failure, setFailure] = useState<string | null>(null);
     const image = useRef<HTMLImageElement>(null);
-    const press = useRef<{ x: number; y: number; clientX: number; clientY: number; at: number } | null>(null);
+    const steps = useRef<Promise<void>>(Promise.resolve());
+    const touching = useRef(false);
+    const pendingMove = useRef<{ x: number; y: number } | null>(null);
 
     /* The stream runs only while this tab is on screen, so a desk in the
        background costs the simulator nothing. */
@@ -67,11 +70,16 @@ export function SimulatorView({ simulator, live }: { simulator: DeskSimulator; l
         };
     }, [live, udid]);
 
-    const send = (input: SimulatorInput) => void simulatorApi.input(udid, input).catch(reportError("control the simulator"));
+    /* Each step waits for the one before, so the device sees a finger go down,
+       move and lift in the order it did. */
+    const inOrder = (next: () => Promise<void> | undefined) => {
+        steps.current = steps.current.then(next).catch(reportError("control the simulator"));
+    };
+    const send = (input: SimulatorInput) => inOrder(() => simulatorApi.input(udid, input));
 
-    const pointAt = (clientX: number, clientY: number) => {
+    const pointAt = (clientX: number, clientY: number, clamp = false) => {
         const box = image.current?.getBoundingClientRect();
-        return box && screen ? toDevicePoint(box, screen, clientX, clientY) : null;
+        return box && screen ? toDevicePoint(box, screen, clientX, clientY, clamp) : null;
     };
 
     const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -79,22 +87,31 @@ export function SimulatorView({ simulator, live }: { simulator: DeskSimulator; l
         if (!point || event.button !== 0) return;
         event.currentTarget.setPointerCapture(event.pointerId);
         event.currentTarget.focus();
-        press.current = { ...point, clientX: event.clientX, clientY: event.clientY, at: performance.now() };
+        touching.current = true;
+        send({ type: "touch", phase: "down", ...point });
     };
 
-    const onPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
-        const start = press.current;
-        press.current = null;
-        if (!start) return;
-        const seconds = (performance.now() - start.at) / 1000;
-        const moved = Math.hypot(event.clientX - start.clientX, event.clientY - start.clientY);
-        if (moved < TAP_SLOP) {
-            send({ type: "tap", x: start.x, y: start.y, ...(seconds >= LONG_PRESS_SECONDS ? { duration: seconds } : {}) });
-            return;
-        }
-        const end = pointAt(event.clientX, event.clientY);
-        if (!end) return;
-        send({ type: "swipe", fromX: start.x, fromY: start.y, toX: end.x, toY: end.y, duration: Math.min(Math.max(seconds, 0.05), 2) });
+    /* Moves that arrive while an earlier step is still on its way fold into
+       the latest one, so the device follows the finger without a backlog. */
+    const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+        if (!touching.current) return;
+        const point = pointAt(event.clientX, event.clientY, true);
+        if (!point) return;
+        const queued = pendingMove.current !== null;
+        pendingMove.current = point;
+        if (queued) return;
+        inOrder(() => {
+            const latest = pendingMove.current;
+            pendingMove.current = null;
+            return latest ? simulatorApi.input(udid, { type: "touch", phase: "move", ...latest }) : undefined;
+        });
+    };
+
+    const lift = (event: React.PointerEvent<HTMLDivElement>) => {
+        if (!touching.current) return;
+        touching.current = false;
+        const point = pointAt(event.clientX, event.clientY, true);
+        if (point) send({ type: "touch", phase: "up", ...point });
     };
 
     const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -124,8 +141,9 @@ export function SimulatorView({ simulator, live }: { simulator: DeskSimulator; l
                 role="application"
                 aria-label={`${label} screen. Click to tap, drag to swipe, type to enter text.`}
                 onPointerDown={onPointerDown}
-                onPointerUp={onPointerUp}
-                onPointerCancel={() => (press.current = null)}
+                onPointerMove={onPointerMove}
+                onPointerUp={lift}
+                onPointerCancel={lift}
                 onKeyDown={onKeyDown}>
                 {failure ? (
                     <p className="simulator-status">The simulator view stopped: {failure}</p>

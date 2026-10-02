@@ -90,21 +90,65 @@ describe("the simulator view", () => {
         expect(screen.getByText(/The simulator view stopped: the simulator stream answered/)).toBeTruthy();
     });
 
-    it("turns a click on the screen into a tap there, and the Home button into a press", async () => {
-        const { screen, deliver } = mount(true);
+    async function onScreen() {
+        const mounted = mount(true);
         await vi.waitFor(() => expect(simulatorApi.subscribeFrames).toHaveBeenCalled());
-        deliver({ udid: "U1", frame: 1 });
-        const image = screen.getByRole("img");
-        image.getBoundingClientRect = () => ({ left: 0, top: 0, width: 201, height: 437 }) as DOMRect;
-        const stage = screen.getByRole("application");
+        mounted.deliver({ udid: "U1", frame: 1 });
+        mounted.screen.getByRole("img").getBoundingClientRect = () => ({ left: 0, top: 0, width: 201, height: 437 }) as DOMRect;
+        const stage = mounted.screen.getByRole("application");
         stage.setPointerCapture = () => {};
+        return { ...mounted, stage };
+    }
+
+    const sent = () => vi.mocked(simulatorApi.input).mock.calls.map(([, input]) => input);
+
+    it("puts a finger down and lifts it where the screen is clicked, and presses Home", async () => {
+        const { screen, stage } = await onScreen();
 
         fireEvent.pointerDown(stage, { clientX: 170, clientY: 217, button: 0, pointerId: 1 });
         fireEvent.pointerUp(stage, { clientX: 170, clientY: 217, pointerId: 1 });
-        expect(simulatorApi.input).toHaveBeenCalledWith("U1", { type: "tap", x: 340, y: 434 });
-
         fireEvent.click(screen.getByRole("button", { name: "Home" }));
-        expect(simulatorApi.input).toHaveBeenCalledWith("U1", { type: "button", button: "home" });
+
+        await vi.waitFor(() =>
+            expect(sent()).toEqual([
+                { type: "touch", phase: "down", x: 340, y: 434 },
+                { type: "touch", phase: "up", x: 340, y: 434 },
+                { type: "button", button: "home" },
+            ]),
+        );
+    });
+
+    it("follows a drag live, folding moves that arrive while one is on its way into the latest", async () => {
+        const { stage } = await onScreen();
+
+        fireEvent.pointerDown(stage, { clientX: 100, clientY: 400, button: 0, pointerId: 1 });
+        fireEvent.pointerMove(stage, { clientX: 100, clientY: 350, pointerId: 1 });
+        fireEvent.pointerMove(stage, { clientX: 100, clientY: 300, pointerId: 1 });
+        fireEvent.pointerMove(stage, { clientX: 100, clientY: 250, pointerId: 1 });
+        fireEvent.pointerUp(stage, { clientX: 100, clientY: 200, pointerId: 1 });
+
+        await vi.waitFor(() =>
+            expect(sent()).toEqual([
+                { type: "touch", phase: "down", x: 200, y: 800 },
+                { type: "touch", phase: "move", x: 200, y: 500 },
+                { type: "touch", phase: "up", x: 200, y: 400 },
+            ]),
+        );
+    });
+
+    it("keeps a finger dragged off the phone on its edge, and ignores a press beside it", async () => {
+        const { stage } = await onScreen();
+
+        fireEvent.pointerDown(stage, { clientX: 400, clientY: 200, button: 0, pointerId: 1 });
+        fireEvent.pointerDown(stage, { clientX: 20, clientY: 200, button: 0, pointerId: 2 });
+        fireEvent.pointerUp(stage, { clientX: -50, clientY: 200, pointerId: 2 });
+
+        await vi.waitFor(() =>
+            expect(sent()).toEqual([
+                { type: "touch", phase: "down", x: 40, y: 400 },
+                { type: "touch", phase: "up", x: 0, y: 400 },
+            ]),
+        );
     });
 
     it("does not watch a simulator that is not on screen", () => {

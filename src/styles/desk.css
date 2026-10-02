@@ -477,19 +477,22 @@
 /* The screen keeps the device's own proportions, centred, with the margins
    around it left empty; clicks there do nothing. */
 .simulator-stage {
+    position: relative;
     display: grid;
     place-items: center;
     min-height: 0;
-    padding: 12px;
+    overflow: hidden;
     outline: none;
     touch-action: none;
     user-select: none;
 }
 
 .simulator-screen {
-    max-width: 100%;
-    max-height: 100%;
-    border-radius: var(--radius-2);
+    position: absolute;
+    inset: 12px;
+    width: calc(100% - 24px);
+    height: calc(100% - 24px);
+    object-fit: contain;
     pointer-events: none;
 }
 
