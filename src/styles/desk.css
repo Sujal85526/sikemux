@@ -23,7 +23,8 @@
     display: none;
 }
 
-.desk-page {
+.desk-page,
+.desk-simulator {
     display: grid;
     grid-template-rows: 34px minmax(0, 1fr);
     min-width: 0;
@@ -130,7 +131,8 @@
 }
 
 .tabbar.v-desk .tab-add,
-.browser-toolbar button {
+.browser-toolbar button,
+.simulator-toolbar button {
     display: grid;
     place-items: center;
     flex: none;
@@ -148,7 +150,8 @@
 }
 
 .tabbar.v-desk .tab-add:hover,
-.browser-toolbar button:hover {
+.browser-toolbar button:hover,
+.simulator-toolbar button:hover {
     background: var(--surface-hover);
     color: var(--ink);
 }
@@ -157,7 +160,8 @@
    surface, so like the editor's strip they paint nothing. A second fill here
    stacked on the pane's and left the top of the desk more solid than the
    rest of the window. */
-.browser-toolbar {
+.browser-toolbar,
+.simulator-toolbar {
     position: relative;
     display: flex;
     align-items: center;
@@ -168,7 +172,8 @@
     background: transparent;
 }
 
-.browser-toolbar button {
+.browser-toolbar button,
+.simulator-toolbar button {
     width: 24px;
     height: 24px;
 }
@@ -459,4 +464,38 @@
 
 .address-float .address-suggestions li {
     height: 32px;
+}
+
+.simulator-device {
+    flex: 1;
+    overflow: hidden;
+    padding: 0 6px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* The screen keeps the device's own proportions, centred, with the margins
+   around it left empty; clicks there do nothing. */
+.simulator-stage {
+    display: grid;
+    place-items: center;
+    min-height: 0;
+    padding: 12px;
+    outline: none;
+    touch-action: none;
+    user-select: none;
+}
+
+.simulator-screen {
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: var(--radius-2);
+    pointer-events: none;
+}
+
+.simulator-device,
+.simulator-status {
+    margin: 0;
+    color: var(--ink-faint);
+    font-size: 12px;
 }

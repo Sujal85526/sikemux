@@ -13,13 +13,14 @@ import {
     fileKey,
     isShown,
     shownDeskItem,
+    simulatorKey,
     terminalKey,
     type DeskItem,
 } from "../desks";
 import { reportError } from "../toast";
 import { activeAgentId, shownDeskPaneId } from "../selectors";
 import { collectPanes, makePane, newId, removePane, splitPane } from "../layout";
-import type { Desk } from "../types";
+import type { Desk, DeskSimulator } from "../types";
 import { setEditorView } from "./editor";
 import { dirtyPathsForPane, dropDeskPaneState, guardDiscardDirty } from "./shared";
 
@@ -180,6 +181,23 @@ export function openDeskTerminal(
     return id;
 }
 
+/**
+ * Shows a simulator the agent attached on its desk, in front. Attaching the same
+ * device again comes back to its tab.
+ */
+export function openDeskSimulator(agentId: string, simulator: DeskSimulator): void {
+    mutate((d) => {
+        const desk = ensureDesk(d, agentId);
+        const key = simulatorKey(simulator.udid);
+        const known = desk.simulators.findIndex((candidate) => candidate.udid === simulator.udid);
+        if (known >= 0) desk.simulators[known] = simulator;
+        else desk.simulators.push(simulator);
+        if (!desk.order.includes(key)) desk.order.push(key);
+        desk.active = key;
+    });
+    revealDesk(agentId);
+}
+
 export function showDeskTerminal(agentId: string, id: string): void {
     revealDesk(agentId);
     setDeskActive(agentId, terminalKey(id));
@@ -227,6 +245,15 @@ export function closeDeskItem(agentId: string, item: DeskItem): void {
         emit({ type: "close-file", paneId: deskEditorId(agentId), path: item.path });
         return;
     }
+    if (item.kind === "simulator") {
+        mutate((d) => {
+            const current = d.desks[agentId];
+            if (!current) return;
+            current.simulators = current.simulators.filter((simulator) => simulator.udid !== item.simulator.udid);
+            current.order = current.order.filter((key) => key !== item.key);
+        });
+        return;
+    }
     taskPtyBindings.release(item.terminal.id);
     mutate((d) => {
         const current = d.desks[agentId];
@@ -236,7 +263,7 @@ export function closeDeskItem(agentId: string, item: DeskItem): void {
     });
 }
 
-/** Closes the page, file or terminal the desk is showing; false when it shows nothing. */
+/** Closes the page, file, terminal or simulator the desk is showing; false when it shows nothing. */
 export function closeShownDeskTab(agentId: string): boolean {
     const state = getState();
     const items = deskItemsOf(state, agentId);

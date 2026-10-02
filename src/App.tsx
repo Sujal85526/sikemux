@@ -40,6 +40,7 @@ import { VoiceCaption } from "./voice/VoiceCaption";
 import { useBackdropImage } from "./hooks/useBackdropImage";
 import { useBrowserDownloads } from "./state/browserDownloads";
 import { useBrowserReveal } from "./state/browserReveal";
+import { useSimulatorReveal } from "./state/simulatorReveal";
 import { useBrowserStrips } from "./state/browserStrips";
 import { filesApi } from "./api/files";
 import { emit } from "./state/bus";
@@ -691,6 +692,7 @@ export default function App() {
     useVoiceDictation();
     useBrowserDownloads();
     useBrowserReveal();
+    useSimulatorReveal();
     useBrowserStrips();
     useRailWidthVars();
     const [bootReady, setBootReady] = useState(false);

@@ -568,6 +568,7 @@ describe("DeskHost", () => {
                     order: ["file:/repo/src/a.ts", "browser:tab-one", "terminal:term-web"],
                     active: "file:/repo/src/a.ts",
                     terminals: [{ id: "term-web", terminalKey: "task-web", label: "Web", cwd: "/repo" }],
+                    simulators: [],
                     reveal: null,
                 },
             },
@@ -599,7 +600,13 @@ describe("DeskHost", () => {
         vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [], activeTabId: null });
         setState({
             desks: {
-                "agent-one": { order: ["file:/repo/b.ts"], active: "file:/repo/b.ts", terminals: [], reveal: { path: "/repo/b.ts", seq: 1 } },
+                "agent-one": {
+                    order: ["file:/repo/b.ts"],
+                    active: "file:/repo/b.ts",
+                    terminals: [],
+                    simulators: [],
+                    reveal: { path: "/repo/b.ts", seq: 1 },
+                },
             },
         } as never);
         renderPane();

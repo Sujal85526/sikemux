@@ -210,6 +210,7 @@ export const IconPhone = makeSvgIcon(
         <path d="M7.2 11.8h1.6" />
     </>,
 );
+export const IconHome = makeSvgIcon(<path d="M2.8 7.4 8 3l5.2 4.4v5.8a.8.8 0 0 1-.8.8H3.6a.8.8 0 0 1-.8-.8Z" />);
 export const IconLock = makeSvgIcon(
     <>
         <rect x="3.5" y="7" width="9" height="6.5" rx="1.5" />
