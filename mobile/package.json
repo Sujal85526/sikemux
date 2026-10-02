@@ -17,6 +17,7 @@
     "start": "pnpm --filter sikemux-app start",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r --if-present lint",
+    "test": "pnpm -r --if-present test",
     "format": "pnpm -r --if-present format",
     "format:check": "pnpm -r --if-present format:check",
     "design": "node design/build.mjs --serve",

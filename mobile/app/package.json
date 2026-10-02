@@ -14,8 +14,9 @@
     "prebuild": "node scripts/run.mjs prebuild",
     "typecheck": "node ../scripts/require-bindings.mjs && node scripts/generate.mjs && tsc --noEmit",
     "lint": "eslint .",
-    "format": "prettier --write \"**/*.{ts,tsx,js,mjs}\"",
-    "format:check": "prettier --check \"**/*.{ts,tsx,js,mjs}\""
+    "test": "vitest run",
+    "format": "prettier --write \"**/*.{ts,tsx,mts,js,mjs}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,mts,js,mjs}\""
   },
   "dependencies": {
     "@expo-google-fonts/figtree": "^0.4.1",
