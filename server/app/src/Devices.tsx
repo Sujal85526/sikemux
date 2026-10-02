@@ -1,8 +1,9 @@
 import { useAuth } from "@clerk/react";
 import type { Device } from "@sikemux/protocol";
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 
 import { api } from "./api.ts";
+import { LaptopIcon, PhoneIcon } from "./icons.tsx";
 
 type Load =
   | { state: "loading" }
@@ -14,14 +15,8 @@ const PLATFORMS: Record<Device["platform"], string> = {
   ios: "iOS",
   android: "Android",
 };
-const CHANNELS: Record<NonNullable<Device["channel"]>, string> = {
-  dev: "dev",
-  nightly: "nightly",
-  stable: "stable",
-};
 
-function when(iso: string | null): string {
-  if (!iso) return "never";
+function added(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, {
     day: "numeric",
     month: "short",
@@ -29,17 +24,20 @@ function when(iso: string | null): string {
   });
 }
 
-export function Devices() {
-  const { getToken } = useAuth();
+export function Devices({ ready }: { ready: boolean }) {
+  const { isSignedIn, getToken } = useAuth();
   const [load, setLoad] = useState<Load>({ state: "loading" });
 
+  const read = useEffectEvent(async () => {
+    const token = await getToken();
+    if (!token) throw new Error("Sign in again to see your devices.");
+    return api.devices(token);
+  });
+
   useEffect(() => {
+    if (!ready || !isSignedIn) return;
     let live = true;
-    getToken()
-      .then((token) => {
-        if (!token) throw new Error("Sign in again to see your devices.");
-        return api.devices(token);
-      })
+    read()
       .then(
         (list) => live && setLoad({ state: "loaded", devices: list.devices }),
       )
@@ -48,31 +46,28 @@ export function Devices() {
           live &&
           setLoad({
             state: "failed",
-            message: String((error as Error).message ?? error),
+            message: error instanceof Error ? error.message : String(error),
           }),
       );
     return () => {
       live = false;
     };
-  }, [getToken]);
+  }, [ready, isSignedIn]);
 
-  if (load.state === "loading")
-    return <p className="quiet">Loading your devices…</p>;
   if (load.state === "failed") return <p className="problem">{load.message}</p>;
 
-  const hosts = load.devices.filter((device) => device.role === "host");
-  const clients = load.devices.filter((device) => device.role === "client");
+  const devices = load.state === "loaded" ? load.devices : null;
   return (
-    <div className="devices">
+    <div className="groups">
       <DeviceGroup
         title="Macs"
-        empty="No Macs yet. In Sikemux on your Mac, open Settings, Devices and sign in."
-        devices={hosts}
+        empty="No Macs yet. In Sikemux on your Mac, open Settings, then Devices, and sign in."
+        devices={devices?.filter((device) => device.role === "host") ?? null}
       />
       <DeviceGroup
         title="Phones"
         empty="No phones yet. Sign in to Sikemux on your phone."
-        devices={clients}
+        devices={devices?.filter((device) => device.role === "client") ?? null}
       />
     </div>
   );
@@ -85,28 +80,40 @@ function DeviceGroup({
 }: {
   title: string;
   empty: string;
-  devices: Device[];
+  devices: Device[] | null;
 }) {
   return (
     <section className="group">
       <h2>
-        {title} <span className="count">{devices.length}</span>
+        {title}
+        {devices ? <span className="count">{devices.length}</span> : null}
       </h2>
-      {devices.length === 0 ? (
-        <p className="quiet">{empty}</p>
+      {devices === null ? (
+        <ul className="rows" aria-busy="true">
+          <li className="row placeholder" />
+        </ul>
+      ) : devices.length === 0 ? (
+        <p className="empty">{empty}</p>
       ) : (
         <ul className="rows">
           {devices.map((device) => (
             <li key={device.key} className="row">
+              <span className="glyph">
+                {device.role === "host" ? (
+                  <LaptopIcon size={18} />
+                ) : (
+                  <PhoneIcon size={18} />
+                )}
+              </span>
               <span className="name">{device.name}</span>
               <span className="detail">
                 {PLATFORMS[device.platform] ?? device.platform}
-                {device.channel
-                  ? ` · ${CHANNELS[device.channel] ?? device.channel}`
-                  : ""}
-                {` · added ${when(device.createdAt)}`}
+                {device.channel ? ` · ${device.channel}` : ""}
+                {` · added ${added(device.createdAt)}`}
               </span>
-              <code className="key">{device.key.slice(0, 8)}</code>
+              <code className="key" title={device.key}>
+                {device.key.slice(0, 8)}
+              </code>
             </li>
           ))}
         </ul>

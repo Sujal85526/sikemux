@@ -1,5 +1,4 @@
 import { ClerkProvider } from "@clerk/react";
-import { dark } from "@clerk/ui/themes";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -13,7 +12,8 @@ createRoot(root).render(
   <StrictMode>
     <ClerkProvider
       publishableKey={config.clerkPublishableKey}
-      appearance={{ theme: dark }}
+      prefetchUI={false}
+      afterSignOutUrl="/"
     >
       <App />
     </ClerkProvider>
