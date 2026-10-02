@@ -4,6 +4,9 @@
 //! As the Mac, against a core's socket:
 //!   remote mac <socket> on | off | code | allow | status
 //!   remote mac <socket> spawn
+//!   remote mac <socket> publish            offers the fake agent to devices
+//!   remote mac <socket> chat [prompt]      starts a chat with it
+//!   remote mac <socket> say <agent> <text>
 //! As a device, keeping its key in `<key-file>`:
 //!   remote device <key-file> pair <core-id> <code>
 //!   remote device <key-file> sessions <core-id>
@@ -15,7 +18,9 @@ use iroh::endpoint::presets;
 use iroh::{Endpoint, EndpointAddr};
 use sikemux_core::client::CoreClient;
 use sikemux_core::pairing::{self, PairingRequest};
-use sikemux_core::protocol::{DeviceAccess, LaunchIdentity, SpawnTarget, TerminalSpawn};
+use sikemux_core::protocol::{
+    ChatLauncher, DeviceAccess, LaunchIdentity, ProjectInfo, SpawnTarget, TerminalSpawn,
+};
 use sikemux_core::remote::{self, SecretKey};
 
 type Failure = Box<dyn std::error::Error>;
@@ -26,10 +31,13 @@ async fn main() -> Result<(), Failure> {
     let words: Vec<&str> = args.iter().map(String::as_str).collect();
     match words.as_slice() {
         ["mac", socket, "spawn"] => spawn(Path::new(socket)).await,
+        ["mac", socket, "publish"] => publish(Path::new(socket)).await,
+        ["mac", socket, "chat", prompt @ ..] => chat(Path::new(socket), &prompt.join(" ")).await,
+        ["mac", socket, "say", agent, text @ ..] => say(Path::new(socket), agent, &text.join(" ")).await,
         ["mac", socket, action] => mac(Path::new(socket), action).await,
         ["device", key, "pair", core, code] => pair(Path::new(key), core, code).await,
         ["device", key, "sessions", core] => sessions(Path::new(key), core).await,
-        _ => Err("usage: remote mac <socket> on|off|code|allow|status|spawn | remote device <key-file> pair <core-id> <code> | remote device <key-file> sessions <core-id>".into()),
+        _ => Err("usage: remote mac <socket> on|off|code|allow|status|spawn|publish|chat|say | remote device <key-file> pair <core-id> <code> | remote device <key-file> sessions <core-id>".into()),
     }
 }
 
@@ -66,6 +74,59 @@ async fn spawn(socket: &Path) -> Result<(), Failure> {
         ..TerminalSpawn::default()
     });
     println!("terminal {}", client.spawn(launch, terminal).await?);
+    Ok(())
+}
+
+/// The fake agent is built beside this example, one directory up.
+fn fake_agent() -> Result<std::path::PathBuf, Failure> {
+    let examples = std::env::current_exe()?;
+    let debug = examples
+        .parent()
+        .and_then(Path::parent)
+        .ok_or("the example is not inside a target directory")?;
+    Ok(debug.join("sikemux-fake-acp-agent"))
+}
+
+async fn publish(socket: &Path) -> Result<(), Failure> {
+    let (client, _events) = CoreClient::connect(socket).await?;
+    let launcher = ChatLauncher {
+        id: "opencode".into(),
+        provider: "opencode".into(),
+        label: "OpenCode".into(),
+        program: fake_agent()?,
+        args: vec!["acp".into()],
+        env: Default::default(),
+        permission_mode: "workspace-write".into(),
+    };
+    let project = ProjectInfo {
+        id: "tmp".into(),
+        name: "tmp".into(),
+        path: std::env::temp_dir(),
+    };
+    client.publish_workspace(vec![project], vec![launcher]).await?;
+    println!("published the fake agent");
+    Ok(())
+}
+
+async fn chat(socket: &Path, prompt: &str) -> Result<(), Failure> {
+    let (client, _events) = CoreClient::connect(socket).await?;
+    let (agent, _start) = client
+        .start_chat("opencode".into(), "tmp".into(), None)
+        .await?;
+    println!("chat {agent}");
+    if !prompt.is_empty() {
+        client
+            .acp_prompt(agent, prompt.into(), Vec::new(), Vec::new())
+            .await?;
+    }
+    Ok(())
+}
+
+async fn say(socket: &Path, agent: &str, text: &str) -> Result<(), Failure> {
+    let (client, _events) = CoreClient::connect(socket).await?;
+    client
+        .acp_prompt(agent.into(), text.into(), Vec::new(), Vec::new())
+        .await?;
     Ok(())
 }
 
