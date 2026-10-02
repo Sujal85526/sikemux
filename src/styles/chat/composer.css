@@ -180,7 +180,7 @@
 /* Beside the borderless pickers the toggle is text too: the rainbow word
    carries YOLO, and the ring and key hint stay in the pane header. */
 .chat-composer-bar .yolo-toggle {
-    padding: 0 8px;
+    padding: 0 11px;
     border-color: transparent;
     background: none;
 }

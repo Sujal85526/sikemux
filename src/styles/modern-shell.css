@@ -1284,6 +1284,8 @@ textarea,
         .rnd-live i,
         .chat-send,
         .chat-project-trigger,
+        .chat-picker-trigger,
+        .chat-composer-bar .yolo-toggle,
         .chat-project-strip .worktree-toggle
     ) {
     border-radius: var(--radius-full) !important;
