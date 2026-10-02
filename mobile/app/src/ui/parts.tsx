@@ -16,7 +16,7 @@ import { router } from 'expo-router';
 
 import { Backdrop } from './Backdrop';
 import { Icon } from './Icon';
-import { fonts, type Palette, radius, typeFor, useColors, useStyles, useType } from './theme';
+import { fonts, type Palette, radius, typeFor, useColors, useStyles, useType, translucent } from './theme';
 
 /** Space under a screen's last content: the system's home bar or gesture bar, then a little air. */
 export function useBottomGap(): number {
@@ -335,7 +335,7 @@ const makeStyles = (colors: Palette) => {
     rowDetail: { ...type.meta, fontSize: 12.5, marginTop: 1 },
     rowEnd: { minWidth: 20, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 },
 
-    track: { height: 36, padding: 3, borderRadius: 10, borderWidth: 1, borderColor: colors.border, flexDirection: 'row' },
+    track: { height: 36, padding: 3, borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: translucent(colors.raised, 0.8), flexDirection: 'row' },
     trackOption: { flex: 1, borderRadius: 7, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 },
     trackOn: { backgroundColor: colors.active },
     trackText: { fontFamily: fonts.ui, fontSize: 13, color: colors.tertiary },

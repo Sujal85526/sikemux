@@ -56,6 +56,14 @@ export function paletteFrom(published: Readonly<Record<string, string>> | undefi
   return palette;
 }
 
+/** A palette colour at some opacity, for surfaces that let the backdrop show through. */
+export function translucent(color: string, opacity: number): string {
+  const hex = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(color);
+  if (!hex) return color;
+  const [red, green, blue] = hex.slice(1).map((part) => parseInt(part, 16));
+  return `rgba(${red}, ${green}, ${blue}, ${opacity})`;
+}
+
 /** Whether a palette's ground is light, so the status bar's text turns dark on it. */
 export function isLight(palette: Palette): boolean {
   const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(palette.ground);

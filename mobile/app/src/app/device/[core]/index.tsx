@@ -9,7 +9,7 @@ import { ProjectSheet } from '@/devices/ProjectSheet';
 import { chatState, chatTitle, folder } from '@/devices/words';
 import { AgentIcon, DeviceIcon, Icon } from '@/ui/Icon';
 import { Group, IconButton, Nav, NeedsYou, Row, Screen, SectionLabel, Track, useBottomGap, Working } from '@/ui/parts';
-import { fonts, type Palette, radius, typeFor, useColors, useStyles, useType } from '@/ui/theme';
+import { fonts, type Palette, radius, typeFor, useColors, useStyles, useType, translucent } from '@/ui/theme';
 
 type Tab = 'agents' | 'terminals';
 
@@ -340,8 +340,8 @@ const makeStyles = (colors: Palette) => {
     },
     termCount: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     filters: { flexDirection: 'row', gap: 6, paddingTop: 12 },
-    filter: { height: 32, minWidth: 40, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
-    filterOn: { backgroundColor: colors.active, borderColor: colors.borderStrong },
+    filter: { height: 32, minWidth: 40, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: translucent(colors.raised, 0.8), alignItems: 'center', justifyContent: 'center' },
+    filterOn: { backgroundColor: translucent(colors.overlay, 0.9), borderColor: colors.borderStrong },
     filterText: { fontFamily: fonts.ui, fontSize: 13, color: colors.secondary },
     ask: {
       marginTop: 14,
