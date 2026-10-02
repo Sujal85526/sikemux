@@ -21,7 +21,7 @@
     "ubrn:ios:release": "node scripts/ubrn.mjs build ios --and-generate --profile mobile",
     "ubrn:android:release": "node scripts/ubrn.mjs build android --and-generate --profile mobile && node scripts/shrink-android-link.mjs",
     "ubrn:clean": "rm -rf cpp/ ios/ android/ src/ build/ *.podspec *.xcframework",
-    "typecheck": "tsc"
+    "typecheck": "node ../scripts/require-bindings.mjs && tsc"
   },
   "peerDependencies": {
     "react": "*",
