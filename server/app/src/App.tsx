@@ -48,6 +48,10 @@ export function App() {
         ) : (
           <main className="center">
             <SignIn ready={isLoaded} />
+            <footer className="legal">
+              <a href="https://sikemux.com/privacy">Privacy</a>
+              <a href="https://sikemux.com/terms">Terms</a>
+            </footer>
           </main>
         )}
       </div>
