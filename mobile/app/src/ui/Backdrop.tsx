@@ -143,7 +143,8 @@ function draw(surface: Surface, frameMs: number) {
   gl.endFrameEXP();
 }
 
-function useStill(): boolean {
+/** Whether the person asked the system to reduce motion. */
+export function useStill(): boolean {
   const [still, setStill] = useState(false);
   useEffect(() => {
     AccessibilityInfo.isReduceMotionEnabled().then(setStill);

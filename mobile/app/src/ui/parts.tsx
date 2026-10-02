@@ -1,6 +1,5 @@
-import { Children, useEffect, useRef, type ReactNode } from 'react';
+import { Children, isValidElement, useEffect, useRef, type ReactNode } from 'react';
 import {
-  AccessibilityInfo,
   Animated,
   Easing,
   Pressable,
@@ -14,7 +13,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
-import { Backdrop } from './Backdrop';
+import { Backdrop, useStill } from './Backdrop';
 import { Icon } from './Icon';
 import { fonts, type Palette, radius, typeFor, useColors, useStyles, useType, translucent } from './theme';
 
@@ -106,7 +105,7 @@ export function Group({ children, inset = 50 }: { children: ReactNode; inset?: n
   return (
     <View style={styles.group}>
       {rows.map((row, index) => (
-        <View key={index}>
+        <View key={isValidElement(row) && row.key !== null ? row.key : index}>
           {index > 0 ? <View style={[styles.divider, { marginLeft: inset }]} /> : null}
           {row}
         </View>
@@ -196,21 +195,14 @@ export function Track<T extends string>({
   );
 }
 
-function useReducedMotion() {
-  const reduced = useRef(false);
-  useEffect(() => {
-    AccessibilityInfo.isReduceMotionEnabled().then((value) => {
-      reduced.current = value;
-    });
-  }, []);
-  return reduced;
-}
-
 function useLoop(duration: number, delay = 0) {
   const value = useRef(new Animated.Value(0)).current;
-  const reduced = useReducedMotion();
+  const still = useStill();
   useEffect(() => {
-    if (reduced.current) return;
+    if (still) {
+      value.setValue(0);
+      return;
+    }
     const loop = Animated.loop(
       Animated.sequence([
         Animated.delay(delay),
@@ -219,7 +211,7 @@ function useLoop(duration: number, delay = 0) {
     );
     loop.start();
     return () => loop.stop();
-  }, [value, duration, delay, reduced]);
+  }, [value, duration, delay, still]);
   return value;
 }
 
