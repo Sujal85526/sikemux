@@ -1,23 +1,30 @@
 import { fileURLToPath } from "node:url";
 
-import { loadConfig } from "./config.ts";
+import type { Level } from "pino";
+
+import { loadConfig, loadMigrationConfig } from "./config.ts";
 import { openDatabase } from "./db.ts";
 import { createLogger } from "./log.ts";
 import { migrate, readMigrations } from "./migrations.ts";
 import { startServer } from "./server.ts";
 
-const command = process.argv[2] ?? "serve";
-const config = loadConfig(process.env);
-const log = createLogger(config.logLevel);
+function startLogging(level: Level) {
+  const log = createLogger(level);
+  process.on("unhandledRejection", (error) => {
+    log.fatal({ err: error }, "an unhandled rejection");
+    process.exit(1);
+  });
+  return log;
+}
 
-process.on("unhandledRejection", (error) => {
-  log.fatal({ err: error }, "an unhandled rejection");
-  process.exit(1);
-});
+const command = process.argv[2] ?? "serve";
 
 if (command === "serve") {
-  startServer(config, log);
+  const config = loadConfig(process.env);
+  startServer(config, startLogging(config.logLevel));
 } else if (command === "migrate") {
+  const config = loadMigrationConfig(process.env);
+  const log = startLogging(config.logLevel);
   const database = openDatabase(config.databaseUrl, log);
   try {
     const migrations = await readMigrations(
@@ -35,6 +42,9 @@ if (command === "serve") {
     await database.close();
   }
 } else {
-  log.fatal({ command }, "unknown command; use serve or migrate");
+  startLogging("info").fatal(
+    { command },
+    "unknown command; use serve or migrate",
+  );
   process.exitCode = 2;
 }
