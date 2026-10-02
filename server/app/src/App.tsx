@@ -1,5 +1,5 @@
 import { HandleSSOCallback, useAuth, useClerk, useUser } from "@clerk/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Backdrop } from "./Backdrop.tsx";
 import { Devices } from "./Devices.tsx";
@@ -15,6 +15,15 @@ export function App() {
   const { isLoaded, isSignedIn } = useAuth();
   const [path, setPath] = useState(location.pathname);
   const signedIn = isLoaded ? isSignedIn : SIGNED_IN_BEFORE;
+
+  useEffect(() => {
+    document.title =
+      path === "/sso-callback"
+        ? "Signing in · Sikemux"
+        : signedIn
+          ? "Your devices · Sikemux"
+          : "Sign in · Sikemux";
+  }, [path, signedIn]);
 
   const goHome = () => {
     history.replaceState(null, "", "/");
