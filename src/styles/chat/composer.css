@@ -397,8 +397,8 @@
         display: none;
     }
 
-    .agent-surface-header {
-        justify-content: flex-end;
+    .agent-surface-name {
+        padding: 0 3px;
     }
 
     .chat-message {

@@ -1303,7 +1303,8 @@ textarea,
         .chat-project-trigger,
         .chat-picker-trigger,
         .chat-composer-bar .yolo-toggle,
-        .chat-project-strip .worktree-toggle
+        .chat-project-strip .worktree-toggle,
+        .agent-surface-header button
     ) {
     border-radius: var(--radius-full) !important;
 }

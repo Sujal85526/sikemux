@@ -140,57 +140,61 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
     }, [agent.id, tuiShown]);
 
     return (
-        <section className="agent-surface">
+        <section className="agent-surface" data-view={view}>
             <header className="agent-surface-header">
-                <span className={`agent-surface-mark agent-glyph ${agent.type}`} aria-hidden="true">
-                    <AgentIcon type={agent.type} size={16} />
-                </span>
-                {renaming ? (
-                    <AgentTitleInput
-                        title={agent.title}
-                        className="agent-surface-title"
-                        onSave={(title) => cmd.renameAgent(agent.id, title)}
-                        onDone={() => setRenaming(false)}
-                    />
-                ) : (
-                    <span className="agent-surface-title" title={agent.title} onDoubleClick={() => setRenaming(true)}>
-                        {agent.title}
+                <div className="agent-surface-name">
+                    <span className={`agent-surface-mark agent-glyph ${agent.type}`} aria-hidden="true">
+                        <AgentIcon type={agent.type} size={16} />
                     </span>
-                )}
-                <AgentMenuButton agent={agent} session={session} onRename={() => setRenaming(true)} />
-                {view === "tui" && recovery?.phase === "resuming" && (
-                    <span className="agent-surface-resuming" role="status">
-                        <span className="chat-activity-loader" aria-hidden="true" />
-                        Resuming…
-                    </span>
-                )}
-                {agent.worktree && (
-                    <Suspense fallback={null}>
-                        <WorktreeHeader agentId={agent.id} worktree={agent.worktree} visible={visible} />
-                    </Suspense>
-                )}
-                {view === "tui" && cmd.agentSupportsSkipPermissions(agent.type) && <YoloToggle agent={agent} relaunches />}
-                <div className="agent-view-switch" role="group" aria-label="Agent view">
-                    <button
-                        type="button"
-                        aria-pressed={view === "gui"}
-                        disabled={!supportsGui || switching}
-                        title="Open the built-in agent chat"
-                        onClick={() => void switchView("gui")}>
-                        <IconAgent size={13} />
-                        <span>GUI</span>
-                    </button>
-                    <button
-                        type="button"
-                        aria-pressed={view === "tui"}
-                        disabled={switching || (view === "gui" && chatBusy)}
-                        title={chatBusy ? "Stop the current turn before opening TUI" : "Open native agent TUI"}
-                        onClick={() => void switchView("tui")}>
-                        <IconCommand size={13} />
-                        <span>TUI</span>
-                    </button>
+                    {renaming ? (
+                        <AgentTitleInput
+                            title={agent.title}
+                            className="agent-surface-title"
+                            onSave={(title) => cmd.renameAgent(agent.id, title)}
+                            onDone={() => setRenaming(false)}
+                        />
+                    ) : (
+                        <span className="agent-surface-title" title={agent.title} onDoubleClick={() => setRenaming(true)}>
+                            {agent.title}
+                        </span>
+                    )}
+                    <AgentMenuButton agent={agent} session={session} onRename={() => setRenaming(true)} />
                 </div>
-                <DeskButton agent={agent} />
+                <div className="agent-surface-controls">
+                    {view === "tui" && recovery?.phase === "resuming" && (
+                        <span className="agent-surface-resuming" role="status">
+                            <span className="chat-activity-loader" aria-hidden="true" />
+                            Resuming…
+                        </span>
+                    )}
+                    {agent.worktree && (
+                        <Suspense fallback={null}>
+                            <WorktreeHeader agentId={agent.id} worktree={agent.worktree} visible={visible} />
+                        </Suspense>
+                    )}
+                    {view === "tui" && cmd.agentSupportsSkipPermissions(agent.type) && <YoloToggle agent={agent} relaunches />}
+                    <div className="agent-view-switch" role="group" aria-label="Agent view">
+                        <button
+                            type="button"
+                            aria-pressed={view === "gui"}
+                            disabled={!supportsGui || switching}
+                            title="Open the built-in agent chat"
+                            onClick={() => void switchView("gui")}>
+                            <IconAgent size={13} />
+                            <span>GUI</span>
+                        </button>
+                        <button
+                            type="button"
+                            aria-pressed={view === "tui"}
+                            disabled={switching || (view === "gui" && chatBusy)}
+                            title={chatBusy ? "Stop the current turn before opening TUI" : "Open native agent TUI"}
+                            onClick={() => void switchView("tui")}>
+                            <IconCommand size={13} />
+                            <span>TUI</span>
+                        </button>
+                    </div>
+                    <DeskButton agent={agent} />
+                </div>
             </header>
 
             <div className="agent-surface-body">

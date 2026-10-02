@@ -1,7 +1,8 @@
 .agent-surface {
+    --agent-pill-h: 32px;
+    position: relative;
     display: grid;
-    /* 28px rather than 34px: the header reaches up into the pane's 6px inset. */
-    grid-template-rows: 28px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
     width: 100%;
     height: 100%;
     min-width: 0;
@@ -13,20 +14,48 @@
     background: transparent;
 }
 
+/* Two floating pills rather than a bar: the transcript runs to the top of the
+   pane and fades out under them. */
 .agent-surface-header {
     --control-h: 24px;
+    position: absolute;
+    z-index: 3;
+    top: 2px;
+    right: 4px;
+    left: 6px;
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    height: 34px;
+    justify-content: space-between;
+    gap: var(--space-3);
     min-width: 0;
-    /* The pane insets its contents, and the desk beside it does not. Bleeding
-       into that inset puts this hairline at the same height as the desk's, and
-       runs it the full width of the pane like the desk's does. */
-    margin: calc(-1 * var(--space-1h)) calc(-1 * var(--space-1h)) 0;
-    padding: 0 11px 0 14px;
-    border-bottom: 1px solid var(--border);
-    background: color-mix(in srgb, var(--void) 70%, transparent);
+    pointer-events: none;
+}
+
+.agent-surface-name,
+.agent-surface-controls {
+    display: flex;
+    align-items: center;
+    height: var(--agent-pill-h);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    background: color-mix(in srgb, var(--void) 62%, transparent);
+    -webkit-backdrop-filter: blur(14px) saturate(1.2);
+    backdrop-filter: blur(14px) saturate(1.2);
+    pointer-events: auto;
+}
+
+.agent-surface-name {
+    flex: 0 1 auto;
+    gap: var(--space-2);
+    min-width: 0;
+    padding: 0 4px 0 8px;
+}
+
+.agent-surface-controls {
+    flex: none;
+    gap: 6px;
+    margin-left: auto;
+    padding: 0 3px;
 }
 
 .agent-surface-mark {
@@ -43,7 +72,7 @@
     overflow: hidden;
     color: var(--ink);
     font-family: var(--ui);
-    font-size: var(--text-md);
+    font-size: var(--text-sm);
     font-weight: var(--weight-semibold);
     letter-spacing: var(--tracking-tight);
     text-overflow: ellipsis;
@@ -56,9 +85,7 @@
     flex: none;
     width: 22px;
     height: 24px;
-    /* The menu belongs to the title, so it sits against it and everything
-       after it goes to the far end of the row. */
-    margin: 0 auto 0 -4px;
+    margin-left: -2px;
     padding: 0;
     border: 1px solid transparent;
     background: transparent;
@@ -79,8 +106,7 @@
     align-items: center;
     height: var(--control-h);
     padding: 2px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-full);
     background: transparent;
 }
 
@@ -120,8 +146,7 @@
     width: var(--control-h);
     height: var(--control-h);
     padding: 0;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-control);
+    border: 1px solid transparent;
     background: transparent;
     color: var(--ink-faint);
     transition:
@@ -131,7 +156,6 @@
 }
 
 .agent-desk-open:hover {
-    border-color: var(--border-strong);
     background: var(--surface-hover);
     color: var(--text-primary);
 }
@@ -224,6 +248,10 @@
     animation: yolo-slide 5s linear infinite;
 }
 
+.agent-surface-header .yolo-toggle.on .yolo-ring {
+    border-radius: var(--radius-full);
+}
+
 .yolo-toggle.on .yolo-label {
     color: transparent;
     background: var(--yolo-rainbow);
@@ -269,6 +297,17 @@
 .agent-tui-layer {
     width: 100%;
     height: 100%;
+}
+
+/* A terminal draws to its top row, so it starts below the pills instead of under them. */
+.agent-surface[data-view="tui"] .agent-surface-body {
+    padding-top: calc(var(--agent-pill-h) + 8px);
+}
+
+.agent-surface .chat-scroll {
+    padding-top: 52px;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 6px, #000 48px);
+    mask-image: linear-gradient(to bottom, transparent 6px, #000 48px);
 }
 
 .agent-transport-switching {
