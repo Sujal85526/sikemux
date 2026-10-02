@@ -1363,6 +1363,8 @@ const isolatedEnvironment = {
   SIKEMUX_CORE_SOCKET: coreSocket,
 };
 delete isolatedEnvironment.SIKEMUX_APP_EXECUTABLE;
+// Run from a Sikemux agent terminal, this names an agent the test app has never seen.
+delete isolatedEnvironment.SIKEMUX_AGENT_ID;
 
 let desktopLog = "";
 let desktopSpawnError = "";
