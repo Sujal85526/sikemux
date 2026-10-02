@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 
@@ -194,9 +194,11 @@ export default function Device() {
   const device = devices.find((known) => known.core === core);
   const live = useLive(core);
   const [tab, setTab] = useState<Tab>(linkedTab === 'terminals' ? 'terminals' : 'agents');
-  useEffect(() => {
+  const [followedLink, setFollowedLink] = useState(linkedTab);
+  if (linkedTab !== followedLink) {
+    setFollowedLink(linkedTab);
     if (linkedTab === 'agents' || linkedTab === 'terminals') setTab(linkedTab);
-  }, [linkedTab]);
+  }
   const away = live.status === 'closed';
   const channel = channelLabel(device?.channel);
   const behind = live.status === 'closed' ? live.outdated : undefined;

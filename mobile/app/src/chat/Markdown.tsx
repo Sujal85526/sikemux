@@ -160,15 +160,18 @@ function Blocks({ blocks, first, style, styles }: { blocks: Block[]; first: numb
 }
 
 export function Markdown({ text, style }: { text: string; style: TextStyle }) {
-  const styles = useStyles(makeStyles);
   const source = text.replace(/\r\n/g, '\n');
   const cut = settledLength(source);
-  const settled = source.slice(0, cut);
+  return <Parsed settled={source.slice(0, cut)} tail={source.slice(cut)} style={style} />;
+}
+
+function Parsed({ settled, tail, style }: { settled: string; tail: string; style: TextStyle }) {
+  const styles = useStyles(makeStyles);
   const done = useMemo(() => blocks(settled), [settled]);
   return (
     <View style={styles.stack}>
       <Blocks blocks={done} first={0} style={style} styles={styles} />
-      <Blocks blocks={blocks(source.slice(cut))} first={done.length} style={style} styles={styles} />
+      <Blocks blocks={blocks(tail)} first={done.length} style={style} styles={styles} />
     </View>
   );
 }

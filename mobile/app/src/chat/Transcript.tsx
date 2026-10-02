@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { durationLabel } from '@mac/chat/durationLabel';
@@ -66,9 +66,11 @@ function ToolGroup({ parts, untimed }: { parts: ToolPart[]; untimed: boolean }) 
   const styles = useStyles(makeStyles);
   const working = parts.some((part) => toolRunning(part.tool));
   const [open, setOpen] = useState(working);
-  useEffect(() => {
+  const [wasWorking, setWasWorking] = useState(working);
+  if (working !== wasWorking) {
+    setWasWorking(working);
     if (working) setOpen(true);
-  }, [working]);
+  }
   const started = parts[0]?.startedAt;
   const ended = parts[parts.length - 1]?.endedAt;
   return (
@@ -169,7 +171,7 @@ export function Queued({ text }: { text: string }) {
 /** The working line: the agent's logo breathing beside what it is doing, and for how long. */
 export function Activity({ provider, label, since }: { provider: string; label: string; since: number }) {
   const styles = useStyles(makeStyles);
-  const breath = useRef(new Animated.Value(1)).current;
+  const [breath] = useState(() => new Animated.Value(1));
   const [seconds, setSeconds] = useState(0);
   useEffect(() => {
     const loop = Animated.loop(

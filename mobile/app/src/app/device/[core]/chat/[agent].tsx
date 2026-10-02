@@ -20,7 +20,7 @@ const FOLLOW = 0.1;
 
 /** When the running turn began, as this phone saw it, for the working line's clock. */
 function useTurnStart(running: boolean): number {
-  const [since, setSince] = useState(Date.now());
+  const [since, setSince] = useState(() => Date.now());
   const was = useRef(running);
   useEffect(() => {
     if (running && !was.current) setSince(Date.now());
