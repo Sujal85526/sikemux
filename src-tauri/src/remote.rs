@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use serde::Deserialize;
 use sikemux_core::client::CoreClient;
 use sikemux_core::protocol::{
-    ChatLauncher, DeviceAccess, ProjectInfo, PublishedChat, RemoteStatus,
+    BackdropImage, ChatLauncher, DeviceAccess, ProjectInfo, PublishedChat, RemoteStatus,
 };
 use tauri::{AppHandle, Manager, State};
 
@@ -21,6 +21,10 @@ use crate::pty::{core_error, PtyManager};
 /// core keeps it in memory only.
 #[derive(Default)]
 pub struct PublishedWorkspace(Mutex<Option<(Vec<ProjectInfo>, Vec<ChatLauncher>)>>);
+
+/// The backdrop the app last published, sent again like the workspace.
+#[derive(Default)]
+pub struct PublishedBackdrop(Mutex<Option<(bool, Option<BackdropImage>)>>);
 
 /// The theme colours the app last published, sent again like the workspace.
 #[derive(Default)]
@@ -77,6 +81,23 @@ pub async fn remote_publish_workspace(
 }
 
 #[tauri::command]
+pub async fn remote_publish_backdrop(
+    manager: State<'_, PtyManager>,
+    published: State<'_, PublishedBackdrop>,
+    texture: bool,
+    image: Option<BackdropImage>,
+) -> AppResult<()> {
+    if let Ok(mut last) = published.0.lock() {
+        *last = Some((texture, image.clone()));
+    }
+    let client = manager.client().await?;
+    client
+        .publish_backdrop(texture, image)
+        .await
+        .map_err(core_error)
+}
+
+#[tauri::command]
 pub async fn remote_publish_palette(
     manager: State<'_, PtyManager>,
     published: State<'_, PublishedPalette>,
@@ -124,6 +145,14 @@ pub(crate) async fn connected(
     if let Some(palette) = palette {
         if let Err(error) = client.publish_palette(palette).await {
             eprintln!("Sikemux could not tell its core the theme's colours: {error}");
+        }
+    }
+    let backdrop = app
+        .try_state::<PublishedBackdrop>()
+        .and_then(|published| published.0.lock().ok().and_then(|last| last.clone()));
+    if let Some((texture, image)) = backdrop {
+        if let Err(error) = client.publish_backdrop(texture, image).await {
+            eprintln!("Sikemux could not tell its core what it draws behind panes: {error}");
         }
     }
     let chats = app

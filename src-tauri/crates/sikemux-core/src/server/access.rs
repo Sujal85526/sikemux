@@ -37,6 +37,7 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::AcpList
         | Request::AcpAttach { .. }
         | Request::AcpWake { .. }
+        | Request::BackdropImage
         | Request::AcpPermissionReply { .. }
         | Request::Workspace
         | Request::Attentions
@@ -72,7 +73,8 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::AnswerPairing { .. }
         | Request::PublishWorkspace { .. }
         | Request::PublishChats { .. }
-        | Request::PublishPalette { .. } => Needs::Local,
+        | Request::PublishPalette { .. }
+        | Request::PublishBackdrop { .. } => Needs::Local,
     }
 }
 

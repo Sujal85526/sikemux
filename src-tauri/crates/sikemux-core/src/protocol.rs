@@ -347,6 +347,14 @@ pub enum Request {
         projects: Vec<ProjectInfo>,
         launchers: Vec<ChatLauncher>,
     },
+    /// What the app draws behind its panes, so devices draw the same.
+    /// Replaces what it published before.
+    PublishBackdrop {
+        texture: bool,
+        image: Option<BackdropImage>,
+    },
+    /// The picture published with the backdrop, as a data URL.
+    BackdropImage,
     /// The colours of the app's theme, by name, so devices draw in them.
     /// Replaces what it published before.
     PublishPalette {
@@ -662,6 +670,7 @@ pub enum Response {
     Attentions { attentions: Vec<Attention> },
     ChatBegun { agent_id: String, start: ChatStart },
     Host { host: HostInfo },
+    BackdropImage { data_url: Option<String> },
 }
 
 /// A project the app has open.
@@ -703,6 +712,26 @@ pub struct Workspace {
     pub launchers: Vec<LauncherInfo>,
     /// The app's theme colours by name; empty until the app publishes them.
     pub palette: BTreeMap<String, String>,
+    pub backdrop: Backdrop,
+}
+
+/// What the app draws behind its panes.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Backdrop {
+    /// The dithered grain that moves behind each pane.
+    pub texture: bool,
+    /// Names the picture shown in place of the grain; `BackdropImage` fetches it.
+    pub image: Option<String>,
+}
+
+/// A picture shown behind the panes, shrunk to suit a phone.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackdropImage {
+    /// Changes whenever the picture does, so a device fetches it only then.
+    pub id: String,
+    pub data_url: String,
 }
 
 /// What a paired device was approved to do.

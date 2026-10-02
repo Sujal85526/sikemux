@@ -11,8 +11,8 @@ use agent_client_protocol::schema::v1::{EnvVariable, McpServer, McpServerStdio};
 use serde_json::Value;
 
 use crate::protocol::{
-    ChatInfo, ChatLaunch, ChatLauncher, ChatState, Event, LauncherInfo, ProjectInfo, PublishedChat,
-    RequestId, Response, Workspace,
+    Backdrop, BackdropImage, ChatInfo, ChatLaunch, ChatLauncher, ChatState, Event, LauncherInfo,
+    ProjectInfo, PublishedChat, RequestId, Response, Workspace,
 };
 
 use super::chat;
@@ -24,6 +24,8 @@ const MAX_LAUNCHERS: usize = 64;
 const MAX_CHATS: usize = 1024;
 const MAX_TITLE_CHARS: usize = 200;
 const MAX_COLOURS: usize = 64;
+/// A phone-sized JPEG is a few hundred kilobytes; this leaves room without letting one fill a frame.
+const MAX_IMAGE_BYTES: usize = 3 * 1024 * 1024;
 const MAX_COLOUR_CHARS: usize = 64;
 /// Long enough for an agent's adapter and CLI to come back up.
 const WAKE_WAIT: Duration = Duration::from_secs(30);
@@ -34,6 +36,8 @@ struct Published {
     launchers: Vec<ChatLauncher>,
     chats: Vec<PublishedChat>,
     palette: BTreeMap<String, String>,
+    texture: bool,
+    image: Option<BackdropImage>,
 }
 
 #[derive(Default)]
@@ -71,6 +75,32 @@ impl Workspaces {
         published.projects = projects;
         published.launchers = launchers;
         Ok(())
+    }
+
+    pub(crate) fn publish_backdrop(
+        &self,
+        texture: bool,
+        image: Option<BackdropImage>,
+    ) -> CoreResult<()> {
+        if let Some(image) = &image {
+            if !image.data_url.starts_with("data:image/") {
+                return Err("the backdrop picture is not an image".into());
+            }
+            if image.data_url.len() > MAX_IMAGE_BYTES {
+                return Err("the backdrop picture is larger than the core keeps".into());
+            }
+        }
+        let mut published = self.lock();
+        published.texture = texture;
+        published.image = image;
+        Ok(())
+    }
+
+    pub(crate) fn backdrop_image(&self) -> Option<String> {
+        self.lock()
+            .image
+            .as_ref()
+            .map(|image| image.data_url.clone())
     }
 
     pub(crate) fn publish_palette(&self, palette: BTreeMap<String, String>) -> CoreResult<()> {
@@ -160,6 +190,10 @@ impl Workspaces {
                 })
                 .collect(),
             palette: published.palette.clone(),
+            backdrop: Backdrop {
+                texture: published.texture,
+                image: published.image.as_ref().map(|image| image.id.clone()),
+            },
         }
     }
 

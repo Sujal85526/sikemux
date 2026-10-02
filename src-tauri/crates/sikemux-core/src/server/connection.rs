@@ -629,6 +629,18 @@ async fn run_requests(
                 let result = core.workspaces.publish(projects, launchers);
                 client.respond(request_id, result.map(|()| Response::Done));
             }
+            Request::PublishBackdrop { texture, image } => {
+                let result = core.workspaces.publish_backdrop(texture, image);
+                client.respond(request_id, result.map(|()| Response::Done));
+            }
+            Request::BackdropImage => {
+                client.respond(
+                    request_id,
+                    Ok(Response::BackdropImage {
+                        data_url: core.workspaces.backdrop_image(),
+                    }),
+                );
+            }
             Request::PublishPalette { palette } => {
                 let result = core.workspaces.publish_palette(palette);
                 client.respond(request_id, result.map(|()| Response::Done));

@@ -50,6 +50,7 @@
     "allow-remote-publish-workspace",
     "allow-remote-publish-chats",
     "allow-remote-publish-palette",
+    "allow-remote-publish-backdrop",
     "allow-task-watch",
     "allow-app-quit-and-stop-everything",
     "allow-agent-detection-explain",

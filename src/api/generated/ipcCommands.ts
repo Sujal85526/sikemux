@@ -33,6 +33,7 @@ export const IPC_COMMANDS = [
     "remote_publish_workspace",
     "remote_publish_chats",
     "remote_publish_palette",
+    "remote_publish_backdrop",
     "task_watch",
     "app_quit_and_stop_everything",
     "agent_detection_explain",

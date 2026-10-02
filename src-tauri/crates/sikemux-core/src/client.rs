@@ -23,8 +23,8 @@ use tokio::task::JoinHandle;
 use crate::protocol::frozen::{FrozenReply, FrozenRequest};
 use crate::protocol::{
     decode_output, decode_snapshot, encode_control, encode_frozen, encode_input, read_frame,
-    read_frame_sync, Attention, BuildIdentity, CallId, ChatAttachment, ChatContext, ChatInfo,
-    ChatLaunch, ChatLauncher, ChatStart, ClientMessage, DeviceAccess, Event, FrameKind,
+    read_frame_sync, Attention, BackdropImage, BuildIdentity, CallId, ChatAttachment, ChatContext,
+    ChatInfo, ChatLaunch, ChatLauncher, ChatStart, ClientMessage, DeviceAccess, Event, FrameKind,
     LaunchIdentity, ProjectInfo, PublishedChat, RemoteStatus, Request, RequestId, Response,
     RunSelector, ServerMessage, SessionId, SessionInfo, SpawnTarget, WindowAnswer, WindowCall,
     Workspace, MAX_FRAME_BYTES, PROTOCOL, PROTOCOL_VERSION,
@@ -675,6 +675,22 @@ impl CoreClient {
             launchers,
         })
         .await
+    }
+
+    pub async fn publish_backdrop(
+        &self,
+        texture: bool,
+        image: Option<BackdropImage>,
+    ) -> Result<(), ClientError> {
+        self.request_done(Request::PublishBackdrop { texture, image })
+            .await
+    }
+
+    pub async fn backdrop_image(&self) -> Result<Option<String>, ClientError> {
+        match self.request(Request::BackdropImage).await? {
+            Response::BackdropImage { data_url } => Ok(data_url),
+            _ => Err(ClientError::UnexpectedReply),
+        }
     }
 
     pub async fn publish_palette(

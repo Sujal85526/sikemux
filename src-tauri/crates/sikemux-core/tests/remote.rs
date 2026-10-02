@@ -11,9 +11,9 @@ use serde_json::json;
 use sikemux_core::client::{probe, ClientError, ClientEvent, CoreClient};
 use sikemux_core::pairing::{self, PairError, PairingRequest};
 use sikemux_core::protocol::{
-    Attention, AttentionKind, BuildIdentity, ChatAttachment, ChatEventKind, ChatLaunch,
-    ChatLauncher, ChatState, DeviceAccess, Event, LaunchIdentity, ProjectInfo, PublishedChat,
-    RemoteStatus, SessionId, SpawnTarget, TerminalSpawn,
+    Attention, AttentionKind, BackdropImage, BuildIdentity, ChatAttachment, ChatEventKind,
+    ChatLaunch, ChatLauncher, ChatState, DeviceAccess, Event, LaunchIdentity, ProjectInfo,
+    PublishedChat, RemoteStatus, SessionId, SpawnTarget, TerminalSpawn,
 };
 use sikemux_core::remote::{self, SecretKey};
 use sikemux_core::server::{self, ServerConfig, ServerError};
@@ -676,6 +676,24 @@ async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
         workspace.palette.get("ground").map(String::as_str),
         Some("#0f0f13")
     );
+    let picture = BackdropImage {
+        id: "pane-1".into(),
+        data_url: "data:image/jpeg;base64,AAAA".into(),
+    };
+    app.publish_backdrop(true, Some(picture))
+        .await
+        .expect("publish backdrop");
+    let backdrop = client.workspace().await.expect("workspace").backdrop;
+    assert!(backdrop.texture);
+    assert_eq!(backdrop.image.as_deref(), Some("pane-1"));
+    let data_url = client.backdrop_image().await.expect("backdrop image");
+    assert_eq!(data_url.as_deref(), Some("data:image/jpeg;base64,AAAA"));
+    let not_a_picture = BackdropImage {
+        id: "pane-2".into(),
+        data_url: "data:text/plain,hi".into(),
+    };
+    let refused = app.publish_backdrop(true, Some(not_a_picture)).await;
+    assert!(refusal(refused).contains("not an image"));
     let refused = client.publish_palette(Default::default()).await;
     assert!(refusal(refused).contains("only Sikemux on this Mac"));
 

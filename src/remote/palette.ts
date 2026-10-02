@@ -53,7 +53,7 @@ export function plainColor([red, green, blue, alpha]: ArrayLike<number> & Iterab
  * `color-mix()` or `color(srgb …)` a phone cannot parse, so each is painted
  * into one pixel and read back.
  */
-export function readPalette(root: HTMLElement = document.documentElement): Record<string, string> {
+export function readPalette(extra: Readonly<Record<string, string>> = {}, root: HTMLElement = document.documentElement): Record<string, string> {
     const probe = document.createElement("span");
     probe.style.display = "none";
     root.appendChild(probe);
@@ -64,7 +64,7 @@ export function readPalette(root: HTMLElement = document.documentElement): Recor
     const palette: Record<string, string> = {};
     try {
         if (!paint) return palette;
-        for (const [name, token] of Object.entries(PALETTE_TOKENS)) {
+        for (const [name, token] of Object.entries({ ...PALETTE_TOKENS, ...extra })) {
             probe.style.color = "";
             probe.style.color = token;
             const computed = getComputedStyle(probe).color;
