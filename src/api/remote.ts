@@ -38,6 +38,8 @@ export interface RemoteStatus {
     readonly connected: readonly string[];
     readonly pairing: PairingOffer | null;
     readonly pending: readonly PendingDevice[];
+    /** The account this Mac is signed in to. */
+    readonly owner: string | null;
 }
 
 /** A project a paired device may start an agent in. */

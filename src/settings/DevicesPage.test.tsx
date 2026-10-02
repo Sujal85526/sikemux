@@ -17,15 +17,19 @@ function status(overrides: Partial<RemoteStatus> = {}): RemoteStatus {
         connected: [],
         pairing: null,
         pending: [],
+        owner: null,
         ...overrides,
     };
 }
 
 let transport: MemoryIpcTransport;
 
+const SIGNED_OUT = { signedIn: false, userId: null, email: null };
+
 beforeEach(() => {
     transport = new MemoryIpcTransport();
     installIpcTransportForTests(transport);
+    transport.register("account_status", () => SIGNED_OUT);
 });
 
 afterEach(() => {
@@ -106,5 +110,40 @@ describe("seenLabel", () => {
         expect(seenLabel(now - 20_000, now)).toBe("seen just now");
         expect(seenLabel(now - 5 * 60_000, now)).toBe("seen 5 min ago");
         expect(seenLabel(now - 3 * 3_600_000, now)).toBe("seen 3 h ago");
+    });
+
+    it("signs in through the browser, then offers to sign out", async () => {
+        const user = userEvent.setup();
+        transport.register("remote_status", () => status());
+        let finish: (value: unknown) => void = () => {};
+        transport.register("account_sign_in", () => new Promise((resolve) => (finish = resolve)));
+        transport.register("account_sign_out", () => SIGNED_OUT);
+        render(<DevicesPage />);
+
+        await user.click(await screen.findByRole("button", { name: "Sign in" }));
+        expect(await screen.findByText("Finish signing in in your browser")).toBeInTheDocument();
+        finish({ signedIn: true, userId: "user_2abc", email: "me@example.com" });
+
+        expect(await screen.findByText("me@example.com")).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Sign out" }));
+        expect(await screen.findByRole("button", { name: "Sign in" })).toBeInTheDocument();
+    });
+
+    it("lets the person give up on a sign-in left open in the browser", async () => {
+        const user = userEvent.setup();
+        transport.register("remote_status", () => status());
+        let fail: (error: unknown) => void = () => {};
+        transport.register("account_sign_in", () => new Promise((_, reject) => (fail = reject)));
+        const cancel = vi.fn(() => {
+            fail(new Error("sign-in was cancelled"));
+        });
+        transport.register("account_cancel_sign_in", cancel);
+        render(<DevicesPage />);
+
+        await user.click(await screen.findByRole("button", { name: "Sign in" }));
+        await user.click(await screen.findByRole("button", { name: "Cancel" }));
+
+        expect(cancel).toHaveBeenCalled();
+        expect(await screen.findByRole("button", { name: "Sign in" })).toBeInTheDocument();
     });
 });

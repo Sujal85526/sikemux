@@ -124,6 +124,8 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
 
     section("devices", "Remote access", "phone mobile iphone android remote away connect"),
     row("devices", "Remote access", "Allow paired devices", "phone mobile remote enable turn on off background"),
+    section("devices", "Your account", "account sign in login google github email phones find"),
+    row("devices", "Your account", "Not signed in", "sign in log in account google github email"),
     section("devices", "Pair a device", "phone mobile code pairing add connect"),
     section("devices", "Paired devices", "phone mobile revoke remove forget access watch"),
 

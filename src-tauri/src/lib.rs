@@ -1,3 +1,4 @@
+mod account;
 mod acp;
 mod activity;
 mod agents;
@@ -228,6 +229,7 @@ pub fn run() {
         })
         .manage(deep_link::DeepLinks::default())
         .manage(PtyManager::default())
+        .manage(account::PendingSignIn::default())
         .manage(harness::HarnessBroker::default())
         .manage(cli_open::CliOpens::default())
         .manage(AcpManager::default())
@@ -268,6 +270,10 @@ pub fn run() {
             remote::remote_set_device_access,
             remote::remote_revoke_device,
             remote::remote_open_pairing,
+            account::account_status,
+            account::account_sign_in,
+            account::account_cancel_sign_in,
+            account::account_sign_out,
             remote::remote_close_pairing,
             remote::remote_answer_pairing,
             remote::remote_publish_workspace,

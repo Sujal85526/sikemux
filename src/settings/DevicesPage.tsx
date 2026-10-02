@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { accountApi, type AccountStatus } from "../api/account";
 import { remoteApi, shortKey, spacedCode, type DeviceAccess, type PairedDevice, type PendingDevice, type RemoteStatus } from "../api/remote";
 import { reportError } from "../state/toast";
 import { Dropdown } from "../ui/Dropdown";
@@ -102,6 +103,8 @@ export function DevicesPage() {
                 </SettingsRows>
             </SettingsSection>
 
+            <AccountSection />
+
             <SettingsSection
                 title="Pair a device"
                 sub="Scan the code with Sikemux on your phone, or choose this Mac from the phones on the same network and type the digits.">
@@ -163,6 +166,70 @@ export function DevicesPage() {
                 )}
             </SettingsSection>
         </SettingsPage>
+    );
+}
+
+function AccountSection() {
+    const [account, setAccount] = useState<AccountStatus | null>(null);
+    const [waiting, setWaiting] = useState(false);
+    useEffect(() => {
+        let live = true;
+        accountApi
+            .status()
+            .then((current) => live && setAccount(current))
+            .catch(reportError("Account"));
+        return () => {
+            live = false;
+        };
+    }, []);
+
+    const signIn = async () => {
+        setWaiting(true);
+        try {
+            setAccount(await accountApi.signIn());
+        } catch (error) {
+            if (!String(error).includes("cancelled")) reportError("Sign in")(error);
+        } finally {
+            setWaiting(false);
+        }
+    };
+    const signOut = async () => {
+        try {
+            setAccount(await accountApi.signOut());
+        } catch (error) {
+            reportError("Sign out")(error);
+        }
+    };
+
+    return (
+        <SettingsSection
+            title="Your account"
+            meta={account ? (account.signedIn ? "signed in" : "signed out") : "checking"}
+            sub="Phones signed in to the same Sikemux account find this Mac without a code. Each still needs your approval here before it can reach anything.">
+            <SettingsRows>
+                {account?.signedIn ? (
+                    <SettingsRow
+                        label={account.email ?? "Signed in"}
+                        desc="Signing out keeps the devices already paired; it stops new phones finding this Mac through the account.">
+                        <button className="settings-btn" type="button" onClick={() => void signOut()}>
+                            Sign out
+                        </button>
+                    </SettingsRow>
+                ) : waiting ? (
+                    <SettingsRow label="Finish signing in in your browser" desc="Sikemux opened the sign-in page in your default browser.">
+                        <button className="settings-btn" type="button" onClick={() => void accountApi.cancelSignIn()}>
+                            Cancel
+                        </button>
+                    </SettingsRow>
+                ) : (
+                    <SettingsRow label="Not signed in" desc="Sign in with Google, GitHub or your email, in your browser.">
+                        <button className="settings-btn primary" type="button" disabled={!account} onClick={() => void signIn()}>
+                            Sign in
+                        </button>
+                    </SettingsRow>
+                )}
+            </SettingsRows>
+        </SettingsSection>
     );
 }
 

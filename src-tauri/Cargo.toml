@@ -75,6 +75,7 @@ tempfile = "3"
 linked-hash-map = "0.5"
 thiserror = "1"
 uuid = { version = "1", features = ["v4"] }
+getrandom = { version = "0.3", features = ["std"] }
 futures = "0.3"
 semver = "1"
 sikemux-plugin-api = { path = "crates/sikemux-plugin-api" }
@@ -90,7 +91,7 @@ sikemux-markdown = { path = "crates/sikemux-markdown" }
 sikemux-pty = { path = "crates/sikemux-pty" }
 sikemux-core = { path = "crates/sikemux-core" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "time", "sync", "io-util", "net"] }
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider", "gzip", "stream", "cookies", "multipart"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "form", "rustls-no-provider", "gzip", "stream", "cookies", "multipart"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 open = "5"
 trash = "5"
