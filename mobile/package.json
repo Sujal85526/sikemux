@@ -16,6 +16,7 @@
     "android:release": "pnpm --filter sikemux-app android:release",
     "start": "pnpm --filter sikemux-app start",
     "typecheck": "pnpm -r typecheck",
-    "design": "node design/build.mjs --serve"
+    "design": "node design/build.mjs --serve",
+    "doctor": "node scripts/doctor.mjs"
   }
 }

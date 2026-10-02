@@ -50,6 +50,7 @@ You need rustup's Rust (Homebrew's Rust ignores `rust-toolchain.toml` and has no
 cargo install cargo-ndk     # Android only
 cd mobile
 pnpm install
+pnpm run doctor             # checks the toolchain, Xcode, the Android SDK and what is built
 pnpm native:ios:sim         # builds the Rust client for the simulator and generates its bindings
 pnpm ios                    # builds the development app and runs it in the simulator
 ```
