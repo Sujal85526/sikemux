@@ -12,7 +12,7 @@ public enum Keyboard {
         for (offset, letter) in "abcdefghijklmnopqrstuvwxyz".enumerated() { map[letter] = 4 + UInt32(offset) }
         for (offset, digit) in "1234567890".enumerated() { map[digit] = 30 + UInt32(offset) }
         let others: [Character: UInt32] = [
-            "\n": 40, "\t": 43, " ": 44, "-": 45, "=": 46, "[": 47, "]": 48, "\\": 49,
+            "\n": 40, "\u{8}": 42, "\t": 43, " ": 44, "-": 45, "=": 46, "[": 47, "]": 48, "\\": 49,
             ";": 51, "'": 52, "`": 53, ",": 54, ".": 55, "/": 56,
         ]
         return map.merging(others) { $1 }

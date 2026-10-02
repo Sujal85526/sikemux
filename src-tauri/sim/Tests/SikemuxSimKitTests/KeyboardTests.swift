@@ -15,6 +15,10 @@ final class KeyboardTests: XCTestCase {
         ])
     }
 
+    func testBackspaceDeletesTheCharacterBeforeTheCaret() throws {
+        XCTAssertEqual(try Keyboard.strokes(for: "\u{8}").get(), [KeyStroke(keyCode: 42, shifted: false)])
+    }
+
     func testEveryPrintableAsciiCharacterIsTypable() {
         let printable = String((32...126).map { Character(UnicodeScalar(UInt8($0))) })
         XCTAssertEqual(try Keyboard.strokes(for: printable).get().count, printable.count)
