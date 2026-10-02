@@ -32,6 +32,9 @@
   `rust-toolchain.toml` and has no phone targets.
 - The bindings `uniffi-bindgen-react-native` generates are build output; do not commit or
   hand-edit them.
+- Phone screens are designed in `mobile/design/screens.src.html` before they are built, and
+  it must keep matching the app. Change it in the same commit as the screen it draws; run
+  `pnpm design` in `mobile/` to view it.
 
 ## Website
 

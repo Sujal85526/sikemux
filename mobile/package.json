@@ -12,6 +12,7 @@
     "ios:release": "pnpm --filter sikemux-app ios:release",
     "android:release": "pnpm --filter sikemux-app android:release",
     "start": "pnpm --filter sikemux-app start",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "design": "node design/build.mjs --serve"
   }
 }

@@ -57,6 +57,10 @@ pnpm ios                    # builds the development app and runs it in the simu
 
 Rebuild with `pnpm native:ios` or `pnpm native:android` after changing `sikemux-mobile` or the protocol in `sikemux-core`. The generated bindings and native libraries are build output and are not committed. The app needs a development build; Expo Go cannot load `@sikemux/native`. To pair the simulator with your Mac, turn on Settings, Devices in a dev build of Sikemux.
 
+#### Designing phone screens
+
+Every phone screen is drawn first in `mobile/design/screens.src.html`, with the Mac app's own icons and fonts. A design change starts there, before the app: run `pnpm design` in `mobile/` and open http://127.0.0.1:8791/mobile/design/screens.html, which rebuilds on each reload. In the PR, add a screenshot of each screen you changed or added from that page, so the design is reviewed before the code. `{{IconName}}` or `{{IconName:size}}` in the file draws one of the app's icons.
+
 ## Before you open a PR
 
 The `pre-push` hook already runs these for you. To check without pushing:
