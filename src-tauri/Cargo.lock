@@ -5698,6 +5698,7 @@ name = "sikemux-mobile"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "hex",
  "iroh",
  "jni 0.22.4",
  "ndk-context",
@@ -5706,6 +5707,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sikemux-core",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "tracing",

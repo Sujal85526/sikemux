@@ -246,8 +246,26 @@ impl Device {
         core: String,
         listener: Arc<dyn CoreListener>,
     ) -> Result<Arc<Connection>, MobileError> {
-        let (endpoint, generation) = self.endpoint();
         let addr = core_addr(&core)?;
+        self.connect_to(core, addr, listener).await
+    }
+
+    /// Takes the phone off the network until the app makes a new device. Open
+    /// connections end with it.
+    pub async fn close(&self) {
+        let (endpoint, _) = self.endpoint();
+        let _ = on_runtime(async move { endpoint.close().await }).await;
+    }
+}
+
+impl Device {
+    async fn connect_to(
+        &self,
+        core: String,
+        addr: EndpointAddr,
+        listener: Arc<dyn CoreListener>,
+    ) -> Result<Arc<Connection>, MobileError> {
+        let (endpoint, generation) = self.endpoint();
         let (deliveries, queue) = mpsc::unbounded_channel();
         deliver(listener, queue);
         let sink = Arc::new(ListenerSink(deliveries));
@@ -279,15 +297,6 @@ impl Device {
         }))
     }
 
-    /// Takes the phone off the network until the app makes a new device. Open
-    /// connections end with it.
-    pub async fn close(&self) {
-        let (endpoint, _) = self.endpoint();
-        let _ = on_runtime(async move { endpoint.close().await }).await;
-    }
-}
-
-impl Device {
     fn lock(&self) -> std::sync::MutexGuard<'_, Online> {
         self.online
             .lock()
@@ -692,6 +701,9 @@ fn backdrop_path(dir: &Path, id: &str, extension: &str) -> PathBuf {
         .collect();
     dir.join(format!("{name}.{extension}"))
 }
+
+#[cfg(test)]
+mod loopback_tests;
 
 #[cfg(test)]
 mod tests {
