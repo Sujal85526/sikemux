@@ -24,6 +24,10 @@ function useTurnStart(running: boolean): number {
   return since;
 }
 
+function capitalised(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1) + (text.endsWith('.') ? '' : '.');
+}
+
 export default function Chat() {
   const { core, agent } = useLocalSearchParams<{ core: string; agent: string }>();
   const live = useLive(core);
@@ -61,11 +65,11 @@ export default function Chat() {
           onLayout={toEnd}
           keyboardDismissMode="interactive">
           {chat.attached === 'missing' ? (
-            <Text style={styles.gone}>This chat is no longer running on the Mac.</Text>
+            <Text style={styles.gone}>{chat.problem ? capitalised(chat.problem) : 'This chat is no longer running on the Mac.'}</Text>
           ) : chat.attached === 'attaching' ? (
             <View style={styles.attaching}>
               <Working />
-              <Text style={type.meta}>Opening the chat…</Text>
+              <Text style={type.meta}>{info?.asleep ? 'Waking the chat…' : 'Opening the chat…'}</Text>
             </View>
           ) : null}
           {state.messages.map((message) => (

@@ -26,6 +26,7 @@ export function chatTitle(chat: Pick<ChatInfo, 'title' | 'provider'>): string {
 /** The Mac rail's words for where a chat is (src/state/agentStatus.ts). */
 export function chatState(chat: ChatInfo): string {
   if (chat.pendingPermissions.length) return 'Needs input';
+  if (chat.asleep) return 'Sleeping';
   if (chat.state === 'starting') return 'Starting…';
   return chat.running ? 'Working' : 'Ready';
 }

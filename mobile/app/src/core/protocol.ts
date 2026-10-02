@@ -24,6 +24,7 @@ export type ChatInfo = {
   pendingPermissions: string[];
   permissionMode: string;
   model: string | null;
+  asleep: boolean;
 };
 
 export type Attention = {

@@ -7,6 +7,7 @@
 //!   remote mac <socket> publish            offers the fake agent to devices
 //!   remote mac <socket> chat [prompt]      starts a chat with it
 //!   remote mac <socket> say <agent> <text>
+//!   remote mac <socket> sleepy             lists a sleeping chat and wakes it when asked
 //! As a device, keeping its key in `<key-file>`:
 //!   remote device <key-file> pair <core-id> <code>
 //!   remote device <key-file> sessions <core-id>
@@ -16,10 +17,11 @@ use std::time::Duration;
 
 use iroh::endpoint::presets;
 use iroh::{Endpoint, EndpointAddr};
-use sikemux_core::client::CoreClient;
+use sikemux_core::client::{ClientEvent, CoreClient};
 use sikemux_core::pairing::{self, PairingRequest};
 use sikemux_core::protocol::{
-    ChatLauncher, DeviceAccess, LaunchIdentity, ProjectInfo, SpawnTarget, TerminalSpawn,
+    ChatLaunch, ChatLauncher, DeviceAccess, Event, LaunchIdentity, ProjectInfo, PublishedChat,
+    SpawnTarget, TerminalSpawn,
 };
 use sikemux_core::remote::{self, SecretKey};
 
@@ -34,6 +36,7 @@ async fn main() -> Result<(), Failure> {
         ["mac", socket, "publish"] => publish(Path::new(socket)).await,
         ["mac", socket, "chat", prompt @ ..] => chat(Path::new(socket), &prompt.join(" ")).await,
         ["mac", socket, "say", agent, text @ ..] => say(Path::new(socket), agent, &text.join(" ")).await,
+        ["mac", socket, "sleepy"] => sleepy(Path::new(socket)).await,
         ["mac", socket, action] => mac(Path::new(socket), action).await,
         ["device", key, "pair", core, code] => pair(Path::new(key), core, code).await,
         ["device", key, "sessions", core] => sessions(Path::new(key), core).await,
@@ -120,6 +123,43 @@ async fn chat(socket: &Path, prompt: &str) -> Result<(), Failure> {
         client
             .acp_prompt(agent, prompt.into(), Vec::new(), Vec::new())
             .await?;
+    }
+    Ok(())
+}
+
+/// Stands in for the app: keeps one chat asleep until a device opens it.
+async fn sleepy(socket: &Path) -> Result<(), Failure> {
+    let (client, mut events) = CoreClient::connect(socket).await?;
+    let agent_id = "agent-sleepy".to_owned();
+    client
+        .publish_chats(vec![PublishedChat {
+            agent_id: agent_id.clone(),
+            provider: "opencode".into(),
+            title: Some("Tidy the docs".into()),
+            cwd: std::env::temp_dir(),
+            asleep: true,
+        }])
+        .await?;
+    println!("{agent_id} is asleep");
+    while let Some(event) = events.recv().await {
+        let ClientEvent::Event(Event::WakeChat { agent_id: woken }) = event else {
+            continue;
+        };
+        let launch = ChatLaunch {
+            agent_id: woken.clone(),
+            provider: "opencode".into(),
+            cwd: std::env::temp_dir(),
+            program: fake_agent()?,
+            args: vec!["acp".into()],
+            env: Default::default(),
+            mcp_servers: Vec::new(),
+            resume_id: None,
+            permission_mode: "workspace-write".into(),
+            model: None,
+            effort: None,
+        };
+        client.acp_start(launch).await?;
+        println!("woke {woken}");
     }
     Ok(())
 }

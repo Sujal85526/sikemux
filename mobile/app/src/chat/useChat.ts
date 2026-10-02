@@ -3,6 +3,8 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { permissionRequest, promptAction, recordOf, statusFromEvent } from '@mac/chat/acpEvents';
 import { chatReducer, initialChatState } from '@mac/chat/reducer';
 import type { ChatAction, ChatState } from '@mac/chat/types';
+import { MobileError } from '@sikemux/native';
+
 import { onEvent, useLive } from '@/devices/hub';
 
 type CoreChatEvent = { kind: string; payload: Record<string, unknown> };
@@ -58,6 +60,8 @@ export type ChatView = {
   /** Messages rebuilt from the replay, which carries no times. */
   replayed: ReadonlySet<string>;
   attached: 'attaching' | 'live' | 'missing';
+  /** Why the chat could not be opened, in the Mac's words. */
+  problem: string | null;
   queued: string | null;
   send: (text: string) => void;
   cancel: () => void;
@@ -69,6 +73,7 @@ export function useChat(core: string, agentId: string): ChatView {
   const live = useLive(core);
   const [state, apply] = useReducer(reduceAll, initialChatState);
   const [attached, setAttached] = useState<ChatView['attached']>('attaching');
+  const [problem, setProblem] = useState<string | null>(null);
   const [queued, setQueued] = useState<string | null>(null);
   const [replayed, setReplayed] = useState<ReadonlySet<string>>(new Set());
   const connection = live.status === 'open' ? live.connection : undefined;
@@ -87,8 +92,10 @@ export function useChat(core: string, agentId: string): ChatView {
       if (event.kind !== 'chat' || event.agentId !== agentId || !event.event) return;
       if (!attaching) apply(actions(event.event));
     });
+    // A chat the Mac put to sleep starts again first; one already running answers at once.
     connection
-      .request(JSON.stringify({ op: 'acpAttach', agentId }))
+      .request(JSON.stringify({ op: 'acpWake', agentId }))
+      .then(() => connection.request(JSON.stringify({ op: 'acpAttach', agentId })))
       .then((text) => {
         if (!current) return;
         const response = JSON.parse(text) as { kind: string; attachment?: Attachment };
@@ -107,7 +114,11 @@ export function useChat(core: string, agentId: string): ChatView {
         attaching = false;
         setAttached('live');
       })
-      .catch(() => current && setAttached('missing'));
+      .catch((error: unknown) => {
+        if (!current) return;
+        setProblem(MobileError.Refused.instanceOf(error) ? error.inner.message : null);
+        setAttached('missing');
+      });
     return () => {
       current = false;
       off();
@@ -171,5 +182,5 @@ export function useChat(core: string, agentId: string): ChatView {
     [agentId, request],
   );
 
-  return { state, replayed, attached, queued, send, cancel, answer, setConfig };
+  return { state, replayed, attached, problem, queued, send, cancel, answer, setConfig };
 }
