@@ -12,7 +12,10 @@
     "android": "node scripts/run.mjs android development",
     "android:release": "node scripts/run.mjs android production --variant release",
     "prebuild": "node scripts/run.mjs prebuild",
-    "typecheck": "node ../scripts/require-bindings.mjs && node scripts/generate.mjs && tsc --noEmit"
+    "typecheck": "node ../scripts/require-bindings.mjs && node scripts/generate.mjs && tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write \"**/*.{ts,tsx,js,mjs}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,mjs}\""
   },
   "dependencies": {
     "@expo-google-fonts/figtree": "^0.4.1",

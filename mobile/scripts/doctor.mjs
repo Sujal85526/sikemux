@@ -3,16 +3,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
-import {
-  bindingsExist,
-  buildCommand,
-  libraries,
-  PHONE_TARGETS,
-  readBuild,
-  repo,
-  rustupPath,
-  toolchainChannel,
-} from './native-build.mjs';
+import { bindingsExist, buildCommand, libraries, PHONE_TARGETS, readBuild, repo, rustupPath, toolchainChannel } from './native-build.mjs';
 
 let failed = false;
 const ok = (message) => console.log(`  ok    ${message}`);

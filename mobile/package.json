@@ -16,6 +16,9 @@
     "android:release": "pnpm --filter sikemux-app android:release",
     "start": "pnpm --filter sikemux-app start",
     "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r --if-present lint",
+    "format": "pnpm -r --if-present format",
+    "format:check": "pnpm -r --if-present format:check",
     "design": "node design/build.mjs --serve",
     "doctor": "node scripts/doctor.mjs"
   }
