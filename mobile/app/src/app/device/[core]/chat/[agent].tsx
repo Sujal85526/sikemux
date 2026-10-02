@@ -35,6 +35,8 @@ export default function Chat() {
   const { state } = chat;
   const since = useTurnStart(state.running);
   const scroller = useRef<ScrollView>(null);
+  // The composer arrives once the chat attaches and shortens the transcript, so its layout scrolls too.
+  const toEnd = () => requestAnimationFrame(() => scroller.current?.scrollToEnd({ animated: false }));
   const activity = activityText(state, activeToolLabel(state.messages));
   const title = state.title ?? (info ? chatTitle(info) : providerName(provider));
 
@@ -55,7 +57,8 @@ export default function Chat() {
           ref={scroller}
           style={styles.transcript}
           contentContainerStyle={styles.content}
-          onContentSizeChange={() => scroller.current?.scrollToEnd({ animated: false })}
+          onContentSizeChange={toEnd}
+          onLayout={toEnd}
           keyboardDismissMode="interactive">
           {chat.attached === 'missing' ? (
             <Text style={styles.gone}>This chat is no longer running on the Mac.</Text>
@@ -66,7 +69,7 @@ export default function Chat() {
             </View>
           ) : null}
           {state.messages.map((message) => (
-            <Message key={message.id} message={message} />
+            <Message key={message.id} message={message} untimed={chat.replayed.has(message.id)} />
           ))}
           {chat.queued ? <Queued text={chat.queued} /> : null}
           {activity ? <Activity provider={provider} label={activity} since={since} /> : null}

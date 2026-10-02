@@ -32,12 +32,12 @@ function look(kind: string): { icon: IconName; color: string } {
   }
 }
 
-function ToolRow({ part, last }: { part: ToolPart; last: boolean }) {
+function ToolRow({ part, last, untimed }: { part: ToolPart; last: boolean; untimed: boolean }) {
   const kind = toolKind(part.tool);
   const { icon, color } = look(kind);
   const failed = part.tool.status === 'failed';
   const running = toolRunning(part.tool);
-  const spent = part.startedAt && part.endedAt && part.endedAt > part.startedAt ? durationLabel(part.endedAt - part.startedAt) : null;
+  const spent = !untimed && part.startedAt && part.endedAt && part.endedAt > part.startedAt ? durationLabel(part.endedAt - part.startedAt) : null;
   return (
     <View style={styles.tool}>
       <View style={[styles.spine, last && styles.spineLast]} />
@@ -59,7 +59,7 @@ function ToolRow({ part, last }: { part: ToolPart; last: boolean }) {
   );
 }
 
-function ToolGroup({ parts }: { parts: ToolPart[] }) {
+function ToolGroup({ parts, untimed }: { parts: ToolPart[]; untimed: boolean }) {
   const working = parts.some((part) => toolRunning(part.tool));
   const [open, setOpen] = useState(working);
   useEffect(() => {
@@ -73,7 +73,7 @@ function ToolGroup({ parts }: { parts: ToolPart[] }) {
         <Text style={styles.summaryText}>
           {parts.length} tool call{parts.length === 1 ? '' : 's'}
         </Text>
-        {started && ended && ended > started ? <Text style={styles.summaryTime}>{durationLabel(ended - started)}</Text> : null}
+        {!untimed && started && ended && ended > started ? <Text style={styles.summaryTime}>{durationLabel(ended - started)}</Text> : null}
         <View style={[styles.summaryChevron, open && { transform: [{ rotate: '90deg' }] }]}>
           <Icon name="IconChevron" size={11} color={colors.inkDim} />
         </View>
@@ -81,7 +81,7 @@ function ToolGroup({ parts }: { parts: ToolPart[] }) {
       {open ? (
         <View style={styles.toolsBody}>
           {parts.map((part, index) => (
-            <ToolRow key={part.id} part={part} last={index === parts.length - 1} />
+            <ToolRow key={part.id} part={part} last={index === parts.length - 1} untimed={untimed} />
           ))}
         </View>
       ) : null}
@@ -93,7 +93,7 @@ function userText(message: ChatMessage): string {
   return message.parts.flatMap((part) => (part.kind === 'text' ? [part.text] : [])).join('\n');
 }
 
-function Assistant({ message }: { message: ChatMessage }) {
+function Assistant({ message, untimed }: { message: ChatMessage; untimed: boolean }) {
   const runs: (ChatPart | ToolPart[])[] = [];
   for (const part of message.parts) {
     const previous = runs[runs.length - 1];
@@ -105,7 +105,7 @@ function Assistant({ message }: { message: ChatMessage }) {
   return (
     <>
       {runs.map((run, index) => {
-        if (Array.isArray(run)) return <ToolGroup key={run[0].id} parts={run} />;
+        if (Array.isArray(run)) return <ToolGroup key={run[0].id} parts={run} untimed={untimed} />;
         switch (run.kind) {
           case 'text':
             return run.text.trim() ? <Markdown key={run.id} text={run.text} style={styles.prose} /> : null;
@@ -135,7 +135,7 @@ function Assistant({ message }: { message: ChatMessage }) {
   );
 }
 
-export function Message({ message }: { message: ChatMessage }) {
+export function Message({ message, untimed = false }: { message: ChatMessage; untimed?: boolean }) {
   if (message.role === 'user') {
     return (
       <View style={styles.userRow}>
@@ -145,7 +145,7 @@ export function Message({ message }: { message: ChatMessage }) {
       </View>
     );
   }
-  return <Assistant message={message} />;
+  return <Assistant message={message} untimed={untimed} />;
 }
 
 export function Queued({ text }: { text: string }) {

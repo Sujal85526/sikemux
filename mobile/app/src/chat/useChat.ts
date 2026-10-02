@@ -55,6 +55,8 @@ function reduceAll(state: ChatState, batch: ChatAction[]): ChatState {
 
 export type ChatView = {
   state: ChatState;
+  /** Messages rebuilt from the replay, which carries no times. */
+  replayed: ReadonlySet<string>;
   attached: 'attaching' | 'live' | 'missing';
   queued: string | null;
   send: (text: string) => void;
@@ -68,6 +70,7 @@ export function useChat(core: string, agentId: string): ChatView {
   const [state, apply] = useReducer(reduceAll, initialChatState);
   const [attached, setAttached] = useState<ChatView['attached']>('attaching');
   const [queued, setQueued] = useState<string | null>(null);
+  const [replayed, setReplayed] = useState<ReadonlySet<string>>(new Set());
   const connection = live.status === 'open' ? live.connection : undefined;
   const connectionRef = useRef(connection);
   connectionRef.current = connection;
@@ -95,6 +98,7 @@ export function useChat(core: string, agentId: string): ChatView {
           return;
         }
         const replay = attachment.replay.flatMap(actions);
+        setReplayed(new Set(reduceAll(initialChatState, replay).messages.map((message) => message.id)));
         apply([
           ...replay,
           { type: 'ready', capabilities: recordOf(attachment.start.capabilities) ?? {}, setup: recordOf(attachment.start.setup) ?? {} },
@@ -167,5 +171,5 @@ export function useChat(core: string, agentId: string): ChatView {
     [agentId, request],
   );
 
-  return { state, attached, queued, send, cancel, answer, setConfig };
+  return { state, replayed, attached, queued, send, cancel, answer, setConfig };
 }
