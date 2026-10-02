@@ -70,6 +70,7 @@ export const remoteApi = {
     answerPairing: (id: string, allow: boolean, access: DeviceAccess) => invoke<RemoteStatus>("remote_answer_pairing", { id, allow, access }),
     publishWorkspace: (projects: readonly PublishedProject[], launchers: readonly LauncherRequest[]) =>
         invoke<void>("remote_publish_workspace", { projects, launchers }),
+    publishChatTitles: (titles: Readonly<Record<string, string>>) => invoke<void>("remote_publish_chat_titles", { titles }),
     subscribe: (listener: (status: RemoteStatus) => void, signal: AbortSignal) =>
         getIpcTransport().subscribe<RemoteStatus>(REMOTE_STATUS_EVENT, (event) => listener(event.payload), { signal }),
 };

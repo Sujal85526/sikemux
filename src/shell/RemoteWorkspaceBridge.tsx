@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { remoteApi } from "../api/remote";
-import { remoteWorkspace } from "../remote/workspace";
+import { remoteTitles, remoteWorkspace } from "../remote/workspace";
 import { swallow } from "../state/toast";
 import { useStore } from "../state/store";
 
 /** Long enough that opening or renaming several projects publishes once. */
 export const PUBLISH_DELAY_MS = 400;
 
-/** While remote access is on, tells the core which projects and agents paired devices may start. */
+/** While remote access is on, tells the core which projects and agents paired devices may start, and what each chat is called. */
 export function RemoteWorkspaceBridge() {
     const [enabled, setEnabled] = useState(false);
     const sessions = useStore((s) => s.sessions);
@@ -18,6 +18,8 @@ export function RemoteWorkspaceBridge() {
         () => JSON.stringify(remoteWorkspace(sessions, sessionOrder, profiles, permissionMode)),
         [sessions, sessionOrder, profiles, permissionMode],
     );
+    const agents = useStore((s) => s.agents);
+    const titles = useMemo(() => JSON.stringify(remoteTitles(agents)), [agents]);
 
     useEffect(() => {
         const controller = new AbortController();
@@ -41,6 +43,16 @@ export function RemoteWorkspaceBridge() {
         }, PUBLISH_DELAY_MS);
         return () => window.clearTimeout(timer);
     }, [enabled, published]);
+
+    useEffect(() => {
+        if (!enabled) return;
+        const timer = window.setTimeout(() => {
+            remoteApi
+                .publishChatTitles(JSON.parse(titles) as Record<string, string>)
+                .catch(swallow("publish chat titles to paired devices"));
+        }, PUBLISH_DELAY_MS);
+        return () => window.clearTimeout(timer);
+    }, [enabled, titles]);
 
     return null;
 }

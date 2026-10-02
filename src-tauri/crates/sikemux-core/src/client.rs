@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;
 use std::fs::OpenOptions;
 use std::future::Future;
@@ -675,6 +675,14 @@ impl CoreClient {
             launchers,
         })
         .await
+    }
+
+    pub async fn publish_chat_titles(
+        &self,
+        titles: BTreeMap<String, String>,
+    ) -> Result<(), ClientError> {
+        self.request_done(Request::PublishChatTitles { titles })
+            .await
     }
 
     pub async fn attentions(&self) -> Result<Vec<Attention>, ClientError> {

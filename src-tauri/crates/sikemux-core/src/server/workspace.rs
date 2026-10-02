@@ -2,6 +2,7 @@
 //! can start one with the window closed. Held in memory only: a launcher's
 //! environment may carry the person's API keys.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -9,7 +10,8 @@ use agent_client_protocol::schema::v1::{EnvVariable, McpServer, McpServerStdio};
 use serde_json::Value;
 
 use crate::protocol::{
-    ChatLaunch, ChatLauncher, Event, LauncherInfo, ProjectInfo, RequestId, Response, Workspace,
+    ChatInfo, ChatLaunch, ChatLauncher, Event, LauncherInfo, ProjectInfo, RequestId, Response,
+    Workspace,
 };
 
 use super::chat;
@@ -18,11 +20,14 @@ use super::{Core, CoreError, CoreResult};
 
 const MAX_PROJECTS: usize = 512;
 const MAX_LAUNCHERS: usize = 64;
+const MAX_TITLES: usize = 1024;
+const MAX_TITLE_CHARS: usize = 200;
 
 #[derive(Default)]
 struct Published {
     projects: Vec<ProjectInfo>,
     launchers: Vec<ChatLauncher>,
+    titles: BTreeMap<String, String>,
 }
 
 #[derive(Default)]
@@ -56,11 +61,35 @@ impl Workspaces {
         if let Some(project) = projects.iter().find(|project| !project.path.is_absolute()) {
             return Err(format!("project {} has no absolute path", project.name).into());
         }
-        *self.lock() = Published {
-            projects,
-            launchers,
-        };
+        let mut published = self.lock();
+        published.projects = projects;
+        published.launchers = launchers;
         Ok(())
+    }
+
+    /// What the app calls each chat, replacing what it published before.
+    pub(crate) fn publish_titles(&self, titles: BTreeMap<String, String>) -> CoreResult<()> {
+        if titles.len() > MAX_TITLES
+            || titles
+                .values()
+                .any(|title| title.chars().count() > MAX_TITLE_CHARS)
+        {
+            return Err("the app published more chat titles than the core keeps".into());
+        }
+        self.lock().titles = titles;
+        Ok(())
+    }
+
+    /// The app's name for a chat wins over the agent's: it includes the
+    /// agent's own unless the person renamed the chat.
+    pub(crate) fn titled(&self, mut chats: Vec<ChatInfo>) -> Vec<ChatInfo> {
+        let published = self.lock();
+        for chat in &mut chats {
+            if let Some(title) = published.titles.get(&chat.agent_id) {
+                chat.title = Some(title.clone());
+            }
+        }
+        chats
     }
 
     pub(crate) fn view(&self) -> Workspace {

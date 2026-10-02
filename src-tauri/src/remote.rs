@@ -2,6 +2,7 @@
 //! and agents the app offers paired devices. The core keeps the state; these
 //! commands forward to it.
 
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use serde::Deserialize;
@@ -18,6 +19,10 @@ use crate::pty::{core_error, PtyManager};
 /// core keeps it in memory only.
 #[derive(Default)]
 pub struct PublishedWorkspace(Mutex<Option<(Vec<ProjectInfo>, Vec<ChatLauncher>)>>);
+
+/// What the app last called each chat, sent again like the workspace.
+#[derive(Default)]
+pub struct PublishedTitles(Mutex<BTreeMap<String, String>>);
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -65,6 +70,22 @@ pub async fn remote_publish_workspace(
         .map_err(core_error)
 }
 
+#[tauri::command]
+pub async fn remote_publish_chat_titles(
+    manager: State<'_, PtyManager>,
+    published: State<'_, PublishedTitles>,
+    titles: BTreeMap<String, String>,
+) -> AppResult<()> {
+    if let Ok(mut last) = published.0.lock() {
+        *last = titles.clone();
+    }
+    let client = manager.client().await?;
+    client
+        .publish_chat_titles(titles)
+        .await
+        .map_err(core_error)
+}
+
 /// Gives a core the app just connected to what it published to the last one,
 /// and keeps the login item in step with its remote access switch.
 pub(crate) async fn connected(
@@ -78,6 +99,15 @@ pub(crate) async fn connected(
     if let Some((projects, launchers)) = last {
         if let Err(error) = client.publish_workspace(projects, launchers).await {
             eprintln!("Sikemux could not tell its core which agents devices may start: {error}");
+        }
+    }
+    let titles = app
+        .try_state::<PublishedTitles>()
+        .and_then(|published| published.0.lock().ok().map(|last| last.clone()))
+        .filter(|titles| !titles.is_empty());
+    if let Some(titles) = titles {
+        if let Err(error) = client.publish_chat_titles(titles).await {
+            eprintln!("Sikemux could not tell its core what its chats are called: {error}");
         }
     }
     if let Ok(status) = client.remote_status().await {

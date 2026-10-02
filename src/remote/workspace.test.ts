@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ProviderProfile, Session } from "../state/types";
-import { remoteWorkspace } from "./workspace";
+import type { Agent, ProviderProfile, Session } from "../state/types";
+import { remoteTitles, remoteWorkspace } from "./workspace";
 
 function project(id: string, cwd: string): Session {
     return { id, name: cwd.split("/").at(-1) ?? id, kind: "project", cwd, pinned: false, activeWindowId: `${id}-window` };
@@ -39,5 +39,14 @@ describe("remoteWorkspace", () => {
         expect(byId["codex:cx"].label).toBe("Codex");
         expect(byId["opencode"].permissionMode).toBe("workspace-write");
         expect(byId["grok"].permissionMode).toBe("bypass");
+    });
+});
+
+describe("remoteTitles", () => {
+    it("names the chats the rail has titled and leaves the rest to the core", () => {
+        const agent = (id: string, title: string) => ({ id, type: "claude", title, startup: "" }) as Agent;
+        expect(remoteTitles({ a: agent("a", "Fix the login flow"), b: agent("b", "claude"), c: agent("c", " ") })).toEqual({
+            a: "Fix the login flow",
+        });
     });
 });

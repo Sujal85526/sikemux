@@ -343,6 +343,11 @@ pub enum Request {
         projects: Vec<ProjectInfo>,
         launchers: Vec<ChatLauncher>,
     },
+    /// What the app calls each running chat, by agent id, so devices list
+    /// chats under the names the app shows. Replaces what it published before.
+    PublishChatTitles {
+        titles: BTreeMap<String, String>,
+    },
     Workspace,
     /// What agents wait on a person for now.
     Attentions,

@@ -540,7 +540,7 @@ async fn run_requests(
                 client.respond(
                     request_id,
                     Ok(Response::Chats {
-                        chats: core.chats.list(),
+                        chats: core.workspaces.titled(core.chats.list()),
                     }),
                 );
             }
@@ -617,6 +617,10 @@ async fn run_requests(
                 launchers,
             } => {
                 let result = core.workspaces.publish(projects, launchers);
+                client.respond(request_id, result.map(|()| Response::Done));
+            }
+            Request::PublishChatTitles { titles } => {
+                let result = core.workspaces.publish_titles(titles);
                 client.respond(request_id, result.map(|()| Response::Done));
             }
             Request::Attentions => {

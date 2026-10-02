@@ -591,6 +591,38 @@ async fn a_prompt_reaches_everyone_watching_but_its_sender_and_stays_in_the_repl
             && event.payload["text"] == "from the phone"));
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn a_device_lists_chats_by_the_titles_the_app_shows() {
+    let core_key = SecretKey::generate();
+    let phone = Device::new("Phone", DeviceAccess::Full);
+    let core = start_core(&core_key, &[&phone]);
+    let (app, _app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    publish_fake_agent(&app).await;
+    let status = listening(&app).await;
+    let endpoint = phone.endpoint().await;
+    let (client, _events) = remote::connect(&endpoint, core_addr(&status))
+        .await
+        .expect("the phone connects");
+    let (agent_id, _) = client
+        .start_chat("opencode".into(), "sess-tmp".into(), None)
+        .await
+        .expect("the phone starts a chat");
+
+    let titles = [(agent_id.clone(), "Fix the replay test".to_owned())].into();
+    app.publish_chat_titles(titles)
+        .await
+        .expect("publish titles");
+    let chats = client.acp_list().await.expect("list chats");
+    let chat = chats
+        .iter()
+        .find(|chat| chat.agent_id == agent_id)
+        .expect("the chat");
+    assert_eq!(chat.title.as_deref(), Some("Fix the replay test"));
+
+    let refused = client.publish_chat_titles(Default::default()).await;
+    assert!(refusal(refused).contains("only Sikemux on this Mac"));
+}
+
 async fn until_said(events: &mut UnboundedReceiver<ClientEvent>, agent: &str, needle: &str) {
     let mut said = String::new();
     while !said.contains(needle) {
