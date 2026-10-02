@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AccessibilityInfo, Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -58,7 +58,7 @@ function Fade({ edge }: { edge: 'top' | 'bottom' }) {
 }
 
 function Reel() {
-  const drift = useRef(new Animated.Value(0)).current;
+  const [drift] = useState(() => new Animated.Value(0));
   const [still, setStill] = useState(false);
   useEffect(() => {
     AccessibilityInfo.isReduceMotionEnabled().then(setStill);

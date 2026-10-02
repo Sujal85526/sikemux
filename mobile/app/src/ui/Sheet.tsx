@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Animated, Dimensions, Easing, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -16,12 +16,12 @@ export function Sheet({ visible, onClose, tall, children }: { visible: boolean; 
   // A modal measures no safe area of its own, so the screen behind it lends its inset.
   const insets = useSafeAreaInsets();
   const [mounted, setMounted] = useState(visible);
-  const progress = useRef(new Animated.Value(0)).current;
+  if (visible && !mounted) setMounted(true);
+  const [progress] = useState(() => new Animated.Value(0));
   const offscreen = Dimensions.get('window').height;
 
   useEffect(() => {
     if (visible) {
-      setMounted(true);
       Animated.timing(progress, { toValue: 1, duration: OPEN_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
       return;
     }

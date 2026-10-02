@@ -1,4 +1,4 @@
-import { Children, isValidElement, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Children, isValidElement, useEffect, useState, type ReactNode } from 'react';
 import {
   Animated,
   Easing,
@@ -218,7 +218,7 @@ export function Track<T extends string>({
 }
 
 function useLoop(duration: number, delay = 0) {
-  const value = useRef(new Animated.Value(0)).current;
+  const [value] = useState(() => new Animated.Value(0));
   const still = useStill();
   useEffect(() => {
     if (still) {
