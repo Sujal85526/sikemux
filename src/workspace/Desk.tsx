@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from "react";
 import { animate } from "../lib/motion";
-import { DESK_OPEN_MS, takeDeskEntrance } from "../state/deskEntrance";
+import { deskAppearing, onDeskMotion } from "../state/deskMotion";
 import { browserApi, BLANK_URL, type BrowserBounds, type BrowserHole, type BrowserSnapshot } from "../api/browser";
 import { onStageFrame, stageMoving, useNativeViewHoles, useNativeViewsOccluded, useStageMoving, type NativeViewHole } from "../state/nativeViews";
 import type { AgentType, PtyContext, Session, Window as WindowT } from "../state/types";
@@ -66,14 +66,15 @@ function holesOver(placement: Placement, holes: NativeViewHole[]): BrowserHole[]
         .map((hole) => ({ ...hole, x: hole.x - placement.x, y: hole.y - placement.y }));
 }
 
-/** Where the page area sits in the window, less whatever pokes past the stage's sides. */
+/** Where the page area sits in the window, less whatever pokes past its pane's or the stage's sides. */
 function measurePage(host: HTMLElement): Placement {
     const rect = host.getBoundingClientRect();
     const stage = host.closest(".window-area")?.getBoundingClientRect();
+    const pane = host.closest(".pane")?.getBoundingClientRect();
     const x = Math.round(rect.left);
     const width = Math.max(1, Math.round(rect.width));
-    const left = stage ? Math.round(stage.left) : -Infinity;
-    const right = stage ? Math.round(stage.right) : Infinity;
+    const left = Math.round(Math.max(stage?.left ?? -Infinity, pane?.left ?? -Infinity));
+    const right = Math.round(Math.min(stage?.right ?? Infinity, pane?.right ?? Infinity));
     const clipLeft = Math.min(width, Math.max(0, left - x));
     return {
         x,
@@ -138,14 +139,35 @@ export function DeskHost({
     );
 }
 
-/* The desk fades in while the split makes room for it, so it is not drawn squeezed at the start. */
-function useDeskEntrance(section: RefObject<HTMLElement | null>, paneId: string): void {
-    useLayoutEffect(() => {
-        if (!takeDeskEntrance(paneId)) return;
-        animate(section.current?.closest<HTMLElement>(".pane") ?? section.current, [{ opacity: 0 }, { opacity: 1 }], {
-            duration: DESK_OPEN_MS,
-        });
-    }, [paneId, section]);
+/* While the split opens or closes around it, the desk keeps the layout it has
+   when open and its pane's edge moves over it, so nothing inside rewraps or
+   grows a scrollbar part way. It fades along, and a fade turned around mid-way
+   starts from the opacity it had reached. */
+function useDeskMotion(section: RefObject<HTMLElement | null>, paneId: string): void {
+    const fade = useRef<Animation | null>(null);
+    useLayoutEffect(
+        () =>
+            onDeskMotion(paneId, (event) => {
+                const desk = section.current;
+                const pane = desk?.closest<HTMLElement>(".pane") ?? desk;
+                if (!desk || !pane) return;
+                if (event.kind === "settled") {
+                    desk.style.width = "";
+                    return;
+                }
+                if (!desk.style.width) {
+                    const area = desk.closest(".window-area")?.getBoundingClientRect().width ?? 0;
+                    desk.style.width = `${desk.getBoundingClientRect().width + area * (event.openShare - event.currentShare)}px`;
+                }
+                const from = event.appearing ? 0 : Number(getComputedStyle(pane).opacity);
+                fade.current?.cancel();
+                fade.current = animate(pane, [{ opacity: from }, { opacity: event.heading === "open" ? 1 : 0 }], {
+                    duration: event.ms,
+                    fill: "forwards",
+                });
+            }),
+        [paneId, section],
+    );
 }
 
 function DeskSession({
@@ -287,7 +309,7 @@ function DeskSession({
     });
 
     const sectionRef = useRef<HTMLElement>(null);
-    useDeskEntrance(sectionRef, paneId);
+    useDeskMotion(sectionRef, paneId);
 
     return (
         <section ref={sectionRef} className={`desk ${agentType}`} data-desk data-agent-id={agentId} aria-label={`${agentType} desk`}>
@@ -310,6 +332,7 @@ function DeskSession({
             />
             <div className="desk-body">
                 <BrowserPage
+                    paneId={paneId}
                     agentId={agentId}
                     hidden={shown !== BROWSER_ACTIVE}
                     visible={visible}
@@ -354,6 +377,7 @@ function DeskSession({
 /* The page itself is a native view the window draws over this pane, so the
    pane's only job for it is to say where the page area is. */
 function BrowserPage({
+    paneId,
     agentId,
     hidden,
     visible,
@@ -361,6 +385,7 @@ function BrowserPage({
     snapshot,
     refresh,
 }: {
+    paneId: string;
     agentId: string;
     hidden: boolean;
     visible: boolean;
@@ -383,7 +408,7 @@ function BrowserPage({
     const pageAddress = blank ? "" : (activeTab?.url ?? "");
     const addressFloating = useStore((state) => state.deskAddressOpen === agentId) && visible && !hidden;
 
-    const inputs = { agentId, visible, painted, hidden, occluded, blank, hasTab, appHoles, addressFloating };
+    const inputs = { paneId, agentId, visible, painted, hidden, occluded, blank, hasTab, appHoles, addressFloating };
     const inputsRef = useRef(inputs);
     inputsRef.current = inputs;
 
@@ -397,7 +422,7 @@ function BrowserPage({
         let sent = "";
         const place = () => {
             frame = 0;
-            const { agentId, visible, painted, hidden, occluded, blank, hasTab, appHoles, addressFloating } = inputsRef.current;
+            const { paneId, agentId, visible, painted, hidden, occluded, blank, hasTab, appHoles, addressFloating } = inputsRef.current;
             const placement = measurePage(host);
             /* A screen sliding on or off stage is on the window without being the
                screen the session is on, and its page travels with it rather than
@@ -406,8 +431,15 @@ function BrowserPage({
                moves for all of them at once. */
             const travelling = stageMoving() && painted && placement.clipLeft + placement.clipRight < placement.width;
             const shown = (visible || travelling) && !hidden && !occluded && !blank && hasTab;
+            /* A native page cannot inherit CSS opacity, so it is told its pane's. */
+            const opacity = deskAppearing(paneId) ? 0 : Math.round(Number(getComputedStyle(host.closest(".pane") ?? host).opacity) * 100) / 100;
             const bounds: BrowserBounds | null = shown
-                ? { ...placement, holes: holesOver(placement, appHoles), ...(addressFloating ? { dim: UNDER_ADDRESS_DIM } : {}) }
+                ? {
+                      ...placement,
+                      holes: holesOver(placement, appHoles),
+                      ...(addressFloating ? { dim: UNDER_ADDRESS_DIM } : {}),
+                      ...(opacity < 1 ? { opacity } : {}),
+                  }
                 : null;
             const key = JSON.stringify(bounds);
             if (key === sent) return;

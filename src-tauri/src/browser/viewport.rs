@@ -146,6 +146,7 @@ fn fit(area: &BrowserBounds, viewport: Viewport) -> BrowserBounds {
             })
             .collect(),
         dim: area.dim,
+        opacity: area.opacity,
     }
 }
 
@@ -229,6 +230,7 @@ mod tests {
             clip_right: 0.0,
             holes: Vec::new(),
             dim: 0.0,
+            opacity: 1.0,
         }
     }
 

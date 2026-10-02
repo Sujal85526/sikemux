@@ -494,6 +494,16 @@ pub fn clip(pointer: *mut c_void, clip_left: f64, clip_right: f64, holes: Vec<(N
     CATransaction::commit();
 }
 
+/// Fade the whole page, so it goes with the pane it sits in when that fades.
+pub fn fade(pointer: *mut c_void, opacity: f64) {
+    let Some(webview) = webview_from(pointer) else {
+        return;
+    };
+    let view: &NSView = &webview;
+    // SAFETY: `setAlphaValue:` is an NSView method taking a CGFloat.
+    let _: () = unsafe { msg_send![view, setAlphaValue: opacity] };
+}
+
 /// Lay a black shade of `alpha` over the page, or take it off at zero, so an
 /// app panel floating on the page stands apart from it. The shade lives in the
 /// page's own layer, so the mask `clip` sets cuts it where the panel is.

@@ -62,6 +62,8 @@ export interface BrowserBounds {
     holes: BrowserHole[];
     /** How dark a shade to lay over the page, from 0 to 1. */
     dim?: number;
+    /** How opaque to draw the page, from 0 to 1, for following its pane's fade. */
+    opacity?: number;
 }
 
 /** A command chord pressed while a page had keyboard focus. */
