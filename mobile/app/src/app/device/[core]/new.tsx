@@ -144,7 +144,7 @@ const styles = StyleSheet.create({
   welcome: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 28, borderTopWidth: 1, borderTopColor: colors.border },
   welcomeTitle: { fontFamily: fonts.uiSemibold, fontSize: 20, letterSpacing: -0.55, color: colors.ink },
   problem: { fontFamily: fonts.ui, fontSize: 13.5, color: colors.danger, textAlign: 'center' },
-  wrap: { paddingHorizontal: 10, paddingTop: 8 },
+  wrap: { paddingHorizontal: 10, paddingTop: 8, paddingBottom: 6 },
   strip: {
     flexDirection: 'row',
     alignItems: 'center',

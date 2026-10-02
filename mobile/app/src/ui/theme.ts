@@ -6,7 +6,8 @@ export const colors = {
   ground: '#0f0f13',
   raised: '#18181c',
   overlay: '#1e1e22',
-  composer: '#111114',
+  // The Mac's composer sits on its darkest surface; this keeps that step above the phone's ground.
+  composer: '#17171b',
   border: '#27272b',
   borderStrong: '#3f3f43',
   rest: '#6a6a6f',

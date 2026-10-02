@@ -267,7 +267,7 @@ export function Composer({
 }
 
 const styles = StyleSheet.create({
-  wrap: { paddingHorizontal: 10, paddingTop: 8 },
+  wrap: { paddingHorizontal: 10, paddingTop: 8, paddingBottom: 6 },
   composer: { padding: 6, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.composer },
   bar: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingTop: 6 },
   yolo: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 34, paddingHorizontal: 8 },
