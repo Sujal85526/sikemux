@@ -1,0 +1,47 @@
+(sikemux_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+}
+
+api.sikemux.com {
+	import sikemux_headers
+	header Referrer-Policy "no-referrer"
+	encode zstd gzip
+	request_body {
+		max_size 1MB
+	}
+	reverse_proxy 127.0.0.1:4000
+	log {
+		output file /var/log/caddy/sikemux-api.log {
+			roll_size 10MiB
+			roll_keep 10
+		}
+		format json
+	}
+}
+
+app.sikemux.com {
+	import sikemux_headers
+	header {
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+	}
+	root * /srv/sikemux/current/app
+	encode zstd gzip
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+	@pages not path /assets/*
+	header @pages Cache-Control "no-cache"
+	try_files {path} /index.html
+	file_server
+	log {
+		output file /var/log/caddy/sikemux-app.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+		format json
+	}
+}

@@ -1,0 +1,117 @@
+name: Server
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "server/**"
+      - "src-tauri/crates/sikemux-core/src/accounts/**"
+      - .github/workflows/server.yml
+  pull_request:
+    paths:
+      - "server/**"
+      - "src-tauri/crates/sikemux-core/src/accounts/**"
+      - .github/workflows/server.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Server checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: server-check-${{ github.ref }}
+      cancel-in-progress: true
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    defaults:
+      run:
+        working-directory: server
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      SIKEMUX_VERSION: ${{ github.sha }}
+      VITE_API_URL: https://api.sikemux.com
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: server/pnpm-lock.yaml
+
+      - name: Install server dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check, test and build
+        run: pnpm check
+
+      - name: Pack the release
+        run: pnpm pack:release
+
+      - name: Keep the release for the deploy
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: server-release
+          path: server/dist/release.tar.gz
+          retention-days: 7
+          if-no-files-found: error
+
+  deploy:
+    name: Deploy to citadel
+    needs: check
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+      url: https://app.sikemux.com
+    # Deploys queue rather than cancel, so a half-finished one is never cut off.
+    concurrency:
+      group: server-deploy
+      cancel-in-progress: false
+    steps:
+      - name: Fetch the release
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: server-release
+
+      - name: Send it to citadel
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          install -m 600 /dev/null ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            "sikemux-deploy@$DEPLOY_HOST" "$GITHUB_SHA" < release.tar.gz
+
+      - name: Check it from outside
+        run: |
+          health="$(curl -fsS --retry 5 --retry-all-errors --max-time 10 https://api.sikemux.com/v1/health)"
+          echo "$health"
+          test "$(jq -r .version <<<"$health")" = "$GITHUB_SHA"
+          curl -fsS --max-time 10 -o /dev/null https://app.sikemux.com

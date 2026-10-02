@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# Installs a release sent as `ssh sikemux-deploy@citadel <commit> < release.tar.gz`. The deploy
+# key's authorized_keys entry forces this script, so that key can do nothing else.
+set -euo pipefail
+
+ROOT=/srv/sikemux
+RELEASES="$ROOT/releases"
+KEEP=5
+MAX_BYTES=$((200 * 1024 * 1024))
+HEALTH=http://127.0.0.1:4000/v1/health
+export DATABASE_URL='postgresql://sikemux@%2Fvar%2Frun%2Fpostgresql/sikemux'
+
+say() { printf '[deploy] %s\n' "$*"; }
+fail() {
+  say "$*" >&2
+  exit 1
+}
+
+commit="${SSH_ORIGINAL_COMMAND:-}"
+[[ "$commit" =~ ^[0-9a-f]{40}$ ]] || fail "usage: ssh sikemux-deploy@citadel <40-character commit> < release.tar.gz"
+
+exec 9>"$ROOT/deploy.lock"
+flock 9
+
+incoming="$(mktemp -d "$RELEASES/.incoming.XXXXXX")"
+trap 'rm -rf "$incoming"' EXIT
+head -c "$MAX_BYTES" | tar -xzf - -C "$incoming" --no-same-owner --no-same-permissions
+for required in RELEASE api/dist/main.mjs app/index.html; do
+  [ -f "$incoming/$required" ] || fail "the release has no $required"
+done
+[ "$(cat "$incoming/RELEASE")" = "$commit" ] || fail "the release was built from another commit"
+chmod -R a+rX,go-w "$incoming"
+
+target="$RELEASES/$commit"
+rm -rf "$target"
+mv "$incoming" "$target"
+trap - EXIT
+
+previous="$(readlink "$ROOT/current" 2>/dev/null || true)"
+
+point_at() {
+  ln -sfn "$1" "$ROOT/current.next"
+  mv -T "$ROOT/current.next" "$ROOT/current"
+}
+
+healthy() {
+  local body
+  for _ in $(seq 30); do
+    if body="$(curl -fsS --max-time 3 "$HEALTH" 2>/dev/null)" &&
+      node -e 'const h = JSON.parse(process.argv[1]); process.exit(h.status === "ok" && h.version === process.argv[2] ? 0 : 1)' "$body" "$commit"; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+say "migrating the database"
+node "$target/api/dist/main.mjs" migrate
+
+say "starting $commit"
+point_at "$target"
+sudo -n /usr/bin/systemctl restart sikemux-api
+
+if healthy; then
+  say "$commit is live"
+  find "$RELEASES" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -printf '%T@ %p\n' | sort -rn | tail -n +$((KEEP + 1)) |
+    cut -d' ' -f2- | while read -r old; do
+      [ "$old" = "$previous" ] || rm -rf "$old"
+    done
+  exit 0
+fi
+
+say "$commit did not become healthy; its last log lines:"
+sudo -n /usr/bin/journalctl -u sikemux-api -n 50 --no-pager || true
+if [ -n "$previous" ] && [ "$previous" != "$target" ]; then
+  point_at "$previous"
+  sudo -n /usr/bin/systemctl restart sikemux-api
+  say "rolled back to $(basename "$previous")"
+fi
+exit 1
