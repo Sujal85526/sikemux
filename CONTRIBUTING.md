@@ -63,6 +63,25 @@ Rebuild with `pnpm native:ios:sim` after changing `sikemux-mobile` or the protoc
 
 Every phone screen is drawn first in `mobile/design/screens.src.html`, with the Mac app's own icons and fonts. A design change starts there, before the app: run `pnpm design` in `mobile/` and open http://127.0.0.1:8791/mobile/design/screens.html, which rebuilds on each reload. In the PR, add a screenshot of each screen you changed or added from that page, so the design is reviewed before the code. `{{IconName}}` or `{{IconName:size}}` in the file draws one of the app's icons. The glyphs the phone draws itself live in `mobile/app/src/ui/drawnIcons.ts`, which the app and the page both read.
 
+### The accounts server
+
+`server/` holds the backend behind phone sign-in and the device list: the API at api.sikemux.com and the web app at app.sikemux.com. Like `mobile/`, it is a pnpm workspace of its own. [ADR 0009](docs/architecture/0009-accounts-and-backend.md) records the design.
+
+- `server/protocol` is the contract. Its JSON Schema in `schema/` and the routes in `routes.json` generate the TypeScript types, a bundled schema the API validates with, an OpenAPI document, and the Rust types in `src-tauri/crates/sikemux-core/src/accounts/protocol.rs`. Change the schema, then run `pnpm protocol:generate`; never edit the generated files. Every definition needs an example in `fixtures/`, which both the TypeScript and the Rust tests read.
+- `server/api` is the API (Hono on Node, Postgres through Kysely). Schema changes are numbered SQL files in `api/migrations`; a shipped one is never edited, only followed by a new one.
+- `server/app` is the web app (Vite and React).
+- `server/deploy` is what runs it on the server: the systemd unit, the Caddy sites, the one-time setup and the script that installs a release.
+
+```bash
+cd server
+pnpm install
+pnpm check                  # schema drift, Prettier, ESLint, types, tests and builds
+```
+
+The API's tests need Postgres 16 or newer installed (`brew install postgresql@17`); they start a throwaway server of their own, or use `TEST_DATABASE_URL` when it is set. To run the API and the web app locally, put `DATABASE_URL=postgresql://localhost/sikemux` (a database you created) in `server/api/.env`, run `pnpm --filter @sikemux/api migrate`, then `pnpm dev`.
+
+Merging a change under `server/` to `main` deploys it: `.github/workflows/server.yml` runs `pnpm check`, sends the release to the server over SSH, migrates the database, restarts the API, and switches back to the previous release if the new one does not report itself healthy.
+
 ## Before you open a PR
 
 The `pre-push` hook already runs these for you. To check without pushing:

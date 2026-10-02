@@ -47,6 +47,23 @@
   it must keep matching the app. Change it in the same commit as the screen it draws; run
   `pnpm design` in `mobile/` to view it.
 
+## Server
+
+- The accounts backend is in `server/`: the API (`server/api`), the web app at
+  app.sikemux.com (`server/app`), the shared protocol (`server/protocol`) and what runs
+  them on citadel (`server/deploy`). It is its own pnpm workspace: never add it to the
+  root install, scripts or checks. Run `pnpm check` in `server/`.
+- The protocol is generated from `server/protocol/schema`. Change the schema and run
+  `pnpm protocol:generate`; the TypeScript, the OpenAPI document and the core's
+  `accounts/protocol.rs` are build output that CI compares against it. Within `/v1` the
+  schema only grows: never remove or rename a field, route or enum value a released app
+  reads.
+- Migrations in `server/api/migrations` are never edited once merged. A change that
+  removes something comes in two steps: stop using it in one release, drop it in a later
+  one, so a rollback always finds the schema it expects.
+- Merging to `main` deploys anything under `server/` to production. Do not run
+  `server/deploy` scripts against citadel yourself; ask first.
+
 ## Website
 
 - sikemux.com is a separate Astro repo, `nodelike/sikemux-front`, checked out at
