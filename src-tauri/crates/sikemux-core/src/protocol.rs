@@ -346,6 +346,8 @@ pub enum Request {
     Workspace,
     /// What agents wait on a person for now.
     Attentions,
+    /// The computer this core runs on, so a device can name it.
+    Host,
     /// Starts a chat agent the way the app would, in one of its projects.
     StartChat {
         launcher: String,
@@ -624,6 +626,7 @@ pub enum Response {
     Workspace { workspace: Workspace },
     Attentions { attentions: Vec<Attention> },
     ChatBegun { agent_id: String, start: ChatStart },
+    Host { host: HostInfo },
 }
 
 /// A project the app has open.
@@ -673,6 +676,16 @@ pub enum DeviceAccess {
     Full,
     /// Read sessions and answer agents' permission requests.
     Watch,
+}
+
+/// The computer a core runs on, as a person would recognise it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostInfo {
+    /// The name set in System Settings, such as "Kishore's MacBook Pro".
+    pub name: String,
+    /// The kind of computer, such as "MacBook Pro" or "Mac mini".
+    pub model: String,
 }
 
 /// A device approved to reach this core from another machine.

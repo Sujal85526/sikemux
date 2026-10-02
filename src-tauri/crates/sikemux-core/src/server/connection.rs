@@ -14,6 +14,7 @@ use crate::protocol::{
 };
 
 use super::access::{self, Needs, Peer};
+use super::host;
 use super::prepare::{prepare_task, prepare_terminal};
 use super::session::{self, PendingStart};
 use super::{agent, chat, harness, remote, upgrade, workspace, Core, CoreError, CoreResult};
@@ -624,6 +625,12 @@ async fn run_requests(
                         attentions: core.chats.attentions(),
                     }),
                 );
+            }
+            Request::Host => {
+                tokio::spawn(async move {
+                    let host = blocking(|| Ok(host::info())).await;
+                    client.respond(request_id, host.map(|host| Response::Host { host }));
+                });
             }
             Request::Workspace => {
                 client.respond(
