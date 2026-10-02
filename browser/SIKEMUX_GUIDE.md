@@ -559,7 +559,8 @@ from inside the content instead. `sim_button` presses `home`, `lock`,
 `side`, `siri`, `volumeUp`, `volumeDown` or `applePay`.
 
 Acting tools wait until two reads of the screen agree before they return, so
-an animation has finished. `sim_screenshot` returns the screen as an image at
+an animation or an app's launch has finished. Content an app loads from the
+network can arrive later; read again with `sim_state`. `sim_screenshot` returns the screen as an image at
 its size in points; read `sim_state` rather than a screenshot to decide what
 to tap.
 

@@ -17,7 +17,10 @@ const BOOT_TIMEOUT: Duration = Duration::from_secs(60);
 const ACTION_TIMEOUT: Duration = Duration::from_secs(20);
 const INSTALL_TIMEOUT: Duration = Duration::from_secs(60);
 const SETTLE_STEP: Duration = Duration::from_millis(300);
-const SETTLE_READS: usize = 6;
+/// Enough reads for an app to finish launching, about three and a half seconds.
+const SETTLE_READS: usize = 12;
+/// Elements whose centre is above this are the status bar's: time, signal, battery.
+const STATUS_BAR_HEIGHT: f64 = 60.0;
 /// How many reads, a step apart, to wait for an action to change the screen.
 const CHANGE_READS: usize = 5;
 /// iOS reads a touch that starts this close to an edge as a system gesture.
@@ -333,7 +336,7 @@ fn attached(manager: &SimulatorManager, agent_id: &str) -> Result<Device, String
         .ok_or_else(|| "no simulator is attached; call sim_attach first".into())
 }
 
-type Screen = (String, Vec<Element>);
+pub(super) type Screen = (String, Vec<Element>);
 
 fn read_screen(manager: &SimulatorManager, device: &Device) -> Result<Screen, String> {
     let reply = manager.request("state", json!({ "udid": device.udid }), ACTION_TIMEOUT)?;
@@ -363,7 +366,7 @@ fn settled_state(
     for _ in 1..SETTLE_READS {
         std::thread::sleep(SETTLE_STEP);
         let next = read_screen(manager, &device)?;
-        let settled = next == latest;
+        let settled = next == latest && !launching(&next);
         latest = next;
         if settled {
             break;
@@ -381,6 +384,16 @@ fn settled_state(
         state["screen"] = json!({ "width": width, "height": height });
     }
     Ok(state)
+}
+
+/// An app on its way in shows a blank launch screen that no app owns yet, so
+/// nothing but the status bar can be read.
+pub(super) fn launching(screen: &Screen) -> bool {
+    let (app, elements) = screen;
+    app.is_empty()
+        && elements
+            .iter()
+            .all(|element| element.center.1 < STATUS_BAR_HEIGHT)
 }
 
 /// The frontmost app's name and its elements, from one accessibility read.

@@ -165,7 +165,8 @@ mod tools {
 
     use super::helper;
     use crate::simulator::tools::{
-        choose_device, edge_warning, element_lines, elements_from, run, tap_point, Device,
+        choose_device, edge_warning, element_lines, elements_from, launching, run, tap_point,
+        Device,
     };
 
     fn device(name: &str, os: &str, booted: bool) -> Device {
@@ -253,6 +254,20 @@ mod tools {
             .unwrap_err()
             .contains("sim_state"));
         assert!(tap_point(&elements, None, Some(3.0), None).is_err());
+    }
+
+    #[test]
+    fn a_blank_launch_screen_is_not_a_settled_one() {
+        let status_bar = json!({ "elements": [
+            { "type": "Application", "AXLabel": " ", "frame": { "x": 0, "y": 0, "width": 402, "height": 874 } },
+            { "type": "StaticText", "AXLabel": "9:27 PM", "frame": { "x": 60, "y": 20, "width": 44, "height": 26 } },
+            { "type": "GenericElement", "AXLabel": "100% battery power", "frame": { "x": 330, "y": 20, "width": 36, "height": 26 } },
+        ]});
+        assert!(launching(&elements_from(&status_bar, Some((402.0, 874.0)))));
+        assert!(!launching(&elements_from(
+            &home_screen(),
+            Some((402.0, 874.0))
+        )));
     }
 
     #[test]
