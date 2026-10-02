@@ -44,6 +44,7 @@ function DeviceCard({ device }: { device: PairedDevice }) {
   return (
     <Pressable
       onPress={() => router.push(`/device/${device.core}`)}
+      accessibilityRole="button"
       style={({ pressed }) => [styles.card, away && styles.away, pressed && { opacity: 0.85 }]}>
       <View style={styles.head}>
         <View style={styles.glyph}>

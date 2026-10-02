@@ -299,7 +299,7 @@ const makeStyles = (colors: Palette) => {
     dockCmd: { marginTop: 10, paddingVertical: 9, paddingHorizontal: 11, borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.sunken },
     dockCmdText: { fontFamily: fonts.mono, fontSize: 12.5, lineHeight: 18, color: colors.ink },
     dockActs: { flexDirection: 'row', gap: 6, marginTop: 10 },
-    act: { flex: 1, height: 38, borderRadius: 10, borderWidth: 1, borderColor: colors.borderStrong, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+    act: { flex: 1, minHeight: 38, borderRadius: 10, borderWidth: 1, borderColor: colors.borderStrong, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
     actGo: { backgroundColor: colors.ink, borderColor: colors.ink },
     actText: { fontFamily: fonts.uiMedium, fontSize: 14, color: colors.ink },
     actGoText: { fontFamily: fonts.uiSemibold, color: colors.ground },

@@ -53,7 +53,7 @@ export function Nav({ back, title, end, onBack }: { back?: string; title?: React
   const styles = useStyles(makeStyles);
   return (
     <View style={styles.nav}>
-      <Pressable style={styles.back} onPress={onBack ?? (() => router.back())} hitSlop={8} accessibilityRole="button">
+      <Pressable style={styles.back} onPress={onBack ?? (() => router.back())} hitSlop={8} accessibilityRole="button" accessibilityLabel={back ?? 'Back'}>
         <View style={styles.backChevron}>
           <Icon name="IconChevron" size={18} color={colors.secondary} />
         </View>
@@ -157,6 +157,8 @@ export function Row({
   return (
     <Pressable
       onPress={onPress}
+      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityState={selected === undefined ? undefined : { selected }}
       style={({ pressed }) => [styles.row, selected && styles.rowSelected, pressed && onPress && styles.rowPressed]}>
       {mark ? <View style={styles.mark}>{mark}</View> : null}
       <View style={styles.rowBody}>
@@ -248,7 +250,7 @@ function TwinkleCell({ period, index }: { period: number; index: number }) {
 export function Working() {
   const styles = useStyles(makeStyles);
   return (
-    <View style={styles.loader}>
+    <View style={styles.loader} accessible accessibilityLabel="Working">
       {TWINKLE.map((period, index) => (
         <TwinkleCell key={index} period={period} index={index} />
       ))}
@@ -264,7 +266,7 @@ export function NeedsYou() {
   const scale = phase.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1.8] });
   const opacity = phase.interpolate({ inputRange: [0, 1], outputRange: [0.9, 0] });
   return (
-    <View style={styles.dotBox}>
+    <View style={styles.dotBox} accessible accessibilityLabel="Needs input">
       <Animated.View style={[styles.ring, { transform: [{ scale }], opacity }]} />
       <View style={[styles.dot, { backgroundColor: colors.ink }]} />
     </View>
@@ -309,7 +311,7 @@ const buttonFill = (colors: Palette): Record<ButtonKind, ViewStyle> => ({
   primary: { backgroundColor: colors.ink, borderColor: colors.ink },
   neutral: { backgroundColor: colors.raised, borderColor: colors.border },
   danger: { backgroundColor: colors.raised, borderColor: colors.border },
-  text: { backgroundColor: 'transparent', borderColor: 'transparent', height: 40 },
+  text: { backgroundColor: 'transparent', borderColor: 'transparent', minHeight: 40 },
 });
 
 const buttonInk = (colors: Palette): Record<ButtonKind, TextStyle> => ({
@@ -323,8 +325,8 @@ const makeStyles = (colors: Palette) => {
   const type = typeFor(colors);
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: colors.ground },
-    nav: { height: 46, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6 },
-    back: { flexDirection: 'row', alignItems: 'center', height: 44, paddingRight: 8, paddingLeft: 4, minWidth: 44 },
+    nav: { minHeight: 46, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6 },
+    back: { flexDirection: 'row', alignItems: 'center', minHeight: 44, paddingRight: 8, paddingLeft: 4, minWidth: 44 },
     backChevron: { transform: [{ rotate: '180deg' }] },
     backText: { fontFamily: fonts.ui, fontSize: 16, color: colors.secondary, marginLeft: 2 },
     navTitle: { flex: 1, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
@@ -332,7 +334,7 @@ const makeStyles = (colors: Palette) => {
     navEnd: { minWidth: 76, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center' },
     iconButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
 
-    button: { height: 50, borderRadius: radius.row, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
+    button: { minHeight: 50, paddingVertical: 8, borderRadius: radius.row, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
     buttonText: { fontFamily: fonts.uiSemibold, fontSize: 16 },
     pressed: { opacity: 0.75 },
     disabled: { opacity: 0.5 },
@@ -348,7 +350,7 @@ const makeStyles = (colors: Palette) => {
     rowDetail: { ...type.meta, fontSize: 12.5, marginTop: 1 },
     rowEnd: { minWidth: 20, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 },
 
-    track: { height: 36, padding: 3, borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: translucent(colors.raised, 0.8), flexDirection: 'row' },
+    track: { minHeight: 36, padding: 3, borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: translucent(colors.raised, 0.8), flexDirection: 'row' },
     trackOption: { flex: 1, borderRadius: 7, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 },
     trackOn: { backgroundColor: colors.active },
     trackText: { fontFamily: fonts.ui, fontSize: 13, color: colors.tertiary },

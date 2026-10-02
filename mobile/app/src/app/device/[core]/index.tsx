@@ -7,7 +7,7 @@ import { reloadDevices, retry, useDevices, useLive } from '@/devices/hub';
 import { channelLabel, deviceKind, deviceName, updateDevice } from '@/devices/paired';
 import { ForgetSheet } from '@/devices/ForgetSheet';
 import { ProjectSheet } from '@/devices/ProjectSheet';
-import { chatState, chatTitle, folder } from '@/devices/words';
+import { chatState, chatTitle, folder, providerName } from '@/devices/words';
 import { AgentIcon, DeviceIcon, Icon } from '@/ui/Icon';
 import { Button, Group, IconButton, Nav, NeedsYou, Row, Screen, SectionLabel, Track, useBottomGap, Working } from '@/ui/parts';
 import { fonts, type Palette, radius, typeFor, useColors, useStyles, useType, translucent } from '@/ui/theme';
@@ -82,7 +82,11 @@ function Agents({ core, snapshot, scope }: { core: string; snapshot: Snapshot; s
     <>
       {providers.length > 1 ? (
         <View style={styles.filters}>
-          <Pressable onPress={() => setFilter('all')} style={[styles.filter, shown === 'all' && styles.filterOn]}>
+          <Pressable
+            onPress={() => setFilter('all')}
+            style={[styles.filter, shown === 'all' && styles.filterOn]}
+            accessibilityRole="button"
+            accessibilityState={{ selected: shown === 'all' }}>
             <Text style={[styles.filterText, shown === 'all' && { color: colors.ink }]}>All</Text>
           </Pressable>
           {providers.map((provider) => (
@@ -90,14 +94,16 @@ function Agents({ core, snapshot, scope }: { core: string; snapshot: Snapshot; s
               key={provider}
               onPress={() => setFilter(provider)}
               style={[styles.filter, shown === provider && styles.filterOn]}
-              accessibilityLabel={provider}>
+              accessibilityRole="button"
+              accessibilityLabel={providerName(provider)}
+              accessibilityState={{ selected: shown === provider }}>
               <AgentIcon provider={provider} size={17} />
             </Pressable>
           ))}
         </View>
       ) : null}
       {asking.map((chat) => (
-        <Pressable key={chat.agentId} style={styles.ask} onPress={() => open(chat.agentId)}>
+        <Pressable key={chat.agentId} style={styles.ask} onPress={() => open(chat.agentId)} accessibilityRole="button">
           <AgentIcon provider={chat.provider} size={22} />
           <View style={{ flex: 1 }}>
             <Text style={styles.askTitle} numberOfLines={1}>
@@ -378,7 +384,7 @@ const makeStyles = (colors: Palette) => {
     },
     termCount: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     filters: { flexDirection: 'row', gap: 6, paddingTop: 12 },
-    filter: { height: 32, minWidth: 40, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: translucent(colors.raised, 0.8), alignItems: 'center', justifyContent: 'center' },
+    filter: { minHeight: 32, minWidth: 40, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: translucent(colors.raised, 0.8), alignItems: 'center', justifyContent: 'center' },
     filterOn: { backgroundColor: translucent(colors.overlay, 0.9), borderColor: colors.borderStrong },
     filterText: { fontFamily: fonts.ui, fontSize: 13, color: colors.secondary },
     ask: {

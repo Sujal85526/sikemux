@@ -73,7 +73,7 @@ function ToolGroup({ parts, untimed }: { parts: ToolPart[]; untimed: boolean }) 
   const ended = parts[parts.length - 1]?.endedAt;
   return (
     <View style={styles.tools}>
-      <Pressable onPress={() => setOpen(!open)} style={styles.summary} hitSlop={6} accessibilityRole="button">
+      <Pressable onPress={() => setOpen(!open)} style={styles.summary} hitSlop={6} accessibilityRole="button" accessibilityState={{ expanded: open }}>
         <Text style={styles.summaryText}>
           {parts.length} tool call{parts.length === 1 ? '' : 's'}
         </Text>
@@ -214,7 +214,7 @@ const makeStyles = (colors: Palette) => {
     thought: { fontFamily: fonts.uiItalic, fontSize: 13.5, lineHeight: 21, color: colors.inkFaint, marginVertical: 8 },
     note: { fontFamily: fonts.ui, fontSize: 13, color: colors.inkDim, marginVertical: 6 },
     tools: { marginVertical: 6 },
-    summary: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 26, alignSelf: 'flex-start' },
+    summary: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 26, alignSelf: 'flex-start' },
     summaryText: { fontFamily: fonts.ui, fontSize: 13, color: colors.inkDim },
     summaryTime: { fontFamily: fonts.mono, fontSize: 11.5, color: colors.inkDim },
     summaryChevron: { opacity: 0.7 },
