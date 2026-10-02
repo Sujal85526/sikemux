@@ -181,6 +181,13 @@ async fn bind(key: SecretKey) -> Result<Endpoint, MobileError> {
     })
 }
 
+fn sign_registration(key: &SecretKey, nonce: &str, user_id: &str) -> Result<String, MobileError> {
+    sikemux_core::accounts::check_registration(nonce, user_id).map_err(invalid)?;
+    let message =
+        sikemux_core::accounts::registration_message(nonce, user_id, &key.public().to_string());
+    Ok(hex::encode(key.sign(message.as_bytes()).to_bytes()))
+}
+
 fn core_addr(core: &str) -> Result<EndpointAddr, MobileError> {
     Ok(EndpointAddr::new(core.parse().map_err(invalid)?))
 }
@@ -211,6 +218,12 @@ impl Device {
     /// The key Macs know this phone by.
     pub fn id(&self) -> String {
         self.key.public().to_string()
+    }
+
+    /// This phone's signature, in hex, over the text that registers it with
+    /// the account `user_id`, for the accounts server's challenge `nonce`.
+    pub fn sign_registration(&self, nonce: String, user_id: String) -> Result<String, MobileError> {
+        sign_registration(&self.key, &nonce, &user_id)
     }
 
     /// Pairs with the Mac whose key is `core`, waiting while the person
@@ -708,6 +721,27 @@ mod loopback_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The vector the server's and the core's tests check too.
+    #[test]
+    fn registrations_sign_the_text_the_server_checks() {
+        let vector: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../server/protocol/vectors/registration.json"
+        ))
+        .expect("the vector is JSON");
+        let text = |name: &str| vector[name].as_str().expect("a string").to_owned();
+        let bytes: [u8; 32] = hex::decode(text("secretKey"))
+            .expect("hex")
+            .try_into()
+            .expect("32 bytes");
+        let key = SecretKey::from_bytes(&bytes);
+        assert_eq!(key.public().to_string(), text("key"));
+        assert_eq!(
+            sign_registration(&key, &text("nonce"), &text("userId")).expect("signs"),
+            text("signature")
+        );
+        assert!(sign_registration(&key, "not a challenge", &text("userId")).is_err());
+    }
 
     #[test]
     fn a_device_key_is_32_bytes_and_new_each_time() {
