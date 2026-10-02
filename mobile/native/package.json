@@ -4,7 +4,7 @@
   "private": true,
   "description": "The Sikemux core client, compiled from Rust, for the phone app",
   "license": "SEE LICENSE IN ../../LICENSE",
-  "author": "nodelike <kishore.sensei@gmail.com> (https://github.com/nodelike)",
+  "author": "nodelike <contact@nodelike.com> (https://github.com/nodelike)",
   "homepage": "https://github.com/nodelike/sikemux/tree/main/mobile/native",
   "repository": {
     "type": "git",
