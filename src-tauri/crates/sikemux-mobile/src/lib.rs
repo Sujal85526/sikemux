@@ -114,7 +114,19 @@ pub fn parse_pairing_link(text: String) -> Option<PairingLink> {
 /// This phone on the network, known by its key.
 #[derive(uniffi::Object)]
 pub struct Device {
-    endpoint: Endpoint,
+    key: SecretKey,
+    /// Replaced after a connection to a Mac stalls: once a connection closes,
+    /// iroh 1.3 can leave an endpoint unable to reach that Mac again, while a
+    /// new endpoint with the same key reaches it at once.
+    endpoint: Mutex<Endpoint>,
+}
+
+async fn bind(key: SecretKey) -> Result<Endpoint, MobileError> {
+    on_runtime(async move { Endpoint::builder(presets::N0).secret_key(key).bind().await })
+        .await
+        .map_err(|error| MobileError::Connection {
+            message: error.to_string(),
+        })
 }
 
 fn core_addr(core: &str) -> Result<EndpointAddr, MobileError> {
@@ -129,22 +141,17 @@ impl Device {
         let bytes: [u8; 32] = key
             .try_into()
             .map_err(|_| invalid("a device key is 32 bytes"))?;
-        let endpoint = on_runtime(async move {
-            Endpoint::builder(presets::N0)
-                .secret_key(SecretKey::from_bytes(&bytes))
-                .bind()
-                .await
-        })
-        .await
-        .map_err(|error| MobileError::Connection {
-            message: error.to_string(),
-        })?;
-        Ok(Arc::new(Self { endpoint }))
+        let key = SecretKey::from_bytes(&bytes);
+        let endpoint = bind(key.clone()).await?;
+        Ok(Arc::new(Self {
+            key,
+            endpoint: Mutex::new(endpoint),
+        }))
     }
 
     /// The key Macs know this phone by.
     pub fn id(&self) -> String {
-        self.endpoint.id().to_string()
+        self.endpoint().id().to_string()
     }
 
     /// Pairs with the Mac whose key is `core`, waiting while the person
@@ -156,7 +163,7 @@ impl Device {
         name: String,
         platform: String,
     ) -> Result<String, MobileError> {
-        let endpoint = self.endpoint.clone();
+        let endpoint = self.endpoint();
         let addr = core_addr(&core)?;
         let access = on_runtime(async move {
             let request = PairingRequest {
@@ -180,19 +187,51 @@ impl Device {
         core: String,
         listener: Arc<dyn CoreListener>,
     ) -> Result<Arc<Connection>, MobileError> {
-        let endpoint = self.endpoint.clone();
+        let endpoint = self.endpoint();
         let addr = core_addr(&core)?;
         let sink = Arc::new(ListenerSink(listener));
-        let client = on_runtime(async move {
+        let attempt = on_runtime(async move {
             tokio::time::timeout(CONNECT_TIMEOUT, remote::connect_with(&endpoint, addr, sink)).await
         })
-        .await
-        .map_err(|_| MobileError::Connection {
-            message: "this Mac did not answer in time".into(),
-        })??;
+        .await;
+        let client = match attempt {
+            Ok(Ok(client)) => client,
+            Ok(Err(error @ (ClientError::Core(_) | ClientError::VersionMismatch { .. }))) => {
+                return Err(error.into())
+            }
+            Ok(Err(error)) => {
+                self.renew().await;
+                return Err(error.into());
+            }
+            Err(_) => {
+                self.renew().await;
+                return Err(MobileError::Connection {
+                    message: "this Mac did not answer in time".into(),
+                });
+            }
+        };
         Ok(Arc::new(Connection {
             client: Mutex::new(Some(Arc::new(client))),
         }))
+    }
+}
+
+impl Device {
+    fn endpoint(&self) -> Endpoint {
+        self.endpoint
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    /// Connections still open on the old endpoint keep it alive until they end.
+    async fn renew(&self) {
+        if let Ok(fresh) = bind(self.key.clone()).await {
+            *self
+                .endpoint
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = fresh;
+        }
     }
 }
 
