@@ -38,35 +38,35 @@ export const AGENTS = {
   rail: {
     id: "agent-rail",
     type: "claude",
-    title: "Tighten the rail spacing",
+    title: "Line up the sidebar labels",
     resumeId: "5f0c8a1e-rail",
     cwd: SIKEMUX,
   },
   replay: {
     id: "agent-replay",
     type: "codex",
-    title: "Fix the flaky PTY replay test",
+    title: "Fix a flaky terminal test",
     resumeId: "codex-replay-0192",
     cwd: SIKEMUX,
   },
   hero: {
     id: "agent-hero",
     type: "claude",
-    title: "Fix Hermes going missing",
+    title: "Fix the download button on phones",
     resumeId: "91d2e7b4-hero",
-    cwd: SIKEMUX,
+    cwd: FRONT,
   },
   palette: {
     id: "agent-palette",
     type: "codex",
-    title: "Palette extraction benchmark",
+    title: "Compare two ways to pick colours",
     resumeId: "codex-palette-7731",
     cwd: MOODBOARD,
   },
   notes: {
     id: "agent-notes",
     type: "hermes",
-    title: "Write up the palette results",
+    title: "Write up the colour results",
     resumeId: "hermes-notes-3310",
     cwd: MOODBOARD,
   },
@@ -191,7 +191,6 @@ export function demoSnapshot(): PersistedSnapshot {
         },
         agentWindow(AGENTS.rail),
         agentWindow(AGENTS.replay),
-        agentWindow(AGENTS.hero),
       ],
       "s-front": [
         terminalWindow(
@@ -199,6 +198,7 @@ export function demoSnapshot(): PersistedSnapshot {
           pane("t-front", FRONT, "terminal", "dev"),
           "t-front",
         ),
+        agentWindow(AGENTS.hero),
       ],
       "s-mood": [
         terminalWindow(
