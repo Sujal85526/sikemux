@@ -41,6 +41,63 @@ Stable is cut from a `release/<major.minor>` branch and nightly from `main`. A n
 
 A hotfix cut from a release branch claims a version as well. When it claims the one the nightlies are building toward, the Nightly channel moves onto the hotfix, because the updater takes the newest version across both feeds, and loses whatever `main` had that the hotfix did not until a later nightly passes it. Before cutting such a hotfix, publish a nightly at the version after it, so the hotfix lands below the nightlies instead of over them.
 
+## Version numbers
+
+A nightly is a prerelease of the version after the latest stable one. Once a stable `0.x.y` ships, number `main`'s nightlies at the next minor, `0.(x+1).0-nightly.N`, rather than the next patch. Patch hotfixes on the release branch then always land below the nightlies and never take the Nightly channel over.
+
+## Promoting a nightly to stable
+
+A nightly that has been in use becomes stable without anything newer from `main`. On `release/<major.minor>`:
+
+1. A merge commit whose content is exactly that nightly's tagged commit.
+2. A commit that sets the stable version in `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and the `sikemux` entry in `src-tauri/Cargo.lock`, and writes `RELEASE_NOTES.md` for everything since the last stable release.
+3. The `v<version>` tag on that commit.
+
+None of this lands on `main`. Commits made to `main` meanwhile stay out of the release.
+
+## Hotfixes
+
+Fix the bug on `main` as usual, then cherry-pick only that commit onto `release/<major.minor>`, bump to the next patch, write short notes and tag it. If `main` has rewritten the code since, make the fix on the release branch instead and redo it on `main`. Never merge a release branch into `main`, or `main` into a release branch for a hotfix.
+
+## Committing to a release branch from the shared checkout
+
+Several agents work in one checkout at once, so never check out `release/*`, stash, or use a worktree. Build the commits from objects with a temporary index and push them by id. Use `${name}:path`, not `$name:path`: zsh reads `:s`, `:h` and the like after a bare variable as modifiers.
+
+Promote a nightly:
+
+```bash
+release=release/0.4 nightly=v0.4.3-nightly.6 version=0.4.3
+git fetch origin
+base=$(git rev-parse "origin/${release}"); src=$(git rev-parse "${nightly}^{commit}")
+merge=$(git commit-tree "${src}^{tree}" -p "${base}" -p "${src}" -m "merge: bring ${nightly} onto the ${release#release/} line for v${version}")
+export GIT_INDEX_FILE=$(mktemp -u); git read-tree "${merge}"
+from=$(git show "${merge}:package.json" | sed -n 's/.*"version": "\(.*\)".*/\1/p')
+put() { git update-index --cacheinfo "100644,$(git hash-object -w --stdin),$1"; }
+git show "${merge}:package.json" | sed "s/\"version\": \"${from}\"/\"version\": \"${version}\"/" | put package.json
+git show "${merge}:src-tauri/tauri.conf.json" | sed "s/\"version\": \"${from}\"/\"version\": \"${version}\"/" | put src-tauri/tauri.conf.json
+git show "${merge}:src-tauri/Cargo.toml" | sed "3s/\"${from}\"/\"${version}\"/" | put src-tauri/Cargo.toml
+git show "${merge}:src-tauri/Cargo.lock" | awk -v from="${from}" -v to="${version}" 'prev=="name = \"sikemux\"" && $0=="version = \""from"\"" {print "version = \""to"\""; prev=$0; next} {print; prev=$0}' | put src-tauri/Cargo.lock
+put RELEASE_NOTES.md < /path/to/notes.md
+bump=$(git commit-tree "$(git write-tree)" -p "${merge}" -m "chore(release): prepare v${version}")
+rm -f "${GIT_INDEX_FILE}"; unset GIT_INDEX_FILE
+git diff --stat "${merge}" "${bump}"   # only the four version fields and the notes
+git push origin "${bump}:refs/heads/${release}"
+git tag "v${version}" "${bump}" && git push origin "v${version}"
+```
+
+Cherry-pick a fix, then bump and tag the same way with the patch version:
+
+```bash
+release=release/0.4 fix=<commit on main>
+base=$(git rev-parse "origin/${release}")
+out=$(git merge-tree --write-tree --merge-base="${fix}^" "${base}" "${fix}") || { echo "${out}"; echo "conflict: fix it on the release branch by hand"; }
+picked=$(git commit-tree "${out%%$'\n'*}" -p "${base}" -m "$(git log -1 --format=%B "${fix}")")
+```
+
+The push to `release/*` fails unless it fast-forwards, and only the owner may push to these branches or push a `v*` tag.
+
+## Running the release script
+
 ```bash
 ./scripts/release.sh 0.3.5 "Release notes"
 ./scripts/release.sh 0.4.0-nightly.1 "Nightly notes" --nightly

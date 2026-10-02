@@ -20,6 +20,17 @@
 - Do not leave random markdown files in the codebase that are meant to be some way to deliver information to me. If you want to write a markdown file write it in a temporary file, and give me the path and chat and I can read it
 - Never write code that is explicitly backwards compatible. Systems should handle backwards compatibility (like migrations), not logic. If there is some logic that needs to be written otherwise it would appear it would break older users, you MUST make the assumption that no users have ran that code yet and its unreleased, so it would not make sense to consider the side effects that code would produce. This is a safe assumption because the maintainers of this codebase always ensure code that gets shipped is compatbile with the systems that allow for us to not have to explicitly hardcode backwards compatibility
 
+## Releasing
+
+- Follow `docs/releasing.md`. Releases publish only from the Release workflow, started by
+  pushing a `v*` tag; never run `scripts/release.sh --publish` yourself, and never approve
+  the `release` environment for the owner.
+- Nightlies are tagged on `main`. Stable releases and hotfixes are tagged on
+  `release/<major.minor>`, and their version bump and notes go only there.
+- Never check out `release/*` in this shared checkout. Commit to it from objects with a
+  temporary index, as `docs/releasing.md` shows.
+- After a stable `0.x.y`, number `main`'s nightlies `0.(x+1).0-nightly.N`.
+
 ## Mobile app
 
 - The phone app is in `mobile/` (Expo, `mobile/app`) with the core's Rust client bridged
