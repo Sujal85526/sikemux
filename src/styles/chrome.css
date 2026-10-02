@@ -546,6 +546,11 @@
 .window-track {
     position: absolute;
     inset: 0;
+    /* Kept on its own compositing layer all the time. Promoting the track only
+       when a swipe began rebuilt the layers of the whole stage, and WebKit drew
+       it blank for several frames at both ends of every swipe. Opacity is the
+       hint that does this without trapping `position: fixed` overlays. */
+    will-change: opacity;
 }
 /* On a pane in a split tab: puts it back as a tab of its own. Top centre,
    since the pane's own controls sit in its corners, and out of the way until
@@ -592,9 +597,6 @@
 }
 /* A transform here would trap the `position: fixed` overlays panes put on
    screen, so the track only carries one, inline, for the length of a slide. */
-.window-track.panning {
-    will-change: transform;
-}
 /* Those offsets have to be on screen before the travel starts, or the track
    would animate in from nothing on the first frame. */
 .window-track.sliding {
@@ -630,6 +632,9 @@
        transforms it. Stated outright so the field inside it sits under the
        panes the same way standing still as it does mid-swipe. */
     isolation: isolate;
+    /* Composited for good, like the track, so a swipe only moves layers that
+       already exist rather than building them with the stage in full view. */
+    will-change: opacity;
 }
 .window-track.panning .window-layer {
     transform: translate(calc(var(--slot) * (100% + var(--window-card-gap))), 0);
