@@ -34,8 +34,12 @@ for (const [to, from] of Object.entries(pieces)) {
 writeFileSync(join(release, "RELEASE"), version);
 
 // macOS tar otherwise adds ._ files that the server's tar would unpack as junk.
-execFileSync("tar", ["-czf", join(out, "release.tar.gz"), "-C", release, "."], {
-  stdio: "inherit",
-  env: { ...process.env, COPYFILE_DISABLE: "1" },
-});
+execFileSync(
+  "tar",
+  ["--no-xattrs", "-czf", join(out, "release.tar.gz"), "-C", release, "."],
+  {
+    stdio: "inherit",
+    env: { ...process.env, COPYFILE_DISABLE: "1" },
+  },
+);
 console.log(`Packed server/dist/release.tar.gz for ${version}`);

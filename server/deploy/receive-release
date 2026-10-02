@@ -34,7 +34,7 @@ chmod -R a+rX,go-w "$incoming"
 target="$RELEASES/$commit"
 rm -rf "$target"
 mv "$incoming" "$target"
-trap - EXIT
+trap '[ "$(readlink "$ROOT/current" 2>/dev/null)" = "$target" ] || rm -rf "$target"' EXIT
 
 previous="$(readlink "$ROOT/current" 2>/dev/null || true)"
 
