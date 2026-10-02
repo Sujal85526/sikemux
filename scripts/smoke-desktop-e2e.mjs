@@ -17,6 +17,17 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+// Read from the core's source so the greeting cannot fall behind a protocol bump.
+const CORE_PROTOCOL_VERSION = Number(
+  (
+    await readFile(
+      join(root, "src-tauri/crates/sikemux-core/src/protocol.rs"),
+      "utf8",
+    )
+  ).match(/pub const PROTOCOL_VERSION: u32 = (\d+);/)?.[1],
+);
+if (!Number.isInteger(CORE_PROTOCOL_VERSION))
+  throw new Error("could not read PROTOCOL_VERSION from sikemux-core");
 const executableSuffix = process.platform === "win32" ? ".exe" : "";
 const appExecutable = resolve(
   process.env.SIKEMUX_E2E_APP ??
@@ -224,7 +235,11 @@ function openCore(path) {
       frame.kind === CORE_FRAME.control ? JSON.parse(frame.payload) : null;
     socket.once("connect", async () => {
       socket.write(
-        coreControl({ type: "hello", protocol: "sikemux-core", version: 7 }),
+        coreControl({
+          type: "hello",
+          protocol: "sikemux-core",
+          version: CORE_PROTOCOL_VERSION,
+        }),
       );
       const hello = await next((frame) => control(frame)?.type === "helloAck");
       if (!hello) {
