@@ -10,7 +10,7 @@ import { useChat } from '@/chat/useChat';
 import { useDevices, useLive } from '@/devices/hub';
 import { chatTitle, providerName } from '@/devices/words';
 import { AgentIcon } from '@/ui/Icon';
-import { Nav, Screen, Working } from '@/ui/parts';
+import { Nav, Screen, useBottomGap, Working } from '@/ui/parts';
 import { colors, fonts, type } from '@/ui/theme';
 
 /** When the running turn began, as this phone saw it, for the working line's clock. */
@@ -39,6 +39,7 @@ export default function Chat() {
   const { state } = chat;
   const since = useTurnStart(state.running);
   const scroller = useRef<ScrollView>(null);
+  const bottom = useBottomGap();
   // The composer arrives once the chat attaches and shortens the transcript, so its layout scrolls too.
   const toEnd = () => requestAnimationFrame(() => scroller.current?.scrollToEnd({ animated: false }));
   const activity = activityText(state, activeToolLabel(state.messages));
@@ -60,7 +61,7 @@ export default function Chat() {
         <ScrollView
           ref={scroller}
           style={styles.transcript}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, chat.attached !== 'live' && { paddingBottom: bottom }]}
           onContentSizeChange={toEnd}
           onLayout={toEnd}
           keyboardDismissMode="interactive">

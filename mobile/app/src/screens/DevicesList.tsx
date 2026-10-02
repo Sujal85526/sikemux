@@ -1,5 +1,4 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
 import type { Snapshot } from '@/core/protocol';
@@ -9,7 +8,7 @@ import { phoneName } from '@/devices/pairing';
 import { useDeviceId } from '@/device/identity';
 import { chatTitle, ago } from '@/devices/words';
 import { AgentIcon, DeviceIcon, Icon } from '@/ui/Icon';
-import { IconButton, NeedsYou, Screen, Working } from '@/ui/parts';
+import { IconButton, NeedsYou, Screen, useBottomGap, Working } from '@/ui/parts';
 import { colors, fonts, type } from '@/ui/theme';
 
 function summary(snapshot: Snapshot): string {
@@ -90,7 +89,7 @@ function DeviceCard({ device }: { device: PairedDevice }) {
 
 export function DevicesList({ devices }: { devices: PairedDevice[] }) {
   const id = useDeviceId();
-  const insets = useSafeAreaInsets();
+  const bottom = useBottomGap();
   return (
     <Screen>
       <View style={styles.nav}>
@@ -102,7 +101,7 @@ export function DevicesList({ devices }: { devices: PairedDevice[] }) {
           <DeviceCard key={device.core} device={device} />
         ))}
       </ScrollView>
-      <View style={[styles.phone, { paddingBottom: insets.bottom + 14 }]}>
+      <View style={[styles.phone, { paddingBottom: bottom }]}>
         <Icon name="IconPhone" size={15} color={colors.tertiary} />
         <Text style={styles.phoneText}>{phoneName()}</Text>
         {id ? <Text style={[type.mono, { marginLeft: 'auto' }]}>{shortKey(id)}</Text> : null}

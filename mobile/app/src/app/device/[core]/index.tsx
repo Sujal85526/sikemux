@@ -8,7 +8,7 @@ import { channelLabel, deviceKind, deviceName, updateDevice } from '@/devices/pa
 import { ProjectSheet } from '@/devices/ProjectSheet';
 import { chatState, chatTitle, folder } from '@/devices/words';
 import { AgentIcon, DeviceIcon, Icon } from '@/ui/Icon';
-import { Group, IconButton, Nav, NeedsYou, Row, Screen, SectionLabel, Track, Working } from '@/ui/parts';
+import { Group, IconButton, Nav, NeedsYou, Row, Screen, SectionLabel, Track, useBottomGap, Working } from '@/ui/parts';
 import { colors, fonts, radius, type } from '@/ui/theme';
 
 type Tab = 'agents' | 'terminals';
@@ -192,6 +192,7 @@ export default function Device() {
         : { title: "Can't reach this Mac", body: 'It may be asleep, offline, or have remote access turned off.' };
   const snapshot = live.snapshot;
   const [picking, setPicking] = useState(false);
+  const bottom = useBottomGap();
   const scope = snapshot?.workspace.projects.find((project) => project.id === device?.project);
   const asking = snapshot?.chats.filter((chat) => chat.pendingPermissions.length && (!scope || inProject(scope, chat.cwd))).length ?? 0;
   const scopeTo = (project: string | null) => {
@@ -263,7 +264,7 @@ export default function Device() {
               ]}
             />
           </View>
-          <ScrollView contentContainerStyle={styles.body}>
+          <ScrollView contentContainerStyle={[styles.body, { paddingBottom: bottom + 24 }]}>
             {snapshot ? (
               tab === 'agents' ? (
                 <Agents core={core} snapshot={snapshot} scope={scope} />
@@ -297,7 +298,7 @@ const styles = StyleSheet.create({
   presenceOn: { backgroundColor: colors.live, borderColor: colors.ground },
   presenceOff: { backgroundColor: colors.ground, borderColor: colors.rest },
   name: { ...type.title },
-  body: { paddingHorizontal: 16, paddingBottom: 40 },
+  body: { paddingHorizontal: 16 },
   scope: { flexDirection: 'row', paddingHorizontal: 16, paddingBottom: 12 },
   pill: {
     flexDirection: 'row',

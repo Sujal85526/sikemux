@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 
 import { failure, pair, type Failure } from '@/devices/pairing';
-import { Button, CodeTiles, Nav, Screen, Working } from '@/ui/parts';
+import { Button, CodeTiles, Nav, Screen, useBottomGap, Working } from '@/ui/parts';
 import { colors, fonts, radius, type } from '@/ui/theme';
 
 /** How long the Mac keeps a pairing request open (sikemux_core::pairing::APPROVAL_TIMEOUT). */
@@ -35,6 +34,7 @@ export default function Pair() {
     return () => clearInterval(tick);
   }, [failed]);
 
+  const bottom = useBottomGap();
   return (
     <Screen>
       <Nav back={failed ? 'Back' : 'Cancel'} />
@@ -47,7 +47,7 @@ export default function Pair() {
           <CodeTiles code={code} state={failed ? 'failed' : 'locked'} />
         </View>
       </View>
-      <SafeAreaView edges={['bottom']} style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: bottom }]}>
         {failed ? (
           <Button kind="primary" title="Scan again" onPress={() => router.replace('/scan')} />
         ) : (
@@ -57,7 +57,7 @@ export default function Pair() {
             <Text style={type.mono}>{clock(left)}</Text>
           </View>
         )}
-      </SafeAreaView>
+      </View>
     </Screen>
   );
 }
@@ -67,7 +67,7 @@ const styles = StyleSheet.create({
   title: { ...type.title, fontSize: 22, textAlign: 'center' },
   detail: { ...type.body, textAlign: 'center', marginTop: 8, minHeight: 44 },
   tiles: { marginTop: 32 },
-  footer: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 },
+  footer: { paddingHorizontal: 16, paddingTop: 12 },
   waiting: {
     minHeight: 52,
     flexDirection: 'row',

@@ -7,7 +7,7 @@ import { parsePairingLink } from '@sikemux/native';
 
 import { openPairing, pasteLink } from '@/devices/pairing';
 import { Icon } from '@/ui/Icon';
-import { Button } from '@/ui/parts';
+import { Button, useBottomGap } from '@/ui/parts';
 import { fonts } from '@/ui/theme';
 
 const FINDER = 236;
@@ -16,6 +16,7 @@ export default function Scan() {
   const [permission, requestPermission] = useCameraPermissions();
   const found = useRef(false);
 
+  const bottom = useBottomGap();
   return (
     <View style={styles.screen}>
       {permission?.granted ? (
@@ -51,12 +52,12 @@ export default function Scan() {
           <Text style={styles.backText}>Back</Text>
         </Pressable>
       </SafeAreaView>
-      <SafeAreaView edges={['bottom']} style={styles.bottom}>
+      <View style={[styles.bottom, { bottom }]}>
         {permission && !permission.granted && permission.canAskAgain ? (
           <Button kind="primary" title="Allow the camera" onPress={requestPermission} style={{ marginBottom: 8 }} />
         ) : null}
         <Button title="Paste a pairing link instead" onPress={() => pasteLink('replace')} style={styles.glass} />
-      </SafeAreaView>
+      </View>
     </View>
   );
 }
@@ -74,7 +75,7 @@ const styles = StyleSheet.create({
   top: { position: 'absolute', left: 0, right: 0, top: 0 },
   back: { flexDirection: 'row', alignItems: 'center', height: 46, paddingHorizontal: 10 },
   backText: { color: '#fff', fontFamily: fonts.ui, fontSize: 16, marginLeft: 2 },
-  bottom: { position: 'absolute', left: 16, right: 16, bottom: 8 },
+  bottom: { position: 'absolute', left: 16, right: 16 },
   glass: { backgroundColor: 'rgba(28, 28, 34, 0.82)', borderColor: 'rgba(255, 255, 255, 0.12)' },
 });
 

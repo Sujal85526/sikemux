@@ -6,7 +6,7 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { pasteLink } from '@/devices/pairing';
 import { AgentIcon, Icon } from '@/ui/Icon';
-import { Button, Dot, NeedsYou, Working } from '@/ui/parts';
+import { Button, Dot, NeedsYou, useBottomGap, Working } from '@/ui/parts';
 import { colors, fonts, type } from '@/ui/theme';
 
 /** What the app is for, before there is anything of the person's to show: the rail, drifting past. */
@@ -83,8 +83,9 @@ function Reel() {
 }
 
 export function Welcome() {
+  const bottom = useBottomGap();
   return (
-    <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.screen} edges={['top']}>
       <Reel />
       <View style={styles.copy}>
         <View style={styles.markLine}>
@@ -94,7 +95,7 @@ export function Welcome() {
         <Text style={styles.title}>Your agents,{'\n'}on your phone.</Text>
         <Text style={styles.body}>Watch them work, answer what they ask, and open the Mac's terminals.</Text>
       </View>
-      <View style={styles.actions}>
+      <View style={[styles.actions, { paddingBottom: bottom }]}>
         <Button kind="primary" title="Scan the code on your Mac" onPress={() => router.push('/scan')} />
         <Pressable onPress={() => pasteLink()} style={styles.paste} accessibilityRole="button">
           <Text style={styles.pasteText}>Paste a pairing link</Text>
@@ -116,7 +117,7 @@ const styles = StyleSheet.create({
   markText: { fontFamily: fonts.uiSemibold, fontSize: 15, color: colors.ink, letterSpacing: -0.2 },
   title: { marginTop: 18, fontFamily: fonts.uiSemibold, fontSize: 34, lineHeight: 37, letterSpacing: -1.2, color: colors.ink },
   body: { ...type.body, fontSize: 16, lineHeight: 24, marginTop: 12, maxWidth: 300 },
-  actions: { paddingHorizontal: 16, paddingTop: 28, paddingBottom: 4, gap: 4 },
+  actions: { paddingHorizontal: 16, paddingTop: 28, gap: 4 },
   paste: { height: 44, alignItems: 'center', justifyContent: 'center' },
   pasteText: { fontFamily: fonts.uiMedium, fontSize: 15, color: colors.secondary },
 });

@@ -10,11 +10,16 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
 import { Icon } from './Icon';
 import { colors, fonts, radius, type } from './theme';
+
+/** Space under a screen's last content: the system's home bar or gesture bar, then a little air. */
+export function useBottomGap(): number {
+  return useSafeAreaInsets().bottom + 12;
+}
 
 export function Screen({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
   return (
