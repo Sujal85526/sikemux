@@ -34,6 +34,21 @@ final class ElementLookupTests: XCTestCase {
 
     func testIgnoresElementsWithNoSizeOnScreen() {
         let result = ElementLookup.frame(of: "Hidden", in: [element("Hidden", x: 0, width: 0, height: 0)])
-        XCTAssertEqual(result, .failure(ElementLookup.Failure(description: "no element is labelled \"Hidden\"")))
+        guard case let .failure(failure) = result else { return XCTFail("expected no match") }
+        XCTAssertTrue(failure.description.hasPrefix("no element on screen is labelled \"Hidden\""), failure.description)
+    }
+
+    func testRefusesAnElementScrolledOffTheScreen() {
+        let screen = Frame(x: 0, y: 0, width: 402, height: 874)
+        let elements = [element("Camera", x: 0, y: -60, width: 402, height: 90)]
+        XCTAssertEqual(
+            ElementLookup.frame(of: "Camera", in: elements, screen: screen),
+            .failure(ElementLookup.Failure(description: "\"Camera\" is off the screen; scroll it into view, then tap it")))
+    }
+
+    func testAnOnScreenMatchIsNotAmbiguousWithAnOffScreenOne() {
+        let screen = Frame(x: 0, y: 0, width: 402, height: 874)
+        let elements = [element("Camera", x: 0, y: -60, width: 402, height: 90), element("Camera", x: 0, y: 300, width: 402, height: 50)]
+        XCTAssertEqual(try ElementLookup.frame(of: "Camera", in: elements, screen: screen).get().y, 300)
     }
 }

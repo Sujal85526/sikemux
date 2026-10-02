@@ -3,7 +3,15 @@ import Foundation
 public struct Frame: Equatable, Sendable {
     public let x, y, width, height: Double
 
+    public init(x: Double, y: Double, width: Double, height: Double) {
+        (self.x, self.y, self.width, self.height) = (x, y, width, height)
+    }
+
     public var center: Point { Point(x: x + width / 2, y: y + height / 2) }
+
+    func contains(_ point: Point) -> Bool {
+        point.x >= x && point.y >= y && point.x <= x + width && point.y <= y + height
+    }
 }
 
 /// Finds one element in an accessibility read by its label or accessibility identifier.
@@ -13,10 +21,16 @@ public enum ElementLookup {
     }
 
     /// An exact label or identifier wins over a partial one, and more than one equally good match is
-    /// an error, so a tap never lands on an element the caller did not mean.
-    public static func frame(of name: String, in elements: [[String: Any]]) -> Result<Frame, Failure> {
+    /// an error, so a tap never lands on an element the caller did not mean. An element whose centre
+    /// lies outside `screen`, scrolled out of view, cannot be tapped.
+    public static func frame(of name: String, in elements: [[String: Any]], screen: Frame? = nil) -> Result<Frame, Failure> {
+        var offscreen = false
         let named = elements.compactMap { element -> (label: String, frame: Frame, exact: Bool)? in
             guard let frame = frame(element), frame.width > 0, frame.height > 0 else { return nil }
+            if let screen, !screen.contains(frame.center) {
+                if matches(element, name) { offscreen = true }
+                return nil
+            }
             let label = element["AXLabel"] as? String ?? ""
             let identifier = element["AXUniqueId"] as? String ?? ""
             if label == name || identifier == name { return (label.isEmpty ? identifier : label, frame, true) }
@@ -26,14 +40,21 @@ public enum ElementLookup {
         let exact = named.filter(\.exact)
         let matches = exact.isEmpty ? named : exact
         switch matches.count {
+        case 0 where offscreen:
+            return .failure(Failure(description: "\"\(name)\" is off the screen; scroll it into view, then tap it"))
         case 0:
-            return .failure(Failure(description: "no element is labelled \"\(name)\""))
+            return .failure(Failure(description: "no element on screen is labelled \"\(name)\"; it may be scrolled out of view, so scroll and read the screen again"))
         case 1:
             return .success(matches[0].frame)
         default:
             let listed = matches.prefix(5).map { "\"\($0.label)\" at (\(Int($0.frame.center.x)), \(Int($0.frame.center.y)))" }
             return .failure(Failure(description: "\(matches.count) elements match \"\(name)\": \(listed.joined(separator: ", ")); tap one by its coordinates"))
         }
+    }
+
+    private static func matches(_ element: [String: Any], _ name: String) -> Bool {
+        let label = element["AXLabel"] as? String ?? ""
+        return label == name || element["AXUniqueId"] as? String == name || label.localizedCaseInsensitiveContains(name)
     }
 
     private static func frame(_ element: [String: Any]) -> Frame? {

@@ -78,7 +78,8 @@ final class Simulators {
         case .state:
             return ["elements": try await elements(of: simulator)]
         case let .tapElement(_, label):
-            let frame = try ElementLookup.frame(of: label, in: try await elements(of: simulator)).get()
+            let screen = Self.screenSize(simulator).map { Frame(x: 0, y: 0, width: $0.width, height: $0.height) }
+            let frame = try ElementLookup.frame(of: label, in: try await elements(of: simulator), screen: screen).get()
             try await send(.tapAt(x: frame.center.x, y: frame.center.y), to: simulator)
             return ["x": frame.center.x, "y": frame.center.y]
         case let .launch(_, bundleId, arguments, environment):
@@ -154,11 +155,17 @@ final class Simulators {
             "udid": simulator.udid, "name": simulator.name, "os": simulator.osVersion.name.rawValue,
             "state": "\(simulator.stateString)", "booted": simulator.state == .booted,
         ]
-        if let screen = simulator.screenInfo, screen.scale > 0 {
-            let scale = Double(screen.scale)
-            device["screen"] = ["width": Double(screen.widthPixels) / scale, "height": Double(screen.heightPixels) / scale, "scale": scale]
+        if let size = Self.screenSize(simulator) {
+            device["screen"] = ["width": size.width, "height": size.height, "scale": size.scale]
         }
         return device
+    }
+
+    /// The screen in points, the unit every coordinate here is in.
+    private static func screenSize(_ simulator: Simulator) -> (width: Double, height: Double, scale: Double)? {
+        guard let screen = simulator.screenInfo, screen.scale > 0 else { return nil }
+        let scale = Double(screen.scale)
+        return (Double(screen.widthPixels) / scale, Double(screen.heightPixels) / scale, scale)
     }
 
     private static func events(for stroke: KeyStroke) -> [SimulatorHIDEvent] {
