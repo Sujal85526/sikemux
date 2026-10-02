@@ -546,7 +546,6 @@
 .window-track {
     position: absolute;
     inset: 0;
-    --pan: 0%;
 }
 /* On a pane in a split tab: puts it back as a tab of its own. Top centre,
    since the pane's own controls sit in its corners, and out of the way until
@@ -592,9 +591,8 @@
     box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--acc) 55%, transparent);
 }
 /* A transform here would trap the `position: fixed` overlays panes put on
-   screen, so the screens are only offset for the length of a slide. */
+   screen, so the track only carries one, inline, for the length of a slide. */
 .window-track.panning {
-    transform: translate(var(--pan), 0);
     will-change: transform;
 }
 /* Those offsets have to be on screen before the travel starts, or the track

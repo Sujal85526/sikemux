@@ -29,6 +29,10 @@ export const settleMs = (remaining: number) => Math.max(SETTLE_MIN_MS, Math.roun
  *  travel is the stage plus the gap the cards keep between them. */
 export const panOffset = (index: number) => `calc(${-index} * (100% + var(--window-card-gap)))`;
 
+/** The track's transform for `index`. Written as the transform itself rather than
+ *  a custom property, which every screen on the track would inherit and restyle for. */
+export const panTransform = (index: number) => `translate(${panOffset(index)}, 0)`;
+
 interface Pan {
     /** A drag is written to the element frame by frame; a slide travels on a transition. */
     readonly kind: "drag" | "slide";
@@ -61,8 +65,8 @@ export interface WindowPan {
     slotOf(windowId: string, slot: number): number;
     paints(windowId: string): boolean;
     /**
-     * Hands the track to a gesture: `on` and `beside` paint, `--pan` is the
-     * gesture's to write, and a session moving onto `on` is the gesture's own
+     * Hands the track to a gesture: `on` and `beside` paint, the track's transform
+     * is the gesture's to write, and a session moving onto `on` is the gesture's own
      * doing rather than a switch to slide for.
      */
     grab(on: string, beside: string | null): void;
@@ -104,7 +108,7 @@ function planPan(from: string | null, to: string | null, slots: ReadonlyMap<stri
  * the same whether the jump was one screen or twenty.
  *
  * A trackpad gesture borrows the track through `grab` and `snap` instead of a
- * switch. It drives `--pan` itself and moves the session along the screens it
+ * switch. It drives the transform itself and moves the session along the screens it
  * drags past, so only the snap at the end is a slide.
  */
 export function useWindowPan(sessionId: string, activeWindowId: string | null, slots: ReadonlyMap<string, number>): WindowPan {
@@ -130,7 +134,7 @@ export function useWindowPan(sessionId: string, activeWindowId: string | null, s
             // A slide taking over from a gesture starts where the gesture left the
             // track, which React had no reason to write, so put the destination on
             // the element itself now that the transition is on.
-            trackRef.current?.style.setProperty("--pan", panOffset(pan.slot));
+            if (trackRef.current) trackRef.current.style.transform = panTransform(pan.slot);
             return;
         }
         // Reading layout pins the parked position as the value the slide starts from.
@@ -163,7 +167,7 @@ export function useWindowPan(sessionId: string, activeWindowId: string | null, s
         // check above has to know those moves are already accounted for.
         previous.current = { sessionId, activeWindowId: on };
         const neighbour = beside === null ? undefined : slots.get(beside);
-        // `fromSlot` is what React writes to `--pan`, and the gesture is writing
+        // `fromSlot` is what React writes to the transform, and the gesture is writing
         // that itself, so it may not move while the gesture holds the track.
         setPan((was) => ({
             kind: "drag",
@@ -183,9 +187,9 @@ export function useWindowPan(sessionId: string, activeWindowId: string | null, s
         // then the one thing moving the track: only a drag is still the gesture's.
         if (pan?.kind !== "drag") return;
         previous.current = { sessionId, activeWindowId };
-        // The track goes by hand: React's `--pan` has not moved since the
+        // The track goes by hand: React's transform has not moved since the
         // gesture took the track over.
-        trackRef.current?.style.setProperty("--pan", panOffset(activeWindowId === null ? 0 : (slots.get(activeWindowId) ?? 0)));
+        if (trackRef.current) trackRef.current.style.transform = panTransform(activeWindowId === null ? 0 : (slots.get(activeWindowId) ?? 0));
         setPan(null);
         setRunning(false);
     };
@@ -198,7 +202,7 @@ export function useWindowPan(sessionId: string, activeWindowId: string | null, s
         // its way out, and this is the travel for it, so nothing else plans one.
         previous.current = { sessionId, activeWindowId: onto };
         if (prefersReducedMotion()) {
-            trackRef.current?.style.setProperty("--pan", panOffset(home));
+            if (trackRef.current) trackRef.current.style.transform = panTransform(home);
             setPan(null);
             setRunning(false);
             return;

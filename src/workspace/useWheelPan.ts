@@ -4,7 +4,7 @@ import * as cmd from "../state/commands";
 import { fingersDown, onFingers, watchFingers } from "../lib/wheelTouch";
 import { selectSwipeOrder } from "../state/selectors";
 import { getState } from "../state/store";
-import { panOffset, RETURN_MS, settleMs } from "./useWindowPan";
+import { panTransform, RETURN_MS, settleMs } from "./useWindowPan";
 import type { WindowPan } from "./useWindowPan";
 import { claimsWheel, endDelay, flicked, panned, pulledOn, pushed, thrust } from "./wheelPan";
 import type { PaneScroller, Push } from "./wheelPan";
@@ -18,7 +18,7 @@ interface Gesture {
     slot: number;
     /** Screens dragged from that screen, before the ends of the session resist the pull. */
     raw: number;
-    /** How far past that screen the track sits, which is what reaches `--pan`. */
+    /** How far past that screen the track sits, which is what reaches the transform. */
     offset: number;
     /** The screen showing beside it, which is the one the drag is heading for. */
     toward: string | null;
@@ -61,7 +61,7 @@ function scrollersUnder(target: EventTarget | null): PaneScroller[] {
  * while only the two either side of the finger ever paint. Only when the events
  * stop does anything animate, and then only to close the last half screen.
  *
- * Nothing here may wait on React. `--pan` is written straight to the element
+ * Nothing here may wait on React. The transform is written straight to the element
  * from a frame loop, the session is read back out of the store rather than off
  * a prop, and React is told two things: which screen is active and which layers
  * paint.
@@ -106,7 +106,8 @@ export function useWheelPan(areaRef: RefObject<HTMLElement | null>, pan: WindowP
             moving.frame = null;
             const { order, on } = session();
             if (order[moving.slot] !== on) return;
-            latest.current.trackRef.current?.style.setProperty("--pan", panOffset(moving.slot + moving.offset));
+            const track = latest.current.trackRef.current;
+            if (track) track.style.transform = panTransform(moving.slot + moving.offset);
         };
 
         /**

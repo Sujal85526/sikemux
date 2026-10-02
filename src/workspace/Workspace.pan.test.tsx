@@ -51,8 +51,8 @@ function sessionOfScreens(): void {
 
 const slotOf = (layer: Element) => Number((layer as HTMLElement).style.getPropertyValue("--slot"));
 
-/** What `--pan` reads once the track has been slid `screens` screens to the left. */
-const slidLeft = (screens: number) => `calc(${-screens} * (100% + var(--window-card-gap)))`;
+/** The track's transform once it has been slid `screens` screens to the left. */
+const slidLeft = (screens: number) => `translate(calc(${-screens} * (100% + var(--window-card-gap))), 0)`;
 
 describe("workspace pan", () => {
     /*
@@ -132,7 +132,7 @@ describe("workspace pan", () => {
 
         const track = container.querySelector(".window-track") as HTMLElement;
         expect(track).toHaveClass("panning");
-        expect(track.style.getPropertyValue("--pan")).toBe(slidLeft(parked + 1));
+        expect(track.style.transform).toBe(slidLeft(parked + 1));
     });
 
     /*
@@ -149,7 +149,7 @@ describe("workspace pan", () => {
 
         for (const agent of ["agent-9", "agent-4", "agent-1", "agent-0"]) {
             act(() => cmd.selectWindowId(agentWindowId(getState(), agent)!));
-            expect(track.style.getPropertyValue("--pan")).toBe(slidLeft(parkedAt()));
+            expect(track.style.transform).toBe(slidLeft(parkedAt()));
         }
 
         expect(parkedAt()).toBe(-1);
@@ -242,7 +242,7 @@ describe("workspace wheel pan", () => {
         return taken;
     };
     const settleTime = (track: HTMLElement) => Number.parseFloat(track.style.getPropertyValue("--window-pan-ms"));
-    const panOf = (track: HTMLElement) => track.style.getPropertyValue("--pan");
+    const panOf = (track: HTMLElement) => track.style.transform;
 
     /*
      * The finger drives the track directly: the offsets are on, the screen it is
@@ -530,7 +530,7 @@ describe("workspace wheel pan", () => {
 
         expect(activeWindow()).toBe(last);
         expect(container.querySelectorAll(".window-layer.painted")).toHaveLength(1);
-        const pulled = Number.parseFloat(panOf(track).slice("calc(".length));
+        const pulled = Number.parseFloat(panOf(track).slice("translate(calc(".length));
         expect(-pulled - index).toBeGreaterThan(0);
         expect(-pulled - index).toBeLessThan(0.15);
     });
@@ -635,7 +635,7 @@ describe("workspace wheel pan", () => {
 
         expect(activeWindow()).toBe(on);
         expect(track).not.toHaveClass("panning");
-        expect(panOf(track)).toBe(slidLeft(order().indexOf(on)));
+        expect(panOf(track)).toBe("");
     });
 
     /*
@@ -655,7 +655,7 @@ describe("workspace wheel pan", () => {
 
         expect(activeWindow()).toBe(neighbour);
         expect(track).not.toHaveClass("panning");
-        expect(panOf(track)).toBe(slidLeft(index + 1));
+        expect(panOf(track)).toBe("");
         vi.unstubAllGlobals();
     });
 });

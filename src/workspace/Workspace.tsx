@@ -39,7 +39,7 @@ import { FILE_MANAGER_NAME } from "../lib/platform";
 import { useShortcutLabel } from "../commands/useShortcutLabel";
 import { notify, reportError } from "../state/toast";
 import { copyText } from "../lib/clipboard";
-import { PAN_MS, panOffset, useWindowPan } from "./useWindowPan";
+import { PAN_MS, panTransform, useWindowPan } from "./useWindowPan";
 import { useWheelPan } from "./useWheelPan";
 import { useDocumentSlide } from "./useDocumentSlide";
 
@@ -140,7 +140,7 @@ export const Workspace = memo(function Workspace() {
                         style={
                             {
                                 "--window-pan-ms": `${isActive ? pan.ms : PAN_MS}ms`,
-                                "--pan": panOffset(isActive ? pan.at : order.indexOf(session.activeWindowId)),
+                                transform: isActive && pan.panning ? panTransform(pan.at) : undefined,
                             } as CSSProperties
                         }>
                         {order.map((wid, slot) => {
