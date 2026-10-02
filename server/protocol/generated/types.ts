@@ -6,6 +6,46 @@ export interface ApiError {
   error: ErrorDetail;
 }
 
+/** A one-time value a device signs to prove it holds its key. */
+export interface Challenge {
+  nonce: string;
+  expiresAt: string;
+}
+
+/** Which build a host runs. Dev, nightly and stable cores are separate hosts. */
+export type Channel = "dev" | "nightly" | "stable";
+
+export interface Device {
+  key: DeviceKey;
+  role: DeviceRole;
+  name: string;
+  platform: Platform;
+  channel?: Channel;
+  createdAt: string;
+  lastSeenAt: string | null;
+}
+
+/** A device's iroh public key: 32 bytes of Ed25519, in lowercase hex. */
+export type DeviceKey = string;
+
+export interface DeviceList {
+  devices: Device[];
+}
+
+/** Adds a device to the signed-in account, or updates it if it is already there. The signature is the device key's Ed25519 signature over the UTF-8 text `sikemux-register|<nonce>|<user id>|<key>`. */
+export interface DeviceRegistration {
+  key: DeviceKey;
+  role: DeviceRole;
+  name: string;
+  platform: Platform;
+  channel?: Channel;
+  nonce: string;
+  signature: string;
+}
+
+/** A host is a core people connect to, such as a Mac. A client connects to hosts, such as a phone. */
+export type DeviceRole = "host" | "client";
+
 export type ErrorCode =
   | "bad_request"
   | "unauthorized"
@@ -35,11 +75,21 @@ export interface Health {
 
 export type HealthStatus = "ok" | "unavailable";
 
+export type Platform = "macos" | "ios" | "android";
+
 /** Every definition by name, so code can look a type up from the name it validates against. */
 export interface Definitions {
   ApiError: ApiError;
+  Challenge: Challenge;
+  Channel: Channel;
+  Device: Device;
+  DeviceKey: DeviceKey;
+  DeviceList: DeviceList;
+  DeviceRegistration: DeviceRegistration;
+  DeviceRole: DeviceRole;
   ErrorCode: ErrorCode;
   ErrorDetail: ErrorDetail;
   Health: Health;
   HealthStatus: HealthStatus;
+  Platform: Platform;
 }

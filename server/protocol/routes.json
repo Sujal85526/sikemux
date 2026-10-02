@@ -7,10 +7,60 @@
       "summary": "Whether the API and its database are working",
       "auth": "none",
       "responses": {
-        "200": { "description": "Everything works.", "body": "Health" },
+        "200": {
+          "description": "Everything works.",
+          "body": "Health"
+        },
         "503": {
           "description": "The database cannot be reached.",
           "body": "Health"
+        }
+      }
+    },
+    {
+      "method": "post",
+      "path": "/v1/devices/challenge",
+      "operationId": "createChallenge",
+      "summary": "A one-time value for a device to sign before it registers",
+      "auth": "session",
+      "responses": {
+        "200": {
+          "description": "The challenge, valid for two minutes.",
+          "body": "Challenge"
+        }
+      }
+    },
+    {
+      "method": "post",
+      "path": "/v1/devices",
+      "operationId": "registerDevice",
+      "summary": "Add a device to your account, or update it",
+      "auth": "session",
+      "request": "DeviceRegistration",
+      "responses": {
+        "201": {
+          "description": "The device was added.",
+          "body": "Device"
+        },
+        "200": {
+          "description": "The device was already yours and is updated.",
+          "body": "Device"
+        }
+      }
+    },
+    {
+      "method": "get",
+      "path": "/v1/devices",
+      "operationId": "listDevices",
+      "summary": "Your devices",
+      "auth": "session",
+      "query": {
+        "role": "DeviceRole"
+      },
+      "responses": {
+        "200": {
+          "description": "Your devices, newest first.",
+          "body": "DeviceList"
         }
       }
     }

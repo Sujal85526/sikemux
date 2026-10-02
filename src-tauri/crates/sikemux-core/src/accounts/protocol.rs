@@ -10,6 +10,76 @@ pub struct ApiError {
     pub error: ErrorDetail,
 }
 
+/// A one-time value a device signs to prove it holds its key.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Challenge {
+    pub nonce: String,
+    pub expires_at: String,
+}
+
+/// Which build a host runs. Dev, nightly and stable cores are separate hosts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Channel {
+    #[serde(rename = "dev")]
+    Dev,
+    #[serde(rename = "nightly")]
+    Nightly,
+    #[serde(rename = "stable")]
+    Stable,
+    /// A value added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Device {
+    pub key: DeviceKey,
+    pub role: DeviceRole,
+    pub name: String,
+    pub platform: Platform,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel: Option<Channel>,
+    pub created_at: String,
+    pub last_seen_at: Option<String>,
+}
+
+/// A device's iroh public key: 32 bytes of Ed25519, in lowercase hex.
+pub type DeviceKey = String;
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceList {
+    pub devices: Vec<Device>,
+}
+
+/// Adds a device to the signed-in account, or updates it if it is already there. The signature is the device key's Ed25519 signature over the UTF-8 text `sikemux-register|<nonce>|<user id>|<key>`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceRegistration {
+    pub key: DeviceKey,
+    pub role: DeviceRole,
+    pub name: String,
+    pub platform: Platform,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel: Option<Channel>,
+    pub nonce: String,
+    pub signature: String,
+}
+
+/// A host is a core people connect to, such as a Mac. A client connects to hosts, such as a phone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum DeviceRole {
+    #[serde(rename = "host")]
+    Host,
+    #[serde(rename = "client")]
+    Client,
+    /// A value added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ErrorCode {
     #[serde(rename = "bad_request")]
@@ -66,16 +136,37 @@ pub enum HealthStatus {
     Unknown,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Platform {
+    #[serde(rename = "macos")]
+    Macos,
+    #[serde(rename = "ios")]
+    Ios,
+    #[serde(rename = "android")]
+    Android,
+    /// A value added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
 /// Reads `json` as the named type and writes it back, for the contract tests.
 #[cfg(test)]
 pub(crate) fn round_trip(name: &str, json: &str) -> Option<super::RoundTrip> {
     use super::through;
     Some(match name {
         "ApiError" => through::<ApiError>(json),
+        "Challenge" => through::<Challenge>(json),
+        "Channel" => through::<Channel>(json),
+        "Device" => through::<Device>(json),
+        "DeviceKey" => through::<DeviceKey>(json),
+        "DeviceList" => through::<DeviceList>(json),
+        "DeviceRegistration" => through::<DeviceRegistration>(json),
+        "DeviceRole" => through::<DeviceRole>(json),
         "ErrorCode" => through::<ErrorCode>(json),
         "ErrorDetail" => through::<ErrorDetail>(json),
         "Health" => through::<Health>(json),
         "HealthStatus" => through::<HealthStatus>(json),
+        "Platform" => through::<Platform>(json),
         _ => return None,
     })
 }

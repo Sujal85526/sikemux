@@ -402,6 +402,7 @@ export function openapi(definitions, routes) {
         "summary",
         "auth",
         "request",
+        "query",
         "responses",
       ]),
     );
@@ -441,6 +442,20 @@ export function openapi(definitions, routes) {
         schema: { type: "string" },
       }),
     );
+    for (const [param, type] of Object.entries(route.query ?? {})) {
+      if (!definitions.has(type)) {
+        fail(
+          where,
+          `query parameter "${param}" names "${type}", which is not a definition`,
+        );
+      }
+      parameters.push({
+        name: param,
+        in: "query",
+        required: false,
+        schema: { $ref: `#/components/schemas/${type}` },
+      });
+    }
     paths[route.path] ??= {};
     paths[route.path][route.method] = {
       operationId: route.operationId,

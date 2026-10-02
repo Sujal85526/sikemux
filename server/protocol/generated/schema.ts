@@ -11,6 +11,72 @@ export const schema = {
       required: ["error"],
       additionalProperties: false,
     },
+    Challenge: {
+      description: "A one-time value a device signs to prove it holds its key.",
+      type: "object",
+      properties: {
+        nonce: { type: "string", pattern: "^[0-9a-f]{64}$" },
+        expiresAt: { type: "string", format: "date-time" },
+      },
+      required: ["nonce", "expiresAt"],
+      additionalProperties: false,
+    },
+    Channel: {
+      description:
+        "Which build a host runs. Dev, nightly and stable cores are separate hosts.",
+      type: "string",
+      enum: ["dev", "nightly", "stable"],
+    },
+    Device: {
+      type: "object",
+      properties: {
+        key: { $ref: "#/$defs/DeviceKey" },
+        role: { $ref: "#/$defs/DeviceRole" },
+        name: { type: "string" },
+        platform: { $ref: "#/$defs/Platform" },
+        channel: { $ref: "#/$defs/Channel" },
+        createdAt: { type: "string", format: "date-time" },
+        lastSeenAt: { type: ["string", "null"], format: "date-time" },
+      },
+      required: ["key", "role", "name", "platform", "createdAt", "lastSeenAt"],
+      additionalProperties: false,
+    },
+    DeviceKey: {
+      description:
+        "A device's iroh public key: 32 bytes of Ed25519, in lowercase hex.",
+      type: "string",
+      pattern: "^[0-9a-f]{64}$",
+    },
+    DeviceList: {
+      type: "object",
+      properties: {
+        devices: { type: "array", items: { $ref: "#/$defs/Device" } },
+      },
+      required: ["devices"],
+      additionalProperties: false,
+    },
+    DeviceRegistration: {
+      description:
+        "Adds a device to the signed-in account, or updates it if it is already there. The signature is the device key's Ed25519 signature over the UTF-8 text `sikemux-register|<nonce>|<user id>|<key>`.",
+      type: "object",
+      properties: {
+        key: { $ref: "#/$defs/DeviceKey" },
+        role: { $ref: "#/$defs/DeviceRole" },
+        name: { type: "string", minLength: 1, maxLength: 64 },
+        platform: { $ref: "#/$defs/Platform" },
+        channel: { $ref: "#/$defs/Channel" },
+        nonce: { type: "string", pattern: "^[0-9a-f]{64}$" },
+        signature: { type: "string", pattern: "^[0-9a-f]{128}$" },
+      },
+      required: ["key", "role", "name", "platform", "nonce", "signature"],
+      additionalProperties: false,
+    },
+    DeviceRole: {
+      description:
+        "A host is a core people connect to, such as a Mac. A client connects to hosts, such as a phone.",
+      type: "string",
+      enum: ["host", "client"],
+    },
     ErrorCode: {
       type: "string",
       enum: [
@@ -59,5 +125,6 @@ export const schema = {
       additionalProperties: false,
     },
     HealthStatus: { type: "string", enum: ["ok", "unavailable"] },
+    Platform: { type: "string", enum: ["macos", "ios", "android"] },
   },
 } as const;

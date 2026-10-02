@@ -1,0 +1,12 @@
+{
+  "devices": [
+    {
+      "key": "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29",
+      "role": "client",
+      "name": "iPhone",
+      "platform": "ios",
+      "createdAt": "2026-10-03T10:00:00.000Z",
+      "lastSeenAt": "2026-10-03T11:00:00.000Z"
+    }
+  ]
+}

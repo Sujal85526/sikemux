@@ -235,6 +235,34 @@ describe("bundle and openapi", () => {
     });
   });
 
+  it("describes query parameters by their definition", () => {
+    const withErrors = new Map([
+      ...collect(device),
+      ...collect(document("common.json", { ApiError: { type: "string" } })),
+    ]);
+    const api = openapi(withErrors, {
+      routes: [
+        {
+          method: "get",
+          path: "/v1/devices",
+          operationId: "listDevices",
+          summary: "",
+          auth: "session",
+          query: { role: "DeviceRole" },
+          responses: {},
+        },
+      ],
+    });
+    expect(api.paths["/v1/devices"].get.parameters).toEqual([
+      {
+        name: "role",
+        in: "query",
+        required: false,
+        schema: { $ref: "#/components/schemas/DeviceRole" },
+      },
+    ]);
+  });
+
   it("refuses routes outside /v1", () => {
     expect(() =>
       openapi(collect(device), {
