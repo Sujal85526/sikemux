@@ -9,3 +9,6 @@ sikemux-process = { path = "../sikemux-process" }
 
 [lints]
 workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+workspace-hack = { version = "0.1", path = "../workspace-hack" }

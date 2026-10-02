@@ -100,6 +100,7 @@ rustix = { version = "1", features = ["fs"] }
 libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
+workspace-hack = { version = "0.1", path = "crates/workspace-hack" }
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["NSAlert", "NSApplication", "NSBitmapImageRep", "NSControl", "NSEvent", "NSGraphicsContext", "NSImage", "NSImageRep", "NSPasteboard", "NSResponder", "NSScreen", "NSTextField", "NSView", "NSWindow", "NSWorkspace", "block2", "objc2-core-graphics"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["NSData", "NSDictionary", "NSError", "NSGeometry", "NSObject", "NSProcessInfo", "NSString", "NSThread", "NSURL", "NSURLResponse", "NSValue"] }

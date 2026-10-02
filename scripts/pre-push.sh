@@ -104,6 +104,7 @@ step 'prettier format' pnpm format:check
 [ "$SHELL_SCRIPTS" = 1 ] && needs shellcheck 'shell lint' && step 'shell lint' shellcheck scripts/*.sh
 [ "$RUST" = 1 ] && step 'rust toolchain' rust_toolchain_matches
 [ "$RUST" = 1 ] && step 'cargo fmt' pnpm rust:fmt:check
+[ "$RUST" = 1 ] && needs cargo-hakari 'workspace-hack' && step 'workspace-hack' pnpm rust:hakari:check
 [ "$RUST" = 1 ] && needs cargo-audit 'rust security audit' && step 'rust security audit' cargo audit --file src-tauri/Cargo.lock
 [ "$FRONTEND" = 1 ] && step 'eslint' pnpm lint
 [ "$FRONTEND" = 1 ] && step 'typescript' pnpm typecheck

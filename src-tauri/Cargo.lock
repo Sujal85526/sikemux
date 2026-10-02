@@ -5651,6 +5651,7 @@ dependencies = [
  "url",
  "uuid",
  "vt100",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -5675,6 +5676,7 @@ dependencies = [
  "url",
  "uuid",
  "vt100",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -5682,6 +5684,7 @@ name = "sikemux-keychain"
 version = "0.1.0"
 dependencies = [
  "sikemux-process",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -5691,6 +5694,7 @@ dependencies = [
  "pulldown-cmark",
  "serde",
  "serde_json",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -5722,6 +5726,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -5734,6 +5739,7 @@ dependencies = [
  "sikemux-plugin-api",
  "sikemux-process",
  "tokio",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -5750,6 +5756,7 @@ dependencies = [
  "sikemux-plugin-api",
  "tokio",
  "url",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -5765,6 +5772,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "url",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -5783,6 +5791,7 @@ dependencies = [
  "sikemux-process",
  "tokio",
  "url",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -5800,6 +5809,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "url",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -5815,6 +5825,7 @@ dependencies = [
  "sikemux-process",
  "tokio",
  "url",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -5822,6 +5833,7 @@ name = "sikemux-process"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -5838,6 +5850,7 @@ dependencies = [
  "thiserror 1.0.69",
  "url",
  "vt100",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -8193,6 +8206,92 @@ dependencies = [
  "thiserror 2.0.21",
  "windows 0.62.2",
  "windows-core 0.62.2",
+]
+
+[[package]]
+name = "workspace-hack"
+version = "0.1.0"
+dependencies = [
+ "aho-corasick",
+ "bitflags 2.13.2",
+ "block2",
+ "cc",
+ "crc32fast",
+ "crossbeam-utils",
+ "crypto-common 0.1.7",
+ "crypto-common 0.2.2",
+ "data-encoding",
+ "deranged",
+ "derive_more",
+ "derive_more-impl",
+ "digest 0.11.3",
+ "dispatch2",
+ "errno",
+ "fastrand",
+ "foldhash",
+ "form_urlencoded",
+ "futures-channel",
+ "futures-core",
+ "futures-io",
+ "futures-sink",
+ "futures-util",
+ "getrandom 0.3.4",
+ "getrandom 0.4.3",
+ "hashbrown 0.17.1",
+ "hyper",
+ "hyper-util",
+ "icu_properties",
+ "idna",
+ "libc",
+ "memchr",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-foundation",
+ "objc2-quartz-core",
+ "objc2-web-kit",
+ "once_cell",
+ "percent-encoding",
+ "phf_shared",
+ "proc-macro2",
+ "quote",
+ "regex-automata",
+ "reqwest",
+ "rustix",
+ "rustls",
+ "rustls-webpki",
+ "schemars 0.8.22",
+ "schemars 1.2.2",
+ "semver",
+ "serde",
+ "serde_core",
+ "serde_json",
+ "serde_with",
+ "serde_with_macros",
+ "simd-adler32",
+ "simdutf8",
+ "slab",
+ "smallvec",
+ "stable_deref_trait",
+ "subtle",
+ "syn 2.0.119",
+ "syn 3.0.6",
+ "tauri-build",
+ "tauri-utils",
+ "time",
+ "time-macros",
+ "tokio-rustls",
+ "tokio-util",
+ "toml_datetime 1.1.1+spec-1.1.0",
+ "toml_parser",
+ "tower-http",
+ "tracing",
+ "typenum",
+ "url",
+ "uuid",
+ "winnow 1.0.4",
+ "zeroize",
 ]
 
 [[package]]

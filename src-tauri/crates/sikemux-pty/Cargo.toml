@@ -20,3 +20,6 @@ libc = "0.2"
 
 [lints.clippy]
 undocumented_unsafe_blocks = "deny"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+workspace-hack = { version = "0.1", path = "../workspace-hack" }
