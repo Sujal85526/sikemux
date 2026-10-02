@@ -36,10 +36,10 @@ function DeviceCard({ device }: { device: PairedDevice }) {
       ? 'Needs a newer Sikemux'
       : 'Update this app to connect'
     : away
-    ? `Asleep or offline${device.lastSeen ? ` · seen ${ago(device.lastSeen)}` : ''}`
-    : snapshot
-      ? summary(snapshot)
-      : 'Connecting…';
+      ? `Asleep or offline${device.lastSeen ? ` · seen ${ago(device.lastSeen)}` : ''}`
+      : snapshot
+        ? summary(snapshot)
+        : 'Connecting…';
 
   return (
     <Pressable

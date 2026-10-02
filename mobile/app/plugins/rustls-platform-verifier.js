@@ -43,10 +43,7 @@ module.exports = (config) => {
   return withAppBuildGradle(config, (config) => {
     const dependency = `implementation "org.rustls:rustls-platform-verifier:${verifierVersion()}"`;
     if (!config.modResults.contents.includes('org.rustls:rustls-platform-verifier')) {
-      config.modResults.contents = config.modResults.contents.replace(
-        /dependencies\s*\{/,
-        (opening) => `${opening}\n    ${dependency}`,
-      );
+      config.modResults.contents = config.modResults.contents.replace(/dependencies\s*\{/, (opening) => `${opening}\n    ${dependency}`);
     }
     return config;
   });

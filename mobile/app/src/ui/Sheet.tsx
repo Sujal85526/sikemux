@@ -11,7 +11,17 @@ const CLOSE_MS = 180;
  * A sheet that slides up while the screen behind it dims in place; a tap on
  * the dimmed screen closes it. The modal stays mounted until the sheet is down.
  */
-export function Sheet({ visible, onClose, tall, children }: { visible: boolean; onClose: () => void; tall?: boolean; children: ReactNode }) {
+export function Sheet({
+  visible,
+  onClose,
+  tall,
+  children,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  tall?: boolean;
+  children: ReactNode;
+}) {
   const styles = useStyles(makeStyles);
   // A modal measures no safe area of its own, so the screen behind it lends its inset.
   const insets = useSafeAreaInsets();
@@ -25,9 +35,11 @@ export function Sheet({ visible, onClose, tall, children }: { visible: boolean; 
       Animated.timing(progress, { toValue: 1, duration: OPEN_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
       return;
     }
-    Animated.timing(progress, { toValue: 0, duration: CLOSE_MS, easing: Easing.in(Easing.cubic), useNativeDriver: true }).start(({ finished }) => {
-      if (finished) setMounted(false);
-    });
+    Animated.timing(progress, { toValue: 0, duration: CLOSE_MS, easing: Easing.in(Easing.cubic), useNativeDriver: true }).start(
+      ({ finished }) => {
+        if (finished) setMounted(false);
+      },
+    );
   }, [visible, progress]);
 
   const rise = progress.interpolate({ inputRange: [0, 1], outputRange: [offscreen, 0] });
@@ -38,7 +50,8 @@ export function Sheet({ visible, onClose, tall, children }: { visible: boolean; 
         <Pressable style={{ flex: 1 }} onPress={onClose} accessibilityLabel="Close" />
       </Animated.View>
       <View style={styles.dock} pointerEvents="box-none">
-        <Animated.View style={[styles.sheet, tall && { height: '82%' }, { paddingBottom: insets.bottom + 12, transform: [{ translateY: rise }] }]}>
+        <Animated.View
+          style={[styles.sheet, tall && { height: '82%' }, { paddingBottom: insets.bottom + 12, transform: [{ translateY: rise }] }]}>
           <View style={styles.grabber} />
           {children}
         </Animated.View>

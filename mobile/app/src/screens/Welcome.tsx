@@ -65,9 +65,7 @@ function Reel() {
   }, []);
   useEffect(() => {
     if (still) return;
-    const loop = Animated.loop(
-      Animated.timing(drift, { toValue: 1, duration: 26_000, easing: Easing.linear, useNativeDriver: true }),
-    );
+    const loop = Animated.loop(Animated.timing(drift, { toValue: 1, duration: 26_000, easing: Easing.linear, useNativeDriver: true }));
     loop.start();
     return () => loop.stop();
   }, [drift, still]);

@@ -101,9 +101,26 @@ export function ProjectSheet({ visible, onClose, device, projects, chosen, onCho
 const makeStyles = (colors: Palette) => {
   const type = typeFor(colors);
   return StyleSheet.create({
-    head: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', paddingHorizontal: 4, paddingTop: 2, paddingBottom: 12 },
+    head: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      justifyContent: 'space-between',
+      paddingHorizontal: 4,
+      paddingTop: 2,
+      paddingBottom: 12,
+    },
     title: { fontFamily: fonts.uiSemibold, fontSize: 17, letterSpacing: -0.35, color: colors.ink },
-    search: { flexDirection: 'row', alignItems: 'center', gap: 10, height: 44, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.sunken },
+    search: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      height: 44,
+      paddingHorizontal: 12,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.sunken,
+    },
     searchInput: { flex: 1, fontFamily: fonts.ui, fontSize: 15.5, color: colors.ink },
     group: { borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.raised, overflow: 'hidden' },
     row: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 56, paddingHorizontal: 14, paddingVertical: 8 },

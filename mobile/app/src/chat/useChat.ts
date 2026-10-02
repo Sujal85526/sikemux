@@ -21,9 +21,7 @@ function actions(event: CoreChatEvent): ChatAction[] {
       return rows.flatMap((entry): ChatAction[] => {
         const row = recordOf(entry);
         const update = row && recordOf(row.update);
-        return update && typeof row.sessionId === 'string'
-          ? [{ type: 'session_update', sessionId: row.sessionId, update }]
-          : [];
+        return update && typeof row.sessionId === 'string' ? [{ type: 'session_update', sessionId: row.sessionId, update }] : [];
       });
     }
     case 'prompt': {
@@ -155,7 +153,11 @@ export function useChat(core: string, agentId: string): ChatView {
           const replay = parsed(inner.replayJson);
           const rebuilt = reduceAll(initialChatState, [
             ...replay,
-            { type: 'ready', capabilities: recordOf(JSON.parse(inner.capabilitiesJson)) ?? {}, setup: recordOf(JSON.parse(inner.setupJson)) ?? {} },
+            {
+              type: 'ready',
+              capabilities: recordOf(JSON.parse(inner.capabilitiesJson)) ?? {},
+              setup: recordOf(JSON.parse(inner.setupJson)) ?? {},
+            },
             ...(inner.running ? [{ type: 'turn_started' } as const] : []),
           ]);
           setReplayed(new Set(reduceAll(initialChatState, replay).messages.map((message) => message.id)));

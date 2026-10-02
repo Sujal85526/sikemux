@@ -47,7 +47,9 @@ export function useDeviceBackdrop(core: string): DeviceBackdrop {
             return;
           }
           forgetBackdrop(remembered);
-          return updateDevice(core, { backdrop: { texture, image: { id: wanted, uri: new File(`file://${path}`).uri } } }).then(reloadDevices);
+          return updateDevice(core, { backdrop: { texture, image: { id: wanted, uri: new File(`file://${path}`).uri } } }).then(
+            reloadDevices,
+          );
         })
         .catch(() => missing.add(key))
         .finally(() => fetching.delete(core));

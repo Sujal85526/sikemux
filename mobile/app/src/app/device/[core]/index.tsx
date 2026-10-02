@@ -167,7 +167,13 @@ function Terminals({ snapshot, scope }: { snapshot: Snapshot; scope?: ProjectInf
               <Row
                 key={session.id}
                 dim={!session.running}
-                mark={<Icon name={session.task ? 'IconRun' : 'IconCommand'} size={session.task ? 15 : 18} color={session.running ? colors.secondary : colors.tertiary} />}
+                mark={
+                  <Icon
+                    name={session.task ? 'IconRun' : 'IconCommand'}
+                    size={session.task ? 15 : 18}
+                    color={session.running ? colors.secondary : colors.tertiary}
+                  />
+                }
                 title={terminalTitle(session)}
                 detail={<Text style={type.mono}>{terminalDetail(session)}</Text>}
                 end={session.running ? session.task ? <Working /> : <View style={styles.liveDot} /> : null}
@@ -222,12 +228,7 @@ export default function Device() {
 
   return (
     <Screen>
-      <Nav
-        back="Devices"
-        end={
-          device ? <IconButton name="IconMore" label="Options" onPress={() => setOptions(true)} /> : null
-        }
-      />
+      <Nav back="Devices" end={device ? <IconButton name="IconMore" label="Options" onPress={() => setOptions(true)} /> : null} />
       {device ? <ForgetSheet device={device} visible={options} onClose={() => setOptions(false)} /> : null}
       <View style={styles.header}>
         <View style={styles.glyph}>
@@ -239,7 +240,9 @@ export default function Device() {
             {device ? deviceName(device) : 'Mac'}
           </Text>
           <Text style={type.meta} numberOfLines={1}>
-            {[channel, behind ? 'Needs an update' : away ? 'Asleep or offline' : snapshot ? summary(snapshot) : null].filter(Boolean).join(' · ')}
+            {[channel, behind ? 'Needs an update' : away ? 'Asleep or offline' : snapshot ? summary(snapshot) : null]
+              .filter(Boolean)
+              .join(' · ')}
           </Text>
         </View>
       </View>
@@ -382,7 +385,17 @@ const makeStyles = (colors: Palette) => {
     },
     termCount: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     filters: { flexDirection: 'row', gap: 6, paddingTop: 12 },
-    filter: { minHeight: 32, minWidth: 40, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: translucent(colors.raised, 0.8), alignItems: 'center', justifyContent: 'center' },
+    filter: {
+      minHeight: 32,
+      minWidth: 40,
+      paddingHorizontal: 12,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: translucent(colors.raised, 0.8),
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
     filterOn: { backgroundColor: translucent(colors.overlay, 0.9), borderColor: colors.borderStrong },
     filterText: { fontFamily: fonts.ui, fontSize: 13, color: colors.secondary },
     ask: {

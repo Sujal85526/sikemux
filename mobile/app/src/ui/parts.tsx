@@ -53,7 +53,12 @@ export function Nav({ back, title, end, onBack }: { back?: string; title?: React
   const styles = useStyles(makeStyles);
   return (
     <View style={styles.nav}>
-      <Pressable style={styles.back} onPress={onBack ?? (() => router.back())} hitSlop={8} accessibilityRole="button" accessibilityLabel={back ?? 'Back'}>
+      <Pressable
+        style={styles.back}
+        onPress={onBack ?? (() => router.back())}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={back ?? 'Back'}>
         <View style={styles.backChevron}>
           <Icon name="IconChevron" size={18} color={colors.secondary} />
         </View>
@@ -334,7 +339,15 @@ const makeStyles = (colors: Palette) => {
     navEnd: { minWidth: 76, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center' },
     iconButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
 
-    button: { minHeight: 50, paddingVertical: 8, borderRadius: radius.row, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
+    button: {
+      minHeight: 50,
+      paddingVertical: 8,
+      borderRadius: radius.row,
+      borderWidth: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 16,
+    },
     buttonText: { fontFamily: fonts.uiSemibold, fontSize: 16 },
     pressed: { opacity: 0.75 },
     disabled: { opacity: 0.5 },
@@ -350,11 +363,27 @@ const makeStyles = (colors: Palette) => {
     rowDetail: { ...type.meta, fontSize: 12.5, marginTop: 1 },
     rowEnd: { minWidth: 20, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 },
 
-    track: { minHeight: 36, padding: 3, borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: translucent(colors.raised, 0.8), flexDirection: 'row' },
+    track: {
+      minHeight: 36,
+      padding: 3,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: translucent(colors.raised, 0.8),
+      flexDirection: 'row',
+    },
     trackOption: { flex: 1, borderRadius: 7, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 },
     trackOn: { backgroundColor: colors.active },
     trackText: { fontFamily: fonts.ui, fontSize: 13, color: colors.tertiary },
-    count: { minWidth: 16, height: 16, borderRadius: 8, paddingHorizontal: 5, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
+    count: {
+      minWidth: 16,
+      height: 16,
+      borderRadius: 8,
+      paddingHorizontal: 5,
+      backgroundColor: colors.ink,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
     countText: { fontFamily: fonts.uiSemibold, fontSize: 11, color: colors.ground },
 
     loader: { width: 13, height: 13, flexDirection: 'row', flexWrap: 'wrap', gap: 2 },
@@ -365,7 +394,16 @@ const makeStyles = (colors: Palette) => {
 
     tiles: { flexDirection: 'row', gap: 8, justifyContent: 'center' },
     tileWrap: {},
-    tile: { width: 46, height: 58, borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.sunken, alignItems: 'center', justifyContent: 'center' },
+    tile: {
+      width: 46,
+      height: 58,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.sunken,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
     tileCurrent: { borderColor: colors.borderSelected },
     tileLocked: { backgroundColor: colors.raised, borderColor: colors.borderStrong },
     tileFailed: { borderColor: 'rgba(255, 103, 103, 0.55)', backgroundColor: '#140b0d' },

@@ -14,7 +14,8 @@ function variant(tag: Tag) {
   return {
     new: (inner: { message: string; macIsOlder?: boolean } = { message: tag }) => new FakeMobileError(tag, inner),
     // By tag rather than class, so values made before `vi.resetModules` still match.
-    instanceOf: (error: unknown): error is FakeMobileError => (error as FakeMobileError | undefined)?.tag === tag && 'inner' in (error as object),
+    instanceOf: (error: unknown): error is FakeMobileError =>
+      (error as FakeMobileError | undefined)?.tag === tag && 'inner' in (error as object),
   };
 }
 

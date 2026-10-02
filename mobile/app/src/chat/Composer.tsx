@@ -27,7 +27,15 @@ function askTitle(request: AcpPermissionRequest): string {
 }
 
 /** Docked on the composer until it is answered: the Mac's permission card, with the agent's own options. */
-function PermissionDock({ request, provider, onAnswer }: { request: AcpPermissionRequest; provider: string; onAnswer: (optionId: string | null) => void }) {
+function PermissionDock({
+  request,
+  provider,
+  onAnswer,
+}: {
+  request: AcpPermissionRequest;
+  provider: string;
+  onAnswer: (optionId: string | null) => void;
+}) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
   const rejects = request.options.filter((option) => option.kind.startsWith('reject'));
@@ -62,7 +70,9 @@ function PermissionDock({ request, provider, onAnswer }: { request: AcpPermissio
               }}
               style={({ pressed }) => [styles.act, go && styles.actGo, pressed && { opacity: 0.8 }]}
               accessibilityRole="button">
-              <Text style={[styles.actText, go && styles.actGoText, option.kind.startsWith('reject') && { color: colors.secondary }]} numberOfLines={1}>
+              <Text
+                style={[styles.actText, go && styles.actGoText, option.kind.startsWith('reject') && { color: colors.secondary }]}
+                numberOfLines={1}>
                 {option.name}
               </Text>
             </Pressable>
@@ -106,7 +116,10 @@ function ConfigSheet({
             {model.options.map((option, index) => {
               const on = option.value === model.currentValue;
               return (
-                <Pressable key={option.value} onPress={() => onPick(model, option.value)} style={[styles.option, on && { backgroundColor: colors.active }, index > 0 && styles.optionDivided]}>
+                <Pressable
+                  key={option.value}
+                  onPress={() => onPick(model, option.value)}
+                  style={[styles.option, on && { backgroundColor: colors.active }, index > 0 && styles.optionDivided]}>
                   <AgentIcon provider={provider} size={18} />
                   <Text style={[styles.optionText, on && { color: colors.ink }]} numberOfLines={1}>
                     {option.label}
@@ -140,7 +153,10 @@ function ConfigSheet({
             <View
               style={[
                 styles.contextFill,
-                { width: `${Math.min(100, (usage.used / usage.size) * 100)}%`, backgroundColor: isProvider(provider) ? brand[provider] : colors.accent },
+                {
+                  width: `${Math.min(100, (usage.used / usage.size) * 100)}%`,
+                  backgroundColor: isProvider(provider) ? brand[provider] : colors.accent,
+                },
               ]}
             />
           </View>
@@ -227,7 +243,11 @@ export function Composer({
             <Text style={[styles.yoloText, yolo && { color: colors.accent }]}>{yolo ? 'yolo' : 'safe'}</Text>
           </View>
           {model ? (
-            <Pressable style={styles.picker} onPress={() => setSheet(true)} accessibilityRole="button" accessibilityLabel="Model and effort">
+            <Pressable
+              style={styles.picker}
+              onPress={() => setSheet(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Model and effort">
               <AgentIcon provider={provider} size={16} />
               <Text style={[styles.pickerText, { color: colors.accent }]} numberOfLines={1}>
                 {model}
@@ -306,17 +326,41 @@ const makeStyles = (colors: Palette) => {
     dockHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
     dockTitle: { fontFamily: fonts.uiSemibold, fontSize: 15, letterSpacing: -0.2, color: colors.ink },
     dockDetail: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.tertiary, marginTop: 1 },
-    dockCmd: { marginTop: 10, paddingVertical: 9, paddingHorizontal: 11, borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.sunken },
+    dockCmd: {
+      marginTop: 10,
+      paddingVertical: 9,
+      paddingHorizontal: 11,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.sunken,
+    },
     dockCmdText: { fontFamily: fonts.mono, fontSize: 12.5, lineHeight: 18, color: colors.ink },
     dockActs: { flexDirection: 'row', gap: 6, marginTop: 10 },
-    act: { flex: 1, minHeight: 38, borderRadius: 10, borderWidth: 1, borderColor: colors.borderStrong, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+    act: {
+      flex: 1,
+      minHeight: 38,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.borderStrong,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 6,
+    },
     actGo: { backgroundColor: colors.ink, borderColor: colors.ink },
     actText: { fontFamily: fonts.uiMedium, fontSize: 14, color: colors.ink },
     actGoText: { fontFamily: fonts.uiSemibold, color: colors.ground },
 
     sheetHead: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4 },
     sheetTitle: { fontFamily: fonts.uiSemibold, fontSize: 17, letterSpacing: -0.35, color: colors.ink },
-    sheetLabel: { fontFamily: fonts.uiSemibold, fontSize: 13, color: colors.tertiary, paddingTop: 18, paddingBottom: 8, paddingHorizontal: 6 },
+    sheetLabel: {
+      fontFamily: fonts.uiSemibold,
+      fontSize: 13,
+      color: colors.tertiary,
+      paddingTop: 18,
+      paddingBottom: 8,
+      paddingHorizontal: 6,
+    },
     group: { borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.raised, overflow: 'hidden' },
     option: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 52, paddingHorizontal: 14 },
     optionDivided: { borderTopWidth: 1, borderTopColor: colors.border },

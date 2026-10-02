@@ -12,7 +12,10 @@ import { fonts, type Palette, radius, typeFor, useStyles, useType } from '@/ui/t
 /** How long the Mac keeps a pairing request open (sikemux_core::pairing::APPROVAL_TIMEOUT). */
 const APPROVAL_SECONDS = 120;
 
-const EXPIRED: Failure = { title: 'The Mac did not answer', detail: 'Pairing waits two minutes for someone at the Mac. Scan the code again to retry.' };
+const EXPIRED: Failure = {
+  title: 'The Mac did not answer',
+  detail: 'Pairing waits two minutes for someone at the Mac. Scan the code again to retry.',
+};
 const BROKEN: Failure = { title: 'That link is incomplete', detail: 'Scan the code on the Mac, or copy its pairing link again.' };
 
 function clock(seconds: number): string {

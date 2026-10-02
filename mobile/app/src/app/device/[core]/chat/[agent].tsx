@@ -105,7 +105,11 @@ export default function Chat() {
                 </>
               }
               contentContainerStyle={{ ...styles.content, ...(chat.attached !== 'live' && { paddingBottom: bottom }) }}
-              maintainVisibleContentPosition={{ startRenderingFromBottom: true, autoscrollToBottomThreshold: FOLLOW, animateAutoScrollToBottom: false }}
+              maintainVisibleContentPosition={{
+                startRenderingFromBottom: true,
+                autoscrollToBottomThreshold: FOLLOW,
+                animateAutoScrollToBottom: false,
+              }}
               onScroll={onScroll}
               scrollEventThrottle={100}
               keyboardDismissMode="interactive"

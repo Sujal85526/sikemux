@@ -16,7 +16,19 @@ import { fonts, type Palette, useColors, useStyles, useType } from '@/ui/theme';
 
 const IDLE = composerPlaceholder({ connection: 'ready', running: false }, { resuming: false, disconnected: false });
 
-function AgentSheet({ visible, onClose, launchers, chosen, onChoose }: { visible: boolean; onClose: () => void; launchers: LauncherInfo[]; chosen?: LauncherInfo; onChoose: (launcher: LauncherInfo) => void }) {
+function AgentSheet({
+  visible,
+  onClose,
+  launchers,
+  chosen,
+  onChoose,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  launchers: LauncherInfo[];
+  chosen?: LauncherInfo;
+  onChoose: (launcher: LauncherInfo) => void;
+}) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
   return (
@@ -26,7 +38,11 @@ function AgentSheet({ visible, onClose, launchers, chosen, onChoose }: { visible
         {launchers.map((launcher) => {
           const on = launcher.id === chosen?.id;
           return (
-            <Pressable key={launcher.id} onPress={() => onChoose(launcher)} style={[styles.agent, on && styles.agentOn]} accessibilityRole="button">
+            <Pressable
+              key={launcher.id}
+              onPress={() => onChoose(launcher)}
+              style={[styles.agent, on && styles.agentOn]}
+              accessibilityRole="button">
               <AgentIcon provider={launcher.provider} size={22} />
               <Text style={[styles.agentText, on && { color: colors.ink }]} numberOfLines={1}>
                 {launcher.label}
@@ -54,8 +70,14 @@ export default function NewChat() {
   const [problem, setProblem] = useState<string>();
   const [started, setStarted] = useState<string>();
   const typing = useKeyboardShown();
-  const launcher = useMemo(() => workspace?.launchers.find((known) => known.id === launcherId) ?? workspace?.launchers[0], [workspace, launcherId]);
-  const project = useMemo(() => workspace?.projects.find((known) => known.id === projectId) ?? workspace?.projects[0], [workspace, projectId]);
+  const launcher = useMemo(
+    () => workspace?.launchers.find((known) => known.id === launcherId) ?? workspace?.launchers[0],
+    [workspace, launcherId],
+  );
+  const project = useMemo(
+    () => workspace?.projects.find((known) => known.id === projectId) ?? workspace?.projects[0],
+    [workspace, projectId],
+  );
   const yolo = launcher?.permissionMode === 'bypass' || launcher?.permissionMode === 'bypassPermissions';
   const sendable = Boolean(draft.trim() && launcher && project && live.status === 'open' && !starting);
 
@@ -93,7 +115,12 @@ export default function NewChat() {
         </View>
         <SafeAreaView edges={typing ? [] : ['bottom']} style={styles.wrap}>
           {project ? (
-            <Pressable style={styles.strip} onPress={() => setSheet('project')} disabled={Boolean(started)} accessibilityRole="button" accessibilityLabel="Project">
+            <Pressable
+              style={styles.strip}
+              onPress={() => setSheet('project')}
+              disabled={Boolean(started)}
+              accessibilityRole="button"
+              accessibilityLabel="Project">
               <Icon name="IconFolder" size={13} color={colors.live} />
               <Text style={styles.stripName}>{project.name}</Text>
               <View style={{ transform: [{ rotate: '90deg' }] }}>
@@ -109,7 +136,12 @@ export default function NewChat() {
                 <Text style={[styles.yoloText, yolo && { color: colors.accent }]}>{yolo ? 'yolo' : 'safe'}</Text>
               </View>
               {launcher ? (
-                <Pressable style={styles.picker} onPress={() => setSheet('agent')} disabled={Boolean(started)} accessibilityRole="button" accessibilityLabel="Agent">
+                <Pressable
+                  style={styles.picker}
+                  onPress={() => setSheet('agent')}
+                  disabled={Boolean(started)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Agent">
                   <AgentIcon provider={launcher.provider} size={16} />
                   <Text style={styles.pickerText}>{launcher.label}</Text>
                   <View style={{ transform: [{ rotate: '90deg' }], opacity: 0.6 }}>
@@ -157,7 +189,15 @@ export default function NewChat() {
 
 const makeStyles = (colors: Palette) => {
   return StyleSheet.create({
-    welcome: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 28, borderTopWidth: 1, borderTopColor: colors.border },
+    welcome: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 12,
+      paddingHorizontal: 28,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+    },
     welcomeTitle: { fontFamily: fonts.uiSemibold, fontSize: 20, letterSpacing: -0.55, color: colors.ink },
     problem: { fontFamily: fonts.ui, fontSize: 13.5, color: colors.danger, textAlign: 'center' },
     wrap: { paddingHorizontal: 10, paddingTop: 8, paddingBottom: 6 },
@@ -186,7 +226,17 @@ const makeStyles = (colors: Palette) => {
     send: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
 
     agents: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-    agent: { width: '23.6%', height: 66, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.raised, alignItems: 'center', justifyContent: 'center', gap: 6 },
+    agent: {
+      width: '23.6%',
+      height: 66,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.raised,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+    },
     agentOn: { backgroundColor: colors.active, borderColor: colors.borderStrong },
     agentText: { fontFamily: fonts.ui, fontSize: 12, color: colors.tertiary },
   });

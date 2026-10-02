@@ -51,7 +51,13 @@ export function ForgetSheet({ device, visible, onClose }: { device: PairedDevice
           use it again, pair with its code.
         </Text>
         {problem ? <Text style={styles.problem}>{problem}</Text> : null}
-        <Button kind="danger" title={forgetting ? 'Forgetting…' : 'Forget this Mac'} onPress={leave} disabled={forgetting} style={styles.button} />
+        <Button
+          kind="danger"
+          title={forgetting ? 'Forgetting…' : 'Forget this Mac'}
+          onPress={leave}
+          disabled={forgetting}
+          style={styles.button}
+        />
       </View>
     </Sheet>
   );

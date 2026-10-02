@@ -39,7 +39,8 @@ function ToolRow({ part, last, untimed }: { part: ToolPart; last: boolean; untim
   const { icon, color } = look(kind, colors);
   const failed = part.tool.status === 'failed';
   const running = toolRunning(part.tool);
-  const spent = !untimed && part.startedAt && part.endedAt && part.endedAt > part.startedAt ? durationLabel(part.endedAt - part.startedAt) : null;
+  const spent =
+    !untimed && part.startedAt && part.endedAt && part.endedAt > part.startedAt ? durationLabel(part.endedAt - part.startedAt) : null;
   return (
     <View style={styles.tool}>
       <View style={last ? styles.elbow : styles.spine} />
@@ -52,7 +53,8 @@ function ToolRow({ part, last, untimed }: { part: ToolPart; last: boolean; untim
       <View style={styles.toolEnd}>
         {part.diff ? (
           <Text style={styles.endText}>
-            <Text style={{ color: colors.gitAdded }}>+{part.diff.adds}</Text> <Text style={{ color: colors.gitDeleted }}>−{part.diff.dels}</Text>
+            <Text style={{ color: colors.gitAdded }}>+{part.diff.adds}</Text>{' '}
+            <Text style={{ color: colors.gitDeleted }}>−{part.diff.dels}</Text>
           </Text>
         ) : null}
         {!part.diff && spent ? <Text style={styles.endText}>{spent}</Text> : null}
@@ -75,7 +77,12 @@ function ToolGroup({ parts, untimed }: { parts: ToolPart[]; untimed: boolean }) 
   const ended = parts[parts.length - 1]?.endedAt;
   return (
     <View style={styles.tools}>
-      <Pressable onPress={() => setOpen(!open)} style={styles.summary} hitSlop={6} accessibilityRole="button" accessibilityState={{ expanded: open }}>
+      <Pressable
+        onPress={() => setOpen(!open)}
+        style={styles.summary}
+        hitSlop={6}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}>
         <Text style={styles.summaryText}>
           {parts.length} tool call{parts.length === 1 ? '' : 's'}
         </Text>

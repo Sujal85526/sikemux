@@ -183,7 +183,11 @@ export function Backdrop() {
 
   useEffect(() => {
     if (!picture) return;
-    Image.getSize(picture, (width, height) => setAspect(width / height), () => setAspect(undefined));
+    Image.getSize(
+      picture,
+      (width, height) => setAspect(width / height),
+      () => setAspect(undefined),
+    );
   }, [picture]);
 
   useEffect(() => {
@@ -242,7 +246,11 @@ export function Backdrop() {
 
   return (
     <View pointerEvents="none" style={[styles.band, { height: band }]}>
-      <GLView key={`${picture ?? 'grain'}:${colors.ground}:${colors.shaderDot}`} style={[StyleSheet.absoluteFill, { opacity: strength }]} onContextCreate={ready} />
+      <GLView
+        key={`${picture ?? 'grain'}:${colors.ground}:${colors.shaderDot}`}
+        style={[StyleSheet.absoluteFill, { opacity: strength }]}
+        onContextCreate={ready}
+      />
       {/* The Mac masks the field out by the band's end; covering it with the ground does the same on an opaque screen. */}
       <Svg style={StyleSheet.absoluteFill} width="100%" height="100%">
         <Defs>

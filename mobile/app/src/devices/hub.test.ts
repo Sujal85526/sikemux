@@ -22,7 +22,8 @@ class FakeConnection {
 }
 
 function fakeDevice() {
-  const calls: { core: string; listener: CoreListener; settle: (connection: FakeConnection) => void; fail: (error: unknown) => void }[] = [];
+  const calls: { core: string; listener: CoreListener; settle: (connection: FakeConnection) => void; fail: (error: unknown) => void }[] =
+    [];
   const device = {
     connect: vi.fn(
       (core: string, listener: CoreListener) =>
@@ -34,7 +35,12 @@ function fakeDevice() {
   return { device, calls };
 }
 
-const VIEW = { workspace: { projects: [], launchers: [], palette: new Map(), backdrop: { texture: false } }, sessions: [], chats: [], attentions: [] };
+const VIEW = {
+  workspace: { projects: [], launchers: [], palette: new Map(), backdrop: { texture: false } },
+  sessions: [],
+  chats: [],
+  attentions: [],
+};
 
 let hub: Hub;
 let fake: ReturnType<typeof fakeDevice>;

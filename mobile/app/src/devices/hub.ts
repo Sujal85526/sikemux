@@ -185,9 +185,7 @@ async function connect(core: string, found: Entry) {
   set(found, { status: 'open', connection, snapshot: found.live.snapshot });
   connection
     .host()
-    .then((host) =>
-      updateDevice(core, { name: host.name, model: host.model, channel: channelName(host.channel), lastSeen: Date.now() }),
-    )
+    .then((host) => updateDevice(core, { name: host.name, model: host.model, channel: channelName(host.channel), lastSeen: Date.now() }))
     .then(reloadDevices)
     .catch(() => {});
 }

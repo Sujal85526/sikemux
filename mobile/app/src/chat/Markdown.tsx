@@ -178,14 +178,14 @@ function Parsed({ settled, tail, style }: { settled: string; tail: string; style
 
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
-  stack: { gap: 10 },
-  chip: { fontFamily: fonts.mono, fontSize: 13, color: colors.accent, backgroundColor: colors.accentSoft },
-  bold: { fontFamily: fonts.uiSemibold, color: colors.ink },
-  link: { color: colors.accent },
-  item: { flexDirection: 'row', gap: 8, paddingLeft: 2 },
-  marker: { color: colors.tertiary, minWidth: 14 },
-  code: { borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.sunken },
-  codeText: { fontFamily: fonts.mono, fontSize: 12, lineHeight: 18, color: colors.ink },
-});
+    stack: { gap: 10 },
+    chip: { fontFamily: fonts.mono, fontSize: 13, color: colors.accent, backgroundColor: colors.accentSoft },
+    bold: { fontFamily: fonts.uiSemibold, color: colors.ink },
+    link: { color: colors.accent },
+    item: { flexDirection: 'row', gap: 8, paddingLeft: 2 },
+    marker: { color: colors.tertiary, minWidth: 14 },
+    code: { borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.sunken },
+    codeText: { fontFamily: fonts.mono, fontSize: 12, lineHeight: 18, color: colors.ink },
+  });
 
 type Styles = ReturnType<typeof makeStyles>;

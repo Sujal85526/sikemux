@@ -3,12 +3,7 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
-import {
-  Figtree_400Regular,
-  Figtree_400Regular_Italic,
-  Figtree_500Medium,
-  Figtree_600SemiBold,
-} from '@expo-google-fonts/figtree';
+import { Figtree_400Regular, Figtree_400Regular_Italic, Figtree_500Medium, Figtree_600SemiBold } from '@expo-google-fonts/figtree';
 import { JetBrainsMono_400Regular } from '@expo-google-fonts/jetbrains-mono';
 
 import { useColors } from '@/ui/theme';

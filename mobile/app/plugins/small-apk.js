@@ -37,7 +37,9 @@ configurations.all {
     if (!application['meta-data'].some((entry) => entry.$['android:name'] === name)) {
       // Asks Play services to fetch the scanner when the app installs rather than on the first
       // scan, keeping the code-scanner UI expo-camera already asks for.
-      application['meta-data'].push({ $: { 'android:name': name, 'android:value': 'barcode_ui,barcode', 'tools:replace': 'android:value' } });
+      application['meta-data'].push({
+        $: { 'android:name': name, 'android:value': 'barcode_ui,barcode', 'tools:replace': 'android:value' },
+      });
     }
     return config;
   });
