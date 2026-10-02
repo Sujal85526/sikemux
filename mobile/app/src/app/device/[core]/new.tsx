@@ -9,7 +9,7 @@ import type { LauncherInfo, ProjectInfo } from '@/core/protocol';
 import { useLive } from '@/devices/hub';
 import { ProjectSheet } from '@/devices/ProjectSheet';
 import { AgentIcon, Icon } from '@/ui/Icon';
-import { Nav, Screen, Working } from '@/ui/parts';
+import { Nav, Screen, useKeyboardShown, Working } from '@/ui/parts';
 import { Sheet, SheetLabel } from '@/ui/Sheet';
 import { fonts, type Palette, useColors, useStyles, useType } from '@/ui/theme';
 
@@ -51,6 +51,7 @@ export default function NewChat() {
   const [sheet, setSheet] = useState<'agent' | 'project'>();
   const [starting, setStarting] = useState(false);
   const [problem, setProblem] = useState<string>();
+  const typing = useKeyboardShown();
   const launcher = useMemo(() => workspace?.launchers.find((known) => known.id === launcherId) ?? workspace?.launchers[0], [workspace, launcherId]);
   const project = useMemo(() => workspace?.projects.find((known) => known.id === projectId) ?? workspace?.projects[0], [workspace, projectId]);
   const yolo = launcher?.permissionMode === 'bypass' || launcher?.permissionMode === 'bypassPermissions';
@@ -87,7 +88,7 @@ export default function NewChat() {
           ) : null}
           {problem ? <Text style={styles.problem}>{problem}</Text> : null}
         </View>
-        <SafeAreaView edges={['bottom']} style={styles.wrap}>
+        <SafeAreaView edges={typing ? [] : ['bottom']} style={styles.wrap}>
           {project ? (
             <Pressable style={styles.strip} onPress={() => setSheet('project')} accessibilityRole="button" accessibilityLabel="Project">
               <Icon name="IconFolder" size={13} color={colors.live} />

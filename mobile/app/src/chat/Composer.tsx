@@ -7,7 +7,7 @@ import { toolKind, toolTarget } from '@mac/chat/toolLabels';
 import type { AcpPermissionRequest, ChatState } from '@mac/chat/types';
 import { providerName } from '@/devices/words';
 import { AgentIcon, Icon, isProvider } from '@/ui/Icon';
-import { Track } from '@/ui/parts';
+import { Track, useKeyboardShown } from '@/ui/parts';
 import { Sheet } from '@/ui/Sheet';
 import { ComposerInput } from './ComposerInput';
 import { brand, fonts, type Palette, useColors, useStyles } from '@/ui/theme';
@@ -173,6 +173,7 @@ export function Composer({
   const [focused, setFocused] = useState(false);
   const input = useRef<TextInput>(null);
   const [sheet, setSheet] = useState(false);
+  const typing = useKeyboardShown();
   const configs = sessionConfigs(state.setup);
   const slots = pickerSlots(configs, provider as never);
   const model = current(slots[0]?.config);
@@ -182,7 +183,7 @@ export function Composer({
 
   if (watchOnly) {
     return (
-      <SafeAreaView edges={['bottom']} style={styles.wrap}>
+      <SafeAreaView edges={typing ? [] : ['bottom']} style={styles.wrap}>
         <View style={[styles.composer, styles.watch]}>
           <Icon name="IconEye" size={17} color={colors.inkDim} />
           <Text style={styles.watchText}>Watching. This phone can answer permission requests; the Mac can give it full access.</Text>
@@ -201,7 +202,7 @@ export function Composer({
   };
 
   return (
-    <SafeAreaView edges={['bottom']} style={styles.wrap}>
+    <SafeAreaView edges={typing ? [] : ['bottom']} style={styles.wrap}>
       {request ? <PermissionDock request={request} provider={provider} onAnswer={(option) => onAnswer(request.requestId, option)} /> : null}
       <View style={[styles.composer, focused && { borderColor: colors.borderSelected }]}>
         <ComposerInput

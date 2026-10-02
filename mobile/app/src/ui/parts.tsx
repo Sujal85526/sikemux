@@ -1,7 +1,9 @@
-import { Children, isValidElement, useEffect, useRef, type ReactNode } from 'react';
+import { Children, isValidElement, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Animated,
   Easing,
+  Keyboard,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -20,6 +22,20 @@ import { fonts, type Palette, radius, typeFor, useColors, useStyles, useType, tr
 /** Space under a screen's last content: the system's home bar or gesture bar, then a little air. */
 export function useBottomGap(): number {
   return useSafeAreaInsets().bottom + 12;
+}
+
+/** Whether the keyboard is up; it covers the home bar, so screens drop that gap while it is. */
+export function useKeyboardShown(): boolean {
+  const [shown, setShown] = useState(Keyboard.isVisible());
+  useEffect(() => {
+    const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => setShown(true));
+    const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setShown(false));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+  return shown;
 }
 
 export function Screen({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
