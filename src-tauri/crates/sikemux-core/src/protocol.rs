@@ -464,6 +464,9 @@ pub enum ChatAttachment {
 pub enum ChatState {
     Starting,
     Ready,
+    /// The app has the chat open but its agent is not running: asleep, or it
+    /// failed to start.
+    Stopped,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

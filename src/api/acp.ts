@@ -49,7 +49,7 @@ export interface AcpChat {
     provider: string;
     cwd: string;
     sessionId: string | null;
-    state: "starting" | "ready";
+    state: "starting" | "ready" | "stopped";
     running: boolean;
     pendingPermissions: string[];
     /** The paired device that started it; null when this app did. */

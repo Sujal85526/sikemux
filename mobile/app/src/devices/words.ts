@@ -27,6 +27,7 @@ export function chatTitle(chat: Pick<ChatInfo, 'title' | 'provider'>): string {
 export function chatState(chat: ChatInfo): string {
   if (chat.pendingPermissions.length) return 'Needs input';
   if (chat.asleep) return 'Sleeping';
+  if (chat.state === 'stopped') return 'Stopped';
   if (chat.state === 'starting') return 'Starting…';
   return chat.running ? 'Working' : 'Ready';
 }

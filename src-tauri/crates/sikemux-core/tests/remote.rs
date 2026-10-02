@@ -12,8 +12,8 @@ use sikemux_core::client::{probe, ClientError, ClientEvent, CoreClient};
 use sikemux_core::pairing::{self, PairError, PairingRequest};
 use sikemux_core::protocol::{
     Attention, AttentionKind, BuildIdentity, ChatAttachment, ChatEventKind, ChatLaunch,
-    ChatLauncher, DeviceAccess, Event, LaunchIdentity, ProjectInfo, PublishedChat, RemoteStatus,
-    SessionId, SpawnTarget, TerminalSpawn,
+    ChatLauncher, ChatState, DeviceAccess, Event, LaunchIdentity, ProjectInfo, PublishedChat,
+    RemoteStatus, SessionId, SpawnTarget, TerminalSpawn,
 };
 use sikemux_core::remote::{self, SecretKey};
 use sikemux_core::server::{self, ServerConfig, ServerError};
@@ -618,6 +618,7 @@ async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
     app.publish_chats(vec![
         published(&agent_id, "Fix the replay test", false),
         published("agent-sleepy", "Tidy the docs", true),
+        published("agent-failed", "Try Codex", false),
     ])
     .await
     .expect("publish chats");
@@ -638,6 +639,8 @@ async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
         Some("Tidy the docs")
     );
     assert!(titled("agent-sleepy").asleep);
+    assert_eq!(titled("agent-failed").state, ChatState::Stopped);
+    assert!(!titled("agent-failed").asleep);
 
     let waking = tokio::spawn(async move {
         let woken = client.acp_wake("agent-sleepy".into()).await;
@@ -667,6 +670,8 @@ async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
 
     let refused = client.publish_chats(Vec::new()).await;
     assert!(refusal(refused).contains("only Sikemux on this Mac"));
+    let refused = client.acp_wake("agent-failed".into()).await;
+    assert!(refusal(refused).contains("stopped on the Mac"));
     let refused = client.acp_wake("agent-gone".into()).await;
     assert!(refusal(refused).contains("no longer open"));
 }

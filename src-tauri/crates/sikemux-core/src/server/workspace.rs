@@ -83,7 +83,7 @@ impl Workspaces {
     }
 
     /// The running chats under the app's names, which include the agent's own
-    /// unless the person renamed the chat, then the ones the app put to sleep.
+    /// unless the person renamed the chat, then the app's chats that are not running.
     pub(crate) fn listed(&self, mut running: Vec<ChatInfo>) -> Vec<ChatInfo> {
         let published = self.lock();
         for chat in &mut running {
@@ -96,10 +96,9 @@ impl Workspaces {
                 chat.title = title;
             }
         }
-        let asleep: Vec<ChatInfo> = published
+        let stopped: Vec<ChatInfo> = published
             .chats
             .iter()
-            .filter(|chat| chat.asleep)
             .filter(|chat| !running.iter().any(|live| live.agent_id == chat.agent_id))
             .map(|chat| ChatInfo {
                 agent_id: chat.agent_id.clone(),
@@ -107,7 +106,7 @@ impl Workspaces {
                 title: chat.title.clone(),
                 cwd: chat.cwd.clone(),
                 session_id: None,
-                state: ChatState::Ready,
+                state: ChatState::Stopped,
                 running: false,
                 pending_permissions: Vec::new(),
                 started_by: None,
@@ -115,18 +114,20 @@ impl Workspaces {
                 permission_mode: String::new(),
                 model: None,
                 effort: None,
-                asleep: true,
+                asleep: chat.asleep,
             })
             .collect();
-        running.extend(asleep);
+        running.extend(stopped);
         running
     }
 
-    fn asleep(&self, agent_id: &str) -> bool {
+    /// Whether the app has the chat open, and if so whether it is asleep.
+    fn published(&self, agent_id: &str) -> Option<bool> {
         self.lock()
             .chats
             .iter()
-            .any(|chat| chat.asleep && chat.agent_id == agent_id)
+            .find(|chat| chat.agent_id == agent_id)
+            .map(|chat| chat.asleep)
     }
 
     pub(crate) fn view(&self) -> Workspace {
@@ -214,8 +215,14 @@ pub(crate) async fn wake_chat(core: &Arc<Core>, agent_id: String) -> CoreResult<
     if running(core, &agent_id) {
         return Ok(Response::Done);
     }
-    if !core.workspaces.asleep(&agent_id) {
-        return Err("that chat is no longer open in Sikemux on this Mac".into());
+    match core.workspaces.published(&agent_id) {
+        None => return Err("that chat is no longer open in Sikemux on this Mac".into()),
+        Some(false) => {
+            return Err(
+                "this chat stopped on the Mac; open it in Sikemux there to start it again".into(),
+            )
+        }
+        Some(true) => {}
     }
     if !core.has_local_client() {
         return Err("open Sikemux on the Mac to wake this chat".into());

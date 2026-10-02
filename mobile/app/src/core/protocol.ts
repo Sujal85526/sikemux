@@ -19,7 +19,7 @@ export type ChatInfo = {
   provider: string;
   title: string | null;
   cwd: string;
-  state: 'starting' | 'ready';
+  state: 'starting' | 'ready' | 'stopped';
   running: boolean;
   pendingPermissions: string[];
   permissionMode: string;

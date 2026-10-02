@@ -546,7 +546,11 @@ async fn run_requests(
                 client.respond(
                     request_id,
                     Ok(Response::Chats {
-                        chats: core.workspaces.listed(core.chats.list()),
+                        chats: if client.peer.is_local() {
+                            core.chats.list()
+                        } else {
+                            core.workspaces.listed(core.chats.list())
+                        },
                     }),
                 );
             }
