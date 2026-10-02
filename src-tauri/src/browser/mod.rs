@@ -776,6 +776,12 @@ impl BrowserManager {
                 })
                 .collect()
         };
+        if !views.is_empty() {
+            eprintln!(
+                "Sikemux closed {} browser tab(s) with agent {agent_id}",
+                views.len()
+            );
+        }
         for view in views {
             drop_view(view);
         }
@@ -1014,12 +1020,15 @@ impl BrowserManager {
         }
     }
 
-    pub fn drain(&self) {
+    pub fn drain(&self, why: &str) {
         let views: Vec<Webview> = self
             .lock()
             .drain()
             .flat_map(|(_, agent)| agent.views.into_values())
             .collect();
+        if !views.is_empty() {
+            eprintln!("Sikemux closed {} browser tab(s): {why}", views.len());
+        }
         for view in views {
             drop_view(view);
         }

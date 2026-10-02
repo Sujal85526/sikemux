@@ -156,7 +156,7 @@ pub fn run() {
                     harness.fail_all("Sikemux's window closed before it answered");
                 }
                 if let Some(browser) = window.try_state::<BrowserManager>() {
-                    browser.drain();
+                    browser.drain("the window closed");
                 }
                 if let Some(plugins) = window.try_state::<PluginHost>() {
                     plugins.drain();
@@ -189,7 +189,7 @@ pub fn run() {
                     harness.fail_all("Sikemux's window reloaded before it answered");
                 }
                 if let Some(browser) = webview.try_state::<BrowserManager>() {
-                    browser.drain();
+                    browser.drain(&format!("the window started loading {}", payload.url()));
                 }
                 if let Some(plugins) = webview.try_state::<PluginHost>() {
                     plugins.drain();
@@ -484,7 +484,7 @@ pub fn run() {
                     mgr.release();
                 }
                 if let Some(browser) = app_handle.try_state::<BrowserManager>() {
-                    browser.drain();
+                    browser.drain("Sikemux is quitting");
                 }
                 if let Some(plugins) = app_handle.try_state::<PluginHost>() {
                     plugins.drain();
