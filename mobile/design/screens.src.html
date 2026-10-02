@@ -241,6 +241,8 @@
   .send { width: 34px; height: 34px; border-radius: 999px; background: var(--ink); color: var(--bg); display: grid; place-items: center; flex: none; }
   .send.off { opacity: .28; }
   .send i { width: 10px; height: 10px; border-radius: 2px; background: currentColor; display: block; }
+  .composer-wrap.jumps { position: relative; }
+  .jump { position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%); width: 34px; height: 34px; border-radius: 999px; display: grid; place-items: center; border: 1px solid var(--border); background: color-mix(in oklab, var(--surface-raised) 55%, var(--surface-sunken)); color: var(--ink-dim); box-shadow: 0 6px 18px rgba(0,0,0,.52); }
 
   /* ---------- sheet ---------- */
   .scrim { position: absolute; inset: 0; background: color-mix(in oklab, var(--surface-sunken) 62%, transparent); }
@@ -1032,6 +1034,37 @@
       </div>
       <div class="home-bar"></div></div>
       <figcaption><b>Writing</b><div class="note">Focus edges the composer in the selection colour, and the stop square becomes the Mac's up arrow. Return makes a new line; the arrow sends.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span>Fix the flaky PTY replay test</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border);justify-content:flex-start">
+          <div class="prose">The channel could deliver bytes already inside the attach snapshot, so the first write landed twice whenever the channel won the race.</div>
+          <div class="msg-user">Good. Run the whole terminal suite, then commit it.</div>
+          <div class="thought">Running every terminal test before the commit, since the change touches attach and detach.</div>
+          <div class="tools"><span class="tools-sum">3 tool calls <span class="time">7s</span>{{IconChevron:11}}</span></div>
+          <div class="prose">All 214 terminal tests pass. The fix keeps channel output back until the snapshot is written, then lets it through in order.</div>
+        </div>
+        <div class="composer-wrap jumps">
+          <span class="jump">{{IconArrowDown:16}}</span>
+          <div class="composer">
+            <div class="ta ph">Send to queue behind the running turn</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">Medium<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="ib">{{IconMic:17}}</span>
+              <span class="send"><i></i></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Reading back</b><div class="note">Scrolled up, the transcript holds still while the agent keeps writing below. A round arrow sits just above the composer, as on the Mac, and takes you back to the latest message. Near the end, new lines follow on their own. Text can be selected, and links open in the browser.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
