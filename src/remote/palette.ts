@@ -32,6 +32,10 @@ export const PALETTE_TOKENS: Readonly<Record<string, string>> = {
     gitModified: "var(--git-modified)",
     gitDeleted: "var(--git-deleted)",
     gitRenamed: "var(--git-renamed)",
+    toolRead: "color-mix(in oklab, var(--git-renamed) 76%, var(--ink-dim))",
+    toolEdit: "color-mix(in oklab, var(--git-modified) 76%, var(--ink-dim))",
+    toolDelete: "color-mix(in oklab, var(--git-deleted) 76%, var(--ink-dim))",
+    toolRun: "color-mix(in oklab, var(--cmd) 70%, var(--ink-dim))",
 };
 
 function hex(part: number): string {

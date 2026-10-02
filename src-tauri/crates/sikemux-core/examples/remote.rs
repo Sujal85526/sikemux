@@ -7,6 +7,7 @@
 //!   remote mac <socket> publish            offers the fake agent to devices
 //!   remote mac <socket> chat [prompt]      starts a chat with it
 //!   remote mac <socket> say <agent> <text>
+//!   remote mac <socket> palette <name=colour>…  publishes theme colours
 //!   remote mac <socket> chats              lists the chats running on the core
 //!   remote mac <socket> sleepy             lists a sleeping chat and wakes it when asked
 //! As a device, keeping its key in `<key-file>`:
@@ -39,6 +40,7 @@ async fn main() -> Result<(), Failure> {
         ["mac", socket, "say", agent, text @ ..] => say(Path::new(socket), agent, &text.join(" ")).await,
         ["mac", socket, "sleepy"] => sleepy(Path::new(socket)).await,
         ["mac", socket, "chats"] => chats(Path::new(socket)).await,
+        ["mac", socket, "palette", colours @ ..] => palette(Path::new(socket), colours).await,
         ["mac", socket, action] => mac(Path::new(socket), action).await,
         ["device", key, "pair", core, code] => pair(Path::new(key), core, code).await,
         ["device", key, "sessions", core] => sessions(Path::new(key), core).await,
@@ -126,6 +128,18 @@ async fn chat(socket: &Path, prompt: &str) -> Result<(), Failure> {
             .acp_prompt(agent, prompt.into(), Vec::new(), Vec::new())
             .await?;
     }
+    Ok(())
+}
+
+async fn palette(socket: &Path, colours: &[&str]) -> Result<(), Failure> {
+    let (client, _events) = CoreClient::connect(socket).await?;
+    let palette = colours
+        .iter()
+        .filter_map(|pair| pair.split_once('='))
+        .map(|(name, colour)| (name.to_owned(), colour.to_owned()))
+        .collect();
+    client.publish_palette(palette).await?;
+    println!("published the palette");
     Ok(())
 }
 
