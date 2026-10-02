@@ -60,7 +60,6 @@ import {
 import { notify, reportError, swallow } from "./state/toast";
 import { confirmDialog } from "./state/dialog";
 import { invalidate } from "./state/resources";
-import { selectFocusMode } from "./state/selectors";
 import { getState, useStore } from "./state/store";
 import { applyTheme, applyWindowOpacity, registerCustomThemes } from "./themes/bus";
 import { applyTerminalFontSize } from "./terminal/fontSize";
@@ -696,7 +695,6 @@ export default function App() {
     useRailWidthVars();
     const [bootReady, setBootReady] = useState(false);
     const [bootIssue, setBootIssue] = useState<string | null>(null);
-    const zen = useStore(selectFocusMode);
     const sideRailVisible = useStore((s) => s.sideRailOpen);
     const agentRailVisible = useStore((s) => s.agentRailOpen);
     const activeSessionIsProject = useStore((s) => s.sessions[s.activeSessionId]?.kind === "project");
@@ -975,7 +973,7 @@ export default function App() {
             <div className="body">
                 {sideRailVisible && <SideRail />}
                 {sideRailVisible && <RailResizer edge="start" />}
-                {!sideRailVisible && !zen && (
+                {!sideRailVisible && (
                     <RailPeek edge="start">
                         <SideRail />
                     </RailPeek>
@@ -990,7 +988,7 @@ export default function App() {
                 </main>
                 {agentRailVisible && activeSessionIsProject && <AgentRail />}
                 {agentRailVisible && activeSessionIsProject && <RailResizer edge="end" />}
-                {!agentRailVisible && !zen && activeSessionIsProject && (
+                {!agentRailVisible && activeSessionIsProject && (
                     <RailPeek edge="end">
                         <AgentRail />
                     </RailPeek>
