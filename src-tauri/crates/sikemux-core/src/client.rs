@@ -24,10 +24,10 @@ use crate::protocol::frozen::{FrozenReply, FrozenRequest};
 use crate::protocol::{
     decode_output, decode_snapshot, encode_control, encode_frozen, encode_input, read_frame,
     read_frame_sync, Attention, BackdropImage, BuildIdentity, CallId, ChatAttachment, ChatContext,
-    ChatInfo, ChatLaunch, ChatLauncher, ChatStart, ClientMessage, DeviceAccess, Event, FrameKind,
-    LaunchIdentity, ProjectInfo, PublishedChat, RemoteStatus, Request, RequestId, Response,
-    RunSelector, ServerMessage, SessionId, SessionInfo, SpawnTarget, WindowAnswer, WindowCall,
-    Workspace, MAX_FRAME_BYTES, PROTOCOL, PROTOCOL_VERSION,
+    ChatInfo, ChatLaunch, ChatLauncher, ChatMark, ChatStart, ClientMessage, DeviceAccess, Event,
+    FrameKind, LaunchIdentity, ProjectInfo, PublishedChat, RemoteStatus, Request, RequestId,
+    Response, RunSelector, ServerMessage, SessionId, SessionInfo, SpawnTarget, WindowAnswer,
+    WindowCall, Workspace, MAX_FRAME_BYTES, PROTOCOL, PROTOCOL_VERSION,
 };
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -51,6 +51,8 @@ pub enum ClientError {
     Core(String),
     #[error("the connection to the Sikemux core closed")]
     Disconnected,
+    #[error("this device is no longer paired with this Mac")]
+    NotPaired,
     #[error("the Sikemux core sent a reply of the wrong kind")]
     UnexpectedReply,
     #[error("could not encode a message for the Sikemux core: {0}")]
@@ -116,14 +118,12 @@ pub struct CoreClient {
     pending: Pending,
     next_request: AtomicU64,
     hello: CoreHello,
-    tasks: [JoinHandle<()>; 2],
+    reader: JoinHandle<()>,
 }
 
 impl Drop for CoreClient {
     fn drop(&mut self) {
-        for task in &self.tasks {
-            task.abort();
-        }
+        self.reader.abort();
     }
 }
 
@@ -230,12 +230,15 @@ impl CoreClient {
 
         let pending: Pending = Arc::new(Mutex::new(Some(HashMap::new())));
         let (outgoing, mut outgoing_queue) = mpsc::unbounded_channel::<Vec<u8>>();
-        let writer = tokio::spawn(async move {
+        // Outlives the client, so what it queued before it was dropped still
+        // reaches the core.
+        tokio::spawn(async move {
             while let Some(frame) = outgoing_queue.recv().await {
                 if write_half.write_all(&frame).await.is_err() {
                     return;
                 }
             }
+            let _ = write_half.shutdown().await;
         });
         let reader_pending = pending.clone();
         let reader = tokio::spawn(async move {
@@ -250,7 +253,7 @@ impl CoreClient {
             pending,
             next_request: AtomicU64::new(1),
             hello,
-            tasks: [reader, writer],
+            reader,
         })
     }
 
@@ -263,7 +266,7 @@ impl CoreClient {
     }
 
     pub fn is_connected(&self) -> bool {
-        !self.tasks[0].is_finished()
+        !self.reader.is_finished()
     }
 
     fn queue(
@@ -527,10 +530,25 @@ impl CoreClient {
     /// Takes up a running chat. Its live events follow the replay on the
     /// event stream.
     pub async fn acp_attach(&self, agent_id: String) -> Result<ChatAttachment, ClientError> {
-        match self.request(Request::AcpAttach { agent_id }).await? {
+        self.acp_attach_since(agent_id, None).await
+    }
+
+    /// Takes the chat up again from `since`, hearing only what was missed
+    /// when the core still has it.
+    pub async fn acp_attach_since(
+        &self,
+        agent_id: String,
+        since: Option<ChatMark>,
+    ) -> Result<ChatAttachment, ClientError> {
+        match self.request(Request::AcpAttach { agent_id, since }).await? {
             Response::ChatAttached { attachment } => Ok(attachment),
             _ => Err(ClientError::UnexpectedReply),
         }
+    }
+
+    /// No more of the chat's events reach this client.
+    pub async fn acp_detach(&self, agent_id: String) -> Result<(), ClientError> {
+        self.request_done(Request::AcpDetach { agent_id }).await
     }
 
     pub async fn acp_list(&self) -> Result<Vec<ChatInfo>, ClientError> {
@@ -767,6 +785,13 @@ impl CoreClient {
     }
 }
 
+fn unreadable_reply(payload: &[u8]) -> Option<RequestId> {
+    serde_json::from_slice::<serde_json::Value>(payload)
+        .ok()?
+        .get("requestId")?
+        .as_u64()
+}
+
 fn dispatch(frame: crate::protocol::Frame, pending: &Pending, sink: &dyn EventSink) {
     let resolve = |request_id: RequestId, reply: Result<Reply, ClientError>| {
         let waiter = pending
@@ -807,7 +832,13 @@ fn dispatch(frame: crate::protocol::Frame, pending: &Pending, sink: &dyn EventSi
             }) => resolve(request_id, Err(ClientError::Core(message))),
             Ok(ServerMessage::Event { event }) => sink.event(event),
             Ok(ServerMessage::WindowCall { call_id, call }) => sink.window_call(call_id, call),
-            _ => {}
+            Ok(_) => {}
+            // A reply this client cannot read still ends the wait for it.
+            Err(_) => {
+                if let Some(request_id) = unreadable_reply(&frame.payload) {
+                    resolve(request_id, Err(ClientError::UnexpectedReply));
+                }
+            }
         },
         FrameKind::Input | FrameKind::Frozen => {}
     }

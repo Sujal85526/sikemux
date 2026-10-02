@@ -10,10 +10,11 @@ use std::time::Duration;
 use serde_json::{json, Value};
 
 use crate::protocol::{
-    encode_control, ChatAttachment, ChatEvent, ChatEventKind, ChatStart, Event, RequestId,
-    Response, ServerMessage,
+    encode_control, fits, ChatAttachment, ChatEvent, ChatEventKind, ChatMark, ChatStart, Event,
+    RequestId, Response, ServerMessage,
 };
 
+use super::super::access::Peer;
 use super::super::connection::{ClientConn, ClientId};
 
 /// One frame's worth of streamed updates travels as a single event. Each
@@ -24,6 +25,10 @@ pub(crate) const MAX_REPLAY_BYTES: usize = 8 * 1024 * 1024;
 pub(crate) const MAX_REPLAY_EVENTS: usize = 20_000;
 /// Roughly what an event costs beyond its payload once it is on the wire.
 const EVENT_OVERHEAD: usize = 48;
+/// The events kept as sent, for a client that reconnects to hear only what
+/// it missed. Past this it rebuilds the chat from the replay.
+const MAX_RECENT_BYTES: usize = 1024 * 1024;
+const MAX_RECENT_EVENTS: usize = 4096;
 
 struct Entry {
     event: ChatEvent,
@@ -197,6 +202,52 @@ impl Replay {
     }
 }
 
+/// One event as clients heard it.
+struct Sent {
+    seq: u64,
+    event: ChatEvent,
+    bytes: usize,
+    /// Who sent it, when it is a prompt the sender was not told of.
+    sender: Option<Peer>,
+}
+
+/// The newest events as sent, numbered, so a client that held everything
+/// up to some number can be told just the rest.
+#[derive(Default)]
+struct Recent {
+    sent: VecDeque<Sent>,
+    bytes: usize,
+    /// Every event after this number is still kept.
+    kept_after: u64,
+}
+
+impl Recent {
+    fn push(&mut self, sent: Sent) {
+        self.bytes += sent.bytes;
+        self.sent.push_back(sent);
+        while self.bytes > MAX_RECENT_BYTES || self.sent.len() > MAX_RECENT_EVENTS {
+            let Some(dropped) = self.sent.pop_front() else {
+                break;
+            };
+            self.bytes -= dropped.bytes;
+            self.kept_after = dropped.seq;
+        }
+    }
+
+    fn since(&self, seq: u64, peer: &Peer) -> Option<Vec<ChatEvent>> {
+        if seq < self.kept_after {
+            return None;
+        }
+        Some(
+            self.sent
+                .iter()
+                .filter(|sent| sent.seq > seq && sent.sender.as_ref() != Some(peer))
+                .map(|sent| sent.event.clone())
+                .collect(),
+        )
+    }
+}
+
 /// What a client attaching now is told about the chat besides its replay.
 pub(crate) struct Standing {
     pub running: bool,
@@ -205,6 +256,8 @@ pub(crate) struct Standing {
 
 struct Inner {
     subscribers: HashMap<ClientId, Arc<ClientConn>>,
+    seq: u64,
+    recent: Recent,
     replay: Replay,
     pending: Vec<Value>,
     flush_scheduled: bool,
@@ -218,6 +271,8 @@ struct Inner {
 
 pub(crate) struct Feed {
     agent_id: String,
+    /// Names this run of the chat's agent in the marks clients hold.
+    id: String,
     runtime: tokio::runtime::Handle,
     inner: Mutex<Inner>,
 }
@@ -226,9 +281,12 @@ impl Feed {
     pub(crate) fn new(agent_id: String, permission_mode: String) -> Arc<Self> {
         Arc::new(Self {
             agent_id,
+            id: uuid::Uuid::new_v4().to_string(),
             runtime: tokio::runtime::Handle::current(),
             inner: Mutex::new(Inner {
                 subscribers: HashMap::new(),
+                seq: 0,
+                recent: Recent::default(),
                 replay: Replay::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS),
                 pending: Vec::new(),
                 flush_scheduled: false,
@@ -244,6 +302,13 @@ impl Feed {
         self.broadcast_except(inner, kind, payload, None);
     }
 
+    fn mark(&self, inner: &Inner) -> ChatMark {
+        ChatMark {
+            feed: self.id.clone(),
+            seq: inner.seq,
+        }
+    }
+
     fn broadcast_except(
         &self,
         inner: &mut Inner,
@@ -251,17 +316,34 @@ impl Feed {
         payload: Value,
         except: Option<ClientId>,
     ) {
-        if inner.subscribers.is_empty() {
-            return;
-        }
+        inner.seq += 1;
+        let seq = inner.seq;
+        let event = ChatEvent { kind, payload };
         let Ok(frame) = encode_control(&ServerMessage::Event {
             event: Event::Chat {
                 agent_id: self.agent_id.clone(),
-                event: ChatEvent { kind, payload },
+                seq,
+                event: event.clone(),
             },
         }) else {
             return;
         };
+        if !fits(&frame) {
+            eprintln!(
+                "sikemux core: a chat event of {} bytes is too large to send",
+                frame.len()
+            );
+            return;
+        }
+        let sender = except
+            .and_then(|id| inner.subscribers.get(&id))
+            .map(|client| client.peer.clone());
+        inner.recent.push(Sent {
+            seq,
+            event,
+            bytes: frame.len(),
+            sender,
+        });
         let frame: Arc<[u8]> = frame.into();
         inner
             .subscribers
@@ -338,32 +420,45 @@ impl Feed {
         }
     }
 
-    /// Answers the client with everything said so far and adds it to the
-    /// listeners in the same step, so it hears every later event exactly once.
+    /// Answers the client with everything said so far, or everything since
+    /// `since`, and adds it to the listeners in the same step, so it hears
+    /// every later event exactly once.
     pub(crate) fn attach(
         &self,
         client: &Arc<ClientConn>,
         request_id: RequestId,
         standing: Standing,
+        since: Option<ChatMark>,
     ) {
         let Ok(mut inner) = self.inner.lock() else {
             client.respond(request_id, Err("chat feed lock poisoned".into()));
             return;
         };
         self.flush_locked(&mut inner);
-        let attachment = match inner.start.clone() {
+        let missed = since
+            .filter(|since| since.feed == self.id && since.seq <= inner.seq)
+            .and_then(|since| inner.recent.since(since.seq, &client.peer));
+        let attachment = match (inner.start.clone(), missed) {
             _ if inner.closed => ChatAttachment::Missing,
-            Some(_) if inner.replay.is_trimmed() => ChatAttachment::Restart,
-            Some(start) => ChatAttachment::Live {
+            (Some(_), Some(events)) => ChatAttachment::Resumed {
+                events,
+                mark: self.mark(&inner),
+            },
+            (Some(_), None) if inner.replay.is_trimmed() => ChatAttachment::Restart,
+            (Some(start), None) => ChatAttachment::Live {
                 start: Box::new(start),
                 permission_mode: inner.permission_mode.clone(),
                 running: standing.running,
                 turned: standing.turned,
                 replay: inner.replay.events(),
+                mark: self.mark(&inner),
             },
-            None => ChatAttachment::Missing,
+            (None, _) => ChatAttachment::Missing,
         };
-        let live = matches!(attachment, ChatAttachment::Live { .. });
+        let live = matches!(
+            attachment,
+            ChatAttachment::Live { .. } | ChatAttachment::Resumed { .. }
+        );
         client.respond(request_id, Ok(Response::ChatAttached { attachment }));
         if live {
             inner.subscribers.insert(client.id, client.clone());

@@ -311,6 +311,7 @@ async fn a_client_that_attaches_replays_what_another_watched() {
         turned,
         replay,
         permission_mode,
+        ..
     } = late.acp_attach("agent-b".into()).await.expect("attach")
     else {
         panic!("the chat was not live");

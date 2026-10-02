@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use iroh::endpoint::{Connection, SendStream};
+use tokio::sync::Semaphore;
 
 use crate::pairing::{self, PairMessage, APPROVAL_TIMEOUT};
 use crate::protocol::PendingDevice;
@@ -15,6 +16,9 @@ const STEP: Duration = Duration::from_secs(15);
 /// Time for the device to read the last answer before the connection closes.
 const LINGER: Duration = Duration::from_secs(2);
 const NAME_LIMIT: usize = 64;
+/// Pairing connections answered at once. One person pairs one device at a
+/// time; anything past this is turned away before it costs anything.
+static IN_PROGRESS: Semaphore = Semaphore::const_new(4);
 const PLATFORM_LIMIT: usize = 16;
 const NO_CODE: &str =
     "No pairing code is open on this Mac. Open Settings, then Devices, and choose Pair a device.";
@@ -44,6 +48,10 @@ async fn refuse(writer: &mut SendStream, connection: &Connection, message: &str)
 }
 
 pub(super) async fn serve(core: Arc<Core>, connection: Connection) {
+    let Ok(_slot) = IN_PROGRESS.try_acquire() else {
+        connection.close(0u32.into(), b"busy");
+        return;
+    };
     let device_id = connection.remote_id().to_string();
     let Ok(Ok((mut writer, mut reader))) = tokio::time::timeout(STEP, connection.accept_bi()).await
     else {

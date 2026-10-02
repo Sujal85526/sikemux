@@ -21,7 +21,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 use crate::acp::{adapter_effort_id, bounded_text, current_choice, native};
 use crate::protocol::{
     Attention, AttentionKind, ChatAttachment, ChatContext, ChatEventKind, ChatInfo, ChatLaunch,
-    ChatStart, ChatState, Event, RequestId, Response,
+    ChatMark, ChatStart, ChatState, Event, RequestId, Response,
 };
 
 use super::connection::{ClientConn, ClientId};
@@ -598,6 +598,7 @@ pub(crate) async fn attach(
     client: &Arc<ClientConn>,
     request_id: RequestId,
     agent_id: &str,
+    since: Option<ChatMark>,
 ) {
     let missing = || {
         client.respond(
@@ -625,7 +626,14 @@ pub(crate) async fn attach(
             running: chat.turn_running(),
             turned: chat.turned.load(Ordering::Acquire),
         },
+        since,
     );
+}
+
+pub(crate) fn detach(core: &Core, client: ClientId, agent_id: &str) {
+    if let Some(chat) = core.chats.get(agent_id) {
+        chat.feed.unsubscribe(client);
+    }
 }
 
 pub(crate) fn prompt(

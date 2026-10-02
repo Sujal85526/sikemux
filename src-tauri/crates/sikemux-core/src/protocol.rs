@@ -268,8 +268,15 @@ pub enum Request {
         launch: Box<ChatLaunch>,
     },
     /// Takes up a chat agent the core already runs: the answer replays what
-    /// it said so far, and its events follow.
+    /// it said so far, and its events follow. A client that watched the chat
+    /// before passes where it got to, and hears only what it missed when the
+    /// core still has that.
     AcpAttach {
+        agent_id: String,
+        since: Option<ChatMark>,
+    },
+    /// Stops the chat's events reaching this client.
+    AcpDetach {
         agent_id: String,
     },
     AcpList,
@@ -452,6 +459,14 @@ pub struct ChatEvent {
     pub payload: Value,
 }
 
+/// The last of a chat's events a client heard. `feed` changes whenever the
+/// chat's agent starts again, which starts `seq` over.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatMark {
+    pub feed: String,
+    pub seq: u64,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(
     tag = "status",
@@ -461,6 +476,7 @@ pub struct ChatEvent {
 pub enum ChatAttachment {
     /// `replay` holds what the agent said since its session started or
     /// loaded, in order, so a client rebuilds the chat as if it had watched.
+    /// Live events follow, numbered from `mark.seq + 1`.
     Live {
         start: Box<ChatStart>,
         permission_mode: String,
@@ -468,6 +484,13 @@ pub enum ChatAttachment {
         /// A turn has run in this session, so the provider keeps it.
         turned: bool,
         replay: Vec<ChatEvent>,
+        mark: ChatMark,
+    },
+    /// The events the client missed since the mark it attached with, except
+    /// the prompts it sent itself. Live events follow `mark`.
+    Resumed {
+        events: Vec<ChatEvent>,
+        mark: ChatMark,
     },
     Missing,
     /// The session said more than the core keeps, so the client starts it
@@ -945,16 +968,24 @@ pub enum Event {
     },
     AgentState(AgentStateEvent),
     /// Sent only to the clients that started or attached to the chat.
+    /// `seq` counts the chat's events, so a client can tell which ones the
+    /// attach answer already held.
     Chat {
         agent_id: String,
+        seq: u64,
         event: ChatEvent,
+    },
+    /// Sent only to paired devices: what they show of this Mac, whole, when
+    /// they connect and whenever any of it changes.
+    DeviceView {
+        view: DeviceView,
     },
     /// Sent only to clients on this Mac.
     Remote {
         status: RemoteStatus,
     },
-    /// An agent started waiting on a person. Every client hears it, whether
-    /// or not it shows that agent.
+    /// An agent started waiting on a person. Every client on this Mac hears
+    /// it, whether or not it shows that agent; devices see it in their view.
     Attention {
         attention: Attention,
     },
@@ -973,6 +1004,15 @@ pub enum Event {
         id: String,
         agent_id: String,
     },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceView {
+    pub workspace: Workspace,
+    pub sessions: Vec<SessionInfo>,
+    pub chats: Vec<ChatInfo>,
+    pub attentions: Vec<Attention>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1098,9 +1138,15 @@ pub fn decode_snapshot(payload: &[u8]) -> Option<(RequestId, SessionId, AttachHe
     Some((request_id, id, header, replay))
 }
 
-fn frame_length(header: [u8; 4]) -> io::Result<usize> {
+/// Whether a frame from [`encode_frame`] is small enough for the other side
+/// to read.
+pub fn fits(frame: &[u8]) -> bool {
+    frame.len() <= MAX_FRAME_BYTES + 5
+}
+
+fn frame_length(header: [u8; 4], max_payload: usize) -> io::Result<usize> {
     let length = u32::from_be_bytes(header) as usize;
-    if length == 0 || length > MAX_FRAME_BYTES + 1 {
+    if length == 0 || length > max_payload + 1 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!("frame length {length} is out of range"),
@@ -1129,7 +1175,7 @@ pub fn read_frame_sync<R: Read>(reader: &mut R) -> io::Result<Option<Frame>> {
         Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
         Err(error) => return Err(error),
     }
-    let mut body = vec![0u8; frame_length(header)?];
+    let mut body = vec![0u8; frame_length(header, MAX_FRAME_BYTES)?];
     reader.read_exact(&mut body)?;
     split_frame(body).map(Some)
 }
@@ -1138,6 +1184,15 @@ pub fn read_frame_sync<R: Read>(reader: &mut R) -> io::Result<Option<Frame>> {
 pub async fn read_frame<R: tokio::io::AsyncRead + Unpin>(
     reader: &mut R,
 ) -> io::Result<Option<Frame>> {
+    read_frame_within(reader, MAX_FRAME_BYTES).await
+}
+
+/// Refuses a frame longer than `max_payload` before allocating room for it.
+#[cfg(unix)]
+pub async fn read_frame_within<R: tokio::io::AsyncRead + Unpin>(
+    reader: &mut R,
+    max_payload: usize,
+) -> io::Result<Option<Frame>> {
     use tokio::io::AsyncReadExt;
     let mut header = [0u8; 4];
     match reader.read_exact(&mut header).await {
@@ -1145,7 +1200,7 @@ pub async fn read_frame<R: tokio::io::AsyncRead + Unpin>(
         Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
         Err(error) => return Err(error),
     }
-    let mut body = vec![0u8; frame_length(header)?];
+    let mut body = vec![0u8; frame_length(header, max_payload)?];
     reader.read_exact(&mut body).await?;
     split_frame(body).map(Some)
 }
@@ -1186,6 +1241,13 @@ mod tests {
         let huge = ((MAX_FRAME_BYTES + 2) as u32).to_be_bytes();
         assert!(read_frame_sync(&mut &huge[..]).is_err());
         assert!(read_frame_sync(&mut &[][..]).unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn a_frame_past_the_reader_s_limit_is_refused_before_it_is_read() {
+        let frame = encode_control(&"x".repeat(100)).unwrap();
+        assert!(read_frame_within(&mut &frame[..], 64).await.is_err());
+        assert!(read_frame_within(&mut &frame[..], 200).await.unwrap().is_some());
     }
 
     #[test]

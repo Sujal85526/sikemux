@@ -36,6 +36,7 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::TaskOutput { .. }
         | Request::AcpList
         | Request::AcpAttach { .. }
+        | Request::AcpDetach { .. }
         | Request::AcpWake { .. }
         | Request::BackdropImage
         | Request::Unpair

@@ -27,7 +27,6 @@ use super::bonjour;
 use super::connection::{blocking, serve_client};
 use super::{Core, CoreError, CoreResult};
 
-const NOT_PAIRED: u32 = 1;
 const OFFER_LIFETIME_MS: u64 = 5 * 60 * 1000;
 /// Wrong codes one pairing code survives before it is withdrawn.
 const OFFER_ATTEMPTS: u8 = 5;
@@ -510,7 +509,7 @@ async fn serve_device(core: Arc<Core>, incoming: Incoming) {
     let id = connection.remote_id().to_string();
     if core.remote.access_of(&id).is_none() {
         connection.close(
-            NOT_PAIRED.into(),
+            crate::remote::NOT_PAIRED.into(),
             b"this device is not paired with this core",
         );
         return;

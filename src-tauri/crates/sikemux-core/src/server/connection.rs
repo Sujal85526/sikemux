@@ -9,8 +9,9 @@ use tokio::net::UnixStream;
 use tokio::sync::{mpsc, Notify};
 
 use crate::protocol::{
-    decode_input, encode_control, read_frame, ClientMessage, FrameKind, LaunchIdentity, Request,
-    RequestId, Response, ServerMessage, SessionId, SpawnTarget, PROTOCOL, PROTOCOL_VERSION,
+    decode_input, encode_control, fits, read_frame, ClientMessage, FrameKind, LaunchIdentity,
+    Request, RequestId, Response, ServerMessage, SessionId, SpawnTarget, PROTOCOL,
+    PROTOCOL_VERSION,
 };
 
 use super::access::{self, Needs, Peer};
@@ -61,8 +62,25 @@ impl ClientConn {
     }
 
     pub(crate) fn send_message(&self, message: &ServerMessage) {
-        if let Ok(frame) = encode_control(message) {
+        let Ok(frame) = encode_control(message) else {
+            return;
+        };
+        if fits(&frame) {
             self.send(frame.into());
+            return;
+        }
+        // The client would drop the connection over a frame it cannot read, and
+        // ask again for the same thing once it reconnects.
+        if let ServerMessage::Response { request_id, .. } = message {
+            self.send_message(&ServerMessage::Error {
+                request_id: Some(*request_id),
+                message: "the answer is larger than a connection to the core carries".into(),
+            });
+        } else {
+            eprintln!(
+                "sikemux core: a message of {} bytes is too large to send",
+                frame.len()
+            );
         }
     }
 
@@ -203,6 +221,9 @@ pub(crate) async fn serve_client(
         subscriptions: Mutex::new(HashSet::new()),
     });
     core.register_client(client.clone());
+    if !client.peer.is_local() {
+        core.send_device_view(&client);
+    }
     let (work, work_queue) = mpsc::unbounded_channel();
     tokio::select! {
         _ = read_requests(&core, &client, &mut reader, work) => {}
@@ -531,10 +552,14 @@ async fn run_requests(
                     Err(error) => client.respond(request_id, Err(error)),
                 }
             }
-            Request::AcpAttach { agent_id } => {
+            Request::AcpAttach { agent_id, since } => {
                 tokio::spawn(async move {
-                    chat::attach(&core, &client, request_id, &agent_id).await;
+                    chat::attach(&core, &client, request_id, &agent_id, since).await;
                 });
+            }
+            Request::AcpDetach { agent_id } => {
+                chat::detach(&core, client.id, &agent_id);
+                client.respond(request_id, Ok(Response::Done));
             }
             Request::AcpWake { agent_id } => {
                 tokio::spawn(async move {

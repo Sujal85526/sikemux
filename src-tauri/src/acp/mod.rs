@@ -694,6 +694,7 @@ pub async fn acp_attach(
         .submit(
             Request::AcpAttach {
                 agent_id: agent_id.clone(),
+                since: None,
             },
             move |reply| match reply {
                 Ok(Reply::Response(Response::ChatAttached { attachment })) => {
@@ -704,6 +705,7 @@ pub async fn acp_attach(
                             running,
                             turned,
                             replay: events,
+                            ..
                         } => {
                             replay(&replaying, &replay_agent, events);
                             Attachment::Live {
@@ -714,7 +716,10 @@ pub async fn acp_attach(
                             }
                         }
                         ChatAttachment::Missing => Attachment::Missing,
-                        ChatAttachment::Restart => Attachment::Restart,
+                        // Only an attach that names a mark is resumed, and this one names none.
+                        ChatAttachment::Restart | ChatAttachment::Resumed { .. } => {
+                            Attachment::Restart
+                        }
                     })
                 }
                 Ok(_) => Err(ClientError::UnexpectedReply),

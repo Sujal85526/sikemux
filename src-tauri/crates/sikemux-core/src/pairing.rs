@@ -13,13 +13,16 @@ use sha2::Sha256;
 use spake2::{Ed25519Group, Identity, Password, Spake2};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 
-use crate::protocol::{encode_control, read_frame, DeviceAccess, FrameKind};
+use crate::protocol::{encode_control, read_frame_within, DeviceAccess, FrameKind};
 
 pub const PAIR_ALPN: &[u8] = b"sikemux/pair/1";
 pub const CODE_DIGITS: usize = 6;
 /// How long the core waits for the person at the Mac to answer.
 pub const APPROVAL_TIMEOUT: Duration = Duration::from_secs(120);
 const STEP_TIMEOUT: Duration = Duration::from_secs(15);
+/// Every pairing message is a few hundred bytes. Either side reads them
+/// before it knows who sent them, so nothing larger is accepted.
+const MAX_MESSAGE_BYTES: usize = 4096;
 const CORE_LABEL: &[u8] = b"sikemux pairing: the core knows the code";
 const DEVICE_LABEL: &[u8] = b"sikemux pairing: the device knows the code";
 
@@ -166,7 +169,7 @@ pub(crate) async fn receive(
     reader: &mut (impl AsyncRead + Unpin),
     limit: Duration,
 ) -> std::io::Result<PairMessage> {
-    let frame = tokio::time::timeout(limit, read_frame(reader))
+    let frame = tokio::time::timeout(limit, read_frame_within(reader, MAX_MESSAGE_BYTES))
         .await
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "no answer in time"))??
         .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::UnexpectedEof))?;

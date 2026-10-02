@@ -150,11 +150,14 @@ impl EventSink for AppSink {
             Event::ShellMetadata(metadata) => self.emit(PTY_SHELL_METADATA_EVENT, metadata),
             Event::TaskOutput { .. } => {}
             Event::AgentState(state) => self.emit("agent_state_changed", state),
-            Event::Chat { agent_id, event } => crate::acp::deliver(&self.app, &agent_id, event),
+            Event::Chat {
+                agent_id, event, ..
+            } => crate::acp::deliver(&self.app, &agent_id, event),
             Event::Remote { status } => self.emit("remote_status_changed", status),
             Event::ChatBegun { chat } => self.emit("remote_chat_begun", chat),
             Event::WakeChat { agent_id } => self.emit("remote_chat_wake", agent_id),
-            Event::Attention { .. } | Event::AttentionCleared { .. } => {}
+            Event::Attention { .. } | Event::AttentionCleared { .. } | Event::DeviceView { .. } => {
+            }
         }
     }
 

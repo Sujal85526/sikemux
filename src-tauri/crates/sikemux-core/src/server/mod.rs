@@ -37,7 +37,7 @@ use sikemux_pty::task::{
 use tokio::sync::{watch, Notify};
 
 use crate::client::{probe, ProbeError};
-use crate::protocol::{encode_control, BuildIdentity, Event, ServerMessage, SessionId};
+use crate::protocol::{encode_control, BuildIdentity, DeviceView, Event, ServerMessage, SessionId};
 
 use connection::{ClientConn, ClientId};
 use session::Session;
@@ -48,6 +48,8 @@ const SESSION_POLL: Duration = Duration::from_millis(250);
 const SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 const IDLE_TRIM: Duration = Duration::from_secs(10 * 60);
 const PROBE_TIMEOUT: Duration = Duration::from_secs(1);
+/// How soon a paired device sees a change to what it shows of this Mac.
+const DEVICE_VIEW_INTERVAL: Duration = Duration::from_millis(400);
 
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
@@ -263,6 +265,8 @@ pub(crate) struct Core {
     pub(crate) chats: chat::Chats,
     pub(crate) remote: remote::Remote,
     pub(crate) workspaces: workspace::Workspaces,
+    /// The view paired devices were last sent, as sent.
+    device_view: Mutex<Vec<u8>>,
 }
 
 /// Session and window call ids start from the clock, so an id a client still
@@ -303,6 +307,7 @@ impl Core {
             chats: chat::Chats::default(),
             remote: remote::Remote::default(),
             workspaces: workspace::Workspaces::default(),
+            device_view: Mutex::new(Vec::new()),
         }))
     }
 
@@ -463,8 +468,69 @@ impl Core {
         }
     }
 
+    /// Paired devices hear only of terminals ending and changing; the rest
+    /// reaches them through [`Core::publish_device_view`].
     pub(crate) fn broadcast_event(&self, event: &Event) {
-        self.broadcast_to(event, |_| true);
+        let devices_hear = matches!(event, Event::Exited { .. } | Event::ShellMetadata(_));
+        self.broadcast_to(event, |client| devices_hear || client.peer.is_local());
+    }
+
+    fn device_view_frame(&self) -> Option<Vec<u8>> {
+        let mut sessions: Vec<_> = self.all_sessions().iter().map(|s| s.info()).collect();
+        sessions.sort_by_key(|info| info.id);
+        let mut chats = self.workspaces.listed(self.chats.list());
+        for chat in &mut chats {
+            chat.pending_permissions.sort();
+        }
+        let mut attentions = self.chats.attentions();
+        attentions.sort_by(|a, b| (a.at, &a.id).cmp(&(b.at, &b.id)));
+        let view = DeviceView {
+            workspace: self.workspaces.view(),
+            sessions,
+            chats,
+            attentions,
+        };
+        encode_control(&ServerMessage::Event {
+            event: Event::DeviceView { view },
+        })
+        .ok()
+    }
+
+    /// Sends every paired device what it shows of this Mac, when that changed
+    /// since they were last sent it.
+    pub(crate) fn publish_device_view(&self) {
+        let devices: Vec<_> = self
+            .clients()
+            .into_iter()
+            .filter(|client| !client.peer.is_local())
+            .collect();
+        if devices.is_empty() {
+            return;
+        }
+        let Ok(mut last) = self.device_view.lock() else {
+            return;
+        };
+        let Some(frame) = self.device_view_frame() else {
+            return;
+        };
+        if *last == frame {
+            return;
+        }
+        let shared: Arc<[u8]> = frame.as_slice().into();
+        for client in devices {
+            client.send(shared.clone());
+        }
+        *last = frame;
+    }
+
+    /// A device that just connected starts from the whole view.
+    pub(crate) fn send_device_view(&self, client: &ClientConn) {
+        let Ok(_last) = self.device_view.lock() else {
+            return;
+        };
+        if let Some(frame) = self.device_view_frame() {
+            client.send(frame.into());
+        }
     }
 
     pub(crate) fn broadcast_local(&self, event: &Event) {
@@ -662,6 +728,15 @@ async fn poll_sessions(core: Arc<Core>) {
     }
 }
 
+async fn device_views(core: Arc<Core>) {
+    let mut ticker = tokio::time::interval(DEVICE_VIEW_INTERVAL);
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        ticker.tick().await;
+        core.publish_device_view();
+    }
+}
+
 async fn sweep(core: Arc<Core>) {
     let mut ticker = tokio::time::interval(SWEEP_INTERVAL);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -718,6 +793,7 @@ pub(crate) async fn run_core(
     let background = [
         tokio::spawn(poll_sessions(core.clone())),
         tokio::spawn(sweep(core.clone())),
+        tokio::spawn(device_views(core.clone())),
     ];
     let mut shutdown = core.shutdown.subscribe();
     let mut frozen = core.frozen.subscribe();
