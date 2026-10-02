@@ -15,9 +15,7 @@ enum Probe {
             report("  \(shot["width"] ?? 0)x\(shot["height"] ?? 0) px at \(path)")
             try await step("read the screen") { try await simulators.handle(.state(udid: udid)) }
             try await step("tap \"Settings\" by label") { try await simulators.handle(.tapElement(udid: udid, label: "Settings")) }
-            try await waitFor("Settings to open") {
-                labels(try await simulators.handle(.state(udid: udid))).contains("General")
-            }
+            try await waitFor("Settings to open") { try await frontmostApp(simulators, udid) == "Settings" }
             try await step("tap at a point") { try await simulators.handle(.tap(udid: udid, at: Point(x: 10, y: 10), duration: nil)) }
             try await step("swipe") {
                 try await simulators.handle(.swipe(udid: udid, from: Point(x: 200, y: 600), to: Point(x: 200, y: 300), duration: 0.3))
@@ -60,10 +58,20 @@ enum Probe {
         report(String(format: "%-26@ %6.0f ms", "wait for \(name)" as NSString, Date().timeIntervalSince(started) * 1000))
     }
 
+    /// The home screen's own application element has no name; an app's is the app's name.
+    private static func frontmostApp(_ state: [String: Any]) -> String? {
+        let elements = state["elements"] as? [[String: Any]] ?? []
+        return elements.first { $0["type"] as? String == "Application" }?["AXLabel"] as? String
+    }
+
+    private static func frontmostApp(_ simulators: Simulators, _ udid: String) async throws -> String? {
+        frontmostApp(try await simulators.handle(.state(udid: udid)))
+    }
+
     /// Settings' launch icon, alone: while an app is still animating away its own elements are read too.
     private static func onHomeScreen(_ simulators: Simulators, _ udid: String) async throws -> Bool {
-        let onScreen = labels(try await simulators.handle(.state(udid: udid)))
-        return onScreen.filter { $0 == "Settings" }.count == 1 && !onScreen.contains("General")
+        let state = try await simulators.handle(.state(udid: udid))
+        return labels(state).filter { $0 == "Settings" }.count == 1 && frontmostApp(state) != "Settings"
     }
 
     private static func labels(_ state: [String: Any]) -> [String] {
