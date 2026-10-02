@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "not_found",
+    "message": "No route matches GET /v1/nothing.",
+    "requestId": "6f1c1c58-3a0e-4c55-9d43-5a43c1b1f5d2"
+  }
+}

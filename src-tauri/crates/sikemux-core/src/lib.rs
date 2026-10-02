@@ -2,6 +2,7 @@
 //! they outlive the window. `sikemux core` runs [`server`]; the app talks to
 //! it with [`client`].
 
+pub mod accounts;
 pub mod acp;
 pub mod cli;
 #[cfg(unix)]

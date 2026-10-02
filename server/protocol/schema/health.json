@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "health.json",
+  "$defs": {
+    "Health": {
+      "description": "Whether the API can serve requests, and which build is answering.",
+      "type": "object",
+      "properties": {
+        "status": { "$ref": "#/$defs/HealthStatus" },
+        "database": { "$ref": "#/$defs/HealthStatus" },
+        "version": {
+          "description": "The commit the running build was made from, or \"dev\".",
+          "type": "string"
+        }
+      },
+      "required": ["status", "database", "version"],
+      "additionalProperties": false
+    },
+    "HealthStatus": {
+      "type": "string",
+      "enum": ["ok", "unavailable"]
+    }
+  }
+}

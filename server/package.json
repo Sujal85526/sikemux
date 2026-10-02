@@ -1,0 +1,31 @@
+{
+  "name": "sikemux-server",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @sikemux/api --filter @sikemux/app dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint --max-warnings=0 .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "protocol:generate": "pnpm --filter @sikemux/protocol generate",
+    "protocol:check": "pnpm --filter @sikemux/protocol check",
+    "test": "pnpm -r test",
+    "check": "pnpm protocol:check && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "pack:release": "node deploy/pack.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.11.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0",
+    "prettier": "^3.9.9",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "typescript-eslint": "^8.70.1"
+  }
+}

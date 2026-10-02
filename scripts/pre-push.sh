@@ -88,13 +88,14 @@ fi
 CHANGED="$(pushed_files | sort -u)"
 if [ "${PREPUSH_FULL:-}" = "1" ] || [ -z "$CHANGED" ]; then
   CHANGED='(full run)'
-  RUST=1 FRONTEND=1 SHELL_SCRIPTS=1 RELEASE=1
+  RUST=1 FRONTEND=1 SHELL_SCRIPTS=1 RELEASE=1 SERVER=1
 else
-  RUST=0 FRONTEND=0 SHELL_SCRIPTS=0 RELEASE=0
+  RUST=0 FRONTEND=0 SHELL_SCRIPTS=0 RELEASE=0 SERVER=0
   touches '^(src-tauri/|rust-toolchain\.toml$)' && RUST=1
   touches '^(src/|public/|index\.html|package\.json|pnpm-lock\.yaml|vite\.config\.ts|eslint\.config\.js|tsconfig\.json)' && FRONTEND=1
   touches '^scripts/.*\.sh$' && SHELL_SCRIPTS=1
   touches '^(scripts/|package\.json|latest\.json|src-tauri/tauri.*\.conf\.json)' && RELEASE=1
+  touches '^(server/|src-tauri/crates/sikemux-core/src/accounts/)' && SERVER=1
 fi
 
 printf '%sChecking %s commits against the CI gates%s\n' "$BOLD" "$(printf '%s\n' "$CHANGED" | wc -l | tr -d ' ')" "$RESET"
@@ -131,5 +132,10 @@ fi
 [ "$FRONTEND" = 1 ] && step 'frontend build' pnpm build
 [ "$FRONTEND" = 1 ] && step 'performance budget' pnpm perf:budget
 [ "$RELEASE" = 1 ] && step 'release tooling' pnpm release:check
+# The server is its own workspace, so its install and checks run inside server/.
+if [ "$SERVER" = 1 ]; then
+  step 'server install' pnpm --dir server install --frozen-lockfile --silent &&
+    step 'server checks' pnpm --dir server check
+fi
 
 summary

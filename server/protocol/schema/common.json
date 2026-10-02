@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "common.json",
+  "$defs": {
+    "ApiError": {
+      "description": "The body of every response that is not a success.",
+      "type": "object",
+      "properties": {
+        "error": { "$ref": "#/$defs/ErrorDetail" }
+      },
+      "required": ["error"],
+      "additionalProperties": false
+    },
+    "ErrorDetail": {
+      "type": "object",
+      "properties": {
+        "code": { "$ref": "#/$defs/ErrorCode" },
+        "message": {
+          "description": "Written for whoever reads the logs. Apps show their own words for each code.",
+          "type": "string"
+        },
+        "requestId": {
+          "description": "The same as the response's x-request-id header, and how the server's logs find this request.",
+          "type": "string"
+        }
+      },
+      "required": ["code", "message", "requestId"],
+      "additionalProperties": false
+    },
+    "ErrorCode": {
+      "type": "string",
+      "enum": [
+        "bad_request",
+        "unauthorized",
+        "forbidden",
+        "not_found",
+        "conflict",
+        "payload_too_large",
+        "rate_limited",
+        "internal",
+        "unavailable"
+      ]
+    }
+  }
+}

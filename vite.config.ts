@@ -144,11 +144,11 @@ export default defineConfig({
   server: {
     port: 1420,
     strictPort: true,
-    watch: { ignored: ["**/src-tauri/**", "**/mobile/**"] },
+    watch: { ignored: ["**/src-tauri/**", "**/mobile/**", "**/server/**"] },
   },
   test: {
     environment: "jsdom",
-    exclude: [...configDefaults.exclude, "mobile/**"],
+    exclude: [...configDefaults.exclude, "mobile/**", "server/**"],
     setupFiles: "./src/test/setup.ts",
     globals: false,
     coverage: {

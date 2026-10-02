@@ -1,0 +1,11 @@
+packages:
+  - protocol
+  - api
+  - app
+
+catalog:
+  "@types/node": ^22.19.0
+  vitest: ^5.0.2
+
+onlyBuiltDependencies:
+  - esbuild

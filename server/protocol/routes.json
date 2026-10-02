@@ -1,0 +1,18 @@
+{
+  "routes": [
+    {
+      "method": "get",
+      "path": "/v1/health",
+      "operationId": "getHealth",
+      "summary": "Whether the API and its database are working",
+      "auth": "none",
+      "responses": {
+        "200": { "description": "Everything works.", "body": "Health" },
+        "503": {
+          "description": "The database cannot be reached.",
+          "body": "Health"
+        }
+      }
+    }
+  ]
+}
