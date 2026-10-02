@@ -229,7 +229,7 @@ export function Backdrop() {
     };
     const loop: Loop = {
       start: () => {
-        timer ??= setTimeout(tick, FRAME_MS);
+        if (timer === undefined) timer = setTimeout(tick, FRAME_MS);
       },
       stop: () => {
         clearTimeout(timer);
