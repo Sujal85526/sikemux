@@ -475,6 +475,7 @@
   .field.on { border-color: var(--border-selected); box-shadow: 0 0 0 3px color-mix(in oklab, var(--acc) 20%, transparent); }
   .field .ph { color: var(--text-tertiary); }
   .field .caret { width: 1.5px; height: 20px; background: var(--acc); margin-left: 1px; }
+  .field .reveal { margin-left: auto; display: flex; color: var(--text-tertiary); }
   .field-label { font-size: 13px; color: var(--text-tertiary); margin-bottom: -6px; }
   .account-head { display: flex; align-items: center; gap: 12px; padding: 6px 8px 14px; }
   .account-head .avatar { width: 40px; height: 40px; border-radius: 20px; display: grid; place-items: center; background: var(--surface-raised); border: 1px solid var(--border); color: var(--text-secondary); }
@@ -620,13 +621,13 @@
         <div class="signin">
           <h2>Enter your password</h2>
           <p>contact@nodelike.com</p>
-          <div class="field on">••••••••••••••••<span class="caret"></span></div>
+          <div class="field on">••••••••••••••••<span class="caret"></span><span class="reveal">{{IconEye:18}}</span></div>
           <div class="btn primary">Sign in</div>
           <div class="text-link">Forgot your password?</div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Password</b><div class="note">A new account sees "Choose a password" here instead, at least 15 characters, and a password already found in a breach is refused with that reason.</div></figcaption>
+      <figcaption><b>Password</b><div class="note">A new account sees "Choose a password" here instead, at least 15 characters, and a password already found in a breach is refused with that reason. The eye shows the password, and becomes a crossed-out eye that hides it again.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>

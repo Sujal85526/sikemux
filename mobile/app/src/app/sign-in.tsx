@@ -5,7 +5,7 @@ import { useSignIn, useSignUp } from '@clerk/expo';
 
 import { errorCode, explain } from '@/account/clerkErrors';
 import { CodeEntry } from '@/ui/CodeEntry';
-import { Button, Field, Nav, Screen } from '@/ui/parts';
+import { Button, Field, Nav, PasswordField, Screen } from '@/ui/parts';
 import { fonts, type Palette, typeFor, useStyles } from '@/ui/theme';
 
 /** Why an emailed code is asked for: a phone new to the account, a new account, or a new password. */
@@ -162,6 +162,7 @@ export default function SignIn() {
           <Text style={styles.detail}>{detail}</Text>
           {step.kind === 'email' ? (
             <Field
+              key="email"
               value={email}
               onChangeText={setEmail}
               placeholder="you@example.com"
@@ -175,12 +176,12 @@ export default function SignIn() {
               onSubmitEditing={() => void submitEmail()}
             />
           ) : (
-            <Field
+            <PasswordField
+              key={step.kind}
               value={password}
               onChangeText={setPassword}
               placeholder="Password"
               autoFocus
-              secureTextEntry
               textContentType={step.kind === 'password' ? 'password' : 'newPassword'}
               autoComplete={step.kind === 'password' ? 'current-password' : 'new-password'}
               returnKeyType="go"

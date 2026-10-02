@@ -18,7 +18,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router';
 
 import { Backdrop, useStill } from './Backdrop';
-import { Icon } from './Icon';
+import { DrawnIcon, Icon } from './Icon';
 import { fonts, type Palette, radius, typeFor, useColors, useStyles, useType, translucent } from './theme';
 
 /** Space under a screen's last content: the system's home bar or gesture bar, then a little air. */
@@ -145,6 +145,25 @@ export function Field(props: TextInputProps) {
       }}
       style={[styles.field, focused && styles.fieldFocused, props.style]}
     />
+  );
+}
+
+export function PasswordField(props: Omit<TextInputProps, 'secureTextEntry'>) {
+  const styles = useStyles(makeStyles);
+  const colors = useColors();
+  const [shown, setShown] = useState(false);
+  return (
+    <View>
+      <Field {...props} secureTextEntry={!shown} style={[styles.passwordField, props.style]} />
+      <Pressable
+        onPress={() => setShown((was) => !was)}
+        style={styles.reveal}
+        accessibilityRole="button"
+        accessibilityLabel={shown ? 'Hide password' : 'Show password'}
+        hitSlop={6}>
+        {shown ? <DrawnIcon name="eyeOff" size={18} color={colors.tertiary} /> : <Icon name="IconEye" size={18} color={colors.tertiary} />}
+      </Pressable>
+    </View>
   );
 }
 
@@ -393,6 +412,8 @@ const makeStyles = (colors: Palette) => {
       color: colors.ink,
     },
     fieldFocused: { borderColor: colors.borderSelected },
+    passwordField: { paddingRight: 48 },
+    reveal: { position: 'absolute', right: 0, top: 0, bottom: 0, width: 48, alignItems: 'center', justifyContent: 'center' },
     pressed: { opacity: 0.75 },
     disabled: { opacity: 0.5 },
 
