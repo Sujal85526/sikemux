@@ -1247,7 +1247,10 @@ mod tests {
     async fn a_frame_past_the_reader_s_limit_is_refused_before_it_is_read() {
         let frame = encode_control(&"x".repeat(100)).unwrap();
         assert!(read_frame_within(&mut &frame[..], 64).await.is_err());
-        assert!(read_frame_within(&mut &frame[..], 200).await.unwrap().is_some());
+        assert!(read_frame_within(&mut &frame[..], 200)
+            .await
+            .unwrap()
+            .is_some());
     }
 
     #[test]
