@@ -32,6 +32,10 @@
     color: var(--ink);
     font-size: var(--text-xs);
     font-weight: var(--weight-medium);
+    transition:
+        background-color var(--dur-2) var(--ease-out),
+        border-color var(--dur-2) var(--ease-out),
+        color var(--dur-2) var(--ease-out);
 }
 
 .chat-project-trigger > span {
@@ -113,6 +117,10 @@
     font-weight: var(--weight-normal);
     letter-spacing: 0;
     text-transform: none;
+    transition:
+        background-color var(--dur-2) var(--ease-out),
+        border-color var(--dur-2) var(--ease-out),
+        color var(--dur-2) var(--ease-out);
 }
 
 .chat-project-strip .worktree-toggle:hover {

@@ -20,6 +20,10 @@
     border-radius: var(--radius-control);
     color: var(--ink-dim);
     font-size: var(--text-2xs);
+    transition:
+        background-color var(--dur-2) var(--ease-out),
+        border-color var(--dur-2) var(--ease-out),
+        color var(--dur-2) var(--ease-out);
 }
 
 .chat-picker-trigger > span {
