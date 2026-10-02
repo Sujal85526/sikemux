@@ -131,6 +131,7 @@ opt-level = 3
 [profile.mobile]
 inherits = "release"
 panic = "unwind"
+opt-level = "z"
 
 [profile.release]
 # Sikemux is latency-sensitive (PTY parsing, Git walks, serialization). The

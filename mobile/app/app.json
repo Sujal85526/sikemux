@@ -32,6 +32,7 @@
       "expo-secure-store",
       "./plugins/link-system-configuration",
       "./plugins/rustls-platform-verifier",
+      "./plugins/small-apk",
       [
         "expo-splash-screen",
         {
@@ -54,6 +55,7 @@
         {
           "android": {
             "minSdkVersion": 28,
+            "useLegacyPackaging": true,
             "enableMinifyInReleaseBuilds": true,
             "enableShrinkResourcesInReleaseBuilds": true,
             "extraProguardRules": "-keep, includedescriptorclasses class org.rustls.platformverifier.** { *; }"
