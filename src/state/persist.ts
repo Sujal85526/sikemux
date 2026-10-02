@@ -21,6 +21,7 @@ import { getState, setState, useStore, type StoreState } from "./store";
 import { errMessage, notify } from "./toast";
 import { isCoreSessionId, isSessionKind, validatePersistedLayout } from "./persistValidation";
 import { isPluginId, isPluginKind } from "../plugins/kinds";
+import { firstGrapheme, spaceName } from "./projectSpaces";
 import { createWorkbenchItemRef, workbenchItemRegistry, workbenchItemRefFromPane, type BuiltinWorkbenchItemState } from "../workbench/registry";
 import type {
     Agent,
@@ -37,6 +38,7 @@ import type {
     PersistedPrefs,
     PersistedSession,
     PersistedSnapshot,
+    ProjectSpace,
     ProviderProfile,
     ProviderProfileSelection,
     RecentEntry,
@@ -109,6 +111,9 @@ const PERSISTED_KEYS = [
     "pluginSettings",
     "disabledPlugins",
     "restoreAgentTabs",
+    "spaces",
+    "projectSpaces",
+    "activeSpaceId",
     "agentNotifications",
     "voiceDictation",
     "notificationsIntroduced",
@@ -170,6 +175,9 @@ function packPrefs(s: StoreState): PersistedPrefs {
         pluginSettings: s.pluginSettings,
         disabledPlugins: [...s.disabledPlugins],
         restoreAgentTabs: s.restoreAgentTabs,
+        spaces: [...s.spaces],
+        projectSpaces: s.projectSpaces,
+        activeSpaceId: s.activeSpaceId,
         agentNotifications: s.agentNotifications,
         voiceDictation: s.voiceDictation,
         notificationsIntroduced: s.notificationsIntroduced,
@@ -194,6 +202,26 @@ function packPrefs(s: StoreState): PersistedPrefs {
 }
 
 const WINDOW_ROLES = new Set<WindowRole>(["term", "files", "git", "diff", "search", "ssh-config", "named", "agent"]);
+
+function normaliseSpaces(value: unknown): ProjectSpace[] {
+    if (!Array.isArray(value)) return [];
+    const spaces: ProjectSpace[] = [];
+    for (const row of value) {
+        if (!isRecord(row) || typeof row.id !== "string" || !row.id || typeof row.name !== "string") continue;
+        const name = spaceName(row.name);
+        if (!name || spaces.some((space) => space.id === row.id)) continue;
+        spaces.push({ id: row.id, name, icon: typeof row.icon === "string" ? firstGrapheme(row.icon) : "" });
+    }
+    return spaces;
+}
+
+function normaliseProjectSpaces(value: unknown, spaces: readonly ProjectSpace[]): Record<string, string> {
+    if (!isRecord(value)) return {};
+    const known = new Set(spaces.map((space) => space.id));
+    const projectSpaces: Record<string, string> = {};
+    for (const [cwd, id] of Object.entries(value)) if (typeof id === "string" && known.has(id)) projectSpaces[cwd] = id;
+    return projectSpaces;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return !!value && typeof value === "object" && !Array.isArray(value);
@@ -861,6 +889,7 @@ export function applyHydrate(raw: string): HydrationResult {
     const cur = getState();
     const providerProfiles = normaliseProviderProfiles(prefs.providerProfiles, cur.providerProfiles);
     const restoreAgentTabs = typeof prefs.restoreAgentTabs === "boolean" ? prefs.restoreAgentTabs : true;
+    const spaces = normaliseSpaces(prefs.spaces);
     // Before v8 an agent sat beside its session rather than in a window, and
     // the session recorded which agent it was looking at. Each becomes a window
     // here, and that focus becomes the active window.
@@ -1041,6 +1070,9 @@ export function applyHydrate(raw: string): HydrationResult {
         pluginSettings: normalisePluginSettings(prefs.pluginSettings),
         disabledPlugins: Array.isArray(prefs.disabledPlugins) ? [...new Set(prefs.disabledPlugins.filter(isPluginId))] : [],
         restoreAgentTabs,
+        spaces,
+        projectSpaces: normaliseProjectSpaces(prefs.projectSpaces, spaces),
+        activeSpaceId: spaces.some((space) => space.id === prefs.activeSpaceId) ? (prefs.activeSpaceId as string) : null,
         agentNotifications: typeof prefs.agentNotifications === "boolean" ? prefs.agentNotifications : cur.agentNotifications,
         voiceDictation: prefs.voiceDictation === true,
         notificationsIntroduced: prefs.notificationsIntroduced === true,

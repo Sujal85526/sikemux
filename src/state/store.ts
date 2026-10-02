@@ -28,6 +28,7 @@ import type {
     GlobalSearchView,
     PickerMode,
     ProjectRoot,
+    ProjectSpace,
     ProviderProfile,
     ProviderProfileSelection,
     RecentEntry,
@@ -78,6 +79,11 @@ export interface DomainState {
     /** Plugins switched off in Settings; they are built in but act as if absent. */
     disabledPlugins: readonly string[];
     restoreAgentTabs: boolean;
+    spaces: readonly ProjectSpace[];
+    /** The space id each project belongs to, by project folder, so it outlives closing the project. */
+    projectSpaces: Readonly<Record<string, string>>;
+    /** The space the rail shows, or null for every project. */
+    activeSpaceId: string | null;
     agentNotifications: boolean;
     voiceDictation: boolean;
     notificationsIntroduced: boolean;
@@ -244,6 +250,9 @@ export const useStore = create<StoreState>(() => {
         pluginSettings: {},
         disabledPlugins: [],
         restoreAgentTabs: true,
+        spaces: [],
+        projectSpaces: {},
+        activeSpaceId: null,
         agentNotifications: true,
         voiceDictation: false,
         notificationsIntroduced: false,

@@ -16,7 +16,7 @@ import { agentWindow } from "../agentWindow";
 import { newId } from "../layout";
 import type { Agent, AgentEffort, AgentPermissionMode, AgentType, AgentWorktree, ProviderProfile } from "../types";
 import { selectSession } from "./sessions";
-import { openProjectSession, projectSessionInBackground, withActiveSession } from "./shared";
+import { keepOpenedProjectInView, openProjectSession, projectSessionInBackground, withActiveSession } from "./shared";
 import { closeWindowById } from "./tabs";
 
 const FALLBACK_AGENT_TITLE_MAX = 13;
@@ -380,6 +380,7 @@ export function moveAgentToProject(id: string, cwd: string): void {
         const winId = agentWindowId(d, id);
         const fromId = winId ? ownerSessionId(d, winId) : null;
         if (!agent || !winId || !fromId || agent.resumeId || agent.worktree) return;
+        keepOpenedProjectInView(cwd);
         const toId = openProjectSession(d as unknown as StoreState, cwd);
         if (toId === fromId) return;
         const from = d.sessions[fromId];

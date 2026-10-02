@@ -193,6 +193,14 @@ export type DiffTarget = { kind: "worktree"; path: string } | { kind: "commit"; 
 
 /** Which panel the workspace rail is showing. */
 
+/** A set of projects the person makes to see on their own, so other work stays out of sight without being closed. */
+export interface ProjectSpace {
+    id: string;
+    name: string;
+    /** An emoji, or empty to show the name's first letter instead. */
+    icon: string;
+}
+
 export interface Session {
     id: string;
     name: string;

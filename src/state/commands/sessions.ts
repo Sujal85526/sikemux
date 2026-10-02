@@ -2,6 +2,7 @@ import type { PluginManifest } from "../../api/plugins";
 import { fixedSessionName } from "../sessionNames";
 import { isPluginKind, pluginIdOf, type PluginKind } from "../../plugins/kinds";
 import { RAIL_GROUP_ORDER, railGroupOf } from "../railGroups";
+import { firstGrapheme, isProjectShown, spaceName } from "../projectSpaces";
 import { filesApi } from "../../api/files";
 import { lsp } from "../../api/lsp";
 import { sshApi } from "../../api/ssh";
@@ -11,7 +12,7 @@ import { taskPtyBindings } from "../../tasks/nativeRuntime";
 import { getState, mutate, setState, type StoreState } from "../store";
 import { reportError } from "../toast";
 import { agentIdsOf } from "../selectors";
-import { collectPanes } from "../layout";
+import { collectPanes, newId } from "../layout";
 import type { Window } from "../types";
 import {
     attachSession,
@@ -22,12 +23,14 @@ import {
     guardStopAgents,
     makeSession,
     makeWindow,
+    keepOpenedProjectInView,
     openProjectSession,
     pruneWindowViews,
     withActiveSession,
 } from "./shared";
 
 export function createProjectSession(cwd: string): void {
+    keepOpenedProjectInView(cwd);
     mutate((d) => {
         openProjectSession(d as unknown as StoreState, cwd);
     });
@@ -126,6 +129,64 @@ export function selectSession(id: string): void {
         d.pickerOpen = false;
         d.settingsOpen = false;
     });
+}
+
+/** Makes a space and returns its id, or null when the name is blank. */
+export function createSpace(name: string, icon = ""): string | null {
+    const clean = spaceName(name);
+    if (!clean) return null;
+    const id = newId("space");
+    setState((s) => ({ spaces: [...s.spaces, { id, name: clean, icon: firstGrapheme(icon) }] }));
+    return id;
+}
+
+export function renameSpace(id: string, name: string): void {
+    const clean = spaceName(name);
+    if (!clean) return;
+    setState((s) => ({ spaces: s.spaces.map((space) => (space.id === id ? { ...space, name: clean } : space)) }));
+}
+
+/** Takes the first emoji or character given; an empty icon shows the name's first letter. */
+export function setSpaceIcon(id: string, icon: string): void {
+    setState((s) => ({ spaces: s.spaces.map((space) => (space.id === id ? { ...space, icon: firstGrapheme(icon) } : space)) }));
+}
+
+/** Removes a space; its projects stay open and show under All. */
+export function deleteSpace(id: string): void {
+    setState((s) => ({
+        spaces: s.spaces.filter((space) => space.id !== id),
+        projectSpaces: Object.fromEntries(Object.entries(s.projectSpaces).filter(([, spaceId]) => spaceId !== id)),
+        activeSpaceId: s.activeSpaceId === id ? null : s.activeSpaceId,
+    }));
+}
+
+export function showSpace(id: string | null): void {
+    if (id !== null && !getState().spaces.some((space) => space.id === id)) return;
+    setState({ activeSpaceId: id });
+    leaveHiddenProject();
+}
+
+export function setProjectSpace(cwd: string, spaceId: string | null): void {
+    setState((s) => {
+        const projectSpaces = { ...s.projectSpaces };
+        if (spaceId && s.spaces.some((space) => space.id === spaceId)) projectSpaces[cwd] = spaceId;
+        else delete projectSpaces[cwd];
+        return { projectSpaces };
+    });
+    leaveHiddenProject();
+}
+
+/** The workspace follows the rail: when the open project is hidden, the first project still shown opens instead. */
+function leaveHiddenProject(): void {
+    const { sessions, sessionOrder, activeSessionId, projectSpaces, activeSpaceId } = getState();
+    const shown = (id: string) => {
+        const session = sessions[id];
+        return session?.kind === "project" && isProjectShown(session.cwd, projectSpaces, activeSpaceId);
+    };
+    const active = sessions[activeSessionId];
+    if (active?.kind !== "project" || shown(activeSessionId)) return;
+    const next = sessionOrder.find(shown);
+    if (next) selectSession(next);
 }
 
 export function selectLastSession(): void {

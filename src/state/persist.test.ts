@@ -219,6 +219,31 @@ describe("frontend persistence", () => {
         expect(getState().agentWorktreeDefaults).toEqual({ "/code/app": true });
     });
 
+    it("remembers the spaces, each project's space and which space is shown", async () => {
+        const work = cmd.createSpace("Work", "💼")!;
+        const side = cmd.createSpace("Side projects")!;
+        cmd.setProjectSpace("/office", work);
+        cmd.setProjectSpace("/side", side);
+        cmd.showSpace(work);
+        invoke.mockResolvedValue(undefined);
+
+        await expect(flushPersist()).resolves.toBe(true);
+        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
+        expect(saved.prefs.spaces).toEqual([
+            { id: work, name: "Work", icon: "💼" },
+            { id: side, name: "Side projects", icon: "" },
+        ]);
+
+        setState({ spaces: [], projectSpaces: {}, activeSpaceId: null });
+        saved.prefs.projectSpaces["/gone"] = "space-that-was-deleted";
+        saved.prefs.spaces.push({ id: "blank", name: "   ", icon: "" });
+        applyHydrate(JSON.stringify(saved));
+
+        expect(getState().spaces.map((space) => space.name)).toEqual(["Work", "Side projects"]);
+        expect(getState().projectSpaces).toEqual({ "/office": work, "/side": side });
+        expect(getState().activeSpaceId).toBe(work);
+    });
+
     it("persists rail widths and pulls stored ones back inside their bounds", async () => {
         setState({ sideRailWidth: 320, agentRailWidth: 400 });
         invoke.mockResolvedValue(undefined);

@@ -7,6 +7,7 @@ import type {
     AgentPermissionMode,
     AgentType,
     ProjectRoot,
+    ProjectSpace,
     ProviderProfile,
     ProviderProfileSelection,
     RailDensity,
@@ -81,6 +82,9 @@ export interface PersistedPrefs {
     pluginSettings?: Record<string, unknown>;
     disabledPlugins?: string[];
     restoreAgentTabs?: boolean;
+    spaces?: ProjectSpace[];
+    projectSpaces?: Record<string, string>;
+    activeSpaceId?: string | null;
     agentNotifications?: boolean;
     voiceDictation?: boolean;
     notificationsIntroduced?: boolean;
