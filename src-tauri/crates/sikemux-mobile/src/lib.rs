@@ -21,6 +21,10 @@ mod android;
 
 uniffi::setup_scaffolding!();
 
+/// Long enough to find a Mac through a relay on a slow network; past it the
+/// app shows the Mac as unreachable and tries again.
+const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
 /// iroh and the core's client both need a Tokio runtime, which the phone's
 /// JavaScript thread does not have.
 static RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
@@ -179,8 +183,13 @@ impl Device {
         let endpoint = self.endpoint.clone();
         let addr = core_addr(&core)?;
         let sink = Arc::new(ListenerSink(listener));
-        let client =
-            on_runtime(async move { remote::connect_with(&endpoint, addr, sink).await }).await?;
+        let client = on_runtime(async move {
+            tokio::time::timeout(CONNECT_TIMEOUT, remote::connect_with(&endpoint, addr, sink)).await
+        })
+        .await
+        .map_err(|_| MobileError::Connection {
+            message: "this Mac did not answer in time".into(),
+        })??;
         Ok(Arc::new(Connection {
             client: Mutex::new(Some(Arc::new(client))),
         }))
