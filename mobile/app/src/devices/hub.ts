@@ -4,7 +4,7 @@ import { MobileError, type ConnectionLike } from '@sikemux/native';
 
 import { host, snapshot, type Snapshot } from '@/core/protocol';
 import { thisDevice } from '@/device/identity';
-import { pairedDevices, updateDevice, type PairedDevice } from './paired';
+import { forgetDevice, pairedDevices, updateDevice, type PairedDevice } from './paired';
 
 export type Live =
   | { status: 'connecting'; snapshot?: Snapshot }
@@ -21,6 +21,8 @@ const POLL_MS = 5000;
 /** A device nobody is looking at keeps its connection this long, for a quick return. */
 const LINGER_MS = 30_000;
 const RETRY_MS = [1000, 3000, 8000, 15_000];
+/** A Mac that does not answer the unpair in this time is forgotten on the phone anyway. */
+const UNPAIR_WAIT_MS = 3000;
 
 type Entry = {
   live: Live;
@@ -73,8 +75,12 @@ function problem(error: unknown): string {
   return String(error);
 }
 
+/** Macs left for good; a screen still open on one must not reconnect to it. */
+const forgotten = new Set<string>();
+
 export async function reloadDevices() {
   devices = await pairedDevices();
+  devices.forEach((device) => forgotten.delete(device.core));
   devicesLoaded = true;
   changed();
 }
@@ -108,6 +114,7 @@ function drop(core: string, reason: string, behind?: Outdated) {
 }
 
 async function open(core: string) {
+  if (forgotten.has(core)) return;
   const found = entry(core);
   if (found.live.status === 'open') return;
   set(core, { status: 'connecting', snapshot: found.live.snapshot });
@@ -187,6 +194,23 @@ export function useDevices(): { devices: PairedDevice[]; loaded: boolean } {
 export function useLive(core: string): Live {
   useEffect(() => watch(core), [core]);
   return useSyncExternalStore(subscribe, () => entry(core).live);
+}
+
+/** Leaves a Mac for good: asks it to unpair this phone while it can, then drops the connection and forgets it. */
+export async function forget(core: string) {
+  forgotten.add(core);
+  const found = entry(core);
+  if (found.live.status === 'open') {
+    const asked = found.live.connection.request(JSON.stringify({ op: 'unpair' })).catch(() => '');
+    await Promise.race([asked, new Promise((settle) => setTimeout(settle, UNPAIR_WAIT_MS))]);
+  }
+  stopTimers(found);
+  clearTimeout(found.lingering);
+  if (found.live.status === 'open') found.live.connection.close();
+  entries.delete(core);
+  await forgetDevice(core);
+  devices = await pairedDevices();
+  changed();
 }
 
 export function retry(core: string) {

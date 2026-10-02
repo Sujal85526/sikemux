@@ -16,7 +16,8 @@ function save(core: string, id: string, dataUrl: string): string {
   return file.uri;
 }
 
-function forget(saved: PairedDevice['backdrop']) {
+/** Deletes the picture saved for a Mac's backdrop. */
+export function forgetBackdrop(saved: PairedDevice['backdrop']) {
   if (!saved?.image) return;
   const file = new File(saved.image.uri);
   if (file.exists) file.delete();
@@ -42,14 +43,14 @@ export function useDeviceBackdrop(core: string): DeviceBackdrop {
           const answer = JSON.parse(text) as { dataUrl?: string | null };
           if (!answer.dataUrl) return;
           const uri = save(core, wanted, answer.dataUrl);
-          forget(remembered);
+          forgetBackdrop(remembered);
           return updateDevice(core, { backdrop: { texture: published.texture, image: { id: wanted, uri } } }).then(reloadDevices);
         })
         .catch(() => {})
         .finally(() => fetching.delete(core));
       return;
     }
-    if (!wanted && remembered?.image) forget(remembered);
+    if (!wanted && remembered?.image) forgetBackdrop(remembered);
     if (published.texture !== remembered?.texture || (!wanted && remembered?.image)) {
       updateDevice(core, { backdrop: { texture: published.texture, image: wanted ? remembered?.image : undefined } }).then(reloadDevices);
     }

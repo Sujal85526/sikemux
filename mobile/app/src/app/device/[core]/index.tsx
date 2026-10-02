@@ -5,6 +5,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import type { ChatInfo, ProjectInfo, SessionInfo, Snapshot } from '@/core/protocol';
 import { reloadDevices, useDevices, useLive } from '@/devices/hub';
 import { channelLabel, deviceKind, deviceName, updateDevice } from '@/devices/paired';
+import { ForgetSheet } from '@/devices/ForgetSheet';
 import { ProjectSheet } from '@/devices/ProjectSheet';
 import { chatState, chatTitle, folder } from '@/devices/words';
 import { AgentIcon, DeviceIcon, Icon } from '@/ui/Icon';
@@ -203,6 +204,7 @@ export default function Device() {
         : { title: "Can't reach this Mac", body: 'It may be asleep, offline, or have remote access turned off.' };
   const snapshot = live.snapshot;
   const [picking, setPicking] = useState(false);
+  const [options, setOptions] = useState(false);
   const bottom = useBottomGap();
   const scope = snapshot?.workspace.projects.find((project) => project.id === device?.project);
   const asking = snapshot?.chats.filter((chat) => chat.pendingPermissions.length && (!scope || inProject(scope, chat.cwd))).length ?? 0;
@@ -216,15 +218,19 @@ export default function Device() {
       <Nav
         back="Devices"
         end={
-          device?.access === 'full' && !away ? (
-            <IconButton
-              name="IconPlus"
-              label="New chat"
-              onPress={() => router.push(scope ? `/device/${core}/new?project=${encodeURIComponent(scope.id)}` : `/device/${core}/new`)}
-            />
-          ) : null
+          <View style={styles.navEnd}>
+            {device?.access === 'full' && !away ? (
+              <IconButton
+                name="IconPlus"
+                label="New chat"
+                onPress={() => router.push(scope ? `/device/${core}/new?project=${encodeURIComponent(scope.id)}` : `/device/${core}/new`)}
+              />
+            ) : null}
+            {device ? <IconButton name="IconMore" label="Options" onPress={() => setOptions(true)} /> : null}
+          </View>
         }
       />
+      {device ? <ForgetSheet device={device} visible={options} onClose={() => setOptions(false)} /> : null}
       <View style={styles.header}>
         <View style={styles.glyph}>
           <DeviceIcon kind={deviceKind(device?.model)} color={away ? colors.tertiary : colors.ink} />
@@ -312,6 +318,7 @@ const makeStyles = (colors: Palette) => {
     presenceOff: { backgroundColor: colors.ground, borderColor: colors.rest },
     name: { ...type.title },
     body: { paddingHorizontal: 16 },
+    navEnd: { flexDirection: 'row', alignItems: 'center' },
     scope: { flexDirection: 'row', paddingHorizontal: 16, paddingBottom: 12 },
     pill: {
       flexDirection: 'row',
