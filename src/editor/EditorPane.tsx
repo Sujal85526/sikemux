@@ -1075,7 +1075,7 @@ export function EditorPane({
                 />
             )}
             <div className="ed-main">
-                {!bare && <PaneField enabled={paneShader && visible} />}
+                {!bare && <PaneField enabled={paneShader} />}
                 {/* An ordinary editor's documents are tabs in the session
                     strip, so the only bar left here is the one an SSH config
                     window needs to close itself. */}

@@ -24,7 +24,7 @@ import {
 } from "../state/selectors";
 import { type CtxItem } from "../rail/FileTree";
 import { ErrorBoundary } from "../ui/ErrorBoundary";
-import { PaneField } from "../ui/ShaderField";
+import { PaneField, PanePaintedContext } from "../ui/ShaderField";
 import { agentMenu } from "./agentMenu";
 import { TabBar, type TabDescriptor } from "./TabBar";
 import type { TabDragOut, TabPoint } from "./useTabReorder";
@@ -720,16 +720,18 @@ const WindowLayer = memo(function WindowLayer({
                             className={`pane pane-${isPluginKind(p.kind) ? "plugin" : p.kind}`}
                             data-pane-id={p.id}
                             onMouseDown={() => live && cmd.focusPane(p.id)}>
-                            {/* The pane is a surface, so it carries its own texture — and only
-                                while it is the one being read, so a screen off stage spends no
-                                WebGL context on a field nobody is looking at. The editor draws
-                                its own, on the code panel beside its file tree, and the desk, git and plugins have none. */}
-                            {p.kind !== "editor" && p.kind !== "desk" && p.kind !== "git" && !isPluginKind(p.kind) && (
-                                <PaneField enabled={paneShader && live && shown} />
-                            )}
-                            <ErrorBoundary label={`${p.kind} pane`}>
-                                {renderWorkbenchItem({ pane: p, session, win, active: paneActive, visible: paneVisible, painted: panePainted })}
-                            </ErrorBoundary>
+                            <PanePaintedContext.Provider value={panePainted}>
+                                {/* The pane is a surface, so it carries its own texture — and only
+                                    while its screen is on stage, so a screen off stage spends no
+                                    WebGL context on a field nobody is looking at. The editor draws
+                                    its own, on the code panel beside its file tree, and the desk, git and plugins have none. */}
+                                {p.kind !== "editor" && p.kind !== "desk" && p.kind !== "git" && !isPluginKind(p.kind) && (
+                                    <PaneField enabled={paneShader} />
+                                )}
+                                <ErrorBoundary label={`${p.kind} pane`}>
+                                    {renderWorkbenchItem({ pane: p, session, win, active: paneActive, visible: paneVisible, painted: panePainted })}
+                                </ErrorBoundary>
+                            </PanePaintedContext.Provider>
                             {live && canUnsplit && (
                                 <button
                                     type="button"

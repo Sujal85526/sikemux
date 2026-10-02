@@ -94,6 +94,9 @@ interface Surface {
 }
 
 const surfaces = new Map<HTMLElement, Surface>();
+/* Fields turned away while the budget was spent. A swipe paints two screens at
+   once, and the one arriving must get its field once the one leaving lets go. */
+const waiting = new Map<HTMLElement, { preset: ShaderFieldPreset; image: HTMLImageElement | null }>();
 let runtimePromise: Promise<Runtime | null> | null = null;
 let webglSupported: boolean | null = null;
 /*
@@ -449,8 +452,10 @@ export function mountShaderField(host: HTMLElement, preset: ShaderFieldPreset, i
     prune();
     if (surfaces.size >= SURFACE_BUDGET) {
         lastRefusal = `budget spent (${SURFACE_BUDGET} surfaces live)`;
+        waiting.set(host, { preset, image });
         return;
     }
+    waiting.delete(host);
     lastRefusal = null;
 
     startFocusWatch();
@@ -527,6 +532,7 @@ function trackHostSize(host: HTMLElement, mount: InstanceType<Shaders["ShaderMou
 
 /** Release a surface and its WebGL context. Safe to call for a host that never got one. */
 export function unmountShaderField(host: HTMLElement): void {
+    waiting.delete(host);
     const surface = surfaces.get(host);
     if (!surface) return;
     surfaces.delete(host);
@@ -534,6 +540,11 @@ export function unmountShaderField(host: HTMLElement): void {
     surface.resize?.disconnect();
     surface.mount?.dispose();
     syncTicker();
+    for (const [next, field] of [...waiting]) {
+        if (surfaces.size >= SURFACE_BUDGET) break;
+        waiting.delete(next);
+        if (next.isConnected) mountShaderField(next, field.preset, field.image);
+    }
 }
 
 /** Live surface count. Exported for tests and for reasoning about the context budget. */

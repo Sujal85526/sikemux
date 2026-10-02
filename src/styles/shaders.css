@@ -80,6 +80,17 @@
     clip-path: inset(0 round calc(var(--radius-panel) - 1px));
 }
 
+/* A field comes up a frame or two after its pane, once its shader has built,
+   so it fades in rather than appearing on a pane already in view. */
+.pane-field > canvas {
+    animation: pane-field-in 180ms ease-out;
+}
+@keyframes pane-field-in {
+    from {
+        opacity: 0;
+    }
+}
+
 /* The picture only covers the band the grain would have reached, so it is framed
    to that band rather than to the whole pane, and fades over it the same way. */
 .pane-field-image {

@@ -1,6 +1,5 @@
-import { useRef } from "react";
+import { createContext, useContext } from "react";
 import { usePaneImage } from "../lib/paneImage";
-import { useStageMoving } from "../state/nativeViews";
 import { useShaderField } from "../hooks/useShaderField";
 import type { ShaderFieldPreset } from "../lib/shaderField";
 
@@ -26,15 +25,19 @@ export function ShaderField({
     return <div className={className} aria-hidden="true" ref={ref} />;
 }
 
-/** The grain behind a pane, or the reader's picture in its place when one is set. */
+/** Whether the screen a pane sits on is on the stage, standing still or sliding. */
+export const PanePaintedContext = createContext(true);
+
+/**
+ * The grain behind a pane, or the reader's picture in its place when one is set.
+ *
+ * It lives for as long as its screen is on the stage, not for as long as the
+ * screen is the one being read: a swipe hands that over halfway across, and a
+ * field dropped or started there blinks on a screen still in full view.
+ */
 export function PaneField({ enabled }: { enabled: boolean }) {
     const image = usePaneImage();
+    const painted = useContext(PanePaintedContext);
     const field = image ? "image" : "ambient";
-    /* A field starts by compiling its shader and stops by dropping its WebGL
-       context, either of which costs a swipe frames. The screen it slides past
-       is not the one being read yet, so the field waits for the stage to stop. */
-    const moving = useStageMoving();
-    const settled = useRef(enabled);
-    if (!moving) settled.current = enabled;
-    return <ShaderField preset={field} className={`pane-field pane-field-${field}`} enabled={settled.current} image={image} />;
+    return <ShaderField preset={field} className={`pane-field pane-field-${field}`} enabled={enabled && painted} image={image} />;
 }
