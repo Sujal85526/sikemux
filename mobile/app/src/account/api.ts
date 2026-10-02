@@ -20,6 +20,7 @@ async function call<T>(token: TokenSource, path: string, init: { method?: string
     },
     ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
   });
+  if (response.status === 204) return null as T;
   if (!response.ok) {
     const failure = (await response.json().catch(() => null)) as ApiError | null;
     throw new AccountProblem(failure?.error.message ?? `The accounts server answered ${response.status}.`);
@@ -40,6 +41,12 @@ export async function registerPhone(token: TokenSource, userId: string): Promise
     signature: device.signRegistration(challenge.nonce, userId),
   };
   return call<Device>(token, '/v1/devices', { method: 'POST', body: registration });
+}
+
+/** Takes this phone off the account, as signing out does. */
+export async function removePhone(token: TokenSource): Promise<void> {
+  const device = await thisDevice();
+  await call<null>(token, `/v1/devices/${device.id()}`, { method: 'DELETE' });
 }
 
 /** The Macs signed in to the account. */

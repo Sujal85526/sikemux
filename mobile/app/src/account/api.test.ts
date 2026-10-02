@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { accountMacs, AccountProblem, registerPhone } from './api';
+import { accountMacs, AccountProblem, registerPhone, removePhone } from './api';
 import { errorCode, explain } from './clerkErrors';
 
 const identity = vi.hoisted(() => ({
@@ -73,6 +73,14 @@ describe('registerPhone', () => {
   it('asks to sign in again without a token', async () => {
     await expect(registerPhone(async () => null, 'user_2abc')).rejects.toBeInstanceOf(AccountProblem);
     expect(calls).toEqual([]);
+  });
+});
+
+describe('removePhone', () => {
+  it('deletes this phone by its key', async () => {
+    answers.push({ status: 204, body: null });
+    await removePhone(token);
+    expect(calls[0]).toMatchObject({ url: `https://api.test/v1/devices/${'ab'.repeat(32)}`, method: 'DELETE' });
   });
 });
 

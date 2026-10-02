@@ -3,6 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth, useUser } from '@clerk/expo';
 
+import { removePhone } from '@/account/api';
 import { useDeviceId } from '@/device/identity';
 import { forget } from '@/devices/hub';
 import { pairedDevices, shortKey } from '@/devices/paired';
@@ -19,7 +20,7 @@ export function AccountSheet({ visible, onClose }: { visible: boolean; onClose: 
   const colors = useColors();
   const styles = useStyles(makeStyles);
   const type = useType();
-  const { signOut } = useAuth();
+  const { signOut, getToken } = useAuth();
   const { user } = useUser();
   const id = useDeviceId();
   const [leaving, setLeaving] = useState(false);
@@ -29,6 +30,9 @@ export function AccountSheet({ visible, onClose }: { visible: boolean; onClose: 
   const leave = async () => {
     setLeaving(true);
     try {
+      await removePhone(() => getToken()).catch((error: unknown) => {
+        console.warn('sikemux: could not take this phone off the account', error);
+      });
       const devices = await pairedDevices();
       await Promise.allSettled(devices.map((device) => forget(device.core)));
       await signOut();
