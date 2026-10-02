@@ -1,4 +1,4 @@
-import { sessionConfigs } from "./ComposerPickers";
+import { sessionConfigs } from "./sessionConfig";
 
 const DEFAULT_WINDOW = 200_000;
 const LONG_WINDOW = 1_000_000;

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { acpApi } from "../api/acp";
-import { effortConfig, sessionConfigs, type SessionConfig } from "./ComposerPickers";
+import { effortConfig, sessionConfigs, type SessionConfig } from "./sessionConfig";
 import { rowMeta } from "./messageMeta";
 import type { Agent, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";

@@ -1,7 +1,8 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { agentSupportsSkipPermissions } from "../state/commands/agentLogic";
-import { ComposerPickers, type SessionConfig } from "./ComposerPickers";
+import { ComposerPickers } from "./ComposerPickers";
+import type { SessionConfig } from "./sessionConfig";
 import { basename, dirname, joinPath } from "../lib/paths";
 import { animate } from "../lib/motion";
 import { hasPrimaryModifier, PRIMARY_SHORTCUT } from "../lib/platform";
