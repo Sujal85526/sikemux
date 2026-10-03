@@ -147,6 +147,7 @@ pub fn main(args: impl Iterator<Item = String>, build: BuildIdentity) -> i32 {
         data_dir: args.data_dir,
         build,
         remote_direct_only: false,
+        accounts_api: Some(crate::accounts::api_base()),
     }))
 }
 

@@ -5660,6 +5660,7 @@ name = "sikemux-core"
 version = "0.1.0"
 dependencies = [
  "agent-client-protocol",
+ "futures-util",
  "hex",
  "hmac",
  "iroh",
@@ -5674,9 +5675,12 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-rustls",
+ "tokio-websockets",
  "url",
  "uuid",
  "vt100",
+ "webpki-roots",
  "workspace-hack",
 ]
 

@@ -346,7 +346,8 @@ pub enum Request {
         user_id: String,
     },
     /// The account this host is signed in to, or none after signing out.
-    /// Kept across restarts.
+    /// Signing out takes this host off the account, waiting a few seconds
+    /// for the server to confirm. Kept across restarts.
     SetOwner {
         owner: Option<String>,
     },
@@ -868,6 +869,32 @@ pub struct RemoteStatus {
     pub pending: Vec<PendingDevice>,
     /// The account this host is signed in to.
     pub owner: Option<String>,
+    /// The live connection to that account, or why the account let this
+    /// host go.
+    #[serde(default)]
+    pub account: Option<AccountLink>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountLink {
+    pub state: AccountLinkState,
+    /// Why the account let this host go, once `state` is `removed`. None
+    /// when the server no longer knew this host at all.
+    pub reason: Option<crate::accounts::protocol::RevokeReason>,
+    /// Milliseconds since the Unix epoch when `state` began.
+    pub since: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AccountLinkState {
+    Connecting,
+    Live,
+    /// The last attempt failed; another follows.
+    Offline,
+    /// Taken off the account from elsewhere, or the account was deleted.
+    Removed,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

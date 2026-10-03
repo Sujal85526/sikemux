@@ -66,6 +66,9 @@ pub struct ServerConfig {
     /// Remote access listens on loopback only, with no relay and without
     /// publishing the core's address. For tests.
     pub remote_direct_only: bool,
+    /// The accounts server this host keeps a live connection to while it is
+    /// signed in. Without it the host learns nothing from its account.
+    pub accounts_api: Option<String>,
 }
 
 impl ServerConfig {
@@ -77,6 +80,7 @@ impl ServerConfig {
             cli_endpoint: None,
             data_dir: None,
             remote_direct_only: false,
+            accounts_api: None,
         }
     }
 }
@@ -811,7 +815,7 @@ pub(crate) async fn run_core(
     });
     listener.set_nonblocking(true)?;
     let listener = tokio::net::UnixListener::from_std(listener)?;
-    remote::start(&core, &config.socket, config.remote_direct_only).await;
+    remote::start(&core, &config).await;
     let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
     let background = [
@@ -860,6 +864,7 @@ pub(crate) async fn run_core(
         task.abort();
     }
     remote::stop(&core).await;
+    remote::stop_live(&core);
     let tools = core.tools.lock().ok().and_then(|mut tools| tools.take());
     if let Some(tools) = tools {
         tools.stop();

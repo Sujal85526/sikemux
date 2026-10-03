@@ -799,8 +799,10 @@ async fn run_requests(
                 });
             }
             Request::SetOwner { owner } => {
-                let result = remote::set_owner(&core, owner);
-                client.respond(request_id, result.map(|status| Response::Remote { status }));
+                tokio::spawn(async move {
+                    let result = remote::set_owner(&core, owner).await;
+                    client.respond(request_id, result.map(|status| Response::Remote { status }));
+                });
             }
             Request::RevokeDevice { id } => {
                 let result = remote::revoke(&core, &id);

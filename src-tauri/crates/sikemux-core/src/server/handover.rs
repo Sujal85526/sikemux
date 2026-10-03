@@ -671,6 +671,7 @@ pub(crate) async fn resume(recovery: Recovery, build: BuildIdentity) -> Result<(
             .as_ref()
             .map_or_else(|| recovery.data_dir.clone(), |state| state.data_dir.clone()),
         remote_direct_only: false,
+        accounts_api: Some(crate::accounts::api_base()),
     };
     let core = Core::new(build, config.data_dir.as_deref())?;
     let mut inherited = Inherited {
