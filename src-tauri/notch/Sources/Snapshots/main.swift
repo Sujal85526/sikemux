@@ -1,0 +1,130 @@
+import AppKit
+@testable import NotchKit
+import SwiftUI
+
+// Renders each state of the island against demo agents, to compare with
+// src-tauri/notch/design/screens.html: `swift run notch-snapshots <dir>`.
+
+let fixture = #"""
+{
+  "workspace": {
+    "projects": [
+      {"id": "p-sikemux", "name": "sikemux", "path": "/Users/me/sikemux"},
+      {"id": "p-server", "name": "server", "path": "/Users/me/server"},
+      {"id": "p-front", "name": "sikemux-front", "path": "/Users/me/sikemux-front"}
+    ],
+    "launchers": [
+      {"id": "claude", "provider": "claude", "label": "Claude", "permissionMode": "bypass", "configOptions": [
+        {"type": "select", "id": "model", "name": "Model", "currentValue": "opus", "options": [
+          {"value": "opus", "name": "Opus", "description": "Opus 5.5 with 1M context"},
+          {"value": "sonnet", "name": "Sonnet", "description": "Sonnet 5.5"},
+          {"value": "haiku", "name": "Haiku", "description": "Haiku 4.5"}
+        ]},
+        {"type": "select", "id": "effort", "name": "Effort", "category": "thought_level", "currentValue": "high", "options": [
+          {"value": "low", "name": "Low"}, {"value": "medium", "name": "Medium"}, {"value": "high", "name": "High"}, {"value": "max", "name": "Max"}
+        ]}
+      ]},
+      {"id": "codex", "provider": "codex", "label": "Codex", "permissionMode": "bypass", "configOptions": null},
+      {"id": "opencode", "provider": "opencode", "label": "OpenCode", "permissionMode": "bypass", "configOptions": null},
+      {"id": "grok", "provider": "grok", "label": "Grok", "permissionMode": "bypass", "configOptions": null}
+    ],
+    "palette": {},
+    "backdrop": {"texture": false, "image": null}
+  },
+  "sessions": [],
+  "chats": [
+    {"agentId": "a1", "provider": "claude", "title": "Fix the login flake", "cwd": "/Users/me/sikemux", "sessionId": "s1", "state": "ready",
+     "running": true, "pendingPermissions": ["p1"], "permissionMode": "default", "asleep": false, "unread": true},
+    {"agentId": "a2", "provider": "codex", "title": "Refactor the auth middleware", "cwd": "/Users/me/server", "sessionId": "s2", "state": "ready",
+     "running": true, "pendingPermissions": [], "permissionMode": "bypass", "asleep": false, "unread": false},
+    {"agentId": "a3", "provider": "opencode", "title": "Draft the notch spec", "cwd": "/Users/me/sikemux", "sessionId": "s3", "state": "ready",
+     "running": true, "pendingPermissions": [], "permissionMode": "bypass", "asleep": false, "unread": false},
+    {"agentId": "a4", "provider": "grok", "title": "Bump Astro to 6", "cwd": "/Users/me/sikemux-front", "sessionId": "s4", "state": "ready",
+     "running": false, "pendingPermissions": [], "permissionMode": "bypass", "asleep": false, "unread": true}
+  ],
+  "attentions": [
+    {"id": "p1", "kind": "permission", "agentId": "a1", "provider": "claude", "cwd": "/Users/me/sikemux", "at": NOW,
+     "request": {"toolCall": {"title": "Run tests", "rawInput": {"command": "pnpm test --filter core -- --runInBand"}},
+                 "options": [{"optionId": "o1", "kind": "allow_once"}, {"optionId": "o2", "kind": "allow_always"}, {"optionId": "o3", "kind": "reject_once"}]}}
+  ]
+}
+"""#
+
+let arguments = CommandLine.arguments
+let outputDir = URL(fileURLWithPath: arguments.count > 1 ? arguments[1] : "/tmp/notch-snapshots")
+try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+
+let fontsDir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../Fonts").standardized.path
+Theme.registerFonts(in: fontsDir)
+_ = NSApplication.shared
+NSApp.setActivationPolicy(.prohibited)
+
+let now = String(Int(Date().timeIntervalSince1970 * 1000) - 134_000)
+let full = try! JSONDecoder().decode(DeviceView.self, from: Data(fixture.replacingOccurrences(of: "NOW", with: now).utf8))
+
+func view(keeping ids: Set<String>?) -> DeviceView {
+    guard let ids else { return full }
+    return DeviceView(
+        workspace: full.workspace,
+        sessions: full.sessions,
+        chats: full.chats.filter { ids.contains($0.agentId) },
+        attentions: full.attentions.filter { ids.contains($0.agentId) }
+    )
+}
+
+let notch = NotchGeometry(notchWidth: 221, height: 38, centerX: 0)
+let plain = NotchGeometry(notchWidth: 0, height: 24, centerX: 0)
+
+func render(_ name: String, agents: Set<String>? = nil, geometry: NotchGeometry = notch, height: CGFloat = 140, dev: Bool = false,
+            setup: (IslandModel) -> Void = { _ in })
+{
+    var options = Options()
+    options.dev = dev
+    let store = NotchStore(options: options)
+    store.apply(view(keeping: agents))
+    let island = IslandModel(geometry: geometry)
+    setup(island)
+    let size = CGSize(width: 760, height: height)
+    let root = ZStack(alignment: .top) {
+        LinearGradient(colors: [Color(hex: "#3b2a6e"), Color(hex: "#141024"), Color(hex: "#1f3b6b")], startPoint: .bottomLeading, endPoint: .topTrailing)
+        Color.black.frame(height: 10).frame(maxHeight: .infinity, alignment: .top)
+        IslandView(store: store, island: island).padding(.top, 10)
+    }
+    .frame(width: size.width, height: size.height)
+    let window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: .borderless, backing: .buffered, defer: false)
+    let host = NSHostingView(rootView: root)
+    host.frame = CGRect(origin: .zero, size: size)
+    window.contentView = host
+    host.layoutSubtreeIfNeeded()
+    RunLoop.main.run(until: Date().addingTimeInterval(0.8))
+    guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return }
+    host.cacheDisplay(in: host.bounds, to: bitmap)
+    let url = outputDir.appendingPathComponent("\(name).png")
+    try? bitmap.representation(using: .png, properties: [:])?.write(to: url)
+    print(url.path)
+}
+
+render("C1-idle", agents: [])
+render("C2-working", agents: ["a2", "a3"])
+render("C3-needs-you")
+render("C4-done", agents: ["a4"])
+render("C6-hover", agents: ["a2", "a3"]) { $0.hovering = true }
+render("P1-permission", height: 260) { $0.mode = .peekAsk("a1") }
+render("P2-finished", agents: ["a2", "a4"]) { $0.mode = .peekDone("a4") }
+render("O1-agents", height: 440) { $0.mode = .open }
+render("O2-new-agent", height: 300) {
+    $0.mode = .open
+    $0.tab = .compose
+    $0.draft = "Turn the notch mockup into a SwiftUI spec"
+}
+render("O3-model-picker", height: 460) {
+    $0.mode = .open
+    $0.tab = .compose
+    $0.menu = .model
+    $0.draft = "Turn the notch mockup into a SwiftUI spec"
+}
+render("O4-empty", agents: [], height: 220) { $0.mode = .open }
+render("D1-drop", height: 260) { $0.mode = .drop }
+render("V1-dev-open", height: 440, dev: true) { $0.mode = .open }
+render("X-plain-working", geometry: plain, height: 100)
+render("X-plain-open", geometry: plain, height: 440) { $0.mode = .open }

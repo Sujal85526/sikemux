@@ -1,0 +1,201 @@
+import AppKit
+import SwiftUI
+
+/// A borderless panel above the menu bar that never takes the app's focus. It
+/// takes keys only while the composer is open.
+final class NotchPanel: NSPanel {
+    var acceptsKey = false
+
+    override var canBecomeKey: Bool { acceptsKey }
+    override var canBecomeMain: Bool { false }
+
+    init(frame: CGRect) {
+        super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        isFloatingPanel = true
+        level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 3)
+        collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = false
+        isMovable = false
+        hidesOnDeactivate = false
+        isReleasedWhenClosed = false
+        appearance = NSAppearance(named: .darkAqua)
+    }
+}
+
+/// One island per screen the settings show it on, rebuilt whenever the screens change.
+final class Panels {
+    /// Room for the widest island, its tallest list and its shadow. Only the island is drawn.
+    static let canvas = CGSize(width: 760, height: 480)
+
+    private let store: NotchStore
+    private var panels: [CGDirectDisplayID: (panel: NotchPanel, island: IslandModel)] = [:]
+    private var monitors: [Any] = []
+    private var dragCount = 0
+    private var settingsWatcher: SettingsWatcher?
+    private var pointerScreen: CGDirectDisplayID?
+
+    init(store: NotchStore) {
+        self.store = store
+        store.onPeek = { [weak self] peek in
+            let seconds: Double
+            if case .ask = peek { seconds = 6 } else { seconds = 3 }
+            self?.panels.values.forEach { $0.island.peek(peek, for: seconds) }
+        }
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.rebuild() }
+        settingsWatcher = SettingsWatcher(path: store.options.settings) { [weak self] in
+            self?.store.reloadSettings()
+            self?.rebuild()
+        }
+        Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
+        watchDrags()
+        rebuild()
+    }
+
+    private static func displayId(_ screen: NSScreen) -> CGDirectDisplayID? {
+        screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+    }
+
+    private func wantedScreens() -> [NSScreen] {
+        let screens = NSScreen.screens
+        switch store.settings.displays {
+        case .all:
+            return screens
+        case .builtIn:
+            let builtIn = screens.filter { Self.displayId($0).map { CGDisplayIsBuiltin($0) != 0 } ?? false }
+            return builtIn.isEmpty ? Array(screens.prefix(1)) : builtIn
+        case .pointer:
+            let mouse = NSEvent.mouseLocation
+            return screens.filter { $0.frame.contains(mouse) }.prefix(1).map { $0 }
+        }
+    }
+
+    func rebuild() {
+        let wanted = Dictionary(wantedScreens().compactMap { screen in Self.displayId(screen).map { ($0, screen) } },
+                                uniquingKeysWith: { first, _ in first })
+        for (id, entry) in panels where wanted[id] == nil {
+            entry.panel.orderOut(nil)
+            panels[id] = nil
+        }
+        for (id, screen) in wanted {
+            let geometry = NotchGeometry.of(screen)
+            let frame = CGRect(
+                x: geometry.centerX - Self.canvas.width / 2,
+                y: screen.frame.maxY - Self.canvas.height,
+                width: Self.canvas.width,
+                height: Self.canvas.height
+            )
+            if let entry = panels[id] {
+                entry.panel.setFrame(frame, display: true)
+                if entry.island.geometry != geometry { entry.island.geometry = geometry }
+                continue
+            }
+            let island = IslandModel(geometry: geometry)
+            let panel = NotchPanel(frame: frame)
+            panel.contentView = NSHostingView(rootView: IslandView(store: store, island: island))
+            island.wantsKey = { [weak panel] wants in
+                guard let panel else { return }
+                panel.acceptsKey = wants
+                if wants {
+                    NSApp.activate(ignoringOtherApps: true)
+                    panel.makeKeyAndOrderFront(nil)
+                } else if panel.isKeyWindow {
+                    panel.resignKey()
+                    NSApp.hide(nil)
+                    NSApp.unhideWithoutActivation()
+                }
+            }
+            panel.orderFrontRegardless()
+            panels[id] = (panel, island)
+        }
+        pointerScreen = wantedScreens().first.flatMap(Self.displayId)
+        tick()
+    }
+
+    /// Hides the islands while Sikemux Dev's helper holds the notch, or over a full-screen app.
+    private func tick() {
+        if store.settings.displays == .pointer {
+            let current = wantedScreens().first.flatMap(Self.displayId)
+            if current != pointerScreen { rebuild() }
+        }
+        let yielding = !store.options.dev && store.settings.yieldToDev && Handover.devIsRunning(stateDir: store.options.stateDir)
+        let needsYou = store.agents.contains { $0.state == .blocked }
+        let fullScreen = FullScreen.displays()
+        for (id, entry) in panels {
+            let covered: Bool
+            switch store.settings.fullScreen {
+            case .always: covered = false
+            case .never: covered = fullScreen.contains(id)
+            case .needsYou: covered = fullScreen.contains(id) && !needsYou
+            }
+            let hidden = yielding || covered
+            if entry.island.hidden != hidden {
+                withAnimation(.smooth(duration: 0.2)) { entry.island.hidden = hidden }
+            }
+        }
+    }
+
+    /// Opens the island's drop targets as a file is dragged towards the top of a screen.
+    private func watchDrags() {
+        let events: NSEvent.EventTypeMask = [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
+        let handler: (NSEvent) -> Void = { [weak self] event in self?.drag(event) }
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: events, handler: handler) {
+            monitors.append(global)
+        }
+    }
+
+    private func drag(_ event: NSEvent) {
+        let pasteboard = NSPasteboard(name: .drag)
+        switch event.type {
+        case .leftMouseDown:
+            dragCount = pasteboard.changeCount
+        case .leftMouseDragged:
+            guard pasteboard.changeCount != dragCount, pasteboard.types?.contains(.fileURL) == true else { return }
+            let mouse = NSEvent.mouseLocation
+            for (_, entry) in panels {
+                let island = entry.island
+                guard let screen = entry.panel.screen, !island.hidden, island.mode != .drop else { continue }
+                let near = mouse.y > screen.frame.maxY - 140 && abs(mouse.x - island.geometry.centerX) < 420
+                if near { island.set(.drop) }
+            }
+        case .leftMouseUp:
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.panels.values.forEach { entry in
+                    if entry.island.mode == .drop {
+                        entry.island.dropTarget = nil
+                        entry.island.set(.closed)
+                    }
+                }
+            }
+        default:
+            break
+        }
+    }
+}
+
+/// Which displays the frontmost app fills, as a full-screen app does.
+enum FullScreen {
+    static func displays() -> Set<CGDirectDisplayID> {
+        guard let front = NSWorkspace.shared.frontmostApplication?.processIdentifier,
+              let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
+        else { return [] }
+        var filled: Set<CGDirectDisplayID> = []
+        for window in windows {
+            guard (window[kCGWindowOwnerPID as String] as? pid_t) == front,
+                  (window[kCGWindowLayer as String] as? Int) == 0,
+                  let bounds = window[kCGWindowBounds as String] as? [String: CGFloat],
+                  let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary)
+            else { continue }
+            var count: UInt32 = 0
+            var ids = [CGDirectDisplayID](repeating: 0, count: 8)
+            CGGetDisplaysWithRect(rect, 8, &ids, &count)
+            for id in ids.prefix(Int(count)) where CGDisplayBounds(id) == rect {
+                filled.insert(id)
+            }
+        }
+        return filled
+    }
+}

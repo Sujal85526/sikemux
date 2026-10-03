@@ -18,6 +18,8 @@ node --check scripts/release-credits.mjs
 node --check scripts/build-cli-sidecar.mjs
 node --check scripts/smoke-browser-sidecar.mjs
 node --check scripts/build-voice-helper.mjs
+node --check scripts/build-notch-helper.mjs
+node scripts/generate-notch-icons.mjs --check
 /usr/bin/plutil -lint src-tauri/Info.plist >/dev/null
 
 if RELEASE_CHANNEL=preview scripts/release.sh 0.2.0-beta.1 fixture >/dev/null 2>&1; then
@@ -40,6 +42,7 @@ const config = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
 const macConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.macos.conf.json", "utf8"));
 const windowsConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.windows.conf.json", "utf8"));
 const sidecarConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.sidecar.conf.json", "utf8"));
+const notchConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.notch.conf.json", "utf8"));
 const macBuild = fs.readFileSync("scripts/build-mac.sh", "utf8");
 const sidecarBuild = fs.readFileSync("scripts/build-cli-sidecar.mjs", "utf8");
 const release = fs.readFileSync("scripts/release.sh", "utf8");
@@ -59,6 +62,9 @@ if (!windowsConfig.bundle?.icon?.includes("icons/icon.ico")) fail("Windows icon 
 if (windowsConfig.bundle?.windows?.nsis?.installMode !== "currentUser") fail("unexpected Windows install mode");
 if (JSON.stringify(sidecarConfig.bundle?.externalBin) !== JSON.stringify(["binaries/sikemux-editor"])) fail("sidecar bundle mapping is incomplete");
 if (!macBuild.includes("build-voice-helper.mjs")) fail("macOS build does not build the voice helper");
+if (!macBuild.includes("build-notch-helper.mjs")) fail("macOS build does not build the notch helper");
+if (!macBuild.includes("tauri.notch.conf.json")) fail("macOS build does not bundle the notch helper");
+if (JSON.stringify(notchConfig.bundle?.externalBin) !== JSON.stringify(["binaries/sikemux-editor", "binaries/sikemux-notch"])) fail("the macOS bundle must carry the CLI sidecar and the notch helper");
 if (!release.includes('"$SIG" "$VOICE"')) fail("releases do not publish the voice helper the app downloads");
 if (sidecarConfig.bundle?.resources?.["resources/sikemux_pi_tools.ts"] !== "sikemux_pi_tools.ts") fail("Pi browser extension resource mapping is missing");
 if (!pkg.scripts?.["build:windows"]?.includes("build:sidecar")) fail("Windows build does not build sidecars");

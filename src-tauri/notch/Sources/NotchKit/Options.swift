@@ -1,0 +1,50 @@
+import Foundation
+
+/// What the app tells the helper when it starts it. The core command is the
+/// app's own, so a core the helper starts runs exactly as the app's would.
+struct Options {
+    var socket = ""
+    var protocolVersion = 0
+    var coreBinary: String?
+    var coreLog: String?
+    var coreArgs: [String] = []
+    var dev = false
+    /// The app bundle, or the app's executable in a dev build, to open when its window is not.
+    var app: String?
+    var fonts: String?
+    var settings = ""
+    var stateDir = ""
+
+    static let version = "sikemux-notch 1"
+
+    static func parse(_ arguments: [String]) -> Options? {
+        var options = Options()
+        var rest = arguments.dropFirst().makeIterator()
+        while let flag = rest.next() {
+            if flag == "--version" {
+                print(version)
+                exit(0)
+            }
+            if flag == "--dev" {
+                options.dev = true
+                continue
+            }
+            guard let value = rest.next() else { return nil }
+            switch flag {
+            case "--socket": options.socket = value
+            case "--protocol-version": options.protocolVersion = Int(value) ?? 0
+            case "--core-binary": options.coreBinary = value
+            case "--core-log": options.coreLog = value
+            case "--core-arg": options.coreArgs.append(value)
+            case "--app": options.app = value
+            case "--fonts": options.fonts = value
+            case "--settings": options.settings = value
+            case "--state-dir": options.stateDir = value
+            default: return nil
+            }
+        }
+        guard !options.socket.isEmpty, options.protocolVersion > 0, !options.settings.isEmpty, !options.stateDir.isEmpty
+        else { return nil }
+        return options
+    }
+}

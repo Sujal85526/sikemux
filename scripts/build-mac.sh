@@ -27,6 +27,7 @@ done
 
 BUILD_ARGS=("$@")
 BUILD_ARGS+=(--config "$ROOT/src-tauri/tauri.sidecar.conf.json")
+BUILD_ARGS+=(--config "$ROOT/src-tauri/tauri.notch.conf.json")
 # Normal developer builds do not have the updater private key, so avoid asking
 # Tauri to create an updater archive it cannot sign.
 if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
@@ -47,9 +48,11 @@ fi
 if [[ -n "$TARGET" ]]; then
   node "$ROOT/scripts/build-cli-sidecar.mjs" --target "$TARGET"
   node "$ROOT/scripts/build-voice-helper.mjs" --target "$TARGET"
+  node "$ROOT/scripts/build-notch-helper.mjs" --target "$TARGET"
 else
   node "$ROOT/scripts/build-cli-sidecar.mjs"
   node "$ROOT/scripts/build-voice-helper.mjs"
+  node "$ROOT/scripts/build-notch-helper.mjs"
 fi
 printf '→ pnpm tauri build --no-bundle'
 printf ' %q' "${BUILD_ARGS[@]}"
