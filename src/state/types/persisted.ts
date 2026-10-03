@@ -85,6 +85,7 @@ export interface PersistedPrefs {
     projectSpaces?: Record<string, string>;
     activeSpaceId?: string | null;
     agentNotifications?: boolean;
+    notch?: unknown;
     voiceDictation?: boolean;
     notificationsIntroduced?: boolean;
     keptRunningNoticeShown?: boolean;

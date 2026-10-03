@@ -1,3 +1,4 @@
+import { normaliseNotchSettings } from "../notch/notchSettings";
 import { invokeCommand as invoke } from "../api/invoke";
 import { fixedSessionName } from "./sessionNames";
 import { sshStartup } from "../terminal/sshStartup";
@@ -114,6 +115,7 @@ const PERSISTED_KEYS = [
     "projectSpaces",
     "activeSpaceId",
     "agentNotifications",
+    "notch",
     "voiceDictation",
     "notificationsIntroduced",
     "keptRunningNoticeShown",
@@ -177,6 +179,7 @@ function packPrefs(s: StoreState): PersistedPrefs {
         projectSpaces: s.projectSpaces,
         activeSpaceId: s.activeSpaceId,
         agentNotifications: s.agentNotifications,
+        notch: s.notch,
         voiceDictation: s.voiceDictation,
         notificationsIntroduced: s.notificationsIntroduced,
         keptRunningNoticeShown: s.keptRunningNoticeShown,
@@ -1071,6 +1074,7 @@ export function applyHydrate(raw: string): HydrationResult {
         projectSpaces: normaliseProjectSpaces(prefs.projectSpaces, spaces),
         activeSpaceId: spaces.some((space) => space.id === prefs.activeSpaceId) ? (prefs.activeSpaceId as string) : null,
         agentNotifications: typeof prefs.agentNotifications === "boolean" ? prefs.agentNotifications : cur.agentNotifications,
+        notch: normaliseNotchSettings(prefs.notch),
         voiceDictation: prefs.voiceDictation === true,
         notificationsIntroduced: prefs.notificationsIntroduced === true,
         keptRunningNoticeShown: prefs.keptRunningNoticeShown === true,

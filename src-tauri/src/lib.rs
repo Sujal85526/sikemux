@@ -27,6 +27,7 @@ mod login_item;
 mod lsp;
 mod markdown;
 mod model_providers;
+mod notch;
 pub mod observability;
 mod plugins;
 mod ports;
@@ -284,6 +285,7 @@ pub fn run() {
             remote::remote_publish_workspace,
             remote::remote_publish_agents,
             remote::remote_publish_on_screen,
+            notch::notch_configure,
             remote::remote_publish_palette,
             remote::remote_publish_backdrop,
             pty::commands::task_watch,

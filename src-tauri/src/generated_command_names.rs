@@ -38,6 +38,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "remote_publish_workspace",
     "remote_publish_agents",
     "remote_publish_on_screen",
+    "notch_configure",
     "remote_publish_palette",
     "remote_publish_backdrop",
     "task_watch",

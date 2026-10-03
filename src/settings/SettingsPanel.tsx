@@ -709,6 +709,7 @@ function AgentsPage() {
             </SettingsSection>
 
             {IS_MACOS && <VoiceSection />}
+            {IS_MACOS && <NotchSection />}
         </SettingsPage>
     );
 }
@@ -1669,6 +1670,121 @@ function VoiceSection() {
                     }
                 />
                 <SettingsRow label="Speech model" desc={voiceModelStatus(voice, enabled)} />
+            </SettingsRows>
+        </SettingsSection>
+    );
+}
+
+function NotchSection() {
+    const notch = useStore((s) => s.notch);
+    const choice =
+        <K extends "displays" | "openWith" | "fullScreen" | "peeks">(key: K) =>
+        (value: string) =>
+            cmd.setNotch({ [key]: value } as Partial<typeof notch>);
+    return (
+        <SettingsSection
+            title="Notch"
+            sub="The island over the MacBook notch shows the agents running, what they need from you, and starts new ones.">
+            <SettingsRows>
+                <SettingsRow
+                    label="Show the island"
+                    desc="It keeps running after Sikemux quits, as your agents do."
+                    asLabel
+                    control={<Switch checked={notch.enabled} onChange={(enabled) => cmd.setNotch({ enabled })} label="Show the island" />}
+                />
+                <SettingsRow label="Show on" desc="A display without a notch gets a pill at its menu bar's height." wide>
+                    <Dropdown
+                        className="settings-dd"
+                        label="show on"
+                        value={notch.displays}
+                        disabled={!notch.enabled}
+                        options={[
+                            { value: "all", label: "Every display" },
+                            { value: "builtIn", label: "Built-in display only" },
+                            { value: "pointer", label: "The display under the pointer" },
+                        ]}
+                        onChange={choice("displays")}
+                    />
+                </SettingsRow>
+                <SettingsRow label="Open with" desc="Resting waits a moment, so passing the pointer across the menu bar does not open it." wide>
+                    <Dropdown
+                        className="settings-dd"
+                        label="open with"
+                        value={notch.openWith}
+                        disabled={!notch.enabled}
+                        options={[
+                            { value: "hover", label: "Resting the pointer" },
+                            { value: "click", label: "Clicking" },
+                        ]}
+                        onChange={choice("openWith")}
+                    />
+                </SettingsRow>
+                <SettingsRow label="In full-screen apps" wide>
+                    <Dropdown
+                        className="settings-dd"
+                        label="in full-screen apps"
+                        value={notch.fullScreen}
+                        disabled={!notch.enabled}
+                        options={[
+                            { value: "needsYou", label: "Hide unless an agent needs you" },
+                            { value: "always", label: "Always show" },
+                            { value: "never", label: "Always hide" },
+                        ]}
+                        onChange={choice("fullScreen")}
+                    />
+                </SettingsRow>
+                <SettingsRow label="Peek when" desc="The island grows for a moment without opening." wide>
+                    <Dropdown
+                        className="settings-dd"
+                        label="peek when"
+                        value={notch.peeks}
+                        disabled={!notch.enabled}
+                        options={[
+                            { value: "all", label: "An agent needs you or finishes" },
+                            { value: "needsYou", label: "An agent needs you" },
+                            { value: "never", label: "Never" },
+                        ]}
+                        onChange={choice("peeks")}
+                    />
+                </SettingsRow>
+                <SettingsRow
+                    label="Answer permissions in the notch"
+                    desc="Otherwise a request offers Open in Sikemux instead of Deny and Allow."
+                    asLabel
+                    control={
+                        <Switch
+                            checked={notch.answerInNotch}
+                            disabled={!notch.enabled}
+                            onChange={(answerInNotch) => cmd.setNotch({ answerInNotch })}
+                            label="Answer permissions in the notch"
+                        />
+                    }
+                />
+                <SettingsRow
+                    label="Sound when an agent needs you"
+                    asLabel
+                    control={
+                        <Switch
+                            checked={notch.sound}
+                            disabled={!notch.enabled}
+                            onChange={(sound) => cmd.setNotch({ sound })}
+                            label="Sound when an agent needs you"
+                        />
+                    }
+                />
+                <SettingsRow
+                    label="Step aside for Sikemux Dev"
+                    desc="While a dev build runs, its island takes the notch."
+                    asLabel
+                    control={
+                        <Switch
+                            checked={notch.yieldToDev}
+                            disabled={!notch.enabled}
+                            onChange={(yieldToDev) => cmd.setNotch({ yieldToDev })}
+                            label="Step aside for Sikemux Dev"
+                        />
+                    }
+                />
             </SettingsRows>
         </SettingsSection>
     );

@@ -106,6 +106,15 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     ...(IS_MACOS
         ? [
               section("agents", "Voice", "dictation microphone speech talk transcribe"),
+              section("agents", "Notch", "island dynamic menu bar notch overlay agents running"),
+              row("agents", "Notch", "Show the island", "notch dynamic island enable disable"),
+              row("agents", "Notch", "Show on", "display monitor external screen"),
+              row("agents", "Notch", "Open with", "hover click"),
+              row("agents", "Notch", "In full-screen apps", "fullscreen hide"),
+              row("agents", "Notch", "Peek when", "peek finished needs you"),
+              row("agents", "Notch", "Answer permissions in the notch", "allow deny permission"),
+              row("agents", "Notch", "Sound when an agent needs you", "sound alert"),
+              row("agents", "Notch", "Step aside for Sikemux Dev", "dev build development"),
               row("agents", "Voice", "Dictate with right Option", "dictation microphone speech push to talk hold"),
               row("agents", "Voice", "Speech model", "parakeet download neural engine"),
           ]

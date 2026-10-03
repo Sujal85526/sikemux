@@ -28,6 +28,7 @@ import { TerminalPane } from "./terminal/TerminalPane";
 import { HarnessBridge } from "./shell/HarnessBridge";
 import { RemoteChatBridge } from "./shell/RemoteChatBridge";
 import { RemoteWorkspaceBridge } from "./shell/RemoteWorkspaceBridge";
+import { NotchBridge } from "./notch/NotchBridge";
 import { CliOpenBridge } from "./shell/CliOpenBridge";
 import { DeepLinkBridge } from "./shell/DeepLinkBridge";
 import { git } from "./api/git";
@@ -965,6 +966,7 @@ export default function App() {
             <DeepLinkBridge />
             <HarnessBridge />
             <RemoteWorkspaceBridge />
+            <NotchBridge />
             <RemoteChatBridge />
             <ProjectBridge />
             <AgentSessionSync />

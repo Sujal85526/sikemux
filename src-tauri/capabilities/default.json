@@ -55,6 +55,7 @@
     "allow-remote-publish-workspace",
     "allow-remote-publish-agents",
     "allow-remote-publish-on-screen",
+    "allow-notch-configure",
     "allow-remote-publish-palette",
     "allow-remote-publish-backdrop",
     "allow-task-watch",

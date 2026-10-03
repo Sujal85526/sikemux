@@ -1,3 +1,4 @@
+import { DEFAULT_NOTCH_SETTINGS } from "../notch/notchSettings";
 import type { PluginManifest } from "../api/plugins";
 import { create } from "zustand";
 import { enableMapSet, produce, type Draft } from "immer";
@@ -84,6 +85,7 @@ export interface DomainState {
     /** The space the rail shows, or null for every project. */
     activeSpaceId: string | null;
     agentNotifications: boolean;
+    notch: import("../notch/notchSettings").NotchSettings;
     voiceDictation: boolean;
     notificationsIntroduced: boolean;
     /** The person was told once that terminals keep running after Sikemux quits. */
@@ -254,6 +256,7 @@ export const useStore = create<StoreState>(() => {
         projectSpaces: {},
         activeSpaceId: null,
         agentNotifications: true,
+        notch: DEFAULT_NOTCH_SETTINGS,
         voiceDictation: false,
         notificationsIntroduced: false,
         keptRunningNoticeShown: false,

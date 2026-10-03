@@ -10,6 +10,8 @@ export const setCloudBrowserShortcut = (v: string): void => setState({ cloudBrow
 export const setRestoreAgentTabs = (value: boolean): void => setState({ restoreAgentTabs: value });
 export const setAgentNotifications = (value: boolean): void => setState({ agentNotifications: value });
 export const setVoiceDictation = (value: boolean): void => setState({ voiceDictation: value });
+export const setNotch = (patch: Partial<import("../../notch/notchSettings").NotchSettings>): void =>
+    setState({ notch: { ...getState().notch, ...patch } });
 export const setPaneShader = (value: boolean): void => setState({ paneShader: value });
 export const setPaneImage = (path: string | null): void => setState({ paneImage: path });
 export const setUiTextScale = (value: number): void => setState({ uiTextScale: [1, 1.1, 1.25].includes(value) ? value : 1 });
