@@ -188,6 +188,12 @@ fn sign_registration(key: &SecretKey, nonce: &str, user_id: &str) -> Result<Stri
     Ok(hex::encode(key.sign(message.as_bytes()).to_bytes()))
 }
 
+fn sign_live(key: &SecretKey, nonce: &str) -> Result<String, MobileError> {
+    sikemux_core::accounts::check_live(nonce).map_err(invalid)?;
+    let message = sikemux_core::accounts::live_message(nonce, &key.public().to_string());
+    Ok(hex::encode(key.sign(message.as_bytes()).to_bytes()))
+}
+
 fn core_addr(core: &str) -> Result<EndpointAddr, MobileError> {
     Ok(EndpointAddr::new(core.parse().map_err(invalid)?))
 }
@@ -224,6 +230,12 @@ impl Device {
     /// the account `user_id`, for the accounts server's challenge `nonce`.
     pub fn sign_registration(&self, nonce: String, user_id: String) -> Result<String, MobileError> {
         sign_registration(&self.key, &nonce, &user_id)
+    }
+
+    /// This phone's signature, in hex, that proves its key on the accounts
+    /// server's live connection, for that connection's challenge `nonce`.
+    pub fn sign_live(&self, nonce: String) -> Result<String, MobileError> {
+        sign_live(&self.key, &nonce)
     }
 
     /// Pairs with the host whose key is `core`, waiting while the person
@@ -741,6 +753,27 @@ mod tests {
             text("signature")
         );
         assert!(sign_registration(&key, "not a challenge", &text("userId")).is_err());
+    }
+
+    #[test]
+    fn live_hellos_sign_the_text_the_server_checks() {
+        let vector: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../server/protocol/vectors/live.json"
+        ))
+        .expect("the vector is JSON");
+        let text = |name: &str| vector[name].as_str().expect("a string").to_owned();
+        let bytes: [u8; 32] = hex::decode(text("secretKey"))
+            .expect("hex")
+            .try_into()
+            .expect("32 bytes");
+        let key = SecretKey::from_bytes(&bytes);
+        assert_eq!(key.public().to_string(), text("key"));
+        assert_eq!(
+            sign_live(&key, &text("nonce")).expect("signs"),
+            text("signature")
+        );
+        assert!(sign_live(&key, "not a challenge").is_err());
+        assert!(sign_live(&key, &text("nonce").to_uppercase()).is_err());
     }
 
     #[test]

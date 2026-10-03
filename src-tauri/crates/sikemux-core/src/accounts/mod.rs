@@ -13,14 +13,27 @@ pub fn registration_message(nonce: &str, user_id: &str, key: &str) -> String {
 /// Accepts only a challenge and a Clerk user id, so a request to sign a
 /// registration cannot make the core sign any other text.
 pub fn check_registration(nonce: &str, user_id: &str) -> Result<(), &'static str> {
+    check_live(nonce)?;
+    check_user_id(user_id)
+}
+
+/// What a device signs to open its live connection to the account. The prefix
+/// differs from registration's, so neither signature stands in for the other.
+pub fn live_message(nonce: &str, key: &str) -> String {
+    format!("sikemux-live|{nonce}|{key}")
+}
+
+/// Accepts only a server challenge: 64 lowercase hex characters.
+pub fn check_live(nonce: &str) -> Result<(), &'static str> {
     let is_challenge = nonce.len() == 64
         && nonce
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
-    if !is_challenge {
-        return Err("the challenge is 64 lowercase hex characters");
+    if is_challenge {
+        Ok(())
+    } else {
+        Err("the challenge is 64 lowercase hex characters")
     }
-    check_user_id(user_id)
 }
 
 /// Clerk user ids look like `user_2abcXYZ`.
@@ -86,6 +99,35 @@ mod tests {
         assert!(super::check_registration(&nonce, "user_").is_err());
         assert!(super::check_registration(&nonce, "org_2abc").is_err());
         assert!(super::check_registration(&nonce, "user_2abc|anything").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn live_hellos_sign_the_text_the_server_checks() -> Result<(), Box<dyn std::error::Error>> {
+        let vector: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../../server/protocol/vectors/live.json"
+        ))?;
+        let text = |name: &str| vector[name].as_str().unwrap_or_default().to_owned();
+        let bytes: [u8; 32] = hex::decode(text("secretKey"))?
+            .try_into()
+            .map_err(|_| "the secret is 32 bytes")?;
+        let key = iroh::SecretKey::from_bytes(&bytes);
+        assert_eq!(key.public().to_string(), text("key"));
+        let message = super::live_message(&text("nonce"), &text("key"));
+        assert_eq!(message, text("message"));
+        assert_eq!(
+            hex::encode(key.sign(message.as_bytes()).to_bytes()),
+            text("signature")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn live_text_is_only_ever_a_challenge() {
+        assert!(super::check_live(&"a".repeat(64)).is_ok());
+        assert!(super::check_live("short").is_err());
+        assert!(super::check_live(&"A".repeat(64)).is_err());
+        assert!(super::check_live(&format!("{}|x", "a".repeat(62))).is_err());
     }
 
     #[test]
