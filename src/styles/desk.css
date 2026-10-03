@@ -476,14 +476,14 @@
 
 /* The device's name reads as a title that opens the list, not as a field. */
 .simulator-picker.dd-btn {
-    height: 28px;
     padding: 0 8px;
     border-color: transparent;
     background: transparent;
     font-size: var(--text-md);
 }
 
-.simulator-picker .dd-trailing {
+.simulator-picker .dd-trailing,
+.simulator-status {
     color: var(--ink-faint);
 }
 
@@ -499,6 +499,11 @@
     user-select: none;
 }
 
+/* Focus taken by a click on the device keeps typing there without ringing the stage. */
+.simulator-stage.pointer-focus:focus-visible {
+    box-shadow: none;
+}
+
 .simulator-phone {
     position: relative;
 }
@@ -510,7 +515,6 @@
 }
 
 .simulator-bezel {
-    inset: 0;
     width: 100%;
     height: 100%;
 }
@@ -534,6 +538,4 @@
 
 .simulator-status {
     margin: 0;
-    color: var(--ink-faint);
-    font-size: 12px;
 }

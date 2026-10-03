@@ -188,6 +188,7 @@ export function SimulatorView({ agentId, simulator, hidden, live }: { agentId: s
         const point = pointAt(event.clientX, event.clientY);
         if (!point || event.button !== 0) return;
         event.currentTarget.setPointerCapture(event.pointerId);
+        event.currentTarget.classList.add("pointer-focus");
         event.currentTarget.focus();
         touching.current = true;
         send({ type: "touch", phase: "down", ...point });
@@ -249,7 +250,8 @@ export function SimulatorView({ agentId, simulator, hidden, live }: { agentId: s
                 onPointerMove={onPointerMove}
                 onPointerUp={lift}
                 onPointerCancel={lift}
-                onKeyDown={onKeyDown}>
+                onKeyDown={onKeyDown}
+                onBlur={(event) => event.currentTarget.classList.remove("pointer-focus")}>
                 {booting ? (
                     <p className="simulator-status">Booting {booting}…</p>
                 ) : failure ? (
