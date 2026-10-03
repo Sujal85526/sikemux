@@ -191,9 +191,11 @@ actor Simulators {
             if let process {
                 arguments += ["--predicate", "process == \"\(process.replacingOccurrences(of: "\"", with: ""))\""]
             } else {
-                // Apple's own frameworks log thousands of lines a second, among them every
-                // accessibility read; an app's own logging is what remains.
-                arguments += ["--predicate", "NOT (subsystem BEGINSWITH \"com.apple.\")"]
+                // Apple's own frameworks log thousands of activity and debug-level entries a
+                // second, many without a subsystem at all, so excluding com.apple.* alone still
+                // lets those through; keeping only ordinary log messages at Notice level and
+                // louder is what leaves an app's own logging.
+                arguments += ["--type", "log", "--level", "info", "--predicate", "NOT (subsystem BEGINSWITH \"com.apple.\")"]
             }
             let operation = try await simulator.log.tail(arguments: arguments, consumer: tail.consumer)
             tail.attach(operation)

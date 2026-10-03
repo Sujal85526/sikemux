@@ -322,6 +322,10 @@ pub(super) async fn run(
                     )
                     .await;
             };
+            // The helper follows the whole device from sim.attach, so reading one
+            // process's lines picks them out of that same feed rather than
+            // starting a fresh, native, process-only tail too late to catch
+            // what it logged before this was first asked for.
             let read = manager
                 .request(
                     "logs",
