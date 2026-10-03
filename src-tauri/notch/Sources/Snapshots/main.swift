@@ -104,6 +104,59 @@ func render(_ name: String, agents: Set<String>? = nil, geometry: NotchGeometry 
     print(url.path)
 }
 
+/// The island opening, frame by frame: closed, then every 50 ms after it is told to open.
+func film(_ name: String, height: CGFloat = 440, frames: Int = 12, _ change: @escaping (IslandModel) -> Void) {
+    let store = NotchStore(options: Options())
+    store.apply(full)
+    let island = IslandModel(geometry: notch)
+    let size = CGSize(width: 760, height: height)
+    let root = ZStack(alignment: .top) {
+        Color(hex: "#2a2140")
+        IslandView(store: store, island: island)
+    }
+    .frame(width: size.width, height: size.height)
+    let window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: .borderless, backing: .buffered, defer: false)
+    let host = NSHostingView(rootView: root)
+    host.frame = CGRect(origin: .zero, size: size)
+    window.contentView = host
+    window.orderFrontRegardless()
+    RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+    var shots: [NSBitmapImageRep] = []
+    func capture() {
+        host.layoutSubtreeIfNeeded()
+        if let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            shots.append(bitmap)
+        }
+    }
+    capture()
+    change(island)
+    for _ in 0..<frames {
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        capture()
+    }
+    for (index, shot) in shots.enumerated() {
+        let url = outputDir.appendingPathComponent("\(name)-\(String(format: "%02d", index)).png")
+        try? shot.representation(using: .png, properties: [:])?.write(to: url)
+    }
+    let strip = NSImage(size: NSSize(width: size.width, height: size.height * CGFloat(shots.count)))
+    strip.lockFocus()
+    for (index, shot) in shots.enumerated() {
+        shot.draw(in: NSRect(x: 0, y: size.height * CGFloat(shots.count - 1 - index), width: size.width, height: size.height))
+    }
+    strip.unlockFocus()
+    if let tiff = strip.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff) {
+        let url = outputDir.appendingPathComponent("\(name).png")
+        try? bitmap.representation(using: .png, properties: [:])?.write(to: url)
+        print(url.path)
+    }
+}
+
+if arguments.contains("--film") {
+    film("film-open") { $0.set(.open) }
+    exit(0)
+}
+
 render("C1-idle", agents: [])
 render("C2-working", agents: ["a2", "a3"])
 render("C3-needs-you")

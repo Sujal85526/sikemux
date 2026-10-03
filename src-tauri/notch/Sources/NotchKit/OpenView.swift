@@ -2,38 +2,17 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct OpenView: View {
+/// The open island's band: tabs left of the camera, Sikemux right of it.
+struct OpenHeader: View {
     let store: NotchStore
     @Bindable var island: IslandModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if island.mode == .drop {
-                HeaderBand(geometry: island.geometry) {
-                    Text("Drop to start or send").font(Theme.ui(13, .semibold)).foregroundStyle(Theme.ink).padding(.leading, 12)
-                } trailing: {
-                    EmptyView()
-                }
-                DropTargets(store: store, island: island)
-            } else {
-                HeaderBand(geometry: island.geometry) {
-                    tabs
-                } trailing: {
-                    tools
-                }
-                if let error = store.error {
-                    Text(error).font(Theme.ui(11.5)).foregroundStyle(Theme.danger).padding(.horizontal, 12).padding(.top, 4)
-                }
-                Group {
-                    switch island.tab {
-                    case .agents: AgentList(store: store, island: island)
-                    case .compose: Composer(store: store, island: island)
-                    }
-                }
-                .padding(.top, 6)
-            }
+        HeaderBand(geometry: island.geometry) {
+            tabs
+        } trailing: {
+            tools
         }
-        .padding(.bottom, 14)
     }
 
     private var tabs: some View {
@@ -93,10 +72,31 @@ struct OpenView: View {
     }
 }
 
+/// The open island below its band: the agents, or the composer.
+struct OpenBody: View {
+    let store: NotchStore
+    @Bindable var island: IslandModel
+    let marks: Namespace.ID
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let error = store.error {
+                Text(error).font(Theme.ui(11.5)).foregroundStyle(Theme.danger).padding(.horizontal, 12).padding(.top, 4)
+            }
+            switch island.tab {
+            case .agents: AgentList(store: store, island: island, marks: marks)
+            case .compose: Composer(store: store, island: island)
+            }
+        }
+        .padding(.top, 6)
+    }
+}
+
 /// Agents grouped by what they need from the person.
 struct AgentList: View {
     let store: NotchStore
     let island: IslandModel
+    let marks: Namespace.ID
 
     var body: some View {
         if store.agents.isEmpty {
@@ -126,6 +126,10 @@ struct AgentList: View {
                     group("Working", .working)
                     group("Done", .done)
                 }
+                .background(GeometryReader { proxy in
+                    Color.clear.onAppear { island.listScrolls = proxy.size.height > 330 }
+                        .onChange(of: proxy.size.height) { _, height in island.listScrolls = height > 330 }
+                })
             }
             .frame(maxHeight: 330)
             .fixedSize(horizontal: false, vertical: true)
@@ -144,9 +148,9 @@ struct AgentList: View {
                 .padding(.bottom, 4)
             ForEach(agents) { agent in
                 if state == .blocked {
-                    AskCard(store: store, island: island, agent: agent)
+                    AskCard(store: store, island: island, agent: agent, marks: marks)
                 } else {
-                    AgentRow(store: store, agent: agent)
+                    AgentRow(store: store, agent: agent, marks: marks)
                 }
             }
         }
@@ -156,13 +160,14 @@ struct AgentList: View {
 struct AgentRow: View {
     let store: NotchStore
     let agent: AgentItem
+    let marks: Namespace.ID
     @State private var hovering = false
 
     var body: some View {
         Button {
             store.focus(agent.id)
         } label: {
-            RowLine(store: store, agent: agent)
+            RowLine(store: store, agent: agent, marks: marks)
                 .padding(.horizontal, 12)
                 .frame(height: 36)
                 .background(RoundedRectangle(cornerRadius: 12).fill(hovering ? Theme.hover : .clear))
@@ -177,10 +182,11 @@ struct AgentRow: View {
 struct RowLine: View {
     let store: NotchStore
     let agent: AgentItem
+    let marks: Namespace.ID
 
     var body: some View {
         HStack(spacing: 10) {
-            AgentMark(provider: agent.provider, size: 16)
+            AgentMark(provider: agent.provider, size: 16).matchedGeometryEffect(id: agent.id, in: marks)
             Text(agent.title)
                 .font(Theme.ui(13, .semibold))
                 .foregroundStyle(Theme.ink)
@@ -197,13 +203,14 @@ struct AskCard: View {
     let store: NotchStore
     let island: IslandModel
     let agent: AgentItem
+    let marks: Namespace.ID
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
                 store.focus(agent.id)
             } label: {
-                RowLine(store: store, agent: agent).contentShape(Rectangle())
+                RowLine(store: store, agent: agent, marks: marks).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             if let ask = agent.ask {
@@ -257,7 +264,10 @@ struct DropTargets: View {
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(hot ? Theme.accentLine : .clear, lineWidth: 1))
             .onDrop(of: [.fileURL], isTargeted: Binding(
                 get: { island.dropTarget == id },
-                set: { island.dropTarget = $0 ? id : (island.dropTarget == id ? nil : island.dropTarget) }
+                set: { targeted in
+                    if targeted, island.dropTarget != id { Haptics.tick() }
+                    island.dropTarget = targeted ? id : (island.dropTarget == id ? nil : island.dropTarget)
+                }
             )) { providers in
                 load(providers) { paths in drop(paths, on: id) }
                 return true

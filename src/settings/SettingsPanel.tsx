@@ -1773,6 +1773,19 @@ function NotchSection() {
                     }
                 />
                 <SettingsRow
+                    label="Haptic feedback"
+                    desc="A tick on a Force Touch trackpad as the pointer reaches the island, a swipe opens or closes it, or an agent needs you."
+                    asLabel
+                    control={
+                        <Switch
+                            checked={notch.haptics}
+                            disabled={!notch.enabled}
+                            onChange={(haptics) => cmd.setNotch({ haptics })}
+                            label="Haptic feedback"
+                        />
+                    }
+                />
+                <SettingsRow
                     label="Step aside for Sikemux Dev"
                     desc="While a dev build runs, its island takes the notch."
                     asLabel

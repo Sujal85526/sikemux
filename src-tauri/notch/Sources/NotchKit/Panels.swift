@@ -31,6 +31,7 @@ final class Panels {
 
     private let store: NotchStore
     private var panels: [CGDirectDisplayID: (panel: NotchPanel, island: IslandModel)] = [:]
+    private var swipes: [CGDirectDisplayID: SwipeTracker] = [:]
     private var monitors: [Any] = []
     private var dragCount = 0
     private var settingsWatcher: SettingsWatcher?
@@ -40,7 +41,12 @@ final class Panels {
         self.store = store
         store.onPeek = { [weak self] peek in
             let seconds: Double
-            if case .ask = peek { seconds = 6 } else { seconds = 3 }
+            if case .ask = peek {
+                seconds = 6
+                Haptics.tick()
+            } else {
+                seconds = 3
+            }
             self?.panels.values.forEach { $0.island.peek(peek, for: seconds) }
         }
         NotificationCenter.default.addObserver(
@@ -79,6 +85,7 @@ final class Panels {
         for (id, entry) in panels where wanted[id] == nil {
             entry.panel.orderOut(nil)
             panels[id] = nil
+            swipes[id] = nil
         }
         for (id, screen) in wanted {
             let geometry = NotchGeometry.of(screen)
@@ -110,6 +117,11 @@ final class Panels {
             }
             panel.orderFrontRegardless()
             panels[id] = (panel, island)
+            let swipe = SwipeTracker()
+            swipe.onPull = { [weak island] direction, travelled in island?.swipe(direction, travelled: travelled) }
+            swipe.onSwipe = { [weak island] direction in island?.swiped(direction) }
+            swipe.onEnd = { [weak island] in island?.swipeEnded() }
+            swipes[id] = swipe
         }
         pointerScreen = wantedScreens().first.flatMap(Self.displayId)
         tick()
@@ -145,6 +157,14 @@ final class Panels {
         if let global = NSEvent.addGlobalMonitorForEvents(matching: events, handler: handler) {
             monitors.append(global)
         }
+        let swipes = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            guard let self, let window = event.window,
+                  let id = self.panels.first(where: { $0.value.panel === window })?.key
+            else { return event }
+            self.swipes[id]?.handle(event)
+            return event
+        }
+        if let swipes { monitors.append(swipes) }
     }
 
     private func drag(_ event: NSEvent) {
@@ -159,7 +179,10 @@ final class Panels {
                 let island = entry.island
                 guard let screen = entry.panel.screen, !island.hidden, island.mode != .drop else { continue }
                 let near = mouse.y > screen.frame.maxY - 140 && abs(mouse.x - island.geometry.centerX) < 420
-                if near { island.set(.drop) }
+                if near {
+                    Haptics.tick()
+                    island.set(.drop)
+                }
             }
         case .leftMouseUp:
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in

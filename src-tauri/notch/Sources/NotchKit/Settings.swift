@@ -14,6 +14,7 @@ struct NotchSettings: Decodable, Equatable {
     var peeks: Peeks = .all
     var answerInNotch = true
     var sound = true
+    var haptics = true
     /// Only a stable or nightly build reads this: whether it steps aside while Sikemux Dev runs.
     var yieldToDev = true
 
@@ -28,11 +29,12 @@ struct NotchSettings: Decodable, Equatable {
         peeks = (try? container.decode(Peeks.self, forKey: .peeks)) ?? defaults.peeks
         answerInNotch = (try? container.decode(Bool.self, forKey: .answerInNotch)) ?? defaults.answerInNotch
         sound = (try? container.decode(Bool.self, forKey: .sound)) ?? defaults.sound
+        haptics = (try? container.decode(Bool.self, forKey: .haptics)) ?? defaults.haptics
         yieldToDev = (try? container.decode(Bool.self, forKey: .yieldToDev)) ?? defaults.yieldToDev
     }
 
     private enum CodingKeys: String, CodingKey {
-        case displays, openWith, fullScreen, peeks, answerInNotch, sound, yieldToDev
+        case displays, openWith, fullScreen, peeks, answerInNotch, sound, haptics, yieldToDev
     }
 
     static func load(_ path: String) -> NotchSettings {

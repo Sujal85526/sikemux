@@ -414,11 +414,18 @@ code { font-family: var(--mono); font-size: 11px; color: var(--ink); }
         <tr><td>Closed wings</td><td>Each wing is as wide as the wider of the two, minimum 48. Mark tiles 24 pt with a 2 pt black ring, overlapping by 7.</td></tr>
         <tr><td>Open</td><td>680 wide, height follows content up to 400, then the list scrolls. Padding: top-radius horizontally, then 12. Rows are one line, 36 tall, radius 12: mark, task, project, time, state.</td></tr>
         <tr><td>Springs</td><td>Open <code>spring(response: 0.42, dampingFraction: 0.8)</code>. Close <code>spring(response: 0.45, dampingFraction: 1.0)</code>.
-            Hover nudge <code>interactiveSpring(response: 0.38, dampingFraction: 0.8)</code>.</td></tr>
-        <tr><td>Content</td><td>Open layers enter with scale 0.8 → 1 anchored at the top, opacity 0 → 1 and blur 20 → 0 over 0.35 s (<code>.smooth</code>). Wings
-            leave in 0.16 s.</td></tr>
+            Hover (shadow) <code>interactiveSpring(response: 0.38, dampingFraction: 0.8)</code>.</td></tr>
+        <tr><td>Content</td><td>One shape: the band beside the camera swaps the wings for a header in place, out of and into a 20 pt blur; the body
+            below enters with scale 0.8 → 1 anchored at the top and opacity 0 → 1 over 0.35 s (<code>.smooth</code>). Agent marks fly from the wings
+            to their rows (<code>matchedGeometryEffect</code>). The width is set per state (open 680, permission 460), so width, height and both radii
+            spring together.</td></tr>
         <tr><td>Timing</td><td>Hover 0.3 s before opening; leave closes after 0.1 s, never while the prompt has focus. Permission peek 6 s, finished peek 3 s.</td></tr>
-        <tr><td>Hover</td><td>Shadow on (black 70%, radius 6) and the island grows 10 × 3 pt. A trackpad tick (<code>.alignment</code>) when the pointer arrives.</td></tr>
+        <tr><td>Hover</td><td>Shadow on (black 70%, radius 6); the size stays. A trackpad tick (<code>.alignment</code>) when the pointer reaches a closed island.</td></tr>
+        <tr><td>Swipe</td><td>Two fingers down over a closed island open it, up over an open one close it, once they travel 140 pt along the finger direction
+            (twice the other axis; a mouse wheel's lines count 8 pt). While pulling, the island scales from the top, 1% per twentieth of the way, never
+            under 60%, and ticks when it crosses. A list that scrolls keeps the upward swipe.</td></tr>
+        <tr><td>Haptics</td><td>A trackpad tick when the pointer reaches the closed island, a swipe crosses, a permission request peeks in, a dragged file
+            opens the drop targets or snaps onto one. Off with the Haptic feedback option.</td></tr>
         <tr><td>Hit area</td><td>The drawn shape plus the menu-bar band beneath a closed island. Everything else in the canvas passes clicks through.</td></tr>
         <tr><td>Displays</td><td>One panel per screen, keyed by display UUID, rebuilt when the screen setup changes. Setting: every display / the built-in only / the
             one under the pointer. In a full-screen app the island stays hidden unless an agent needs you.</td></tr>
@@ -782,7 +789,7 @@ class Island {
         this.layers.peek.classList.toggle("off", this.mode !== "peek-ask");
         this.layers.open.classList.toggle("off", !isBig);
         const target = this.target();
-        const nudge = target.nudge && this.hover ? [10, 3] : [0, 0];
+        const nudge = [0, 0];
         this.goal = [target.w + nudge[0], target.h + nudge[1], target.r[0], target.r[1]];
         const lifted = isBig || this.mode.startsWith("peek") || this.hover;
         this.el.classList.toggle("lifted", lifted);
@@ -949,7 +956,7 @@ const SECTIONS = [
             { id: "C5", name: "More than three", when: "Four or more agents are running.",
               shows: "Three marks, then +N.", opts: { agents: () => [...allWorking(), { id: "a5", type: "pi", title: "x", project: "x", state: "working" }] } },
             { id: "C6", name: "Pointer resting", when: "The pointer is on the island, for the 0.3 s before it opens.",
-              shows: "The shadow comes on, the island grows 10 × 3 pt, and the trackpad ticks once.", opts: { agents: () => only(["a2", "a3"]), hover: true } },
+              shows: "The shadow comes on and the trackpad ticks once. The island keeps its size until it opens.", opts: { agents: () => only(["a2", "a3"]), hover: true } },
         ],
     },
     {
@@ -1012,6 +1019,7 @@ const OPTIONS = [
     { name: "While Sikemux Dev runs", choices: ["Dev takes the notch", "Prod keeps it", "One island with both builds' agents"], def: 0,
       why: "Prod's helper watches for Dev's helper starting and quitting, and hides while it runs." },
     { name: "Sound", choices: ["When an agent needs you", "Never"], def: 0 },
+    { name: "Haptic feedback", choices: ["On", "Off"], def: 0, why: "Ticks on a Force Touch trackpad; only felt while a finger rests on it." },
 ];
 
 const FLOW = [

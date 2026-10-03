@@ -27,10 +27,12 @@ final class NotchStore {
     init(options: Options) {
         self.options = options
         settings = NotchSettings.load(options.settings)
+        Haptics.enabled = settings.haptics
     }
 
     func reloadSettings() {
         let fresh = NotchSettings.load(options.settings)
+        Haptics.enabled = fresh.haptics
         if fresh != settings { settings = fresh }
     }
 

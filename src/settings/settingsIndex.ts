@@ -114,6 +114,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
               row("agents", "Notch", "Peek when", "peek finished needs you"),
               row("agents", "Notch", "Answer permissions in the notch", "allow deny permission"),
               row("agents", "Notch", "Sound when an agent needs you", "sound alert"),
+              row("agents", "Notch", "Haptic feedback", "haptics trackpad force touch tick vibration swipe"),
               row("agents", "Notch", "Step aside for Sikemux Dev", "dev build development"),
               row("agents", "Voice", "Dictate with right Option", "dictation microphone speech push to talk hold"),
               row("agents", "Voice", "Speech model", "parakeet download neural engine"),

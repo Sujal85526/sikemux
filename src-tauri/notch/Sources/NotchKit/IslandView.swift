@@ -2,19 +2,26 @@ import SwiftUI
 
 /// The island on one screen, top-centred in its panel. Only the black shape
 /// is drawn, so the rest of the panel lets clicks through to what is under it.
+///
+/// It is one shape whose width, height and corners spring together: the band
+/// beside the camera swaps what it shows in place, and the body below it
+/// arrives scaled from the top. Agent marks fly from the wings to their rows.
 struct IslandView: View {
     let store: NotchStore
     @Bindable var island: IslandModel
+    @Namespace private var marks
 
     var body: some View {
         VStack(spacing: 0) {
             if shows {
-                shape
-                    .transition(.opacity)
+                shape.transition(.opacity)
             }
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .compositingGroup()
+        .scaleEffect(island.pullScale, anchor: .top)
+        .animation(.smooth, value: island.pull)
         .preferredColorScheme(.dark)
     }
 
@@ -25,6 +32,13 @@ struct IslandView: View {
         return geometry.hasNotch || !store.agents.isEmpty || island.mode != .closed
     }
 
+    private var expanded: Bool {
+        switch island.mode {
+        case .closed, .peekDone: return false
+        case .peekAsk, .open, .drop: return true
+        }
+    }
+
     private var radii: (top: CGFloat, bottom: CGFloat) {
         switch island.mode {
         case .closed, .peekDone: return Radii.closed
@@ -33,58 +47,102 @@ struct IslandView: View {
         }
     }
 
+    private var width: CGFloat {
+        switch island.mode {
+        case .closed: return ClosedWings.width(store.agents.count, geometry)
+        case .peekDone: return geometry.notchWidth + 2 * FinishedWings.wing
+        case .peekAsk: return 460
+        case .open, .drop: return 680
+        }
+    }
+
+    private var inset: CGFloat {
+        switch island.mode {
+        case .closed, .peekDone: return 0
+        case .peekAsk: return Radii.peek.top + 8
+        case .open, .drop: return Radii.open.top + 12
+        }
+    }
+
     private var lifted: Bool { island.mode != .closed || island.hovering }
 
     private var shape: some View {
         let outline = NotchShape(top: radii.top, bottom: radii.bottom)
-        return content
-            .background(Color.black)
-            .clipShape(outline)
-            .contentShape(outline)
-            .shadow(color: lifted ? .black.opacity(0.7) : .clear, radius: 6)
-            .onHover { island.pointer(entered: $0, opensOnHover: store.settings.openWith == .hover) }
-            .onTapGesture {
-                if !island.isOpen { island.set(.open) }
+        return VStack(alignment: .leading, spacing: 0) {
+            band
+            if expanded {
+                expandedBody.transition(.opening)
             }
-            .onExitCommand { island.set(.closed) }
+        }
+        .padding(.horizontal, inset)
+        .padding(.bottom, expanded ? 14 : 0)
+        .frame(width: width, alignment: .top)
+        .background(Color.black)
+        .clipShape(outline)
+        .contentShape(outline)
+        .shadow(color: lifted ? .black.opacity(0.7) : .clear, radius: 6)
+        .onHover { island.pointer(entered: $0, opensOnHover: store.settings.openWith == .hover) }
+        .onTapGesture {
+            if !island.isOpen { island.set(.open) }
+        }
+        .onExitCommand { island.set(.closed) }
+    }
+
+    /// What sits beside the camera: the wings when closed, a header when open.
+    @ViewBuilder
+    private var band: some View {
+        ZStack {
+            switch island.mode {
+            case .closed:
+                ClosedWings(store: store, geometry: geometry, marks: marks)
+                    .transition(.inPlace)
+            case .peekDone(let id):
+                FinishedWings(agent: store.agents.first { $0.id == id }, geometry: geometry, marks: marks)
+                    .transition(.inPlace)
+            case .peekAsk(let id):
+                AskHeader(agent: store.agents.first { $0.id == id }, geometry: geometry, marks: marks)
+                    .transition(.inPlace)
+            case .open:
+                OpenHeader(store: store, island: island)
+                    .transition(.inPlace)
+            case .drop:
+                HeaderBand(geometry: geometry) {
+                    Text("Drop to start or send").font(Theme.ui(13, .semibold)).foregroundStyle(Theme.ink).padding(.leading, 12)
+                } trailing: {
+                    EmptyView()
+                }
+                .transition(.inPlace)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: geometry.height)
     }
 
     @ViewBuilder
-    private var content: some View {
+    private var expandedBody: some View {
         switch island.mode {
-        case .closed:
-            ClosedWings(store: store, geometry: geometry)
-                .padding(.horizontal, island.hovering ? 5 : 0)
-                .padding(.bottom, island.hovering ? 3 : 0)
-                .transition(.opacity.combined(with: .blur))
-        case .peekDone(let id):
-            FinishedWings(agent: store.agents.first { $0.id == id }, geometry: geometry)
-                .transition(.opacity.combined(with: .blur))
         case .peekAsk(let id):
-            AskPeek(store: store, island: island, agent: store.agents.first { $0.id == id })
-                .frame(width: 460 - 2 * Radii.peek.top - 16)
-                .padding(.horizontal, Radii.peek.top + 8)
-                .transition(.opening)
-        case .open, .drop:
-            OpenView(store: store, island: island)
-                .frame(width: 680 - 2 * Radii.open.top - 24)
-                .padding(.horizontal, Radii.open.top + 12)
-                .transition(.opening)
+            AskBody(store: store, island: island, agent: store.agents.first { $0.id == id })
+        case .drop:
+            DropTargets(store: store, island: island)
+        default:
+            OpenBody(store: store, island: island, marks: marks)
         }
     }
 }
 
 extension AnyTransition {
-    /// Content arriving in an opening island: from 80% and blurred, anchored at the top.
+    /// The body arriving in an opening island: from 80%, anchored at the top, as it fades in.
     static var opening: AnyTransition {
         .asymmetric(
-            insertion: .scale(scale: 0.8, anchor: .top).combined(with: .opacity).combined(with: .blur).animation(Motion.content),
+            insertion: .scale(scale: 0.8, anchor: .top).combined(with: .opacity).animation(Motion.content),
             removal: .opacity.animation(.smooth(duration: 0.16))
         )
     }
 
-    static var blur: AnyTransition {
-        .modifier(active: BlurModifier(radius: 20), identity: BlurModifier(radius: 0))
+    /// What the band shows changing where it stands: out of and into a 20-point blur.
+    static var inPlace: AnyTransition {
+        .opacity.combined(with: .modifier(active: BlurModifier(radius: 20), identity: BlurModifier(radius: 0)))
     }
 }
 
@@ -98,23 +156,30 @@ private struct BlurModifier: ViewModifier {
 struct ClosedWings: View {
     let store: NotchStore
     let geometry: NotchGeometry
+    let marks: Namespace.ID
 
     private var running: [AgentItem] { store.agents }
 
-    private var wing: CGFloat {
-        guard !running.isEmpty else { return 0 }
-        let marks = min(running.count, 3) + (running.count > 3 ? 1 : 0)
-        let left = 14 + 24 + CGFloat(max(0, marks - 1)) * 17 + 8
+    static func wing(_ count: Int) -> CGFloat {
+        guard count > 0 else { return 0 }
+        let tiles = min(count, 3) + (count > 3 ? 1 : 0)
+        let left = 14 + 24 + CGFloat(max(0, tiles - 1)) * 17 + 8
         let right: CGFloat = 14 + 16 + 6 + 10 + 8
         return max(48, left, right)
     }
 
+    static func width(_ count: Int, _ geometry: NotchGeometry) -> CGFloat {
+        geometry.notchWidth + 2 * wing(count)
+    }
+
     var body: some View {
+        let wing = Self.wing(running.count)
         HStack(spacing: 0) {
             if wing > 0 {
                 HStack(spacing: -7) {
                     ForEach(running.prefix(3)) { agent in
                         MarkTile(provider: agent.provider)
+                            .matchedGeometryEffect(id: agent.id, in: marks)
                     }
                     if running.count > 3 {
                         Text("+\(running.count - 3)")
@@ -148,17 +213,22 @@ struct ClosedWings: View {
 
 /// A finished agent, for a moment, on either side of the notch.
 struct FinishedWings: View {
+    static let wing: CGFloat = 150
+
     let agent: AgentItem?
     let geometry: NotchGeometry
+    let marks: Namespace.ID
 
     var body: some View {
         HStack(spacing: 0) {
             HStack(spacing: 8) {
-                if let agent { MarkTile(provider: agent.provider) }
+                if let agent {
+                    MarkTile(provider: agent.provider).matchedGeometryEffect(id: agent.id, in: marks)
+                }
                 Text("Finished").font(Theme.ui(12.5, .semibold)).foregroundStyle(Theme.ink)
             }
             .padding(.leading, 14)
-            .frame(width: 150, alignment: .leading)
+            .frame(width: Self.wing, alignment: .leading)
             Color.clear.frame(width: geometry.notchWidth)
             HStack(spacing: 6) {
                 Text(agent?.title ?? "")
@@ -168,7 +238,7 @@ struct FinishedWings: View {
                 StateMark(state: .done)
             }
             .padding(.trailing, 14)
-            .frame(width: 150, alignment: .trailing)
+            .frame(width: Self.wing, alignment: .trailing)
         }
         .frame(height: geometry.height)
     }
@@ -190,21 +260,33 @@ struct HeaderBand<Leading: View, Trailing: View>: View {
     }
 }
 
+/// A permission request's band: the agent on the left of the camera, that it needs you on the right.
+struct AskHeader: View {
+    let agent: AgentItem?
+    let geometry: NotchGeometry
+    let marks: Namespace.ID
+
+    var body: some View {
+        HeaderBand(geometry: geometry) {
+            if let agent {
+                MarkTile(provider: agent.provider, size: 26, ringed: false).matchedGeometryEffect(id: agent.id, in: marks)
+            }
+            Text(agent.map { agentName($0.provider) } ?? "").font(Theme.ui(13, .semibold)).foregroundStyle(Theme.ink)
+        } trailing: {
+            Text("Needs you").font(Theme.ui(12, .semibold)).foregroundStyle(Theme.warn)
+            StateMark(state: .blocked)
+        }
+    }
+}
+
 /// A permission request, answered without opening the island.
-struct AskPeek: View {
+struct AskBody: View {
     let store: NotchStore
     let island: IslandModel
     let agent: AgentItem?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HeaderBand(geometry: island.geometry) {
-                if let agent { MarkTile(provider: agent.provider, size: 26, ringed: false) }
-                Text(agent.map { agentName($0.provider) } ?? "").font(Theme.ui(13, .semibold)).foregroundStyle(Theme.ink)
-            } trailing: {
-                Text("Needs you").font(Theme.ui(12, .semibold)).foregroundStyle(Theme.warn)
-                StateMark(state: .blocked)
-            }
             if let agent {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(agent.title).font(Theme.ui(13, .semibold)).foregroundStyle(Theme.ink).lineLimit(1)
@@ -217,7 +299,7 @@ struct AskPeek: View {
                 AnswerButtons(store: store, island: island, agent: agent, height: 32).padding(.top, 10)
             }
         }
-        .padding(.bottom, 16)
+        .padding(.bottom, 2)
     }
 }
 

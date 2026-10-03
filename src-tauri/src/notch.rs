@@ -20,6 +20,7 @@ pub struct NotchSettings {
     peeks: String,
     answer_in_notch: bool,
     sound: bool,
+    haptics: bool,
     yield_to_dev: bool,
 }
 

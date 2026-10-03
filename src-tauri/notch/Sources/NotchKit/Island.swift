@@ -60,6 +60,13 @@ final class IslandModel {
     /// Hidden while Sikemux Dev's helper holds the notch, or over a full-screen app.
     var hidden = false
     var geometry: NotchGeometry
+    /// How far a two-finger swipe has pulled the island: positive down, negative up.
+    var pull: CGFloat = 0
+    /// Whether the agent list is taller than the island shows, so it scrolls instead of closing.
+    var listScrolls = false
+
+    /// The island leans into a swipe: about a percent per twentieth of the way, never under 60%.
+    var pullScale: CGFloat { pull == 0 ? 1 : max(0.6, 1 + pull * 0.01) }
 
     @ObservationIgnored var wantsKey: ((Bool) -> Void)?
     @ObservationIgnored private var peekTimer: DispatchWorkItem?
@@ -72,8 +79,7 @@ final class IslandModel {
     var isOpen: Bool { mode == .open || mode == .drop }
 
     func set(_ mode: Mode, animation: Animation? = nil) {
-        let opening = mode == .open || mode == .drop || mode != .closed
-        withAnimation(animation ?? (opening ? Motion.open : Motion.close)) {
+        withAnimation(animation ?? (mode == .closed ? Motion.close : Motion.open)) {
             self.mode = mode
             if mode != .open { menu = nil }
         }
@@ -98,9 +104,7 @@ final class IslandModel {
     func pointer(entered: Bool, opensOnHover: Bool) {
         hoverTimer?.cancel()
         if entered {
-            if !hovering {
-                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
-            }
+            if !hovering, mode == .closed { Haptics.tick() }
             withAnimation(Motion.hover) { hovering = true }
             guard opensOnHover, !isOpen else { return }
             schedule(after: 0.3) { $0.set(.open) }
@@ -111,6 +115,30 @@ final class IslandModel {
                 island.set(.closed)
             }
         }
+    }
+
+    /// A two-finger swipe over the island: down opens it, up closes it, each
+    /// with a tick once the fingers have gone far enough.
+    func swipe(_ direction: SwipeTracker.Direction, travelled: CGFloat) {
+        switch (direction, mode) {
+        case (.down, .closed), (.down, .peekDone):
+            pull = travelled / SwipeTracker.threshold * 20
+        case (.up, .open) where !composing && menu == nil && (tab == .compose || !listScrolls):
+            pull = -travelled / SwipeTracker.threshold * 20
+        default:
+            pull = 0
+        }
+    }
+
+    func swiped(_ direction: SwipeTracker.Direction) {
+        guard pull != 0 else { return }
+        pull = 0
+        Haptics.tick()
+        set(direction == .down ? .open : .closed)
+    }
+
+    func swipeEnded() {
+        pull = 0
     }
 
     private func schedule(after seconds: Double, _ work: @escaping (IslandModel) -> Void) {

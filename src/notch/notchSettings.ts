@@ -9,6 +9,7 @@ export interface NotchSettings {
     readonly peeks: "all" | "needsYou" | "never";
     readonly answerInNotch: boolean;
     readonly sound: boolean;
+    readonly haptics: boolean;
     readonly yieldToDev: boolean;
 }
 
@@ -20,6 +21,7 @@ export const DEFAULT_NOTCH_SETTINGS: NotchSettings = {
     peeks: "all",
     answerInNotch: true,
     sound: true,
+    haptics: true,
     yieldToDev: true,
 };
 
@@ -38,6 +40,7 @@ export function normaliseNotchSettings(value: unknown): NotchSettings {
         peeks: choice(saved.peeks, ["all", "needsYou", "never"], DEFAULT_NOTCH_SETTINGS.peeks),
         answerInNotch: flag("answerInNotch"),
         sound: flag("sound"),
+        haptics: flag("haptics"),
         yieldToDev: flag("yieldToDev"),
     };
 }
