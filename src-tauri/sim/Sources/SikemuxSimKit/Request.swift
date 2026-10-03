@@ -18,6 +18,14 @@ public enum TouchPhase: String, Sendable {
     case down, move, up
 }
 
+/// Which way up the device is held, named as iOS names it.
+public enum Orientation: String, Sendable, CaseIterable {
+    case portrait, portraitUpsideDown, landscapeLeft, landscapeRight
+
+    /// Held sideways, the screen is as wide as it is tall upright.
+    public var isLandscape: Bool { self == .landscapeLeft || self == .landscapeRight }
+}
+
 public enum ImageFormat: String, Sendable {
     case png, jpeg
 }
@@ -45,13 +53,15 @@ public enum Command: Equatable, Sendable {
     /// A live MJPEG view of the screen at a local address, shared by everyone who opens it.
     case stream(udid: String)
     case stopStream(udid: String)
+    case rotate(udid: String, to: Orientation)
+    case orientation(udid: String)
     /// The device drawn around the screen, as Xcode's simulator window draws it, saved as two PNGs.
     case chrome(udid: String, chromePath: String, maskPath: String)
 
     public var udid: String? {
         switch self {
         case .devices: nil
-        case let .boot(udid), let .shutdown(udid), let .state(udid), let .stream(udid), let .stopStream(udid): udid
+        case let .boot(udid), let .shutdown(udid), let .state(udid), let .stream(udid), let .stopStream(udid), let .rotate(udid, _), let .orientation(udid): udid
         case let .screenshot(udid, _, _, _), let .chrome(udid, _, _), let .type(udid, _), let .button(udid, _), let .tapElement(udid, _),
             let .terminate(udid, _), let .install(udid, _), let .openUrl(udid, _):
             udid
@@ -150,6 +160,14 @@ public struct Request: Equatable, Sendable {
             return .stream(udid: try fields.required("udid"))
         case "chrome":
             return .chrome(udid: try fields.required("udid"), chromePath: try fields.required("chromePath"), maskPath: try fields.required("maskPath"))
+        case "orientation":
+            return .orientation(udid: try fields.required("udid"))
+        case "rotate":
+            let name: String = try fields.required("orientation")
+            guard let orientation = Orientation(rawValue: name) else {
+                throw FieldError("orientation must be one of \(Orientation.allCases.map(\.rawValue).joined(separator: ", "))")
+            }
+            return .rotate(udid: try fields.required("udid"), to: orientation)
         case "stopStream":
             return .stopStream(udid: try fields.required("udid"))
         default:

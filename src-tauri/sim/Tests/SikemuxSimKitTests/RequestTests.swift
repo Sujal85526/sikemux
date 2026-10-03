@@ -29,6 +29,9 @@ final class RequestTests: XCTestCase {
             try parse(#"{"id":2,"type":"touch2","udid":"A","phase":"down","x1":100,"y1":400,"x2":300,"y2":400}"#).command,
             .touch2(udid: "A", phase: .down, first: Point(x: 100, y: 400), second: Point(x: 300, y: 400)))
         XCTAssertEqual(try parse(#"{"id":2,"type":"stopStream","udid":"A"}"#).command, .stopStream(udid: "A"))
+        XCTAssertEqual(try parse(#"{"id":2,"type":"rotate","udid":"A","orientation":"landscapeLeft"}"#).command, .rotate(udid: "A", to: .landscapeLeft))
+        XCTAssertEqual(try parse(#"{"id":2,"type":"orientation","udid":"A"}"#).command, .orientation(udid: "A"))
+        XCTAssertTrue(failure(#"{"id":3,"type":"rotate","udid":"A","orientation":"sideways"}"#)?.description.contains("landscapeLeft") ?? false)
         XCTAssertEqual(
             try parse(#"{"id":2,"type":"chrome","udid":"A","chromePath":"/tmp/c.png","maskPath":"/tmp/m.png"}"#).command,
             .chrome(udid: "A", chromePath: "/tmp/c.png", maskPath: "/tmp/m.png"))

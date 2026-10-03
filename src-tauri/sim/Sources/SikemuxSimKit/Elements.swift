@@ -52,6 +52,12 @@ public enum ElementLookup {
         }
     }
 
+    /// The screen as the frontmost app is laid out on it, which is wider than tall when the
+    /// device is turned on its side.
+    public static func screen(of elements: [[String: Any]]) -> Frame? {
+        elements.first { $0["type"] as? String == "Application" }.flatMap(frame)
+    }
+
     private static func matches(_ element: [String: Any], _ name: String) -> Bool {
         let label = element["AXLabel"] as? String ?? ""
         return label == name || element["AXUniqueId"] as? String == name || label.localizedCaseInsensitiveContains(name)

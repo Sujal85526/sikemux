@@ -23,6 +23,8 @@ final class Simulators {
     /// The latest live touch step sent to each device; the next one waits for it, so a move never
     /// overtakes its touch-down.
     private var touchSteps: [String: Task<Void, Error>] = [:]
+    /// The way each device was last turned here, which sets the shape its touches are measured on.
+    private var orientations: [String: Orientation] = [:]
 
     init() throws {
         logger = FBControlCoreLoggerFactory.systemLoggerWriting(toStderr: false, withDebugLogging: false)
@@ -109,8 +111,8 @@ final class Simulators {
         case .state:
             return ["elements": try await elements(of: simulator)]
         case let .tapElement(_, label):
-            let screen = Self.screenSize(simulator).map { Frame(x: 0, y: 0, width: $0.width, height: $0.height) }
-            let frame = try ElementLookup.frame(of: label, in: try await elements(of: simulator), screen: screen).get()
+            let onScreen = try await elements(of: simulator)
+            let frame = try ElementLookup.frame(of: label, in: onScreen, screen: ElementLookup.screen(of: onScreen)).get()
             try await send(.tapAt(x: frame.center.x, y: frame.center.y), to: simulator)
             return ["x": frame.center.x, "y": frame.center.y]
         case let .launch(_, bundleId, arguments, environment):
@@ -145,6 +147,21 @@ final class Simulators {
                 "width": layout.size.width, "height": layout.size.height,
                 "screen": ["x": layout.screen.minX, "y": layout.screen.minY, "width": layout.screen.width, "height": layout.screen.height],
             ]
+        case let .rotate(_, orientation):
+            let device: SimulatorDeviceOrientation = switch orientation {
+            case .portrait: .portrait
+            case .portraitUpsideDown: .portraitUpsideDown
+            case .landscapeLeft: .landscapeLeft
+            case .landscapeRight: .landscapeRight
+            }
+            try await requireBooted(simulator).orientation.set(device)
+            orientations[simulator.udid] = orientation
+            return ["orientation": orientation.rawValue]
+        case .orientation:
+            let current = try await requireBooted(simulator).orientation.current()
+            let orientation = Orientation(rawValue: current.rawValue) ?? .portrait
+            orientations[simulator.udid] = orientation
+            return ["orientation": orientation.rawValue]
         case .stopStream:
             streams.removeValue(forKey: simulator.udid)?.stop()
             return [:]
@@ -225,9 +242,10 @@ final class Simulators {
     /// A touch starting at a side of the screen is tagged with it, so iOS treats it as the system
     /// gesture a finger there would make: home, back, Notification Center or Control Center.
     private func edgeAt(_ point: Point, of simulator: Simulator) -> SimulatorHIDEdge {
-        guard let size = Self.screenSize(simulator),
-            let edge = ScreenEdge.of(point, width: size.width, height: size.height)
-        else { return .none }
+        guard let size = Self.screenSize(simulator) else { return .none }
+        let sideways = orientations[simulator.udid]?.isLandscape == true
+        let (width, height) = sideways ? (size.height, size.width) : (size.width, size.height)
+        guard let edge = ScreenEdge.of(point, width: width, height: height) else { return .none }
         switch edge {
         case .top: return .top
         case .left: return .left

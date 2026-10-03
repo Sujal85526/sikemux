@@ -51,4 +51,14 @@ final class ElementLookupTests: XCTestCase {
         let elements = [element("Camera", x: 0, y: -60, width: 402, height: 90), element("Camera", x: 0, y: 300, width: 402, height: 50)]
         XCTAssertEqual(try ElementLookup.frame(of: "Camera", in: elements, screen: screen).get().y, 300)
     }
+
+    func testTheScreenIsShapedAsTheAppIsLaidOut() {
+        let landscape: [[String: Any]] = [
+            ["type": "Application", "frame": ["x": 0, "y": 0, "width": 874, "height": 402]],
+            element("Add one", x: 400, y: 40, width: 74, height: 44),
+        ]
+        let screen = ElementLookup.screen(of: landscape)
+        XCTAssertEqual(screen, Frame(x: 0, y: 0, width: 874, height: 402))
+        XCTAssertEqual(try ElementLookup.frame(of: "Add one", in: landscape, screen: screen).get().center, Point(x: 437, y: 62))
+    }
 }
