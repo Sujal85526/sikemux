@@ -26,7 +26,7 @@ public enum ElementLookup {
     public static func frame(of name: String, in elements: [[String: Any]], screen: Frame? = nil) -> Result<Frame, Failure> {
         var offscreen = false
         let named = elements.compactMap { element -> (label: String, frame: Frame, exact: Bool)? in
-            guard let frame = frame(element), frame.width > 0, frame.height > 0 else { return nil }
+            guard let frame = bounds(of: element), frame.width > 0, frame.height > 0 else { return nil }
             if let screen, !screen.contains(frame.center) {
                 if matches(element, name) { offscreen = true }
                 return nil
@@ -55,7 +55,7 @@ public enum ElementLookup {
     /// The screen as the frontmost app is laid out on it, which is wider than tall when the
     /// device is turned on its side.
     public static func screen(of elements: [[String: Any]]) -> Frame? {
-        elements.first { $0["type"] as? String == "Application" }.flatMap(frame)
+        elements.first { $0["type"] as? String == "Application" }.flatMap { bounds(of: $0) }
     }
 
     private static func matches(_ element: [String: Any], _ name: String) -> Bool {
@@ -63,7 +63,7 @@ public enum ElementLookup {
         return label == name || element["AXUniqueId"] as? String == name || label.localizedCaseInsensitiveContains(name)
     }
 
-    private static func frame(_ element: [String: Any]) -> Frame? {
+    private static func bounds(of element: [String: Any]) -> Frame? {
         guard let frame = element["frame"] as? [String: Any],
             let x = (frame["x"] as? NSNumber)?.doubleValue,
             let y = (frame["y"] as? NSNumber)?.doubleValue,
