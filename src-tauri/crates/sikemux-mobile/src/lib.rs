@@ -12,9 +12,10 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 use base64::Engine;
-use iroh::address_lookup::{DnsAddressLookup, PkarrResolver};
-use iroh::endpoint::{default_relay_mode, presets};
-use iroh::{Endpoint, EndpointAddr, SecretKey};
+use iroh::endpoint::presets;
+use iroh::{Endpoint, EndpointAddr, RelayMode, RelayUrl, SecretKey};
+use sikemux_core::accounts::network;
+use sikemux_core::accounts::protocol::Relay;
 use sikemux_core::client::{ClientError, CoreClient, EventSink, Reply};
 use sikemux_core::pairing::{self, PairError, PairingRequest};
 use sikemux_core::protocol::{
@@ -148,6 +149,34 @@ pub fn parse_pairing_link(text: String) -> Option<PairingLink> {
     })
 }
 
+/// A relay from the accounts server's `GET /v1/network`, which hosts listen on
+/// and this phone dials them through.
+#[derive(Clone, uniffi::Record)]
+pub struct RelaySetting {
+    pub url: String,
+    /// The relay's QUIC address discovery port, if it runs one.
+    pub quic_port: Option<u16>,
+}
+
+/// The relays to use, or the built-in one when none of `settings` is usable.
+/// Never iroh's public relays: no host listens there.
+fn relays_from(settings: Vec<RelaySetting>) -> Vec<Relay> {
+    let relays: Vec<Relay> = settings
+        .into_iter()
+        .filter(|setting| setting.url.parse::<RelayUrl>().is_ok())
+        .map(|setting| Relay {
+            url: setting.url,
+            region: String::new(),
+            quic_port: setting.quic_port.map(i64::from),
+        })
+        .collect();
+    if relays.is_empty() {
+        network::default_relays()
+    } else {
+        relays
+    }
+}
+
 /// The endpoint and the hosts it has reached.
 struct Online {
     endpoint: Endpoint,
@@ -159,18 +188,18 @@ struct Online {
 #[derive(uniffi::Object)]
 pub struct Device {
     key: SecretKey,
+    relays: Vec<Relay>,
     online: Mutex<Online>,
     renewing: tokio::sync::Mutex<()>,
 }
 
-/// The phone looks hosts up but never publishes its own addresses: no host
-/// dials a phone, and publishing would announce where the phone is.
-async fn bind(key: SecretKey) -> Result<Endpoint, MobileError> {
+/// The phone finds a host through the relay the host listens on and never
+/// publishes its own addresses: no host dials a phone.
+async fn bind(key: SecretKey, relays: &[Relay]) -> Result<Endpoint, MobileError> {
+    let relays = network::relay_map(relays);
     on_runtime(async move {
         Endpoint::builder(presets::Minimal)
-            .address_lookup(PkarrResolver::n0_dns())
-            .address_lookup(DnsAddressLookup::n0_dns())
-            .relay_mode(default_relay_mode())
+            .relay_mode(RelayMode::Custom(relays))
             .secret_key(key)
             .bind()
             .await
@@ -194,24 +223,36 @@ fn sign_live(key: &SecretKey, nonce: &str) -> Result<String, MobileError> {
     Ok(hex::encode(key.sign(message.as_bytes()).to_bytes()))
 }
 
-fn core_addr(core: &str) -> Result<EndpointAddr, MobileError> {
-    Ok(EndpointAddr::new(core.parse().map_err(invalid)?))
+fn core_addr(core: &str, relays: &[Relay]) -> Result<EndpointAddr, MobileError> {
+    let addr = EndpointAddr::new(core.parse().map_err(invalid)?);
+    Ok(
+        match relays
+            .iter()
+            .find_map(|relay| relay.url.parse::<RelayUrl>().ok())
+        {
+            Some(relay) => addr.with_relay_url(relay),
+            None => addr,
+        },
+    )
 }
 
 #[uniffi::export]
 impl Device {
-    /// Comes online with the key from [`new_device_key`].
+    /// Comes online with the key from [`new_device_key`], reaching hosts
+    /// through `relays`, best first.
     #[uniffi::constructor]
-    pub async fn create(key: Vec<u8>) -> Result<Arc<Self>, MobileError> {
+    pub async fn create(key: Vec<u8>, relays: Vec<RelaySetting>) -> Result<Arc<Self>, MobileError> {
         let bytes: [u8; 32] = key
             .try_into()
             .map_err(|_| invalid("a device key is 32 bytes"))?;
         #[cfg(target_os = "android")]
         android::ensure_context().map_err(|message| MobileError::Connection { message })?;
         let key = SecretKey::from_bytes(&bytes);
-        let endpoint = bind(key.clone()).await?;
+        let relays = relays_from(relays);
+        let endpoint = bind(key.clone(), &relays).await?;
         Ok(Arc::new(Self {
             key,
+            relays,
             online: Mutex::new(Online {
                 endpoint,
                 generation: 0,
@@ -248,7 +289,7 @@ impl Device {
         platform: String,
     ) -> Result<String, MobileError> {
         let (endpoint, _) = self.endpoint();
-        let addr = core_addr(&core)?;
+        let addr = core_addr(&core, &self.relays)?;
         let access = on_runtime(async move {
             let request = PairingRequest {
                 code: &code,
@@ -271,7 +312,7 @@ impl Device {
         core: String,
         listener: Arc<dyn CoreListener>,
     ) -> Result<Arc<Connection>, MobileError> {
-        let addr = core_addr(&core)?;
+        let addr = core_addr(&core, &self.relays)?;
         self.connect_to(core, addr, listener).await
     }
 
@@ -346,7 +387,7 @@ impl Device {
                 return;
             }
         }
-        if let Ok(fresh) = bind(self.key.clone()).await {
+        if let Ok(fresh) = bind(self.key.clone(), &self.relays).await {
             let mut online = self.lock();
             online.endpoint = fresh;
             online.generation += 1;
@@ -774,6 +815,35 @@ mod tests {
         );
         assert!(sign_live(&key, "not a challenge").is_err());
         assert!(sign_live(&key, &text("nonce").to_uppercase()).is_err());
+    }
+
+    #[test]
+    fn hosts_are_dialled_through_the_first_usable_relay_and_never_none() {
+        let setting = |url: &str, quic_port| RelaySetting {
+            url: url.into(),
+            quic_port,
+        };
+        let relays = relays_from(vec![
+            setting("not a relay", None),
+            setting("https://relay.example/", Some(7842)),
+        ]);
+        assert_eq!(relays.len(), 1);
+        assert_eq!(relays[0].quic_port, Some(7842));
+        let core = SecretKey::generate().public().to_string();
+        let addr = core_addr(&core, &relays).expect("an address");
+        assert_eq!(
+            addr.relay_urls()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            vec!["https://relay.example/"]
+        );
+
+        let fallback = relays_from(Vec::new());
+        assert_eq!(fallback[0].url, network::DEFAULT_RELAY);
+        assert_eq!(
+            fallback[0].quic_port,
+            Some(i64::from(network::DEFAULT_QUIC_PORT))
+        );
     }
 
     #[test]

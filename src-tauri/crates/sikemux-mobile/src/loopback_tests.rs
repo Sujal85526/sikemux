@@ -115,6 +115,7 @@ async fn loopback_device(key: SecretKey) -> Device {
         .expect("device endpoint");
     Device {
         key,
+        relays: Vec::new(),
         online: Mutex::new(Online {
             endpoint,
             generation: 0,

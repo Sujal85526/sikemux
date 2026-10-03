@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { Device, newDeviceKey, type DeviceLike } from '@sikemux/native';
 
+import { currentRelays, relaySettings, updateRequired } from '@/network/network';
+
 const KEY_ITEM = 'sikemux.device-key';
 /** The key stays on this phone: a backup restored onto another must not make it the same device. */
 const KEY_OPTIONS = { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY };
@@ -31,10 +33,13 @@ async function deviceKey(): Promise<ArrayBuffer> {
 let online: Promise<DeviceLike> | undefined;
 let pairing = 0;
 
-/** This phone on the network. A failure is not kept, so the next call tries again. */
+/** This phone on the network, unless the app is too old to use it. A failure is not kept, so the next call tries again. */
 export function thisDevice(): Promise<DeviceLike> {
   if (!online) {
-    const coming = deviceKey().then((key) => Device.create(key));
+    const coming = Promise.all([deviceKey(), currentRelays()]).then(([key, relays]) => {
+      if (updateRequired()) throw new Error('Update Sikemux to reach your hosts.');
+      return Device.create(key, relaySettings(relays));
+    });
     online = coming;
     coming.catch(() => {
       if (online === coming) online = undefined;

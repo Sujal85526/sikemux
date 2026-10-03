@@ -115,7 +115,7 @@ git tag mobile-v0.1.0-nightly.1 && git push origin mobile-v0.1.0-nightly.1
 
 `mobile/app/app.json` holds the plain version, such as `0.1.0`, because iOS refuses anything else. A tag is either that version, which is stable, or that version with `-nightly.N`. The run stops if the tag is not a release of the version in `app.json`.
 
-Android needs a version code that grows with every upload. `app.config.js` derives it from the tag: `0.5.0-nightly.3` is `50003`, and `0.5.0` itself is `50099`, so a stable build always follows its own nightlies. Minor and patch numbers stay below 100, and nightlies below 99.
+Android needs a version code that grows with every upload. `app.config.js` derives it from the tag: `0.5.0-nightly.3` is `50003`, and `0.5.0` itself is `50099`, so a stable build always follows its own nightlies. Minor and patch numbers stay below 100, and nightlies below 99. The iOS build number is the same code, and the app reads its release back from it to compare with the oldest version `GET /v1/network` allows.
 
 The run checks the phone app, builds the Rust client with the small `mobile` profile, and builds the APK and the Play app bundle. It refuses either unless it is signed with the Play upload key. It attaches the APK to a GitHub release of the tag, marked a prerelease for a nightly, and never as the latest release: sikemux.com takes its Mac download from that one. The app bundle stays on the run until uploads to Google Play are added.
 

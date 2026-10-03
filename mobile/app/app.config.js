@@ -22,8 +22,11 @@ function googleSignIn({ web, ios }) {
   };
 }
 
-/** Play needs a number that grows with every upload: 0.5.0-nightly.3 is 50003, and 0.5.0 itself is 50099. */
-function androidVersionCode(version, base) {
+/**
+ * Play needs a number that grows with every upload: 0.5.0-nightly.3 is 50003, and 0.5.0 itself is 50099.
+ * The iOS build number is the same, so the app can tell its own nightly from it.
+ */
+function versionCode(version, base) {
   const match = /^(\d+)\.(\d+)\.(\d+)(?:-nightly\.(\d+))?$/.exec(version);
   if (!match) throw new Error(`${version} is not a version like 0.5.0 or 0.5.0-nightly.3`);
   const [major, minor, patch] = match.slice(1, 4).map(Number);
@@ -52,10 +55,12 @@ function updates(channel) {
 module.exports = ({ config }) => {
   if (process.env.APP_VARIANT === 'production') {
     const version = process.env.SIKEMUX_MOBILE_VERSION ?? config.version;
+    const code = versionCode(version, config.version);
     return {
       ...config,
       extra: { ...config.extra, ...googleSignIn(GOOGLE.production) },
-      android: { ...config.android, versionCode: androidVersionCode(version, config.version) },
+      ios: { ...config.ios, buildNumber: String(code) },
+      android: { ...config.android, versionCode: code },
       runtimeVersion: { policy: 'fingerprint' },
       updates: updates(process.env.SIKEMUX_MOBILE_CHANNEL || 'nightly'),
     };
