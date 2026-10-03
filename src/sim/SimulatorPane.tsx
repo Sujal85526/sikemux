@@ -6,6 +6,7 @@ import { notify, reportError } from "../state/toast";
 import { Dropdown } from "../ui/Dropdown";
 import { EmptyState } from "../ui/Panel";
 import { playScreen } from "./screenStream";
+import "../styles/simulator.css";
 
 const NAMED_KEYS = new Set(["Enter", "Escape", "Backspace", "Tab", "Delete", "ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"]);
 const TURNS: SimOrientation[] = ["portrait", "landscapeLeft", "portraitUpsideDown", "landscapeRight"];

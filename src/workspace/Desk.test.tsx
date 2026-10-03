@@ -622,7 +622,7 @@ describe("DeskHost", () => {
         renderPane();
 
         const tab = await screen.findByRole("tab", { name: /iPhone 17/ });
-        expect(screen.getByTestId("desk-simulator")).toHaveAttribute("data-visible", "false");
+        expect(await screen.findByTestId("desk-simulator")).toHaveAttribute("data-visible", "false");
 
         fireEvent.click(tab);
 

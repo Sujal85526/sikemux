@@ -28,12 +28,12 @@ import {
     terminalKey,
 } from "../state/desks";
 import { TerminalPane } from "../terminal/TerminalPane";
-import { SimulatorPane } from "../sim/SimulatorPane";
 import { basename } from "../lib/paths";
 import * as cmd from "../state/commands";
 import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
 
 const EditorPane = lazy(() => import("../editor/EditorPane").then((module) => ({ default: module.EditorPane })));
+const SimulatorPane = lazy(() => import("../sim/SimulatorPane").then((module) => ({ default: module.SimulatorPane })));
 const NO_FILES: readonly string[] = [];
 const NO_DIRTY: readonly string[] = [];
 /** How dark the page goes under the ⌘L address, so the panel stands apart from it. */
@@ -409,7 +409,9 @@ function DeskSession({
                     const showing = shown === simulatorKey(simulator.id);
                     return (
                         <div key={simulator.id} className="desk-simulator" hidden={!showing}>
-                            <SimulatorPane agentId={agentId} simulator={simulator} visible={visible && showing} />
+                            <Suspense fallback={null}>
+                                <SimulatorPane agentId={agentId} simulator={simulator} visible={visible && showing} />
+                            </Suspense>
                         </div>
                     );
                 })}
