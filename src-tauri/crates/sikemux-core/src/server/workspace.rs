@@ -35,6 +35,9 @@ struct Published {
     projects: Vec<ProjectInfo>,
     launchers: Vec<ChatLauncher>,
     chats: Vec<PublishedChat>,
+    titles: BTreeMap<String, String>,
+    /// Each provider's `configOptions` from its last session, by provider.
+    config_options: BTreeMap<String, Value>,
     palette: BTreeMap<String, String>,
     texture: bool,
     image: Option<BackdropImage>,
@@ -114,17 +117,42 @@ impl Workspaces {
         Ok(())
     }
 
-    pub(crate) fn publish_chats(&self, chats: Vec<PublishedChat>) -> CoreResult<()> {
-        let too_long = |chat: &PublishedChat| {
-            chat.title
-                .as_ref()
-                .is_some_and(|title| title.chars().count() > MAX_TITLE_CHARS)
-        };
-        if chats.len() > MAX_CHATS || chats.iter().any(too_long) {
-            return Err("the app published more chats than the core keeps".into());
+    pub(crate) fn publish_agents(
+        &self,
+        chats: Vec<PublishedChat>,
+        titles: BTreeMap<String, String>,
+    ) -> CoreResult<()> {
+        let too_long = |title: &str| title.chars().count() > MAX_TITLE_CHARS;
+        let chat_too_long = |chat: &PublishedChat| chat.title.as_deref().is_some_and(too_long);
+        if chats.len() > MAX_CHATS
+            || titles.len() > MAX_CHATS
+            || chats.iter().any(chat_too_long)
+            || titles.values().any(|title| too_long(title))
+        {
+            return Err("the app published more agents than the core keeps".into());
         }
-        self.lock().chats = chats;
+        let mut published = self.lock();
+        published.chats = chats;
+        published.titles = titles;
         Ok(())
+    }
+
+    /// What the app calls an agent terminal.
+    pub(crate) fn title(&self, agent_id: &str) -> Option<String> {
+        self.lock().titles.get(agent_id).cloned()
+    }
+
+    /// Keeps the models and effort levels a provider's session offered, so a
+    /// device choosing them before it starts one sees the same.
+    pub(crate) fn note_config_options(&self, provider: &str, setup: &Value) {
+        if let Some(options) = setup
+            .get("configOptions")
+            .filter(|options| options.is_array())
+        {
+            self.lock()
+                .config_options
+                .insert(provider.to_owned(), options.clone());
+        }
     }
 
     /// The running chats under the app's names, which include the agent's own
@@ -160,6 +188,7 @@ impl Workspaces {
                 model: None,
                 effort: None,
                 asleep: chat.asleep,
+                unread: false,
             })
             .collect();
         running.extend(stopped);
@@ -187,6 +216,11 @@ impl Workspaces {
                     provider: launcher.provider.clone(),
                     label: launcher.label.clone(),
                     permission_mode: launcher.permission_mode.clone(),
+                    config_options: published
+                        .config_options
+                        .get(&launcher.provider)
+                        .cloned()
+                        .unwrap_or(Value::Null),
                 })
                 .collect(),
             palette: published.palette.clone(),

@@ -816,6 +816,44 @@ async fn an_agent_terminal_reports_ready_then_working_on_a_submitted_line_then_s
 }
 
 #[tokio::test]
+async fn a_client_on_this_host_can_watch_the_device_view_with_the_app_s_titles() {
+    let core = start_core();
+    let (app, _app_events) = core.connect().await;
+    let id = app
+        .spawn(launch(), agent_terminal("agent-10", "sleep 1000"))
+        .await
+        .expect("spawn");
+    app.publish_agents(
+        Vec::new(),
+        [("agent-10".to_owned(), "Fix the login flake".to_owned())].into(),
+    )
+    .await
+    .expect("publish titles");
+    app.publish_on_screen(vec!["agent-10".into()])
+        .await
+        .expect("publish what is on screen");
+
+    let (watcher, mut stream) = core.connect().await;
+    watcher.watch_view().await.expect("watch the view");
+    let view = loop {
+        let event = tokio::time::timeout(WAIT, stream.events.recv())
+            .await
+            .expect("the view arrives")
+            .expect("the core disconnected");
+        if let ClientEvent::Event(Event::DeviceView { view }) = event {
+            break view;
+        }
+    };
+    let session = view
+        .sessions
+        .iter()
+        .find(|session| session.id == id)
+        .expect("the agent terminal is in the view");
+    assert_eq!(session.title.as_deref(), Some("Fix the login flake"));
+    assert!(!session.unread);
+}
+
+#[tokio::test]
 async fn a_killed_agent_reports_nothing_more() {
     let core = start_core();
     let (client, mut stream) = core.connect().await;

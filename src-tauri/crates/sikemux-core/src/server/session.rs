@@ -250,6 +250,8 @@ impl Session {
             started_by: self.owner.started_by.clone(),
             exit: self.exit.lock().ok().and_then(|exit| exit.clone()),
             killed: self.is_killed(),
+            title: None,
+            unread: false,
         }
     }
 }

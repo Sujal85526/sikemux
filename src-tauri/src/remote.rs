@@ -30,9 +30,16 @@ pub struct PublishedBackdrop(Mutex<Option<(bool, Option<BackdropImage>)>>);
 #[derive(Default)]
 pub struct PublishedPalette(Mutex<BTreeMap<String, String>>);
 
-/// The chats the app last listed, sent again like the workspace.
+/// The chats the app lists, and the titles of its terminal agents by agent id.
+type AgentList = (Vec<PublishedChat>, BTreeMap<String, String>);
+
+/// The agents the app last listed, sent again like the workspace.
 #[derive(Default)]
-pub struct PublishedChats(Mutex<Vec<PublishedChat>>);
+pub struct PublishedAgents(Mutex<Option<AgentList>>);
+
+/// The agents the app last showed, sent again like the workspace.
+#[derive(Default)]
+pub struct PublishedOnScreen(Mutex<Vec<String>>);
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -111,16 +118,36 @@ pub async fn remote_publish_palette(
 }
 
 #[tauri::command]
-pub async fn remote_publish_chats(
+pub async fn remote_publish_agents(
     manager: State<'_, PtyManager>,
-    published: State<'_, PublishedChats>,
+    published: State<'_, PublishedAgents>,
     chats: Vec<PublishedChat>,
+    titles: BTreeMap<String, String>,
 ) -> AppResult<()> {
     if let Ok(mut last) = published.0.lock() {
-        *last = chats.clone();
+        *last = Some((chats.clone(), titles.clone()));
     }
     let client = manager.client().await?;
-    client.publish_chats(chats).await.map_err(core_error)
+    client
+        .publish_agents(chats, titles)
+        .await
+        .map_err(core_error)
+}
+
+#[tauri::command]
+pub async fn remote_publish_on_screen(
+    manager: State<'_, PtyManager>,
+    published: State<'_, PublishedOnScreen>,
+    agent_ids: Vec<String>,
+) -> AppResult<()> {
+    if let Ok(mut last) = published.0.lock() {
+        *last = agent_ids.clone();
+    }
+    let client = manager.client().await?;
+    client
+        .publish_on_screen(agent_ids)
+        .await
+        .map_err(core_error)
 }
 
 /// Gives a core the app just connected to what it published to the last one,
@@ -155,13 +182,21 @@ pub(crate) async fn connected(
             eprintln!("Sikemux could not tell its core what it draws behind panes: {error}");
         }
     }
-    let chats = app
-        .try_state::<PublishedChats>()
+    let agents = app
+        .try_state::<PublishedAgents>()
+        .and_then(|published| published.0.lock().ok().and_then(|last| last.clone()));
+    if let Some((chats, titles)) = agents {
+        if let Err(error) = client.publish_agents(chats, titles).await {
+            eprintln!("Sikemux could not tell its core which agents it has: {error}");
+        }
+    }
+    let on_screen = app
+        .try_state::<PublishedOnScreen>()
         .and_then(|published| published.0.lock().ok().map(|last| last.clone()))
-        .filter(|chats| !chats.is_empty());
-    if let Some(chats) = chats {
-        if let Err(error) = client.publish_chats(chats).await {
-            eprintln!("Sikemux could not tell its core which chats it has: {error}");
+        .filter(|agent_ids| !agent_ids.is_empty());
+    if let Some(agent_ids) = on_screen {
+        if let Err(error) = client.publish_on_screen(agent_ids).await {
+            eprintln!("Sikemux could not tell its core which agents are on screen: {error}");
         }
     }
     if let Ok(status) = client.remote_status().await {

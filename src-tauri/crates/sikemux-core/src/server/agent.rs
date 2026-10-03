@@ -190,7 +190,13 @@ impl AgentActivity {
         if self.last_published.swap(fingerprint, Ordering::AcqRel) == fingerprint {
             return;
         }
-        self.state.store(next, Ordering::Release);
+        let previous = self.state.swap(next, Ordering::AcqRel);
+        match next {
+            WORKING => core.seen.working(&self.agent_id),
+            BLOCKED => core.seen.wants_a_look(&self.agent_id),
+            IDLE if matches!(previous, WORKING | BLOCKED) => core.seen.wants_a_look(&self.agent_id),
+            _ => {}
+        }
         core.broadcast_event(&Event::AgentState(AgentStateEvent {
             agent_id: self.agent_id.clone(),
             state: label.into(),

@@ -3,7 +3,8 @@ import { remoteApi, type PublishedChat } from "../api/remote";
 import { backdropPicture, grainDotColor } from "../remote/backdrop";
 import { usePaneImage } from "../lib/paneImage";
 import { readPalette } from "../remote/palette";
-import { remoteChats, remoteWorkspace } from "../remote/workspace";
+import { remoteChats, remoteTitles, remoteWorkspace } from "../remote/workspace";
+import { activeAgentId } from "../state/selectors";
 import { currentTheme, subscribeTheme } from "../themes/bus";
 import { swallow } from "../state/toast";
 import { useStore } from "../state/store";
@@ -11,7 +12,10 @@ import { useStore } from "../state/store";
 /** Long enough that opening or renaming several projects publishes once. */
 export const PUBLISH_DELAY_MS = 400;
 
-/** While remote access is on, tells the core which projects and agents paired devices may start, the chats they can open, and the theme and backdrop to draw them in. */
+/**
+ * Tells the core which projects and agents can be started and what the app calls its agents, for the notch and paired
+ * devices, and which agent is on screen. While remote access is on, also the theme and backdrop devices draw in.
+ */
 export function RemoteWorkspaceBridge() {
     const [enabled, setEnabled] = useState(false);
     const [themeChanges, setThemeChanges] = useState(0);
@@ -30,6 +34,8 @@ export function RemoteWorkspaceBridge() {
         () => JSON.stringify(remoteChats({ agents, windows, sessions, sessionOrder, windowsBySession })),
         [agents, windows, sessions, sessionOrder, windowsBySession],
     );
+    const titles = useMemo(() => JSON.stringify(remoteTitles({ agents })), [agents]);
+    const onScreen = useStore((s) => activeAgentId(s, s.sessions[s.activeSessionId]));
 
     useEffect(() => {
         const controller = new AbortController();
@@ -68,21 +74,25 @@ export function RemoteWorkspaceBridge() {
     }, [enabled, themeChanges]);
 
     useEffect(() => {
-        if (!enabled) return;
         const timer = window.setTimeout(() => {
             const { projects, launchers } = JSON.parse(published) as ReturnType<typeof remoteWorkspace>;
-            remoteApi.publishWorkspace(projects, launchers).catch(swallow("publish projects to paired devices"));
+            remoteApi.publishWorkspace(projects, launchers).catch(swallow("publish projects to the core"));
         }, PUBLISH_DELAY_MS);
         return () => window.clearTimeout(timer);
-    }, [enabled, published]);
+    }, [published]);
 
     useEffect(() => {
-        if (!enabled) return;
         const timer = window.setTimeout(() => {
-            remoteApi.publishChats(JSON.parse(chats) as PublishedChat[]).catch(swallow("publish chats to paired devices"));
+            remoteApi
+                .publishAgents(JSON.parse(chats) as PublishedChat[], JSON.parse(titles) as Record<string, string>)
+                .catch(swallow("publish agents to the core"));
         }, PUBLISH_DELAY_MS);
         return () => window.clearTimeout(timer);
-    }, [enabled, chats]);
+    }, [chats, titles]);
+
+    useEffect(() => {
+        remoteApi.publishOnScreen(onScreen ? [onScreen] : []).catch(swallow("tell the core which agent is on screen"));
+    }, [onScreen]);
 
     return null;
 }

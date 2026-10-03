@@ -13,6 +13,7 @@ function chat(overrides: Partial<ChatInfo> = {}): ChatInfo {
     pendingPermissions: [],
     permissionMode: 'default',
     asleep: false,
+    unread: false,
     ...overrides,
   };
 }

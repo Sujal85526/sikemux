@@ -119,6 +119,13 @@ impl Chat {
         if kind == ChatEventKind::TurnStarted {
             self.turned.store(true, Ordering::Release);
         }
+        if let Some(core) = self.core.upgrade() {
+            match kind {
+                ChatEventKind::TurnStarted => core.seen.working(self.agent_id()),
+                ChatEventKind::TurnCompleted => core.seen.wants_a_look(self.agent_id()),
+                _ => {}
+            }
+        }
         self.feed.emit(kind, payload);
     }
 
@@ -137,6 +144,10 @@ impl Chat {
     }
 
     pub(crate) fn mark_ready(&self, start: ChatStart) {
+        if let Some(core) = self.core.upgrade() {
+            core.workspaces
+                .note_config_options(self.provider(), &start.setup);
+        }
         self.feed.set_start(start.clone());
         self.readiness.send_replace(Readiness::Ready(start));
     }
@@ -194,6 +205,9 @@ impl Chat {
         let attention = self.attention(&request_id, &pending);
         permissions.insert(request_id, pending);
         drop(permissions);
+        if let Some(core) = self.core.upgrade() {
+            core.seen.wants_a_look(self.agent_id());
+        }
         self.announce(&Event::Attention { attention });
         true
     }
@@ -316,6 +330,7 @@ impl Chat {
             model: self.launch.model.clone(),
             effort: self.launch.effort.clone(),
             asleep: false,
+            unread: false,
         }
     }
 

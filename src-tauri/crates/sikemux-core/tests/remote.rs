@@ -635,11 +635,14 @@ async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
         cwd: std::env::temp_dir(),
         asleep,
     };
-    app.publish_chats(vec![
-        published(&agent_id, "Fix the replay test", false),
-        published("agent-sleepy", "Tidy the docs", true),
-        published("agent-failed", "Try Codex", false),
-    ])
+    app.publish_agents(
+        vec![
+            published(&agent_id, "Fix the replay test", false),
+            published("agent-sleepy", "Tidy the docs", true),
+            published("agent-failed", "Try Codex", false),
+        ],
+        Default::default(),
+    )
     .await
     .expect("publish chats");
     let chats = client.acp_list().await.expect("list chats");
@@ -719,7 +722,11 @@ async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
     let refused = client.publish_palette(Default::default()).await;
     assert!(refusal(refused).contains("only Sikemux on this host"));
 
-    let refused = client.publish_chats(Vec::new()).await;
+    let refused = client.publish_agents(Vec::new(), Default::default()).await;
+    assert!(refusal(refused).contains("only Sikemux on this host"));
+    let refused = client.publish_on_screen(Vec::new()).await;
+    assert!(refusal(refused).contains("only Sikemux on this host"));
+    let refused = client.watch_view().await;
     assert!(refusal(refused).contains("only Sikemux on this host"));
     let refused = client.acp_wake("agent-failed".into()).await;
     assert!(refusal(refused).contains("stopped on the host"));

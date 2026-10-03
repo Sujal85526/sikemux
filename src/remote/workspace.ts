@@ -48,6 +48,16 @@ export function profileOfLauncher(launcher: string | null, profiles: readonly Pr
     return profiles.some((profile) => profile.id === profileId && profile.provider === type) ? profileId : undefined;
 }
 
+/** What the person named each agent, by agent id, for the notch and paired devices to show. */
+export function remoteTitles(state: Pick<StoreState, "agents">): Record<string, string> {
+    const titles: Record<string, string> = {};
+    for (const agent of Object.values(state.agents)) {
+        const title = agent.title.trim();
+        if (title && title !== agent.type) titles[agent.id] = title;
+    }
+    return titles;
+}
+
 /** The chat agents in the rail, sleeping ones included, as paired devices list them. */
 export function remoteChats(state: Pick<StoreState, "agents" | "windows" | "sessions" | "sessionOrder" | "windowsBySession">): PublishedChat[] {
     return Object.values(state.agents).flatMap((agent) => {

@@ -19,7 +19,7 @@ use sikemux_pty::task::{TaskSource, TaskSpawnRequest};
 use crate::cli::protocol::{CliOpenRequest, HarnessRequest};
 
 pub const PROTOCOL: &str = "sikemux-core";
-pub const PROTOCOL_VERSION: u32 = 8;
+pub const PROTOCOL_VERSION: u32 = 9;
 /// Room for the largest attach snapshot plus its header.
 pub const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 
@@ -381,11 +381,21 @@ pub enum Request {
     PublishPalette {
         palette: BTreeMap<String, String>,
     },
-    /// The chats the app lists, so devices show them under the app's names,
-    /// sleeping ones included. Replaces what it published before.
-    PublishChats {
+    /// The agents the app lists, so devices show them under the app's names:
+    /// its chats, sleeping ones included, and the titles of its terminal
+    /// agents by agent id. Replaces what it published before.
+    PublishAgents {
         chats: Vec<PublishedChat>,
+        titles: BTreeMap<String, String>,
     },
+    /// The agents the person is looking at in the app now, replacing the
+    /// last list. An agent on screen is never left unread.
+    PublishOnScreen {
+        agent_ids: Vec<String>,
+    },
+    /// Sends this client the [`DeviceView`] now and whenever it changes, as
+    /// paired devices get it.
+    WatchView,
     Workspace,
     /// What agents wait on a person for now.
     Attentions,
@@ -540,6 +550,9 @@ pub struct ChatInfo {
     pub effort: Option<String>,
     /// The app stopped its agent while idle; `AcpWake` starts it again.
     pub asleep: bool,
+    /// It finished a turn or asked for something while the person was not
+    /// looking at it in the app.
+    pub unread: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -753,6 +766,9 @@ pub struct LauncherInfo {
     pub provider: String,
     pub label: String,
     pub permission_mode: String,
+    /// The `configOptions` the provider's last session offered, such as its
+    /// models and effort levels, or null before one has started.
+    pub config_options: Value,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -945,6 +961,11 @@ pub struct SessionInfo {
     pub killed: bool,
     /// The paired device that started it. The app started the rest.
     pub started_by: Option<String>,
+    /// The name the app gives an agent terminal.
+    pub title: Option<String>,
+    /// The agent finished or asked for something while the person was not
+    /// looking at it in the app.
+    pub unread: bool,
 }
 
 /// A task's launch request without its environment.

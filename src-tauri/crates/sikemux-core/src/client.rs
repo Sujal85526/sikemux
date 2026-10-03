@@ -742,8 +742,23 @@ impl CoreClient {
         self.request_done(Request::PublishPalette { palette }).await
     }
 
-    pub async fn publish_chats(&self, chats: Vec<PublishedChat>) -> Result<(), ClientError> {
-        self.request_done(Request::PublishChats { chats }).await
+    pub async fn publish_agents(
+        &self,
+        chats: Vec<PublishedChat>,
+        titles: BTreeMap<String, String>,
+    ) -> Result<(), ClientError> {
+        self.request_done(Request::PublishAgents { chats, titles })
+            .await
+    }
+
+    pub async fn publish_on_screen(&self, agent_ids: Vec<String>) -> Result<(), ClientError> {
+        self.request_done(Request::PublishOnScreen { agent_ids })
+            .await
+    }
+
+    /// The device view arrives as events from now on, starting with the whole.
+    pub async fn watch_view(&self) -> Result<(), ClientError> {
+        self.request_done(Request::WatchView).await
     }
 
     pub async fn acp_wake(&self, agent_id: String) -> Result<(), ClientError> {

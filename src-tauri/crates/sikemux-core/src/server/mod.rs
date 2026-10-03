@@ -10,6 +10,7 @@ mod host;
 mod pairing;
 mod prepare;
 mod remote;
+mod seen;
 mod session;
 mod tools;
 mod upgrade;
@@ -265,6 +266,7 @@ pub(crate) struct Core {
     pub(crate) chats: chat::Chats,
     pub(crate) remote: remote::Remote,
     pub(crate) workspaces: workspace::Workspaces,
+    pub(crate) seen: seen::Seen,
     /// The view paired devices were last sent, as sent.
     device_view: Mutex<Vec<u8>>,
 }
@@ -307,6 +309,7 @@ impl Core {
             chats: chat::Chats::default(),
             remote: remote::Remote::default(),
             workspaces: workspace::Workspaces::default(),
+            seen: seen::Seen::default(),
             device_view: Mutex::new(Vec::new()),
         }))
     }
@@ -475,13 +478,34 @@ impl Core {
         self.broadcast_to(event, |client| devices_hear || client.peer.is_local());
     }
 
-    fn device_view_frame(&self) -> Option<Vec<u8>> {
+    /// Every session, with what the app calls its agent and whether the
+    /// person has seen what the agent last did.
+    pub(crate) fn session_infos(&self) -> Vec<crate::protocol::SessionInfo> {
         let mut sessions: Vec<_> = self.all_sessions().iter().map(|s| s.info()).collect();
         sessions.sort_by_key(|info| info.id);
+        for info in &mut sessions {
+            if let Some(agent_id) = &info.agent_id {
+                info.title = self.workspaces.title(agent_id);
+                info.unread = self.seen.unread(agent_id);
+            }
+        }
+        sessions
+    }
+
+    /// The chats under the app's names, with whether the person has seen what
+    /// each last did.
+    pub(crate) fn chat_infos(&self) -> Vec<crate::protocol::ChatInfo> {
         let mut chats = self.workspaces.listed(self.chats.list());
         for chat in &mut chats {
             chat.pending_permissions.sort();
+            chat.unread = self.seen.unread(&chat.agent_id);
         }
+        chats
+    }
+
+    fn device_view_frame(&self) -> Option<Vec<u8>> {
+        let sessions = self.session_infos();
+        let chats = self.chat_infos();
         let mut attentions = self.chats.attentions();
         attentions.sort_by(|a, b| (a.at, &a.id).cmp(&(b.at, &b.id)));
         let view = DeviceView {
@@ -502,7 +526,7 @@ impl Core {
         let devices: Vec<_> = self
             .clients()
             .into_iter()
-            .filter(|client| !client.peer.is_local())
+            .filter(|client| !client.peer.is_local() || client.watches_view())
             .collect();
         if devices.is_empty() {
             return;

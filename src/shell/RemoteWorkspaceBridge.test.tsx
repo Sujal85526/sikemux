@@ -1,6 +1,6 @@
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { REMOTE_STATUS_EVENT, type RemoteStatus } from "../api/remote";
+import type { RemoteStatus } from "../api/remote";
 import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "../api/transport";
 import * as cmd from "../state/commands";
 import { getState, setState } from "../state/store";
@@ -37,20 +37,9 @@ async function settle() {
 }
 
 describe("RemoteWorkspaceBridge", () => {
-    it("publishes nothing while remote access is off", async () => {
+    it("publishes the workspace with remote access off, and again when a project opens", async () => {
         transport.register("remote_status", () => status(false));
         render(<RemoteWorkspaceBridge />);
-        await settle();
-        expect(publish).not.toHaveBeenCalled();
-    });
-
-    it("publishes once remote access turns on, and again when a project opens", async () => {
-        transport.register("remote_status", () => status(false));
-        render(<RemoteWorkspaceBridge />);
-        await settle();
-        act(() => {
-            transport.emit(REMOTE_STATUS_EVENT, status(true));
-        });
         await settle();
         expect(publish).toHaveBeenCalledTimes(1);
         const before = publish.mock.calls[0][0] as { projects: { path: string }[] };
@@ -64,5 +53,24 @@ describe("RemoteWorkspaceBridge", () => {
         expect(after.projects.length).toBe(before.projects.length + 1);
         expect(after.projects.map((project) => project.path)).toContain("/Users/me/new-project");
         expect(after.launchers.map((launcher) => launcher.id)).toContain("opencode");
+    });
+
+    it("publishes what the person named their agents and which one is on screen", async () => {
+        transport.register("remote_status", () => status(false));
+        const agents = vi.fn<(args: unknown) => void>();
+        const onScreen = vi.fn<(args: unknown) => void>();
+        transport.register("remote_publish_agents", agents);
+        transport.register("remote_publish_on_screen", onScreen);
+        render(<RemoteWorkspaceBridge />);
+        await settle();
+        act(() => {
+            cmd.createProjectSession("/Users/me/notch");
+            cmd.addAgent("claude", undefined, "Fix the login flake");
+        });
+        await settle();
+        const agentId = Object.values(getState().agents).find((agent) => agent.title === "Fix the login flake")?.id ?? "";
+        const titles = (agents.mock.lastCall?.[0] as { titles: Record<string, string> }).titles;
+        expect(titles[agentId]).toBe("Fix the login flake");
+        expect(onScreen.mock.lastCall?.[0]).toEqual({ agentIds: [agentId] });
     });
 });

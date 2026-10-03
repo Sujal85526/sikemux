@@ -29,6 +29,9 @@ pub struct LauncherInfo {
     pub provider: String,
     pub label: String,
     pub permission_mode: String,
+    /// The `configOptions` the provider's last session offered, as JSON, or
+    /// `null` before one has started.
+    pub config_options_json: String,
 }
 
 impl From<core::LauncherInfo> for LauncherInfo {
@@ -38,6 +41,7 @@ impl From<core::LauncherInfo> for LauncherInfo {
             provider: launcher.provider,
             label: launcher.label,
             permission_mode: launcher.permission_mode,
+            config_options_json: launcher.config_options.to_string(),
         }
     }
 }
@@ -108,6 +112,10 @@ pub struct SessionInfo {
     pub exit: Option<SessionExit>,
     pub killed: bool,
     pub started_by: Option<String>,
+    /// What the host's app calls the agent terminal.
+    pub title: Option<String>,
+    /// The agent finished or asked for something nobody has looked at yet.
+    pub unread: bool,
 }
 
 impl From<core::SessionInfo> for SessionInfo {
@@ -137,6 +145,8 @@ impl From<core::SessionInfo> for SessionInfo {
             }),
             killed: session.killed,
             started_by: session.started_by,
+            title: session.title,
+            unread: session.unread,
         }
     }
 }
@@ -163,6 +173,8 @@ pub struct ChatInfo {
     pub model: Option<String>,
     pub effort: Option<String>,
     pub asleep: bool,
+    /// It finished or asked for something nobody has looked at yet.
+    pub unread: bool,
 }
 
 impl From<core::ChatInfo> for ChatInfo {
@@ -185,6 +197,7 @@ impl From<core::ChatInfo> for ChatInfo {
             model: chat.model,
             effort: chat.effort,
             asleep: chat.asleep,
+            unread: chat.unread,
         }
     }
 }

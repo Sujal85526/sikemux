@@ -194,13 +194,16 @@ async fn sleepy(socket: &Path) -> Result<(), Failure> {
     let (client, mut events) = CoreClient::connect(socket).await?;
     let agent_id = "agent-sleepy".to_owned();
     client
-        .publish_chats(vec![PublishedChat {
-            agent_id: agent_id.clone(),
-            provider: "opencode".into(),
-            title: Some("Tidy the docs".into()),
-            cwd: std::env::temp_dir(),
-            asleep: true,
-        }])
+        .publish_agents(
+            vec![PublishedChat {
+                agent_id: agent_id.clone(),
+                provider: "opencode".into(),
+                title: Some("Tidy the docs".into()),
+                cwd: std::env::temp_dir(),
+                asleep: true,
+            }],
+            Default::default(),
+        )
         .await?;
     println!("{agent_id} is asleep");
     while let Some(event) = events.recv().await {

@@ -81,7 +81,9 @@ export const remoteApi = {
     answerPairing: (id: string, allow: boolean, access: DeviceAccess) => invoke<RemoteStatus>("remote_answer_pairing", { id, allow, access }),
     publishWorkspace: (projects: readonly PublishedProject[], launchers: readonly LauncherRequest[]) =>
         invoke<void>("remote_publish_workspace", { projects, launchers }),
-    publishChats: (chats: readonly PublishedChat[]) => invoke<void>("remote_publish_chats", { chats }),
+    publishAgents: (chats: readonly PublishedChat[], titles: Readonly<Record<string, string>>) =>
+        invoke<void>("remote_publish_agents", { chats, titles }),
+    publishOnScreen: (agentIds: readonly string[]) => invoke<void>("remote_publish_on_screen", { agentIds }),
     publishPalette: (palette: Readonly<Record<string, string>>) => invoke<void>("remote_publish_palette", { palette }),
     publishBackdrop: (texture: boolean, image: { readonly id: string; readonly dataUrl: string } | null) =>
         invoke<void>("remote_publish_backdrop", { texture, image }),

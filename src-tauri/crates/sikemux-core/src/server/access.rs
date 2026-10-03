@@ -76,7 +76,9 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::SignRegistration { .. }
         | Request::SetOwner { .. }
         | Request::PublishWorkspace { .. }
-        | Request::PublishChats { .. }
+        | Request::PublishAgents { .. }
+        | Request::PublishOnScreen { .. }
+        | Request::WatchView
         | Request::PublishPalette { .. }
         | Request::PublishBackdrop { .. } => Needs::Local,
     }

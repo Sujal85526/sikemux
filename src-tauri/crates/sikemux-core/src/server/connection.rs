@@ -37,9 +37,15 @@ pub(crate) struct ClientConn {
     closed: AtomicBool,
     kick: Notify,
     subscriptions: Mutex<HashSet<SessionId>>,
+    /// A local client that asked for the device view.
+    watches_view: AtomicBool,
 }
 
 impl ClientConn {
+    pub(crate) fn watches_view(&self) -> bool {
+        self.watches_view.load(Ordering::Acquire)
+    }
+
     pub(crate) fn send(&self, frame: Arc<[u8]>) -> bool {
         if self.closed.load(Ordering::Acquire) {
             return false;
@@ -219,6 +225,7 @@ pub(crate) async fn serve_client(
         closed: AtomicBool::new(false),
         kick: Notify::new(),
         subscriptions: Mutex::new(HashSet::new()),
+        watches_view: AtomicBool::new(false),
     });
     core.register_client(client.clone());
     if !client.peer.is_local() {
@@ -534,9 +541,12 @@ async fn run_requests(
                 client.respond(request_id, result.map(|()| Response::Done));
             }
             Request::List => {
-                let mut sessions: Vec<_> = core.all_sessions().iter().map(|s| s.info()).collect();
-                sessions.sort_by_key(|info| info.id);
-                client.respond(request_id, Ok(Response::Sessions { sessions }));
+                client.respond(
+                    request_id,
+                    Ok(Response::Sessions {
+                        sessions: core.session_infos(),
+                    }),
+                );
             }
             Request::AcpStart { launch } => {
                 match chat::begin(&core, *launch, Some(&client), None) {
@@ -670,9 +680,18 @@ async fn run_requests(
                 let result = core.workspaces.publish_palette(palette);
                 client.respond(request_id, result.map(|()| Response::Done));
             }
-            Request::PublishChats { chats } => {
-                let result = core.workspaces.publish_chats(chats);
+            Request::PublishAgents { chats, titles } => {
+                let result = core.workspaces.publish_agents(chats, titles);
                 client.respond(request_id, result.map(|()| Response::Done));
+            }
+            Request::PublishOnScreen { agent_ids } => {
+                core.seen.on_screen(agent_ids);
+                client.respond(request_id, Ok(Response::Done));
+            }
+            Request::WatchView => {
+                client.watches_view.store(true, Ordering::Release);
+                client.respond(request_id, Ok(Response::Done));
+                core.send_device_view(&client);
             }
             Request::Attentions => {
                 client.respond(

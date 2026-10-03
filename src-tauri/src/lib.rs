@@ -237,7 +237,8 @@ pub fn run() {
         .manage(cli_open::CliOpens::default())
         .manage(AcpManager::default())
         .manage(remote::PublishedWorkspace::default())
-        .manage(remote::PublishedChats::default())
+        .manage(remote::PublishedAgents::default())
+        .manage(remote::PublishedOnScreen::default())
         .manage(remote::PublishedPalette::default())
         .manage(remote::PublishedBackdrop::default())
         .manage(BrowserManager::default())
@@ -281,7 +282,8 @@ pub fn run() {
             remote::remote_close_pairing,
             remote::remote_answer_pairing,
             remote::remote_publish_workspace,
-            remote::remote_publish_chats,
+            remote::remote_publish_agents,
+            remote::remote_publish_on_screen,
             remote::remote_publish_palette,
             remote::remote_publish_backdrop,
             pty::commands::task_watch,
