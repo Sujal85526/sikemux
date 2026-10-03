@@ -64,6 +64,20 @@
 - Merging to `main` deploys anything under `server/` to production. Do not run
   `server/deploy` scripts against citadel yourself; ask first.
 
+## Brand assets
+
+- Every logo and icon image lives in `brand/`. Take it from there; never draw or render
+  the logo again.
+  - `brand/mark/`: the bare S mark in white, black and purple (`#a277ff`), as SVG and
+    transparent PNG at 64, 256 and 1024.
+  - `brand/icon/`: the mark on the dark app gradient, or the purple "Sikemux Dev" one,
+    with rounded or square corners, as SVG and PNG at 256 and 1024.
+  - `brand/macos/`: the real Dock icon (Liquid Glass) at 128 to 1024.
+  - `brand/social/avatar-400.png`: profile picture.
+- The source is `src-tauri/icons/sikemux.icon`. After changing it, run `pnpm brand` to
+  redraw everything; the Dock icon is taken from the installed `/Applications/Sikemux.app`
+  (or `SIKEMUX_APP`), so install the new build first.
+
 ## Notch
 
 - The island over the MacBook notch is `sikemux-notch`, a SwiftUI helper in `src-tauri/notch`

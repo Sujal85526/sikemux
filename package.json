@@ -15,6 +15,7 @@
     "build": "tsc --noEmit && vite build && pnpm bundle:check",
     "bundle:check": "node scripts/check-bundle-globals.mjs",
     "preview": "vite preview",
+    "brand": "node scripts/brand.mjs",
     "showcase": "node showcase/capture.mjs",
     "showcase:serve": "vite --config showcase/vite.config.ts",
     "showcase:twitter": "node showcase/twitter.mjs",
