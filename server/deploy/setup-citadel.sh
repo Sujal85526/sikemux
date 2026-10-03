@@ -97,6 +97,64 @@ systemctl daemon-reload
 systemctl enable sikemux-api >/dev/null
 systemctl enable --now sikemux-purge.timer >/dev/null
 
+step "backups: nightly, encrypted to an offline age key, sent to R2"
+command -v age >/dev/null && command -v rclone >/dev/null ||
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends age rclone >/dev/null
+id sikemux-backup >/dev/null 2>&1 ||
+  useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin sikemux-backup
+install -D -m 755 -o root -g root "$here/backup-database" /usr/local/lib/sikemux/backup-database
+install -D -m 755 -o root -g root "$here/restore-database" /usr/local/lib/sikemux/restore-database
+if [ ! -f /etc/sikemux/backup.env ]; then
+  cat >/etc/sikemux/backup.env <<'EOF'
+R2_ACCOUNT_ID=
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+R2_BUCKET=sikemux-backups
+EOF
+fi
+chown root:root /etc/sikemux/backup.env
+chmod 600 /etc/sikemux/backup.env
+if [ ! -f /etc/sikemux/backup-recipients.txt ]; then
+  printf '# age public keys (age1...), one per line. Their private keys never come to this server.\n' \
+    >/etc/sikemux/backup-recipients.txt
+fi
+chown root:root /etc/sikemux/backup-recipients.txt
+chmod 644 /etc/sikemux/backup-recipients.txt
+
+psql -U "$PG_ADMIN" -d postgres -v ON_ERROR_STOP=1 -q <<'SQL'
+select 'create role sikemux_backup login' where not exists (select from pg_roles where rolname = 'sikemux_backup') \gexec
+grant pg_read_all_data to sikemux_backup;
+grant connect on database sikemux to sikemux_backup;
+SQL
+if ! grep -q '^# sikemux-backup: begin' "$PG_CONF/pg_hba.conf"; then
+  cp "$PG_CONF/pg_hba.conf" "$PG_CONF/pg_hba.conf.bak.$(date +%Y%m%d%H%M%S)"
+  rules="$(mktemp)"
+  cat >"$rules" <<'EOF'
+# sikemux-backup: begin
+# The nightly backup reads the sikemux database as sikemux_backup, which can read but not write.
+local   sikemux         sikemux_backup                          peer map=sikemux-backup
+# sikemux-backup: end
+
+EOF
+  sikemux_rules="$(grep -n '^# sikemux: begin' "$PG_CONF/pg_hba.conf" | cut -d: -f1)"
+  sed -i "$((sikemux_rules - 1))r $rules" "$PG_CONF/pg_hba.conf"
+  rm -f "$rules"
+fi
+grep -q '^sikemux-backup ' "$PG_CONF/pg_ident.conf" ||
+  printf 'sikemux-backup  sikemux-backup          sikemux_backup\n' >>"$PG_CONF/pg_ident.conf"
+systemctl reload "postgresql@$PG_VERSION-main"
+sudo -u sikemux-backup psql 'postgresql://sikemux_backup@%2Fvar%2Frun%2Fpostgresql/sikemux' -Atc 'select current_user' |
+  grep -qx sikemux_backup
+
+install -m 644 "$here/sikemux-backup.service" /etc/systemd/system/sikemux-backup.service
+install -m 644 "$here/sikemux-backup.timer" /etc/systemd/system/sikemux-backup.timer
+systemctl daemon-reload
+systemctl enable --now sikemux-backup.timer >/dev/null
+grep -q '^age1' /etc/sikemux/backup-recipients.txt ||
+  echo "backups will fail until an age public key is in /etc/sikemux/backup-recipients.txt" >&2
+grep -q '^R2_SECRET_ACCESS_KEY=.' /etc/sikemux/backup.env ||
+  echo "backups will fail until the R2 credentials are in /etc/sikemux/backup.env" >&2
+
 step "caddy"
 install -d -m 755 /etc/caddy/sites
 install -m 644 "$here/sikemux.caddy" /etc/caddy/sites/sikemux.caddy

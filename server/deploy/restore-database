@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+# Restores a backup into a scratch database, compares it with the live one and drops it again.
+# Run as root on citadel; the age private key comes in on stdin and never touches the disk:
+#   restore-database [--object sikemux/YYYY/MM/DD/sikemux-<stamp>.dump.age] [--database NAME] [--keep]
+# --keep leaves the restored database in place, for recovering from it instead of drilling.
+set -euo pipefail
+export LC_ALL=C
+
+backup_env="${BACKUP_ENV:-/etc/sikemux/backup.env}"
+recipients="${BACKUP_RECIPIENTS:-/etc/sikemux/backup-recipients.txt}"
+pg_admin="${PG_ADMIN:-nodelike}"
+live_os_user="${LIVE_OS_USER-sikemux-backup}"
+live_role="${LIVE_ROLE:-sikemux_backup}"
+object=""
+database=sikemux_restore_check
+keep=no
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --object) object="${2:?--object needs a key}"; shift 2 ;;
+    --database) database="${2:?--database needs a name}"; shift 2 ;;
+    --keep) keep=yes; shift ;;
+    *) sed -n '2,5s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
+  esac
+done
+[[ "$database" =~ ^[a-z_][a-z0-9_]*$ ]] || { echo "$database is not a plain database name" >&2; exit 2; }
+[ "$database" != sikemux ] || { echo "restore into a new database, never over sikemux" >&2; exit 2; }
+
+if [ -f "$backup_env" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$backup_env"
+  set +a
+fi
+: "${R2_BUCKET:?R2_BUCKET is not set}"
+: "${R2_ACCESS_KEY_ID:?R2_ACCESS_KEY_ID is not set}"
+: "${R2_SECRET_ACCESS_KEY:?R2_SECRET_ACCESS_KEY is not set}"
+[ -n "${R2_ENDPOINT:-}" ] || : "${R2_ACCOUNT_ID:?R2_ACCOUNT_ID is not set}"
+
+export RCLONE_CONFIG_R2_TYPE=s3
+export RCLONE_CONFIG_R2_PROVIDER=Cloudflare
+export RCLONE_CONFIG_R2_ENDPOINT="${R2_ENDPOINT:-https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com}"
+export RCLONE_CONFIG_R2_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
+export RCLONE_CONFIG_R2_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
+export RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true
+rclone() { command rclone --config "" --use-server-modtime "$@"; }
+
+admin_psql() { PGOPTIONS="-c client_min_messages=warning" psql --no-psqlrc --no-password -v ON_ERROR_STOP=1 --quiet -U "$pg_admin" "$@"; }
+live_psql() {
+  if [ -n "$live_os_user" ]; then
+    runuser -u "$live_os_user" -- psql --no-psqlrc --no-password -v ON_ERROR_STOP=1 -U "$live_role" -d sikemux "$@"
+  else
+    psql --no-psqlrc --no-password -v ON_ERROR_STOP=1 -U "$live_role" -d sikemux "$@"
+  fi
+}
+
+if [ -t 0 ]; then
+  echo "paste the age private key (AGE-SECRET-KEY-1...), then press Ctrl-D" >&2
+fi
+identity="$(cat)"
+case "$identity" in
+  *AGE-SECRET-KEY-1*) ;;
+  *) echo "no age private key on stdin" >&2; exit 1 ;;
+esac
+if [ -f "$recipients" ]; then
+  public="$(age-keygen -y <(printf '%s\n' "$identity"))"
+  grep -qx "$public" "$recipients" ||
+    echo "warning: this key's public half, $public, is not in $recipients; newer backups may not open with it" >&2
+fi
+
+latest=no
+if [ -z "$object" ]; then
+  latest=yes
+  object="$(rclone lsf --recursive --files-only --include '*.dump.age' "r2:$R2_BUCKET/sikemux" | sort | tail -1)"
+  [ -n "$object" ] || { echo "no backups in $R2_BUCKET/sikemux" >&2; exit 1; }
+  object="sikemux/$object"
+fi
+stamp="$(basename "$object" .dump.age)"
+stamp="${stamp#sikemux-}"
+[[ "$stamp" =~ ^[0-9]{8}T[0-9]{6}Z$ ]] || { echo "$object is not named like a backup" >&2; exit 2; }
+age_hours="$(admin_psql -d postgres -Atc "select floor(extract(epoch from now() - (to_timestamp('$stamp', 'YYYYMMDD\"T\"HH24MISS\"Z\"')::timestamp at time zone 'UTC')) / 3600)")"
+echo "restoring $object, taken $age_hours hours ago, into $database"
+
+drop_scratch() { admin_psql -d postgres -c "drop database if exists $database with (force)"; }
+if [ "$keep" = no ]; then
+  drop_scratch
+  trap drop_scratch EXIT
+fi
+admin_psql -d postgres -c "create database $database owner sikemux"
+
+rclone cat "r2:$R2_BUCKET/$object" |
+  age --decrypt --identity <(printf '%s\n' "$identity") |
+  pg_restore --no-password -U "$pg_admin" --dbname="$database" --single-transaction --exit-on-error
+unset identity
+
+count_rows="$(cat <<'SQL'
+select format($$select %L, count(*) from %I.%I$$, n.nspname || $$.$$ || c.relname, n.nspname, c.relname)
+from pg_class c join pg_namespace n on n.oid = c.relnamespace
+where c.relkind in ($$r$$, $$p$$) and n.nspname not in ($$pg_catalog$$, $$information_schema$$)
+  and n.nspname not like $$pg\_toast%$$
+order by 1
+\gexec
+SQL
+)"
+latest_migration='select coalesce(max(version), 0) from schema_migrations'
+restored_counts="$(printf '%s' "$count_rows" | admin_psql -d "$database" -At -F ' ' -f -)"
+live_counts="$(printf '%s' "$count_rows" | live_psql -At -F ' ' -f -)"
+restored_migration="$(admin_psql -d "$database" -Atc "$latest_migration")"
+live_migration="$(live_psql -Atc "$latest_migration")"
+
+failed=no
+printf '\n%-40s %12s %12s\n' table backup live
+join -a 1 -a 2 -e missing -o 0,1.2,2.2 <(printf '%s\n' "$restored_counts" | sort) <(printf '%s\n' "$live_counts" | sort) |
+  while read -r table restored live; do printf '%-40s %12s %12s\n' "$table" "$restored" "$live"; done
+printf '%-40s %12s %12s\n\n' "latest migration" "$restored_migration" "$live_migration"
+
+restored_tables="$(printf '%s\n' "$restored_counts" | cut -d' ' -f1)"
+live_tables="$(printf '%s\n' "$live_counts" | cut -d' ' -f1)"
+restored_total="$(printf '%s\n' "$restored_counts" | awk '{ n += $2 } END { print n + 0 }')"
+live_total="$(printf '%s\n' "$live_counts" | awk '{ n += $2 } END { print n + 0 }')"
+
+if [ "$restored_migration" = "$live_migration" ] && [ "$restored_tables" != "$live_tables" ]; then
+  echo "FAIL: the backup and the live database are on the same migration but have different tables" >&2
+  failed=yes
+fi
+if [ "$restored_migration" != "$live_migration" ]; then
+  echo "note: a migration ran since this backup, so the tables may differ" >&2
+fi
+if [ "$restored_total" -eq 0 ] && [ "$live_total" -gt 0 ]; then
+  echo "FAIL: the backup restored no rows" >&2
+  failed=yes
+fi
+if [ "$latest" = yes ] && [ "$age_hours" -gt 48 ]; then
+  echo "FAIL: the newest backup is $age_hours hours old; check sikemux-backup.timer" >&2
+  failed=yes
+fi
+
+if [ "$keep" = yes ]; then
+  echo "kept the restored database $database"
+else
+  echo "dropping $database"
+fi
+[ "$failed" = no ] || exit 1
+echo "restore drill passed: $restored_total rows in the backup, $live_total live"
