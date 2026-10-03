@@ -20,6 +20,7 @@
   --ink: #e7e5ef;
   --acc: #a277ff;
   --danger: #ff6767;
+  --on-danger: var(--bg);
 
   --gray-100: color-mix(in oklab, var(--ink) 4%, var(--bg));
   --gray-200: color-mix(in oklab, var(--ink) 7%, var(--bg));
@@ -250,6 +251,23 @@ h1 {
 .button.primary:hover:not(:disabled) {
   background: color-mix(in oklab, var(--ink) 88%, var(--bg));
   border-color: color-mix(in oklab, var(--ink) 88%, var(--bg));
+}
+
+.button.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--on-danger);
+  font-weight: 600;
+}
+
+.button.danger:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--danger) 88%, var(--bg));
+  border-color: color-mix(in oklab, var(--danger) 88%, var(--bg));
+}
+
+.button.danger[data-busy]::after {
+  border-color: color-mix(in oklab, var(--on-danger) 35%, transparent);
+  border-top-color: var(--on-danger);
 }
 
 .button.small {
@@ -564,11 +582,59 @@ button:focus-visible,
   font-size: 13px;
 }
 
-.key {
+.end {
   grid-column: 3;
   grid-row: 1 / span 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.key {
   font: 400 12px var(--mono);
   color: var(--text-tertiary);
+}
+
+.remove {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-tertiary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background var(--dur-2),
+    color var(--dur-2);
+}
+
+.remove:hover:not(:disabled),
+.remove[aria-expanded="true"] {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.remove:disabled {
+  cursor: default;
+}
+
+.confirm {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .row.placeholder {

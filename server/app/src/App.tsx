@@ -2,8 +2,9 @@ import { HandleSSOCallback, useAuth, useClerk, useUser } from "@clerk/react";
 import { useEffect, useState } from "react";
 
 import { Backdrop } from "./Backdrop.tsx";
-import { Devices } from "./Devices.tsx";
+import { Devices, useDevices } from "./Devices.tsx";
 import { Logo } from "./icons.tsx";
+import { useLive } from "./live.ts";
 import { SignIn } from "./SignIn.tsx";
 
 /** Clerk leaves a nonzero `__client_uat` cookie once signed in, so the first paint can guess the right screen. */
@@ -61,8 +62,17 @@ export function App() {
 
 function Account({ ready }: { ready: boolean }) {
   const { user } = useUser();
+  const { isSignedIn } = useAuth();
   const { signOut } = useClerk();
   const email = user?.primaryEmailAddress?.emailAddress;
+  const devices = useDevices(ready);
+
+  useLive(ready && isSignedIn === true, {
+    onEvents: devices.apply,
+    onResync: devices.reload,
+    onAccountDeleted: () => void signOut({ redirectUrl: "/" }),
+  });
+
   return (
     <div className="account">
       <header className="top">
@@ -89,7 +99,7 @@ function Account({ ready }: { ready: boolean }) {
           Hosts and clients signed in to this account. A client still connects
           to a host only after someone at the host allows it.
         </p>
-        <Devices ready={ready} />
+        <Devices load={devices.load} remove={devices.remove} />
       </main>
     </div>
   );
