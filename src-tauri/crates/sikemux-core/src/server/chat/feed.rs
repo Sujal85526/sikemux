@@ -414,6 +414,12 @@ impl Feed {
         }
     }
 
+    pub(crate) fn has_subscriber(&self, client: ClientId) -> bool {
+        self.inner
+            .lock()
+            .is_ok_and(|inner| inner.subscribers.contains_key(&client))
+    }
+
     pub(crate) fn unsubscribe(&self, client: ClientId) {
         if let Ok(mut inner) = self.inner.lock() {
             inner.subscribers.remove(&client);

@@ -2,7 +2,7 @@
 //! on/off switch and the trusted devices live in `<socket>.remote.json`, so
 //! the dev and release cores keep separate ones.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{DirBuilder, OpenOptions};
 use std::future::Future;
 use std::io::Write;
@@ -18,16 +18,17 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{oneshot, watch, Notify};
 use tokio::task::JoinHandle;
 
-use crate::accounts::live::{self, Link, Want};
+use crate::accounts::live::{self, Link, Push, Want};
 use crate::accounts::network;
 use crate::accounts::protocol::{
-    AccountEvent, AccountEventType, LiveApp, Network, Platform, Relay, RevokeReason,
+    AccountEvent, AccountEventType, LiveApp, Network, Platform, PushResult, Relay, RevokeReason,
 };
 use crate::pairing::{PairingLink, CODE_DIGITS, PAIR_ALPN};
 use crate::protocol::{
-    AccountLink, AccountLinkState, DeviceAccess, DeviceInfo, Event, PairingOffer, PendingDevice,
-    RemoteStatus, UpdateRequired,
+    AccountLink, AccountLinkState, DeviceAccess, DeviceInfo, Event, NotificationState, NotifyPrefs,
+    NotifyWhen, PairingOffer, PendingDevice, PhoneNotifications, RemoteStatus, UpdateRequired,
 };
+use crate::push::NotificationKey;
 use crate::remote::CORE_ALPN;
 
 use super::access::Peer;
@@ -67,6 +68,30 @@ struct Stored {
     /// reach.
     #[serde(default)]
     network: Option<Network>,
+    /// Each phone's key for its notifications and what it wants to hear
+    /// about, by device id.
+    #[serde(default)]
+    notifications: BTreeMap<String, PhoneNotify>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PhoneNotify {
+    key_id: u32,
+    key: String,
+    prefs: NotifyPrefs,
+    since: u64,
+}
+
+const MAX_MUTES: usize = 256;
+const MAX_AGENT_ID: usize = 200;
+
+/// A phone to notify, with its key and what it asked for.
+#[derive(Clone, Debug)]
+pub(crate) struct NotifyTarget {
+    pub device_id: String,
+    pub key: NotificationKey,
+    pub prefs: NotifyPrefs,
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
@@ -128,6 +153,11 @@ struct Inner {
     never_too_old: bool,
     update_required: Option<UpdateRequired>,
     network: Option<JoinHandle<()>>,
+    outbox: Arc<live::Outbox>,
+    /// What became of each phone's last notification, and when.
+    pushed: HashMap<String, (NotificationState, u64)>,
+    /// Phones the account will not pass notifications to.
+    refused: HashSet<String>,
 }
 
 impl Inner {
@@ -264,7 +294,134 @@ impl Remote {
             owner: inner.stored.owner.clone(),
             account: account_link(&inner),
             update_required: inner.update_required.clone(),
+            notifications: notifications(&inner),
         }
+    }
+
+    /// Keeps a paired phone's notification key and preferences, replacing
+    /// what it sent before.
+    pub(crate) fn set_notifications(
+        &self,
+        id: &str,
+        key_id: u32,
+        key: &str,
+        prefs: NotifyPrefs,
+    ) -> CoreResult<()> {
+        NotificationKey::from_hex(key_id, key)
+            .ok_or_else(|| CoreError::from("the notification key is 32 bytes in hex"))?;
+        if prefs.muted.len() > MAX_MUTES
+            || prefs
+                .muted
+                .iter()
+                .any(|mute| mute.agent_id.len() > MAX_AGENT_ID)
+        {
+            return Err("more muted agents than the host keeps".into());
+        }
+        self.change(|stored| {
+            if !stored.devices.iter().any(|device| device.id == id) {
+                return Err(CoreError::from(super::access::UNPAIRED));
+            }
+            let since = match stored.notifications.get(id) {
+                Some(known) if known.key_id == key_id && known.key == key => known.since,
+                _ => unix_ms(),
+            };
+            stored.notifications.insert(
+                id.to_owned(),
+                PhoneNotify {
+                    key_id,
+                    key: key.to_ascii_lowercase(),
+                    prefs,
+                    since,
+                },
+            );
+            Ok(())
+        })?;
+        let mut inner = self.lock();
+        inner.refused.remove(id);
+        Ok(())
+    }
+
+    pub(crate) fn clear_notifications(&self, id: &str) -> CoreResult<()> {
+        self.change(|stored| {
+            stored.notifications.remove(id);
+            Ok(())
+        })?;
+        let mut inner = self.lock();
+        inner.pushed.remove(id);
+        inner.refused.remove(id);
+        Ok(())
+    }
+
+    /// This host's key and the phones it may notify now: none while it is
+    /// signed out, since notifications go through the account.
+    pub(crate) fn notify_targets(&self) -> Option<(String, Vec<NotifyTarget>)> {
+        let inner = self.lock();
+        if inner.stored.owner.is_none() || inner.update_required.is_some() {
+            return None;
+        }
+        let host = inner.secret.as_ref()?.public().to_string();
+        let targets = inner
+            .stored
+            .notifications
+            .iter()
+            .filter(|(id, _)| !inner.refused.contains(*id))
+            .filter(|(id, _)| inner.stored.devices.iter().any(|device| &device.id == *id))
+            .filter_map(|(id, notify)| {
+                Some(NotifyTarget {
+                    device_id: id.clone(),
+                    key: NotificationKey::from_hex(notify.key_id, &notify.key)?,
+                    prefs: notify.prefs.clone(),
+                })
+            })
+            .collect();
+        Some((host, targets))
+    }
+
+    /// A host with this key, signed in to `owner`, with these phones paired.
+    #[cfg(test)]
+    pub(crate) fn stand_in(
+        &self,
+        secret: SecretKey,
+        owner: Option<&str>,
+        devices: Vec<DeviceInfo>,
+    ) {
+        let mut inner = self.lock();
+        inner.secret = Some(secret);
+        inner.stored.owner = owner.map(str::to_owned);
+        inner.stored.devices = devices;
+    }
+
+    pub(crate) fn outbox(&self) -> Arc<live::Outbox> {
+        self.lock().outbox.clone()
+    }
+
+    /// Notes what the server did with a push. True when the phone's state
+    /// changed, so the app should hear.
+    #[cfg(test)]
+    pub(crate) fn set_accounts_api(&self, base: &str) {
+        self.lock().accounts_api = Some(base.into());
+    }
+
+    pub(crate) fn note_pushed(&self, push: &Push, result: PushResult) -> bool {
+        let state = match result {
+            PushResult::Sent => NotificationState::On,
+            PushResult::NoToken => NotificationState::PhoneOff,
+            PushResult::NotAllowed => NotificationState::OtherAccount,
+            PushResult::Failed | PushResult::NotSetUp => NotificationState::NotReaching,
+            PushResult::Throttled | PushResult::Expired | PushResult::Unknown => return false,
+        };
+        let mut inner = self.lock();
+        if !inner.stored.notifications.contains_key(&push.to) {
+            return false;
+        }
+        if state == NotificationState::OtherAccount {
+            inner.refused.insert(push.to.clone());
+        }
+        let changed = inner.pushed.get(&push.to).map(|(known, _)| *known) != Some(state);
+        if changed {
+            inner.pushed.insert(push.to.clone(), (state, unix_ms()));
+        }
+        changed
     }
 
     /// The core's key and its signature over the registration text for
@@ -381,6 +538,7 @@ impl Remote {
     fn add_device(&self, device: DeviceInfo) -> CoreResult<()> {
         self.change(|stored| {
             stored.devices.retain(|known| known.id != device.id);
+            stored.notifications.remove(&device.id);
             stored.devices.push(device);
             Ok(())
         })
@@ -423,6 +581,31 @@ impl Remote {
             }
         }
     }
+}
+
+fn notifications(inner: &Inner) -> Vec<PhoneNotifications> {
+    let signed_out = inner.stored.owner.is_none();
+    inner
+        .stored
+        .notifications
+        .iter()
+        .filter(|(id, _)| inner.stored.devices.iter().any(|device| &device.id == *id))
+        .map(|(id, notify)| {
+            let pushed = inner.pushed.get(id).copied();
+            let (state, since) = if notify.prefs.when == NotifyWhen::Off {
+                (NotificationState::Off, notify.since)
+            } else if signed_out {
+                (NotificationState::SignedOut, notify.since)
+            } else {
+                pushed.unwrap_or((NotificationState::On, notify.since))
+            };
+            PhoneNotifications {
+                device_id: id.clone(),
+                state,
+                since,
+            }
+        })
+        .collect()
 }
 
 fn account_link(inner: &Inner) -> Option<AccountLink> {
@@ -772,7 +955,7 @@ pub(crate) async fn set_owner(core: &Arc<Core>, owner: Option<String>) -> CoreRe
 
 /// Starts the live connection if the host wants one and has none, or wakes
 /// the one it has to look again.
-fn ensure_live(core: &Arc<Core>) {
+pub(crate) fn ensure_live(core: &Arc<Core>) {
     let mut inner = core.remote.lock();
     if let Some(live) = &inner.live {
         let _ = live.changed.send(());
@@ -794,7 +977,8 @@ fn ensure_live(core: &Arc<Core>) {
         version: core.build.version.clone(),
     };
     let account = Arc::new(HostAccount(Arc::downgrade(core)));
-    let task = tokio::spawn(live::run(account, live::url(&base), app, watching));
+    let outbox = inner.outbox.clone();
+    let task = tokio::spawn(live::run(account, live::url(&base), app, outbox, watching));
     inner.live = Some(LiveTask { task, changed });
 }
 
@@ -884,6 +1068,14 @@ impl live::Account for HostAccount {
             announce(&core);
         }
     }
+
+    fn pushed(&self, push: Push, result: PushResult) {
+        if let Some(core) = self.0.upgrade() {
+            if core.remote.note_pushed(&push, result) {
+                announce(&core);
+            }
+        }
+    }
 }
 
 fn revoke_reason(reason: Option<RevokeReason>) -> &'static str {
@@ -920,6 +1112,7 @@ fn apply_events(core: &Core, events: &[AccountEvent]) {
             if let Some(index) = stored.devices.iter().position(|device| &device.id == key) {
                 forgotten.push((stored.devices.remove(index), *reason));
             }
+            stored.notifications.remove(key);
         }
         stored.account_event_id = stored.account_event_id.max(last);
         Ok(forgotten)
@@ -985,6 +1178,7 @@ fn let_go(core: &Core, reason: Option<RevokeReason>) {
 pub(crate) fn revoke(core: &Core, id: &str) -> CoreResult<RemoteStatus> {
     core.remote.change(|stored| {
         stored.devices.retain(|device| device.id != id);
+        stored.notifications.remove(id);
         Ok(())
     })?;
     core.close_device_clients(Some(id));
@@ -1068,6 +1262,7 @@ mod tests {
             pending_leave: Some("user_2old".into()),
             removed: None,
             network: None,
+            notifications: BTreeMap::new(),
             devices: vec![DeviceInfo {
                 id: SecretKey::generate().public().to_string(),
                 name: "Phone".into(),

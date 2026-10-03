@@ -733,11 +733,22 @@ pub(crate) fn report_exit(core: &Core, session: &Session, status: Option<&ExitSt
         killed: session.killed.load(Ordering::Acquire),
     });
     drop(parser);
+    let failed = match (&code, &signal) {
+        (_, Some(signal)) => Some(format!("It stopped from signal {signal}.")),
+        (Some(code), None) if *code != 0 => Some(format!("It exited with code {code}.")),
+        _ => None,
+    };
     if session.is_task() {
         core.harness.session_exited(session.id, code, signal);
     }
     if let Some(agent) = session.agent.as_ref() {
         agent::note_exit(core, agent, status);
+        if let Some(reason) = failed.filter(|_| !session.is_killed()) {
+            core.notify.send(super::notify::Signal::AgentFailed {
+                agent_id: agent.agent_id().to_owned(),
+                reason,
+            });
+        }
     }
     if let Some(exited_at) = exited_at {
         core.reclaim_exited_sessions(exited_at);

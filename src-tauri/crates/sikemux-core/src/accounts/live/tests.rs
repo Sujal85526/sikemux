@@ -16,6 +16,7 @@ struct Fake {
     applied: Mutex<Vec<i64>>,
     links: Mutex<Vec<Link>>,
     removed: Mutex<Option<Option<RevokeReason>>>,
+    pushed: Mutex<Vec<(Push, PushResult)>>,
 }
 
 impl Fake {
@@ -27,6 +28,7 @@ impl Fake {
             applied: Mutex::new(Vec::new()),
             links: Mutex::new(Vec::new()),
             removed: Mutex::new(None),
+            pushed: Mutex::new(Vec::new()),
         })
     }
 
@@ -80,6 +82,10 @@ impl Account for Fake {
     fn removed(&self, reason: Option<RevokeReason>) {
         *self.removed.lock().unwrap() = Some(reason);
         *self.want.lock().unwrap() = Want::Stop;
+    }
+
+    fn pushed(&self, push: Push, result: PushResult) {
+        self.pushed.lock().unwrap().push((push, result));
     }
 }
 
@@ -176,12 +182,26 @@ impl Peer {
 }
 
 fn spawn(account: &Arc<Fake>, server: &Server) -> (JoinHandle<()>, watch::Sender<()>) {
+    spawn_with(account, server, Arc::default())
+}
+
+fn spawn_with(
+    account: &Arc<Fake>,
+    server: &Server,
+    outbox: Arc<Outbox>,
+) -> (JoinHandle<()>, watch::Sender<()>) {
     let (changed, watching) = watch::channel(());
     let app = LiveApp {
         platform: crate::accounts::protocol::Platform::Macos,
         version: "0.0.0-test".into(),
     };
-    let task = tokio::spawn(run(account.clone(), url(&server.base()), app, watching));
+    let task = tokio::spawn(run(
+        account.clone(),
+        url(&server.base()),
+        app,
+        outbox,
+        watching,
+    ));
     (task, changed)
 }
 
@@ -338,6 +358,125 @@ async fn a_cursor_beyond_the_servers_history_starts_over() {
     peer.events(&[1, 2]).await;
     assert_eq!(peer.receive().await, json!({ "type": "ack", "id": 2 }));
     assert_eq!(account.applied(), vec![1, 2]);
+    *account.want.lock().unwrap() = Want::Stop;
+    changed.send(()).unwrap();
+    finished(task).await;
+}
+
+fn push(to: &str, card: &str, expires_at: u64) -> Push {
+    Push {
+        to: to.into(),
+        kind: PushKind::Alert,
+        collapse_id: card.repeat(32),
+        blob: "AAAA".into(),
+        expires_at,
+    }
+}
+
+fn later() -> u64 {
+    now_ms() + 60_000
+}
+
+#[test]
+fn expiry_reads_as_an_rfc3339_time() {
+    assert_eq!(rfc3339(0), "1970-01-01T00:00:00.000Z");
+    assert_eq!(rfc3339(1_791_003_600_123), "2026-10-03T05:00:00.123Z");
+    assert_eq!(rfc3339(951_782_400_000), "2000-02-29T00:00:00.000Z");
+}
+
+#[test]
+fn a_newer_alert_for_the_same_card_replaces_one_still_waiting() {
+    let outbox = Outbox::default();
+    outbox.post(push("phone", "a", later()));
+    outbox.post(push("phone", "b", later()));
+    outbox.post(Push {
+        blob: "BBBB".into(),
+        ..push("phone", "a", later())
+    });
+    outbox.post(push("phone", "c", now_ms() - 1));
+    let waiting = outbox.waiting();
+    assert_eq!(waiting.len(), 3);
+    assert_eq!(waiting[0].collapse_id, "b".repeat(32));
+    assert_eq!(waiting[1].blob, "BBBB");
+    assert!(outbox.withdraw("phone", &"b".repeat(32)));
+    assert!(!outbox.withdraw("phone", &"b".repeat(32)));
+    let taken = outbox.take();
+    assert_eq!(taken.len(), 1, "an expired push never goes out");
+    assert_eq!(taken[0].r#ref, 1);
+}
+
+#[tokio::test]
+async fn pushes_go_out_with_rising_refs_and_their_answers_come_back() {
+    let server = Server::new().await;
+    let account = Fake::new(Want::Stay);
+    let outbox = Arc::new(Outbox::default());
+    outbox.post(push("phone", "a", later()));
+    let (task, changed) = spawn_with(&account, &server, outbox.clone());
+    let mut peer = server.greet(&account).await;
+    peer.ready(0).await;
+    let first = peer.receive().await;
+    assert_eq!(first["type"], "push");
+    assert_eq!(first["ref"], 1);
+    assert_eq!(first["to"], "phone");
+    assert_eq!(first["kind"], "alert");
+    assert_eq!(first["collapseId"], "a".repeat(32));
+    assert_eq!(first["blob"], "AAAA");
+    assert!(first["expiresAt"].as_str().unwrap().ends_with('Z'));
+
+    outbox.post(Push {
+        kind: PushKind::Clear,
+        ..push("phone", "b", later())
+    });
+    let second = peer.receive().await;
+    assert_eq!(second["ref"], 2);
+    assert_eq!(second["kind"], "clear");
+
+    peer.send(json!({ "type": "pushed", "ref": 2, "result": "no_token" }))
+        .await;
+    peer.send(json!({ "type": "pushed", "ref": 99, "result": "sent" }))
+        .await;
+    peer.send(json!({ "type": "pushed", "ref": 1, "result": "sent" }))
+        .await;
+    peer.send(json!({ "type": "ping" })).await;
+    assert_eq!(peer.receive().await, json!({ "type": "pong" }));
+    let pushed = account.pushed.lock().unwrap().clone();
+    assert_eq!(pushed.len(), 2);
+    assert_eq!(pushed[0].0.collapse_id, "b".repeat(32));
+    assert_eq!(pushed[0].1, PushResult::NoToken);
+    assert_eq!(pushed[1].0.collapse_id, "a".repeat(32));
+    assert_eq!(pushed[1].1, PushResult::Sent);
+
+    *account.want.lock().unwrap() = Want::Stop;
+    changed.send(()).unwrap();
+    finished(task).await;
+}
+
+#[tokio::test]
+async fn a_push_left_unanswered_goes_out_again_on_the_next_connection() {
+    let server = Server::new().await;
+    let account = Fake::new(Want::Stay);
+    let outbox = Arc::new(Outbox::default());
+    let (task, changed) = spawn_with(&account, &server, outbox.clone());
+    let mut peer = server.greet(&account).await;
+    peer.ready(0).await;
+    peer.send(json!({ "type": "ping" })).await;
+    assert_eq!(peer.receive().await, json!({ "type": "pong" }));
+    outbox.post(push("phone", "a", later()));
+    assert_eq!(peer.receive().await["ref"], 1);
+    peer.send(json!({ "type": "bye", "reconnectAfterMs": 10 }))
+        .await;
+    peer.close(1012).await;
+
+    outbox.post(push("phone", "b", later()));
+    let mut peer = server.greet(&account).await;
+    peer.ready(0).await;
+    let again = peer.receive().await;
+    assert_eq!(again["ref"], 2);
+    assert_eq!(again["collapseId"], "a".repeat(32));
+    let newer = peer.receive().await;
+    assert_eq!(newer["ref"], 3);
+    assert_eq!(newer["collapseId"], "b".repeat(32));
+
     *account.want.lock().unwrap() = Want::Stop;
     changed.send(()).unwrap();
     finished(task).await;

@@ -3,17 +3,18 @@
 //! applies each event once, acknowledges it, and reconnects when the
 //! connection drops.
 
-use std::sync::{Arc, OnceLock};
-use std::time::Duration;
+use std::collections::{BTreeMap, VecDeque};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
-use tokio::sync::watch;
+use tokio::sync::{watch, Notify};
 use tokio_websockets::{ClientBuilder, Connector, MaybeTlsStream, Message, WebSocketStream};
 
 use super::protocol::{
-    AccountEvent, LiveAck, LiveApp, LiveDeviceMessage, LiveHello, LiveLeave, LivePong, LiveRole,
-    LiveServerMessage, RevokeReason,
+    AccountEvent, LiveAck, LiveApp, LiveDeviceMessage, LiveHello, LiveLeave, LivePong, LivePush,
+    LiveRole, LiveServerMessage, PushKind, PushResult, RevokeReason,
 };
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
@@ -70,6 +71,150 @@ pub trait Account: Send + Sync + 'static {
     /// The server took this device off the account. `None` when it no longer
     /// knows the key at all.
     fn removed(&self, reason: Option<RevokeReason>);
+    /// What the server did with a push from the [`Outbox`].
+    fn pushed(&self, push: Push, result: PushResult);
+}
+
+/// A notification for one of the account's phones, sealed by the host.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Push {
+    pub to: String,
+    pub kind: PushKind,
+    pub collapse_id: String,
+    pub blob: String,
+    /// Milliseconds since the Unix epoch. Until then a push waits for the
+    /// connection; after it, it is dropped.
+    pub expires_at: u64,
+}
+
+/// Pushes waiting for the live connection, and those sent but not yet
+/// answered. Each goes out with a `ref` one higher than the last, and its
+/// answer carries it back.
+#[derive(Default)]
+pub struct Outbox {
+    state: Mutex<OutboxState>,
+    ready: Notify,
+}
+
+#[derive(Default)]
+struct OutboxState {
+    last_ref: i64,
+    waiting: VecDeque<Push>,
+    sent: BTreeMap<i64, Push>,
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+impl Outbox {
+    fn lock(&self) -> MutexGuard<'_, OutboxState> {
+        self.state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Queues `push`, replacing an alert for the same card that has not gone
+    /// out yet.
+    pub fn post(&self, push: Push) {
+        let now = now_ms();
+        let mut state = self.lock();
+        state.waiting.retain(|waiting| {
+            waiting.expires_at > now
+                && !(waiting.to == push.to && waiting.collapse_id == push.collapse_id)
+        });
+        state.waiting.push_back(push);
+        drop(state);
+        self.ready.notify_one();
+    }
+
+    /// Drops the push for this card that has not gone out yet. True when
+    /// there was one.
+    pub fn withdraw(&self, to: &str, collapse_id: &str) -> bool {
+        let mut state = self.lock();
+        let before = state.waiting.len();
+        state
+            .waiting
+            .retain(|waiting| !(waiting.to == to && waiting.collapse_id == collapse_id));
+        state.waiting.len() != before
+    }
+
+    pub fn waiting(&self) -> Vec<Push> {
+        self.lock().waiting.iter().cloned().collect()
+    }
+
+    pub(crate) fn take(&self) -> Vec<LivePush> {
+        let now = now_ms();
+        let mut state = self.lock();
+        let mut taken = Vec::new();
+        while let Some(push) = state.waiting.pop_front() {
+            if push.expires_at <= now {
+                continue;
+            }
+            state.last_ref += 1;
+            let r#ref = state.last_ref;
+            taken.push(LivePush {
+                r#ref,
+                to: push.to.clone(),
+                kind: push.kind,
+                collapse_id: push.collapse_id.clone(),
+                blob: push.blob.clone(),
+                expires_at: rfc3339(push.expires_at),
+            });
+            state.sent.insert(r#ref, push);
+        }
+        taken
+    }
+
+    fn answered(&self, r#ref: i64) -> Option<Push> {
+        self.lock().sent.remove(&r#ref)
+    }
+
+    /// The connection dropped before these were answered, so they go out
+    /// again on the next one, ahead of anything newer.
+    fn unanswered(&self) {
+        let mut state = self.lock();
+        let sent = std::mem::take(&mut state.sent);
+        for push in sent.into_values().rev() {
+            if !state
+                .waiting
+                .iter()
+                .any(|waiting| waiting.to == push.to && waiting.collapse_id == push.collapse_id)
+            {
+                state.waiting.push_front(push);
+            }
+        }
+    }
+}
+
+/// `2026-10-03T00:00:30.000Z` for milliseconds since the Unix epoch.
+pub fn rfc3339(ms: u64) -> String {
+    let days = (ms / 86_400_000) as i64;
+    let in_day = ms % 86_400_000;
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let day_of_era = z.rem_euclid(146_097);
+    let year_of_era =
+        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let shifted_month = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * shifted_month + 2) / 5 + 1;
+    let month = if shifted_month < 10 {
+        shifted_month + 3
+    } else {
+        shifted_month - 9
+    };
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{:03}Z",
+        in_day / 3_600_000,
+        in_day / 60_000 % 60,
+        in_day / 1000 % 60,
+        in_day % 1000
+    )
 }
 
 /// `base` is the accounts API, `http(s)://host`.
@@ -91,6 +236,7 @@ pub async fn run<A: Account>(
     account: Arc<A>,
     url: String,
     app: LiveApp,
+    outbox: Arc<Outbox>,
     mut changed: watch::Receiver<()>,
 ) {
     let mut failures: u32 = 0;
@@ -99,7 +245,9 @@ pub async fn run<A: Account>(
         if changed.has_changed().is_err() || account.want() == Want::Stop {
             return;
         }
-        let wait = match session(&*account, &url, &app, &mut changed).await {
+        let ended = session(&*account, &url, &app, &outbox, &mut changed).await;
+        outbox.unanswered();
+        let wait = match ended {
             Ended::Done => continue,
             Ended::Retry { hint, was_live } => {
                 if was_live {
@@ -183,10 +331,20 @@ async fn next_frame(socket: &mut Socket, wait: Duration) -> Frame {
     }
 }
 
+async fn flush(socket: &mut Socket, outbox: &Outbox) -> bool {
+    for push in outbox.take() {
+        if !send(socket, LiveDeviceMessage::Push(push)).await {
+            return false;
+        }
+    }
+    true
+}
+
 async fn session<A: Account>(
     account: &A,
     url: &str,
     app: &LiveApp,
+    outbox: &Outbox,
     changed: &mut watch::Receiver<()>,
 ) -> Ended {
     let retry = |hint, was_live| Ended::Retry { hint, was_live };
@@ -220,6 +378,12 @@ async fn session<A: Account>(
     loop {
         let frame = tokio::select! {
             frame = next_frame(&mut socket, SILENCE) => frame,
+            _ = outbox.ready.notified(), if ready && !leaving => {
+                if !flush(&mut socket, outbox).await {
+                    return retry(hint, ready);
+                }
+                continue;
+            }
             gone = changed.changed() => {
                 match if gone.is_err() { Want::Stop } else { account.want() } {
                     Want::Stop => {
@@ -261,7 +425,7 @@ async fn session<A: Account>(
                     leaving = true;
                     send(&mut socket, LiveDeviceMessage::Leave(LiveLeave {})).await
                 } else {
-                    true
+                    flush(&mut socket, outbox).await
                 }
             }
             LiveServerMessage::Events(batch) => {
@@ -291,6 +455,12 @@ async fn session<A: Account>(
                 hint = Some(Duration::from_millis(
                     u64::try_from(bye.reconnect_after_ms).unwrap_or_default(),
                 ));
+                true
+            }
+            LiveServerMessage::Pushed(pushed) => {
+                if let Some(push) = outbox.answered(pushed.r#ref) {
+                    account.pushed(push, pushed.result);
+                }
                 true
             }
             LiveServerMessage::Revoked(revoked) => {

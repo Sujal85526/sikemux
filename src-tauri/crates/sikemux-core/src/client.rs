@@ -656,7 +656,7 @@ impl CoreClient {
 
     async fn remote_request(&self, request: Request) -> Result<RemoteStatus, ClientError> {
         match self.request(request).await? {
-            Response::Remote { status } => Ok(status),
+            Response::Remote { status } => Ok(*status),
             _ => Err(ClientError::UnexpectedReply),
         }
     }

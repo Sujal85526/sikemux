@@ -25,6 +25,7 @@ use crate::protocol::{
 };
 
 use super::connection::{ClientConn, ClientId};
+use super::notify::Signal;
 use super::remote::unix_ms;
 use super::{Core, CoreError, CoreResult};
 use feed::{Feed, Standing};
@@ -120,9 +121,29 @@ impl Chat {
             self.turned.store(true, Ordering::Release);
         }
         if let Some(core) = self.core.upgrade() {
+            let agent_id = self.agent_id().to_owned();
             match kind {
-                ChatEventKind::TurnStarted => core.seen.working(self.agent_id()),
-                ChatEventKind::TurnCompleted => core.seen.wants_a_look(self.agent_id()),
+                ChatEventKind::TurnStarted => {
+                    core.seen.working(&agent_id);
+                    core.notify.send(Signal::TurnStarted { agent_id });
+                }
+                ChatEventKind::TurnCompleted => {
+                    core.seen.wants_a_look(&agent_id);
+                    let cancelled =
+                        payload.get("stopReason").and_then(Value::as_str) == Some("cancelled");
+                    core.notify.send(Signal::TurnCompleted {
+                        agent_id,
+                        cancelled,
+                    });
+                }
+                ChatEventKind::Error => {
+                    let message = payload
+                        .get("message")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_owned();
+                    core.notify.send(Signal::ChatError { agent_id, message });
+                }
                 _ => {}
             }
         }
@@ -512,6 +533,29 @@ impl Chats {
         chats.insert(chat.agent_id().to_owned(), chat.clone());
         Ok((chat, queue))
     }
+}
+
+/// A chat that is listed but never started, for tests of what surrounds it.
+#[cfg(test)]
+pub(crate) fn idle(core: &Arc<Core>, agent_id: &str, provider: &str, cwd: &str) -> Arc<Chat> {
+    let launch = ChatLaunch {
+        agent_id: agent_id.into(),
+        provider: provider.into(),
+        cwd: cwd.into(),
+        program: "/bin/false".into(),
+        args: Vec::new(),
+        env: Default::default(),
+        mcp_servers: Vec::new(),
+        resume_id: None,
+        permission_mode: "default".into(),
+        model: None,
+        effort: None,
+    };
+    let (chat, _) = core
+        .chats
+        .insert(core, launch, Origin::default())
+        .unwrap_or_else(|error| panic!("{error}"));
+    chat
 }
 
 fn validate(launch: &ChatLaunch) -> CoreResult<()> {

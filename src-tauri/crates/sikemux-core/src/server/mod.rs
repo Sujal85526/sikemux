@@ -7,6 +7,7 @@ mod entry;
 mod handover;
 mod harness;
 mod host;
+mod notify;
 mod pairing;
 mod prepare;
 mod remote;
@@ -271,6 +272,7 @@ pub(crate) struct Core {
     pub(crate) remote: remote::Remote,
     pub(crate) workspaces: workspace::Workspaces,
     pub(crate) seen: seen::Seen,
+    pub(crate) notify: notify::Notifier,
     /// The view paired devices were last sent, as sent.
     device_view: Mutex<Vec<u8>>,
 }
@@ -314,6 +316,7 @@ impl Core {
             remote: remote::Remote::default(),
             workspaces: workspace::Workspaces::default(),
             seen: seen::Seen::default(),
+            notify: notify::Notifier::default(),
             device_view: Mutex::new(Vec::new()),
         }))
     }
@@ -478,6 +481,21 @@ impl Core {
     /// Paired devices hear only of terminals ending and changing; the rest
     /// reaches them through [`Core::publish_device_view`].
     pub(crate) fn broadcast_event(&self, event: &Event) {
+        match event {
+            Event::Attention { attention } => {
+                self.notify
+                    .send(notify::Signal::Attention(attention.clone()));
+            }
+            Event::AttentionCleared { id, agent_id } => self.notify.send(notify::Signal::Cleared {
+                id: id.clone(),
+                agent_id: agent_id.clone(),
+            }),
+            Event::AgentState(state) => self.notify.send(notify::Signal::AgentState {
+                agent_id: state.agent_id.clone(),
+                state: state.state.clone(),
+            }),
+            _ => {}
+        }
         let devices_hear = matches!(event, Event::Exited { .. } | Event::ShellMetadata(_));
         self.broadcast_to(event, |client| devices_hear || client.peer.is_local());
     }
@@ -822,6 +840,7 @@ pub(crate) async fn run_core(
         tokio::spawn(poll_sessions(core.clone())),
         tokio::spawn(sweep(core.clone())),
         tokio::spawn(device_views(core.clone())),
+        tokio::spawn(notify::run(core.clone())),
     ];
     let mut shutdown = core.shutdown.subscribe();
     let mut frozen = core.frozen.subscribe();

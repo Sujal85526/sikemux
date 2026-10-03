@@ -339,6 +339,21 @@ pub enum Request {
     /// A paired device forgetting this host: removes it from the paired
     /// devices and closes its connection once answered.
     Unpair,
+    /// A paired phone's key for sealing its notifications from this host,
+    /// and what it wants to hear about. Sent again whenever either changes;
+    /// a new key replaces the old one.
+    SetNotifications {
+        key_id: u32,
+        key: String,
+        prefs: NotifyPrefs,
+    },
+    /// A paired phone wants no more notifications from this host.
+    ClearNotifications,
+    /// Whether the phone's app is in front, which it is when it connects.
+    /// A phone in front showing a chat gets no notifications about it.
+    SetForeground {
+        foreground: bool,
+    },
     /// Signs the text that registers this core with an account, built by
     /// `accounts::registration_message` from the server's challenge.
     SignRegistration {
@@ -721,7 +736,7 @@ pub enum Response {
     Chats { chats: Vec<ChatInfo> },
     Steered { outcome: String },
     ChatConfig { value: Value },
-    Remote { status: RemoteStatus },
+    Remote { status: Box<RemoteStatus> },
     Workspace { workspace: Workspace },
     Attentions { attentions: Vec<Attention> },
     ChatBegun { agent_id: String, start: ChatStart },
@@ -877,6 +892,70 @@ pub struct RemoteStatus {
     /// access and the account stay off until it updates.
     #[serde(default)]
     pub update_required: Option<UpdateRequired>,
+    /// The phones that asked this host for notifications.
+    #[serde(default)]
+    pub notifications: Vec<PhoneNotifications>,
+}
+
+/// What a phone wants to hear about from this host. The phone owns these
+/// and sends them on every connection.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotifyPrefs {
+    /// Permission requests, and terminal agents waiting for input.
+    pub needs_you: bool,
+    pub finished: bool,
+    pub problems: bool,
+    pub when: NotifyWhen,
+    #[serde(default)]
+    pub muted: Vec<NotifyMute>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum NotifyWhen {
+    /// Only while nobody is using this host: locked, or untouched for a
+    /// couple of minutes.
+    Away,
+    Always,
+    Off,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotifyMute {
+    pub agent_id: String,
+    /// Milliseconds since the Unix epoch, or `None` while the agent runs.
+    pub until: Option<u64>,
+}
+
+/// Whether a phone's notifications from this host reach it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PhoneNotifications {
+    pub device_id: String,
+    pub state: NotificationState,
+    /// Milliseconds since the Unix epoch when `state` began.
+    pub since: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum NotificationState {
+    /// The phone asked for none from this host.
+    Off,
+    /// The last one was delivered, or none was sent yet.
+    On,
+    /// Notifications are turned off on the phone itself.
+    PhoneOff,
+    /// The push services could not deliver the last one.
+    NotReaching,
+    /// The phone is not on this host's account, so the server will not
+    /// pass notifications to it.
+    OtherAccount,
+    /// This host is not signed in to an account, which notifications go
+    /// through.
+    SignedOut,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

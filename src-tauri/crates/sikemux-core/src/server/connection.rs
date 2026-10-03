@@ -41,11 +41,47 @@ pub(crate) struct ClientConn {
     subscriptions: Mutex<HashSet<SessionId>>,
     /// A local client that asked for the device view.
     watches_view: AtomicBool,
+    /// A phone's app is in front, as far as it last said.
+    foreground: AtomicBool,
 }
 
 impl ClientConn {
     pub(crate) fn watches_view(&self) -> bool {
         self.watches_view.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn in_front(&self) -> bool {
+        self.foreground.load(Ordering::Acquire)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_foreground(&self, foreground: bool) {
+        self.foreground.store(foreground, Ordering::Release);
+    }
+
+    /// A client with nobody on the other end, registered with the core.
+    #[cfg(test)]
+    pub(crate) fn stand_in(core: &Core, peer: Peer) -> Arc<Self> {
+        let (frames, _) = mpsc::unbounded_channel();
+        let client = Arc::new(Self {
+            id: core.next_client_id.fetch_add(1, Ordering::Relaxed),
+            peer,
+            frames,
+            queued: AtomicUsize::new(0),
+            closed: AtomicBool::new(false),
+            kick: Notify::new(),
+            subscriptions: Mutex::new(HashSet::new()),
+            watches_view: AtomicBool::new(false),
+            foreground: AtomicBool::new(true),
+        });
+        core.register_client(client.clone());
+        client
+    }
+
+    pub(crate) fn is_subscribed(&self, id: SessionId) -> bool {
+        self.subscriptions
+            .lock()
+            .is_ok_and(|subscriptions| subscriptions.contains(&id))
     }
 
     pub(crate) fn send(&self, frame: Arc<[u8]>) -> bool {
@@ -228,6 +264,7 @@ pub(crate) async fn serve_client(
         kick: Notify::new(),
         subscriptions: Mutex::new(HashSet::new()),
         watches_view: AtomicBool::new(false),
+        foreground: AtomicBool::new(true),
     });
     core.register_client(client.clone());
     if !client.peer.is_local() {
@@ -294,7 +331,7 @@ async fn read_requests(
                     message: "the handshake is already done".into(),
                 }),
                 Err(error) => client.send_message(&ServerMessage::Error {
-                    request_id: None,
+                    request_id: unreadable_request_id(&frame.payload),
                     message: format!("unreadable message: {error}"),
                 }),
             },
@@ -645,19 +682,29 @@ async fn run_requests(
                 client.respond(
                     request_id,
                     Ok(Response::Remote {
-                        status: core.remote.status(),
+                        status: Box::new(core.remote.status()),
                     }),
                 );
             }
             Request::SetRemoteAccess { enabled } => {
                 tokio::spawn(async move {
                     let result = remote::set_enabled(&core, enabled).await;
-                    client.respond(request_id, result.map(|status| Response::Remote { status }));
+                    client.respond(
+                        request_id,
+                        result.map(|status| Response::Remote {
+                            status: Box::new(status),
+                        }),
+                    );
                 });
             }
             Request::SetDeviceAccess { id, access } => {
                 let result = remote::set_access(&core, &id, access);
-                client.respond(request_id, result.map(|status| Response::Remote { status }));
+                client.respond(
+                    request_id,
+                    result.map(|status| Response::Remote {
+                        status: Box::new(status),
+                    }),
+                );
             }
             Request::PublishWorkspace {
                 projects,
@@ -700,6 +747,30 @@ async fn run_requests(
                         Err(window::not_open("show that agent").into())
                     },
                 );
+            }
+            Request::SetNotifications { key_id, key, prefs } => {
+                let result = match &client.peer {
+                    Peer::Device { id } => core.remote.set_notifications(id, key_id, &key, prefs),
+                    Peer::Local => Err("only a paired phone can ask for notifications".into()),
+                };
+                if result.is_ok() {
+                    remote::announce(&core);
+                }
+                client.respond(request_id, result.map(|()| Response::Done));
+            }
+            Request::ClearNotifications => {
+                let result = match &client.peer {
+                    Peer::Device { id } => core.remote.clear_notifications(id),
+                    Peer::Local => Err("only a paired phone has notifications to stop".into()),
+                };
+                if result.is_ok() {
+                    remote::announce(&core);
+                }
+                client.respond(request_id, result.map(|()| Response::Done));
+            }
+            Request::SetForeground { foreground } => {
+                client.foreground.store(foreground, Ordering::Release);
+                client.respond(request_id, Ok(Response::Done));
             }
             Request::WatchView => {
                 client.watches_view.store(true, Ordering::Release);
@@ -746,19 +817,34 @@ async fn run_requests(
             }
             Request::OpenPairing => {
                 let result = core.remote.open_offer().map(|()| remote::announce(&core));
-                client.respond(request_id, result.map(|status| Response::Remote { status }));
+                client.respond(
+                    request_id,
+                    result.map(|status| Response::Remote {
+                        status: Box::new(status),
+                    }),
+                );
             }
             Request::ClosePairing => {
                 core.remote.close_offer();
                 let status = remote::announce(&core);
-                client.respond(request_id, Ok(Response::Remote { status }));
+                client.respond(
+                    request_id,
+                    Ok(Response::Remote {
+                        status: Box::new(status),
+                    }),
+                );
             }
             Request::AnswerPairing { id, allow, access } => {
                 let result = core
                     .remote
                     .answer(&id, allow.then_some(access))
                     .map(|()| remote::announce(&core));
-                client.respond(request_id, result.map(|status| Response::Remote { status }));
+                client.respond(
+                    request_id,
+                    result.map(|status| Response::Remote {
+                        status: Box::new(status),
+                    }),
+                );
             }
             Request::Unpair => {
                 let Peer::Device { id } = &client.peer else {
@@ -801,12 +887,22 @@ async fn run_requests(
             Request::SetOwner { owner } => {
                 tokio::spawn(async move {
                     let result = remote::set_owner(&core, owner).await;
-                    client.respond(request_id, result.map(|status| Response::Remote { status }));
+                    client.respond(
+                        request_id,
+                        result.map(|status| Response::Remote {
+                            status: Box::new(status),
+                        }),
+                    );
                 });
             }
             Request::RevokeDevice { id } => {
                 let result = remote::revoke(&core, &id);
-                client.respond(request_id, result.map(|status| Response::Remote { status }));
+                client.respond(
+                    request_id,
+                    result.map(|status| Response::Remote {
+                        status: Box::new(status),
+                    }),
+                );
             }
             Request::AcpSetConfig {
                 agent_id,
@@ -863,4 +959,25 @@ async fn shutdown(core: Arc<Core>, client: Arc<ClientConn>, request_id: RequestI
     client.respond(request_id, Ok(Response::Done));
     client.wait_flushed(SHUTDOWN_FLUSH).await;
     core.begin_shutdown();
+}
+
+/// The id of a request this core cannot read, such as one added in a later
+/// release, so the client hears it was refused instead of waiting.
+fn unreadable_request_id(payload: &[u8]) -> Option<RequestId> {
+    let message: serde_json::Value = serde_json::from_slice(payload).ok()?;
+    if message.get("type")?.as_str()? != "request" {
+        return None;
+    }
+    message.get("requestId")?.as_u64()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_request_from_a_later_release_is_refused_by_its_id() {
+        let later = br#"{"type":"request","requestId":12,"request":{"op":"addedLater"}}"#;
+        assert_eq!(super::unreadable_request_id(later), Some(12));
+        assert_eq!(super::unreadable_request_id(br#"{"type":"ack"}"#), None);
+        assert_eq!(super::unreadable_request_id(b"not json"), None);
+    }
 }
