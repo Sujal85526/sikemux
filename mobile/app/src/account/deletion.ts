@@ -4,7 +4,7 @@ export type Factor = { strategy: 'email_code'; to: string } | { strategy: 'passw
 export type DeletionPhase =
   { name: 'confirm' } | { name: 'deleting' } | { name: 'verify'; factor: Factor; entry: string; checking: boolean } | { name: 'done' };
 
-export type DeletionState = { expected: string; typed: string; problem?: string; phase: DeletionPhase };
+export type DeletionState = { typed: string; problem?: string; phase: DeletionPhase };
 
 export type DeletionAction =
   | { type: 'typed'; text: string }
@@ -18,16 +18,16 @@ export type DeletionAction =
   | { type: 'failed'; problem: string }
   | { type: 'deleted' };
 
-/** The text that confirms: the account's email, or the word "delete" for an account without one. */
-export function startDeletion(email: string | undefined): DeletionState {
-  return { expected: email ?? 'delete', typed: '', phase: { name: 'confirm' } };
+/** The word typed to confirm, the same as at app.sikemux.com/delete-account. */
+export const CONFIRM_WORD = 'delete';
+
+export const START: DeletionState = { typed: '', phase: { name: 'confirm' } };
+
+export function confirmed(state: Pick<DeletionState, 'typed'>): boolean {
+  return state.typed.trim().toLowerCase() === CONFIRM_WORD;
 }
 
-export function confirmed(state: Pick<DeletionState, 'expected' | 'typed'>): boolean {
-  return state.typed.trim().toLowerCase() === state.expected.trim().toLowerCase();
-}
-
-/** Steps through deleting: confirm by typing, delete, prove it is them again if the server asks, done. */
+/** Steps through deleting: confirm by typing the word, delete, prove it is them again if the server asks, done. */
 export function deletion(state: DeletionState, action: DeletionAction): DeletionState {
   const phase = state.phase;
   switch (action.type) {

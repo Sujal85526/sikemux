@@ -15,7 +15,7 @@ const WORDS: Record<Reason, { title: string; body: string }> = {
   },
   'deleted-here': {
     title: 'Your account is deleted',
-    body: 'Your account, its devices and its history are gone from Sikemux. Your code and files never reached us, so they are still on your hosts.',
+    body: 'Every device on it is signed out. Device keys and the account’s history are erased within 30 days. Your code and files never reached us, so they are still on your hosts.',
   },
 };
 

@@ -5,35 +5,31 @@ import { useAuth, useReverification, useSession, useUser } from '@clerk/expo';
 
 import { AccountProblem, deleteAccount, ReverifyNeeded } from '@/account/api';
 import { errorCode, explain } from '@/account/clerkErrors';
-import { chooseFactor, confirmed, deletion, REVERIFY_HINT, startDeletion } from '@/account/deletion';
+import { chooseFactor, CONFIRM_WORD, confirmed, deletion, REVERIFY_HINT, START } from '@/account/deletion';
 import { signOutHere } from '@/account/leave';
 import { CodeEntry } from '@/ui/CodeEntry';
 import { Button, Field, Nav, PasswordField, Screen, useBottomGap } from '@/ui/parts';
 import { type Palette, typeFor, useStyles } from '@/ui/theme';
 
 const GONE = [
-  'Your Sikemux account and its sign-in.',
-  'Every device on it. Hosts sign out and keep the phones paired with them; phones sign out and are removed from every host.',
-  'The history of changes to your devices.',
+  'Hosts are signed out. The phones paired to them keep working.',
+  'Phones, this one too, are signed out and removed from every host.',
+  'Your sign-in is deleted. Device keys and the account’s history are erased within 30 days, and backups within 30 days after that.',
 ];
 
 function describe(error: unknown): string {
   return error instanceof AccountProblem ? error.message : explain(error);
 }
 
+/** Deletes the account, after the person types the word and, when the server asks, proves it is them again. */
 export default function DeleteAccount() {
-  const { isLoaded, user } = useUser();
-  if (!isLoaded) return null;
-  return <Deletion email={user?.primaryEmailAddress?.emailAddress} />;
-}
-
-/** Deletes the account, after the person types their email and, when the server asks, proves it is them again. */
-function Deletion({ email }: { email: string | undefined }) {
   const styles = useStyles(makeStyles);
   const bottom = useBottomGap();
   const { getToken, signOut } = useAuth();
   const { session } = useSession();
-  const [state, dispatch] = useReducer(deletion, email, startDeletion);
+  const { user } = useUser();
+  const email = user?.primaryEmailAddress?.emailAddress;
+  const [state, dispatch] = useReducer(deletion, START);
   const pending = useRef<{ complete: () => void; cancel: () => void }>(undefined);
 
   const askAgain = async (cancel: () => void) => {
@@ -176,7 +172,9 @@ function Deletion({ email }: { email: string | undefined }) {
       <Nav back="Back" onBack={back} />
       <ScrollView contentContainerStyle={[styles.block, { paddingBottom: bottom }]} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>Delete your account</Text>
-        <Text style={styles.detail}>This can&apos;t be undone. It deletes, at once:</Text>
+        <Text style={styles.detail}>
+          This deletes {email ? <Text style={styles.ink}>{email}</Text> : 'it'} from Sikemux right away. It can&apos;t be undone.
+        </Text>
         <View style={styles.list}>
           {GONE.map((line) => (
             <View key={line} style={styles.item}>
@@ -186,15 +184,16 @@ function Deletion({ email }: { email: string | undefined }) {
           ))}
         </View>
         <Text style={styles.detail}>Your code and files never reached us, so they stay on your hosts.</Text>
-        <Text style={styles.label}>Type {state.expected} to confirm</Text>
+        <Text style={styles.label}>
+          Type <Text style={styles.word}>{CONFIRM_WORD}</Text> to confirm
+        </Text>
         <Field
           value={state.typed}
           onChangeText={(text) => dispatch({ type: 'typed', text })}
-          placeholder={state.expected}
+          placeholder={CONFIRM_WORD}
           editable={!busy}
           autoCapitalize="none"
           autoCorrect={false}
-          keyboardType={email ? 'email-address' : 'default'}
           returnKeyType="go"
           onSubmitEditing={() => void start()}
         />
@@ -223,6 +222,8 @@ const makeStyles = (colors: Palette) => {
     bullet: { ...type.body, color: colors.tertiary },
     itemText: { ...type.body, flex: 1 },
     label: { ...type.meta, marginTop: 8, marginBottom: -4 },
+    word: { ...type.mono, color: colors.ink },
+    ink: { color: colors.ink },
     tiles: { marginTop: 12 },
     problem: { ...type.meta, color: colors.danger },
   });

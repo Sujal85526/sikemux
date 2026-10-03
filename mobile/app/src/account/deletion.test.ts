@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { chooseFactor, confirmed, deletion, startDeletion, type DeletionAction, type DeletionState } from './deletion';
+import { chooseFactor, confirmed, deletion, START, type DeletionAction, type DeletionState } from './deletion';
 
 function run(state: DeletionState, ...actions: DeletionAction[]): DeletionState {
   return actions.reduce(deletion, state);
@@ -9,26 +9,20 @@ function run(state: DeletionState, ...actions: DeletionAction[]): DeletionState 
 const EMAIL = { strategy: 'email_code', to: 'c***@nodelike.com' } as const;
 
 describe('confirming', () => {
-  it('needs the account email typed before it deletes', () => {
-    const start = startDeletion('contact@nodelike.com');
-    expect(run(start, { type: 'typed', text: 'contact@' }, { type: 'delete' }).phase.name).toBe('confirm');
-    expect(run(start, { type: 'typed', text: ' Contact@Nodelike.com ' }, { type: 'delete' }).phase.name).toBe('deleting');
-  });
-
-  it('asks for the word delete from an account without an email', () => {
-    const start = startDeletion(undefined);
-    expect(confirmed({ ...start, typed: 'DELETE' })).toBe(true);
-    expect(confirmed({ ...start, typed: '' })).toBe(false);
+  it('needs the word delete typed before it deletes', () => {
+    expect(run(START, { type: 'typed', text: 'del' }, { type: 'delete' }).phase.name).toBe('confirm');
+    expect(run(START, { type: 'typed', text: ' Delete ' }, { type: 'delete' }).phase.name).toBe('deleting');
+    expect(confirmed({ typed: '' })).toBe(false);
   });
 
   it('keeps what was typed and stops editing it while deleting', () => {
-    const deleting = run(startDeletion('a@b.c'), { type: 'typed', text: 'a@b.c' }, { type: 'delete' });
-    expect(run(deleting, { type: 'typed', text: 'x' }).typed).toBe('a@b.c');
+    const deleting = run(START, { type: 'typed', text: 'delete' }, { type: 'delete' });
+    expect(run(deleting, { type: 'typed', text: 'x' }).typed).toBe('delete');
   });
 });
 
 describe('deleting', () => {
-  const deleting = run(startDeletion('a@b.c'), { type: 'typed', text: 'a@b.c' }, { type: 'delete' });
+  const deleting = run(START, { type: 'typed', text: 'delete' }, { type: 'delete' });
 
   it('finishes when the server answers', () => {
     expect(run(deleting, { type: 'deleted' }).phase).toEqual({ name: 'done' });
@@ -38,17 +32,17 @@ describe('deleting', () => {
     const failed = run(deleting, { type: 'failed', problem: "Can't reach Sikemux." });
     expect(failed.phase.name).toBe('confirm');
     expect(failed.problem).toBe("Can't reach Sikemux.");
-    expect(failed.typed).toBe('a@b.c');
-    expect(run(failed, { type: 'typed', text: 'a@b.c ' }).problem).toBeUndefined();
+    expect(failed.typed).toBe('delete');
+    expect(run(failed, { type: 'typed', text: 'delete ' }).problem).toBeUndefined();
   });
 
   it('cannot finish twice or from anywhere but deleting', () => {
-    expect(run(startDeletion('a@b.c'), { type: 'deleted' }).phase.name).toBe('confirm');
+    expect(run(START, { type: 'deleted' }).phase.name).toBe('confirm');
   });
 });
 
 describe('proving it is them again', () => {
-  const deleting = run(startDeletion('a@b.c'), { type: 'typed', text: 'a@b.c' }, { type: 'delete' });
+  const deleting = run(START, { type: 'typed', text: 'delete' }, { type: 'delete' });
   const verifying = run(deleting, { type: 'reverify', factor: EMAIL });
 
   it('asks for a code when the server wants a fresh sign-in, then deletes again once verified', () => {
@@ -80,7 +74,7 @@ describe('proving it is them again', () => {
   });
 
   it('does not ask unless it is deleting', () => {
-    expect(run(startDeletion('a@b.c'), { type: 'reverify', factor: EMAIL }).phase.name).toBe('confirm');
+    expect(run(START, { type: 'reverify', factor: EMAIL }).phase.name).toBe('confirm');
   });
 });
 

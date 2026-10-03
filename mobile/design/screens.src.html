@@ -485,6 +485,7 @@
   .sheet-version { padding-top: 14px; font-size: 12px; text-align: center; color: var(--text-tertiary); }
   .sheet-title { padding: 12px 8px 0; font-size: 15px; font-weight: 600; color: var(--text-primary); }
   .choices { display: flex; flex-direction: column; gap: 8px; }
+  .ink { color: var(--text-primary); font-weight: 500; }
   .gone { margin: 0; padding: 0 8px 0 18px; display: flex; flex-direction: column; gap: 8px; font-size: 15px; line-height: 1.5; }
   /* the three pairing steps share one layout so the code never moves */
   .pairing { padding: 40px 28px 0; display: flex; flex-direction: column; align-items: center; text-align: center; }
@@ -869,20 +870,20 @@
         <div class="nav"><span class="back">{{IconChevron:18}}Back</span></div>
         <div class="signin">
           <h2>Delete your account</h2>
-          <p style="margin-bottom:0">This can't be undone. It deletes, at once:</p>
+          <p style="margin-bottom:0">This deletes <b class="ink">contact@nodelike.com</b> from Sikemux right away. It can't be undone.</p>
           <ul class="gone">
-            <li>Your Sikemux account and its sign-in.</li>
-            <li>Every device on it. Hosts sign out and keep the phones paired with them; phones sign out and are removed from every host.</li>
-            <li>The history of changes to your devices.</li>
+            <li>Hosts are signed out. The phones paired to them keep working.</li>
+            <li>Phones, this one too, are signed out and removed from every host.</li>
+            <li>Your sign-in is deleted. Device keys and the account’s history are erased within 30 days, and backups within 30 days after that.</li>
           </ul>
           <p style="margin:0">Your code and files never reached us, so they stay on your hosts.</p>
-          <div class="field-label" style="margin-top:8px">Type contact@nodelike.com to confirm</div>
-          <div class="field on">contact@nodelike.com<span class="caret"></span></div>
+          <div class="field-label" style="margin-top:8px">Type <span class="m" style="color:var(--text-primary)">delete</span> to confirm</div>
+          <div class="field on">delete<span class="caret"></span></div>
           <div class="btn danger">Delete account</div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Delete account</b><div class="note">Reached from the account sheet. It says what goes, in the words app.sikemux.com/delete-account uses, and what never reached us. The button wakes only once the account's email is typed; an account without one types "delete". While it runs the button reads "Deleting…", and a failure, such as the server out of reach, shows in red above it with nothing deleted.</div></figcaption>
+      <figcaption><b>Delete account</b><div class="note">Reached from the account sheet. It says what goes, in the words app.sikemux.com/delete-account uses, and what never reached us. The button wakes only once "delete" is typed, the same word as on the web. While it runs the button reads "Deleting…", and a failure, such as the server out of reach, shows in red above it with nothing deleted.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -911,7 +912,7 @@
       <div class="screen">
         <div class="stack" style="padding-bottom:120px">
           <h2 style="font-size:22px">Your account is deleted</h2>
-          <p>Your account, its devices and its history are gone from Sikemux. Your code and files never reached us, so they are still on your hosts.</p>
+          <p>Every device on it is signed out. Device keys and the account’s history are erased within 30 days. Your code and files never reached us, so they are still on your hosts.</p>
         </div>
         <div class="footer"><div class="btn primary">Continue</div></div>
       </div>
