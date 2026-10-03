@@ -414,7 +414,7 @@ code { font-family: var(--mono); font-size: 11px; color: var(--ink); }
             below enters with scale 0.8 → 1 anchored at the top and opacity 0 → 1 over 0.35 s (<code>.smooth</code>). Agent marks fly from the wings
             to their rows (<code>matchedGeometryEffect</code>). The width is set per state (open 680, permission 460), so width, height and both radii
             spring together.</td></tr>
-        <tr><td>Timing</td><td>Hover 0.3 s before opening; leave closes after 0.1 s, never while the prompt has focus. Permission peek 6 s, finished peek 3 s.</td></tr>
+        <tr><td>Timing</td><td>Hover 0.3 s before opening; leave closes after 0.1 s, a peek too, unless a draft is typed; clicking another app closes it and keeps the draft. The keyboard is taken only when the prompt is clicked or New agent is chosen, never on hover. Permission peek 6 s, finished peek 3 s.</td></tr>
         <tr><td>Hover</td><td>Shadow on (black 70%, radius 6); the size stays. A trackpad tick (<code>.alignment</code>) when the pointer reaches a closed island.</td></tr>
         <tr><td>Swipe</td><td>Two fingers down over a closed island open it, up over an open one close it, once they travel 140 pt along the finger direction
             (twice the other axis; a mouse wheel's lines count 8 pt). While pulling, the island scales from the top, 1% per twentieth of the way, never
@@ -980,7 +980,7 @@ const SECTIONS = [
               leaves: "The pointer leaves, and 0.1 s later it closes.", opts: { agents: () => freshAgents(), mode: "open" } },
             { id: "O2", name: "New agent", when: "Opened, on the New agent tab.",
               shows: "Sikemux's own composer: add files, the yolo toggle, the model picker (agent mark + model, in accent), effort, project and send.",
-              leaves: "Send (⏎) starts the agent and goes to O1 with it on top. Stays open while the prompt has focus.",
+              leaves: "Send (⏎) starts the agent and goes to O1 with it on top. Stays open on leave while a draft is typed; clicking elsewhere closes it and keeps the draft.",
               opts: { agents: () => freshAgents(), mode: "open", tab: "new", draft: "Turn the notch mockup into a SwiftUI spec" } },
             { id: "O3", name: "Model picker", when: "The model picker is open on the New agent tab.",
               shows: "The composer's picker, opening downward so the island grows to hold it: search, the agents as chips, then that agent's models with a check on the current one.",
