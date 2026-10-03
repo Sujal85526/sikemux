@@ -8,10 +8,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use serde_json::{json, Value};
 
-/// The latest lines of everything the device logs, which system services fill
-/// at a thousand or more lines a second.
+/// The latest lines of everything the device logs, Apple's frameworks left out.
 const KEPT_LINES: usize = 5_000;
-/// The latest lines of each process, kept apart so an app's own lines outlast that noise.
+/// The latest lines of each process, kept apart so one chatty process does not push out another's.
 const KEPT_PER_PROCESS: usize = 500;
 const DEFAULT_LIMIT: usize = 200;
 
@@ -136,6 +135,9 @@ impl Logs {
             .args([
                 "simctl", "spawn", udid, "log", "stream", "--style", "compact", "--level", "info",
             ])
+            // Apple's own frameworks log thousands of lines a second, among them every
+            // accessibility read an agent makes; an app's own logging is what remains.
+            .args(["--predicate", "NOT (subsystem BEGINSWITH \"com.apple.\")"])
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
