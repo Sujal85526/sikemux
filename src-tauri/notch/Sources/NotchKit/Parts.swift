@@ -155,7 +155,7 @@ struct SinceText: View {
     }
 
     static func format(_ state: AgentState, _ since: Date?, _ now: Date) -> String {
-        guard let since else { return "" }
+        guard let since, state != .idle else { return "" }
         let seconds = max(0, Int(now.timeIntervalSince(since)))
         if state == .done {
             if seconds < 60 { return "just now" }

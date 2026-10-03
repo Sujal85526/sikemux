@@ -39,6 +39,8 @@ let fixture = #"""
      "running": true, "pendingPermissions": [], "permissionMode": "bypass", "asleep": false, "unread": false},
     {"agentId": "a3", "provider": "opencode", "title": "Draft the notch spec", "cwd": "/Users/me/sikemux", "sessionId": "s3", "state": "ready",
      "running": true, "pendingPermissions": [], "permissionMode": "bypass", "asleep": false, "unread": false},
+    {"agentId": "a5", "provider": "codex", "title": "Read the release notes", "cwd": "/Users/me/sikemux", "sessionId": "s5", "state": "ready",
+     "running": false, "pendingPermissions": [], "permissionMode": "bypass", "asleep": false, "unread": false},
     {"agentId": "a4", "provider": "grok", "title": "Bump Astro to 6", "cwd": "/Users/me/sikemux-front", "sessionId": "s4", "state": "ready",
      "running": false, "pendingPermissions": [], "permissionMode": "bypass", "asleep": false, "unread": true}
   ],
@@ -158,6 +160,8 @@ if arguments.contains("--film") {
 }
 
 render("C1-idle", agents: [])
+render("C7-only-idle", agents: ["a5"])
+render("O5-with-idle", agents: ["a2", "a5"], height: 300) { $0.mode = .open }
 render("C2-working", agents: ["a2", "a3"])
 render("C3-needs-you")
 render("C4-done", agents: ["a4"])

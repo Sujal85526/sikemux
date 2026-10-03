@@ -125,6 +125,7 @@ struct AgentList: View {
                     group("Needs you", .blocked)
                     group("Working", .working)
                     group("Done", .done)
+                    group("Idle", .idle)
                 }
                 .background(GeometryReader { proxy in
                     Color.clear.onAppear { island.listScrolls = proxy.size.height > 330 }

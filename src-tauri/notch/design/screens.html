@@ -943,10 +943,10 @@ const SECTIONS = [
         id: "closed", letter: "C", title: "Closed",
         lede: "The resting island. Only the wings change; it never grows taller than the menu bar.",
         states: [
-            { id: "C1", name: "Idle", when: "No agent is running.", shows: "The bare notch. Nothing is drawn beyond the camera housing.",
+            { id: "C1", name: "Nothing open", when: "No agent is open in Sikemux.", shows: "The bare notch. Nothing is drawn beyond the camera housing.",
               plain: "No island at all.", opts: { agents: [] } },
             { id: "C2", name: "Working", when: "One or more agents are working and none is waiting for you.",
-              shows: "Left: the marks of the running agents. Right: how many are working, and the green twinkle grid.",
+              shows: "Left: the marks of the open agents, the busiest first. Right: how many are working, and the green twinkle grid. With every agent idle, the right wing shows how many are open, dim.",
               opts: { agents: () => only(["a2", "a3"]) } },
             { id: "C3", name: "Needs you", when: "Any agent is waiting for a permission or an answer.",
               shows: "An amber dot replaces the grid. It sends out two rings when it arrives, then goes still. Beats working and done.",
@@ -976,7 +976,7 @@ const SECTIONS = [
         lede: "Opened by resting the pointer for 0.3 s. The header sits in the menu-bar band, split around the camera: tabs on the left, Sikemux on the right.",
         states: [
             { id: "O1", name: "Agents", when: "Opened, on the Agents tab.",
-              shows: "Agents grouped Needs you, Working, Done. A permission can be answered in place. Clicking a row opens that agent in Sikemux.",
+              shows: "Every open agent, grouped Needs you, Working, Done, Idle. A permission can be answered in place. Clicking a row opens that agent in Sikemux.",
               leaves: "The pointer leaves, and 0.1 s later it closes.", opts: { agents: () => freshAgents(), mode: "open" } },
             { id: "O2", name: "New agent", when: "Opened, on the New agent tab.",
               shows: "Sikemux's own composer: add files, the yolo toggle, the model picker (agent mark + model, in accent), effort, project and send.",

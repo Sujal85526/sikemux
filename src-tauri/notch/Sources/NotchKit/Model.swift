@@ -157,7 +157,7 @@ extension DeviceView {
         return URL(fileURLWithPath: value).lastPathComponent
     }
 
-    /// The agents that are working, waiting on the person, or finished unseen.
+    /// Every agent open in the app, most in need of the person first.
     var agents: [AgentItem] {
         var items: [AgentItem] = []
         for chat in chats where chat.state != "stopped" && !chat.asleep {
@@ -194,7 +194,9 @@ extension DeviceView {
                 ask: nil
             ))
         }
-        return items.filter { $0.state != .idle }
+        return items.enumerated()
+            .sorted { $0.element.state != $1.element.state ? $0.element.state > $1.element.state : $0.offset < $1.offset }
+            .map(\.element)
     }
 
     private static func ask(_ attention: Attention) -> Ask {
