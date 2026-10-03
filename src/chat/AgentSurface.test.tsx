@@ -210,3 +210,10 @@ it("leaves the iOS Simulator out once the person turns it off in Settings", () =
     expect(screen.queryByRole("button", { name: "iOS Simulator" })).toBeNull();
     mocks.simulatorsAvailable = false;
 });
+
+it("leaves the iOS Simulator out of an SSH session, whose agent works on another machine", () => {
+    mocks.simulatorsAvailable = true;
+    render(<AgentSurface agent={agent} session={{ ...session, kind: "ssh" }} visible />);
+    expect(screen.queryByRole("button", { name: "iOS Simulator" })).toBeNull();
+    mocks.simulatorsAvailable = false;
+});

@@ -191,7 +191,8 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                         <span>TUI</span>
                     </button>
                 </div>
-                <SimulatorButton agentId={agent.id} />
+                {/* Simulators run on this Mac, out of reach of an agent working over SSH. */}
+                {session.kind !== "ssh" && <SimulatorButton agentId={agent.id} />}
                 <DeskButton agent={agent} />
             </header>
 
