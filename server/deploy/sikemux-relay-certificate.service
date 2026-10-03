@@ -1,0 +1,7 @@
+[Unit]
+Description=Copy Caddy's relay.sikemux.com certificate for the relay's QUIC port
+After=caddy.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/sikemux/relay-certificate

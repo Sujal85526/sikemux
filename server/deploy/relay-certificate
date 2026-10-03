@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Copies Caddy's certificate for relay.sikemux.com to where the relay reads it, for the QUIC port
+# Caddy cannot serve. Runs as root from sikemux-relay-certificate.timer; changes nothing when the
+# copy is already current, and starts the relay once the first certificate arrives.
+set -euo pipefail
+
+HOST=relay.sikemux.com
+CERTS="${CADDY_CERTS:-/var/lib/caddy/.local/share/caddy/certificates}"
+DEST=/etc/sikemux-relay
+
+# Caddy keeps one folder per certificate authority; take the newest, in case it switched.
+crt="$({ find "$CERTS" -path "*/$HOST/$HOST.crt" -printf '%T@ %p\n' 2>/dev/null || true; } |
+  sort -rn | head -1 | cut -d' ' -f2-)"
+if [ -z "$crt" ]; then
+  echo "Caddy has no certificate for $HOST yet; is its DNS record pointing here?" >&2
+  exit 1
+fi
+key="${crt%.crt}.key"
+
+install -d -m 750 -o root -g sikemux-relay "$DEST"
+if cmp -s "$crt" "$DEST/tls.crt" && cmp -s "$key" "$DEST/tls.key"; then
+  exit 0
+fi
+install -m 640 -o root -g sikemux-relay "$key" "$DEST/tls.key.new"
+install -m 640 -o root -g sikemux-relay "$crt" "$DEST/tls.crt.new"
+mv -f "$DEST/tls.key.new" "$DEST/tls.key"
+mv -f "$DEST/tls.crt.new" "$DEST/tls.crt"
+echo "copied the certificate for $HOST from $crt"
+
+if systemctl is-enabled --quiet sikemux-relay; then
+  systemctl start --no-block sikemux-relay
+fi

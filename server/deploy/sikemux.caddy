@@ -84,3 +84,34 @@ updates.sikemux.com {
 		format json
 	}
 }
+
+# The iroh relay apps fall back to when two devices cannot reach each other directly. It speaks
+# plain HTTP on 127.0.0.1:3340; Caddy terminates TLS. Its QUIC address discovery listens on
+# udp/7842 by itself, with a copy of this site's certificate (see relay-certificate).
+relay.sikemux.com {
+	import sikemux_headers
+	header Referrer-Policy "no-referrer"
+	# Each device holds one WebSocket at /relay. A reload leaves open ones up to 5 minutes, so
+	# devices reconnect spread out instead of all at once.
+	reverse_proxy 127.0.0.1:3340 {
+		stream_close_delay 5m
+	}
+	log {
+		output file /var/log/caddy/sikemux-relay.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+		format json
+	}
+}
+
+# Apps check for a captive portal with a plain-HTTP request to /generate_204, which must reach the
+# relay rather than Caddy's usual redirect to HTTPS.
+http://relay.sikemux.com {
+	handle /generate_204 {
+		reverse_proxy 127.0.0.1:3340
+	}
+	handle {
+		redir https://{host}{uri} 308
+	}
+}

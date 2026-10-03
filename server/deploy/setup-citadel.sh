@@ -105,5 +105,65 @@ grep -qx 'import /etc/caddy/sites/\*.caddy' /etc/caddy/Caddyfile ||
 sudo -u caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
 systemctl reload caddy
 
+# n0's release of the relay, the same version as the iroh the apps are built with
+# (src-tauri/Cargo.lock). Bump it together with them.
+RELAY_VERSION=1.3.0
+case "$(uname -m)" in
+  x86_64)
+    RELAY_TARGET=x86_64-unknown-linux-musl
+    RELAY_SHA256=677f4c62342a6ba8044459b5fd4302f2b1dcb8402542072e3a4ade5039bc0b9e
+    ;;
+  aarch64)
+    RELAY_TARGET=aarch64-unknown-linux-musl
+    RELAY_SHA256=dc4b9d620642026966d498763ec8ba3a6eefde8d39994b2d63e3d15d7af770f8
+    ;;
+  *) echo "no relay build for $(uname -m)" >&2; exit 1 ;;
+esac
+
+step "relay: iroh-relay $RELAY_VERSION behind Caddy at relay.sikemux.com, QUIC address discovery on udp/7842"
+id sikemux-relay >/dev/null 2>&1 ||
+  useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin sikemux-relay
+relay_changed=0
+if ! /usr/local/lib/sikemux/iroh-relay --version 2>/dev/null | grep -qx "iroh-relay $RELAY_VERSION"; then
+  download="$(mktemp -d)"
+  curl -fsSL -o "$download/relay.tar.gz" \
+    "https://github.com/n0-computer/iroh/releases/download/v$RELAY_VERSION/iroh-relay-v$RELAY_VERSION-$RELAY_TARGET.tar.gz"
+  echo "$RELAY_SHA256  $download/relay.tar.gz" | sha256sum --check --quiet
+  tar -xzf "$download/relay.tar.gz" -C "$download" ./iroh-relay
+  install -D -m 755 -o root -g root "$download/iroh-relay" /usr/local/lib/sikemux/iroh-relay.new
+  mv -f /usr/local/lib/sikemux/iroh-relay.new /usr/local/lib/sikemux/iroh-relay
+  rm -rf "$download"
+  relay_changed=1
+fi
+install -d -m 750 -o root -g sikemux-relay /etc/sikemux-relay
+cmp -s "$here/sikemux-relay.toml" /etc/sikemux-relay/relay.toml || relay_changed=1
+install -m 640 -o root -g sikemux-relay "$here/sikemux-relay.toml" /etc/sikemux-relay/relay.toml
+install -m 755 -o root -g root "$here/relay-certificate" /usr/local/lib/sikemux/relay-certificate
+install -m 755 -o root -g root "$here/relay-health" /usr/local/lib/sikemux/relay-health
+for unit in sikemux-relay.service sikemux-relay-certificate.service sikemux-relay-certificate.timer; do
+  cmp -s "$here/$unit" "/etc/systemd/system/$unit" || relay_changed=1
+  install -m 644 "$here/$unit" "/etc/systemd/system/$unit"
+done
+systemctl daemon-reload
+systemctl enable sikemux-relay >/dev/null
+systemctl enable --now sikemux-relay-certificate.timer >/dev/null
+if command -v ufw >/dev/null; then
+  ufw allow 7842/udp comment 'sikemux relay: QUIC address discovery' >/dev/null
+fi
+
+# Caddy asks for the certificate when it first loads the site, which takes a few seconds.
+for _ in $(seq 30); do
+  /usr/local/lib/sikemux/relay-certificate 2>/dev/null && break
+  sleep 2
+done
+if [ -f /etc/sikemux-relay/tls.crt ]; then
+  if [ "$relay_changed" = 1 ]; then systemctl restart sikemux-relay; else systemctl start sikemux-relay; fi
+  sleep 2
+  /usr/local/lib/sikemux/relay-health
+else
+  echo "the relay waits for Caddy's certificate for relay.sikemux.com; it starts within an hour of" \
+    "the DNS record pointing here, or run /usr/local/lib/sikemux/relay-certificate" >&2
+fi
+
 step "done"
 echo "citadel is ready for the first deploy"

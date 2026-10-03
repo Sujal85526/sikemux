@@ -1,0 +1,28 @@
+# iroh-relay's settings, installed as /etc/sikemux-relay/relay.toml. The relay runs with --dev, which
+# here means only "serve plain HTTP": Caddy holds 80 and 443 and terminates TLS for
+# relay.sikemux.com, then proxies to this port. The TLS settings below are for the QUIC
+# address-discovery port alone, which Caddy cannot proxy.
+http_bind_addr = "127.0.0.1:3340"
+enable_quic_addr_discovery = true
+enable_metrics = true
+metrics_bind_addr = "127.0.0.1:9342"
+access = "everyone"
+
+[tls]
+# QUIC listens on every address, since phones and hosts reach it directly over UDP.
+quic_bind_addr = "[::]:7842"
+# Caddy's certificate for relay.sikemux.com, copied here by relay-certificate. The relay reads it
+# again every day, so a renewal needs no restart.
+cert_mode = "Reloading"
+manual_cert_path = "/etc/sikemux-relay/tls.crt"
+manual_key_path = "/etc/sikemux-relay/tls.key"
+
+# What one device may send through the relay. Relayed traffic is the fallback when two devices
+# cannot reach each other directly, so this only stops one device from taking the whole link.
+[limits]
+accept_conn_limit = 50.0
+accept_conn_burst = 200
+
+[limits.client.rx]
+bytes_per_second = 4000000
+max_burst_bytes = 16000000
