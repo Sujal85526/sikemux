@@ -183,7 +183,10 @@ mod mac {
             command.arg("--app").arg(bundle);
         }
         if dev() {
-            command.arg("--dev");
+            command
+                .arg("--dev")
+                .arg("--app-pid")
+                .arg(std::process::id().to_string());
         }
         command
             .stdin(Stdio::null())

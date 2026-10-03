@@ -9,6 +9,8 @@ struct Options {
     var coreLog: String?
     var coreArgs: [String] = []
     var dev = false
+    /// A dev build's app: its island goes away with it, so a stable build's comes back.
+    var appPid: pid_t?
     /// The app bundle, or the app's executable in a dev build, to open when its window is not.
     var app: String?
     var fonts: String?
@@ -37,6 +39,7 @@ struct Options {
             case "--core-log": options.coreLog = value
             case "--core-arg": options.coreArgs.append(value)
             case "--app": options.app = value
+            case "--app-pid": options.appPid = pid_t(value)
             case "--fonts": options.fonts = value
             case "--settings": options.settings = value
             case "--state-dir": options.stateDir = value
