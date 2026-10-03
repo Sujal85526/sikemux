@@ -854,6 +854,31 @@ async fn a_client_on_this_host_can_watch_the_device_view_with_the_app_s_titles()
 }
 
 #[tokio::test]
+async fn asking_to_show_an_agent_reaches_the_window_or_says_it_is_not_open() {
+    let core = start_core();
+    let (notch, _notch_events) = core.connect().await;
+    let refused = notch.focus_agent("agent-1".into()).await;
+    assert!(refused.is_err(), "no window is open yet");
+
+    let (app, mut stream) = core.connect().await;
+    app.register_window().await.expect("register the window");
+    notch
+        .focus_agent("agent-1".into())
+        .await
+        .expect("the window is asked");
+    loop {
+        let event = tokio::time::timeout(WAIT, stream.events.recv())
+            .await
+            .expect("the window hears it")
+            .expect("the core disconnected");
+        if let ClientEvent::Event(Event::FocusAgent { agent_id }) = event {
+            assert_eq!(agent_id, "agent-1");
+            break;
+        }
+    }
+}
+
+#[tokio::test]
 async fn a_killed_agent_reports_nothing_more() {
     let core = start_core();
     let (client, mut stream) = core.connect().await;

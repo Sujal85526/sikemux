@@ -9,16 +9,18 @@ use tokio::net::UnixStream;
 use tokio::sync::{mpsc, Notify};
 
 use crate::protocol::{
-    decode_input, encode_control, fits, read_frame, ClientMessage, FrameKind, HostRegistration,
-    LaunchIdentity, Request, RequestId, Response, ServerMessage, SessionId, SpawnTarget, PROTOCOL,
-    PROTOCOL_VERSION,
+    decode_input, encode_control, fits, read_frame, ClientMessage, Event, FrameKind,
+    HostRegistration, LaunchIdentity, Request, RequestId, Response, ServerMessage, SessionId,
+    SpawnTarget, PROTOCOL, PROTOCOL_VERSION,
 };
 
 use super::access::{self, Needs, Peer};
 use super::host;
 use super::prepare::{prepare_task, prepare_terminal};
 use super::session::{self, PendingStart};
-use super::{agent, chat, harness, remote, upgrade, workspace, Core, CoreError, CoreResult};
+use super::{
+    agent, chat, harness, remote, upgrade, window, workspace, Core, CoreError, CoreResult,
+};
 
 pub(crate) type ClientId = u64;
 pub(crate) type FrameReader = BufReader<Box<dyn AsyncRead + Send + Unpin>>;
@@ -687,6 +689,17 @@ async fn run_requests(
             Request::PublishOnScreen { agent_ids } => {
                 core.seen.on_screen(agent_ids);
                 client.respond(request_id, Ok(Response::Done));
+            }
+            Request::FocusAgent { agent_id } => {
+                let shown = core.window.tell(Event::FocusAgent { agent_id });
+                client.respond(
+                    request_id,
+                    if shown {
+                        Ok(Response::Done)
+                    } else {
+                        Err(window::not_open("show that agent").into())
+                    },
+                );
             }
             Request::WatchView => {
                 client.watches_view.store(true, Ordering::Release);

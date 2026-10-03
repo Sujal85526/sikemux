@@ -79,6 +79,7 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::PublishAgents { .. }
         | Request::PublishOnScreen { .. }
         | Request::WatchView
+        | Request::FocusAgent { .. }
         | Request::PublishPalette { .. }
         | Request::PublishBackdrop { .. } => Needs::Local,
     }

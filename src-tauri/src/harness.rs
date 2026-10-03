@@ -168,6 +168,15 @@ fn run(app: &AppHandle, request: HarnessRequest) -> Result<Value, String> {
 /// An agent must not pull the person's keyboard away from another app they
 /// are typing in, so unless Sikemux is already in front it only asks for
 /// attention.
+/// Shows the window and makes Sikemux the active app, for a person who asked to see something in it.
+pub(crate) fn bring_to_front(app: &AppHandle) {
+    if let Some(window) = app.get_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
 fn bring_forward(app: &AppHandle) {
     if let Some(window) = app.get_window("main") {
         let _ = window.show();

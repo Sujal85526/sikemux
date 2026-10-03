@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use serde_json::Value;
 use tokio::sync::oneshot;
 
-use crate::protocol::{CallId, ServerMessage, WindowAnswer, WindowCall};
+use crate::protocol::{encode_control, CallId, Event, ServerMessage, WindowAnswer, WindowCall};
 
 use super::connection::{ClientConn, ClientId};
 
@@ -78,6 +78,23 @@ impl Window {
                 let _ = closed.send(false);
             }
         }
+    }
+
+    /// Sends the window an event no other client hears. False when no window
+    /// is open.
+    pub(crate) fn tell(&self, event: Event) -> bool {
+        let Some(client) = self
+            .inner
+            .lock()
+            .ok()
+            .and_then(|inner| inner.client.clone())
+        else {
+            return false;
+        };
+        let Ok(frame) = encode_control(&ServerMessage::Event { event }) else {
+            return false;
+        };
+        client.send(frame.into())
     }
 
     pub(crate) fn register(&self, client: Arc<ClientConn>) {

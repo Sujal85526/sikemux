@@ -396,6 +396,11 @@ pub enum Request {
     /// Sends this client the [`DeviceView`] now and whenever it changes, as
     /// paired devices get it.
     WatchView,
+    /// Asks the app's window to show this agent. Refused when no window is
+    /// open.
+    FocusAgent {
+        agent_id: String,
+    },
     Workspace,
     /// What agents wait on a person for now.
     Attentions,
@@ -1049,6 +1054,10 @@ pub enum Event {
     /// What an agent waited on was answered or withdrawn.
     AttentionCleared {
         id: String,
+        agent_id: String,
+    },
+    /// Sent only to the app's window: show this agent and come to the front.
+    FocusAgent {
         agent_id: String,
     },
 }

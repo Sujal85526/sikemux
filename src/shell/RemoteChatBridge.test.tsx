@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AcpChat } from "../api/acp";
 import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "../api/transport";
 import { getState, setState } from "../state/store";
-import { REMOTE_CHAT_BEGUN_EVENT, RemoteChatBridge } from "./RemoteChatBridge";
+import { FOCUS_AGENT_EVENT, REMOTE_CHAT_BEGUN_EVENT, RemoteChatBridge } from "./RemoteChatBridge";
 
 const initial = getState();
 let transport: MemoryIpcTransport;
@@ -54,5 +54,23 @@ describe("RemoteChatBridge", () => {
         expect(windows).toHaveLength(1);
         view.unmount();
         expect(transport.eventListenerCount).toBe(0);
+    });
+
+    it("shows the agent the notch asks for, switching project on the way", async () => {
+        render(<RemoteChatBridge />);
+        await act(async () => {
+            await Promise.resolve();
+        });
+        act(() => {
+            transport.emit(REMOTE_CHAT_BEGUN_EVENT, phoneChat());
+        });
+        expect(getState().sessions[getState().activeSessionId]?.cwd).not.toBe("/Users/me/site");
+        act(() => {
+            transport.emit(FOCUS_AGENT_EVENT, "agent-from-phone");
+        });
+        const state = getState();
+        const session = state.sessions[state.activeSessionId];
+        expect(session?.cwd).toBe("/Users/me/site");
+        expect(state.windows[session?.activeWindowId ?? ""]?.activePaneId).toBe("agent-from-phone");
     });
 });

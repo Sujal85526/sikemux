@@ -756,6 +756,10 @@ impl CoreClient {
             .await
     }
 
+    pub async fn focus_agent(&self, agent_id: String) -> Result<(), ClientError> {
+        self.request_done(Request::FocusAgent { agent_id }).await
+    }
+
     /// The device view arrives as events from now on, starting with the whole.
     pub async fn watch_view(&self) -> Result<(), ClientError> {
         self.request_done(Request::WatchView).await
