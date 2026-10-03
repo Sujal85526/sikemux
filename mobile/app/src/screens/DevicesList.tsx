@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
-import { useUser } from '@clerk/expo';
 import type { Device } from '@protocol';
 
 import { AccountSheet } from '@/account/AccountSheet';
+import { Avatar } from '@/account/Avatar';
 import { useAccountHosts } from '@/account/session';
 import { pasteFoundLink } from '@/devices/foundLinks';
 
@@ -141,10 +141,8 @@ function Empty() {
 }
 
 export function DevicesList({ devices }: { devices: PairedDevice[] }) {
-  const colors = useColors();
   const styles = useStyles(makeStyles);
   const bottom = useBottomGap();
-  const { user } = useUser();
   const [account, setAccount] = useState(false);
   const hosts = useAccountHosts();
   const unpaired = hosts.filter((host) => !devices.some((device) => device.core === host.key));
@@ -152,10 +150,13 @@ export function DevicesList({ devices }: { devices: PairedDevice[] }) {
     <Screen>
       <View style={styles.nav}>
         <IconButton name="IconPlus" label="Pair another device" onPress={() => router.push('/scan')} />
+        <Pressable onPress={() => setAccount(true)} accessibilityRole="button" accessibilityLabel="Account" style={styles.account}>
+          <Avatar size={28} />
+        </Pressable>
       </View>
       <Text style={styles.title}>Devices</Text>
       {devices.length || unpaired.length ? (
-        <ScrollView contentContainerStyle={styles.list}>
+        <ScrollView contentContainerStyle={[styles.list, { paddingBottom: bottom + 12 }]}>
           {devices.map((device) => (
             <DeviceCard key={device.core} device={device} />
           ))}
@@ -166,17 +167,6 @@ export function DevicesList({ devices }: { devices: PairedDevice[] }) {
       ) : (
         <Empty />
       )}
-      <Pressable
-        onPress={() => setAccount(true)}
-        accessibilityRole="button"
-        accessibilityLabel="Account"
-        style={[styles.phone, { paddingBottom: bottom }]}>
-        <Icon name="IconUser" size={15} color={colors.tertiary} />
-        <Text style={styles.phoneText} numberOfLines={1}>
-          {user?.primaryEmailAddress?.emailAddress ?? 'Account'}
-        </Text>
-        <Icon name="IconChevron" size={13} color={colors.rest} />
-      </Pressable>
       <AccountSheet visible={account} onClose={() => setAccount(false)} />
     </Screen>
   );
@@ -185,9 +175,10 @@ export function DevicesList({ devices }: { devices: PairedDevice[] }) {
 const makeStyles = (colors: Palette) => {
   const type = typeFor(colors);
   return StyleSheet.create({
-    nav: { height: 46, flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 8 },
+    nav: { height: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8, paddingHorizontal: 8 },
+    account: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
     title: { ...type.title, fontSize: 26, paddingHorizontal: 16, paddingBottom: 14 },
-    list: { paddingHorizontal: 16, gap: 10, paddingBottom: 24 },
+    list: { paddingHorizontal: 16, gap: 10 },
     card: { borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.raised, overflow: 'hidden' },
     away: { backgroundColor: 'transparent' },
     head: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, paddingLeft: 16, paddingRight: 14 },
@@ -225,16 +216,6 @@ const makeStyles = (colors: Palette) => {
       borderColor: colors.raised,
     },
     workText: { flex: 1, marginLeft: 6, fontFamily: fonts.ui, fontSize: 13, color: colors.secondary },
-    phone: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-      marginHorizontal: 16,
-      paddingTop: 14,
-      borderTopWidth: 1,
-      borderTopColor: colors.border,
-    },
-    phoneText: { ...type.meta },
     empty: { flex: 1, justifyContent: 'center', paddingHorizontal: 28, paddingBottom: 60 },
     emptyTitle: { ...type.title, fontSize: 20, textAlign: 'center' },
     emptyBody: { ...type.body, textAlign: 'center', marginTop: 8 },

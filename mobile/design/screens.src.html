@@ -446,8 +446,6 @@
   .faces { display: flex; }
   .faces > span { width: 26px; height: 26px; border-radius: 999px; display: grid; place-items: center; background: var(--surface-overlay); box-shadow: 0 0 0 2px var(--surface-raised); margin-right: -6px; }
   .faces > span:last-child { margin-right: 0; }
-  .this-phone { flex: none; display: flex; align-items: center; gap: 8px; margin: 0 16px 38px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 13px; color: var(--text-tertiary); }
-  .this-phone .m { margin-left: auto; }
   /* welcome: the rail itself, drifting past */
   .reel { position: absolute; left: 0; right: 0; top: 54px; height: 360px; overflow: hidden; padding: 0 16px;
     -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 24%, #000 52%, transparent 94%);
@@ -478,7 +476,9 @@
   .field .reveal { margin-left: auto; display: flex; color: var(--text-tertiary); }
   .field-label { font-size: 13px; color: var(--text-tertiary); margin-bottom: -6px; }
   .account-head { display: flex; align-items: center; gap: 12px; padding: 6px 8px 14px; }
-  .account-head .avatar { width: 40px; height: 40px; border-radius: 20px; display: grid; place-items: center; background: var(--surface-raised); border: 1px solid var(--border); color: var(--text-secondary); }
+  /* the account's picture; a person has no photo here, so a drawn portrait stands in for one */
+  .avatar { flex: none; width: var(--size); height: var(--size); border-radius: 999px; display: grid; place-items: center; overflow: hidden; background: var(--surface-raised); border: 1px solid var(--border); color: var(--text-secondary); font-size: calc(var(--size) * .4); font-weight: 600; letter-spacing: -0.01em; }
+  .avatar.photo { background: radial-gradient(circle at 50% 40%, #c8a58a 0 21%, transparent 22%), radial-gradient(ellipse 46% 34% at 50% 100%, #3b4656 0 98%, transparent 100%), linear-gradient(#66768a, #2b3442); }
   .account-head .t { font-size: 16px; font-weight: 600; color: var(--text-primary); letter-spacing: -0.015em; }
   .account-head .s { font-size: 13px; color: var(--text-tertiary); }
   .sheet-note { padding: 10px 8px 12px; font-size: 13px; line-height: 1.45; color: var(--text-tertiary); }
@@ -750,7 +750,7 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span></div>
+        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
         <div class="title-block"><h1>Devices</h1></div>
         <div class="pad grow devices">
 
@@ -797,27 +797,22 @@
           </div>
 
         </div>
-        <div class="this-phone">
-          <span>{{IconUser:15}}</span>
-          <span>contact@nodelike.com</span>
-          <span class="chev">{{IconChevron:13}}</span>
-        </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Devices</b><div class="note">Each card is a device with its own glyph and a presence dot. The busy one says the one thing that needs you, then who is working, with the rail's logos and squares. A device that is asleep keeps its place but drops to an outline. A host signed in to the same account but not paired with this phone comes last, outlined, and pairs with the code from that host. The account is the last line; it opens the account sheet.</div></figcaption>
+      <figcaption><b>Devices</b><div class="note">Each card is a device with its own glyph and a presence dot. The busy one says the one thing that needs you, then who is working, with the rail's logos and squares. A device that is asleep keeps its place but drops to an outline. A host signed in to the same account but not paired with this phone comes last, outlined, and pairs with the code from that host. The account's picture sits at the top right, beside pairing, and opens the account sheet.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen" style="opacity:.35">
-        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span></div>
+        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
         <div class="title-block"><h1>Devices</h1></div>
       </div>
       <div class="sheet">
         <div class="grabber"></div>
         <div class="account-head">
-          <span class="avatar">{{IconUser:18}}</span>
-          <div><div class="t">contact@nodelike.com</div><div class="s">Signed in with Google</div></div>
+          <span class="avatar photo" style="--size:44px"></span>
+          <div style="min-width:0"><div class="t">Kishore Gunalan</div><div class="s">contact@nodelike.com</div><div class="s">Signed in with Google</div></div>
         </div>
         <div class="row boxed"><span class="mark">{{IconPhone:18}}</span><div class="body"><div class="t" style="font-size:15px">Kishore's iPhone</div><div class="s">This phone · <span class="m">3308a907</span></div></div></div>
         <div class="sheet-note">Signing out takes this phone off your account and forgets every host paired with it.</div>
@@ -825,13 +820,13 @@
         <div class="sheet-version">Sikemux 0.1.0 · update a1b2c3d (3 Oct)</div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Account</b><div class="note">Who is signed in, and this phone as the account knows it. Signing out says what it does before it does it. The last line is the installed version, quiet like the Mac's About; when an over-the-air update is running it adds the update's short id and the day it was made, and without one it is only the version.</div></figcaption>
+      <figcaption><b>Account</b><div class="note">Who is signed in: the picture, the name, the email and how they signed in; without a name the email leads. This phone as the account knows it. Signing out says what it does before it does it. The last line is the installed version, quiet like the Mac's About; when an over-the-air update is running it adds the update's short id and the day it was made, and without one it is only the version.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span></div>
+        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar" style="--size:28px">C</span></span></div>
         <div class="title-block"><h1>Devices</h1></div>
         <div class="stack" style="padding-bottom:60px">
           <h2 style="font-size:20px">No hosts yet</h2>
@@ -839,14 +834,9 @@
           <div class="btn primary" style="align-self:stretch;margin-top:14px">Scan the code on your host</div>
           <div class="text-link">Paste a pairing link</div>
         </div>
-        <div class="this-phone">
-          <span>{{IconUser:15}}</span>
-          <span>contact@nodelike.com</span>
-          <span class="chev">{{IconChevron:13}}</span>
-        </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>No hosts yet</b><div class="note">Signed in, with no host paired and none on the account. A host appears here by itself once it signs in to the same account; a code still pairs one that does not.</div></figcaption>
+      <figcaption><b>No hosts yet</b><div class="note">Signed in, with no host paired and none on the account. A host appears here by itself once it signs in to the same account; a code still pairs one that does not. This account has no picture, so its initials stand in, from the name or else the email, on the same neutral circle; while a picture loads the circle stays empty.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>

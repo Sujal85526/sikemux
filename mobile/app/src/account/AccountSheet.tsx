@@ -6,6 +6,7 @@ import { nativeApplicationVersion } from 'expo-application';
 import * as Updates from 'expo-updates';
 
 import { removePhone } from '@/account/api';
+import { Avatar } from '@/account/Avatar';
 import { versionLabel } from '@/account/versionLabel';
 import { useDeviceId } from '@/device/identity';
 import { forget } from '@/devices/hub';
@@ -34,6 +35,8 @@ export function AccountSheet({ visible, onClose }: { visible: boolean; onClose: 
   const id = useDeviceId();
   const [leaving, setLeaving] = useState(false);
   const provider = user?.externalAccounts[0]?.provider.replace(/^oauth_/, '');
+  const name = user?.fullName?.trim() || undefined;
+  const email = user?.primaryEmailAddress?.emailAddress;
   const how = provider ? `Signed in with ${PROVIDERS[provider] ?? provider}` : 'Signed in with email';
 
   const leave = async () => {
@@ -55,13 +58,16 @@ export function AccountSheet({ visible, onClose }: { visible: boolean; onClose: 
   return (
     <Sheet visible={visible} onClose={onClose}>
       <View style={styles.head}>
-        <View style={styles.avatar}>
-          <Icon name="IconUser" size={18} color={colors.secondary} />
-        </View>
+        <Avatar size={44} />
         <View style={{ flex: 1 }}>
-          <Text style={styles.email} numberOfLines={1}>
-            {user?.primaryEmailAddress?.emailAddress ?? 'Signed in'}
+          <Text style={styles.name} numberOfLines={1}>
+            {name ?? email ?? 'Signed in'}
           </Text>
+          {name && email ? (
+            <Text style={type.meta} numberOfLines={1}>
+              {email}
+            </Text>
+          ) : null}
           <Text style={type.meta}>{how}</Text>
         </View>
       </View>
@@ -86,17 +92,7 @@ const makeStyles = (colors: Palette) => {
   const type = typeFor(colors);
   return StyleSheet.create({
     head: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 8, paddingTop: 6, paddingBottom: 14 },
-    avatar: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: colors.raised,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    email: { fontFamily: fonts.uiSemibold, fontSize: 16, letterSpacing: -0.25, color: colors.ink },
+    name: { fontFamily: fonts.uiSemibold, fontSize: 16, letterSpacing: -0.25, color: colors.ink },
     phone: {
       flexDirection: 'row',
       alignItems: 'center',
