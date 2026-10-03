@@ -130,6 +130,17 @@ final class Simulators {
             let stream = try await FrameStream.start(requireBooted(simulator), logger: logger)
             streams[simulator.udid] = stream
             return ["url": stream.address]
+        case let .chrome(_, chromePath, maskPath):
+            guard let deviceType = simulator.device.deviceType?.name, let size = Self.screenSize(simulator) else {
+                throw SimulatorError("\(simulator.name) has no device type to draw")
+            }
+            let layout = try DeviceChrome.render(
+                deviceType: deviceType, screen: CGSize(width: size.width, height: size.height),
+                chrome: URL(fileURLWithPath: chromePath), mask: URL(fileURLWithPath: maskPath))
+            return [
+                "width": layout.size.width, "height": layout.size.height,
+                "screen": ["x": layout.screen.minX, "y": layout.screen.minY, "width": layout.screen.width, "height": layout.screen.height],
+            ]
         case .stopStream:
             streams.removeValue(forKey: simulator.udid)?.stop()
             return [:]

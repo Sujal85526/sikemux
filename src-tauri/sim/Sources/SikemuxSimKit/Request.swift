@@ -43,12 +43,14 @@ public enum Command: Equatable, Sendable {
     /// A live MJPEG view of the screen at a local address, shared by everyone who opens it.
     case stream(udid: String)
     case stopStream(udid: String)
+    /// The device drawn around the screen, as Xcode's simulator window draws it, saved as two PNGs.
+    case chrome(udid: String, chromePath: String, maskPath: String)
 
     public var udid: String? {
         switch self {
         case .devices: nil
         case let .boot(udid), let .shutdown(udid), let .state(udid), let .stream(udid), let .stopStream(udid): udid
-        case let .screenshot(udid, _, _, _), let .type(udid, _), let .button(udid, _), let .tapElement(udid, _),
+        case let .screenshot(udid, _, _, _), let .chrome(udid, _, _), let .type(udid, _), let .button(udid, _), let .tapElement(udid, _),
             let .terminate(udid, _), let .install(udid, _), let .openUrl(udid, _):
             udid
         case let .tap(udid, _, _), let .touch(udid, _, _), let .swipe(udid, _, _, _), let .launch(udid, _, _, _): udid
@@ -138,6 +140,8 @@ public struct Request: Equatable, Sendable {
             return .openUrl(udid: try fields.required("udid"), url: url)
         case "stream":
             return .stream(udid: try fields.required("udid"))
+        case "chrome":
+            return .chrome(udid: try fields.required("udid"), chromePath: try fields.required("chromePath"), maskPath: try fields.required("maskPath"))
         case "stopStream":
             return .stopStream(udid: try fields.required("udid"))
         default:
