@@ -556,7 +556,10 @@ when two elements match equally; tap one of them by number instead. Prefer a
 number or label over a point read off a screenshot. `duration` holds the
 touch, for a long press.
 
-`sim_type` types into the focused field, so tap the field first. It types
+`sim_type` types into the focused field, so tap the field first. While a
+field is focused the keyboard covers the bottom of the screen, and a swipe across
+it types a word, as sliding a finger over the keys does; press Return (`\n`) or
+tap outside the field before you swipe there to scroll. It types
 the characters of a US keyboard; other characters fail and are named.
 `sim_swipe` drags from one point to another; a swipe that starts within
 10 points of a screen edge is a system gesture: up from the bottom goes home,
@@ -585,9 +588,9 @@ a deep link.
 
 `sim_logs` reads the device's log, kept from when you attached it, by
 `cursor`: start at `0` and pass back the `cursor` it returns, as with
-`task_read`. System services log over a thousand lines a second, so ask for
-your app by `process`, its executable name: its lines are kept apart and
-outlast that noise, and that cursor counts only its lines. `limit` caps the
+`task_read`. It holds what apps log themselves, through `Logger`, `os_log`
+or `NSLog`; Apple's frameworks are left out. Ask for your app by `process`, its
+executable name: its lines are kept apart, and that cursor counts only them. `limit` caps the
 lines in one read; `more` says lines are waiting, and `dropped` that older ones
 went before you read them. `sim_detach`
 lets go of the device and closes it on your desk; it keeps running.

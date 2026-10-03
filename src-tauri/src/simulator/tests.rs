@@ -7,6 +7,15 @@ use tempfile::TempDir;
 use super::SimulatorManager;
 
 const SECOND: Duration = Duration::from_secs(1);
+
+/// Tests that drive a real simulator share it, so they take turns.
+static REAL_DEVICE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn real_device() -> std::sync::MutexGuard<'static, ()> {
+    REAL_DEVICE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 /// Long enough for a shell helper to start when every test starts one at once.
 const PROMPT: Duration = Duration::from_secs(5);
 
@@ -149,6 +158,7 @@ fn rejects_fields_that_are_not_an_object() {
 #[test]
 #[ignore = "needs the sikemux-sim helper and Xcode's simulators"]
 fn lists_the_real_simulators() {
+    let _turn = real_device();
     let manager = SimulatorManager::default();
     let devices = manager
         .request("devices", json!({}), PROMPT)
@@ -449,11 +459,108 @@ done
         );
     }
 
+    /// Drives the fixture app the way an agent would, through every kind of tool:
+    /// `pnpm build:sim-fixture`, then
+    /// `SIKEMUX_SIM_EXECUTABLE=… SIKEMUX_SIM_FIXTURE=…/SimFixture.app cargo test --lib simulator -- --ignored`.
+    #[test]
+    #[ignore = "needs the sikemux-sim helper, Xcode's simulators and the fixture app"]
+    fn an_agent_drives_the_fixture_app() {
+        let _turn = super::real_device();
+        let fixture = std::env::var("SIKEMUX_SIM_FIXTURE")
+            .expect("SIKEMUX_SIM_FIXTURE names the built SimFixture.app");
+        let manager = crate::simulator::SimulatorManager::default();
+        let call = |method: &str, params: serde_json::Value| {
+            run(&manager, "agent-fixture", "/", method, &params)
+                .unwrap_or_else(|error| panic!("{method}: {error}"))
+        };
+        let shows = |state: &serde_json::Value, text: &str| {
+            state["elements"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|line| line.as_str().unwrap().contains(text))
+        };
+        let device = std::env::var("SIKEMUX_SIM_DEVICE").ok();
+        call(
+            "sim.attach",
+            device.map_or_else(|| json!({}), |device| json!({ "device": device })),
+        );
+        call("sim.install", json!({ "path": fixture }));
+
+        let opened = call(
+            "sim.launch",
+            json!({ "bundleId": "com.nodelike.sikemux.simfixture" }),
+        );
+        assert_eq!(opened["app"], json!("SimFixture"), "{opened}");
+        assert!(shows(&opened, "Count: 0"), "{opened}");
+
+        let tapped = call("sim.tap", json!({ "label": "Add one" }));
+        assert!(shows(&tapped, "Count: 1"), "{tapped}");
+
+        call("sim.tap", json!({ "label": "field" }));
+        let typed = call("sim.type", json!({ "text": "Hi there 42" }));
+        assert!(shows(&typed, "Echo: Hi there 42"), "{typed}");
+
+        let zoom = typed["elements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|line| line.as_str().unwrap())
+            .find(|line| line.contains("Zoom: 1.0"))
+            .expect("the zoom view")
+            .to_owned();
+        let centre: Vec<f64> = zoom
+            .rsplit_once(" at (")
+            .unwrap()
+            .1
+            .trim_end_matches(')')
+            .split(", ")
+            .map(|n| n.parse().unwrap())
+            .collect();
+        let pinched = call(
+            "sim.touch2Path",
+            json!({ "points": [
+                { "x1": centre[0] - 20.0, "y1": centre[1], "x2": centre[0] + 20.0, "y2": centre[1] },
+                { "x1": centre[0] - 120.0, "y1": centre[1], "x2": centre[0] + 120.0, "y2": centre[1] },
+            ], "duration": 0.5 }),
+        );
+        assert!(
+            !shows(&pinched, "Zoom: 1.0"),
+            "spreading two fingers zooms in: {pinched}"
+        );
+
+        call("sim.type", json!({ "text": "\n" }));
+        let scrolled = call(
+            "sim.swipe",
+            json!({ "fromX": 200, "fromY": 780, "toX": 200, "toY": 520, "duration": 0.4 }),
+        );
+        assert!(
+            shows(&scrolled, "Row 1") || shows(&scrolled, "Row 2"),
+            "the list is on screen: {scrolled}"
+        );
+
+        let logged = call("sim.logs", json!({ "process": "SimFixture" }));
+        let lines = logged["lines"].as_array().unwrap();
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.as_str().unwrap().contains("tapped add one, count 1")),
+            "{logged}"
+        );
+
+        call(
+            "sim.terminate",
+            json!({ "bundleId": "com.nodelike.sikemux.simfixture" }),
+        );
+        call("sim.detach", json!({}));
+    }
+
     /// An agent's whole round on a real simulator:
     /// `SIKEMUX_SIM_EXECUTABLE=… cargo test --lib simulator -- --ignored`.
     #[test]
     #[ignore = "needs the sikemux-sim helper and Xcode's simulators"]
     fn an_agent_drives_a_real_simulator() {
+        let _turn = super::real_device();
         let manager = crate::simulator::SimulatorManager::default();
         let call = |method: &str, params: serde_json::Value| {
             run(&manager, "agent-real", "/tmp", method, &params)
@@ -461,7 +568,8 @@ done
         };
         let attached = call(
             "sim.attach",
-            json!({ "device": std::env::var("SIKEMUX_SIM_DEVICE").unwrap_or("iPhone 18 Pro".into()) }),
+            std::env::var("SIKEMUX_SIM_DEVICE")
+                .map_or_else(|_| json!({}), |device| json!({ "device": device })),
         );
         println!("attached: {}", attached["device"]);
         let home = call("sim.button", json!({ "button": "home" }));
