@@ -5,8 +5,10 @@ import IOKit
 ///
 /// It is the tick `NSHapticFeedbackManager` plays: every one of its patterns
 /// asks the window server for the trackpad's pattern 15. AppKit only asks for
-/// the app in front, which the island never is, so it asks the window server
-/// itself, then the trackpad's actuator directly, then AppKit.
+/// the app in front, which the island never is, and the window server plays
+/// such a request from a background app only once, so the island drives the
+/// trackpad's actuator with that pattern itself, then asks the window server,
+/// then AppKit.
 /// Writes to the helper's log while a `notch.debug` file sits beside its lock, for chasing hover and haptics.
 enum Debug {
     static var on = false
@@ -25,9 +27,9 @@ enum Haptics {
 
     static func tick() {
         guard enabled else { return }
-        let server = WindowServer.shared.tick()
-        Debug.log("tick window server \(server)")
-        if server || Actuators.shared.tick() { return }
+        let actuated = Actuators.shared.tick()
+        Debug.log("tick actuator \(actuated)")
+        if actuated || WindowServer.shared.tick() { return }
         NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
     }
 }
