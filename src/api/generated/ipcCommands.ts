@@ -218,6 +218,8 @@ export const IPC_COMMANDS = [
     "simulator_input",
     "simulator_devices",
     "simulator_available",
+    "simulator_set_enabled",
+    "simulator_setup",
     "simulator_preferred",
     "simulator_attach",
     "simulator_shutdown",

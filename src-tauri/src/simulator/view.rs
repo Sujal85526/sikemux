@@ -261,10 +261,46 @@ pub async fn simulator_devices(
     Ok(devices.into_iter().map(DeviceSummary::from).collect())
 }
 
+#[tauri::command]
+pub fn simulator_set_enabled(enabled: bool) {
+    super::set_enabled(enabled);
+}
+
+/// What Settings shows about the simulator: the Xcode in use, its iOS runtimes,
+/// and where the helper stands.
+#[tauri::command]
+pub async fn simulator_setup(simulators: State<'_, SimulatorManager>) -> AppResult<Value> {
+    let output = |program: &str, args: &[&str]| {
+        sikemux_process::user_environment::command(program)
+            .args(args)
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+    };
+    let runtimes: Vec<String> = output("xcrun", &["simctl", "list", "runtimes", "--json"])
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .map(|list| {
+            list["runtimes"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|runtime| runtime["isAvailable"].as_bool() == Some(true))
+                .filter_map(|runtime| runtime["name"].as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(json!({
+        "xcode": output("xcode-select", &["-p"]),
+        "runtimes": runtimes,
+        "helper": simulators.helper_state(),
+    }))
+}
+
 /// Whether this Mac can run simulators, so the window offers them only where they work.
 #[tauri::command]
 pub fn simulator_available() -> bool {
-    super::offered()
+    super::capable()
 }
 
 /// The device to show when the person opens the simulator: the one the agent is

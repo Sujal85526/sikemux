@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
@@ -89,6 +89,20 @@ impl SimulatorManager {
         )
         .await
         .map_err(|error| format!("could not download the iOS Simulator helper: {error}"))
+    }
+
+    /// Where the helper this app runs comes from, for Settings to show.
+    pub fn helper_state(&self) -> &'static str {
+        match (&self.executable, &self.downloaded, published()) {
+            (Some(_), _, _) => "built with this copy of Sikemux",
+            (None, Some(path), Some(helper))
+                if crate::voice_models::release_file_matches(path, helper.size, helper.sha256) =>
+            {
+                "ready"
+            }
+            (None, Some(_), Some(_)) => "downloading",
+            _ => "not included in this build",
+        }
     }
 
     pub fn with_executable(executable: Option<PathBuf>) -> Self {
@@ -281,9 +295,21 @@ fn read_replies(stdout: impl BufRead, pending: &Pending) {
     }
 }
 
-/// Whether agents on this Mac are offered the simulator tools: Xcode has
-/// installed CoreSimulator, and the helper is here or published with this release.
+/// The person's switch for the simulator in Settings, on until they turn it off.
+static ENABLED: AtomicBool = AtomicBool::new(true);
+
+pub fn set_enabled(enabled: bool) {
+    ENABLED.store(enabled, Ordering::Relaxed);
+}
+
+/// Whether agents are offered the simulator tools: the person has not turned
+/// them off, and this Mac can run simulators.
 pub fn offered() -> bool {
+    ENABLED.load(Ordering::Relaxed) && capable()
+}
+
+/// Whether this Mac can run simulators at all, whatever the switch says.
+pub fn capable() -> bool {
     (helper_executable().is_some() || published().is_some()) && Path::new(CORE_SIMULATOR).exists()
 }
 

@@ -235,6 +235,8 @@
     "allow-simulator-input",
     "allow-simulator-devices",
     "allow-simulator-available",
+    "allow-simulator-set-enabled",
+    "allow-simulator-setup",
     "allow-simulator-preferred",
     "allow-simulator-attach",
     "allow-simulator-shutdown",
