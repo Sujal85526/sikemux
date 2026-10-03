@@ -1,0 +1,186 @@
+name: Mobile update
+run-name: ${{ inputs.update_id && format('Promote phone update {0} to stable', inputs.update_id) || format('Phone update from {0}', github.sha) }}
+
+# The phone's JavaScript and assets go out over the air: every push to main that changes them
+# publishes an Android update to nightly, and running this by hand with an update id promotes that
+# update to stable once the owner approves. Phones only take an update made for their runtime
+# version, so one that needs new native code waits for the build that has it.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mobile/app/src/**"
+      - "mobile/app/assets/**"
+      - "mobile/app/app.json"
+      - "mobile/app/app.config.js"
+      - "mobile/app/metro.config.js"
+      - "mobile/app/package.json"
+      - "mobile/pnpm-lock.yaml"
+      - "mobile/app/scripts/generate.mjs"
+      - "mobile/app/scripts/publish-update.mjs"
+      - "src/chat/**"
+      - "src/ui/Icons.tsx"
+      - "src/assets/agent-logos/**"
+      - .github/workflows/mobile-update.yml
+  workflow_dispatch:
+    inputs:
+      update_id:
+        description: Update to promote to stable. Leave empty to publish main to nightly.
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-update-${{ inputs.update_id && 'promote' || 'publish' }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Check and export the phone app
+    if: github.repository == 'nodelike/sikemux' && github.ref == 'refs/heads/main' && !inputs.update_id
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          package_json_file: mobile/package.json
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: mobile/pnpm-lock.yaml
+
+      - name: Use the runner's Android NDK
+        run: echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >>"$GITHUB_ENV"
+
+      - name: Setup Rust
+        run: |
+          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)"
+          rustup toolchain install "$channel" --profile minimal --no-self-update \
+            --target aarch64-linux-android --target x86_64-linux-android
+          cargo install cargo-ndk --locked
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri
+          shared-key: mobile-android
+
+      - name: Install phone dependencies
+        working-directory: mobile
+        run: pnpm install --frozen-lockfile
+
+      # The app's JavaScript imports the bindings generated alongside the Rust client.
+      - name: Build the Rust client
+        working-directory: mobile
+        run: pnpm native:android:release
+
+      - name: Check the phone app
+        working-directory: mobile
+        run: pnpm check
+
+      - name: Export the update
+        working-directory: mobile/app
+        run: node scripts/publish-update.mjs prepare android nightly "$RUNNER_TEMP/update"
+
+      - name: Keep the update for signing
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: phone-update
+          path: ${{ runner.temp }}/update
+          retention-days: 7
+          if-no-files-found: error
+
+  publish:
+    name: Sign and publish to nightly
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Fetch the update
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: phone-update
+          path: ${{ runner.temp }}/update
+
+      - name: Set up the deploy key
+        env:
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          install -m 600 /dev/null ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      # Only node's own modules run here: no dependency of the app ever sees the signing key.
+      - name: Sign and send it to citadel
+        env:
+          UPDATES_SIGNING_KEY: ${{ secrets.UPDATES_SIGNING_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          export DEPLOY_SSH_KEY_FILE=~/.ssh/deploy_key
+          node mobile/app/scripts/publish-update.mjs publish "$RUNNER_TEMP/update"
+
+  approve:
+    name: Approve promoting to stable
+    if: github.repository == 'nodelike/sikemux' && github.ref == 'refs/heads/main' && inputs.update_id
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: release
+    steps:
+      - name: Approved
+        env:
+          UPDATE_ID: ${{ inputs.update_id }}
+        run: echo "Promoting $UPDATE_ID to stable" >>"$GITHUB_STEP_SUMMARY"
+
+  promote:
+    name: Promote to stable
+    needs: approve
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Set up the deploy key
+        env:
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          install -m 600 /dev/null ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Promote it on citadel
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          UPDATE_ID: ${{ inputs.update_id }}
+        run: |
+          export DEPLOY_SSH_KEY_FILE=~/.ssh/deploy_key
+          node mobile/app/scripts/publish-update.mjs promote "$UPDATE_ID"

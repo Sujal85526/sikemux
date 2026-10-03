@@ -125,3 +125,22 @@ The run checks the phone app, builds the Rust client with the small `mobile` pro
 | `ANDROID_UPLOAD_PASSWORD` | secret | its password, which is also the key's own password |
 
 Locally, `pnpm android:release` in `mobile/` signs with the same key: the keystore from `~/.config/sikemux/release/upload.keystore` and its password from the Keychain entry "Sikemux Android upload key".
+
+### Over-the-air updates
+
+A release build also asks `updates.sikemux.com` for newer JavaScript and assets each time it starts, on its own channel: a nightly build on `nightly`, a stable one on `stable`. The **Mobile release** run tells the build its channel through `SIKEMUX_MOBILE_CHANNEL`. Dev builds never update.
+
+Every push to `main` that changes the phone's JavaScript or assets runs the **Mobile update** workflow. One job checks the phone app and exports it with `expo export`; a second, which sees only the exported files, signs the update and sends it to citadel on `nightly`. The signature is checked against `mobile/app/certs/updates-certificate.pem` before anything is sent, and phones refuse an update without it.
+
+An update carries a runtime version, a fingerprint of everything native in the app: the Expo config, native modules and the Rust client's sources. A phone only takes updates with its own build's runtime version, so a change that needs new native code is published but waits for the next build that has it. The run's summary shows the update id and runtime version.
+
+To promote a nightly update to stable, run **Mobile update** by hand with its id. It waits for the owner's approval on the `release` environment and then serves the same signed update on `stable`.
+
+Locally, `node scripts/publish-update.mjs android nightly --dry-run` in `mobile/app` builds and signs an update without sending it, with the key from `UPDATES_SIGNING_KEY`. The key lives at `~/.config/sikemux/release/updates-signing-key.pem`.
+
+| Name                  | Kind   | Environment  | Holds                                |
+| --------------------- | ------ | ------------ | ------------------------------------ |
+| `UPDATES_SIGNING_KEY` | secret | `production` | the update signing key, PEM          |
+| `DEPLOY_SSH_KEY`      | secret | `production` | the `sikemux-deploy` key for citadel |
+| `DEPLOY_KNOWN_HOSTS`  | secret | `production` | citadel's host key                   |
+| `DEPLOY_HOST`         | secret | `production` | citadel's address                    |
