@@ -56,6 +56,8 @@ export const simulatorApi = {
     /** Boots the device and makes it the agent's, so both look at the same screen. */
     attach: (agentId: string, udid: string) => invoke<SimulatorDevice>("simulator_attach", { agentId, udid }),
     shutdown: (udid: string) => invoke<void>("simulator_shutdown", { udid }),
+    /** Saves the screen to the Desktop as `name`, and answers with where it went. */
+    saveScreenshot: (udid: string, name: string) => invoke<string>("simulator_save_screenshot", { udid, name }),
     subscribeFrames: (listener: (frame: SimulatorFrame) => void, signal: AbortSignal) =>
         getIpcTransport().subscribe<SimulatorFrame>("simulator-frame", (event) => listener(event.payload), { signal }),
     subscribeAttached: (listener: (attached: SimulatorAttached) => void, signal: AbortSignal) =>

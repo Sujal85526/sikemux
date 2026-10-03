@@ -11,9 +11,9 @@ import {
 import * as cmd from "../state/commands";
 import { simulatorKey } from "../state/desks";
 import type { DeskSimulator } from "../state/types";
-import { reportError } from "../state/toast";
+import { notify, reportError } from "../state/toast";
 import { Dropdown, type DropdownOption } from "../ui/Dropdown";
-import { IconHome, IconLock, IconStop } from "../ui/Icons";
+import { IconCamera, IconHome, IconLock, IconPower } from "../ui/Icons";
 
 interface Box {
     left: number;
@@ -50,6 +50,14 @@ export function typedText(event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKe
     if (event.key === "Tab") return "\t";
     if (event.key === "Backspace") return "\b";
     return [...event.key].length === 1 ? event.key : null;
+}
+
+/** Named as Simulator.app names its screenshots: `Simulator Screenshot - iPhone 18 Pro - 2026-10-03 at 10.30.12.png`. */
+export function screenshotName(device: string, at: Date): string {
+    const two = (value: number) => String(value).padStart(2, "0");
+    const day = `${at.getFullYear()}-${two(at.getMonth() + 1)}-${two(at.getDate())}`;
+    const time = `${two(at.getHours())}.${two(at.getMinutes())}.${two(at.getSeconds())}`;
+    return `Simulator Screenshot - ${device.replaceAll("/", "-")} - ${day} at ${time}.png`;
 }
 
 /** The largest size `content` can be drawn at inside `room`, keeping its proportions. */
@@ -158,6 +166,12 @@ export function SimulatorView({ agentId, simulator, hidden, live }: { agentId: s
             .then(() => cmd.closeDeskItem(agentId, { key: simulatorKey(udid), kind: "simulator", simulator }))
             .catch(reportError("shut down the simulator"));
 
+    const saveScreenshot = () =>
+        void simulatorApi
+            .saveScreenshot(udid, screenshotName(simulator.name, new Date()))
+            .then((path) => notify("success", `Saved ${path.split("/").pop()} to the Desktop`))
+            .catch(reportError("save a screenshot"));
+
     /* Each step waits for the one before, so the device sees a finger go down,
        move and lift in the order it did. */
     const inOrder = (next: () => Promise<void> | undefined) => {
@@ -220,13 +234,10 @@ export function SimulatorView({ agentId, simulator, hidden, live }: { agentId: s
                     onChange={pick}
                     title="Simulator"
                     label={`Simulator: ${label}`}
+                    trailing={simulator.os}
                     search="Find a device"
                     menuWidth={280}
                 />
-                <span className="simulator-device">{simulator.os}</span>
-                <button type="button" aria-label="Shut down" title="Shut down" onClick={shutDown}>
-                    <IconStop size={13} />
-                </button>
             </div>
             <div
                 ref={stage}
@@ -251,10 +262,16 @@ export function SimulatorView({ agentId, simulator, hidden, live }: { agentId: s
             </div>
             <div className="simulator-controls">
                 <button type="button" aria-label="Home" title="Home" onClick={() => send({ type: "button", button: "home" })}>
-                    <IconHome size={13} />
+                    <IconHome size={20} />
+                </button>
+                <button type="button" aria-label="Screenshot" title="Save a screenshot to the Desktop" onClick={saveScreenshot}>
+                    <IconCamera size={20} />
                 </button>
                 <button type="button" aria-label="Lock" title="Lock" onClick={() => send({ type: "button", button: "lock" })}>
-                    <IconLock size={13} />
+                    <IconLock size={20} />
+                </button>
+                <button type="button" aria-label="Shut down" title="Shut down" onClick={shutDown}>
+                    <IconPower size={20} />
                 </button>
             </div>
         </div>

@@ -2,7 +2,7 @@ import { act, fireEvent, render, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { simulatorApi, type SimulatorFrame } from "../api/simulator";
 import * as cmd from "../state/commands";
-import { devicePickerOptions, fitInside, SimulatorView, toDevicePoint, typedText } from "./SimulatorView";
+import { devicePickerOptions, fitInside, screenshotName, SimulatorView, toDevicePoint, typedText } from "./SimulatorView";
 
 vi.mock("../api/simulator", async () => {
     const actual = await vi.importActual<typeof import("../api/simulator")>("../api/simulator");
@@ -15,6 +15,7 @@ vi.mock("../api/simulator", async () => {
             devices: vi.fn(),
             attach: vi.fn(),
             shutdown: vi.fn(),
+            saveScreenshot: vi.fn(),
             subscribeFrames: vi.fn(),
             subscribeAttached: vi.fn(),
         },
@@ -265,5 +266,29 @@ describe("the device around the screen", () => {
         const screen = container.querySelector<HTMLImageElement>(".simulator-screen")!;
         expect([screen.style.left, screen.style.width, screen.style.height]).toEqual(["0%", "100%", "100%"]);
         expect(screen.style.maskImage).toBe("");
+    });
+});
+
+describe("screenshots", () => {
+    it("are named the way Simulator.app names them", () => {
+        expect(screenshotName("iPhone 18 Pro", new Date(2026, 9, 3, 9, 5, 7))).toBe(
+            "Simulator Screenshot - iPhone 18 Pro - 2026-10-03 at 09.05.07.png",
+        );
+        expect(screenshotName("a/b", new Date(2026, 0, 1, 0, 0, 0))).toBe("Simulator Screenshot - a-b - 2026-01-01 at 00.00.00.png");
+    });
+
+    it("are saved to the Desktop from the button under the device", async () => {
+        vi.mocked(simulatorApi.saveScreenshot).mockResolvedValue("/Users/me/Desktop/Simulator Screenshot - iPhone 18 Pro.png");
+        vi.mocked(simulatorApi.devices).mockResolvedValue([]);
+        const view = render(
+            <SimulatorView agentId="agent-1" simulator={{ udid: "U1", name: "iPhone 18 Pro", os: "iOS 27.0", screen: iPhone }} live={false} />,
+        );
+
+        fireEvent.click(within(view.container).getByRole("button", { name: "Screenshot" }));
+
+        await vi.waitFor(() => expect(simulatorApi.saveScreenshot).toHaveBeenCalled());
+        const [udid, name] = vi.mocked(simulatorApi.saveScreenshot).mock.calls[0];
+        expect(udid).toBe("U1");
+        expect(name).toMatch(/^Simulator Screenshot - iPhone 18 Pro - \d{4}-\d{2}-\d{2} at \d{2}\.\d{2}\.\d{2}\.png$/);
     });
 });
