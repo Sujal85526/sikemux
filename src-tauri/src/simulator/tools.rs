@@ -433,9 +433,8 @@ pub(super) fn elements_from(reply: &Value, screen: Option<(f64, f64)>) -> (Strin
             value
                 .get(key)
                 .and_then(Value::as_str)
+                .map(readable)
                 .unwrap_or_default()
-                .trim()
-                .to_owned()
         };
         let role = text("type");
         if role == "Application" {
@@ -456,7 +455,7 @@ pub(super) fn elements_from(reply: &Value, screen: Option<(f64, f64)>) -> (Strin
         }
         let label = text("AXLabel");
         let value_text = match value.get("AXValue") {
-            Some(Value::String(text)) => text.trim().to_owned(),
+            Some(Value::String(text)) => readable(text),
             Some(Value::Number(number)) => number.to_string(),
             _ => String::new(),
         };
@@ -488,6 +487,20 @@ pub(super) fn elements_from(reply: &Value, screen: Option<(f64, f64)>) -> (Strin
     (app, elements)
 }
 
+/// Text as a person reads it: without the invisible marks that set reading
+/// direction, which Safari puts around an address.
+fn readable(text: &str) -> String {
+    text.chars()
+        .filter(|character| !matches!(character, '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'))
+        .collect::<String>()
+        .trim()
+        .to_owned()
+}
+
+fn quoted(text: &str) -> String {
+    format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
 /// One line per element: `3 Button "General" at (201, 418)`.
 pub(super) fn element_lines(elements: &[Element]) -> Vec<String> {
     let mut lines: Vec<String> = elements
@@ -497,13 +510,13 @@ pub(super) fn element_lines(elements: &[Element]) -> Vec<String> {
         .map(|(index, element)| {
             let mut line = format!("{index} {}", element.role);
             if !element.label.is_empty() {
-                line.push_str(&format!(" {:?}", element.label));
+                line.push_str(&format!(" {}", quoted(&element.label)));
             }
             if !element.value.is_empty() && element.value != element.label {
-                line.push_str(&format!(" value={:?}", element.value));
+                line.push_str(&format!(" value={}", quoted(&element.value)));
             }
             if !element.identifier.is_empty() && element.identifier != element.label {
-                line.push_str(&format!(" id={:?}", element.identifier));
+                line.push_str(&format!(" id={}", quoted(&element.identifier)));
             }
             if !element.enabled {
                 line.push_str(" [disabled]");

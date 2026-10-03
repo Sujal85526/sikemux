@@ -273,6 +273,23 @@ mod tools {
     }
 
     #[test]
+    fn shows_text_as_a_person_reads_it() {
+        let safari = json!({ "elements": [
+            { "type": "Application", "AXLabel": "Safari", "frame": { "x": 0, "y": 0, "width": 402, "height": 874 } },
+            { "type": "TextField", "AXLabel": "Address", "AXValue": "\u{200e}example.com\u{200f}", "frame": { "x": 30, "y": 800, "width": 340, "height": 32 } },
+            { "type": "StaticText", "AXLabel": "Say \"hi\" \\ bye", "frame": { "x": 0, "y": 100, "width": 100, "height": 20 } },
+        ]});
+        let (_, elements) = elements_from(&safari, Some((402.0, 874.0)));
+        assert_eq!(
+            element_lines(&elements),
+            vec![
+                "0 TextField \"Address\" value=\"example.com\" at (200, 816)",
+                "1 StaticText \"Say \\\"hi\\\" \\\\ bye\" at (50, 110)",
+            ]
+        );
+    }
+
+    #[test]
     fn a_blank_launch_screen_is_not_a_settled_one() {
         let status_bar = json!({ "elements": [
             { "type": "Application", "AXLabel": " ", "frame": { "x": 0, "y": 0, "width": 402, "height": 874 } },
