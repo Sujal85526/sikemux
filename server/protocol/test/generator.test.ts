@@ -46,6 +46,24 @@ const device = {
   }),
 };
 
+const message = (type: string, properties: Record<string, unknown> = {}) => ({
+  type: "object",
+  properties: { type: { const: type }, ...properties },
+  required: ["type", ...Object.keys(properties)],
+  additionalProperties: false,
+});
+
+const live = document("live.json", {
+  ServerMessage: {
+    description: "What the server sends.",
+    type: "object",
+    oneOf: [{ $ref: "#/$defs/Hello" }, { $ref: "#/$defs/Ping" }],
+    discriminator: { propertyName: "type" },
+  },
+  Hello: message("hello", { nonce: { type: "string" } }),
+  Ping: message("ping"),
+});
+
 describe("collect", () => {
   it("accepts the supported shapes", () => {
     expect([...collect(device).keys()].sort()).toEqual([
@@ -123,10 +141,82 @@ describe("collect", () => {
     ],
     [
       "unsupported keywords",
-      { A: { type: "string", oneOf: [] } },
-      /"oneOf" is not supported/,
+      { A: { type: "string", allOf: [] } },
+      /"allOf" is not supported/,
     ],
     ["lowercase definition names", { a: { type: "string" } }, /PascalCase/],
+    [
+      "constants outside a union's tag",
+      { A: message("a") },
+      /only for the property that tags a union's members/,
+    ],
+    [
+      "unions that do not say they are objects",
+      {
+        U: {
+          oneOf: [{ $ref: "#/$defs/A" }],
+          discriminator: { propertyName: "type" },
+        },
+        A: message("a"),
+      },
+      /type: "object"/,
+    ],
+    [
+      "unions without a discriminator",
+      {
+        U: { type: "object", oneOf: [{ $ref: "#/$defs/A" }] },
+        A: message("a"),
+      },
+      /discriminator/,
+    ],
+    [
+      "union members without the tag",
+      {
+        U: {
+          type: "object",
+          oneOf: [{ $ref: "#/$defs/A" }],
+          discriminator: { propertyName: "type" },
+        },
+        A: { type: "object", properties: {}, additionalProperties: false },
+      },
+      /require "type" as a constant string/,
+    ],
+    [
+      "two members with one tag",
+      {
+        U: {
+          type: "object",
+          oneOf: [{ $ref: "#/$defs/A" }, { $ref: "#/$defs/B" }],
+          discriminator: { propertyName: "type" },
+        },
+        A: message("a"),
+        B: message("a"),
+      },
+      /same Rust variant/,
+    ],
+    [
+      "the reserved tag",
+      {
+        U: {
+          type: "object",
+          oneOf: [{ $ref: "#/$defs/A" }],
+          discriminator: { propertyName: "type" },
+        },
+        A: message("unknown"),
+      },
+      /reserved/,
+    ],
+    [
+      "inline union members",
+      {
+        U: {
+          type: "object",
+          oneOf: [message("a")],
+          discriminator: { propertyName: "type" },
+        },
+      },
+      /each member of oneOf is a/,
+    ],
   ];
   for (const [what, $defs, message] of rejects) {
     it(`rejects ${what}`, () => {
@@ -140,6 +230,22 @@ describe("collect", () => {
       ...document("b.json", { A: { type: "string" } }),
     };
     expect(() => collect(twice)).toThrow(/already defined in a.json/);
+  });
+  it("rejects a member shared by two unions", () => {
+    const shared = document("a.json", {
+      U: {
+        type: "object",
+        oneOf: [{ $ref: "#/$defs/A" }],
+        discriminator: { propertyName: "type" },
+      },
+      V: {
+        type: "object",
+        oneOf: [{ $ref: "#/$defs/A" }],
+        discriminator: { propertyName: "type" },
+      },
+      A: message("a"),
+    });
+    expect(() => collect(shared)).toThrow(/already a member of U/);
   });
 });
 
@@ -161,6 +267,38 @@ describe("typescript", () => {
     expect(out).toContain(
       "export interface Definitions {\n  Device: Device;\n  DeviceKey: DeviceKey;",
     );
+  });
+});
+
+describe("tagged unions", () => {
+  const definitions = collect(live);
+
+  it("are a union of their members in TypeScript, each with its tag as a literal", () => {
+    const out = typescript(definitions);
+    expect(out).toContain(
+      "/** What the server sends. */\nexport type ServerMessage =\n  | Hello\n  | Ping;",
+    );
+    expect(out).toContain('export interface Ping {\n  type: "ping";\n}');
+  });
+
+  it("are internally tagged enums in Rust that skip what they do not know", () => {
+    const out = rust(definitions);
+    expect(out).toContain(
+      '#[serde(tag = "type")]\npub enum ServerMessage {\n    #[serde(rename = "hello")]\n    Hello(Hello),\n    #[serde(rename = "ping")]\n    Ping(Ping),\n',
+    );
+    expect(out).toContain("    #[serde(other)]\n    Unknown,\n}");
+    expect(out).toContain("pub struct Hello {\n    pub nonce: String,\n}");
+    expect(out).toContain("pub struct Ping {}");
+    expect(out).toContain('"Ping" => through::<ServerMessage>(json)');
+  });
+
+  it("keep their discriminator in the bundle and OpenAPI", () => {
+    expect(bundle(definitions).$defs.ServerMessage).toEqual({
+      description: "What the server sends.",
+      type: "object",
+      oneOf: [{ $ref: "#/$defs/Hello" }, { $ref: "#/$defs/Ping" }],
+      discriminator: { propertyName: "type" },
+    });
   });
 });
 
@@ -261,6 +399,70 @@ describe("bundle and openapi", () => {
         schema: { $ref: "#/components/schemas/DeviceRole" },
       },
     ]);
+  });
+
+  const withLive = new Map([
+    ...collect(live),
+    ...collect(document("common.json", { ApiError: { type: "string" } })),
+  ]);
+  const socket = {
+    method: "get",
+    path: "/v1/live",
+    operationId: "openLive",
+    summary: "",
+    auth: "device",
+    upgrade: "websocket",
+    messages: { send: "Hello", receive: "ServerMessage" },
+    responses: { "101": { description: "Switching to a WebSocket." } },
+  };
+
+  it("describes a WebSocket route by the messages each side sends", () => {
+    const operation = openapi(withLive, { routes: [socket] }).paths["/v1/live"]
+      .get;
+    expect(operation.security).toEqual([]);
+    expect(operation["x-websocket"]).toEqual({
+      send: { $ref: "#/components/schemas/Hello" },
+      receive: { $ref: "#/components/schemas/ServerMessage" },
+    });
+    expect(operation.responses["101"]).toEqual({
+      description: "Switching to a WebSocket.",
+    });
+  });
+
+  it("leaves webhooks out of the session security", () => {
+    const api = openapi(withLive, {
+      routes: [
+        {
+          method: "post",
+          path: "/v1/webhooks/clerk",
+          operationId: "receiveClerkWebhook",
+          summary: "",
+          auth: "webhook",
+          responses: { "204": { description: "Done." } },
+        },
+      ],
+    });
+    expect(api.paths["/v1/webhooks/clerk"].post.security).toEqual([]);
+  });
+
+  it("refuses a WebSocket route that is not a get, or names no messages", () => {
+    expect(() =>
+      openapi(withLive, { routes: [{ ...socket, method: "post" }] }),
+    ).toThrow(/on a get/);
+    expect(() =>
+      openapi(withLive, { routes: [{ ...socket, messages: undefined }] }),
+    ).toThrow(/names the messages/);
+    expect(() =>
+      openapi(withLive, {
+        routes: [{ ...socket, upgrade: undefined, auth: "session" }],
+      }),
+    ).toThrow(/only WebSocket routes have messages/);
+  });
+
+  it("refuses an unknown kind of auth", () => {
+    expect(() =>
+      openapi(withLive, { routes: [{ ...socket, auth: "cookie" }] }),
+    ).toThrow(/auth is one of none, session, device, webhook/);
   });
 
   it("refuses routes outside /v1", () => {

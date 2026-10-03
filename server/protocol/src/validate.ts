@@ -16,7 +16,11 @@ export interface Validator {
 
 /** Checks values against the protocol's schema, compiling each definition once. */
 export function validator(): Validator {
-  const ajv = new Ajv2020({ allErrors: true, strict: true });
+  const ajv = new Ajv2020({
+    allErrors: true,
+    strict: true,
+    discriminator: true,
+  });
   addFormats(ajv);
   ajv.addSchema(schema);
   return {

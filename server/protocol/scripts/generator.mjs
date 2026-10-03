@@ -72,7 +72,50 @@ export function collect(documents) {
     }
   }
   for (const definition of definitions.values()) check(definition, definitions);
+  checkTags(definitions);
   return definitions;
+}
+
+/** Each union a definition is a member of, so its tag property can be left to the union. */
+function unionOf(definitions) {
+  const unions = new Map();
+  for (const { name, file, schema } of definitions.values()) {
+    if (kindOf(schema) !== "union") continue;
+    for (const member of schema.oneOf) {
+      const memberName = resolveRef(name, member.$ref, file, definitions);
+      if (unions.has(memberName))
+        fail(
+          `${file}#${name}`,
+          `"${memberName}" is already a member of ${unions.get(memberName)}`,
+        );
+      unions.set(memberName, name);
+    }
+  }
+  return unions;
+}
+
+/** A constant property is only ever the tag that tells a union's members apart. */
+function checkTags(definitions) {
+  const unions = unionOf(definitions);
+  for (const { name, file, schema } of definitions.values()) {
+    if (kindOf(schema) !== "object") continue;
+    for (const [property, value] of Object.entries(schema.properties ?? {})) {
+      if (!("const" in value)) continue;
+      const union = unions.get(name);
+      if (
+        !union ||
+        definitions.get(union).schema.discriminator.propertyName !== property
+      )
+        fail(
+          `${file}#${name}.${property}`,
+          "a constant is only for the property that tags a union's members",
+        );
+    }
+  }
+}
+
+function tagOf(member, propertyName) {
+  return member.schema.properties?.[propertyName]?.const;
 }
 
 function resolveRef(where, ref, file, definitions) {
@@ -87,6 +130,7 @@ function resolveRef(where, ref, file, definitions) {
 }
 
 function kindOf(schema) {
+  if (schema.oneOf) return "union";
   if (schema.type === "object") return "object";
   if (schema.type === "string" && schema.enum) return "enum";
   return "alias";
@@ -127,6 +171,57 @@ function check({ name, file, schema }, definitions) {
         fail(at, "a property is either optional or nullable, not both");
       }
     }
+  } else if (kind === "union") {
+    onlyKeys(
+      where,
+      schema,
+      new Set(["description", "type", "oneOf", "discriminator"]),
+    );
+    if (schema.type !== "object")
+      fail(where, `a union says type: "object", as validators need`);
+    const discriminator = schema.discriminator;
+    if (
+      typeof discriminator !== "object" ||
+      discriminator === null ||
+      Object.keys(discriminator).join() !== "propertyName" ||
+      typeof discriminator.propertyName !== "string"
+    )
+      fail(where, `a union says discriminator: { "propertyName": "type" }`);
+    if (!Array.isArray(schema.oneOf) || schema.oneOf.length === 0)
+      fail(where, "oneOf lists the union's members");
+    const tags = new Set();
+    for (const member of schema.oneOf) {
+      if (
+        typeof member !== "object" ||
+        member === null ||
+        Object.keys(member).join() !== "$ref"
+      )
+        fail(where, `each member of oneOf is a { "$ref": ... }`);
+      const target = definitions.get(
+        resolveRef(where, member.$ref, file, definitions),
+      );
+      const at = `${where} member ${target.name}`;
+      if (kindOf(target.schema) !== "object") fail(at, "members are objects");
+      const tag = tagOf(target, discriminator.propertyName);
+      if (
+        typeof tag !== "string" ||
+        !(target.schema.required ?? []).includes(discriminator.propertyName)
+      )
+        fail(
+          at,
+          `members require "${discriminator.propertyName}" as a constant string`,
+        );
+      if (!/^[a-z][a-z0-9_.]*$/.test(tag))
+        fail(at, `tag ${JSON.stringify(tag)} must be lowercase words`);
+      if (tags.has(pascalCase(tag)))
+        fail(at, `two members make the same Rust variant`);
+      if (pascalCase(tag) === "Unknown")
+        fail(
+          at,
+          `"unknown" is reserved for messages a client does not know yet`,
+        );
+      tags.add(pascalCase(tag));
+    }
   } else if (kind === "enum") {
     onlyKeys(where, schema, new Set(["description", "type", "enum"]));
     const variants = schema.enum.map((value) => {
@@ -160,6 +255,11 @@ function propertyType(where, schema, file, definitions) {
       ref: resolveRef(where, schema.$ref, file, definitions),
       nullable: false,
     };
+  }
+  if ("const" in schema) {
+    onlyKeys(where, schema, new Set(["const", "description"]));
+    if (typeof schema.const !== "string") fail(where, "a constant is a string");
+    return { constant: schema.const, nullable: false };
   }
   if (schema.anyOf) {
     onlyKeys(where, schema, new Set(["anyOf", "description"]));
@@ -242,7 +342,8 @@ function docComment(description, indent, marker) {
 
 function tsType(type) {
   let base;
-  if (type.ref) base = type.ref;
+  if (type.constant !== undefined) base = JSON.stringify(type.constant);
+  else if (type.ref) base = type.ref;
   else if (type.array) base = `${tsType(type.array)}[]`;
   else
     base = {
@@ -268,6 +369,8 @@ export function typescript(definitions) {
         out += `  ${property}${required.has(property) ? "" : "?"}: ${tsType(type)};\n`;
       }
       out += "}\n";
+    } else if (kind === "union") {
+      out += `export type ${name} =\n${schema.oneOf.map((member) => `  | ${resolveRef(name, member.$ref, file, definitions)}`).join("\n")};\n`;
     } else if (kind === "enum") {
       out += `export type ${name} = ${schema.enum.map((value) => JSON.stringify(value)).join(" | ")};\n`;
     } else {
@@ -302,12 +405,22 @@ function rustField(property) {
 /** Whether a type can derive Eq, which floating point numbers cannot. */
 function rustEq(type, definitions, file, seen = new Set()) {
   if (type.array) return rustEq(type.array, definitions, file, seen);
+  if (type.constant !== undefined) return true;
   if (type.primitive) return type.primitive !== "number";
   if (seen.has(type.ref)) return true;
   seen.add(type.ref);
   const target = definitions.get(type.ref);
   const kind = kindOf(target.schema);
   if (kind === "enum") return true;
+  if (kind === "union")
+    return target.schema.oneOf.every((member) =>
+      rustEq(
+        { ref: resolveRef(target.name, member.$ref, target.file, definitions) },
+        definitions,
+        target.file,
+        seen,
+      ),
+    );
   if (kind === "alias")
     return rustEq(
       propertyType(target.name, target.schema, target.file, definitions),
@@ -326,14 +439,31 @@ function rustEq(type, definitions, file, seen = new Set()) {
 }
 
 export function rust(definitions) {
+  const unions = unionOf(definitions);
   let out = `${HEADER}\nuse serde::{Deserialize, Serialize};\n`;
   for (const { name, file, schema } of sortedDefinitions(definitions)) {
     out += "\n" + docComment(schema.description, "", "///");
     const kind = kindOf(schema);
-    if (kind === "object") {
-      const eq = rustEq({ ref: name }, definitions, file) ? ", Eq" : "";
+    const eq = rustEq({ ref: name }, definitions, file) ? ", Eq" : "";
+    if (kind === "union") {
+      const tag = schema.discriminator.propertyName;
+      out += `#[derive(Clone, Debug, PartialEq${eq}, Serialize, Deserialize)]\n#[serde(tag = ${JSON.stringify(tag)})]\n`;
+      out += `pub enum ${name} {\n`;
+      for (const member of schema.oneOf) {
+        const target = definitions.get(
+          resolveRef(name, member.$ref, file, definitions),
+        );
+        const value = tagOf(target, tag);
+        out += `    #[serde(rename = ${JSON.stringify(value)})]\n    ${pascalCase(value)}(${target.name}),\n`;
+      }
+      out +=
+        "    /// A message added after this build, which it cannot act on.\n";
+      out += "    #[serde(other)]\n    Unknown,\n}\n";
+    } else if (kind === "object") {
       out += `#[derive(Clone, Debug, PartialEq${eq}, Serialize, Deserialize)]\n#[serde(rename_all = "camelCase")]\n`;
-      const properties = Object.entries(schema.properties ?? {});
+      const properties = Object.entries(schema.properties ?? {}).filter(
+        ([, value]) => !("const" in value),
+      );
       if (properties.length === 0) {
         out += `pub struct ${name} {}\n`;
         continue;
@@ -372,10 +502,17 @@ export function rust(definitions) {
   out += "    use super::through;\n";
   out += "    Some(match name {\n";
   for (const { name } of sortedDefinitions(definitions))
-    out += `        ${JSON.stringify(name)} => through::<${name}>(json),\n`;
+    out += `        ${JSON.stringify(name)} => through::<${unions.get(name) ?? name}>(json),\n`;
   out += "        _ => return None,\n    })\n}\n";
   return out;
 }
+
+const AUTH = new Set(["none", "session", "device", "webhook"]);
+const AUTH_NOTES = {
+  device:
+    "A WebSocket. The device proves who it is in its first message, since browsers cannot set headers on one. `send` is what the device sends; `receive` is what the server sends.",
+  webhook: "Called by Clerk, signed with Svix's headers.",
+};
 
 /** The OpenAPI document for the HTTP routes, served to anyone who wants to read the API. */
 export function openapi(definitions, routes) {
@@ -404,14 +541,29 @@ export function openapi(definitions, routes) {
         "request",
         "query",
         "responses",
+        "upgrade",
+        "messages",
       ]),
     );
     if (!["get", "post", "put", "patch", "delete"].includes(route.method))
       fail(where, "unknown method");
     if (!route.path.startsWith("/v1/"))
       fail(where, "paths are versioned under /v1/");
-    if (!["none", "session"].includes(route.auth))
-      fail(where, `auth is "none" or "session"`);
+    if (!AUTH.has(route.auth))
+      fail(where, `auth is one of ${[...AUTH].join(", ")}`);
+    if (route.upgrade !== undefined) {
+      if (route.upgrade !== "websocket" || route.method !== "get")
+        fail(where, `upgrade is "websocket", on a get`);
+      if (!route.responses["101"]) fail(where, "a WebSocket route answers 101");
+      onlyKeys(where, route.messages ?? {}, new Set(["send", "receive"]));
+      if (!route.messages?.send || !route.messages?.receive)
+        fail(
+          where,
+          "a WebSocket route names the messages it sends and receives",
+        );
+    } else if (route.messages) {
+      fail(where, "only WebSocket routes have messages");
+    }
     if (seen.has(route.operationId))
       fail(where, `operationId "${route.operationId}" is used twice`);
     seen.add(route.operationId);
@@ -456,11 +608,23 @@ export function openapi(definitions, routes) {
         schema: { $ref: `#/components/schemas/${type}` },
       });
     }
+    const messages = route.messages
+      ? {
+          "x-websocket": {
+            send: named(route.messages.send)["application/json"].schema,
+            receive: named(route.messages.receive)["application/json"].schema,
+          },
+        }
+      : {};
     paths[route.path] ??= {};
     paths[route.path][route.method] = {
       operationId: route.operationId,
       summary: route.summary,
-      ...(route.auth === "none" ? { security: [] } : {}),
+      ...(route.auth === "session" ? {} : { security: [] }),
+      ...(AUTH_NOTES[route.auth]
+        ? { description: AUTH_NOTES[route.auth] }
+        : {}),
+      ...messages,
       ...(parameters.length ? { parameters } : {}),
       ...(route.request
         ? { requestBody: { required: true, content: named(route.request) } }
