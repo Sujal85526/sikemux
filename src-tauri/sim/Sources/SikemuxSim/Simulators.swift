@@ -52,12 +52,18 @@ actor Simulators {
         return try JSONSerialization.jsonObject(with: JSONEncoder().encode(response.elements.elements))
     }
 
-    func frame(of label: String, on udid: String?) async throws -> CGRect {
-        do {
-            return try await booted(udid).uiAutomation(backend: .accessibility)
-                .frame(.marker(value: label, key: .label, depth: .max))
-        } catch {
-            throw Failure(reason: "notFound", message: "\(error)")
+    /// Looks again every quarter second until `wait` runs out, since a label is often still on its way in
+    /// just after a tap, a key press or a screen change.
+    func frame(of label: String, on udid: String?, wait: TimeInterval) async throws -> CGRect {
+        let automation = try await booted(udid).uiAutomation(backend: .accessibility)
+        let deadline = Date().addingTimeInterval(wait)
+        while true {
+            do {
+                return try await automation.frame(.marker(value: label, key: .label, depth: .max))
+            } catch {
+                guard Date() < deadline else { throw Failure(reason: "notFound", message: "\(error)") }
+                try await Task.sleep(nanoseconds: 250_000_000)
+            }
         }
     }
 

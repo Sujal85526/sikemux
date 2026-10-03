@@ -61,7 +61,7 @@ struct SikemuxSim {
             let point = try require(request.x, request.y)
             try await simulators.send(.tapAt(x: point.x, y: point.y, duration: request.duration ?? 0.05), to: udid)
         case "tapLabel":
-            let frame = try await simulators.frame(of: try require(request.label, "label"), on: udid)
+            let frame = try await simulators.frame(of: try require(request.label, "label"), on: udid, wait: min(max(request.wait ?? 2, 0), 30))
             try await simulators.send(.tapAt(x: frame.midX, y: frame.midY, duration: 0.05), to: udid)
             return ["frame": ["x": frame.minX, "y": frame.minY, "width": frame.width, "height": frame.height]]
         case "swipe":
