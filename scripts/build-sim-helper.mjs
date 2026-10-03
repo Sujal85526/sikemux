@@ -12,7 +12,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -25,26 +25,7 @@ const args = process.argv.slice(2);
 const name = "sikemux-sim";
 const deploymentTarget = "15.0";
 
-const privateModules = [
-  "AXRuntime",
-  "CoreSimulatorUtilities",
-  "DTXConnectionServices",
-  "SimulatorKit",
-  "AccessibilityPlatformTranslation",
-  "CoreSimDeviceIO",
-  "CoreSimulator",
-  "SimulatorApp",
-];
-// CoreSimulator comes with Xcode and is loaded only if it is there, so the
-// helper starts on a Mac without Xcode and can say what is missing.
-const weakLibraries = ["CoreSimulator", "AccessibilityPlatformTranslation"].map(
-  (library) => join(idbDir, "PrivateHeaders", library, `${library}.tbd`),
-);
-const swiftModules = [
-  "CompanionUtilities",
-  "SimulatorIPC",
-  "SimulatorFrameworkBridgeProtocol",
-];
+const frameworks = join(simDir, "Frameworks");
 
 function fail(message) {
   console.error(`Simulator helper build failed: ${message}`);
@@ -53,9 +34,10 @@ function fail(message) {
 
 function run(command, commandArgs, options = {}) {
   const result = spawnSync(command, commandArgs, {
-    cwd: root,
+    cwd: options.cwd ?? root,
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
+    env: { ...process.env, ...options.env },
     stdio: options.capture ? ["ignore", "pipe", "inherit"] : "inherit",
   });
   if (result.error) fail(`${command}: ${result.error.message}`);
@@ -79,9 +61,9 @@ function hostTriple() {
   return host;
 }
 
-function filesIn(dir, extension) {
+function filesIn(dir) {
   return readdirSync(dir, { recursive: true, withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith(extension))
+    .filter((entry) => entry.isFile())
     .map((entry) => join(entry.parentPath, entry.name))
     .sort();
 }
@@ -89,9 +71,7 @@ function filesIn(dir, extension) {
 function fingerprint(paths) {
   const hash = createHash("sha256");
   for (const path of paths)
-    for (const file of statSync(path).isDirectory()
-      ? filesIn(path, "")
-      : [path]) {
+    for (const file of statSync(path).isDirectory() ? filesIn(path) : [path]) {
       hash.update(relative(root, file));
       hash.update(readFileSync(file));
     }
@@ -112,180 +92,78 @@ const archs = {
 if (!archs) fail(`unsupported target ${target}`);
 
 const developerDir = run("xcode-select", ["-p"], { capture: true });
-const sdk = run("xcrun", ["--sdk", "macosx", "--show-sdk-path"], {
-  capture: true,
-});
-const privateFlags = [
-  "-F",
-  join(developerDir, "Library", "PrivateFrameworks"),
-  "-Xcc",
-  `-I${join(idbDir, "PrivateHeaders")}`,
-  ...privateModules.flatMap((module) => [
-    "-Xcc",
-    `-fmodule-map-file=${join(idbDir, "PrivateHeaders", module, "module.modulemap")}`,
-  ]),
-];
 
-function buildIdb(arch, out) {
-  const triple = `${arch}-apple-macos${deploymentTarget}`;
-  const include = join(out, "include");
-  const modules = join(out, "modules");
-  const lib = join(out, "lib");
-  const objects = join(out, "objects");
-  rmSync(out, { recursive: true, force: true });
-  for (const dir of [include, modules, lib, objects])
-    mkdirSync(dir, { recursive: true });
-
-  const swiftc = (moduleName, sources, extra) =>
-    run("xcrun", [
-      "swiftc",
-      "-sdk",
-      sdk,
-      "-target",
-      triple,
-      "-swift-version",
-      "6",
-      "-Osize",
-      "-parse-as-library",
-      "-module-name",
-      moduleName,
-      "-module-cache-path",
-      join(out, "cache"),
-      "-I",
-      modules,
-      "-I",
-      include,
-      ...privateFlags,
-      "-emit-module",
-      "-emit-module-path",
-      join(modules, `${moduleName}.swiftmodule`),
-      "-emit-library",
-      "-static",
-      ...extra,
-      ...sources,
-    ]);
-
-  for (const module of swiftModules)
-    swiftc(module, filesIn(join(idbDir, module), ".swift"), [
-      "-o",
-      join(lib, `lib${module}.a`),
-    ]);
-
-  // FBControlCore is part Swift, part Objective-C, and each half imports the
-  // other: Swift builds against the Objective-C headers and writes the header
-  // the Objective-C files then import.
-  const coreDir = join(idbDir, "FBControlCore");
-  const coreHeaders = join(include, "FBControlCore");
-  mkdirSync(coreHeaders, { recursive: true });
-  for (const header of filesIn(coreDir, ".h"))
-    copyFileSync(header, join(coreHeaders, basename(header)));
-  writeFileSync(
-    join(coreHeaders, "module.modulemap"),
-    'module FBControlCore {\n  umbrella header "FBControlCore.h"\n  export *\n  module * { export * }\n}\n',
-  );
-  swiftc("FBControlCore", filesIn(coreDir, ".swift"), [
-    "-import-underlying-module",
-    "-emit-objc-header",
-    "-emit-objc-header-path",
-    join(coreHeaders, "FBControlCore-Swift.h"),
-    "-o",
-    join(objects, "libFBControlCoreSwift.a"),
-  ]);
-  // Compiled from copies beside nothing else, so a quoted import finds the same
-  // staged header the module does instead of a second copy of it.
-  const sources = join(out, "sources");
-  mkdirSync(sources, { recursive: true });
-  const objcObjects = filesIn(coreDir, ".m").map((original) => {
-    const source = join(sources, basename(original));
-    copyFileSync(original, source);
-    const object = join(objects, `${basename(source, ".m")}.o`);
-    run("xcrun", [
-      "clang",
-      "-c",
-      "-isysroot",
-      sdk,
-      "-target",
-      triple,
-      "-Os",
-      "-fobjc-arc",
-      "-fobjc-arc-exceptions",
-      "-fmodules",
-      `-fmodules-cache-path=${join(out, "cache")}`,
-      "-fmodule-name=FBControlCore",
-      "-DNDEBUG",
-      "-I",
-      include,
-      "-I",
-      coreHeaders,
-      source,
-      "-o",
-      object,
-    ]);
-    return object;
-  });
-  run("libtool", [
-    "-static",
-    "-o",
-    join(lib, "libFBControlCore.a"),
-    join(objects, "libFBControlCoreSwift.a"),
-    ...objcObjects,
-  ]);
-
-  swiftc(
-    "FBSimulatorControl",
-    filesIn(join(idbDir, "FBSimulatorControl"), ".swift"),
-    ["-o", join(lib, "libFBSimulatorControl.a")],
-  );
-}
-
-function buildHelper(arch) {
-  const out = join(buildDir, arch);
-  const stamp = join(out, "idb.fingerprint");
-  const current = fingerprint([idbDir, fileURLToPath(import.meta.url)]);
-  if (!existsSync(stamp) || readFileSync(stamp, "utf8") !== current) {
-    console.log(
-      `- building idb for ${arch} (once per change to src-tauri/sim/idb)`,
-    );
-    buildIdb(arch, out);
-    writeFileSync(stamp, current);
-  }
-  const lib = join(out, "lib");
-  const binary = join(out, name);
-  run("xcrun", [
-    "swiftc",
-    "-sdk",
-    sdk,
+// FBControlCore's Swift and Objective-C halves import each other, which one
+// SwiftPM target cannot hold, so XcodeGen and xcodebuild build it for both
+// architectures into the xcframework Package.swift links. It is rebuilt only
+// when its sources or its spec change.
+function buildFBControlCore() {
+  const spec = join(simDir, "FBControlCore.yml");
+  const xcframework = join(frameworks, "FBControlCore.xcframework");
+  const stamp = join(frameworks, "FBControlCore.fingerprint");
+  const current = fingerprint([join(idbDir, "FBControlCore"), spec]);
+  if (existsSync(stamp) && readFileSync(stamp, "utf8") === current) return;
+  if (spawnSync("xcodegen", ["--version"]).status !== 0)
+    fail("XcodeGen is needed to build FBControlCore: brew install xcodegen");
+  console.log("- building FBControlCore (once per change to it)");
+  const xcode = join(buildDir, "xcode");
+  rmSync(xcode, { recursive: true, force: true });
+  rmSync(frameworks, { recursive: true, force: true });
+  run("xcodegen", ["generate", "--spec", spec, "--quiet"], { cwd: simDir });
+  run("xcodebuild", [
+    "-project",
+    join(simDir, "FBControlCore.xcodeproj"),
     "-target",
-    `${arch}-apple-macos${deploymentTarget}`,
-    "-swift-version",
-    "5",
-    "-Osize",
-    "-module-cache-path",
-    join(out, "cache"),
-    "-I",
-    join(out, "modules"),
-    "-I",
-    join(out, "include"),
-    ...privateFlags,
-    "-L",
-    lib,
-    ...readdirSync(lib).map((file) => `-l${file.slice(3, -2)}`),
-    ...weakLibraries.flatMap((library) => [
-      "-Xlinker",
-      "-weak_library",
-      "-Xlinker",
-      library,
-    ]),
-    // The libraries add Objective-C categories that nothing references by name.
-    "-Xlinker",
-    "-all_load",
-    ...filesIn(join(simDir, "Sources", "SikemuxSim"), ".swift"),
-    "-o",
-    binary,
+    "FBControlCore",
+    "-configuration",
+    "Release",
+    "-sdk",
+    "macosx",
+    "-quiet",
+    "-skipMacroValidation",
+    "ARCHS=arm64 x86_64",
+    "ONLY_ACTIVE_ARCH=NO",
+    "ENABLE_USER_SCRIPT_SANDBOXING=NO",
+    `SYMROOT=${join(xcode, "products")}`,
+    `OBJROOT=${join(xcode, "objects")}`,
+    "build",
   ]);
-  return binary;
+  // Built and linked by the same compiler, so the framework carries a binary Swift module and no interface.
+  run("xcodebuild", [
+    "-create-xcframework",
+    "-allow-internal-distribution",
+    "-framework",
+    join(xcode, "products", "Release", "FBControlCore.framework"),
+    "-output",
+    xcframework,
+  ]);
+  writeFileSync(stamp, current);
 }
 
+// One build per architecture: building both in one `swift build` switches to
+// Xcode's build system, which links FBControlCore into the executable twice.
+function buildHelper(arch) {
+  const triple = `${arch}-apple-macosx${deploymentTarget}`;
+  const swiftArgs = [
+    "build",
+    "-c",
+    "release",
+    "--package-path",
+    simDir,
+    "--triple",
+    triple,
+    "-Xswiftc",
+    "-Osize",
+  ];
+  const env = { DEVELOPER_DIR: developerDir };
+  run("swift", swiftArgs, { env });
+  return join(
+    run("swift", [...swiftArgs, "--show-bin-path"], { capture: true, env }),
+    name,
+  );
+}
+
+buildFBControlCore();
 const built = archs.map(buildHelper);
 const destination = args.includes("--dev")
   ? join(tauriDir, "target", "debug", name)

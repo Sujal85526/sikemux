@@ -13,6 +13,8 @@ src-tauri/binaries/sikemux-voice-*
 src-tauri/voice/.build/
 src-tauri/binaries/sikemux-sim-*
 src-tauri/sim/.build/
+src-tauri/sim/Frameworks/
+src-tauri/sim/FBControlCore.xcodeproj/
 .env
 .design/
 
