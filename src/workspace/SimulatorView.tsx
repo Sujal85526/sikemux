@@ -5,6 +5,7 @@ import {
     simulatorApi,
     type SimulatorChrome,
     type SimulatorDevice,
+    type Orientation,
     type SimulatorInput,
     type SimulatorScreen,
 } from "../api/simulator";
@@ -13,7 +14,7 @@ import { simulatorKey } from "../state/desks";
 import type { DeskSimulator } from "../state/types";
 import { notify, reportError } from "../state/toast";
 import { Dropdown, type DropdownOption } from "../ui/Dropdown";
-import { IconCamera, IconHome, IconLock, IconPhone, IconPower } from "../ui/Icons";
+import { IconCamera, IconHome, IconLock, IconPhone, IconPower, IconRotate } from "../ui/Icons";
 import { shownDeskPaneId } from "../state/selectors";
 import { useStore } from "../state/store";
 import { useSimulatorsAvailable } from "../state/simulatorAvailable";
@@ -63,6 +64,29 @@ export function screenshotName(device: string, at: Date): string {
     return `Simulator Screenshot - ${device.replaceAll("/", "-")} - ${day} at ${time}.png`;
 }
 
+/** The order the rotate button turns through. */
+const TURNS: Orientation[] = ["portrait", "landscapeLeft", "landscapeRight"];
+
+/**
+ * How far to turn the picture of the screen so it reads upright. The simulator draws a
+ * turned app sideways into its upright screen, clockwise for landscapeLeft, so the
+ * picture turns back the other way; upright, a point on it is a point in the app.
+ */
+export function uprightTurn(orientation: Orientation): number {
+    switch (orientation) {
+        case "landscapeLeft":
+            return -90;
+        case "landscapeRight":
+            return 90;
+        case "portraitUpsideDown":
+            return 180;
+        default:
+            return 0;
+    }
+}
+
+const sideways = (orientation: Orientation) => orientation === "landscapeLeft" || orientation === "landscapeRight";
+
 /** The largest size `content` can be drawn at inside `room`, keeping its proportions. */
 export function fitInside(room: { width: number; height: number }, content: { width: number; height: number }) {
     const scale = Math.max(0, Math.min(room.width / content.width, room.height / content.height));
@@ -92,6 +116,7 @@ export function SimulatorView({ agentId, simulator, hidden, live }: { agentId: s
     const [devices, setDevices] = useState<SimulatorDevice[]>([]);
     const [booting, setBooting] = useState<string | null>(null);
     const [chrome, setChrome] = useState<SimulatorChrome | null>(null);
+    const [orientation, setOrientation] = useState<Orientation>("portrait");
     const [room, setRoom] = useState({ width: 0, height: 0 });
     const stage = useRef<HTMLDivElement>(null);
     const [frame, setFrame] = useState<number | null>(null);
@@ -108,6 +133,9 @@ export function SimulatorView({ agentId, simulator, hidden, live }: { agentId: s
         const controller = new AbortController();
         setFailure(null);
         void simulatorApi
+            .subscribeRotated((rotated) => rotated.udid === udid && setOrientation(rotated.orientation), controller.signal)
+            .catch(() => {});
+        void simulatorApi
             .subscribeFrames((event) => {
                 if (event.udid !== udid) return;
                 if (event.error) setFailure(event.error);
@@ -122,6 +150,10 @@ export function SimulatorView({ agentId, simulator, hidden, live }: { agentId: s
             .then(() => {
                 if (controller.signal.aborted) return;
                 setBooting(null);
+                void simulatorApi
+                    .orientation(udid)
+                    .then((turned) => !controller.signal.aborted && setOrientation(turned))
+                    .catch(() => {});
                 return simulatorApi.openView(udid).then((drawn) => setChrome(drawn ?? null));
             })
             .catch((error) => {
@@ -194,7 +226,9 @@ export function SimulatorView({ agentId, simulator, hidden, live }: { agentId: s
 
     const pointAt = (clientX: number, clientY: number, clamp = false) => {
         const box = image.current?.getBoundingClientRect();
-        return box && screen ? toDevicePoint(box, screen, clientX, clientY, clamp) : null;
+        if (!box || !screen) return null;
+        const shown = sideways(orientation) ? { width: screen.height, height: screen.width } : screen;
+        return toDevicePoint(box, shown, clientX, clientY, clamp);
     };
 
     const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -272,7 +306,16 @@ export function SimulatorView({ agentId, simulator, hidden, live }: { agentId: s
                 ) : frame === null ? (
                     <p className="simulator-status">Connecting to {simulator.name}…</p>
                 ) : (
-                    <Phone udid={udid} frame={frame} label={label} chrome={chrome} screen={screen} room={room} image={image} />
+                    <Phone
+                        udid={udid}
+                        frame={frame}
+                        label={label}
+                        chrome={chrome}
+                        screen={screen}
+                        room={room}
+                        image={image}
+                        turn={uprightTurn(orientation)}
+                    />
                 )}
             </div>
             <div className="simulator-controls">
@@ -281,6 +324,16 @@ export function SimulatorView({ agentId, simulator, hidden, live }: { agentId: s
                 </button>
                 <button type="button" aria-label="Screenshot" title="Save a screenshot to the Desktop" onClick={saveScreenshot}>
                     <IconCamera size={20} />
+                </button>
+                <button
+                    type="button"
+                    aria-label="Rotate"
+                    title="Rotate"
+                    onClick={() => {
+                        const next = TURNS[(TURNS.indexOf(orientation) + 1) % TURNS.length];
+                        void simulatorApi.rotate(udid, next).catch(reportError("rotate the simulator"));
+                    }}>
+                    <IconRotate size={20} />
                 </button>
                 <button type="button" aria-label="Lock" title="Lock" onClick={() => send({ type: "button", button: "lock" })}>
                     <IconLock size={20} />
@@ -305,6 +358,7 @@ function Phone({
     screen,
     room,
     image,
+    turn,
 }: {
     udid: string;
     frame: number;
@@ -313,13 +367,25 @@ function Phone({
     screen: SimulatorScreen | null;
     room: { width: number; height: number };
     image: React.RefObject<HTMLImageElement | null>;
+    turn: number;
 }) {
     const whole = chrome ?? screen ?? { width: 1, height: 1 };
-    const size = fitInside(room, whole);
+    const quarter = Math.abs(turn) === 90;
+    const shown = fitInside(room, quarter ? { width: whole.height, height: whole.width } : whole);
+    const size = quarter ? { width: shown.height, height: shown.width } : shown;
     const area = chrome?.screen ?? { x: 0, y: 0, ...whole };
     const mask = chrome ? `url("${chromeUrl(udid, "mask")}")` : undefined;
     return (
-        <div className="simulator-phone" style={{ width: size.width, height: size.height }}>
+        <div
+            className="simulator-phone"
+            style={{
+                position: "absolute",
+                left: "50%",
+                top: "50%",
+                width: size.width,
+                height: size.height,
+                transform: `translate(-50%, -50%) rotate(${turn}deg)`,
+            }}>
             {chrome && <img className="simulator-bezel" src={chromeUrl(udid, "chrome")} alt="" draggable={false} />}
             <img
                 ref={image}

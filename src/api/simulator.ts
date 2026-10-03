@@ -22,6 +22,9 @@ export interface SimulatorChrome {
     screen: { x: number; y: number; width: number; height: number };
 }
 
+/** Which way the device is turned; landscape screens are as wide as they are tall upright. */
+export type Orientation = "portrait" | "portraitUpsideDown" | "landscapeLeft" | "landscapeRight";
+
 /** What Settings shows about the simulator. */
 export interface SimulatorSetup {
     xcode: string | null;
@@ -68,6 +71,12 @@ export const simulatorApi = {
     /** Boots the device and makes it the agent's, so both look at the same screen. */
     attach: (agentId: string, udid: string) => invoke<SimulatorDevice>("simulator_attach", { agentId, udid }),
     shutdown: (udid: string) => invoke<void>("simulator_shutdown", { udid }),
+    rotate: (udid: string, orientation: Orientation) => invoke<void>("simulator_rotate", { udid, orientation }),
+    orientation: (udid: string) => invoke<Orientation>("simulator_orientation", { udid }),
+    subscribeRotated: (listener: (rotated: { udid: string; orientation: Orientation }) => void, signal: AbortSignal) =>
+        getIpcTransport().subscribe<{ udid: string; orientation: Orientation }>("simulator-rotated", (event) => listener(event.payload), {
+            signal,
+        }),
     /** Saves the screen to the Desktop as `name`, and answers with where it went. */
     saveScreenshot: (udid: string, name: string) => invoke<string>("simulator_save_screenshot", { udid, name }),
     subscribeFrames: (listener: (frame: SimulatorFrame) => void, signal: AbortSignal) =>

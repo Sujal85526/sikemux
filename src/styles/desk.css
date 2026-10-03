@@ -490,6 +490,7 @@
 /* The device keeps its own proportions, centred, with the margins around it
    left empty; clicks there do nothing. */
 .simulator-stage {
+    position: relative;
     display: grid;
     place-items: center;
     min-height: 0;
@@ -502,10 +503,6 @@
 /* Focus taken by a click on the device keeps typing there without ringing the stage. */
 .simulator-stage.pointer-focus:focus-visible {
     box-shadow: none;
-}
-
-.simulator-phone {
-    position: relative;
 }
 
 .simulator-bezel,

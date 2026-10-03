@@ -1,8 +1,8 @@
 import { act, fireEvent, render, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { simulatorApi, type SimulatorFrame } from "../api/simulator";
+import { simulatorApi, type Orientation, type SimulatorFrame } from "../api/simulator";
 import * as cmd from "../state/commands";
-import { devicePickerOptions, fitInside, screenshotName, SimulatorView, toDevicePoint, typedText } from "./SimulatorView";
+import { devicePickerOptions, fitInside, screenshotName, SimulatorView, toDevicePoint, typedText, uprightTurn } from "./SimulatorView";
 
 vi.mock("../api/simulator", async () => {
     const actual = await vi.importActual<typeof import("../api/simulator")>("../api/simulator");
@@ -18,6 +18,9 @@ vi.mock("../api/simulator", async () => {
             saveScreenshot: vi.fn(),
             subscribeFrames: vi.fn(),
             subscribeAttached: vi.fn(),
+            subscribeRotated: vi.fn(),
+            rotate: vi.fn(),
+            orientation: vi.fn(),
         },
     };
 });
@@ -41,6 +44,14 @@ describe("mapping a click to the simulator's screen", () => {
 
     it("misses when there is nothing to draw on", () => {
         expect(toDevicePoint({ left: 0, top: 0, width: 0, height: 0 }, iPhone, 0, 0)).toBeNull();
+    });
+});
+
+describe("a turned simulator", () => {
+    it("turns the picture back so the app reads upright", () => {
+        expect(uprightTurn("portrait")).toBe(0);
+        expect(uprightTurn("landscapeLeft")).toBe(-90);
+        expect(uprightTurn("landscapeRight")).toBe(90);
     });
 });
 
@@ -69,6 +80,13 @@ describe("the simulator view", () => {
 
     function mount(live: boolean) {
         let deliver: (frame: SimulatorFrame) => void = () => {};
+        let turn: (rotated: { udid: string; orientation: Orientation }) => void = () => {};
+        vi.mocked(simulatorApi.subscribeRotated).mockImplementation(async (listener) => {
+            turn = listener;
+            return () => {};
+        });
+        vi.mocked(simulatorApi.orientation).mockResolvedValue("portrait");
+        vi.mocked(simulatorApi.rotate).mockResolvedValue();
         vi.mocked(simulatorApi.subscribeFrames).mockImplementation(async (listener) => {
             deliver = listener;
             return () => {};
@@ -82,7 +100,12 @@ describe("the simulator view", () => {
             { udid: "U2", name: "iPhone 17", os: "iOS 26.0", booted: false, screen: { width: 402, height: 874 } },
         ]);
         const view = render(<SimulatorView agentId="agent-1" simulator={device} live={live} />);
-        return { view, screen: within(view.container), deliver: (frame: SimulatorFrame) => act(() => deliver(frame)) };
+        return {
+            view,
+            screen: within(view.container),
+            deliver: (frame: SimulatorFrame) => act(() => deliver(frame)),
+            turn: (orientation: Orientation, udid = "U1") => act(() => turn({ udid, orientation })),
+        };
     }
 
     it("starts the device for the agent, then watches the screen only while it is live", async () => {
@@ -119,6 +142,25 @@ describe("the simulator view", () => {
     }
 
     const sent = () => vi.mocked(simulatorApi.input).mock.calls.map(([, input]) => input);
+
+    it("turns the device, and maps a click on the turned screen to the app's own points", async () => {
+        const { screen, stage, turn } = await onScreen();
+        fireEvent.click(screen.getByRole("button", { name: "Rotate" }));
+        expect(simulatorApi.rotate).toHaveBeenCalledWith("U1", "landscapeLeft");
+
+        turn("landscapeRight", "other");
+        turn("landscapeLeft");
+        const phone = screen.getByRole("img").closest(".simulator-phone") as HTMLElement;
+        expect(phone.style.transform).toContain("rotate(-90deg)");
+        screen.getByRole("img").getBoundingClientRect = () => ({ left: 0, top: 0, width: 437, height: 201 }) as DOMRect;
+
+        fireEvent.pointerDown(stage, { clientX: 437, clientY: 0, button: 0, pointerId: 1 });
+        fireEvent.pointerUp(stage, { clientX: 437, clientY: 0, pointerId: 1 });
+        await vi.waitFor(() => expect(sent()[0]).toMatchObject({ type: "touch", x: 874, y: 0 }));
+
+        fireEvent.click(screen.getByRole("button", { name: "Rotate" }));
+        expect(simulatorApi.rotate).toHaveBeenLastCalledWith("U1", "landscapeRight");
+    });
 
     it("puts a finger down and lifts it where the screen is clicked, and presses Home", async () => {
         const { screen, stage } = await onScreen();
