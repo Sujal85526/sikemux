@@ -75,6 +75,14 @@ not become a remote shell on someone's Mac. This decision keeps that rule.
 - We now run a server: backups, a monthly restore test, monitoring and alerts are part
   of the work.
 
+## Notes
+
+- 2026-10-03: Phones prove their device key on the live connection as well as showing their
+  Clerk session, the same signed challenge a Mac's core answers. That ties each socket and
+  its cursor to one phone, so another session on the account cannot acknowledge events for
+  it. Removing a phone from elsewhere also revokes the Clerk session that registered it, and
+  deleting an account deletes the user in Clerk; deleted accounts are erased 30 days later.
+
 ## Alternatives considered
 
 - **Bonjour on the local network only.** Needs no server, but finds a Mac only on the same
