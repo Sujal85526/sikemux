@@ -38,17 +38,17 @@ public enum ElementLookup {
             return nil
         }
         let exact = named.filter(\.exact)
-        let matches = exact.isEmpty ? named : exact
-        switch matches.count {
+        let candidates = exact.isEmpty ? named : exact
+        switch candidates.count {
         case 0 where offscreen:
             return .failure(Failure(description: "\"\(name)\" is off the screen; scroll it into view, then tap it"))
         case 0:
             return .failure(Failure(description: "no element on screen is labelled \"\(name)\"; it may be scrolled out of view, so scroll and read the screen again"))
         case 1:
-            return .success(matches[0].frame)
+            return .success(candidates[0].frame)
         default:
-            let listed = matches.prefix(5).map { "\"\($0.label)\" at (\(Int($0.frame.center.x)), \(Int($0.frame.center.y)))" }
-            return .failure(Failure(description: "\(matches.count) elements match \"\(name)\": \(listed.joined(separator: ", ")); tap one by its coordinates"))
+            let listed = candidates.prefix(5).map { "\"\($0.label)\" at (\(Int($0.frame.center.x)), \(Int($0.frame.center.y)))" }
+            return .failure(Failure(description: "\(candidates.count) elements match \"\(name)\": \(listed.joined(separator: ", ")); tap one by its coordinates"))
         }
     }
 
