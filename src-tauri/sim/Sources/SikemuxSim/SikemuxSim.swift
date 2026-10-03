@@ -42,6 +42,8 @@ struct SikemuxSim {
         switch request.type {
         case "devices":
             return ["devices": try await simulators.devices()]
+        case "runtimes":
+            return ["runtimes": try await simulators.runtimes()]
         case "boot":
             try await simulators.boot(udid)
         case "shutdown":
@@ -66,6 +68,10 @@ struct SikemuxSim {
             let from = try require(request.x, request.y), to = try require(request.toX, request.toY)
             try await simulators.send(
                 .swipe(from.x, yStart: from.y, xEnd: to.x, yEnd: to.y, delta: 0, duration: request.duration ?? 0.3), to: udid)
+        case "touchPath":
+            try await simulators.send(try touchPath(try require(request.points, "points")), to: udid)
+        case "touch2Path":
+            try await simulators.send(try twoFingerPath(try require(request.points, "points")), to: udid)
         case "text":
             var events: [SimulatorHIDEvent] = []
             for key in try Keyboard.keys(for: try require(request.text, "text")) {
@@ -105,6 +111,36 @@ struct SikemuxSim {
     private static func require(_ x: Double?, _ y: Double?) throws -> CGPoint {
         guard let x, let y else { throw Failure(reason: "badRequest", message: "Missing x or y") }
         return CGPoint(x: x, y: y)
+    }
+
+    /// A finger put down at the first point, moved through the rest at their times, and lifted at the last.
+    static func touchPath(_ points: [TouchPoint]) throws -> SimulatorHIDEvent {
+        try path(points) { direction, point in .touch(direction: direction, x: point.x, y: point.y) }
+    }
+
+    static func twoFingerPath(_ points: [TouchPoint]) throws -> SimulatorHIDEvent {
+        guard points.allSatisfy({ $0.x2 != nil && $0.y2 != nil }) else {
+            throw Failure(reason: "badRequest", message: "Every point of a two-finger path needs x2 and y2")
+        }
+        return try path(points) { direction, point in
+            .twoFingerTouch(direction: direction, finger1: CGPoint(x: point.x, y: point.y), finger2: CGPoint(x: point.x2!, y: point.y2!))
+        }
+    }
+
+    private static func path(_ points: [TouchPoint], _ touch: (SimulatorHIDDirection, TouchPoint) -> SimulatorHIDEvent) throws -> SimulatorHIDEvent {
+        guard let first = points.first, let last = points.last, points.count >= 2 else {
+            throw Failure(reason: "badRequest", message: "A touch path needs at least two points")
+        }
+        guard zip(points, points.dropFirst()).allSatisfy({ $0.t <= $1.t }) else {
+            throw Failure(reason: "badRequest", message: "A touch path's times must not go backwards")
+        }
+        var events = [touch(.down, first)]
+        for (previous, point) in zip(points, points.dropFirst()) {
+            if point.t > previous.t { events.append(.delay(point.t - previous.t)) }
+            events.append(touch(.down, point))
+        }
+        events.append(touch(.up, last))
+        return .composite(events)
     }
 
     private static func button(_ name: String) throws -> SimulatorHIDButton {

@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreSimulator
 import FBControlCore
 import FBSimulatorControl
 import Foundation
@@ -17,6 +18,13 @@ actor Simulators {
                 "runtime": simulator.osVersion.name.rawValue,
                 "model": simulator.deviceType.model.rawValue,
             ]
+        }
+    }
+
+    func runtimes() throws -> [[String: Any]] {
+        _ = try set()
+        return (control?.serviceContext.supportedRuntimes() ?? []).map { runtime in
+            ["identifier": runtime.identifier, "name": runtime.name, "version": runtime.versionString, "available": runtime.available]
         }
     }
 

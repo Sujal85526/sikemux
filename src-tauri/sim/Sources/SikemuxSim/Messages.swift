@@ -17,6 +17,16 @@ struct Request: Decodable {
     let arguments: [String]?
     let environment: [String: String]?
     let url: String?
+    let points: [TouchPoint]?
+}
+
+/// One moment of a touch path: where the finger is, or both fingers for a pinch, `t` seconds after it starts.
+struct TouchPoint: Decodable {
+    let x: Double
+    let y: Double
+    let x2: Double?
+    let y2: Double?
+    let t: Double
 }
 
 struct Failure: Error {
