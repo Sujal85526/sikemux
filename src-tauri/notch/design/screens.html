@@ -160,8 +160,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 .proj svg { flex: 0 0 auto; color: var(--ink-faint); }
 .time { min-width: 44px; text-align: right; }
 .row:hover { background: rgba(255, 255, 255, 0.07); }
-.mark { width: 16px; height: 16px; flex: 0 0 auto; }
-.mark svg { width: 16px; height: 16px; display: block; }
+.mark { width: 20px; height: 20px; flex: 0 0 auto; }
+.mark svg { width: 20px; height: 20px; display: block; }
 .text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .title { font-size: 13px; font-weight: 600; letter-spacing: -0.005em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sub { font-size: 11.5px; color: var(--ink-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -407,7 +407,7 @@ code { font-family: var(--mono); font-size: 11px; color: var(--ink); }
             Both radii animate with the size.</td></tr>
         <tr><td>Closed wings</td><td>Each wing is as wide as what it holds: the right one holds only the count while every agent is idle, and grows
             to fit the state mark when one works or needs you. The island moves aside by half the difference so the camera stays between them. Bare agent marks at 20 pt, as the project tree draws them, 3 pt apart from overlapping.</td></tr>
-        <tr><td>Open</td><td>680 wide, height follows content up to 400, then the list scrolls. Padding: top-radius horizontally, then 12. Rows are one line, 36 tall, radius 12: mark, task, project, time, state.</td></tr>
+        <tr><td>Open</td><td>680 wide, height follows content up to 400, then the list scrolls. Padding: top-radius horizontally, then 12. Rows are one line, 36 tall, radius 12: mark at 20 pt as the rail draws it, task, project, time, state.</td></tr>
         <tr><td>Springs</td><td>Open <code>spring(response: 0.42, dampingFraction: 0.8)</code>. Close <code>spring(response: 0.45, dampingFraction: 1.0)</code>.
             Hover (shadow) <code>interactiveSpring(response: 0.38, dampingFraction: 0.8)</code>.</td></tr>
         <tr><td>Content</td><td>One shape: the band beside the camera swaps the wings for a header in place, out of and into a 20 pt blur; the body

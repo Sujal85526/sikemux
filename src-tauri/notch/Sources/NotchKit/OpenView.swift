@@ -187,7 +187,7 @@ struct RowLine: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            AgentMark(provider: agent.provider, size: 16).matchedGeometryEffect(id: agent.id, in: marks)
+            AgentMark(provider: agent.provider, size: 20).matchedGeometryEffect(id: agent.id, in: marks)
             Text(agent.title)
                 .font(Theme.ui(13, .semibold))
                 .foregroundStyle(Theme.ink)
