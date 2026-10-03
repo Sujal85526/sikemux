@@ -575,6 +575,11 @@ in from the left goes back, down from the top opens Notification Center. Its
 result carries a `warning` saying so; to scroll, start inside the content. `sim_button` presses `home`, `lock`,
 `side`, `siri`, `volumeUp`, `volumeDown` or `applePay`.
 
+`sim_rotate` turns the device to `portrait`, `landscapeLeft` or
+`landscapeRight` and reads the screen, which is then wider than tall; an app
+that only runs upright, such as Settings, stays as it was. Coordinates always
+follow the screen as it is turned, so read it again after turning.
+
 `sim_touch_path` puts one finger down on the first of its `points`, moves it
 through the rest evenly over `duration` seconds and lifts it on the last: a
 long-press drag, reordering a list or drawing. `sim_touch2_path` does the same

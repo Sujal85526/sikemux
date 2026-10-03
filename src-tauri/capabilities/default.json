@@ -236,6 +236,8 @@
     "allow-simulator-devices",
     "allow-simulator-available",
     "allow-simulator-set-enabled",
+    "allow-simulator-rotate",
+    "allow-simulator-orientation",
     "allow-simulator-setup",
     "allow-simulator-preferred",
     "allow-simulator-attach",

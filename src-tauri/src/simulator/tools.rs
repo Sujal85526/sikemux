@@ -31,6 +31,8 @@ const MAX_ELEMENTS: usize = 200;
 /// An agent cannot see the person's screen, so attaching says where the device went.
 const SHOWN_ON_DESK: &str =
     "live on your desk in Sikemux, beside the person, who sees what you do and can use it too";
+/// Tells the window a device was turned, so its view turns with it.
+pub const ROTATED_EVENT: &str = "simulator-rotated";
 /// Tells the window an agent let go of a simulator, so its desk can close the tab.
 pub const DETACHED_EVENT: &str = "simulator-detached";
 /// Tells the window an agent attached a simulator, so its desk can show it.
@@ -61,6 +63,18 @@ pub fn execute(app: &AppHandle, request: &HarnessRequest) -> Result<Value, Strin
                     "os": device.os,
                     "screen": device.screen.map(|(width, height)| json!({ "width": width, "height": height })),
                 }),
+            );
+        }
+    }
+    if request.method == "sim.rotate" && result.is_ok() {
+        if let (Some(device), Some(orientation)) = (
+            manager.attached(agent_id),
+            request.params.get("orientation").and_then(Value::as_str),
+        ) {
+            let _ = app.emit_to(
+                "main",
+                ROTATED_EVENT,
+                json!({ "udid": device.udid, "orientation": orientation }),
             );
         }
     }
@@ -116,6 +130,15 @@ pub(super) fn run(
                 return Err(error);
             }
             manager.attach(agent_id, device.clone());
+            if let Ok(turned) = manager.request(
+                "orientation",
+                json!({ "udid": device.udid }),
+                ACTION_TIMEOUT,
+            ) {
+                if let Some(orientation) = turned["orientation"].as_str() {
+                    manager.set_orientation(&device.udid, orientation);
+                }
+            }
             let _ = manager.logs.follow(&device.udid);
             let mut state = settled_state(manager, agent_id, None, Report::Full)?;
             state["shown"] = SHOWN_ON_DESK.into();
@@ -165,7 +188,7 @@ pub(super) fn run(
             }
             manager.request("swipe", fields, ACTION_TIMEOUT)?;
             let mut state = settled_state(manager, agent_id, Some(before), report(params)?)?;
-            if let Some(warning) = edge_warning(device.screen, from) {
+            if let Some(warning) = edge_warning(manager.screen_for(&device), from) {
                 state["warning"] = warning.into();
             }
             Ok(state)
@@ -319,6 +342,12 @@ pub(super) fn run(
                 .logs
                 .read(&device.udid, cursor, text("process"), limit)
         }
+        "sim.rotate" => {
+            let device = attached(manager, agent_id)?;
+            let orientation = text("orientation").ok_or("orientation is required")?;
+            rotate(manager, &device.udid, orientation)?;
+            settled_state(manager, agent_id, None, Report::Full)
+        }
         other => Err(format!("unknown simulator method {other}")),
     }
 }
@@ -469,7 +498,7 @@ pub(super) fn frontmost_pid(reply: &Value) -> Option<i64> {
 
 fn read_screen(manager: &SimulatorManager, device: &Device) -> Result<Screen, String> {
     let reply = manager.request("state", json!({ "udid": device.udid }), ACTION_TIMEOUT)?;
-    Ok(elements_from(&reply, device.screen))
+    Ok(elements_from(&reply, manager.screen_for(device)))
 }
 
 /// Reads the screen until two reads agree, so an animation has finished before
@@ -520,7 +549,7 @@ fn settled_state(
         }
         _ => state["elements"] = element_lines(&elements).into(),
     }
-    if let Some((width, height)) = device.screen {
+    if let Some((width, height)) = manager.screen_for(&device) {
         state["screen"] = json!({ "width": width, "height": height });
     }
     manager.remember_read(agent_id, app, elements);
@@ -717,6 +746,21 @@ pub(super) fn element_lines(elements: &[Element]) -> Vec<String> {
         ));
     }
     lines
+}
+
+/// Turns the device and remembers which way, so touches and the screen's shape follow.
+pub(super) fn rotate(
+    manager: &SimulatorManager,
+    udid: &str,
+    orientation: &str,
+) -> Result<(), String> {
+    manager.request(
+        "rotate",
+        json!({ "udid": udid, "orientation": orientation }),
+        ACTION_TIMEOUT,
+    )?;
+    manager.set_orientation(udid, orientation);
+    Ok(())
 }
 
 /// The points of a touch path, each with the given coordinates, from `params.points`.

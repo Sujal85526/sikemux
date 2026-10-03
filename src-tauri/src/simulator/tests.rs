@@ -428,6 +428,18 @@ done
             ]
         );
 
+        let turned = call("sim.rotate", json!({ "orientation": "landscapeLeft" })).expect("rotate");
+        assert_eq!(turned["screen"], json!({ "width": 874.0, "height": 402.0 }));
+        let upright =
+            call("sim.rotate", json!({ "orientation": "portrait" })).expect("rotate back");
+        assert_eq!(
+            upright["screen"],
+            json!({ "width": 402.0, "height": 874.0 })
+        );
+        assert!(std::fs::read_to_string(&log)
+            .unwrap()
+            .contains(r#""orientation":"landscapeLeft""#));
+
         let detached = call("sim.detach", json!({})).expect("detach");
         assert_eq!(detached["udid"], json!("U1"));
         assert!(call("sim.state", json!({}))
@@ -592,6 +604,15 @@ done
             "{logged}"
         );
 
+        let turned = call("sim.rotate", json!({ "orientation": "landscapeLeft" }));
+        println!("turned: {turned}");
+        let tapped = call("sim.tap", json!({ "label": "Add one" }));
+        assert!(
+            shows(&tapped, "Count: 2"),
+            "a turned app is tapped by label: {tapped}"
+        );
+        call("sim.rotate", json!({ "orientation": "portrait" }));
+
         call(
             "sim.terminate",
             json!({ "bundleId": "com.nodelike.sikemux.simfixture" }),
@@ -616,6 +637,7 @@ done
                 .map_or_else(|_| json!({}), |device| json!({ "device": device })),
         );
         println!("attached: {}", attached["device"]);
+        call("sim.button", json!({ "button": "home" }));
         let home = call("sim.button", json!({ "button": "home" }));
         assert_eq!(home["app"], json!("Home Screen"), "{home}");
         let settings = call("sim.tap", json!({ "label": "Settings" }));

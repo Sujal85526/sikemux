@@ -31,6 +31,7 @@ pub const SIM_METHODS: &[&str] = &[
     "sim.swipe",
     "sim.type",
     "sim.button",
+    "sim.rotate",
     "sim.screenshot",
     "sim.launch",
     "sim.terminate",

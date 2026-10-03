@@ -261,6 +261,40 @@ pub async fn simulator_devices(
     Ok(devices.into_iter().map(DeviceSummary::from).collect())
 }
 
+/// Turns the device the person is looking at, and tells every view of it.
+#[tauri::command]
+pub async fn simulator_rotate(
+    app: AppHandle,
+    simulators: State<'_, SimulatorManager>,
+    udid: String,
+    orientation: String,
+) -> AppResult<()> {
+    super::tools::rotate(&simulators, &udid, &orientation).map_err(AppError::Other)?;
+    let _ = app.emit_to(
+        "main",
+        super::tools::ROTATED_EVENT,
+        json!({ "udid": udid, "orientation": orientation }),
+    );
+    Ok(())
+}
+
+/// Which way the device is turned, as it reports it.
+#[tauri::command]
+pub async fn simulator_orientation(
+    simulators: State<'_, SimulatorManager>,
+    udid: String,
+) -> AppResult<String> {
+    let reply = simulators
+        .request("orientation", json!({ "udid": udid }), REQUEST_TIMEOUT)
+        .map_err(AppError::Other)?;
+    let orientation = reply["orientation"]
+        .as_str()
+        .unwrap_or("portrait")
+        .to_owned();
+    simulators.set_orientation(&udid, &orientation);
+    Ok(orientation)
+}
+
 #[tauri::command]
 pub fn simulator_set_enabled(enabled: bool) {
     super::set_enabled(enabled);

@@ -704,7 +704,7 @@
       "name": "sim_attach",
       "method": "sim.attach",
       "offered": "simulator",
-      "description": "Attach an iOS simulator by name or udid, booting it if needed, and read its screen. Without a device, uses the booted iPhone or one on the newest iOS.",
+      "description": "Attach an iOS simulator by name or udid, booting it if needed, and read its screen.",
       "properties": {
         "device": {
           "type": "string",
@@ -851,6 +851,24 @@
       },
       "required": [
         "button"
+      ]
+    },
+    {
+      "name": "sim_rotate",
+      "method": "sim.rotate",
+      "offered": "simulator",
+      "description": "Turn the attached simulator to an orientation and read its screen.",
+      "properties": {
+        "orientation": {
+          "enum": [
+            "portrait",
+            "landscapeLeft",
+            "landscapeRight"
+          ]
+        }
+      },
+      "required": [
+        "orientation"
       ]
     },
     {

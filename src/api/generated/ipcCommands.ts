@@ -219,6 +219,8 @@ export const IPC_COMMANDS = [
     "simulator_devices",
     "simulator_available",
     "simulator_set_enabled",
+    "simulator_rotate",
+    "simulator_orientation",
     "simulator_setup",
     "simulator_preferred",
     "simulator_attach",

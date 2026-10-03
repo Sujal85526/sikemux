@@ -53,6 +53,8 @@ pub struct SimulatorManager {
     next_id: AtomicU64,
     attachments: Mutex<HashMap<String, Attachment>>,
     logs: logs::Logs,
+    /// The way each device is turned, by udid, as last set or read here.
+    orientations: Mutex<HashMap<String, String>>,
 }
 
 impl Default for SimulatorManager {
@@ -116,6 +118,7 @@ impl SimulatorManager {
             next_id: AtomicU64::new(1),
             attachments: Mutex::default(),
             logs: logs::Logs::default(),
+            orientations: Mutex::default(),
         }
     }
 
@@ -140,6 +143,30 @@ impl SimulatorManager {
         if let Some(attachment) = self.lock_attachments().get_mut(agent_id) {
             attachment.read = Some((app, elements));
         }
+    }
+
+    fn set_orientation(&self, udid: &str, orientation: &str) {
+        self.orientations
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(udid.to_owned(), orientation.to_owned());
+    }
+
+    /// The screen in points as the device is turned now: on its side it is as
+    /// wide as it is tall upright.
+    fn screen_for(&self, device: &Device) -> Option<(f64, f64)> {
+        let (width, height) = device.screen?;
+        let sideways = self
+            .orientations
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(&device.udid)
+            .is_some_and(|orientation| orientation.starts_with("landscape"));
+        Some(if sideways {
+            (height, width)
+        } else {
+            (width, height)
+        })
     }
 
     fn last_read(&self, agent_id: &str) -> Option<(String, Vec<Element>)> {

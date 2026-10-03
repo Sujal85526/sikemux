@@ -469,6 +469,8 @@ pub fn run() {
             simulator::view::simulator_devices,
             simulator::view::simulator_available,
             simulator::view::simulator_set_enabled,
+            simulator::view::simulator_rotate,
+            simulator::view::simulator_orientation,
             simulator::view::simulator_setup,
             simulator::view::simulator_preferred,
             simulator::view::simulator_attach,
