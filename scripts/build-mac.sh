@@ -47,9 +47,11 @@ fi
 if [[ -n "$TARGET" ]]; then
   node "$ROOT/scripts/build-cli-sidecar.mjs" --target "$TARGET"
   node "$ROOT/scripts/build-voice-helper.mjs" --target "$TARGET"
+  node "$ROOT/scripts/build-sim-helper.mjs" --target "$TARGET"
 else
   node "$ROOT/scripts/build-cli-sidecar.mjs"
   node "$ROOT/scripts/build-voice-helper.mjs"
+  node "$ROOT/scripts/build-sim-helper.mjs"
 fi
 printf '→ pnpm tauri build --no-bundle'
 printf ' %q' "${BUILD_ARGS[@]}"
@@ -120,18 +122,38 @@ CLI_EXECUTABLE="$APP_PATH/Contents/MacOS/sikemux-editor"
 CLI_ARCHS="$(/usr/bin/lipo -archs "$CLI_EXECUTABLE")"
 [[ "$CLI_ARCHS" == "$ARCHS" ]] || fail "CLI sidecar architecture ($CLI_ARCHS) differs from app ($ARCHS)"
 [[ -s "$APP_PATH/Contents/Resources/sikemux_pi_tools.ts" ]] || fail "bundled Pi browser extension is missing"
-# The voice helper is published beside the release and downloaded with the
-# speech model, so it must be built and signed but stay out of the app.
-VOICE_TARGET="${TARGET:-$(rustc -vV | sed -n 's/^host: //p')}"
-VOICE_EXECUTABLE="$ROOT/src-tauri/binaries/sikemux-voice-$VOICE_TARGET"
-[[ -x "$VOICE_EXECUTABLE" ]] || fail "voice helper is missing or not executable"
-[[ ! -e "$APP_PATH/Contents/MacOS/sikemux-voice" ]] || fail "the voice helper is bundled in the app"
-/usr/bin/codesign --verify --strict "$VOICE_EXECUTABLE" || fail "voice helper signature is invalid"
-VOICE_SIGNATURE="$(/usr/bin/codesign -dv "$VOICE_EXECUTABLE" 2>&1)"
-grep -q 'flags=.*runtime' <<<"$VOICE_SIGNATURE" || fail "voice helper lacks the hardened runtime"
-VOICE_ARCHS="$(/usr/bin/lipo -archs "$VOICE_EXECUTABLE")"
+# The voice and simulator helpers are published beside the release and
+# downloaded by the app when it needs them, so each must be built and signed
+# but stay out of the app.
+HELPER_TARGET="${TARGET:-$(rustc -vV | sed -n 's/^host: //p')}"
+VOICE_EXECUTABLE="$ROOT/src-tauri/binaries/sikemux-voice-$HELPER_TARGET"
+SIM_EXECUTABLE="$ROOT/src-tauri/binaries/sikemux-sim-$HELPER_TARGET"
 sorted_archs() { tr ' ' '\n' <<<"$1" | sort | tr '\n' ' '; }
-[[ "$(sorted_archs "$VOICE_ARCHS")" == "$(sorted_archs "$ARCHS")" ]] || fail "voice helper architecture ($VOICE_ARCHS) differs from app ($ARCHS)"
+check_helper() {
+  local name="$1" executable="$2" archs signature libs
+  [[ -x "$executable" ]] || fail "$name is missing or not executable"
+  [[ ! -e "$APP_PATH/Contents/MacOS/$(basename "${executable%-"$HELPER_TARGET"}")" ]] || fail "the $name is bundled in the app"
+  /usr/bin/codesign --verify --strict "$executable" || fail "$name signature is invalid"
+  signature="$(/usr/bin/codesign -dv "$executable" 2>&1)"
+  grep -q 'flags=.*runtime' <<<"$signature" || fail "$name lacks the hardened runtime"
+  archs="$(/usr/bin/lipo -archs "$executable")"
+  [[ "$(sorted_archs "$archs")" == "$(sorted_archs "$ARCHS")" ]] || fail "$name architecture ($archs) differs from app ($ARCHS)"
+  libs="$(/usr/bin/otool -L "$executable")"
+  if grep -Eq '^[[:space:]]+(/opt/homebrew|/usr/local|/opt/local)/' <<<"$libs"; then
+    echo "$libs" >&2
+    fail "$name links to a package-manager library"
+  fi
+  # The signed helper must still start under the hardened runtime.
+  if [[ "$archs" == *"$(uname -m)"* ]]; then
+    "$executable" --version | grep -Fq "$(basename "${executable%-"$HELPER_TARGET"}")" || fail "signed $name does not start"
+  fi
+  if [[ "${REQUIRE_SIGNED_APP:-0}" == "1" ]]; then
+    grep -q '^Authority=' <<<"$(/usr/bin/codesign -dv --verbose=4 "$executable" 2>&1)" ||
+      fail "release $name has no certificate authority (ad-hoc signature)"
+  fi
+}
+check_helper "voice helper" "$VOICE_EXECUTABLE"
+check_helper "simulator helper" "$SIM_EXECUTABLE"
 
 # Packaged apps must never depend on libraries from the build machine's
 # Homebrew/MacPorts installation. Such binaries pass codesign verification but
@@ -146,11 +168,6 @@ if grep -Eq '^[[:space:]]+(/opt/homebrew|/usr/local|/opt/local)/' <<<"$CLI_DYNAM
   echo "$CLI_DYNAMIC_LIBS" >&2
   fail "CLI sidecar links to a package-manager library"
 fi
-VOICE_DYNAMIC_LIBS="$(/usr/bin/otool -L "$VOICE_EXECUTABLE")"
-if grep -Eq '^[[:space:]]+(/opt/homebrew|/usr/local|/opt/local)/' <<<"$VOICE_DYNAMIC_LIBS"; then
-  echo "$VOICE_DYNAMIC_LIBS" >&2
-  fail "voice helper links to a package-manager library"
-fi
 
 # Bundling is what gives the sidecar the hardened runtime, so only starting the
 # bundled copy proves it survives signing: the copy built beside it is signed
@@ -160,11 +177,6 @@ TOOLS_START="$(SIKEMUX_TOOLS_AGENT_ID='' "$CLI_EXECUTABLE" --tools-mcp 2>&1 || t
 if ! grep -Fq "Missing SIKEMUX_TOOLS_AGENT_ID" <<<"$TOOLS_START"; then
   echo "$TOOLS_START" >&2
   fail "bundled tools MCP server does not start"
-fi
-
-# The signed voice helper must still start under the hardened runtime.
-if [[ "$VOICE_ARCHS" == *"$(uname -m)"* ]]; then
-  "$VOICE_EXECUTABLE" --version | grep -Fq "sikemux-voice" || fail "signed voice helper does not start"
 fi
 
 # Every normal build is ad-hoc signed when no Apple identity is configured.
@@ -183,8 +195,6 @@ if [[ "${REQUIRE_SIGNED_APP:-0}" == "1" ]]; then
   SIGNING_INFO="$(/usr/bin/codesign -dv --verbose=4 "$APP_PATH" 2>&1)"
   grep -q '^Authority=' <<<"$SIGNING_INFO" || fail "release app has no certificate authority (ad-hoc signature)"
   grep -q '^TeamIdentifier=' <<<"$SIGNING_INFO" || fail "release app has no TeamIdentifier"
-  VOICE_SIGNING_INFO="$(/usr/bin/codesign -dv --verbose=4 "$VOICE_EXECUTABLE" 2>&1)"
-  grep -q '^Authority=' <<<"$VOICE_SIGNING_INFO" || fail "release voice helper has no certificate authority (ad-hoc signature)"
 fi
 
 echo ""
@@ -193,4 +203,5 @@ echo "  app: $APP_PATH"
 echo "  version: $APP_VERSION"
 echo "  architectures: $ARCHS"
 echo "  cli: $CLI_EXECUTABLE ($CLI_ARCHS)"
-echo "  voice helper: $VOICE_EXECUTABLE ($VOICE_ARCHS)"
+echo "  voice helper: $VOICE_EXECUTABLE"
+echo "  simulator helper: $SIM_EXECUTABLE"

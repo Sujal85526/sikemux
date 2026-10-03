@@ -126,6 +126,9 @@ jobs:
           while read -r existing; do keychains+=("${existing//\"/}"); done < <(security list-keychains -d user)
           security list-keychains -d user -s "${keychains[@]}"
 
+      - name: Install XcodeGen for the simulator helper
+        run: brew install xcodegen
+
       - name: Build, verify, and publish
         env:
           GH_TOKEN: ${{ github.token }}
@@ -156,4 +159,5 @@ jobs:
             src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
             src-tauri/target/release/bundle/latest.json
             src-tauri/binaries/sikemux-voice-*
+            src-tauri/binaries/sikemux-sim-*
             latest.json

@@ -121,6 +121,23 @@ jobs:
         run: cargo clippy -p sikemux --no-default-features --all-targets -- -D warnings
         working-directory: src-tauri
 
+  simulator-helper:
+    name: iOS Simulator helper
+    # idb's simulator libraries need Xcode 26 or newer.
+    runs-on: macos-26
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Build the helper
+        run: node scripts/build-sim-helper.mjs --dev
+
+      - name: Run the helper's tests
+        run: swift test --package-path src-tauri/sim
+
   desktop-e2e:
     name: macOS launched desktop E2E
     runs-on: macos-latest
