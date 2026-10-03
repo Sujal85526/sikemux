@@ -234,6 +234,8 @@
     "allow-simulator-view-close",
     "allow-simulator-input",
     "allow-simulator-devices",
+    "allow-simulator-available",
+    "allow-simulator-preferred",
     "allow-simulator-attach",
     "allow-simulator-shutdown",
     "allow-simulator-save-screenshot"

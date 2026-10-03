@@ -459,6 +459,8 @@ pub fn run() {
             simulator::view::simulator_view_close,
             simulator::view::simulator_input,
             simulator::view::simulator_devices,
+            simulator::view::simulator_available,
+            simulator::view::simulator_preferred,
             simulator::view::simulator_attach,
             simulator::view::simulator_shutdown,
             simulator::view::simulator_save_screenshot,

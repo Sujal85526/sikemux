@@ -14,7 +14,7 @@ use serde_json::{json, Value};
 use tauri::http::{header, Request, Response, StatusCode};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State, UriSchemeContext, UriSchemeResponder};
 
-use super::tools::{list_devices, Device};
+use super::tools::{choose_device, list_devices, Device};
 use super::SimulatorManager;
 use crate::error::{AppError, AppResult};
 
@@ -259,6 +259,27 @@ pub async fn simulator_devices(
 ) -> AppResult<Vec<DeviceSummary>> {
     let devices = list_devices(&simulators).map_err(AppError::Other)?;
     Ok(devices.into_iter().map(DeviceSummary::from).collect())
+}
+
+/// Whether this Mac can run simulators, so the window offers them only where they work.
+#[tauri::command]
+pub fn simulator_available() -> bool {
+    super::offered()
+}
+
+/// The device to show when the person opens the simulator: the one the agent is
+/// using, else a booted iPhone, else an iPhone on the newest iOS.
+#[tauri::command]
+pub async fn simulator_preferred(
+    simulators: State<'_, SimulatorManager>,
+    agent_id: String,
+) -> AppResult<DeviceSummary> {
+    if let Some(device) = simulators.attached(&agent_id) {
+        return Ok(device.into());
+    }
+    let devices = list_devices(&simulators).map_err(AppError::Other)?;
+    let device = choose_device(&devices, None).map_err(AppError::Other)?;
+    Ok(device.clone().into())
 }
 
 /// Boots the device the person picked and makes it the agent's, so the person
