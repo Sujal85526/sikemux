@@ -1,12 +1,10 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "bundle": {
-    "externalBin": ["binaries/sikemux-editor", "binaries/sikemux-notch"],
-    "resources": {
-      "notch/Fonts/Figtree_400Regular.ttf": "notch-fonts/Figtree_400Regular.ttf",
-      "notch/Fonts/Figtree_500Medium.ttf": "notch-fonts/Figtree_500Medium.ttf",
-      "notch/Fonts/Figtree_600SemiBold.ttf": "notch-fonts/Figtree_600SemiBold.ttf",
-      "notch/Fonts/OFL.txt": "notch-fonts/OFL.txt"
+    "macOS": {
+      "files": {
+        "Helpers/Sikemux Notch.app": "binaries/notch/Sikemux Notch.app"
+      }
     }
   }
 }

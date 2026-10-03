@@ -10,7 +10,7 @@ final class NotchPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 
     init(frame: CGRect) {
-        super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel, .utilityWindow, .hudWindow], backing: .buffered, defer: false)
         isFloatingPanel = true
         level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 3)
         collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]

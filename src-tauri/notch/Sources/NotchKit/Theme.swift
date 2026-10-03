@@ -23,9 +23,12 @@ enum Theme {
 
     private static var registered = false
 
-    /// Loads Figtree from `directory`; without it the island falls back to the system face.
+    /// Loads Figtree from `directory`, or else from the helper app's own resources;
+    /// without either the island falls back to the system face.
     static func registerFonts(in directory: String?) {
-        guard !registered, let directory else { return }
+        guard !registered,
+              let directory = directory ?? Bundle.main.resourceURL?.appendingPathComponent("Fonts").path
+        else { return }
         registered = true
         let names = ["Figtree_400Regular.ttf", "Figtree_500Medium.ttf", "Figtree_600SemiBold.ttf"]
         for name in names {

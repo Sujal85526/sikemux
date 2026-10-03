@@ -1,10 +1,18 @@
 #!/usr/bin/env node
 
 // Builds `sikemux-notch`, the Swift helper that draws the island over the
-// MacBook notch. The macOS app bundles it beside the CLI sidecar; `--dev` puts
-// it beside a dev build instead.
+// MacBook notch, as an app of its own: the window server plays a background
+// process's trackpad haptics only when it is a real app. The macOS app carries
+// it in Contents/Helpers; `--dev` puts it beside a dev build instead.
 
-import { chmodSync, copyFileSync, mkdirSync } from "node:fs";
+import {
+  chmodSync,
+  copyFileSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -80,10 +88,49 @@ const built = join(
   name,
 );
 
-const destination = args.includes("--dev")
-  ? join(tauriDir, "target", "debug", name)
-  : join(tauriDir, "binaries", `${name}-${target}`);
-mkdirSync(dirname(destination), { recursive: true });
+const dev = args.includes("--dev");
+const appName = dev ? "Sikemux Notch Dev" : "Sikemux Notch";
+const bundle = dev
+  ? join(tauriDir, "target", "debug", `${appName}.app`)
+  : join(tauriDir, "binaries", "notch", `${appName}.app`);
+const version = JSON.parse(
+  readFileSync(join(tauriDir, "tauri.conf.json"), "utf8"),
+).version;
+rmSync(bundle, { recursive: true, force: true });
+mkdirSync(join(bundle, "Contents", "MacOS"), { recursive: true });
+mkdirSync(join(bundle, "Contents", "Resources", "Fonts"), { recursive: true });
+writeFileSync(
+  join(bundle, "Contents", "Info.plist"),
+  `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key><string>com.nodelike.sikemux.notch${dev ? ".dev" : ""}</string>
+  <key>CFBundleName</key><string>${appName}</string>
+  <key>CFBundleExecutable</key><string>${name}</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>${version}</string>
+  <key>CFBundleVersion</key><string>${version}</string>
+  <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>LSUIElement</key><true/>
+  <key>NSHighResolutionCapable</key><true/>
+</dict>
+</plist>
+`,
+);
+const fonts = join(packageDir, "Fonts");
+for (const font of [
+  "Figtree_400Regular.ttf",
+  "Figtree_500Medium.ttf",
+  "Figtree_600SemiBold.ttf",
+  "OFL.txt",
+])
+  copyFileSync(
+    join(fonts, font),
+    join(bundle, "Contents", "Resources", "Fonts", font),
+  );
+
+const destination = join(bundle, "Contents", "MacOS", name);
 copyFileSync(built, destination);
 chmodSync(destination, 0o755);
 run("strip", ["-x", destination]);
@@ -95,10 +142,23 @@ const toolchainPaths = [
 for (const path of new Set(toolchainPaths))
   run("install_name_tool", ["-delete_rpath", path, destination]);
 
+// The app's signature covers what it carries, so the helper app is signed
+// first, the way the bundler signs the app itself.
+const identity = process.env.APPLE_SIGNING_IDENTITY || "-";
+run("codesign", [
+  "--force",
+  "--options",
+  "runtime",
+  ...(identity === "-" ? [] : ["--timestamp"]),
+  "--sign",
+  identity,
+  bundle,
+]);
+
 if (target === hostTriple() || target === "universal-apple-darwin") {
-  const version = run(destination, ["--version"], { capture: true });
-  if (!version.startsWith(name))
-    fail(`unexpected --version output: ${version}`);
+  const reported = run(destination, ["--version"], { capture: true });
+  if (!reported.startsWith(name))
+    fail(`unexpected --version output: ${reported}`);
 }
 
-console.log(`✓ ${name} ready: ${destination.slice(root.length + 1)}`);
+console.log(`✓ ${appName} ready: ${bundle.slice(root.length + 1)}`);

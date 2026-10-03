@@ -88,24 +88,23 @@ mod mac {
     }
 
     /// The helper built beside the app, or the one `SIKEMUX_NOTCH_EXECUTABLE` names.
+    /// The helper inside its own app, which it must run from: the window server
+    /// plays a background process's trackpad haptics only for a real app. A
+    /// release carries it in Contents/Helpers; a dev build beside its binary.
     fn helper() -> Option<PathBuf> {
         if let Some(path) = std::env::var_os("SIKEMUX_NOTCH_EXECUTABLE") {
             return Some(PathBuf::from(path));
         }
-        let beside = std::env::current_exe()
-            .ok()?
-            .parent()?
-            .join("sikemux-notch");
-        beside.is_file().then_some(beside)
-    }
-
-    fn fonts(app: &AppHandle) -> Option<PathBuf> {
-        let bundled = app.path().resource_dir().ok()?.join("notch-fonts");
-        if bundled.is_dir() {
-            return Some(bundled);
-        }
-        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("notch/Fonts");
-        source.is_dir().then_some(source)
+        let macos = std::env::current_exe().ok()?.parent()?.to_path_buf();
+        let executable = |app: PathBuf| app.join("Contents/MacOS/sikemux-notch");
+        let candidates = if dev() {
+            vec![executable(macos.join("Sikemux Notch Dev.app"))]
+        } else {
+            vec![executable(
+                macos.parent()?.join("Helpers/Sikemux Notch.app"),
+            )]
+        };
+        candidates.into_iter().find(|path| path.is_file())
     }
 
     /// The app bundle, which the helper opens when the window it asks for is closed.
@@ -176,9 +175,6 @@ mod mac {
             .arg(&launch.log);
         for argument in &launch.args {
             command.arg("--core-arg").arg(argument);
-        }
-        if let Some(fonts) = fonts(app) {
-            command.arg("--fonts").arg(fonts);
         }
         if let Some(bundle) = bundle() {
             command.arg("--app").arg(bundle);

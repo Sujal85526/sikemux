@@ -64,7 +64,7 @@ if (JSON.stringify(sidecarConfig.bundle?.externalBin) !== JSON.stringify(["binar
 if (!macBuild.includes("build-voice-helper.mjs")) fail("macOS build does not build the voice helper");
 if (!macBuild.includes("build-notch-helper.mjs")) fail("macOS build does not build the notch helper");
 if (!macBuild.includes("tauri.notch.conf.json")) fail("macOS build does not bundle the notch helper");
-if (JSON.stringify(notchConfig.bundle?.externalBin) !== JSON.stringify(["binaries/sikemux-editor", "binaries/sikemux-notch"])) fail("the macOS bundle must carry the CLI sidecar and the notch helper");
+if (notchConfig.bundle?.macOS?.files?.["Helpers/Sikemux Notch.app"] !== "binaries/notch/Sikemux Notch.app") fail("the macOS bundle must carry the notch helper app");
 if (!release.includes('"$SIG" "$VOICE"')) fail("releases do not publish the voice helper the app downloads");
 if (sidecarConfig.bundle?.resources?.["resources/sikemux_pi_tools.ts"] !== "sikemux_pi_tools.ts") fail("Pi browser extension resource mapping is missing");
 if (!pkg.scripts?.["build:windows"]?.includes("build:sidecar")) fail("Windows build does not build sidecars");
