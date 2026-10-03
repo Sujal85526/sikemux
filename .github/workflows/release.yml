@@ -156,4 +156,5 @@ jobs:
             src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
             src-tauri/target/release/bundle/latest.json
             src-tauri/binaries/sikemux-voice-*
+            src-tauri/binaries/sikemux-sim-*
             latest.json
