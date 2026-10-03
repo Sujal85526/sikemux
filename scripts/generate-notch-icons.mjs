@@ -39,7 +39,12 @@ const MARK_FUNCTIONS = {
 };
 
 const MARK_FILES = { codex: "codex.svg", omp: "omp.svg" };
-const BRAND_MARK = resolve(root, "brand/mark/mark-white.svg");
+// The same mark as brand/mark/mark-white.svg, read from the server app's copy
+// until brand/ is in the repository.
+const BRAND_MARK = [
+  resolve(root, "brand/mark/mark-white.svg"),
+  resolve(root, "server/app/src/mark-white.svg"),
+];
 
 /** The colour each mark takes where the app paints it with its brand colour. */
 const BRAND = {
@@ -278,7 +283,9 @@ for (const [key, file] of Object.entries(MARK_FILES)) {
   );
 }
 
-const brand = await readFile(BRAND_MARK, "utf8");
+const brand = await readFile(BRAND_MARK[0], "utf8").catch(() =>
+  readFile(BRAND_MARK[1], "utf8"),
+);
 const brandBody = shapes(brand).map(
   (shape) =>
     `        IconShape(d: ${swiftString(shape.d)}, style: .fill(.current), opacity: 1, evenOdd: false, translate: (0, 0)),`,

@@ -210,11 +210,22 @@ mod mac {
     }
 
     /// Writes the settings the helper reads, then starts or stops it to match.
+    /// The helper is SwiftUI for macOS 14, while the app runs on older systems.
+    fn supported() -> bool {
+        objc2_foundation::NSProcessInfo::processInfo()
+            .operatingSystemVersion()
+            .majorVersion
+            >= 14
+    }
+
     pub(super) fn configure(
         app: &AppHandle,
         manager: &PtyManager,
         settings: &NotchSettings,
     ) -> AppResult<()> {
+        if !supported() {
+            return Ok(());
+        }
         let launch = manager
             .core_launch()
             .ok_or_else(|| AppError::Other("the terminal core is not configured yet".into()))?;

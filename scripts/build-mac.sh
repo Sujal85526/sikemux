@@ -135,6 +135,12 @@ grep -q 'flags=.*runtime' <<<"$VOICE_SIGNATURE" || fail "voice helper lacks the 
 VOICE_ARCHS="$(/usr/bin/lipo -archs "$VOICE_EXECUTABLE")"
 sorted_archs() { tr ' ' '\n' <<<"$1" | sort | tr '\n' ' '; }
 [[ "$(sorted_archs "$VOICE_ARCHS")" == "$(sorted_archs "$ARCHS")" ]] || fail "voice helper architecture ($VOICE_ARCHS) differs from app ($ARCHS)"
+NOTCH_APP="$APP_PATH/Contents/Helpers/Sikemux Notch.app"
+NOTCH_EXECUTABLE="$NOTCH_APP/Contents/MacOS/sikemux-notch"
+[[ -x "$NOTCH_EXECUTABLE" ]] || fail "notch helper is missing or not executable"
+/usr/bin/codesign --verify --strict "$NOTCH_APP" || fail "notch helper signature is invalid"
+NOTCH_ARCHS="$(/usr/bin/lipo -archs "$NOTCH_EXECUTABLE")"
+[[ "$(sorted_archs "$NOTCH_ARCHS")" == "$(sorted_archs "$ARCHS")" ]] || fail "notch helper architecture ($NOTCH_ARCHS) differs from app ($ARCHS)"
 
 # Packaged apps must never depend on libraries from the build machine's
 # Homebrew/MacPorts installation. Such binaries pass codesign verification but
