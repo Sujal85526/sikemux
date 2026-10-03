@@ -99,6 +99,14 @@ jobs:
         working-directory: mobile/app
         run: node scripts/run.mjs prebuild android production
 
+      # Left to Gradle, the NDK is downloaded and unpacked inside the build's own memory, which runs out.
+      - name: Install the NDK React Native builds with
+        working-directory: mobile/app
+        run: |
+          ndk="$(sed -n 's/^ndkVersion = "\(.*\)"$/\1/p' node_modules/react-native/gradle/libs.versions.toml)"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ndk" >/dev/null
+          echo "Installed NDK $ndk"
+
       - name: Build the signed APK and app bundle
         working-directory: mobile/app/android
         env:
