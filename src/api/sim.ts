@@ -25,12 +25,6 @@ export interface SimScreen {
 
 export type SimStreamFormat = "h264" | "mjpeg";
 
-export interface SimStream {
-    port: number;
-    token: string;
-    format: SimStreamFormat;
-}
-
 export type SimButton = "home" | "lock" | "side" | "siri" | "volumeUp" | "volumeDown";
 export type SimOrientation = "portrait" | "portraitUpsideDown" | "landscapeLeft" | "landscapeRight";
 export type SimTouchPhase = "down" | "move" | "up";
@@ -48,7 +42,6 @@ export const simApi = {
     boot: (udid: string) => call<void>({ type: "boot", udid }),
     shutdown: (udid: string) => call<void>({ type: "shutdown", udid }),
     screen: (udid: string) => call<SimScreen>({ type: "screen", udid }),
-    stream: (udid: string, format: SimStreamFormat) => call<SimStream>({ type: "stream", udid, format }),
     stopStream: (udid: string, format?: SimStreamFormat) => call<void>({ type: "stopStream", udid, format }),
     touch: (udid: string, phase: SimTouchPhase, x: number, y: number) => call<void>({ type: "touch", udid, phase, x, y }),
     text: (udid: string, text: string) => call<void>({ type: "text", udid, text }),
@@ -56,7 +49,7 @@ export const simApi = {
     button: (udid: string, button: SimButton) => call<void>({ type: "button", udid, button }),
     orientation: (udid: string, orientation: SimOrientation) => call<void>({ type: "orientation", udid, orientation }),
     screenshot: (udid: string, path: string) => call<{ path: string }>({ type: "screenshot", udid, path }),
-    /** The screen through the app instead of a WebSocket the page opens; resolves to the id `unwatch` takes. */
+    /** Streams the screen through the app; resolves to the id `unwatch` takes. */
     watch: (udid: string, format: SimStreamFormat, onFrame: (frame: ArrayBuffer) => void) => {
         const channel = new Channel<ArrayBuffer>();
         channel.onmessage = onFrame;

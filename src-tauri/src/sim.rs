@@ -301,8 +301,7 @@ pub async fn sim_call(
     sim.call(executable(&app).await?, request).await
 }
 
-/// Reads the helper's length-prefixed frames from 127.0.0.1 and hands each to the page as raw bytes,
-/// the route frames take when the page does not open the helper's WebSocket itself.
+/// Reads the helper's length-prefixed frames from 127.0.0.1 and hands each to the page as raw bytes.
 async fn forward_frames(
     port: u16,
     token: String,
@@ -322,7 +321,7 @@ async fn forward_frames(
     }
 }
 
-/// Streams a device's screen to `on_frame` through the app, and returns an id `sim_unwatch` stops it by.
+/// Streams a device's screen to `on_frame`, and returns an id `sim_unwatch` stops it by.
 #[tauri::command]
 pub async fn sim_watch(
     app: AppHandle,
@@ -334,8 +333,7 @@ pub async fn sim_watch(
     if let Some(reason) = unsupported_reason() {
         return Err(AppError::Other(reason));
     }
-    let request =
-        json!({ "type": "stream", "udid": udid, "format": format, "transport": "framed" });
+    let request = json!({ "type": "stream", "udid": udid, "format": format });
     let stream = sim
         .call(
             executable(&app).await?,

@@ -20,8 +20,6 @@ export async function chooseDecoder(
 const webCodecsSupports = async (config: VideoDecoderConfig) =>
     typeof VideoDecoder !== "undefined" && (await VideoDecoder.isConfigSupported(config).catch(() => ({ supported: false }))).supported === true;
 
-export type ScreenTransport = "websocket" | "channel";
-
 export interface ScreenStreamEvents {
     /** Frames drawn in the last second. */
     onFps: (fps: number) => void;
@@ -32,18 +30,13 @@ export interface ScreenStreamEvents {
 }
 
 /**
- * Plays a device's screen into a canvas until stopped. Nothing else depends on
- * it: taps, screenshots and the accessibility tree work with no stream running.
+ * Plays a device's screen into a canvas until stopped. The frames come through
+ * the app on a Tauri channel. Nothing else depends on it: taps, screenshots and
+ * the accessibility tree work with no stream running.
  */
-export function playScreen(
-    udid: string,
-    canvas: HTMLCanvasElement,
-    events: ScreenStreamEvents,
-    transport: ScreenTransport = "websocket",
-): { stop: () => void; markInput: () => void } {
+export function playScreen(udid: string, canvas: HTMLCanvasElement, events: ScreenStreamEvents): { stop: () => void; markInput: () => void } {
     const context = canvas.getContext("2d");
     let stopped = false;
-    let socket: WebSocket | null = null;
     let watch: Promise<number> | null = null;
     let inputAt: number | null = null;
     let decoder: VideoDecoder | null = null;
@@ -71,31 +64,14 @@ export function playScreen(
     const open = async (wanted: SimStreamFormat) => {
         format = wanted;
         events.onFormat(wanted);
-        if (transport === "channel") {
-            watch = simApi.watch(udid, wanted, (frame) => void receive(new Uint8Array(frame)));
-            await watch;
-            return;
-        }
-        const stream = await simApi.stream(udid, wanted);
-        if (stopped) return;
-        socket = new WebSocket(`ws://127.0.0.1:${stream.port}/`, [stream.token]);
-        socket.binaryType = "arraybuffer";
-        socket.onmessage = ({ data }) => void receive(new Uint8Array(data as ArrayBuffer));
-        socket.onclose = () => {
-            if (!stopped) events.onError("The simulator's screen stream closed.");
-        };
+        watch = simApi.watch(udid, wanted, (frame) => void receive(new Uint8Array(frame)));
+        await watch;
     };
 
     const close = () => {
-        if (socket) {
-            socket.onclose = null;
-            socket.close();
-            socket = null;
-        }
-        if (watch) {
-            void watch.then((id) => simApi.unwatch(id)).catch(() => {});
-            watch = null;
-        }
+        if (!watch) return;
+        void watch.then((id) => simApi.unwatch(id)).catch(() => {});
+        watch = null;
     };
 
     const fallBackToMjpeg = (reason: string) => {

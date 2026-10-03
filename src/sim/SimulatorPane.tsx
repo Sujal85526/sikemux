@@ -5,7 +5,7 @@ import type { DeskSimulator } from "../state/types";
 import { notify, reportError } from "../state/toast";
 import { Dropdown } from "../ui/Dropdown";
 import { EmptyState } from "../ui/Panel";
-import { playScreen, type ScreenTransport } from "./screenStream";
+import { playScreen } from "./screenStream";
 
 const NAMED_KEYS = new Set(["Enter", "Escape", "Backspace", "Tab", "Delete", "ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"]);
 const TURNS: SimOrientation[] = ["portrait", "landscapeLeft", "portraitUpsideDown", "landscapeRight"];
@@ -36,7 +36,6 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
     const [fps, setFps] = useState(0);
     const [format, setFormat] = useState<SimStreamFormat>("h264");
     const [turn, setTurn] = useState(0);
-    const [transport, setTransport] = useState<ScreenTransport>("websocket");
     const [latency, setLatency] = useState<number | null>(null);
     const player = useRef<ReturnType<typeof playScreen> | null>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -98,13 +97,13 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!udid || !booted || !visible || !canvas) return;
-        const playing = playScreen(udid, canvas, { onFps: setFps, onFormat: setFormat, onError: setProblem, onLatency: setLatency }, transport);
+        const playing = playScreen(udid, canvas, { onFps: setFps, onFormat: setFormat, onError: setProblem, onLatency: setLatency });
         player.current = playing;
         return () => {
             playing.stop();
             player.current = null;
         };
-    }, [udid, booted, visible, transport]);
+    }, [udid, booted, visible]);
 
     const send = (work: () => Promise<unknown>) => {
         input.current = input.current.then(work).catch(reportError("simulator input"));
@@ -206,14 +205,10 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
                     </button>
                 </span>
                 {import.meta.env.DEV && booted && visible && (
-                    <button
-                        type="button"
-                        className="sim-fps"
-                        title="Frames drawn in the last second, the format, the route frames take and the last tap → frame time (dev builds only). Click to switch the route."
-                        onClick={() => setTransport((current) => (current === "websocket" ? "channel" : "websocket"))}>
-                        {fps} fps · {format === "h264" ? "H.264" : "MJPEG"} · {transport === "websocket" ? "WebSocket" : "Channel"}
+                    <span className="sim-fps" title="Frames drawn in the last second, the format, and the last tap → frame time (dev builds only)">
+                        {fps} fps · {format === "h264" ? "H.264" : "MJPEG"}
                         {latency !== null && ` · tap→frame ${Math.round(latency)} ms`}
-                    </button>
+                    </span>
                 )}
             </div>
             {problem && devices && <div className="sim-problem">{problem}</div>}
