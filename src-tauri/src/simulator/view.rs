@@ -424,6 +424,9 @@ pub fn handle<R: Runtime>(
         Some(image) => Response::builder()
             .header(header::CONTENT_TYPE, kind)
             .header(header::CACHE_CONTROL, "no-store")
+            // The window loads the screen's shape as a CSS mask, which a browser fetches only
+            // across origins the answer allows; without this the masked screen draws nothing.
+            .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
             .body(image)
             .unwrap_or_else(|_| status(StatusCode::INTERNAL_SERVER_ERROR)),
         None => status(StatusCode::NOT_FOUND),
