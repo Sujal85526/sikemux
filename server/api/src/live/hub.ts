@@ -20,8 +20,8 @@ export class Hub {
   private readonly byDevice = new Map<string, Member>();
   private readonly pending = new Set<string>();
   private readonly lastSwept = new Map<string, number>();
+  private readonly connections = new Set<Member>();
   private flushTimer: NodeJS.Timeout | undefined;
-  private connections = 0;
 
   private readonly options: LiveOptions;
 
@@ -31,15 +31,16 @@ export class Hub {
 
   /** Every open connection, including those still proving who they are. */
   get open(): number {
-    return this.connections;
+    return this.connections.size;
   }
 
-  opened() {
-    this.connections += 1;
+  opened(member: Member) {
+    this.connections.add(member);
   }
 
-  closed() {
-    this.connections -= 1;
+  closed(member: Member) {
+    this.connections.delete(member);
+    this.remove(member);
   }
 
   /** Adds a connection, replacing an older one for the same device. False when its account has too many. */
@@ -112,7 +113,7 @@ export class Hub {
 
   /** Says bye to every connection, each told to wait a different time so they come back spread out. */
   async closeAll(spreadMs: number) {
-    const members = [...this.byUser.values()].flatMap((set) => [...set]);
+    const members = [...this.connections];
     const least = Math.min(1_000, spreadMs);
     await Promise.all(
       members.map((member) =>

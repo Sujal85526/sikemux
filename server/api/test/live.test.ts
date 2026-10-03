@@ -191,6 +191,15 @@ describe("a host's live connection", () => {
     expect(await peer.closed).toBe(CLOSE.restarting);
   });
 
+  it("says bye even to connections that have not said hello yet", async () => {
+    await start();
+    const peer = new Peer(api.url);
+    await peer.challenge();
+    await api.live.stop();
+    expect((await peer.until("bye")).type).toBe("bye");
+    expect(await peer.closed).toBe(CLOSE.restarting);
+  });
+
   it("records when the device was last seen", async () => {
     await start();
     const mac = await host("user_a");

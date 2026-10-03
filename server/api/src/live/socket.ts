@@ -105,7 +105,7 @@ export class LiveSocket implements Member {
 
   start() {
     const { options, hub } = this.context;
-    hub.opened();
+    hub.opened(this);
     this.ws.on("message", (data, isBinary) => this.onMessage(data, isBinary));
     this.ws.on("close", (code) => void this.onClose(code));
     this.ws.on("error", (error) =>
@@ -580,8 +580,7 @@ export class LiveSocket implements Member {
     clearTimeout(this.authTimer);
     clearTimeout(this.cursorTimer);
     const { hub, db } = this.context;
-    hub.remove(this);
-    hub.closed();
+    hub.closed(this);
     try {
       await this.queue;
       if (this.role === "host" || this.role === "client") {
