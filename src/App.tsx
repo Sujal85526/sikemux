@@ -28,6 +28,7 @@ import { TerminalPane } from "./terminal/TerminalPane";
 import { HarnessBridge } from "./shell/HarnessBridge";
 import { RemoteChatBridge } from "./shell/RemoteChatBridge";
 import { RemoteWorkspaceBridge } from "./shell/RemoteWorkspaceBridge";
+import { UpdateRequiredPrompt } from "./shell/UpdateRequiredPrompt";
 import { NotchBridge } from "./notch/NotchBridge";
 import { CliOpenBridge } from "./shell/CliOpenBridge";
 import { DeepLinkBridge } from "./shell/DeepLinkBridge";
@@ -1034,6 +1035,7 @@ export default function App() {
             <DialogHost />
             <ImageViewer />
             <VoiceCaption />
+            <UpdateRequiredPrompt />
             <Toaster />
         </div>
     );

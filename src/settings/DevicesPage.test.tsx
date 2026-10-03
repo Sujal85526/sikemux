@@ -20,6 +20,7 @@ function status(overrides: Partial<RemoteStatus> = {}): RemoteStatus {
         pending: [],
         owner: null,
         account: null,
+        updateRequired: null,
         ...overrides,
     };
 }

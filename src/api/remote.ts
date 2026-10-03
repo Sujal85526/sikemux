@@ -42,6 +42,12 @@ export interface AccountLink {
     readonly since: number;
 }
 
+/** The accounts server no longer works with this build: remote access and the account stay off until it updates. */
+export interface UpdateRequired {
+    readonly current: string;
+    readonly minimum: string;
+}
+
 export interface RemoteStatus {
     readonly enabled: boolean;
     readonly coreId: string;
@@ -53,6 +59,7 @@ export interface RemoteStatus {
     /** The account this host is signed in to. */
     readonly owner: string | null;
     readonly account: AccountLink | null;
+    readonly updateRequired: UpdateRequired | null;
 }
 
 /** A project a paired device may start an agent in. */
