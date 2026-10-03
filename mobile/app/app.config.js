@@ -33,6 +33,22 @@ function androidVersionCode(version, base) {
   return major * 1_000_000 + minor * 10_000 + patch * 100 + (nightly ?? 99);
 }
 
+const CHANNELS = ['nightly', 'stable'];
+
+/** Production builds fetch over-the-air updates for their channel; the server only sends one signed with our key. */
+function updates(channel) {
+  if (!CHANNELS.includes(channel)) throw new Error(`${channel} is not a release channel: use nightly or stable`);
+  return {
+    enabled: true,
+    url: 'https://updates.sikemux.com/manifest',
+    checkAutomatically: 'ON_LOAD',
+    fallbackToCacheTimeout: 0,
+    codeSigningCertificate: './certs/updates-certificate.pem',
+    codeSigningMetadata: { keyid: 'main', alg: 'rsa-v1_5-sha256' },
+    requestHeaders: { 'expo-channel-name': channel },
+  };
+}
+
 module.exports = ({ config }) => {
   if (process.env.APP_VARIANT === 'production') {
     const version = process.env.SIKEMUX_MOBILE_VERSION ?? config.version;
@@ -40,11 +56,14 @@ module.exports = ({ config }) => {
       ...config,
       extra: { ...config.extra, ...googleSignIn(GOOGLE.production) },
       android: { ...config.android, versionCode: androidVersionCode(version, config.version) },
+      runtimeVersion: { policy: 'fingerprint' },
+      updates: updates(process.env.SIKEMUX_MOBILE_CHANNEL || 'nightly'),
     };
   }
   return {
     ...config,
     name: 'Sikemux Dev',
+    updates: { enabled: false },
     extra: { ...config.extra, ...googleSignIn(GOOGLE.dev) },
     scheme: 'sikemux-dev',
     ios: {

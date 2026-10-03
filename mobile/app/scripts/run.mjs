@@ -73,7 +73,9 @@ if (!env.ANDROID_HOME && existsSync(androidStudioSdk)) env.ANDROID_HOME = androi
 const expo = (...args) => execFileSync('npx', ['expo', ...args], { cwd: app, stdio: 'inherit', env });
 
 function configHash() {
-  const hash = createHash('sha256').update(variant);
+  const hash = createHash('sha256')
+    .update(variant)
+    .update(process.env.SIKEMUX_MOBILE_CHANNEL ?? '');
   const plugins = readdirSync(join(app, 'plugins')).sort();
   const files = ['app.json', 'app.config.js', ...plugins.map((name) => join('plugins', name))];
   for (const file of files) hash.update(file).update(readFileSync(join(app, file)));
