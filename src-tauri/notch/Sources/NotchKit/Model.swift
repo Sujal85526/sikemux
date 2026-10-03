@@ -160,7 +160,8 @@ extension DeviceView {
     /// Every agent open in the app, most in need of the person first.
     var agents: [AgentItem] {
         var items: [AgentItem] = []
-        for chat in chats where chat.state != "stopped" && !chat.asleep {
+        // A sleeping chat is still open in the app; it starts again when opened there.
+        for chat in chats {
             let ask = attentions.first { $0.agentId == chat.agentId }.map(Self.ask)
             let state: AgentState =
                 !chat.pendingPermissions.isEmpty ? .blocked : chat.running ? .working : chat.unread ? .done : .idle
