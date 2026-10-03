@@ -1,4 +1,7 @@
+import type { Network } from "@sikemux/protocol";
 import type { Level } from "pino";
+
+import { readNetwork } from "./network/network.ts";
 
 export interface MigrationConfig {
   databaseUrl: string;
@@ -18,6 +21,8 @@ export interface Config extends MigrationConfig {
   clerkSecretKey: string | null;
   /** Checks the signatures on Clerk's webhooks. Without it, the webhook route refuses everything. */
   clerkWebhookSecret: string | null;
+  /** What GET /v1/network answers: the relay apps use and the oldest app versions allowed. */
+  network: Network;
 }
 
 const LEVELS: readonly Level[] = [
@@ -97,6 +102,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
   if (clerkWebhookSecret && !/^whsec_[A-Za-z0-9+/=]+$/.test(clerkWebhookSecret))
     problems.push("CLERK_WEBHOOK_SECRET is not a signing secret like whsec_…");
 
+  const network = readNetwork(env, problems);
   const logLevel = readLogLevel();
   const host = read("HOST", "127.0.0.1");
 
@@ -109,6 +115,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     macClientId,
     clerkSecretKey,
     clerkWebhookSecret,
+    network,
     logLevel,
   });
 }

@@ -7,6 +7,7 @@ import { createApp, type Services } from "../src/app.ts";
 import { openDatabase, type Database } from "../src/db.ts";
 import { RateLimiter } from "../src/limits.ts";
 import { createLogger } from "../src/log.ts";
+import { readNetwork } from "../src/network/network.ts";
 import { APP_ORIGIN, verifier } from "./tokens.ts";
 
 export { APP_ORIGIN };
@@ -62,6 +63,7 @@ export function testApp(
     limiter,
     clerk: null,
     webhookSecret: null,
+    network: readNetwork({}, []),
     ...services,
   });
 }

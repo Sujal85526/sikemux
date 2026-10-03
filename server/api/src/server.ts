@@ -40,6 +40,7 @@ export function startServer(config: Config, log: Logger) {
     limiter,
     clerk,
     webhookSecret: config.clerkWebhookSecret,
+    network: config.network,
   });
   const server = serve(
     { fetch: app.fetch, hostname: config.host, port: config.port },

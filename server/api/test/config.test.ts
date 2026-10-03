@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { loadConfig, loadMigrationConfig } from "../src/config.ts";
+import { readNetwork } from "../src/network/network.ts";
 
 const minimal = {
   DATABASE_URL: "postgresql://sikemux@localhost/sikemux",
@@ -19,6 +20,7 @@ describe("loadConfig", () => {
       macClientId: "mac_client",
       clerkSecretKey: null,
       clerkWebhookSecret: null,
+      network: readNetwork({}, []),
       logLevel: "info",
     });
   });
