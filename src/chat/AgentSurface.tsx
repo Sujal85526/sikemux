@@ -11,6 +11,7 @@ import { isResumableSession } from "../terminal/sessionResume";
 import { AgentIcon, IconAgent, IconCommand, IconMoreVertical, IconPanelRight, IconPlug } from "../ui/Icons";
 import { useStore } from "../state/store";
 import { shownDeskPaneId } from "../state/selectors";
+import { SimulatorButton } from "../workspace/SimulatorView";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
 import { AgentContextMenu } from "../workspace/AgentContextMenu";
 import * as cmd from "../state/commands";
@@ -190,6 +191,7 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                         <span>TUI</span>
                     </button>
                 </div>
+                <SimulatorButton agentId={agent.id} />
                 <DeskButton agent={agent} />
             </header>
 

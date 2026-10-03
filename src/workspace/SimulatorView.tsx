@@ -13,7 +13,10 @@ import { simulatorKey } from "../state/desks";
 import type { DeskSimulator } from "../state/types";
 import { notify, reportError } from "../state/toast";
 import { Dropdown, type DropdownOption } from "../ui/Dropdown";
-import { IconCamera, IconHome, IconLock, IconPower } from "../ui/Icons";
+import { IconCamera, IconHome, IconLock, IconPhone, IconPower } from "../ui/Icons";
+import { shownDeskPaneId } from "../state/selectors";
+import { useStore } from "../state/store";
+import { useSimulatorsAvailable } from "../state/simulatorAvailable";
 
 interface Box {
     left: number;
@@ -111,15 +114,25 @@ export function SimulatorView({ agentId, simulator, hidden, live }: { agentId: s
                 else if (event.frame !== undefined) setFrame(event.frame);
             }, controller.signal)
             .catch(() => {});
+        /* Opening the view boots the device if it is off, and makes it the
+           agent's, so a tab the person opened works the same as one the agent did. */
+        setBooting(simulator.name);
         void simulatorApi
-            .openView(udid)
-            .then((drawn) => setChrome(drawn ?? null))
-            .catch((error) => setFailure(String(error)));
+            .attach(agentId, udid)
+            .then(() => {
+                if (controller.signal.aborted) return;
+                setBooting(null);
+                return simulatorApi.openView(udid).then((drawn) => setChrome(drawn ?? null));
+            })
+            .catch((error) => {
+                setBooting(null);
+                setFailure(String(error));
+            });
         return () => {
             controller.abort();
             void simulatorApi.closeView(udid).catch(() => {});
         };
-    }, [live, udid]);
+    }, [agentId, live, simulator.name, udid]);
 
     useEffect(() => {
         if (!live) return;
@@ -253,7 +266,7 @@ export function SimulatorView({ agentId, simulator, hidden, live }: { agentId: s
                 onKeyDown={onKeyDown}
                 onBlur={(event) => event.currentTarget.classList.remove("pointer-focus")}>
                 {booting ? (
-                    <p className="simulator-status">Booting {booting}…</p>
+                    <p className="simulator-status">Starting {booting}…</p>
                 ) : failure ? (
                     <p className="simulator-status">The simulator view stopped: {failure}</p>
                 ) : frame === null ? (
@@ -326,5 +339,28 @@ function Phone({
                 }}
             />
         </div>
+    );
+}
+
+/** Opens the agent's desk on an iOS simulator, the one the agent uses if it has one. */
+export function SimulatorButton({ agentId }: { agentId: string }) {
+    const available = useSimulatorsAvailable();
+    const showing = useStore((state) => shownDeskPaneId(state, agentId) !== null && !!state.desks[agentId]?.active?.startsWith("simulator:"));
+    if (!available) return null;
+    return (
+        <button
+            type="button"
+            className="agent-desk-open"
+            aria-pressed={showing}
+            aria-label="iOS Simulator"
+            title="iOS Simulator"
+            onClick={() =>
+                void simulatorApi
+                    .preferred(agentId)
+                    .then(({ udid, name, os, screen }) => cmd.openDeskSimulator(agentId, { udid, name, os, screen }))
+                    .catch(reportError("open the iOS Simulator"))
+            }>
+            <IconPhone size={13} />
+        </button>
     );
 }

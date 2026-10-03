@@ -53,6 +53,9 @@ export const simulatorApi = {
     closeView: (udid: string) => invoke<void>("simulator_view_close", { udid }),
     input: (udid: string, input: SimulatorInput) => invoke<void>("simulator_input", { udid, input }),
     devices: () => invoke<SimulatorDevice[]>("simulator_devices"),
+    available: () => invoke<boolean>("simulator_available"),
+    /** The device to show when the person opens the simulator for this agent. */
+    preferred: (agentId: string) => invoke<SimulatorDevice>("simulator_preferred", { agentId }),
     /** Boots the device and makes it the agent's, so both look at the same screen. */
     attach: (agentId: string, udid: string) => invoke<SimulatorDevice>("simulator_attach", { agentId, udid }),
     shutdown: (udid: string) => invoke<void>("simulator_shutdown", { udid }),
