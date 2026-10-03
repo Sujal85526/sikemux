@@ -17,6 +17,7 @@ mod error;
 mod external;
 mod file_serving;
 mod files;
+mod frame_rate;
 mod fs;
 mod fs_watch;
 mod git;
@@ -113,6 +114,8 @@ pub fn run() {
     cli_paths::link_cli_for_children();
     sikemux_process::user_environment::provide(system::user_environment);
     std::thread::spawn(sikemux_process::user_environment::warm);
+
+    frame_rate::render_at_display_rate();
 
     let builder = tauri::Builder::default();
     #[cfg(target_os = "macos")]
