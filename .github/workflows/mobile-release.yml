@@ -43,6 +43,7 @@ jobs:
           echo "version=$version" >>"$GITHUB_OUTPUT"
           echo "channel=$channel" >>"$GITHUB_OUTPUT"
           echo "SIKEMUX_MOBILE_VERSION=$version" >>"$GITHUB_ENV"
+          echo "SIKEMUX_MOBILE_CHANNEL=$channel" >>"$GITHUB_ENV"
           echo "Releasing Android $channel $version from $(git rev-parse HEAD)" >>"$GITHUB_STEP_SUMMARY"
 
       - name: Setup pnpm
