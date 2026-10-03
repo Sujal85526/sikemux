@@ -30,6 +30,8 @@ export interface LiveOptions {
   eventsPerFrame: number;
   /** How many frames may be sent ahead of the device's last acknowledgement. */
   framesAhead: number;
+  /** Pushes one host may have waiting on the platforms at once; more are answered throttled. */
+  pushesInFlight: number;
   /** A restart asks each device to wait a random time up to this before reconnecting. */
   reconnectSpreadMs: number;
 }
@@ -55,6 +57,7 @@ export const LIVE_OPTIONS: LiveOptions = {
   eventsPerFrame: 200,
   framesAhead: 2,
   reconnectSpreadMs: 15_000,
+  pushesInFlight: 32,
 };
 
 /** Close codes a device acts on. */

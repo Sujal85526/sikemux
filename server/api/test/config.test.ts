@@ -21,6 +21,7 @@ describe("loadConfig", () => {
       clerkSecretKey: null,
       clerkWebhookSecret: null,
       network: readNetwork({}, []),
+      push: { app: "production", allowSandbox: false, fcm: null },
       logLevel: "info",
     });
   });

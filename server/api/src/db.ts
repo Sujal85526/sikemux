@@ -70,6 +70,16 @@ export interface Tables {
     >;
   };
   challenges: { nonce: string; user_id: string; expires_at: Date };
+  push_tokens: {
+    device_key: string;
+    platform: string;
+    app: string;
+    apns_environment: string | null;
+    token: string;
+    updated_at: ColumnType<Date, never, Date>;
+    last_ok_at: ColumnType<Date | null, never, Date | null>;
+    failures: ColumnType<number, never, number>;
+  };
   updates: {
     id: string;
     platform: string;

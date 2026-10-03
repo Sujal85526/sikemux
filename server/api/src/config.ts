@@ -2,6 +2,7 @@ import type { Network } from "@sikemux/protocol";
 import type { Level } from "pino";
 
 import { readNetwork } from "./network/network.ts";
+import { readPush, type PushSettings } from "./push/settings.ts";
 
 export interface MigrationConfig {
   databaseUrl: string;
@@ -23,6 +24,7 @@ export interface Config extends MigrationConfig {
   clerkWebhookSecret: string | null;
   /** What GET /v1/network answers: the relay apps use and the oldest app versions allowed. */
   network: Network;
+  push: PushSettings;
 }
 
 const LEVELS: readonly Level[] = [
@@ -103,6 +105,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     problems.push("CLERK_WEBHOOK_SECRET is not a signing secret like whsec_…");
 
   const network = readNetwork(env, problems);
+  const push = readPush(env, problems);
   const logLevel = readLogLevel();
   const host = read("HOST", "127.0.0.1");
 
@@ -116,6 +119,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     clerkSecretKey,
     clerkWebhookSecret,
     network,
+    push,
     logLevel,
   });
 }

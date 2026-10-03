@@ -8,6 +8,7 @@ import type { Verifier } from "../auth.ts";
 import type { Database } from "../db.ts";
 import type { RateLimiter } from "../limits.ts";
 import type { Logger } from "../log.ts";
+import type { Pusher } from "../push/send.ts";
 import { Hub } from "./hub.ts";
 import { listenForEvents, type Listener } from "./listener.ts";
 import { CLOSE, LIVE_OPTIONS, type LiveOptions } from "./options.ts";
@@ -20,6 +21,7 @@ export interface LiveServices {
   limiter: RateLimiter;
   log: Logger;
   appOrigin: string;
+  pusher: Pusher;
   options?: Partial<LiveOptions>;
 }
 
@@ -77,6 +79,7 @@ export function attachLive(server: Server, services: LiveServices): Live {
     log,
     options,
     appOrigin,
+    pusher: services.pusher,
   };
   let stopping = false;
 

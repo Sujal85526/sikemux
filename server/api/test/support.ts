@@ -64,6 +64,7 @@ export function testApp(
     clerk: null,
     webhookSecret: null,
     network: readNetwork({}, []),
+    push: { app: "production", allowSandbox: false },
     ...services,
   });
 }

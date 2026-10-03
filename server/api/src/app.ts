@@ -13,6 +13,7 @@ import { ApiFailure, errorResponse, requestContext, type Env } from "./http.ts";
 import { clientAddress, limit, RateLimiter } from "./limits.ts";
 import type { Logger } from "./log.ts";
 import { networkRoutes } from "./network/routes.ts";
+import type { PushSettings } from "./push/settings.ts";
 import { updateRoutes } from "./updates/routes.ts";
 import { clerkWebhookRoutes } from "./webhooks/clerk.ts";
 
@@ -27,6 +28,7 @@ export interface Services {
   /** The secret Clerk signs webhooks with, or null when CLERK_WEBHOOK_SECRET is not set. */
   webhookSecret: string | null;
   network: Network;
+  push: Pick<PushSettings, "app" | "allowSandbox">;
 }
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -40,6 +42,7 @@ export function createApp({
   clerk,
   webhookSecret,
   network,
+  push,
 }: Services) {
   const app = new Hono<Env>();
 
@@ -69,7 +72,10 @@ export function createApp({
 
   app.route("/v1/health", healthRoutes(database));
   app.route("/v1/network", networkRoutes(network, limiter));
-  app.route("/v1/devices", deviceRoutes(database, verifier, limiter, clerk));
+  app.route(
+    "/v1/devices",
+    deviceRoutes(database, verifier, limiter, clerk, push),
+  );
   app.route("/v1/account", accountRoutes(database, verifier, limiter, clerk));
   app.route("/v1/webhooks", clerkWebhookRoutes(database, webhookSecret));
   app.route("/updates", updateRoutes(database, limiter));

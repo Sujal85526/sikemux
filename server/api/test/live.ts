@@ -8,6 +8,7 @@ import type { Database } from "../src/db.ts";
 import { RateLimiter } from "../src/limits.ts";
 import type { LiveOptions } from "../src/live/options.ts";
 import { attachLive, type Live } from "../src/live/server.ts";
+import { Pusher, type PusherOptions } from "../src/push/send.ts";
 import { signLive, type TestDevice } from "./accounts.ts";
 import { APP_ORIGIN, log, protocol, testApp } from "./support.ts";
 import { sessionToken, verifier } from "./tokens.ts";
@@ -24,6 +25,7 @@ export interface Running {
 export async function runApi(
   database: Database,
   options: Partial<LiveOptions> = {},
+  push: Partial<Pick<PusherOptions, "providers" | "limits" | "sleep">> = {},
 ): Promise<Running> {
   const limiter = new RateLimiter();
   const app = testApp(database, limiter);
@@ -40,6 +42,13 @@ export async function runApi(
     limiter,
     log,
     appOrigin: APP_ORIGIN,
+    pusher: new Pusher({
+      db: database.db,
+      log,
+      limiter,
+      providers: {},
+      ...push,
+    }),
     options: { coalesceMs: 10, ...options },
   });
   const { port } = server.address() as AddressInfo;

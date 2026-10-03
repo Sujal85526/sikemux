@@ -10,6 +10,8 @@ import { openDatabase } from "./db.ts";
 import { RateLimiter } from "./limits.ts";
 import { attachLive } from "./live/server.ts";
 import type { Logger } from "./log.ts";
+import { FcmProvider } from "./push/fcm.ts";
+import { Pusher } from "./push/send.ts";
 
 /** How long a stop waits for requests in flight before closing them anyway. */
 const DRAIN_MS = 25_000;
@@ -32,6 +34,22 @@ export function startServer(config: Config, log: Logger) {
     );
   if (!config.clerkWebhookSecret)
     log.warn("CLERK_WEBHOOK_SECRET is not set: Clerk's webhooks are refused");
+  const fcm = config.push.fcm ? new FcmProvider(config.push.fcm) : null;
+  if (fcm)
+    log.info(
+      { project: config.push.fcm?.projectId, app: config.push.app },
+      "pushing to Android through FCM",
+    );
+  else
+    log.warn(
+      "FCM_SERVICE_ACCOUNT_FILE is not set: pushes to Android phones answer not_set_up",
+    );
+  const pusher = new Pusher({
+    db: database.db,
+    log,
+    limiter,
+    providers: fcm ? { fcm } : {},
+  });
   const app = createApp({
     database,
     log,
@@ -41,6 +59,7 @@ export function startServer(config: Config, log: Logger) {
     clerk,
     webhookSecret: config.clerkWebhookSecret,
     network: config.network,
+    push: config.push,
   });
   const server = serve(
     { fetch: app.fetch, hostname: config.host, port: config.port },
@@ -54,6 +73,7 @@ export function startServer(config: Config, log: Logger) {
     limiter,
     log,
     appOrigin: config.appOrigin,
+    pusher,
   });
 
   let sweeping = false;

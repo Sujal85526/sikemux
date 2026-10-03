@@ -1,4 +1,4 @@
-import { createPublicKey, verify } from "node:crypto";
+import { createHash, createPublicKey, verify } from "node:crypto";
 
 /** The DER prefix that turns a raw 32-byte Ed25519 key into the form Node reads. */
 const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
@@ -15,6 +15,16 @@ export function registrationMessage(
 /** What a device signs to open a live connection. The prefix keeps it from ever passing for a registration. */
 export function liveMessage(nonce: string, key: string): string {
   return `sikemux-live|${nonce}|${key}`;
+}
+
+/** What a phone signs to send its notifications to a token. The token goes in as its SHA-256, in hex. */
+export function pushTokenMessage(
+  nonce: string,
+  key: string,
+  token: string,
+): string {
+  const tokenHash = createHash("sha256").update(token, "utf8").digest("hex");
+  return `sikemux-push|${nonce}|${key}|${tokenHash}`;
 }
 
 /** Whether `signature` (hex) is `key`'s (hex) Ed25519 signature over `message`. */

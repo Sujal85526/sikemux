@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import type {
   LiveDeviceMessage,
   LiveHello,
+  LivePush,
   LiveRole,
   LiveServerMessage,
   RevokeReason,
@@ -19,6 +20,7 @@ import { latestEventId } from "../events/log.ts";
 import { ApiFailure } from "../http.ts";
 import type { RateLimiter } from "../limits.ts";
 import type { Logger } from "../log.ts";
+import type { Pusher } from "../push/send.ts";
 import type { Hub, Member } from "./hub.ts";
 import { CLOSE, type LiveOptions } from "./options.ts";
 
@@ -30,6 +32,7 @@ export interface LiveContext {
   log: Logger;
   options: LiveOptions;
   appOrigin: string;
+  pusher: Pusher;
 }
 
 /** Who a hello proved the connection is. */
@@ -78,6 +81,7 @@ export class LiveSocket implements Member {
   private ackedThrough = 0;
   private storedThrough = 0;
   private inFlight: number[] = [];
+  private pushesInFlight = 0;
   private queue: Promise<void> = Promise.resolve();
   private wakeQueued = false;
   private readonly timers: NodeJS.Timeout[] = [];
@@ -233,7 +237,34 @@ export class LiveSocket implements Member {
         }
         this.serially(() => this.leave());
         return;
+      case "push":
+        if (this.role !== "host") {
+          this.close(CLOSE.badMessage, "only hosts push");
+          return;
+        }
+        this.push(message);
+        return;
     }
+  }
+
+  /** Pushes run beside the event stream, so a slow platform never holds up events. */
+  private push(message: LivePush) {
+    const { ref } = message;
+    if (this.pushesInFlight >= this.context.options.pushesInFlight) {
+      this.send({ type: "pushed", ref, result: "throttled" });
+      return;
+    }
+    this.pushesInFlight += 1;
+    this.context.pusher
+      .push({ userId: this.userId, key: this.deviceKey ?? "" }, message)
+      .catch((error: unknown) => {
+        this.log.error({ err: error }, "a push failed");
+        return "failed" as const;
+      })
+      .then((result) => {
+        this.pushesInFlight -= 1;
+        if (this.phase === "live") this.send({ type: "pushed", ref, result });
+      });
   }
 
   private async prove(hello: LiveHello) {

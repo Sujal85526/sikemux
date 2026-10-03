@@ -17,6 +17,8 @@ import type { Database, Tables } from "../db.ts";
 import { appendEvent } from "../events/log.ts";
 import { ApiFailure, readBody } from "../http.ts";
 import { limit, type RateLimiter } from "../limits.ts";
+import { pushTokenRoutes } from "../push/routes.ts";
+import type { PushSettings } from "../push/settings.ts";
 import { removeDevice } from "./removal.ts";
 import { registrationMessage, signedBy } from "./signature.ts";
 
@@ -37,16 +39,19 @@ function toDevice(row: Selectable<Tables["devices"]>): Device {
 }
 
 export function deviceRoutes(
-  { db }: Database,
+  database: Database,
   verifier: Verifier,
   limiter: RateLimiter,
   clerk: ClerkBackend | null,
+  push: Pick<PushSettings, "app" | "allowSandbox">,
 ) {
+  const { db } = database;
   const perUser = (name: string, perMinute: number) =>
     limit<AuthEnv>(limiter, name, perMinute, (c) => c.get("identity").userId);
 
   return new Hono<AuthEnv>()
     .use(requireIdentity(verifier, db))
+    .route("/", pushTokenRoutes(database, limiter, push))
     .post("/challenge", perUser("challenge", 30), async (c) => {
       const { userId } = c.get("identity");
       const nonce = randomBytes(32).toString("hex");
