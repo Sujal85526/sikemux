@@ -26,7 +26,7 @@ import { type CtxItem } from "../rail/FileTree";
 import { promptDialog } from "../state/dialog";
 import { ErrorBoundary } from "../ui/ErrorBoundary";
 import { PaneField, PanePaintedContext } from "../ui/ShaderField";
-import { agentMenu } from "./agentMenu";
+import { agentMenu, renameAgentPrompt } from "./agentMenu";
 import { TabBar, type TabDescriptor } from "./TabBar";
 import type { TabDragOut, TabPoint } from "./useTabReorder";
 import { AgentIcon, IconArrowUp, IconPlus, WindowIcon } from "../ui/Icons";
@@ -605,6 +605,8 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                 onRename={(key) => {
                     const win = windowsById[refByKey.get(key)?.id ?? paneOfTab.get(key)?.windowId ?? ""];
                     if (win?.role === "term") void renameTerminalTab(win, termTitles.get(win.activePaneId));
+                    const agent = win?.role === "agent" ? agentsById[agentPaneId(win) ?? ""] : undefined;
+                    if (agent) void renameAgentPrompt(agent);
                 }}
                 onClose={(key) => {
                     const ref = refByKey.get(key);

@@ -64,7 +64,7 @@ export function agentMenu(
     return items;
 }
 
-async function renameAgentPrompt(agent: Agent): Promise<void> {
+export async function renameAgentPrompt(agent: Agent): Promise<void> {
     const title = await promptDialog({ title: "Rename chat", label: "Name", initial: agent.title, confirmLabel: "Rename" });
     if (title) cmd.renameAgent(agent.id, title);
 }

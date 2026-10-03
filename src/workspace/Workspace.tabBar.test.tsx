@@ -250,6 +250,15 @@ describe("naming a terminal tab", () => {
         expect(getState().windows[win.id].customName).toBeUndefined();
     });
 
+    it("renames an agent's tab the same way, by double-clicking it", () => {
+        projectWithAgent();
+        render(<Stage />);
+
+        fireEvent.doubleClick(screen.getByRole("tab", { name: /only agent/ }));
+
+        expect(useDialogs.getState().dialog).toMatchObject({ kind: "prompt", title: "Rename chat", initial: "only agent" });
+    });
+
     it("keeps the name a duplicated tab was given", () => {
         const win = terminalWindow();
         cmd.renameWindow(win.id, "logs");
