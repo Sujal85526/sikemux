@@ -5660,12 +5660,14 @@ name = "sikemux-core"
 version = "0.1.0"
 dependencies = [
  "agent-client-protocol",
+ "base64 0.22.1",
  "futures-util",
  "hex",
  "hmac",
  "iroh",
  "libc",
  "portable-pty",
+ "ring",
  "semver",
  "serde",
  "serde_json",

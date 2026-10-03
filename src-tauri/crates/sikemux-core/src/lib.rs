@@ -12,6 +12,8 @@ pub mod harness;
 pub mod pairing;
 pub mod protocol;
 #[cfg(unix)]
+pub mod push;
+#[cfg(unix)]
 pub mod remote;
 #[cfg(unix)]
 pub mod server;
