@@ -1,9 +1,15 @@
-import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from 'react';
+import { AppState, Platform } from 'react-native';
 import { useAuth } from '@clerk/expo';
-import { useFocusEffect } from 'expo-router';
+import { nativeApplicationVersion } from 'expo-application';
 import type { Device } from '@protocol';
 
+import { thisDevice } from '@/device/identity';
 import { accountHosts, registerPhone } from './api';
+import { apiUrl } from './config';
+import { farewellFor } from './farewell';
+import { signOutHere } from './leave';
+import { LiveAccount, liveUrl, runLive, savedCursor } from './live';
 
 /** Registers this phone with the account once per sign-in; a failure tries again on the next launch. */
 export function useRegisterPhone() {
@@ -18,25 +24,78 @@ export function useRegisterPhone() {
   }, [isSignedIn, userId]);
 }
 
-/** The hosts on the account, read again whenever the screen comes back into view. */
+let hostsVersion = 0;
+const hostsListeners = new Set<() => void>();
+
+function hostsChanged() {
+  hostsVersion += 1;
+  hostsListeners.forEach((listener) => listener());
+}
+
+function useHostsVersion(): number {
+  return useSyncExternalStore(
+    (listener) => {
+      hostsListeners.add(listener);
+      return () => hostsListeners.delete(listener);
+    },
+    () => hostsVersion,
+  );
+}
+
+/** The hosts on the account, read again whenever the live connection hears one change. */
 export function useAccountHosts(): Device[] {
   const { isSignedIn, getToken } = useAuth();
+  const version = useHostsVersion();
   const [hosts, setHosts] = useState<Device[]>([]);
   const latestGetToken = useRef(getToken);
   useEffect(() => {
     latestGetToken.current = getToken;
   });
-  useFocusEffect(
-    useCallback(() => {
-      if (!isSignedIn) return;
-      let live = true;
-      accountHosts(() => latestGetToken.current())
-        .then((found) => live && setHosts(found))
-        .catch((error: unknown) => console.warn('sikemux: could not list the hosts on the account', error));
-      return () => {
-        live = false;
-      };
-    }, [isSignedIn]),
-  );
+  useEffect(() => {
+    if (!isSignedIn) return;
+    let current = true;
+    accountHosts(() => latestGetToken.current())
+      .then((found) => current && setHosts(found))
+      .catch((error: unknown) => console.warn('sikemux: could not list the hosts on the account', error));
+    return () => {
+      current = false;
+    };
+  }, [isSignedIn, version]);
   return hosts;
+}
+
+/** Keeps this phone connected to its account while the app is in front and signed in. */
+export function useAccountLive() {
+  const { isSignedIn, getToken, signOut } = useAuth();
+  const token = useEffectEvent(() => getToken());
+  const leave = useEffectEvent((farewell: ReturnType<typeof farewellFor>) => signOutHere(() => signOut(), farewell));
+  useEffect(() => {
+    if (!isSignedIn) return;
+    const live = new LiveAccount({
+      url: liveUrl(apiUrl()),
+      connect: (url, on) => {
+        const socket = new WebSocket(url);
+        socket.onmessage = (event) => on.message(event.data);
+        socket.onclose = (event) => on.closed(event.code);
+        return socket;
+      },
+      key: async () => (await thisDevice()).id(),
+      sign: async (nonce) => (await thisDevice()).signLive(nonce),
+      token: () => token(),
+      app: { platform: Platform.OS === 'ios' ? 'ios' : 'android', version: nativeApplicationVersion ?? 'unknown' },
+      cursor: savedCursor,
+      hostsChanged,
+      gone: (reason) => void leave(farewellFor(reason)),
+    });
+    runLive(live);
+    if (AppState.currentState === 'active') live.start();
+    const following = AppState.addEventListener('change', (state) => {
+      if (state === 'active') live.start();
+      else if (state === 'background') live.stop();
+    });
+    return () => {
+      following.remove();
+      live.stop();
+    };
+  }, [isSignedIn]);
 }

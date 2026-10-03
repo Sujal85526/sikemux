@@ -1,8 +1,10 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '@clerk/expo';
 
+import { useFarewell } from '@/account/farewell';
 import { reloadDevices, useDevices } from '@/devices/hub';
 import { DevicesList } from '@/screens/DevicesList';
+import { Farewell } from '@/screens/Farewell';
 import { Welcome } from '@/screens/Welcome';
 import { Button, Screen, useBottomGap } from '@/ui/parts';
 import { typeFor, useStyles, type Palette } from '@/ui/theme';
@@ -26,8 +28,9 @@ function Unreadable({ problem }: { problem: string }) {
 export default function Home() {
   const { isLoaded, isSignedIn } = useAuth();
   const { devices, loaded, problem } = useDevices();
+  const farewell = useFarewell();
   if (!isLoaded) return null;
-  if (!isSignedIn) return <Welcome />;
+  if (!isSignedIn) return farewell ? <Farewell reason={farewell} /> : <Welcome />;
   if (problem) return <Unreadable problem={problem} />;
   if (!loaded) return null;
   return <DevicesList devices={devices} />;

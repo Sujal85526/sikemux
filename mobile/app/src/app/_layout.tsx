@@ -10,7 +10,7 @@ import { ClerkProvider } from '@clerk/expo';
 import { tokenCache } from '@clerk/expo/token-cache';
 
 import { CLERK_PUBLISHABLE_KEY } from '@/account/config';
-import { useRegisterPhone } from '@/account/session';
+import { useAccountLive, useRegisterPhone } from '@/account/session';
 import { useColors } from '@/ui/theme';
 
 SplashScreen.preventAutoHideAsync();
@@ -41,5 +41,6 @@ export default function RootLayout() {
 
 function PhoneOnAccount() {
   useRegisterPhone();
+  useAccountLive();
   return null;
 }

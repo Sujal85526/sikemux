@@ -7,23 +7,41 @@ import { apiUrl } from './config';
 
 export type TokenSource = () => Promise<string | null>;
 
-export class AccountProblem extends Error {}
+export class AccountProblem extends Error {
+  /** The server's status, or undefined when it could not be reached at all. */
+  constructor(
+    message: string,
+    readonly status?: number,
+  ) {
+    super(message);
+  }
+
+  /** Nothing changed on the server: it was out of reach, or failed on its side. */
+  get unreachable(): boolean {
+    return this.status === undefined || this.status >= 500;
+  }
+}
 
 async function call<T>(token: TokenSource, path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   const bearer = await token();
-  if (!bearer) throw new AccountProblem('Sign in again.');
-  const response = await fetch(`${apiUrl()}${path}`, {
-    method: init.method ?? 'GET',
-    headers: {
-      authorization: `Bearer ${bearer}`,
-      ...(init.body === undefined ? {} : { 'content-type': 'application/json' }),
-    },
-    ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
-  });
+  if (!bearer) throw new AccountProblem('Sign in again.', 401);
+  let response: Response;
+  try {
+    response = await fetch(`${apiUrl()}${path}`, {
+      method: init.method ?? 'GET',
+      headers: {
+        authorization: `Bearer ${bearer}`,
+        ...(init.body === undefined ? {} : { 'content-type': 'application/json' }),
+      },
+      ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
+    });
+  } catch {
+    throw new AccountProblem("Can't reach Sikemux. Check the phone is online.");
+  }
   if (response.status === 204) return null as T;
   if (!response.ok) {
     const failure = (await response.json().catch(() => null)) as ApiError | null;
-    throw new AccountProblem(failure?.error.message ?? `The accounts server answered ${response.status}.`);
+    throw new AccountProblem(failure?.error?.message ?? `The accounts server answered ${response.status}.`, response.status);
   }
   return (await response.json()) as T;
 }
@@ -43,10 +61,15 @@ export async function registerPhone(token: TokenSource, userId: string): Promise
   return call<Device>(token, '/v1/devices', { method: 'POST', body: registration });
 }
 
-/** Takes this phone off the account, as signing out does. */
+/** Takes this phone off the account, as signing out does. A phone the account no longer has is already off it. */
 export async function removePhone(token: TokenSource): Promise<void> {
   const device = await thisDevice();
-  await call<null>(token, `/v1/devices/${device.id()}`, { method: 'DELETE' });
+  try {
+    await call<null>(token, `/v1/devices/${device.id()}`, { method: 'DELETE' });
+  } catch (error) {
+    if (error instanceof AccountProblem && (error.status === 404 || error.status === 401)) return;
+    throw error;
+  }
 }
 
 /** The hosts signed in to the account. */

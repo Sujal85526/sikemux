@@ -1,16 +1,15 @@
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { router } from 'expo-router';
 import { useAuth, useUser } from '@clerk/expo';
 import { nativeApplicationVersion } from 'expo-application';
 import * as Updates from 'expo-updates';
 
-import { removePhone } from '@/account/api';
+import { AccountProblem, removePhone } from '@/account/api';
 import { Avatar } from '@/account/Avatar';
+import { signOutHere } from '@/account/leave';
 import { versionLabel } from '@/account/versionLabel';
 import { useDeviceId } from '@/device/identity';
-import { forget } from '@/devices/hub';
-import { pairedDevices, shortKey } from '@/devices/paired';
+import { shortKey } from '@/devices/paired';
 import { phoneName } from '@/devices/pairing';
 import { Icon } from '@/ui/Icon';
 import { Button } from '@/ui/parts';
@@ -34,29 +33,42 @@ export function AccountSheet({ visible, onClose }: { visible: boolean; onClose: 
   const { user } = useUser();
   const id = useDeviceId();
   const [leaving, setLeaving] = useState(false);
+  const [unreachable, setUnreachable] = useState(false);
+  const [problem, setProblem] = useState<string>();
   const provider = user?.externalAccounts[0]?.provider.replace(/^oauth_/, '');
   const name = user?.fullName?.trim() || undefined;
   const email = user?.primaryEmailAddress?.emailAddress;
   const how = provider ? `Signed in with ${PROVIDERS[provider] ?? provider}` : 'Signed in with email';
 
-  const leave = async () => {
+  /** Takes the phone off the account first, so hosts hear of it; offline, it asks before leaving it there. */
+  const leave = async (anyway = false) => {
     setLeaving(true);
+    setUnreachable(false);
+    setProblem(undefined);
     try {
-      await removePhone(() => getToken()).catch((error: unknown) => {
-        console.warn('sikemux: could not take this phone off the account', error);
-      });
-      const devices = await pairedDevices();
-      await Promise.allSettled(devices.map((device) => forget(device.core)));
-      await signOut();
+      if (!anyway) await removePhone(() => getToken());
+    } catch (error) {
+      setLeaving(false);
+      if (error instanceof AccountProblem && !error.unreachable) setProblem(error.message);
+      else setUnreachable(true);
+      return;
+    }
+    try {
+      await signOutHere(() => signOut());
       onClose();
-      router.replace('/');
     } finally {
       setLeaving(false);
     }
   };
 
+  const close = () => {
+    setUnreachable(false);
+    setProblem(undefined);
+    onClose();
+  };
+
   return (
-    <Sheet visible={visible} onClose={onClose}>
+    <Sheet visible={visible} onClose={close}>
       <View style={styles.head}>
         <Avatar size={44} />
         <View style={{ flex: 1 }}>
@@ -81,8 +93,29 @@ export function AccountSheet({ visible, onClose }: { visible: boolean; onClose: 
           </Text>
         </View>
       </View>
-      <Text style={styles.note}>Signing out takes this phone off your account and forgets every host paired with it.</Text>
-      <Button kind="danger" title={leaving ? 'Signing out…' : 'Sign out'} disabled={leaving} onPress={() => void leave()} />
+      {unreachable ? (
+        <>
+          <Text style={styles.noteTitle}>Can&apos;t reach Sikemux</Text>
+          <Text style={[styles.note, styles.noteAfterTitle]}>
+            Signing out now leaves this phone on your account until you remove it at app.sikemux.com.
+          </Text>
+          <View style={styles.choices}>
+            <Button title="Try again" disabled={leaving} onPress={() => void leave()} />
+            <Button
+              kind="danger"
+              title={leaving ? 'Signing out…' : 'Sign out anyway'}
+              disabled={leaving}
+              onPress={() => void leave(true)}
+            />
+          </View>
+        </>
+      ) : (
+        <>
+          <Text style={styles.note}>Signing out takes this phone off your account and forgets every host paired with it.</Text>
+          {problem ? <Text style={styles.problem}>{problem}</Text> : null}
+          <Button kind="danger" title={leaving ? 'Signing out…' : 'Sign out'} disabled={leaving} onPress={() => void leave()} />
+        </>
+      )}
       <Text style={styles.version}>Sikemux {VERSION}</Text>
     </Sheet>
   );
@@ -107,6 +140,10 @@ const makeStyles = (colors: Palette) => {
     },
     phoneName: { ...type.row, fontSize: 15, color: colors.ink },
     note: { ...type.meta, lineHeight: 19, paddingHorizontal: 8, paddingTop: 10, paddingBottom: 12 },
+    noteTitle: { fontFamily: fonts.uiSemibold, fontSize: 15, color: colors.ink, paddingHorizontal: 8, paddingTop: 12 },
+    noteAfterTitle: { paddingTop: 4 },
+    problem: { ...type.meta, color: colors.danger, paddingHorizontal: 8, paddingBottom: 12 },
+    choices: { gap: 8 },
     version: { ...type.meta, fontSize: 12, textAlign: 'center', paddingTop: 14 },
   });
 };

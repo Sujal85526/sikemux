@@ -82,6 +82,29 @@ describe('removePhone', () => {
     await removePhone(token);
     expect(calls[0]).toMatchObject({ url: `https://api.test/v1/devices/${'ab'.repeat(32)}`, method: 'DELETE' });
   });
+
+  it('counts a phone the account no longer has as already off it', async () => {
+    answers.push({ status: 404, body: { error: { code: 'not_found', message: 'None of your devices has that key.', requestId: 'r' } } });
+    await expect(removePhone(token)).resolves.toBeUndefined();
+  });
+
+  it('reports a server out of reach, so signing out can ask first', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('Network request failed');
+      }),
+    );
+    const failure = await removePhone(token).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(AccountProblem);
+    expect((failure as AccountProblem).unreachable).toBe(true);
+  });
+
+  it('reports a server failing on its side as out of reach too', async () => {
+    answers.push({ status: 503, body: {} });
+    const failure = await removePhone(token).catch((error: unknown) => error);
+    expect((failure as AccountProblem).unreachable).toBe(true);
+  });
 });
 
 describe('accountHosts', () => {

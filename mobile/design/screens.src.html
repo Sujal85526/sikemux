@@ -483,6 +483,8 @@
   .account-head .s { font-size: 13px; color: var(--text-tertiary); }
   .sheet-note { padding: 10px 8px 12px; font-size: 13px; line-height: 1.45; color: var(--text-tertiary); }
   .sheet-version { padding-top: 14px; font-size: 12px; text-align: center; color: var(--text-tertiary); }
+  .sheet-title { padding: 12px 8px 0; font-size: 15px; font-weight: 600; color: var(--text-primary); }
+  .choices { display: flex; flex-direction: column; gap: 8px; }
   /* the three pairing steps share one layout so the code never moves */
   .pairing { padding: 40px 28px 0; display: flex; flex-direction: column; align-items: center; text-align: center; }
   .pairing h2 { color: var(--text-primary); font-size: 22px; font-weight: 600; letter-spacing: -0.028em; line-height: 1.25; text-wrap: balance; }
@@ -821,6 +823,41 @@
       </div>
       <div class="home-bar"></div></div>
       <figcaption><b>Account</b><div class="note">Who is signed in: the picture, the name, the email and how they signed in; without a name the email leads. This phone as the account knows it. Signing out says what it does before it does it. The last line is the installed version, quiet like the Mac's About; when an over-the-air update is running it adds the update's short id and the day it was made, and without one it is only the version.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen" style="opacity:.35">
+        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
+        <div class="title-block"><h1>Devices</h1></div>
+      </div>
+      <div class="sheet">
+        <div class="grabber"></div>
+        <div class="account-head">
+          <span class="avatar photo" style="--size:44px"></span>
+          <div style="min-width:0"><div class="t">Kishore Gunalan</div><div class="s">contact@nodelike.com</div><div class="s">Signed in with Google</div></div>
+        </div>
+        <div class="row boxed"><span class="mark">{{IconPhone:18}}</span><div class="body"><div class="t" style="font-size:15px">Kishore's iPhone</div><div class="s">This phone · <span class="m">3308a907</span></div></div></div>
+        <div class="sheet-title">Can't reach Sikemux</div>
+        <div class="sheet-note" style="padding-top:4px">Signing out now leaves this phone on your account until you remove it at app.sikemux.com.</div>
+        <div class="choices"><div class="btn">Try again</div><div class="btn danger">Sign out anyway</div></div>
+        <div class="sheet-version">Sikemux 0.1.0 · update a1b2c3d (3 Oct)</div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Signing out, offline</b><div class="note">Signing out first takes this phone off the account, so every host hears of it, even one that is asleep. When the accounts server can't be reached, the sheet says what signing out now would leave behind and lets the person choose. A server that answers with a problem shows it in red above Sign out instead.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="stack" style="padding-bottom:120px">
+          <h2 style="font-size:22px">This phone was removed from your account</h2>
+          <p>It was removed from another device or at app.sikemux.com, so it signed out and forgot the hosts it was paired with. Sign in again to use it.</p>
+        </div>
+        <div class="footer"><div class="btn primary">Continue</div></div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Removed</b><div class="note">The phone stays connected to the account while the app is open, so it hears at once when it is removed, and on its next launch if it was away. It signs out, forgets its hosts, and says why before the welcome screen. When the account was deleted elsewhere the same screen reads "Your account was deleted" and "It was deleted on another device or at app.sikemux.com. This phone signed out and forgot the hosts it was paired with." A host joining, renaming or leaving the account changes the Devices list the same way, without a reload.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
