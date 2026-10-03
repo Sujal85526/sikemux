@@ -19,7 +19,7 @@ use sikemux_core::accounts::protocol::Relay;
 use sikemux_core::client::{ClientError, CoreClient, EventSink, Reply};
 use sikemux_core::pairing::{self, PairError, PairingRequest};
 use sikemux_core::protocol::{
-    CallId, Event, Request, Response, SessionId, WindowCall, PROTOCOL_VERSION,
+    CallId, Event, NotifyPrefs, Request, Response, SessionId, WindowCall, PROTOCOL_VERSION,
 };
 use sikemux_core::remote;
 use tokio::sync::mpsc;
@@ -229,6 +229,14 @@ fn sign_push(key: &SecretKey, nonce: &str, token_sha256: &str) -> Result<String,
         .map_err(|_| invalid("the token's hash is 64 lowercase hex characters"))?;
     let message = format!("sikemux-push|{nonce}|{}|{token_sha256}", key.public());
     Ok(hex::encode(key.sign(message.as_bytes()).to_bytes()))
+}
+
+fn notify_prefs(json: &str) -> Result<NotifyPrefs, MobileError> {
+    serde_json::from_str(json).map_err(|error| {
+        invalid(format!(
+            "the notification settings are not readable: {error}"
+        ))
+    })
 }
 
 fn core_addr(core: &str, relays: &[Relay]) -> Result<EndpointAddr, MobileError> {
@@ -697,6 +705,38 @@ impl Connection {
         }
     }
 
+    /// Gives the host the 32-byte `key` it seals this phone's notifications
+    /// with, under `key_id`, and what the phone wants to hear about, as JSON:
+    /// `{needsYou, finished, problems, when, muted}`. A host older than
+    /// notifications never answers, so the app gives up waiting on its own.
+    pub async fn set_notifications(
+        &self,
+        key_id: u32,
+        key: Vec<u8>,
+        prefs_json: String,
+    ) -> Result<(), MobileError> {
+        if key.len() != 32 {
+            return Err(invalid("a notification key is 32 bytes"));
+        }
+        let prefs = notify_prefs(&prefs_json)?;
+        self.done(Request::SetNotifications {
+            key_id,
+            key: hex::encode(key),
+            prefs,
+        })
+        .await
+    }
+
+    /// The host sends this phone no more notifications.
+    pub async fn clear_notifications(&self) -> Result<(), MobileError> {
+        self.done(Request::ClearNotifications).await
+    }
+
+    /// Whether the app is in front, where a chat it shows needs no notification.
+    pub async fn set_foreground(&self, foreground: bool) -> Result<(), MobileError> {
+        self.done(Request::SetForeground { foreground }).await
+    }
+
     /// Asks the host to forget this phone. The host closes the connection after.
     pub async fn unpair(&self) -> Result<(), MobileError> {
         self.done(Request::Unpair).await
@@ -851,6 +891,18 @@ mod tests {
         );
         assert!(sign_push(&key, "not a challenge", &text("tokenSha256")).is_err());
         assert!(sign_push(&key, &text("nonce"), &text("token")).is_err());
+    }
+
+    #[test]
+    fn notification_settings_read_as_the_app_writes_them() {
+        let prefs = notify_prefs(
+            r#"{"needsYou":true,"finished":false,"problems":true,"when":"away","muted":[{"agentId":"chat-7f3a","until":null}]}"#,
+        )
+        .expect("reads");
+        assert!(prefs.needs_you && !prefs.finished && prefs.problems);
+        assert_eq!(prefs.when, sikemux_core::protocol::NotifyWhen::Away);
+        assert_eq!(prefs.muted[0].agent_id, "chat-7f3a");
+        assert!(notify_prefs(r#"{"when":"sometimes"}"#).is_err());
     }
 
     #[test]
