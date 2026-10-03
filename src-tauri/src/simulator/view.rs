@@ -29,6 +29,14 @@ const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 #[derive(Default)]
 pub struct Views {
     views: Mutex<HashMap<String, View>>,
+    /// The device drawn around each simulator's screen, once per device.
+    chromes: Mutex<HashMap<String, Arc<Chrome>>>,
+}
+
+struct Chrome {
+    layout: Value,
+    image: Vec<u8>,
+    mask: Vec<u8>,
 }
 
 struct View {
@@ -38,6 +46,37 @@ struct View {
 }
 
 impl Views {
+    /// Draws the device around `udid`'s screen the first time it is asked for. Without it the
+    /// screen is shown bare, so a device Xcode has no artwork for still shows.
+    fn chrome(&self, simulators: &SimulatorManager, udid: &str) -> Option<Arc<Chrome>> {
+        let mut chromes = self
+            .chromes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(chrome) = chromes.get(udid) {
+            return Some(Arc::clone(chrome));
+        }
+        let folder = tempfile::tempdir().ok()?;
+        let (image, mask) = (
+            folder.path().join("chrome.png"),
+            folder.path().join("mask.png"),
+        );
+        let layout = simulators
+            .request(
+                "chrome",
+                json!({ "udid": udid, "chromePath": image, "maskPath": mask }),
+                REQUEST_TIMEOUT,
+            )
+            .ok()?;
+        let chrome = Arc::new(Chrome {
+            layout,
+            image: std::fs::read(&image).ok()?,
+            mask: std::fs::read(&mask).ok()?,
+        });
+        chromes.insert(udid.to_owned(), Arc::clone(&chrome));
+        Some(chrome)
+    }
+
     fn lock(&self) -> MutexGuard<'_, HashMap<String, View>> {
         self.views
             .lock()
@@ -60,10 +99,13 @@ pub async fn simulator_view_open(
     views: State<'_, Views>,
     simulators: State<'_, SimulatorManager>,
     udid: String,
-) -> AppResult<()> {
+) -> AppResult<Option<Value>> {
+    let layout = views
+        .chrome(&simulators, &udid)
+        .map(|chrome| chrome.layout.clone());
     if let Some(view) = views.lock().get_mut(&udid) {
         view.viewers += 1;
-        return Ok(());
+        return Ok(layout);
     }
     let reply = simulators
         .request("stream", json!({ "udid": udid }), REQUEST_TIMEOUT)
@@ -108,7 +150,7 @@ pub async fn simulator_view_open(
             socket,
         },
     );
-    Ok(())
+    Ok(layout)
 }
 
 #[tauri::command]
@@ -320,6 +362,8 @@ fn read_line(stream: &mut impl BufRead) -> std::io::Result<Option<String>> {
 
 /// `sim://localhost/<udid>/<frame>` answers with that simulator's latest frame;
 /// the frame number only keeps the window from reusing a cached one.
+/// `<udid>/chrome` and `<udid>/mask` are the device drawn around the screen and
+/// the shape of the screen.
 pub fn handle<R: Runtime>(
     context: UriSchemeContext<'_, R>,
     request: Request<Vec<u8>>,
@@ -329,20 +373,27 @@ pub fn handle<R: Runtime>(
         responder.respond(status(StatusCode::FORBIDDEN));
         return;
     }
-    let udid = request
-        .uri()
-        .path()
-        .trim_start_matches('/')
-        .split('/')
-        .next()
-        .unwrap_or_default()
-        .to_owned();
-    let frame = context.app_handle().state::<Views>().latest(&udid);
-    responder.respond(match frame {
-        Some(jpeg) => Response::builder()
-            .header(header::CONTENT_TYPE, "image/jpeg")
+    let mut parts = request.uri().path().trim_start_matches('/').split('/');
+    let udid = parts.next().unwrap_or_default().to_owned();
+    let views = context.app_handle().state::<Views>();
+    let chrome = || {
+        views
+            .chromes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(&udid)
+            .cloned()
+    };
+    let (body, kind) = match parts.next() {
+        Some("chrome") => (chrome().map(|chrome| chrome.image.clone()), "image/png"),
+        Some("mask") => (chrome().map(|chrome| chrome.mask.clone()), "image/png"),
+        _ => (views.latest(&udid), "image/jpeg"),
+    };
+    responder.respond(match body {
+        Some(image) => Response::builder()
+            .header(header::CONTENT_TYPE, kind)
             .header(header::CACHE_CONTROL, "no-store")
-            .body(jpeg)
+            .body(image)
             .unwrap_or_else(|_| status(StatusCode::INTERNAL_SERVER_ERROR)),
         None => status(StatusCode::NOT_FOUND),
     });
