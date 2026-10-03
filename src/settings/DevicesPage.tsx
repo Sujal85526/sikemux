@@ -1,7 +1,17 @@
 import { useEffect, useState } from "react";
 import { accountApi } from "../api/account";
+import { portsApi } from "../api/ports";
 import { loadAccount, setAccount, useAccount } from "../account/account";
-import { remoteApi, shortKey, spacedCode, type DeviceAccess, type PairedDevice, type PendingDevice, type RemoteStatus } from "../api/remote";
+import {
+    remoteApi,
+    shortKey,
+    spacedCode,
+    type AccountLink,
+    type DeviceAccess,
+    type PairedDevice,
+    type PendingDevice,
+    type RemoteStatus,
+} from "../api/remote";
 import { reportError } from "../state/toast";
 import { Dropdown } from "../ui/Dropdown";
 import { Switch } from "../ui/Controls";
@@ -13,6 +23,8 @@ const ACCESS_OPTIONS = [
     { value: "full", label: "Full control", detail: "Drive terminals and agents" },
     { value: "watch", label: "Watch and approve", detail: "Read sessions and answer permission requests" },
 ];
+
+const DELETE_ACCOUNT_URL = import.meta.env.DEV ? "http://localhost:5173/delete-account" : "https://app.sikemux.com/delete-account";
 
 const PLATFORM_NAMES: Record<string, string> = { ios: "iOS", android: "Android", macos: "macOS", linux: "Linux", web: "Web" };
 
@@ -104,7 +116,7 @@ export function DevicesPage() {
                 </SettingsRows>
             </SettingsSection>
 
-            <AccountSection />
+            <AccountSection link={status?.account ?? null} />
 
             <SettingsSection
                 title="Pair a device"
@@ -170,12 +182,34 @@ export function DevicesPage() {
     );
 }
 
-function AccountSection() {
+/** How the live connection to the account reads in the section's corner. */
+export function accountMeta(signedIn: boolean | undefined, link: AccountLink | null): string {
+    if (signedIn === undefined) return "checking";
+    if (!signedIn) return "signed out";
+    if (link?.state === "connecting") return "connecting";
+    if (link?.state === "offline") return "offline, retrying";
+    return "signed in";
+}
+
+/** Why this host is signed out, when the account let it go rather than the person here. */
+export function removalNote(link: AccountLink | null): string | null {
+    if (link?.state !== "removed") return null;
+    if (link.reason === "account_deleted") return "Your account was deleted. Devices already paired stay paired.";
+    if (link.reason === "signed_out") return "This host was signed out of your account. Devices already paired stay paired.";
+    return "This host was removed from your account at app.sikemux.com. Devices already paired stay paired.";
+}
+
+function AccountSection({ link }: { link: AccountLink | null }) {
     const account = useAccount((s) => s.account);
+    const removed = removalNote(link);
     const [waiting, setWaiting] = useState(false);
+    const [leaving, setLeaving] = useState(false);
     useEffect(() => {
         loadAccount().catch(reportError("Account"));
     }, []);
+    useEffect(() => {
+        if (removed && account?.signedIn) loadAccount().catch(reportError("Account"));
+    }, [removed, account?.signedIn]);
 
     const signIn = async () => {
         setWaiting(true);
@@ -188,26 +222,38 @@ function AccountSection() {
         }
     };
     const signOut = async () => {
+        setLeaving(true);
         try {
             setAccount(await accountApi.signOut());
         } catch (error) {
             reportError("Sign out")(error);
+        } finally {
+            setLeaving(false);
         }
     };
 
     return (
         <SettingsSection
             title="Your account"
-            meta={account ? (account.signedIn ? "signed in" : "signed out") : "checking"}
+            meta={accountMeta(account?.signedIn, link)}
             sub="Devices signed in to the same Sikemux account find this host without a code. Each still needs your approval here before it can reach anything.">
             <SettingsRows>
                 {account?.signedIn ? (
                     <SettingsRow
                         label={account.email ?? "Signed in"}
-                        desc="Signing out keeps the devices already paired; it stops new devices finding this host through the account.">
-                        <button className="settings-btn" type="button" onClick={() => void signOut()}>
-                            Sign out
-                        </button>
+                        desc="Signing out takes this host off your account. Devices already paired stay paired.">
+                        <span className="settings-actions">
+                            <button
+                                className="settings-btn"
+                                type="button"
+                                title="Delete your account at app.sikemux.com"
+                                onClick={() => void portsApi.openExternal(DELETE_ACCOUNT_URL).catch(reportError("Open link"))}>
+                                Delete account…
+                            </button>
+                            <button className="settings-btn" type="button" disabled={leaving} onClick={() => void signOut()}>
+                                {leaving ? "Signing out…" : "Sign out"}
+                            </button>
+                        </span>
                     </SettingsRow>
                 ) : waiting ? (
                     <SettingsRow label="Finish signing in in your browser" desc="Sikemux opened the sign-in page in your default browser.">
@@ -216,7 +262,7 @@ function AccountSection() {
                         </button>
                     </SettingsRow>
                 ) : (
-                    <SettingsRow label="Not signed in" desc="Sign in with Google, GitHub or your email, in your browser.">
+                    <SettingsRow label="Not signed in" desc={removed ?? "Sign in with Google, GitHub or your email, in your browser."}>
                         <button className="settings-btn primary" type="button" disabled={!account} onClick={() => void signIn()}>
                             Sign in
                         </button>

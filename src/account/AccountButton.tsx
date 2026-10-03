@@ -3,14 +3,17 @@ import * as cmd from "../state/commands";
 import { swallow } from "../state/toast";
 import { IconUser } from "../ui/Icons";
 import { Tooltip } from "../ui/Tooltip";
-import { initials, loadAccount, useAccount } from "./account";
+import { initials, loadAccount, useAccount, watchAccount } from "./account";
 
 export function AccountButton() {
     const account = useAccount((s) => s.account);
     const [brokenPicture, setBrokenPicture] = useState<string | null>(null);
 
     useEffect(() => {
+        const controller = new AbortController();
+        watchAccount(controller.signal).catch(swallow("account"));
         loadAccount().catch(swallow("account"));
+        return () => controller.abort();
     }, []);
 
     const signedIn = account?.signedIn ?? false;

@@ -12,6 +12,11 @@ export async function loadAccount(): Promise<void> {
     if (cached.signedIn) setAccount(await accountApi.refreshProfile());
 }
 
+/** Keeps the account current when it changes without the app asking. */
+export async function watchAccount(signal: AbortSignal): Promise<void> {
+    await accountApi.subscribe(setAccount, signal);
+}
+
 export function initials(name: string | null, email: string | null): string {
     const words = (name ?? "").trim().split(/\s+/).filter(Boolean);
     if (words.length > 0) {

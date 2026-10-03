@@ -1,7 +1,8 @@
 //! Signing this host in to a Sikemux account, so devices on the same account
 //! find it. Sign-in happens in the person's browser (OAuth with PKCE), which
 //! hands back to a one-time listener on 127.0.0.1. The refresh token stays in
-//! the Keychain; the core keeps which account owns it.
+//! the Keychain; the core keeps which account owns it, and holds the live
+//! connection that tells it when the account lets this host go.
 
 mod profile;
 
@@ -18,8 +19,8 @@ use sikemux_core::accounts::protocol::{
     ApiError, Challenge, Channel, Device, DeviceRegistration, DeviceRole, Platform,
 };
 use sikemux_core::client::CoreClient;
-use sikemux_core::protocol::BuildChannel;
-use tauri::{AppHandle, Manager, State};
+use sikemux_core::protocol::{AccountLinkState, BuildChannel, RemoteStatus};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
@@ -56,15 +57,16 @@ fn key_account() -> &'static str {
     }
 }
 
-/// Dev builds talk to a server on this computer, or to `SIKEMUX_API_URL`.
 fn api(path: &str) -> String {
-    let base = if cfg!(debug_assertions) {
-        std::env::var("SIKEMUX_API_URL").unwrap_or_else(|_| "http://127.0.0.1:4000".into())
-    } else {
-        "https://api.sikemux.com".into()
-    };
-    format!("{}{path}", base.trim_end_matches('/'))
+    format!(
+        "{}{path}",
+        sikemux_core::accounts::api_base().trim_end_matches('/')
+    )
 }
+
+/// Emitted with the new [`AccountStatus`] when the account changes without
+/// the app asking, such as this host being removed from it elsewhere.
+pub const ACCOUNT_CHANGED_EVENT: &str = "account_changed";
 
 fn http() -> &'static Client {
     static CLIENT: OnceLock<Client> = OnceLock::new();
@@ -86,7 +88,7 @@ struct Saved {
     refresh_token: String,
 }
 
-#[derive(Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountStatus {
     signed_in: bool,
@@ -181,14 +183,74 @@ async fn delete_saved() -> AppResult<()> {
         .map_err(|error| AppError::Other(error.to_string()))
 }
 
-/// What this host knows about the account without asking the network.
+/// The account let this host go while the app was not looking: the core
+/// has a key but no longer this account as its owner.
+fn released(remote: &RemoteStatus, user_id: &str) -> bool {
+    !remote.core_id.is_empty() && remote.owner.as_deref() != Some(user_id)
+}
+
+/// Drops the saved sign-in, and asks the account service to drop its
+/// refresh token too, best effort.
+async fn forget(app: &AppHandle, saved: &Saved) -> AppResult<()> {
+    delete_saved().await?;
+    let _ = http()
+        .post(format!("{CLERK}/oauth/token/revoke"))
+        .form(&[
+            ("token", saved.refresh_token.as_str()),
+            ("token_type_hint", "refresh_token"),
+            ("client_id", CLIENT_ID),
+        ])
+        .send()
+        .await;
+    profile::forget(&profile_dir(app)?).await?;
+    Ok(())
+}
+
+/// What this host knows about the account without asking the network. It is
+/// signed in only while the core still has the account as its owner.
 #[tauri::command]
-pub async fn account_status(app: AppHandle) -> AppResult<AccountStatus> {
+pub async fn account_status(
+    app: AppHandle,
+    manager: State<'_, PtyManager>,
+) -> AppResult<AccountStatus> {
     let dir = profile_dir(&app)?;
-    Ok(match read_saved().await? {
-        Some(saved) => status_of(&dir, saved).await,
-        None => AccountStatus::signed_out(),
-    })
+    let Some(saved) = read_saved().await? else {
+        return Ok(AccountStatus::signed_out());
+    };
+    let remote = match manager.client().await {
+        Ok(core) => core.remote_status().await.ok(),
+        Err(_) => None,
+    };
+    if remote.is_some_and(|remote| released(&remote, &saved.user_id)) {
+        forget(&app, &saved).await?;
+        return Ok(AccountStatus::signed_out());
+    }
+    Ok(status_of(&dir, saved).await)
+}
+
+/// The core reported that the account let this host go, so the sign-in
+/// saved here goes too, and the app hears it is signed out.
+pub fn notice_remote(app: &AppHandle, remote: &RemoteStatus) {
+    let removed = remote.owner.is_none()
+        && remote
+            .account
+            .as_ref()
+            .is_some_and(|link| link.state == AccountLinkState::Removed);
+    if !removed {
+        return;
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let Ok(Some(saved)) = read_saved().await else {
+            return;
+        };
+        match forget(&app, &saved).await {
+            Ok(()) => {
+                let _ = app.emit(ACCOUNT_CHANGED_EVENT, AccountStatus::signed_out());
+            }
+            Err(error) => eprintln!("sikemux: could not forget the account: {error}"),
+        }
+    });
 }
 
 /// Asks the account service for the name and picture again once the cached
@@ -303,17 +365,19 @@ pub fn account_cancel_sign_in(pending: State<'_, PendingSignIn>) {
     pending.replace(None);
 }
 
-/// Forgets the account on this host. Paired devices stay: they are the host's
-/// own list, approved one by one.
+/// Takes this host off the account, then forgets the account here. The core
+/// tells the account, now or once it is back online. Paired devices stay:
+/// they are the host's own list, approved one by one.
 #[tauri::command]
 pub async fn account_sign_out(
     app: AppHandle,
     manager: State<'_, PtyManager>,
 ) -> AppResult<AccountStatus> {
-    delete_saved().await?;
-    profile::forget(&profile_dir(&app)?).await?;
     let core = manager.client().await?;
     core.set_owner(None).await.map_err(core_error)?;
+    if let Some(saved) = read_saved().await? {
+        forget(&app, &saved).await?;
+    }
     Ok(AccountStatus::signed_out())
 }
 
@@ -614,6 +678,21 @@ mod tests {
         );
         assert_eq!(params["state"], pkce.state);
         assert!(params["scope"].contains("offline_access"));
+    }
+
+    #[test]
+    fn the_host_is_signed_in_only_while_the_core_keeps_the_account() {
+        let remote = |owner: Option<&str>, core_id: &str| -> RemoteStatus {
+            serde_json::from_value(serde_json::json!({
+                "enabled": false, "coreId": core_id, "addresses": [], "devices": [],
+                "connected": [], "pairing": null, "pending": [], "owner": owner,
+            }))
+            .unwrap()
+        };
+        assert!(!released(&remote(Some("user_1"), "key"), "user_1"));
+        assert!(released(&remote(None, "key"), "user_1"));
+        assert!(released(&remote(Some("user_2"), "key"), "user_1"));
+        assert!(!released(&remote(None, ""), "user_1"));
     }
 
     #[test]

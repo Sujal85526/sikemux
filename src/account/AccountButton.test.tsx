@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AccountStatus } from "../api/account";
+import { ACCOUNT_CHANGED_EVENT, type AccountStatus } from "../api/account";
 import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "../api/transport";
 import { getState, setState } from "../state/store";
 import { initials, useAccount } from "./account";
@@ -73,6 +73,15 @@ describe("AccountButton", () => {
         });
         fireEvent.error(image);
         expect(await screen.findByText("AL")).toBeInTheDocument();
+    });
+
+    it("shows the host signed out once the account lets it go", async () => {
+        serve(SIGNED_IN);
+        render(<AccountButton />);
+
+        expect(await screen.findByRole("button", { name: "Account: ada@example.com" })).toBeInTheDocument();
+        transport.emit(ACCOUNT_CHANGED_EVENT, SIGNED_OUT);
+        expect(await screen.findByRole("button", { name: "Account: not signed in" })).toBeInTheDocument();
     });
 
     it("opens settings at the account section", async () => {

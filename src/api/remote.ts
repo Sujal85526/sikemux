@@ -30,6 +30,18 @@ export interface PendingDevice {
     readonly platform: string;
 }
 
+/** Why the account let this host go: removed elsewhere, signed out, or the account was deleted. */
+export type AccountRevokeReason = "removed" | "signed_out" | "account_deleted";
+
+/** The host's live connection to its account, or, once signed out, why the account let it go. */
+export interface AccountLink {
+    readonly state: "connecting" | "live" | "offline" | "removed";
+    /** Set once `state` is `removed`; null when the server no longer knew this host. */
+    readonly reason: AccountRevokeReason | null;
+    /** When `state` began, in milliseconds since the epoch. */
+    readonly since: number;
+}
+
 export interface RemoteStatus {
     readonly enabled: boolean;
     readonly coreId: string;
@@ -40,6 +52,7 @@ export interface RemoteStatus {
     readonly pending: readonly PendingDevice[];
     /** The account this host is signed in to. */
     readonly owner: string | null;
+    readonly account: AccountLink | null;
 }
 
 /** A project a paired device may start an agent in. */

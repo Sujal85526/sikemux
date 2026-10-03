@@ -9,7 +9,7 @@ import { PUBLISH_DELAY_MS, RemoteWorkspaceBridge } from "./RemoteWorkspaceBridge
 const initial = getState();
 
 function status(enabled: boolean): RemoteStatus {
-    return { enabled, coreId: "core", addresses: [], devices: [], connected: [], pairing: null, pending: [], owner: null };
+    return { enabled, coreId: "core", addresses: [], devices: [], connected: [], pairing: null, pending: [], owner: null, account: null };
 }
 
 let transport: MemoryIpcTransport;
