@@ -83,13 +83,13 @@ final class Simulators {
             }
             if phase == .up { touchEdges[simulator.udid] = nil }
             let step = SimulatorHIDEvent.touch(direction: phase == .up ? .up : .down, x: at.x, y: at.y, edge: edge)
-            let previous = touchSteps[simulator.udid]
-            let sent = Task { @MainActor in
-                _ = await previous?.result
-                try await self.send(step, to: simulator)
-            }
-            touchSteps[simulator.udid] = sent
-            try await sent.value
+            try await sendInOrder(step, to: simulator)
+            return [:]
+        case let .touch2(_, phase, first, second):
+            let step = SimulatorHIDEvent.twoFingerTouch(
+                direction: phase == .up ? .up : .down,
+                finger1: CGPoint(x: first.x, y: first.y), finger2: CGPoint(x: second.x, y: second.y))
+            try await sendInOrder(step, to: simulator)
             return [:]
         case let .swipe(_, from, to, duration):
             let swipe = SimulatorHIDEvent.swipe(
@@ -182,6 +182,17 @@ final class Simulators {
             .describe(.frontmost, options: AccessibilityRequestOptions())
         let json = try JSONSerialization.jsonObject(with: try read.formattedOutputJSON(format: .default))
         return (json as? [String: Any])?["elements"] as? [[String: Any]] ?? []
+    }
+
+    /// A step of a live touch waits for the step before, so a move never overtakes its touch-down.
+    private func sendInOrder(_ step: SimulatorHIDEvent, to simulator: Simulator) async throws {
+        let previous = touchSteps[simulator.udid]
+        let sent = Task { @MainActor in
+            _ = await previous?.result
+            try await self.send(step, to: simulator)
+        }
+        touchSteps[simulator.udid] = sent
+        try await sent.value
     }
 
     private func send(_ event: SimulatorHIDEvent, to simulator: Simulator) async throws {

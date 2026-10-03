@@ -31,6 +31,8 @@ public enum Command: Equatable, Sendable {
     case tap(udid: String, at: Point, duration: Double?)
     /// One step of a finger the person moves live: down, any number of moves, then up.
     case touch(udid: String, phase: TouchPhase, at: Point)
+    /// One step of two fingers moving together, for pinching and turning.
+    case touch2(udid: String, phase: TouchPhase, first: Point, second: Point)
     case swipe(udid: String, from: Point, to: Point, duration: Double)
     case type(udid: String, text: String)
     case button(udid: String, button: Button)
@@ -53,7 +55,7 @@ public enum Command: Equatable, Sendable {
         case let .screenshot(udid, _, _, _), let .chrome(udid, _, _), let .type(udid, _), let .button(udid, _), let .tapElement(udid, _),
             let .terminate(udid, _), let .install(udid, _), let .openUrl(udid, _):
             udid
-        case let .tap(udid, _, _), let .touch(udid, _, _), let .swipe(udid, _, _, _), let .launch(udid, _, _, _): udid
+        case let .tap(udid, _, _), let .touch(udid, _, _), let .touch2(udid, _, _, _), let .swipe(udid, _, _, _), let .launch(udid, _, _, _): udid
         }
     }
 }
@@ -106,6 +108,12 @@ public struct Request: Equatable, Sendable {
             let phase: String = try fields.required("phase")
             guard let touchPhase = TouchPhase(rawValue: phase) else { throw FieldError("phase must be down, move or up") }
             return .touch(udid: try fields.required("udid"), phase: touchPhase, at: try fields.point("x", "y"))
+        case "touch2":
+            let phase: String = try fields.required("phase")
+            guard let touchPhase = TouchPhase(rawValue: phase) else { throw FieldError("phase must be down, move or up") }
+            return .touch2(
+                udid: try fields.required("udid"), phase: touchPhase,
+                first: try fields.point("x1", "y1"), second: try fields.point("x2", "y2"))
         case "swipe":
             return .swipe(
                 udid: try fields.required("udid"),

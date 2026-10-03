@@ -25,6 +25,9 @@ final class RequestTests: XCTestCase {
             try parse(#"{"id":2,"type":"touch","udid":"A","phase":"move","x":5,"y":6}"#).command,
             .touch(udid: "A", phase: .move, at: Point(x: 5, y: 6)))
         XCTAssertEqual(failure(#"{"id":3,"type":"touch","udid":"A","phase":"hover","x":5,"y":6}"#)?.description, "phase must be down, move or up")
+        XCTAssertEqual(
+            try parse(#"{"id":2,"type":"touch2","udid":"A","phase":"down","x1":100,"y1":400,"x2":300,"y2":400}"#).command,
+            .touch2(udid: "A", phase: .down, first: Point(x: 100, y: 400), second: Point(x: 300, y: 400)))
         XCTAssertEqual(try parse(#"{"id":2,"type":"stopStream","udid":"A"}"#).command, .stopStream(udid: "A"))
         XCTAssertEqual(
             try parse(#"{"id":2,"type":"chrome","udid":"A","chromePath":"/tmp/c.png","maskPath":"/tmp/m.png"}"#).command,
