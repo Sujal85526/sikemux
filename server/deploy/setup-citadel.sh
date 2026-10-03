@@ -21,7 +21,7 @@ id sikemux-deploy >/dev/null 2>&1 ||
   useradd --system --create-home --home-dir /var/lib/sikemux-deploy --shell /bin/bash sikemux-deploy
 passwd -l sikemux-deploy >/dev/null
 
-step "deploy key, limited to receiving releases"
+step "deploy key, limited to receiving releases and phone updates"
 install -d -m 700 -o sikemux-deploy -g sikemux-deploy /var/lib/sikemux-deploy/.ssh
 printf 'restrict,command="/usr/local/lib/sikemux/receive-release" %s\n' "$(tr -d '\n' <"$deploy_key")" \
   >/var/lib/sikemux-deploy/.ssh/authorized_keys
@@ -37,6 +37,8 @@ visudo -cf /etc/sudoers.d/sikemux-deploy
 
 step "folders"
 install -d -m 755 -o sikemux-deploy -g sikemux-deploy /srv/sikemux /srv/sikemux/releases
+# Phone update assets: written only by the deploy user, read by Caddy, which serves them as they are.
+install -d -m 755 -o sikemux-deploy -g sikemux-deploy /srv/sikemux/updates /srv/sikemux/updates/assets
 install -d -m 750 -o root -g sikemux /etc/sikemux
 if [ ! -f /etc/sikemux/api.env ]; then
   cat >/etc/sikemux/api.env <<'EOF'
