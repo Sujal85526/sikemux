@@ -15,6 +15,15 @@ export interface SimulatorAttached {
     screen: SimulatorScreen | null;
 }
 
+/** A simulator Xcode has, for the person to pick from. */
+export interface SimulatorDevice {
+    udid: string;
+    name: string;
+    os: string;
+    booted: boolean;
+    screen: SimulatorScreen | null;
+}
+
 /** A new frame of a simulator's screen is ready at `frameUrl`, or its stream ended with `error`. */
 export interface SimulatorFrame {
     udid: string;
@@ -34,6 +43,10 @@ export const simulatorApi = {
     openView: (udid: string) => invoke<void>("simulator_view_open", { udid }),
     closeView: (udid: string) => invoke<void>("simulator_view_close", { udid }),
     input: (udid: string, input: SimulatorInput) => invoke<void>("simulator_input", { udid, input }),
+    devices: () => invoke<SimulatorDevice[]>("simulator_devices"),
+    /** Boots the device and makes it the agent's, so both look at the same screen. */
+    attach: (agentId: string, udid: string) => invoke<SimulatorDevice>("simulator_attach", { agentId, udid }),
+    shutdown: (udid: string) => invoke<void>("simulator_shutdown", { udid }),
     subscribeFrames: (listener: (frame: SimulatorFrame) => void, signal: AbortSignal) =>
         getIpcTransport().subscribe<SimulatorFrame>("simulator-frame", (event) => listener(event.payload), { signal }),
     subscribeAttached: (listener: (attached: SimulatorAttached) => void, signal: AbortSignal) =>

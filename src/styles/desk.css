@@ -132,7 +132,7 @@
 
 .tabbar.v-desk .tab-add,
 .browser-toolbar button,
-.simulator-toolbar button {
+.simulator-toolbar > button {
     display: grid;
     place-items: center;
     flex: none;
@@ -151,7 +151,7 @@
 
 .tabbar.v-desk .tab-add:hover,
 .browser-toolbar button:hover,
-.simulator-toolbar button:hover {
+.simulator-toolbar > button:hover {
     background: var(--surface-hover);
     color: var(--ink);
 }
@@ -173,7 +173,7 @@
 }
 
 .browser-toolbar button,
-.simulator-toolbar button {
+.simulator-toolbar > button {
     width: 24px;
     height: 24px;
 }
@@ -464,6 +464,11 @@
 
 .address-float .address-suggestions li {
     height: 32px;
+}
+
+.simulator-picker.dd-btn {
+    height: 24px;
+    padding: 0 8px;
 }
 
 .simulator-device {

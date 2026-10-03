@@ -9,6 +9,7 @@ import {
     removeDeskPane,
     revealDesk,
     selectDeskItem,
+    switchDeskSimulator,
     toggleDesk,
 } from "./commands";
 import { deskEditorId, deskItemsOf, shownDeskItem } from "./desks";
@@ -272,5 +273,20 @@ describe("a simulator on the desk", () => {
         expect(release).not.toHaveBeenCalled();
         expect(getState().desks["agent-1"].simulators).toEqual([]);
         expect(deskItemsOf(getState(), "agent-1").map((item) => item.kind)).toEqual(["terminal"]);
+    });
+
+    it("shows a newly picked device in the same tab, where the old one was", () => {
+        const ipad = { udid: "U3", name: "iPad Air", os: "iOS 27.0", screen: { width: 820, height: 1180 } };
+        openDeskSimulator("agent-1", iPhone);
+        openDeskSimulator("agent-1", ipad);
+        selectDeskItem("agent-1", deskItemsOf(getState(), "agent-1")[0]);
+        const seventeen = { udid: "U2", name: "iPhone 17", os: "iOS 26.0", screen: { width: 402, height: 874 } };
+
+        switchDeskSimulator("agent-1", "U1", seventeen);
+
+        const items = deskItemsOf(getState(), "agent-1");
+        expect(items.map((item) => item.key)).toEqual(["simulator:U2", "simulator:U3"]);
+        expect(getState().desks["agent-1"].simulators).toEqual([seventeen, ipad]);
+        expect(shownDeskItem(getState().desks["agent-1"], items)).toBe("simulator:U2");
     });
 });

@@ -198,6 +198,23 @@ export function openDeskSimulator(agentId: string, simulator: DeskSimulator): vo
     revealDesk(agentId);
 }
 
+/** Shows another device in a simulator's tab, where that tab already is on the desk. */
+export function switchDeskSimulator(agentId: string, previousUdid: string, simulator: DeskSimulator): void {
+    mutate((d) => {
+        const desk = d.desks[agentId];
+        if (!desk) return;
+        const previous = simulatorKey(previousUdid);
+        const next = simulatorKey(simulator.udid);
+        desk.simulators = desk.simulators.filter((candidate) => candidate.udid !== simulator.udid);
+        const at = desk.simulators.findIndex((candidate) => candidate.udid === previousUdid);
+        if (at >= 0) desk.simulators[at] = simulator;
+        else desk.simulators.push(simulator);
+        desk.order = desk.order.filter((key) => key !== next).map((key) => (key === previous ? next : key));
+        if (!desk.order.includes(next)) desk.order.push(next);
+        if (desk.active === previous || desk.active === null) desk.active = next;
+    });
+}
+
 export function showDeskTerminal(agentId: string, id: string): void {
     revealDesk(agentId);
     setDeskActive(agentId, terminalKey(id));

@@ -1,13 +1,23 @@
 import { act, fireEvent, render, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { simulatorApi, type SimulatorFrame } from "../api/simulator";
-import { SimulatorView, toDevicePoint, typedText } from "./SimulatorView";
+import * as cmd from "../state/commands";
+import { devicePickerOptions, SimulatorView, toDevicePoint, typedText } from "./SimulatorView";
 
 vi.mock("../api/simulator", async () => {
     const actual = await vi.importActual<typeof import("../api/simulator")>("../api/simulator");
     return {
         ...actual,
-        simulatorApi: { openView: vi.fn(), closeView: vi.fn(), input: vi.fn(), subscribeFrames: vi.fn(), subscribeAttached: vi.fn() },
+        simulatorApi: {
+            openView: vi.fn(),
+            closeView: vi.fn(),
+            input: vi.fn(),
+            devices: vi.fn(),
+            attach: vi.fn(),
+            shutdown: vi.fn(),
+            subscribeFrames: vi.fn(),
+            subscribeAttached: vi.fn(),
+        },
     };
 });
 
@@ -65,7 +75,11 @@ describe("the simulator view", () => {
         vi.mocked(simulatorApi.openView).mockResolvedValue();
         vi.mocked(simulatorApi.closeView).mockResolvedValue();
         vi.mocked(simulatorApi.input).mockResolvedValue();
-        const view = render(<SimulatorView simulator={device} live={live} />);
+        vi.mocked(simulatorApi.devices).mockResolvedValue([
+            { udid: "U1", name: "iPhone 18 Pro", os: "iOS 27.0", booted: true, screen: iPhone },
+            { udid: "U2", name: "iPhone 17", os: "iOS 26.0", booted: false, screen: { width: 402, height: 874 } },
+        ]);
+        const view = render(<SimulatorView agentId="agent-1" simulator={device} live={live} />);
         return { view, screen: within(view.container), deliver: (frame: SimulatorFrame) => act(() => deliver(frame)) };
     }
 
@@ -79,7 +93,7 @@ describe("the simulator view", () => {
         deliver({ udid: "U1", frame: 3 });
         expect(screen.getByRole("img").getAttribute("src")).toBe("sim://localhost/U1/3");
 
-        view.rerender(<SimulatorView simulator={device} live={false} />);
+        view.rerender(<SimulatorView agentId="agent-1" simulator={device} live={false} />);
         expect(simulatorApi.closeView).toHaveBeenCalledWith("U1");
     });
 
@@ -154,5 +168,57 @@ describe("the simulator view", () => {
     it("does not watch a simulator that is not on screen", () => {
         mount(false);
         expect(simulatorApi.openView).not.toHaveBeenCalled();
+    });
+});
+
+describe("picking a simulator", () => {
+    const device = (udid: string, name: string, os: string, booted = false) => ({ udid, name, os, booted, screen: iPhone });
+
+    it("lists the newest iOS first, then by name, and marks the running ones", () => {
+        const options = devicePickerOptions([
+            device("a", "iPhone 17", "iOS 26.0"),
+            device("b", "iPhone 18 Pro", "iOS 27.0", true),
+            device("c", "iPad Air 11-inch (M4)", "iOS 27.0"),
+            device("d", "iPhone 16e", "iOS 26.0"),
+        ]);
+        expect(options.map((option) => [option.label, option.detail])).toEqual([
+            ["iPad Air 11-inch (M4)", "iOS 27.0"],
+            ["iPhone 18 Pro", "iOS 27.0 · running"],
+            ["iPhone 16e", "iOS 26.0"],
+            ["iPhone 17", "iOS 26.0"],
+        ]);
+    });
+
+    it("boots the picked device for the agent and shows it in the same tab", async () => {
+        const switched = vi.spyOn(cmd, "switchDeskSimulator").mockImplementation(() => {});
+        let finish: (device: { udid: string; name: string; os: string; booted: boolean; screen: typeof iPhone }) => void = () => {};
+        vi.mocked(simulatorApi.attach).mockImplementation(() => new Promise((resolve) => (finish = resolve)));
+        vi.mocked(simulatorApi.subscribeFrames).mockResolvedValue(() => {});
+        vi.mocked(simulatorApi.openView).mockResolvedValue();
+        vi.mocked(simulatorApi.devices).mockResolvedValue([device("U1", "iPhone 18 Pro", "iOS 27.0", true), device("U2", "iPhone 17", "iOS 26.0")]);
+        const view = render(<SimulatorView agentId="agent-1" simulator={{ ...device("U1", "iPhone 18 Pro", "iOS 27.0") }} live />);
+        const screen = within(view.container);
+        await vi.waitFor(() => expect(simulatorApi.devices).toHaveBeenCalled());
+
+        fireEvent.click(screen.getByRole("button", { name: /Simulator: iPhone 18 Pro/ }));
+        fireEvent.click(await within(document.body).findByRole("option", { name: /iPhone 17/ }));
+
+        expect(simulatorApi.attach).toHaveBeenCalledWith("agent-1", "U2");
+        expect(screen.getByText("Booting iPhone 17…")).toBeTruthy();
+        await act(async () => finish({ ...device("U2", "iPhone 17", "iOS 26.0"), booted: true }));
+        expect(switched).toHaveBeenCalledWith("agent-1", "U1", { udid: "U2", name: "iPhone 17", os: "iOS 26.0", screen: iPhone });
+    });
+
+    it("shuts the device down and closes its tab", async () => {
+        const closed = vi.spyOn(cmd, "closeDeskItem").mockImplementation(() => {});
+        vi.mocked(simulatorApi.shutdown).mockResolvedValue();
+        vi.mocked(simulatorApi.devices).mockResolvedValue([]);
+        const simulator = { udid: "U1", name: "iPhone 18 Pro", os: "iOS 27.0", screen: iPhone };
+        const view = render(<SimulatorView agentId="agent-1" simulator={simulator} live={false} />);
+
+        fireEvent.click(within(view.container).getByRole("button", { name: "Shut down" }));
+
+        await vi.waitFor(() => expect(closed).toHaveBeenCalledWith("agent-1", { key: "simulator:U1", kind: "simulator", simulator }));
+        expect(simulatorApi.shutdown).toHaveBeenCalledWith("U1");
     });
 });

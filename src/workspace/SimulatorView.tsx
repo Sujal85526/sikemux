@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState } from "react";
-import { frameUrl, simulatorApi, type SimulatorInput, type SimulatorScreen } from "../api/simulator";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { frameUrl, simulatorApi, type SimulatorDevice, type SimulatorInput, type SimulatorScreen } from "../api/simulator";
+import * as cmd from "../state/commands";
+import { simulatorKey } from "../state/desks";
 import type { DeskSimulator } from "../state/types";
 import { reportError } from "../state/toast";
-import { IconHome, IconLock } from "../ui/Icons";
+import { Dropdown, type DropdownOption } from "../ui/Dropdown";
+import { IconHome, IconLock, IconStop } from "../ui/Icons";
 
 interface Box {
     left: number;
@@ -41,8 +44,26 @@ export function typedText(event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKe
     return [...event.key].length === 1 ? event.key : null;
 }
 
-export function SimulatorView({ simulator, hidden, live }: { simulator: DeskSimulator; hidden?: boolean; live: boolean }) {
+const osVersion = (os: string) => (os.split(" ").pop() ?? "").split(".").map(Number);
+
+/** Devices to pick from: the newest iOS first, then by name, with the ones already running marked. */
+export function devicePickerOptions(devices: readonly SimulatorDevice[]): DropdownOption[] {
+    return [...devices]
+        .sort((a, b) => {
+            const [newer, older] = [osVersion(a.os), osVersion(b.os)];
+            for (let at = 0; at < Math.max(newer.length, older.length); at++) {
+                const difference = (older[at] ?? 0) - (newer[at] ?? 0);
+                if (difference) return difference;
+            }
+            return a.name.localeCompare(b.name, undefined, { numeric: true });
+        })
+        .map((device) => ({ value: device.udid, label: device.name, detail: device.booted ? `${device.os} · running` : device.os }));
+}
+
+export function SimulatorView({ agentId, simulator, hidden, live }: { agentId: string; simulator: DeskSimulator; hidden?: boolean; live: boolean }) {
     const { udid, screen } = simulator;
+    const [devices, setDevices] = useState<SimulatorDevice[]>([]);
+    const [booting, setBooting] = useState<string | null>(null);
     const [frame, setFrame] = useState<number | null>(null);
     const [failure, setFailure] = useState<string | null>(null);
     const image = useRef<HTMLImageElement>(null);
@@ -69,6 +90,43 @@ export function SimulatorView({ simulator, hidden, live }: { simulator: DeskSimu
             void simulatorApi.closeView(udid).catch(() => {});
         };
     }, [live, udid]);
+
+    useEffect(() => {
+        if (!live) return;
+        let current = true;
+        void simulatorApi
+            .devices()
+            .then((found) => current && setDevices(found))
+            .catch(() => {});
+        return () => {
+            current = false;
+        };
+    }, [live]);
+
+    const options = useMemo(
+        () => devicePickerOptions(devices.some((device) => device.udid === udid) ? devices : [...devices, { ...simulator, booted: true }]),
+        [devices, simulator, udid],
+    );
+
+    /* The agent moves to the picked device too, so the person and the agent
+       keep looking at the same screen. */
+    const pick = (next: string) => {
+        if (next === udid) return;
+        setBooting(devices.find((device) => device.udid === next)?.name ?? "the simulator");
+        void simulatorApi
+            .attach(agentId, next)
+            .then(({ udid: picked, name, os, screen: size }) => cmd.switchDeskSimulator(agentId, udid, { udid: picked, name, os, screen: size }))
+            .catch((error) => {
+                setBooting(null);
+                reportError("switch the simulator")(error);
+            });
+    };
+
+    const shutDown = () =>
+        void simulatorApi
+            .shutdown(udid)
+            .then(() => cmd.closeDeskItem(agentId, { key: simulatorKey(udid), kind: "simulator", simulator }))
+            .catch(reportError("shut down the simulator"));
 
     /* Each step waits for the one before, so the device sees a finger go down,
        move and lift in the order it did. */
@@ -125,14 +183,25 @@ export function SimulatorView({ simulator, hidden, live }: { simulator: DeskSimu
     return (
         <div className="desk-simulator" hidden={hidden}>
             <div className="simulator-toolbar">
-                <span className="simulator-device" title={udid}>
-                    {label}
-                </span>
+                <Dropdown
+                    className="simulator-picker"
+                    value={udid}
+                    options={options}
+                    onChange={pick}
+                    title="Simulator"
+                    label={`Simulator: ${label}`}
+                    search="Find a device"
+                    menuWidth={280}
+                />
+                <span className="simulator-device">{simulator.os}</span>
                 <button type="button" aria-label="Home" title="Home" onClick={() => send({ type: "button", button: "home" })}>
                     <IconHome size={13} />
                 </button>
                 <button type="button" aria-label="Lock" title="Lock" onClick={() => send({ type: "button", button: "lock" })}>
                     <IconLock size={13} />
+                </button>
+                <button type="button" aria-label="Shut down" title="Shut down" onClick={shutDown}>
+                    <IconStop size={13} />
                 </button>
             </div>
             <div
@@ -145,7 +214,9 @@ export function SimulatorView({ simulator, hidden, live }: { simulator: DeskSimu
                 onPointerUp={lift}
                 onPointerCancel={lift}
                 onKeyDown={onKeyDown}>
-                {failure ? (
+                {booting ? (
+                    <p className="simulator-status">Booting {booting}…</p>
+                ) : failure ? (
                     <p className="simulator-status">The simulator view stopped: {failure}</p>
                 ) : frame === null ? (
                     <p className="simulator-status">Connecting to {simulator.name}…</p>
