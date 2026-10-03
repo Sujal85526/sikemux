@@ -98,8 +98,9 @@ systemctl enable sikemux-api >/dev/null
 systemctl enable --now sikemux-purge.timer >/dev/null
 
 step "backups: nightly, encrypted to an offline age key, sent to R2"
-command -v age >/dev/null && command -v rclone >/dev/null ||
+if ! command -v age >/dev/null || ! command -v rclone >/dev/null; then
   DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends age rclone >/dev/null
+fi
 id sikemux-backup >/dev/null 2>&1 ||
   useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin sikemux-backup
 install -D -m 755 -o root -g root "$here/backup-database" /usr/local/lib/sikemux/backup-database
