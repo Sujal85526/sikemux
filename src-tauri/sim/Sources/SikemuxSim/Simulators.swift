@@ -9,6 +9,7 @@ actor Simulators {
     private var control: SimulatorControlBootstrap?
     private var touch: [String: SimulatorHID] = [:]
     private var tails: [String: (tail: LogTail, task: Task<Void, Never>)] = [:]
+    private var streams: [String: FrameStream] = [:]
 
     func devices() throws -> [[String: Any]] {
         try set().allSimulators.map { simulator in
@@ -93,6 +94,28 @@ actor Simulators {
     func stopLogs(on udid: String?, process: String?) throws {
         let key = "\(try find(udid).udid) \(process ?? "")"
         tails.removeValue(forKey: key)?.task.cancel()
+    }
+
+    /// One stream per device, shared by every viewer; a key frame each second lets a late viewer start within one.
+    func stream(on udid: String?, fps: Int, scale: Double?) async throws -> [String: Any] {
+        let simulator = try await booted(udid)
+        if streams[simulator.udid] == nil {
+            let stream = try FrameStream()
+            try await stream.listen()
+            let configuration = VideoStreamConfiguration(
+                format: .compressedVideo(withCodec: .h264, transport: .annexB), framesPerSecond: fps, rateControl: nil, scaleFactor: scale,
+                keyFrameRate: 1)
+            stream.operation = try await simulator.videoStream.create(configuration: configuration, to: stream)
+            streams[simulator.udid] = stream
+        }
+        let stream = streams[simulator.udid]!
+        return ["port": Int(stream.port), "token": stream.token, "codec": "h264", "transport": "annex-b"]
+    }
+
+    func stopStream(on udid: String?) async throws {
+        guard let stream = streams.removeValue(forKey: try find(udid).udid) else { return }
+        try? await stream.operation?.stopStreaming()
+        stream.stop()
     }
 
     func install(_ path: String, on udid: String?) async throws -> String {

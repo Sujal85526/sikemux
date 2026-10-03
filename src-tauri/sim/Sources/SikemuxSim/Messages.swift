@@ -21,6 +21,8 @@ struct Request: Decodable {
     let process: String?
     let after: Int?
     let limit: Int?
+    let fps: Int?
+    let scale: Double?
 }
 
 /// One moment of a touch path: where the finger is, or both fingers for a pinch, `t` seconds after it starts.
