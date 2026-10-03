@@ -86,6 +86,8 @@ export interface DomainState {
     activeSpaceId: string | null;
     agentNotifications: boolean;
     voiceDictation: boolean;
+    /** Agents get the iOS Simulator tools, and the agent header its button, on a Mac that can run it. */
+    iosSimulator: boolean;
     notificationsIntroduced: boolean;
     /** The person was told once that terminals keep running after Sikemux quits. */
     keptRunningNoticeShown: boolean;
@@ -255,6 +257,7 @@ export const useStore = create<StoreState>(() => {
         activeSpaceId: null,
         agentNotifications: true,
         voiceDictation: false,
+        iosSimulator: true,
         notificationsIntroduced: false,
         keptRunningNoticeShown: false,
         railDensity: "comfortable",

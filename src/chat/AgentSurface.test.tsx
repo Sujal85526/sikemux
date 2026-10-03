@@ -15,7 +15,13 @@ const mocks = vi.hoisted(() => ({
     relaunch: vi.fn(async () => {}),
     clearRecovery: vi.fn(),
     resume: { recovery: null as null | { phase: "resuming" } | { phase: "failed"; detail: string | null }, generation: 0 },
-    state: { deskPanes: {} as Record<string, string>, desks: {}, windows: {} as Record<string, unknown>, keybindingOverrides: {} },
+    state: {
+        deskPanes: {} as Record<string, string>,
+        desks: {},
+        iosSimulator: true,
+        windows: {} as Record<string, unknown>,
+        keybindingOverrides: {},
+    },
 }));
 
 vi.mock("./AgentChatPane", () => ({ AgentChatPane: mocks.chatPane }));
@@ -66,7 +72,7 @@ afterEach(() => {
     mocks.addAgent.mockClear();
     mocks.relaunch.mockClear();
     mocks.resume = { recovery: null, generation: 0 };
-    mocks.state = { deskPanes: {}, desks: {}, windows: {}, keybindingOverrides: {} };
+    mocks.state = { deskPanes: {}, desks: {}, iosSimulator: true, windows: {}, keybindingOverrides: {} };
 });
 
 /* The window layer keeps a live agent mounted so it keeps its process. The
@@ -90,6 +96,7 @@ it("shows the desk toggle as on while the agent's desk is in the layout", () => 
     mocks.state = {
         keybindingOverrides: {},
         desks: {},
+        iosSimulator: true,
         deskPanes: { "desk-1": "agent-1" },
         windows: {
             "window-1": {
@@ -193,5 +200,13 @@ it("opens the agent's desk on the simulator it would use", async () => {
             screen: { width: 402, height: 874 },
         }),
     );
+    mocks.simulatorsAvailable = false;
+});
+
+it("leaves the iOS Simulator out once the person turns it off in Settings", () => {
+    mocks.simulatorsAvailable = true;
+    mocks.state = { ...mocks.state, iosSimulator: false };
+    render(<AgentSurface agent={agent} session={session} visible />);
+    expect(screen.queryByRole("button", { name: "iOS Simulator" })).toBeNull();
     mocks.simulatorsAvailable = false;
 });

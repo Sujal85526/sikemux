@@ -22,6 +22,13 @@ export interface SimulatorChrome {
     screen: { x: number; y: number; width: number; height: number };
 }
 
+/** What Settings shows about the simulator. */
+export interface SimulatorSetup {
+    xcode: string | null;
+    runtimes: string[];
+    helper: string;
+}
+
 /** A simulator Xcode has, for the person to pick from. */
 export interface SimulatorDevice {
     udid: string;
@@ -54,6 +61,8 @@ export const simulatorApi = {
     input: (udid: string, input: SimulatorInput) => invoke<void>("simulator_input", { udid, input }),
     devices: () => invoke<SimulatorDevice[]>("simulator_devices"),
     available: () => invoke<boolean>("simulator_available"),
+    setEnabled: (enabled: boolean) => invoke<void>("simulator_set_enabled", { enabled }),
+    setup: () => invoke<SimulatorSetup>("simulator_setup"),
     /** The device to show when the person opens the simulator for this agent. */
     preferred: (agentId: string) => invoke<SimulatorDevice>("simulator_preferred", { agentId }),
     /** Boots the device and makes it the agent's, so both look at the same screen. */

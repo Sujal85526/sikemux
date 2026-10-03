@@ -87,6 +87,7 @@ export interface PersistedPrefs {
     activeSpaceId?: string | null;
     agentNotifications?: boolean;
     voiceDictation?: boolean;
+    iosSimulator?: boolean;
     notificationsIntroduced?: boolean;
     keptRunningNoticeShown?: boolean;
     railDensity?: RailDensity;

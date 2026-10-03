@@ -344,7 +344,9 @@ function Phone({
 
 /** Opens the agent's desk on an iOS simulator, the one the agent uses if it has one. */
 export function SimulatorButton({ agentId }: { agentId: string }) {
-    const available = useSimulatorsAvailable();
+    const capable = useSimulatorsAvailable();
+    const switchedOn = useStore((state) => state.iosSimulator);
+    const available = capable && switchedOn;
     const showing = useStore((state) => shownDeskPaneId(state, agentId) !== null && !!state.desks[agentId]?.active?.startsWith("simulator:"));
     if (!available) return null;
     return (
