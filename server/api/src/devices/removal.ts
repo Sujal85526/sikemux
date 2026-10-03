@@ -1,5 +1,5 @@
 import type { DeviceRole, RevokeReason } from "@sikemux/protocol";
-import type { Transaction } from "kysely";
+import { sql, type Transaction } from "kysely";
 
 import type { Tables } from "../db.ts";
 import { appendEvent } from "../events/log.ts";
@@ -43,6 +43,8 @@ export async function removeDevice(
       reason,
       acked_event_id: row.acked_event_id,
       clerk_session_id: row.clerk_session_id,
+      clerk_retry_at:
+        reason === "removed" && row.clerk_session_id ? sql<Date>`now()` : null,
     })
     .execute();
   await appendEvent(trx, {

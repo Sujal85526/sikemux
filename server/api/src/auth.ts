@@ -111,6 +111,7 @@ export function clerkVerifier(options: VerifierOptions): Verifier {
 export async function checkStanding(
   db: Kysely<Tables>,
   identity: Identity,
+  { allowDeleted = false } = {},
 ): Promise<void> {
   const { rows } = await sql<{ deleted: boolean; removed: boolean }>`
     select
@@ -121,7 +122,8 @@ export async function checkStanding(
           and user_id = ${identity.userId}
           and reason = 'removed'
       ) as removed`.execute(db);
-  if (rows[0]?.deleted) throw unauthorized("This account was deleted.");
+  if (rows[0]?.deleted && !allowDeleted)
+    throw unauthorized("This account was deleted.");
   if (rows[0]?.removed)
     throw unauthorized("This sign-in was removed from the account.");
 }
@@ -132,6 +134,7 @@ export type AuthEnv = Env & { Variables: { identity: Identity } };
 export function requireIdentity(
   verifier: Verifier,
   db: Kysely<Tables>,
+  standing: { allowDeleted?: boolean } = {},
 ): MiddlewareHandler<AuthEnv> {
   return async (c, next) => {
     const header = c.req.header("authorization") ?? "";
@@ -139,7 +142,7 @@ export function requireIdentity(
     if (!match?.[1])
       throw unauthorized("Sign in first: send Authorization: Bearer <token>.");
     const identity = await verifier.verify(match[1]);
-    await checkStanding(db, identity);
+    await checkStanding(db, identity, standing);
     c.set("identity", identity);
     c.set("log", c.get("log").child({ userId: identity.userId }));
     await next();

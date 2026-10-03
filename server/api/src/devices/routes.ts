@@ -10,6 +10,8 @@ import type {
 import { Hono } from "hono";
 import { sql, type Selectable } from "kysely";
 
+import type { ClerkBackend } from "../account/clerk.ts";
+import { revokeRemovedSession } from "../account/deletion.ts";
 import { requireIdentity, type AuthEnv, type Verifier } from "../auth.ts";
 import type { Database, Tables } from "../db.ts";
 import { appendEvent } from "../events/log.ts";
@@ -38,6 +40,7 @@ export function deviceRoutes(
   { db }: Database,
   verifier: Verifier,
   limiter: RateLimiter,
+  clerk: ClerkBackend | null,
 ) {
   const perUser = (name: string, perMinute: number) =>
     limit<AuthEnv>(limiter, name, perMinute, (c) => c.get("identity").userId);
@@ -241,6 +244,11 @@ export function deviceRoutes(
         { key, role: removed.role, reason },
         "removed a device",
       );
+      if (reason === "removed" && removed.clerkSessionId)
+        await revokeRemovedSession(db, clerk, c.get("log"), key).catch(
+          (error: unknown) =>
+            c.get("log").warn({ err: error }, "could not revoke the session"),
+        );
       return c.body(null, 204);
     })
     .get("/", perUser("list", 120), async (c) => {

@@ -91,8 +91,11 @@ fi
 
 step "service"
 install -m 644 "$here/sikemux-api.service" /etc/systemd/system/sikemux-api.service
+install -m 644 "$here/sikemux-purge.service" /etc/systemd/system/sikemux-purge.service
+install -m 644 "$here/sikemux-purge.timer" /etc/systemd/system/sikemux-purge.timer
 systemctl daemon-reload
 systemctl enable sikemux-api >/dev/null
+systemctl enable --now sikemux-purge.timer >/dev/null
 
 step "caddy"
 install -d -m 755 /etc/caddy/sites

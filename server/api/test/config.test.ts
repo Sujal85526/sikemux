@@ -17,8 +17,35 @@ describe("loadConfig", () => {
       appOrigin: "https://app.sikemux.com",
       clerkIssuer: "https://clerk.sikemux.com",
       macClientId: "mac_client",
+      clerkSecretKey: null,
+      clerkWebhookSecret: null,
       logLevel: "info",
     });
+  });
+
+  it("takes Clerk's secret key and webhook secret when they are set", () => {
+    expect(
+      loadConfig({
+        ...minimal,
+        CLERK_SECRET_KEY: "sk_live_abc",
+        CLERK_WEBHOOK_SECRET: "whsec_c2VjcmV0",
+      }),
+    ).toMatchObject({
+      clerkSecretKey: "sk_live_abc",
+      clerkWebhookSecret: "whsec_c2VjcmV0",
+    });
+  });
+
+  it("refuses secrets that are not Clerk's", () => {
+    expect(() =>
+      loadConfig({
+        ...minimal,
+        CLERK_SECRET_KEY: "pk_live_abc",
+        CLERK_WEBHOOK_SECRET: "c2VjcmV0",
+      }),
+    ).toThrow(
+      "CLERK_SECRET_KEY is not a secret key like sk_live_…; CLERK_WEBHOOK_SECRET is not a signing secret like whsec_…",
+    );
   });
 
   it("lists every problem at once", () => {

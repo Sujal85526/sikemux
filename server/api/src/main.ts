@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import type { Level } from "pino";
 
+import { purgeAccounts, pruneHistory } from "./account/purge.ts";
 import { loadConfig, loadMigrationConfig } from "./config.ts";
 import { openDatabase } from "./db.ts";
 import { createLogger } from "./log.ts";
@@ -90,10 +91,23 @@ if (command === "serve") {
   } finally {
     await database.close();
   }
+} else if (command === "purge") {
+  const config = loadMigrationConfig(process.env);
+  const log = startLogging(config.logLevel);
+  const database = openDatabase(config.databaseUrl, log);
+  try {
+    await purgeAccounts(database.db, log);
+    await pruneHistory(database.db, log);
+  } catch (error) {
+    log.fatal({ err: error }, "purging failed");
+    process.exitCode = 1;
+  } finally {
+    await database.close();
+  }
 } else {
   startLogging("info").fatal(
     { command },
-    "unknown command; use serve, migrate, publish-update or promote-update",
+    "unknown command; use serve, migrate, purge, publish-update or promote-update",
   );
   process.exitCode = 2;
 }

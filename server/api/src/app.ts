@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 
+import type { ClerkBackend } from "./account/clerk.ts";
+import { accountRoutes } from "./account/routes.ts";
 import type { Verifier } from "./auth.ts";
 import type { Database } from "./db.ts";
 import { deviceRoutes } from "./devices/routes.ts";
@@ -10,6 +12,7 @@ import { ApiFailure, errorResponse, requestContext, type Env } from "./http.ts";
 import { clientAddress, limit, RateLimiter } from "./limits.ts";
 import type { Logger } from "./log.ts";
 import { updateRoutes } from "./updates/routes.ts";
+import { clerkWebhookRoutes } from "./webhooks/clerk.ts";
 
 export interface Services {
   database: Database;
@@ -17,6 +20,10 @@ export interface Services {
   appOrigin: string;
   verifier: Verifier;
   limiter?: RateLimiter;
+  /** Clerk's Backend API, or null when CLERK_SECRET_KEY is not set. */
+  clerk: ClerkBackend | null;
+  /** The secret Clerk signs webhooks with, or null when CLERK_WEBHOOK_SECRET is not set. */
+  webhookSecret: string | null;
 }
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -27,6 +34,8 @@ export function createApp({
   appOrigin,
   verifier,
   limiter = new RateLimiter(),
+  clerk,
+  webhookSecret,
 }: Services) {
   const app = new Hono<Env>();
 
@@ -55,7 +64,9 @@ export function createApp({
   );
 
   app.route("/v1/health", healthRoutes(database));
-  app.route("/v1/devices", deviceRoutes(database, verifier, limiter));
+  app.route("/v1/devices", deviceRoutes(database, verifier, limiter, clerk));
+  app.route("/v1/account", accountRoutes(database, verifier, limiter, clerk));
+  app.route("/v1/webhooks", clerkWebhookRoutes(database, webhookSecret));
   app.route("/updates", updateRoutes(database, limiter));
 
   app.notFound((c) =>
