@@ -13,7 +13,11 @@ api.sikemux.com {
 	request_body {
 		max_size 1MB
 	}
-	reverse_proxy 127.0.0.1:4000
+	# /v1/live is one WebSocket per device. A reload leaves open ones up to 5 minutes before
+	# closing them, so devices reconnect spread out instead of all at once.
+	reverse_proxy 127.0.0.1:4000 {
+		stream_close_delay 5m
+	}
 	log {
 		output file /var/log/caddy/sikemux-api.log {
 			roll_size 10MiB
