@@ -21,6 +21,8 @@ const SETTLE_STEP: Duration = Duration::from_millis(300);
 const SETTLE_READS: usize = 12;
 /// Elements whose centre is above this are the status bar's: time, signal, battery.
 const STATUS_BAR_HEIGHT: f64 = 60.0;
+/// How many reads, a step apart, to wait for a launched app to come to the front: ten seconds.
+const LAUNCH_READS: usize = 33;
 /// How many reads, a step apart, to wait for an action to change the screen.
 const CHANGE_READS: usize = 5;
 /// A swipe that starts this close to an edge is sent as a system gesture, as the helper decides.
@@ -222,6 +224,9 @@ pub(super) fn run(
                 }
             }
             let launched = manager.request("launch", fields, ACTION_TIMEOUT)?;
+            if let Some(pid) = launched["pid"].as_i64() {
+                wait_for_front(manager, &device, pid);
+            }
             let mut state = settled_state(manager, agent_id, Some(before))?;
             state["pid"] = launched["pid"].clone();
             Ok(state)
@@ -438,6 +443,29 @@ fn attached(manager: &SimulatorManager, agent_id: &str) -> Result<Device, String
 }
 
 pub(super) type Screen = (String, Vec<Element>);
+
+/// A newly installed app takes a few seconds to open the first time, longer than
+/// any screen change is waited for, so a launch waits until its process is in front.
+fn wait_for_front(manager: &SimulatorManager, device: &Device, pid: i64) {
+    for _ in 0..LAUNCH_READS {
+        let front = manager
+            .request("state", json!({ "udid": device.udid }), ACTION_TIMEOUT)
+            .ok()
+            .and_then(|reply| frontmost_pid(&reply));
+        if front == Some(pid) {
+            return;
+        }
+        std::thread::sleep(SETTLE_STEP);
+    }
+}
+
+pub(super) fn frontmost_pid(reply: &Value) -> Option<i64> {
+    reply["elements"]
+        .as_array()?
+        .iter()
+        .find(|element| element["type"] == "Application")?["pid"]
+        .as_i64()
+}
 
 fn read_screen(manager: &SimulatorManager, device: &Device) -> Result<Screen, String> {
     let reply = manager.request("state", json!({ "udid": device.udid }), ACTION_TIMEOUT)?;
