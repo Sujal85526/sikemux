@@ -1,0 +1,47 @@
+import Foundation
+
+struct Request: Decodable {
+    let id: Int
+    let type: String
+    let udid: String?
+    let x: Double?
+    let y: Double?
+    let toX: Double?
+    let toY: Double?
+    let duration: Double?
+    let label: String?
+    let text: String?
+    let button: String?
+    let path: String?
+    let bundleId: String?
+    let arguments: [String]?
+    let environment: [String: String]?
+    let url: String?
+}
+
+struct Failure: Error {
+    let reason: String
+    let message: String
+}
+
+enum Output {
+    private static let lock = NSLock()
+
+    static func send(_ message: [String: Any]) {
+        guard var data = try? JSONSerialization.data(withJSONObject: message) else { return }
+        data.append(0x0A)
+        lock.lock()
+        defer { lock.unlock() }
+        FileHandle.standardOutput.write(data)
+    }
+
+    static func result(_ id: Int, _ fields: [String: Any] = [:]) {
+        send(fields.merging(["id": id, "type": "result"]) { _, new in new })
+    }
+
+    static func failure(_ id: Int?, _ reason: String, _ message: String) {
+        var message: [String: Any] = ["type": "error", "reason": reason, "message": message]
+        if let id { message["id"] = id }
+        send(message)
+    }
+}
