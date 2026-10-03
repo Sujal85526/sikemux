@@ -108,7 +108,8 @@ struct SikemuxSim {
             try await simulators.stopLogs(on: udid, process: request.process)
         case "stream":
             return try await simulators.stream(
-                on: udid, format: request.format ?? "h264", fps: min(max(request.fps ?? 60, 1), 60), scale: request.scale)
+                on: udid, format: request.format ?? "h264", framed: request.transport == "framed", fps: min(max(request.fps ?? 60, 1), 60),
+                scale: request.scale)
         case "stopStream":
             try await simulators.stopStream(on: udid, format: request.format)
         case "install":

@@ -227,4 +227,6 @@ pub const IPC_COMMANDS: &[&str] = &[
     "sim_status",
     "sim_prepare",
     "sim_call",
+    "sim_watch",
+    "sim_unwatch",
 ];

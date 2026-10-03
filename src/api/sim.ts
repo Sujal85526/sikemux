@@ -1,3 +1,4 @@
+import { Channel } from "@tauri-apps/api/core";
 import { invokeCommand as invoke } from "./invoke";
 import { getIpcTransport, type IpcUnsubscribe } from "./transport";
 
@@ -55,6 +56,13 @@ export const simApi = {
     button: (udid: string, button: SimButton) => call<void>({ type: "button", udid, button }),
     orientation: (udid: string, orientation: SimOrientation) => call<void>({ type: "orientation", udid, orientation }),
     screenshot: (udid: string, path: string) => call<{ path: string }>({ type: "screenshot", udid, path }),
+    /** The screen through the app instead of a WebSocket the page opens; resolves to the id `unwatch` takes. */
+    watch: (udid: string, format: SimStreamFormat, onFrame: (frame: ArrayBuffer) => void) => {
+        const channel = new Channel<ArrayBuffer>();
+        channel.onmessage = onFrame;
+        return invoke<number>("sim_watch", { udid, format, onFrame: channel });
+    },
+    unwatch: (id: number) => invoke<void>("sim_unwatch", { id }),
     subscribe: (listener: (event: SimEvent) => void, signal: AbortSignal): Promise<IpcUnsubscribe> =>
         getIpcTransport().subscribe<SimEvent>("sim", (event) => listener(event.payload), { signal }),
 };

@@ -477,6 +477,8 @@ pub fn run() {
             sim::sim_status,
             sim::sim_prepare,
             sim::sim_call,
+            sim::sim_watch,
+            sim::sim_unwatch,
         ])
         .build(tauri::generate_context!())
         .expect("error while building sikemux")

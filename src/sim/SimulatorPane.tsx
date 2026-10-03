@@ -5,7 +5,7 @@ import type { DeskSimulator } from "../state/types";
 import { notify, reportError } from "../state/toast";
 import { Dropdown } from "../ui/Dropdown";
 import { EmptyState } from "../ui/Panel";
-import { playScreen } from "./screenStream";
+import { playScreen, type ScreenTransport } from "./screenStream";
 
 const NAMED_KEYS = new Set(["Enter", "Escape", "Backspace", "Tab", "Delete", "ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"]);
 const TURNS: SimOrientation[] = ["portrait", "landscapeLeft", "portraitUpsideDown", "landscapeRight"];
@@ -36,6 +36,9 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
     const [fps, setFps] = useState(0);
     const [format, setFormat] = useState<SimStreamFormat>("h264");
     const [turn, setTurn] = useState(0);
+    const [transport, setTransport] = useState<ScreenTransport>("websocket");
+    const [latency, setLatency] = useState<number | null>(null);
+    const player = useRef<ReturnType<typeof playScreen> | null>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     // Input goes out in the order it happened; the helper answers requests in parallel.
     const input = useRef<Promise<unknown>>(Promise.resolve());
@@ -95,8 +98,13 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!udid || !booted || !visible || !canvas) return;
-        return playScreen(udid, canvas, { onFps: setFps, onFormat: setFormat, onError: setProblem });
-    }, [udid, booted, visible]);
+        const playing = playScreen(udid, canvas, { onFps: setFps, onFormat: setFormat, onError: setProblem, onLatency: setLatency }, transport);
+        player.current = playing;
+        return () => {
+            playing.stop();
+            player.current = null;
+        };
+    }, [udid, booted, visible, transport]);
 
     const send = (work: () => Promise<unknown>) => {
         input.current = input.current.then(work).catch(reportError("simulator input"));
@@ -114,7 +122,10 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
     };
     const touch = (phase: "down" | "move" | "up") => (event: PointerEvent<HTMLCanvasElement>) => {
         if (!udid || (phase === "move" && !event.currentTarget.hasPointerCapture(event.pointerId))) return;
-        if (phase === "down") event.currentTarget.setPointerCapture(event.pointerId);
+        if (phase === "down") {
+            event.currentTarget.setPointerCapture(event.pointerId);
+            player.current?.markInput();
+        }
         const point = pointAt(event);
         if (point) send(() => simApi.touch(udid, phase, point.x, point.y));
     };
@@ -195,9 +206,14 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
                     </button>
                 </span>
                 {import.meta.env.DEV && booted && visible && (
-                    <span className="sim-fps" title="Frames drawn in the last second (dev builds only)">
-                        {fps} fps · {format === "h264" ? "H.264" : "MJPEG"}
-                    </span>
+                    <button
+                        type="button"
+                        className="sim-fps"
+                        title="Frames drawn in the last second, the format, the route frames take and the last tap → frame time (dev builds only). Click to switch the route."
+                        onClick={() => setTransport((current) => (current === "websocket" ? "channel" : "websocket"))}>
+                        {fps} fps · {format === "h264" ? "H.264" : "MJPEG"} · {transport === "websocket" ? "WebSocket" : "Channel"}
+                        {latency !== null && ` · tap→frame ${Math.round(latency)} ms`}
+                    </button>
                 )}
             </div>
             {problem && devices && <div className="sim-problem">{problem}</div>}

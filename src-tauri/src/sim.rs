@@ -13,6 +13,7 @@ use std::time::Duration;
 
 use serde::Serialize;
 use serde_json::{json, Map, Value};
+use tauri::ipc::{Channel, Response};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::oneshot;
 
@@ -38,6 +39,7 @@ pub struct SimManager {
     helper: Arc<Mutex<Option<Helper>>>,
     waiting: Waiting,
     next_id: Arc<AtomicU64>,
+    watches: Arc<Mutex<HashMap<u64, tauri::async_runtime::JoinHandle<()>>>>,
 }
 
 #[derive(Serialize)]
@@ -50,6 +52,14 @@ pub struct SimStatus {
 
 impl SimManager {
     pub fn drain(&self) {
+        for (_, watch) in self
+            .watches
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .drain()
+        {
+            watch.abort();
+        }
         if let Some(mut helper) = self.helper.lock().unwrap_or_else(|e| e.into_inner()).take() {
             let _ = helper.child.kill();
             let _ = helper.child.wait();
@@ -291,6 +301,76 @@ pub async fn sim_call(
     sim.call(executable(&app).await?, request).await
 }
 
+/// Reads the helper's length-prefixed frames from 127.0.0.1 and hands each to the page as raw bytes,
+/// the route frames take when the page does not open the helper's WebSocket itself.
+async fn forward_frames(
+    port: u16,
+    token: String,
+    on_frame: Channel<Response>,
+) -> std::io::Result<()> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut socket = tokio::net::TcpStream::connect(("127.0.0.1", port)).await?;
+    socket.set_nodelay(true)?;
+    socket.write_all(format!("{token}\n").as_bytes()).await?;
+    loop {
+        let length = socket.read_u32().await? as usize;
+        let mut frame = vec![0; length];
+        socket.read_exact(&mut frame).await?;
+        if on_frame.send(Response::new(frame)).is_err() {
+            return Ok(());
+        }
+    }
+}
+
+/// Streams a device's screen to `on_frame` through the app, and returns an id `sim_unwatch` stops it by.
+#[tauri::command]
+pub async fn sim_watch(
+    app: AppHandle,
+    udid: String,
+    format: String,
+    on_frame: Channel<Response>,
+    sim: State<'_, SimManager>,
+) -> AppResult<u64> {
+    if let Some(reason) = unsupported_reason() {
+        return Err(AppError::Other(reason));
+    }
+    let request =
+        json!({ "type": "stream", "udid": udid, "format": format, "transport": "framed" });
+    let stream = sim
+        .call(
+            executable(&app).await?,
+            request.as_object().cloned().unwrap_or_default(),
+        )
+        .await?;
+    let port = stream["port"]
+        .as_u64()
+        .and_then(|port| u16::try_from(port).ok())
+        .ok_or_else(|| AppError::Other("the simulator helper gave no stream port".into()))?;
+    let token = stream["token"].as_str().unwrap_or_default().to_owned();
+    let id = sim.next_id.fetch_add(1, Ordering::SeqCst) + 1;
+    let watch = tauri::async_runtime::spawn(async move {
+        let _ = forward_frames(port, token, on_frame).await;
+    });
+    sim.watches
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(id, watch);
+    Ok(id)
+}
+
+#[tauri::command]
+pub async fn sim_unwatch(id: u64, sim: State<'_, SimManager>) -> AppResult<()> {
+    if let Some(watch) = sim
+        .watches
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(&id)
+    {
+        watch.abort();
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -333,6 +413,43 @@ mod tests {
             "{missing}"
         );
         sim.drain();
+    }
+
+    #[tokio::test]
+    async fn frames_from_the_helpers_socket_reach_the_page_as_raw_bytes() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let helper = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut token = [0u8; 6];
+            socket.read_exact(&mut token).await.unwrap();
+            for frame in [b"first".as_slice(), b"second".as_slice()] {
+                socket.write_u32(frame.len() as u32).await.unwrap();
+                socket.write_all(frame).await.unwrap();
+            }
+            token
+        });
+        let received = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&received);
+        let channel = Channel::new(move |body| {
+            if let tauri::ipc::InvokeResponseBody::Raw(bytes) = body {
+                sink.lock().unwrap().push(bytes);
+            }
+            Ok(())
+        });
+
+        let ended = forward_frames(port, "token".into(), channel).await;
+
+        assert_eq!(&helper.await.unwrap(), b"token\n");
+        assert_eq!(
+            *received.lock().unwrap(),
+            vec![b"first".to_vec(), b"second".to_vec()]
+        );
+        assert!(
+            ended.is_err(),
+            "the stream ends when the helper closes its socket"
+        );
     }
 
     #[test]

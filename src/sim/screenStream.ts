@@ -20,9 +20,13 @@ export async function chooseDecoder(
 const webCodecsSupports = async (config: VideoDecoderConfig) =>
     typeof VideoDecoder !== "undefined" && (await VideoDecoder.isConfigSupported(config).catch(() => ({ supported: false }))).supported === true;
 
+export type ScreenTransport = "websocket" | "channel";
+
 export interface ScreenStreamEvents {
     /** Frames drawn in the last second. */
     onFps: (fps: number) => void;
+    /** From a touch going out to the next frame drawn, in milliseconds. */
+    onLatency?: (ms: number) => void;
     onFormat: (format: SimStreamFormat) => void;
     onError: (message: string) => void;
 }
@@ -31,10 +35,17 @@ export interface ScreenStreamEvents {
  * Plays a device's screen into a canvas until stopped. Nothing else depends on
  * it: taps, screenshots and the accessibility tree work with no stream running.
  */
-export function playScreen(udid: string, canvas: HTMLCanvasElement, events: ScreenStreamEvents): () => void {
+export function playScreen(
+    udid: string,
+    canvas: HTMLCanvasElement,
+    events: ScreenStreamEvents,
+    transport: ScreenTransport = "websocket",
+): { stop: () => void; markInput: () => void } {
     const context = canvas.getContext("2d");
     let stopped = false;
     let socket: WebSocket | null = null;
+    let watch: Promise<number> | null = null;
+    let inputAt: number | null = null;
     let decoder: VideoDecoder | null = null;
     let format: SimStreamFormat = "h264";
     let drawn = 0;
@@ -51,11 +62,20 @@ export function playScreen(udid: string, canvas: HTMLCanvasElement, events: Scre
         }
         context.drawImage(image, 0, 0, width, height);
         drawn += 1;
+        if (inputAt !== null) {
+            events.onLatency?.(performance.now() - inputAt);
+            inputAt = null;
+        }
     };
 
     const open = async (wanted: SimStreamFormat) => {
         format = wanted;
         events.onFormat(wanted);
+        if (transport === "channel") {
+            watch = simApi.watch(udid, wanted, (frame) => void receive(new Uint8Array(frame)));
+            await watch;
+            return;
+        }
         const stream = await simApi.stream(udid, wanted);
         if (stopped) return;
         socket = new WebSocket(`ws://127.0.0.1:${stream.port}/`, [stream.token]);
@@ -66,15 +86,24 @@ export function playScreen(udid: string, canvas: HTMLCanvasElement, events: Scre
         };
     };
 
+    const close = () => {
+        if (socket) {
+            socket.onclose = null;
+            socket.close();
+            socket = null;
+        }
+        if (watch) {
+            void watch.then((id) => simApi.unwatch(id)).catch(() => {});
+            watch = null;
+        }
+    };
+
     const fallBackToMjpeg = (reason: string) => {
         if (format === "mjpeg" || stopped) return;
         console.warn(`simulator screen: ${reason}; showing MJPEG instead`);
         if (decoder && decoder.state !== "closed") decoder.close();
         decoder = null;
-        if (socket) {
-            socket.onclose = null;
-            socket.close();
-        }
+        close();
         void simApi.stopStream(udid, "h264").catch(() => {});
         void open("mjpeg").catch((error) => events.onError(String(error)));
     };
@@ -123,14 +152,16 @@ export function playScreen(udid: string, canvas: HTMLCanvasElement, events: Scre
 
     void open("h264").catch((error) => events.onError(String(error)));
 
-    return () => {
-        stopped = true;
-        window.clearInterval(fpsTimer);
-        if (socket) {
-            socket.onclose = null;
-            socket.close();
-        }
-        if (decoder && decoder.state !== "closed") decoder.close();
-        void simApi.stopStream(udid).catch(() => {});
+    return {
+        stop: () => {
+            stopped = true;
+            window.clearInterval(fpsTimer);
+            close();
+            if (decoder && decoder.state !== "closed") decoder.close();
+            void simApi.stopStream(udid).catch(() => {});
+        },
+        markInput: () => {
+            inputAt = performance.now();
+        },
     };
 }

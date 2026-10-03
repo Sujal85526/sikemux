@@ -122,7 +122,7 @@ actor Simulators {
 
     /// One stream per device and format, shared by every viewer. H.264 sends a key frame each second so a
     /// late viewer starts within one; MJPEG is for a viewer whose H.264 decoder will not start.
-    func stream(on udid: String?, format: String, fps: Int, scale: Double?) async throws -> [String: Any] {
+    func stream(on udid: String?, format: String, framed: Bool, fps: Int, scale: Double?) async throws -> [String: Any] {
         let simulator = try await booted(udid)
         let videoFormat: VideoStreamFormat
         switch format {
@@ -130,9 +130,9 @@ actor Simulators {
         case "mjpeg": videoFormat = .mjpeg(encoder: .allowSoftware)
         default: throw Failure(reason: "badRequest", message: "Unknown stream format \(format). Use h264 or mjpeg.")
         }
-        let key = "\(simulator.udid) \(format)"
+        let key = "\(simulator.udid) \(format)\(framed ? " framed" : "")"
         if streams[key] == nil {
-            let stream = try FrameStream()
+            let stream = try FrameStream(framed: framed)
             try await stream.listen()
             let configuration = VideoStreamConfiguration(
                 format: videoFormat, framesPerSecond: fps, rateControl: nil, scaleFactor: scale, keyFrameRate: 1)
@@ -147,7 +147,7 @@ actor Simulators {
 
     func stopStream(on udid: String?, format: String?) async throws {
         let device = try find(udid).udid
-        for key in streams.keys where key.hasPrefix(device + " ") && (format == nil || key == "\(device) \(format!)") {
+        for key in streams.keys where key.hasPrefix(device + " ") && (format == nil || key.hasPrefix("\(device) \(format!)")) {
             let stream = streams.removeValue(forKey: key)
             try? await stream?.operation?.stopStreaming()
             stream?.stop()
