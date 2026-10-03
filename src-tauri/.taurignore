@@ -1,0 +1,3 @@
+# Build output of the sikemux-sim helper; a change there is not a change to the app.
+sim/.build/
+sim/idb/*.xcodeproj/
