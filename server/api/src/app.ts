@@ -7,8 +7,9 @@ import type { Database } from "./db.ts";
 import { deviceRoutes } from "./devices/routes.ts";
 import { healthRoutes } from "./health/routes.ts";
 import { ApiFailure, errorResponse, requestContext, type Env } from "./http.ts";
-import { limit, RateLimiter } from "./limits.ts";
+import { clientAddress, limit, RateLimiter } from "./limits.ts";
 import type { Logger } from "./log.ts";
+import { updateRoutes } from "./updates/routes.ts";
 
 export interface Services {
   database: Database;
@@ -30,14 +31,7 @@ export function createApp({
   const app = new Hono<Env>();
 
   app.use(requestContext(log));
-  app.use(
-    limit<Env>(
-      limiter,
-      "address",
-      600,
-      (c) => c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || "local",
-    ),
-  );
+  app.use(limit<Env>(limiter, "address", 600, clientAddress));
   app.use(
     cors({
       origin: appOrigin,
@@ -62,6 +56,7 @@ export function createApp({
 
   app.route("/v1/health", healthRoutes(database));
   app.route("/v1/devices", deviceRoutes(database, verifier, limiter));
+  app.route("/updates", updateRoutes(database, limiter));
 
   app.notFound((c) =>
     errorResponse(

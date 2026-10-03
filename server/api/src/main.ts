@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { Level } from "pino";
@@ -7,6 +9,11 @@ import { openDatabase } from "./db.ts";
 import { createLogger } from "./log.ts";
 import { migrate, readMigrations } from "./migrations.ts";
 import { startServer } from "./server.ts";
+import {
+  promoteUpdate,
+  publishUpdate,
+  UpdateRefused,
+} from "./updates/publish.ts";
 
 function startLogging(level: Level) {
   const log = createLogger(level);
@@ -41,10 +48,52 @@ if (command === "serve") {
   } finally {
     await database.close();
   }
+} else if (command === "publish-update" || command === "promote-update") {
+  const config = loadMigrationConfig(process.env);
+  const log = startLogging(config.logLevel);
+  const [first, second] = process.argv.slice(3);
+  const database = openDatabase(config.databaseUrl, log);
+  try {
+    if (command === "publish-update") {
+      if (!first || !second)
+        throw new UpdateRefused(
+          "usage: publish-update <unpacked bundle> <asset folder>",
+        );
+      const published = await publishUpdate(database.db, {
+        dir: resolve(first),
+        assetsDir: resolve(second),
+        certificate: readFileSync(
+          new URL("./updates-certificate.pem", import.meta.url),
+          "utf8",
+        ),
+      });
+      log.info(
+        published,
+        published.added
+          ? "published an update"
+          : "the update was already published",
+      );
+    } else {
+      if (!first) throw new UpdateRefused("usage: promote-update <update id>");
+      const promoted = await promoteUpdate(database.db, first);
+      log.info(
+        promoted,
+        promoted.added
+          ? "promoted an update to stable"
+          : "the update is already on stable",
+      );
+    }
+  } catch (error) {
+    if (error instanceof UpdateRefused) log.error(error.message);
+    else log.fatal({ err: error }, `${command} failed`);
+    process.exitCode = 1;
+  } finally {
+    await database.close();
+  }
 } else {
   startLogging("info").fatal(
     { command },
-    "unknown command; use serve or migrate",
+    "unknown command; use serve, migrate, publish-update or promote-update",
   );
   process.exitCode = 2;
 }

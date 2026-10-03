@@ -26,6 +26,22 @@ export interface Tables {
     last_seen_at: Date | null;
   };
   challenges: { nonce: string; user_id: string; expires_at: Date };
+  updates: {
+    id: string;
+    platform: string;
+    runtime_version: string;
+    created_at: Date;
+    manifest: Buffer;
+    signature: string;
+    commit: string;
+    message: string;
+    published_at: CreatedAt;
+  };
+  update_channels: {
+    update_id: string;
+    channel: string;
+    assigned_at: CreatedAt;
+  };
   audit: {
     id: Generated<string>;
     user_id: string | null;

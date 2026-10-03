@@ -1,4 +1,4 @@
-import type { MiddlewareHandler } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 
 import { ApiFailure, type Env } from "./http.ts";
 
@@ -53,4 +53,9 @@ export function limit<E extends Env>(
     }
     await next();
   };
+}
+
+/** The caller's address as Caddy saw it, so one phone's requests count together. */
+export function clientAddress(c: Context): string {
+  return c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || "local";
 }

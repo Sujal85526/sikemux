@@ -1,5 +1,6 @@
 // Bundles the API into one file, so a release needs no node_modules on the server.
 import { execFileSync } from "node:child_process";
+import { copyFileSync } from "node:fs";
 import { build } from "esbuild";
 
 const version =
@@ -21,4 +22,9 @@ await build({
   },
   logLevel: "warning",
 });
+// publish-update checks bundles against the certificate the phones trust, so it ships beside the API.
+copyFileSync(
+  "../../mobile/app/certs/updates-certificate.pem",
+  "dist/updates-certificate.pem",
+);
 console.log(`Built server/api/dist/main.mjs for ${version}`);
