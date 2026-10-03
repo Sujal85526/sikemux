@@ -64,6 +64,19 @@
 - Merging to `main` deploys anything under `server/` to production. Do not run
   `server/deploy` scripts against citadel yourself; ask first.
 
+## Notch
+
+- The island over the MacBook notch is `sikemux-notch`, a SwiftUI helper in `src-tauri/notch`
+  and a client of the core: it reads the device view phones get. The app starts it; it keeps
+  running after the app quits.
+- It is designed in `src-tauri/notch/design/screens.html` before it is built, and must keep
+  matching it. Change the design in the same commit as the island; view it by serving the repo
+  root (`python3 -m http.server`) and opening `/src-tauri/notch/design/screens.html`.
+- Its icons come from `src/ui/Icons.tsx`, the agent marks and `brand/`. After changing one it
+  uses, run `node scripts/generate-notch-icons.mjs`; the release checks fail on a stale copy.
+- `swift run --package-path src-tauri/notch notch-snapshots <dir>` renders every state to PNGs,
+  for comparing with the design.
+
 ## Website
 
 - sikemux.com is a separate Astro repo, `nodelike/sikemux-front`, checked out at

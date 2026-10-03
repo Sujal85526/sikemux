@@ -1,0 +1,1210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sikemux Notch · design</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face {
+    font-family: "Figtree";
+    src: url("../../../public/fonts/Figtree-latin-wght-normal.woff2") format("woff2");
+    font-weight: 300 900;
+}
+@font-face {
+    font-family: "JetBrainsMono Nerd Font";
+    src: url("../../../public/fonts/JetBrainsMonoNerdFontMono-Regular-Base.woff2") format("woff2");
+}
+:root {
+    --ink: #e7e5ef;
+    --ink-dim: #8b8898;
+    --ink-faint: #736f80;
+    --acc: #a277ff;
+    --acc-soft: rgba(162, 119, 255, 0.16);
+    --acc-line: rgba(162, 119, 255, 0.42);
+    --on-accent: #100e16;
+    --live: #61ffca;
+    --warn: #ffca85;
+    --danger: #ff6767;
+    --hover: rgba(255, 255, 255, 0.07);
+    --raised: rgba(255, 255, 255, 0.055);
+    --hairline: rgba(255, 255, 255, 0.09);
+    --cmd: #ff6ac1;
+    --yolo-rainbow: linear-gradient(90deg, var(--acc), var(--cmd), var(--danger), var(--warn), var(--live), var(--acc));
+    --brand-claude: #d97757;
+    --brand-codex: #7a9dff;
+    --brand-opencode: #a78bfa;
+    --brand-grok: #fcfcfc;
+    --brand-pi: #7dd3fc;
+    --mono: "JetBrainsMono Nerd Font", ui-monospace, "SF Mono", Menlo, monospace;
+    --sys: -apple-system, "SF Pro Text", system-ui, sans-serif;
+    --ui: "Figtree", -apple-system, system-ui, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: #0b0a0f; color: var(--ink); font-family: var(--ui); overscroll-behavior: none; }
+body { padding: 28px 0 120px; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: default; }
+
+
+.controls { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 10px; }
+
+/* A stage is the top of a real screen at 1:1 — one CSS px is one point. */
+.stage {
+    position: relative; overflow: hidden; margin: 10px auto 0; width: 100%; max-width: 1100px;
+    border-radius: 12px; border: 1px solid var(--hairline);
+}
+.stage { background: #000; }
+.stage .screen { position: absolute; top: 10px; bottom: 0; left: 50%; border-radius: 10px 10px 0 0; overflow: hidden; }
+.stage .caption {
+    position: absolute; left: 14px; bottom: 10px; font-size: 11.5px; color: rgba(255,255,255,0.72);
+    text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+}
+.wallpaper {
+    position: absolute; inset: 0;
+    background:
+        radial-gradient(1200px 700px at 30% 120%, #3b2a6e 0%, transparent 60%),
+        radial-gradient(900px 600px at 85% 10%, #1f3b6b 0%, transparent 60%),
+        radial-gradient(700px 500px at 55% 60%, #5a2f5c 0%, transparent 65%),
+        linear-gradient(160deg, #141024, #0d1424);
+}
+.window-peek {
+    position: absolute; top: 70px; left: 240px; right: 240px; height: 900px; border-radius: 16px;
+    background: rgba(23, 20, 30, 0.82); border: 1px solid rgba(255,255,255,0.08);
+    box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+}
+
+/* macOS menu bar */
+.menubar {
+    position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 14px 0 18px; font-family: var(--sys); font-size: 13px; color: #fff; text-shadow: 0 0 6px rgba(0,0,0,0.35);
+}
+.menubar .left, .menubar .right { display: flex; align-items: center; gap: 19px; }
+.menubar .right { gap: 15px; }
+.menubar b { font-weight: 700; }
+.menubar svg { display: block; }
+
+/* The island */
+.island { position: absolute; top: 0; z-index: 5; }
+.island .shadow { position: absolute; top: 0; left: 0; transition: filter 200ms ease; }
+.island.lifted .shadow { filter: drop-shadow(0 0 6px rgba(0,0,0,0.7)); }
+.island .shape { position: relative; background: #000; overflow: hidden; }
+.island .chin { position: absolute; left: 0; right: 0; top: 0; }
+.layer {
+    position: absolute; top: 0; left: 50%;
+    transform-origin: 50% 0;
+    transition: opacity 350ms cubic-bezier(0.2, 0.8, 0.2, 1), transform 350ms cubic-bezier(0.2, 0.8, 0.2, 1), filter 350ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.layer.off { opacity: 0; filter: blur(20px); pointer-events: none; }
+.layer.big.off { transform: translateX(-50%) scale(0.8); }
+.layer.big { transform: translateX(-50%) scale(1); }
+.layer.wings { transform: translateX(-50%); transition-duration: 160ms; }
+.layer.wings.off { filter: blur(6px); }
+
+/* Closed wings */
+.wings { display: flex; align-items: center; }
+.wing { display: flex; align-items: center; height: 100%; }
+.wing.l { justify-content: flex-start; padding-left: 14px; }
+.wing.r { justify-content: flex-end; padding-right: 14px; gap: 6px; }
+.gap { height: 100%; flex: 0 0 auto; }
+.stack { display: flex; }
+.tile {
+    width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
+    background: #1f1d26; box-shadow: 0 0 0 2px #000;
+}
+.tile + .tile { margin-left: -7px; }
+.tile svg { width: 14px; height: 14px; }
+.island.plain .tile { width: 18px; height: 18px; box-shadow: 0 0 0 1.5px #000; }
+.island.plain .tile + .tile { margin-left: -5px; }
+.island.plain .tile svg { width: 11px; height: 11px; }
+.island.plain .wing.l { padding-left: 10px; }
+.count { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink); }
+.inline-text { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.inline-text.dim { color: var(--ink-dim); font-weight: 500; }
+
+/* State marks, the same ones the rail uses */
+.st { width: 16px; height: 16px; display: inline-grid; place-items: center; flex: 0 0 auto; position: relative; }
+.st.working { color: var(--live); }
+.st.blocked { color: var(--warn); }
+.st.done { color: var(--acc); }
+.st .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.st .ping { position: absolute; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid currentColor; opacity: 0; }
+.st.blocked.fresh .ping { animation: ping 520ms cubic-bezier(0.2, 0.6, 0.3, 1) both; }
+.st.blocked.fresh .ping + .ping { animation-delay: 380ms; }
+@keyframes ping { from { transform: scale(0.6); opacity: 0.9; } to { transform: scale(2.4); opacity: 0; } }
+.loader { display: grid; grid-template-columns: repeat(3, 2.5px); gap: 1.5px; }
+.loader i { width: 2.5px; height: 2.5px; border-radius: 0.5px; background: currentColor; animation: twinkle var(--p) ease-in-out var(--o) infinite; }
+@keyframes twinkle { 0%, 100% { opacity: 0.2; } 40% { opacity: 1; } }
+
+/* Open + peek content */
+.big { color: var(--ink); }
+.head { display: flex; align-items: center; }
+.head .side { flex: 1 1 0; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.head .side.r { justify-content: flex-end; }
+.lead { font-size: 13px; font-weight: 600; letter-spacing: -0.005em; }
+.trail { font-size: 12px; font-weight: 600; }
+.tile.lg { width: 26px; height: 26px; box-shadow: none; background: rgba(255, 255, 255, 0.08); }
+.tile.lg svg { width: 15px; height: 15px; }
+
+.chip {
+    height: 26px; padding: 0 11px; border-radius: 13px; display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 600; color: var(--ink-dim); white-space: nowrap;
+}
+.chip:hover { background: rgba(255, 255, 255, 0.08); color: var(--ink); }
+.chip[aria-selected="true"] { color: var(--ink); background: rgba(255, 255, 255, 0.12); }
+.chip .n { font-size: 11px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+.chip[aria-selected="true"] .n { color: var(--ink-dim); }
+.icon-btn { width: 26px; height: 26px; border-radius: 13px; display: grid; place-items: center; color: var(--ink-dim); }
+.icon-btn:hover { background: rgba(255, 255, 255, 0.1); color: var(--ink); }
+.icon-btn img, .icon-btn svg { width: 14px; height: 14px; display: block; }
+.phone { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--ink-dim); padding: 0 6px; }
+.phone .ok { width: 5px; height: 5px; border-radius: 50%; background: var(--live); }
+
+.group-label { font-size: 11px; font-weight: 600; color: var(--ink-faint); padding: 12px 12px 4px; }
+.group-label:first-child { padding-top: 6px; }
+.row { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px; border-radius: 12px; }
+.row .title, .ask-head .title { flex: 1 1 auto; min-width: 0; }
+.proj { display: inline-flex; align-items: center; gap: 4px; flex: 0 1 auto; min-width: 0; max-width: 150px; font-size: 11.5px; color: var(--ink-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.proj svg { flex: 0 0 auto; color: var(--ink-faint); }
+.time { min-width: 44px; text-align: right; }
+.row:hover { background: rgba(255, 255, 255, 0.07); }
+.mark { width: 16px; height: 16px; flex: 0 0 auto; }
+.mark svg { width: 16px; height: 16px; display: block; }
+.text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.title { font-size: 13px; font-weight: 600; letter-spacing: -0.005em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sub { font-size: 11.5px; color: var(--ink-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.time { font-size: 11.5px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+
+.ask { padding: 12px; border-radius: 14px; background: rgba(255, 255, 255, 0.06); margin-bottom: 2px; }
+.ask .ask-head { display: flex; align-items: center; gap: 10px; }
+.ask { padding: 10px 12px 12px; }
+.cmd {
+    margin-top: 10px; font-family: var(--mono); font-size: 12px; line-height: 1.5; color: var(--ink); padding: 9px 12px; border-radius: 10px;
+    background: rgba(255, 255, 255, 0.06); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ask .cmd { background: rgba(0, 0, 0, 0.45); }
+.cmd .sign { color: var(--ink-faint); margin-right: 8px; }
+.actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.btn {
+    height: 32px; padding: 0 14px; border-radius: 16px; font-size: 12.5px; font-weight: 600;
+    background: rgba(255, 255, 255, 0.1); color: var(--ink); display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+}
+.btn:hover { background: rgba(255, 255, 255, 0.16); }
+.btn.primary { background: var(--acc); color: var(--on-accent); }
+.btn.primary:hover { background: #b08fff; }
+.btn.small { height: 28px; border-radius: 14px; }
+
+.sub svg { flex: 0 0 auto; margin-right: 4px; color: var(--ink-faint); }
+.sub { display: flex; align-items: center; }
+.dotsep { margin: 0 5px; color: var(--ink-faint); }
+.yolo-ring {
+    position: absolute; inset: 0; border-radius: inherit; padding: 1px; overflow: hidden; pointer-events: none;
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor; mask-composite: exclude;
+}
+.yolo-ring::before {
+    content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 400%;
+    background-image: var(--yolo-rainbow); background-size: 50% 100%; animation: yolo-slide 5s linear infinite;
+}
+@keyframes yolo-slide { to { transform: translateX(-50%); } }
+
+.composer { border-radius: 16px; background: rgba(255, 255, 255, 0.06); padding: 12px 8px 8px; }
+.composer:focus-within { box-shadow: inset 0 0 0 1px var(--acc-line); }
+.composer textarea {
+    display: block; width: 100%; height: 44px; padding: 0 6px; resize: none; border: 0; outline: 0; background: none; color: var(--ink);
+    font: 500 13.5px/1.45 var(--ui);
+}
+.composer textarea::placeholder { color: var(--ink-faint); }
+.cbar { display: flex; align-items: center; gap: 3px; margin-top: 6px; }
+.cbar .spacer { flex: 1; }
+.cicon { width: 31px; height: 31px; border-radius: 50%; display: grid; place-items: center; color: var(--ink-dim); }
+.cicon:hover { background: rgba(255, 255, 255, 0.07); color: var(--ink); }
+.send { width: 30px; height: 30px; margin-left: 3px; border-radius: 50%; display: grid; place-items: center; background: var(--ink); color: #100e16; }
+.send:hover:not(:disabled) { filter: brightness(1.08); }
+.send:disabled { opacity: 0.28; }
+.yolo-toggle {
+    position: relative; height: 31px; padding: 0 11px; border-radius: 15.5px; display: inline-flex; align-items: center; gap: 5px;
+    color: var(--ink-faint); font: 560 10.5px/1 var(--ui); letter-spacing: 0.08em; text-transform: uppercase;
+}
+.yolo-toggle:hover { background: rgba(255, 255, 255, 0.07); color: var(--ink); }
+.yolo-glyph { display: flex; }
+.yolo-toggle.on .yolo-glyph { color: var(--acc); }
+.yolo-toggle.on .yolo-label {
+    background: var(--yolo-rainbow); background-size: 200% 100%;
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+.picker { display: flex; align-items: center; gap: 6px; max-width: 200px; height: 31px; padding: 0 11px; border-radius: 15.5px; color: var(--ink-dim); font-size: 11.5px; }
+.picker > span:not(.agent-ico) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.picker > svg { flex-shrink: 0; }
+.picker > svg:last-child { transform: rotate(90deg); opacity: 0.6; }
+.picker.first { color: var(--acc); }
+.picker:hover, .picker[aria-expanded="true"] { background: rgba(255, 255, 255, 0.07); }
+.agent-ico { display: flex; flex: 0 0 auto; }
+.agent-ico svg { width: 15px; height: 15px; }
+.picker.first .agent-ico svg { width: 17px; height: 17px; }
+.pmenu { margin: 8px -2px -2px; border-radius: 12px; background: rgba(0, 0, 0, 0.5); overflow: hidden; }
+.pmenu input {
+    width: 100%; padding: 10px 12px; border: 0; outline: 0; background: none; color: var(--ink); font: 500 12.5px var(--ui);
+    border-bottom: 1px solid var(--hairline);
+}
+.pmenu input::placeholder { color: var(--ink-faint); }
+.pm-agents { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px; border-bottom: 1px solid var(--hairline); }
+.pm-agents button { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px; border-radius: 13px; color: var(--ink-dim); font-size: 11.5px; }
+.pm-agents button:hover { background: rgba(255, 255, 255, 0.07); color: var(--ink); }
+.pm-agents button[aria-pressed="true"] { background: var(--acc-soft); color: var(--ink); }
+.pm-options { padding: 5px; max-height: 170px; overflow-y: auto; }
+.pm-options button { display: flex; align-items: center; gap: 9px; width: 100%; padding: 7px 10px; border-radius: 9px; text-align: left; color: var(--ink); }
+.pm-options button:hover { background: rgba(255, 255, 255, 0.07); }
+.pm-options strong { flex: 1; font-size: 12.5px; font-weight: 500; }
+.pm-options button[aria-selected="true"] { color: var(--acc); }
+.pm-options svg { flex-shrink: 0; }
+.devtag {
+    height: 18px; padding: 0 7px; border-radius: 9px; display: inline-flex; align-items: center;
+    font: 600 9.5px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--acc); background: var(--acc-soft);
+}
+.drops { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.drop {
+    height: 104px; border-radius: 14px; background: rgba(255, 255, 255, 0.05); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 7px; font-size: 13px; font-weight: 600; text-align: center; padding: 0 12px;
+}
+.drop .sub { font-weight: 500; }
+.drop.hot, .drop:hover { background: var(--acc-soft); box-shadow: inset 0 0 0 1px var(--acc-line); }
+.drop svg { width: 20px; height: 20px; }
+.file { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--ink-dim); padding-right: 12px; }
+.file .inline-text { font-size: 12px; }
+
+.spec { margin-top: 10px; border-collapse: collapse; width: 100%; font-size: 12px; }
+.spec td { padding: 6px 10px 6px 0; border-top: 1px solid var(--hairline); vertical-align: top; color: var(--ink-dim); }
+.spec td:first-child { color: var(--ink); width: 210px; }
+.spec code { font-size: 11px; }
+.layout { display: grid; grid-template-columns: 196px minmax(0, 1fr); gap: 36px; max-width: 1280px; margin: 0 auto; padding: 0 24px; }
+.toc { position: sticky; top: 18px; align-self: start; max-height: calc(100vh - 36px); overflow: auto; font-size: 12px; padding-bottom: 20px; }
+.toc a { display: flex; align-items: center; gap: 8px; height: 26px; padding: 0 8px; border-radius: 7px; color: var(--ink-dim); text-decoration: none; }
+.toc a:hover { background: var(--hover); color: var(--ink); }
+.toc a.sec { color: var(--ink); font-weight: 650; margin-top: 10px; }
+.toc a.sec:first-child { margin-top: 0; }
+.id {
+    font-family: var(--mono); font-size: 10.5px; line-height: 16px; padding: 0 5px; border-radius: 5px; flex: 0 0 auto;
+    background: var(--raised); border: 1px solid var(--hairline); color: var(--ink-dim);
+}
+.id.option { border-style: dashed; color: var(--acc); border-color: var(--acc-line); background: none; }
+main { min-width: 0; }
+main > header h1 { font-size: 22px; font-weight: 650; letter-spacing: -0.01em; }
+main > header p { font-size: 12.5px; line-height: 1.6; color: var(--ink-dim); max-width: 760px; margin-top: 4px; }
+.toolbar {
+    position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 10px; margin-top: 14px; padding: 10px 0;
+    background: rgba(11, 10, 15, 0.88); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid var(--hairline);
+}
+.toolbar .label { font-size: 12px; color: var(--ink-faint); }
+.toolbar .note { margin-left: auto; font-size: 11.5px; color: var(--ink-faint); }
+.seg { display: flex; gap: 4px; }
+.seg button, .controls button {
+    height: 26px; padding: 0 10px; border-radius: 7px; font-size: 12px; white-space: nowrap;
+    border: 1px solid var(--hairline); background: var(--raised); color: var(--ink);
+}
+.seg button:hover, .controls button:hover { background: rgba(255, 255, 255, 0.1); }
+.seg button[aria-pressed="true"] { border-color: var(--acc-line); background: var(--acc-soft); }
+section { padding-top: 34px; scroll-margin-top: 70px; }
+section > h2 { font-size: 16px; font-weight: 650; display: flex; align-items: center; gap: 10px; }
+section > p.lede { font-size: 12.5px; line-height: 1.6; color: var(--ink-dim); margin-top: 4px; max-width: 760px; }
+.card { margin-top: 14px; border: 1px solid var(--hairline); border-radius: 14px; background: #111016; overflow: hidden; scroll-margin-top: 100px; }
+.card .meta { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 24px; padding: 13px 15px 14px; }
+.card h3 { font-size: 13.5px; font-weight: 650; display: flex; align-items: center; gap: 8px; }
+.facts { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 4px 10px; margin-top: 9px; font-size: 12px; line-height: 1.5; }
+.facts dt { color: var(--ink-faint); }
+.facts dd { color: var(--ink-dim); }
+.measure { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.measure span { font-family: var(--mono); font-size: 10.5px; color: var(--ink-dim); white-space: nowrap; }
+.measure span b { color: var(--ink-faint); font-weight: 400; margin-right: 6px; }
+.card .stage { margin: 0; max-width: none; border: 0; border-top: 1px solid var(--hairline); border-radius: 0; }
+.flow { margin-top: 14px; border: 1px solid var(--hairline); border-radius: 14px; background: #111016; padding: 14px 16px; display: grid; gap: 12px; }
+.flow .path { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; }
+.flow .node { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--hairline); background: var(--raised); color: var(--ink); text-decoration: none; }
+.flow .node:hover { background: rgba(255, 255, 255, 0.1); }
+.flow .node.event { border-style: dashed; background: none; color: var(--ink-dim); }
+.flow .arrow { display: inline-flex; flex-direction: column; align-items: center; color: var(--ink-faint); font-size: 10.5px; line-height: 1.2; min-width: 64px; }
+.flow .arrow::after { content: "⟶"; font-size: 15px; line-height: 12px; color: var(--ink-dim); }
+.legend { display: flex; gap: 16px; font-size: 11.5px; color: var(--ink-faint); margin-top: 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.options { margin-top: 14px; border: 1px solid var(--hairline); border-radius: 14px; overflow: hidden; }
+.options .opt { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 16px; padding: 12px 15px; border-top: 1px solid var(--hairline); background: #111016; }
+.options .opt:first-child { border-top: 0; }
+.options .name { font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.options .choices { display: flex; flex-wrap: wrap; gap: 6px; }
+.options .choice { height: 24px; padding: 0 9px; border-radius: 7px; display: inline-flex; align-items: center; font-size: 12px; color: var(--ink-dim); border: 1px solid var(--hairline); }
+.options .choice.default { color: var(--ink); border-color: var(--acc-line); background: var(--acc-soft); }
+.options .why { grid-column: 2; font-size: 11.5px; color: var(--ink-faint); line-height: 1.5; margin-top: -8px; }
+code { font-family: var(--mono); font-size: 11px; color: var(--ink); }
+.toolbar { flex-wrap: wrap; }
+.jump { display: none; flex-basis: 100%; flex-wrap: wrap; gap: 4px; align-items: center; }
+.jump a { text-decoration: none; }
+.jump a .id:hover { color: var(--ink); background: rgba(255, 255, 255, 0.1); }
+.jump .sep { width: 1px; height: 14px; background: var(--hairline); margin: 0 4px; }
+@media (max-width: 1080px) {
+    .layout { grid-template-columns: minmax(0, 1fr); }
+    .toc { display: none; }
+    .jump { display: flex; }
+}
+.spec { border: 1px solid var(--hairline); border-radius: 14px; overflow: hidden; background: #111016; margin-top: 14px; }
+.spec td { padding: 9px 15px; }
+.spec tr:first-child td { border-top: 0; }
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="toc" id="toc"></nav>
+<main>
+    <header>
+        <h1>Sikemux Notch</h1>
+        <p>The island over the MacBook notch: what it shows, when it changes and what you can set. Each state has an id
+            (<span class="id">C1</span>) and a card with its trigger, its content and its measured size. Settings are marked
+            <span class="id option">option</span>. Everything is drawn at 1:1, one CSS pixel per point, from this MacBook Pro's real notch (221 × 38 pt).</p>
+    </header>
+    <div class="toolbar">
+        <span class="label">Preview on</span>
+        <div class="seg" id="display-seg">
+            <button data-display="notch" aria-pressed="true">Built-in display, with notch</button>
+            <button data-display="plain" aria-pressed="false">External display, no notch</button>
+        </div>
+        <span class="label" style="margin-left:8px">Build</span>
+        <div class="seg" id="channel-seg">
+            <button data-channel="prod" aria-pressed="true">Sikemux</button>
+            <button data-channel="dev" aria-pressed="false">Sikemux Dev</button>
+        </div>
+        <span class="note">View at 100% zoom on the built-in display</span>
+        <div class="jump" id="jump"></div>
+    </div>
+
+    <section id="flow">
+        <h2>How it moves</h2>
+        <p class="lede">Solid boxes are states, dashed boxes are things that happen. Click a state to jump to it.</p>
+        <div class="flow" id="flow-body"></div>
+    </section>
+
+    <section id="playground">
+        <h2>Playground</h2>
+        <p class="lede">The real behaviour, springs included. Rest the pointer on the island to open it, fire events with the buttons,
+            or drag a file from Finder onto the page.</p>
+        <div class="controls" id="controls">
+            <button data-act="start">An agent starts</button>
+            <button data-act="block">Claude asks for permission</button>
+            <button data-act="finish">Codex finishes</button>
+            <button data-act="drag">A file is dragged in</button>
+            <button data-act="clear">No agents</button>
+            <button data-act="reset">Reset</button>
+        </div>
+        <div class="stage" id="live" style="height: 460px"></div>
+    </section>
+
+    <div id="states"></div>
+
+    <section id="options">
+        <h2>Options <span class="id option">option</span></h2>
+        <p class="lede">Settings, not states. The highlighted choice is the default.</p>
+        <div class="options" id="options-body"></div>
+    </section>
+
+    <section id="spec">
+        <h2>Numbers for the SwiftUI port</h2>
+        <table class="spec">
+        <tr><td>Window</td><td>Non-activating <code>NSPanel</code>, borderless, level <code>.mainMenu + 3</code>, joins all Spaces, stationary, full-screen auxiliary,
+            never key or main. Fixed 680 × 420 transparent canvas pinned to the top centre of <code>screen.frame</code>; only the shape animates.</td></tr>
+        <tr><td>Notch geometry</td><td>Width = <code>frame.width − auxiliaryTopLeftArea.width − auxiliaryTopRightArea.width</code>, height = <code>safeAreaInsets.top</code>.
+            Centre on the gap between the two areas, not on the screen. No notch: height = menu bar (<code>frame.maxY − visibleFrame.maxY</code>).</td></tr>
+        <tr><td>Shape</td><td>Top corners curve outward into the menu bar, bottom corners inward. Radii (top / bottom): closed 6 / 14, peek 14 / 22, open 19 / 24.
+            Both radii animate with the size.</td></tr>
+        <tr><td>Closed wings</td><td>Each wing is as wide as the wider of the two, minimum 48. Mark tiles 24 pt with a 2 pt black ring, overlapping by 7.</td></tr>
+        <tr><td>Open</td><td>680 wide, height follows content up to 400, then the list scrolls. Padding: top-radius horizontally, then 12. Rows are one line, 36 tall, radius 12: mark, task, project, time, state.</td></tr>
+        <tr><td>Springs</td><td>Open <code>spring(response: 0.42, dampingFraction: 0.8)</code>. Close <code>spring(response: 0.45, dampingFraction: 1.0)</code>.
+            Hover nudge <code>interactiveSpring(response: 0.38, dampingFraction: 0.8)</code>.</td></tr>
+        <tr><td>Content</td><td>Open layers enter with scale 0.8 → 1 anchored at the top, opacity 0 → 1 and blur 20 → 0 over 0.35 s (<code>.smooth</code>). Wings
+            leave in 0.16 s.</td></tr>
+        <tr><td>Timing</td><td>Hover 0.3 s before opening; leave closes after 0.1 s, never while the prompt has focus. Permission peek 6 s, finished peek 3 s.</td></tr>
+        <tr><td>Hover</td><td>Shadow on (black 70%, radius 6) and the island grows 10 × 3 pt. A trackpad tick (<code>.alignment</code>) when the pointer arrives.</td></tr>
+        <tr><td>Hit area</td><td>The drawn shape plus the menu-bar band beneath a closed island. Everything else in the canvas passes clicks through.</td></tr>
+        <tr><td>Displays</td><td>One panel per screen, keyed by display UUID, rebuilt when the screen setup changes. Setting: every display / the built-in only / the
+            one under the pointer. In a full-screen app the island stays hidden unless an agent needs you.</td></tr>
+        <tr><td>Icons</td><td>The app's own set from <code>src/ui/Icons.tsx</code>: a 16-pt grid, 1.4 stroke, round caps and joins. Port each path as a SwiftUI
+            <code>Shape</code> (or an SVG asset) so the island and the app never drift apart. Agent marks come from the same file.</td></tr>
+        <tr><td>Yolo</td><td>Label: <code>Text("YOLO").foregroundStyle(LinearGradient(colors: [acc, cmd, danger, warn, live, acc]))</code>. Ring: a 1-pt
+            <code>strokeBorder</code> of the same gradient whose start point slides one full turn every 5 s. The bolt stays plain accent, as in the app.</td></tr>
+        <tr><td>Colours</td><td>Ground pure black so it merges with the camera housing. Ink <code>#e7e5ef</code>, dim <code>#8b8898</code>, faint <code>#736f80</code>;
+            working <code>#61ffca</code>, needs you <code>#ffca85</code>, done and the one primary button <code>#a277ff</code>. Figtree for text, JetBrains Mono for commands.</td></tr>
+    </table>
+    </section>
+</main>
+</div>
+<script type="module">
+const ICON = {
+    claude: `<svg viewBox="-4 -4 32 32" fill="var(--brand-claude)"><path d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/></svg>`,
+    codex: `<svg viewBox="0 0 24 24"><defs><linearGradient id="codex-fill" x1="0" y1="0" x2="1" y2="0" gradientUnits="userSpaceOnUse" gradientTransform="matrix(0 18 -18 0 12 3)"><stop offset="0" stop-color="#b1a7ff"/><stop offset=".5" stop-color="#7a9dff"/><stop offset="1" stop-color="#3941ff"/></linearGradient></defs><path d="M12.546 13.909a.64.64 0 00-.601.636.64.64 0 00.601.636h3.636l.036.001a.64.64 0 00.637-.637.64.64 0 00-.637-.637l-.036.001h-3.636zM8.462 9.23a.64.64 0 00-.543-.304.64.64 0 00-.563.935l1.272 2.224-1.266 2.136a.638.638 0 001.095.649l1.454-2.455a.637.637 0 00.005-.64L8.462 9.23z" fill="#fff"/><path d="M9.064 3.344a4.578 4.578 0 012.285-.312c1 .115 1.891.54 2.673 1.275.01.01.024.017.037.021a.104.104 0 00.043 0 4.556 4.556 0 013.046.275l.047.022.116.057a4.585 4.585 0 012.188 2.399c.209.51.313 1.041.315 1.595.015.412-.03.824-.134 1.223a.124.124 0 00.03.115c.594.607.988 1.33 1.183 2.17.289 1.425-.007 2.71-.887 3.854l-.136.166a4.548 4.548 0 01-2.201 1.388.12.12 0 00-.081.076c-.191.551-.383 1.023-.74 1.494-.9 1.187-2.222 1.846-3.711 1.838-1.187-.006-2.239-.44-3.157-1.302a.109.109 0 00-.105-.024c-.388.125-.78.143-1.204.138a4.438 4.438 0 01-1.945-.466 4.553 4.553 0 01-1.61-1.335c-.152-.202-.303-.392-.414-.617a5.797 5.797 0 01-.37-.961 4.575 4.575 0 01-.014-2.298.133.133 0 00.006-.056.083.083 0 00-.027-.048 4.467 4.467 0 01-1.034-1.651 3.898 3.898 0 01-.251-1.192 5.193 5.193 0 01.141-1.6c.337-1.112.982-1.985 1.933-2.618.212-.141.413-.251.601-.33a6.29 6.29 0 01.646-.227.1.1 0 00.065-.066 4.512 4.512 0 01.829-1.615 4.54 4.54 0 011.837-1.388zm3.482 10.565a.64.64 0 00-.601.636.64.64 0 00.601.636h3.636l.036.001a.64.64 0 00.637-.637.64.64 0 00-.637-.637l-.036.001h-3.636zM8.462 9.23a.64.64 0 00-.543-.304.64.64 0 00-.563.935l1.272 2.224-1.266 2.136a.638.638 0 001.095.649l1.454-2.455a.637.637 0 00.005-.64L8.462 9.23z" fill="url(#codex-fill)"/></svg>`,
+    opencode: `<svg viewBox="-50 -50 400 400" fill="var(--brand-opencode)"><g transform="translate(30, 0)"><path d="M180 240H60V120H180V240Z" opacity="0.45"/><path fill-rule="evenodd" d="M180 60H60V240H180V60ZM240 300H0V0H240V300Z"/></g></svg>`,
+    grok: `<svg viewBox="-72 -72 1168 1168" fill="var(--brand-grok)"><path d="M395.479 633.828 735.91 381.105C752.599 368.715 776.454 373.548 784.406 392.792 826.26 494.285 807.561 616.253 724.288 699.996 641.016 783.739 525.151 802.104 419.247 760.277L303.556 814.143C469.49 928.202 670.987 899.995 796.901 773.282 896.776 672.843 927.708 535.937 898.785 412.476L899.047 412.739C857.105 231.37 909.358 158.874 1016.4 10.6326 1018.93 7.11771 1021.47 3.60279 1024 0L883.144 141.651V141.212L395.392 633.916M325.226 695.251C206.128 580.84 226.662 403.776 328.285 301.668 403.431 226.097 526.549 195.254 634.026 240.596L749.454 186.994C728.657 171.88 702.007 155.623 671.424 144.2 533.19 86.9942 367.693 115.465 255.323 228.382 147.234 337.081 113.244 504.215 171.613 646.833 215.216 753.423 143.739 828.818 71.7385 904.916 46.2237 931.893 20.6216 958.87 0 987.429L325.139 695.339"/></svg>`,
+    pi: `<svg viewBox="0 0 800 800" fill="var(--brand-pi)"><path fill-rule="evenodd" d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z"/><path d="M517.36 400H634.72V634.72H517.36Z"/></svg>`,
+};
+const MODELS = {
+    claude: ["Opus 5.5", "Sonnet 5.5", "Haiku 4.5"],
+    codex: ["GPT-5.5", "GPT-5.5 mini"],
+    opencode: ["Opus 5.5", "GPT-5.5", "Kimi K3"],
+    grok: ["Grok 5", "Grok 5 fast"],
+    pi: ["Opus 5.5", "GPT-5.5"],
+};
+const EFFORTS = ["Low", "Medium", "High", "Max"];
+const PROJECTS = ["sikemux", "server", "sikemux-front", "showreel"];
+const NAME = { claude: "Claude", codex: "Codex", opencode: "OpenCode", grok: "Grok", pi: "Pi" };
+const ICONS = {};
+let GLYPH = {};
+
+async function loadIcons() {
+    const source = await (await fetch("../../../src/ui/Icons.tsx")).text();
+    const pattern = /export const (Icon\w+) = makeSvgIcon\(\s*([\s\S]*?)\s*(?:,\s*(\{[^{}]*\}))?\s*,?\s*\);\n/g;
+    for (const [, name, jsx, opts = ""] of source.matchAll(pattern)) {
+        const body = jsx
+            .replace(/^<>|<\/>$/g, "")
+            .replace(/\{\/\*[\s\S]*?\*\/\}/g, "")
+            .replace(/\s([a-z]+)([A-Z][a-z]+)=/g, (_, head, tail) => ` ${head}-${tail.toLowerCase()}=`)
+            .replace(/=\{([^}]*)\}/g, '="$1"');
+        ICONS[name] = {
+            body,
+            fill: opts.match(/fill:\s*"([^"]+)"/)?.[1] ?? "none",
+            viewBox: opts.match(/viewBox:\s*"([^"]+)"/)?.[1] ?? "0 0 16 16",
+        };
+    }
+    const icon = (name, size = 14, extra = "") => {
+        const def = ICONS[name];
+        if (!def) throw new Error(`Icons.tsx has no ${name}`);
+        return `<svg width="${size}" height="${size}" viewBox="${def.viewBox}" fill="${def.fill}" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" ${extra}>${def.body}</svg>`;
+    };
+    GLYPH = {
+        plus: icon("IconPlus", 13),
+        mic: icon("IconMic"),
+        clip: icon("IconImage"),
+        phone: icon("IconPhone", 13),
+        file: icon("IconFile", 13),
+        folder: icon("IconFolder", 13),
+        folderSmall: icon("IconFolder", 11),
+        shield: icon("IconShield", 12),
+        bolt: icon("IconShieldBolt", 12),
+        chevronDown: icon("IconChevron", 11, 'style="transform:rotate(90deg)"'),
+        external: icon("IconExternal", 13),
+        plusBig: icon("IconPlus", 17),
+        arrowUp: icon("IconArrowUp", 15),
+        check: icon("IconCheck", 14),
+        chevron: icon("IconChevron", 10),
+    };
+}
+const MARK = `<img src="../../../brand/mark/mark-white.svg" alt="">`;
+
+const DISPLAYS = {
+    notch: { width: 1800, menu: 38, notchW: 221, notchH: 38, center: 901.5 },
+    plain: { width: 1920, menu: 24, notchW: 0, notchH: 24, center: 960 },
+};
+const RADII = { closed: [6, 14], peek: [14, 22], open: [19, 24] };
+const SPRING = { open: [0.42, 0.8], close: [0.45, 1.0], hover: [0.38, 0.8] };
+
+function freshAgents() {
+    return [
+        { id: "a1", type: "claude", title: "Fix the login flake", project: "sikemux", state: "blocked", time: "2:14",
+          ask: { tool: "Bash", cmd: "pnpm test --filter core -- --runInBand" } },
+        { id: "a2", type: "codex", title: "Refactor the auth middleware", project: "server", state: "working", time: "4:12" },
+        { id: "a3", type: "opencode", title: "Draft the notch spec", project: "sikemux", state: "working", time: "0:48" },
+        { id: "a4", type: "grok", title: "Bump Astro to 6", project: "sikemux-front", state: "done", unread: true, time: "1m ago" },
+    ];
+}
+
+function stateMark(state, fresh) {
+    if (state === "working") {
+        const periods = [[0.9, 0], [1.24, -0.52], [1.58, -1.04], [1.07, -0.39], [1.41, -0.91], [0.9, -0.26], [1.24, -0.78], [1.58, -0.13], [1.07, -0.65]];
+        return `<span class="st working"><span class="loader">${periods.map(([p, o]) => `<i style="--p:${p}s;--o:${o}s"></i>`).join("")}</span></span>`;
+    }
+    if (state === "blocked") return `<span class="st blocked${fresh ? " fresh" : ""}"><span class="ping"></span><span class="ping"></span><span class="dot"></span></span>`;
+    if (state === "done") return `<span class="st done"><span class="dot"></span></span>`;
+    return "";
+}
+
+function rollup(agents) {
+    for (const s of ["blocked", "working", "done"]) {
+        const hits = agents.filter((a) => a.state === s && (s !== "done" || a.unread));
+        if (hits.length) return { state: s, count: hits.length };
+    }
+    return null;
+}
+
+function notchPath(w, h, t, b) {
+    return `M0 0Q${t} 0 ${t} ${t}L${t} ${h - b}Q${t} ${h} ${t + b} ${h}L${w - t - b} ${h}Q${w - t} ${h} ${w - t} ${h - b}L${w - t} ${t}Q${w - t} 0 ${w} 0Z`;
+}
+
+class Island {
+    constructor(stage, opts) {
+        this.stage = stage;
+        this.live = !!opts.live;
+        this.display = opts.display || "notch";
+        this.channel = opts.channel || "prod";
+        this.agents = opts.agents || freshAgents();
+        this.mode = opts.mode || "closed";
+        this.tab = opts.tab || "agents";
+        this.peekAgent = opts.peekAgent || null;
+        this.hover = !!opts.hover;
+        this.freshPing = !!opts.fresh;
+        this.selectedType = "claude";
+        this.perm = "yolo";
+        this.effort = "High";
+        this.project = "sikemux";
+        this.model = "";
+        this.menu = opts.menu || null;
+        this.draft = opts.draft || "";
+        this.geom = null;
+        this.vel = [0, 0, 0, 0];
+        this.build();
+        this.render(true);
+    }
+
+    build() {
+        const d = DISPLAYS[this.display];
+        this.stage.innerHTML = `
+            <div class="screen" style="width:${d.width}px;margin-left:${-d.width / 2}px">
+                <div class="wallpaper"></div>
+                <div class="window-peek" style="top:${d.menu + 34}px"></div>
+                ${menubar(d)}
+                <div class="island"><div class="shadow"><div class="shape"><div class="chin"></div></div></div></div>
+            </div>
+            ${this.caption ? `<div class="caption">${this.caption}</div>` : ""}`;
+        this.el = this.stage.querySelector(".island");
+        this.el.classList.toggle("plain", d.notchW === 0);
+        this.shape = this.stage.querySelector(".shape");
+        this.layers = {
+            wings: this.addLayer("wings"),
+            peek: this.addLayer("big peek"),
+            open: this.addLayer("big open"),
+        };
+        if (this.live) this.wire();
+    }
+
+    addLayer(cls) {
+        const layer = document.createElement("div");
+        layer.className = `layer ${cls} off`;
+        this.shape.appendChild(layer);
+        return layer;
+    }
+
+    get d() { return DISPLAYS[this.display]; }
+
+    wingWidth() {
+        const running = this.agents.filter((a) => a.state !== "idle");
+        const marks = Math.min(running.length, 3) + (running.length > 3 ? 1 : 0);
+        const left = 14 + 24 + Math.max(0, marks - 1) * 17 + 8;
+        const right = 14 + 16 + 6 + 10 + 8;
+        return Math.max(48, left, right);
+    }
+
+    target() {
+        const d = this.d;
+        const plain = d.notchW === 0;
+        const running = this.agents.filter((a) => a.state !== "idle");
+        if (this.mode === "open" || this.mode === "drop") {
+            const h = Math.min(400, this.layers.open.offsetHeight);
+            return { w: 680, h, r: RADII.open };
+        }
+        if (this.mode === "peek-ask") return { w: 460, h: this.layers.peek.offsetHeight, r: RADII.peek };
+        if (this.mode === "peek-done") {
+            const w = plain ? 300 : d.notchW + 2 * 150;
+            return { w, h: d.notchH, r: RADII.closed };
+        }
+        if (!running.length) {
+            if (plain) return { w: 0, h: 0, r: RADII.closed };
+            return { w: d.notchW, h: d.notchH, r: RADII.closed, nudge: true };
+        }
+        const wing = this.wingWidth();
+        const w = plain ? wing * 2 + 8 : d.notchW + wing * 2;
+        return { w, h: d.notchH, r: RADII.closed, nudge: true };
+    }
+
+    renderContent() {
+        const d = this.d;
+        const plain = d.notchW === 0;
+        const t = this.mode === "open" || this.mode === "drop" ? RADII.open[0] : RADII.peek[0];
+        const running = this.agents.filter((a) => a.state !== "idle");
+        const top = rollup(this.agents);
+        const wing = this.wingWidth();
+
+        if (this.mode === "peek-done") {
+            const a = this.agents.find((x) => x.id === this.peekAgent);
+            const half = plain ? 150 : 150;
+            this.layers.wings.innerHTML = `
+                <div class="wing l" style="width:${half}px;height:${d.notchH}px;gap:8px">
+                    <span class="tile">${ICON[a.type]}</span><span class="inline-text">Finished</span></div>
+                ${plain ? "" : `<div class="gap" style="width:${d.notchW}px"></div>`}
+                <div class="wing r" style="width:${half}px;height:${d.notchH}px">
+                    <span class="inline-text dim">${a.title}</span>${stateMark("done")}</div>`;
+        } else {
+            const shown = running.slice(0, 3);
+            const extra = running.length - shown.length;
+            this.layers.wings.innerHTML = `
+                <div class="wing l" style="width:${wing + (plain ? 4 : 0)}px;height:${d.notchH}px">
+                    <span class="stack">${shown.map((a) => `<span class="tile">${ICON[a.type]}</span>`).join("")}${
+                        extra > 0 ? `<span class="tile count" style="font-size:10px">+${extra}</span>` : ""}</span></div>
+                ${plain ? "" : `<div class="gap" style="width:${d.notchW}px"></div>`}
+                <div class="wing r" style="width:${wing + (plain ? 4 : 0)}px;height:${d.notchH}px">
+                    ${top ? `${top.count > 1 ? `<span class="count">${top.count}</span>` : ""}${stateMark(top.state, this.freshPing)}` : ""}</div>`;
+            if (plain) this.layers.wings.firstElementChild.nextElementSibling.style.paddingRight = "10px";
+        }
+
+        const head = (left, right, width) => `
+            <div class="head" style="height:${d.notchH}px;width:${width}px">
+                <div class="side">${left}</div>
+                ${plain ? "" : `<div class="gap" style="width:${d.notchW + 8}px"></div>`}
+                <div class="side r">${right}</div>
+            </div>`;
+
+        if (this.mode === "peek-ask") {
+            const a = this.agents.find((x) => x.id === this.peekAgent);
+            const inner = 460 - 2 * t - 16;
+            this.layers.peek.style.width = `${inner}px`;
+            this.layers.peek.innerHTML = `
+                ${head(`<span class="tile lg">${ICON[a.type]}</span><span class="lead">${NAME[a.type]}</span>`,
+                       `<span class="trail" style="color:var(--warn)">Needs you</span>${stateMark("blocked", true)}`, inner)}
+                <div style="padding:8px 0 16px">
+                    <div class="text"><span class="title">${a.title}</span><span class="sub">${GLYPH.folderSmall}${a.project}<span class="dotsep">·</span>wants to run a command</span></div>
+                    <div class="cmd"><span class="sign">$</span>${a.ask.cmd}</div>
+                    <div class="actions">
+                        <button class="btn" data-answer="deny" data-id="${a.id}">Deny</button>
+                        <button class="btn" data-answer="always" data-id="${a.id}">Always allow</button>
+                        <button class="btn primary" data-answer="allow" data-id="${a.id}">Allow</button>
+                    </div>
+                </div>`;
+        }
+
+        const inner = 680 - 2 * RADII.open[0] - 24;
+        this.layers.open.style.width = `${inner}px`;
+        const count = running.length;
+        const tabs = `
+            <button class="chip" data-tab="agents" aria-selected="${this.tab === "agents"}">Agents <span class="n">${count}</span></button>
+            <button class="chip" data-tab="new" aria-selected="${this.tab === "new"}">${GLYPH.plus.replace("<svg", '<svg width="12" height="12"')} New agent</button>`;
+        const tools = `
+            ${this.channel === "dev" ? '<span class="devtag">dev</span>' : ""}
+            <button class="icon-btn" title="Open ${this.channel === "dev" ? "Sikemux Dev" : "Sikemux"}">${MARK}</button>`;
+
+        let body = "";
+        if (this.mode === "drop") {
+            const target = this.agents.find((a) => a.state === "blocked" || a.state === "working") || this.agents[0];
+            body = `
+                <div class="drops">
+                    <div class="drop hot" data-drop="new">${GLYPH.plus}New agent with this file<span class="sub">${NAME[this.selectedType]} in sikemux</span></div>
+                    ${target ? `<div class="drop" data-drop="${target.id}">${ICON[target.type]}Send to ${NAME[target.type]}<span class="sub">${target.title}</span></div>` : ""}
+                </div>`;
+        } else if (this.tab === "agents") {
+            if (!this.agents.length) {
+                body = `<div style="padding:18px 8px 14px;text-align:center;font-size:13px;color:var(--ink-dim)">No agents running
+                    <div style="margin-top:14px"><button class="btn primary" data-tab="new">${GLYPH.plus.replace("<svg", '<svg width="12" height="12"')} New agent</button></div></div>`;
+            } else {
+                const groups = [
+                    ["Needs you", this.agents.filter((a) => a.state === "blocked")],
+                    ["Working", this.agents.filter((a) => a.state === "working")],
+                    ["Done", this.agents.filter((a) => a.state === "done")],
+                ];
+                body = groups.filter(([, list]) => list.length).map(([label, list]) => `
+                    <div class="group-label">${label}</div>
+                    ${list.map((a) => a.state === "blocked" ? `
+                        <div class="ask">
+                            <div class="ask-head">
+                                <span class="mark">${ICON[a.type]}</span>
+                                <span class="title">${a.title}</span><span class="proj">${GLYPH.folderSmall}${a.project}</span>
+                                <span class="time">${a.time}</span>${stateMark("blocked")}
+                            </div>
+                            <div class="cmd"><span class="sign">$</span>${a.ask.cmd}</div>
+                            <div class="actions">
+                                <button class="btn small" data-answer="deny" data-id="${a.id}">Deny</button>
+                                <button class="btn small" data-answer="always" data-id="${a.id}">Always allow</button>
+                                <button class="btn small primary" data-answer="allow" data-id="${a.id}">Allow</button>
+                            </div>
+                        </div>` : `
+                        <div class="row">
+                            <span class="mark">${ICON[a.type]}</span>
+                            <span class="title">${a.title}</span><span class="proj">${GLYPH.folderSmall}${a.project}</span>
+                            <span class="time">${a.time}</span>${stateMark(a.state)}
+                        </div>`).join("")}`).join("");
+            }
+        } else {
+            body = this.composer();
+        }
+        const dropHead = head(`<span class="lead" style="padding-left:12px">Drop to start or send</span>`, `<span class="file">${GLYPH.file}<span class="inline-text dim">Screenshot 06.24.png</span></span>`, inner);
+        this.layers.open.innerHTML = `${this.mode === "drop" ? dropHead : head(tabs, tools, inner)}<div style="padding:6px 0 14px">${body}</div>`;
+    }
+
+    composer() {
+        const models = MODELS[this.selectedType];
+        const model = models.includes(this.model) ? this.model : models[0];
+        const trigger = (menu, lead, label) => `
+            <button class="picker${menu === "model" ? " first" : ""}" data-menu="${menu}" aria-expanded="${this.menu === menu}">
+                ${lead}<span>${label}</span>${GLYPH.chevron}</button>`;
+        const yolo = this.perm === "yolo";
+        return `
+            <div class="composer">
+                <textarea placeholder="What should it do?" spellcheck="false">${this.draft}</textarea>
+                <div class="cbar">
+                    <button class="cicon" title="Add files">${GLYPH.plusBig}</button>
+                    <button class="yolo-toggle${yolo ? " on" : ""}" data-perm-toggle>
+                        <span class="yolo-glyph">${yolo ? GLYPH.bolt : GLYPH.shield}</span><span class="yolo-label">${yolo ? "yolo" : "safe"}</span></button>
+                    ${trigger("model", `<span class="agent-ico">${ICON[this.selectedType]}</span>`, model)}
+                    ${trigger("effort", "", this.effort)}
+                    ${trigger("project", GLYPH.folder, this.project)}
+                    <span class="spacer"></span>
+                    <button class="send" data-start ${this.draft.trim() ? "" : "disabled"} title="Start agent">${GLYPH.arrowUp}</button>
+                </div>
+                ${this.menu ? this.pickerMenu(model) : ""}
+            </div>`;
+    }
+
+    pickerMenu(model) {
+        const lists = {
+            model: MODELS[this.selectedType].map((m) => ({ value: m, label: m, icon: `<span class="agent-ico">${ICON[this.selectedType]}</span>` })),
+            effort: EFFORTS.map((e) => ({ value: e, label: e })),
+            project: PROJECTS.map((p) => ({ value: p, label: p, icon: GLYPH.folder })),
+        };
+        const current = { model, effort: this.effort, project: this.project }[this.menu];
+        const agents = this.menu === "model" ? `
+            <div class="pm-agents">${Object.keys(ICON).map((k) => `
+                <button data-pick="${k}" aria-pressed="${this.selectedType === k}"><span class="agent-ico">${ICON[k]}</span><span>${NAME[k]}</span></button>`).join("")}
+            </div>` : "";
+        return `
+            <div class="pmenu">
+                <input placeholder="Search ${this.menu === "effort" ? "reasoning effort" : this.menu}…" spellcheck="false">
+                ${agents}
+                <div class="pm-options">${lists[this.menu].map((o) => `
+                    <button data-choose="${o.value}" aria-selected="${o.value === current}">
+                        ${o.icon || ""}<strong>${o.label}</strong>${o.value === current ? GLYPH.check : ""}</button>`).join("")}
+                </div>
+            </div>`;
+    }
+
+    render(snap) {
+        this.renderContent();
+        const isBig = this.mode === "open" || this.mode === "drop";
+        this.layers.wings.classList.toggle("off", isBig || this.mode === "peek-ask");
+        this.layers.peek.classList.toggle("off", this.mode !== "peek-ask");
+        this.layers.open.classList.toggle("off", !isBig);
+        const target = this.target();
+        const nudge = target.nudge && this.hover ? [10, 3] : [0, 0];
+        this.goal = [target.w + nudge[0], target.h + nudge[1], target.r[0], target.r[1]];
+        const lifted = isBig || this.mode.startsWith("peek") || this.hover;
+        this.el.classList.toggle("lifted", lifted);
+        this.spring = isBig || this.mode.startsWith("peek") ? SPRING.open : this.hover ? SPRING.hover : SPRING.close;
+        if (snap || !this.geom) {
+            this.geom = this.goal.slice();
+            this.paint();
+        } else this.animate();
+    }
+
+    animate() {
+        if (this.raf) return;
+        let last = performance.now();
+        const tick = (now) => {
+            const [response, damping] = this.spring;
+            const k = (2 * Math.PI / response) ** 2;
+            const c = 4 * Math.PI * damping / response;
+            let dt = Math.min(0.05, (now - last) / 1000);
+            last = now;
+            let settled = true;
+            while (dt > 0) {
+                const step = Math.min(dt, 1 / 480);
+                for (let i = 0; i < 4; i++) {
+                    const a = -k * (this.geom[i] - this.goal[i]) - c * this.vel[i];
+                    this.vel[i] += a * step;
+                    this.geom[i] += this.vel[i] * step;
+                }
+                dt -= step;
+            }
+            for (let i = 0; i < 4; i++)
+                if (Math.abs(this.geom[i] - this.goal[i]) > 0.05 || Math.abs(this.vel[i]) > 0.05) settled = false;
+            if (settled) { this.geom = this.goal.slice(); this.vel = [0, 0, 0, 0]; }
+            this.paint();
+            this.raf = settled ? 0 : requestAnimationFrame(tick);
+        };
+        this.raf = requestAnimationFrame(tick);
+    }
+
+    paint() {
+        const [w, h, t, b] = this.geom.map((v) => Math.max(0, v));
+        const tt = Math.min(t, w / 4, h / 2), bb = Math.min(b, w / 4, Math.max(0, h - tt));
+        this.el.style.left = `${this.d.center - w / 2}px`;
+        this.shape.style.width = `${w}px`;
+        this.shape.style.height = `${h}px`;
+        this.shape.style.clipPath = `path("${notchPath(w, h, tt, bb)}")`;
+        const pad = this.mode === "open" || this.mode === "drop" ? 0 : 0;
+        for (const layer of Object.values(this.layers)) layer.style.marginLeft = `${pad}px`;
+        this.layers.wings.style.left = `${w / 2}px`;
+        this.layers.peek.style.left = `${w / 2}px`;
+        this.layers.open.style.left = `${w / 2}px`;
+    }
+
+    wire() {
+        let openTimer = 0, closeTimer = 0;
+        this.el.addEventListener("mouseenter", () => {
+            clearTimeout(closeTimer);
+            if (this.mode === "drop") return;
+            this.hover = true;
+            if (this.mode === "closed" || this.mode === "peek-done") {
+                this.render();
+                openTimer = setTimeout(() => { this.mode = "open"; this.render(); }, 300);
+            }
+        });
+        this.el.addEventListener("mouseleave", () => {
+            clearTimeout(openTimer);
+            closeTimer = setTimeout(() => {
+                if (this.el.contains(document.activeElement) && document.activeElement.tagName === "TEXTAREA") return;
+                this.hover = false;
+                if (this.mode === "open") this.mode = "closed";
+                this.render();
+            }, 100);
+        });
+        this.el.addEventListener("input", (e) => {
+            if (e.target.tagName !== "TEXTAREA") return;
+            const had = !!this.draft.trim();
+            this.draft = e.target.value;
+            if (had !== !!this.draft.trim()) this.el.querySelector(".send").toggleAttribute("disabled", !this.draft.trim());
+        });
+        this.el.addEventListener("click", (e) => {
+            const tab = e.target.closest("[data-tab]");
+            if (tab) { this.tab = tab.dataset.tab; this.render(); return; }
+            if (e.target.closest("[data-perm-toggle]")) { this.perm = this.perm === "yolo" ? "safe" : "yolo"; this.render(); return; }
+            const menu = e.target.closest("[data-menu]");
+            if (menu) { this.menu = this.menu === menu.dataset.menu ? null : menu.dataset.menu; this.render(); return; }
+            const pick = e.target.closest("[data-pick]");
+            if (pick) { this.selectedType = pick.dataset.pick; this.model = ""; this.render(); return; }
+            const choose = e.target.closest("[data-choose]");
+            if (choose) {
+                const field = this.menu === "model" ? "model" : this.menu;
+                this[field] = choose.dataset.choose;
+                this.menu = null;
+                this.render();
+                return;
+            }
+            const answer = e.target.closest("[data-answer]");
+            if (answer) {
+                const a = this.agents.find((x) => x.id === answer.dataset.id);
+                a.state = answer.dataset.answer === "deny" ? "working" : "working";
+                delete a.ask;
+                if (this.mode === "peek-ask") this.mode = this.hover ? "open" : "closed";
+                this.render();
+                return;
+            }
+            if (e.target.closest("[data-start]")) {
+                const text = this.draft.trim() || "New task";
+                this.agents.unshift({ id: `n${Date.now()}`, type: this.selectedType, title: text, project: this.project, state: "working", time: "0:00" });
+                this.draft = "";
+                this.menu = null;
+                this.tab = "agents";
+                this.render();
+                return;
+            }
+            const drop = e.target.closest("[data-drop]");
+            if (drop) this.finishDrop(drop.dataset.drop);
+        });
+    }
+
+    finishDrop(target) {
+        if (target === "new") this.agents.unshift({ id: `n${Date.now()}`, type: this.selectedType, title: "Look at screenshot 2026-10-03", project: "sikemux", state: "working", time: "0:00" });
+        this.mode = "closed";
+        this.hover = false;
+        this.render();
+    }
+
+    peek(mode, id, ms) {
+        clearTimeout(this.peekTimer);
+        this.mode = mode;
+        this.peekAgent = id;
+        this.freshPing = true;
+        this.render();
+        this.peekTimer = setTimeout(() => {
+            if (this.mode === mode && !this.hover) { this.mode = "closed"; this.freshPing = false; this.render(); }
+        }, ms);
+    }
+}
+
+function menubar(d) {
+    const wifi = `<svg width="16" height="12" viewBox="0 0 16 12" fill="#fff"><path d="M8 2.2c2.4 0 4.6.9 6.3 2.5l1.1-1.2A10.6 10.6 0 0 0 8 .6 10.6 10.6 0 0 0 .6 3.5l1.1 1.2A9 9 0 0 1 8 2.2Zm0 3.2c1.5 0 2.9.6 4 1.5l1.1-1.2A7.6 7.6 0 0 0 8 3.8c-1.9 0-3.7.7-5.1 1.9L4 6.9a6 6 0 0 1 4-1.5Zm0 3.2c.7 0 1.3.2 1.8.6L8 11.4 6.2 9.2c.5-.4 1.1-.6 1.8-.6Z"/></svg>`;
+    const battery = `<svg width="25" height="12" viewBox="0 0 25 12"><rect x=".5" y=".5" width="21" height="11" rx="3" fill="none" stroke="#fff" stroke-opacity=".5"/><rect x="2" y="2" width="15" height="8" rx="1.6" fill="#fff"/><path d="M23 4v4a2 2 0 0 0 0-4Z" fill="#fff" fill-opacity=".5"/></svg>`;
+    const cc = `<svg width="15" height="13" viewBox="0 0 15 13" fill="none" stroke="#fff" stroke-width="1.3"><rect x=".7" y=".7" width="13.6" height="4.6" rx="2.3"/><rect x=".7" y="7.7" width="13.6" height="4.6" rx="2.3"/><circle cx="4" cy="3" r="1.2" fill="#fff"/><circle cx="11" cy="10" r="1.2" fill="#fff"/></svg>`;
+    const apple = `<svg width="14" height="17" viewBox="0 0 14 17" fill="#fff"><path d="M11.6 9c0-2.1 1.7-3.1 1.8-3.2-1-1.4-2.5-1.6-3-1.7-1.3-.1-2.5.8-3.1.8-.7 0-1.7-.8-2.8-.7A4.1 4.1 0 0 0 1 6.3c-1.5 2.6-.4 6.4 1.1 8.5.7 1 1.5 2.2 2.6 2.1 1.1 0 1.4-.7 2.7-.7 1.3 0 1.6.7 2.7.7 1.1 0 1.8-1 2.5-2.1.8-1.2 1.1-2.3 1.2-2.4-.1 0-2.2-.9-2.2-3.4ZM9.6 2.8c.6-.7 1-1.7.9-2.7-.9 0-1.9.6-2.5 1.3-.5.6-1 1.6-.9 2.6 1 .1 1.9-.5 2.5-1.2Z"/></svg>`;
+    return `<div class="menubar" style="height:${d.menu}px">
+        <div class="left">${apple}<b>Sikemux</b><span>File</span><span>Edit</span><span>View</span><span>Agent</span><span>Window</span><span>Help</span></div>
+        <div class="right">${wifi}${battery}${cc}<span>Sat 3 Oct&nbsp;&nbsp;6:24</span></div>
+    </div>`;
+}
+
+
+const SECTIONS = [
+    {
+        id: "closed", letter: "C", title: "Closed",
+        lede: "The resting island. Only the wings change; it never grows taller than the menu bar.",
+        states: [
+            { id: "C1", name: "Idle", when: "No agent is running.", shows: "The bare notch. Nothing is drawn beyond the camera housing.",
+              plain: "No island at all.", opts: { agents: [] } },
+            { id: "C2", name: "Working", when: "One or more agents are working and none is waiting for you.",
+              shows: "Left: the marks of the running agents. Right: how many are working, and the green twinkle grid.",
+              opts: { agents: () => only(["a2", "a3"]) } },
+            { id: "C3", name: "Needs you", when: "Any agent is waiting for a permission or an answer.",
+              shows: "An amber dot replaces the grid. It sends out two rings when it arrives, then goes still. Beats working and done.",
+              opts: { agents: () => freshAgents(), fresh: true } },
+            { id: "C4", name: "Done, unseen", when: "An agent finished and you have not looked at it yet.",
+              shows: "A purple dot, until you open the island or the agent.", opts: { agents: () => only(["a4"]) } },
+            { id: "C5", name: "More than three", when: "Four or more agents are running.",
+              shows: "Three marks, then +N.", opts: { agents: () => [...allWorking(), { id: "a5", type: "pi", title: "x", project: "x", state: "working" }] } },
+            { id: "C6", name: "Pointer resting", when: "The pointer is on the island, for the 0.3 s before it opens.",
+              shows: "The shadow comes on, the island grows 10 × 3 pt, and the trackpad ticks once.", opts: { agents: () => only(["a2", "a3"]), hover: true } },
+        ],
+    },
+    {
+        id: "peeks", letter: "P", title: "Peeks",
+        lede: "The island grows for a moment when something happens, without opening. Resting the pointer on a peek opens it.",
+        states: [
+            { id: "P1", name: "Permission request", when: "An agent asks to run something.",
+              shows: "The agent, its task and the exact command, with Deny, Always allow and Allow (⏎).",
+              leaves: "Answering closes it. Unanswered, it shrinks to C3 after 6 s.", opts: { agents: () => freshAgents(), mode: "peek-ask", peekAgent: "a1" } },
+            { id: "P2", name: "Finished", when: "An agent finishes.",
+              shows: "One line either side of the camera: the agent's mark and Finished, then the task and a purple dot.",
+              leaves: "Shrinks to C4 after 3 s.", opts: { agents: () => only(["a2", "a4"]), mode: "peek-done", peekAgent: "a4" } },
+        ],
+    },
+    {
+        id: "open", letter: "O", title: "Open",
+        lede: "Opened by resting the pointer for 0.3 s. The header sits in the menu-bar band, split around the camera: tabs on the left, Sikemux on the right.",
+        states: [
+            { id: "O1", name: "Agents", when: "Opened, on the Agents tab.",
+              shows: "Agents grouped Needs you, Working, Done. A permission can be answered in place. Clicking a row opens that agent in Sikemux.",
+              leaves: "The pointer leaves, and 0.1 s later it closes.", opts: { agents: () => freshAgents(), mode: "open" } },
+            { id: "O2", name: "New agent", when: "Opened, on the New agent tab.",
+              shows: "Sikemux's own composer: add files, the yolo toggle, the model picker (agent mark + model, in accent), effort, project and send.",
+              leaves: "Send (⏎) starts the agent and goes to O1 with it on top. Stays open while the prompt has focus.",
+              opts: { agents: () => freshAgents(), mode: "open", tab: "new", draft: "Turn the notch mockup into a SwiftUI spec" } },
+            { id: "O3", name: "Model picker", when: "The model picker is open on the New agent tab.",
+              shows: "The composer's picker, opening downward so the island grows to hold it: search, the agents as chips, then that agent's models with a check on the current one.",
+              leaves: "Picking a model or pressing Esc closes it. Picking another agent swaps the list.",
+              opts: { agents: () => freshAgents(), mode: "open", tab: "new", menu: "model", draft: "Turn the notch mockup into a SwiftUI spec" } },
+            { id: "O4", name: "Empty", when: "Opened with nothing running.", shows: "One New agent button.", opts: { agents: [], mode: "open" } },
+        ],
+    },
+    {
+        id: "dev", letter: "V", title: "Sikemux Dev",
+        lede: "While Sikemux Dev runs, its island takes the notch and prod's hides; quitting Dev gives it back. The only difference is a small DEV tag in the open header. The Build switch at the top shows any state as Dev.",
+        states: [
+            { id: "V1", name: "Open", when: "The Dev island is open.",
+              shows: "A purple DEV tag before the phone status. Everything else, closed states and peeks included, is the same as prod.",
+              opts: { agents: () => freshAgents(), mode: "open", channel: "dev" } },
+        ],
+    },
+    {
+        id: "drop", letter: "D", title: "Drag and drop",
+        lede: "A file dragged towards the top of the screen opens the island before the pointer reaches it.",
+        states: [
+            { id: "D1", name: "File dragged in", when: "A file is being dragged near the top of the screen.",
+              shows: "Two targets: start a new agent with the file, or send it to the agent you used last.",
+              leaves: "Dropping closes it. Dragging away closes it after 0.5 s.", opts: { agents: () => freshAgents(), mode: "drop" } },
+        ],
+    },
+];
+
+const OPTIONS = [
+    { name: "Show on", choices: ["Every display", "Built-in display only", "The display under the pointer"], def: 0,
+      why: "A display without a notch gets a pill at its menu bar's height. Switch Preview on to External display to see it." },
+    { name: "Open with", choices: ["Resting the pointer", "Clicking"], def: 0, why: "Resting waits 0.3 s, so passing the pointer across the menu bar does not open it." },
+    { name: "In full-screen apps", choices: ["Hide unless an agent needs you", "Always show", "Always hide"], def: 0 },
+    { name: "Peek when", choices: ["An agent needs you or finishes", "An agent needs you", "Never"], def: 0, why: "Turns P1 and P2 on or off." },
+    { name: "Answer permissions", choices: ["In the notch", "Only in Sikemux"], def: 0, why: "With the second choice, P1 and O1 show Open in Sikemux instead of Deny and Allow." },
+    { name: "While Sikemux Dev runs", choices: ["Dev takes the notch", "Prod keeps it", "One island with both builds' agents"], def: 0,
+      why: "Prod's helper watches for Dev's helper starting and quitting, and hides while it runs." },
+    { name: "Sound", choices: ["When an agent needs you", "Never"], def: 0 },
+];
+
+const FLOW = [
+    [["state", "C1–C6", "Closed", "closed"], ["arrow", "rest 0.3 s"], ["state", "O1–O4", "Open", "open"], ["arrow", "leave 0.1 s"], ["state", "C1–C6", "Closed", "closed"]],
+    [["event", "", "Agent asks"], ["arrow", ""], ["state", "P1", "Permission", "P1"], ["arrow", "6 s"], ["state", "C3", "Needs you", "C3"]],
+    [["event", "", "Agent finishes"], ["arrow", ""], ["state", "P2", "Finished", "P2"], ["arrow", "3 s"], ["state", "C4", "Done, unseen", "C4"]],
+    [["event", "", "File dragged"], ["arrow", ""], ["state", "D1", "Drop targets", "D1"], ["arrow", "drop"], ["state", "C2", "Working", "C2"]],
+];
+
+const only = (ids) => freshAgents().filter((a) => ids.includes(a.id));
+const allWorking = () => freshAgents().map((a) => ({ ...a, state: "working", ask: undefined, unread: false }));
+
+let display = "notch";
+let channel = "prod";
+const cards = [];
+
+function stateCard(section, state) {
+    const card = document.createElement("article");
+    card.className = "card";
+    card.id = state.id;
+    const facts = [["When", state.when], ["Shows", state.shows]];
+    if (state.leaves) facts.push(["Leaves", state.leaves]);
+    card.innerHTML = `
+        <div class="meta">
+            <div>
+                <h3><span class="id">${state.id}</span>${state.name}</h3>
+                <dl class="facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}<dt class="ext-k">External</dt><dd class="ext-v"></dd></dl>
+            </div>
+            <div class="measure"></div>
+        </div>
+        <div class="stage"></div>`;
+    return card;
+}
+
+function paintCard(entry) {
+    const { card, state } = entry;
+    const stage = card.querySelector(".stage");
+    const opts = { channel, ...state.opts, display, agents: typeof state.opts.agents === "function" ? state.opts.agents() : state.opts.agents };
+    const island = new Island(stage, opts);
+    requestAnimationFrame(() => {
+        island.render(true);
+        const [w, h, t, b] = island.goal;
+        stage.style.height = `${Math.max(100, Math.round(h) + 62)}px`;
+        const big = island.mode === "open" || island.mode === "drop" || island.mode.startsWith("peek");
+        const spring = island.hover ? SPRING.hover : big ? SPRING.open : SPRING.close;
+        card.querySelector(".measure").innerHTML = w < 1
+            ? `<span><b>size</b>hidden</span>`
+            : `<span><b>size</b>${Math.round(w)} × ${Math.round(h)} pt</span><span><b>corners</b>${t} / ${b}</span><span><b>spring</b>${spring[0]} / ${spring[1]}</span>`;
+    });
+    const ext = state.plain && display === "notch";
+    card.querySelector(".ext-k").style.display = ext ? "" : "none";
+    card.querySelector(".ext-v").style.display = ext ? "" : "none";
+    card.querySelector(".ext-v").textContent = state.plain || "";
+}
+
+function buildStates() {
+    const root = document.getElementById("states");
+    for (const section of SECTIONS) {
+        const el = document.createElement("section");
+        el.id = section.id;
+        el.innerHTML = `<h2>${section.title} <span class="id">${section.letter}</span></h2><p class="lede">${section.lede}</p>`;
+        for (const state of section.states) {
+            const card = stateCard(section, state);
+            el.appendChild(card);
+            cards.push({ card, state });
+        }
+        root.appendChild(el);
+    }
+    cards.forEach(paintCard);
+}
+
+function buildToc() {
+    const links = [
+        `<a class="sec" href="#flow">How it moves</a>`,
+        `<a class="sec" href="#playground">Playground</a>`,
+        ...SECTIONS.flatMap((s) => [
+            `<a class="sec" href="#${s.id}">${s.title}</a>`,
+            ...s.states.map((st) => `<a href="#${st.id}"><span class="id">${st.id}</span>${st.name}</a>`),
+        ]),
+        `<a class="sec" href="#options">Options</a>`,
+        ...OPTIONS.map((o) => `<a href="#options"><span class="id option">opt</span>${o.name}</a>`),
+        `<a class="sec" href="#spec">Numbers for SwiftUI</a>`,
+    ];
+    document.getElementById("toc").innerHTML = links.join("");
+    document.getElementById("jump").innerHTML = [
+        ...SECTIONS.map((sec) => sec.states.map((st) => `<a href="#${st.id}" title="${st.name}"><span class="id">${st.id}</span></a>`).join("")),
+        `<a href="#options"><span class="id option">options</span></a><a href="#spec"><span class="id">numbers</span></a>`,
+    ].join(`<span class="sep"></span>`);
+}
+
+function buildFlow() {
+    document.getElementById("flow-body").innerHTML = FLOW.map((path) => `<div class="path">${path.map(([kind, id, label, target]) => {
+        if (kind === "arrow") return `<span class="arrow">${id || "&nbsp;"}</span>`;
+        if (kind === "event") return `<span class="node event">${label}</span>`;
+        return `<a class="node" href="#${target}"><span class="id">${id}</span>${label}</a>`;
+    }).join("")}</div>`).join("");
+}
+
+function buildOptions() {
+    document.getElementById("options-body").innerHTML = OPTIONS.map((o) => `
+        <div class="opt">
+            <div class="name">${o.name}</div>
+            <div class="choices">${o.choices.map((c, i) => `<span class="choice${i === o.def ? " default" : ""}">${c}</span>`).join("")}</div>
+            ${o.why ? `<div class="why">${o.why}</div>` : ""}
+        </div>`).join("");
+}
+
+await loadIcons();
+buildToc();
+buildFlow();
+buildStates();
+buildOptions();
+
+const live = new Island(document.getElementById("live"), { live: true, agents: freshAgents().slice(1, 3) });
+
+document.getElementById("channel-seg").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-channel]");
+    if (!b) return;
+    channel = b.dataset.channel;
+    for (const x of document.querySelectorAll("[data-channel]")) x.setAttribute("aria-pressed", x === b);
+    cards.forEach(paintCard);
+    live.channel = channel;
+    live.render();
+});
+
+document.getElementById("display-seg").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-display]");
+    if (!b) return;
+    display = b.dataset.display;
+    for (const x of document.querySelectorAll("[data-display]")) x.setAttribute("aria-pressed", x === b);
+    cards.forEach(paintCard);
+    live.display = display;
+    live.geom = null;
+    live.build();
+    live.render(true);
+});
+
+document.getElementById("controls").addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    const act = b.dataset.act;
+    if (act === "start") {
+        const kinds = ["claude", "codex", "opencode", "grok", "pi"];
+        const type = kinds[live.agents.length % kinds.length];
+        live.agents.push({ id: `s${Date.now()}`, type, title: "Tidy up the README", project: "sikemux", state: "working", time: "0:00" });
+        live.render();
+    } else if (act === "block") {
+        let a = live.agents.find((x) => x.type === "claude");
+        if (!a) { a = freshAgents()[0]; live.agents.unshift(a); }
+        a.state = "blocked";
+        a.ask = { tool: "Bash", cmd: "pnpm test --filter core -- --runInBand" };
+        live.peek("peek-ask", a.id, 6000);
+    } else if (act === "finish") {
+        let a = live.agents.find((x) => x.type === "codex");
+        if (!a) { a = freshAgents()[1]; live.agents.push(a); }
+        a.state = "done";
+        a.unread = true;
+        a.time = "just now";
+        live.peek("peek-done", a.id, 3000);
+    } else if (act === "drag") {
+        live.mode = live.mode === "drop" ? "closed" : "drop";
+        live.render();
+    } else if (act === "clear") {
+        live.agents = [];
+        live.mode = "closed";
+        live.render();
+    } else if (act === "reset") {
+        live.agents = freshAgents().slice(1, 3);
+        live.mode = "closed";
+        live.tab = "agents";
+        live.render();
+    }
+});
+
+let dragDepth = 0;
+document.addEventListener("dragenter", (e) => {
+    e.preventDefault();
+    if (dragDepth++ === 0) { live.mode = "drop"; live.render(); }
+});
+document.addEventListener("dragleave", () => {
+    if (--dragDepth === 0 && live.mode === "drop") { live.mode = "closed"; live.render(); }
+});
+document.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    const target = e.target.closest?.("[data-drop]");
+    for (const x of live.el.querySelectorAll("[data-drop]")) x.classList.toggle("hot", x === target);
+});
+document.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dragDepth = 0;
+    const target = e.target.closest?.("[data-drop]");
+    live.finishDrop(target ? target.dataset.drop : null);
+});
+</script>
+</body>
+</html>
