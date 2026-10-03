@@ -27,6 +27,7 @@
     "@shopify/flash-list": "2.0.2",
     "@sikemux/native": "workspace:*",
     "expo": "~57.0.26",
+    "expo-application": "~57.0.3",
     "expo-auth-session": "~57.0.13",
     "expo-build-properties": "~57.0.22",
     "expo-camera": "~57.0.6",

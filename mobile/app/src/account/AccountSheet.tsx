@@ -2,8 +2,11 @@ import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth, useUser } from '@clerk/expo';
+import { nativeApplicationVersion } from 'expo-application';
+import * as Updates from 'expo-updates';
 
 import { removePhone } from '@/account/api';
+import { versionLabel } from '@/account/versionLabel';
 import { useDeviceId } from '@/device/identity';
 import { forget } from '@/devices/hub';
 import { pairedDevices, shortKey } from '@/devices/paired';
@@ -14,6 +17,12 @@ import { Sheet } from '@/ui/Sheet';
 import { fonts, type Palette, typeFor, useColors, useStyles, useType } from '@/ui/theme';
 
 const PROVIDERS: Record<string, string> = { google: 'Google', github: 'GitHub' };
+
+const VERSION = versionLabel(nativeApplicationVersion, {
+  id: Updates.updateId,
+  createdAt: Updates.createdAt,
+  embedded: Updates.isEmbeddedLaunch,
+});
 
 /** Who is signed in, this phone as the account knows it, and signing out. */
 export function AccountSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
@@ -68,6 +77,7 @@ export function AccountSheet({ visible, onClose }: { visible: boolean; onClose: 
       </View>
       <Text style={styles.note}>Signing out takes this phone off your account and forgets every host paired with it.</Text>
       <Button kind="danger" title={leaving ? 'Signing out…' : 'Sign out'} disabled={leaving} onPress={() => void leave()} />
+      <Text style={styles.version}>Sikemux {VERSION}</Text>
     </Sheet>
   );
 }
@@ -101,5 +111,6 @@ const makeStyles = (colors: Palette) => {
     },
     phoneName: { ...type.row, fontSize: 15, color: colors.ink },
     note: { ...type.meta, lineHeight: 19, paddingHorizontal: 8, paddingTop: 10, paddingBottom: 12 },
+    version: { ...type.meta, fontSize: 12, textAlign: 'center', paddingTop: 14 },
   });
 };

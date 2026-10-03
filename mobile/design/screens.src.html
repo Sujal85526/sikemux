@@ -482,6 +482,7 @@
   .account-head .t { font-size: 16px; font-weight: 600; color: var(--text-primary); letter-spacing: -0.015em; }
   .account-head .s { font-size: 13px; color: var(--text-tertiary); }
   .sheet-note { padding: 10px 8px 12px; font-size: 13px; line-height: 1.45; color: var(--text-tertiary); }
+  .sheet-version { padding-top: 14px; font-size: 12px; text-align: center; color: var(--text-tertiary); }
   /* the three pairing steps share one layout so the code never moves */
   .pairing { padding: 40px 28px 0; display: flex; flex-direction: column; align-items: center; text-align: center; }
   .pairing h2 { color: var(--text-primary); font-size: 22px; font-weight: 600; letter-spacing: -0.028em; line-height: 1.25; text-wrap: balance; }
@@ -821,9 +822,10 @@
         <div class="row boxed"><span class="mark">{{IconPhone:18}}</span><div class="body"><div class="t" style="font-size:15px">Kishore's iPhone</div><div class="s">This phone · <span class="m">3308a907</span></div></div></div>
         <div class="sheet-note">Signing out takes this phone off your account and forgets every host paired with it.</div>
         <div class="btn danger">Sign out</div>
+        <div class="sheet-version">Sikemux 0.1.0 · update a1b2c3d (3 Oct)</div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Account</b><div class="note">Who is signed in, and this phone as the account knows it. Signing out says what it does before it does it.</div></figcaption>
+      <figcaption><b>Account</b><div class="note">Who is signed in, and this phone as the account knows it. Signing out says what it does before it does it. The last line is the installed version, quiet like the Mac's About; when an over-the-air update is running it adds the update's short id and the day it was made, and without one it is only the version.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
