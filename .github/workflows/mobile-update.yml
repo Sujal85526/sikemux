@@ -151,7 +151,7 @@ jobs:
     if: github.repository == 'nodelike/sikemux' && github.ref == 'refs/heads/main' && inputs.update_id
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    environment: release-mobile
+    environment: release
     steps:
       - name: Approved
         env:

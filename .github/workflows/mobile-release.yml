@@ -2,7 +2,7 @@ name: Mobile release
 run-name: Mobile release ${{ github.ref_name }}
 
 # A phone release starts from a mobile-v* tag, separate from the Mac's v* tags, and waits for the
-# owner's approval on the release-mobile environment, as the Mac release does on release-desktop.
+# owner's approval on the release environment like the Mac release does.
 on:
   push:
     tags: ["mobile-v*"]
@@ -19,7 +19,7 @@ jobs:
     name: Build, verify, and publish Android
     runs-on: ubuntu-latest
     timeout-minutes: 90
-    environment: release-mobile
+    environment: release
     permissions:
       contents: write
     env:
