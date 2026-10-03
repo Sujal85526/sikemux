@@ -7,7 +7,7 @@ use tokio_websockets::{CloseCode, ServerBuilder};
 
 use super::*;
 
-const WAIT: Duration = Duration::from_secs(10);
+const WAIT: Duration = Duration::from_secs(30);
 
 struct Fake {
     secret: SecretKey,

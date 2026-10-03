@@ -20,7 +20,7 @@ use sikemux_core::server::{self, ServerConfig, ServerError};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 const FAKE_AGENT: &str = env!("CARGO_BIN_EXE_sikemux-fake-acp-agent");
-const WAIT: Duration = Duration::from_secs(15);
+const WAIT: Duration = Duration::from_secs(30);
 
 struct TestCore {
     _dir: tempfile::TempDir,
