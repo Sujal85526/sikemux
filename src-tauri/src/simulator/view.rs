@@ -14,12 +14,15 @@ use serde_json::{json, Value};
 use tauri::http::{header, Request, Response, StatusCode};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State, UriSchemeContext, UriSchemeResponder};
 
+use super::tools::{list_devices, Device};
 use super::SimulatorManager;
 use crate::error::{AppError, AppResult};
 
 pub const SCHEME: &str = "sim";
 pub const FRAME_EVENT: &str = "simulator-frame";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
+/// A first boot of a device, which also prepares its data, can take a couple of minutes.
+const BOOT_TIMEOUT: Duration = Duration::from_secs(240);
 /// A frame is a JPEG of a phone screen; anything far larger is not one.
 const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 
@@ -179,6 +182,73 @@ pub async fn simulator_input(
     }
     simulators
         .request(kind, fields, REQUEST_TIMEOUT)
+        .map(drop)
+        .map_err(AppError::Other)
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceSummary {
+    udid: String,
+    name: String,
+    os: String,
+    booted: bool,
+    screen: Option<Value>,
+}
+
+impl From<Device> for DeviceSummary {
+    fn from(device: Device) -> Self {
+        Self {
+            screen: device
+                .screen
+                .map(|(width, height)| json!({ "width": width, "height": height })),
+            udid: device.udid,
+            name: device.name,
+            os: device.os,
+            booted: device.booted,
+        }
+    }
+}
+
+/// Every simulator Xcode has, for the person to pick from.
+#[tauri::command]
+pub async fn simulator_devices(
+    simulators: State<'_, SimulatorManager>,
+) -> AppResult<Vec<DeviceSummary>> {
+    let devices = list_devices(&simulators).map_err(AppError::Other)?;
+    Ok(devices.into_iter().map(DeviceSummary::from).collect())
+}
+
+/// Boots the device the person picked and makes it the agent's, so the person
+/// and the agent keep looking at the same screen.
+#[tauri::command]
+pub async fn simulator_attach(
+    simulators: State<'_, SimulatorManager>,
+    agent_id: String,
+    udid: String,
+) -> AppResult<DeviceSummary> {
+    let device = list_devices(&simulators)
+        .map_err(AppError::Other)?
+        .into_iter()
+        .find(|device| device.udid == udid)
+        .ok_or_else(|| AppError::Other(format!("no simulator {udid}")))?;
+    simulators
+        .request("boot", json!({ "udid": udid }), BOOT_TIMEOUT)
+        .map_err(AppError::Other)?;
+    simulators.attach(&agent_id, device.clone());
+    Ok(DeviceSummary {
+        booted: true,
+        ..device.into()
+    })
+}
+
+#[tauri::command]
+pub async fn simulator_shutdown(
+    simulators: State<'_, SimulatorManager>,
+    udid: String,
+) -> AppResult<()> {
+    simulators
+        .request("shutdown", json!({ "udid": udid }), REQUEST_TIMEOUT)
         .map(drop)
         .map_err(AppError::Other)
 }

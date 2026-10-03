@@ -216,4 +216,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "simulator_view_open",
     "simulator_view_close",
     "simulator_input",
+    "simulator_devices",
+    "simulator_attach",
+    "simulator_shutdown",
 ];

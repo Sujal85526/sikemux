@@ -458,6 +458,9 @@ pub fn run() {
             simulator::view::simulator_view_open,
             simulator::view::simulator_view_close,
             simulator::view::simulator_input,
+            simulator::view::simulator_devices,
+            simulator::view::simulator_attach,
+            simulator::view::simulator_shutdown,
         ])
         .build(tauri::generate_context!())
         .expect("error while building sikemux")

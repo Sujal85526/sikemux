@@ -232,6 +232,9 @@
     "allow-voice-shutdown",
     "allow-simulator-view-open",
     "allow-simulator-view-close",
-    "allow-simulator-input"
+    "allow-simulator-input",
+    "allow-simulator-devices",
+    "allow-simulator-attach",
+    "allow-simulator-shutdown"
   ]
 }

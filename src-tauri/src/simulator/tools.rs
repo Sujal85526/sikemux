@@ -269,7 +269,7 @@ pub(super) struct Element {
     pub offscreen: bool,
 }
 
-fn list_devices(manager: &SimulatorManager) -> Result<Vec<Device>, String> {
+pub(super) fn list_devices(manager: &SimulatorManager) -> Result<Vec<Device>, String> {
     let reply = manager.request("devices", json!({}), ACTION_TIMEOUT)?;
     Ok(reply["devices"]
         .as_array()
