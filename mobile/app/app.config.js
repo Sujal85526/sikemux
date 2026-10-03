@@ -22,9 +22,25 @@ function googleSignIn({ web, ios }) {
   };
 }
 
+/** Play needs a number that grows with every upload: 0.5.0-nightly.3 is 50003, and 0.5.0 itself is 50099. */
+function androidVersionCode(version, base) {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:-nightly\.(\d+))?$/.exec(version);
+  if (!match) throw new Error(`${version} is not a version like 0.5.0 or 0.5.0-nightly.3`);
+  const [major, minor, patch] = match.slice(1, 4).map(Number);
+  const nightly = match[4] === undefined ? null : Number(match[4]);
+  if (`${major}.${minor}.${patch}` !== base) throw new Error(`${version} is not a release of ${base}, the version in app.json`);
+  if (minor > 99 || patch > 99 || nightly > 98) throw new Error(`${version} does not fit the version code scheme`);
+  return major * 1_000_000 + minor * 10_000 + patch * 100 + (nightly ?? 99);
+}
+
 module.exports = ({ config }) => {
   if (process.env.APP_VARIANT === 'production') {
-    return { ...config, extra: { ...config.extra, ...googleSignIn(GOOGLE.production) } };
+    const version = process.env.SIKEMUX_MOBILE_VERSION ?? config.version;
+    return {
+      ...config,
+      extra: { ...config.extra, ...googleSignIn(GOOGLE.production) },
+      android: { ...config.android, versionCode: androidVersionCode(version, config.version) },
+    };
   }
   return {
     ...config,

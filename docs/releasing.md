@@ -104,3 +104,24 @@ The push to `release/*` fails unless it fast-forwards, and only the owner may pu
 ```
 
 If you have an Apple Developer membership, set `RELEASE_NOTARIZED=1` with the Developer ID and notarization environment variables. The release script then requires a successful Gatekeeper assessment and stapled notarization tickets before it publishes anything.
+
+## Releasing the phone app
+
+The phone app releases on its own schedule from the **Mobile release** workflow, started by a `mobile-v*` tag. Only the owner can create, move or delete one, and like a Mac release it waits for the owner's approval on the `release` environment.
+
+```bash
+git tag mobile-v0.1.0-nightly.1 && git push origin mobile-v0.1.0-nightly.1
+```
+
+`mobile/app/app.json` holds the plain version, such as `0.1.0`, because iOS refuses anything else. A tag is either that version, which is stable, or that version with `-nightly.N`. The run stops if the tag is not a release of the version in `app.json`.
+
+Android needs a version code that grows with every upload. `app.config.js` derives it from the tag: `0.5.0-nightly.3` is `50003`, and `0.5.0` itself is `50099`, so a stable build always follows its own nightlies. Minor and patch numbers stay below 100, and nightlies below 99.
+
+The run checks the phone app, builds the Rust client with the small `mobile` profile, and builds the APK and the Play app bundle. It refuses either unless it is signed with the Play upload key. It attaches the APK to a GitHub release of the tag, marked a prerelease for a nightly, and never as the latest release: sikemux.com takes its Mac download from that one. The app bundle stays on the run until uploads to Google Play are added.
+
+| Name                      | Kind   | Holds                                              |
+| ------------------------- | ------ | -------------------------------------------------- |
+| `ANDROID_UPLOAD_KEYSTORE` | secret | the upload keystore, base64                        |
+| `ANDROID_UPLOAD_PASSWORD` | secret | its password, which is also the key's own password |
+
+Locally, `pnpm android:release` in `mobile/` signs with the same key: the keystore from `~/.config/sikemux/release/upload.keystore` and its password from the Keychain entry "Sikemux Android upload key".

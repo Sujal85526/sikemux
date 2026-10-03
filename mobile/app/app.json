@@ -11,7 +11,7 @@
       "bundleIdentifier": "com.nodelike.sikemux.mobile",
       "supportsTablet": true,
       "infoPlist": {
-        "NSLocalNetworkUsageDescription": "Sikemux finds the Macs on your network that you can pair with.",
+        "NSLocalNetworkUsageDescription": "Sikemux finds the computers on your network that you can pair with.",
         "NSBonjourServices": ["_sikemux._udp"]
       },
       "icon": "../../src-tauri/icons/sikemux.icon"
@@ -60,7 +60,7 @@
             "useLegacyPackaging": true,
             "enableMinifyInReleaseBuilds": true,
             "enableShrinkResourcesInReleaseBuilds": true,
-            "extraProguardRules": "-keep, includedescriptorclasses class org.rustls.platformverifier.** { *; }"
+            "extraProguardRules": "-keep, includedescriptorclasses class org.rustls.platformverifier.** { *; }\n-dontwarn kotlin.MustUseReturnValues"
           }
         }
       ]
