@@ -940,7 +940,7 @@ const SECTIONS = [
             { id: "C1", name: "Nothing open", when: "No agent is open in Sikemux.", shows: "The bare notch. Nothing is drawn beyond the camera housing.",
               plain: "No island at all.", opts: { agents: [] } },
             { id: "C2", name: "Working", when: "One or more agents are working and none is waiting for you.",
-              shows: "Left: the marks of the open agents, the busiest first. Right: how many are working, and the green twinkle grid. With every agent idle, the right wing shows how many are open, dim.",
+              shows: "Left: the marks of the open agents, the busiest first. Right: how many are working, and the green twinkle grid. With every agent idle, the right wing shows how many are open.",
               opts: { agents: () => only(["a2", "a3"]) } },
             { id: "C3", name: "Needs you", when: "Any agent is waiting for a permission or an answer.",
               shows: "An amber dot replaces the grid. It sends out two rings when it arrives, then goes still. Beats working and done.",

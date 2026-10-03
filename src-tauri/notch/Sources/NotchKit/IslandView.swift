@@ -200,7 +200,7 @@ struct ClosedWings: View {
                         }
                         StateMark(state: top.state).id(top.state)
                     } else {
-                        Text("\(running.count)").font(Theme.ui(12, .semibold)).monospacedDigit().foregroundStyle(Theme.inkFaint)
+                        Text("\(running.count)").font(Theme.ui(12, .semibold)).monospacedDigit().foregroundStyle(Theme.ink)
                     }
                 }
                 .padding(.trailing, 14)
