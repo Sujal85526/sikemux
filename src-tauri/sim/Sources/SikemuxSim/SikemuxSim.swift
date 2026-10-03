@@ -84,6 +84,11 @@ struct SikemuxSim {
             try await simulators.send(.composite(events), to: udid)
         case "button":
             try await simulators.send(.shortButtonPress(try button(try require(request.button, "button"))), to: udid)
+        case "logs":
+            return try await simulators.logs(
+                on: udid, process: request.process, after: request.after ?? 0, limit: min(max(request.limit ?? 200, 1), LogTail.capacity))
+        case "stopLogs":
+            try await simulators.stopLogs(on: udid, process: request.process)
         case "install":
             return ["bundleId": try await simulators.install(try require(request.path, "path"), on: udid)]
         case "launch":

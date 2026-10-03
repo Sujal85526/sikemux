@@ -8,6 +8,7 @@ import Foundation
 actor Simulators {
     private var control: SimulatorControlBootstrap?
     private var touch: [String: SimulatorHID] = [:]
+    private var tails: [String: (tail: LogTail, task: Task<Void, Never>)] = [:]
 
     func devices() throws -> [[String: Any]] {
         try set().allSimulators.map { simulator in
@@ -69,6 +70,29 @@ actor Simulators {
             touch[simulator.udid] = hid
         }
         try await hid.send(event: event, logger: simulator.logger)
+    }
+
+    /// Starts following a device's log the first time it is asked for, filtered to one process if one is named.
+    func logs(on udid: String?, process: String?, after cursor: Int, limit: Int) async throws -> [String: Any] {
+        let simulator = try await booted(udid)
+        let key = "\(simulator.udid) \(process ?? "")"
+        if tails[key] == nil {
+            let tail = LogTail()
+            var arguments = ["--style", "compact"]
+            if let process {
+                arguments += ["--predicate", "process == \"\(process.replacingOccurrences(of: "\"", with: ""))\""]
+            }
+            let operation = try await simulator.log.tail(arguments: arguments, consumer: tail.consumer)
+            tail.attach(operation)
+            let task = Task { _ = try? await operation.waitUntilCompleted() }
+            tails[key] = (tail, task)
+        }
+        return tails[key]!.tail.read(after: cursor, limit: limit)
+    }
+
+    func stopLogs(on udid: String?, process: String?) throws {
+        let key = "\(try find(udid).udid) \(process ?? "")"
+        tails.removeValue(forKey: key)?.task.cancel()
     }
 
     func install(_ path: String, on udid: String?) async throws -> String {
