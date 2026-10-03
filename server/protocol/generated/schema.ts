@@ -4,6 +4,57 @@ export const schema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $id: "https://api.sikemux.com/schema/v1",
   $defs: {
+    AccountDeletion: {
+      description:
+        "The account and its devices are gone from the moment this is answered; every device is revoked and every token refused.",
+      type: "object",
+      properties: {
+        status: { $ref: "#/$defs/AccountDeletionStatus" },
+        requestedAt: { type: "string", format: "date-time" },
+      },
+      required: ["status", "requestedAt"],
+      additionalProperties: false,
+    },
+    AccountDeletionStatus: {
+      description:
+        "Deleted once Clerk confirms it deleted the sign-in too; deleting until then, while the server retries.",
+      type: "string",
+      enum: ["deleting", "deleted"],
+    },
+    AccountEvent: {
+      description:
+        "Something changed on the account. Events carry keys, never names: a device rereads the lists it shows over HTTP.",
+      type: "object",
+      properties: {
+        id: { $ref: "#/$defs/EventId" },
+        type: { $ref: "#/$defs/AccountEventType" },
+        at: { type: "string", format: "date-time" },
+        key: {
+          description:
+            "The device the event is about. Absent from account.deleted.",
+          $ref: "#/$defs/DeviceKey",
+        },
+        role: {
+          description: "That device's role. Absent from account.deleted.",
+          $ref: "#/$defs/DeviceRole",
+        },
+        reason: {
+          description: "Only on device.revoked.",
+          $ref: "#/$defs/RevokeReason",
+        },
+      },
+      required: ["id", "type", "at"],
+      additionalProperties: false,
+    },
+    AccountEventType: {
+      type: "string",
+      enum: [
+        "device.added",
+        "device.changed",
+        "device.revoked",
+        "account.deleted",
+      ],
+    },
     ApiError: {
       description: "The body of every response that is not a success.",
       type: "object",
@@ -109,6 +160,12 @@ export const schema = {
       required: ["code", "message", "requestId"],
       additionalProperties: false,
     },
+    EventId: {
+      description:
+        "An account event's place in the log. Later events have larger ids.",
+      type: "integer",
+      minimum: 1,
+    },
     Health: {
       description:
         "Whether the API can serve requests, and which build is answering.",
@@ -125,6 +182,198 @@ export const schema = {
       additionalProperties: false,
     },
     HealthStatus: { type: "string", enum: ["ok", "unavailable"] },
+    LiveAck: {
+      description: "Every event up to and including id is handled.",
+      type: "object",
+      properties: { type: { const: "ack" }, id: { $ref: "#/$defs/EventId" } },
+      required: ["type", "id"],
+      additionalProperties: false,
+    },
+    LiveApp: {
+      description:
+        "The build that opened the connection, for the server's logs.",
+      type: "object",
+      properties: {
+        platform: { $ref: "#/$defs/Platform" },
+        version: { type: "string", maxLength: 64 },
+      },
+      required: ["platform", "version"],
+      additionalProperties: false,
+    },
+    LiveAuth: {
+      description:
+        "Web only: a fresh Clerk session token for the same user, sent before ready.authExpiresAt.",
+      type: "object",
+      properties: {
+        type: { const: "auth" },
+        token: { type: "string", minLength: 1, maxLength: 4096 },
+      },
+      required: ["type", "token"],
+      additionalProperties: false,
+    },
+    LiveBye: {
+      description:
+        "The server is restarting and closes with 1012 after it. Reconnect no sooner than reconnectAfterMs.",
+      type: "object",
+      properties: {
+        type: { const: "bye" },
+        reconnectAfterMs: { type: "integer", minimum: 0 },
+      },
+      required: ["type", "reconnectAfterMs"],
+      additionalProperties: false,
+    },
+    LiveChallenge: {
+      description:
+        "The server's first message on every connection: a one-time value the device's hello answers.",
+      type: "object",
+      properties: {
+        type: { const: "challenge" },
+        nonce: { type: "string", pattern: "^[0-9a-f]{64}$" },
+        expiresAt: { type: "string", format: "date-time" },
+      },
+      required: ["type", "nonce", "expiresAt"],
+      additionalProperties: false,
+    },
+    LiveDeviceMessage: {
+      description: "What a device or the web app sends on a live connection.",
+      type: "object",
+      oneOf: [
+        { $ref: "#/$defs/LiveHello" },
+        { $ref: "#/$defs/LiveAck" },
+        { $ref: "#/$defs/LiveAuth" },
+        { $ref: "#/$defs/LivePong" },
+        { $ref: "#/$defs/LiveLeave" },
+      ],
+      discriminator: { propertyName: "type" },
+    },
+    LiveEvents: {
+      description:
+        "Events the device has not acknowledged yet, oldest first. Delivery is at least once.",
+      type: "object",
+      properties: {
+        type: { const: "events" },
+        events: {
+          type: "array",
+          items: { $ref: "#/$defs/AccountEvent" },
+          minItems: 1,
+          maxItems: 200,
+        },
+      },
+      required: ["type", "events"],
+      additionalProperties: false,
+    },
+    LiveHello: {
+      description:
+        "The device's first message, answering the challenge. Hosts send key and signature; clients send key, signature and their Clerk session token; the web app sends only its token. The signature is the device key's Ed25519 signature over the UTF-8 text `sikemux-live|<nonce>|<key>`.",
+      type: "object",
+      properties: {
+        type: { const: "hello" },
+        role: { $ref: "#/$defs/LiveRole" },
+        key: { $ref: "#/$defs/DeviceKey" },
+        signature: { type: "string", pattern: "^[0-9a-f]{128}$" },
+        token: { type: "string", minLength: 1, maxLength: 4096 },
+        app: { $ref: "#/$defs/LiveApp" },
+      },
+      required: ["type", "role"],
+      additionalProperties: false,
+    },
+    LiveLeave: {
+      description:
+        "Hosts and clients only: take this device off its account. The server answers with revoked (signed_out).",
+      type: "object",
+      properties: { type: { const: "leave" } },
+      required: ["type"],
+      additionalProperties: false,
+    },
+    LivePing: {
+      description: "Answer with pong.",
+      type: "object",
+      properties: { type: { const: "ping" } },
+      required: ["type"],
+      additionalProperties: false,
+    },
+    LivePong: {
+      description: "The answer to ping.",
+      type: "object",
+      properties: { type: { const: "pong" } },
+      required: ["type"],
+      additionalProperties: false,
+    },
+    LiveReady: {
+      description:
+        "The hello was accepted. Events after the device's cursor follow.",
+      type: "object",
+      properties: {
+        type: { const: "ready" },
+        latest: {
+          description: "The account's newest event id, or 0 when it has none.",
+          type: "integer",
+          minimum: 0,
+        },
+        heartbeatMs: {
+          description:
+            "How often the server pings. A device that hears nothing for twice as long reconnects.",
+          type: "integer",
+          minimum: 1,
+        },
+        authExpiresAt: {
+          description:
+            "Web only: send a fresh token in an auth message before this.",
+          type: "string",
+          format: "date-time",
+        },
+      },
+      required: ["type", "latest", "heartbeatMs"],
+      additionalProperties: false,
+    },
+    LiveReset: {
+      description:
+        "Some events after the device's cursor are no longer kept. Clients reread their lists; the events that follow are still every kept event after the cursor.",
+      type: "object",
+      properties: {
+        type: { const: "reset" },
+        latest: { $ref: "#/$defs/EventId" },
+      },
+      required: ["type", "latest"],
+      additionalProperties: false,
+    },
+    LiveRevoked: {
+      description:
+        "This device is no longer on the account. The server closes with 4403 after it.",
+      type: "object",
+      properties: {
+        type: { const: "revoked" },
+        reason: { $ref: "#/$defs/RevokeReason" },
+      },
+      required: ["type", "reason"],
+      additionalProperties: false,
+    },
+    LiveRole: {
+      description:
+        "Who opens a live connection. A host or a client proves its device key; the web app is not a device and shows only its sign-in.",
+      type: "string",
+      enum: ["host", "client", "web"],
+    },
+    LiveServerMessage: {
+      description: "What the server sends on a live connection.",
+      type: "object",
+      oneOf: [
+        { $ref: "#/$defs/LiveChallenge" },
+        { $ref: "#/$defs/LiveReady" },
+        { $ref: "#/$defs/LiveEvents" },
+        { $ref: "#/$defs/LiveReset" },
+        { $ref: "#/$defs/LiveRevoked" },
+        { $ref: "#/$defs/LivePing" },
+        { $ref: "#/$defs/LiveBye" },
+      ],
+      discriminator: { propertyName: "type" },
+    },
     Platform: { type: "string", enum: ["macos", "ios", "android"] },
+    RevokeReason: {
+      description:
+        "Why a device left its account: removed from another device or the web, signed out on the device itself, or the account was deleted.",
+      type: "string",
+      enum: ["removed", "signed_out", "account_deleted"],
+    },
   },
 } as const;

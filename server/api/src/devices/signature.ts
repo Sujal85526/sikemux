@@ -12,6 +12,11 @@ export function registrationMessage(
   return `sikemux-register|${nonce}|${userId}|${key}`;
 }
 
+/** What a device signs to open a live connection. The prefix keeps it from ever passing for a registration. */
+export function liveMessage(nonce: string, key: string): string {
+  return `sikemux-live|${nonce}|${key}`;
+}
+
 /** Whether `signature` (hex) is `key`'s (hex) Ed25519 signature over `message`. */
 export function signedBy(
   key: string,

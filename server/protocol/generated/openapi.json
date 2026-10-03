@@ -154,10 +154,157 @@
           }
         }
       }
+    },
+    "/v1/live": {
+      "get": {
+        "operationId": "openLive",
+        "summary": "One connection per device that pushes account events as they happen",
+        "security": [],
+        "description": "A WebSocket. The device proves who it is in its first message, since browsers cannot set headers on one. `send` is what the device sends; `receive` is what the server sends.",
+        "x-websocket": {
+          "send": { "$ref": "#/components/schemas/LiveDeviceMessage" },
+          "receive": { "$ref": "#/components/schemas/LiveServerMessage" }
+        },
+        "responses": {
+          "101": {
+            "description": "The connection is open. The server sends a challenge; the device answers with hello within 10 seconds. Close codes: 4400 bad message, 4401 not signed in, 4403 revoked, 4408 no hello in time, 4409 replaced by a newer connection for the same device, 4429 too many messages, 1012 restarting, 1013 overloaded."
+          },
+          "429": {
+            "description": "Too many connections from this address.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "default": {
+            "description": "Something went wrong.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/account": {
+      "delete": {
+        "operationId": "deleteAccount",
+        "summary": "Delete your account and take every device off it",
+        "responses": {
+          "202": {
+            "description": "The account is deleted here. Repeating the call answers the same way.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AccountDeletion" }
+              }
+            }
+          },
+          "403": {
+            "description": "Only the phone and web app may delete an account, after verifying the sign-in again in the last 10 minutes (message reverify).",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "default": {
+            "description": "Something went wrong.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/webhooks/clerk": {
+      "post": {
+        "operationId": "receiveClerkWebhook",
+        "summary": "Clerk telling the API a user was deleted in its dashboard",
+        "security": [],
+        "description": "Called by Clerk, signed with Svix's headers.",
+        "responses": {
+          "204": { "description": "Handled, or not an event the API acts on." },
+          "401": {
+            "description": "The Svix signature is missing, wrong or too old.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "503": {
+            "description": "The API has no webhook secret, so it accepts no webhooks.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "default": {
+            "description": "Something went wrong.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "AccountDeletion": {
+        "description": "The account and its devices are gone from the moment this is answered; every device is revoked and every token refused.",
+        "type": "object",
+        "properties": {
+          "status": { "$ref": "#/components/schemas/AccountDeletionStatus" },
+          "requestedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["status", "requestedAt"],
+        "additionalProperties": false
+      },
+      "AccountDeletionStatus": {
+        "description": "Deleted once Clerk confirms it deleted the sign-in too; deleting until then, while the server retries.",
+        "type": "string",
+        "enum": ["deleting", "deleted"]
+      },
+      "AccountEvent": {
+        "description": "Something changed on the account. Events carry keys, never names: a device rereads the lists it shows over HTTP.",
+        "type": "object",
+        "properties": {
+          "id": { "$ref": "#/components/schemas/EventId" },
+          "type": { "$ref": "#/components/schemas/AccountEventType" },
+          "at": { "type": "string", "format": "date-time" },
+          "key": {
+            "description": "The device the event is about. Absent from account.deleted.",
+            "$ref": "#/components/schemas/DeviceKey"
+          },
+          "role": {
+            "description": "That device's role. Absent from account.deleted.",
+            "$ref": "#/components/schemas/DeviceRole"
+          },
+          "reason": {
+            "description": "Only on device.revoked.",
+            "$ref": "#/components/schemas/RevokeReason"
+          }
+        },
+        "required": ["id", "type", "at"],
+        "additionalProperties": false
+      },
+      "AccountEventType": {
+        "type": "string",
+        "enum": [
+          "device.added",
+          "device.changed",
+          "device.revoked",
+          "account.deleted"
+        ]
+      },
       "ApiError": {
         "description": "The body of every response that is not a success.",
         "type": "object",
@@ -269,6 +416,11 @@
         "required": ["code", "message", "requestId"],
         "additionalProperties": false
       },
+      "EventId": {
+        "description": "An account event's place in the log. Later events have larger ids.",
+        "type": "integer",
+        "minimum": 1
+      },
       "Health": {
         "description": "Whether the API can serve requests, and which build is answering.",
         "type": "object",
@@ -284,7 +436,188 @@
         "additionalProperties": false
       },
       "HealthStatus": { "type": "string", "enum": ["ok", "unavailable"] },
-      "Platform": { "type": "string", "enum": ["macos", "ios", "android"] }
+      "LiveAck": {
+        "description": "Every event up to and including id is handled.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "ack" },
+          "id": { "$ref": "#/components/schemas/EventId" }
+        },
+        "required": ["type", "id"],
+        "additionalProperties": false
+      },
+      "LiveApp": {
+        "description": "The build that opened the connection, for the server's logs.",
+        "type": "object",
+        "properties": {
+          "platform": { "$ref": "#/components/schemas/Platform" },
+          "version": { "type": "string", "maxLength": 64 }
+        },
+        "required": ["platform", "version"],
+        "additionalProperties": false
+      },
+      "LiveAuth": {
+        "description": "Web only: a fresh Clerk session token for the same user, sent before ready.authExpiresAt.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "auth" },
+          "token": { "type": "string", "minLength": 1, "maxLength": 4096 }
+        },
+        "required": ["type", "token"],
+        "additionalProperties": false
+      },
+      "LiveBye": {
+        "description": "The server is restarting and closes with 1012 after it. Reconnect no sooner than reconnectAfterMs.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "bye" },
+          "reconnectAfterMs": { "type": "integer", "minimum": 0 }
+        },
+        "required": ["type", "reconnectAfterMs"],
+        "additionalProperties": false
+      },
+      "LiveChallenge": {
+        "description": "The server's first message on every connection: a one-time value the device's hello answers.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "challenge" },
+          "nonce": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "expiresAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["type", "nonce", "expiresAt"],
+        "additionalProperties": false
+      },
+      "LiveDeviceMessage": {
+        "description": "What a device or the web app sends on a live connection.",
+        "type": "object",
+        "oneOf": [
+          { "$ref": "#/components/schemas/LiveHello" },
+          { "$ref": "#/components/schemas/LiveAck" },
+          { "$ref": "#/components/schemas/LiveAuth" },
+          { "$ref": "#/components/schemas/LivePong" },
+          { "$ref": "#/components/schemas/LiveLeave" }
+        ],
+        "discriminator": { "propertyName": "type" }
+      },
+      "LiveEvents": {
+        "description": "Events the device has not acknowledged yet, oldest first. Delivery is at least once.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "events" },
+          "events": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/AccountEvent" },
+            "minItems": 1,
+            "maxItems": 200
+          }
+        },
+        "required": ["type", "events"],
+        "additionalProperties": false
+      },
+      "LiveHello": {
+        "description": "The device's first message, answering the challenge. Hosts send key and signature; clients send key, signature and their Clerk session token; the web app sends only its token. The signature is the device key's Ed25519 signature over the UTF-8 text `sikemux-live|<nonce>|<key>`.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "hello" },
+          "role": { "$ref": "#/components/schemas/LiveRole" },
+          "key": { "$ref": "#/components/schemas/DeviceKey" },
+          "signature": { "type": "string", "pattern": "^[0-9a-f]{128}$" },
+          "token": { "type": "string", "minLength": 1, "maxLength": 4096 },
+          "app": { "$ref": "#/components/schemas/LiveApp" }
+        },
+        "required": ["type", "role"],
+        "additionalProperties": false
+      },
+      "LiveLeave": {
+        "description": "Hosts and clients only: take this device off its account. The server answers with revoked (signed_out).",
+        "type": "object",
+        "properties": { "type": { "const": "leave" } },
+        "required": ["type"],
+        "additionalProperties": false
+      },
+      "LivePing": {
+        "description": "Answer with pong.",
+        "type": "object",
+        "properties": { "type": { "const": "ping" } },
+        "required": ["type"],
+        "additionalProperties": false
+      },
+      "LivePong": {
+        "description": "The answer to ping.",
+        "type": "object",
+        "properties": { "type": { "const": "pong" } },
+        "required": ["type"],
+        "additionalProperties": false
+      },
+      "LiveReady": {
+        "description": "The hello was accepted. Events after the device's cursor follow.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "ready" },
+          "latest": {
+            "description": "The account's newest event id, or 0 when it has none.",
+            "type": "integer",
+            "minimum": 0
+          },
+          "heartbeatMs": {
+            "description": "How often the server pings. A device that hears nothing for twice as long reconnects.",
+            "type": "integer",
+            "minimum": 1
+          },
+          "authExpiresAt": {
+            "description": "Web only: send a fresh token in an auth message before this.",
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": ["type", "latest", "heartbeatMs"],
+        "additionalProperties": false
+      },
+      "LiveReset": {
+        "description": "Some events after the device's cursor are no longer kept. Clients reread their lists; the events that follow are still every kept event after the cursor.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "reset" },
+          "latest": { "$ref": "#/components/schemas/EventId" }
+        },
+        "required": ["type", "latest"],
+        "additionalProperties": false
+      },
+      "LiveRevoked": {
+        "description": "This device is no longer on the account. The server closes with 4403 after it.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "revoked" },
+          "reason": { "$ref": "#/components/schemas/RevokeReason" }
+        },
+        "required": ["type", "reason"],
+        "additionalProperties": false
+      },
+      "LiveRole": {
+        "description": "Who opens a live connection. A host or a client proves its device key; the web app is not a device and shows only its sign-in.",
+        "type": "string",
+        "enum": ["host", "client", "web"]
+      },
+      "LiveServerMessage": {
+        "description": "What the server sends on a live connection.",
+        "type": "object",
+        "oneOf": [
+          { "$ref": "#/components/schemas/LiveChallenge" },
+          { "$ref": "#/components/schemas/LiveReady" },
+          { "$ref": "#/components/schemas/LiveEvents" },
+          { "$ref": "#/components/schemas/LiveReset" },
+          { "$ref": "#/components/schemas/LiveRevoked" },
+          { "$ref": "#/components/schemas/LivePing" },
+          { "$ref": "#/components/schemas/LiveBye" }
+        ],
+        "discriminator": { "propertyName": "type" }
+      },
+      "Platform": { "type": "string", "enum": ["macos", "ios", "android"] },
+      "RevokeReason": {
+        "description": "Why a device left its account: removed from another device or the web, signed out on the device itself, or the account was deleted.",
+        "type": "string",
+        "enum": ["removed", "signed_out", "account_deleted"]
+      }
     },
     "securitySchemes": {
       "session": {

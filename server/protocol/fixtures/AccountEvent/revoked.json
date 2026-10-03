@@ -1,0 +1,8 @@
+{
+  "id": 42,
+  "type": "device.revoked",
+  "at": "2026-10-03T09:30:00.000Z",
+  "key": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+  "role": "client",
+  "reason": "removed"
+}

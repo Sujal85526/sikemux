@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "account.json",
+  "$defs": {
+    "AccountDeletionStatus": {
+      "description": "Deleted once Clerk confirms it deleted the sign-in too; deleting until then, while the server retries.",
+      "type": "string",
+      "enum": ["deleting", "deleted"]
+    },
+    "AccountDeletion": {
+      "description": "The account and its devices are gone from the moment this is answered; every device is revoked and every token refused.",
+      "type": "object",
+      "properties": {
+        "status": { "$ref": "#/$defs/AccountDeletionStatus" },
+        "requestedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["status", "requestedAt"],
+      "additionalProperties": false
+    }
+  }
+}

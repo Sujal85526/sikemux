@@ -75,6 +75,64 @@
           "description": "The device is no longer on your account."
         }
       }
+    },
+    {
+      "method": "get",
+      "path": "/v1/live",
+      "operationId": "openLive",
+      "summary": "One connection per device that pushes account events as they happen",
+      "auth": "device",
+      "upgrade": "websocket",
+      "messages": {
+        "send": "LiveDeviceMessage",
+        "receive": "LiveServerMessage"
+      },
+      "responses": {
+        "101": {
+          "description": "The connection is open. The server sends a challenge; the device answers with hello within 10 seconds. Close codes: 4400 bad message, 4401 not signed in, 4403 revoked, 4408 no hello in time, 4409 replaced by a newer connection for the same device, 4429 too many messages, 1012 restarting, 1013 overloaded."
+        },
+        "429": {
+          "description": "Too many connections from this address.",
+          "body": "ApiError"
+        }
+      }
+    },
+    {
+      "method": "delete",
+      "path": "/v1/account",
+      "operationId": "deleteAccount",
+      "summary": "Delete your account and take every device off it",
+      "auth": "session",
+      "responses": {
+        "202": {
+          "description": "The account is deleted here. Repeating the call answers the same way.",
+          "body": "AccountDeletion"
+        },
+        "403": {
+          "description": "Only the phone and web app may delete an account, after verifying the sign-in again in the last 10 minutes (message reverify).",
+          "body": "ApiError"
+        }
+      }
+    },
+    {
+      "method": "post",
+      "path": "/v1/webhooks/clerk",
+      "operationId": "receiveClerkWebhook",
+      "summary": "Clerk telling the API a user was deleted in its dashboard",
+      "auth": "webhook",
+      "responses": {
+        "204": {
+          "description": "Handled, or not an event the API acts on."
+        },
+        "401": {
+          "description": "The Svix signature is missing, wrong or too old.",
+          "body": "ApiError"
+        },
+        "503": {
+          "description": "The API has no webhook secret, so it accepts no webhooks.",
+          "body": "ApiError"
+        }
+      }
     }
   ]
 }

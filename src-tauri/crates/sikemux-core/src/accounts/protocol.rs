@@ -3,6 +3,59 @@
 
 use serde::{Deserialize, Serialize};
 
+/// The account and its devices are gone from the moment this is answered; every device is revoked and every token refused.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountDeletion {
+    pub status: AccountDeletionStatus,
+    pub requested_at: String,
+}
+
+/// Deleted once Clerk confirms it deleted the sign-in too; deleting until then, while the server retries.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum AccountDeletionStatus {
+    #[serde(rename = "deleting")]
+    Deleting,
+    #[serde(rename = "deleted")]
+    Deleted,
+    /// A value added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
+/// Something changed on the account. Events carry keys, never names: a device rereads the lists it shows over HTTP.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountEvent {
+    pub id: EventId,
+    pub r#type: AccountEventType,
+    pub at: String,
+    /// The device the event is about. Absent from account.deleted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<DeviceKey>,
+    /// That device's role. Absent from account.deleted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<DeviceRole>,
+    /// Only on device.revoked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<RevokeReason>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum AccountEventType {
+    #[serde(rename = "device.added")]
+    DeviceAdded,
+    #[serde(rename = "device.changed")]
+    DeviceChanged,
+    #[serde(rename = "device.revoked")]
+    DeviceRevoked,
+    #[serde(rename = "account.deleted")]
+    AccountDeleted,
+    /// A value added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
 /// The body of every response that is not a success.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -115,6 +168,9 @@ pub struct ErrorDetail {
     pub request_id: String,
 }
 
+/// An account event's place in the log. Later events have larger ids.
+pub type EventId = i64;
+
 /// Whether the API can serve requests, and which build is answering.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -136,6 +192,163 @@ pub enum HealthStatus {
     Unknown,
 }
 
+/// Every event up to and including id is handled.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveAck {
+    pub id: EventId,
+}
+
+/// The build that opened the connection, for the server's logs.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveApp {
+    pub platform: Platform,
+    pub version: String,
+}
+
+/// Web only: a fresh Clerk session token for the same user, sent before ready.authExpiresAt.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveAuth {
+    pub token: String,
+}
+
+/// The server is restarting and closes with 1012 after it. Reconnect no sooner than reconnectAfterMs.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveBye {
+    pub reconnect_after_ms: i64,
+}
+
+/// The server's first message on every connection: a one-time value the device's hello answers.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveChallenge {
+    pub nonce: String,
+    pub expires_at: String,
+}
+
+/// What a device or the web app sends on a live connection.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum LiveDeviceMessage {
+    #[serde(rename = "hello")]
+    Hello(LiveHello),
+    #[serde(rename = "ack")]
+    Ack(LiveAck),
+    #[serde(rename = "auth")]
+    Auth(LiveAuth),
+    #[serde(rename = "pong")]
+    Pong(LivePong),
+    #[serde(rename = "leave")]
+    Leave(LiveLeave),
+    /// A message added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
+/// Events the device has not acknowledged yet, oldest first. Delivery is at least once.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveEvents {
+    pub events: Vec<AccountEvent>,
+}
+
+/// The device's first message, answering the challenge. Hosts send key and signature; clients send key, signature and their Clerk session token; the web app sends only its token. The signature is the device key's Ed25519 signature over the UTF-8 text `sikemux-live|<nonce>|<key>`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveHello {
+    pub role: LiveRole,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<DeviceKey>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app: Option<LiveApp>,
+}
+
+/// Hosts and clients only: take this device off its account. The server answers with revoked (signed_out).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveLeave {}
+
+/// Answer with pong.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LivePing {}
+
+/// The answer to ping.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LivePong {}
+
+/// The hello was accepted. Events after the device's cursor follow.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveReady {
+    /// The account's newest event id, or 0 when it has none.
+    pub latest: i64,
+    /// How often the server pings. A device that hears nothing for twice as long reconnects.
+    pub heartbeat_ms: i64,
+    /// Web only: send a fresh token in an auth message before this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_expires_at: Option<String>,
+}
+
+/// Some events after the device's cursor are no longer kept. Clients reread their lists; the events that follow are still every kept event after the cursor.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveReset {
+    pub latest: EventId,
+}
+
+/// This device is no longer on the account. The server closes with 4403 after it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveRevoked {
+    pub reason: RevokeReason,
+}
+
+/// Who opens a live connection. A host or a client proves its device key; the web app is not a device and shows only its sign-in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum LiveRole {
+    #[serde(rename = "host")]
+    Host,
+    #[serde(rename = "client")]
+    Client,
+    #[serde(rename = "web")]
+    Web,
+    /// A value added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
+/// What the server sends on a live connection.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum LiveServerMessage {
+    #[serde(rename = "challenge")]
+    Challenge(LiveChallenge),
+    #[serde(rename = "ready")]
+    Ready(LiveReady),
+    #[serde(rename = "events")]
+    Events(LiveEvents),
+    #[serde(rename = "reset")]
+    Reset(LiveReset),
+    #[serde(rename = "revoked")]
+    Revoked(LiveRevoked),
+    #[serde(rename = "ping")]
+    Ping(LivePing),
+    #[serde(rename = "bye")]
+    Bye(LiveBye),
+    /// A message added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Platform {
     #[serde(rename = "macos")]
@@ -149,11 +362,29 @@ pub enum Platform {
     Unknown,
 }
 
+/// Why a device left its account: removed from another device or the web, signed out on the device itself, or the account was deleted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum RevokeReason {
+    #[serde(rename = "removed")]
+    Removed,
+    #[serde(rename = "signed_out")]
+    SignedOut,
+    #[serde(rename = "account_deleted")]
+    AccountDeleted,
+    /// A value added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
 /// Reads `json` as the named type and writes it back, for the contract tests.
 #[cfg(test)]
 pub(crate) fn round_trip(name: &str, json: &str) -> Option<super::RoundTrip> {
     use super::through;
     Some(match name {
+        "AccountDeletion" => through::<AccountDeletion>(json),
+        "AccountDeletionStatus" => through::<AccountDeletionStatus>(json),
+        "AccountEvent" => through::<AccountEvent>(json),
+        "AccountEventType" => through::<AccountEventType>(json),
         "ApiError" => through::<ApiError>(json),
         "Challenge" => through::<Challenge>(json),
         "Channel" => through::<Channel>(json),
@@ -164,9 +395,27 @@ pub(crate) fn round_trip(name: &str, json: &str) -> Option<super::RoundTrip> {
         "DeviceRole" => through::<DeviceRole>(json),
         "ErrorCode" => through::<ErrorCode>(json),
         "ErrorDetail" => through::<ErrorDetail>(json),
+        "EventId" => through::<EventId>(json),
         "Health" => through::<Health>(json),
         "HealthStatus" => through::<HealthStatus>(json),
+        "LiveAck" => through::<LiveDeviceMessage>(json),
+        "LiveApp" => through::<LiveApp>(json),
+        "LiveAuth" => through::<LiveDeviceMessage>(json),
+        "LiveBye" => through::<LiveServerMessage>(json),
+        "LiveChallenge" => through::<LiveServerMessage>(json),
+        "LiveDeviceMessage" => through::<LiveDeviceMessage>(json),
+        "LiveEvents" => through::<LiveServerMessage>(json),
+        "LiveHello" => through::<LiveDeviceMessage>(json),
+        "LiveLeave" => through::<LiveDeviceMessage>(json),
+        "LivePing" => through::<LiveServerMessage>(json),
+        "LivePong" => through::<LiveDeviceMessage>(json),
+        "LiveReady" => through::<LiveServerMessage>(json),
+        "LiveReset" => through::<LiveServerMessage>(json),
+        "LiveRevoked" => through::<LiveServerMessage>(json),
+        "LiveRole" => through::<LiveRole>(json),
+        "LiveServerMessage" => through::<LiveServerMessage>(json),
         "Platform" => through::<Platform>(json),
+        "RevokeReason" => through::<RevokeReason>(json),
         _ => return None,
     })
 }
