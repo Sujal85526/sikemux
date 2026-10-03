@@ -3,7 +3,31 @@
 
 #[cfg(unix)]
 pub mod live;
+#[cfg(unix)]
+pub mod network;
 pub mod protocol;
+
+/// TLS for the accounts API, trusting the usual web roots.
+#[cfg(unix)]
+pub(crate) fn tls_config() -> Option<std::sync::Arc<tokio_rustls::rustls::ClientConfig>> {
+    use std::sync::{Arc, OnceLock};
+    use tokio_rustls::rustls;
+    static CONFIG: OnceLock<Option<Arc<rustls::ClientConfig>>> = OnceLock::new();
+    CONFIG
+        .get_or_init(|| {
+            let roots = rustls::RootCertStore {
+                roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+            };
+            let provider = Arc::new(rustls::crypto::ring::default_provider());
+            let builder = rustls::ClientConfig::builder_with_provider(provider)
+                .with_safe_default_protocol_versions()
+                .ok()?;
+            Some(Arc::new(
+                builder.with_root_certificates(roots).with_no_client_auth(),
+            ))
+        })
+        .clone()
+}
 
 /// Where the accounts API is. Dev builds talk to a server on this computer,
 /// or to `SIKEMUX_API_URL`.

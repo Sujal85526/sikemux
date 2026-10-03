@@ -873,6 +873,17 @@ pub struct RemoteStatus {
     /// host go.
     #[serde(default)]
     pub account: Option<AccountLink>,
+    /// Set while the accounts server no longer works with this build. Remote
+    /// access and the account stay off until it updates.
+    #[serde(default)]
+    pub update_required: Option<UpdateRequired>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateRequired {
+    pub current: String,
+    pub minimum: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

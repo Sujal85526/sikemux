@@ -863,6 +863,7 @@ pub(crate) async fn run_core(
     for task in background {
         task.abort();
     }
+    remote::stop_network(&core);
     remote::stop(&core).await;
     remote::stop_live(&core);
     let tools = core.tools.lock().ok().and_then(|mut tools| tools.take());

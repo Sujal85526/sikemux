@@ -142,19 +142,9 @@ type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 fn connector() -> &'static Connector {
     static CONNECTOR: OnceLock<Connector> = OnceLock::new();
-    CONNECTOR.get_or_init(|| {
-        let roots = tokio_rustls::rustls::RootCertStore {
-            roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
-        };
-        let provider = Arc::new(tokio_rustls::rustls::crypto::ring::default_provider());
-        match tokio_rustls::rustls::ClientConfig::builder_with_provider(provider)
-            .with_safe_default_protocol_versions()
-        {
-            Ok(builder) => Connector::Rustls(tokio_rustls::TlsConnector::from(Arc::new(
-                builder.with_root_certificates(roots).with_no_client_auth(),
-            ))),
-            Err(_) => Connector::Plain,
-        }
+    CONNECTOR.get_or_init(|| match super::tls_config() {
+        Some(config) => Connector::Rustls(tokio_rustls::TlsConnector::from(config)),
+        None => Connector::Plain,
     })
 }
 

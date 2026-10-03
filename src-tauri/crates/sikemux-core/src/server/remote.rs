@@ -13,17 +13,20 @@ use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use iroh::endpoint::{presets, Incoming};
-use iroh::{Endpoint, SecretKey};
+use iroh::{Endpoint, RelayMode, SecretKey};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{oneshot, watch, Notify};
 use tokio::task::JoinHandle;
 
 use crate::accounts::live::{self, Link, Want};
-use crate::accounts::protocol::{AccountEvent, AccountEventType, LiveApp, Platform, RevokeReason};
+use crate::accounts::network;
+use crate::accounts::protocol::{
+    AccountEvent, AccountEventType, LiveApp, Network, Platform, Relay, RevokeReason,
+};
 use crate::pairing::{PairingLink, CODE_DIGITS, PAIR_ALPN};
 use crate::protocol::{
     AccountLink, AccountLinkState, DeviceAccess, DeviceInfo, Event, PairingOffer, PendingDevice,
-    RemoteStatus,
+    RemoteStatus, UpdateRequired,
 };
 use crate::remote::CORE_ALPN;
 
@@ -40,6 +43,8 @@ const OFFER_ATTEMPTS: u8 = 5;
 const LEAVE_WAIT: Duration = Duration::from_secs(5);
 #[cfg(test)]
 const LEAVE_WAIT: Duration = Duration::from_millis(300);
+const NETWORK_REFRESH: Duration = Duration::from_secs(4 * 60 * 60);
+const NETWORK_RETRY: Duration = Duration::from_secs(5 * 60);
 
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -58,6 +63,10 @@ struct Stored {
     /// Why the account let this host go, until it signs in again.
     #[serde(default)]
     removed: Option<Removal>,
+    /// The last network the accounts server described, for when it is out of
+    /// reach.
+    #[serde(default)]
+    network: Option<Network>,
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
@@ -114,6 +123,11 @@ struct Inner {
     accounts_api: Option<String>,
     live: Option<LiveTask>,
     link: Option<(Link, u64)>,
+    relays: Vec<Relay>,
+    /// Dev builds are never too old for the accounts server.
+    never_too_old: bool,
+    update_required: Option<UpdateRequired>,
+    network: Option<JoinHandle<()>>,
 }
 
 impl Inner {
@@ -249,6 +263,7 @@ impl Remote {
                 .collect(),
             owner: inner.stored.owner.clone(),
             account: account_link(&inner),
+            update_required: inner.update_required.clone(),
         }
     }
 
@@ -464,8 +479,14 @@ pub(crate) async fn start(core: &Arc<Core>, config: &ServerConfig) {
     let enabled = stored.enabled;
     {
         let mut inner = core.remote.lock();
+        inner.relays = stored
+            .network
+            .as_ref()
+            .and_then(network::usable_relays)
+            .unwrap_or_else(network::default_relays);
         inner.path = Some(path);
         inner.direct_only = direct_only;
+        inner.never_too_old = cfg!(debug_assertions);
         inner.secret = Some(secret);
         inner.stored = stored;
         inner.accounts_api = config.accounts_api.clone();
@@ -476,11 +497,134 @@ pub(crate) async fn start(core: &Arc<Core>, config: &ServerConfig) {
             eprintln!("sikemux core: remote access did not start: {error}");
         }
     }
+    watch_network(core);
+}
+
+/// Reads the network now and every few hours while the core runs. Until the
+/// first answer, the host uses the last copy it saved.
+fn watch_network(core: &Arc<Core>) {
+    let mut inner = core.remote.lock();
+    let Some(base) = inner.accounts_api.clone() else {
+        return;
+    };
+    if inner.direct_only || inner.network.is_some() {
+        return;
+    }
+    let core = Arc::downgrade(core);
+    inner.network = Some(tokio::spawn(async move {
+        loop {
+            let fetched = network::fetch(&base).await;
+            let Some(core) = core.upgrade() else {
+                return;
+            };
+            let wait = match fetched {
+                Some(fetched) => {
+                    apply_network(&core, fetched).await;
+                    NETWORK_REFRESH
+                }
+                None => NETWORK_RETRY,
+            };
+            drop(core);
+            tokio::time::sleep(wait).await;
+        }
+    }));
+}
+
+pub(crate) fn stop_network(core: &Core) {
+    if let Some(task) = core.remote.lock().network.take() {
+        task.abort();
+    }
+}
+
+/// Moves a listening endpoint onto the network's relays, and turns remote
+/// access and the account off while this build is older than the server
+/// allows.
+async fn apply_network(core: &Arc<Core>, fetched: Network) {
+    let relays = network::usable_relays(&fetched);
+    let version = &core.build.version;
+    let (moved, endpoint, required, was_required) = {
+        let mut inner = core.remote.lock();
+        let required = if inner.never_too_old {
+            None
+        } else {
+            network::too_old(version, &fetched.minimum_versions.macos).map(|minimum| {
+                UpdateRequired {
+                    current: version.clone(),
+                    minimum,
+                }
+            })
+        };
+        let moved = match &relays {
+            Some(relays) if *relays != inner.relays => {
+                let changes = network::relay_changes(&inner.relays, relays);
+                inner.relays = relays.clone();
+                Some(changes)
+            }
+            _ => None,
+        };
+        let was_required = std::mem::replace(&mut inner.update_required, required.clone());
+        let endpoint = inner
+            .running
+            .as_ref()
+            .map(|running| running.endpoint.clone());
+        (moved, endpoint, required, was_required)
+    };
+    if relays.is_some() {
+        let saved = core.remote.change(|stored| {
+            if stored.network.as_ref() != Some(&fetched) {
+                stored.network = Some(fetched);
+            }
+            Ok(())
+        });
+        if let Err(error) = saved {
+            eprintln!("sikemux core: could not save the network: {error}");
+        }
+    }
+    if let (Some((removed, added)), Some(endpoint)) = (moved, endpoint) {
+        for config in added {
+            endpoint.insert_relay(config.url.clone(), config).await;
+        }
+        for url in &removed {
+            endpoint.remove_relay(url).await;
+        }
+    }
+    match (&was_required, &required) {
+        (None, Some(required)) => {
+            eprintln!(
+                "sikemux core: this build ({}) is older than {}, the oldest the accounts server works with; remote access and the account are off until Sikemux updates",
+                required.current, required.minimum
+            );
+            stop(core).await;
+            stop_live(core);
+        }
+        (Some(_), None) => {
+            ensure_live(core);
+            if core.remote.is_enabled() {
+                if let Err(error) = listen(core).await {
+                    eprintln!("sikemux core: remote access did not start: {error}");
+                }
+            }
+        }
+        _ => {}
+    }
+    if was_required != required {
+        announce(core);
+    }
+}
+
+fn update_first(required: &UpdateRequired) -> CoreError {
+    CoreError::from(format!(
+        "update Sikemux first: this version ({}) is older than {}, the oldest the accounts server works with",
+        required.current, required.minimum
+    ))
 }
 
 async fn listen(core: &Arc<Core>) -> CoreResult<()> {
-    let (secret, direct_only) = {
+    let (secret, direct_only, relays) = {
         let inner = core.remote.lock();
+        if let Some(required) = &inner.update_required {
+            return Err(update_first(required));
+        }
         if inner.running.is_some() {
             return Ok(());
         }
@@ -488,7 +632,7 @@ async fn listen(core: &Arc<Core>) -> CoreResult<()> {
             .secret
             .clone()
             .ok_or_else(|| CoreError::from("remote access has no key"))?;
-        (secret, inner.direct_only)
+        (secret, inner.direct_only, inner.relays.clone())
     };
     let builder = if direct_only {
         Endpoint::builder(presets::Minimal)
@@ -496,7 +640,8 @@ async fn listen(core: &Arc<Core>) -> CoreResult<()> {
             .bind_addr("127.0.0.1:0")
             .map_err(|error| CoreError::from(error.to_string()))?
     } else {
-        Endpoint::builder(presets::N0)
+        Endpoint::builder(presets::Minimal)
+            .relay_mode(RelayMode::Custom(network::relay_map(&relays)))
     };
     let endpoint = builder
         .secret_key(secret)
@@ -543,6 +688,15 @@ pub(crate) async fn stop(core: &Arc<Core>) {
 }
 
 pub(crate) async fn set_enabled(core: &Arc<Core>, enabled: bool) -> CoreResult<RemoteStatus> {
+    if let Some(required) = core
+        .remote
+        .lock()
+        .update_required
+        .as_ref()
+        .filter(|_| enabled)
+    {
+        return Err(update_first(required));
+    }
     core.remote.change(|stored| {
         stored.enabled = enabled;
         Ok(())
@@ -627,7 +781,7 @@ fn ensure_live(core: &Arc<Core>) {
     let Some(base) = inner.accounts_api.clone() else {
         return;
     };
-    if inner.stored.want() == Want::Stop {
+    if inner.stored.want() == Want::Stop || inner.update_required.is_some() {
         return;
     }
     let (changed, watching) = watch::channel(());
@@ -913,6 +1067,7 @@ mod tests {
             account_event_id: 7,
             pending_leave: Some("user_2old".into()),
             removed: None,
+            network: None,
             devices: vec![DeviceInfo {
                 id: SecretKey::generate().public().to_string(),
                 name: "Phone".into(),
@@ -1159,6 +1314,81 @@ mod tests {
         let saved = read_stored(&dir.path().join("core.sock.remote.json")).unwrap();
         assert_eq!(saved.pending_leave, None);
         stop_live(&core);
+    }
+
+    fn network_allowing(macos: &str) -> Network {
+        let any = serde_json::json!({ "nightly": "0.0.0", "stable": "0.0.0" });
+        serde_json::from_value(serde_json::json!({
+            "relays": [{ "url": "https://relay.example/", "region": "test", "quicPort": null }],
+            "minimumVersions": {
+                "macos": { "nightly": macos, "stable": macos },
+                "ios": any,
+                "android": any,
+            },
+        }))
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_build_older_than_the_server_allows_stays_off_until_it_is_allowed_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let build = crate::protocol::BuildIdentity {
+            version: "0.5.0-nightly.1".into(),
+            ..Default::default()
+        };
+        let core = Core::new(build, None).unwrap();
+        {
+            let mut inner = core.remote.lock();
+            inner.path = Some(dir.path().join("core.sock.remote.json"));
+            inner.secret = Some(SecretKey::generate());
+            inner.direct_only = true;
+            inner.accounts_api = Some("http://127.0.0.1:9".into());
+            inner.stored.owner = Some("user_2abc".into());
+        }
+        set_enabled(&core, true).await.unwrap();
+        ensure_live(&core);
+        assert!(core.remote.lock().live.is_some());
+
+        apply_network(&core, network_allowing("0.5.0-nightly.2")).await;
+        let status = core.remote.status();
+        assert_eq!(
+            status.update_required,
+            Some(UpdateRequired {
+                current: "0.5.0-nightly.1".into(),
+                minimum: "0.5.0-nightly.2".into(),
+            })
+        );
+        assert!(status.enabled, "the switch stays on for after the update");
+        assert!(core.remote.lock().running.is_none());
+        assert!(core.remote.lock().live.is_none());
+        assert!(set_enabled(&core, true).await.is_err());
+        ensure_live(&core);
+        assert!(core.remote.lock().live.is_none());
+        let saved = read_stored(&dir.path().join("core.sock.remote.json")).unwrap();
+        assert_eq!(
+            saved.network.unwrap().relays[0].url,
+            "https://relay.example/"
+        );
+        assert_eq!(core.remote.lock().relays[0].url, "https://relay.example/");
+
+        apply_network(&core, network_allowing("0.4.0")).await;
+        assert_eq!(core.remote.status().update_required, None);
+        assert!(core.remote.lock().running.is_some());
+        assert!(core.remote.lock().live.is_some());
+        stop(&core).await;
+        stop_live(&core);
+    }
+
+    #[tokio::test]
+    async fn dev_builds_are_never_too_old() {
+        let build = crate::protocol::BuildIdentity {
+            version: "0.0.1".into(),
+            ..Default::default()
+        };
+        let core = Core::new(build, None).unwrap();
+        core.remote.lock().never_too_old = true;
+        apply_network(&core, network_allowing("9.0.0")).await;
+        assert_eq!(core.remote.status().update_required, None);
     }
 
     #[test]

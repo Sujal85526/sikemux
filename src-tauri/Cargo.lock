@@ -5666,6 +5666,7 @@ dependencies = [
  "iroh",
  "libc",
  "portable-pty",
+ "semver",
  "serde",
  "serde_json",
  "sha2 0.11.0",
