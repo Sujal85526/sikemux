@@ -77,7 +77,13 @@ function configHash() {
     .update(variant)
     .update(process.env.SIKEMUX_MOBILE_CHANNEL ?? '');
   const plugins = readdirSync(join(app, 'plugins')).sort();
-  const files = ['app.json', 'app.config.js', ...plugins.map((name) => join('plugins', name))];
+  const firebase = readdirSync(join(app, 'firebase')).sort();
+  const files = [
+    'app.json',
+    'app.config.js',
+    ...plugins.map((name) => join('plugins', name)),
+    ...firebase.map((name) => join('firebase', name)),
+  ];
   for (const file of files) hash.update(file).update(readFileSync(join(app, file)));
   const { dependencies } = JSON.parse(readFileSync(join(app, 'package.json'), 'utf8'));
   return hash.update(JSON.stringify(dependencies)).digest('hex');

@@ -60,7 +60,7 @@ module.exports = ({ config }) => {
       ...config,
       extra: { ...config.extra, ...googleSignIn(GOOGLE.production) },
       ios: { ...config.ios, buildNumber: String(code) },
-      android: { ...config.android, versionCode: code },
+      android: { ...config.android, versionCode: code, googleServicesFile: './firebase/google-services.json' },
       runtimeVersion: { policy: 'fingerprint' },
       updates: updates(process.env.SIKEMUX_MOBILE_CHANNEL || 'nightly'),
     };
@@ -79,6 +79,7 @@ module.exports = ({ config }) => {
     android: {
       ...config.android,
       package: `${config.android.package}.dev`,
+      googleServicesFile: './firebase/google-services.dev.json',
       adaptiveIcon: {
         ...config.android.adaptiveIcon,
         backgroundColor: '#140c2a',

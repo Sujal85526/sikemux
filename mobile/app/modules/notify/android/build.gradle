@@ -1,0 +1,37 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+def expoNotifications = new groovy.json.JsonSlurper().parse(new File(providers.exec {
+  workingDir(projectDir)
+  commandLine("node", "--print", "require.resolve('expo-notifications/package.json')")
+}.standardOutput.asText.get().trim()))
+
+group = 'com.nodelike.sikemux'
+version = '0.1.0'
+
+android {
+  namespace "com.nodelike.sikemux.notify"
+  defaultConfig {
+    versionCode 1
+    versionName '0.1.0'
+  }
+  testOptions {
+    unitTests.all { test ->
+      testLogging {
+        events "passed", "failed"
+        showExceptions true
+      }
+    }
+  }
+}
+
+dependencies {
+  implementation "host.exp.exponent:expo.modules.notifications:${expoNotifications.version}"
+  implementation 'com.facebook.react:react-android'
+  implementation 'androidx.core:core:1.17.0'
+  implementation 'com.google.firebase:firebase-messaging:25.0.1'
+  testImplementation 'junit:junit:4.13.2'
+  testImplementation 'org.json:json:20250517'
+}

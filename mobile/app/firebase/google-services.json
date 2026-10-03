@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "225181228835",
+    "project_id": "sikemux",
+    "storage_bucket": "sikemux.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:225181228835:android:3e991d4dc69f35ba26b696",
+        "android_client_info": {
+          "package_name": "com.nodelike.sikemux.mobile"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "225181228835-furfr1rb7o5uhghb4i1rn7vd0igh2g1i.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA2HfTPkvucKFEECL30JMAmLLANpUCmZV0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "225181228835-furfr1rb7o5uhghb4i1rn7vd0igh2g1i.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "225181228835-c96vngbka2ub7na629h2jv0lamv89dhq.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.nodelike.sikemux.mobile"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
