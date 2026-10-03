@@ -29,6 +29,8 @@ const MAX_ELEMENTS: usize = 200;
 /// An agent cannot see the person's screen, so attaching says where the device went.
 const SHOWN_ON_DESK: &str =
     "live on your desk in Sikemux, beside the person, who sees what you do and can use it too";
+/// Tells the window an agent let go of a simulator, so its desk can close the tab.
+pub const DETACHED_EVENT: &str = "simulator-detached";
 /// Tells the window an agent attached a simulator, so its desk can show it.
 pub const ATTACHED_EVENT: &str = "simulator-attached";
 
@@ -57,6 +59,15 @@ pub fn execute(app: &AppHandle, request: &HarnessRequest) -> Result<Value, Strin
                     "os": device.os,
                     "screen": device.screen.map(|(width, height)| json!({ "width": width, "height": height })),
                 }),
+            );
+        }
+    }
+    if request.method == "sim.detach" {
+        if let Ok(detached) = &result {
+            let _ = app.emit_to(
+                "main",
+                DETACHED_EVENT,
+                json!({ "agentId": agent_id, "udid": detached["udid"] }),
             );
         }
     }
@@ -102,7 +113,8 @@ pub(super) fn run(
                 }
                 return Err(error);
             }
-            manager.attach(agent_id, device);
+            manager.attach(agent_id, device.clone());
+            let _ = manager.logs.follow(&device.udid);
             let mut state = settled_state(manager, agent_id, None)?;
             state["shown"] = SHOWN_ON_DESK.into();
             Ok(state)
@@ -247,6 +259,60 @@ pub(super) fn run(
                 ACTION_TIMEOUT,
             )?;
             settled_state(manager, agent_id, Some(before))
+        }
+        "sim.touchPath" => {
+            let device = attached(manager, agent_id)?;
+            let before = read_screen(manager, &device)?;
+            let points = path(params, &["x", "y"])?;
+            drag(
+                manager,
+                &device,
+                &points,
+                number("duration"),
+                |phase, point| {
+                    (
+                        "touch",
+                        json!({ "phase": phase, "x": point[0], "y": point[1] }),
+                    )
+                },
+            )?;
+            settled_state(manager, agent_id, Some(before))
+        }
+        "sim.touch2Path" => {
+            let device = attached(manager, agent_id)?;
+            let before = read_screen(manager, &device)?;
+            let points = path(params, &["x1", "y1", "x2", "y2"])?;
+            drag(
+                manager,
+                &device,
+                &points,
+                number("duration"),
+                |phase, point| {
+                    (
+                        "touch2",
+                        json!({ "phase": phase, "x1": point[0], "y1": point[1], "x2": point[2], "y2": point[3] }),
+                    )
+                },
+            )?;
+            settled_state(manager, agent_id, Some(before))
+        }
+        "sim.detach" => {
+            let device = manager.detach(agent_id).ok_or("no simulator is attached")?;
+            manager.logs.stop(&device.udid);
+            Ok(
+                json!({ "detached": format!("{} ({})", device.name, device.os), "udid": device.udid }),
+            )
+        }
+        "sim.logs" => {
+            let device = attached(manager, agent_id)?;
+            let cursor = params.get("cursor").and_then(Value::as_u64).unwrap_or(0);
+            let limit = params
+                .get("limit")
+                .and_then(Value::as_u64)
+                .map(|limit| limit as usize);
+            manager
+                .logs
+                .read(&device.udid, cursor, text("process"), limit)
         }
         other => Err(format!("unknown simulator method {other}")),
     }
@@ -551,6 +617,48 @@ pub(super) fn element_lines(elements: &[Element]) -> Vec<String> {
         ));
     }
     lines
+}
+
+/// The points of a touch path, each with the given coordinates, from `params.points`.
+fn path(params: &Value, keys: &[&str]) -> Result<Vec<Vec<f64>>, String> {
+    let points: Vec<Vec<f64>> = params["points"]
+        .as_array()
+        .ok_or("points is required")?
+        .iter()
+        .map(|point| {
+            keys.iter()
+                .map(|key| point[*key].as_f64())
+                .collect::<Option<Vec<f64>>>()
+        })
+        .collect::<Option<_>>()
+        .ok_or_else(|| format!("each point needs {}", keys.join(", ")))?;
+    if points.len() < 2 {
+        return Err("a path needs at least two points".into());
+    }
+    Ok(points)
+}
+
+/// Puts the finger or fingers down on the first point, moves them through the
+/// rest evenly over `duration` seconds, and lifts them on the last.
+fn drag(
+    manager: &SimulatorManager,
+    device: &Device,
+    points: &[Vec<f64>],
+    duration: Option<f64>,
+    step: impl Fn(&str, &[f64]) -> (&'static str, Value),
+) -> Result<(), String> {
+    let pause = Duration::from_secs_f64(duration.unwrap_or(0.5) / (points.len() - 1) as f64);
+    let send = |phase: &str, point: &[f64]| {
+        let (kind, mut fields) = step(phase, point);
+        fields["udid"] = device.udid.clone().into();
+        manager.request(kind, fields, ACTION_TIMEOUT).map(drop)
+    };
+    send("down", &points[0])?;
+    for point in &points[1..] {
+        std::thread::sleep(pause);
+        send("move", point)?;
+    }
+    send("up", points.last().expect("at least two points"))
 }
 
 /// Where to tap: an element number from the latest read, or a point.

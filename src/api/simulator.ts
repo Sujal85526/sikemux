@@ -72,6 +72,8 @@ export const simulatorApi = {
     saveScreenshot: (udid: string, name: string) => invoke<string>("simulator_save_screenshot", { udid, name }),
     subscribeFrames: (listener: (frame: SimulatorFrame) => void, signal: AbortSignal) =>
         getIpcTransport().subscribe<SimulatorFrame>("simulator-frame", (event) => listener(event.payload), { signal }),
+    subscribeDetached: (listener: (detached: { agentId: string; udid: string }) => void, signal: AbortSignal) =>
+        getIpcTransport().subscribe<{ agentId: string; udid: string }>("simulator-detached", (event) => listener(event.payload), { signal }),
     subscribeAttached: (listener: (attached: SimulatorAttached) => void, signal: AbortSignal) =>
         getIpcTransport().subscribe<SimulatorAttached>("simulator-attached", (event) => listener(event.payload), { signal }),
 };

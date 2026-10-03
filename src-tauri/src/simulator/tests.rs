@@ -333,6 +333,71 @@ done
     }
 
     #[test]
+    fn drags_through_each_point_in_order_and_lets_go() {
+        let log_dir = tempfile::tempdir().unwrap();
+        let log = log_dir.path().join("requests");
+        let (_dir, manager) = helper(&recording_helper(&log));
+        let call = |method: &str, params: serde_json::Value| {
+            run(&manager, "agent-1", "/tmp", method, &params)
+        };
+        call("sim.attach", json!({})).expect("attach");
+
+        call(
+            "sim.touchPath",
+            json!({ "points": [{ "x": 10, "y": 20 }, { "x": 30, "y": 40 }, { "x": 50, "y": 60 }], "duration": 0.1 }),
+        )
+        .expect("touch path");
+        call(
+            "sim.touch2Path",
+            json!({ "points": [{ "x1": 100, "y1": 400, "x2": 300, "y2": 400 }, { "x1": 150, "y1": 400, "x2": 250, "y2": 400 }], "duration": 0.05 }),
+        )
+        .expect("pinch");
+        assert!(
+            call("sim.touchPath", json!({ "points": [{ "x": 1, "y": 2 }] }))
+                .unwrap_err()
+                .contains("two points")
+        );
+        assert!(call(
+            "sim.touchPath",
+            json!({ "points": [{ "x": 1 }, { "x": 2 }] })
+        )
+        .unwrap_err()
+        .contains("x, y"));
+
+        let steps: Vec<serde_json::Value> = std::fs::read_to_string(&log)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .filter(|request| matches!(request["type"].as_str(), Some("touch" | "touch2")))
+            .map(|request| {
+                json!([
+                    request["type"],
+                    request["phase"],
+                    request["x"].as_f64().or(request["x1"].as_f64())
+                ])
+            })
+            .collect();
+        assert_eq!(
+            steps,
+            vec![
+                json!(["touch", "down", 10.0]),
+                json!(["touch", "move", 30.0]),
+                json!(["touch", "move", 50.0]),
+                json!(["touch", "up", 50.0]),
+                json!(["touch2", "down", 100.0]),
+                json!(["touch2", "move", 150.0]),
+                json!(["touch2", "up", 150.0]),
+            ]
+        );
+
+        let detached = call("sim.detach", json!({})).expect("detach");
+        assert_eq!(detached["udid"], json!("U1"));
+        assert!(call("sim.state", json!({}))
+            .unwrap_err()
+            .contains("sim_attach"));
+    }
+
+    #[test]
     fn an_agent_attaches_reads_and_taps_by_number() {
         let log_dir = tempfile::tempdir().unwrap();
         let log = log_dir.path().join("requests");
@@ -544,5 +609,75 @@ mod release {
         assert!(runnable(None, None, None, |_, _| true)
             .unwrap_err()
             .contains("does not include"));
+    }
+}
+
+mod logs {
+    use serde_json::json;
+
+    use crate::simulator::logs::Lines;
+
+    fn lines(text: &[&str]) -> Lines {
+        let mut lines = Lines::default();
+        for line in text {
+            lines.push((*line).to_owned());
+        }
+        lines
+    }
+
+    #[test]
+    fn reads_on_from_the_cursor_it_hands_back() {
+        let kept = lines(&[
+            "a Df Maps[1:2] one",
+            "a Df Notes[3:4] two",
+            "a Df Maps[1:2] three",
+        ]);
+        assert_eq!(
+            kept.read(0, None, 2),
+            json!({ "lines": ["a Df Maps[1:2] one", "a Df Notes[3:4] two"], "cursor": 2, "more": true })
+        );
+        assert_eq!(
+            kept.read(2, None, 10),
+            json!({ "lines": ["a Df Maps[1:2] three"], "cursor": 3, "more": false })
+        );
+    }
+
+    #[test]
+    fn keeps_one_process_by_its_exact_name() {
+        let kept = lines(&[
+            "a Df Maps[1:2] one",
+            "a Df MapsWidget[5:6] two",
+            "a Df Maps[1:2] three",
+        ]);
+        assert_eq!(
+            kept.read(0, Some("Maps"), 10)["lines"],
+            json!(["a Df Maps[1:2] one", "a Df Maps[1:2] three"])
+        );
+    }
+
+    #[test]
+    fn says_how_many_lines_went_before_a_slow_reader_came_back() {
+        let mut kept = Lines::default();
+        for number in 0..5_003 {
+            kept.push(format!("t Df dasd[1:2] line {number}"));
+        }
+        let read = kept.read(0, None, 1);
+        assert_eq!(read["dropped"], json!(3));
+        assert_eq!(read["lines"], json!(["t Df dasd[1:2] line 3"]));
+    }
+
+    #[test]
+    fn an_apps_lines_outlast_a_flood_from_system_services() {
+        let mut kept = Lines::default();
+        kept.push("t Df MyApp[9:9] launched".into());
+        for number in 0..20_000 {
+            kept.push(format!("t Df dasd[1:2] noise {number}"));
+        }
+        kept.push("t Df MyApp[9:9] tapped".into());
+        assert_eq!(
+            kept.read(0, Some("MyApp"), 10),
+            json!({ "lines": ["t Df MyApp[9:9] launched", "t Df MyApp[9:9] tapped"], "cursor": 2, "more": false })
+        );
+        assert_eq!(kept.read(0, Some("Nobody"), 10)["lines"], json!([]));
     }
 }

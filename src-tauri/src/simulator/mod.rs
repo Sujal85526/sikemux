@@ -15,6 +15,7 @@ use serde_json::{Map, Value};
 
 use tools::{Device, Element};
 
+mod logs;
 pub mod tools;
 pub mod view;
 
@@ -50,6 +51,7 @@ pub struct SimulatorManager {
     helper: Mutex<Option<Helper>>,
     next_id: AtomicU64,
     attachments: Mutex<HashMap<String, Attachment>>,
+    logs: logs::Logs,
 }
 
 impl Default for SimulatorManager {
@@ -112,7 +114,14 @@ impl SimulatorManager {
             helper: Mutex::new(None),
             next_id: AtomicU64::new(1),
             attachments: Mutex::default(),
+            logs: logs::Logs::default(),
         }
+    }
+
+    fn detach(&self, agent_id: &str) -> Option<Device> {
+        self.lock_attachments()
+            .remove(agent_id)
+            .map(|attachment| attachment.device)
     }
 
     fn attach(&self, agent_id: &str, device: Device) {
@@ -204,6 +213,7 @@ impl SimulatorManager {
     }
 
     pub fn drain(&self) {
+        self.logs.stop_all();
         if let Some(mut helper) = self.lock().take() {
             let _ = helper.child.kill();
             let _ = helper.child.wait();

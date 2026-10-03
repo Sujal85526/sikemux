@@ -914,6 +914,125 @@
       ]
     },
     {
+      "name": "sim_touch_path",
+      "method": "sim.touchPath",
+      "offered": "simulator",
+      "description": "Drag one finger through points over a duration, as a long-press drag or drawing.",
+      "properties": {
+        "points": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "x": {
+                "type": "number",
+                "minimum": 0
+              },
+              "y": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ]
+          }
+        },
+        "duration": {
+          "type": "number",
+          "minimum": 0.05,
+          "maximum": 10
+        }
+      },
+      "required": [
+        "points"
+      ]
+    },
+    {
+      "name": "sim_touch2_path",
+      "method": "sim.touch2Path",
+      "offered": "simulator",
+      "description": "Move two fingers through points together, to pinch, spread or turn.",
+      "properties": {
+        "points": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "x1": {
+                "type": "number",
+                "minimum": 0
+              },
+              "y1": {
+                "type": "number",
+                "minimum": 0
+              },
+              "x2": {
+                "type": "number",
+                "minimum": 0
+              },
+              "y2": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "x1",
+              "y1",
+              "x2",
+              "y2"
+            ]
+          }
+        },
+        "duration": {
+          "type": "number",
+          "minimum": 0.05,
+          "maximum": 10
+        }
+      },
+      "required": [
+        "points"
+      ]
+    },
+    {
+      "name": "sim_logs",
+      "method": "sim.logs",
+      "offered": "simulator",
+      "description": "Read the attached simulator's log by cursor, all of it or one process's.",
+      "properties": {
+        "process": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "cursor": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500
+        }
+      },
+      "required": []
+    },
+    {
+      "name": "sim_detach",
+      "method": "sim.detach",
+      "offered": "simulator",
+      "description": "Let go of the attached simulator and close it on your desk.",
+      "properties": {},
+      "required": []
+    },
+    {
       "name": "workspace_inspect",
       "method": "workspace.inspect",
       "description": "Inspect the open project: tasks, runs, listening ports and the event cursor.",

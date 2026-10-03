@@ -564,6 +564,12 @@ in from the left goes back, down from the top opens Notification Center. Its
 result carries a `warning` saying so; to scroll, start inside the content. `sim_button` presses `home`, `lock`,
 `side`, `siri`, `volumeUp`, `volumeDown` or `applePay`.
 
+`sim_touch_path` puts one finger down on the first of its `points`, moves it
+through the rest evenly over `duration` seconds and lifts it on the last: a
+long-press drag, reordering a list or drawing. `sim_touch2_path` does the same
+with two fingers, each point naming both (`x1`, `y1`, `x2`, `y2`): spread them
+to zoom in, bring them together to zoom out, or turn them around a centre.
+
 Acting tools wait until two reads of the screen agree before they return, so
 an animation or an app's launch has finished. Content an app loads from the
 network can arrive later; read again with `sim_state`. `sim_screenshot` returns the screen as an image at
@@ -576,6 +582,15 @@ relative path is read from the project) and `sim_launch` it by bundle id,
 with optional `arguments` and `environment`. `sim_launch` relaunches an app
 that is running. `sim_terminate` quits it, and `sim_open_url` opens a URL or
 a deep link.
+
+`sim_logs` reads the device's log, kept from when you attached it, by
+`cursor`: start at `0` and pass back the `cursor` it returns, as with
+`task_read`. System services log over a thousand lines a second, so ask for
+your app by `process`, its executable name: its lines are kept apart and
+outlast that noise, and that cursor counts only its lines. `limit` caps the
+lines in one read; `more` says lines are waiting, and `dropped` that older ones
+went before you read them. `sim_detach`
+lets go of the device and closes it on your desk; it keeps running.
 
 ## shell: The same operations from a shell
 

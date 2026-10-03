@@ -36,6 +36,10 @@ pub const SIM_METHODS: &[&str] = &[
     "sim.terminate",
     "sim.install",
     "sim.openUrl",
+    "sim.touchPath",
+    "sim.touch2Path",
+    "sim.logs",
+    "sim.detach",
 ];
 
 pub const HARNESS_METHODS: &[&str] = &[

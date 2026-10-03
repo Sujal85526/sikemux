@@ -44,7 +44,7 @@ const harnessMethods = methods.filter(
 function handlersIn(source, pattern, prefix) {
   const handled = new Set();
   for (const match of source.matchAll(pattern)) {
-    for (const [, method] of match[1].matchAll(/"([a-zA-Z.]+)"/gu)) {
+    for (const [, method] of match[1].matchAll(/"([a-zA-Z0-9.]+)"/gu)) {
       if (method.startsWith(prefix)) handled.add(method);
     }
   }
@@ -77,7 +77,7 @@ compare(
   simulatorMethods,
   handlersIn(
     await readFile(simulatorHandlersPath, "utf8"),
-    /((?:"[a-zA-Z.]+"\s*\|\s*)*"[a-zA-Z.]+")\s*=>/gu,
+    /((?:"[a-zA-Z0-9.]+"\s*\|\s*)*"[a-zA-Z0-9.]+")\s*=>/gu,
     "sim.",
   ),
   "src-tauri/src/simulator/tools.rs",
