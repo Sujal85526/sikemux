@@ -45,7 +45,9 @@ export const closeNewTabPalette = (): void => setState({ newTabPaletteOpen: fals
 
 export const openFilePalette = (): void => setState({ filePaletteOpen: true });
 export const closeFilePalette = (): void => setState({ filePaletteOpen: false });
-export const openSettings = (page?: SettingsPageId): void => setState(page ? { settingsOpen: true, settingsPage: page } : { settingsOpen: true });
+export const openSettings = (page?: SettingsPageId, target?: string): void =>
+    setState(page ? { settingsOpen: true, settingsPage: page, settingsTarget: target ?? null } : { settingsOpen: true });
+export const clearSettingsTarget = (): void => setState({ settingsTarget: null });
 export const setSettingsPage = (page: SettingsPageId): void => setState({ settingsPage: page });
 export const closeSettings = (): void => setState({ settingsOpen: false });
 export const toggleSettings = (): void => setState((s) => ({ settingsOpen: !s.settingsOpen }));

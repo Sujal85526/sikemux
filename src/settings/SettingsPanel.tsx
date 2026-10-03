@@ -110,6 +110,7 @@ export function SettingsPanel() {
     const keybindingOverrides = useStore((s) => s.keybindingOverrides);
     const home = useStore((s) => s.home);
     const page = useStore((s) => s.settingsPage);
+    const target = useStore((s) => s.settingsTarget);
     const settingsBinding = resolvedKeybinding(keybindingOverrides, "settings.toggle");
     const closeSettingsHint = settingsBinding ? `Esc / ${keybindingLabel(settingsBinding)}` : "Esc";
 
@@ -157,6 +158,13 @@ export function SettingsPanel() {
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
     }, []);
+
+    useEffect(() => {
+        if (!target) return;
+        cmd.clearSettingsTarget();
+        setQuery("");
+        setJump({ entry: { page, section: target, label: target, target }, at: Date.now() });
+    }, [target, page]);
 
     useEffect(() => {
         if (!jump) return;

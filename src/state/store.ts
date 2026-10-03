@@ -147,6 +147,8 @@ export interface ViewState {
     deskAddressOpen: string | null;
     settingsOpen: boolean;
     settingsPage: SettingsPageId;
+    /** A section or row title the settings pane scrolls to once it opens. */
+    settingsTarget: string | null;
     zoomedPaneId: string | null;
     sessionSwitcher: SessionSwitcherView | null;
 
@@ -282,6 +284,7 @@ export const useStore = create<StoreState>(() => {
         deskAddressOpen: null,
         settingsOpen: false,
         settingsPage: "general",
+        settingsTarget: null,
         zoomedPaneId: null,
         sessionSwitcher: null,
         editorViews: {},

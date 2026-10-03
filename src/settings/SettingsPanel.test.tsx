@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { settingsApi } from "../api/settings";
+import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "../api/transport";
 import { keybindingLabel, resolvedKeybinding } from "../commands/keybindings";
 import { IS_MACOS } from "../lib/platform";
 import { SETTINGS_INDEX, SETTINGS_PAGE_ORDER } from "./settingsIndex";
@@ -240,6 +241,20 @@ describe("SettingsPanel navigation", () => {
         render(<SettingsPanel />);
         expect(screen.getByRole("button", { name: "About" })).toHaveAttribute("aria-current", "page");
         expect(screen.getByRole("button", { name: "Check now" })).toBeInTheDocument();
+    });
+
+    it("opens at the section it was asked for", async () => {
+        const transport = new MemoryIpcTransport();
+        installIpcTransportForTests(transport);
+        transport.register("remote_status", () => new Promise(() => {}));
+        transport.register("account_status", () => new Promise(() => {}));
+        cmd.openSettings("devices", "Your account");
+        render(<SettingsPanel />);
+
+        const section = screen.getByRole("heading", { name: "Your account" }).closest<HTMLElement>("[data-settings-target]");
+        await vi.waitFor(() => expect(section).toHaveAttribute("data-settings-flash"));
+        expect(getState().settingsTarget).toBeNull();
+        resetIpcTransportForTests();
     });
 });
 
