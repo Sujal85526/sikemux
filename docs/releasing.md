@@ -17,7 +17,7 @@ If a release fails before it publishes, fix it and move the tag onto the fix. On
 git tag -f v0.4.1 && git push -f origin v0.4.1
 ```
 
-The workflow takes its signing material from the `release` environment:
+The workflow takes its signing material from the `release-desktop` environment, which every desktop release shares as Linux and Windows arrive:
 
 | Name                                                                                                                                       | Kind                    | Needed for         |
 | ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------- | ------------------ |
@@ -107,7 +107,7 @@ If you have an Apple Developer membership, set `RELEASE_NOTARIZED=1` with the De
 
 ## Releasing the phone app
 
-The phone app releases on its own schedule from the **Mobile release** workflow, started by a `mobile-v*` tag. Only the owner can create, move or delete one, and like a Mac release it waits for the owner's approval on the `release` environment.
+The phone app releases on its own schedule from the **Mobile release** workflow, started by a `mobile-v*` tag. Only the owner can create, move or delete one, and it waits for the owner's approval on the `release-mobile` environment, limited to `main` and `mobile-v*` tags.
 
 ```bash
 git tag mobile-v0.1.0-nightly.1 && git push origin mobile-v0.1.0-nightly.1
@@ -118,6 +118,8 @@ git tag mobile-v0.1.0-nightly.1 && git push origin mobile-v0.1.0-nightly.1
 Android needs a version code that grows with every upload. `app.config.js` derives it from the tag: `0.5.0-nightly.3` is `50003`, and `0.5.0` itself is `50099`, so a stable build always follows its own nightlies. Minor and patch numbers stay below 100, and nightlies below 99. The iOS build number is the same code, and the app reads its release back from it to compare with the oldest version `GET /v1/network` allows.
 
 The run checks the phone app, builds the Rust client with the small `mobile` profile, and builds the APK and the Play app bundle. It refuses either unless it is signed with the Play upload key. It attaches the APK to a GitHub release of the tag, marked a prerelease for a nightly, and never as the latest release: sikemux.com takes its Mac download from that one. The app bundle stays on the run until uploads to Google Play are added.
+
+The secrets live in the `release-mobile` environment, which the iPhone release will share:
 
 | Name                      | Kind   | Holds                                              |
 | ------------------------- | ------ | -------------------------------------------------- |
@@ -134,7 +136,7 @@ Every push to `main` that changes the phone's JavaScript or assets runs the **Mo
 
 An update carries a runtime version, a fingerprint of everything native in the app: the Expo config, native modules and the Rust client's sources. A phone only takes updates with its own build's runtime version, so a change that needs new native code is published but waits for the next build that has it. The run's summary shows the update id and runtime version.
 
-To promote a nightly update to stable, run **Mobile update** by hand with its id. It waits for the owner's approval on the `release` environment and then serves the same signed update on `stable`.
+To promote a nightly update to stable, run **Mobile update** by hand with its id. It waits for the owner's approval on the `release-mobile` environment and then serves the same signed update on `stable`.
 
 Locally, `node scripts/publish-update.mjs android nightly --dry-run` in `mobile/app` builds and signs an update without sending it, with the key from `UPDATES_SIGNING_KEY`. The key lives at `~/.config/sikemux/release/updates-signing-key.pem`.
 

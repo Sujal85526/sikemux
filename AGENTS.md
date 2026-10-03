@@ -24,7 +24,7 @@
 
 - Follow `docs/releasing.md`. Releases publish only from the Release workflow, started by
   pushing a `v*` tag; never run `scripts/release.sh --publish` yourself, and never approve
-  the `release` environment for the owner.
+  the `release-desktop` or `release-mobile` environment for the owner.
 - Nightlies are tagged on `main`. Stable releases and hotfixes are tagged on
   `release/<major.minor>`, and their version bump and notes go only there.
 - Never check out `release/*` in this shared checkout. Commit to it from objects with a
