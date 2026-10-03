@@ -284,6 +284,37 @@ pub async fn simulator_attach(
     })
 }
 
+/// Saves the screen at full size to the Desktop as `name`, the way Simulator.app does.
+#[tauri::command]
+pub async fn simulator_save_screenshot(
+    app: AppHandle,
+    simulators: State<'_, SimulatorManager>,
+    udid: String,
+    name: String,
+) -> AppResult<String> {
+    let plain = std::path::Path::new(&name)
+        .file_name()
+        .is_some_and(|file| file == name.as_str());
+    if !plain || !name.ends_with(".png") {
+        return Err(AppError::BadArg(
+            "a screenshot name is a plain .png file name",
+        ));
+    }
+    let desktop = app
+        .path()
+        .desktop_dir()
+        .map_err(|error| AppError::Other(format!("no Desktop folder: {error}")))?;
+    let path = desktop.join(&name);
+    simulators
+        .request(
+            "screenshot",
+            json!({ "udid": udid, "path": path }),
+            REQUEST_TIMEOUT,
+        )
+        .map_err(AppError::Other)?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
 #[tauri::command]
 pub async fn simulator_shutdown(
     simulators: State<'_, SimulatorManager>,

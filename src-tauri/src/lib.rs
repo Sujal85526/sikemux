@@ -461,6 +461,7 @@ pub fn run() {
             simulator::view::simulator_devices,
             simulator::view::simulator_attach,
             simulator::view::simulator_shutdown,
+            simulator::view::simulator_save_screenshot,
         ])
         .build(tauri::generate_context!())
         .expect("error while building sikemux")

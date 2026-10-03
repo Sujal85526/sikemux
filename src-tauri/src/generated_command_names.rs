@@ -219,4 +219,5 @@ pub const IPC_COMMANDS: &[&str] = &[
     "simulator_devices",
     "simulator_attach",
     "simulator_shutdown",
+    "simulator_save_screenshot",
 ];

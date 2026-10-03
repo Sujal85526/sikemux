@@ -219,6 +219,7 @@ export const IPC_COMMANDS = [
     "simulator_devices",
     "simulator_attach",
     "simulator_shutdown",
+    "simulator_save_screenshot",
 ] as const;
 
 export type IpcCommand = (typeof IPC_COMMANDS)[number];
