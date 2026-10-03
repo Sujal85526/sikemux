@@ -29,6 +29,16 @@ export class RateLimiter {
     return window.count <= perMinute;
   }
 
+  /** Whether `key` is already past its limit, without counting this as another try. */
+  exceeded(key: string, perMinute: number): boolean {
+    const window = this.windows.get(key);
+    return (
+      window !== undefined &&
+      this.now() - window.started < 60_000 &&
+      window.count >= perMinute
+    );
+  }
+
   private sweep(now: number) {
     for (const [key, window] of this.windows) {
       if (now - window.started >= 60_000) this.windows.delete(key);

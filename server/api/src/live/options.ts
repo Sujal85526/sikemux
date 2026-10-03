@@ -1,0 +1,70 @@
+/** Every limit and timer of the live connection, so tests can shorten them. */
+export interface LiveOptions {
+  /** How long the challenge in the first message stays valid. */
+  challengeMs: number;
+  /** How long a new connection may stay silent before its hello. */
+  helloTimeoutMs: number;
+  heartbeatMs: number;
+  /** How long without any message before a connection counts as dead. */
+  silenceMs: number;
+  /** Every connection is closed after this, so each proof is fresh at least this often. */
+  maxAgeMs: number;
+  /** How long a web connection may outlive its token's expiry before it is closed. */
+  authGraceMs: number;
+  /** Notifications for one account within this window wake its connections once. */
+  coalesceMs: number;
+  /** How often every connected account is checked for events a lost notification hid. */
+  sweepMs: number;
+  /** A connection writes its acknowledged cursor at most this often. */
+  cursorFlushMs: number;
+  maxSockets: number;
+  socketsPerUser: number;
+  upgradesPerMinute: number;
+  failedHellosPerMinute: number;
+  messagesPerSecond: number;
+  maxPayloadBytes: number;
+  /** Above this many unsent bytes a connection gets no more backlog until it drains. */
+  pauseBytes: number;
+  /** Above this many unsent bytes a connection is closed, to resume later from its cursor. */
+  dropBytes: number;
+  eventsPerFrame: number;
+  /** How many frames may be sent ahead of the device's last acknowledgement. */
+  framesAhead: number;
+  /** A restart asks each device to wait a random time up to this before reconnecting. */
+  reconnectSpreadMs: number;
+}
+
+export const LIVE_OPTIONS: LiveOptions = {
+  challengeMs: 30_000,
+  helloTimeoutMs: 10_000,
+  heartbeatMs: 25_000,
+  silenceMs: 60_000,
+  maxAgeMs: 12 * 60 * 60_000,
+  authGraceMs: 30_000,
+  coalesceMs: 50,
+  sweepMs: 60_000,
+  cursorFlushMs: 1_000,
+  maxSockets: 20_000,
+  socketsPerUser: 20,
+  upgradesPerMinute: 60,
+  failedHellosPerMinute: 10,
+  messagesPerSecond: 20,
+  maxPayloadBytes: 8 * 1024,
+  pauseBytes: 256 * 1024,
+  dropBytes: 1024 * 1024,
+  eventsPerFrame: 200,
+  framesAhead: 2,
+  reconnectSpreadMs: 15_000,
+};
+
+/** Close codes a device acts on. */
+export const CLOSE = {
+  badMessage: 4400,
+  unauthenticated: 4401,
+  revoked: 4403,
+  helloTimeout: 4408,
+  replaced: 4409,
+  overLimit: 4429,
+  restarting: 1012,
+  overloaded: 1013,
+} as const;
