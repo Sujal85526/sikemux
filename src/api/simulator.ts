@@ -15,6 +15,13 @@ export interface SimulatorAttached {
     screen: SimulatorScreen | null;
 }
 
+/** The device Xcode draws around a simulator's screen: its size and where the screen sits in it, in points. */
+export interface SimulatorChrome {
+    width: number;
+    height: number;
+    screen: { x: number; y: number; width: number; height: number };
+}
+
 /** A simulator Xcode has, for the person to pick from. */
 export interface SimulatorDevice {
     udid: string;
@@ -38,9 +45,11 @@ export type SimulatorInput =
     | { type: "type"; text: string };
 
 export const frameUrl = (udid: string, frame: number): string => `sim://localhost/${encodeURIComponent(udid)}/${frame}`;
+export const chromeUrl = (udid: string, part: "chrome" | "mask"): string => `sim://localhost/${encodeURIComponent(udid)}/${part}`;
 
 export const simulatorApi = {
-    openView: (udid: string) => invoke<void>("simulator_view_open", { udid }),
+    /** Starts the live view, and answers with the device to draw around it when Xcode has one. */
+    openView: (udid: string) => invoke<SimulatorChrome | null>("simulator_view_open", { udid }),
     closeView: (udid: string) => invoke<void>("simulator_view_close", { udid }),
     input: (udid: string, input: SimulatorInput) => invoke<void>("simulator_input", { udid, input }),
     devices: () => invoke<SimulatorDevice[]>("simulator_devices"),

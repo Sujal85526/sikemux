@@ -2,7 +2,7 @@ import { act, fireEvent, render, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { simulatorApi, type SimulatorFrame } from "../api/simulator";
 import * as cmd from "../state/commands";
-import { devicePickerOptions, SimulatorView, toDevicePoint, typedText } from "./SimulatorView";
+import { devicePickerOptions, fitInside, SimulatorView, toDevicePoint, typedText } from "./SimulatorView";
 
 vi.mock("../api/simulator", async () => {
     const actual = await vi.importActual<typeof import("../api/simulator")>("../api/simulator");
@@ -72,7 +72,7 @@ describe("the simulator view", () => {
             deliver = listener;
             return () => {};
         });
-        vi.mocked(simulatorApi.openView).mockResolvedValue();
+        vi.mocked(simulatorApi.openView).mockResolvedValue(null);
         vi.mocked(simulatorApi.closeView).mockResolvedValue();
         vi.mocked(simulatorApi.input).mockResolvedValue();
         vi.mocked(simulatorApi.devices).mockResolvedValue([
@@ -194,7 +194,7 @@ describe("picking a simulator", () => {
         let finish: (device: { udid: string; name: string; os: string; booted: boolean; screen: typeof iPhone }) => void = () => {};
         vi.mocked(simulatorApi.attach).mockImplementation(() => new Promise((resolve) => (finish = resolve)));
         vi.mocked(simulatorApi.subscribeFrames).mockResolvedValue(() => {});
-        vi.mocked(simulatorApi.openView).mockResolvedValue();
+        vi.mocked(simulatorApi.openView).mockResolvedValue(null);
         vi.mocked(simulatorApi.devices).mockResolvedValue([device("U1", "iPhone 18 Pro", "iOS 27.0", true), device("U2", "iPhone 17", "iOS 26.0")]);
         const view = render(<SimulatorView agentId="agent-1" simulator={{ ...device("U1", "iPhone 18 Pro", "iOS 27.0") }} live />);
         const screen = within(view.container);
@@ -220,5 +220,50 @@ describe("picking a simulator", () => {
 
         await vi.waitFor(() => expect(closed).toHaveBeenCalledWith("agent-1", { key: "simulator:U1", kind: "simulator", simulator }));
         expect(simulatorApi.shutdown).toHaveBeenCalledWith("U1");
+    });
+});
+
+describe("the device around the screen", () => {
+    const iPhone18 = { width: 454, height: 908, screen: { x: 26, y: 17, width: 402, height: 874 } };
+
+    it("scales the device to the room it has, keeping its proportions", () => {
+        expect(fitInside({ width: 1000, height: 454 }, { width: 454, height: 908 })).toEqual({ width: 227, height: 454 });
+        expect(fitInside({ width: 227, height: 2000 }, { width: 454, height: 908 })).toEqual({ width: 227, height: 454 });
+        expect(fitInside({ width: 0, height: 0 }, { width: 454, height: 908 })).toEqual({ width: 0, height: 0 });
+    });
+
+    async function drawn(chrome: typeof iPhone18 | null) {
+        let deliver: (frame: SimulatorFrame) => void = () => {};
+        vi.mocked(simulatorApi.subscribeFrames).mockImplementation(async (listener) => {
+            deliver = listener;
+            return () => {};
+        });
+        vi.mocked(simulatorApi.openView).mockResolvedValue(chrome);
+        vi.mocked(simulatorApi.devices).mockResolvedValue([]);
+        const view = render(
+            <SimulatorView agentId="agent-1" simulator={{ udid: "U1", name: "iPhone 18 Pro", os: "iOS 27.0", screen: iPhone }} live />,
+        );
+        await vi.waitFor(() => expect(simulatorApi.openView).toHaveBeenCalled());
+        await act(async () => deliver({ udid: "U1", frame: 1 }));
+        return view.container;
+    }
+
+    it("draws the screen inside Xcode's device, shaped like the real display", async () => {
+        const container = await drawn(iPhone18);
+        const bezel = container.querySelector<HTMLImageElement>(".simulator-bezel")!;
+        const screen = container.querySelector<HTMLImageElement>(".simulator-screen")!;
+        expect(bezel.getAttribute("src")).toBe("sim://localhost/U1/chrome");
+        expect(screen.style.left).toBe(`${(26 / 454) * 100}%`);
+        expect(screen.style.top).toBe(`${(17 / 908) * 100}%`);
+        expect(screen.style.width).toBe(`${(402 / 454) * 100}%`);
+        expect(screen.style.maskImage).toContain("sim://localhost/U1/mask");
+    });
+
+    it("shows the screen bare when Xcode has no drawing of the device", async () => {
+        const container = await drawn(null);
+        expect(container.querySelector(".simulator-bezel")).toBeNull();
+        const screen = container.querySelector<HTMLImageElement>(".simulator-screen")!;
+        expect([screen.style.left, screen.style.width, screen.style.height]).toEqual(["0%", "100%", "100%"]);
+        expect(screen.style.maskImage).toBe("");
     });
 });

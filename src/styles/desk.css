@@ -23,8 +23,7 @@
     display: none;
 }
 
-.desk-page,
-.desk-simulator {
+.desk-page {
     display: grid;
     grid-template-rows: 34px minmax(0, 1fr);
     min-width: 0;
@@ -132,7 +131,8 @@
 
 .tabbar.v-desk .tab-add,
 .browser-toolbar button,
-.simulator-toolbar > button {
+.simulator-toolbar > button,
+.simulator-controls button {
     display: grid;
     place-items: center;
     flex: none;
@@ -151,7 +151,8 @@
 
 .tabbar.v-desk .tab-add:hover,
 .browser-toolbar button:hover,
-.simulator-toolbar > button:hover {
+.simulator-toolbar > button:hover,
+.simulator-controls button:hover {
     background: var(--surface-hover);
     color: var(--ink);
 }
@@ -466,6 +467,11 @@
     height: 32px;
 }
 
+.desk-simulator {
+    display: grid;
+    grid-template-rows: 34px minmax(0, 1fr) auto;
+}
+
 .simulator-picker.dd-btn {
     height: 24px;
     padding: 0 8px;
@@ -479,26 +485,45 @@
     white-space: nowrap;
 }
 
-/* The screen keeps the device's own proportions, centred, with the margins
-   around it left empty; clicks there do nothing. */
+/* The device keeps its own proportions, centred, with the margins around it
+   left empty; clicks there do nothing. */
 .simulator-stage {
-    position: relative;
     display: grid;
     place-items: center;
     min-height: 0;
-    overflow: hidden;
+    margin: 16px 16px 0;
     outline: none;
     touch-action: none;
     user-select: none;
 }
 
+.simulator-phone {
+    position: relative;
+}
+
+.simulator-bezel,
 .simulator-screen {
     position: absolute;
-    inset: 12px;
-    width: calc(100% - 24px);
-    height: calc(100% - 24px);
-    object-fit: contain;
     pointer-events: none;
+}
+
+.simulator-bezel {
+    inset: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.simulator-controls {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 0 14px;
+}
+
+.simulator-controls button {
+    width: 32px;
+    height: 28px;
+    border: 1px solid var(--border);
 }
 
 .simulator-device,

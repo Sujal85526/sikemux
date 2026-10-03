@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { frameUrl, simulatorApi, type SimulatorDevice, type SimulatorInput, type SimulatorScreen } from "../api/simulator";
+import {
+    chromeUrl,
+    frameUrl,
+    simulatorApi,
+    type SimulatorChrome,
+    type SimulatorDevice,
+    type SimulatorInput,
+    type SimulatorScreen,
+} from "../api/simulator";
 import * as cmd from "../state/commands";
 import { simulatorKey } from "../state/desks";
 import type { DeskSimulator } from "../state/types";
@@ -44,6 +52,14 @@ export function typedText(event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKe
     return [...event.key].length === 1 ? event.key : null;
 }
 
+/** The largest size `content` can be drawn at inside `room`, keeping its proportions. */
+export function fitInside(room: { width: number; height: number }, content: { width: number; height: number }) {
+    const scale = Math.max(0, Math.min(room.width / content.width, room.height / content.height));
+    return { width: content.width * scale, height: content.height * scale };
+}
+
+const percent = (part: number, whole: number) => `${(part / whole) * 100}%`;
+
 const osVersion = (os: string) => (os.split(" ").pop() ?? "").split(".").map(Number);
 
 /** Devices to pick from: the newest iOS first, then by name, with the ones already running marked. */
@@ -64,6 +80,9 @@ export function SimulatorView({ agentId, simulator, hidden, live }: { agentId: s
     const { udid, screen } = simulator;
     const [devices, setDevices] = useState<SimulatorDevice[]>([]);
     const [booting, setBooting] = useState<string | null>(null);
+    const [chrome, setChrome] = useState<SimulatorChrome | null>(null);
+    const [room, setRoom] = useState({ width: 0, height: 0 });
+    const stage = useRef<HTMLDivElement>(null);
     const [frame, setFrame] = useState<number | null>(null);
     const [failure, setFailure] = useState<string | null>(null);
     const image = useRef<HTMLImageElement>(null);
@@ -84,7 +103,10 @@ export function SimulatorView({ agentId, simulator, hidden, live }: { agentId: s
                 else if (event.frame !== undefined) setFrame(event.frame);
             }, controller.signal)
             .catch(() => {});
-        void simulatorApi.openView(udid).catch((error) => setFailure(String(error)));
+        void simulatorApi
+            .openView(udid)
+            .then((drawn) => setChrome(drawn ?? null))
+            .catch((error) => setFailure(String(error)));
         return () => {
             controller.abort();
             void simulatorApi.closeView(udid).catch(() => {});
@@ -107,6 +129,14 @@ export function SimulatorView({ agentId, simulator, hidden, live }: { agentId: s
         () => devicePickerOptions(devices.some((device) => device.udid === udid) ? devices : [...devices, { ...simulator, booted: true }]),
         [devices, simulator, udid],
     );
+
+    useEffect(() => {
+        const element = stage.current;
+        if (!element || typeof ResizeObserver === "undefined") return;
+        const observer = new ResizeObserver(([entry]) => setRoom({ width: entry.contentRect.width, height: entry.contentRect.height }));
+        observer.observe(element);
+        return () => observer.disconnect();
+    }, []);
 
     /* The agent moves to the picked device too, so the person and the agent
        keep looking at the same screen. */
@@ -194,17 +224,12 @@ export function SimulatorView({ agentId, simulator, hidden, live }: { agentId: s
                     menuWidth={280}
                 />
                 <span className="simulator-device">{simulator.os}</span>
-                <button type="button" aria-label="Home" title="Home" onClick={() => send({ type: "button", button: "home" })}>
-                    <IconHome size={13} />
-                </button>
-                <button type="button" aria-label="Lock" title="Lock" onClick={() => send({ type: "button", button: "lock" })}>
-                    <IconLock size={13} />
-                </button>
                 <button type="button" aria-label="Shut down" title="Shut down" onClick={shutDown}>
                     <IconStop size={13} />
                 </button>
             </div>
             <div
+                ref={stage}
                 className="simulator-stage"
                 tabIndex={0}
                 role="application"
@@ -221,9 +246,66 @@ export function SimulatorView({ agentId, simulator, hidden, live }: { agentId: s
                 ) : frame === null ? (
                     <p className="simulator-status">Connecting to {simulator.name}…</p>
                 ) : (
-                    <img ref={image} className="simulator-screen" src={frameUrl(udid, frame)} alt={`${label} screen`} draggable={false} />
+                    <Phone udid={udid} frame={frame} label={label} chrome={chrome} screen={screen} room={room} image={image} />
                 )}
             </div>
+            <div className="simulator-controls">
+                <button type="button" aria-label="Home" title="Home" onClick={() => send({ type: "button", button: "home" })}>
+                    <IconHome size={13} />
+                </button>
+                <button type="button" aria-label="Lock" title="Lock" onClick={() => send({ type: "button", button: "lock" })}>
+                    <IconLock size={13} />
+                </button>
+            </div>
+        </div>
+    );
+}
+
+/**
+ * The live screen inside the device Xcode draws around it, scaled to fit the
+ * stage. Without that drawing the screen shows bare.
+ */
+function Phone({
+    udid,
+    frame,
+    label,
+    chrome,
+    screen,
+    room,
+    image,
+}: {
+    udid: string;
+    frame: number;
+    label: string;
+    chrome: SimulatorChrome | null;
+    screen: SimulatorScreen | null;
+    room: { width: number; height: number };
+    image: React.RefObject<HTMLImageElement | null>;
+}) {
+    const whole = chrome ?? screen ?? { width: 1, height: 1 };
+    const size = fitInside(room, whole);
+    const area = chrome?.screen ?? { x: 0, y: 0, ...whole };
+    const mask = chrome ? `url("${chromeUrl(udid, "mask")}")` : undefined;
+    return (
+        <div className="simulator-phone" style={{ width: size.width, height: size.height }}>
+            {chrome && <img className="simulator-bezel" src={chromeUrl(udid, "chrome")} alt="" draggable={false} />}
+            <img
+                ref={image}
+                className="simulator-screen"
+                src={frameUrl(udid, frame)}
+                alt={`${label} screen`}
+                draggable={false}
+                style={{
+                    left: percent(area.x, whole.width),
+                    top: percent(area.y, whole.height),
+                    width: percent(area.width, whole.width),
+                    height: percent(area.height, whole.height),
+                    maskImage: mask,
+                    WebkitMaskImage: mask,
+                    maskSize: "100% 100%",
+                    WebkitMaskSize: "100% 100%",
+                }}
+            />
         </div>
     );
 }
