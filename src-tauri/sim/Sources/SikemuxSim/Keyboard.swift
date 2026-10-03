@@ -15,6 +15,18 @@ enum Keyboard {
         }
     }
 
+    /// Keys with no character of their own, by the names a browser gives them in `KeyboardEvent.key`.
+    static func named(_ name: String) throws -> UInt32 {
+        let keys: [String: UInt32] = [
+            "Enter": 40, "Escape": 41, "Backspace": 42, "Tab": 43, "Delete": 76,
+            "ArrowRight": 79, "ArrowLeft": 80, "ArrowDown": 81, "ArrowUp": 82,
+        ]
+        guard let code = keys[name] else {
+            throw Failure(reason: "badRequest", message: "Unknown key \(name). Use one of: \(keys.keys.sorted().joined(separator: ", "))")
+        }
+        return code
+    }
+
     private static let table: [Character: (code: UInt32, shifted: Bool)] = {
         var table: [Character: (UInt32, Bool)] = [:]
         for (offset, letter) in "abcdefghijklmnopqrstuvwxyz".enumerated() {

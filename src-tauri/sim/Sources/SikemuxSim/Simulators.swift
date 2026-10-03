@@ -23,6 +23,24 @@ actor Simulators {
         }
     }
 
+    /// The device's screen in points, which is what touches are given in, and its pixels per point.
+    func screen(_ udid: String?) async throws -> [String: Any] {
+        guard let info = try await booted(udid).screenInfo else {
+            throw Failure(reason: "simulator", message: "The device did not report its screen size")
+        }
+        let scale = Double(info.scale)
+        return ["width": Double(info.widthPixels) / scale, "height": Double(info.heightPixels) / scale, "scale": scale]
+    }
+
+    func orient(_ udid: String?, to name: String) async throws {
+        let settable: [SimulatorDeviceOrientation] = [.portrait, .portraitUpsideDown, .landscapeLeft, .landscapeRight]
+        guard let orientation = SimulatorDeviceOrientation(rawValue: name), settable.contains(orientation) else {
+            throw Failure(
+                reason: "badRequest", message: "Unknown orientation \(name). Use portrait, portraitUpsideDown, landscapeLeft or landscapeRight.")
+        }
+        try await booted(udid).orientation.set(orientation)
+    }
+
     func runtimes() throws -> [[String: Any]] {
         _ = try set()
         return (control?.serviceContext.supportedRuntimes() ?? []).map { runtime in

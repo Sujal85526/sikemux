@@ -68,6 +68,22 @@ struct SikemuxSim {
             let from = try require(request.x, request.y), to = try require(request.toX, request.toY)
             try await simulators.send(
                 .swipe(from.x, yStart: from.y, xEnd: to.x, yEnd: to.y, delta: 0, duration: request.duration ?? 0.3), to: udid)
+        case "touch":
+            let point = try require(request.x, request.y)
+            let direction: SimulatorHIDDirection
+            switch try require(request.phase, "phase") {
+            case "down", "move": direction = .down
+            case "up": direction = .up
+            default: throw Failure(reason: "badRequest", message: "A touch's phase is down, move or up")
+            }
+            try await simulators.send(.touch(direction: direction, x: point.x, y: point.y), to: udid)
+        case "key":
+            let code = try Keyboard.named(try require(request.key, "key"))
+            try await simulators.send(.composite([.keyboard(direction: .down, keyCode: code), .keyboard(direction: .up, keyCode: code)]), to: udid)
+        case "screen":
+            return try await simulators.screen(udid)
+        case "orientation":
+            try await simulators.orient(udid, to: try require(request.orientation, "orientation"))
         case "touchPath":
             try await simulators.send(try touchPath(try require(request.points, "points")), to: udid)
         case "touch2Path":
