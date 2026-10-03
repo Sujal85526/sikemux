@@ -3,18 +3,45 @@ import IOKit
 
 /// The trackpad's tick, felt only while a finger rests on a Force Touch trackpad.
 ///
-/// `NSHapticFeedbackManager` only plays for the app in front, and the island
-/// never is, so it drives the trackpad's actuator directly through
-/// MultitouchSupport, as background haptic apps do. Without that framework it
-/// falls back to the public API.
+/// It is the tick `NSHapticFeedbackManager` plays: every one of its patterns
+/// asks the window server for the trackpad's pattern 15. AppKit only asks for
+/// the app in front, which the island never is, so it asks the window server
+/// itself, then the trackpad's actuator directly, then AppKit.
 enum Haptics {
     static var enabled = true
 
+    /// The waveform AppKit's alignment, generic and level-change feedback all play.
+    static let pattern: Int32 = 15
+
     static func tick() {
         guard enabled else { return }
-        if !Actuators.shared.tick() {
-            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
-        }
+        if WindowServer.shared.tick() || Actuators.shared.tick() { return }
+        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+    }
+}
+
+private final class WindowServer {
+    static let shared = WindowServer()
+
+    private typealias Connection = @convention(c) () -> Int32
+    private typealias Actuate = @convention(c) (Int32, Int32, Int32, Int32) -> Int32
+
+    private var connection: Connection?
+    private var actuate: Actuate?
+
+    private init() {
+        guard let framework = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY),
+              let connection = dlsym(framework, "SLSMainConnectionID"),
+              let actuate = dlsym(framework, "SLSActuateDeviceWithPattern")
+        else { return }
+        self.connection = unsafeBitCast(connection, to: Connection.self)
+        self.actuate = unsafeBitCast(actuate, to: Actuate.self)
+    }
+
+    /// AppKit's own call: every trackpad, the pattern, no delay.
+    func tick() -> Bool {
+        guard let connection, let actuate else { return false }
+        return actuate(connection(), 0, Haptics.pattern, 0) == 0
     }
 }
 
@@ -24,9 +51,6 @@ private final class Actuators {
     private typealias Create = @convention(c) (UInt64) -> Unmanaged<CFTypeRef>?
     private typealias Open = @convention(c) (CFTypeRef) -> Int32
     private typealias Actuate = @convention(c) (CFTypeRef, Int32, UInt32, Float, Float) -> Int32
-
-    /// The lightest of the actuator's clicks.
-    private static let weak: Int32 = 3
 
     private var fire: Actuate?
     private var actuators: [CFTypeRef] = []
@@ -50,7 +74,7 @@ private final class Actuators {
     func tick() -> Bool {
         guard let fire, !actuators.isEmpty else { return false }
         var played = false
-        for actuator in actuators where fire(actuator, Self.weak, 0, 0, 2) == 0 {
+        for actuator in actuators where fire(actuator, Haptics.pattern, 0, 0, 2) == 0 {
             played = true
         }
         return played
