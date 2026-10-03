@@ -20,6 +20,15 @@ const REFRESH_MS = 2000;
 interface Still {
     readonly tabId: string;
     readonly url: string;
+    readonly print: string;
+}
+
+/** Enough of the picture to tell a page that has not changed since its last one. */
+function fingerprint(jpeg: ArrayBuffer): string {
+    const bytes = new Uint8Array(jpeg);
+    let hash = 2166136261;
+    for (let i = 0; i < bytes.length; i += 61) hash = Math.imul(hash ^ bytes[i], 16777619);
+    return `${bytes.length}:${hash >>> 0}`;
 }
 
 const stills = new Map<string, Still>();
@@ -42,6 +51,10 @@ async function takeStill(agentId: string, tabId: string): Promise<void> {
     taking.add(agentId);
     try {
         const jpeg = await browserApi.pageStill(agentId);
+        const print = fingerprint(jpeg);
+        const current = stills.get(agentId);
+        /* Swapping in the same picture would only decode it again. */
+        if (current && current.tabId === tabId && current.print === print) return;
         const url = URL.createObjectURL(new Blob([jpeg], { type: "image/jpeg" }));
         const image = new Image();
         image.src = url;
@@ -49,7 +62,7 @@ async function takeStill(agentId: string, tabId: string): Promise<void> {
            half-drawn picture. */
         await image.decode();
         const previous = stills.get(agentId);
-        stills.set(agentId, { tabId, url });
+        stills.set(agentId, { tabId, url, print });
         notify();
         /* An image already on screen keeps what it decoded. */
         if (previous) URL.revokeObjectURL(previous.url);

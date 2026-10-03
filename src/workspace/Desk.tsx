@@ -557,7 +557,14 @@ function BrowserPage({
             <div ref={viewportRef} className="browser-viewport" tabIndex={-1}>
                 {/* Under the live page, where it shows only while the stage moves. */}
                 {still && !blank && (
-                    <img className="browser-still" src={still} srcSet={`${still} ${window.devicePixelRatio || 1}x`} alt="" draggable={false} />
+                    <img
+                        className="browser-still"
+                        src={still}
+                        srcSet={`${still} ${window.devicePixelRatio || 1}x`}
+                        alt=""
+                        decoding="async"
+                        draggable={false}
+                    />
                 )}
                 {blank && <div className="browser-blank" aria-label="Blank browser page" />}
                 {blank && addressFloating && <div className="browser-dim" style={{ opacity: UNDER_ADDRESS_DIM }} />}
