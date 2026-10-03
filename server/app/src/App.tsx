@@ -71,6 +71,7 @@ function Account({ ready }: { ready: boolean }) {
           <span>Sikemux</span>
         </div>
         <div className="who">
+          <Avatar />
           {email ? <span className="email">{email}</span> : null}
           <button
             type="button"
@@ -91,5 +92,32 @@ function Account({ ready }: { ready: boolean }) {
         <Devices ready={ready} />
       </main>
     </div>
+  );
+}
+
+/** The account's picture, or its initials on a neutral circle when it has none. */
+function Avatar() {
+  const { user } = useUser();
+  const [failed, setFailed] = useState<string>();
+  const picture = user?.hasImage ? user.imageUrl : undefined;
+  const initials =
+    [user?.firstName, user?.lastName]
+      .map((name) => name?.charAt(0) ?? "")
+      .join("") ||
+    (user?.primaryEmailAddress?.emailAddress.charAt(0) ?? "");
+  return (
+    <span className="avatar" aria-hidden="true">
+      {picture && picture !== failed ? (
+        <img
+          src={`${picture}${picture.includes("?") ? "&" : "?"}width=56&height=56&fit=crop&quality=100`}
+          alt=""
+          width={26}
+          height={26}
+          onError={() => setFailed(picture)}
+        />
+      ) : (
+        initials.toUpperCase()
+      )}
+    </span>
   );
 }
