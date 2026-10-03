@@ -341,7 +341,7 @@ async fn fetch_avatar(url: &str) -> Option<String> {
     ))
 }
 
-fn image_type(bytes: &[u8]) -> Option<&'static str> {
+pub(crate) fn image_type(bytes: &[u8]) -> Option<&'static str> {
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         return Some("image/png");
     }

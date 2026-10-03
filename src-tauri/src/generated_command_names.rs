@@ -29,6 +29,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "remote_revoke_device",
     "remote_open_pairing",
     "account_status",
+    "account_refresh_profile",
     "account_sign_in",
     "account_cancel_sign_in",
     "account_sign_out",

@@ -274,6 +274,7 @@ pub fn run() {
             remote::remote_revoke_device,
             remote::remote_open_pairing,
             account::account_status,
+            account::account_refresh_profile,
             account::account_sign_in,
             account::account_cancel_sign_in,
             account::account_sign_out,
