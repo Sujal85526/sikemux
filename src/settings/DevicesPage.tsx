@@ -8,6 +8,7 @@ import {
     spacedCode,
     type AccountLink,
     type DeviceAccess,
+    type NotificationState,
     type PairedDevice,
     type PendingDevice,
     type RemoteStatus,
@@ -30,6 +31,26 @@ const PLATFORM_NAMES: Record<string, string> = { ios: "iOS", android: "Android",
 
 function platformName(platform: string): string {
     return PLATFORM_NAMES[platform] ?? platform;
+}
+
+/** How a phone's notifications from this host read beside its name, or nothing when it asked for none. */
+export function notificationNote(state: NotificationState | undefined): string | null {
+    switch (state) {
+        case "on":
+            return "notifications on";
+        case "off":
+            return "notifications off";
+        case "phoneOff":
+            return "notifications turned off on the phone";
+        case "notReaching":
+            return "notifications aren't reaching it";
+        case "otherAccount":
+            return "notifications need it signed in to your account";
+        case "signedOut":
+            return "sign in to send it notifications";
+        default:
+            return null;
+    }
 }
 
 export function seenLabel(at: number | null, now: number): string {
@@ -170,6 +191,7 @@ export function DevicesPage() {
                                 key={device.id}
                                 device={device}
                                 connected={status.connected.includes(device.id)}
+                                notifications={status.notifications.find((phone) => phone.deviceId === device.id)?.state}
                                 now={now}
                                 onAccess={(access) => void apply(remoteApi.setDeviceAccess(device.id, access), "Device access")}
                                 onRevoke={() => void apply(remoteApi.revokeDevice(device.id), "Revoke device")}
@@ -305,20 +327,36 @@ function PendingRow({ request, onAnswer }: { request: PendingDevice; onAnswer: (
 function DeviceRow({
     device,
     connected,
+    notifications,
     now,
     onAccess,
     onRevoke,
 }: {
     device: PairedDevice;
     connected: boolean;
+    notifications: NotificationState | undefined;
     now: number;
     onAccess: (access: DeviceAccess) => void;
     onRevoke: () => void;
 }) {
+    const note = notificationNote(notifications);
+    const seen = connected ? "connected now" : seenLabel(device.lastSeen, now);
     return (
         <SettingsRow
             label={device.name || "Unnamed device"}
-            desc={`${platformName(device.platform)} · ${connected ? "connected now" : seenLabel(device.lastSeen, now)}`}>
+            desc={
+                <>
+                    {platformName(device.platform)} · {seen}
+                    {note && (
+                        <>
+                            {" · "}
+                            <span className={notifications === "notReaching" || notifications === "otherAccount" ? "device-warning" : undefined}>
+                                {note}
+                            </span>
+                        </>
+                    )}
+                </>
+            }>
             <span className="device-controls">
                 <Dropdown
                     className="settings-dd"

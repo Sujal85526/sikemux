@@ -48,6 +48,21 @@ export interface UpdateRequired {
     readonly minimum: string;
 }
 
+/**
+ * Whether a phone's notifications from this host reach it: `phoneOff` when they are off on the
+ * phone itself, `notReaching` when Apple or Google could not deliver the last one, `otherAccount`
+ * when the phone is not on this host's account, `signedOut` while this host is signed out.
+ */
+export type NotificationState = "off" | "on" | "phoneOff" | "notReaching" | "otherAccount" | "signedOut";
+
+/** A phone that asked this host for notifications. */
+export interface PhoneNotifications {
+    readonly deviceId: string;
+    readonly state: NotificationState;
+    /** When `state` began, in milliseconds since the epoch. */
+    readonly since: number;
+}
+
 export interface RemoteStatus {
     readonly enabled: boolean;
     readonly coreId: string;
@@ -60,6 +75,7 @@ export interface RemoteStatus {
     readonly owner: string | null;
     readonly account: AccountLink | null;
     readonly updateRequired: UpdateRequired | null;
+    readonly notifications: readonly PhoneNotifications[];
 }
 
 /** A project a paired device may start an agent in. */

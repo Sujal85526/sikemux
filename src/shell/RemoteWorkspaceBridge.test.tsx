@@ -20,6 +20,7 @@ function status(enabled: boolean): RemoteStatus {
         owner: null,
         account: null,
         updateRequired: null,
+        notifications: [],
     };
 }
 

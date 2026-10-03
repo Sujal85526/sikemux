@@ -18,6 +18,7 @@ function status(updateRequired: RemoteStatus["updateRequired"]): RemoteStatus {
         owner: null,
         account: null,
         updateRequired,
+        notifications: [],
     };
 }
 

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { REMOTE_STATUS_EVENT, type RemoteStatus } from "../api/remote";
 import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "../api/transport";
 import { useAccount } from "../account/account";
-import { accountMeta, DevicesPage, removalNote, seenLabel } from "./DevicesPage";
+import { accountMeta, DevicesPage, notificationNote, removalNote, seenLabel } from "./DevicesPage";
 
 const CORE = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2";
 const PHONE = "f0e1d2c3b4a5968778695a4b3c2d1e0ff0e1d2c3b4a5968778695a4b3c2d1e0f";
@@ -21,6 +21,7 @@ function status(overrides: Partial<RemoteStatus> = {}): RemoteStatus {
         owner: null,
         account: null,
         updateRequired: null,
+        notifications: [],
         ...overrides,
     };
 }
@@ -201,5 +202,29 @@ describe("seenLabel", () => {
 
         expect(cancel).toHaveBeenCalled();
         expect(await screen.findByRole("button", { name: "Sign in" })).toBeInTheDocument();
+    });
+});
+
+describe("DevicesPage and notifications", () => {
+    const phone = { id: PHONE, name: "Pixel", platform: "android", access: "watch" as const, pairedAt: 1, lastSeen: null };
+
+    it("says beside each phone whether its notifications reach it", async () => {
+        transport.register("remote_status", () => status({ devices: [phone], notifications: [{ deviceId: PHONE, state: "notReaching", since: 1 }] }));
+        render(<DevicesPage />);
+        expect(await screen.findByText("notifications aren't reaching it")).toHaveClass("device-warning");
+    });
+
+    it("says nothing of notifications for a phone that never asked", async () => {
+        transport.register("remote_status", () => status({ devices: [phone] }));
+        render(<DevicesPage />);
+        expect(await screen.findByText("Pixel")).toBeInTheDocument();
+        expect(screen.queryByText(/notifications/)).not.toBeInTheDocument();
+    });
+
+    it("reads each state the way the row shows it", () => {
+        expect(notificationNote("on")).toBe("notifications on");
+        expect(notificationNote("phoneOff")).toBe("notifications turned off on the phone");
+        expect(notificationNote("signedOut")).toBe("sign in to send it notifications");
+        expect(notificationNote(undefined)).toBeNull();
     });
 });
