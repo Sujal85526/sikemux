@@ -165,6 +165,7 @@ final class IslandModel {
     func checkPointer() {
         guard !pointerInside else { return }
         if hovering || (mode == .open && !holdsOpen) {
+            Debug.log("pointer left unreported, mode \(mode)")
             hoverTimer?.cancel()
             left()
         }

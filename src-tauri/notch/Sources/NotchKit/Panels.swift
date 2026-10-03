@@ -124,16 +124,16 @@ final class Panels {
             panel.contentView = NSHostingView(rootView: IslandView(store: store, island: island))
             island.keyboard = { [weak panel] keyboard in
                 guard let panel else { return }
-                panel.acceptsKey = keyboard != .off
                 switch keyboard {
                 case .take:
+                    panel.acceptsKey = true
                     panel.makeKey()
                 case .give, .off:
-                    // Ordering the panel out and back is what ends its key status.
-                    if panel.isKeyWindow {
-                        panel.orderOut(nil)
-                        panel.orderFrontRegardless()
-                    }
+                    // A panel that refuses the keyboard hands it straight back to the app in front.
+                    // Ordering it out instead would cut its animation short and stop hover reaching it.
+                    panel.acceptsKey = false
+                    if panel.isKeyWindow { panel.resignKey() }
+                    if keyboard == .give { DispatchQueue.main.async { panel.acceptsKey = true } }
                 }
             }
             NotificationCenter.default.addObserver(
