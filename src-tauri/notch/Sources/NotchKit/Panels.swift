@@ -1,8 +1,9 @@
 import AppKit
 import SwiftUI
 
-/// A borderless panel above the menu bar that never takes the app's focus. It
-/// takes keys only while the composer is open.
+/// A borderless panel above the menu bar that never activates the app. While
+/// the island is open it takes the keyboard when the prompt is clicked, and
+/// gives it back without taking the person's app out of the front.
 final class NotchPanel: NSPanel {
     var acceptsKey = false
 
@@ -12,6 +13,7 @@ final class NotchPanel: NSPanel {
     init(frame: CGRect) {
         super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel, .utilityWindow, .hudWindow], backing: .buffered, defer: false)
         isFloatingPanel = true
+        becomesKeyOnlyIfNeeded = true
         level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 3)
         collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
         isOpaque = false
@@ -103,18 +105,23 @@ final class Panels {
             let island = IslandModel(geometry: geometry)
             let panel = NotchPanel(frame: frame)
             panel.contentView = NSHostingView(rootView: IslandView(store: store, island: island))
-            island.wantsKey = { [weak panel] wants in
+            island.keyboard = { [weak panel] keyboard in
                 guard let panel else { return }
-                panel.acceptsKey = wants
-                if wants {
-                    NSApp.activate(ignoringOtherApps: true)
-                    panel.makeKeyAndOrderFront(nil)
-                } else if panel.isKeyWindow {
-                    panel.resignKey()
-                    NSApp.hide(nil)
-                    NSApp.unhideWithoutActivation()
+                panel.acceptsKey = keyboard != .off
+                switch keyboard {
+                case .take:
+                    panel.makeKey()
+                case .give, .off:
+                    // Ordering the panel out and back is what ends its key status.
+                    if panel.isKeyWindow {
+                        panel.orderOut(nil)
+                        panel.orderFrontRegardless()
+                    }
                 }
             }
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.didResignKeyNotification, object: panel, queue: .main
+            ) { [weak island] _ in island?.keyboardLost() }
             panel.orderFrontRegardless()
             panels[id] = (panel, island)
             let swipe = SwipeTracker()
@@ -136,6 +143,14 @@ final class Panels {
         let yielding = !store.options.dev && store.settings.yieldToDev && Handover.devIsRunning(stateDir: store.options.stateDir)
         let needsYou = store.agents.contains { $0.state == .blocked }
         let fullScreen = FullScreen.displays()
+        for (_, entry) in panels {
+            let island = entry.island
+            // macOS can miss telling the island the pointer left, as when it shrinks under a still pointer.
+            if island.mode == .open, !island.holdsOpen, !entry.panel.frame.contains(NSEvent.mouseLocation) {
+                island.hovering = false
+                island.set(.closed)
+            }
+        }
         for (id, entry) in panels {
             let covered: Bool
             switch store.settings.fullScreen {

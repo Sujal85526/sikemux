@@ -68,7 +68,11 @@ final class IslandModel {
     /// The island leans into a swipe: about a percent per twentieth of the way, never under 60%.
     var pullScale: CGFloat { pull == 0 ? 1 : max(0.6, 1 + pull * 0.01) }
 
-    @ObservationIgnored var wantsKey: ((Bool) -> Void)?
+    /// Whether the island holds the keyboard: `take` it now, `give` it back but
+    /// take it when the prompt is clicked, or `off` while closed.
+    enum Keyboard { case take, give, off }
+
+    @ObservationIgnored var keyboard: ((Keyboard) -> Void)?
     @ObservationIgnored private var peekTimer: DispatchWorkItem?
     @ObservationIgnored private var hoverTimer: DispatchWorkItem?
 
@@ -84,7 +88,18 @@ final class IslandModel {
             self.mode = mode
             if mode != .open { menu = nil }
         }
-        wantsKey?(mode == .open && tab == .compose)
+        if mode == .open { keyboard?(.give) } else if mode == .closed { keyboard?(.off) }
+    }
+
+    /// Typing in the prompt keeps the island open when the pointer leaves; an empty prompt does not.
+    var holdsOpen: Bool {
+        composing && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// The person clicked somewhere else: the island closes, and the draft waits for next time.
+    func keyboardLost() {
+        guard isOpen, !hovering else { return }
+        set(.closed)
     }
 
     func peek(_ peek: NotchStore.Peek, for seconds: Double) {
@@ -113,8 +128,12 @@ final class IslandModel {
         } else {
             schedule(after: 0.1) { island in
                 withAnimation(Motion.hover) { island.hovering = false }
-                guard island.mode == .open, !island.composing, island.menu == nil else { return }
-                island.set(.closed)
+                switch island.mode {
+                case .open where !island.holdsOpen, .peekAsk, .peekDone:
+                    island.set(.closed)
+                default:
+                    break
+                }
             }
         }
     }
@@ -125,7 +144,7 @@ final class IslandModel {
         switch (direction, mode) {
         case (.down, .closed), (.down, .peekDone):
             pull = travelled / SwipeTracker.threshold * 20
-        case (.up, .open) where !composing && menu == nil && (tab == .compose || !listScrolls):
+        case (.up, .open) where !holdsOpen && (tab == .compose || !listScrolls):
             pull = -travelled / SwipeTracker.threshold * 20
         default:
             pull = 0

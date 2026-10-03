@@ -57,6 +57,7 @@ struct Composer: View {
             DispatchQueue.main.async { focused = true }
         }
         .onChange(of: focused) { _, now in island.composing = now }
+        .onDisappear { island.composing = false }
     }
 
     private var attachments: some View {
@@ -161,7 +162,7 @@ struct Composer: View {
             island.attachments = []
             island.menu = nil
             island.tab = .agents
-            island.wantsKey?(false)
+            island.keyboard?(.give)
         }
     }
 }
