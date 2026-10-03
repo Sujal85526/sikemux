@@ -135,6 +135,7 @@ fn run(app: &AppHandle, request: HarnessRequest) -> Result<Value, String> {
     }
     let id = request.id.clone();
     let method = request.method.clone();
+    let agent_id = request.agent_id.clone();
     let focus =
         method == "ui.open" && request.params.get("focus").and_then(Value::as_bool) == Some(true);
     let broker = app.state::<HarnessBroker>();
@@ -155,6 +156,12 @@ fn run(app: &AppHandle, request: HarnessRequest) -> Result<Value, String> {
                 (value.as_object_mut(), crate::cli_paths::cli_command_path())
             {
                 object.insert("cli".into(), cli.to_string_lossy().into());
+            }
+            if let Some(object) = value.as_object_mut() {
+                object.insert(
+                    "simulator".into(),
+                    crate::simulator::tools::inspect(&app.state(), agent_id.as_deref()),
+                );
             }
             Ok(value)
         }

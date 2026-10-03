@@ -532,7 +532,9 @@ They are listed only when this Mac has Xcode. `sim_attach` puts the device
 live on your desk in Sikemux, beside the person, who watches what you do and
 can tap it too, so there is nothing else to open to show it: do not look for
 Simulator.app or open screenshots in another app. Its absence does not mean
-Xcode is broken; from Xcode 27 its window is DeviceHub.
+Xcode is broken; from Xcode 27 its window is DeviceHub. `workspace_inspect`
+reports `simulator`: whether this Mac can run them, and the device you have
+attached.
 
 `sim_attach` comes first. It takes a device name or udid from `sim_devices`,
 boots the device if it is off, and waits until its screen can be read.

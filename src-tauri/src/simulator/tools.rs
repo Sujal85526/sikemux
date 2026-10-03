@@ -252,6 +252,17 @@ pub(super) fn run(
     }
 }
 
+/// What `workspace_inspect` says about simulators: whether this Mac can run
+/// them, and the device the agent has attached, so an agent does not reach for
+/// `sim_*` on a Mac without Xcode.
+pub fn inspect(manager: &SimulatorManager, agent_id: Option<&str>) -> Value {
+    let attached = agent_id.and_then(|agent_id| manager.attached(agent_id));
+    json!({
+        "available": super::offered(),
+        "attached": attached.map(|device| json!({ "udid": device.udid, "name": device.name, "os": device.os })),
+    })
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct Device {
     pub udid: String,

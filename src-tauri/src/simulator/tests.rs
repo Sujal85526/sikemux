@@ -165,8 +165,8 @@ mod tools {
 
     use super::helper;
     use crate::simulator::tools::{
-        choose_device, edge_warning, element_lines, elements_from, launching, run, tap_point,
-        Device,
+        choose_device, edge_warning, element_lines, elements_from, inspect, launching, run,
+        tap_point, Device,
     };
 
     fn device(name: &str, os: &str, booted: bool) -> Device {
@@ -360,6 +360,11 @@ done
         call("sim.tap", json!({ "index": 0 })).expect("tap");
         let devices = call("sim.devices", json!({})).expect("devices");
         assert_eq!(devices["devices"][0]["attached"], json!(true));
+        assert_eq!(
+            inspect(&manager, Some("agent-1"))["attached"],
+            json!({ "udid": "U1", "name": "iPhone 17", "os": "iOS 27.0" })
+        );
+        assert_eq!(inspect(&manager, Some("agent-2"))["attached"], json!(null));
         let other_agent = run(&manager, "agent-2", "/tmp", "sim.state", &json!({}));
         assert!(other_agent.is_err(), "attachments belong to one agent");
 
