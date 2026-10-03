@@ -96,26 +96,38 @@ actor Simulators {
         tails.removeValue(forKey: key)?.task.cancel()
     }
 
-    /// One stream per device, shared by every viewer; a key frame each second lets a late viewer start within one.
-    func stream(on udid: String?, fps: Int, scale: Double?) async throws -> [String: Any] {
+    /// One stream per device and format, shared by every viewer. H.264 sends a key frame each second so a
+    /// late viewer starts within one; MJPEG is for a viewer whose H.264 decoder will not start.
+    func stream(on udid: String?, format: String, fps: Int, scale: Double?) async throws -> [String: Any] {
         let simulator = try await booted(udid)
-        if streams[simulator.udid] == nil {
+        let videoFormat: VideoStreamFormat
+        switch format {
+        case "h264": videoFormat = .compressedVideo(withCodec: .h264, transport: .annexB)
+        case "mjpeg": videoFormat = .mjpeg(encoder: .allowSoftware)
+        default: throw Failure(reason: "badRequest", message: "Unknown stream format \(format). Use h264 or mjpeg.")
+        }
+        let key = "\(simulator.udid) \(format)"
+        if streams[key] == nil {
             let stream = try FrameStream()
             try await stream.listen()
             let configuration = VideoStreamConfiguration(
-                format: .compressedVideo(withCodec: .h264, transport: .annexB), framesPerSecond: fps, rateControl: nil, scaleFactor: scale,
-                keyFrameRate: 1)
+                format: videoFormat, framesPerSecond: fps, rateControl: nil, scaleFactor: scale, keyFrameRate: 1)
             stream.operation = try await simulator.videoStream.create(configuration: configuration, to: stream)
-            streams[simulator.udid] = stream
+            streams[key] = stream
         }
-        let stream = streams[simulator.udid]!
-        return ["port": Int(stream.port), "token": stream.token, "codec": "h264", "transport": "annex-b"]
+        let stream = streams[key]!
+        var answer: [String: Any] = ["port": Int(stream.port), "token": stream.token, "format": format]
+        if format == "h264" { answer["transport"] = "annex-b" }
+        return answer
     }
 
-    func stopStream(on udid: String?) async throws {
-        guard let stream = streams.removeValue(forKey: try find(udid).udid) else { return }
-        try? await stream.operation?.stopStreaming()
-        stream.stop()
+    func stopStream(on udid: String?, format: String?) async throws {
+        let device = try find(udid).udid
+        for key in streams.keys where key.hasPrefix(device + " ") && (format == nil || key == "\(device) \(format!)") {
+            let stream = streams.removeValue(forKey: key)
+            try? await stream?.operation?.stopStreaming()
+            stream?.stop()
+        }
     }
 
     func install(_ path: String, on udid: String?) async throws -> String {

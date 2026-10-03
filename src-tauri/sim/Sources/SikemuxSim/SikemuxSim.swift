@@ -90,9 +90,10 @@ struct SikemuxSim {
         case "stopLogs":
             try await simulators.stopLogs(on: udid, process: request.process)
         case "stream":
-            return try await simulators.stream(on: udid, fps: min(max(request.fps ?? 60, 1), 60), scale: request.scale)
+            return try await simulators.stream(
+                on: udid, format: request.format ?? "h264", fps: min(max(request.fps ?? 60, 1), 60), scale: request.scale)
         case "stopStream":
-            try await simulators.stopStream(on: udid)
+            try await simulators.stopStream(on: udid, format: request.format)
         case "install":
             return ["bundleId": try await simulators.install(try require(request.path, "path"), on: udid)]
         case "launch":
