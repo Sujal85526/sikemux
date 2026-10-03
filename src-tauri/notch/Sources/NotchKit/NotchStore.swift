@@ -1,5 +1,6 @@
 import AppKit
 import Observation
+import SwiftUI
 
 /// What every island shows: the agents in the core's device view, and the
 /// actions that reach back to the core.
@@ -86,7 +87,7 @@ final class NotchStore {
         let finished = fresh.filter { $0.state == .done && before[$0.id].map { $0.state != .done } ?? false }
         seenAttentions = Set(view.attentions.map(\.id))
         self.view = view
-        agents = fresh
+        withAnimation(Motion.open) { agents = fresh }
         self.since = since
         defer { heard = true }
         guard heard else { return }

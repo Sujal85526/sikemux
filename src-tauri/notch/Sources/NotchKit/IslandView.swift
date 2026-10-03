@@ -49,7 +49,7 @@ struct IslandView: View {
 
     private var width: CGFloat {
         switch island.mode {
-        case .closed: return ClosedWings.width(store.agents.count, geometry)
+        case .closed: return ClosedWings.width(store, geometry)
         case .peekDone: return geometry.notchWidth + 2 * FinishedWings.wing
         case .peekAsk: return 460
         case .open, .drop: return 680
@@ -86,6 +86,7 @@ struct IslandView: View {
             if !island.isOpen { island.set(.open) }
         }
         .onExitCommand { island.set(.closed) }
+        .offset(x: island.mode == .closed ? ClosedWings.offset(store, geometry) : 0)
     }
 
     /// What sits beside the camera: the wings when closed, a header when open.
@@ -160,22 +161,40 @@ struct ClosedWings: View {
 
     private var running: [AgentItem] { store.agents }
 
-    static func wing(_ count: Int) -> CGFloat {
-        guard count > 0 else { return 0 }
-        let tiles = min(count, 3) + (count > 3 ? 1 : 0)
-        let left = 14 + 20 + CGFloat(max(0, tiles - 1)) * 17 + 8
-        let right: CGFloat = 14 + 16 + 6 + 10 + 8
-        return max(48, left, right)
+    /// Each wing as wide as what it holds, so a quiet right wing stays small
+    /// and grows when a state mark arrives.
+    static func widths(_ store: NotchStore) -> (left: CGFloat, right: CGFloat) {
+        let count = store.agents.count
+        guard count > 0 else { return (0, 0) }
+        let digit: CGFloat = 7.5
+        func digits(_ number: Int) -> CGFloat { CGFloat(String(number).count) * digit }
+        var left = 14 + 20 + CGFloat(min(count, 3) - 1) * 17 + 10
+        if count > 3 { left += 9 + 6.5 * CGFloat(String(count - 3).count + 1) }
+        let held: CGFloat
+        if let top = store.rollup {
+            held = (top.count > 1 ? digits(top.count) + 6 : 0) + 16
+        } else {
+            held = digits(count)
+        }
+        return (left, 10 + held + 14)
     }
 
-    static func width(_ count: Int, _ geometry: NotchGeometry) -> CGFloat {
-        geometry.notchWidth + 2 * wing(count)
+    static func width(_ store: NotchStore, _ geometry: NotchGeometry) -> CGFloat {
+        let wings = widths(store)
+        return geometry.notchWidth + wings.left + wings.right
+    }
+
+    /// How far the island moves aside so the camera stays between unequal wings.
+    static func offset(_ store: NotchStore, _ geometry: NotchGeometry) -> CGFloat {
+        guard geometry.hasNotch else { return 0 }
+        let wings = widths(store)
+        return (wings.right - wings.left) / 2
     }
 
     var body: some View {
-        let wing = Self.wing(running.count)
+        let wings = Self.widths(store)
         HStack(spacing: 0) {
-            if wing > 0 {
+            if wings.left > 0 {
                 HStack(spacing: -3) {
                     ForEach(running.prefix(3)) { agent in
                         AgentMark(provider: agent.provider, size: 20)
@@ -189,10 +208,10 @@ struct ClosedWings: View {
                     }
                 }
                 .padding(.leading, 14)
-                .frame(width: wing, alignment: .leading)
+                .frame(width: wings.left, alignment: .leading)
             }
             Color.clear.frame(width: geometry.notchWidth)
-            if wing > 0 {
+            if wings.right > 0 {
                 HStack(spacing: 6) {
                     if let top = store.rollup {
                         if top.count > 1 {
@@ -204,7 +223,7 @@ struct ClosedWings: View {
                     }
                 }
                 .padding(.trailing, 14)
-                .frame(width: wing, alignment: .trailing)
+                .frame(width: wings.right, alignment: .trailing)
             }
         }
         .frame(height: geometry.height)
