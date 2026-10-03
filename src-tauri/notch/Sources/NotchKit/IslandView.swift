@@ -163,7 +163,7 @@ struct ClosedWings: View {
     static func wing(_ count: Int) -> CGFloat {
         guard count > 0 else { return 0 }
         let tiles = min(count, 3) + (count > 3 ? 1 : 0)
-        let left = 14 + 24 + CGFloat(max(0, tiles - 1)) * 17 + 8
+        let left = 14 + 20 + CGFloat(max(0, tiles - 1)) * 17 + 8
         let right: CGFloat = 14 + 16 + 6 + 10 + 8
         return max(48, left, right)
     }
@@ -176,18 +176,16 @@ struct ClosedWings: View {
         let wing = Self.wing(running.count)
         HStack(spacing: 0) {
             if wing > 0 {
-                HStack(spacing: -7) {
+                HStack(spacing: -3) {
                     ForEach(running.prefix(3)) { agent in
-                        MarkTile(provider: agent.provider)
+                        AgentMark(provider: agent.provider, size: 20)
                             .matchedGeometryEffect(id: agent.id, in: marks)
                     }
                     if running.count > 3 {
                         Text("+\(running.count - 3)")
-                            .font(Theme.ui(10, .semibold))
-                            .foregroundStyle(Theme.ink)
-                            .frame(width: 24, height: 24)
-                            .background(Circle().fill(Color(hex: "#1f1d26")))
-                            .overlay(Circle().stroke(Color.black, lineWidth: 2))
+                            .font(Theme.ui(10.5, .semibold))
+                            .foregroundStyle(Theme.inkDim)
+                            .padding(.leading, 9)
                     }
                 }
                 .padding(.leading, 14)
@@ -225,7 +223,7 @@ struct FinishedWings: View {
         HStack(spacing: 0) {
             HStack(spacing: 8) {
                 if let agent {
-                    MarkTile(provider: agent.provider).matchedGeometryEffect(id: agent.id, in: marks)
+                    AgentMark(provider: agent.provider, size: 20).matchedGeometryEffect(id: agent.id, in: marks)
                 }
                 Text("Finished").font(Theme.ui(12.5, .semibold)).foregroundStyle(Theme.ink)
             }
@@ -271,7 +269,7 @@ struct AskHeader: View {
     var body: some View {
         HeaderBand(geometry: geometry) {
             if let agent {
-                MarkTile(provider: agent.provider, size: 26, ringed: false).matchedGeometryEffect(id: agent.id, in: marks)
+                AgentMark(provider: agent.provider, size: 20).matchedGeometryEffect(id: agent.id, in: marks)
             }
             Text(agent.map { agentName($0.provider) } ?? "").font(Theme.ui(13, .semibold)).foregroundStyle(Theme.ink)
         } trailing: {

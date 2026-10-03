@@ -79,20 +79,6 @@ private struct TwinkleGrid: View {
     }
 }
 
-/// An agent's mark in a round tile, ringed in black so overlapping tiles read apart.
-struct MarkTile: View {
-    let provider: String
-    var size: CGFloat = 24
-    var ringed = true
-
-    var body: some View {
-        AgentMark(provider: provider, size: size * 0.58)
-            .frame(width: size, height: size)
-            .background(Circle().fill(ringed ? Color(hex: "#1f1d26") : Color.white.opacity(0.08)))
-            .overlay(Circle().stroke(Color.black, lineWidth: ringed ? 2 : 0))
-    }
-}
-
 struct CapsuleButton: View {
     let title: String
     var primary = false

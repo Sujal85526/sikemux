@@ -106,15 +106,10 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 .wing.r { justify-content: flex-end; padding-right: 14px; gap: 6px; }
 .gap { height: 100%; flex: 0 0 auto; }
 .stack { display: flex; }
-.tile {
-    width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
-    background: #1f1d26; box-shadow: 0 0 0 2px #000;
-}
-.tile + .tile { margin-left: -7px; }
-.tile svg { width: 14px; height: 14px; }
-.island.plain .tile { width: 18px; height: 18px; box-shadow: 0 0 0 1.5px #000; }
-.island.plain .tile + .tile { margin-left: -5px; }
-.island.plain .tile svg { width: 11px; height: 11px; }
+.tile { width: 20px; height: 20px; display: grid; place-items: center; }
+.tile + .tile { margin-left: -3px; }
+.tile svg { width: 20px; height: 20px; }
+.island.plain .tile, .island.plain .tile svg { width: 18px; height: 18px; }
 .island.plain .wing.l { padding-left: 10px; }
 .count { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink); }
 .inline-text { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -141,8 +136,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 .head .side.r { justify-content: flex-end; }
 .lead { font-size: 13px; font-weight: 600; letter-spacing: -0.005em; }
 .trail { font-size: 12px; font-weight: 600; }
-.tile.lg { width: 26px; height: 26px; box-shadow: none; background: rgba(255, 255, 255, 0.08); }
-.tile.lg svg { width: 15px; height: 15px; }
+
 
 .chip {
     height: 26px; padding: 0 11px; border-radius: 13px; display: inline-flex; align-items: center; gap: 6px;
@@ -411,7 +405,7 @@ code { font-family: var(--mono); font-size: 11px; color: var(--ink); }
             Centre on the gap between the two areas, not on the screen. No notch: height = menu bar (<code>frame.maxY − visibleFrame.maxY</code>).</td></tr>
         <tr><td>Shape</td><td>Top corners curve outward into the menu bar, bottom corners inward. Radii (top / bottom): closed 6 / 14, peek 14 / 22, open 19 / 24.
             Both radii animate with the size.</td></tr>
-        <tr><td>Closed wings</td><td>Each wing is as wide as the wider of the two, minimum 48. Mark tiles 24 pt with a 2 pt black ring, overlapping by 7.</td></tr>
+        <tr><td>Closed wings</td><td>Each wing is as wide as the wider of the two, minimum 48. Bare agent marks at 20 pt, as the project tree draws them, 3 pt apart from overlapping.</td></tr>
         <tr><td>Open</td><td>680 wide, height follows content up to 400, then the list scrolls. Padding: top-radius horizontally, then 12. Rows are one line, 36 tall, radius 12: mark, task, project, time, state.</td></tr>
         <tr><td>Springs</td><td>Open <code>spring(response: 0.42, dampingFraction: 0.8)</code>. Close <code>spring(response: 0.45, dampingFraction: 1.0)</code>.
             Hover (shadow) <code>interactiveSpring(response: 0.38, dampingFraction: 0.8)</code>.</td></tr>
