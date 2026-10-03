@@ -49,6 +49,7 @@ const capability = {
     "dialog:default",
     "notification:default",
     "process:allow-restart",
+    "process:allow-exit",
     "core:window:allow-show",
     "core:window:allow-unminimize",
     "core:window:allow-set-focus",
