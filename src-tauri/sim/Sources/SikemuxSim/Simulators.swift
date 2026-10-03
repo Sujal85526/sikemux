@@ -12,6 +12,7 @@ struct SimulatorError: Error, CustomStringConvertible {
 @MainActor
 final class Simulators {
     private static let bootDeadline: TimeInterval = 120
+    private static let keystrokeGap: TimeInterval = 0.025
 
     private let control: SimulatorControlBootstrap
     private let logger: any ControlCoreLogger
@@ -97,7 +98,10 @@ final class Simulators {
             return [:]
         case let .type(_, text):
             let strokes = try Keyboard.strokes(for: text).get()
-            try await send(.composite(strokes.flatMap(Self.events)), to: simulator)
+            // A text field drops keys that arrive all at once, so each waits a moment for the last.
+            let keys = strokes.map { SimulatorHIDEvent.composite(Self.events(for: $0)) }
+            let paced = keys.flatMap { [$0, SimulatorHIDEvent.delay(Self.keystrokeGap)] }
+            try await send(.composite(paced), to: simulator)
             return [:]
         case let .button(_, button):
             try await send(.shortButtonPress(Self.hidButton(button)), to: simulator)
