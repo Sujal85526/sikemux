@@ -79,6 +79,7 @@ final class IslandModel {
     var isOpen: Bool { mode == .open || mode == .drop }
 
     func set(_ mode: Mode, animation: Animation? = nil) {
+        Debug.log("set \(mode)")
         withAnimation(animation ?? (mode == .closed ? Motion.close : Motion.open)) {
             self.mode = mode
             if mode != .open { menu = nil }
@@ -102,6 +103,7 @@ final class IslandModel {
     }
 
     func pointer(entered: Bool, opensOnHover: Bool) {
+        Debug.log("pointer entered \(entered) hovering \(hovering) mode \(mode)")
         hoverTimer?.cancel()
         if entered {
             if !hovering, mode == .closed { Haptics.tick() }

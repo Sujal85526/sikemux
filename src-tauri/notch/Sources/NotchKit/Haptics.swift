@@ -7,6 +7,16 @@ import IOKit
 /// asks the window server for the trackpad's pattern 15. AppKit only asks for
 /// the app in front, which the island never is, so it asks the window server
 /// itself, then the trackpad's actuator directly, then AppKit.
+/// Writes to the helper's log while a `notch.debug` file sits beside its lock, for chasing hover and haptics.
+enum Debug {
+    static var on = false
+
+    static func log(_ message: @autoclosure () -> String) {
+        guard on else { return }
+        FileHandle.standardError.write(Data("\(Date().timeIntervalSince1970) \(message())\n".utf8))
+    }
+}
+
 enum Haptics {
     static var enabled = true
 
@@ -15,7 +25,9 @@ enum Haptics {
 
     static func tick() {
         guard enabled else { return }
-        if WindowServer.shared.tick() || Actuators.shared.tick() { return }
+        let server = WindowServer.shared.tick()
+        Debug.log("tick window server \(server)")
+        if server || Actuators.shared.tick() { return }
         NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
     }
 }

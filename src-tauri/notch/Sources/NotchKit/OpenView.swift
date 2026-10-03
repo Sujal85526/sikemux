@@ -194,8 +194,10 @@ struct RowLine: View {
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
             ProjectLabel(project: agent.project).frame(maxWidth: 150, alignment: .trailing).fixedSize()
-            SinceText(state: agent.state, since: store.since[agent.id]).frame(minWidth: 44, alignment: .trailing)
-            StateMark(state: agent.state)
+            if agent.state != .idle {
+                SinceText(state: agent.state, since: store.since[agent.id]).frame(minWidth: 44, alignment: .trailing)
+                StateMark(state: agent.state)
+            }
         }
     }
 }
