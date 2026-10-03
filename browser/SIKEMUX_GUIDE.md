@@ -540,8 +540,9 @@ on the newest iOS. A cold boot can take a minute; when it runs past the reply
 time the boot carries on, so call `sim_attach` again. Each agent attaches
 its own device, and every other `sim_*` tool acts on that one.
 
-`sim_state` reads the screen: the frontmost `app` (`Home Screen` when no app
-is open) and numbered `elements`, each with its role, label, value, identifier
+`sim_state` reads the screen: the frontmost `app`, which is `Home Screen` when
+its icons show and `System` for what iOS draws over an app, such as a
+permission alert, Control Center or the lock screen, and numbered `elements`, each with its role, label, value, identifier
 and centre point, as in `3 Button "General" at (201, 418)`. Coordinates are
 device points, the same for every tool. Element numbers belong to the latest
 read only; every tool that acts returns a fresh read, so use its numbers.

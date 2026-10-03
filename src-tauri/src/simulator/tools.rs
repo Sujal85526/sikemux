@@ -396,7 +396,7 @@ fn settled_state(
     manager.remember_elements(agent_id, elements);
     let mut state = json!({
         "device": format!("{} ({})", device.name, device.os),
-        "app": if app.is_empty() { "Home Screen".to_owned() } else { app },
+        "app": app,
         "elements": lines,
     });
     if let Some((width, height)) = device.screen {
@@ -405,11 +405,16 @@ fn settled_state(
     Ok(state)
 }
 
+/// What iOS itself draws, rather than an app, is the home screen when its app icons are
+/// showing, and otherwise an alert, Control Center, the lock screen or a launch screen.
+const HOME_SCREEN: &str = "Home Screen";
+const SYSTEM: &str = "System";
+
 /// An app on its way in shows a blank launch screen that no app owns yet, so
 /// nothing but the status bar can be read.
 pub(super) fn launching(screen: &Screen) -> bool {
     let (app, elements) = screen;
-    app.is_empty()
+    app == SYSTEM
         && elements
             .iter()
             .all(|element| element.center.1 < STATUS_BAR_HEIGHT)
@@ -419,7 +424,11 @@ pub(super) fn launching(screen: &Screen) -> bool {
 pub(super) fn elements_from(reply: &Value, screen: Option<(f64, f64)>) -> (String, Vec<Element>) {
     let mut app = String::new();
     let mut elements = Vec::new();
+    let mut app_icons = false;
     for value in reply["elements"].as_array().into_iter().flatten() {
+        app_icons |= value["traits"]
+            .as_array()
+            .is_some_and(|traits| traits.iter().any(|trait_| trait_ == "LaunchIcon"));
         let text = |key: &str| {
             value
                 .get(key)
@@ -472,6 +481,9 @@ pub(super) fn elements_from(reply: &Value, screen: Option<(f64, f64)>) -> (Strin
                     || center_y > screen_height
             }),
         });
+    }
+    if app.is_empty() {
+        app = if app_icons { HOME_SCREEN } else { SYSTEM }.to_owned();
     }
     (app, elements)
 }

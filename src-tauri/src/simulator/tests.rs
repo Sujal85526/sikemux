@@ -181,7 +181,7 @@ mod tools {
 
     fn home_screen() -> serde_json::Value {
         let element = |kind: &str, label: &str, x: f64, y: f64| {
-            json!({ "type": kind, "AXLabel": label, "AXValue": "", "AXUniqueId": label, "enabled": true,
+            json!({ "type": kind, "AXLabel": label, "AXValue": "", "AXUniqueId": label, "enabled": true, "traits": ["LaunchIcon"],
                     "frame": { "x": x, "y": y, "width": 68, "height": 90 } })
         };
         json!({ "elements": [
@@ -230,7 +230,7 @@ mod tools {
     #[test]
     fn numbers_the_elements_a_person_could_act_on() {
         let (app, elements) = elements_from(&home_screen(), Some((402.0, 874.0)));
-        assert_eq!(app, "");
+        assert_eq!(app, "Home Screen");
         assert_eq!(
             element_lines(&elements),
             vec![
@@ -254,6 +254,22 @@ mod tools {
             .unwrap_err()
             .contains("sim_state"));
         assert!(tap_point(&elements, None, Some(3.0), None).is_err());
+    }
+
+    #[test]
+    fn an_alert_ios_draws_is_the_system_not_the_home_screen() {
+        let alert = json!({ "elements": [
+            { "type": "Application", "AXLabel": " ", "frame": { "x": 0, "y": 0, "width": 402, "height": 874 } },
+            { "type": "Button", "AXLabel": "Allow Once", "traits": [], "frame": { "x": 56, "y": 458, "width": 290, "height": 48 } },
+        ]});
+        let (app, elements) = elements_from(&alert, Some((402.0, 874.0)));
+        assert_eq!(app, "System");
+        assert_eq!(
+            element_lines(&elements),
+            vec!["0 Button \"Allow Once\" at (201, 482)"]
+        );
+        let maps = json!({ "elements": [{ "type": "Application", "AXLabel": "Maps", "frame": { "x": 0, "y": 0, "width": 402, "height": 874 } }] });
+        assert_eq!(elements_from(&maps, None).0, "Maps");
     }
 
     #[test]
