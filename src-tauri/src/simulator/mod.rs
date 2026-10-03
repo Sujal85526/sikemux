@@ -41,7 +41,8 @@ impl Helper {
 /// the agent's element numbers refer to.
 struct Attachment {
     device: Device,
-    elements: Vec<Element>,
+    /// The latest read the agent was shown: the frontmost app and its elements.
+    read: Option<(String, Vec<Element>)>,
 }
 
 pub struct SimulatorManager {
@@ -125,13 +126,8 @@ impl SimulatorManager {
     }
 
     fn attach(&self, agent_id: &str, device: Device) {
-        self.lock_attachments().insert(
-            agent_id.to_owned(),
-            Attachment {
-                device,
-                elements: Vec::new(),
-            },
-        );
+        self.lock_attachments()
+            .insert(agent_id.to_owned(), Attachment { device, read: None });
     }
 
     fn attached(&self, agent_id: &str) -> Option<Device> {
@@ -140,16 +136,19 @@ impl SimulatorManager {
             .map(|attachment| attachment.device.clone())
     }
 
-    fn remember_elements(&self, agent_id: &str, elements: Vec<Element>) {
+    fn remember_read(&self, agent_id: &str, app: String, elements: Vec<Element>) {
         if let Some(attachment) = self.lock_attachments().get_mut(agent_id) {
-            attachment.elements = elements;
+            attachment.read = Some((app, elements));
         }
     }
 
+    fn last_read(&self, agent_id: &str) -> Option<(String, Vec<Element>)> {
+        self.lock_attachments().get(agent_id)?.read.clone()
+    }
+
     fn elements(&self, agent_id: &str) -> Vec<Element> {
-        self.lock_attachments()
-            .get(agent_id)
-            .map(|attachment| attachment.elements.clone())
+        self.last_read(agent_id)
+            .map(|(_, elements)| elements)
             .unwrap_or_default()
     }
 

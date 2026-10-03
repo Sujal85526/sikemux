@@ -749,6 +749,13 @@
           "type": "number",
           "minimum": 0,
           "maximum": 10
+        },
+        "report": {
+          "enum": [
+            "changes",
+            "outcome",
+            "full"
+          ]
         }
       },
       "required": []
@@ -779,6 +786,13 @@
           "type": "number",
           "minimum": 0.05,
           "maximum": 5
+        },
+        "report": {
+          "enum": [
+            "changes",
+            "outcome",
+            "full"
+          ]
         }
       },
       "required": [
@@ -797,6 +811,13 @@
         "text": {
           "type": "string",
           "maxLength": 2000
+        },
+        "report": {
+          "enum": [
+            "changes",
+            "outcome",
+            "full"
+          ]
         }
       },
       "required": [
@@ -818,6 +839,13 @@
             "volumeUp",
             "volumeDown",
             "applePay"
+          ]
+        },
+        "report": {
+          "enum": [
+            "changes",
+            "outcome",
+            "full"
           ]
         }
       },
@@ -859,6 +887,13 @@
             "type": "string",
             "maxLength": 4096
           }
+        },
+        "report": {
+          "enum": [
+            "changes",
+            "outcome",
+            "full"
+          ]
         }
       },
       "required": [
@@ -875,6 +910,13 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 255
+        },
+        "report": {
+          "enum": [
+            "changes",
+            "outcome",
+            "full"
+          ]
         }
       },
       "required": [
@@ -907,6 +949,13 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 8192
+        },
+        "report": {
+          "enum": [
+            "changes",
+            "outcome",
+            "full"
+          ]
         }
       },
       "required": [
@@ -946,6 +995,13 @@
           "type": "number",
           "minimum": 0.05,
           "maximum": 10
+        },
+        "report": {
+          "enum": [
+            "changes",
+            "outcome",
+            "full"
+          ]
         }
       },
       "required": [
@@ -995,6 +1051,13 @@
           "type": "number",
           "minimum": 0.05,
           "maximum": 10
+        },
+        "report": {
+          "enum": [
+            "changes",
+            "outcome",
+            "full"
+          ]
         }
       },
       "required": [

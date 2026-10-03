@@ -175,8 +175,8 @@ mod tools {
 
     use super::helper;
     use crate::simulator::tools::{
-        choose_device, edge_warning, element_lines, elements_from, inspect, launching, run,
-        tap_point, Device,
+        changes, choose_device, edge_warning, element_lines, elements_from, inspect, launching,
+        run, tap_point, Device,
     };
 
     fn device(name: &str, os: &str, booted: bool) -> Device {
@@ -297,6 +297,34 @@ mod tools {
                 "1 StaticText \"Say \\\"hi\\\" \\\\ bye\" at (50, 110)",
             ]
         );
+    }
+
+    #[test]
+    fn tells_what_appeared_changed_and_went_away() {
+        let (_, before) = elements_from(&home_screen(), Some((402.0, 874.0)));
+        assert_eq!(changes(&before, &before), (vec![], vec![]));
+
+        let mut after = before.clone();
+        after[2].value = "dogs".into();
+        after.remove(1);
+        after.push(crate::simulator::tools::Element {
+            role: "Button".into(),
+            label: "Done".into(),
+            value: String::new(),
+            identifier: String::new(),
+            enabled: true,
+            center: (50.0, 50.0),
+            offscreen: false,
+        });
+        let (changed, removed) = changes(&before, &after);
+        assert_eq!(
+            changed,
+            vec![
+                "1 TextField \"Search\" value=\"dogs\" [disabled] at (60, 25)",
+                "3 Button \"Done\" at (50, 50)",
+            ]
+        );
+        assert_eq!(removed, vec!["Button \"Safari\" at (58, 745)"]);
     }
 
     #[test]
@@ -432,7 +460,21 @@ done
             json!("0 Button \"Settings\" at (340, 434)")
         );
 
-        call("sim.tap", json!({ "index": 0 })).expect("tap");
+        assert_eq!(
+            call("sim.tap", json!({ "index": 0 })).expect("tap")["changes"],
+            json!("none")
+        );
+        let full = call("sim.tap", json!({ "index": 0, "report": "full" })).expect("tap");
+        assert_eq!(
+            full["elements"][0],
+            json!("0 Button \"Settings\" at (340, 434)")
+        );
+        let outcome = call("sim.tap", json!({ "index": 0, "report": "outcome" })).expect("tap");
+        assert!(
+            outcome.get("elements").is_none() && outcome.get("changes").is_none(),
+            "{outcome}"
+        );
+        assert!(call("sim.tap", json!({ "index": 0, "report": "everything" })).is_err());
         let devices = call("sim.devices", json!({})).expect("devices");
         assert_eq!(devices["devices"][0]["attached"], json!(true));
         assert_eq!(
@@ -474,10 +516,12 @@ done
                 .unwrap_or_else(|error| panic!("{method}: {error}"))
         };
         let shows = |state: &serde_json::Value, text: &str| {
-            state["elements"]
+            let lines = state["elements"]
                 .as_array()
-                .unwrap()
-                .iter()
+                .or(state["changes"]["elements"].as_array());
+            lines
+                .into_iter()
+                .flatten()
                 .any(|line| line.as_str().unwrap().contains(text))
         };
         let device = std::env::var("SIKEMUX_SIM_DEVICE").ok();
@@ -501,7 +545,7 @@ done
         let typed = call("sim.type", json!({ "text": "Hi there 42" }));
         assert!(shows(&typed, "Echo: Hi there 42"), "{typed}");
 
-        let zoom = typed["elements"]
+        let zoom = call("sim.state", json!({}))["elements"]
             .as_array()
             .unwrap()
             .iter()

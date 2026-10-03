@@ -548,7 +548,15 @@ its icons show and `System` for what iOS draws over an app, such as a
 permission alert, Control Center or the lock screen, and numbered `elements`, each with its role, label, value, identifier
 and centre point, as in `3 Button "General" at (201, 418)`. Coordinates are
 device points, the same for every tool. Element numbers belong to the latest
-read only; every tool that acts returns a fresh read, so use its numbers.
+read only.
+
+Tools that act report on the screen afterwards, and `report` chooses how much,
+as for the browser. `"changes"`, the default, returns the app and `changes`:
+`elements` lists what appeared or changed, numbered as the screen now is, and
+`removed` what went away; `changes: "none"` means nothing moved. A different
+app in front, or no earlier read, gets the whole screen instead. `"outcome"`
+returns only the device and app, for a run of steps you check afterwards, and
+`"full"` the whole screen, as `sim_state` does.
 
 `sim_tap` takes an element `index`, a `label`, or `x` and `y`. A `label`
 matches the accessibility label or identifier, exact matches first, and fails

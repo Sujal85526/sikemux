@@ -117,11 +117,11 @@ pub(super) fn run(
             }
             manager.attach(agent_id, device.clone());
             let _ = manager.logs.follow(&device.udid);
-            let mut state = settled_state(manager, agent_id, None)?;
+            let mut state = settled_state(manager, agent_id, None, Report::Full)?;
             state["shown"] = SHOWN_ON_DESK.into();
             Ok(state)
         }
-        "sim.state" => settled_state(manager, agent_id, None),
+        "sim.state" => settled_state(manager, agent_id, None, Report::Full),
         "sim.tap" => {
             let device = attached(manager, agent_id)?;
             let before = read_screen(manager, &device)?;
@@ -146,7 +146,7 @@ pub(super) fn run(
                 }
                 manager.request("tap", fields, ACTION_TIMEOUT)?;
             }
-            settled_state(manager, agent_id, Some(before))
+            settled_state(manager, agent_id, Some(before), report(params)?)
         }
         "sim.swipe" => {
             let device = attached(manager, agent_id)?;
@@ -164,7 +164,7 @@ pub(super) fn run(
                 fields["duration"] = duration.into();
             }
             manager.request("swipe", fields, ACTION_TIMEOUT)?;
-            let mut state = settled_state(manager, agent_id, Some(before))?;
+            let mut state = settled_state(manager, agent_id, Some(before), report(params)?)?;
             if let Some(warning) = edge_warning(device.screen, from) {
                 state["warning"] = warning.into();
             }
@@ -179,7 +179,7 @@ pub(super) fn run(
                 json!({ "udid": device.udid, "text": typed }),
                 ACTION_TIMEOUT,
             )?;
-            settled_state(manager, agent_id, Some(before))
+            settled_state(manager, agent_id, Some(before), report(params)?)
         }
         "sim.button" => {
             let device = attached(manager, agent_id)?;
@@ -190,7 +190,7 @@ pub(super) fn run(
                 json!({ "udid": device.udid, "button": button }),
                 ACTION_TIMEOUT,
             )?;
-            settled_state(manager, agent_id, Some(before))
+            settled_state(manager, agent_id, Some(before), report(params)?)
         }
         "sim.screenshot" => {
             let device = attached(manager, agent_id)?;
@@ -227,7 +227,7 @@ pub(super) fn run(
             if let Some(pid) = launched["pid"].as_i64() {
                 wait_for_front(manager, &device, pid);
             }
-            let mut state = settled_state(manager, agent_id, Some(before))?;
+            let mut state = settled_state(manager, agent_id, Some(before), report(params)?)?;
             state["pid"] = launched["pid"].clone();
             Ok(state)
         }
@@ -240,7 +240,7 @@ pub(super) fn run(
                 json!({ "udid": device.udid, "bundleId": bundle }),
                 ACTION_TIMEOUT,
             )?;
-            settled_state(manager, agent_id, Some(before))
+            settled_state(manager, agent_id, Some(before), report(params)?)
         }
         "sim.install" => {
             let device = attached(manager, agent_id)?;
@@ -263,7 +263,7 @@ pub(super) fn run(
                 json!({ "udid": device.udid, "url": url }),
                 ACTION_TIMEOUT,
             )?;
-            settled_state(manager, agent_id, Some(before))
+            settled_state(manager, agent_id, Some(before), report(params)?)
         }
         "sim.touchPath" => {
             let device = attached(manager, agent_id)?;
@@ -281,7 +281,7 @@ pub(super) fn run(
                     )
                 },
             )?;
-            settled_state(manager, agent_id, Some(before))
+            settled_state(manager, agent_id, Some(before), report(params)?)
         }
         "sim.touch2Path" => {
             let device = attached(manager, agent_id)?;
@@ -299,7 +299,7 @@ pub(super) fn run(
                     )
                 },
             )?;
-            settled_state(manager, agent_id, Some(before))
+            settled_state(manager, agent_id, Some(before), report(params)?)
         }
         "sim.detach" => {
             let device = manager.detach(agent_id).ok_or("no simulator is attached")?;
@@ -480,6 +480,7 @@ fn settled_state(
     manager: &SimulatorManager,
     agent_id: &str,
     before: Option<Screen>,
+    report: Report,
 ) -> Result<Value, String> {
     let device = attached(manager, agent_id)?;
     let mut latest = read_screen(manager, &device)?;
@@ -502,17 +503,88 @@ fn settled_state(
         }
     }
     let (app, elements) = latest;
-    let lines = element_lines(&elements);
-    manager.remember_elements(agent_id, elements);
+    let previous = manager.last_read(agent_id);
     let mut state = json!({
         "device": format!("{} ({})", device.name, device.os),
         "app": app,
-        "elements": lines,
     });
+    match (report, previous) {
+        (Report::Outcome, _) => {}
+        (Report::Changes, Some((previous_app, previous))) if previous_app == app => {
+            let (changed, removed) = changes(&previous, &elements);
+            state["changes"] = if changed.is_empty() && removed.is_empty() {
+                "none".into()
+            } else {
+                json!({ "elements": changed, "removed": removed })
+            };
+        }
+        _ => state["elements"] = element_lines(&elements).into(),
+    }
     if let Some((width, height)) = device.screen {
         state["screen"] = json!({ "width": width, "height": height });
     }
+    manager.remember_read(agent_id, app, elements);
     Ok(state)
+}
+
+/// How much an acting tool says about the screen afterwards, as the browser's tools do.
+#[derive(Clone, Copy)]
+pub(super) enum Report {
+    /// What appeared, changed or went away since the agent's last read of this app.
+    Changes,
+    /// Only the device and the frontmost app, for a run of steps checked afterwards.
+    Outcome,
+    Full,
+}
+
+fn report(params: &Value) -> Result<Report, String> {
+    match params.get("report").and_then(Value::as_str) {
+        None | Some("changes") => Ok(Report::Changes),
+        Some("outcome") => Ok(Report::Outcome),
+        Some("full") => Ok(Report::Full),
+        Some(other) => Err(format!(
+            "report must be changes, outcome or full, not {other}"
+        )),
+    }
+}
+
+/// The lines of elements that are new or changed, numbered as in `next`, and the
+/// lines of those that went away. An element keeps its identity by role, label
+/// and identifier, so one that moved or took a new value reads as changed.
+pub(super) fn changes(previous: &[Element], next: &[Element]) -> (Vec<String>, Vec<String>) {
+    let identity = |element: &Element| {
+        (
+            element.role.clone(),
+            element.label.clone(),
+            element.identifier.clone(),
+        )
+    };
+    let mut unmatched: Vec<Option<&Element>> = previous.iter().map(Some).collect();
+    let lines = element_lines(next);
+    let mut changed = Vec::new();
+    for (index, element) in next.iter().enumerate() {
+        let matched = unmatched
+            .iter_mut()
+            .find(|candidate| {
+                candidate.is_some_and(|candidate| identity(candidate) == identity(element))
+            })
+            .and_then(Option::take);
+        if matched != Some(element) {
+            if let Some(line) = lines.get(index) {
+                changed.push(line.clone());
+            }
+        }
+    }
+    let removed = unmatched
+        .into_iter()
+        .flatten()
+        .map(|element| {
+            let line = &element_lines(std::slice::from_ref(element))[0];
+            line.split_once(' ')
+                .map_or(line.clone(), |(_, rest)| rest.to_owned())
+        })
+        .collect();
+    (changed, removed)
 }
 
 /// What iOS itself draws, rather than an app, is the home screen when its app icons are
