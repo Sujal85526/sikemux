@@ -24,21 +24,35 @@ describe("clerkVerifier", () => {
   it("accepts a session token from the phone, which names no site", async () => {
     await expect(
       verifier.verify(await sessionToken("user_1")),
-    ).resolves.toEqual({ userId: "user_1", via: "session" });
-  });
-
-  it("accepts a session token from the web app", async () => {
-    const token = await sessionToken("user_1", { claims: { azp: APP_ORIGIN } });
-    await expect(verifier.verify(token)).resolves.toEqual({
+    ).resolves.toEqual({
       userId: "user_1",
       via: "session",
+      sessionId: "sess_test",
+      expiresAt: expect.any(Date),
     });
+  });
+
+  it("accepts a session token from the web app, and says which site", async () => {
+    const token = await sessionToken("user_1", { claims: { azp: APP_ORIGIN } });
+    await expect(verifier.verify(token)).resolves.toMatchObject({
+      userId: "user_1",
+      via: "session",
+      origin: APP_ORIGIN,
+    });
+  });
+
+  it("reads how long ago the first factor was verified", async () => {
+    const fresh = await sessionToken("user_1", { claims: { fva: [3, -1] } });
+    expect((await verifier.verify(fresh)).factorAgeMinutes).toBe(3);
+    const never = await sessionToken("user_1", { claims: { fva: [-1, -1] } });
+    expect((await verifier.verify(never)).factorAgeMinutes).toBeUndefined();
   });
 
   it("accepts the Mac app's OAuth token", async () => {
     await expect(verifier.verify(await macToken("user_1"))).resolves.toEqual({
       userId: "user_1",
       via: "mac",
+      expiresAt: expect.any(Date),
     });
   });
 

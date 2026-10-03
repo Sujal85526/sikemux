@@ -1,102 +1,47 @@
-import { generateKeyPairSync, sign, type KeyObject } from "node:crypto";
 import type { DeviceRegistration } from "@sikemux/protocol";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { openDatabase, type Database } from "../src/db.ts";
+import type { Database } from "../src/db.ts";
 import { registrationMessage } from "../src/devices/signature.ts";
 import { RateLimiter } from "../src/limits.ts";
-import { migrate, readMigrations } from "../src/migrations.ts";
-import { body, freshDatabase, log, testApp } from "./support.ts";
+import * as harness from "./accounts.ts";
+import {
+  caller,
+  migratedDatabase,
+  newDevice,
+  type TestDevice,
+} from "./accounts.ts";
+import { body, testApp } from "./support.ts";
 import { macToken, sessionToken } from "./tokens.ts";
-
-interface TestDevice {
-  key: string;
-  secret: KeyObject;
-}
-
-function newDevice(): TestDevice {
-  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
-  return {
-    key: publicKey
-      .export({ format: "der", type: "spki" })
-      .subarray(12)
-      .toString("hex"),
-    secret: privateKey,
-  };
-}
 
 let database: Database;
 let drop: () => Promise<void>;
 let app: ReturnType<typeof testApp>;
 
 beforeAll(async () => {
-  const fresh = await freshDatabase();
-  drop = fresh.drop;
-  database = openDatabase(fresh.url, log);
-  await migrate(
-    database.pool,
-    await readMigrations(new URL("../migrations", import.meta.url).pathname),
-    log,
-  );
+  ({ database, drop } = await migratedDatabase());
 });
 
 beforeEach(async () => {
-  await database.pool.query(
-    "truncate users, devices, challenges, audit cascade",
-  );
+  await harness.emptyTables(database);
   app = testApp(database);
 });
 
-afterAll(async () => {
-  await database.close();
-  await drop();
-});
+afterAll(() => drop());
 
-async function call(
-  path: string,
-  token: string,
-  init: { method?: string; json?: unknown } = {},
-) {
-  return app.request(path, {
-    method: init.method ?? "GET",
-    headers: {
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json",
-    },
-    ...(init.json === undefined ? {} : { body: JSON.stringify(init.json) }),
-  });
-}
+const call: ReturnType<typeof caller> = (...args) => caller(app)(...args);
+const challenge = (token: string) => harness.challenge(app, token);
 
-async function challenge(token: string) {
-  const response = await call("/v1/devices/challenge", token, {
-    method: "POST",
-  });
-  expect(response.status).toBe(200);
-  return (await body(response, "Challenge")).nonce;
-}
-
-async function registration(
+function registration(
   device: TestDevice,
   userId: string,
   token: string,
   fields: Partial<DeviceRegistration> = {},
-): Promise<DeviceRegistration> {
-  const nonce = fields.nonce ?? (await challenge(token));
-  const signature = sign(
-    null,
-    Buffer.from(registrationMessage(nonce, userId, device.key)),
-    device.secret,
-  ).toString("hex");
-  return {
-    key: device.key,
-    role: "host",
-    name: "Studio Mac",
-    platform: "macos",
+) {
+  return harness.registration(app, device, userId, token, {
     channel: "stable",
-    nonce,
-    signature,
     ...fields,
-  };
+  });
 }
 
 describe("registering a device", () => {
@@ -192,11 +137,10 @@ describe("registering a device", () => {
     const token = await macToken("user_a");
     const mac = newDevice();
     const nonce = await challenge(token);
-    const signature = sign(
-      null,
-      Buffer.from(registrationMessage(nonce, "user_b", mac.key)),
-      mac.secret,
-    ).toString("hex");
+    const signature = harness.signText(
+      mac,
+      registrationMessage(nonce, "user_b", mac.key),
+    );
     const response = await call("/v1/devices", token, {
       method: "POST",
       json: await registration(mac, "user_a", token, { nonce, signature }),

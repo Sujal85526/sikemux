@@ -13,7 +13,41 @@ type CreatedAt = ColumnType<Date, never, never>;
 
 /** The tables the API reads and writes. Each one arrives with the migration that creates it. */
 export interface Tables {
-  users: { id: string; created_at: CreatedAt };
+  users: {
+    id: string;
+    created_at: CreatedAt;
+    deleted_at: ColumnType<Date | null, never, Date | null>;
+    clerk_deleted_at: ColumnType<Date | null, never, Date | null>;
+    clerk_attempts: ColumnType<number, never, number>;
+    clerk_retry_at: ColumnType<Date | null, never, Date | null>;
+    purge_after: ColumnType<Date | null, never, Date | null>;
+    events_pruned_through: ColumnType<string, never, string | number>;
+  };
+  events: {
+    id: Generated<string>;
+    user_id: string;
+    type: string;
+    subject: string | null;
+    subject_role: string | null;
+    reason: string | null;
+    at: CreatedAt;
+  };
+  removed_devices: {
+    key: string;
+    user_id: string;
+    role: string;
+    reason: string;
+    acked_event_id: string | number;
+    clerk_session_id: string | null;
+    clerk_revoked_at: ColumnType<Date | null, never, Date | null>;
+    clerk_attempts: ColumnType<number, never, number>;
+    clerk_retry_at: ColumnType<
+      Date | null,
+      Date | null | undefined,
+      Date | null
+    >;
+    removed_at: CreatedAt;
+  };
   devices: {
     key: string;
     user_id: string;
@@ -23,7 +57,17 @@ export interface Tables {
     channel: string | null;
     created_at: CreatedAt;
     updated_at: ColumnType<Date, never, Date>;
-    last_seen_at: Date | null;
+    last_seen_at: ColumnType<Date | null, never, Date | null>;
+    acked_event_id: ColumnType<
+      string,
+      string | number | undefined,
+      string | number
+    >;
+    clerk_session_id: ColumnType<
+      string | null,
+      string | null | undefined,
+      string | null
+    >;
   };
   challenges: { nonce: string; user_id: string; expires_at: Date };
   updates: {
