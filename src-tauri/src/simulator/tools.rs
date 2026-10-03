@@ -26,6 +26,9 @@ const CHANGE_READS: usize = 5;
 /// A swipe that starts this close to an edge is sent as a system gesture, as the helper decides.
 const EDGE: f64 = 10.0;
 const MAX_ELEMENTS: usize = 200;
+/// An agent cannot see the person's screen, so attaching says where the device went.
+const SHOWN_ON_DESK: &str =
+    "live on your desk in Sikemux, beside the person, who sees what you do and can use it too";
 /// Tells the window an agent attached a simulator, so its desk can show it.
 pub const ATTACHED_EVENT: &str = "simulator-attached";
 
@@ -100,7 +103,9 @@ pub(super) fn run(
                 return Err(error);
             }
             manager.attach(agent_id, device);
-            settled_state(manager, agent_id, None)
+            let mut state = settled_state(manager, agent_id, None)?;
+            state["shown"] = SHOWN_ON_DESK.into();
+            Ok(state)
         }
         "sim.state" => settled_state(manager, agent_id, None),
         "sim.tap" => {

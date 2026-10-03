@@ -348,6 +348,10 @@ done
         let attached = call("sim.attach", json!({})).expect("attach");
         assert_eq!(attached["device"], json!("iPhone 17 (iOS 27.0)"));
         assert_eq!(attached["app"], json!("Home Screen"));
+        assert!(attached["shown"]
+            .as_str()
+            .unwrap()
+            .starts_with("live on your desk"));
         assert_eq!(
             attached["elements"][0],
             json!("0 Button \"Settings\" at (340, 434)")

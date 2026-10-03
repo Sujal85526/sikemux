@@ -161,6 +161,10 @@ fn the_simulator_tools_are_listed_only_where_they_work_and_stay_within_budget() 
         .offering(true)
         .instructions()
         .contains("sim_attach"));
+    assert!(Manifest::load()
+        .offering(true)
+        .instructions()
+        .contains("live on your desk"));
 
     let simulator: Vec<Value> = Manifest::load()
         .offering(true)
