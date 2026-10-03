@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import markWhite from "./mark-white.svg";
 
 function Stroke({
   size = 16,
@@ -24,19 +25,18 @@ function Stroke({
   );
 }
 
+// The brand mark is cropped to its edges; this keeps the margin the layout was drawn with.
+const markShareOfBox = 265 / 420;
+
 export function Logo({ size = 20 }: { size?: number }) {
   return (
-    <svg
+    <img
+      src={markWhite}
+      alt=""
       width={size}
       height={size}
-      viewBox="0 -30 420 420"
-      fill="currentColor"
-      aria-hidden="true"
-    >
-      <polygon points="257,72 331,29 331,114" />
-      <polygon points="98,199 172,241 98,284" />
-      <path d="M108 54C100 72 96 90 98 104C100 119 106 133 121 144C129 151 139 158 151 164L286 223C297 228 306 236 313 245C317 250 320 255 321 259C327 246 331 229 331 209C330 201 328 194 324 189C319 181 314 175 308 169C300 162 290 155 278 149L143 90C137 87 132 84 128 80C122 76 117 71 108 54Z" />
-    </svg>
+      style={{ padding: (size * (1 - markShareOfBox)) / 2, flex: "none" }}
+    />
   );
 }
 
