@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { REMOTE_STATUS_EVENT, type RemoteStatus } from "../api/remote";
 import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "../api/transport";
+import { useAccount } from "../account/account";
 import { DevicesPage, seenLabel } from "./DevicesPage";
 
 const CORE = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2";
@@ -24,12 +25,13 @@ function status(overrides: Partial<RemoteStatus> = {}): RemoteStatus {
 
 let transport: MemoryIpcTransport;
 
-const SIGNED_OUT = { signedIn: false, userId: null, email: null };
+const SIGNED_OUT = { signedIn: false, userId: null, email: null, name: null, picture: null };
 
 beforeEach(() => {
     transport = new MemoryIpcTransport();
     installIpcTransportForTests(transport);
     transport.register("account_status", () => SIGNED_OUT);
+    useAccount.setState({ account: null });
 });
 
 afterEach(() => {
@@ -122,7 +124,7 @@ describe("seenLabel", () => {
 
         await user.click(await screen.findByRole("button", { name: "Sign in" }));
         expect(await screen.findByText("Finish signing in in your browser")).toBeInTheDocument();
-        finish({ signedIn: true, userId: "user_2abc", email: "me@example.com" });
+        finish({ signedIn: true, userId: "user_2abc", email: "me@example.com", name: null, picture: null });
 
         expect(await screen.findByText("me@example.com")).toBeInTheDocument();
         await user.click(screen.getByRole("button", { name: "Sign out" }));

@@ -1,0 +1,23 @@
+import { create } from "zustand";
+import { accountApi, type AccountStatus } from "../api/account";
+
+export const useAccount = create<{ account: AccountStatus | null }>(() => ({ account: null }));
+
+export const setAccount = (account: AccountStatus): void => useAccount.setState({ account });
+
+/** Shows what is cached first, then asks for a newer name and picture if the cached ones are old. */
+export async function loadAccount(): Promise<void> {
+    const cached = await accountApi.status();
+    setAccount(cached);
+    if (cached.signedIn) setAccount(await accountApi.refreshProfile());
+}
+
+export function initials(name: string | null, email: string | null): string {
+    const words = (name ?? "").trim().split(/\s+/).filter(Boolean);
+    if (words.length > 0) {
+        const first = words[0] ?? "";
+        const last = words.length > 1 ? (words[words.length - 1] ?? "") : "";
+        return (Array.from(first)[0] ?? "").concat(Array.from(last)[0] ?? "").toLocaleUpperCase();
+    }
+    return (Array.from((email ?? "").trim())[0] ?? "").toLocaleUpperCase();
+}

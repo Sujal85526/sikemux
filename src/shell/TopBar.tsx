@@ -19,6 +19,7 @@ import { RollingText } from "../ui/RollingText";
 import { remoteRepoR } from "../codehost/project";
 import { codeHost } from "../codehost/registry";
 import { PortsChip } from "../ports/PortsChip";
+import { AccountButton } from "../account/AccountButton";
 
 const time2 = (n: number) => String(n).padStart(2, "0");
 
@@ -204,6 +205,7 @@ export const TopBar = memo(function TopBar() {
                         </button>
                     </Tooltip>
                 </div>
+                <AccountButton />
             </div>
         </header>
     );

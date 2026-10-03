@@ -1304,7 +1304,9 @@ textarea,
         .chat-picker-trigger,
         .chat-composer-bar .yolo-toggle,
         .chat-project-strip .worktree-toggle,
-        .agent-surface-header button
+        .agent-surface-header button,
+        .tb-account,
+        .tb-account-face
     ) {
     border-radius: var(--radius-full) !important;
 }

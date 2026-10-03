@@ -262,6 +262,42 @@
     color: var(--acc);
 }
 
+.tb-account {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    color: var(--text-tertiary);
+    user-select: none;
+    -webkit-user-select: none;
+    transition:
+        color 0.12s,
+        background 0.12s;
+}
+.tb-account:hover {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+}
+.tb-account-face {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    object-fit: cover;
+    box-shadow: 0 0 0 1px var(--border);
+}
+.tb-account-initials {
+    background: var(--surface-raised);
+    color: var(--text-secondary);
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 0.02em;
+}
+
 .side-rail {
     display: flex;
     flex-direction: column;

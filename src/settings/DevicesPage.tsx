@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { accountApi, type AccountStatus } from "../api/account";
+import { accountApi } from "../api/account";
+import { loadAccount, setAccount, useAccount } from "../account/account";
 import { remoteApi, shortKey, spacedCode, type DeviceAccess, type PairedDevice, type PendingDevice, type RemoteStatus } from "../api/remote";
 import { reportError } from "../state/toast";
 import { Dropdown } from "../ui/Dropdown";
@@ -170,17 +171,10 @@ export function DevicesPage() {
 }
 
 function AccountSection() {
-    const [account, setAccount] = useState<AccountStatus | null>(null);
+    const account = useAccount((s) => s.account);
     const [waiting, setWaiting] = useState(false);
     useEffect(() => {
-        let live = true;
-        accountApi
-            .status()
-            .then((current) => live && setAccount(current))
-            .catch(reportError("Account"));
-        return () => {
-            live = false;
-        };
+        loadAccount().catch(reportError("Account"));
     }, []);
 
     const signIn = async () => {
