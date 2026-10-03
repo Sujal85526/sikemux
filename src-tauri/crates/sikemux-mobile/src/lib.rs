@@ -223,6 +223,14 @@ fn sign_live(key: &SecretKey, nonce: &str) -> Result<String, MobileError> {
     Ok(hex::encode(key.sign(message.as_bytes()).to_bytes()))
 }
 
+fn sign_push(key: &SecretKey, nonce: &str, token_sha256: &str) -> Result<String, MobileError> {
+    sikemux_core::accounts::check_live(nonce).map_err(invalid)?;
+    sikemux_core::accounts::check_live(token_sha256)
+        .map_err(|_| invalid("the token's hash is 64 lowercase hex characters"))?;
+    let message = format!("sikemux-push|{nonce}|{}|{token_sha256}", key.public());
+    Ok(hex::encode(key.sign(message.as_bytes()).to_bytes()))
+}
+
 fn core_addr(core: &str, relays: &[Relay]) -> Result<EndpointAddr, MobileError> {
     let addr = EndpointAddr::new(core.parse().map_err(invalid)?);
     Ok(
@@ -277,6 +285,13 @@ impl Device {
     /// server's live connection, for that connection's challenge `nonce`.
     pub fn sign_live(&self, nonce: String) -> Result<String, MobileError> {
         sign_live(&self.key, &nonce)
+    }
+
+    /// This phone's signature, in hex, that sends its notifications to the push
+    /// token whose SHA-256 is `token_sha256`, for the accounts server's
+    /// challenge `nonce`.
+    pub fn sign_push(&self, nonce: String, token_sha256: String) -> Result<String, MobileError> {
+        sign_push(&self.key, &nonce, &token_sha256)
     }
 
     /// Pairs with the host whose key is `core`, waiting while the person
@@ -815,6 +830,27 @@ mod tests {
         );
         assert!(sign_live(&key, "not a challenge").is_err());
         assert!(sign_live(&key, &text("nonce").to_uppercase()).is_err());
+    }
+
+    #[test]
+    fn push_tokens_sign_the_text_the_server_checks() {
+        let vector: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../server/protocol/vectors/push-token.json"
+        ))
+        .expect("the vector is JSON");
+        let text = |name: &str| vector[name].as_str().expect("a string").to_owned();
+        let bytes: [u8; 32] = hex::decode(text("secretKey"))
+            .expect("hex")
+            .try_into()
+            .expect("32 bytes");
+        let key = SecretKey::from_bytes(&bytes);
+        assert_eq!(key.public().to_string(), text("key"));
+        assert_eq!(
+            sign_push(&key, &text("nonce"), &text("tokenSha256")).expect("signs"),
+            text("signature")
+        );
+        assert!(sign_push(&key, "not a challenge", &text("tokenSha256")).is_err());
+        assert!(sign_push(&key, &text("nonce"), &text("token")).is_err());
     }
 
     #[test]
