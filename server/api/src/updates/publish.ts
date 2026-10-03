@@ -1,5 +1,6 @@
 import { createHash, randomBytes, verify, X509Certificate } from "node:crypto";
 import {
+  chmod,
   link,
   lstat,
   readdir,
@@ -211,7 +212,8 @@ export function assetFileName(hex: string, contentType: string): string {
 async function addFile(dir: string, name: string, bytes: Buffer) {
   if (await lstat(join(dir, name)).catch(() => undefined)) return false;
   const partial = join(dir, `.partial-${randomBytes(8).toString("hex")}`);
-  await writeFile(partial, bytes, { mode: 0o644 });
+  await writeFile(partial, bytes);
+  await chmod(partial, 0o644);
   try {
     await link(partial, join(dir, name));
     return true;

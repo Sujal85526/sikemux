@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
-# Installs a release sent as `ssh sikemux-deploy@citadel <commit> < release.tar.gz`. The deploy
-# key's authorized_keys entry forces this script, so that key can do nothing else.
+# Receives what the deploy key may send, and nothing else, since its authorized_keys entry forces
+# this script:
+#   ssh sikemux-deploy@citadel <commit> < release.tar.gz          installs a server release
+#   ssh sikemux-deploy@citadel publish-update < update.tar.gz     publishes a phone update
+#   ssh sikemux-deploy@citadel promote-update <update id>         offers an update on stable too
 set -euo pipefail
 
 ROOT=/srv/sikemux
 RELEASES="$ROOT/releases"
+UPDATES="$ROOT/updates"
 KEEP=5
 MAX_BYTES=$((200 * 1024 * 1024))
+MAX_UPDATE_BYTES=$((100 * 1024 * 1024))
 HEALTH=http://127.0.0.1:4000/v1/health
 export DATABASE_URL='postgresql://sikemux@%2Fvar%2Frun%2Fpostgresql/sikemux'
 
@@ -16,8 +21,82 @@ fail() {
   exit 1
 }
 
+usage() {
+  fail "usage: ssh sikemux-deploy@citadel <40-character commit> < release.tar.gz
+         ssh sikemux-deploy@citadel publish-update < update.tar.gz
+         ssh sikemux-deploy@citadel promote-update <update id>"
+}
+
+api() {
+  [ -f "$ROOT/current/api/dist/main.mjs" ] || fail "no server release is installed yet"
+  node "$ROOT/current/api/dist/main.mjs" "$@"
+}
+
+publish_update() {
+  exec 9>"$ROOT/deploy.lock"
+  flock 9
+
+  incoming="$(mktemp -d "$UPDATES/.incoming.XXXXXX")"
+  trap 'rm -rf "$incoming"' EXIT
+  head -c "$((MAX_UPDATE_BYTES + 1))" >"$incoming/update.tar.gz"
+  [ "$(stat -c %s "$incoming/update.tar.gz")" -le "$MAX_UPDATE_BYTES" ] ||
+    fail "the update is larger than $((MAX_UPDATE_BYTES / 1024 / 1024)) MB"
+  # Unpacked with a cap too, so a small archive cannot fill the disk.
+  { gzip -dc "$incoming/update.tar.gz" 2>/dev/null || true; } | head -c "$((MAX_UPDATE_BYTES + 1))" >"$incoming/update.tar"
+  [ "$(stat -c %s "$incoming/update.tar")" -le "$MAX_UPDATE_BYTES" ] ||
+    fail "the update unpacks to more than $((MAX_UPDATE_BYTES / 1024 / 1024)) MB"
+
+  # Only plain files and folders with the names a bundle has, so nothing lands outside it.
+  local listing names line name
+  listing="$(tar -tvf "$incoming/update.tar" 2>/dev/null)" || fail "the update is not a .tar.gz"
+  names="$(tar -tf "$incoming/update.tar")"
+  while IFS= read -r line; do
+    [[ "$line" =~ ^[-d] ]] || fail "the update holds something other than files and folders"
+  done <<<"$listing"
+  while IFS= read -r name; do
+    name="${name#./}"
+    [ -z "$name" ] || [[ "$name" =~ ^(update\.json|manifest\.json|manifest\.sig|assets/?|assets/[0-9a-f]{64}(\.type)?)$ ]] ||
+      fail "the update holds $name, which a bundle does not"
+  done <<<"$names"
+
+  mkdir "$incoming/bundle"
+  tar -xf "$incoming/update.tar" -C "$incoming/bundle" --no-same-owner --no-same-permissions
+  [ -z "$(find "$incoming/bundle" ! -type f ! -type d)" ] ||
+    fail "the update holds something other than files and folders"
+
+  say "publishing the update"
+  api publish-update "$incoming/bundle" "$UPDATES/assets" || fail "the update was refused"
+  say "the update is published"
+  exit 0
+}
+
+promote_update() {
+  local id="${1:-}"
+  [[ "$id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || usage
+
+  exec 9>"$ROOT/deploy.lock"
+  flock 9
+
+  say "promoting $id to stable"
+  api promote-update "$id" || fail "promoting $id was refused"
+  say "$id is on stable"
+  exit 0
+}
+
+read -r -a words <<<"${SSH_ORIGINAL_COMMAND:-}"
+case "${words[0]:-}" in
+  publish-update)
+    [ "${#words[@]}" -eq 1 ] || usage
+    publish_update
+    ;;
+  promote-update)
+    [ "${#words[@]}" -eq 2 ] || usage
+    promote_update "${words[1]}"
+    ;;
+esac
+
 commit="${SSH_ORIGINAL_COMMAND:-}"
-[[ "$commit" =~ ^[0-9a-f]{40}$ ]] || fail "usage: ssh sikemux-deploy@citadel <40-character commit> < release.tar.gz"
+[[ "$commit" =~ ^[0-9a-f]{40}$ ]] || usage
 
 exec 9>"$ROOT/deploy.lock"
 flock 9
