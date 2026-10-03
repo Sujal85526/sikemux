@@ -5,18 +5,21 @@
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::Serialize;
-use serde_json::{Map, Value};
-use tauri::State;
+use serde_json::{json, Map, Value};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::oneshot;
 
 use crate::error::{AppError, AppResult};
+use crate::voice_models::{self, ModelFile};
+
+pub const SIM_EVENT: &str = "sim";
 
 /// Booting a device the first time can take most of a minute.
 const BOOT_TIMEOUT: Duration = Duration::from_secs(180);
@@ -41,6 +44,7 @@ pub struct SimManager {
 #[serde(rename_all = "camelCase")]
 pub struct SimStatus {
     supported: bool,
+    installed: bool,
     reason: Option<String>,
 }
 
@@ -54,7 +58,7 @@ impl SimManager {
     }
 
     /// Sends one request, such as `{"type": "tap", "x": 10, "y": 20}`, and waits for its answer.
-    pub async fn call(&self, request: Map<String, Value>) -> AppResult<Value> {
+    pub async fn call(&self, executable: PathBuf, request: Map<String, Value>) -> AppResult<Value> {
         let kind = request
             .get("type")
             .and_then(Value::as_str)
@@ -68,7 +72,7 @@ impl SimManager {
             .insert(id, sender);
         let mut request = request;
         request.insert("id".into(), Value::from(id));
-        if let Err(error) = self.send(&Value::Object(request)) {
+        if let Err(error) = self.send(executable, &Value::Object(request)) {
             self.waiting
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
@@ -95,14 +99,14 @@ impl SimManager {
         }
     }
 
-    fn send(&self, request: &Value) -> AppResult<()> {
+    fn send(&self, executable: PathBuf, request: &Value) -> AppResult<()> {
         let mut slot = self.helper.lock().unwrap_or_else(|e| e.into_inner());
         let running = match slot.as_mut() {
             Some(helper) => matches!(helper.child.try_wait(), Ok(None)),
             None => false,
         };
         if !running {
-            *slot = Some(self.spawn()?);
+            *slot = Some(self.spawn(executable)?);
         }
         let helper = slot.as_mut().expect("helper was just started");
         let mut line = request.to_string();
@@ -116,10 +120,7 @@ impl SimManager {
             })
     }
 
-    fn spawn(&self) -> AppResult<Helper> {
-        let executable = helper_executable().ok_or_else(|| {
-            AppError::Other("the simulator helper is missing from this build".into())
-        })?;
+    fn spawn(&self, executable: PathBuf) -> AppResult<Helper> {
         let mut child = sikemux_process::user_environment::command(executable)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -176,7 +177,7 @@ fn parse_reply(line: &str) -> Option<(u64, Reply)> {
 }
 
 /// A helper built alongside the app, as `make dev` does.
-fn helper_executable() -> Option<PathBuf> {
+fn local_helper() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("SIKEMUX_SIM_EXECUTABLE") {
         return Some(PathBuf::from(path));
     }
@@ -184,30 +185,110 @@ fn helper_executable() -> Option<PathBuf> {
     beside.is_file().then_some(beside)
 }
 
+/// The helper published beside this release, which the app downloads the first time it is needed.
+fn published_helper() -> Option<ModelFile> {
+    Some(ModelFile {
+        path: option_env!("SIKEMUX_SIM_HELPER_ASSET")?.into(),
+        size: option_env!("SIKEMUX_SIM_HELPER_SIZE")?.parse().ok()?,
+        sha256: option_env!("SIKEMUX_SIM_HELPER_SHA256")?.into(),
+    })
+}
+
+fn downloaded_helper(app: &AppHandle) -> AppResult<PathBuf> {
+    Ok(app
+        .path()
+        .app_data_dir()
+        .map_err(|error| AppError::Other(format!("simulator data directory unavailable: {error}")))?
+        .join("sim")
+        .join("sikemux-sim"))
+}
+
+fn matches(path: &Path, helper: &ModelFile) -> bool {
+    std::fs::metadata(path).is_ok_and(|meta| meta.len() == helper.size)
+        && voice_models::hash_file(path).is_ok_and(|hash| hash == helper.sha256)
+}
+
+fn installed(app: &AppHandle) -> bool {
+    local_helper().is_some()
+        || published_helper()
+            .zip(downloaded_helper(app).ok())
+            .is_some_and(|(helper, path)| matches(&path, &helper))
+}
+
+/// The helper to run, downloading the published one first if this build has none beside it.
+async fn executable(app: &AppHandle) -> AppResult<PathBuf> {
+    if let Some(local) = local_helper() {
+        return Ok(local);
+    }
+    let helper = published_helper().ok_or_else(|| {
+        AppError::Other("This build does not include the simulator helper.".into())
+    })?;
+    let destination = downloaded_helper(app)?;
+    if !matches(&destination, &helper) {
+        let url = format!(
+            "https://github.com/nodelike/sikemux/releases/download/v{}/{}",
+            env!("CARGO_PKG_VERSION"),
+            helper.path
+        );
+        let mut reported = 0.0;
+        voice_models::download(&url, &destination, &helper, |bytes| {
+            let fraction = bytes as f64 / helper.size as f64;
+            if fraction - reported >= 0.01 || fraction >= 1.0 {
+                reported = fraction;
+                let _ = app.emit_to(
+                    "main",
+                    SIM_EVENT,
+                    json!({ "type": "progress", "fraction": fraction }),
+                );
+            }
+        })
+        .await?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&destination, std::fs::Permissions::from_mode(0o755))?;
+        }
+    }
+    Ok(destination)
+}
+
 fn unsupported_reason() -> Option<String> {
     if !cfg!(target_os = "macos") {
         return Some("The iOS Simulator is only available on macOS.".into());
     }
-    helper_executable()
-        .is_none()
+    (local_helper().is_none() && published_helper().is_none())
         .then(|| "This build does not include the simulator helper.".into())
 }
 
 #[tauri::command]
-pub async fn sim_status() -> AppResult<SimStatus> {
+pub async fn sim_status(app: AppHandle) -> AppResult<SimStatus> {
     let reason = unsupported_reason();
     Ok(SimStatus {
         supported: reason.is_none(),
+        installed: installed(&app),
         reason,
     })
 }
 
+/// Downloads the helper if this build needs to, reporting progress as `sim` events.
 #[tauri::command]
-pub async fn sim_call(request: Map<String, Value>, sim: State<'_, SimManager>) -> AppResult<Value> {
+pub async fn sim_prepare(app: AppHandle) -> AppResult<()> {
     if let Some(reason) = unsupported_reason() {
         return Err(AppError::Other(reason));
     }
-    sim.call(request).await
+    executable(&app).await.map(|_| ())
+}
+
+#[tauri::command]
+pub async fn sim_call(
+    app: AppHandle,
+    request: Map<String, Value>,
+    sim: State<'_, SimManager>,
+) -> AppResult<Value> {
+    if let Some(reason) = unsupported_reason() {
+        return Err(AppError::Other(reason));
+    }
+    sim.call(executable(&app).await?, request).await
 }
 
 #[cfg(test)]
@@ -236,24 +317,17 @@ mod tests {
     #[ignore = "needs Xcode, a simulator and a built sikemux-sim"]
     async fn the_helper_lists_boots_and_reads_a_device() {
         let sim = SimManager::default();
-        let request = |value: Value| value.as_object().cloned().unwrap();
-        let devices = sim
-            .call(request(serde_json::json!({ "type": "devices" })))
-            .await
-            .unwrap();
+        let helper = local_helper().expect("set SIKEMUX_SIM_EXECUTABLE to a built sikemux-sim");
+        let call = |value: Value| sim.call(helper.clone(), value.as_object().cloned().unwrap());
+        let devices = call(json!({ "type": "devices" })).await.unwrap();
         let udid = devices["devices"][0]["udid"].as_str().unwrap().to_owned();
-        sim.call(request(serde_json::json!({ "type": "boot", "udid": udid })))
-            .await
-            .unwrap();
-        let tree = sim
-            .call(request(serde_json::json!({ "type": "tree", "udid": udid })))
-            .await
-            .unwrap();
+        call(json!({ "type": "boot", "udid": udid })).await.unwrap();
+        let tree = call(json!({ "type": "tree", "udid": udid })).await.unwrap();
         assert!(tree["elements"].is_array());
-        let missing = sim
-            .call(request(serde_json::json!({ "type": "tapLabel", "udid": udid, "label": "no such label anywhere" })))
-            .await
-            .unwrap_err();
+        let missing =
+            call(json!({ "type": "tapLabel", "udid": udid, "label": "no such label anywhere" }))
+                .await
+                .unwrap_err();
         assert!(
             missing.to_string().contains("no such label anywhere"),
             "{missing}"

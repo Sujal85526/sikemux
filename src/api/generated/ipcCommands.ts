@@ -225,6 +225,7 @@ export const IPC_COMMANDS = [
     "voice_cancel",
     "voice_shutdown",
     "sim_status",
+    "sim_prepare",
     "sim_call",
 ] as const;
 

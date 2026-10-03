@@ -225,5 +225,6 @@ pub const IPC_COMMANDS: &[&str] = &[
     "voice_cancel",
     "voice_shutdown",
     "sim_status",
+    "sim_prepare",
     "sim_call",
 ];

@@ -475,6 +475,7 @@ pub fn run() {
             voice::voice_cancel,
             voice::voice_shutdown,
             sim::sim_status,
+            sim::sim_prepare,
             sim::sim_call,
         ])
         .build(tauri::generate_context!())
