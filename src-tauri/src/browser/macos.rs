@@ -18,8 +18,9 @@ use objc2::{
 };
 use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSAlertSecondButtonReturn, NSAutoresizingMaskOptions,
-    NSBitmapImageFileType, NSBitmapImageRep, NSEvent, NSEventMask, NSEventModifierFlags, NSImage,
-    NSImageCompressionFactor, NSModalResponse, NSTextField, NSView,
+    NSBitmapImageFileType, NSBitmapImageRep, NSEvent, NSEventMask, NSEventModifierFlags,
+    NSEventPhase, NSEventType, NSImage, NSImageCompressionFactor, NSModalResponse, NSTextField,
+    NSView,
 };
 use objc2_core_graphics::{CGColor, CGMutablePath};
 use objc2_foundation::{
@@ -93,6 +94,9 @@ thread_local! {
     static SHADES: RefCell<HashMap<usize, Retained<CALayer>>> = RefCell::new(HashMap::new());
     static MASKS: RefCell<HashMap<usize, PageMask>> = RefCell::new(HashMap::new());
     static PAGE_HIT_TEST: std::cell::Cell<Option<Imp>> = const { std::cell::Cell::new(None) };
+    static PAGE_UNUSED_GESTURE: std::cell::Cell<Option<Imp>> = const { std::cell::Cell::new(None) };
+    /// Whether the swipe under way belongs to the stage, once its first sideways move says so.
+    static SWIPE_TO_STAGE: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
     /// WebKit tears a named world down once nothing holds it, and the element
     /// numbers the agent was given go with it.
     static HELPER_WORLD: RefCell<Option<Retained<WKContentWorld>>> = const { RefCell::new(None) };
@@ -172,6 +176,7 @@ pub fn adopt(
             );
         }
     }
+    let _ = hand_unused_swipes_to_the_stage(&webview);
     TABS.with(|tabs| {
         tabs.borrow_mut().insert(
             tab_id,
@@ -583,6 +588,122 @@ fn pass_clicks_through_holes(view: &NSView) -> Option<()> {
     added
         .as_bool()
         .then(|| PAGE_HIT_TEST.with(|cell| cell.set(Some(inherited.implementation()))))
+}
+
+/* A two-finger swipe that starts over a page goes to the page, so the stage
+never hears it and cannot move. WebKit reports each scroll the page did not
+use, which is what its own back and forward swipe is built on. A sideways
+swipe the page's history cannot take is handed to the app's own view
+instead, where it moves the stage as it would anywhere else. */
+fn hand_unused_swipes_to_the_stage(view: &NSView) -> Option<()> {
+    if PAGE_UNUSED_GESTURE.with(|cell| cell.get()).is_some() {
+        return Some(());
+    }
+    let class = view.class();
+    let selector = sel!(_gestureEventWasNotHandledByWebCore:);
+    let inherited = class.instance_method(selector)?;
+    // SAFETY: `inherited` is a real method of the view's class, so its type string lives
+    // as long as the class does.
+    let types = unsafe { objc2::ffi::method_getTypeEncoding(inherited) };
+    let unused: UnusedGesture = gesture_unused_by_page;
+    // SAFETY: `gesture_unused_by_page` has the method's exact signature and reuses its
+    // type string. `class_addMethod` only adds to the class, never replaces a method.
+    let added = unsafe {
+        objc2::ffi::class_addMethod(
+            (class as *const objc2::runtime::AnyClass).cast_mut(),
+            selector,
+            std::mem::transmute::<UnusedGesture, Imp>(unused),
+            types,
+        )
+    };
+    added
+        .as_bool()
+        .then(|| PAGE_UNUSED_GESTURE.with(|cell| cell.set(Some(inherited.implementation()))))
+}
+
+type UnusedGesture = unsafe extern "C-unwind" fn(&NSView, Sel, *mut NSEvent);
+
+// SAFETY: only WebKit calls this, as `_gestureEventWasNotHandledByWebCore:` on a
+// live view on the main thread, with an event or nil.
+unsafe extern "C-unwind" fn gesture_unused_by_page(
+    view: &NSView,
+    selector: Sel,
+    event: *mut NSEvent,
+) {
+    // SAFETY: WebKit passes a live event or nil for the length of the call.
+    let stage = unsafe { event.as_ref() }.and_then(|event| stage_for_swipe(view, event));
+    if let Some(stage) = stage {
+        // SAFETY: `scrollWheel:` takes one event and returns nothing; the stage's view
+        // is live and on the main thread.
+        let _: () = unsafe { msg_send![&*stage, scrollWheel: event] };
+        return;
+    }
+    let Some(inherited) = PAGE_UNUSED_GESTURE.with(|cell| cell.get()) else {
+        return;
+    };
+    // SAFETY: `inherited` is the implementation this function stands in front of.
+    let inherited = unsafe { std::mem::transmute::<Imp, UnusedGesture>(inherited) };
+    // SAFETY: passes WebKit's own arguments straight through.
+    unsafe { inherited(view, selector, event) }
+}
+
+/// The app's own view, when this scroll is part of a sideways swipe the page
+/// had no use for and its history cannot take either.
+fn stage_for_swipe(view: &NSView, event: &NSEvent) -> Option<Retained<NSView>> {
+    if event.r#type() != NSEventType::ScrollWheel {
+        return None;
+    }
+    let tab = TABS.with(|tabs| {
+        tabs.borrow()
+            .values()
+            .find(|tab| view_key(&tab.webview) == view_key(view))
+            .map(|tab| tab.webview.clone())
+    })?;
+    let phase = event.phase();
+    if phase.intersects(NSEventPhase::MayBegin | NSEventPhase::Began) {
+        SWIPE_TO_STAGE.with(|cell| cell.set(None));
+    }
+    let to_stage = match SWIPE_TO_STAGE.with(|cell| cell.get()) {
+        Some(decided) => decided,
+        None => {
+            let (across, down) = (event.scrollingDeltaX(), event.scrollingDeltaY());
+            if across == 0.0 || across.abs() <= down.abs() {
+                return None;
+            }
+            // Fingers moving right ask for the page before; left for the one after.
+            // SAFETY: main thread, and `tab` is retained.
+            let history = unsafe {
+                if across > 0.0 {
+                    tab.canGoBack()
+                } else {
+                    tab.canGoForward()
+                }
+            };
+            SWIPE_TO_STAGE.with(|cell| cell.set(Some(!history)));
+            !history
+        }
+    };
+    let momentum = event.momentumPhase();
+    if momentum.contains(NSEventPhase::Ended)
+        || (momentum.is_empty() && phase.intersects(NSEventPhase::Ended | NSEventPhase::Cancelled))
+    {
+        SWIPE_TO_STAGE.with(|cell| cell.set(None));
+    }
+    if !to_stage {
+        return None;
+    }
+    // SAFETY: main thread, and `view` is alive for this call.
+    let parent = unsafe { view.superview() }?;
+    let pages: Vec<usize> = TABS.with(|tabs| {
+        tabs.borrow()
+            .values()
+            .map(|tab| view_key(&tab.webview))
+            .collect()
+    });
+    let web_view_class = objc2::runtime::AnyClass::get(c"WKWebView")?;
+    parent.subviews().iter().find(|sibling| {
+        !pages.contains(&view_key(sibling)) && sibling.isKindOfClass(web_view_class)
+    })
 }
 
 type HitTest = unsafe extern "C-unwind" fn(&NSView, Sel, NSPoint) -> *mut NSView;
