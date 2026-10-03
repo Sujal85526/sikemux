@@ -499,3 +499,45 @@ mod view {
         assert_eq!(frames, vec![b"first".to_vec(), b"second".to_vec()]);
     }
 }
+
+mod release {
+    use std::path::Path;
+
+    use crate::simulator::{runnable, Published};
+
+    const HELPER: Published = Published {
+        asset: "sikemux-sim-aarch64-apple-darwin",
+        size: 4,
+        sha256: "abc",
+    };
+
+    #[test]
+    fn a_dev_build_runs_the_helper_beside_it() {
+        let local = Path::new("/dev/sikemux-sim");
+        assert_eq!(
+            runnable(Some(local), None, Some(&HELPER), |_, _| false),
+            Ok(local)
+        );
+    }
+
+    #[test]
+    fn a_release_runs_the_downloaded_helper_only_once_it_is_the_published_one() {
+        let downloaded = Path::new("/data/simulator/sikemux-sim");
+        assert_eq!(
+            runnable(None, Some(downloaded), Some(&HELPER), |_, _| true),
+            Ok(downloaded)
+        );
+        assert!(
+            runnable(None, Some(downloaded), Some(&HELPER), |_, _| false)
+                .unwrap_err()
+                .contains("still downloading")
+        );
+    }
+
+    #[test]
+    fn a_build_without_a_published_helper_says_so() {
+        assert!(runnable(None, None, None, |_, _| true)
+            .unwrap_err()
+            .contains("does not include"));
+    }
+}

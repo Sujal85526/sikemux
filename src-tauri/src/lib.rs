@@ -206,6 +206,15 @@ pub fn run() {
                 &_app.path().app_data_dir()?.join("plugins"),
                 &_app.package_info().version,
             )?);
+            _app.manage(SimulatorManager::for_app(
+                &_app.path().app_data_dir()?.join("simulator"),
+            ));
+            let simulators = _app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(error) = simulators.state::<SimulatorManager>().prepare().await {
+                    eprintln!("{error}");
+                }
+            });
             wheel::watch(_app.handle());
             _app.state::<PtyManager>().start(_app.handle());
             // See-through window — same recipe as nackle (NSWindow opaque=NO,
@@ -236,7 +245,6 @@ pub fn run() {
         .manage(remote::PublishedWorkspace::default())
         .manage(BrowserManager::default())
         .manage(VoiceManager::default())
-        .manage(SimulatorManager::default())
         .manage(simulator::view::Views::default())
         .manage(preview::Previews::default())
         .register_asynchronous_uri_scheme_protocol(preview::SCHEME, preview::handle)

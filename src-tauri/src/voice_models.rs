@@ -179,6 +179,34 @@ pub async fn ensure(dir: &Path, with_helper: bool, mut progress: impl FnMut(f64)
     Ok(())
 }
 
+/// Whether `path` is the exact file a release published, by size and hash.
+pub(crate) fn release_file_matches(path: &Path, size: u64, sha256: &str) -> bool {
+    std::fs::metadata(path).is_ok_and(|meta| meta.len() == size)
+        && hash_file(path).is_ok_and(|hash| hash == sha256)
+}
+
+/// Fetches `asset` from this version's GitHub release into `destination` as an
+/// executable, moving it into place only once it is the exact file recorded.
+pub(crate) async fn fetch_release_executable(
+    asset: &str,
+    destination: &Path,
+    size: u64,
+    sha256: &str,
+) -> AppResult<()> {
+    let file = ModelFile {
+        path: asset.into(),
+        size,
+        sha256: sha256.into(),
+    };
+    download(&helper_url(&file), destination, &file, |_| {}).await?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(destination, std::fs::Permissions::from_mode(0o755))?;
+    }
+    Ok(())
+}
+
 /// A relative path that cannot climb out of, or jump away from, the directory it is joined to.
 fn plain_relative(path: &str) -> AppResult<PathBuf> {
     let relative = Path::new(path);
