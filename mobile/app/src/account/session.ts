@@ -5,19 +5,25 @@ import { nativeApplicationVersion } from 'expo-application';
 import type { Device } from '@protocol';
 
 import { thisDevice } from '@/device/identity';
+import { syncPushToken } from '@/notify/token';
 import { accountHosts, registerPhone } from './api';
 import { apiUrl } from './config';
 import { farewellFor } from './farewell';
 import { signOutHere } from './leave';
 import { LiveAccount, liveUrl, runLive, savedCursor } from './live';
 
-/** Registers this phone with the account once per sign-in; a failure tries again on the next launch. */
+/**
+ * Registers this phone with the account once per sign-in, then its notification token, which the server
+ * takes only from a phone on the account. A failure tries again on the next launch.
+ */
 export function useRegisterPhone() {
   const { isSignedIn, userId, getToken } = useAuth();
   const register = useEffectEvent((user: string) => {
-    registerPhone(() => getToken(), user).catch((error: unknown) => {
-      console.warn('sikemux: could not add this phone to the account', error);
-    });
+    registerPhone(() => getToken(), user)
+      .then(() => syncPushToken(() => getToken()))
+      .catch((error: unknown) => {
+        console.warn('sikemux: could not add this phone to the account', error);
+      });
   });
   useEffect(() => {
     if (isSignedIn && userId) register(userId);

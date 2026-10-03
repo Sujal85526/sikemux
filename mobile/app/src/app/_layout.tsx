@@ -13,6 +13,8 @@ import { tokenCache } from '@clerk/expo/token-cache';
 import { CLERK_PUBLISHABLE_KEY } from '@/account/config';
 import { useAccountLive, useRegisterPhone } from '@/account/session';
 import { goOffline } from '@/device/identity';
+import { NotificationsOffer } from '@/notify/NotificationsOffer';
+import { usePushToken } from '@/notify/switch';
 import { currentRelays, useUpdateRequired } from '@/network/network';
 import { UpdateRequired } from '@/screens/UpdateRequired';
 import { useColors } from '@/ui/theme';
@@ -60,6 +62,7 @@ export default function RootLayout() {
       <PhoneOnAccount />
       <StatusBar style="light" />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.ground } }} />
+      <NotificationsOffer />
     </ClerkProvider>
   );
 }
@@ -67,5 +70,6 @@ export default function RootLayout() {
 function PhoneOnAccount() {
   useRegisterPhone();
   useAccountLive();
+  usePushToken();
   return null;
 }

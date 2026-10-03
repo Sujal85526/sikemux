@@ -4,6 +4,8 @@ import { CoreEvent, MobileError, type ConnectionLike, type CoreListener } from '
 
 import { channelName, type Snapshot } from '@/core/protocol';
 import { goOffline, thisDevice } from '@/device/identity';
+import { reconcileCards } from '@/notify/cards';
+import { shareKey, type Shared } from '@/notify/keys';
 import { forgetDevice, pairedDevices, updateDevice, type PairedDevice } from './paired';
 
 export type Live =
@@ -136,6 +138,7 @@ function listener(core: string, found: Entry, attempt: object): CoreListener {
         // The host sends its view as soon as it lets the phone in, which can be before `connect` answers.
         else if (CoreEvent.View.instanceOf(event) && found.current === attempt) {
           set(found, { ...found.live, snapshot: event.inner.view });
+          reconcileCards(core, event.inner.view);
         }
       }
       if (chats.length) {
@@ -183,6 +186,7 @@ async function connect(core: string, found: Entry) {
   }
   found.attempt = 0;
   set(found, { status: 'open', connection, snapshot: found.live.snapshot });
+  shareKey(core, connection).then((shared) => noteNotifications(core, shared));
   connection
     .host()
     .then((host) => updateDevice(core, { name: host.name, model: host.model, channel: channelName(host.channel), lastSeen: Date.now() }))
@@ -215,8 +219,39 @@ export function watch(core: string) {
 let leftAt = 0;
 let leaving: ReturnType<typeof setTimeout> | undefined;
 
+/** Whether each host took this phone's notification key on its last connection. */
+const notifications = new Map<string, Shared>();
+
+function noteNotifications(core: string, shared: Shared) {
+  notifications.set(core, shared);
+  changed();
+}
+
+export function useNotificationsAt(core: string): Shared | undefined {
+  return useSyncExternalStore(subscribe, () => notifications.get(core));
+}
+
+/** The hosts this phone holds a connection to now. */
+export function openConnections(): [string, ConnectionLike][] {
+  const open: [string, ConnectionLike][] = [];
+  entries.forEach((found, core) => {
+    if (found.live.status === 'open') open.push([core, found.live.connection]);
+  });
+  return open;
+}
+
+/** Gives every connected host the notification key again, as when notifications were just turned on. */
+export function shareKeys() {
+  openConnections().forEach(([core, connection]) => shareKey(core, connection).then((shared) => noteNotifications(core, shared)));
+}
+
+function tellForeground(foreground: boolean) {
+  openConnections().forEach(([, connection]) => connection.setForeground(foreground).catch(() => {}));
+}
+
 AppState.addEventListener('change', (state) => {
   if (state === 'background') {
+    tellForeground(false);
     leftAt = Date.now();
     clearTimeout(leaving);
     leaving = setTimeout(() => {
@@ -228,6 +263,7 @@ AppState.addEventListener('change', (state) => {
   }
   if (state !== 'active') return;
   clearTimeout(leaving);
+  tellForeground(true);
   const wasAway = away || Date.now() - leftAt > AWAY_MS;
   away = false;
   entries.forEach((found, core) => {

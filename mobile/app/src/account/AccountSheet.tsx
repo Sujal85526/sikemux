@@ -12,6 +12,8 @@ import { versionLabel } from '@/account/versionLabel';
 import { useDeviceId } from '@/device/identity';
 import { shortKey } from '@/devices/paired';
 import { phoneName } from '@/devices/pairing';
+import { NotificationsRow } from '@/notify/NotificationsRow';
+import { stopPush } from '@/notify/token';
 import { Icon } from '@/ui/Icon';
 import { Button } from '@/ui/parts';
 import { Sheet } from '@/ui/Sheet';
@@ -41,13 +43,16 @@ export function AccountSheet({ visible, onClose }: { visible: boolean; onClose: 
   const email = user?.primaryEmailAddress?.emailAddress;
   const how = provider ? `Signed in with ${PROVIDERS[provider] ?? provider}` : 'Signed in with email';
 
-  /** Takes the phone off the account first, so hosts hear of it; offline, it asks before leaving it there. */
+  /** Takes the notification token and then the phone off the account first, so hosts hear of it; offline, it asks before leaving them there. */
   const leave = async (anyway = false) => {
     setLeaving(true);
     setUnreachable(false);
     setProblem(undefined);
     try {
-      if (!anyway) await removePhone(() => getToken());
+      if (!anyway) {
+        await stopPush(() => getToken());
+        await removePhone(() => getToken());
+      }
     } catch (error) {
       setLeaving(false);
       if (error instanceof AccountProblem && !error.unreachable) setProblem(error.message);
@@ -94,6 +99,7 @@ export function AccountSheet({ visible, onClose }: { visible: boolean; onClose: 
           </Text>
         </View>
       </View>
+      <NotificationsRow />
       {unreachable ? (
         <>
           <Text style={styles.noteTitle}>Can&apos;t reach Sikemux</Text>

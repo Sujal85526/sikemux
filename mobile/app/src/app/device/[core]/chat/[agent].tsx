@@ -10,6 +10,7 @@ import { Composer } from '@/chat/Composer';
 import { Activity, Message, Queued } from '@/chat/Transcript';
 import { useChat } from '@/chat/useChat';
 import { useDevices, useLive } from '@/devices/hub';
+import { dismissCardsFor } from '@/notify/cards';
 import { chatTitle, providerName } from '@/devices/words';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Button, Nav, Screen, useBottomGap, Working } from '@/ui/parts';
@@ -45,6 +46,7 @@ export default function Chat() {
   const provider = info?.provider ?? 'agent';
   const chat = useChat(core, agent);
   const { state } = chat;
+  useEffect(() => dismissCardsFor(core, agent), [core, agent]);
   const since = useTurnStart(state.running);
   const list = useRef<FlashListRef<ChatMessage>>(null);
   const [away, setAway] = useState(false);

@@ -555,6 +555,13 @@
 
   .toggle { width: 51px; height: 31px; border-radius: 999px; background: var(--live); position: relative; flex: none; }
   .toggle::after { content: ""; position: absolute; right: 2px; top: 2px; width: 27px; height: 27px; border-radius: 999px; background: #fff; }
+  .toggle.off { background: var(--surface-active); }
+  .toggle.off::after { right: auto; left: 2px; }
+  .choices.across { flex-direction: row; }
+  .choices.across .btn { flex: 1; }
+  .notif.quiet .b { opacity: .9; }
+  .lock .stacked { position: absolute; left: 10px; right: 10px; top: 240px; display: flex; flex-direction: column; gap: 8px; }
+  .lock .stacked .notif { position: static; }
 </style>
 </head>
 <body>
@@ -728,6 +735,22 @@
 
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen" style="opacity:.35">
+        <div class="nav"><span class="back">{{IconChevron:18}}Devices</span></div>
+        <div class="title-block"><h1>MacBook Pro</h1></div>
+      </div>
+      <div class="sheet">
+        <div class="grabber"></div>
+        <div class="sheet-title">Turn on notifications?</div>
+        <div class="sheet-note" style="padding-top:4px">Get told when an agent stops to ask, finishes, or runs into a problem. What it's doing is encrypted on your computer; only this phone can read it.</div>
+        <div class="choices across"><div class="btn">Not now</div><div class="btn primary">Turn on</div></div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Notifications, after pairing</b><div class="note">Asked once, on the host the phone just paired with, because that is when a notification first means something; never at first launch. Turn on brings the system's own prompt next. Not now leaves them off, and the account sheet can turn them on later. Only a signed-in phone is asked: notifications travel through the account. Android only for now; iPhones wait for Apple's push service.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Back</span></div>
         <div class="pairing">
@@ -818,7 +841,8 @@
           <span class="avatar photo" style="--size:44px"></span>
           <div style="min-width:0"><div class="t">Kishore Gunalan</div><div class="s">contact@nodelike.com</div><div class="s">Signed in with Google</div></div>
         </div>
-        <div class="row boxed"><span class="mark">{{IconPhone:18}}</span><div class="body"><div class="t" style="font-size:15px">Kishore's iPhone</div><div class="s">This phone · <span class="m">3308a907</span></div></div></div>
+        <div class="row boxed"><span class="mark">{{IconPhone:18}}</span><div class="body"><div class="t" style="font-size:15px">Kishore's Pixel</div><div class="s">This phone · <span class="m">3308a907</span></div></div></div>
+        <div class="row boxed" style="margin-top:8px"><span class="mark">{{IconInbox:18}}</span><div class="body"><div class="t" style="font-size:15px">Notifications</div><div class="s">When agents need you or finish</div></div><span class="toggle"></span></div>
         <div class="sheet-note">Signing out takes this phone off your account and forgets every host paired with it.</div>
         <div class="btn danger">Sign out</div>
         <div class="text-link" style="height:44px;line-height:44px;margin-top:4px">Delete account…</div>
@@ -826,6 +850,29 @@
       </div>
       <div class="home-bar"></div></div>
       <figcaption><b>Account</b><div class="note">Who is signed in: the picture, the name, the email and how they signed in; without a name the email leads. This phone as the account knows it. Signing out says what it does before it does it. Deleting the account is a quiet link under it, leading to a screen that explains it first. The last line is the installed version, quiet like the Mac's About; when an over-the-air update is running it adds the update's short id and the day it was made, and without one it is only the version.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen" style="opacity:.35">
+        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
+        <div class="title-block"><h1>Devices</h1></div>
+      </div>
+      <div class="sheet">
+        <div class="grabber"></div>
+        <div class="account-head">
+          <span class="avatar photo" style="--size:44px"></span>
+          <div style="min-width:0"><div class="t">Kishore Gunalan</div><div class="s">contact@nodelike.com</div><div class="s">Signed in with Google</div></div>
+        </div>
+        <div class="row boxed"><span class="mark">{{IconPhone:18}}</span><div class="body"><div class="t" style="font-size:15px">Kishore's Pixel</div><div class="s">This phone · <span class="m">3308a907</span></div></div></div>
+        <div class="row boxed" style="margin-top:8px"><span class="mark">{{IconInbox:18}}</span><div class="body"><div class="t" style="font-size:15px">Notifications</div><div class="s" style="color:var(--acc)">Allow them in Android settings</div></div><span class="toggle off"></span></div>
+        <div class="sheet-note">Signing out takes this phone off your account and forgets every host paired with it.</div>
+        <div class="btn danger">Sign out</div>
+        <div class="text-link" style="height:44px;line-height:44px;margin-top:4px">Delete account…</div>
+        <div class="sheet-version">Sikemux 0.1.0 · update a1b2c3d (3 Oct)</div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Notifications, not allowed</b><div class="note">The switch says whether notifications reach this phone. On, it hands the phone's address for them to Sikemux and a key to each paired host; off, it takes both back. When Android has notifications turned off for the app, the switch reads off and the line under it opens the app's Android settings. Signing out takes the address back before anything else.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1582,7 +1629,7 @@
 <!-- ================================================================ -->
 <section class="flow">
   <h2>Away from the app</h2>
-  <p>An agent stops to ask while the phone is in a pocket. This needs a push service the core can reach, which does not exist yet.</p>
+  <p>An agent stops to ask while the phone is in a pocket. The host seals what happened with a key only this phone has, and Sikemux passes it on without being able to read it. By default a host notifies only while nobody is at it.</p>
   <div class="phones">
 
     <figure><div class="phone" style="background:#000"><div class="island"></div>
@@ -1596,7 +1643,43 @@
         </div>
       </div>
       <div class="home-bar" style="background:#fff"></div></div>
-      <figcaption><b>Notification</b><div class="note">Allow or Reject straight from the lock screen. "Always allow" is left to the chat, where you can see what you would be allowing.</div></figcaption>
+      <figcaption><b>Notification</b><div class="note">Allow or Reject straight from the lock screen; Allow asks for the phone's lock first. "Always allow" is left to the chat, where you can see what you would be allowing. Tapping the card opens the chat. A request answered on the computer or another phone takes its card away.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone" style="background:#000"><div class="island"></div>
+      <div class="status" style="color:#fff"><span></span><span class="bars"><i></i><i></i></span></div>
+      <div class="lock">
+        <div class="clock"><div>Friday 2 October</div><div>9:41</div></div>
+        <div class="stacked">
+          <div class="notif quiet">
+            <div class="h"><span class="appicon">{{Logo:15}}</span>SIKEMUX<span class="t">now</span></div>
+            <div class="b"><b>Allowing…</b></div>
+          </div>
+          <div class="notif quiet">
+            <div class="h"><span class="appicon">{{Logo:15}}</span>SIKEMUX<span class="t">now</span></div>
+            <div class="b"><b>Allowed on MacBook Pro</b></div>
+          </div>
+          <div class="notif quiet">
+            <div class="h"><span class="appicon">{{Logo:15}}</span>SIKEMUX<span class="t">now</span></div>
+            <div class="b"><b>Couldn't reach MacBook Pro</b><br>Open Sikemux to answer</div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar" style="background:#fff"></div></div>
+      <figcaption><b>Answering</b><div class="note">The card says the answer is on its way while the phone reaches the host itself, then how it went; "Allowed" fades after a few seconds. When the host can't be reached the card stays, and opens the chat to answer there. A request already answered elsewhere just goes.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone" style="background:#000"><div class="island"></div>
+      <div class="status" style="color:#fff"><span></span><span class="bars"><i></i><i></i></span></div>
+      <div class="lock">
+        <div class="clock"><div>Friday 2 October</div><div>9:41</div></div>
+        <div class="notif">
+          <div class="h"><span class="appicon">{{Logo:15}}</span>SIKEMUX<span class="t">now</span></div>
+          <div class="b"><b>Sikemux</b><br>An agent on your computer needs you</div>
+        </div>
+      </div>
+      <div class="home-bar" style="background:#fff"></div></div>
+      <figcaption><b>Can't be read</b><div class="note">When the phone can't open what the host sealed, because it lost the key or the host is newer, the card says only that something needs you, with no buttons, and opens the app. The phone gives that host a new key on its next connection.</div></figcaption>
     </figure>
 
   </div>

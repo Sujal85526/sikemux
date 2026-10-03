@@ -6,6 +6,7 @@ import * as Haptics from 'expo-haptics';
 import { wasFound } from '@/devices/foundLinks';
 import { shortKey } from '@/devices/paired';
 import { failure, pair, type Failure } from '@/devices/pairing';
+import { offerNotifications } from '@/notify/setting';
 import { Button, CodeTiles, Nav, Screen, useBottomGap, Working } from '@/ui/parts';
 import { fonts, type Palette, radius, typeFor, useStyles, useType } from '@/ui/theme';
 
@@ -44,6 +45,7 @@ export default function Pair() {
         if (controller.signal.aborted) return;
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         router.replace(`/device/${core}`);
+        offerNotifications().catch(() => {});
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setFailed(failure(error));

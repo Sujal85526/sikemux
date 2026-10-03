@@ -1,5 +1,15 @@
 import { Platform } from 'react-native';
-import type { AccountDeletion, ApiError, Challenge, Device, DeviceList, DeviceRegistration } from '@protocol';
+import type {
+  AccountDeletion,
+  ApiError,
+  Challenge,
+  Device,
+  DeviceList,
+  DeviceRegistration,
+  PushApp,
+  PushTokenRegistration,
+  PushTokenState,
+} from '@protocol';
 
 import { thisDevice } from '@/device/identity';
 import { phoneName } from '@/devices/pairing';
@@ -70,6 +80,34 @@ export async function removePhone(token: TokenSource): Promise<void> {
   const device = await thisDevice();
   try {
     await call<null>(token, `/v1/devices/${device.id()}`, { method: 'DELETE' });
+  } catch (error) {
+    if (error instanceof AccountProblem && (error.status === 404 || error.status === 401)) return;
+    throw error;
+  }
+}
+
+/** Sends this phone's notifications to an FCM token, proving the phone holds its key. */
+export async function setPushToken(
+  token: TokenSource,
+  push: { token: string; tokenSha256: string; app: PushApp },
+): Promise<PushTokenState> {
+  const challenge = await call<Challenge>(token, '/v1/devices/challenge', { method: 'POST' });
+  const device = await thisDevice();
+  const registration: PushTokenRegistration = {
+    platform: 'fcm',
+    token: push.token,
+    app: push.app,
+    nonce: challenge.nonce,
+    signature: device.signPush(challenge.nonce, push.tokenSha256),
+  };
+  return call<PushTokenState>(token, `/v1/devices/${device.id()}/push`, { method: 'PUT', body: registration });
+}
+
+/** Stops the server sending this phone notifications. A phone the account no longer has gets none anyway. */
+export async function clearPushToken(token: TokenSource): Promise<void> {
+  const device = await thisDevice();
+  try {
+    await call<null>(token, `/v1/devices/${device.id()}/push`, { method: 'DELETE' });
   } catch (error) {
     if (error instanceof AccountProblem && (error.status === 404 || error.status === 401)) return;
     throw error;

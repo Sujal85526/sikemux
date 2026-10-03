@@ -1,12 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { accountHosts, AccountProblem, deleteAccount, registerPhone, removePhone, ReverifyNeeded } from './api';
+import {
+  accountHosts,
+  AccountProblem,
+  clearPushToken,
+  deleteAccount,
+  registerPhone,
+  removePhone,
+  ReverifyNeeded,
+  setPushToken,
+} from './api';
 import { errorCode, explain } from './clerkErrors';
 
 const identity = vi.hoisted(() => ({
   thisDevice: vi.fn(async () => ({
     id: () => 'ab'.repeat(32),
     signRegistration: vi.fn((nonce: string, userId: string) => `signed:${nonce}:${userId}`),
+    signPush: vi.fn((nonce: string, tokenSha256: string) => `pushed:${nonce}:${tokenSha256}`),
   })),
 }));
 vi.mock('@/device/identity', () => identity);
@@ -103,6 +113,43 @@ describe('removePhone', () => {
   it('reports a server failing on its side as out of reach too', async () => {
     answers.push({ status: 503, body: {} });
     const failure = await removePhone(token).catch((error: unknown) => error);
+    expect((failure as AccountProblem).unreachable).toBe(true);
+  });
+});
+
+describe('setPushToken', () => {
+  it('signs the challenge with the token hash and sends the FCM token for this build', async () => {
+    answers.push({ status: 200, body: { nonce: 'n'.repeat(64), expiresAt: '' } });
+    answers.push({ status: 200, body: { enabled: true, updatedAt: '2026-10-03T10:00:00.000Z' } });
+    await setPushToken(token, { token: 'fcm-token', tokenSha256: 'h'.repeat(64), app: 'dev' });
+    expect(calls[0]).toMatchObject({ url: 'https://api.test/v1/devices/challenge', method: 'POST' });
+    expect(calls[1]).toMatchObject({
+      url: `https://api.test/v1/devices/${'ab'.repeat(32)}/push`,
+      method: 'PUT',
+      body: {
+        platform: 'fcm',
+        token: 'fcm-token',
+        app: 'dev',
+        nonce: 'n'.repeat(64),
+        signature: `pushed:${'n'.repeat(64)}:${'h'.repeat(64)}`,
+      },
+    });
+    expect(calls[1]?.body).not.toHaveProperty('apnsEnvironment');
+  });
+});
+
+describe('clearPushToken', () => {
+  it("deletes this phone's token, and counts a phone the account no longer has as done", async () => {
+    answers.push({ status: 204, body: null });
+    await clearPushToken(token);
+    expect(calls[0]).toMatchObject({ url: `https://api.test/v1/devices/${'ab'.repeat(32)}/push`, method: 'DELETE' });
+    answers.push({ status: 404, body: { error: { code: 'not_found', message: 'None of your devices has that key.', requestId: 'r' } } });
+    await expect(clearPushToken(token)).resolves.toBeUndefined();
+  });
+
+  it('reports a server out of reach, so signing out can ask first', async () => {
+    answers.push({ status: 503, body: {} });
+    const failure = await clearPushToken(token).catch((error: unknown) => error);
     expect((failure as AccountProblem).unreachable).toBe(true);
   });
 });

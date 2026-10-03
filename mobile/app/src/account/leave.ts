@@ -2,6 +2,8 @@ import { router } from 'expo-router';
 
 import { forget } from '@/devices/hub';
 import { pairedDevices } from '@/devices/paired';
+import { choose } from '@/notify/setting';
+import { forgetPush } from '@/notify/token';
 import { sayFarewell, type Farewell } from './farewell';
 import { forgetCursor, stopLive } from './live';
 
@@ -15,6 +17,8 @@ export function signOutHere(signOut: () => Promise<unknown>, farewell: Farewell 
   if (farewell) sayFarewell(farewell);
   leaving ??= (async () => {
     stopLive();
+    await forgetPush().catch(() => {});
+    await choose(undefined).catch(() => {});
     const devices = await pairedDevices().catch(() => []);
     await Promise.allSettled(devices.map((device) => forget(device.core)));
     await forgetCursor().catch(() => {});

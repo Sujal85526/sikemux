@@ -4,7 +4,19 @@ import { defineConfig } from 'vitest/config';
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
 // React Native and the native modules only run on a phone, so tests get stand-ins from test/mocks.
-const mocked = ['react-native', '@sikemux/native', 'expo-clipboard', 'expo-device', 'expo-file-system', 'expo-router', 'expo-secure-store'];
+const mocked = [
+  'react-native',
+  '@sikemux/native',
+  'expo',
+  'expo-application',
+  'expo-clipboard',
+  'expo-crypto',
+  'expo-device',
+  'expo-file-system',
+  'expo-notifications',
+  'expo-router',
+  'expo-secure-store',
+];
 
 export default defineConfig({
   resolve: {

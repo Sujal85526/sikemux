@@ -13,6 +13,7 @@ class FakeConnection {
   closed = false;
   unpair = vi.fn(async () => {});
   host = vi.fn(async () => ({ name: 'Studio', model: 'Mac mini', version: '1', channel: 2 }));
+  setForeground = vi.fn(async (_foreground: boolean) => {});
   close() {
     this.closed = true;
   }
@@ -123,7 +124,7 @@ describe('the hub', () => {
     expect(fake.device.connect).toHaveBeenCalledTimes(1);
   });
 
-  it('lets connections go once the app has been away a while, and comes back with it', async () => {
+  it('lets connections go once the app has been away a while, and comes back with it, telling the host which', async () => {
     hub.watch('host');
     await vi.waitFor(() => expect(fake.calls).toHaveLength(1));
     const connection = new FakeConnection();
@@ -131,9 +132,11 @@ describe('the hub', () => {
     await vi.waitFor(() => expect(hub.liveOf('host').status).toBe('open'));
 
     AppState.emit('background');
+    expect(connection.setForeground).toHaveBeenLastCalledWith(false);
     await vi.advanceTimersByTimeAsync(2_000);
     AppState.emit('active');
     expect(connection.closed).toBe(false);
+    expect(connection.setForeground).toHaveBeenLastCalledWith(true);
 
     AppState.emit('background');
     await vi.advanceTimersByTimeAsync(11_000);
