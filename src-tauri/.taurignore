@@ -1,3 +1,2 @@
-# Build output of the sikemux-sim helper; a change there is not a change to the app.
-sim/.build/
-sim/idb/*.xcodeproj/
+# The sikemux-sim helper is built on its own, by pnpm build:sim; the app does not compile it.
+sim/
