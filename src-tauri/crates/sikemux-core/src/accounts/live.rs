@@ -307,7 +307,7 @@ async fn session<A: Account>(
                 account.removed(Some(revoked.reason));
                 return Ended::Done;
             }
-            LiveServerMessage::Challenge(_) | LiveServerMessage::Unknown => true,
+            _ => true,
         };
         if !answered {
             return retry(hint, ready);
