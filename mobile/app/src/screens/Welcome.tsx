@@ -134,7 +134,7 @@ export function Welcome() {
           <Text style={styles.markText}>Sikemux</Text>
         </View>
         <Text style={styles.title}>Your agents,{'\n'}on your phone.</Text>
-        <Text style={styles.body}>Watch them work, answer what they ask, and open the host&apos;s terminals.</Text>
+        <Text style={styles.body}>Watch them work, answer what they ask, and start new chats from anywhere.</Text>
       </View>
       <View style={[styles.actions, { paddingBottom: bottom }]}>
         <Button

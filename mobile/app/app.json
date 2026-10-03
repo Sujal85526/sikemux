@@ -47,7 +47,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Sikemux uses the camera to scan the pairing code on your Mac.",
+          "cameraPermission": "Sikemux uses the camera to scan the pairing code on your computer.",
           "microphonePermission": false,
           "recordAudioAndroid": false
         }
