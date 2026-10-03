@@ -485,6 +485,7 @@
   .sheet-version { padding-top: 14px; font-size: 12px; text-align: center; color: var(--text-tertiary); }
   .sheet-title { padding: 12px 8px 0; font-size: 15px; font-weight: 600; color: var(--text-primary); }
   .choices { display: flex; flex-direction: column; gap: 8px; }
+  .gone { margin: 0; padding: 0 8px 0 18px; display: flex; flex-direction: column; gap: 8px; font-size: 15px; line-height: 1.5; }
   /* the three pairing steps share one layout so the code never moves */
   .pairing { padding: 40px 28px 0; display: flex; flex-direction: column; align-items: center; text-align: center; }
   .pairing h2 { color: var(--text-primary); font-size: 22px; font-weight: 600; letter-spacing: -0.028em; line-height: 1.25; text-wrap: balance; }
@@ -819,10 +820,11 @@
         <div class="row boxed"><span class="mark">{{IconPhone:18}}</span><div class="body"><div class="t" style="font-size:15px">Kishore's iPhone</div><div class="s">This phone · <span class="m">3308a907</span></div></div></div>
         <div class="sheet-note">Signing out takes this phone off your account and forgets every host paired with it.</div>
         <div class="btn danger">Sign out</div>
+        <div class="text-link" style="height:44px;line-height:44px;margin-top:4px">Delete account…</div>
         <div class="sheet-version">Sikemux 0.1.0 · update a1b2c3d (3 Oct)</div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Account</b><div class="note">Who is signed in: the picture, the name, the email and how they signed in; without a name the email leads. This phone as the account knows it. Signing out says what it does before it does it. The last line is the installed version, quiet like the Mac's About; when an over-the-air update is running it adds the update's short id and the day it was made, and without one it is only the version.</div></figcaption>
+      <figcaption><b>Account</b><div class="note">Who is signed in: the picture, the name, the email and how they signed in; without a name the email leads. This phone as the account knows it. Signing out says what it does before it does it. Deleting the account is a quiet link under it, leading to a screen that explains it first. The last line is the installed version, quiet like the Mac's About; when an over-the-air update is running it adds the update's short id and the day it was made, and without one it is only the version.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -841,6 +843,7 @@
         <div class="sheet-title">Can't reach Sikemux</div>
         <div class="sheet-note" style="padding-top:4px">Signing out now leaves this phone on your account until you remove it at app.sikemux.com.</div>
         <div class="choices"><div class="btn">Try again</div><div class="btn danger">Sign out anyway</div></div>
+        <div class="text-link" style="height:44px;line-height:44px;margin-top:4px">Delete account…</div>
         <div class="sheet-version">Sikemux 0.1.0 · update a1b2c3d (3 Oct)</div>
       </div>
       <div class="home-bar"></div></div>
@@ -858,6 +861,62 @@
       </div>
       <div class="home-bar"></div></div>
       <figcaption><b>Removed</b><div class="note">The phone stays connected to the account while the app is open, so it hears at once when it is removed, and on its next launch if it was away. It signs out, forgets its hosts, and says why before the welcome screen. When the account was deleted elsewhere the same screen reads "Your account was deleted" and "It was deleted on another device or at app.sikemux.com. This phone signed out and forgot the hosts it was paired with." A host joining, renaming or leaving the account changes the Devices list the same way, without a reload.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}Back</span></div>
+        <div class="signin">
+          <h2>Delete your account</h2>
+          <p style="margin-bottom:0">This can't be undone. It deletes, at once:</p>
+          <ul class="gone">
+            <li>Your Sikemux account and its sign-in.</li>
+            <li>Every device on it. Hosts sign out and keep the phones paired with them; phones sign out and are removed from every host.</li>
+            <li>The history of changes to your devices.</li>
+          </ul>
+          <p style="margin:0">Your code and files never reached us, so they stay on your hosts.</p>
+          <div class="field-label" style="margin-top:8px">Type contact@nodelike.com to confirm</div>
+          <div class="field on">contact@nodelike.com<span class="caret"></span></div>
+          <div class="btn danger">Delete account</div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Delete account</b><div class="note">Reached from the account sheet. It says what goes, in the words app.sikemux.com/delete-account uses, and what never reached us. The button wakes only once the account's email is typed; an account without one types "delete". While it runs the button reads "Deleting…", and a failure, such as the server out of reach, shows in red above it with nothing deleted.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}Back</span></div>
+        <div class="pairing">
+          <h2>Confirm it's you</h2>
+          <p>Sikemux sent a code to c*****@nodelike.com. Enter it to delete your account.</p>
+          <div class="digits"><span>4</span><span>8</span><span>1</span><span class="gap"></span><span class="cur"></span><span></span><span></span></div>
+        </div>
+        <div style="flex:1"></div>
+        <div class="kb num">
+          <div class="r"><span class="k">1</span><span class="k">2</span><span class="k">3</span></div>
+          <div class="r"><span class="k">4</span><span class="k">5</span><span class="k">6</span></div>
+          <div class="r"><span class="k">7</span><span class="k">8</span><span class="k">9</span></div>
+          <div class="r"><span class="k blank"></span><span class="k">0</span><span class="k blank" style="font-size:18px">⌫</span></div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Confirm it's you</b><div class="note">Deleting needs a sign-in from the last ten minutes. When it is older, the server says so and the phone asks again: the password for an account that has one, otherwise a code to the account's email, in the same tiles as signing in. The sixth digit sends it, and the deletion carries on by itself. A wrong code edges the tiles red and says why; Back cancels and deletes nothing.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="stack" style="padding-bottom:120px">
+          <h2 style="font-size:22px">Your account is deleted</h2>
+          <p>Your account, its devices and its history are gone from Sikemux. Your code and files never reached us, so they are still on your hosts.</p>
+        </div>
+        <div class="footer"><div class="btn primary">Continue</div></div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Deleted</b><div class="note">The phone signs out and forgets its hosts, then says it is done, in the same place as Removed. Continue goes to the welcome screen.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>

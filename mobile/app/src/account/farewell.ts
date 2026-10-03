@@ -1,13 +1,15 @@
 import { useSyncExternalStore } from 'react';
 import type { RevokeReason } from '@protocol';
 
-/** Why this phone was signed out without being asked to: removed from the account, or the account deleted. */
-export type Farewell = 'removed' | 'deleted';
+/** Why this phone signed out: removed from the account, the account deleted elsewhere, or deleted here. */
+export type Farewell = 'removed' | 'deleted' | 'deleted-here';
 
 let shown: Farewell | null = null;
 const listeners = new Set<() => void>();
 
 export function sayFarewell(farewell: Farewell | null) {
+  // The live connection also hears of a deletion made here, and may hear it last.
+  if (shown === 'deleted-here' && farewell === 'deleted') return;
   shown = farewell;
   listeners.forEach((listener) => listener());
 }

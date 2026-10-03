@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { accountHosts, AccountProblem, registerPhone, removePhone } from './api';
+import { accountHosts, AccountProblem, deleteAccount, registerPhone, removePhone, ReverifyNeeded } from './api';
 import { errorCode, explain } from './clerkErrors';
 
 const identity = vi.hoisted(() => ({
@@ -104,6 +104,24 @@ describe('removePhone', () => {
     answers.push({ status: 503, body: {} });
     const failure = await removePhone(token).catch((error: unknown) => error);
     expect((failure as AccountProblem).unreachable).toBe(true);
+  });
+});
+
+describe('deleteAccount', () => {
+  it('deletes the account', async () => {
+    answers.push({ status: 202, body: { status: 'deleted', requestedAt: '2026-10-03T10:00:00.000Z' } });
+    await expect(deleteAccount(token)).resolves.toEqual({ status: 'deleted', requestedAt: '2026-10-03T10:00:00.000Z' });
+    expect(calls[0]).toMatchObject({ url: 'https://api.test/v1/account', method: 'DELETE', authorization: 'Bearer session-token' });
+  });
+
+  it('asks for a fresh sign-in when the server says reverify', async () => {
+    answers.push({ status: 403, body: { error: { code: 'forbidden', message: 'reverify', requestId: 'r' } } });
+    await expect(deleteAccount(token)).rejects.toBeInstanceOf(ReverifyNeeded);
+  });
+
+  it('passes on any other refusal', async () => {
+    answers.push({ status: 403, body: { error: { code: 'forbidden', message: 'Delete the account in the phone app.', requestId: 'r' } } });
+    await expect(deleteAccount(token)).rejects.toThrow('Delete the account in the phone app.');
   });
 });
 

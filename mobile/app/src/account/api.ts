@@ -1,5 +1,5 @@
 import { Platform } from 'react-native';
-import type { ApiError, Challenge, Device, DeviceList, DeviceRegistration } from '@protocol';
+import type { AccountDeletion, ApiError, Challenge, Device, DeviceList, DeviceRegistration } from '@protocol';
 
 import { thisDevice } from '@/device/identity';
 import { phoneName } from '@/devices/pairing';
@@ -22,6 +22,9 @@ export class AccountProblem extends Error {
   }
 }
 
+/** The server wants a recent proof of the person's password or email before it deletes the account. */
+export class ReverifyNeeded extends Error {}
+
 async function call<T>(token: TokenSource, path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   const bearer = await token();
   if (!bearer) throw new AccountProblem('Sign in again.', 401);
@@ -41,6 +44,7 @@ async function call<T>(token: TokenSource, path: string, init: { method?: string
   if (response.status === 204) return null as T;
   if (!response.ok) {
     const failure = (await response.json().catch(() => null)) as ApiError | null;
+    if (response.status === 403 && failure?.error?.message === 'reverify') throw new ReverifyNeeded('reverify');
     throw new AccountProblem(failure?.error?.message ?? `The accounts server answered ${response.status}.`, response.status);
   }
   return (await response.json()) as T;
@@ -75,4 +79,9 @@ export async function removePhone(token: TokenSource): Promise<void> {
 /** The hosts signed in to the account. */
 export async function accountHosts(token: TokenSource): Promise<Device[]> {
   return (await call<DeviceList>(token, '/v1/devices?role=host')).devices;
+}
+
+/** Deletes the account and every device on it. */
+export async function deleteAccount(token: TokenSource): Promise<AccountDeletion> {
+  return call<AccountDeletion>(token, '/v1/account', { method: 'DELETE' });
 }

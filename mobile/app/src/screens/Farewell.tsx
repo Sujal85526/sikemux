@@ -13,9 +13,13 @@ const WORDS: Record<Reason, { title: string; body: string }> = {
     title: 'Your account was deleted',
     body: 'It was deleted on another device or at app.sikemux.com. This phone signed out and forgot the hosts it was paired with.',
   },
+  'deleted-here': {
+    title: 'Your account is deleted',
+    body: 'Your account, its devices and its history are gone from Sikemux. Your code and files never reached us, so they are still on your hosts.',
+  },
 };
 
-/** Says why the phone signed out by itself, before the welcome screen. */
+/** Says why the phone signed out, before the welcome screen. */
 export function Farewell({ reason }: { reason: Reason }) {
   const styles = useStyles(makeStyles);
   const bottom = useBottomGap();

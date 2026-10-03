@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { router } from 'expo-router';
 import { useAuth, useUser } from '@clerk/expo';
 import { nativeApplicationVersion } from 'expo-application';
 import * as Updates from 'expo-updates';
@@ -116,6 +117,16 @@ export function AccountSheet({ visible, onClose }: { visible: boolean; onClose: 
           <Button kind="danger" title={leaving ? 'Signing out…' : 'Sign out'} disabled={leaving} onPress={() => void leave()} />
         </>
       )}
+      <Pressable
+        onPress={() => {
+          close();
+          router.push('/delete-account');
+        }}
+        disabled={leaving}
+        style={styles.link}
+        accessibilityRole="button">
+        <Text style={styles.linkText}>Delete account…</Text>
+      </Pressable>
       <Text style={styles.version}>Sikemux {VERSION}</Text>
     </Sheet>
   );
@@ -144,6 +155,8 @@ const makeStyles = (colors: Palette) => {
     noteAfterTitle: { paddingTop: 4 },
     problem: { ...type.meta, color: colors.danger, paddingHorizontal: 8, paddingBottom: 12 },
     choices: { gap: 8 },
+    link: { height: 44, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+    linkText: { fontFamily: fonts.uiMedium, fontSize: 15, color: colors.secondary },
     version: { ...type.meta, fontSize: 12, textAlign: 'center', paddingTop: 14 },
   });
 };
