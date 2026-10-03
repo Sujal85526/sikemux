@@ -71,6 +71,7 @@
     "allow-browser-forward",
     "allow-browser-reload",
     "allow-browser-set-bounds",
+    "allow-browser-page-still",
     "allow-home-dir",
     "allow-recent-dirs",
     "allow-boot-init",
