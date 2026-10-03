@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type SubmitEvent } from "react";
 
 import { errorCode, explain } from "./clerkErrors.ts";
 import { BackIcon, EyeIcon, GitHubMark, GoogleMark, Logo } from "./icons.tsx";
+import { rememberReturn } from "./navigation.ts";
 
 /** Why an emailed code is asked for: a browser new to the account, a new account, or a new password. */
 type CodePurpose = "trust" | "verify" | "reset";
@@ -86,6 +87,7 @@ export function SignIn({ ready }: { ready: boolean }) {
 
   const withProvider = (strategy: "oauth_google" | "oauth_github") =>
     attempt(strategy === "oauth_google" ? "google" : "github", async () => {
+      rememberReturn();
       check(
         await signIn.sso({
           strategy,

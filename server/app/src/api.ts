@@ -1,4 +1,4 @@
-import type { ApiError, DeviceList } from "@sikemux/protocol";
+import type { AccountDeletion, ApiError, DeviceList } from "@sikemux/protocol";
 
 import { config } from "./config.ts";
 
@@ -44,4 +44,8 @@ export const api = {
   removeDevice: async (token: string, key: string) => {
     await call("DELETE", `/v1/devices/${encodeURIComponent(key)}`, token);
   },
+  deleteAccount: async (token: string) =>
+    (await (
+      await call("DELETE", "/v1/account", token)
+    ).json()) as AccountDeletion,
 };

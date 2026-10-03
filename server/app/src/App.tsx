@@ -1,11 +1,19 @@
 import { HandleSSOCallback, useAuth, useClerk, useUser } from "@clerk/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 
 import { Backdrop } from "./Backdrop.tsx";
+import {
+  AccountDeleted,
+  DeleteAccount,
+  DeleteAccountIntro,
+} from "./DeleteAccount.tsx";
 import { Devices, useDevices } from "./Devices.tsx";
 import { Logo } from "./icons.tsx";
 import { useLive } from "./live.ts";
+import { DELETE_ACCOUNT, takeReturn, usePath } from "./navigation.ts";
 import { SignIn } from "./SignIn.tsx";
+
+const DELETED_QUERY = "?deleted";
 
 /** Clerk leaves a nonzero `__client_uat` cookie once signed in, so the first paint can guess the right screen. */
 const SIGNED_IN_BEFORE = /(?:^|;\s*)__client_uat(?:_\w+)?=[1-9]/.test(
@@ -14,40 +22,70 @@ const SIGNED_IN_BEFORE = /(?:^|;\s*)__client_uat(?:_\w+)?=[1-9]/.test(
 
 export function App() {
   const { isLoaded, isSignedIn } = useAuth();
-  const [path, setPath] = useState(location.pathname);
+  const { signOut } = useClerk();
+  const { path, go, follow } = usePath();
+  const [deleted, setDeleted] = useState(false);
+  const signingOut = useRef(false);
   const signedIn = isLoaded ? isSignedIn : SIGNED_IN_BEFORE;
+  const showDeleted =
+    deleted ||
+    (path === DELETE_ACCOUNT &&
+      new URLSearchParams(location.search).has("deleted") &&
+      !signedIn);
 
   useEffect(() => {
-    document.title =
-      path === "/sso-callback"
+    document.title = showDeleted
+      ? "Account deleted · Sikemux"
+      : path === "/sso-callback"
         ? "Signing in · Sikemux"
-        : signedIn
-          ? "Your devices · Sikemux"
-          : "Sign in · Sikemux";
-  }, [path, signedIn]);
+        : path === DELETE_ACCOUNT
+          ? "Delete your account · Sikemux"
+          : signedIn
+            ? "Your devices · Sikemux"
+            : "Sign in · Sikemux";
+  }, [path, signedIn, showDeleted]);
 
-  const goHome = () => {
-    history.replaceState(null, "", "/");
-    setPath("/");
+  const afterSignIn = () => go(takeReturn(), { replace: true });
+
+  /** Reached from this page or from the account's live connection, so it may run twice. */
+  const onDeleted = () => {
+    if (signingOut.current) return;
+    signingOut.current = true;
+    setDeleted(true);
+    go(`${DELETE_ACCOUNT}${DELETED_QUERY}`, { replace: true });
+    signOut({ redirectUrl: `${DELETE_ACCOUNT}${DELETED_QUERY}` }).catch(
+      () => undefined,
+    );
   };
 
   return (
     <>
       <Backdrop />
       <div className="page">
-        {path === "/sso-callback" ? (
+        {showDeleted ? (
+          <main className="center">
+            <AccountDeleted />
+          </main>
+        ) : path === "/sso-callback" ? (
           <section className="panel">
             <p className="quiet">Signing you in…</p>
             <HandleSSOCallback
-              navigateToApp={goHome}
-              navigateToSignIn={goHome}
-              navigateToSignUp={goHome}
+              navigateToApp={afterSignIn}
+              navigateToSignIn={afterSignIn}
+              navigateToSignUp={afterSignIn}
             />
           </section>
         ) : signedIn ? (
-          <Account ready={isLoaded} />
+          <Account
+            ready={isLoaded}
+            deleting={path === DELETE_ACCOUNT}
+            onDelete={follow(DELETE_ACCOUNT)}
+            onBack={() => go("/")}
+            onDeleted={onDeleted}
+          />
         ) : (
           <main className="center">
+            {path === DELETE_ACCOUNT ? <DeleteAccountIntro /> : null}
             <SignIn ready={isLoaded} />
             <footer className="legal">
               <a href="https://sikemux.com/privacy">Privacy</a>
@@ -60,7 +98,19 @@ export function App() {
   );
 }
 
-function Account({ ready }: { ready: boolean }) {
+function Account({
+  ready,
+  deleting,
+  onDelete,
+  onBack,
+  onDeleted,
+}: {
+  ready: boolean;
+  deleting: boolean;
+  onDelete: (event: MouseEvent<HTMLAnchorElement>) => void;
+  onBack: () => void;
+  onDeleted: () => void;
+}) {
   const { user } = useUser();
   const { isSignedIn } = useAuth();
   const { signOut } = useClerk();
@@ -70,7 +120,7 @@ function Account({ ready }: { ready: boolean }) {
   useLive(ready && isSignedIn === true, {
     onEvents: devices.apply,
     onResync: devices.reload,
-    onAccountDeleted: () => void signOut({ redirectUrl: "/" }),
+    onAccountDeleted: onDeleted,
   });
 
   return (
@@ -94,12 +144,28 @@ function Account({ ready }: { ready: boolean }) {
         </div>
       </header>
       <main>
-        <h1>Your devices</h1>
-        <p className="lede">
-          Hosts and clients signed in to this account. A client still connects
-          to a host only after someone at the host allows it.
-        </p>
-        <Devices load={devices.load} remove={devices.remove} />
+        {deleting ? (
+          <DeleteAccount
+            email={email}
+            load={devices.load}
+            onBack={onBack}
+            onDeleted={onDeleted}
+          />
+        ) : (
+          <>
+            <h1>Your devices</h1>
+            <p className="lede">
+              Hosts and clients signed in to this account. A client still
+              connects to a host only after someone at the host allows it.
+            </p>
+            <Devices load={devices.load} remove={devices.remove} />
+            <footer className="account-footer">
+              <a href={DELETE_ACCOUNT} onClick={onDelete}>
+                Delete account
+              </a>
+            </footer>
+          </>
+        )}
       </main>
     </div>
   );
