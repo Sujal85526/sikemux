@@ -62,6 +62,12 @@ export const schema = {
       required: ["error"],
       additionalProperties: false,
     },
+    ApnsEnvironment: {
+      description:
+        "Which of Apple's push servers issued an iOS token: sandbox for builds run from Xcode, production for TestFlight and the App Store.",
+      type: "string",
+      enum: ["sandbox", "production"],
+    },
     AppVersion: {
       description: "A semantic version, such as 0.5.0 or 0.6.0-nightly.3.",
       type: "string",
@@ -260,6 +266,7 @@ export const schema = {
         { $ref: "#/$defs/LiveAuth" },
         { $ref: "#/$defs/LivePong" },
         { $ref: "#/$defs/LiveLeave" },
+        { $ref: "#/$defs/LivePush" },
       ],
       discriminator: { propertyName: "type" },
     },
@@ -314,6 +321,60 @@ export const schema = {
       type: "object",
       properties: { type: { const: "pong" } },
       required: ["type"],
+      additionalProperties: false,
+    },
+    LivePush: {
+      description:
+        "Hosts only: deliver a notification to one of the account's phones. The blob is sealed on the host with a key only that phone has, and the server passes it on unread. The server answers with pushed.",
+      type: "object",
+      properties: {
+        type: { const: "push" },
+        ref: { $ref: "#/$defs/PushRef" },
+        to: {
+          description: "The phone's device key.",
+          $ref: "#/$defs/DeviceKey",
+        },
+        kind: { $ref: "#/$defs/PushKind" },
+        collapseId: {
+          description:
+            "Opaque to the server. A later push with the same collapseId replaces or clears the notification this one shows.",
+          type: "string",
+          pattern: "^[0-9a-f]{32}$",
+        },
+        blob: {
+          description: "The sealed notification, in standard base64.",
+          type: "string",
+          minLength: 4,
+          maxLength: 2900,
+          pattern: "^[A-Za-z0-9+/]+={0,2}$",
+        },
+        expiresAt: {
+          description:
+            "After this the push is worth nothing, so the server drops it rather than deliver it late.",
+          type: "string",
+          format: "date-time",
+        },
+      },
+      required: [
+        "type",
+        "ref",
+        "to",
+        "kind",
+        "collapseId",
+        "blob",
+        "expiresAt",
+      ],
+      additionalProperties: false,
+    },
+    LivePushed: {
+      description: "The answer to a host's push, carrying the push's ref.",
+      type: "object",
+      properties: {
+        type: { const: "pushed" },
+        ref: { $ref: "#/$defs/PushRef" },
+        result: { $ref: "#/$defs/PushResult" },
+      },
+      required: ["type", "ref", "result"],
       additionalProperties: false,
     },
     LiveReady: {
@@ -382,6 +443,7 @@ export const schema = {
         { $ref: "#/$defs/LiveRevoked" },
         { $ref: "#/$defs/LivePing" },
         { $ref: "#/$defs/LiveBye" },
+        { $ref: "#/$defs/LivePushed" },
       ],
       discriminator: { propertyName: "type" },
     },
@@ -415,6 +477,81 @@ export const schema = {
       additionalProperties: false,
     },
     Platform: { type: "string", enum: ["macos", "ios", "android"] },
+    PushApp: {
+      description:
+        "Which build of the phone app the token belongs to. Each has its own Firebase project and bundle id, and an API serves only one of them.",
+      type: "string",
+      enum: ["production", "dev"],
+    },
+    PushKind: {
+      description:
+        "alert shows a notification. clear removes one shown before with the same collapseId, and is delivered at a lower priority.",
+      type: "string",
+      enum: ["alert", "clear"],
+    },
+    PushPlatform: {
+      description:
+        "Which service delivers to the phone: Apple's push service, or Firebase Cloud Messaging.",
+      type: "string",
+      enum: ["apns", "fcm"],
+    },
+    PushRef: {
+      description:
+        "A number the host picks for each push, so it can match the server's answer to it.",
+      type: "integer",
+      minimum: 0,
+      maximum: 2147483647,
+    },
+    PushResult: {
+      description:
+        "What became of a push. sent: the platform accepted it. no_token: the phone has notifications off. not_allowed: the target is not a phone on the sender's account. throttled: over a limit, dropped. expired: its expiresAt had passed. not_set_up: this server cannot reach the phone's platform. failed: the platform refused it or could not be reached.",
+      type: "string",
+      enum: [
+        "sent",
+        "no_token",
+        "not_allowed",
+        "throttled",
+        "expired",
+        "not_set_up",
+        "failed",
+      ],
+    },
+    PushTokenRegistration: {
+      description:
+        "Where the phone wants its notifications delivered. The signature is the phone's device key's Ed25519 signature over the UTF-8 text `sikemux-push|<nonce>|<key>|<sha256 of the token, lowercase hex>`, so no other sign-in on the account can redirect the phone's notifications.",
+      type: "object",
+      properties: {
+        platform: { $ref: "#/$defs/PushPlatform" },
+        token: {
+          description:
+            "The token the platform gave the app: the native APNs or FCM token, never an Expo push token.",
+          type: "string",
+          minLength: 1,
+          maxLength: 4096,
+        },
+        app: { $ref: "#/$defs/PushApp" },
+        apnsEnvironment: {
+          description: "Required when platform is apns, and absent otherwise.",
+          $ref: "#/$defs/ApnsEnvironment",
+        },
+        nonce: { type: "string", pattern: "^[0-9a-f]{64}$" },
+        signature: { type: "string", pattern: "^[0-9a-f]{128}$" },
+      },
+      required: ["platform", "token", "app", "nonce", "signature"],
+      additionalProperties: false,
+    },
+    PushTokenState: {
+      type: "object",
+      properties: {
+        enabled: {
+          description: "Whether the server has a token for this phone.",
+          type: "boolean",
+        },
+        updatedAt: { type: "string", format: "date-time" },
+      },
+      required: ["enabled", "updatedAt"],
+      additionalProperties: false,
+    },
     Relay: {
       type: "object",
       properties: {

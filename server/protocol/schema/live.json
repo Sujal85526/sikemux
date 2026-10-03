@@ -194,6 +194,63 @@
       "required": ["type"],
       "additionalProperties": false
     },
+    "PushRef": {
+      "description": "A number the host picks for each push, so it can match the server's answer to it.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483647
+    },
+    "LivePush": {
+      "description": "Hosts only: deliver a notification to one of the account's phones. The blob is sealed on the host with a key only that phone has, and the server passes it on unread. The server answers with pushed.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "push" },
+        "ref": { "$ref": "#/$defs/PushRef" },
+        "to": {
+          "description": "The phone's device key.",
+          "$ref": "devices.json#/$defs/DeviceKey"
+        },
+        "kind": { "$ref": "push.json#/$defs/PushKind" },
+        "collapseId": {
+          "description": "Opaque to the server. A later push with the same collapseId replaces or clears the notification this one shows.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "blob": {
+          "description": "The sealed notification, in standard base64.",
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 2900,
+          "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+        },
+        "expiresAt": {
+          "description": "After this the push is worth nothing, so the server drops it rather than deliver it late.",
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "type",
+        "ref",
+        "to",
+        "kind",
+        "collapseId",
+        "blob",
+        "expiresAt"
+      ],
+      "additionalProperties": false
+    },
+    "LivePushed": {
+      "description": "The answer to a host's push, carrying the push's ref.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "pushed" },
+        "ref": { "$ref": "#/$defs/PushRef" },
+        "result": { "$ref": "push.json#/$defs/PushResult" }
+      },
+      "required": ["type", "ref", "result"],
+      "additionalProperties": false
+    },
     "LiveServerMessage": {
       "description": "What the server sends on a live connection.",
       "type": "object",
@@ -204,7 +261,8 @@
         { "$ref": "#/$defs/LiveReset" },
         { "$ref": "#/$defs/LiveRevoked" },
         { "$ref": "#/$defs/LivePing" },
-        { "$ref": "#/$defs/LiveBye" }
+        { "$ref": "#/$defs/LiveBye" },
+        { "$ref": "#/$defs/LivePushed" }
       ],
       "discriminator": { "propertyName": "type" }
     },
@@ -216,7 +274,8 @@
         { "$ref": "#/$defs/LiveAck" },
         { "$ref": "#/$defs/LiveAuth" },
         { "$ref": "#/$defs/LivePong" },
-        { "$ref": "#/$defs/LiveLeave" }
+        { "$ref": "#/$defs/LiveLeave" },
+        { "$ref": "#/$defs/LivePush" }
       ],
       "discriminator": { "propertyName": "type" }
     }

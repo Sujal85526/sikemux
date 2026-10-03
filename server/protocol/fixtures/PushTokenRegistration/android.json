@@ -1,0 +1,7 @@
+{
+  "platform": "fcm",
+  "token": "dQw4w9WgXcQ:APA91bH-example-fcm-registration-token",
+  "app": "production",
+  "nonce": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+  "signature": "60024c270e909a0f354c1e01bc54453bdbdec1cb0bf32190222a86fcf6f9280302bc876838087a9c447e1317f111e2147e0c9918a8b4b1b464491a9bfd845c00"
+}

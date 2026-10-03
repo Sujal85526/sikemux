@@ -63,6 +63,18 @@ pub struct ApiError {
     pub error: ErrorDetail,
 }
 
+/// Which of Apple's push servers issued an iOS token: sandbox for builds run from Xcode, production for TestFlight and the App Store.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ApnsEnvironment {
+    #[serde(rename = "sandbox")]
+    Sandbox,
+    #[serde(rename = "production")]
+    Production,
+    /// A value added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
 /// A semantic version, such as 0.5.0 or 0.6.0-nightly.3.
 pub type AppVersion = String;
 
@@ -254,6 +266,8 @@ pub enum LiveDeviceMessage {
     Pong(LivePong),
     #[serde(rename = "leave")]
     Leave(LiveLeave),
+    #[serde(rename = "push")]
+    Push(LivePush),
     /// A message added after this build, which it cannot act on.
     #[serde(other)]
     Unknown,
@@ -295,6 +309,30 @@ pub struct LivePing {}
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LivePong {}
+
+/// Hosts only: deliver a notification to one of the account's phones. The blob is sealed on the host with a key only that phone has, and the server passes it on unread. The server answers with pushed.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LivePush {
+    pub r#ref: PushRef,
+    /// The phone's device key.
+    pub to: DeviceKey,
+    pub kind: PushKind,
+    /// Opaque to the server. A later push with the same collapseId replaces or clears the notification this one shows.
+    pub collapse_id: String,
+    /// The sealed notification, in standard base64.
+    pub blob: String,
+    /// After this the push is worth nothing, so the server drops it rather than deliver it late.
+    pub expires_at: String,
+}
+
+/// The answer to a host's push, carrying the push's ref.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LivePushed {
+    pub r#ref: PushRef,
+    pub result: PushResult,
+}
 
 /// The hello was accepted. Events after the device's cursor follow.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -355,6 +393,8 @@ pub enum LiveServerMessage {
     Ping(LivePing),
     #[serde(rename = "bye")]
     Bye(LiveBye),
+    #[serde(rename = "pushed")]
+    Pushed(LivePushed),
     /// A message added after this build, which it cannot act on.
     #[serde(other)]
     Unknown,
@@ -389,6 +429,90 @@ pub enum Platform {
     /// A value added after this build, which it cannot act on.
     #[serde(other)]
     Unknown,
+}
+
+/// Which build of the phone app the token belongs to. Each has its own Firebase project and bundle id, and an API serves only one of them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum PushApp {
+    #[serde(rename = "production")]
+    Production,
+    #[serde(rename = "dev")]
+    Dev,
+    /// A value added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
+/// alert shows a notification. clear removes one shown before with the same collapseId, and is delivered at a lower priority.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum PushKind {
+    #[serde(rename = "alert")]
+    Alert,
+    #[serde(rename = "clear")]
+    Clear,
+    /// A value added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
+/// Which service delivers to the phone: Apple's push service, or Firebase Cloud Messaging.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum PushPlatform {
+    #[serde(rename = "apns")]
+    Apns,
+    #[serde(rename = "fcm")]
+    Fcm,
+    /// A value added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
+/// A number the host picks for each push, so it can match the server's answer to it.
+pub type PushRef = i64;
+
+/// What became of a push. sent: the platform accepted it. no_token: the phone has notifications off. not_allowed: the target is not a phone on the sender's account. throttled: over a limit, dropped. expired: its expiresAt had passed. not_set_up: this server cannot reach the phone's platform. failed: the platform refused it or could not be reached.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum PushResult {
+    #[serde(rename = "sent")]
+    Sent,
+    #[serde(rename = "no_token")]
+    NoToken,
+    #[serde(rename = "not_allowed")]
+    NotAllowed,
+    #[serde(rename = "throttled")]
+    Throttled,
+    #[serde(rename = "expired")]
+    Expired,
+    #[serde(rename = "not_set_up")]
+    NotSetUp,
+    #[serde(rename = "failed")]
+    Failed,
+    /// A value added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
+/// Where the phone wants its notifications delivered. The signature is the phone's device key's Ed25519 signature over the UTF-8 text `sikemux-push|<nonce>|<key>|<sha256 of the token, lowercase hex>`, so no other sign-in on the account can redirect the phone's notifications.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PushTokenRegistration {
+    pub platform: PushPlatform,
+    /// The token the platform gave the app: the native APNs or FCM token, never an Expo push token.
+    pub token: String,
+    pub app: PushApp,
+    /// Required when platform is apns, and absent otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub apns_environment: Option<ApnsEnvironment>,
+    pub nonce: String,
+    pub signature: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PushTokenState {
+    /// Whether the server has a token for this phone.
+    pub enabled: bool,
+    pub updated_at: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -426,6 +550,7 @@ pub(crate) fn round_trip(name: &str, json: &str) -> Option<super::RoundTrip> {
         "AccountEvent" => through::<AccountEvent>(json),
         "AccountEventType" => through::<AccountEventType>(json),
         "ApiError" => through::<ApiError>(json),
+        "ApnsEnvironment" => through::<ApnsEnvironment>(json),
         "AppVersion" => through::<AppVersion>(json),
         "Challenge" => through::<Challenge>(json),
         "Channel" => through::<Channel>(json),
@@ -451,6 +576,8 @@ pub(crate) fn round_trip(name: &str, json: &str) -> Option<super::RoundTrip> {
         "LiveLeave" => through::<LiveDeviceMessage>(json),
         "LivePing" => through::<LiveServerMessage>(json),
         "LivePong" => through::<LiveDeviceMessage>(json),
+        "LivePush" => through::<LiveDeviceMessage>(json),
+        "LivePushed" => through::<LiveServerMessage>(json),
         "LiveReady" => through::<LiveServerMessage>(json),
         "LiveReset" => through::<LiveServerMessage>(json),
         "LiveRevoked" => through::<LiveServerMessage>(json),
@@ -459,6 +586,13 @@ pub(crate) fn round_trip(name: &str, json: &str) -> Option<super::RoundTrip> {
         "MinimumVersions" => through::<MinimumVersions>(json),
         "Network" => through::<Network>(json),
         "Platform" => through::<Platform>(json),
+        "PushApp" => through::<PushApp>(json),
+        "PushKind" => through::<PushKind>(json),
+        "PushPlatform" => through::<PushPlatform>(json),
+        "PushRef" => through::<PushRef>(json),
+        "PushResult" => through::<PushResult>(json),
+        "PushTokenRegistration" => through::<PushTokenRegistration>(json),
+        "PushTokenState" => through::<PushTokenState>(json),
         "Relay" => through::<Relay>(json),
         "RevokeReason" => through::<RevokeReason>(json),
         _ => return None,

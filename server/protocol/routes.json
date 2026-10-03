@@ -94,6 +94,48 @@
       }
     },
     {
+      "method": "put",
+      "path": "/v1/devices/{key}/push",
+      "operationId": "setPushToken",
+      "summary": "Deliver this phone's notifications to a push token",
+      "auth": "session",
+      "request": "PushTokenRegistration",
+      "responses": {
+        "200": {
+          "description": "The token is stored, replacing the phone's earlier one. A token another phone had moves to this one.",
+          "body": "PushTokenState"
+        },
+        "400": {
+          "description": "The challenge is unknown, used or expired; the device is a host; or this server does not deliver to that app or APNs environment.",
+          "body": "ApiError"
+        },
+        "403": {
+          "description": "The signature does not prove the phone holds its key.",
+          "body": "ApiError"
+        },
+        "404": {
+          "description": "None of your devices has that key.",
+          "body": "ApiError"
+        }
+      }
+    },
+    {
+      "method": "delete",
+      "path": "/v1/devices/{key}/push",
+      "operationId": "clearPushToken",
+      "summary": "Stop delivering notifications to this phone",
+      "auth": "session",
+      "responses": {
+        "204": {
+          "description": "The phone has no push token, whether or not it had one."
+        },
+        "404": {
+          "description": "None of your devices has that key.",
+          "body": "ApiError"
+        }
+      }
+    },
+    {
       "method": "get",
       "path": "/v1/live",
       "operationId": "openLive",

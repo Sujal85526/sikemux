@@ -31,6 +31,9 @@ export interface ApiError {
   error: ErrorDetail;
 }
 
+/** Which of Apple's push servers issued an iOS token: sandbox for builds run from Xcode, production for TestFlight and the App Store. */
+export type ApnsEnvironment = "sandbox" | "production";
+
 /** A semantic version, such as 0.5.0 or 0.6.0-nightly.3. */
 export type AppVersion = string;
 
@@ -145,7 +148,7 @@ export interface LiveChallenge {
 
 /** What a device or the web app sends on a live connection. */
 export type LiveDeviceMessage =
-  LiveHello | LiveAck | LiveAuth | LivePong | LiveLeave;
+  LiveHello | LiveAck | LiveAuth | LivePong | LiveLeave | LivePush;
 
 /** Events the device has not acknowledged yet, oldest first. Delivery is at least once. */
 export interface LiveEvents {
@@ -176,6 +179,28 @@ export interface LivePing {
 /** The answer to ping. */
 export interface LivePong {
   type: "pong";
+}
+
+/** Hosts only: deliver a notification to one of the account's phones. The blob is sealed on the host with a key only that phone has, and the server passes it on unread. The server answers with pushed. */
+export interface LivePush {
+  type: "push";
+  ref: PushRef;
+  /** The phone's device key. */
+  to: DeviceKey;
+  kind: PushKind;
+  /** Opaque to the server. A later push with the same collapseId replaces or clears the notification this one shows. */
+  collapseId: string;
+  /** The sealed notification, in standard base64. */
+  blob: string;
+  /** After this the push is worth nothing, so the server drops it rather than deliver it late. */
+  expiresAt: string;
+}
+
+/** The answer to a host's push, carrying the push's ref. */
+export interface LivePushed {
+  type: "pushed";
+  ref: PushRef;
+  result: PushResult;
 }
 
 /** The hello was accepted. Events after the device's cursor follow. */
@@ -212,7 +237,8 @@ export type LiveServerMessage =
   | LiveReset
   | LiveRevoked
   | LivePing
-  | LiveBye;
+  | LiveBye
+  | LivePushed;
 
 /** The oldest version of each app the server works with, by platform. Dev builds are never too old. */
 export interface MinimumVersions {
@@ -229,6 +255,46 @@ export interface Network {
 }
 
 export type Platform = "macos" | "ios" | "android";
+
+/** Which build of the phone app the token belongs to. Each has its own Firebase project and bundle id, and an API serves only one of them. */
+export type PushApp = "production" | "dev";
+
+/** alert shows a notification. clear removes one shown before with the same collapseId, and is delivered at a lower priority. */
+export type PushKind = "alert" | "clear";
+
+/** Which service delivers to the phone: Apple's push service, or Firebase Cloud Messaging. */
+export type PushPlatform = "apns" | "fcm";
+
+/** A number the host picks for each push, so it can match the server's answer to it. */
+export type PushRef = number;
+
+/** What became of a push. sent: the platform accepted it. no_token: the phone has notifications off. not_allowed: the target is not a phone on the sender's account. throttled: over a limit, dropped. expired: its expiresAt had passed. not_set_up: this server cannot reach the phone's platform. failed: the platform refused it or could not be reached. */
+export type PushResult =
+  | "sent"
+  | "no_token"
+  | "not_allowed"
+  | "throttled"
+  | "expired"
+  | "not_set_up"
+  | "failed";
+
+/** Where the phone wants its notifications delivered. The signature is the phone's device key's Ed25519 signature over the UTF-8 text `sikemux-push|<nonce>|<key>|<sha256 of the token, lowercase hex>`, so no other sign-in on the account can redirect the phone's notifications. */
+export interface PushTokenRegistration {
+  platform: PushPlatform;
+  /** The token the platform gave the app: the native APNs or FCM token, never an Expo push token. */
+  token: string;
+  app: PushApp;
+  /** Required when platform is apns, and absent otherwise. */
+  apnsEnvironment?: ApnsEnvironment;
+  nonce: string;
+  signature: string;
+}
+
+export interface PushTokenState {
+  /** Whether the server has a token for this phone. */
+  enabled: boolean;
+  updatedAt: string;
+}
 
 export interface Relay {
   /** The relay's HTTPS address, such as https://relay.sikemux.com/. */
@@ -249,6 +315,7 @@ export interface Definitions {
   AccountEvent: AccountEvent;
   AccountEventType: AccountEventType;
   ApiError: ApiError;
+  ApnsEnvironment: ApnsEnvironment;
   AppVersion: AppVersion;
   Challenge: Challenge;
   Channel: Channel;
@@ -274,6 +341,8 @@ export interface Definitions {
   LiveLeave: LiveLeave;
   LivePing: LivePing;
   LivePong: LivePong;
+  LivePush: LivePush;
+  LivePushed: LivePushed;
   LiveReady: LiveReady;
   LiveReset: LiveReset;
   LiveRevoked: LiveRevoked;
@@ -282,6 +351,13 @@ export interface Definitions {
   MinimumVersions: MinimumVersions;
   Network: Network;
   Platform: Platform;
+  PushApp: PushApp;
+  PushKind: PushKind;
+  PushPlatform: PushPlatform;
+  PushRef: PushRef;
+  PushResult: PushResult;
+  PushTokenRegistration: PushTokenRegistration;
+  PushTokenState: PushTokenState;
   Relay: Relay;
   RevokeReason: RevokeReason;
 }

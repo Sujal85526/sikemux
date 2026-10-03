@@ -1,0 +1,10 @@
+{
+  "description": "A push token registration signed by the key whose secret is 32 bytes of 7, the same key and challenge as registration.json. The server and sikemux-mobile check it.",
+  "secretKey": "0707070707070707070707070707070707070707070707070707070707070707",
+  "key": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+  "nonce": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+  "token": "dQw4w9WgXcQ:APA91bH-example-fcm-registration-token",
+  "tokenSha256": "39cbb8e4342fc2475ae0c49988e02c7daf1061ce973c0334c0d513e715ff2f71",
+  "message": "sikemux-push|9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08|ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c|39cbb8e4342fc2475ae0c49988e02c7daf1061ce973c0334c0d513e715ff2f71",
+  "signature": "60024c270e909a0f354c1e01bc54453bdbdec1cb0bf32190222a86fcf6f9280302bc876838087a9c447e1317f111e2147e0c9918a8b4b1b464491a9bfd845c00"
+}
