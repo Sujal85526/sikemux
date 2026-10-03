@@ -5,7 +5,7 @@ import { browserApi, BLANK_URL, type BrowserBounds, type BrowserHole, type Brows
 import { onStageFrame, stageMoving, useNativeViewHoles, useNativeViewsOccluded, useStageMoving, type NativeViewHole } from "../state/nativeViews";
 import type { AgentType, PtyContext, Session, Window as WindowT } from "../state/types";
 import { reportError } from "../state/toast";
-import { AgentIcon, IconChevron, IconPlus, IconRefresh, WindowIcon } from "../ui/Icons";
+import { AgentIcon, IconChevron, IconPhone, IconPlus, IconRefresh, WindowIcon } from "../ui/Icons";
 import { FileIcon } from "../ui/FileIcon";
 import { SiteIcon } from "../ui/SiteIcon";
 import { AddressBar } from "./AddressBar";
@@ -24,9 +24,11 @@ import {
     isShown,
     shownDeskItem,
     takeDeskRestore,
+    simulatorKey,
     terminalKey,
 } from "../state/desks";
 import { TerminalPane } from "../terminal/TerminalPane";
+import { SimulatorPane } from "../sim/SimulatorPane";
 import { basename } from "../lib/paths";
 import * as cmd from "../state/commands";
 import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
@@ -303,6 +305,20 @@ function DeskSession({
                 dirty: dirty.includes(item.path),
             };
         }
+        if (item.kind === "simulator") {
+            const label = item.simulator.deviceName ?? "Simulator";
+            return {
+                id: item.key,
+                label,
+                title: `iOS Simulator · ${label}`,
+                active: tabActive,
+                icon: (
+                    <span className="agent-glyph sim">
+                        <IconPhone size={13} />
+                    </span>
+                ),
+            };
+        }
         return {
             id: item.key,
             label: item.terminal.label,
@@ -386,6 +402,14 @@ function DeskSession({
                                 context={context(terminal.id)}
                                 externallyOwned
                             />
+                        </div>
+                    );
+                })}
+                {desk.simulators.map((simulator) => {
+                    const showing = shown === simulatorKey(simulator.id);
+                    return (
+                        <div key={simulator.id} className="desk-simulator" hidden={!showing}>
+                            <SimulatorPane agentId={agentId} simulator={simulator} visible={visible && showing} />
                         </div>
                     );
                 })}

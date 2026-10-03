@@ -50,7 +50,8 @@ struct SikemuxSim {
             try await simulators.shutdown(udid)
         case "screenshot":
             let png = try await simulators.screenshot(udid)
-            if let path = request.path {
+            if let given = request.path {
+                let path = (given as NSString).expandingTildeInPath
                 try png.write(to: URL(fileURLWithPath: path))
                 return ["path": path, "bytes": png.count]
             }
