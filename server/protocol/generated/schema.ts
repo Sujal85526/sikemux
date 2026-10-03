@@ -62,6 +62,12 @@ export const schema = {
       required: ["error"],
       additionalProperties: false,
     },
+    AppVersion: {
+      description: "A semantic version, such as 0.5.0 or 0.6.0-nightly.3.",
+      type: "string",
+      pattern:
+        "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
+    },
     Challenge: {
       description: "A one-time value a device signs to prove it holds its key.",
       type: "object",
@@ -77,6 +83,17 @@ export const schema = {
         "Which build a host runs. Dev, nightly and stable cores are separate hosts.",
       type: "string",
       enum: ["dev", "nightly", "stable"],
+    },
+    ChannelVersions: {
+      description:
+        "An app older than its channel's version, compared as semantic versions, must update before it connects.",
+      type: "object",
+      properties: {
+        nightly: { $ref: "#/$defs/AppVersion" },
+        stable: { $ref: "#/$defs/AppVersion" },
+      },
+      required: ["nightly", "stable"],
+      additionalProperties: false,
     },
     Device: {
       type: "object",
@@ -368,7 +385,60 @@ export const schema = {
       ],
       discriminator: { propertyName: "type" },
     },
+    MinimumVersions: {
+      description:
+        "The oldest version of each app the server works with, by platform. Dev builds are never too old.",
+      type: "object",
+      properties: {
+        macos: { $ref: "#/$defs/ChannelVersions" },
+        ios: { $ref: "#/$defs/ChannelVersions" },
+        android: { $ref: "#/$defs/ChannelVersions" },
+      },
+      required: ["macos", "ios", "android"],
+      additionalProperties: false,
+    },
+    Network: {
+      description:
+        "How hosts and phones reach each other, and the oldest app the server still serves. Apps read it when they start, so changing either needs no app release.",
+      type: "object",
+      properties: {
+        relays: {
+          description:
+            "The relays to use, best first. A host connects to every one; a phone dials a host through the relay the host says it is on.",
+          type: "array",
+          minItems: 1,
+          items: { $ref: "#/$defs/Relay" },
+        },
+        minimumVersions: { $ref: "#/$defs/MinimumVersions" },
+      },
+      required: ["relays", "minimumVersions"],
+      additionalProperties: false,
+    },
     Platform: { type: "string", enum: ["macos", "ios", "android"] },
+    Relay: {
+      type: "object",
+      properties: {
+        url: {
+          description:
+            "The relay's HTTPS address, such as https://relay.sikemux.com/.",
+          type: "string",
+          format: "uri",
+        },
+        region: {
+          description: "Where the relay runs, for logs and settings screens.",
+          type: "string",
+        },
+        quicPort: {
+          description:
+            "The UDP port of the relay's QUIC address discovery, or null when it has none.",
+          type: ["integer", "null"],
+          minimum: 1,
+          maximum: 65535,
+        },
+      },
+      required: ["url", "region", "quicPort"],
+      additionalProperties: false,
+    },
     RevokeReason: {
       description:
         "Why a device left its account: removed from another device or the web, signed out on the device itself, or the account was deleted.",

@@ -63,6 +63,9 @@ pub struct ApiError {
     pub error: ErrorDetail,
 }
 
+/// A semantic version, such as 0.5.0 or 0.6.0-nightly.3.
+pub type AppVersion = String;
+
 /// A one-time value a device signs to prove it holds its key.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -83,6 +86,14 @@ pub enum Channel {
     /// A value added after this build, which it cannot act on.
     #[serde(other)]
     Unknown,
+}
+
+/// An app older than its channel's version, compared as semantic versions, must update before it connects.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelVersions {
+    pub nightly: AppVersion,
+    pub stable: AppVersion,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -349,6 +360,24 @@ pub enum LiveServerMessage {
     Unknown,
 }
 
+/// The oldest version of each app the server works with, by platform. Dev builds are never too old.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MinimumVersions {
+    pub macos: ChannelVersions,
+    pub ios: ChannelVersions,
+    pub android: ChannelVersions,
+}
+
+/// How hosts and phones reach each other, and the oldest app the server still serves. Apps read it when they start, so changing either needs no app release.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Network {
+    /// The relays to use, best first. A host connects to every one; a phone dials a host through the relay the host says it is on.
+    pub relays: Vec<Relay>,
+    pub minimum_versions: MinimumVersions,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Platform {
     #[serde(rename = "macos")]
@@ -360,6 +389,17 @@ pub enum Platform {
     /// A value added after this build, which it cannot act on.
     #[serde(other)]
     Unknown,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Relay {
+    /// The relay's HTTPS address, such as https://relay.sikemux.com/.
+    pub url: String,
+    /// Where the relay runs, for logs and settings screens.
+    pub region: String,
+    /// The UDP port of the relay's QUIC address discovery, or null when it has none.
+    pub quic_port: Option<i64>,
 }
 
 /// Why a device left its account: removed from another device or the web, signed out on the device itself, or the account was deleted.
@@ -386,8 +426,10 @@ pub(crate) fn round_trip(name: &str, json: &str) -> Option<super::RoundTrip> {
         "AccountEvent" => through::<AccountEvent>(json),
         "AccountEventType" => through::<AccountEventType>(json),
         "ApiError" => through::<ApiError>(json),
+        "AppVersion" => through::<AppVersion>(json),
         "Challenge" => through::<Challenge>(json),
         "Channel" => through::<Channel>(json),
+        "ChannelVersions" => through::<ChannelVersions>(json),
         "Device" => through::<Device>(json),
         "DeviceKey" => through::<DeviceKey>(json),
         "DeviceList" => through::<DeviceList>(json),
@@ -414,7 +456,10 @@ pub(crate) fn round_trip(name: &str, json: &str) -> Option<super::RoundTrip> {
         "LiveRevoked" => through::<LiveServerMessage>(json),
         "LiveRole" => through::<LiveRole>(json),
         "LiveServerMessage" => through::<LiveServerMessage>(json),
+        "MinimumVersions" => through::<MinimumVersions>(json),
+        "Network" => through::<Network>(json),
         "Platform" => through::<Platform>(json),
+        "Relay" => through::<Relay>(json),
         "RevokeReason" => through::<RevokeReason>(json),
         _ => return None,
     })

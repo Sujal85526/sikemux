@@ -31,6 +31,9 @@ export interface ApiError {
   error: ErrorDetail;
 }
 
+/** A semantic version, such as 0.5.0 or 0.6.0-nightly.3. */
+export type AppVersion = string;
+
 /** A one-time value a device signs to prove it holds its key. */
 export interface Challenge {
   nonce: string;
@@ -39,6 +42,12 @@ export interface Challenge {
 
 /** Which build a host runs. Dev, nightly and stable cores are separate hosts. */
 export type Channel = "dev" | "nightly" | "stable";
+
+/** An app older than its channel's version, compared as semantic versions, must update before it connects. */
+export interface ChannelVersions {
+  nightly: AppVersion;
+  stable: AppVersion;
+}
 
 export interface Device {
   key: DeviceKey;
@@ -205,7 +214,30 @@ export type LiveServerMessage =
   | LivePing
   | LiveBye;
 
+/** The oldest version of each app the server works with, by platform. Dev builds are never too old. */
+export interface MinimumVersions {
+  macos: ChannelVersions;
+  ios: ChannelVersions;
+  android: ChannelVersions;
+}
+
+/** How hosts and phones reach each other, and the oldest app the server still serves. Apps read it when they start, so changing either needs no app release. */
+export interface Network {
+  /** The relays to use, best first. A host connects to every one; a phone dials a host through the relay the host says it is on. */
+  relays: Relay[];
+  minimumVersions: MinimumVersions;
+}
+
 export type Platform = "macos" | "ios" | "android";
+
+export interface Relay {
+  /** The relay's HTTPS address, such as https://relay.sikemux.com/. */
+  url: string;
+  /** Where the relay runs, for logs and settings screens. */
+  region: string;
+  /** The UDP port of the relay's QUIC address discovery, or null when it has none. */
+  quicPort: number | null;
+}
 
 /** Why a device left its account: removed from another device or the web, signed out on the device itself, or the account was deleted. */
 export type RevokeReason = "removed" | "signed_out" | "account_deleted";
@@ -217,8 +249,10 @@ export interface Definitions {
   AccountEvent: AccountEvent;
   AccountEventType: AccountEventType;
   ApiError: ApiError;
+  AppVersion: AppVersion;
   Challenge: Challenge;
   Channel: Channel;
+  ChannelVersions: ChannelVersions;
   Device: Device;
   DeviceKey: DeviceKey;
   DeviceList: DeviceList;
@@ -245,6 +279,9 @@ export interface Definitions {
   LiveRevoked: LiveRevoked;
   LiveRole: LiveRole;
   LiveServerMessage: LiveServerMessage;
+  MinimumVersions: MinimumVersions;
+  Network: Network;
   Platform: Platform;
+  Relay: Relay;
   RevokeReason: RevokeReason;
 }

@@ -18,6 +18,23 @@
       }
     },
     {
+      "method": "get",
+      "path": "/v1/network",
+      "operationId": "getNetwork",
+      "summary": "The relays apps connect through and the oldest app version still served",
+      "auth": "none",
+      "responses": {
+        "200": {
+          "description": "The network settings. Cacheable for five minutes; apps keep the last copy they read for when the API cannot be reached.",
+          "body": "Network"
+        },
+        "429": {
+          "description": "Too many requests from this address.",
+          "body": "ApiError"
+        }
+      }
+    },
+    {
       "method": "post",
       "path": "/v1/devices/challenge",
       "operationId": "createChallenge",
