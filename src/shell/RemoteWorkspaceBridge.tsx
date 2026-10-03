@@ -1,3 +1,4 @@
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useMemo, useState } from "react";
 import { remoteApi, type PublishedChat } from "../api/remote";
 import { backdropPicture, grainDotColor } from "../remote/backdrop";
@@ -35,7 +36,9 @@ export function RemoteWorkspaceBridge() {
         [agents, windows, sessions, sessionOrder, windowsBySession],
     );
     const titles = useMemo(() => JSON.stringify(remoteTitles({ agents })), [agents]);
-    const onScreen = useStore((s) => activeAgentId(s, s.sessions[s.activeSessionId]));
+    const active = useStore((s) => activeAgentId(s, s.sessions[s.activeSessionId]));
+    const focused = useWindowFocused();
+    const onScreen = focused ? active : undefined;
 
     useEffect(() => {
         const controller = new AbortController();
@@ -95,4 +98,34 @@ export function RemoteWorkspaceBridge() {
     }, [onScreen]);
 
     return null;
+}
+
+/** Whether the app's window is the one the person is using: a window behind another app is not looked at. */
+function useWindowFocused(): boolean {
+    const [focused, setFocused] = useState(true);
+    useEffect(() => {
+        let disposed = false;
+        let unlisten: (() => void) | undefined;
+        const onFocus = () => setFocused(true);
+        const onBlur = () => setFocused(false);
+        const watchPage = () => {
+            window.addEventListener("focus", onFocus);
+            window.addEventListener("blur", onBlur);
+        };
+        try {
+            getCurrentWindow()
+                .onFocusChanged(({ payload }) => setFocused(payload))
+                .then((stop) => (disposed ? stop() : (unlisten = stop)))
+                .catch(watchPage);
+        } catch {
+            watchPage();
+        }
+        return () => {
+            disposed = true;
+            unlisten?.();
+            window.removeEventListener("focus", onFocus);
+            window.removeEventListener("blur", onBlur);
+        };
+    }, []);
+    return focused;
 }

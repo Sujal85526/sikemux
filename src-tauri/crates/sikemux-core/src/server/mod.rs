@@ -468,6 +468,7 @@ impl Core {
         client.close();
         self.window.unregister(client.id);
         self.chats.forget_client(client.id);
+        self.seen.client_gone(client.id);
         if let Ok(mut clients) = self.clients.lock() {
             clients.remove(&client.id);
         }

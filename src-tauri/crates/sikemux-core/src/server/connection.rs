@@ -734,7 +734,7 @@ async fn run_requests(
                 client.respond(request_id, result.map(|()| Response::Done));
             }
             Request::PublishOnScreen { agent_ids } => {
-                core.seen.on_screen(agent_ids);
+                core.seen.on_screen(client.id, agent_ids);
                 client.respond(request_id, Ok(Response::Done));
             }
             Request::FocusAgent { agent_id } => {
