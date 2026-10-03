@@ -119,6 +119,7 @@ struct AgentList: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 18)
+            .onAppear { island.listScrolls = false }
         } else {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
@@ -217,7 +218,7 @@ struct AskCard: View {
             }
             .buttonStyle(.plain)
             if let ask = agent.ask {
-                CommandText(command: ask.command, darker: true).padding(.top, 10)
+                CommandText(ask: ask, darker: true).padding(.top, 10)
             }
             AnswerButtons(store: store, island: island, agent: agent, height: 28).padding(.top, 10)
         }

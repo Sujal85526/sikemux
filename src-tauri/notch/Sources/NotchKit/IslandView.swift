@@ -23,6 +23,7 @@ struct IslandView: View {
         .scaleEffect(island.pullScale, anchor: .top)
         .animation(.smooth, value: island.pull)
         .preferredColorScheme(.dark)
+        .onChange(of: store.agents) { _, agents in island.agentsChanged(agents) }
     }
 
     private var geometry: NotchGeometry { island.geometry }
@@ -68,6 +69,7 @@ struct IslandView: View {
 
     private var shape: some View {
         let outline = NotchShape(top: radii.top, bottom: radii.bottom)
+        let shift = island.mode == .closed ? ClosedWings.offset(store, geometry) : 0
         return VStack(alignment: .leading, spacing: 0) {
             band
             if expanded {
@@ -77,6 +79,11 @@ struct IslandView: View {
         .padding(.horizontal, inset)
         .padding(.bottom, expanded ? 14 : 0)
         .frame(width: width, alignment: .top)
+        .background(GeometryReader { proxy in
+            Color.clear.onChange(of: proxy.frame(in: .global).offsetBy(dx: shift, dy: 0), initial: true) { _, frame in
+                island.shapeFrame = frame
+            }
+        })
         .background(Color.black)
         .clipShape(outline)
         .contentShape(outline)
@@ -86,7 +93,7 @@ struct IslandView: View {
             if !island.isOpen { island.set(.open) }
         }
         .onExitCommand { island.set(.closed) }
-        .offset(x: island.mode == .closed ? ClosedWings.offset(store, geometry) : 0)
+        .offset(x: shift)
     }
 
     /// What sits beside the camera: the wings when closed, a header when open.
@@ -309,16 +316,21 @@ struct AskBody: View {
             if let agent {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(agent.title).font(Theme.ui(13, .semibold)).foregroundStyle(Theme.ink).lineLimit(1)
-                    ProjectLabel(project: agent.project, suffix: agent.ask == nil ? "needs you" : "wants to run a command")
+                    ProjectLabel(project: agent.project, suffix: suffix(agent.ask))
                 }
                 .padding(.top, 8)
                 if let ask = agent.ask {
-                    CommandText(command: ask.command).padding(.top, 10)
+                    CommandText(ask: ask).padding(.top, 10)
                 }
                 AnswerButtons(store: store, island: island, agent: agent, height: 32).padding(.top, 10)
             }
         }
         .padding(.bottom, 2)
+    }
+
+    private func suffix(_ ask: Ask?) -> String {
+        guard let ask else { return "needs you" }
+        return ask.isCommand ? "wants to run a command" : "asks to go ahead"
     }
 }
 
@@ -341,13 +353,13 @@ struct ProjectLabel: View {
 }
 
 struct CommandText: View {
-    let command: String
+    let ask: Ask
     var darker = false
 
     var body: some View {
         HStack(spacing: 8) {
-            Text("$").foregroundStyle(Theme.inkFaint)
-            Text(command).foregroundStyle(Theme.ink).lineLimit(1).truncationMode(.tail)
+            if ask.isCommand { Text("$").foregroundStyle(Theme.inkFaint) }
+            Text(ask.command).foregroundStyle(Theme.ink).lineLimit(1).truncationMode(.tail)
         }
         .font(Theme.mono(12))
         .padding(.horizontal, 12)
@@ -365,21 +377,25 @@ struct AnswerButtons: View {
     var height: CGFloat
 
     var body: some View {
-        if let ask = agent.ask, agent.isChat, store.settings.answerInNotch {
+        if let ask = agent.ask, agent.isChat, store.settings.answerInNotch, ask.allowOnce != nil || ask.allowAlways != nil {
             HStack(spacing: 8) {
-                CapsuleButton(title: "Deny", height: height) { answer(ask, ask.reject) }
-                if ask.allowAlways != nil {
-                    CapsuleButton(title: "Always allow", height: height) { answer(ask, ask.allowAlways) }
+                if let reject = ask.reject {
+                    CapsuleButton(title: "Deny", height: height) { answer(ask, reject) }
                 }
-                CapsuleButton(title: "Allow", primary: true, height: height) { answer(ask, ask.allowOnce) }
+                if let always = ask.allowAlways {
+                    CapsuleButton(title: "Always allow", primary: ask.allowOnce == nil, height: height) { answer(ask, always) }
+                }
+                if let once = ask.allowOnce {
+                    CapsuleButton(title: "Allow", primary: true, height: height) { answer(ask, once) }
+                }
             }
         } else {
             CapsuleButton(title: "Open in Sikemux", primary: true, height: height) { store.focus(agent.id) }
         }
     }
 
-    private func answer(_ ask: Ask, _ option: String?) {
+    private func answer(_ ask: Ask, _ option: String) {
         store.answer(ask, agentId: agent.id, optionId: option)
-        if case .peekAsk = island.mode { island.set(.closed) }
+        if case .peekAsk = island.mode { island.set(island.hovering ? .open : .closed) }
     }
 }

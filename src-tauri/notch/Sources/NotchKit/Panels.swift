@@ -29,7 +29,7 @@ final class NotchPanel: NSPanel {
 /// One island per screen the settings show it on, rebuilt whenever the screens change.
 final class Panels {
     /// Room for the widest island, its tallest list and its shadow. Only the island is drawn.
-    static let canvas = CGSize(width: 760, height: 480)
+    static let canvas = CGSize(width: 760, height: 560)
 
     private let store: NotchStore
     private var panels: [CGDirectDisplayID: (panel: NotchPanel, island: IslandModel)] = [:]
@@ -41,16 +41,7 @@ final class Panels {
 
     init(store: NotchStore) {
         self.store = store
-        store.onPeek = { [weak self] peek in
-            let seconds: Double
-            if case .ask = peek {
-                seconds = 6
-                Haptics.tick()
-            } else {
-                seconds = 3
-            }
-            self?.panels.values.forEach { $0.island.peek(peek, for: seconds) }
-        }
+        store.onPeek = { [weak self] peek in self?.peek(peek) }
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in self?.rebuild() }
@@ -61,6 +52,21 @@ final class Panels {
         Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
         watchDrags()
         rebuild()
+    }
+
+    /// Rings and peeks on every island that shows. A request first un-hides an
+    /// island over a full-screen app, so its peek is not lost.
+    private func peek(_ peek: NotchStore.Peek) {
+        tick()
+        let shown = panels.values.filter { !$0.island.hidden }
+        guard !shown.isEmpty else { return }
+        let settings = store.settings
+        let isAsk: Bool
+        if case .ask = peek { isAsk = true } else { isAsk = false }
+        if isAsk, settings.sound { NSSound(named: "Tink")?.play() }
+        guard settings.peeks == .all || (isAsk && settings.peeks == .needsYou) else { return }
+        if isAsk { Haptics.tick() }
+        shown.forEach { $0.island.peek(peek, for: isAsk ? 6 : 3) }
     }
 
     private static func displayId(_ screen: NSScreen) -> CGDirectDisplayID? {
@@ -84,11 +90,20 @@ final class Panels {
     func rebuild() {
         let wanted = Dictionary(wantedScreens().compactMap { screen in Self.displayId(screen).map { ($0, screen) } },
                                 uniquingKeysWith: { first, _ in first })
+        // An island whose screen went is moved to a screen that has none, so the draft in it is kept.
+        var spare: [(panel: NotchPanel, island: IslandModel, swipe: SwipeTracker?)] = []
         for (id, entry) in panels where wanted[id] == nil {
-            entry.panel.orderOut(nil)
+            spare.append((entry.panel, entry.island, swipes[id]))
             panels[id] = nil
             swipes[id] = nil
         }
+        for id in wanted.keys where panels[id] == nil && !spare.isEmpty {
+            let moved = spare.removeLast()
+            moved.island.set(.closed)
+            panels[id] = (moved.panel, moved.island)
+            swipes[id] = moved.swipe
+        }
+        spare.forEach { $0.panel.orderOut(nil) }
         for (id, screen) in wanted {
             let geometry = NotchGeometry.of(screen)
             let frame = CGRect(
@@ -99,10 +114,12 @@ final class Panels {
             )
             if let entry = panels[id] {
                 entry.panel.setFrame(frame, display: true)
+                entry.island.canvas = frame
                 if entry.island.geometry != geometry { entry.island.geometry = geometry }
                 continue
             }
             let island = IslandModel(geometry: geometry)
+            island.canvas = frame
             let panel = NotchPanel(frame: frame)
             panel.contentView = NSHostingView(rootView: IslandView(store: store, island: island))
             island.keyboard = { [weak panel] keyboard in
@@ -119,6 +136,9 @@ final class Panels {
                     }
                 }
             }
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.didBecomeKeyNotification, object: panel, queue: .main
+            ) { [weak island] _ in island?.hasKeyboard = true }
             NotificationCenter.default.addObserver(
                 forName: NSWindow.didResignKeyNotification, object: panel, queue: .main
             ) { [weak island] _ in island?.keyboardLost() }
@@ -144,12 +164,7 @@ final class Panels {
         let needsYou = store.agents.contains { $0.state == .blocked }
         let fullScreen = FullScreen.displays()
         for (_, entry) in panels {
-            let island = entry.island
-            // macOS can miss telling the island the pointer left, as when it shrinks under a still pointer.
-            if island.mode == .open, !island.holdsOpen, !entry.panel.frame.contains(NSEvent.mouseLocation) {
-                island.hovering = false
-                island.set(.closed)
-            }
+            entry.island.checkPointer()
         }
         for (id, entry) in panels {
             let covered: Bool
@@ -193,7 +208,9 @@ final class Panels {
             for (_, entry) in panels {
                 let island = entry.island
                 guard let screen = entry.panel.screen, !island.hidden, island.mode != .drop else { continue }
-                let near = mouse.y > screen.frame.maxY - 140 && abs(mouse.x - island.geometry.centerX) < 420
+                let frame = screen.frame
+                let onScreen = mouse.x >= frame.minX && mouse.x < frame.maxX && mouse.y >= frame.minY && mouse.y <= frame.maxY
+                let near = onScreen && mouse.y > frame.maxY - 140 && abs(mouse.x - island.geometry.centerX) < 420
                 if near {
                     Haptics.tick()
                     island.set(.drop)

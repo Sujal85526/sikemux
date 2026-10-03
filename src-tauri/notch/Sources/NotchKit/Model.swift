@@ -116,7 +116,9 @@ enum AgentState: Int, Comparable {
 /// A permission an agent waits on, with the person's choices.
 struct Ask: Equatable {
     let attentionId: String
+    /// The command it wants to run, or what the tool call is called when it is not a command.
     let command: String
+    let isCommand: Bool
     let allowOnce: String?
     let allowAlways: String?
     let reject: String?
@@ -203,16 +205,15 @@ extension DeviceView {
     private static func ask(_ attention: Attention) -> Ask {
         let toolCall = attention.request["toolCall"]
         let raw = toolCall?["rawInput"]
-        let command = raw?["command"]?.string
-            ?? raw?["cmd"]?.string
-            ?? toolCall?["title"]?.string
-            ?? "a tool"
+        let shell = raw?["command"]?.string ?? raw?["cmd"]?.string
+        let command = shell ?? toolCall?["title"]?.string ?? "a tool"
         func option(_ kind: String) -> String? {
             attention.request["options"]?.array.first { $0["kind"]?.string == kind }?["optionId"]?.string
         }
         return Ask(
             attentionId: attention.id,
             command: command,
+            isCommand: shell != nil,
             allowOnce: option("allow_once"),
             allowAlways: option("allow_always"),
             reject: option("reject_once") ?? option("reject_always")
