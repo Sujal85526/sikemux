@@ -26,6 +26,7 @@ export function QueryWorkspace({ profile, resultActions }: { profile: DatabasePr
                         Stop
                     </button>
                 )}
+                <span className="db-meta">Rows</span>
                 <Dropdown
                     label="Rows"
                     value={String(query.limit)}
