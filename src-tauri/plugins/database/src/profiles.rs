@@ -13,6 +13,8 @@ const PASSWORD_SERVICE: &str = "sikemux-database-password";
 #[cfg(test)]
 const PASSWORD_SERVICE: &str = "sikemux-database-password-test";
 
+pub const POSTGRES_PORT: u16 = 5432;
+
 #[derive(Serialize, Deserialize, Clone, Copy, Default, PartialEq, Eq, Debug)]
 #[serde(rename_all = "kebab-case")]
 pub enum Tls {

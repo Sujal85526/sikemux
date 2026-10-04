@@ -12,6 +12,8 @@ use crate::profiles::Draft;
 #[serde(rename_all = "camelCase")]
 pub struct TestRequest {
     pub profile: Draft,
+    #[serde(default)]
+    pub password: Option<String>,
 }
 
 #[derive(Serialize, Debug)]
@@ -23,7 +25,12 @@ pub struct Tested {
 
 pub async fn test(request: TestRequest) -> DatabaseResult<Tested> {
     let started = Instant::now();
-    let session = Session::open(&request.profile.target, request.profile.read_only).await?;
+    let session = Session::open(
+        &request.profile.target,
+        request.password.as_deref(),
+        request.profile.read_only,
+    )
+    .await?;
     let version = session.version().await?;
     Ok(Tested {
         version,
