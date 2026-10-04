@@ -61,7 +61,7 @@
             "useLegacyPackaging": true,
             "enableMinifyInReleaseBuilds": true,
             "enableShrinkResourcesInReleaseBuilds": true,
-            "extraProguardRules": "-keep, includedescriptorclasses class org.rustls.platformverifier.** { *; }\n-dontwarn kotlin.MustUseReturnValues"
+            "extraProguardRules": "-keep, includedescriptorclasses class org.rustls.platformverifier.** { *; }\n-keep class expo.modules.gl.** { *; }\n-dontwarn kotlin.MustUseReturnValues"
           }
         }
       ]
