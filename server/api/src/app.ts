@@ -10,6 +10,7 @@ import type { Database } from "./db.ts";
 import { deviceRoutes } from "./devices/routes.ts";
 import { healthRoutes } from "./health/routes.ts";
 import { ApiFailure, errorResponse, requestContext, type Env } from "./http.ts";
+import type { JoinSigner } from "./join/signer.ts";
 import { clientAddress, limit, RateLimiter } from "./limits.ts";
 import type { Logger } from "./log.ts";
 import { networkRoutes } from "./network/routes.ts";
@@ -29,6 +30,7 @@ export interface Services {
   webhookSecret: string | null;
   network: Network;
   push: Pick<PushSettings, "app" | "allowSandbox">;
+  join: JoinSigner;
 }
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -43,6 +45,7 @@ export function createApp({
   webhookSecret,
   network,
   push,
+  join,
 }: Services) {
   const app = new Hono<Env>();
 
@@ -74,7 +77,7 @@ export function createApp({
   app.route("/v1/network", networkRoutes(network, limiter));
   app.route(
     "/v1/devices",
-    deviceRoutes(database, verifier, limiter, clerk, push),
+    deviceRoutes(database, verifier, limiter, clerk, push, join),
   );
   app.route("/v1/account", accountRoutes(database, verifier, limiter, clerk));
   app.route("/v1/webhooks", clerkWebhookRoutes(database, webhookSecret));

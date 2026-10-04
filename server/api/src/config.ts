@@ -1,8 +1,10 @@
 import type { Network } from "@sikemux/protocol";
 import type { Level } from "pino";
 
+import { readJoinSigner, type JoinSigner } from "./join/signer.ts";
 import { readNetwork } from "./network/network.ts";
 import { readPush, type PushSettings } from "./push/settings.ts";
+import { version } from "./version.ts";
 
 export interface MigrationConfig {
   databaseUrl: string;
@@ -25,6 +27,8 @@ export interface Config extends MigrationConfig {
   /** What GET /v1/network answers: the relay apps use and the oldest app versions allowed. */
   network: Network;
   push: PushSettings;
+  /** The key join tickets are signed with. */
+  join: JoinSigner;
 }
 
 const LEVELS: readonly Level[] = [
@@ -70,8 +74,14 @@ export function loadMigrationConfig(env: NodeJS.ProcessEnv): MigrationConfig {
   return finish({ databaseUrl: readDatabaseUrl(), logLevel: readLogLevel() });
 }
 
-/** Reads the configuration from the environment, refusing to start on anything missing or malformed. */
-export function loadConfig(env: NodeJS.ProcessEnv): Config {
+/**
+ * Reads the configuration from the environment, refusing to start on anything missing or
+ * malformed. `release` is whether this is the bundle CI builds, which never makes its own keys.
+ */
+export function loadConfig(
+  env: NodeJS.ProcessEnv,
+  { release = version !== "dev" } = {},
+): Config {
   const { problems, read, readDatabaseUrl, readLogLevel, finish } = reader(env);
 
   const databaseUrl = readDatabaseUrl();
@@ -106,6 +116,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
 
   const network = readNetwork(env, problems);
   const push = readPush(env, problems);
+  const join = readJoinSigner(env, problems, release);
   const logLevel = readLogLevel();
   const host = read("HOST", "127.0.0.1");
 
@@ -120,6 +131,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     clerkWebhookSecret,
     network,
     push,
+    join: join as JoinSigner,
     logLevel,
   });
 }
