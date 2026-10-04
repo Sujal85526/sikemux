@@ -1,18 +1,8 @@
 import { useEffect, useRef } from "react";
-import {
-    EditorState,
-    EditorView,
-    Prec,
-    auraExtensions,
-    basicSetup,
-    keymap,
-    placeholder,
-    registerView,
-    sqlLanguage,
-    type Extension,
-    type SqlDialect,
-} from "../../../plugin-api/editor";
+import { EditorState, EditorView, Prec, auraExtensions, basicSetup, keymap, placeholder, registerView } from "../../../plugin-api/editor";
+import type { Engine } from "../api";
 import { statementAt } from "../sql";
+import { sqlHighlighting } from "../sqlHighlight";
 
 /** What ⌘↵ runs: the selection when there is one, otherwise the statement the cursor is in. */
 export function sqlUnderCursor(view: EditorView): string {
@@ -29,7 +19,7 @@ export function SqlEditor({
     onRun,
 }: {
     value: string;
-    dialect: SqlDialect;
+    dialect: Engine;
     onChange: (text: string) => void;
     /** Called with the SQL to run: the statement under the cursor, the selection, or everything. */
     onRun: (sql: string) => void;
@@ -43,7 +33,6 @@ export function SqlEditor({
     onRunRef.current = onRun;
 
     useEffect(() => {
-        let cancelled = false;
         const runKeys = Prec.highest(
             keymap.of([
                 {
@@ -62,11 +51,11 @@ export function SqlEditor({
                 },
             ]),
         );
-        const extensions = (language: Extension[]): Extension[] => [
+        const extensions = [
             runKeys,
             basicSetup,
             auraExtensions,
-            ...language,
+            sqlHighlighting(dialect),
             EditorView.lineWrapping,
             placeholder("select * from …   ⌘↵ runs the statement under the cursor"),
             EditorView.updateListener.of((update) => {
@@ -77,16 +66,11 @@ export function SqlEditor({
         ];
         const view = new EditorView({
             parent: hostRef.current!,
-            state: EditorState.create({ doc: lastValue.current, extensions: extensions([]) }),
+            state: EditorState.create({ doc: lastValue.current, extensions }),
         });
         viewRef.current = view;
         const unregister = registerView(view);
-        void sqlLanguage(dialect).then((language) => {
-            if (cancelled) return;
-            view.setState(EditorState.create({ doc: view.state.doc, selection: view.state.selection, extensions: extensions([language]) }));
-        });
         return () => {
-            cancelled = true;
             unregister();
             view.destroy();
             viewRef.current = null;
