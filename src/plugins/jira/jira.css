@@ -1,0 +1,217 @@
+.jira-pane {
+    display: grid;
+    grid-template-columns: 200px minmax(240px, 0.9fr) minmax(320px, 1.4fr);
+    height: 100%;
+    min-height: 0;
+    color: var(--text-primary);
+}
+
+.jira-sidebar,
+.jira-list-pane,
+.jira-detail {
+    min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.jira-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 12px 8px;
+    border-right: 1px solid var(--border);
+}
+
+.jira-lists {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.jira-heading {
+    padding: 0 8px 4px;
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+}
+
+.jira-list,
+.jira-row {
+    border: 1px solid transparent;
+    border-radius: var(--radius-2);
+    text-align: left;
+    color: var(--text-secondary);
+}
+
+.jira-list {
+    padding: 5px 8px;
+    font-size: var(--text-sm);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.jira-list:hover,
+.jira-row:hover {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+}
+
+.jira-list.active,
+.jira-row.active {
+    color: var(--text-primary);
+    background: var(--surface-selected);
+    border-color: var(--border-selected);
+}
+
+.jira-jql {
+    display: flex;
+    flex-direction: column;
+}
+
+.jira-jql input,
+.jira-assign input,
+.jira-comments textarea {
+    padding: 5px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    font-size: var(--text-xs);
+    color: var(--text-primary);
+    background: transparent;
+}
+
+.jira-jql input {
+    font-family: var(--mono);
+}
+
+.jira-signout {
+    margin-top: auto;
+    padding: 5px 8px;
+    font-size: var(--text-xs);
+    text-align: left;
+    color: var(--text-tertiary);
+}
+
+.jira-signout:hover {
+    color: var(--text-primary);
+}
+
+.jira-list-pane {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px;
+    border-right: 1px solid var(--border);
+}
+
+.jira-row {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 7px 9px;
+}
+
+.jira-row-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.jira-row-top .jira-status {
+    margin-left: auto;
+}
+
+.jira-row-summary {
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+}
+
+.jira-meta {
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+}
+
+.jira-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 16px 20px;
+}
+
+.jira-detail-head h2 {
+    margin: 4px 0 0;
+    font-size: var(--text-lg);
+    font-weight: 600;
+}
+
+.jira-key.link {
+    color: var(--text-tertiary);
+}
+
+.jira-key.link:hover {
+    color: var(--text-primary);
+    text-decoration: underline;
+}
+
+.jira-facts {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.jira-fact,
+.jira-assign {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--text-sm);
+}
+
+.jira-fact .jira-heading {
+    padding: 0 4px 0 0;
+}
+
+.jira-chip {
+    padding: 3px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+}
+
+.jira-chip:hover:not(:disabled) {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+}
+
+.jira-chip:disabled {
+    opacity: 0.5;
+}
+
+.jira-chip.primary {
+    align-self: flex-start;
+    border-color: transparent;
+    color: var(--on-accent);
+    background: var(--acc);
+}
+
+.jira-comments {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.jira-comment {
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+}
+
+.jira-comments textarea {
+    resize: vertical;
+    font-family: inherit;
+    font-size: var(--text-sm);
+}
