@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { EmptyState, IconPlus, SkeletonRows } from "../../../plugin-api/ui";
 import { databaseApi, failureMessage, refreshDatabase, type Connected, type DatabaseProfile } from "../api";
-import { addressOf, blankDraft, draftOf, engineLabel } from "../profileForm";
+import { addressOf, blankDraft, defaultPort, draftOf, engineLabel, isServer } from "../profileForm";
 import { databaseConnectedR, databaseProfilesR } from "../resources";
 import { updateDatabaseView, useDatabaseView } from "../state";
 import { DatabaseMark } from "./DatabaseMark";
@@ -155,11 +155,11 @@ function ProfileDetail({ profile, connected, onEdit }: { profile: DatabaseProfil
             <dl className="db-facts">
                 <dt>Engine</dt>
                 <dd>{engineLabel(profile.engine)}</dd>
-                {profile.engine === "postgres" ? (
+                {isServer(profile) ? (
                     <>
                         <dt>Server</dt>
                         <dd className="mono">
-                            {profile.host}:{profile.port ?? 5432}
+                            {profile.host}:{profile.port ?? defaultPort(profile.engine)}
                         </dd>
                         <dt>Database</dt>
                         <dd className="mono">{profile.database || profile.user}</dd>

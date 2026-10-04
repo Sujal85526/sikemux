@@ -1,11 +1,17 @@
-import type { DatabaseProfile, Engine, ProfileDraft, Target, TlsMode } from "./api";
+import type { DatabaseProfile, Engine, ProfileDraft, ServerTarget, Target, TlsMode } from "./api";
 
 export const POSTGRES_PORT = 5432;
+export const MYSQL_PORT = 3306;
 
 export const ENGINES: readonly { value: Engine; label: string }[] = [
     { value: "postgres", label: "PostgreSQL" },
+    { value: "mysql", label: "MySQL" },
     { value: "sqlite", label: "SQLite" },
 ];
+
+export const isServer = (target: Target): target is ServerTarget => target.engine !== "sqlite";
+
+export const defaultPort = (engine: ServerTarget["engine"]): number => (engine === "mysql" ? MYSQL_PORT : POSTGRES_PORT);
 
 export const TLS_MODES: readonly { value: TlsMode; label: string; detail: string }[] = [
     { value: "prefer", label: "Prefer", detail: "Encrypt when the server offers it" },
@@ -17,11 +23,11 @@ export const TLS_MODES: readonly { value: TlsMode; label: string; detail: string
 export const engineLabel = (engine: Engine): string => ENGINES.find((entry) => entry.value === engine)?.label ?? engine;
 
 export function blankTarget(engine: Engine): Target {
-    return engine === "postgres" ? { engine, host: "localhost", port: null, database: "", user: "", tls: "prefer" } : { engine, path: "" };
+    return engine === "sqlite" ? { engine, path: "" } : { engine, host: "localhost", port: null, database: "", user: "", tls: "prefer" };
 }
 
 export function blankDraft(engine: Engine = "postgres"): ProfileDraft {
-    return { name: "", readOnly: false, ...blankTarget(engine) };
+    return { name: "", readOnly: false, agentWrites: false, ...blankTarget(engine) };
 }
 
 /** The saved profile as the form edits it, without what only the backend decides. */
@@ -33,7 +39,7 @@ export function draftOf(profile: DatabaseProfile): ProfileDraft {
 /** Switching engine keeps the name and the read-only choice, and starts the rest afresh. */
 export function withEngine(draft: ProfileDraft, engine: Engine): ProfileDraft {
     if (draft.engine === engine) return draft;
-    return { id: draft.id, name: draft.name, readOnly: draft.readOnly, ...blankTarget(engine) };
+    return { id: draft.id, name: draft.name, readOnly: draft.readOnly, agentWrites: draft.agentWrites, ...blankTarget(engine) };
 }
 
 /** What still has to be filled in before the profile can be tried or saved, or null when nothing does. */
@@ -56,5 +62,5 @@ export function parsePort(text: string): number | null {
 export function addressOf(target: Target): string {
     if (target.engine === "sqlite") return target.path.split("/").pop() || target.path;
     const database = target.database ? `/${target.database}` : "";
-    return `${target.user}@${target.host}:${target.port ?? POSTGRES_PORT}${database}`;
+    return `${target.user}@${target.host}:${target.port ?? defaultPort(target.engine)}${database}`;
 }

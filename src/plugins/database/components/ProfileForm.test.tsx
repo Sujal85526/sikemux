@@ -14,6 +14,7 @@ const saved: DatabaseProfile = {
     id: "p1",
     name: "Shop",
     readOnly: false,
+    agentWrites: false,
     hasPassword: true,
     engine: "postgres",
     host: "db.internal",

@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { confirmDialog, pickFile, swallow } from "../../../plugin-api/host";
 import { Checkbox, Dropdown } from "../../../plugin-api/ui";
 import { databaseApi, failureMessage, type DatabaseProfile, type ProfileDraft, type Tested, type TlsMode } from "../api";
-import { ENGINES, POSTGRES_PORT, TLS_MODES, missingField, parsePort, withEngine } from "../profileForm";
+import { ENGINES, TLS_MODES, defaultPort, isServer, missingField, parsePort, withEngine } from "../profileForm";
 
 const SQLITE_FILES = { name: "SQLite database", extensions: ["db", "sqlite", "sqlite3", "db3"] };
 
@@ -98,12 +98,12 @@ export function ProfileForm({
                 <input
                     value={draft.name}
                     onChange={(event) => change({ ...draft, name: event.target.value })}
-                    placeholder={draft.engine === "postgres" ? "Production" : "Local app data"}
+                    placeholder={isServer(draft) ? "Production" : "Local app data"}
                     autoFocus
                     spellCheck={false}
                 />
             </label>
-            {draft.engine === "postgres" ? (
+            {isServer(draft) ? (
                 <>
                     <div className="db-inline">
                         <label className="db-field db-grow">
@@ -122,7 +122,7 @@ export function ProfileForm({
                             <input
                                 value={draft.port ?? ""}
                                 onChange={(event) => change({ ...draft, port: parsePort(event.target.value) })}
-                                placeholder={String(POSTGRES_PORT)}
+                                placeholder={String(defaultPort(draft.engine))}
                                 inputMode="numeric"
                             />
                         </label>
@@ -143,7 +143,7 @@ export function ProfileForm({
                             <input
                                 value={draft.user}
                                 onChange={(event) => change({ ...draft, user: event.target.value })}
-                                placeholder="postgres"
+                                placeholder={draft.engine === "mysql" ? "root" : "postgres"}
                                 spellCheck={false}
                                 autoCapitalize="off"
                                 autoCorrect="off"

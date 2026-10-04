@@ -20,6 +20,7 @@ const shop: DatabaseProfile = {
     id: "p1",
     name: "Shop",
     readOnly: true,
+    agentWrites: false,
     hasPassword: true,
     engine: "postgres",
     host: "db.internal",
@@ -29,7 +30,15 @@ const shop: DatabaseProfile = {
     tls: "prefer",
 };
 
-const local: DatabaseProfile = { id: "p2", name: "Local", readOnly: false, hasPassword: false, engine: "sqlite", path: "/Users/me/app.db" };
+const local: DatabaseProfile = {
+    id: "p2",
+    name: "Local",
+    readOnly: false,
+    agentWrites: false,
+    hasPassword: false,
+    engine: "sqlite",
+    path: "/Users/me/app.db",
+};
 
 let pane = 0;
 const renderPane = () => render(<DatabasePane paneId={`pane-${++pane}`} active />);
