@@ -10,7 +10,12 @@ import {
 import { Devices, useDevices } from "./Devices.tsx";
 import { Logo } from "./icons.tsx";
 import { useLive } from "./live.ts";
-import { DELETE_ACCOUNT, takeReturn, usePath } from "./navigation.ts";
+import {
+  appReturn,
+  DELETE_ACCOUNT,
+  takeReturn,
+  usePath,
+} from "./navigation.ts";
 import { SignIn } from "./SignIn.tsx";
 
 const DELETED_QUERY = "?deleted";
@@ -46,6 +51,11 @@ export function App() {
   }, [path, signedIn, showDeleted]);
 
   const afterSignIn = () => go(takeReturn(), { replace: true });
+  const returning = isLoaded && isSignedIn ? appReturn() : null;
+
+  useEffect(() => {
+    if (returning) location.replace(returning);
+  }, [returning]);
 
   /** Reached from this page or from the account's live connection, so it may run twice. */
   const onDeleted = () => {
@@ -62,7 +72,11 @@ export function App() {
     <>
       <Backdrop />
       <div className="page">
-        {showDeleted ? (
+        {returning ? (
+          <section className="panel">
+            <p className="quiet">Taking you back to Sikemux…</p>
+          </section>
+        ) : showDeleted ? (
           <main className="center">
             <AccountDeleted />
           </main>

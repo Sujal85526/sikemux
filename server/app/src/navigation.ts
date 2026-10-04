@@ -1,17 +1,52 @@
 import { useEffect, useState, type MouseEvent } from "react";
 
+import { config } from "./config.ts";
+
 export const DELETE_ACCOUNT = "/delete-account";
 
 const RETURN_KEY = "sikemux.returnTo";
 
+/** Clerk's own host, which the publishable key carries base64-encoded with a trailing `$`. */
+const CLERK_HOST = atob(config.clerkPublishableKey.split("_")[2] ?? "").replace(
+  /\$$/,
+  "",
+);
+
+/** Clerk's hosted pages: accounts.sikemux.com in production, *.accounts.dev in dev. */
+const PORTAL_HOST = CLERK_HOST.replace(/^clerk\./, "accounts.").replace(
+  /\.clerk\.accounts\.dev$/,
+  ".accounts.dev",
+);
+
+/**
+ * Where Clerk asked to go back to after a sign-in started by an app, such as the Mac
+ * signing in through the browser. Only Clerk's own authorize and consent pages are followed.
+ */
+export function appReturn(search = location.search): string | null {
+  const raw = new URLSearchParams(search).get("redirect_url");
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    const clerk =
+      url.host === CLERK_HOST && url.pathname.startsWith("/oauth/authorize");
+    const portal =
+      url.host === PORTAL_HOST && url.pathname.startsWith("/oauth-consent");
+    return url.protocol === "https:" && (clerk || portal) ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Lets a sign-in that leaves the page for Google or GitHub come back to where it started. */
 export function rememberReturn() {
-  sessionStorage.setItem(RETURN_KEY, location.pathname);
+  sessionStorage.setItem(RETURN_KEY, location.pathname + location.search);
 }
 
 export function takeReturn(): string {
-  const path = sessionStorage.getItem(RETURN_KEY);
+  const saved = sessionStorage.getItem(RETURN_KEY) ?? "/";
   sessionStorage.removeItem(RETURN_KEY);
+  const [path = "/", query = ""] = saved.split("?", 2);
+  if (path === "/" && appReturn(`?${query}`)) return saved;
   return path === DELETE_ACCOUNT ? path : "/";
 }
 
