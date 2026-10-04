@@ -52,7 +52,7 @@
     {
       "name": "db_query",
       "method": "agentQuery",
-      "description": "Run SQL on a saved database; statements separated by semicolons each return rows or a changed count. Read-only unless allowed.",
+      "description": "Run SQL on a saved database. Read-only and one statement per call unless the person let agents change data there.",
       "properties": {
         "database": {
           "type": "string"

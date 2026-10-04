@@ -536,16 +536,17 @@ PostgreSQL, MySQL or MariaDB servers, and SQLite files. Name one by its name in
   the connection names for MySQL.
 - `db_describe` gives a table's columns, primary key, indexes and foreign keys.
   Read it before writing a join rather than guessing column names.
-- `db_query` runs SQL. Several statements separated by semicolons each come
-  back as their own result: rows, or how many rows a change touched. Each
-  result keeps 100 rows unless you pass `limit`, up to 1000; `truncated` says
-  some were left out, so add a `where` or an aggregate rather than raising the
-  limit to read everything.
+- `db_query` runs SQL. Each result keeps 100 rows unless you pass `limit`, up
+  to 1000; `truncated` says some were left out, so add a `where` or an
+  aggregate rather than raising the limit to read everything.
 
 Your queries run on a connection of your own. It is read-only unless the
 person ticked "Let agents change data" for that database, and `writable` in
-`db_databases` says which. A refused write is not a fault to work around: ask
-the person. A query stops after 60 seconds. Every query you run shows up in
+`db_databases` says which. On a read-only connection send one statement per
+call; it runs in a read-only transaction that is rolled back afterwards. Where
+you may change data, several statements separated by semicolons each come back
+as their own result: rows, or how many rows a change touched. A refused write
+is not a fault to work around: ask the person. A query stops after 60 seconds. Every query you run shows up in
 that database's history in Sikemux, marked as an agent's.
 
 Large integers and decimals arrive as text so no digit is lost; binary values
