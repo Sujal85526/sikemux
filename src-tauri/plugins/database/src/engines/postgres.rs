@@ -19,6 +19,8 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 #[derive(Clone)]
 pub struct Session {
     client: Arc<Client>,
+    /// Keeps one guarded query's transaction from interleaving with another's on the same connection.
+    guard: Arc<tokio::sync::Mutex<()>>,
     /// Asking the server to stop a query goes over a new connection, encrypted the same way.
     tls: Tls,
 }
@@ -209,6 +211,14 @@ fn mark_numbers_by_text(result: &mut ResultSet) {
     }
 }
 
+fn column_types(statement: &tokio_postgres::Statement) -> Vec<Type> {
+    statement
+        .columns()
+        .iter()
+        .map(|column| column.type_().clone())
+        .collect()
+}
+
 fn ssl_mode(tls: Tls) -> SslMode {
     match tls {
         Tls::Disable => SslMode::Disable,
@@ -259,6 +269,7 @@ impl Session {
         }
         Ok(Self {
             client: Arc::new(client),
+            guard: Arc::new(tokio::sync::Mutex::new(())),
             tls: address.tls,
         })
     }
@@ -271,15 +282,49 @@ impl Session {
     /// prepared first so its columns come back with their types; a script of several comes back as text.
     pub async fn query(&self, sql: &str, limit: usize) -> DatabaseResult<Vec<ResultSet>> {
         let types = match self.client.prepare(sql).await {
-            Ok(statement) => Some(
-                statement
-                    .columns()
-                    .iter()
-                    .map(|column| column.type_().clone())
-                    .collect(),
-            ),
+            Ok(statement) => Some(column_types(&statement)),
             Err(_) => None,
         };
+        self.collect(sql, types, limit).await
+    }
+
+    /// For an agent on a read-only connection. A session setting could otherwise switch read-only off for the
+    /// statements after it, so the SQL must be one statement, and it runs in a read-only transaction that is
+    /// always rolled back, taking anything it set with it.
+    pub async fn query_guarded(&self, sql: &str, limit: usize) -> DatabaseResult<Vec<ResultSet>> {
+        let _one_at_a_time = self.guard.lock().await;
+        let statement = self.client.prepare(sql).await.map_err(|error| {
+            let message = describe(&error);
+            if message.contains("multiple commands") {
+                DatabaseError::Query(
+                    "on a read-only connection an agent runs one statement at a time".into(),
+                )
+            } else {
+                DatabaseError::Query(message)
+            }
+        })?;
+        let types = column_types(&statement);
+        self.client
+            .batch_execute("begin read only")
+            .await
+            .map_err(query_error)?;
+        let outcome = self.collect(sql, Some(types), limit).await;
+        let rolled_back = self
+            .client
+            .batch_execute("rollback")
+            .await
+            .map_err(query_error);
+        let results = outcome?;
+        rolled_back?;
+        Ok(results)
+    }
+
+    async fn collect(
+        &self,
+        sql: &str,
+        types: Option<Vec<Type>>,
+        limit: usize,
+    ) -> DatabaseResult<Vec<ResultSet>> {
         let mut collector = Collector {
             types,
             ..Collector::default()
@@ -650,6 +695,48 @@ pub mod tests {
             panic!("expected a query error")
         };
         assert!(message.contains("does not exist"), "{message}");
+        scratch.drop().await;
+    }
+
+    #[tokio::test]
+    async fn a_guarded_query_cannot_switch_read_only_off() {
+        let Some(scratch) = Scratch::new("guarded").await else {
+            return;
+        };
+        let reader = open_test_server(true).await.unwrap();
+        let schema = &scratch.schema;
+        let escape =
+            format!("set default_transaction_read_only = off; delete from {schema}.orders");
+        let refused = reader.query_guarded(&escape, 10).await;
+        let Err(DatabaseError::Query(message)) = refused else {
+            panic!("expected the script to be refused")
+        };
+        assert!(message.contains("one statement at a time"), "{message}");
+        let committed = reader
+            .query_guarded(&format!("commit; delete from {schema}.orders"), 10)
+            .await;
+        assert!(committed.is_err());
+        let setting = reader
+            .query_guarded("set session characteristics as transaction read write", 10)
+            .await;
+        assert!(setting.is_ok(), "{:?}", setting.err());
+        let write = reader
+            .query_guarded(&format!("delete from {schema}.orders"), 10)
+            .await;
+        let Err(DatabaseError::Query(message)) = write else {
+            panic!("expected the delete to be refused")
+        };
+        assert!(message.contains("read-only"), "{message}");
+        let read = reader
+            .query_guarded(&format!("select count(*) from {schema}.orders"), 10)
+            .await
+            .unwrap();
+        assert_eq!(read[0].rows, vec![vec![serde_json::json!(2)]]);
+        assert!(reader
+            .query_guarded("select * from nowhere", 1)
+            .await
+            .is_err());
+        assert!(reader.query_guarded("select 1", 1).await.is_ok());
         scratch.drop().await;
     }
 
