@@ -115,6 +115,28 @@ export interface Health {
 
 export type HealthStatus = "ok" | "unavailable";
 
+/** Which host on the account the phone wants to join. */
+export interface JoinRequest {
+  host: DeviceKey;
+}
+
+/** The server's word that a phone and a host are on the same account. The phone hands it to the host over ALPN sikemux/join/1, and the host checks it without calling the server, then still asks its owner. The signature is the server's Ed25519 signature over the UTF-8 text `sikemux-join|v1|<keyId>|<account>|<host>|<phone>|<issuedAt>|<expiresAt>`, with the times in decimal. */
+export interface JoinTicket {
+  /** The ticket's format. Only 1 exists. */
+  v: number;
+  /** Which of the server's signing keys signed it: prod-1 in production, dev-1 for a local API. */
+  keyId: string;
+  /** The Clerk user id of the account the phone and the host are on. */
+  account: string;
+  host: DeviceKey;
+  phone: DeviceKey;
+  /** When the server signed it, in unix seconds. */
+  issuedAt: number;
+  /** When it stops being good, in unix seconds: ten minutes after issuedAt. */
+  expiresAt: number;
+  signature: string;
+}
+
 /** Every event up to and including id is handled. */
 export interface LiveAck {
   type: "ack";
@@ -330,6 +352,8 @@ export interface Definitions {
   EventId: EventId;
   Health: Health;
   HealthStatus: HealthStatus;
+  JoinRequest: JoinRequest;
+  JoinTicket: JoinTicket;
   LiveAck: LiveAck;
   LiveApp: LiveApp;
   LiveAuth: LiveAuth;
