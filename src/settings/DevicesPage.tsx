@@ -13,6 +13,7 @@ import {
     type PendingDevice,
     type RemoteStatus,
 } from "../api/remote";
+import { ACCESS_OPTIONS, PairingAnswer, PairingDetail, pairingQuestion, platformName } from "../remote/pairingRequest";
 import { reportError } from "../state/toast";
 import { Dropdown } from "../ui/Dropdown";
 import { Switch } from "../ui/Controls";
@@ -20,18 +21,7 @@ import { IconTrash } from "../ui/Icons";
 import { PairingQr } from "./PairingQr";
 import { SettingsPage, SettingsRow, SettingsRows, SettingsSection } from "./SettingsLayout";
 
-const ACCESS_OPTIONS = [
-    { value: "full", label: "Full control", detail: "Drive terminals and agents" },
-    { value: "watch", label: "Watch and approve", detail: "Read sessions and answer permission requests" },
-];
-
 const DELETE_ACCOUNT_URL = import.meta.env.DEV ? "http://localhost:5173/delete-account" : "https://app.sikemux.com/delete-account";
-
-const PLATFORM_NAMES: Record<string, string> = { ios: "iOS", android: "Android", macos: "macOS", linux: "Linux", web: "Web" };
-
-function platformName(platform: string): string {
-    return PLATFORM_NAMES[platform] ?? platform;
-}
 
 /** How a phone's notifications from this host read beside its name, or nothing when it asked for none. */
 export function notificationNote(state: NotificationState | undefined): string | null {
@@ -296,34 +286,16 @@ function AccountSection({ link }: { link: AccountLink | null }) {
 }
 
 function PendingRow({ request, onAnswer }: { request: PendingDevice; onAnswer: (allow: boolean, access: DeviceAccess) => void }) {
-    const [access, setAccess] = useState<DeviceAccess>("full");
-    const asking = request.fromAccount
-        ? `${request.name || "A device"} from your Sikemux account wants to connect`
-        : `${request.name || "Unnamed device"} wants to pair`;
+    const asking = pairingQuestion(request);
     return (
         <div className="pairing-request" role="group" aria-label={asking}>
             <span className="settings-row-copy">
                 <span className="settings-row-label">{asking}</span>
                 <span className="settings-row-desc">
-                    {platformName(request.platform)} · key <code className="device-key">{shortKey(request.deviceId)}</code> ·{" "}
-                    {request.fromAccount ? "signed in to your account" : "it typed the right code"}
+                    <PairingDetail request={request} />
                 </span>
             </span>
-            <div className="settings-actions">
-                <Dropdown
-                    className="settings-dd"
-                    label="access for this device"
-                    value={access}
-                    options={ACCESS_OPTIONS}
-                    onChange={(value) => setAccess(value as DeviceAccess)}
-                />
-                <button className="settings-btn" type="button" onClick={() => onAnswer(false, access)}>
-                    Decline
-                </button>
-                <button className="settings-btn primary" type="button" onClick={() => onAnswer(true, access)}>
-                    Allow
-                </button>
-            </div>
+            <PairingAnswer className="settings-actions" onAnswer={onAnswer} />
         </div>
     );
 }
