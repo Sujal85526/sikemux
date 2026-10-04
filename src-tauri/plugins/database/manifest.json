@@ -3,5 +3,6 @@
   "name": "Database",
   "version": "0.1.0",
   "sikemux": ">=0.4",
+  "callTimeoutSecs": 600,
   "tools": []
 }

@@ -4,12 +4,14 @@
 //   engines     — one open connection, whichever engine the database runs on
 //   connections — trying a connection, and keeping one open per saved database
 //   schema      — tables, columns, indexes and keys, the same for every engine
+//   queries     — running SQL against a saved database, and stopping it
 //   values      — query results, the same for every engine
 
 mod connections;
 mod engines;
 mod error;
 mod profiles;
+mod queries;
 mod schema;
 mod values;
 
@@ -93,6 +95,11 @@ impl Plugin for Database {
                             .await
                     })
                     .await
+                }
+                "query" => answer(queries::run(&self.pool, &data_dir, params(input)?)).await,
+                "cancel" => {
+                    let profiles::IdRequest { id } = params(input)?;
+                    answer(queries::cancel(&self.pool, &id)).await
                 }
                 "describe" => {
                     let schema::TableRequest { id, schema, table } = params(input)?;
@@ -234,6 +241,35 @@ mod tests {
             missing.err().map(|error| error.category),
             Some("not-found".to_string())
         );
+    }
+
+    #[tokio::test]
+    async fn sql_runs_through_its_method_and_empty_sql_is_refused() {
+        let ctx = scratch("query");
+        let database = plugin().unwrap();
+        let id = saved_fixture(&database, &ctx, "plugin-query").await;
+        let outcome = database
+            .call(
+                &ctx,
+                "query",
+                json!({ "id": id, "sql": "select name from customers order by id", "limit": 1 }),
+            )
+            .await
+            .unwrap();
+        assert_eq!(outcome["results"][0]["rows"], json!([["Ada"]]));
+        assert_eq!(outcome["results"][0]["truncated"], true);
+        assert!(outcome["millis"].is_u64());
+        let empty = database
+            .call(&ctx, "query", json!({ "id": id, "sql": "  " }))
+            .await;
+        assert_eq!(
+            empty.err().map(|error| error.category),
+            Some("bad-params".to_string())
+        );
+        let cancelled = database
+            .call(&ctx, "cancel", json!({ "id": "not-open" }))
+            .await;
+        assert!(cancelled.is_ok());
     }
 
     #[tokio::test]

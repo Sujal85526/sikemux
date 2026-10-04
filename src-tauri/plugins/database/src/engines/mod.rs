@@ -7,6 +7,7 @@ mod tls;
 use crate::error::DatabaseResult;
 use crate::profiles::Target;
 use crate::schema::{Table, TableInfo};
+use crate::values::ResultSet;
 
 #[derive(Clone)]
 pub enum Session {
@@ -93,6 +94,24 @@ impl Session {
         match self {
             Self::Postgres(session) => session.describe(&schema, &table).await,
             Self::Sqlite(session) => session.describe(schema, table).await,
+        }
+    }
+
+    pub async fn query(&self, sql: &str, limit: usize) -> DatabaseResult<Vec<ResultSet>> {
+        match self {
+            Self::Postgres(session) => session.query(sql, limit).await,
+            Self::Sqlite(session) => session.query(sql.to_string(), limit).await,
+        }
+    }
+
+    /// Stops the statement running on this connection, if any.
+    pub async fn cancel(&self) -> DatabaseResult<()> {
+        match self {
+            Self::Postgres(session) => session.cancel().await,
+            Self::Sqlite(session) => {
+                session.cancel();
+                Ok(())
+            }
         }
     }
 }

@@ -97,6 +97,11 @@ impl Pool {
         Ok(opened)
     }
 
+    /// The open connection, without signing in when there is none.
+    pub async fn running(&self, id: &str) -> Option<Session> {
+        self.kept(id).await.map(|kept| kept.session)
+    }
+
     pub async fn session(&self, data_dir: &Path, id: &str) -> DatabaseResult<Session> {
         Ok(self.open(data_dir, id).await?.session)
     }
