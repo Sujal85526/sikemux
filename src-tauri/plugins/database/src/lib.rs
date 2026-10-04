@@ -1,7 +1,11 @@
 // Databases: saved connections, their schemas, and SQL run against them.
 //
-//   profiles — the databases saved here, and their passwords in the Keychain
+//   profiles    — the databases saved here, and their passwords in the Keychain
+//   engines     — one open connection, whichever engine the database runs on
+//   connections — reaching a database
 
+mod connections;
+mod engines;
 mod error;
 mod profiles;
 
@@ -57,6 +61,7 @@ impl Plugin for Database {
                     let profiles::IdRequest { id } = params(input)?;
                     answer(profiles::blocking(move || profiles::remove(&data_dir, &id))).await
                 }
+                "test" => answer(connections::test(params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
@@ -114,5 +119,32 @@ mod tests {
         let listed = database.call(&ctx, "profiles", Value::Null).await.unwrap();
         assert_eq!(listed, json!([]));
         assert!(database.call(&ctx, "nope", Value::Null).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn testing_a_connection_names_the_engine_and_its_version() {
+        let ctx = scratch("test");
+        let database = plugin().unwrap();
+        let path = engines::sqlite::tests::fixture("plugin-test");
+        let tested = database
+            .call(
+                &ctx,
+                "test",
+                json!({ "profile": { "name": "Local", "engine": "sqlite", "path": path } }),
+            )
+            .await
+            .unwrap();
+        assert!(tested["version"].as_str().unwrap().starts_with("SQLite"));
+        let missing = database
+            .call(
+                &ctx,
+                "test",
+                json!({ "profile": { "name": "Gone", "engine": "sqlite", "path": "/nope/x.db" } }),
+            )
+            .await;
+        assert_eq!(
+            missing.err().map(|error| error.category),
+            Some("connect".to_string())
+        );
     }
 }

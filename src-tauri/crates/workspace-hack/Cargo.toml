@@ -41,6 +41,7 @@ serde = { version = "1", features = ["alloc", "derive", "rc"] }
 serde_core = { version = "1", default-features = false, features = ["alloc", "rc", "result", "std"] }
 serde_json = { version = "1", features = ["alloc", "preserve_order", "raw_value"] }
 serde_with = { version = "3", features = ["json", "schemars_1"] }
+smallvec = { version = "1", default-features = false, features = ["const_generics"] }
 tauri-utils = { version = "2", default-features = false, features = ["compression", "resources"] }
 time = { version = "0.3", features = ["formatting", "macros", "parsing", "serde"] }
 typenum = { version = "1", default-features = false, features = ["const-generics"] }
@@ -69,6 +70,7 @@ serde_core = { version = "1", features = ["alloc"] }
 serde_json = { version = "1", features = ["alloc", "unbounded_depth"] }
 serde_with = { version = "3" }
 serde_with_macros = { version = "3", default-features = false, features = ["schemars_1"] }
+smallvec = { version = "1", default-features = false, features = ["const_generics"] }
 stable_deref_trait = { version = "1" }
 syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3", features = ["extra-traits", "fold", "full", "visit"] }
 syn-f595c2ba2a3f28df = { package = "syn", version = "2", features = ["extra-traits", "full", "visit", "visit-mut"] }
@@ -132,7 +134,6 @@ libc = { version = "0.2" }
 objc2 = { version = "0.6", default-features = false, features = ["std"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["NSProcessInfo", "std"] }
 simd-adler32 = { version = "0.3" }
-smallvec = { version = "1", default-features = false, features = ["const_generics"] }
 time-macros = { version = "0.2", default-features = false, features = ["formatting", "parsing", "serde"] }
 toml_datetime = { version = "1", features = ["serde"] }
 toml_parser = { version = "1" }
