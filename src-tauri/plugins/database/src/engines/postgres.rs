@@ -3,13 +3,16 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures_util::StreamExt;
 use tokio_postgres::config::SslMode;
-use tokio_postgres::{Client, Config};
+use tokio_postgres::types::Type;
+use tokio_postgres::{Client, Config, SimpleQueryMessage};
 
 use super::tls;
 use crate::error::{DatabaseError, DatabaseResult};
 use crate::profiles::{Tls, POSTGRES_PORT};
 use crate::schema::{ColumnInfo, ForeignKey, Index, Table, TableInfo, TableKind};
+use crate::values::{self, Column, ResultSet};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -24,6 +27,8 @@ pub struct Address<'a> {
 #[derive(Clone)]
 pub struct Session {
     client: Arc<Client>,
+    /// Asking the server to stop a query goes over a new connection, encrypted the same way.
+    tls: Tls,
 }
 
 /// PostgreSQL's own words for a failure, with its detail and hint, rather than the bare "db error".
@@ -103,6 +108,115 @@ const FOREIGN_KEYS: &str = "select con.conname::text, \
      where con.contype = 'f' and n.nspname = $1 and c.relname = $2 \
      order by con.conname";
 
+fn is_numeric(ty: &Type) -> bool {
+    matches!(
+        *ty,
+        Type::INT2
+            | Type::INT4
+            | Type::INT8
+            | Type::OID
+            | Type::FLOAT4
+            | Type::FLOAT8
+            | Type::NUMERIC
+            | Type::MONEY
+    )
+}
+
+/// A value as PostgreSQL writes it in text, turned back into what its type means.
+/// `numeric` stays text so no digit is lost; a type that is not known stays text too.
+fn cell(text: Option<&str>, ty: Option<&Type>) -> serde_json::Value {
+    let Some(text) = text else {
+        return serde_json::Value::Null;
+    };
+    match ty {
+        Some(&Type::BOOL) => serde_json::Value::Bool(text == "t"),
+        Some(&Type::INT2 | &Type::INT4 | &Type::INT8 | &Type::OID) => text
+            .parse()
+            .map_or_else(|_| values::text(text), values::integer),
+        Some(&Type::FLOAT4 | &Type::FLOAT8) => text
+            .parse()
+            .map_or_else(|_| values::text(text), values::real),
+        _ => values::text(text),
+    }
+}
+
+/// Builds results from the stream of messages a simple query sends: a row description opens a result,
+/// rows fill it, and each statement's completion closes it with the count it reports.
+#[derive(Default)]
+struct Collector {
+    results: Vec<ResultSet>,
+    open: Option<ResultSet>,
+    types: Option<Vec<Type>>,
+}
+
+impl Collector {
+    fn take(&mut self, message: SimpleQueryMessage, limit: usize) {
+        match message {
+            SimpleQueryMessage::RowDescription(described) => {
+                let types = self.types.take();
+                let columns = described
+                    .iter()
+                    .enumerate()
+                    .map(|(index, column)| {
+                        let ty = types.as_ref().and_then(|types| types.get(index));
+                        Column {
+                            name: column.name().to_string(),
+                            type_name: ty.map(|ty| ty.name().to_string()).unwrap_or_default(),
+                            numeric: ty.is_some_and(is_numeric),
+                        }
+                    })
+                    .collect();
+                self.open = Some(ResultSet {
+                    columns,
+                    ..ResultSet::default()
+                });
+                self.types = types;
+            }
+            SimpleQueryMessage::Row(row) => {
+                let Some(open) = self.open.as_mut() else {
+                    return;
+                };
+                if open.rows.len() == limit {
+                    open.truncated = true;
+                    return;
+                }
+                let types = self.types.as_ref();
+                open.rows.push(
+                    (0..row.len())
+                        .map(|index| cell(row.get(index), types.and_then(|types| types.get(index))))
+                        .collect(),
+                );
+            }
+            SimpleQueryMessage::CommandComplete(count) => match self.open.take() {
+                Some(mut finished) => {
+                    if self.types.is_none() {
+                        mark_numbers_by_text(&mut finished);
+                    }
+                    self.types = None;
+                    self.results.push(finished);
+                }
+                None => self.results.push(ResultSet {
+                    affected: Some(count),
+                    ..ResultSet::default()
+                }),
+            },
+            _ => {}
+        }
+    }
+}
+
+/// Without the column types, a column whose every value reads as a number is treated as numbers.
+fn mark_numbers_by_text(result: &mut ResultSet) {
+    for (index, column) in result.columns.iter_mut().enumerate() {
+        let mut texts = result
+            .rows
+            .iter()
+            .filter_map(|row| row.get(index).and_then(serde_json::Value::as_str))
+            .peekable();
+        column.numeric = texts.peek().is_some() && texts.all(|text| text.parse::<f64>().is_ok());
+    }
+}
+
 fn ssl_mode(tls: Tls) -> SslMode {
     match tls {
         Tls::Disable => SslMode::Disable,
@@ -153,11 +267,51 @@ impl Session {
         }
         Ok(Self {
             client: Arc::new(client),
+            tls: address.tls,
         })
     }
 
     pub fn is_alive(&self) -> bool {
         !self.client.is_closed()
+    }
+
+    /// Runs every statement in the text, keeping at most `limit` rows from each. A single statement is
+    /// prepared first so its columns come back with their types; a script of several comes back as text.
+    pub async fn query(&self, sql: &str, limit: usize) -> DatabaseResult<Vec<ResultSet>> {
+        let types = match self.client.prepare(sql).await {
+            Ok(statement) => Some(
+                statement
+                    .columns()
+                    .iter()
+                    .map(|column| column.type_().clone())
+                    .collect(),
+            ),
+            Err(_) => None,
+        };
+        let mut collector = Collector {
+            types,
+            ..Collector::default()
+        };
+        let stream = self
+            .client
+            .simple_query_raw(sql)
+            .await
+            .map_err(query_error)?;
+        let mut stream = std::pin::pin!(stream);
+        while let Some(message) = stream.next().await {
+            collector.take(message.map_err(query_error)?, limit);
+        }
+        Ok(collector.results)
+    }
+
+    /// Asks the server to stop whatever this connection is running; the query ends with an error saying so.
+    pub async fn cancel(&self) -> DatabaseResult<()> {
+        let connector = tls::connector(self.tls == Tls::VerifyFull)?;
+        self.client
+            .cancel_token()
+            .cancel_query(connector)
+            .await
+            .map_err(|error| DatabaseError::Connect(describe(&error)))
     }
 
     /// The schemas this user may look into, `public` first.
@@ -418,6 +572,112 @@ pub mod tests {
             scratch.session.describe(&scratch.schema, "nope").await,
             Err(DatabaseError::NotFound(_))
         ));
+        scratch.drop().await;
+    }
+
+    #[test]
+    fn text_values_become_what_their_types_mean() {
+        assert_eq!(cell(None, Some(&Type::INT4)), serde_json::Value::Null);
+        assert_eq!(cell(Some("t"), Some(&Type::BOOL)), serde_json::json!(true));
+        assert_eq!(cell(Some("42"), Some(&Type::INT8)), serde_json::json!(42));
+        assert_eq!(
+            cell(Some("9223372036854775807"), Some(&Type::INT8)),
+            serde_json::json!("9223372036854775807")
+        );
+        assert_eq!(
+            cell(Some("1.5"), Some(&Type::FLOAT8)),
+            serde_json::json!(1.5)
+        );
+        assert_eq!(
+            cell(Some("NaN"), Some(&Type::FLOAT8)),
+            serde_json::json!("NaN")
+        );
+        assert_eq!(
+            cell(Some("12345678901234567890.12"), Some(&Type::NUMERIC)),
+            serde_json::json!("12345678901234567890.12")
+        );
+        assert_eq!(cell(Some("{a,b}"), None), serde_json::json!("{a,b}"));
+    }
+
+    #[tokio::test]
+    async fn a_live_query_returns_typed_cells() {
+        let Some(scratch) = Scratch::new("query").await else {
+            return;
+        };
+        let sql = format!(
+            "select id, customer_id, total, placed_at, paid, note, tags from {}.orders order by id",
+            scratch.schema
+        );
+        let results = scratch.session.query(&sql, 100).await.unwrap();
+        assert_eq!(results.len(), 1);
+        let result = &results[0];
+        let types: Vec<(&str, bool)> = result
+            .columns
+            .iter()
+            .map(|column| (column.type_name.as_str(), column.numeric))
+            .collect();
+        assert_eq!(
+            types,
+            vec![
+                ("int8", true),
+                ("int4", true),
+                ("numeric", true),
+                ("timestamptz", false),
+                ("bool", false),
+                ("bytea", false),
+                ("_text", false)
+            ]
+        );
+        assert_eq!(result.rows[0][0], serde_json::json!(1));
+        assert_eq!(result.rows[0][2], serde_json::json!("42.50"));
+        assert_eq!(result.rows[0][4], serde_json::json!(true));
+        assert_eq!(result.rows[0][5], serde_json::json!("\\xcafe"));
+        assert_eq!(result.rows[0][6], serde_json::json!("{rush}"));
+        assert_eq!(result.rows[1][3], serde_json::Value::Null);
+        assert_eq!(result.affected, None);
+        scratch.drop().await;
+    }
+
+    #[tokio::test]
+    async fn a_live_script_reports_each_statement_and_keeps_to_the_limit() {
+        let Some(scratch) = Scratch::new("script").await else {
+            return;
+        };
+        let schema = &scratch.schema;
+        let sql = format!(
+            "update {schema}.orders set paid = true; select name from {schema}.customers order by id; select count(*) from {schema}.orders"
+        );
+        let results = scratch.session.query(&sql, 1).await.unwrap();
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0].affected, Some(2));
+        assert_eq!(results[1].rows, vec![vec![serde_json::json!("Ada")]]);
+        assert!(results[1].truncated);
+        assert!(results[2].columns[0].numeric);
+        let failed = scratch.session.query("select * from nowhere", 1).await;
+        let Err(DatabaseError::Query(message)) = failed else {
+            panic!("expected a query error")
+        };
+        assert!(message.contains("does not exist"), "{message}");
+        scratch.drop().await;
+    }
+
+    #[tokio::test]
+    async fn a_live_query_can_be_cancelled() {
+        let Some(scratch) = Scratch::new("cancel").await else {
+            return;
+        };
+        let running = scratch.session.clone();
+        let sleeping = tokio::spawn(async move { running.query("select pg_sleep(30)", 1).await });
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        scratch.session.cancel().await.unwrap();
+        let outcome = tokio::time::timeout(Duration::from_secs(5), sleeping)
+            .await
+            .unwrap()
+            .unwrap();
+        let Err(DatabaseError::Query(message)) = outcome else {
+            panic!("expected the query to be cancelled")
+        };
+        assert!(message.contains("cancel"), "{message}");
         scratch.drop().await;
     }
 
