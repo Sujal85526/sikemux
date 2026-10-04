@@ -4,12 +4,14 @@
 //   client  — the HTTP client, size limits, and Jira's error shape
 //   auth    — signing in to a site with an email and API token, and the status of each
 //   adf     — Jira's document format to markdown and back
+//   issues  — search, one issue, comments, transitions, assignment, new issues, worklogs, filters
 
 mod adf;
 mod auth;
 mod client;
 mod config;
 mod error;
+mod issues;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -62,6 +64,16 @@ impl Plugin for Jira {
                     signed_in(data_dir, auth::sign_in(data_dir, params(input)?).await).await
                 }
                 "signOut" => answer(auth::sign_out(data_dir, params(input)?)).await,
+                "search" => answer(issues::search(data_dir, params(input)?)).await,
+                "issue" => answer(issues::issue(data_dir, params(input)?)).await,
+                "comment" => answer(issues::comment(data_dir, params(input)?)).await,
+                "transition" => answer(issues::transition(data_dir, params(input)?)).await,
+                "assign" => answer(issues::assign(data_dir, params(input)?)).await,
+                "assignable" => answer(issues::assignable(data_dir, params(input)?)).await,
+                "create" => answer(issues::create(data_dir, params(input)?)).await,
+                "worklog" => answer(issues::worklog(data_dir, params(input)?)).await,
+                "filters" => answer(issues::filters(data_dir, params(input)?)).await,
+                "keys" => reply(issues::keys_in(&params::<issues::KeysRequest>(input)?.text)),
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
