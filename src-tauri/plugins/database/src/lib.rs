@@ -3,11 +3,13 @@
 //   profiles    — the databases saved here, and their passwords in the Keychain
 //   engines     — one open connection, whichever engine the database runs on
 //   connections — trying a connection, and keeping one open per saved database
+//   values      — query results, the same for every engine
 
 mod connections;
 mod engines;
 mod error;
 mod profiles;
+mod values;
 
 use std::sync::Arc;
 
