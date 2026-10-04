@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { notify, openUrl, reportError, swallow } from "../../../plugin-api/host";
+import { gitOverviewR, notify, openUrl, reportError, swallow, useActiveProjectCwd } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { Dropdown, EmptyState, Markdown, SkeletonRows } from "../../../plugin-api/ui";
 import { failureMessage, jiraApi, refreshJira, type JiraIssue, type JiraIssueSummary, type JiraPerson } from "../api";
 import { jiraFiltersR, jiraIssueR, jiraSearchR, jiraStatusR } from "../resources";
-import { jqlOf, updateJiraView, useJiraView, type JiraList } from "../state";
+import { jqlOf, mentions, updateJiraView, useJiraView, type JiraList } from "../state";
 import { JiraSignIn } from "./JiraSignIn";
 import { StatusChip } from "./StatusChip";
 import "../jira.css";
@@ -287,6 +287,7 @@ function IssueBody({ issue, site, refresh }: { issue: JiraIssue; site: string; r
             <section className="jira-description">
                 {issue.description ? <Markdown>{issue.description}</Markdown> : <p className="jira-meta">No description.</p>}
             </section>
+            <ProjectCommits issueKey={issue.key} />
             <section className="jira-comments" aria-label="Comments">
                 <div className="jira-heading">
                     Comments{issue.commentCount > issue.comments.length ? ` (latest ${issue.comments.length} of ${issue.commentCount})` : ""}
@@ -314,5 +315,25 @@ function IssueBody({ issue, site, refresh }: { issue: JiraIssue; site: string; r
                 </button>
             </section>
         </article>
+    );
+}
+
+/** The open project's recent commits that name the issue in their message. */
+function ProjectCommits({ issueKey }: { issueKey: string }) {
+    const cwd = useActiveProjectCwd();
+    const repo = useResourceEnabled(!!cwd, gitOverviewR, cwd ?? "");
+    const commits = (repo.data?.log ?? []).filter((commit) => mentions(commit.subject, issueKey));
+    if (commits.length === 0) return null;
+    return (
+        <section className="jira-commits" aria-label="Commits in this project">
+            <div className="jira-heading">Commits in this project</div>
+            {commits.map((commit) => (
+                <div key={commit.full_hash} className="jira-commit">
+                    <span className="jira-key">{commit.hash}</span>
+                    <span>{commit.subject}</span>
+                    <span className="jira-meta">{commit.author}</span>
+                </div>
+            ))}
+        </section>
     );
 }

@@ -19,6 +19,12 @@ export function jqlOf(list: JiraList): string {
     }
 }
 
+/** Whether a commit message names the issue: as a whole word, in any case, so ABC-12 is not ABC-123. */
+export function mentions(text: string, key: string): boolean {
+    const escaped = key.replace(/[^A-Za-z0-9-]/g, "");
+    return escaped.length > 0 && new RegExp(`(^|[^A-Za-z0-9])${escaped}(?![0-9])`, "i").test(text);
+}
+
 export interface JiraView {
     list: JiraList;
     /** The issue open beside the list. */

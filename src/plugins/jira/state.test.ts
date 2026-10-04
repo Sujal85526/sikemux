@@ -1,6 +1,6 @@
 import { renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { jqlOf, MINE_JQL, SPRINT_JQL, updateJiraView, useJiraView } from "./state";
+import { jqlOf, mentions, MINE_JQL, SPRINT_JQL, updateJiraView, useJiraView } from "./state";
 
 describe("the Jira pane's lists", () => {
     it("asks Jira for the right issues for each list", () => {
@@ -19,5 +19,15 @@ describe("the Jira pane's lists", () => {
         expect(a).toEqual({ list: { kind: "mine" }, issue: "ABC-1", site: "" });
         expect(b).toEqual({ list: { kind: "sprint" }, issue: null, site: "" });
         expect(fresh.list).toEqual({ kind: "mine" });
+    });
+});
+
+describe("commits that mention an issue", () => {
+    it("matches the key as a whole word in any case", () => {
+        expect(mentions("ABC-12: fix the race", "ABC-12")).toBe(true);
+        expect(mentions("fix(auth): handle expiry (abc-12)", "ABC-12")).toBe(true);
+        expect(mentions("feature/abc-12-login", "ABC-12")).toBe(true);
+        expect(mentions("ABC-123 is something else", "ABC-12")).toBe(false);
+        expect(mentions("XABC-12", "ABC-12")).toBe(false);
     });
 });

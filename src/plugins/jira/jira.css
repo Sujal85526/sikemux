@@ -215,3 +215,16 @@
     font-family: inherit;
     font-size: var(--text-sm);
 }
+
+.jira-commits {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.jira-commit {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    font-size: var(--text-sm);
+}
