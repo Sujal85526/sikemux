@@ -1,15 +1,18 @@
 // Running SQL against a saved database, and keeping each run in its history.
 
 use std::path::Path;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 
-use crate::connections::Pool;
+use crate::connections::{Access, Pool};
 use crate::error::{DatabaseError, DatabaseResult};
 use crate::history::{self, Entry, Source};
 use crate::profiles;
 use crate::values::{self, QueryOutcome};
+
+/// How long an agent's statement may run before it is stopped, so a runaway query cannot hold the database.
+const AGENT_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -31,15 +34,32 @@ pub async fn run(
     if sql.is_empty() {
         return Err(DatabaseError::BadArg("there is no SQL to run".into()));
     }
-    let session = pool.session(data_dir, &request.id).await?;
+    let access = match source {
+        Source::Person => Access::Person,
+        Source::Agent => Access::Agent,
+    };
+    let session = pool.session(data_dir, &request.id, access).await?;
     let started = Instant::now();
-    let outcome = session
-        .query(&sql, values::row_limit(request.limit))
-        .await
-        .map(|results| QueryOutcome {
-            results,
-            millis: values::elapsed_millis(started),
-        });
+    let limit = values::row_limit(request.limit);
+    let ran = match access {
+        Access::Person => session.query(&sql, limit).await,
+        Access::Agent => {
+            match tokio::time::timeout(AGENT_TIMEOUT, session.query(&sql, limit)).await {
+                Ok(ran) => ran,
+                Err(_) => {
+                    let _ = session.cancel().await;
+                    Err(DatabaseError::Query(format!(
+                        "stopped after {}s; agents' queries are limited to that",
+                        AGENT_TIMEOUT.as_secs()
+                    )))
+                }
+            }
+        }
+    };
+    let outcome = ran.map(|results| QueryOutcome {
+        results,
+        millis: values::elapsed_millis(started),
+    });
     let entry = Entry {
         sql,
         at: history::now_millis(),

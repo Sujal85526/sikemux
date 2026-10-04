@@ -89,13 +89,20 @@ impl Plugin for Database {
                 "connected" => reply(self.pool.connected().await),
                 "schemas" => {
                     let profiles::IdRequest { id } = params(input)?;
-                    answer(async { self.pool.session(&data_dir, &id).await?.schemas().await }).await
+                    answer(async {
+                        self.pool
+                            .session(&data_dir, &id, connections::Access::Person)
+                            .await?
+                            .schemas()
+                            .await
+                    })
+                    .await
                 }
                 "tables" => {
                     let schema::SchemaRequest { id, schema } = params(input)?;
                     answer(async {
                         self.pool
-                            .session(&data_dir, &id)
+                            .session(&data_dir, &id, connections::Access::Person)
                             .await?
                             .tables(schema)
                             .await
@@ -131,7 +138,7 @@ impl Plugin for Database {
                     let schema::TableRequest { id, schema, table } = params(input)?;
                     answer(async {
                         self.pool
-                            .session(&data_dir, &id)
+                            .session(&data_dir, &id, connections::Access::Person)
                             .await?
                             .describe(schema, table)
                             .await

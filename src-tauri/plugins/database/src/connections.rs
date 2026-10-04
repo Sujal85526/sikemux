@@ -55,18 +55,27 @@ struct Open {
     version: String,
 }
 
+/// Who a connection is for. Agents get one of their own, so it can be read-only while the person's is not.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Access {
+    Person,
+    Agent,
+}
+
+type Key = (String, Access);
+
 #[derive(Default)]
 pub struct Pool {
-    open: tokio::sync::Mutex<HashMap<String, Open>>,
+    open: tokio::sync::Mutex<HashMap<Key, Open>>,
 }
 
 impl Pool {
-    async fn kept(&self, id: &str) -> Option<Open> {
+    async fn kept(&self, key: &Key) -> Option<Open> {
         let mut open = self.open.lock().await;
-        match open.get(id) {
+        match open.get(key) {
             Some(kept) if kept.session.is_alive() => Some(kept.clone()),
             Some(_) => {
-                open.remove(id);
+                open.remove(key);
                 None
             }
             None => None,
@@ -74,8 +83,9 @@ impl Pool {
     }
 
     /// The open connection to a saved database, signing in first when there is none or it has dropped.
-    async fn open(&self, data_dir: &Path, id: &str) -> DatabaseResult<Open> {
-        if let Some(kept) = self.kept(id).await {
+    async fn open(&self, data_dir: &Path, id: &str, access: Access) -> DatabaseResult<Open> {
+        let key = (id.to_string(), access);
+        if let Some(kept) = self.kept(&key).await {
             return Ok(kept);
         }
         let dir = data_dir.to_path_buf();
@@ -86,37 +96,44 @@ impl Pool {
             Ok((profile, password))
         })
         .await?;
-        let session =
-            Session::open(&profile.target, password.as_deref(), profile.read_only).await?;
+        let read_only = match access {
+            Access::Person => profile.read_only,
+            Access::Agent => profile.read_only || !profile.agent_writes,
+        };
+        let session = Session::open(&profile.target, password.as_deref(), read_only).await?;
         let version = session.version().await?;
         let opened = Open { session, version };
-        self.open
-            .lock()
-            .await
-            .insert(id.to_string(), opened.clone());
+        self.open.lock().await.insert(key, opened.clone());
         Ok(opened)
     }
 
-    /// The open connection, without signing in when there is none.
+    /// The person's open connection, without signing in when there is none.
     pub async fn running(&self, id: &str) -> Option<Session> {
-        self.kept(id).await.map(|kept| kept.session)
+        self.kept(&(id.to_string(), Access::Person))
+            .await
+            .map(|kept| kept.session)
     }
 
-    pub async fn session(&self, data_dir: &Path, id: &str) -> DatabaseResult<Session> {
-        Ok(self.open(data_dir, id).await?.session)
+    pub async fn session(
+        &self,
+        data_dir: &Path,
+        id: &str,
+        access: Access,
+    ) -> DatabaseResult<Session> {
+        Ok(self.open(data_dir, id, access).await?.session)
     }
 
     pub async fn connect(&self, data_dir: &Path, id: &str) -> DatabaseResult<Connected> {
-        let opened = self.open(data_dir, id).await?;
+        let opened = self.open(data_dir, id, Access::Person).await?;
         Ok(Connected {
             id: id.to_string(),
             version: opened.version,
         })
     }
 
-    /// Closes the connection, as after its profile is edited or removed.
+    /// Closes the person's and the agents' connections, as after the profile is edited or removed.
     pub async fn forget(&self, id: &str) {
-        self.open.lock().await.remove(id);
+        self.open.lock().await.retain(|(kept, _), _| kept != id);
     }
 
     pub async fn connected(&self) -> Vec<Connected> {
@@ -125,8 +142,8 @@ impl Pool {
             .lock()
             .await
             .iter()
-            .filter(|(_, kept)| kept.session.is_alive())
-            .map(|(id, kept)| Connected {
+            .filter(|((_, access), kept)| *access == Access::Person && kept.session.is_alive())
+            .map(|((id, _), kept)| Connected {
                 id: id.clone(),
                 version: kept.version.clone(),
             })
@@ -170,6 +187,32 @@ mod tests {
         assert_eq!(pool.connected().await, vec![connected]);
         pool.forget(&id).await;
         assert!(pool.connected().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn agents_read_only_until_the_person_lets_them_change_data() {
+        let dir = scratch("agent");
+        let file = crate::engines::sqlite::tests::fixture("pool-agent");
+        let id = save_sqlite(&dir, "Local", &file);
+        let pool = Pool::default();
+        let delete = "delete from orders";
+        let agent = pool.session(&dir, &id, Access::Agent).await.unwrap();
+        assert!(agent.query(delete, 1).await.is_err());
+        let person = pool.session(&dir, &id, Access::Person).await.unwrap();
+        assert!(person.query(delete, 1).await.is_ok());
+        assert_eq!(pool.connected().await.len(), 1);
+
+        let request: SaveRequest = serde_json::from_value(serde_json::json!({
+            "profile": { "id": id, "name": "Local", "engine": "sqlite", "path": file, "agentWrites": true }
+        }))
+        .unwrap();
+        profiles::save(&dir, request).unwrap();
+        pool.forget(&id).await;
+        let agent = pool.session(&dir, &id, Access::Agent).await.unwrap();
+        assert!(agent
+            .query("delete from customers where id = 2", 1)
+            .await
+            .is_ok());
     }
 
     #[tokio::test]
