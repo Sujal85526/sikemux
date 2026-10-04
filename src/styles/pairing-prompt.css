@@ -1,0 +1,64 @@
+.pairing-prompts {
+    position: fixed;
+    top: 44px;
+    right: var(--space-3);
+    z-index: 9998;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    width: min(380px, calc(100vw - 2 * var(--space-3)));
+}
+.pairing-prompt {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    background: var(--surface-overlay);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-4);
+    box-shadow: var(--shadow-3);
+    font-family: var(--ui);
+}
+.pairing-prompt-head {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+}
+.pairing-prompt-glyph {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    flex: none;
+    border-radius: var(--radius-2);
+    color: var(--acc);
+    background: var(--surface-selected);
+}
+.pairing-prompt-copy {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+}
+.pairing-prompt-title {
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-semibold);
+    line-height: 1.35;
+    letter-spacing: var(--tracking-tight);
+}
+.pairing-prompt-detail {
+    color: var(--text-tertiary);
+    font-size: var(--text-xs);
+    line-height: 1.45;
+}
+.pairing-prompt-detail .device-key {
+    color: var(--text-secondary);
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+}
+.pairing-prompt-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}

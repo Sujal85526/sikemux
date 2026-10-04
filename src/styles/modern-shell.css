@@ -1236,6 +1236,7 @@ textarea,
     .aws-auth-modal,
     .bruno-secrets-pop,
     .dlg,
+    .pairing-prompt,
     [role="menu"],
     [role="dialog"],
     [role="listbox"]:not(.address-suggestions)
