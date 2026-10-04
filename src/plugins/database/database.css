@@ -137,8 +137,9 @@
     color: var(--text-tertiary);
 }
 
-.db-main {
-    padding: var(--space-4) var(--space-5);
+.db-main > .db-form,
+.db-main > .db-detail {
+    margin: var(--space-4) var(--space-5);
 }
 
 .db-form,

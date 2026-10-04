@@ -3,6 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DatabaseProfile } from "../api";
 
 const api = vi.hoisted(() => ({
+    schemas: vi.fn(),
+    tables: vi.fn(),
+    describe: vi.fn(),
+    query: vi.fn(),
+    history: vi.fn(),
     profiles: vi.fn(),
     connected: vi.fn(),
     connect: vi.fn(),
@@ -52,6 +57,9 @@ beforeEach(() => {
     Object.values(api).forEach((mock) => mock.mockReset());
     api.profiles.mockResolvedValue([shop, local]);
     api.connected.mockResolvedValue([]);
+    api.schemas.mockResolvedValue(["public"]);
+    api.tables.mockResolvedValue([{ name: "orders", kind: "table" }]);
+    api.describe.mockResolvedValue({ schema: "public", name: "orders", kind: "table", columns: [], indexes: [], foreignKeys: [] });
 });
 
 describe("DatabasePane", () => {
@@ -80,9 +88,19 @@ describe("DatabasePane", () => {
         api.connected.mockResolvedValue([{ id: "p1", version: "PostgreSQL 16.4" }]);
         await act(async () => fireEvent.click(screen.getByRole("button", { name: "Connect" })));
         expect(api.connect).toHaveBeenCalledWith("p1");
-        expect(await screen.findByText("Connected to PostgreSQL 16.4")).toBeInTheDocument();
+        expect(await screen.findByRole("region", { name: "Query Shop" })).toBeInTheDocument();
+        expect(screen.getByText("PostgreSQL 16.4")).toBeInTheDocument();
         expect(screen.getByLabelText("Connected")).toBeInTheDocument();
         expect(screen.getByRole("button", { name: "Disconnect" })).toBeInTheDocument();
+    });
+
+    it("lists a connected database's tables and opens one", async () => {
+        api.connected.mockResolvedValue([{ id: "p1", version: "PostgreSQL 16.4" }]);
+        renderPane();
+        fireEvent.click(await screen.findByText("Shop"));
+        fireEvent.click(await screen.findByText("orders"));
+        expect(await screen.findByRole("tab", { name: "orders" })).toHaveAttribute("aria-selected", "true");
+        expect(await screen.findByRole("article", { name: "public.orders" })).toBeInTheDocument();
     });
 
     it("says why a connection failed", async () => {

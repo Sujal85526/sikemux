@@ -4,9 +4,12 @@ import { refreshDatabase, type Connected, type DatabaseProfile } from "../api";
 import { addressOf, blankDraft, draftOf, engineLabel } from "../profileForm";
 import { databaseConnectedR, databaseProfilesR } from "../resources";
 import { updateDatabaseView, useDatabaseView } from "../state";
+import { forgetQuery } from "../queryState";
+import { ConnectedDatabase } from "./ConnectedDatabase";
 import { DatabaseMark } from "./DatabaseMark";
 import { ProfileDetail } from "./ProfileDetail";
 import { ProfileForm } from "./ProfileForm";
+import { SchemaTree } from "./SchemaTree";
 import "../database.css";
 
 export function DatabasePane({ paneId, active }: { paneId: string; active: boolean }) {
@@ -19,7 +22,11 @@ export function DatabasePane({ paneId, active }: { paneId: string; active: boole
 
     const list = profiles.data;
     const selected = list.find((profile) => profile.id === view.selected) ?? null;
+    const connectionOf = (id: string) => connected.data?.find((entry) => entry.id === id) ?? null;
+    const selectedConnection = selected ? connectionOf(selected.id) : null;
     const open = (change: Parameters<typeof updateDatabaseView>[1]) => updateDatabaseView(paneId, change);
+    const pick = (id: string) =>
+        open(id === view.selected ? { editing: null } : { selected: id, editing: null, showing: "query", schema: null, table: null });
     const afterSave = (profile: DatabaseProfile) => {
         refreshDatabase();
         open({ selected: profile.id, editing: null });
@@ -63,12 +70,22 @@ export function DatabasePane({ paneId, active }: { paneId: string; active: boole
                         <ProfileRow
                             key={profile.id}
                             profile={profile}
-                            connected={connected.data?.find((entry) => entry.id === profile.id) ?? null}
+                            connected={connectionOf(profile.id)}
                             selected={profile.id === view.selected && view.editing !== "new"}
-                            onSelect={() => open({ selected: profile.id, editing: null })}
+                            onSelect={() => pick(profile.id)}
                         />
                     ))}
                 </div>
+                {selected && selectedConnection && view.editing === null && (
+                    <SchemaTree
+                        profile={selected}
+                        active={active}
+                        schema={view.schema}
+                        table={view.showing === "table" ? view.table : null}
+                        onSchema={(schema) => open({ schema })}
+                        onOpen={(table) => open({ showing: "table", table })}
+                    />
+                )}
             </nav>
             <section className="db-main">
                 {view.editing === "new" ? (
@@ -87,18 +104,24 @@ export function DatabasePane({ paneId, active }: { paneId: string; active: boole
                         saved={selected}
                         onSaved={afterSave}
                         onRemoved={() => {
+                            forgetQuery(selected.id);
                             refreshDatabase();
-                            open({ selected: null, editing: null });
+                            open({ selected: null, editing: null, table: null });
                         }}
                         onCancel={() => open({ editing: null })}
                     />
-                ) : selected ? (
-                    <ProfileDetail
+                ) : selected && selectedConnection ? (
+                    <ConnectedDatabase
                         key={selected.id}
                         profile={selected}
-                        connected={connected.data?.find((entry) => entry.id === selected.id) ?? null}
+                        connected={selectedConnection}
+                        active={active}
+                        view={view}
+                        onView={open}
                         onEdit={() => open({ editing: "selected" })}
                     />
+                ) : selected ? (
+                    <ProfileDetail key={selected.id} profile={selected} connected={null} onEdit={() => open({ editing: "selected" })} />
                 ) : (
                     <EmptyState message="Pick a connection to see it, or add a new one." />
                 )}
