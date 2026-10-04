@@ -3,7 +3,9 @@
 //   config  — the sites signed in here, and their API tokens in the Keychain
 //   client  — the HTTP client, size limits, and Jira's error shape
 //   auth    — signing in to a site with an email and API token, and the status of each
+//   adf     — Jira's document format to markdown and back
 
+mod adf;
 mod auth;
 mod client;
 mod config;
