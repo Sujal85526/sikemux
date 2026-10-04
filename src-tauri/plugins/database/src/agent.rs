@@ -62,6 +62,7 @@ pub struct AgentTables {
 fn describe_profile(profile: &Profile) -> AgentDatabase {
     let (engine, address) = match &profile.target {
         Target::Postgres(server) => ("postgres", server.address(profiles::POSTGRES_PORT)),
+        Target::Mysql(server) => ("mysql", server.address(crate::engines::mysql::MYSQL_PORT)),
         Target::Sqlite { path } => ("sqlite", path.clone()),
     };
     AgentDatabase {
@@ -91,9 +92,7 @@ pub async fn tables(
 ) -> DatabaseResult<AgentTables> {
     let id = id_of(data_dir, &request.database)?;
     let session = pool.session(data_dir, &id, Access::Agent).await?;
-    let schema = request
-        .schema
-        .unwrap_or_else(|| session.default_schema().to_string());
+    let schema = request.schema.unwrap_or_else(|| session.default_schema());
     Ok(AgentTables {
         schemas: session.schemas().await?,
         tables: session.tables(Some(schema.clone())).await?,

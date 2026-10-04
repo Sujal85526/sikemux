@@ -79,13 +79,14 @@ impl Server {
 #[serde(tag = "engine", rename_all = "lowercase")]
 pub enum Target {
     Postgres(Server),
+    Mysql(Server),
     Sqlite { path: String },
 }
 
 impl Target {
     fn check(&self) -> DatabaseResult<()> {
         match self {
-            Self::Postgres(server) => server.check(),
+            Self::Postgres(server) | Self::Mysql(server) => server.check(),
             Self::Sqlite { path } if path.trim().is_empty() => {
                 Err(DatabaseError::BadArg("a database file is needed".into()))
             }
@@ -96,6 +97,7 @@ impl Target {
     fn trimmed(self) -> Self {
         match self {
             Self::Postgres(server) => Self::Postgres(server.trimmed()),
+            Self::Mysql(server) => Self::Mysql(server.trimmed()),
             Self::Sqlite { path } => Self::Sqlite {
                 path: path.trim().to_string(),
             },
@@ -415,6 +417,17 @@ mod tests {
         assert_eq!(written["engine"], "postgres");
         assert_eq!(written["host"], "localhost");
         assert_eq!(written["readOnly"], false);
+    }
+
+    #[test]
+    fn a_mysql_profile_reads_with_its_engine_name() {
+        let json = r#"{"id":"2","name":"Legacy","engine":"mysql","host":"db","port":3307,"database":"app","user":"root"}"#;
+        let profile: Profile = serde_json::from_str(json).unwrap();
+        let Target::Mysql(server) = &profile.target else {
+            panic!("expected a MySQL target")
+        };
+        assert_eq!(server.address(3306), "root@db:3307/app");
+        assert_eq!(server.tls, Tls::Prefer);
     }
 
     #[test]

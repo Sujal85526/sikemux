@@ -16,20 +16,21 @@ publish = false
 ### BEGIN HAKARI SECTION
 [dependencies]
 aho-corasick = { version = "1" }
+crc32fast = { version = "1" }
 crossbeam-utils = { version = "0.8" }
 deranged = { version = "0.5", features = ["serde"] }
 derive_more = { version = "2", features = ["display", "from"] }
 digest = { version = "0.11", features = ["alloc", "mac", "oid"] }
 fastrand = { version = "2" }
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 form_urlencoded = { version = "1" }
 futures-channel = { version = "0.3", features = ["sink"] }
 futures-core = { version = "0.3" }
 futures-io = { version = "0.3" }
 futures-sink = { version = "0.3" }
-futures-task = { version = "0.3", default-features = false, features = ["std"] }
 futures-util = { version = "0.3", features = ["channel", "io", "sink"] }
 getrandom-468e82937335b1c9 = { package = "getrandom", version = "0.3", default-features = false, features = ["std"] }
-hashbrown = { version = "0.17", default-features = false, features = ["default-hasher"] }
+hashbrown = { version = "0.17", default-features = false, features = ["default-hasher", "inline-more"] }
 icu_properties = { version = "2" }
 libc = { version = "0.2", features = ["extra_traits"] }
 memchr = { version = "2" }
@@ -49,7 +50,6 @@ serde = { version = "1", features = ["alloc", "derive", "rc"] }
 serde_core = { version = "1", default-features = false, features = ["alloc", "rc", "result", "std"] }
 serde_json = { version = "1", features = ["alloc", "preserve_order", "raw_value"] }
 serde_with = { version = "3", features = ["json", "schemars_1"] }
-smallvec = { version = "1", default-features = false, features = ["const_generics"] }
 tauri-utils = { version = "2", default-features = false, features = ["compression", "resources"] }
 time = { version = "0.3", features = ["formatting", "macros", "parsing", "serde"] }
 typenum = { version = "1", default-features = false, features = ["const-generics"] }
@@ -59,10 +59,12 @@ uuid = { version = "1", features = ["serde", "v4"] }
 [build-dependencies]
 aho-corasick = { version = "1", default-features = false, features = ["perf-literal", "std"] }
 cc = { version = "1", default-features = false, features = ["parallel"] }
+crc32fast = { version = "1" }
 deranged = { version = "0.5" }
 derive_more = { version = "2", features = ["add", "add_assign"] }
 derive_more-impl = { version = "2", features = ["add", "add_assign", "display", "from"] }
 digest = { version = "0.11", features = ["alloc", "oid"] }
+flate2 = { version = "1" }
 foldhash = { version = "0.2" }
 form_urlencoded = { version = "1", default-features = false, features = ["std"] }
 icu_properties = { version = "2" }
@@ -80,7 +82,7 @@ serde_core = { version = "1", features = ["alloc"] }
 serde_json = { version = "1", features = ["alloc", "unbounded_depth"] }
 serde_with = { version = "3" }
 serde_with_macros = { version = "3", default-features = false, features = ["schemars_1"] }
-smallvec = { version = "1", default-features = false, features = ["const_generics"] }
+simd-adler32 = { version = "0.3" }
 stable_deref_trait = { version = "1" }
 syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3", features = ["extra-traits", "fold", "full", "visit", "visit-mut"] }
 syn-f595c2ba2a3f28df = { package = "syn", version = "2", features = ["extra-traits", "full", "visit", "visit-mut"] }
@@ -94,15 +96,15 @@ uuid = { version = "1", features = ["serde", "v4"] }
 [target.aarch64-apple-darwin.dependencies]
 bitflags = { version = "2", default-features = false, features = ["serde", "std"] }
 block2 = { version = "0.6" }
-crc32fast = { version = "1" }
 crypto-common-6f8ce4dd05d13bba = { package = "crypto-common", version = "0.2", default-features = false, features = ["rand_core"] }
+crypto-common-c65f7effa3be6d31 = { package = "crypto-common", version = "0.1", default-features = false, features = ["std"] }
 data-encoding = { version = "2" }
 derive_more = { version = "2", default-features = false, features = ["add", "add_assign", "debug", "deref", "deref_mut", "from_str", "into_iterator", "try_into"] }
 digest = { version = "0.11", default-features = false, features = ["rand_core"] }
 dispatch2 = { version = "0.3" }
 errno = { version = "0.3" }
+flate2 = { version = "1" }
 getrandom-9fbad63c4bcf4a8f = { package = "getrandom", version = "0.4", default-features = false, features = ["std", "sys_rng"] }
-hashbrown = { version = "0.17", default-features = false, features = ["inline-more"] }
 hyper = { version = "1", features = ["client", "http1", "server"] }
 hyper-util = { version = "0.1", features = ["client-legacy", "client-proxy", "client-proxy-system", "http1"] }
 idna = { version = "1" }
@@ -130,7 +132,6 @@ zeroize = { version = "1", features = ["derive"] }
 
 [target.aarch64-apple-darwin.build-dependencies]
 bitflags = { version = "2", default-features = false, features = ["std"] }
-crc32fast = { version = "1" }
 crypto-common-c65f7effa3be6d31 = { package = "crypto-common", version = "0.1", default-features = false, features = ["std"] }
 data-encoding = { version = "2", default-features = false, features = ["alloc"] }
 derive_more-impl = { version = "2", default-features = false, features = ["debug", "deref", "deref_mut", "from_str", "into_iterator", "try_into"] }
@@ -138,7 +139,7 @@ idna = { version = "1", default-features = false, features = ["compiled_data", "
 libc = { version = "0.2" }
 objc2 = { version = "0.6", default-features = false, features = ["std"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["NSProcessInfo", "std"] }
-simd-adler32 = { version = "0.3" }
+smallvec = { version = "1", default-features = false, features = ["const_generics"] }
 time-macros = { version = "0.2", default-features = false, features = ["formatting", "parsing", "serde"] }
 toml_datetime = { version = "1", features = ["serde"] }
 toml_parser = { version = "1" }
