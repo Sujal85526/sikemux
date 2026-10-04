@@ -110,6 +110,9 @@ describe("ProfileForm", () => {
         fireEvent.click(screen.getByRole("radio", { name: "MySQL" }));
         expect(screen.getByLabelText("Port")).toHaveAttribute("placeholder", "3306");
         expect(screen.getByLabelText("User")).toHaveAttribute("placeholder", "root");
+        expect(screen.getByLabelText("Database")).toHaveAttribute("placeholder", "Optional; pick a schema once connected");
+        expect(screen.getByText("Encryption")).toBeInTheDocument();
+        expect(screen.getByText("Encrypt when the server offers it")).toBeInTheDocument();
     });
 
     it("removes a saved connection only after it is confirmed", async () => {

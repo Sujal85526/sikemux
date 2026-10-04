@@ -132,7 +132,7 @@ export function ProfileForm({
                         <input
                             value={draft.database}
                             onChange={(event) => change({ ...draft, database: event.target.value })}
-                            placeholder="Same as the user name"
+                            placeholder={draft.engine === "mysql" ? "Optional; pick a schema once connected" : "Same as the user name"}
                             spellCheck={false}
                             autoCapitalize="off"
                         />
@@ -168,12 +168,18 @@ export function ProfileForm({
                             Forget the saved password
                         </Checkbox>
                     )}
-                    <Dropdown
-                        label="Encryption"
-                        value={draft.tls}
-                        options={TLS_MODES.map((mode) => ({ value: mode.value, label: mode.label, detail: mode.detail }))}
-                        onChange={(tls) => change({ ...draft, tls: tls as TlsMode })}
-                    />
+                    <div className="db-field">
+                        <span>Encryption</span>
+                        <div className="db-inline">
+                            <Dropdown
+                                label="Encryption"
+                                value={draft.tls}
+                                options={TLS_MODES.map((mode) => ({ value: mode.value, label: mode.label, detail: mode.detail }))}
+                                onChange={(tls) => change({ ...draft, tls: tls as TlsMode })}
+                            />
+                            <span className="db-hint">{TLS_MODES.find((mode) => mode.value === draft.tls)?.detail}</span>
+                        </div>
+                    </div>
                 </>
             ) : (
                 <label className="db-field">
