@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::fallible_iterator::FallibleIterator;
 use rusqlite::types::ValueRef;
-use rusqlite::{Batch, Connection, OpenFlags};
+use rusqlite::{Batch, Connection, InterruptHandle, OpenFlags};
 
 use crate::error::{DatabaseError, DatabaseResult};
 use crate::schema::{quote_identifier, ColumnInfo, ForeignKey, Index, Table, TableInfo, TableKind};
@@ -15,6 +15,8 @@ use crate::values::{self, Column, ResultSet};
 #[derive(Clone)]
 pub struct Session {
     connection: Arc<Mutex<Connection>>,
+    /// Reaches a running statement from another thread, since the connection itself stays locked while it runs.
+    interrupt: Arc<InterruptHandle>,
 }
 
 /// `~/data/app.db` is the person's own home folder, as it would be in a terminal.
@@ -48,6 +50,7 @@ impl Session {
                 .busy_timeout(std::time::Duration::from_secs(5))
                 .map_err(|error| DatabaseError::Connect(format!("sqlite: {error}")))?;
             Ok(Self {
+                interrupt: Arc::new(connection.get_interrupt_handle()),
                 connection: Arc::new(Mutex::new(connection)),
             })
         })
@@ -110,6 +113,11 @@ impl Session {
             tables.collect()
         })
         .await
+    }
+
+    /// Stops whatever statement is running now; it ends with an "interrupted" error.
+    pub fn cancel(&self) {
+        self.interrupt.interrupt();
     }
 
     pub async fn query(&self, sql: String, limit: usize) -> DatabaseResult<Vec<ResultSet>> {
@@ -498,6 +506,32 @@ pub mod tests {
             panic!("expected a query error")
         };
         assert!(message.contains("no such table"), "{message}");
+    }
+
+    #[tokio::test]
+    async fn a_running_query_can_be_cancelled() {
+        let path = fixture("cancel");
+        let session = Session::open(path.to_str().unwrap(), true).await.unwrap();
+        let running = session.clone();
+        let endless = tokio::spawn(async move {
+            running
+                .query(
+                    "with recursive n(i) as (select 1 union all select i + 1 from n) select count(*) from n".into(),
+                    1,
+                )
+                .await
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        session.cancel();
+        let outcome = tokio::time::timeout(std::time::Duration::from_secs(5), endless)
+            .await
+            .unwrap()
+            .unwrap();
+        let Err(DatabaseError::Query(message)) = outcome else {
+            panic!("expected the query to be interrupted")
+        };
+        assert!(message.contains("interrupt"), "{message}");
+        assert!(session.query("select 1".into(), 1).await.is_ok());
     }
 
     #[test]
