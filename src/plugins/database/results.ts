@@ -1,3 +1,4 @@
+import { codeFence } from "../../plugin-api/ui";
 import type { Cell, QueryOutcome, ResultSet } from "./api";
 
 /** What a cell shows; null is told apart from empty text by the grid's styling, not by this text. */
@@ -67,4 +68,9 @@ export function ago(at: number, now: number): string {
     const days = Math.round(hours / 24);
     if (days < 7) return days === 1 ? "yesterday" : `${days} days ago`;
     return new Date(at).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+/** What an agent is handed: which database, the SQL that ran, and its results as a table. */
+export function resultMessage(database: string, engine: string, sql: string, result: ResultSet): string {
+    return `Results of a query on the ${engine} database "${database}":\n\n${codeFence(sql, "sql")}\n\n${toMarkdown(result)}`;
 }

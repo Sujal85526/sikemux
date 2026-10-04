@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ResultSet } from "./api";
-import { ago, cellText, duration, mainResult, summary, toMarkdown, toTsv } from "./results";
+import { ago, cellText, resultMessage, duration, mainResult, summary, toMarkdown, toTsv } from "./results";
 
 const customers: ResultSet = {
     columns: [
@@ -59,6 +59,13 @@ describe("results", () => {
 
     it("copies as tab-separated text with empty cells for null", () => {
         expect(toTsv(customers)).toBe("id\tname\tnote\n1\tAda\tlikes | pipes\n2\tLinus\t");
+    });
+
+    it("hands an agent the database, the SQL and the table", () => {
+        const message = resultMessage("Shop", "PostgreSQL", "select id, name, note from customers", customers);
+        expect(message.startsWith('Results of a query on the PostgreSQL database "Shop":')).toBe(true);
+        expect(message).toContain("```sql\nselect id, name, note from customers\n```");
+        expect(message).toContain("| 2 | Linus | NULL |");
     });
 
     it("writes a markdown table for an agent, numbers to the right and pipes escaped", () => {
