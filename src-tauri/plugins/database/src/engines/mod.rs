@@ -22,24 +22,9 @@ impl Session {
         read_only: bool,
     ) -> DatabaseResult<Self> {
         match target {
-            Target::Postgres {
-                host,
-                port,
-                database,
-                user,
-                tls,
-            } => {
-                let address = postgres::Address {
-                    host,
-                    port: *port,
-                    database,
-                    user,
-                    tls: *tls,
-                };
-                Ok(Self::Postgres(
-                    postgres::Session::open(address, password, read_only).await?,
-                ))
-            }
+            Target::Postgres(server) => Ok(Self::Postgres(
+                postgres::Session::open(server, password, read_only).await?,
+            )),
             Target::Sqlite { path } => {
                 Ok(Self::Sqlite(sqlite::Session::open(path, read_only).await?))
             }

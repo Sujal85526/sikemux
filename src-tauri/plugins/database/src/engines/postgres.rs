@@ -10,19 +10,11 @@ use tokio_postgres::{Client, Config, SimpleQueryMessage};
 
 use super::tls;
 use crate::error::{DatabaseError, DatabaseResult};
-use crate::profiles::{Tls, POSTGRES_PORT};
+use crate::profiles::{Server, Tls, POSTGRES_PORT};
 use crate::schema::{ColumnInfo, ForeignKey, Index, Table, TableInfo, TableKind};
 use crate::values::{self, Column, ResultSet};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
-
-pub struct Address<'a> {
-    pub host: &'a str,
-    pub port: Option<u16>,
-    pub database: &'a str,
-    pub user: &'a str,
-    pub tls: Tls,
-}
 
 #[derive(Clone)]
 pub struct Session {
@@ -227,20 +219,20 @@ fn ssl_mode(tls: Tls) -> SslMode {
 
 impl Session {
     pub async fn open(
-        address: Address<'_>,
+        address: &Server,
         password: Option<&str>,
         read_only: bool,
     ) -> DatabaseResult<Self> {
         let mut config = Config::new();
         config
-            .host(address.host)
+            .host(&address.host)
             .port(address.port.unwrap_or(POSTGRES_PORT))
-            .user(address.user)
+            .user(&address.user)
             .application_name("Sikemux")
             .connect_timeout(CONNECT_TIMEOUT)
             .ssl_mode(ssl_mode(address.tls));
         if !address.database.is_empty() {
-            config.dbname(address.database);
+            config.dbname(&address.database);
         }
         if let Some(password) = password.filter(|password| !password.is_empty()) {
             config.password(password);
@@ -428,14 +420,14 @@ pub mod tests {
 
     pub async fn open_test_server(read_only: bool) -> Option<Session> {
         let (host, port, database, user) = server()?;
-        let address = Address {
-            host: &host,
+        let address = Server {
+            host,
             port: Some(port),
-            database: &database,
-            user: &user,
+            database,
+            user,
             tls: Tls::Prefer,
         };
-        Some(Session::open(address, None, read_only).await.unwrap())
+        Some(Session::open(&address, None, read_only).await.unwrap())
     }
 
     /// A schema of its own for one test, with two related tables and a view, dropped when the test is done.
@@ -691,14 +683,14 @@ pub mod tests {
 
     #[tokio::test]
     async fn nobody_listening_is_a_connect_error_naming_the_cause() {
-        let address = Address {
-            host: "127.0.0.1",
+        let address = Server {
+            host: "127.0.0.1".into(),
             port: Some(1),
-            database: "",
-            user: "nobody",
+            database: String::new(),
+            user: "nobody".into(),
             tls: Tls::Disable,
         };
-        let failed = Session::open(address, None, false).await;
+        let failed = Session::open(&address, None, false).await;
         let Err(DatabaseError::Connect(message)) = failed else {
             panic!("expected a connect error");
         };

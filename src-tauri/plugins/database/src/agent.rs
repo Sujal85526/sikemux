@@ -61,19 +61,7 @@ pub struct AgentTables {
 
 fn describe_profile(profile: &Profile) -> AgentDatabase {
     let (engine, address) = match &profile.target {
-        Target::Postgres {
-            host,
-            port,
-            database,
-            user,
-            ..
-        } => (
-            "postgres",
-            format!(
-                "{user}@{host}:{}/{database}",
-                port.unwrap_or(profiles::POSTGRES_PORT)
-            ),
-        ),
+        Target::Postgres(server) => ("postgres", server.address(profiles::POSTGRES_PORT)),
         Target::Sqlite { path } => ("sqlite", path.clone()),
     };
     AgentDatabase {

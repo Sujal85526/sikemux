@@ -28,50 +28,74 @@ pub enum Tls {
     VerifyFull,
 }
 
+/// A database server reached over the network.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Server {
+    pub host: String,
+    /// Empty for the engine's usual port.
+    #[serde(default)]
+    pub port: Option<u16>,
+    pub database: String,
+    pub user: String,
+    #[serde(default)]
+    pub tls: Tls,
+}
+
+impl Server {
+    /// `user@host:port/database`, as the person would recognise it.
+    pub fn address(&self, default_port: u16) -> String {
+        format!(
+            "{}@{}:{}/{}",
+            self.user,
+            self.host,
+            self.port.unwrap_or(default_port),
+            self.database
+        )
+    }
+
+    fn check(&self) -> DatabaseResult<()> {
+        let missing = |what: &str| Err(DatabaseError::BadArg(format!("a {what} is needed")));
+        if self.host.trim().is_empty() {
+            return missing("host");
+        }
+        if self.user.trim().is_empty() {
+            return missing("user name");
+        }
+        Ok(())
+    }
+
+    fn trimmed(self) -> Self {
+        Self {
+            host: self.host.trim().to_string(),
+            database: self.database.trim().to_string(),
+            user: self.user.trim().to_string(),
+            ..self
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 #[serde(tag = "engine", rename_all = "lowercase")]
 pub enum Target {
-    #[serde(rename_all = "camelCase")]
-    Postgres {
-        host: String,
-        #[serde(default)]
-        port: Option<u16>,
-        database: String,
-        user: String,
-        #[serde(default)]
-        tls: Tls,
-    },
-    Sqlite {
-        path: String,
-    },
+    Postgres(Server),
+    Sqlite { path: String },
 }
 
 impl Target {
     fn check(&self) -> DatabaseResult<()> {
-        let missing = |what: &str| Err(DatabaseError::BadArg(format!("a {what} is needed")));
         match self {
-            Self::Postgres { host, .. } if host.trim().is_empty() => missing("host"),
-            Self::Postgres { user, .. } if user.trim().is_empty() => missing("user name"),
-            Self::Sqlite { path } if path.trim().is_empty() => missing("database file"),
-            _ => Ok(()),
+            Self::Postgres(server) => server.check(),
+            Self::Sqlite { path } if path.trim().is_empty() => {
+                Err(DatabaseError::BadArg("a database file is needed".into()))
+            }
+            Self::Sqlite { .. } => Ok(()),
         }
     }
 
     fn trimmed(self) -> Self {
         match self {
-            Self::Postgres {
-                host,
-                port,
-                database,
-                user,
-                tls,
-            } => Self::Postgres {
-                host: host.trim().to_string(),
-                port,
-                database: database.trim().to_string(),
-                user: user.trim().to_string(),
-                tls,
-            },
+            Self::Postgres(server) => Self::Postgres(server.trimmed()),
             Self::Sqlite { path } => Self::Sqlite {
                 path: path.trim().to_string(),
             },
@@ -379,16 +403,17 @@ mod tests {
         let profile: Profile = serde_json::from_str(json).unwrap();
         assert_eq!(
             profile.target,
-            Target::Postgres {
+            Target::Postgres(Server {
                 host: "localhost".into(),
                 port: None,
                 database: "shop".into(),
                 user: "app".into(),
                 tls: Tls::VerifyFull,
-            }
+            })
         );
         let written = serde_json::to_value(&profile).unwrap();
         assert_eq!(written["engine"], "postgres");
+        assert_eq!(written["host"], "localhost");
         assert_eq!(written["readOnly"], false);
     }
 
