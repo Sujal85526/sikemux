@@ -91,6 +91,7 @@ function JiraWorkspace({ paneId, active, sites }: { paneId: string; active: bool
             </nav>
             <IssueList
                 active={active}
+                empty={view.list.kind === "mine" ? "Nothing is assigned to you that is open or was done in the last two weeks." : "No issues here."}
                 jql={jqlOf(view.list)}
                 site={view.site}
                 selected={view.issue}
@@ -109,12 +110,14 @@ function JiraWorkspace({ paneId, active, sites }: { paneId: string; active: bool
 
 function IssueList({
     active,
+    empty,
     jql,
     site,
     selected,
     onSelect,
 }: {
     active: boolean;
+    empty: string;
     jql: string;
     site: string;
     selected: string | null;
@@ -136,7 +139,7 @@ function IssueList({
     if (found.data.issues.length === 0)
         return (
             <div className="jira-list-pane">
-                <EmptyState message="No issues here." />
+                <EmptyState message={empty} />
             </div>
         );
     return (

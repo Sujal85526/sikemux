@@ -5,7 +5,8 @@ import { JIRA_ISSUES } from "./kinds";
 export type JiraList =
     { kind: "mine" } | { kind: "sprint" } | { kind: "filter"; id: string; name: string; jql: string } | { kind: "jql"; jql: string };
 
-export const MINE_JQL = "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC";
+/** Everything still open that is mine, and what I finished in the last two weeks so a done ticket does not just vanish. */
+export const MINE_JQL = "assignee = currentUser() AND (statusCategory != Done OR updated >= -14d) ORDER BY updated DESC";
 export const SPRINT_JQL = "sprint in openSprints() ORDER BY Rank ASC";
 
 const JQL_OPERATOR = /[=~<>]|\border\s+by\b|\bin\s*\(|\bis\s+(not\s+)?(empty|null)\b/i;
