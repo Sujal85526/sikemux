@@ -110,6 +110,34 @@ impl Profiles {
             .ok_or_else(|| DatabaseError::NotFound(format!("no saved database with id {id}")))
     }
 
+    /// The saved database named by id, or failing that by name in any case, as an agent would name it.
+    pub fn find(&self, wanted: &str) -> DatabaseResult<&Profile> {
+        let wanted = wanted.trim();
+        self.profiles
+            .iter()
+            .find(|profile| profile.id == wanted)
+            .or_else(|| {
+                self.profiles
+                    .iter()
+                    .find(|profile| profile.name.eq_ignore_ascii_case(wanted))
+            })
+            .ok_or_else(|| {
+                let names: Vec<&str> = self
+                    .profiles
+                    .iter()
+                    .map(|profile| profile.name.as_str())
+                    .collect();
+                DatabaseError::NotFound(format!(
+                    "no saved database named {wanted}; the saved ones are: {}",
+                    if names.is_empty() {
+                        "none".to_string()
+                    } else {
+                        names.join(", ")
+                    }
+                ))
+            })
+    }
+
     fn upsert(&mut self, profile: Profile) {
         match self.profiles.iter_mut().find(|kept| kept.id == profile.id) {
             Some(kept) => *kept = profile,
@@ -396,6 +424,19 @@ mod tests {
         assert!(!save(&dir, locked).unwrap().agent_writes);
         let written = serde_json::to_value(&load(&dir).profiles[0]).unwrap();
         assert_eq!(written["agentWrites"], true);
+    }
+
+    #[test]
+    fn a_profile_is_found_by_id_or_by_name_in_any_case() {
+        let dir = scratch("find");
+        let saved = save(&dir, sqlite("Analytics", "/tmp/a.db")).unwrap();
+        let profiles = load(&dir);
+        assert_eq!(profiles.find(&saved.id).unwrap().name, "Analytics");
+        assert_eq!(profiles.find(" analytics ").unwrap().id, saved.id);
+        let Err(DatabaseError::NotFound(message)) = profiles.find("other") else {
+            panic!("expected not found")
+        };
+        assert!(message.ends_with("Analytics"), "{message}");
     }
 
     #[test]
