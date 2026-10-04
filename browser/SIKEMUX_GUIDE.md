@@ -47,8 +47,8 @@ This page is what to know before your first call. Call `guide` again with a
   rather than sleeps or screenshots taken to see whether something finished.
 - Every state says whether the tab is `visible` to the person; do not tell
   them a page is on their screen when it is not.
-- Plugin tools (`github_*`, `bitbucket_*`, `signoz_*`) are listed only when
-  they can work here: signed in, and for GitHub or Bitbucket a remote of this
+- Plugin tools (`github_*`, `bitbucket_*`, `db_*`, `signoz_*`) are listed only
+  when they can work here: signed in, and for GitHub or Bitbucket a remote of this
   project on that host. If one you need is missing, ask the person to sign in
   from its pane in Sikemux and restart you.
 
@@ -65,6 +65,7 @@ Pass one of these as `topic`:
 - `browser-pages` — navigating, reloading, waiting, local files, viewport sizes, tabs
 - `browser-evidence` — `browser_screenshot`, `browser_annotate`, `browser_record`
 - `browser-debugging` — `browser_network`, loads, `browser_console`, `app_console`, `browser_evaluate`
+- `databases` — the `db_*` tools: saved databases, tables, and SQL that is read-only unless allowed
 - `shell` — the `sikemux tool` CLI for scripts and tasks
 
 ## config: Writing sikemux.json
@@ -523,6 +524,32 @@ input, and `browser_wait` for waiting, rather than a polling loop in a script.
 A script that reloads or leaves the page loses its result; use
 `browser_navigate` with `go: "reload"` for that. It runs with the page's own session, so `fetch` of
 the site's API returns what the signed-in person would get.
+
+## databases: Saved databases
+
+`db_databases` lists the databases the person saved in the Database pane:
+PostgreSQL, MySQL or MariaDB servers, and SQLite files. Name one by its name in
+`db_tables`, `db_describe` and `db_query`.
+
+- `db_tables` lists the schemas and the tables and views in one. Without a
+  `schema` it uses `public` for PostgreSQL, `main` for SQLite, and the database
+  the connection names for MySQL.
+- `db_describe` gives a table's columns, primary key, indexes and foreign keys.
+  Read it before writing a join rather than guessing column names.
+- `db_query` runs SQL. Several statements separated by semicolons each come
+  back as their own result: rows, or how many rows a change touched. Each
+  result keeps 100 rows unless you pass `limit`, up to 1000; `truncated` says
+  some were left out, so add a `where` or an aggregate rather than raising the
+  limit to read everything.
+
+Your queries run on a connection of your own. It is read-only unless the
+person ticked "Let agents change data" for that database, and `writable` in
+`db_databases` says which. A refused write is not a fault to work around: ask
+the person. A query stops after 60 seconds. Every query you run shows up in
+that database's history in Sikemux, marked as an agent's.
+
+Large integers and decimals arrive as text so no digit is lost; binary values
+arrive as the start of their hex.
 
 ## shell: The same operations from a shell
 
