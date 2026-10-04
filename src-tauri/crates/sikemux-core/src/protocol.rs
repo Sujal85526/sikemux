@@ -880,7 +880,8 @@ pub struct RemoteStatus {
     /// Ids of the devices connected now.
     pub connected: Vec<String>,
     pub pairing: Option<PairingOffer>,
-    /// Devices that entered the code and wait for the person to answer.
+    /// Devices that entered the code, or came with a ticket from the account,
+    /// and wait for the person to answer.
     pub pending: Vec<PendingDevice>,
     /// The account this host is signed in to.
     pub owner: Option<String>,
@@ -1006,6 +1007,10 @@ pub struct PendingDevice {
     /// What the device calls itself. Nothing vouches for it.
     pub name: String,
     pub platform: String,
+    /// The device came with a ticket from the host's account instead of a
+    /// code.
+    #[serde(default)]
+    pub from_account: bool,
 }
 
 /// Which build of the sidecar a core runs. `source` fingerprints the code
