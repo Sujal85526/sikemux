@@ -5,6 +5,11 @@ import { REMOTE_STATUS_EVENT, type PendingDevice, type RemoteStatus } from "../a
 import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "../api/transport";
 import { getState, setState } from "../state/store";
 
+const notifications = vi.hoisted(() => ({ post: vi.fn(async () => {}) }));
+vi.mock("../agents/agentNotifications", () => ({ postNotification: notifications.post }));
+const appWindow = vi.hoisted(() => ({ requestUserAttention: vi.fn(async () => {}) }));
+vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => appWindow, UserAttentionType: { Critical: 1, Informational: 2 } }));
+
 const { PairingPrompt } = await import("./PairingPrompt");
 await import("./PairingCards");
 
@@ -35,6 +40,8 @@ beforeEach(() => {
     setState(initial, true);
     transport = new MemoryIpcTransport();
     installIpcTransportForTests(transport);
+    notifications.post.mockClear();
+    appWindow.requestUserAttention.mockClear();
 });
 
 afterEach(() => {
@@ -49,14 +56,14 @@ const JOIN_QUESTION = "Pixel 8 from your Sikemux account wants to connect";
 describe("PairingPrompt", () => {
     it("stays out of the way while no device is waiting", async () => {
         transport.register("remote_status", () => status());
-        render(<PairingPrompt />);
+        render(<PairingPrompt hasFocus={() => true} />);
         await settle();
         expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     });
 
     it("asks about a phone from the account wherever the person is, and goes once the request ends", async () => {
         transport.register("remote_status", () => status());
-        render(<PairingPrompt />);
+        render(<PairingPrompt hasFocus={() => true} />);
         await settle();
 
         transport.emit(REMOTE_STATUS_EVENT, status([FROM_ACCOUNT]));
@@ -69,14 +76,14 @@ describe("PairingPrompt", () => {
 
     it("asks about a device that typed the code the same way", async () => {
         transport.register("remote_status", () => status([WITH_CODE]));
-        render(<PairingPrompt />);
+        render(<PairingPrompt hasFocus={() => true} />);
         expect(await screen.findByRole("alertdialog", { name: "Kishore's phone wants to pair" })).toBeInTheDocument();
     });
 
     it("leaves the question to Settings › Devices while that page is open", async () => {
         setState({ settingsOpen: true, settingsPage: "devices" });
         transport.register("remote_status", () => status([FROM_ACCOUNT]));
-        render(<PairingPrompt />);
+        render(<PairingPrompt hasFocus={() => true} />);
         await settle();
         expect(card(JOIN_QUESTION)).not.toBeInTheDocument();
 
@@ -89,7 +96,7 @@ describe("PairingPrompt", () => {
         transport.register("remote_status", () => status([FROM_ACCOUNT]));
         const answer = vi.fn(() => status());
         transport.register("remote_answer_pairing", answer);
-        render(<PairingPrompt />);
+        render(<PairingPrompt hasFocus={() => true} />);
 
         await screen.findByRole("alertdialog", { name: JOIN_QUESTION });
         await user.click(screen.getByRole("button", { name: /access for this device/ }));
@@ -105,12 +112,36 @@ describe("PairingPrompt", () => {
         transport.register("remote_status", () => status([FROM_ACCOUNT]));
         const answer = vi.fn(() => status());
         transport.register("remote_answer_pairing", answer);
-        render(<PairingPrompt />);
+        render(<PairingPrompt hasFocus={() => true} />);
 
         await screen.findByRole("alertdialog", { name: JOIN_QUESTION });
         await user.click(screen.getByRole("button", { name: "Decline" }));
 
         expect(answer).toHaveBeenCalledWith({ id: "join-1", allow: false, access: "full" }, expect.anything());
         await waitFor(() => expect(card(JOIN_QUESTION)).not.toBeInTheDocument());
+    });
+
+    it("notifies once per request while Sikemux is in the background, and not while it is in front", async () => {
+        let focused = true;
+        transport.register("remote_status", () => status());
+        render(<PairingPrompt hasFocus={() => focused} />);
+        await settle();
+
+        transport.emit(REMOTE_STATUS_EVENT, status([WITH_CODE]));
+        await screen.findByRole("alertdialog", { name: "Kishore's phone wants to pair" });
+        expect(notifications.post).not.toHaveBeenCalled();
+
+        focused = false;
+        transport.emit(REMOTE_STATUS_EVENT, status([WITH_CODE, FROM_ACCOUNT]));
+        await screen.findByRole("alertdialog", { name: JOIN_QUESTION });
+        transport.emit(REMOTE_STATUS_EVENT, status([WITH_CODE, FROM_ACCOUNT]));
+        await settle();
+
+        expect(notifications.post).toHaveBeenCalledTimes(1);
+        expect(notifications.post).toHaveBeenCalledWith(
+            "Pixel 8 wants to connect to this computer",
+            "It is signed in to your Sikemux account. Allow or decline it in Sikemux.",
+        );
+        expect(appWindow.requestUserAttention).toHaveBeenCalledTimes(1);
     });
 });
