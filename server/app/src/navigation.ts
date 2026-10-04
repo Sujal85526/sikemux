@@ -12,15 +12,10 @@ const CLERK_HOST = atob(config.clerkPublishableKey.split("_")[2] ?? "").replace(
   "",
 );
 
-/** Clerk's hosted pages: accounts.sikemux.com in production, *.accounts.dev in dev. */
-const PORTAL_HOST = CLERK_HOST.replace(/^clerk\./, "accounts.").replace(
-  /\.clerk\.accounts\.dev$/,
-  ".accounts.dev",
-);
-
 /**
  * Where Clerk asked to go back to after a sign-in started by an app, such as the Mac
- * signing in through the browser. Only Clerk's own authorize and consent pages are followed.
+ * signing in through the browser. Only Clerk's authorize page and this site's consent
+ * page are followed.
  */
 export function appReturn(search = location.search): string | null {
   const raw = new URLSearchParams(search).get("redirect_url");
@@ -28,10 +23,12 @@ export function appReturn(search = location.search): string | null {
   try {
     const url = new URL(raw);
     const clerk =
-      url.host === CLERK_HOST && url.pathname.startsWith("/oauth/authorize");
-    const portal =
-      url.host === PORTAL_HOST && url.pathname.startsWith("/oauth-consent");
-    return url.protocol === "https:" && (clerk || portal) ? url.href : null;
+      url.protocol === "https:" &&
+      url.host === CLERK_HOST &&
+      url.pathname.startsWith("/oauth/authorize");
+    const consent =
+      url.origin === location.origin && url.pathname === "/oauth-consent";
+    return clerk || consent ? url.href : null;
   } catch {
     return null;
   }
@@ -47,6 +44,7 @@ export function takeReturn(): string {
   sessionStorage.removeItem(RETURN_KEY);
   const [path = "/", query = ""] = saved.split("?", 2);
   if (path === "/" && appReturn(`?${query}`)) return saved;
+  if (path === "/oauth-consent") return saved;
   return path === DELETE_ACCOUNT ? path : "/";
 }
 
