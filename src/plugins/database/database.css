@@ -723,3 +723,30 @@
     white-space: nowrap;
     color: var(--danger);
 }
+
+.db-connected {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
+.db-connected-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--border);
+}
+
+.db-connected-title {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.db-connected-body {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
