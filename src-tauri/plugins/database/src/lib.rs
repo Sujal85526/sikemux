@@ -70,7 +70,11 @@ impl Plugin for Database {
                 "remove" => {
                     let profiles::IdRequest { id } = params(input)?;
                     self.pool.forget(&id).await;
-                    answer(profiles::blocking(move || profiles::remove(&data_dir, &id))).await
+                    answer(profiles::blocking(move || {
+                        profiles::remove(&data_dir, &id)?;
+                        history::clear(&data_dir, &id)
+                    }))
+                    .await
                 }
                 "test" => answer(connections::test(data_dir, params(input)?)).await,
                 "connect" => {
@@ -98,7 +102,27 @@ impl Plugin for Database {
                     })
                     .await
                 }
-                "query" => answer(queries::run(&self.pool, &data_dir, params(input)?)).await,
+                "query" => {
+                    let request = params(input)?;
+                    answer(queries::run(
+                        &self.pool,
+                        &data_dir,
+                        request,
+                        history::Source::Person,
+                    ))
+                    .await
+                }
+                "history" => {
+                    let request: history::HistoryRequest = params(input)?;
+                    answer(profiles::blocking(move || {
+                        history::list(&data_dir, &request)
+                    }))
+                    .await
+                }
+                "clearHistory" => {
+                    let profiles::IdRequest { id } = params(input)?;
+                    answer(profiles::blocking(move || history::clear(&data_dir, &id))).await
+                }
                 "cancel" => {
                     let profiles::IdRequest { id } = params(input)?;
                     answer(queries::cancel(&self.pool, &id)).await
@@ -272,6 +296,44 @@ mod tests {
             .call(&ctx, "cancel", json!({ "id": "not-open" }))
             .await;
         assert!(cancelled.is_ok());
+    }
+
+    #[tokio::test]
+    async fn each_run_lands_in_the_history_with_its_outcome() {
+        let ctx = scratch("history");
+        let database = plugin().unwrap();
+        let id = saved_fixture(&database, &ctx, "plugin-history").await;
+        for sql in ["select * from customers", "select * from nowhere"] {
+            let _ = database
+                .call(&ctx, "query", json!({ "id": id, "sql": sql }))
+                .await;
+        }
+        let history = database
+            .call(&ctx, "history", json!({ "id": id }))
+            .await
+            .unwrap();
+        assert_eq!(history[0]["sql"], "select * from nowhere");
+        assert_eq!(history[0]["ok"], false);
+        assert!(history[0]["error"]
+            .as_str()
+            .unwrap()
+            .contains("no such table"));
+        assert_eq!(history[1]["rows"], 2);
+        assert_eq!(history[1]["source"], "person");
+        let found = database
+            .call(&ctx, "history", json!({ "id": id, "search": "NOWHERE" }))
+            .await
+            .unwrap();
+        assert_eq!(found.as_array().map(Vec::len), Some(1));
+        database
+            .call(&ctx, "remove", json!({ "id": id }))
+            .await
+            .unwrap();
+        let history = database
+            .call(&ctx, "history", json!({ "id": id }))
+            .await
+            .unwrap();
+        assert_eq!(history, json!([]));
     }
 
     #[tokio::test]
