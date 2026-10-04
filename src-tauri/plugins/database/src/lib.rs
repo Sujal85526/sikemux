@@ -1,5 +1,6 @@
 // Databases: saved connections, their schemas, and SQL run against them.
 //
+//   agent       — the tools agents call: databases by name, tables, and SQL on a connection of their own
 //   profiles    — the databases saved here, and their passwords in the Keychain
 //   engines     — one open connection, whichever engine the database runs on
 //   connections — trying a connection, and keeping one open per saved database
@@ -8,6 +9,7 @@
 //   queries     — running SQL against a saved database, and stopping it
 //   values      — query results, the same for every engine
 
+mod agent;
 mod connections;
 mod engines;
 mod error;
@@ -119,6 +121,12 @@ impl Plugin for Database {
                     ))
                     .await
                 }
+                "agentDatabases" => reply(agent::databases(&data_dir)),
+                "agentTables" => answer(agent::tables(&self.pool, &data_dir, params(input)?)).await,
+                "agentDescribe" => {
+                    answer(agent::describe(&self.pool, &data_dir, params(input)?)).await
+                }
+                "agentQuery" => answer(agent::query(&self.pool, &data_dir, params(input)?)).await,
                 "history" => {
                     let request: history::HistoryRequest = params(input)?;
                     answer(profiles::blocking(move || {
@@ -341,6 +349,84 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(history, json!([]));
+    }
+
+    #[test]
+    fn its_manifest_offers_the_four_database_tools() {
+        let database = plugin().unwrap();
+        let names: Vec<&str> = database
+            .manifest()
+            .tools
+            .iter()
+            .map(|tool| tool.name.as_str())
+            .collect();
+        assert_eq!(
+            names,
+            ["db_databases", "db_tables", "db_describe", "db_query"]
+        );
+        assert_eq!(database.manifest().call_timeout_secs, Some(600));
+    }
+
+    #[tokio::test]
+    async fn an_agent_finds_a_database_by_name_reads_it_and_cannot_change_it() {
+        let ctx = scratch("agent");
+        let database = plugin().unwrap();
+        let id = saved_fixture(&database, &ctx, "Shop").await;
+        let listed = database
+            .call(&ctx, "agentDatabases", json!({}))
+            .await
+            .unwrap();
+        assert_eq!(listed[0]["name"], "Shop");
+        assert_eq!(listed[0]["engine"], "sqlite");
+        assert_eq!(listed[0]["writable"], false);
+        let tables = database
+            .call(&ctx, "agentTables", json!({ "database": "shop" }))
+            .await
+            .unwrap();
+        assert_eq!(tables["schema"], "main");
+        assert_eq!(tables["tables"][2]["name"], "orders");
+        let described = database
+            .call(
+                &ctx,
+                "agentDescribe",
+                json!({ "database": "Shop", "table": "customers" }),
+            )
+            .await
+            .unwrap();
+        assert_eq!(described["columns"][0]["name"], "id");
+        let read = database
+            .call(
+                &ctx,
+                "agentQuery",
+                json!({ "database": "Shop", "sql": "select count(*) as n from orders" }),
+            )
+            .await
+            .unwrap();
+        assert_eq!(read["results"][0]["rows"], json!([[2]]));
+        let write = database
+            .call(
+                &ctx,
+                "agentQuery",
+                json!({ "database": "Shop", "sql": "delete from orders" }),
+            )
+            .await;
+        assert_eq!(
+            write.err().map(|error| error.category),
+            Some("query".to_string())
+        );
+        let history = database
+            .call(&ctx, "history", json!({ "id": id }))
+            .await
+            .unwrap();
+        assert_eq!(history[0]["source"], "agent");
+        assert_eq!(history[0]["ok"], false);
+        let unknown = database
+            .call(&ctx, "agentTables", json!({ "database": "Nope" }))
+            .await;
+        assert_eq!(
+            unknown.err().map(|error| error.category),
+            Some("not-found".to_string())
+        );
     }
 
     #[tokio::test]

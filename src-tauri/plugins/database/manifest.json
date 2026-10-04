@@ -4,5 +4,44 @@
   "version": "0.1.0",
   "sikemux": ">=0.4",
   "callTimeoutSecs": 600,
-  "tools": []
+  "tools": [
+    {
+      "name": "db_databases",
+      "method": "agentDatabases",
+      "description": "The databases the person saved in Sikemux: name, engine (postgres or sqlite), where it is, and whether you may change data in it. Name one in the other db_* tools.",
+      "properties": {}
+    },
+    {
+      "name": "db_tables",
+      "method": "agentTables",
+      "description": "The schemas of a saved database, and the tables and views in one of them.",
+      "properties": {
+        "database": { "type": "string", "description": "A saved database's name, from db_databases." },
+        "schema": { "type": "string", "description": "Default: public for PostgreSQL, main for SQLite." }
+      },
+      "required": ["database"]
+    },
+    {
+      "name": "db_describe",
+      "method": "agentDescribe",
+      "description": "One table or view: its columns with types, nullability, defaults and primary key, its indexes and its foreign keys.",
+      "properties": {
+        "database": { "type": "string" },
+        "table": { "type": "string" },
+        "schema": { "type": "string" }
+      },
+      "required": ["database", "table"]
+    },
+    {
+      "name": "db_query",
+      "method": "agentQuery",
+      "description": "Run SQL on a saved database. Several statements may be separated by semicolons; each returns its columns and rows, or the rows it changed. Read-only unless the person allowed agents to change data in that database. Stops after 60 seconds. The person sees every query in the database's history.",
+      "properties": {
+        "database": { "type": "string" },
+        "sql": { "type": "string" },
+        "limit": { "type": "integer", "maximum": 1000, "description": "Rows kept from each statement. Default 100." }
+      },
+      "required": ["database", "sql"]
+    }
+  ]
 }
