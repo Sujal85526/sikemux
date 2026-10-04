@@ -1,0 +1,76 @@
+{
+  "id": "sikemux.jira",
+  "name": "Jira",
+  "version": "0.1.0",
+  "sikemux": ">=0.4",
+  "tools": [
+    {
+      "name": "jira_search",
+      "method": "search",
+      "description": "Find Jira issues with JQL, e.g. 'assignee = currentUser() AND sprint in openSprints()'. Returns key, summary, status, priority, assignee and sprint.",
+      "properties": {
+        "jql": { "type": "string" },
+        "limit": { "type": "integer", "maximum": 100, "description": "Default 20." },
+        "site": { "type": "string", "description": "Site host, e.g. acme.atlassian.net. Default: the first signed-in site." }
+      },
+      "required": ["jql"]
+    },
+    {
+      "name": "jira_issue",
+      "method": "issue",
+      "description": "One Jira issue by key (ABC-123): its fields, description and comments as markdown, and the transitions it can take next.",
+      "properties": {
+        "key": { "type": "string" },
+        "site": { "type": "string" }
+      },
+      "required": ["key"]
+    },
+    {
+      "name": "jira_comment",
+      "method": "comment",
+      "description": "Add a comment to a Jira issue. Write it in markdown.",
+      "properties": {
+        "key": { "type": "string" },
+        "body": { "type": "string" },
+        "site": { "type": "string" }
+      },
+      "required": ["key", "body"]
+    },
+    {
+      "name": "jira_transition",
+      "method": "transition",
+      "description": "Move a Jira issue through its workflow. Name a transition or the status it leads to; with neither, lists the transitions the issue can take now.",
+      "properties": {
+        "key": { "type": "string" },
+        "to": { "type": "string", "description": "A transition's name or id, or the name of the status it leads to." },
+        "site": { "type": "string" }
+      },
+      "required": ["key"]
+    },
+    {
+      "name": "jira_create",
+      "method": "create",
+      "description": "Create a Jira issue. The description is markdown.",
+      "properties": {
+        "project": { "type": "string", "description": "Project key, e.g. ABC." },
+        "summary": { "type": "string" },
+        "type": { "type": "string", "description": "Issue type name. Default Task." },
+        "description": { "type": "string" },
+        "site": { "type": "string" }
+      },
+      "required": ["project", "summary"]
+    },
+    {
+      "name": "jira_worklog",
+      "method": "worklog",
+      "description": "Log time spent on a Jira issue, e.g. time '1h 30m'.",
+      "properties": {
+        "key": { "type": "string" },
+        "time": { "type": "string", "description": "Jira duration, e.g. 45m, 2h, 1d 4h." },
+        "comment": { "type": "string" },
+        "site": { "type": "string" }
+      },
+      "required": ["key", "time"]
+    }
+  ]
+}
