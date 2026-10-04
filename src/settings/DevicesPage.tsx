@@ -297,12 +297,16 @@ function AccountSection({ link }: { link: AccountLink | null }) {
 
 function PendingRow({ request, onAnswer }: { request: PendingDevice; onAnswer: (allow: boolean, access: DeviceAccess) => void }) {
     const [access, setAccess] = useState<DeviceAccess>("full");
+    const asking = request.fromAccount
+        ? `${request.name || "A device"} from your Sikemux account wants to connect`
+        : `${request.name || "Unnamed device"} wants to pair`;
     return (
-        <div className="pairing-request" role="group" aria-label={`${request.name || "A device"} wants to pair`}>
+        <div className="pairing-request" role="group" aria-label={asking}>
             <span className="settings-row-copy">
-                <span className="settings-row-label">{request.name || "Unnamed device"} wants to pair</span>
+                <span className="settings-row-label">{asking}</span>
                 <span className="settings-row-desc">
-                    {platformName(request.platform)} · key <code className="device-key">{shortKey(request.deviceId)}</code> · it typed the right code
+                    {platformName(request.platform)} · key <code className="device-key">{shortKey(request.deviceId)}</code> ·{" "}
+                    {request.fromAccount ? "signed in to your account" : "it typed the right code"}
                 </span>
             </span>
             <div className="settings-actions">
