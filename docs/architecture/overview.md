@@ -227,14 +227,14 @@ Internal crates in `src-tauri/crates/`:
 | `sikemux-plugin-api` | The contract between the app and a plugin: a method name and JSON in, JSON or a stream out                                                                                                                                                                                                                  |
 | `sikemux-process`    | Runs a subprocess with a timeout and an output size limit                                                                                                                                                                                                                                                   |
 | `sikemux-markdown`   | Parses markdown into the block tree the chat transcript draws (`markdown_parse`)                                                                                                                                                                                                                            |
-| `sikemux-keychain`   | Reads and writes secrets in the system keychain; used by the GitHub, Bitbucket and SigNoz plugins                                                                                                                                                                                                           |
+| `sikemux-keychain`   | Reads and writes secrets in the system keychain; used by the GitHub, Bitbucket, Database and SigNoz plugins                                                                                                                                                                                                 |
 | `sikemux-pty`        | The terminal engine without Tauri: the per-PTY screen, shell integration, the configured shell and login-shell environment, the `SIKEMUX_*` environment, task checks, task output paging, and `agent_detection/`, which reads an agent's screen against `manifests/*.json` to tell working, blocked or idle |
 | `sikemux-core`       | The background core (`sikemux core`): its Unix-socket server, wire protocol and client; terminals, tasks and chat agents; the harness, journal and tool endpoint; updating in place                                                                                                                         |
 
 ## Plugins
 
 Plugins are compiled into the app. There is no marketplace and no runtime loading.
-The six built-ins are AWS, Bitbucket, Bruno, GitHub, Rundeck and SigNoz. Each has two
+The seven built-ins are AWS, Bitbucket, Bruno, Database, GitHub, Rundeck and SigNoz. Each has two
 halves:
 
 - **Rust:** a crate in `src-tauri/plugins/<name>/` that implements the `Plugin` trait
