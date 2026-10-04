@@ -707,6 +707,33 @@ impl Connection {
         }
     }
 
+    /// The turns before event `before` of the chat's run `feed`, a page at a
+    /// time, for a chat the phone was sent only the end of.
+    pub async fn chat_history(
+        &self,
+        agent_id: String,
+        feed: String,
+        before: u64,
+        turns: u32,
+    ) -> Result<ChatHistory, MobileError> {
+        let request = Request::AcpHistory {
+            agent_id,
+            feed,
+            before,
+            turns,
+        };
+        match self.ask(request).await? {
+            Response::ChatHistory {
+                events,
+                older_before,
+            } => Ok(ChatHistory {
+                events_json: records::json(&events),
+                older_before,
+            }),
+            _ => Err(unexpected()),
+        }
+    }
+
     /// No more of the chat's events reach this phone.
     pub async fn detach_chat(&self, agent_id: String) -> Result<(), MobileError> {
         self.done(Request::AcpDetach { agent_id }).await

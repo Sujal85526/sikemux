@@ -208,6 +208,10 @@ fn a_phone_hears_the_mac_s_view_and_asks_it_typed_questions() {
             connection.attach_chat("nobody".into(), None).await,
             Ok(ChatAttachment::Missing)
         ));
+        assert!(matches!(
+            connection.chat_history("nobody".into(), "a run".into(), 5, 10).await,
+            Err(MobileError::Refused { message }) if message.contains("not running")
+        ));
         assert!(connection.host().await.is_ok());
         assert!(matches!(
             connection.save_backdrop("/tmp".into(), "none".into()).await,

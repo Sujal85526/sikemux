@@ -16,6 +16,7 @@ use crate::protocol::{
 
 use super::super::access::Peer;
 use super::super::connection::{ClientConn, ClientId};
+use super::history::{History, Page, MAX_HISTORY_BYTES};
 
 /// One frame's worth of streamed updates travels as a single event. Each
 /// notification on its own costs a script eval in the webview, and an adapter
@@ -30,19 +31,56 @@ const EVENT_OVERHEAD: usize = 48;
 const MAX_RECENT_BYTES: usize = 1024 * 1024;
 const MAX_RECENT_EVENTS: usize = 4096;
 
+/// A phone opening a chat is sent this much of its end, and pages back
+/// through the rest.
+const TAIL_TURNS: usize = 50;
+const TAIL_BYTES: usize = 1024 * 1024;
+const MAX_PAGE_TURNS: usize = 100;
+const PAGE_BYTES: u64 = 1024 * 1024;
+/// A turn longer than a page is cut into pieces about this long.
+const PIECE_BYTES: usize = 64 * 1024;
+/// Updates that set how the chat stands rather than say something in it. A
+/// phone shown only the chat's end still needs the last of each.
+const STANDING_UPDATES: [&str; 5] = [
+    "available_commands_update",
+    "current_mode_update",
+    "config_option_update",
+    "usage_update",
+    "session_info_update",
+];
+
 struct Entry {
     event: ChatEvent,
     bytes: usize,
+    index: u64,
+    starts_turn: bool,
+    /// A page of history can start here.
+    point: bool,
+    on_disk: bool,
+}
+
+/// The newest of a chat's events, for a phone, and where the history before
+/// them ends.
+pub(crate) struct Tail {
+    pub events: Vec<ChatEvent>,
+    pub older_before: Option<u64>,
 }
 
 /// The ordered events a late client replays. Text streamed into one message
-/// is kept as one event, which the chat would have joined up anyway.
+/// is kept as one event, which the chat would have joined up anyway. Each is
+/// written to the history on disk once nothing more joins it.
 pub(crate) struct Replay {
     entries: VecDeque<Entry>,
     bytes: usize,
     max_bytes: usize,
     max_events: usize,
     trimmed: bool,
+    history: Option<History>,
+    next_index: u64,
+    in_turn: bool,
+    last_from_user: bool,
+    since_point: usize,
+    standing: Vec<(u64, ChatEvent)>,
 }
 
 /// A streamed piece of a message that can be joined to the piece before it.
@@ -104,14 +142,63 @@ fn is_kept(kind: ChatEventKind) -> bool {
     !matches!(kind, ChatEventKind::Status | ChatEventKind::Ready)
 }
 
+fn session_update_kind(payload: &Value) -> Option<&str> {
+    payload.pointer("/update/sessionUpdate")?.as_str()
+}
+
 impl Replay {
-    pub(crate) fn new(max_bytes: usize, max_events: usize) -> Self {
+    pub(crate) fn new(max_bytes: usize, max_events: usize, history: Option<History>) -> Self {
         Self {
             entries: VecDeque::new(),
             bytes: 0,
             max_bytes,
             max_events,
             trimmed: false,
+            history,
+            next_index: 0,
+            in_turn: false,
+            last_from_user: false,
+            since_point: 0,
+            standing: Vec::new(),
+        }
+    }
+
+    fn write(history: &mut Option<History>, entry: &mut Entry) {
+        if entry.on_disk {
+            return;
+        }
+        entry.on_disk = true;
+        if let Some(history) = history.as_mut() {
+            history.append(entry.index, &entry.event, entry.point, entry.starts_turn);
+        }
+    }
+
+    /// Whether `payload` begins a turn, which a prompt does when the turn
+    /// starts right after it. A loaded session has no turns, only what the
+    /// person said and what the agent answered.
+    fn starts_turn(&mut self, kind: ChatEventKind, payload: &Value) -> bool {
+        match kind {
+            ChatEventKind::TurnStarted => {
+                let prompt = self.entries.back_mut().filter(|entry| {
+                    entry.event.kind == ChatEventKind::Prompt
+                        && entry.index + 1 == self.next_index
+                        && !entry.on_disk
+                });
+                match prompt {
+                    Some(prompt) => {
+                        prompt.starts_turn = true;
+                        prompt.point = true;
+                        false
+                    }
+                    None => true,
+                }
+            }
+            ChatEventKind::SessionUpdate => {
+                session_update_kind(payload) == Some("user_message_chunk")
+                    && !self.in_turn
+                    && !self.last_from_user
+            }
+            _ => false,
         }
     }
 
@@ -122,7 +209,7 @@ impl Replay {
         let Some(last) = self
             .entries
             .back_mut()
-            .filter(|entry| entry.event.kind == ChatEventKind::SessionUpdate)
+            .filter(|entry| entry.event.kind == ChatEventKind::SessionUpdate && !entry.on_disk)
         else {
             return false;
         };
@@ -143,6 +230,7 @@ impl Replay {
         text.push_str(later.text);
         last.bytes += later.text.len();
         self.bytes += later.text.len();
+        self.since_point += later.text.len();
         true
     }
 
@@ -154,13 +242,44 @@ impl Replay {
             self.trim();
             return;
         }
+        let starts_turn = self.starts_turn(kind, payload);
+        if let Some(previous) = self.entries.back_mut() {
+            Self::write(&mut self.history, previous);
+        }
         let bytes = serde_json::to_vec(payload).map_or(0, |bytes| bytes.len()) + EVENT_OVERHEAD;
+        let point = starts_turn
+            || (kind != ChatEventKind::PermissionRequest && self.since_point >= PIECE_BYTES);
+        if point {
+            self.since_point = 0;
+        }
+        self.since_point += bytes;
+        let index = self.next_index;
+        self.next_index += 1;
+        let event = ChatEvent {
+            kind,
+            payload: payload.clone(),
+        };
+        if let Some(standing) = session_update_kind(payload).filter(|update| {
+            kind == ChatEventKind::SessionUpdate && STANDING_UPDATES.contains(update)
+        }) {
+            self.standing
+                .retain(|(_, kept)| session_update_kind(&kept.payload) != Some(standing));
+            self.standing.push((index, event.clone()));
+        }
+        match kind {
+            ChatEventKind::TurnStarted => self.in_turn = true,
+            ChatEventKind::TurnCompleted | ChatEventKind::Error => self.in_turn = false,
+            _ => {}
+        }
+        self.last_from_user = kind == ChatEventKind::Prompt
+            || session_update_kind(payload) == Some("user_message_chunk");
         self.entries.push_back(Entry {
-            event: ChatEvent {
-                kind,
-                payload: payload.clone(),
-            },
+            event,
             bytes,
+            index,
+            starts_turn,
+            point,
+            on_disk: false,
         });
         self.bytes += bytes;
         self.trim();
@@ -168,12 +287,81 @@ impl Replay {
 
     fn trim(&mut self) {
         while self.bytes > self.max_bytes || self.entries.len() > self.max_events {
-            let Some(dropped) = self.entries.pop_front() else {
+            let Some(mut dropped) = self.entries.pop_front() else {
                 break;
             };
+            Self::write(&mut self.history, &mut dropped);
             self.bytes -= dropped.bytes;
             self.trimmed = true;
         }
+    }
+
+    pub(crate) fn keeps_history(&self) -> bool {
+        self.history
+            .as_ref()
+            .is_some_and(|history| history.first().is_some())
+    }
+
+    /// The last turns, as many as fit, and whatever set how the chat stands
+    /// before them. A chat that has gone a whole replay without a turn
+    /// starting is cut where a page of its history can start.
+    pub(crate) fn tail(&self) -> Tail {
+        let mut chosen = None;
+        let mut piece = None;
+        let mut turns = 0;
+        let mut bytes = 0;
+        for (position, entry) in self.entries.iter().enumerate().rev() {
+            bytes += entry.bytes;
+            if bytes > TAIL_BYTES && chosen.is_some() {
+                break;
+            }
+            if entry.point {
+                piece = Some(position);
+            }
+            if entry.starts_turn {
+                chosen = Some(position);
+                turns += 1;
+                if turns >= TAIL_TURNS {
+                    break;
+                }
+            }
+        }
+        let cut = chosen.or(piece);
+        let start = cut.unwrap_or(0);
+        let Some(first) = self.entries.get(start).map(|entry| entry.index) else {
+            return Tail {
+                events: Vec::new(),
+                older_before: None,
+            };
+        };
+        let oldest = self
+            .history
+            .as_ref()
+            .and_then(History::first)
+            .unwrap_or(first);
+        let mut standing: Vec<&(u64, ChatEvent)> = self
+            .standing
+            .iter()
+            .filter(|(index, _)| *index < first)
+            .collect();
+        standing.sort_by_key(|(index, _)| *index);
+        Tail {
+            events: standing
+                .into_iter()
+                .map(|(_, event)| event.clone())
+                .chain(self.entries.range(start..).map(|entry| entry.event.clone()))
+                .collect(),
+            older_before: (cut.is_some() && first > oldest).then_some(first),
+        }
+    }
+
+    pub(crate) fn page(&self, before: u64, turns: usize) -> Result<Page, String> {
+        let Some(history) = self.history.as_ref() else {
+            return Ok(Page::default());
+        };
+        history
+            .page(before, turns.clamp(1, MAX_PAGE_TURNS), PAGE_BYTES)
+            .map_err(|error| error.to_string())
     }
 
     /// An answered request is not asked again when the chat is replayed.
@@ -278,16 +466,24 @@ pub(crate) struct Feed {
 }
 
 impl Feed {
-    pub(crate) fn new(agent_id: String, permission_mode: String) -> Arc<Self> {
+    /// With `history`, everything the chat says is also kept in a file there,
+    /// for phones to page back through.
+    pub(crate) fn new(
+        agent_id: String,
+        permission_mode: String,
+        history: Option<&std::path::Path>,
+    ) -> Arc<Self> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let history = history.map(|dir| History::open(dir, &id, MAX_HISTORY_BYTES));
         Arc::new(Self {
             agent_id,
-            id: uuid::Uuid::new_v4().to_string(),
+            id,
             runtime: tokio::runtime::Handle::current(),
             inner: Mutex::new(Inner {
                 subscribers: HashMap::new(),
                 seq: 0,
                 recent: Recent::default(),
-                replay: Replay::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS),
+                replay: Replay::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS, history),
                 pending: Vec::new(),
                 flush_scheduled: false,
                 start: None,
@@ -441,26 +637,7 @@ impl Feed {
             return;
         };
         self.flush_locked(&mut inner);
-        let missed = since
-            .filter(|since| since.feed == self.id && since.seq <= inner.seq)
-            .and_then(|since| inner.recent.since(since.seq, &client.peer));
-        let attachment = match (inner.start.clone(), missed) {
-            _ if inner.closed => ChatAttachment::Missing,
-            (Some(_), Some(events)) => ChatAttachment::Resumed {
-                events,
-                mark: self.mark(&inner),
-            },
-            (Some(_), None) if inner.replay.is_trimmed() => ChatAttachment::Restart,
-            (Some(start), None) => ChatAttachment::Live {
-                start: Box::new(start),
-                permission_mode: inner.permission_mode.clone(),
-                running: standing.running,
-                turned: standing.turned,
-                replay: inner.replay.events(),
-                mark: self.mark(&inner),
-            },
-            (None, _) => ChatAttachment::Missing,
-        };
+        let attachment = self.attachment(&inner, &client.peer, standing, since);
         let live = matches!(
             attachment,
             ChatAttachment::Live { .. } | ChatAttachment::Resumed { .. }
@@ -468,6 +645,48 @@ impl Feed {
         client.respond(request_id, Ok(Response::ChatAttached { attachment }));
         if live {
             inner.subscribers.insert(client.id, client.clone());
+        }
+    }
+
+    /// A phone is sent the chat's last turns and pages back through the rest.
+    /// The host's own app reloads a chat longer than the replay from the
+    /// provider instead.
+    fn attachment(
+        &self,
+        inner: &Inner,
+        peer: &Peer,
+        standing: Standing,
+        since: Option<ChatMark>,
+    ) -> ChatAttachment {
+        let missed = since
+            .filter(|since| since.feed == self.id && since.seq <= inner.seq)
+            .and_then(|since| inner.recent.since(since.seq, peer));
+        let phone = !peer.is_local() && inner.replay.keeps_history();
+        match (inner.start.clone(), missed) {
+            _ if inner.closed => ChatAttachment::Missing,
+            (Some(_), Some(events)) => ChatAttachment::Resumed {
+                events,
+                mark: self.mark(inner),
+            },
+            (Some(_), None) if inner.replay.is_trimmed() && !phone => ChatAttachment::Restart,
+            (Some(start), None) => {
+                let (replay, older_before) = if phone {
+                    let tail = inner.replay.tail();
+                    (tail.events, tail.older_before)
+                } else {
+                    (inner.replay.events(), None)
+                };
+                ChatAttachment::Live {
+                    start: Box::new(start),
+                    permission_mode: inner.permission_mode.clone(),
+                    running: standing.running,
+                    turned: standing.turned,
+                    replay,
+                    mark: self.mark(inner),
+                    older_before,
+                }
+            }
+            (None, _) => ChatAttachment::Missing,
         }
     }
 
@@ -518,6 +737,16 @@ impl Feed {
             inner.replay.forget_permission(request_id);
         }
     }
+
+    /// The turns before `before` in this run of the chat, which a phone
+    /// shown only the chat's end scrolls back to.
+    pub(crate) fn history(&self, feed: &str, before: u64, turns: usize) -> Result<Page, String> {
+        if feed != self.id {
+            return Err("the chat started again; open it again to see its history".into());
+        }
+        let inner = self.inner.lock().map_err(|_| "chat feed lock poisoned")?;
+        inner.replay.page(before, turns)
+    }
 }
 
 #[cfg(test)]
@@ -560,7 +789,7 @@ mod tests {
 
     #[test]
     fn streamed_text_of_one_message_is_kept_as_one_event() {
-        let mut replay = Replay::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS);
+        let mut replay = Replay::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS, None);
         for piece in ["Hel", "lo", " there"] {
             replay.push(
                 ChatEventKind::SessionUpdate,
@@ -586,7 +815,7 @@ mod tests {
 
     #[test]
     fn only_plain_text_pieces_are_joined() {
-        let mut replay = Replay::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS);
+        let mut replay = Replay::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS, None);
         let mut tagged = text("agent_message_chunk", None, "a");
         tagged["update"]["_meta"] = json!({ "x": 1 });
         replay.push(ChatEventKind::SessionUpdate, &tagged);
@@ -612,7 +841,7 @@ mod tests {
 
     #[test]
     fn status_and_ready_are_not_replayed() {
-        let mut replay = Replay::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS);
+        let mut replay = Replay::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS, None);
         replay.push(ChatEventKind::Status, &json!({ "state": "starting" }));
         replay.push(ChatEventKind::Ready, &json!({}));
         replay.push(ChatEventKind::TurnStarted, &json!({}));
@@ -633,7 +862,7 @@ mod tests {
 
     #[test]
     fn an_answered_permission_request_leaves_the_replay() {
-        let mut replay = Replay::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS);
+        let mut replay = Replay::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS, None);
         replay.push(
             ChatEventKind::PermissionRequest,
             &json!({ "requestId": "a" }),
@@ -653,7 +882,7 @@ mod tests {
 
     #[test]
     fn a_replay_over_its_bounds_drops_the_oldest_and_says_so() {
-        let mut replay = Replay::new(MAX_REPLAY_BYTES, 3);
+        let mut replay = Replay::new(MAX_REPLAY_BYTES, 3, None);
         for index in 0..5 {
             replay.push(ChatEventKind::Error, &json!({ "message": index }));
         }
@@ -662,7 +891,7 @@ mod tests {
         assert_eq!(events[0].payload["message"], 2);
         assert!(replay.is_trimmed());
 
-        let mut replay = Replay::new(400, MAX_REPLAY_EVENTS);
+        let mut replay = Replay::new(400, MAX_REPLAY_EVENTS, None);
         replay.push(
             ChatEventKind::SessionUpdate,
             &text("agent_message_chunk", None, "x"),
@@ -674,5 +903,193 @@ mod tests {
         );
         assert!(replay.is_trimmed());
         assert!(replay.bytes <= 400);
+    }
+
+    fn turn(replay: &mut Replay, n: usize) {
+        replay.push(
+            ChatEventKind::Prompt,
+            &json!({ "text": format!("ask {n}"), "paths": [] }),
+        );
+        replay.push(ChatEventKind::TurnStarted, &json!({}));
+        for piece in ["work", "ing"] {
+            replay.push(
+                ChatEventKind::SessionUpdate,
+                &text("agent_message_chunk", Some(&format!("m{n}")), piece),
+            );
+        }
+        replay.push(
+            ChatEventKind::SessionUpdate,
+            &json!({
+                "sessionId": "s",
+                "update": { "sessionUpdate": "tool_call", "toolCallId": format!("t{n}"), "title": "ls" },
+            }),
+        );
+        replay.push(
+            ChatEventKind::TurnCompleted,
+            &json!({ "stopReason": "end_turn" }),
+        );
+    }
+
+    fn commands() -> Value {
+        json!({
+            "sessionId": "s",
+            "update": { "sessionUpdate": "available_commands_update", "availableCommands": [] },
+        })
+    }
+
+    fn asked(events: &[ChatEvent]) -> Vec<String> {
+        events
+            .iter()
+            .filter(|event| event.kind == ChatEventKind::Prompt)
+            .map(|event| {
+                event.payload["text"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned()
+            })
+            .collect()
+    }
+
+    fn asks(range: std::ops::Range<usize>) -> Vec<String> {
+        range.map(|n| format!("ask {n}")).collect()
+    }
+
+    fn turn_starts(replay: &Replay) -> Vec<u64> {
+        replay
+            .entries
+            .iter()
+            .filter(|entry| entry.starts_turn)
+            .map(|entry| entry.index)
+            .collect()
+    }
+
+    #[test]
+    fn a_turn_starts_where_the_person_speaks() {
+        let mut replay = Replay::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS, None);
+        replay.push(
+            ChatEventKind::SessionUpdate,
+            &text("user_message_chunk", Some("u1"), "loaded"),
+        );
+        replay.push(
+            ChatEventKind::SessionUpdate,
+            &text("user_message_chunk", Some("u2"), "same message, new block"),
+        );
+        replay.push(
+            ChatEventKind::SessionUpdate,
+            &text("agent_message_chunk", None, "answer"),
+        );
+        turn(&mut replay, 0);
+        replay.push(ChatEventKind::TurnStarted, &json!({}));
+        replay.push(
+            ChatEventKind::SessionUpdate,
+            &text("user_message_chunk", None, "<task-notification/>"),
+        );
+        replay.push(
+            ChatEventKind::Prompt,
+            &json!({ "text": "steer", "paths": [] }),
+        );
+        replay.push(
+            ChatEventKind::TurnCompleted,
+            &json!({ "stopReason": "end_turn" }),
+        );
+        assert_eq!(turn_starts(&replay), [0, 3, 8]);
+    }
+
+    #[test]
+    fn a_trimmed_replay_still_pages_back_from_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let history = History::open(dir.path(), "chat", MAX_HISTORY_BYTES);
+        let mut replay = Replay::new(MAX_REPLAY_BYTES, 12, Some(history));
+        replay.push(ChatEventKind::SessionUpdate, &commands());
+        for n in 0..80 {
+            turn(&mut replay, n);
+        }
+        assert!(replay.is_trimmed());
+
+        let tail = replay.tail();
+        assert_eq!(tail.events[0].payload, commands());
+        assert_eq!(tail.events[1].kind, ChatEventKind::Prompt);
+        assert_eq!(asked(&tail.events), asks(78..80));
+        assert_eq!(tail.older_before, Some(1 + 78 * 5));
+
+        let mut earlier = Vec::new();
+        let mut before = tail.older_before;
+        while let Some(cursor) = before {
+            let page = replay.page(cursor, 30).unwrap();
+            assert!(asked(&page.events).len() <= 30);
+            assert!(!page.events.is_empty());
+            earlier.splice(0..0, page.events);
+            before = page.older_before;
+        }
+        assert_eq!(earlier[0].payload, commands());
+        assert_eq!(asked(&earlier), asks(0..78));
+        assert!(earlier
+            .iter()
+            .any(|event| event.payload["update"]["content"]["text"] == "working"));
+        assert_eq!(earlier.len(), 1 + 78 * 5);
+    }
+
+    #[tokio::test]
+    async fn a_phone_is_sent_the_last_turns_and_the_host_app_everything() {
+        let dir = tempfile::tempdir().unwrap();
+        let feed = Feed::new("agent".into(), "default".into(), Some(dir.path()));
+        feed.set_start(ChatStart {
+            session_id: "s".into(),
+            capabilities: json!({}),
+            setup: json!({}),
+        });
+        let standing = || Standing {
+            running: false,
+            turned: true,
+        };
+        let phone = Peer::Device { id: "phone".into() };
+        let mut inner = feed.inner.lock().unwrap();
+        for n in 0..60 {
+            turn(&mut inner.replay, n);
+        }
+
+        let ChatAttachment::Live {
+            replay,
+            older_before,
+            ..
+        } = feed.attachment(&inner, &phone, standing(), None)
+        else {
+            panic!("a phone takes up a long chat");
+        };
+        assert_eq!(asked(&replay), asks(10..60));
+        assert_eq!(older_before, Some(10 * 5));
+        drop(inner);
+        let page = feed.history(&feed.id, 10 * 5, 100).unwrap();
+        assert_eq!(asked(&page.events), asks(0..10));
+        assert_eq!(page.older_before, None);
+        assert!(feed.history("an earlier run", 10 * 5, 100).is_err());
+        let mut inner = feed.inner.lock().unwrap();
+
+        let ChatAttachment::Live {
+            replay,
+            older_before,
+            ..
+        } = feed.attachment(&inner, &Peer::Local, standing(), None)
+        else {
+            panic!("the app takes up a chat the replay still holds");
+        };
+        assert_eq!(asked(&replay), asks(0..60));
+        assert_eq!(older_before, None);
+
+        let history = History::open(dir.path(), "trimmed", MAX_HISTORY_BYTES);
+        inner.replay = Replay::new(MAX_REPLAY_BYTES, 12, Some(history));
+        for n in 0..60 {
+            turn(&mut inner.replay, n);
+        }
+        assert!(matches!(
+            feed.attachment(&inner, &Peer::Local, standing(), None),
+            ChatAttachment::Restart
+        ));
+        let ChatAttachment::Live { older_before, .. } =
+            feed.attachment(&inner, &phone, standing(), None)
+        else {
+            panic!("a phone takes up a chat longer than the replay");
+        };
+        assert_eq!(older_before, Some(58 * 5));
     }
 }

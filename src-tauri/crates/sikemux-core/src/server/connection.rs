@@ -606,6 +606,17 @@ async fn run_requests(
                     chat::attach(&core, &client, request_id, &agent_id, since).await;
                 });
             }
+            Request::AcpHistory {
+                agent_id,
+                feed,
+                before,
+                turns,
+            } => {
+                client.respond(
+                    request_id,
+                    chat::history(&core, &agent_id, &feed, before, turns),
+                );
+            }
             Request::AcpDetach { agent_id } => {
                 chat::detach(&core, client.id, &agent_id);
                 client.respond(request_id, Ok(Response::Done));

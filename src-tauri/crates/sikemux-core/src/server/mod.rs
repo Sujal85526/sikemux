@@ -313,7 +313,7 @@ impl Core {
             launching: Gauge::default(),
             listening: OnceLock::new(),
             tools: Mutex::new(None),
-            chats: chat::Chats::default(),
+            chats: chat::Chats::new(data_dir.map(|dir| dir.join("chat-history"))),
             remote: remote::Remote::default(),
             workspaces: workspace::Workspaces::default(),
             seen: seen::Seen::default(),
