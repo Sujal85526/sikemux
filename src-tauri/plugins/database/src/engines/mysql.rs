@@ -244,6 +244,44 @@ impl Session {
     /// Runs every statement in the text, keeping at most `limit` rows from each.
     pub async fn query(&self, sql: &str, limit: usize) -> DatabaseResult<Vec<ResultSet>> {
         let mut connection = self.connection.lock().await;
+        self.run(&mut connection, sql, limit).await
+    }
+
+    /// For an agent on a read-only connection. A session setting could otherwise switch read-only off for the
+    /// statements after it, so the SQL must be one statement, and it runs in a read-only transaction that is
+    /// always rolled back.
+    pub async fn query_guarded(&self, sql: &str, limit: usize) -> DatabaseResult<Vec<ResultSet>> {
+        let mut connection = self.connection.lock().await;
+        let statement = connection.prep(sql).await.map_err(|error| {
+            DatabaseError::Query(format!(
+                "on a read-only connection an agent runs one statement at a time, which MySQL could not read here: {}",
+                describe(&error)
+            ))
+        })?;
+        connection
+            .close(statement)
+            .await
+            .map_err(|error| self.failed(&error))?;
+        connection
+            .query_drop("start transaction read only")
+            .await
+            .map_err(|error| self.failed(&error))?;
+        let outcome = self.run(&mut connection, sql, limit).await;
+        let rolled_back = connection
+            .query_drop("rollback; set session transaction read only")
+            .await
+            .map_err(|error| self.failed(&error));
+        let results = outcome?;
+        rolled_back?;
+        Ok(results)
+    }
+
+    async fn run(
+        &self,
+        connection: &mut Conn,
+        sql: &str,
+        limit: usize,
+    ) -> DatabaseResult<Vec<ResultSet>> {
         let mut result = connection
             .query_iter(sql)
             .await
@@ -625,6 +663,49 @@ pub mod tests {
             Err(DatabaseError::NotFound(_))
         ));
         scratch.drop().await;
+    }
+
+    #[tokio::test]
+    async fn a_guarded_query_cannot_switch_read_only_off() {
+        let Some(scratch) = Scratch::new("guarded", true).await else {
+            return;
+        };
+        let reader = &scratch.session;
+        let escape = reader
+            .query_guarded("set session transaction read write; delete from orders", 10)
+            .await;
+        let Err(DatabaseError::Query(message)) = escape else {
+            panic!("expected the script to be refused")
+        };
+        assert!(message.contains("one statement at a time"), "{message}");
+        reader
+            .query_guarded("set session transaction read write", 10)
+            .await
+            .unwrap();
+        for write in [
+            "delete from orders",
+            "create table sneaky (id int)",
+            "drop table customers",
+        ] {
+            let refused = reader.query_guarded(write, 10).await;
+            assert!(refused.is_err(), "{write} should be refused");
+        }
+        let read = reader
+            .query_guarded("select count(*) from orders", 10)
+            .await
+            .unwrap();
+        assert_eq!(read[0].rows, vec![vec![serde_json::json!(2)]]);
+        let (mut server, password) = server().unwrap();
+        server.database = scratch.schema.clone();
+        let cleanup = Scratch {
+            session: Session::open(&server, Some(&password), false)
+                .await
+                .unwrap(),
+            schema: scratch.schema,
+        };
+        let tables = cleanup.session.tables(&cleanup.schema).await.unwrap();
+        assert_eq!(tables.len(), 3, "nothing was created or dropped");
+        cleanup.drop().await;
     }
 
     #[tokio::test]
