@@ -6,6 +6,7 @@ mod tls;
 
 use crate::error::DatabaseResult;
 use crate::profiles::Target;
+use crate::schema::{Table, TableInfo};
 
 #[derive(Clone)]
 pub enum Session {
@@ -57,6 +58,41 @@ impl Session {
         match self {
             Self::Postgres(session) => session.version().await,
             Self::Sqlite(session) => session.version().await,
+        }
+    }
+
+    /// The schema a table is looked for in when none is named.
+    pub fn default_schema(&self) -> &'static str {
+        match self {
+            Self::Postgres(_) => "public",
+            Self::Sqlite(_) => "main",
+        }
+    }
+
+    pub async fn schemas(&self) -> DatabaseResult<Vec<String>> {
+        match self {
+            Self::Postgres(session) => session.schemas().await,
+            Self::Sqlite(session) => session.schemas().await,
+        }
+    }
+
+    pub async fn tables(&self, schema: Option<String>) -> DatabaseResult<Vec<Table>> {
+        let schema = schema.unwrap_or_else(|| self.default_schema().to_string());
+        match self {
+            Self::Postgres(session) => session.tables(&schema).await,
+            Self::Sqlite(session) => session.tables(schema).await,
+        }
+    }
+
+    pub async fn describe(
+        &self,
+        schema: Option<String>,
+        table: String,
+    ) -> DatabaseResult<TableInfo> {
+        let schema = schema.unwrap_or_else(|| self.default_schema().to_string());
+        match self {
+            Self::Postgres(session) => session.describe(&schema, &table).await,
+            Self::Sqlite(session) => session.describe(schema, table).await,
         }
     }
 }

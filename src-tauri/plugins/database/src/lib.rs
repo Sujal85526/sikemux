@@ -79,6 +79,32 @@ impl Plugin for Database {
                     reply(())
                 }
                 "connected" => reply(self.pool.connected().await),
+                "schemas" => {
+                    let profiles::IdRequest { id } = params(input)?;
+                    answer(async { self.pool.session(&data_dir, &id).await?.schemas().await }).await
+                }
+                "tables" => {
+                    let schema::SchemaRequest { id, schema } = params(input)?;
+                    answer(async {
+                        self.pool
+                            .session(&data_dir, &id)
+                            .await?
+                            .tables(schema)
+                            .await
+                    })
+                    .await
+                }
+                "describe" => {
+                    let schema::TableRequest { id, schema, table } = params(input)?;
+                    answer(async {
+                        self.pool
+                            .session(&data_dir, &id)
+                            .await?
+                            .describe(schema, table)
+                            .await
+                    })
+                    .await
+                }
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
@@ -162,6 +188,51 @@ mod tests {
         assert_eq!(
             missing.err().map(|error| error.category),
             Some("connect".to_string())
+        );
+    }
+
+    async fn saved_fixture(database: &Arc<dyn Plugin>, ctx: &PluginContext, name: &str) -> Value {
+        let path = engines::sqlite::tests::fixture(name);
+        let saved = database
+            .call(
+                ctx,
+                "save",
+                json!({ "profile": { "name": name, "engine": "sqlite", "path": path } }),
+            )
+            .await
+            .unwrap();
+        saved["id"].clone()
+    }
+
+    #[tokio::test]
+    async fn the_schema_is_browsed_through_its_methods_connecting_on_first_use() {
+        let ctx = scratch("browse");
+        let database = plugin().unwrap();
+        let id = saved_fixture(&database, &ctx, "plugin-browse").await;
+        let schemas = database
+            .call(&ctx, "schemas", json!({ "id": id }))
+            .await
+            .unwrap();
+        assert_eq!(schemas, json!(["main"]));
+        let tables = database
+            .call(&ctx, "tables", json!({ "id": id }))
+            .await
+            .unwrap();
+        assert_eq!(tables[1], json!({ "name": "customers", "kind": "table" }));
+        let described = database
+            .call(&ctx, "describe", json!({ "id": id, "table": "orders" }))
+            .await
+            .unwrap();
+        assert_eq!(described["schema"], "main");
+        assert_eq!(described["foreignKeys"][0]["referencesTable"], "customers");
+        let connected = database.call(&ctx, "connected", Value::Null).await.unwrap();
+        assert_eq!(connected[0]["id"], id);
+        let missing = database
+            .call(&ctx, "describe", json!({ "id": id, "table": "nope" }))
+            .await;
+        assert_eq!(
+            missing.err().map(|error| error.category),
+            Some("not-found".to_string())
         );
     }
 

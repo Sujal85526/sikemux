@@ -97,6 +97,10 @@ impl Pool {
         Ok(opened)
     }
 
+    pub async fn session(&self, data_dir: &Path, id: &str) -> DatabaseResult<Session> {
+        Ok(self.open(data_dir, id).await?.session)
+    }
+
     pub async fn connect(&self, data_dir: &Path, id: &str) -> DatabaseResult<Connected> {
         let opened = self.open(data_dir, id).await?;
         Ok(Connected {
