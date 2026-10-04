@@ -207,9 +207,19 @@ mod tests {
         assert_eq!(status.devices[0].name, "Pixel 8");
         assert_eq!(status.devices[0].access, DeviceAccess::Watch);
 
-        let (client, _events) = crate::remote::connect(&endpoint, host.addr())
+        let (client, mut events) = crate::remote::connect(&endpoint, host.addr())
             .await
             .expect("the joined phone connects like any paired device");
+        let first = tokio::time::timeout(WAIT, events.recv()).await.unwrap();
+        assert!(
+            matches!(
+                first,
+                Some(crate::client::ClientEvent::Event(
+                    crate::protocol::Event::DeviceView { .. }
+                ))
+            ),
+            "the joined phone hears the host's view first, as a paired one does"
+        );
         client
             .list()
             .await
