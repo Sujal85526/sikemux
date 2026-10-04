@@ -71,14 +71,14 @@ function JiraWorkspace({ paneId, active, sites }: { paneId: string; active: bool
                     </div>
                 )}
                 <label className="jira-jql">
-                    <span className="jira-heading">JQL</span>
+                    <span className="jira-heading">Search</span>
                     <input
                         value={jql}
                         onChange={(event) => setJql(event.target.value)}
                         onKeyDown={(event) => {
                             if (event.key === "Enter" && jql.trim()) show({ kind: "jql", jql: jql.trim() });
                         }}
-                        placeholder="project = ABC AND status = 'To Do'"
+                        placeholder="Words, or JQL like project = ABC"
                         spellCheck={false}
                     />
                 </label>
