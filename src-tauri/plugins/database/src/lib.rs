@@ -61,7 +61,7 @@ impl Plugin for Database {
                     let profiles::IdRequest { id } = params(input)?;
                     answer(profiles::blocking(move || profiles::remove(&data_dir, &id))).await
                 }
-                "test" => answer(connections::test(params(input)?)).await,
+                "test" => answer(connections::test(data_dir, params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })

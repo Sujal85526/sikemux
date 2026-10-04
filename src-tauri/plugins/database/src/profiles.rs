@@ -240,6 +240,43 @@ fn to_hex(text: &str) -> String {
     text.bytes().map(|byte| format!("{byte:02x}")).collect()
 }
 
+fn from_hex(hex: &str) -> Option<String> {
+    let digits: Vec<u8> = hex
+        .chars()
+        .map(|c| c.to_digit(16).and_then(|digit| u8::try_from(digit).ok()))
+        .collect::<Option<_>>()?;
+    let bytes = digits
+        .chunks(2)
+        .map(|pair| match pair {
+            [high, low] => Some(high * 16 + low),
+            _ => None,
+        })
+        .collect::<Option<Vec<u8>>>()?;
+    String::from_utf8(bytes).ok()
+}
+
+pub fn password_read(id: &str) -> DatabaseResult<Option<String>> {
+    let stored = sikemux_keychain::read(PASSWORD_SERVICE, id).map_err(keychain_error)?;
+    Ok(stored.as_deref().and_then(from_hex))
+}
+
+/// The password to sign in with: the one just typed, or else the saved one.
+pub fn password_for(
+    data_dir: &Path,
+    id: Option<&str>,
+    typed: Option<String>,
+) -> DatabaseResult<Option<String>> {
+    if typed.is_some() {
+        return Ok(typed);
+    }
+    let Some(id) = id else { return Ok(None) };
+    let profiles = load(data_dir);
+    match profiles.get(id) {
+        Ok(profile) if profile.has_password => password_read(id),
+        _ => Ok(None),
+    }
+}
+
 fn password_write(id: &str, password: &str) -> DatabaseResult<()> {
     sikemux_keychain::write(PASSWORD_SERVICE, id, &to_hex(password)).map_err(keychain_error)
 }
@@ -278,6 +315,27 @@ mod tests {
             },
             password: None,
         }
+    }
+
+    #[test]
+    fn a_password_survives_the_round_trip_through_hex() {
+        for password in ["", "plain", "p@ss w0rd!#$%^&*()\"'", "pässwörd 🔑"] {
+            assert_eq!(from_hex(&to_hex(password)).as_deref(), Some(password));
+        }
+        assert_eq!(from_hex("abc"), None);
+        assert_eq!(from_hex("zz"), None);
+    }
+
+    #[test]
+    fn a_typed_password_wins_and_no_saved_one_means_none() {
+        let dir = scratch("password-for");
+        let saved = save(&dir, sqlite("Local", "/tmp/a.db")).unwrap();
+        assert_eq!(
+            password_for(&dir, Some(&saved.id), Some("typed".into())).unwrap(),
+            Some("typed".into())
+        );
+        assert_eq!(password_for(&dir, Some(&saved.id), None).unwrap(), None);
+        assert_eq!(password_for(&dir, None, None).unwrap(), None);
     }
 
     #[test]
