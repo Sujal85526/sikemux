@@ -703,7 +703,7 @@ describe("AgentChatPane", () => {
             sessionId: "session-1",
             update: { sessionUpdate: "tool_call", toolCallId: "tool-1", title: "mcp__github__list_issues", status: "in_progress" },
         });
-        await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("list_issues"));
+        await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("list issues"));
 
         emit("session_update", {
             sessionId: "session-1",

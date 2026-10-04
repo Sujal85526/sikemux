@@ -1,5 +1,6 @@
 import { basename } from "../lib/paths";
 import { safeWebUrl } from "../terminal/interactions";
+import { sikemuxToolRow, toolArguments } from "./toolRows";
 import type { AcpToolCall, ChatMessage } from "./types";
 
 // Splits `mcp__server__tool` so the server name can be de-emphasized.
@@ -24,9 +25,14 @@ const ACTIVITY_BY_KIND: Record<string, string> = {
    The running row is one line, so say what the agent is doing rather than
    quote it back. */
 export function activityLabel(tool: AcpToolCall): string {
+    const row = sikemuxToolRow(tool);
+    if (row) {
+        const said = `${row.verb} ${row.target}`.trim();
+        return said.length <= 40 ? said : row.verb;
+    }
     const byKind = ACTIVITY_BY_KIND[tool.kind ?? ""];
     if (byKind) return byKind;
-    const name = toolLabel(tool.title).name.split("\n")[0].trim();
+    const name = toolTarget(tool);
     return name.length > 0 && name.length <= 40 ? name : "Working…";
 }
 
@@ -43,6 +49,8 @@ const KIND_WORDS: Record<string, string> = {
 };
 
 export function toolKind(tool: AcpToolCall): string {
+    const row = sikemuxToolRow(tool);
+    if (row) return row.verb;
     const byKind = KIND_WORDS[tool.kind ?? ""];
     if (byKind) return byKind;
     const { scope, name } = toolLabel(tool.title);
@@ -52,9 +60,22 @@ export function toolKind(tool: AcpToolCall): string {
 /* The row has one line for the target, so a path shows the name it ends in and
    keeps the rest in the tooltip. A command is not a path and stays as typed. */
 export function toolTarget(tool: AcpToolCall): string {
-    const line = toolLabel(tool.title).name.split("\n")[0].trim();
+    const row = sikemuxToolRow(tool);
+    if (row) return row.target;
+    const { scope, name } = toolLabel(tool.title);
+    const line = name.split("\n")[0].trim();
+    if (scope !== undefined) return line.replaceAll("_", " ");
     if (!line.includes("/") || /\s/.test(line) || safeWebUrl(line)) return line;
     return basename(line) || line;
+}
+
+// Our tools name the argument worth showing; another server's call shows its first short one.
+export function toolDetail(tool: AcpToolCall): string | null {
+    const row = sikemuxToolRow(tool);
+    if (row) return row.detail;
+    if (toolLabel(tool.title).scope === undefined) return null;
+    const first = Object.values(toolArguments(tool)).find((value) => typeof value === "string" && value.trim() && !value.includes("\n"));
+    return typeof first === "string" && first.length <= 120 ? first.trim() : null;
 }
 
 export function toolUrl(target: string): { before: string; raw: string; url: string; after: string } | null {
@@ -69,6 +90,7 @@ export function toolUrl(target: string): { before: string; raw: string; url: str
    title names when it reported nothing. A shell command is not a file, and a
    title with a space in it is a command. */
 export function toolPath(tool: AcpToolCall): string | null {
+    if (sikemuxToolRow(tool)) return null;
     const first = Array.isArray(tool.locations) ? tool.locations[0] : null;
     if (first && typeof first === "object") {
         const { path, line } = first as { path?: unknown; line?: unknown };

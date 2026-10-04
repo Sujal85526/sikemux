@@ -224,6 +224,11 @@ button.chat-tool:hover > .chat-tool-line::after,
     white-space: nowrap;
 }
 
+.chat-tool-arg {
+    margin-left: 1ch;
+    color: var(--ink-dim);
+}
+
 .chat-tool-link {
     color: var(--acc);
     text-decoration: none;
