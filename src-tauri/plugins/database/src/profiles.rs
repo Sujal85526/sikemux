@@ -87,6 +87,9 @@ pub struct Profile {
     /// Refuses statements that change data or schema, for agents and for people.
     #[serde(default)]
     pub read_only: bool,
+    /// Lets agents run statements that change data. Without it an agent's connection is read-only.
+    #[serde(default)]
+    pub agent_writes: bool,
     #[serde(default)]
     pub has_password: bool,
     #[serde(flatten)]
@@ -129,6 +132,8 @@ pub struct Draft {
     pub name: String,
     #[serde(default)]
     pub read_only: bool,
+    #[serde(default)]
+    pub agent_writes: bool,
     #[serde(flatten)]
     pub target: Target,
 }
@@ -209,6 +214,7 @@ pub fn save(data_dir: &Path, request: SaveRequest) -> DatabaseResult<Profile> {
         id,
         name,
         read_only: profile.read_only,
+        agent_writes: profile.agent_writes && !profile.read_only,
         has_password,
         target,
     };
@@ -311,6 +317,7 @@ mod tests {
                 id: None,
                 name: name.into(),
                 read_only: false,
+                agent_writes: false,
                 target: Target::Sqlite { path: path.into() },
             },
             password: None,
@@ -375,6 +382,20 @@ mod tests {
         assert_eq!(load(&dir).profiles, vec![edited]);
         remove(&dir, &saved.id).unwrap();
         assert!(load(&dir).profiles.is_empty());
+    }
+
+    #[test]
+    fn agents_may_change_data_only_where_people_may_too() {
+        let dir = scratch("agent-writes");
+        let mut allowed = sqlite("Writable", "/tmp/a.db");
+        allowed.profile.agent_writes = true;
+        assert!(save(&dir, allowed).unwrap().agent_writes);
+        let mut locked = sqlite("Locked", "/tmp/b.db");
+        locked.profile.agent_writes = true;
+        locked.profile.read_only = true;
+        assert!(!save(&dir, locked).unwrap().agent_writes);
+        let written = serde_json::to_value(&load(&dir).profiles[0]).unwrap();
+        assert_eq!(written["agentWrites"], true);
     }
 
     #[test]
