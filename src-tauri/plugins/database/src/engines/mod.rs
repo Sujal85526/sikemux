@@ -44,6 +44,14 @@ impl Session {
         }
     }
 
+    /// Whether the connection is still up. A PostgreSQL server can drop it; a SQLite file stays open.
+    pub fn is_alive(&self) -> bool {
+        match self {
+            Self::Postgres(session) => session.is_alive(),
+            Self::Sqlite(_) => true,
+        }
+    }
+
     /// The engine and its version, such as `PostgreSQL 16.4` or `SQLite 3.46.0`.
     pub async fn version(&self) -> DatabaseResult<String> {
         match self {

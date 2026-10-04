@@ -99,6 +99,10 @@ impl Session {
         })
     }
 
+    pub fn is_alive(&self) -> bool {
+        !self.client.is_closed()
+    }
+
     pub async fn version(&self) -> DatabaseResult<String> {
         let row = self
             .client

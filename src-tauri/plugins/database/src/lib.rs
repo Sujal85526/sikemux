@@ -2,7 +2,7 @@
 //
 //   profiles    — the databases saved here, and their passwords in the Keychain
 //   engines     — one open connection, whichever engine the database runs on
-//   connections — reaching a database
+//   connections — trying a connection, and keeping one open per saved database
 
 mod connections;
 mod engines;
@@ -22,11 +22,13 @@ use crate::error::DatabaseResult;
 pub fn plugin() -> Result<Arc<dyn Plugin>, PluginError> {
     Ok(Arc::new(Database {
         manifest: Manifest::from_json(include_str!("../manifest.json"))?,
+        pool: connections::Pool::default(),
     }))
 }
 
 struct Database {
     manifest: Manifest,
+    pool: connections::Pool,
 }
 
 async fn answer<T: Serialize>(
@@ -52,16 +54,27 @@ impl Plugin for Database {
                 "profiles" => reply(profiles::load(&data_dir).profiles),
                 "save" => {
                     let request: profiles::SaveRequest = params(input)?;
-                    answer(profiles::blocking(move || {
-                        profiles::save(&data_dir, request)
-                    }))
-                    .await
+                    let saved =
+                        profiles::blocking(move || profiles::save(&data_dir, request)).await?;
+                    self.pool.forget(&saved.id).await;
+                    reply(saved)
                 }
                 "remove" => {
                     let profiles::IdRequest { id } = params(input)?;
+                    self.pool.forget(&id).await;
                     answer(profiles::blocking(move || profiles::remove(&data_dir, &id))).await
                 }
                 "test" => answer(connections::test(data_dir, params(input)?)).await,
+                "connect" => {
+                    let profiles::IdRequest { id } = params(input)?;
+                    answer(self.pool.connect(&data_dir, &id)).await
+                }
+                "disconnect" => {
+                    let profiles::IdRequest { id } = params(input)?;
+                    self.pool.forget(&id).await;
+                    reply(())
+                }
+                "connected" => reply(self.pool.connected().await),
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
@@ -146,5 +159,33 @@ mod tests {
             missing.err().map(|error| error.category),
             Some("connect".to_string())
         );
+    }
+
+    #[tokio::test]
+    async fn editing_a_connected_profile_closes_its_connection() {
+        let ctx = scratch("edit-closes");
+        let database = plugin().unwrap();
+        let path = engines::sqlite::tests::fixture("plugin-edit");
+        let profile = json!({ "name": "Local", "engine": "sqlite", "path": path });
+        let saved = database
+            .call(&ctx, "save", json!({ "profile": profile }))
+            .await
+            .unwrap();
+        let id = saved["id"].clone();
+        database
+            .call(&ctx, "connect", json!({ "id": id }))
+            .await
+            .unwrap();
+        let connected = database.call(&ctx, "connected", Value::Null).await.unwrap();
+        assert_eq!(connected[0]["id"], id);
+        let mut edited = profile.clone();
+        edited["id"] = id.clone();
+        edited["name"] = json!("Renamed");
+        database
+            .call(&ctx, "save", json!({ "profile": edited }))
+            .await
+            .unwrap();
+        let connected = database.call(&ctx, "connected", Value::Null).await.unwrap();
+        assert_eq!(connected, json!([]));
     }
 }
