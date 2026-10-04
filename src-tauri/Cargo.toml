@@ -30,11 +30,12 @@ name = "sikemux_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
-default = ["aws", "bitbucket", "bruno", "github", "rundeck", "signoz"]
+default = ["aws", "bitbucket", "bruno", "database", "github", "rundeck", "signoz"]
 ipc-command-tests = ["tauri/test"]
 aws = ["dep:sikemux-plugin-aws"]
 bitbucket = ["dep:sikemux-plugin-bitbucket"]
 bruno = ["dep:sikemux-plugin-bruno"]
+database = ["dep:sikemux-plugin-database"]
 github = ["dep:sikemux-plugin-github"]
 rundeck = ["dep:sikemux-plugin-rundeck"]
 signoz = ["dep:sikemux-plugin-signoz"]
@@ -82,6 +83,7 @@ sikemux-plugin-api = { path = "crates/sikemux-plugin-api" }
 sikemux-plugin-aws = { path = "plugins/aws", optional = true }
 sikemux-plugin-bitbucket = { path = "plugins/bitbucket", optional = true }
 sikemux-plugin-bruno = { path = "plugins/bruno", optional = true }
+sikemux-plugin-database = { path = "plugins/database", optional = true }
 sikemux-plugin-github = { path = "plugins/github", optional = true }
 sikemux-plugin-rundeck = { path = "plugins/rundeck", optional = true }
 sikemux-plugin-signoz = { path = "plugins/signoz", optional = true }
@@ -151,6 +153,8 @@ opt-level = "z"
 [profile.release.package.sikemux-plugin-bitbucket]
 opt-level = "z"
 [profile.release.package.sikemux-plugin-bruno]
+opt-level = "z"
+[profile.release.package.sikemux-plugin-database]
 opt-level = "z"
 [profile.release.package.sikemux-plugin-github]
 opt-level = "z"
