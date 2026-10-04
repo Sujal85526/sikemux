@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use hmac::{KeyInit, Mac};
 use iroh::{Endpoint, EndpointAddr};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use spake2::{Ed25519Group, Identity, Password, Spake2};
@@ -160,15 +161,15 @@ pub(crate) fn device_confirms(key: &[u8], confirmation: &str) -> bool {
 
 pub(crate) async fn send(
     writer: &mut (impl AsyncWrite + Unpin),
-    message: &PairMessage,
+    message: &impl Serialize,
 ) -> std::io::Result<()> {
     writer.write_all(&encode_control(message)?).await
 }
 
-pub(crate) async fn receive(
+pub(crate) async fn receive<T: DeserializeOwned>(
     reader: &mut (impl AsyncRead + Unpin),
     limit: Duration,
-) -> std::io::Result<PairMessage> {
+) -> std::io::Result<T> {
     let frame = tokio::time::timeout(limit, read_frame_within(reader, MAX_MESSAGE_BYTES))
         .await
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "no answer in time"))??
