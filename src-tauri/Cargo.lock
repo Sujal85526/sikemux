@@ -8422,6 +8422,7 @@ dependencies = [
  "quote",
  "regex-automata",
  "reqwest",
+ "rusqlite",
  "rustix",
  "rustls",
  "rustls-pki-types",

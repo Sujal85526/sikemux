@@ -4,10 +4,13 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::fallible_iterator::FallibleIterator;
+use rusqlite::types::ValueRef;
+use rusqlite::{Batch, Connection, OpenFlags};
 
 use crate::error::{DatabaseError, DatabaseResult};
 use crate::schema::{quote_identifier, ColumnInfo, ForeignKey, Index, Table, TableInfo, TableKind};
+use crate::values::{self, Column, ResultSet};
 
 #[derive(Clone)]
 pub struct Session {
@@ -109,6 +112,11 @@ impl Session {
         .await
     }
 
+    pub async fn query(&self, sql: String, limit: usize) -> DatabaseResult<Vec<ResultSet>> {
+        self.with(move |connection| run(connection, &sql, limit))
+            .await
+    }
+
     pub async fn describe(&self, schema: String, table: String) -> DatabaseResult<TableInfo> {
         let wanted = format!("{schema}.{table}");
         let found = self
@@ -118,6 +126,67 @@ impl Session {
             DatabaseError::NotFound(format!("there is no table or view named {wanted}"))
         })
     }
+}
+
+fn cell(value: ValueRef<'_>) -> serde_json::Value {
+    match value {
+        ValueRef::Null => serde_json::Value::Null,
+        ValueRef::Integer(number) => values::integer(number),
+        ValueRef::Real(number) => values::real(number),
+        ValueRef::Text(bytes) => values::text(&String::from_utf8_lossy(bytes)),
+        ValueRef::Blob(bytes) => values::blob(bytes),
+    }
+}
+
+/// Runs every statement in the text, one after another, keeping at most `limit` rows from each.
+fn run(connection: &Connection, sql: &str, limit: usize) -> rusqlite::Result<Vec<ResultSet>> {
+    let mut batch = Batch::new(connection, sql);
+    let mut results = Vec::new();
+    while let Some(mut statement) = batch.next()? {
+        let mut columns: Vec<Column> = statement
+            .columns()
+            .iter()
+            .map(|column| {
+                let type_name = column.decl_type().unwrap_or_default().to_string();
+                Column {
+                    name: column.name().to_string(),
+                    numeric: values::is_numeric_type(&type_name),
+                    type_name,
+                }
+            })
+            .collect();
+        if columns.is_empty() {
+            let affected = statement.execute([])?;
+            results.push(ResultSet {
+                affected: u64::try_from(affected).ok(),
+                ..ResultSet::default()
+            });
+            continue;
+        }
+        let width = columns.len();
+        let mut rows = Vec::new();
+        let mut truncated = false;
+        let mut cursor = statement.query([])?;
+        while let Some(row) = cursor.next()? {
+            if rows.len() == limit {
+                truncated = true;
+                break;
+            }
+            rows.push(
+                (0..width)
+                    .map(|index| row.get_ref(index).map(cell))
+                    .collect::<rusqlite::Result<Vec<_>>>()?,
+            );
+        }
+        values::infer_numeric(&mut columns, &rows);
+        results.push(ResultSet {
+            columns,
+            rows,
+            truncated,
+            affected: None,
+        });
+    }
+    Ok(results)
 }
 
 fn describe(
@@ -356,6 +425,79 @@ pub mod tests {
             session.describe("main".into(), "nope".into()).await,
             Err(DatabaseError::NotFound(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn a_query_returns_typed_cells_and_marks_number_columns() {
+        let path = fixture("query");
+        let session = Session::open(path.to_str().unwrap(), false).await.unwrap();
+        let results = session
+            .query("select id, name, email, (select count(*) from orders) as n from customers order by id".into(), 100)
+            .await
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        let result = &results[0];
+        let names: Vec<&str> = result
+            .columns
+            .iter()
+            .map(|column| column.name.as_str())
+            .collect();
+        assert_eq!(names, vec!["id", "name", "email", "n"]);
+        let numeric: Vec<bool> = result.columns.iter().map(|column| column.numeric).collect();
+        assert_eq!(numeric, vec![true, false, false, true]);
+        assert_eq!(
+            result.rows[0],
+            vec![
+                serde_json::json!(1),
+                "Ada".into(),
+                "ada@example.com".into(),
+                serde_json::json!(2)
+            ]
+        );
+        assert_eq!(result.rows[1][2], serde_json::Value::Null);
+        let blob = session
+            .query("select note from orders where id = 1".into(), 10)
+            .await
+            .unwrap();
+        assert_eq!(
+            blob[0].rows[0][0],
+            serde_json::Value::String("\\xcafe".into())
+        );
+    }
+
+    #[tokio::test]
+    async fn every_statement_runs_and_changes_say_how_many_rows_they_touched() {
+        let path = fixture("script");
+        let session = Session::open(path.to_str().unwrap(), false).await.unwrap();
+        let results = session
+            .query(
+                "update orders set total = total + 1; insert into customers (name) values ('Grace'); select count(*) from customers;"
+                    .into(),
+                10,
+            )
+            .await
+            .unwrap();
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0].affected, Some(2));
+        assert_eq!(results[1].affected, Some(1));
+        assert_eq!(results[2].rows, vec![vec![serde_json::json!(3)]]);
+    }
+
+    #[tokio::test]
+    async fn rows_past_the_limit_are_left_out_and_flagged() {
+        let path = fixture("limit");
+        let session = Session::open(path.to_str().unwrap(), false).await.unwrap();
+        let results = session
+            .query("select * from customers".into(), 1)
+            .await
+            .unwrap();
+        assert_eq!(results[0].rows.len(), 1);
+        assert!(results[0].truncated);
+        let error = session.query("select * from nowhere".into(), 1).await;
+        let Err(DatabaseError::Query(message)) = error else {
+            panic!("expected a query error")
+        };
+        assert!(message.contains("no such table"), "{message}");
     }
 
     #[test]

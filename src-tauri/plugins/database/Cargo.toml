@@ -7,7 +7,7 @@ publish = false
 [dependencies]
 sikemux-plugin-api = { path = "../../crates/sikemux-plugin-api" }
 sikemux-keychain = { path = "../../crates/sikemux-keychain" }
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled", "column_decltype"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-platform-verifier = "0.7"
 serde = { version = "1", features = ["derive"] }

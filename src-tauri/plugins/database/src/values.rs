@@ -82,6 +82,31 @@ pub fn blob(bytes: &[u8]) -> Value {
     }
 }
 
+/// Whether a type name, as an engine spells it, holds numbers.
+pub fn is_numeric_type(type_name: &str) -> bool {
+    let upper = type_name.to_ascii_uppercase();
+    [
+        "INT", "REAL", "FLOA", "DOUB", "NUMERIC", "DECIMAL", "SERIAL", "MONEY",
+    ]
+    .iter()
+    .any(|part| upper.contains(part))
+}
+
+/// Columns with no declared type, such as `count(*)`, count as numbers when every value they hold is one.
+pub fn infer_numeric(columns: &mut [Column], rows: &[Vec<Value>]) {
+    for (index, column) in columns.iter_mut().enumerate() {
+        if !column.type_name.is_empty() {
+            continue;
+        }
+        let mut values = rows
+            .iter()
+            .filter_map(|row| row.get(index))
+            .filter(|value| !value.is_null())
+            .peekable();
+        column.numeric = values.peek().is_some() && values.all(Value::is_number);
+    }
+}
+
 pub fn elapsed_millis(started: std::time::Instant) -> u64 {
     u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
@@ -123,6 +148,28 @@ mod tests {
             panic!("expected text")
         };
         assert!(long.ends_with("… (100 bytes)"), "{long}");
+    }
+
+    #[test]
+    fn numeric_types_are_known_by_name_or_by_their_values() {
+        assert!(is_numeric_type("int4"));
+        assert!(is_numeric_type("NUMERIC(10,2)"));
+        assert!(is_numeric_type("double precision"));
+        assert!(!is_numeric_type("text"));
+        assert!(!is_numeric_type("timestamptz"));
+        let column = |name: &str| Column {
+            name: name.into(),
+            type_name: String::new(),
+            numeric: false,
+        };
+        let mut columns = vec![column("count"), column("label"), column("empty")];
+        let rows = vec![
+            vec![Value::from(3), Value::from("a"), Value::Null],
+            vec![Value::Null, Value::from(1), Value::Null],
+        ];
+        infer_numeric(&mut columns, &rows);
+        let numeric: Vec<bool> = columns.iter().map(|column| column.numeric).collect();
+        assert_eq!(numeric, vec![true, false, false]);
     }
 
     #[test]
