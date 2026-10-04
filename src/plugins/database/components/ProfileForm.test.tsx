@@ -91,6 +91,27 @@ describe("ProfileForm", () => {
         expect(screen.getByLabelText("Name")).toHaveValue("app.db");
     });
 
+    it("lets agents change data only when the connection is not read only", async () => {
+        api.save.mockResolvedValue(saved);
+        renderNew({ initial: draftOf(saved), saved });
+        const agents = screen.getByRole("checkbox", { name: /Let agents change data/ });
+        fireEvent.click(agents);
+        await act(async () => fireEvent.click(screen.getByRole("button", { name: "Save" })));
+        expect(api.save).toHaveBeenLastCalledWith(expect.objectContaining({ agentWrites: true }), undefined);
+
+        fireEvent.click(screen.getByRole("checkbox", { name: /Read only/ }));
+        expect(screen.getByRole("checkbox", { name: /Let agents change data/ })).toBeDisabled();
+        await act(async () => fireEvent.click(screen.getByRole("button", { name: "Save" })));
+        expect(api.save).toHaveBeenLastCalledWith(expect.objectContaining({ readOnly: true, agentWrites: false }), undefined);
+    });
+
+    it("offers MySQL with its own default port", () => {
+        renderNew();
+        fireEvent.click(screen.getByRole("radio", { name: "MySQL" }));
+        expect(screen.getByLabelText("Port")).toHaveAttribute("placeholder", "3306");
+        expect(screen.getByLabelText("User")).toHaveAttribute("placeholder", "root");
+    });
+
     it("removes a saved connection only after it is confirmed", async () => {
         const props = renderNew({ initial: draftOf(saved), saved });
         host.confirmDialog.mockResolvedValue(false);

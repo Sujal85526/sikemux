@@ -192,8 +192,13 @@ export function ProfileForm({
                     </span>
                 </label>
             )}
-            <Checkbox checked={draft.readOnly} onChange={(readOnly) => change({ ...draft, readOnly })}>
+            <Checkbox
+                checked={draft.readOnly}
+                onChange={(readOnly) => change({ ...draft, readOnly, agentWrites: readOnly ? false : draft.agentWrites })}>
                 Read only: refuse statements that change data or tables
+            </Checkbox>
+            <Checkbox checked={draft.agentWrites} disabled={draft.readOnly} onChange={(agentWrites) => change({ ...draft, agentWrites })}>
+                Let agents change data here. Otherwise their queries can only read
             </Checkbox>
             {outcome?.kind === "tested" && (
                 <div className="db-callout" data-tone="ok" role="status">

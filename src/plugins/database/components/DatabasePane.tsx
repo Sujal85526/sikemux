@@ -31,7 +31,10 @@ export function DatabasePane({ paneId, active }: { paneId: string; active: boole
                 <div className="db-welcome">
                     <DatabaseMark size={30} />
                     <h2>Connect a database</h2>
-                    <p>Save a PostgreSQL server or a SQLite file to browse its tables and run SQL beside your code.</p>
+                    <p>
+                        Save a PostgreSQL or MySQL server, or a SQLite file, to browse its tables and run SQL beside your code. Your agents can use it
+                        too.
+                    </p>
                     <button type="button" className="db-button primary" onClick={() => open({ editing: "new" })}>
                         Add a connection
                     </button>
@@ -174,6 +177,8 @@ function ProfileDetail({ profile, connected, onEdit }: { profile: DatabaseProfil
                         <dd className="mono">{profile.path}</dd>
                     </>
                 )}
+                <dt>Agents</dt>
+                <dd>{profile.agentWrites ? "May change data" : "Read only"}</dd>
                 <dt>Status</dt>
                 <dd>{connected ? `Connected to ${connected.version}` : "Not connected"}</dd>
             </dl>
