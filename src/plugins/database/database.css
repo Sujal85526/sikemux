@@ -490,3 +490,19 @@
     color: var(--text-disabled);
     font-style: italic;
 }
+
+.db-editor {
+    min-height: 120px;
+    max-height: 45%;
+    overflow: auto;
+    border-bottom: 1px solid var(--border);
+    font-size: var(--text-sm);
+}
+
+.db-editor .cm-editor {
+    min-height: 120px;
+}
+
+.db-editor .cm-editor.cm-focused {
+    outline: none;
+}
