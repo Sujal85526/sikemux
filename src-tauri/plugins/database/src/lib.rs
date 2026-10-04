@@ -4,12 +4,14 @@
 //   engines     — one open connection, whichever engine the database runs on
 //   connections — trying a connection, and keeping one open per saved database
 //   schema      — tables, columns, indexes and keys, the same for every engine
+//   history     — the SQL run against each saved database, to find and run again
 //   queries     — running SQL against a saved database, and stopping it
 //   values      — query results, the same for every engine
 
 mod connections;
 mod engines;
 mod error;
+mod history;
 mod profiles;
 mod queries;
 mod schema;
