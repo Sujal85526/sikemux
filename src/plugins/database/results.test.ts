@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ResultSet } from "./api";
-import { cellText, duration, mainResult, summary, toMarkdown, toTsv } from "./results";
+import { ago, cellText, duration, mainResult, summary, toMarkdown, toTsv } from "./results";
 
 const customers: ResultSet = {
     columns: [
@@ -45,6 +45,16 @@ describe("results", () => {
         expect(mainResult({ results: [changed, customers], millis: 1 })).toBe(1);
         expect(mainResult({ results: [changed, changed], millis: 1 })).toBe(1);
         expect(mainResult({ results: [], millis: 1 })).toBe(0);
+    });
+
+    it("says how long ago a run was", () => {
+        const now = Date.UTC(2026, 9, 4, 12, 0, 0);
+        expect(ago(now - 20_000, now)).toBe("just now");
+        expect(ago(now - 5 * 60_000, now)).toBe("5 min ago");
+        expect(ago(now - 3 * 3_600_000, now)).toBe("3 h ago");
+        expect(ago(now - 26 * 3_600_000, now)).toBe("yesterday");
+        expect(ago(now - 3 * 86_400_000, now)).toBe("3 days ago");
+        expect(ago(now - 30 * 86_400_000, now)).toBe("Sep 4");
     });
 
     it("copies as tab-separated text with empty cells for null", () => {
