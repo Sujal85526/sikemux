@@ -7,7 +7,7 @@ import { activityText, composerPlaceholder } from '@mac/chat/chatStatus';
 import { activeToolLabel } from '@mac/chat/toolLabels';
 import type { ChatMessage } from '@mac/chat/types';
 import { Composer } from '@/chat/Composer';
-import { Activity, Message, Queued } from '@/chat/Transcript';
+import { Activity, Earlier, Message, Queued } from '@/chat/Transcript';
 import { useChat } from '@/chat/useChat';
 import { useDevices, useLive } from '@/devices/hub';
 import { dismissCardsFor } from '@/notify/cards';
@@ -98,7 +98,8 @@ export default function Chat() {
               getItemType={(message) => message.role}
               extraData={chat.replayed}
               renderItem={({ item }) => <Message message={item} untimed={chat.replayed.has(item.id)} />}
-              ListHeaderComponent={chat.attached === 'live' ? null : status}
+              ListHeaderComponent={chat.attached !== 'live' ? status : chat.hasEarlier ? <Earlier /> : null}
+              onStartReached={chat.hasEarlier ? chat.loadEarlier : undefined}
               ListFooterComponent={
                 <>
                   {chat.queued ? <Queued text={chat.queued} /> : null}
