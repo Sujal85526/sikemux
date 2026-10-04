@@ -105,8 +105,8 @@ export function ProfileForm({
             </label>
             {draft.engine === "postgres" ? (
                 <>
-                    <div className="db-row">
-                        <label className="db-field grow">
+                    <div className="db-inline">
+                        <label className="db-field db-grow">
                             <span>Host</span>
                             <input
                                 value={draft.host}
@@ -137,8 +137,8 @@ export function ProfileForm({
                             autoCapitalize="off"
                         />
                     </label>
-                    <div className="db-row">
-                        <label className="db-field grow">
+                    <div className="db-inline">
+                        <label className="db-field db-grow">
                             <span>User</span>
                             <input
                                 value={draft.user}
@@ -149,7 +149,7 @@ export function ProfileForm({
                                 autoCorrect="off"
                             />
                         </label>
-                        <label className="db-field grow">
+                        <label className="db-field db-grow">
                             <span>Password</span>
                             <input
                                 type="password"
@@ -178,9 +178,9 @@ export function ProfileForm({
             ) : (
                 <label className="db-field">
                     <span>Database file</span>
-                    <span className="db-row">
+                    <span className="db-inline">
                         <input
-                            className="grow"
+                            className="db-grow"
                             value={draft.path}
                             onChange={(event) => change({ ...draft, path: event.target.value })}
                             placeholder="~/data/app.db"
@@ -212,7 +212,7 @@ export function ProfileForm({
                         Remove
                     </button>
                 )}
-                <span className="grow" />
+                <span className="db-grow" />
                 <button type="button" className="db-button" onClick={onCancel}>
                     Cancel
                 </button>
