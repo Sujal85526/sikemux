@@ -526,3 +526,74 @@
     padding: var(--space-3);
     overflow: auto;
 }
+
+.db-tree {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1h);
+    min-height: 0;
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--border);
+}
+
+.db-filter {
+    height: 26px;
+    padding: 0 var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: transparent;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: var(--text-xs);
+}
+
+.db-filter:focus-visible {
+    outline: none;
+    border-color: var(--border-selected);
+    box-shadow: var(--focus-ring);
+}
+
+.db-tables {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.db-table {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1h);
+    width: 100%;
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid transparent;
+    border-radius: var(--radius-1);
+    font-size: var(--text-xs);
+    text-align: left;
+    color: var(--text-secondary);
+}
+
+.db-table:hover {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+}
+
+.db-table.active {
+    color: var(--text-primary);
+    background: var(--surface-selected);
+    border-color: var(--border-selected);
+}
+
+.db-table-kind {
+    flex: none;
+    width: 12px;
+    color: var(--text-tertiary);
+}
+
+.db-table-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

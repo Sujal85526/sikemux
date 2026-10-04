@@ -64,3 +64,10 @@ export function addressOf(target: Target): string {
     const database = target.database ? `/${target.database}` : "";
     return `${target.user}@${target.host}:${target.port ?? defaultPort(target.engine)}${database}`;
 }
+
+/** The schema a database opens on: `public`, `main`, or the database a MySQL profile names. */
+export function defaultSchema(target: Target): string {
+    if (target.engine === "postgres") return "public";
+    if (target.engine === "sqlite") return "main";
+    return target.database;
+}

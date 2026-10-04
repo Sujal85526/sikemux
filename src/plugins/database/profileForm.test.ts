@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DatabaseProfile, ProfileDraft } from "./api";
-import { addressOf, blankDraft, draftOf, engineLabel, isServer, missingField, parsePort, withEngine } from "./profileForm";
+import { addressOf, blankDraft, defaultSchema, draftOf, engineLabel, isServer, missingField, parsePort, withEngine } from "./profileForm";
 
 const postgres: ProfileDraft = {
     name: "Shop",
@@ -44,6 +44,12 @@ describe("profileForm", () => {
         expect(isServer(saved)).toBe(true);
         expect(isServer({ engine: "sqlite", path: "/a.db" })).toBe(false);
         expect(draftOf(saved)).toEqual({ ...postgres, id: "1" });
+    });
+
+    it("opens each engine on its usual schema", () => {
+        expect(defaultSchema(postgres)).toBe("public");
+        expect(defaultSchema({ ...postgres, engine: "mysql", database: "app" })).toBe("app");
+        expect(defaultSchema({ engine: "sqlite", path: "/a.db" })).toBe("main");
     });
 
     it("reads an empty port as the default one", () => {
