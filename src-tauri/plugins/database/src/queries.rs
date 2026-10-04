@@ -38,13 +38,15 @@ pub async fn run(
         Source::Person => Access::Person,
         Source::Agent => Access::Agent,
     };
-    let session = pool.session(data_dir, &request.id, access).await?;
+    let (session, read_only) = pool.session_and_mode(data_dir, &request.id, access).await?;
     let started = Instant::now();
     let limit = values::row_limit(request.limit);
     let ran = match access {
         Access::Person => session.query(&sql, limit).await,
         Access::Agent => {
-            match tokio::time::timeout(AGENT_TIMEOUT, session.query(&sql, limit)).await {
+            match tokio::time::timeout(AGENT_TIMEOUT, agent_query(&session, &sql, limit, read_only))
+                .await
+            {
                 Ok(ran) => ran,
                 Err(_) => {
                     let _ = session.cancel().await;
@@ -73,6 +75,20 @@ pub async fn run(
     let id = request.id;
     let _ = profiles::blocking(move || history::record(&dir, &id, entry)).await;
     outcome
+}
+
+/// An agent on a read-only connection gets the guarded path, so no statement can switch read-only off for another.
+async fn agent_query(
+    session: &crate::engines::Session,
+    sql: &str,
+    limit: usize,
+    read_only: bool,
+) -> DatabaseResult<Vec<crate::values::ResultSet>> {
+    if read_only {
+        session.query_guarded(sql, limit).await
+    } else {
+        session.query(sql, limit).await
+    }
 }
 
 fn rows_of_last(outcome: &QueryOutcome) -> Option<u64> {

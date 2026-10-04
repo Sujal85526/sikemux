@@ -430,6 +430,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_read_only_agent_on_postgres_runs_one_statement_at_a_time() {
+        let Some((host, port, database_name, user)) = engines::postgres::tests::server() else {
+            return;
+        };
+        let ctx = scratch("agent-guard");
+        let database = plugin().unwrap();
+        database
+            .call(
+                &ctx,
+                "save",
+                json!({ "profile": { "name": "Live", "engine": "postgres", "host": host, "port": port,
+                                      "database": database_name, "user": user } }),
+            )
+            .await
+            .unwrap();
+        let escape = database
+            .call(
+                &ctx,
+                "agentQuery",
+                json!({ "database": "Live", "sql": "set default_transaction_read_only = off; create table sikemux_sneaky (id int)" }),
+            )
+            .await;
+        let message = escape.err().map(|error| error.message).unwrap_or_default();
+        assert!(message.contains("one statement at a time"), "{message}");
+        let read = database
+            .call(
+                &ctx,
+                "agentQuery",
+                json!({ "database": "Live", "sql": "select 1 as one" }),
+            )
+            .await
+            .unwrap();
+        assert_eq!(read["results"][0]["rows"], json!([[1]]));
+    }
+
+    #[tokio::test]
     async fn editing_a_connected_profile_closes_its_connection() {
         let ctx = scratch("edit-closes");
         let database = plugin().unwrap();

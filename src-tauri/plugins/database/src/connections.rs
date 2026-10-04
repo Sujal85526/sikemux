@@ -53,6 +53,7 @@ pub struct Connected {
 struct Open {
     session: Session,
     version: String,
+    read_only: bool,
 }
 
 /// Who a connection is for. Agents get one of their own, so it can be read-only while the person's is not.
@@ -102,7 +103,11 @@ impl Pool {
         };
         let session = Session::open(&profile.target, password.as_deref(), read_only).await?;
         let version = session.version().await?;
-        let opened = Open { session, version };
+        let opened = Open {
+            session,
+            version,
+            read_only,
+        };
         self.open.lock().await.insert(key, opened.clone());
         Ok(opened)
     }
@@ -121,6 +126,17 @@ impl Pool {
         access: Access,
     ) -> DatabaseResult<Session> {
         Ok(self.open(data_dir, id, access).await?.session)
+    }
+
+    /// The connection and whether it was opened read-only.
+    pub async fn session_and_mode(
+        &self,
+        data_dir: &Path,
+        id: &str,
+        access: Access,
+    ) -> DatabaseResult<(Session, bool)> {
+        let opened = self.open(data_dir, id, access).await?;
+        Ok((opened.session, opened.read_only))
     }
 
     pub async fn connect(&self, data_dir: &Path, id: &str) -> DatabaseResult<Connected> {

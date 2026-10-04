@@ -126,4 +126,14 @@ impl Session {
             }
         }
     }
+
+    /// For an agent on a read-only connection: one statement in a read-only transaction that is rolled back.
+    /// A SQLite file opened read-only cannot be written whatever runs, so it needs no such guard.
+    pub async fn query_guarded(&self, sql: &str, limit: usize) -> DatabaseResult<Vec<ResultSet>> {
+        match self {
+            Self::Mysql(session) => session.query_guarded(sql, limit).await,
+            Self::Postgres(session) => session.query_guarded(sql, limit).await,
+            Self::Sqlite(session) => session.query(sql.to_string(), limit).await,
+        }
+    }
 }
