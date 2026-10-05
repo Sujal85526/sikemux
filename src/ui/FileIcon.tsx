@@ -1,6 +1,6 @@
 import { languageOf } from "../languages";
 
-interface GlyphInfo {
+export interface GlyphInfo {
     char: string;
     color: string;
 }
@@ -238,6 +238,10 @@ function lookup(name: string): GlyphInfo {
     if (byExtension) return byExtension;
     const language = languageOf(name);
     return (language && BY_LANGUAGE[language]) || DEFAULT;
+}
+
+export function languageGlyph(language: string): GlyphInfo | undefined {
+    return BY_LANGUAGE[language];
 }
 
 export function FileIcon({ name, size = 15 }: { name: string; size?: number }) {
