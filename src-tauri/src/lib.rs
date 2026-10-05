@@ -228,6 +228,14 @@ pub fn run() {
                         }
                     }
                 }
+                // The desktop smoke test runs behind other windows, where WebKit would pause this page.
+                if std::env::var_os("SIKEMUX_RUN_WHEN_COVERED").is_some() {
+                    if let Some(webview) = _app.get_webview("main") {
+                        let _ = webview.with_webview(|platform| {
+                            browser::macos::keep_shown_page_running_when_covered(platform.inner())
+                        });
+                    }
+                }
             }
             Ok(())
         })

@@ -207,6 +207,17 @@ pub fn keep_running_when_covered(pointer: *mut c_void, keep_running: bool) {
     }
 }
 
+/// Keeps a page already on screen running while other windows cover it. WebKit
+/// only looks again at whether a page shows when its view is hidden or shown.
+pub fn keep_shown_page_running_when_covered(pointer: *mut c_void) {
+    keep_running_when_covered(pointer, true);
+    let Some(webview) = webview_from(pointer) else {
+        return;
+    };
+    webview.setHidden(true);
+    webview.setHidden(false);
+}
+
 pub fn forget(tab_id: &str) {
     let _ = answer_dialog(tab_id, false, None);
     TABS.with(|tabs| {

@@ -1361,6 +1361,7 @@ const isolatedEnvironment = {
   SIKEMUX_CLI_ENDPOINT_PUBLISH: endpoint,
   SIKEMUX_SIDECAR_PATH: cliExecutable,
   SIKEMUX_CORE_SOCKET: coreSocket,
+  SIKEMUX_RUN_WHEN_COVERED: "1",
 };
 delete isolatedEnvironment.SIKEMUX_APP_EXECUTABLE;
 // Run from a Sikemux agent terminal, this names an agent the test app has never seen.
