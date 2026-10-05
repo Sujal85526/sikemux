@@ -83,8 +83,24 @@ fail() {
 # past this fails here instead of shipping.
 DMG_BUDGET_BYTES=15000000
 
+notarize_dmg() {
+  local credentials status
+  if [[ -n "${APPLE_API_KEY:-}" ]]; then
+    credentials=(--key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER")
+  else
+    credentials=(--apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID")
+  fi
+  echo "→ Notarizing $1"
+  status="$(/usr/bin/xcrun notarytool submit "$1" "${credentials[@]}" --wait --output-format json |
+    node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(0, "utf8")).status ?? "")')" ||
+    fail "could not submit $1 for notarization"
+  [[ "$status" == "Accepted" ]] || fail "Apple did not accept $1 for notarization: $status"
+  /usr/bin/xcrun stapler staple "$1" || fail "could not staple the notarization ticket to $1"
+}
+
 # Tauri packs the DMG with zlib; LZMA makes it about a fifth smaller. The
 # conversion drops the DMG's signature, so a real identity signs it again.
+# Tauri notarizes only the app, so the repacked DMG is notarized here.
 shopt -s nullglob
 for DMG in "$BUNDLE"/dmg/*.dmg; do
   PACKED="${DMG%.dmg}.lzma.dmg"
@@ -92,6 +108,9 @@ for DMG in "$BUNDLE"/dmg/*.dmg; do
   mv -f "$PACKED" "$DMG"
   if [[ -n "${APPLE_SIGNING_IDENTITY:-}" && "$APPLE_SIGNING_IDENTITY" != "-" ]]; then
     /usr/bin/codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$DMG" || fail "could not sign $DMG"
+    if [[ -n "${APPLE_ID:-}" || -n "${APPLE_API_KEY:-}" ]]; then
+      notarize_dmg "$DMG"
+    fi
   fi
   DMG_BYTES="$(stat -f%z "$DMG")"
   ((DMG_BYTES <= DMG_BUDGET_BYTES)) || fail "$DMG is $DMG_BYTES bytes, over the $DMG_BUDGET_BYTES byte budget"
