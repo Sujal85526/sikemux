@@ -107,7 +107,7 @@ describe("PairingPrompt", () => {
 
         await screen.findByRole("alertdialog", { name: JOIN_QUESTION });
         await user.click(screen.getByRole("button", { name: /access for this device/ }));
-        await user.click(await screen.findByRole("option", { name: /Watch and approve/ }));
+        await user.click(await screen.findByRole("option", { name: /Watch only/ }));
         await user.click(screen.getByRole("button", { name: "Allow" }));
 
         expect(answer).toHaveBeenCalledWith({ id: "join-1", allow: true, access: "watch" }, expect.anything());

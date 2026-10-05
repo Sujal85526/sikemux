@@ -3,8 +3,8 @@ import { shortKey, type DeviceAccess, type PendingDevice } from "../api/remote";
 import { Dropdown } from "../ui/Dropdown";
 
 export const ACCESS_OPTIONS = [
-    { value: "full", label: "Full control", detail: "Drive terminals and agents" },
-    { value: "watch", label: "Watch and approve", detail: "Read sessions and answer permission requests" },
+    { value: "full", label: "Full control", detail: "Start chats, answer agents, type in terminals" },
+    { value: "watch", label: "Watch only", detail: "See chats and terminals, change nothing" },
 ];
 
 const PLATFORM_NAMES: Record<string, string> = { ios: "iOS", android: "Android", macos: "macOS", linux: "Linux", web: "Web" };
