@@ -33,12 +33,7 @@ pub struct SignIn {
 
 /// Checks the email and API token against the site, then keeps the token in the Keychain.
 pub async fn sign_in(data_dir: &Path, request: SignIn) -> JiraResult<()> {
-    let host = normalise_host(&request.site);
-    if host.is_empty() || !host.contains('.') {
-        return Err(JiraError::BadArg(
-            "the site looks like acme.atlassian.net".into(),
-        ));
-    }
+    let host = config::cloud_host(&request.site)?;
     let email = request.email.trim().to_string();
     let token = request.token.trim().to_string();
     if email.is_empty() || token.is_empty() {
