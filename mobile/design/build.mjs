@@ -19,7 +19,7 @@ await generate();
 const text = readFileSync(resolve(app, 'src/ui/icons.generated.ts'), 'utf8');
 const icons = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('} as const') + 1));
 
-const { build: bundle } = createRequire(resolve(app, 'package.json'))('esbuild');
+const { build: bundle, buildSync } = createRequire(resolve(app, 'package.json'))('esbuild');
 const drawnModule = await bundle({ entryPoints: [resolve(app, 'src/ui/drawnIcons.ts')], format: 'esm', write: false });
 const { DRAWN_ICONS } = await import(`data:text/javascript,${encodeURIComponent(drawnModule.outputFiles[0].text)}`);
 for (const [name, paths] of Object.entries(DRAWN_ICONS)) {
@@ -37,9 +37,24 @@ function icon(_, name, size = '16') {
     .replace('<svg ', '<svg class="ico" aria-hidden="true" ');
 }
 
+function backdropScript() {
+  const bundled = buildSync({
+    entryPoints: [resolve(here, 'backdrop.js')],
+    bundle: true,
+    format: 'esm',
+    write: false,
+    nodePaths: [resolve(app, 'node_modules')],
+  });
+  return bundled.outputFiles[0].text.replaceAll('</script', '<\\/script');
+}
+
 function build() {
   const source = readFileSync(resolve(here, 'screens.src.html'), 'utf8');
-  writeFileSync(resolve(here, 'screens.html'), source.replace(/\{\{(Icon\w+|Logo)(?::(\d+))?\}\}/g, icon));
+  const page = source.replace(/\{\{(Icon\w+|Logo)(?::(\d+))?\}\}/g, icon);
+  writeFileSync(
+    resolve(here, 'screens.html'),
+    page.replace('{{BackdropScript}}', () => backdropScript()),
+  );
 }
 
 build();
