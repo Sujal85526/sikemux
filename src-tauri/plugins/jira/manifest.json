@@ -6,6 +6,7 @@
   "tools": [
     {
       "name": "jira_search",
+      "row": {"verb": "search", "icon": "search", "target": ["{jql}"], "detail": ["{site}"]},
       "method": "search",
       "description": "Find Jira issues with JQL, e.g. 'assignee = currentUser() AND sprint in openSprints()'. Returns key, summary, status, priority, assignee and sprint.",
       "properties": {
@@ -17,6 +18,7 @@
     },
     {
       "name": "jira_issue",
+      "row": {"verb": "read", "icon": "file", "target": ["{key}"], "detail": ["{site}"]},
       "method": "issue",
       "description": "One Jira issue by key (ABC-123): its fields, description and comments as markdown, and the transitions it can take next.",
       "properties": {
@@ -27,6 +29,7 @@
     },
     {
       "name": "jira_comment",
+      "row": {"verb": "comment", "icon": "pencil", "target": ["{key}"], "detail": ["{site}"]},
       "method": "comment",
       "description": "Add a comment to a Jira issue. Write it in markdown.",
       "properties": {
@@ -38,6 +41,7 @@
     },
     {
       "name": "jira_transition",
+      "row": {"verb": "move", "icon": "refresh", "target": ["{key} to {to}", "{key}"], "detail": ["{site}"]},
       "method": "transition",
       "description": "Move a Jira issue through its workflow. Name a transition or the status it leads to; with neither, lists the transitions the issue can take now.",
       "properties": {
@@ -49,6 +53,7 @@
     },
     {
       "name": "jira_create",
+      "row": {"verb": "create", "icon": "pencil", "target": ["{summary}"], "detail": ["{project}"]},
       "method": "create",
       "description": "Create a Jira issue. The description is markdown.",
       "properties": {
@@ -62,6 +67,7 @@
     },
     {
       "name": "jira_worklog",
+      "row": {"verb": "log", "icon": "clock", "target": ["{key}"], "detail": ["{time}"]},
       "method": "worklog",
       "description": "Log time spent on a Jira issue, e.g. time '1h 30m'.",
       "properties": {

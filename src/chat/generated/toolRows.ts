@@ -46,6 +46,12 @@ export const TOOL_ROWS = {
     bitbucket_pipelines: { verb: "list", icon: "run", target: ["{name} pipelines"], detail: ["{branch}", "{status}"] },
     bitbucket_pipeline: { verb: "read", icon: "run", target: ["pipeline {runId}"], detail: ["{name}"] },
     bitbucket_step_log: { verb: "logs", icon: "command", target: ["step {jobId}"], detail: ["“{grep}”"] },
+    jira_search: { verb: "search", icon: "search", target: ["{jql}"], detail: ["{site}"] },
+    jira_issue: { verb: "read", icon: "file", target: ["{key}"], detail: ["{site}"] },
+    jira_comment: { verb: "comment", icon: "pencil", target: ["{key}"], detail: ["{site}"] },
+    jira_transition: { verb: "move", icon: "refresh", target: ["{key} to {to}", "{key}"], detail: ["{site}"] },
+    jira_create: { verb: "create", icon: "pencil", target: ["{summary}"], detail: ["{project}"] },
+    jira_worklog: { verb: "log", icon: "clock", target: ["{key}"], detail: ["{time}"] },
     signoz_services: { verb: "service", icon: "activity", target: ["{service}", "all services"], detail: ["{show}"] },
     signoz_logs: {
         verb: "logs",
