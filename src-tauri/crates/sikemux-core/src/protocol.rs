@@ -586,6 +586,9 @@ pub struct ChatInfo {
     /// It finished a turn or asked for something while the person was not
     /// looking at it in the app.
     pub unread: bool,
+    /// When it last opened, started work, finished or asked for something,
+    /// in Unix milliseconds. Unknown for chats from before the core started.
+    pub active_at: Option<u64>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -1146,6 +1149,9 @@ pub struct SessionInfo {
     /// The agent finished or asked for something while the person was not
     /// looking at it in the app.
     pub unread: bool,
+    /// When the agent last started work, finished or asked for something, in
+    /// Unix milliseconds.
+    pub active_at: Option<u64>,
 }
 
 /// A task's launch request without its environment.

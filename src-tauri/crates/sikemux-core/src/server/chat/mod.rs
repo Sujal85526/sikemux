@@ -354,6 +354,7 @@ impl Chat {
             effort: self.launch.effort.clone(),
             asleep: false,
             unread: false,
+            active_at: None,
         }
     }
 
@@ -635,6 +636,7 @@ pub(crate) fn begin(
         launcher,
     };
     let (chat, queue) = core.chats.insert(core, launch_spec, origin)?;
+    core.seen.opened(chat.agent_id());
     if let Some(client) = subscriber {
         chat.feed.subscribe(client);
     }

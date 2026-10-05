@@ -511,19 +511,22 @@ impl Core {
             if let Some(agent_id) = &info.agent_id {
                 info.title = self.workspaces.title(agent_id);
                 info.unread = self.seen.unread(agent_id);
+                info.active_at = self.seen.active_at(agent_id);
             }
         }
         sessions
     }
 
-    /// The chats under the app's names, with whether the person has seen what
-    /// each last did.
+    /// The chats under the app's names, most recently active first, with
+    /// whether the person has seen what each last did.
     pub(crate) fn chat_infos(&self) -> Vec<crate::protocol::ChatInfo> {
         let mut chats = self.workspaces.listed(self.chats.list());
         for chat in &mut chats {
             chat.pending_permissions.sort();
             chat.unread = self.seen.unread(&chat.agent_id);
+            chat.active_at = self.seen.active_at(&chat.agent_id);
         }
+        chats.sort_by_key(|chat| std::cmp::Reverse(chat.active_at));
         chats
     }
 

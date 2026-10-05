@@ -252,6 +252,7 @@ impl Session {
             killed: self.is_killed(),
             title: None,
             unread: false,
+            active_at: None,
         }
     }
 }
