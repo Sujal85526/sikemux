@@ -2,11 +2,15 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 export type RunningUpdate = { id: string | null; createdAt: Date | null; embedded: boolean };
 
-/** The installed version, then the over-the-air update running on top of it, if any: `0.1.0 · update a1b2c3d (3 Oct)`. */
-export function versionLabel(version: string | null, update: RunningUpdate): string {
+/**
+ * The installed release and the commit of the code running on it: `0.1.0-nightly.5 · cef3bae`, or
+ * `0.1.0-nightly.5 · update 1b46d28 (6 Oct)` once an over-the-air update replaced the installed code.
+ */
+export function versionLabel(version: string | null, commit: string | null, update: RunningUpdate): string {
   const installed = version ?? 'Unknown version';
-  if (update.embedded || !update.id) return installed;
-  const short = update.id.replace(/-/g, '').slice(0, 7).toLowerCase();
+  const updated = !update.embedded && Boolean(update.id);
+  if (!updated) return commit ? `${installed} · ${commit}` : installed;
+  const name = commit ?? (update.id ?? '').replace(/-/g, '').slice(0, 7).toLowerCase();
   const date = update.createdAt ? ` (${update.createdAt.getDate()} ${MONTHS[update.createdAt.getMonth()]})` : '';
-  return `${installed} · update ${short}${date}`;
+  return `${installed} · update ${name}${date}`;
 }

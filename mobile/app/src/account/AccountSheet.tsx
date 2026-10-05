@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth, useUser } from '@clerk/expo';
-import { nativeApplicationVersion } from 'expo-application';
+import { nativeApplicationVersion, nativeBuildVersion } from 'expo-application';
 import * as Updates from 'expo-updates';
 
 import { AccountProblem, removePhone } from '@/account/api';
@@ -12,6 +12,7 @@ import { signOutHere } from '@/account/leave';
 import { versionLabel } from '@/account/versionLabel';
 import { useDeviceId } from '@/device/identity';
 import { shortKey } from '@/devices/paired';
+import { versionFromBuild } from '@/network/versions';
 import { phoneName } from '@/device/name';
 import { NotificationsRow } from '@/notify/NotificationsRow';
 import { stopPush } from '@/notify/token';
@@ -20,7 +21,7 @@ import { Button } from '@/ui/parts';
 import { Sheet } from '@/ui/Sheet';
 import { fonts, type Palette, typeFor, useColors, useStyles, useType } from '@/ui/theme';
 
-const VERSION = versionLabel(nativeApplicationVersion, {
+const VERSION = versionLabel(versionFromBuild(nativeBuildVersion) ?? nativeApplicationVersion, process.env.EXPO_PUBLIC_COMMIT ?? null, {
   id: Updates.updateId,
   createdAt: Updates.createdAt,
   embedded: Updates.isEmbeddedLaunch,
