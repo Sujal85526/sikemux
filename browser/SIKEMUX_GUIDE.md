@@ -447,6 +447,14 @@ When an action makes the page open a tab of its own, as a link with a new
 window target does, the result lists it under `openedTabs`, and that tab is
 now the current one. Tabs do not survive a restart of Sikemux.
 
+Files a page downloads are saved to `~/Downloads`. When your click, press or
+navigation starts one, the result lists it under `downloads` with its `path`,
+`state` and `bytes`, after waiting up to 15 seconds for it to finish. A
+download that starts later shows up in the next result, such as a
+`browser_wait`, and `browser_state` lists the tabs' recent downloads. Click the
+page's own download link and move the file from that path; never read a file's
+bytes back through `browser_evaluate`.
+
 ## browser-evidence: Screenshots, drawings and recordings
 
 `browser_screenshot` returns an image of the visible part of the tab. Use it

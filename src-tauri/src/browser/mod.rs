@@ -11,6 +11,7 @@ pub mod agents;
 mod burst;
 mod discard;
 mod documents;
+mod downloads;
 mod favicon;
 mod history;
 #[cfg(target_os = "macos")]
@@ -342,6 +343,7 @@ struct AgentBrowser {
     /// What each tab's view was last given, so a swipe moving one page every
     /// frame does not also re-place every tab parked behind it.
     applied: HashMap<String, (viewport::Layout, bool)>,
+    downloads: downloads::DownloadLog,
 }
 
 impl AgentBrowser {
@@ -733,16 +735,39 @@ impl BrowserManager {
             }
             _ => return,
         };
-        let _ = app.emit(
-            BROWSER_DOWNLOAD_EVENT,
-            BrowserDownload {
-                agent_id: agent_id.to_owned(),
-                tab_id: tab_id.to_owned(),
-                url: url.to_string(),
-                path: path.to_string_lossy().into_owned(),
-                state,
-            },
-        );
+        let bytes = (state == DownloadState::Finished)
+            .then(|| std::fs::metadata(&path).ok().map(|meta| meta.len()))
+            .flatten();
+        let download = BrowserDownload {
+            agent_id: agent_id.to_owned(),
+            tab_id: tab_id.to_owned(),
+            url: url.to_string(),
+            path: path.to_string_lossy().into_owned(),
+            state,
+        };
+        if let Some(agent) = self.lock().get_mut(agent_id) {
+            agent.downloads.note(&download, bytes);
+        }
+        let _ = app.emit(BROWSER_DOWNLOAD_EVENT, download);
+    }
+
+    /// The number the agent's next download will get, to find later which
+    /// downloads an action started.
+    pub fn download_mark(&self, agent_id: &str) -> u64 {
+        self.lock()
+            .get(agent_id)
+            .map_or(0, |agent| agent.downloads.mark())
+    }
+
+    pub fn downloads_since(&self, agent_id: &str, mark: u64) -> Vec<downloads::SavedFile> {
+        self.lock()
+            .get(agent_id)
+            .map(|agent| agent.downloads.since(mark))
+            .unwrap_or_default()
+    }
+
+    pub fn recent_downloads(&self, agent_id: &str) -> Vec<downloads::SavedFile> {
+        self.downloads_since(agent_id, 0)
     }
 
     fn dialogs_lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, PageDialog>> {

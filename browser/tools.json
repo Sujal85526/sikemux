@@ -84,7 +84,7 @@
       "name": "browser_state",
       "row": {"verb": "read", "kind": "read", "icon": "eye", "target": ["{selector}"]},
       "method": "browser.state",
-      "description": "Read the tab: url, title, numbered elements, text and tabs. A selector reads only the text of the parts it matches.",
+      "description": "Read the tab: url, title, numbered elements, text, tabs and recent downloads. A selector reads only the text of the parts it matches.",
       "properties": {
         "fullText": {
           "type": "boolean"
