@@ -22,9 +22,9 @@ mod recording;
 pub mod tools;
 mod viewport;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use std::path::{Path, PathBuf};
@@ -59,6 +59,9 @@ const ACTING_LINGER: Duration = Duration::from_secs(3);
 /// A hidden page runs no animation frames, and React reveals streamed content
 /// on one, so a parked tab stays shown this long after it finishes loading.
 const LOAD_SETTLE: Duration = Duration::from_secs(2);
+/// The longest a reloaded tab waits off screen for its page before showing
+/// whatever it has so far.
+const REVEAL_LIMIT: Duration = Duration::from_secs(3);
 
 /// WebKit's own agent string names no browser at all, and sites answer that
 /// with an "unsupported browser" page, so tabs — and the fetch that goes after
@@ -213,6 +216,14 @@ pub struct TabStrip {
     pub acting: HashMap<String, u64>,
     /// Tabs that finished loading a moment ago, keyed by mark like `acting`.
     pub settling: HashMap<String, u64>,
+    /// Tabs whose page was let go to free memory. Their view is built again
+    /// at the same address once they are needed.
+    pub unloaded: HashSet<String>,
+    /// Tabs built again that stay off screen until their page has loaded, so
+    /// the pane keeps its last picture rather than flashing a blank page.
+    pub revealing: HashMap<String, u64>,
+    /// Since when each tab has been out of sight and idle.
+    pub hidden_since: HashMap<String, Instant>,
 }
 
 impl TabStrip {
@@ -232,6 +243,9 @@ impl TabStrip {
         self.pages.remove(id);
         self.acting.remove(id);
         self.settling.remove(id);
+        self.unloaded.remove(id);
+        self.revealing.remove(id);
+        self.hidden_since.remove(id);
         if self.active.as_deref() == Some(id) {
             self.active = self
                 .order
@@ -273,6 +287,14 @@ impl TabStrip {
             return false;
         }
         self.settling.remove(tab);
+        true
+    }
+
+    pub fn release_revealing(&mut self, tab: &str, mark: u64) -> bool {
+        if self.revealing.get(tab) != Some(&mark) {
+            return false;
+        }
+        self.revealing.remove(tab);
         true
     }
 
@@ -322,8 +344,23 @@ struct AgentBrowser {
 }
 
 impl AgentBrowser {
+    /// Unloaded tabs that must have their page back: the one the pane shows,
+    /// and any an agent is working in.
+    fn needed_back(&self) -> Vec<String> {
+        self.strip
+            .unloaded
+            .iter()
+            .filter(|id| {
+                (self.bounds.is_some() && self.strip.active.as_deref() == Some(id.as_str()))
+                    || self.strip.acting.contains_key(id.as_str())
+            })
+            .cloned()
+            .collect()
+    }
+
     fn layout_of(&self, tab_id: &str) -> viewport::Layout {
-        let shown = self.strip.active.as_deref() == Some(tab_id);
+        let shown = self.strip.active.as_deref() == Some(tab_id)
+            && !self.strip.revealing.contains_key(tab_id);
         viewport::layout(
             self.bounds.as_ref().filter(|_| shown),
             self.viewports.get(tab_id).copied(),
@@ -348,6 +385,7 @@ pub struct BrowserManager {
     local_files: local_files::LocalFiles,
     #[cfg(target_os = "macos")]
     recordings: Mutex<HashMap<String, recording::Session>>,
+    app: OnceLock<AppHandle>,
 }
 
 impl BrowserManager {
@@ -373,21 +411,50 @@ impl BrowserManager {
         let url = normalize_url(url.unwrap_or_default());
         validate_url(&url)?;
         let parsed = Url::parse(&url).map_err(|_| AppError::BadArg("invalid browser url"))?;
-        let window = app
-            .get_window("main")
-            .ok_or_else(|| AppError::Window("main window is not open".into()))?;
         let tab_id = format!(
             "browser-{}-{}",
             label_safe(agent_id),
             self.next_tab.fetch_add(1, Ordering::AcqRel)
         );
+        let webview = self.create_view(app, agent_id, &tab_id, parsed, USER_AGENT)?;
+        {
+            let mut agents = self.lock();
+            let agent = agents.entry(agent_id.to_owned()).or_default();
+            agent.strip.insert(
+                tab_id.clone(),
+                TabPage {
+                    url: url.clone(),
+                    loading: url != BLANK_URL,
+                    ..TabPage::default()
+                },
+            );
+            agent.views.insert(tab_id.clone(), webview);
+        }
+        self.relayout(agent_id);
+        self.announce(app);
+        Ok(tab_id)
+    }
+
+    /// Adds the tab's page to the main window, parked off screen.
+    fn create_view(
+        &self,
+        app: &AppHandle,
+        agent_id: &str,
+        tab_id: &str,
+        url: Url,
+        user_agent: &str,
+    ) -> AppResult<Webview> {
+        let _ = self.app.set(app.clone());
+        let window = app
+            .get_window("main")
+            .ok_or_else(|| AppError::Window("main window is not open".into()))?;
         let (width, height) = self
             .lock()
             .get(agent_id)
             .and_then(|agent| agent.seen)
             .unwrap_or(PARKED_SIZE);
 
-        let builder = self.tab_builder(app, agent_id, &tab_id, parsed);
+        let builder = self.tab_builder(app, agent_id, tab_id, url, user_agent);
         let webview = window
             .add_child(
                 builder,
@@ -398,7 +465,7 @@ impl BrowserManager {
         let _ = webview.hide();
         #[cfg(target_os = "macos")]
         {
-            let (app_handle, agent, tab) = (app.clone(), agent_id.to_owned(), tab_id.clone());
+            let (app_handle, agent, tab) = (app.clone(), agent_id.to_owned(), tab_id.to_owned());
             let _ = webview.with_webview(move |platform| {
                 let (moved_agent, moved_tab) = (agent.clone(), tab.clone());
                 let (dialog_app, dialog_tab) = (app_handle.clone(), tab.clone());
@@ -460,22 +527,90 @@ impl BrowserManager {
             });
         }
         self.install_shortcuts(app);
-        {
+        Ok(webview)
+    }
+
+    /// Builds an unloaded tab's view again at the address it was on. The
+    /// back and forward history went with the old page.
+    fn restore(&self, agent_id: &str, tab_id: &str) -> Option<Webview> {
+        let app = self.app.get()?;
+        let (url, user_agent) = {
             let mut agents = self.lock();
-            let agent = agents.entry(agent_id.to_owned()).or_default();
-            agent.strip.insert(
-                tab_id.clone(),
-                TabPage {
-                    url: url.clone(),
-                    loading: url != BLANK_URL,
-                    ..TabPage::default()
-                },
-            );
-            agent.views.insert(tab_id.clone(), webview);
+            let agent = agents.get_mut(agent_id)?;
+            if !agent.strip.unloaded.remove(tab_id) {
+                return agent.views.get(tab_id).cloned();
+            }
+            let url = agent.strip.pages.get(tab_id)?.url.clone();
+            let user_agent = agent
+                .viewports
+                .get(tab_id)
+                .and_then(|fixed| fixed.user_agent())
+                .unwrap_or(USER_AGENT);
+            (url, user_agent)
+        };
+        let parsed = Url::parse(&url)
+            .ok()
+            .filter(tab_may_load)
+            .unwrap_or_else(|| Url::parse(BLANK_URL).expect("about:blank parses"));
+        let blank = parsed.as_str() == BLANK_URL;
+        let view = match self.create_view(app, agent_id, tab_id, parsed, user_agent) {
+            Ok(view) => view,
+            Err(error) => {
+                eprintln!("Sikemux could not reload browser tab {tab_id}: {error}");
+                if let Some(agent) = self.lock().get_mut(agent_id) {
+                    agent.strip.unloaded.insert(tab_id.to_owned());
+                }
+                return None;
+            }
+        };
+        let mark = self.next_mark.fetch_add(1, Ordering::AcqRel);
+        let kept = {
+            let mut agents = self.lock();
+            match agents
+                .get_mut(agent_id)
+                .filter(|agent| agent.strip.pages.contains_key(tab_id))
+            {
+                Some(agent) => {
+                    if let Some(page) = agent.strip.pages.get_mut(tab_id) {
+                        page.loading = !blank;
+                    }
+                    if !blank {
+                        agent.strip.revealing.insert(tab_id.to_owned(), mark);
+                    }
+                    agent.views.insert(tab_id.to_owned(), view.clone());
+                    true
+                }
+                None => false,
+            }
+        };
+        if !kept {
+            drop_view(view);
+            return None;
         }
-        self.relayout(agent_id);
         self.announce(app);
-        Ok(tab_id)
+        let (app, agent_id, tab_id) = (app.clone(), agent_id.to_owned(), tab_id.to_owned());
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(REVEAL_LIMIT).await;
+            let manager = app.state::<BrowserManager>();
+            let released = manager
+                .lock()
+                .get_mut(&agent_id)
+                .is_some_and(|agent| agent.strip.release_revealing(&tab_id, mark));
+            if released {
+                manager.relayout(&agent_id);
+            }
+        });
+        Some(view)
+    }
+
+    /// Whether the agent's shown tab has no live page yet: unloaded, or
+    /// still loading again off screen.
+    pub fn reloading(&self, agent_id: &str) -> bool {
+        self.lock().get(agent_id).is_some_and(|agent| {
+            agent.strip.active.as_ref().is_some_and(|id| {
+                agent.strip.unloaded.contains(id) || agent.strip.revealing.contains_key(id)
+            })
+        })
     }
 
     fn tab_builder(
@@ -484,6 +619,7 @@ impl BrowserManager {
         agent_id: &str,
         tab_id: &str,
         url: Url,
+        user_agent: &str,
     ) -> WebviewBuilder<tauri::Wry> {
         let builder = WebviewBuilder::new(tab_id, WebviewUrl::External(url))
             .accept_first_mouse(true)
@@ -492,7 +628,9 @@ impl BrowserManager {
             .initialization_script(RECORDER_SCRIPT)
             .on_navigation(tab_may_load);
         #[cfg(target_os = "macos")]
-        let builder = builder.user_agent(USER_AGENT);
+        let builder = builder.user_agent(user_agent);
+        #[cfg(not(target_os = "macos"))]
+        let _ = user_agent;
 
         let (load_app, load_agent, load_tab) =
             (app.clone(), agent_id.to_owned(), tab_id.to_owned());
@@ -721,7 +859,10 @@ impl BrowserManager {
     fn settle(&self, app: &AppHandle, agent_id: &str, tab_id: &str) {
         let mark = self.next_mark.fetch_add(1, Ordering::AcqRel);
         match self.lock().get_mut(agent_id) {
-            Some(agent) => agent.strip.settle(tab_id, mark),
+            Some(agent) => {
+                agent.strip.settle(tab_id, mark);
+                agent.strip.revealing.remove(tab_id);
+            }
             None => return,
         }
         self.relayout(agent_id);
@@ -927,20 +1068,38 @@ impl BrowserManager {
             .and_then(|agent| agent.viewports.get(tab_id).copied())
     }
 
+    /// The agent's shown tab, with its page loading again if it was unloaded.
     pub fn active_view(&self, agent_id: &str) -> AppResult<(String, Webview)> {
         validate_agent_id(agent_id)?;
-        self.lock()
+        let no_tab = || AppError::BadArg("this agent has no open browser tab");
+        let (id, view) = self
+            .lock()
             .get(agent_id)
             .and_then(|agent| {
                 let id = agent.strip.active.clone()?;
-                let view = agent.views.get(&id)?.clone();
+                let view = agent.views.get(&id).cloned();
                 Some((id, view))
             })
-            .ok_or(AppError::BadArg("this agent has no open browser tab"))
+            .ok_or_else(no_tab)?;
+        if let Some(view) = view {
+            return Ok((id, view));
+        }
+        let view = self.restore(agent_id, &id).ok_or_else(no_tab)?;
+        self.relayout(agent_id);
+        Ok((id, view))
     }
 
     /// Show the active tab inside the pane's page area and park the rest.
     fn relayout(&self, agent_id: &str) {
+        let needed = self
+            .lock()
+            .get(agent_id)
+            .map(AgentBrowser::needed_back)
+            .unwrap_or_default();
+        for tab_id in needed {
+            self.restore(agent_id, &tab_id);
+        }
+        let now = Instant::now();
         let plan: Vec<(Webview, viewport::Layout, bool)> = {
             let mut agents = self.lock();
             let Some(agent) = agents.get_mut(agent_id) else {
@@ -954,6 +1113,13 @@ impl BrowserManager {
                     (id.clone(), view.clone(), layout, agent.strip.awake(id))
                 })
                 .collect();
+            for (id, _, layout, awake) in &wanted {
+                if *awake || matches!(layout, viewport::Layout::Shown { .. }) {
+                    agent.strip.hidden_since.remove(id);
+                } else {
+                    agent.strip.hidden_since.entry(id.clone()).or_insert(now);
+                }
+            }
             let views = &agent.views;
             agent.applied.retain(|id, _| views.contains_key(id));
             wanted
@@ -1497,6 +1663,11 @@ pub async fn browser_page_still(
     manager: State<'_, BrowserManager>,
     agent_id: String,
 ) -> AppResult<tauri::ipc::Response> {
+    if manager.reloading(&agent_id) {
+        return Err(AppError::Window(
+            "the page is loading again and keeps its last picture".into(),
+        ));
+    }
     let (_, view) = manager.active_view(&agent_id)?;
     #[cfg(target_os = "macos")]
     {

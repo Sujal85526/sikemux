@@ -46,7 +46,11 @@ pub fn execute(app: &AppHandle, request: &HarnessRequest) -> Result<Value, Strin
     let mut marks = Vec::new();
     if acts_on_a_tab {
         manager.announce_acting(app, agent_id);
+        let reloading = manager.reloading(agent_id);
         marks.extend(manager.mark_acting(app, agent_id));
+        if reloading {
+            wait_for_reload(&manager, agent_id);
+        }
     }
     let before = tab_ids(&manager, agent_id);
     let sends_input = matches!(
@@ -84,6 +88,13 @@ pub fn execute(app: &AppHandle, request: &HarnessRequest) -> Result<Value, Strin
         }
     }
     result
+}
+
+/// An unloaded tab loads its page again before the agent's tools touch it.
+fn wait_for_reload(manager: &BrowserManager, agent_id: &str) {
+    if let Ok((tab_id, _)) = manager.active_view(agent_id) {
+        tauri::async_runtime::block_on(manager.wait_until_loaded(agent_id, &tab_id, LOAD_TIMEOUT));
+    }
 }
 
 fn tab_ids(manager: &BrowserManager, agent_id: &str) -> Vec<String> {
@@ -129,6 +140,10 @@ async fn run(
             manager
                 .switch_tab(app, agent_id, &id)
                 .map_err(|error| error.to_string())?;
+            if manager.reloading(agent_id) {
+                let _ = manager.active_view(agent_id);
+                manager.wait_until_loaded(agent_id, &id, LOAD_TIMEOUT).await;
+            }
             read_state(&manager, agent_id, "changes", false).await
         }
         "browser.tab.close" => {
