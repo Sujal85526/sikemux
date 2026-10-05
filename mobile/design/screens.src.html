@@ -175,15 +175,15 @@
   /* ---------- chat pane ---------- */
   .chat { flex: 1; min-height: 0; overflow: hidden; padding: 6px 18px 0; display: flex; flex-direction: column; justify-content: flex-end; }
   .chat > * { flex: none; }
-  .earlier { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 0 6px; font-size: 13px; color: var(--text-tertiary); }
-  .msg-user { align-self: flex-end; max-width: 84%; margin: 12px 0 8px; padding: 9px 13px; border-radius: 12px; border: 1px solid color-mix(in oklab, var(--line) 80%, transparent); background: color-mix(in oklab, var(--rail-2) 72%, transparent); color: var(--ink); font-size: 15px; line-height: 1.6; }
+  .earlier { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 0 6px; font-size: 12.5px; color: var(--text-tertiary); }
+  .msg-user { align-self: flex-end; max-width: 84%; margin: 12px 0 8px; padding: 9px 13px; border-radius: 12px; border: 1px solid color-mix(in oklab, var(--line) 80%, transparent); background: color-mix(in oklab, var(--rail-2) 72%, transparent); color: var(--ink); font-size: 14px; line-height: 1.57; }
   code.chip { font-family: var(--mono); font-size: .86em; padding: 1px 5px; border-radius: 5px; background: var(--acc-soft); color: color-mix(in oklab, var(--acc) 74%, var(--ink)); }
-  .prose { color: var(--ink); font-size: 15.5px; line-height: 1.62; margin: 6px 0 8px; }
-  .thought { color: var(--ink-faint); font-size: 13.5px; line-height: 1.6; font-style: italic; margin: 8px 0; }
+  .prose { color: var(--ink); font-size: 14.5px; line-height: 1.59; margin: 6px 0 8px; }
+  .thought { color: var(--ink-faint); font-size: 12.5px; line-height: 1.56; font-style: italic; margin: 8px 0; }
 
-  .tools { font-family: var(--mono); font-size: 12px; margin: 6px 0; }
-  .tools-sum { display: inline-flex; align-items: center; gap: 8px; height: 26px; color: var(--ink-dim); font-family: var(--ui); font-size: 13px; }
-  .tools-sum .time { font-family: var(--mono); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+  .tools { font-family: var(--mono); font-size: 11.5px; margin: 6px 0; }
+  .tools-sum { display: inline-flex; align-items: center; gap: 8px; height: 26px; color: var(--ink-dim); font-family: var(--ui); font-size: 12.5px; }
+  .tools-sum .time { font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; }
   .tools-sum .ico { opacity: .7; }
   .tools-sum.open .ico { transform: rotate(90deg); }
   .tools-body { margin-left: 6px; padding: 2px 0; }
@@ -195,7 +195,7 @@
   .tool:last-child::before { display: none; }
   .tool .kind { font-weight: 400; }
   .tool .target { color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .tool .end { font-size: 11px; color: var(--ink-dim); display: flex; gap: 6px; font-variant-numeric: tabular-nums; }
+  .tool .end { font-size: 10.5px; color: var(--ink-dim); display: flex; gap: 6px; font-variant-numeric: tabular-nums; }
   .k-run { color: color-mix(in oklab, var(--cmd) 70%, var(--ink-dim)); }
   .k-read { color: color-mix(in oklab, var(--git-renamed) 76%, var(--ink-dim)); }
   .k-edit { color: color-mix(in oklab, var(--git-modified) 76%, var(--ink-dim)); }
@@ -203,10 +203,10 @@
   .tool.running .target { color: transparent; background: linear-gradient(90deg, var(--ink-faint) 0%, var(--ink) 45%, var(--ink-faint) 90%) 0 0 / 200% 100%; -webkit-background-clip: text; background-clip: text; animation: shimmer 2.2s linear infinite; }
   .tool.running .ico { animation: breathe 1.5s ease-in-out infinite; }
 
-  .activity { display: flex; align-items: center; gap: 9px; margin: 14px 0 6px; font-size: 13px; color: var(--ink-faint); }
+  .activity { display: flex; align-items: center; gap: 9px; margin: 14px 0 6px; font-size: 12.5px; color: var(--ink-faint); }
   .activity .glyph { animation: breathe 1.5s ease-in-out infinite; }
   .activity .lbl { color: transparent; background: linear-gradient(90deg, var(--ink-faint) 0%, var(--ink) 45%, var(--ink-faint) 90%) 0 0 / 200% 100%; -webkit-background-clip: text; background-clip: text; animation: shimmer 2.2s linear infinite; }
-  .activity .el { font-family: var(--mono); font-size: 10.5px; color: color-mix(in oklab, var(--ink-faint) 68%, transparent); }
+  .activity .el { font-family: var(--mono); font-size: 10px; color: color-mix(in oklab, var(--ink-faint) 68%, transparent); }
   @keyframes shimmer { from { background-position: 200% 0; } to { background-position: 0 0; } }
   @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
 
@@ -225,7 +225,7 @@
   .composer-wrap { flex: none; padding: 8px 10px 30px; }
   .composer { padding: 6px; border-radius: 16px; border: 1px solid var(--border); background: color-mix(in oklab, var(--surface-raised) 55%, var(--surface-sunken)); }
   .composer.focus { border-color: var(--border-selected); }
-  .composer .ta { padding: 9px 10px 4px; min-height: 44px; font-size: 16px; line-height: 1.5; color: var(--ink); }
+  .composer .ta { padding: 9px 10px 4px; min-height: 44px; font-size: 14.5px; line-height: 1.38; color: var(--ink); }
   .composer .ta.ph { color: var(--ink-faint); }
   .caret { display: inline-block; width: 2px; height: 19px; background: var(--acc); vertical-align: -4px; margin-left: 1px; animation: blink 1s steps(1) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
