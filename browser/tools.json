@@ -82,7 +82,7 @@
     },
     {
       "name": "browser_state",
-      "row": {"verb": "read", "kind": "read", "icon": "eye", "target": ["{selector}", "the page"]},
+      "row": {"verb": "read", "kind": "read", "icon": "eye", "target": ["{selector}"]},
       "method": "browser.state",
       "description": "Read the tab: url, title, numbered elements, text and tabs. A selector reads only the text of the parts it matches.",
       "properties": {
@@ -544,7 +544,7 @@
     },
     {
       "name": "browser_screenshot",
-      "row": {"verb": "shot", "kind": "read", "icon": "image", "target": ["{selector}", "“{text}”", "element {index}", "the page"]},
+      "row": {"verb": "shot", "kind": "read", "icon": "image", "target": ["{selector}", "“{text}”", "element {index}"]},
       "method": "browser.screenshot",
       "description": "Capture the tab, the whole page, or with element numbers.",
       "properties": {
@@ -632,7 +632,7 @@
     },
     {
       "name": "browser_wait",
-      "row": {"verb": "wait", "kind": "think", "icon": "clock", "target": ["for “{text}”", "for “{textGone}” to go", "for {selector}", "for {selectorGone} to go", "for {url}", "{ms} ms", "for the page"]},
+      "row": {"verb": "wait", "kind": "think", "icon": "clock", "target": ["for “{text}”", "for “{textGone}” to go", "for {selector}", "for {selectorGone} to go", "for {url}", "{ms}"]},
       "method": "browser.wait",
       "description": "Wait for text, a selector, a url or a quiet network.",
       "properties": {

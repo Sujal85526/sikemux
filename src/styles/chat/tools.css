@@ -224,6 +224,12 @@ button.chat-tool:hover > .chat-tool-line::after,
     white-space: nowrap;
 }
 
+/* A call with nothing to name, like a screenshot of the whole page, would
+   otherwise leave an empty column and a double gap before its time. */
+.chat-tool-target:empty {
+    display: none;
+}
+
 .chat-tool-arg {
     margin-left: 1ch;
     color: var(--ink-dim);

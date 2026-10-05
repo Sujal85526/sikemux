@@ -1,4 +1,5 @@
 import { basename } from "../lib/paths";
+import { durationLabel } from "./durationLabel";
 import { TOOL_ROWS } from "./generated/toolRows";
 import type { AcpToolCall } from "./types";
 
@@ -68,7 +69,7 @@ function valueText(key: string, value: unknown): string | null {
         const line = value.split("\n")[0].trim();
         return line ? shorten(line) : null;
     }
-    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+    if (typeof value === "number" && Number.isFinite(value)) return /(^ms|Ms)$/.test(key) ? durationLabel(value) : String(value);
     if (!Array.isArray(value) || value.length === 0) return null;
     if (value.every((item) => typeof item === "string")) return value.map(shorten).join(", ");
     return String(value.length);

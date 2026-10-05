@@ -132,6 +132,11 @@ describe("our own tools", () => {
         expect(toolTarget(call(act.title, { rawInput: toolRowArguments(act) }))).toBe("2-step sequence");
     });
 
+    it("say nothing rather than fill in a default, and give waits as durations", () => {
+        expect(toolTarget(call("mcp__sikemux-tools__browser_screenshot", { rawInput: {} }))).toBe("");
+        expect(toolTarget(call("mcp__sikemux-tools__browser_wait", { rawInput: { ms: 4000 } }))).toBe("4s");
+    });
+
     it("are drawn for plugin tools too", () => {
         const logs = call("mcp__sikemux-tools__signoz_logs", { rawInput: { service: "api", text: "timeout" } });
         expect([toolKind(logs), toolTarget(logs), toolDetail(logs)]).toEqual(["logs", "api", "“timeout”"]);

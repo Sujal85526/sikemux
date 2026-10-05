@@ -4,7 +4,7 @@ import type { ToolRowSpec } from "../toolRows";
 export const TOOL_ROWS = {
     guide: { verb: "read", kind: "read", icon: "info", target: ["the guide: {topic}", "the guide"] },
     browser_navigate: { verb: "open", kind: "fetch", icon: "globe", target: ["{url}", "{go}"] },
-    browser_state: { verb: "read", kind: "read", icon: "eye", target: ["{selector}", "the page"] },
+    browser_state: { verb: "read", kind: "read", icon: "eye", target: ["{selector}"] },
     browser_find: { verb: "find", kind: "search", icon: "search", target: ["“{query}”"], detail: ["{role}"] },
     browser_click: {
         verb: "click",
@@ -40,14 +40,14 @@ export const TOOL_ROWS = {
         detail: ["{method}"],
     },
     browser_console: { verb: "read", kind: "read", icon: "info", target: ["the page console"] },
-    browser_screenshot: { verb: "shot", kind: "read", icon: "image", target: ["{selector}", "“{text}”", "element {index}", "the page"] },
+    browser_screenshot: { verb: "shot", kind: "read", icon: "image", target: ["{selector}", "“{text}”", "element {index}"] },
     browser_annotate: { verb: "mark", kind: "edit", icon: "pointer", target: ["element {index}", "{x}, {y}", "clear"], detail: ["{text}"] },
     browser_record: { verb: "record", kind: "execute", icon: "run", target: ["{action}"], detail: ["{path}"] },
     browser_wait: {
         verb: "wait",
         kind: "think",
         icon: "clock",
-        target: ["for “{text}”", "for “{textGone}” to go", "for {selector}", "for {selectorGone} to go", "for {url}", "{ms} ms", "for the page"],
+        target: ["for “{text}”", "for “{textGone}” to go", "for {selector}", "for {selectorGone} to go", "for {url}", "{ms}"],
     },
     browser_switch_tab: { verb: "switch", kind: "move", icon: "window", target: ["tab {tabId}"] },
     browser_close_tab: { verb: "close", kind: "edit", icon: "window", target: ["tab {tabId}"] },
