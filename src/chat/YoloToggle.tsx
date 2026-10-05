@@ -20,7 +20,6 @@ export function YoloToggle({ agent, relaunches, disabled = false }: { agent: Age
                     : `Safe mode — ${agent.type} asks before it acts. ${press}goes YOLO${restart}.`
             }
             onClick={() => cmd.toggleAgentSkipPermissions(agent.id)}>
-            {on && <span className="yolo-ring" aria-hidden="true" />}
             <span className="yolo-glyph" aria-hidden="true">
                 {on ? <IconShieldBolt size={12} /> : <IconShield size={12} />}
             </span>

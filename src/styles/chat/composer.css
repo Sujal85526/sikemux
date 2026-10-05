@@ -178,7 +178,7 @@
 }
 
 /* Beside the borderless pickers the toggle is text too: the rainbow word
-   carries YOLO, and the ring and key hint stay in the pane header. */
+   carries YOLO, and the key hint stays in the pane header. */
 .chat-composer-bar .yolo-toggle {
     padding: 0 11px;
     border-color: transparent;
@@ -193,7 +193,6 @@
     background: color-mix(in srgb, var(--ink) 7%, transparent);
 }
 
-.chat-composer-bar .yolo-ring,
 .chat-composer-bar .yolo-hint {
     display: none;
 }
@@ -444,12 +443,6 @@
 
     .chat-context-fill {
         transition: none;
-    }
-
-    .yolo-toggle.on .yolo-ring::before,
-    .yolo-toggle.on .yolo-label,
-    .yolo-toggle.on .yolo-glyph {
-        animation: none;
     }
 }
 
