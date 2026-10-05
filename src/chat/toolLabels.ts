@@ -1,6 +1,6 @@
 import { basename } from "../lib/paths";
 import { safeWebUrl } from "../terminal/interactions";
-import { sikemuxToolRow, toolArguments } from "./toolRows";
+import { rowArguments, sikemuxToolRow, toolArguments } from "./toolRows";
 import type { AcpToolCall, ChatMessage } from "./types";
 
 // Splits `mcp__server__tool` so the server name can be de-emphasized.
@@ -76,6 +76,14 @@ export function toolDetail(tool: AcpToolCall): string | null {
     if (toolLabel(tool.title).scope === undefined) return null;
     const first = Object.values(toolArguments(tool)).find((value) => typeof value === "string" && value.trim() && !value.includes("\n"));
     return typeof first === "string" && first.length <= 120 ? first.trim() : null;
+}
+
+// What of a call's arguments its row shows, which outlives the rest of what it was handed.
+export function toolRowArguments(tool: AcpToolCall): Record<string, string> | null {
+    const row = rowArguments(tool);
+    if (row) return row;
+    const detail = toolDetail(tool);
+    return detail ? { detail } : null;
 }
 
 export function toolUrl(target: string): { before: string; raw: string; url: string; after: string } | null {

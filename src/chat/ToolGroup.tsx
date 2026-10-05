@@ -78,7 +78,8 @@ export function ToolGroup({ tools, live }: { tools: Extract<ChatPart, { kind: "t
         0,
     );
     /* One column for every call in the run, as wide as the longest name in it:
-       a run of reads stays tight, one that called an MCP server gets the room. */
+       a run of reads stays tight, one that called an MCP server gets the room.
+       The extra pixel is for layout rounding, which otherwise cuts an exact fit. */
     const kindWidth = Math.min(16, Math.max(4, ...tools.map((part) => toolKind(part.tool).length)));
     // While a call runs, the header says what Claude said it is for; a finished run counts its calls.
     const said = current ? toolDescription(current.tool) : null;
@@ -103,7 +104,7 @@ export function ToolGroup({ tools, live }: { tools: Extract<ChatPart, { kind: "t
                 <IconChevron size={10} className="chat-tools-chevron" />
             </button>
             {open && (
-                <div className="chat-tools-body" ref={foldToolBody} style={{ "--chat-kind": `${kindWidth}ch` } as CSSProperties}>
+                <div className="chat-tools-body" ref={foldToolBody} style={{ "--chat-kind": `calc(${kindWidth}ch + 1px)` } as CSSProperties}>
                     {tools.map((part) => (
                         <ToolRow key={part.id} part={part} />
                     ))}

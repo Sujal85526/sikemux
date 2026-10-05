@@ -7,7 +7,7 @@
   "tools": [
     {
       "name": "bitbucket_pulls",
-      "row": {"verb": "list", "icon": "pull-request", "target": ["{name} pull requests"], "detail": ["{state}"]},
+      "row": {"verb": "list", "kind": "read", "icon": "pull-request", "target": ["{name} pull requests"], "detail": ["{state}"]},
       "method": "pulls",
       "description": "Pull requests, most recently updated first, with state, branches and reviewers. owner and name come from the git remote.",
       "properties": {
@@ -19,7 +19,7 @@
     },
     {
       "name": "bitbucket_pull_files",
-      "row": {"verb": "diff", "icon": "pull-request", "target": ["{name}#{number}"], "detail": ["{paths}"]},
+      "row": {"verb": "diff", "kind": "read", "icon": "pull-request", "target": ["{name}#{number}"], "detail": ["{paths}"]},
       "method": "pullFiles",
       "description": "The files a pull request changes, with status, line counts and any old path. Name paths for their diffs; a long diff comes in parts, with a note on the rest.",
       "properties": {
@@ -34,7 +34,7 @@
     },
     {
       "name": "bitbucket_comments",
-      "row": {"verb": "read", "icon": "pull-request", "target": ["comments on {name}#{number}"]},
+      "row": {"verb": "read", "kind": "read", "icon": "pull-request", "target": ["comments on {name}#{number}"]},
       "method": "comments",
       "description": "What people wrote on a pull request, oldest first.",
       "properties": {
@@ -46,7 +46,7 @@
     },
     {
       "name": "bitbucket_pipelines",
-      "row": {"verb": "list", "icon": "run", "target": ["{name} pipelines"], "detail": ["{branch}", "{status}"]},
+      "row": {"verb": "list", "kind": "read", "icon": "run", "target": ["{name} pipelines"], "detail": ["{branch}", "{status}"]},
       "method": "runs",
       "description": "Recent Pipelines runs, newest first, with status and conclusion.",
       "properties": {
@@ -62,7 +62,7 @@
     },
     {
       "name": "bitbucket_pipeline",
-      "row": {"verb": "read", "icon": "run", "target": ["pipeline {runId}"], "detail": ["{name}"]},
+      "row": {"verb": "read", "kind": "read", "icon": "run", "target": ["pipeline {runId}"], "detail": ["{name}"]},
       "method": "run",
       "description": "One pipeline with its steps and their status, to see which step failed.",
       "properties": {
@@ -74,7 +74,7 @@
     },
     {
       "name": "bitbucket_step_log",
-      "row": {"verb": "logs", "icon": "command", "target": ["step {jobId}"], "detail": ["“{grep}”"]},
+      "row": {"verb": "logs", "kind": "read", "icon": "command", "target": ["step {jobId}"], "detail": ["“{grep}”"]},
       "method": "jobLogExcerpt",
       "description": "The end of one pipeline step's log. Start with the default tail or grep for the error. truncated means earlier lines were left out.",
       "properties": {

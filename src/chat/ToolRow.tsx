@@ -155,9 +155,9 @@ export const ToolRow = memo(function ToolRow({ part }: { part: Extract<ChatPart,
     const [open, setOpen] = useState(false);
     const targetRef = useRef<HTMLSpanElement>(null);
     const tool = part.tool;
-    /* Our own tools say what they did, like the built-in ones; another MCP call
-       is named for the server it went to, whatever kind it claims. */
-    const rowKind = sikemuxToolRow(tool) ? "sikemux" : toolLabel(tool.title).scope !== undefined ? "mcp" : tool.kind;
+    /* Our own tools are coloured by the kind they declare, like the built-in
+       ones; another MCP call is named for the server it went to. */
+    const rowKind = sikemuxToolRow(tool)?.kind ?? (toolLabel(tool.title).scope !== undefined ? "mcp" : tool.kind);
     const { diff, output, failure } = part;
     const status = tool.status ?? "pending";
     const running = toolRunning(tool);

@@ -133,11 +133,17 @@ for (const entry of await readdir(pluginsPath, { withFileTypes: true })) {
     tools: JSON.parse(await readFile(path, "utf8")).tools ?? [],
   });
 }
-const icons = new Set(
-  [
-    ...(await readFile(rowIconsPath, "utf8")).matchAll(/^\s+\| "([a-z-]+)"/gmu),
-  ].map(([, icon]) => icon),
-);
+const rowTypes = await readFile(rowIconsPath, "utf8");
+const unionOf = (type) =>
+  new Set(
+    [
+      ...new RegExp(`export type ${type} =([^;]+);`, "u")
+        .exec(rowTypes)[1]
+        .matchAll(/"([a-z-]+)"/gu),
+    ].map(([, value]) => value),
+  );
+const icons = unionOf("ToolRowIcon");
+const kinds = unionOf("ToolRowKind");
 const described = [
   {
     where: "browser/tools.json",
@@ -160,11 +166,15 @@ for (const { where, tools } of described) {
     const { row } = tool;
     if (!row) fail('has no "row" saying how the chat pane draws it');
     const extra = Object.keys(row).filter(
-      (key) => !["verb", "icon", "target", "detail"].includes(key),
+      (key) => !["verb", "kind", "icon", "target", "detail"].includes(key),
     );
     if (extra.length > 0) fail(`row has unknown keys: ${extra.join(", ")}`);
     if (!/^[a-z]{2,8}$/u.test(row.verb ?? ""))
       fail("row verb must be one lowercase word of 2 to 8 letters");
+    if (!kinds.has(row.kind))
+      fail(
+        `row kind "${row.kind}" is not one of ${[...kinds].join(", ")} (src/chat/toolRows.ts)`,
+      );
     if (!icons.has(row.icon))
       fail(
         `row icon "${row.icon}" is not one of ${[...icons].join(", ")} (src/chat/toolRows.ts)`,

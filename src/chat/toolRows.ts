@@ -22,11 +22,15 @@ export type ToolRowIcon =
     | "stop"
     | "window";
 
+// The kinds the agent protocol gives its own calls, so ours take the same colours.
+export type ToolRowKind = "read" | "search" | "fetch" | "edit" | "move" | "delete" | "execute" | "think";
+
 /* Each tool's row is declared beside its schema, in browser/tools.json or a
    plugin's manifest. The first template whose every {argument} the call was
    given becomes the target; a template with none always matches. */
 export interface ToolRowSpec {
     verb: string;
+    kind: ToolRowKind;
     icon: ToolRowIcon;
     target: readonly string[];
     detail?: readonly string[];
@@ -34,6 +38,7 @@ export interface ToolRowSpec {
 
 export interface ToolRowText {
     verb: string;
+    kind: ToolRowKind;
     icon: ToolRowIcon;
     target: string;
     detail: string | null;
@@ -88,5 +93,21 @@ export function sikemuxToolRow(tool: AcpToolCall): ToolRowText | null {
     const args = toolArguments(tool);
     const target = fill(spec.target, args) ?? "";
     const detail = fill(spec.detail, args);
-    return { verb: spec.verb, icon: spec.icon, target, detail: detail && detail !== target ? detail : null };
+    return { verb: spec.verb, kind: spec.kind, icon: spec.icon, target, detail: detail && detail !== target ? detail : null };
+}
+
+/* A finished call lets go of what it was handed, so the arguments its row
+   names are kept as the short text the row shows. */
+export function rowArguments(tool: AcpToolCall): Record<string, string> | null {
+    const spec = rowSpec(tool.title);
+    if (!spec) return null;
+    const args = toolArguments(tool);
+    const kept: Record<string, string> = {};
+    for (const template of [...spec.target, ...(spec.detail ?? [])]) {
+        for (const [, key] of template.matchAll(/\{(\w+)\}/g)) {
+            const value = valueText(key, args[key]);
+            if (value !== null) kept[key] = value;
+        }
+    }
+    return kept;
 }

@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { activeToolLabel, activityLabel, toolDetail, toolKind, toolLabel, toolPath, toolRunning, toolTarget, toolUrl } from "./toolLabels";
+import {
+    activeToolLabel,
+    activityLabel,
+    toolDetail,
+    toolKind,
+    toolLabel,
+    toolPath,
+    toolRowArguments,
+    toolRunning,
+    toolTarget,
+    toolUrl,
+} from "./toolLabels";
 import type { AcpToolCall, ChatMessage, ChatPart } from "./types";
 
 const call = (title: string, extra: Partial<AcpToolCall> = {}): AcpToolCall => ({ toolCallId: "t1", title, ...extra });
@@ -111,6 +122,14 @@ describe("our own tools", () => {
     it("say what they are doing while they run", () => {
         expect(activityLabel(navigate({ url: "https://a.dev" }))).toBe("open https://a.dev");
         expect(activityLabel(navigate({ url: `https://a.dev/${"x".repeat(40)}` }))).toBe("open");
+    });
+
+    it("draw the same row from the arguments a finished call keeps", () => {
+        const live = call("mcp__sikemux-tools__browser_upload", { rawInput: { paths: ["/tmp/a.png"], index: 3, report: "full" } });
+        const kept = call(live.title, { rawInput: toolRowArguments(live) });
+        expect([toolTarget(kept), toolDetail(kept)]).toEqual([toolTarget(live), toolDetail(live)]);
+        const act = call("mcp__sikemux-tools__browser_act", { rawInput: { steps: [{ action: "click" }, { action: "press" }] } });
+        expect(toolTarget(call(act.title, { rawInput: toolRowArguments(act) }))).toBe("2-step sequence");
     });
 
     it("are drawn for plugin tools too", () => {
