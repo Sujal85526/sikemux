@@ -570,12 +570,12 @@
   .lock .stacked .notif { position: static; }
 
   /* the host's pane backdrop behind a device's screens, drawn by backdrop.js with the phone's shaders */
-  .flow.device .phone { isolation: isolate; }
-  .has-backdrop .flow.device .phone::before { content: ""; position: absolute; z-index: -1; left: 0; right: 0; top: 0; height: var(--backdrop-band); pointer-events: none;
+  .flow.on-host .phone > .status, .flow.on-host .phone > .screen { position: relative; }
+  .has-backdrop .flow.on-host .phone::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: var(--backdrop-band); pointer-events: none;
     background: var(--backdrop-art) top center / 100% 100% no-repeat; opacity: var(--backdrop-strength);
     -webkit-mask-image: linear-gradient(#000, rgba(0,0,0,.45) 40%, rgba(0,0,0,.08) 76%, transparent);
     mask-image: linear-gradient(#000, rgba(0,0,0,.45) 40%, rgba(0,0,0,.08) 76%, transparent); }
-  .backdrop-pick { position: fixed; z-index: 50; top: 16px; right: 16px; display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: 12px; border: 1px solid var(--border); background: color-mix(in oklab, var(--surface-overlay) 88%, transparent); backdrop-filter: blur(20px); font-size: 13px; }
+  .backdrop-pick { position: fixed; z-index: 50; bottom: 16px; right: 16px; display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: 12px; border: 1px solid var(--border); background: color-mix(in oklab, var(--surface-overlay) 88%, transparent); backdrop-filter: blur(20px); font-size: 13px; }
   .backdrop-pick > span { padding: 0 6px 0 4px; color: var(--text-tertiary); }
   .backdrop-pick button { height: 28px; padding: 0 11px; border-radius: 7px; border: 1px solid transparent; background: none; color: var(--text-secondary); font: inherit; cursor: pointer; }
   .backdrop-pick button:hover { background: var(--surface-hover); color: var(--text-primary); }
@@ -1005,7 +1005,7 @@
 </section>
 
 <!-- ================================================================ -->
-<section class="flow device">
+<section class="flow on-host">
   <h2>A device</h2>
   <p>The Mac's agent rail at phone size: a switch for agents or terminals, the provider filter, then what needs you lifted above everything else. Running agents keep the rail's green squares.</p>
   <div class="phones">
@@ -1101,7 +1101,7 @@
 </section>
 
 <!-- ================================================================ -->
-<section class="flow device">
+<section class="flow on-host">
   <h2>Project scope</h2>
   <p>The Mac's Projects header at phone size: one pill under the device scopes both Agents and Terminals to a project, the way picking a project on the Mac scopes its rail. It opens the same searchable sheet as New chat.</p>
   <div class="phones">
@@ -1187,7 +1187,7 @@
 </section>
 
 <!-- ================================================================ -->
-<section class="flow device">
+<section class="flow on-host">
   <h2>Starting a chat</h2>
   <p>The + at the top right was the hardest place to reach one-handed, so starting a chat moves to the bottom of the screen.</p>
   <div class="phones">
@@ -1222,7 +1222,7 @@
 </section>
 
 <!-- ================================================================ -->
-<section class="flow device">
+<section class="flow on-host">
   <h2>An agent</h2>
   <p>The Mac's chat pane, line for line: your messages in a bubble on the right, the agent's prose with no bubble, its thinking in faint italics, tool calls folded to "N tool calls" and opened as a tree with the coloured verbs, and the working line with the agent's logo breathing. The composer is the Mac's: attach, YOLO, model, effort, context ring, dictate, send or stop.</p>
   <div class="phones">
@@ -1496,7 +1496,7 @@
 </section>
 
 <!-- ================================================================ -->
-<section class="flow device">
+<section class="flow on-host">
   <h2>New chat</h2>
   <p>The Mac's empty chat: pick the agent from the same tiles, the project, and type into the same composer. Only launchers the host publishes appear.</p>
   <div class="phones">
@@ -1590,7 +1590,7 @@
 </section>
 
 <!-- ================================================================ -->
-<section class="flow device">
+<section class="flow on-host">
   <h2>A terminal</h2>
   <p>The host's own terminal in xterm.js, with a key row for what the phone keyboard lacks.</p>
   <div class="phones">
