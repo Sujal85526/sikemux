@@ -114,7 +114,7 @@ export const DEFAULT_GIT_VIEW: GitPaneView = {
     selected: { files: 0, commits: 0, branches: 0 },
     openRemote: "origin",
     leftWidth: null,
-    historyOpen: false,
+    historyOpen: true,
     historyHeight: null,
     repo: null,
 };

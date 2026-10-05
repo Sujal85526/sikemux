@@ -199,7 +199,6 @@ describe("NewPullForm", () => {
         const left = document.querySelector(".git-left") as HTMLElement;
         await userEvent.click(await within(left).findByRole("button", { name: /README\.md/ }));
         expect(within(right()).getByTestId("commit-review")).toHaveTextContent("@README.md");
-        await userEvent.click(screen.getByRole("button", { name: /^Commits/ }));
         await userEvent.click(await screen.findByRole("button", { name: /feat: the run page/ }));
         expect(within(right()).getByTestId("commit-review")).toHaveTextContent("ccccccc3333333");
         await userEvent.click(screen.getByRole("button", { name: "All changes" }));

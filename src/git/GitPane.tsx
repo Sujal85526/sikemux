@@ -847,7 +847,7 @@ function GitWorkbench({
             else handled = false;
         } else if (GIT_PANEL_BY_KEY[k]) setPanel(GIT_PANEL_BY_KEY[k]!);
         else if (k === "h" && panel !== "branches") {
-            if (historyOpen) setHistoryOpen(false);
+            if (historyOpen && panel === "commits") setHistoryOpen(false);
             else cmd.setGitView(paneId, { historyOpen: true, panel: "commits" });
         } else if (k === "j" || k === "ArrowDown") moveSel(1);
         else if (k === "k" || k === "ArrowUp") moveSel(-1);
