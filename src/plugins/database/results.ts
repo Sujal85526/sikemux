@@ -40,6 +40,18 @@ export function toTsv(result: ResultSet): string {
     return [header, ...result.rows.map((row) => row.map(tsvField).join("\t"))].join("\n");
 }
 
+const csvField = (cell: Cell) => {
+    if (cell === null) return "";
+    const text = cellText(cell);
+    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+};
+
+/** Comma-separated with a header row; fields with commas, quotes or line breaks are quoted. NULL is an empty field. */
+export function toCsv(result: ResultSet): string {
+    const header = result.columns.map((column) => csvField(column.name)).join(",");
+    return [header, ...result.rows.map((row) => row.map(csvField).join(","))].join("\r\n");
+}
+
 const markdownField = (cell: Cell) =>
     cellText(cell)
         .replace(/\|/g, "\\|")

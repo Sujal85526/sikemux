@@ -65,6 +65,12 @@ describe("ResultsView", () => {
         expect(host.copyText).toHaveBeenLastCalledWith("ada@example.com");
     });
 
+    it("copies the result as CSV", () => {
+        render(<ResultsView outcome={{ results: [customers], millis: 1 }} />);
+        fireEvent.click(screen.getByRole("button", { name: "Copy CSV" }));
+        expect(host.copyText).toHaveBeenLastCalledWith("id,email\r\n1,ada@example.com\r\n2,");
+    });
+
     it("draws a long result a page at a time", () => {
         const many: ResultSet = { ...customers, rows: Array.from({ length: 1500 }, (_, at) => [at, `row ${at}`]) };
         render(<ResultsView outcome={{ results: [many], millis: 1 }} />);

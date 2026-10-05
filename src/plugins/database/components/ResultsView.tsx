@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { copyText, swallow } from "../../../plugin-api/host";
 import type { Cell, QueryOutcome, ResultSet } from "../api";
-import { cellText, duration, mainResult, summary, toTsv } from "../results";
+import { cellText, duration, mainResult, summary, toCsv, toTsv } from "../results";
 
 /** Rows drawn at a time; more are added on request so a 10,000-row result stays quick to show. */
 const PAGE = 1000;
@@ -42,6 +42,15 @@ export function ResultsView({ outcome, actions }: { outcome: QueryOutcome; actio
                         title="Copy as tab-separated text, ready to paste into a spreadsheet"
                         onClick={() => void copyText(toTsv(result)).catch(swallow("copy the results"))}>
                         Copy
+                    </button>
+                )}
+                {result.columns.length > 0 && (
+                    <button
+                        type="button"
+                        className="db-button"
+                        title="Copy as comma-separated values (CSV)"
+                        onClick={() => void copyText(toCsv(result)).catch(swallow("copy the results"))}>
+                        Copy CSV
                     </button>
                 )}
                 {actions?.(result)}

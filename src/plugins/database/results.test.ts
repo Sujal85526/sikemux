@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ResultSet } from "./api";
-import { ago, cellText, resultMessage, duration, mainResult, summary, toMarkdown, toTsv } from "./results";
+import { ago, cellText, resultMessage, toCsv, duration, mainResult, summary, toMarkdown, toTsv } from "./results";
 
 const customers: ResultSet = {
     columns: [
@@ -66,6 +66,17 @@ describe("results", () => {
         expect(message.startsWith('Results of a query on the PostgreSQL database "Shop":')).toBe(true);
         expect(message).toContain("```sql\nselect id, name, note from customers\n```");
         expect(message).toContain("| 2 | Linus | NULL |");
+    });
+
+    it("copies as CSV, quoting what needs it and leaving NULL empty", () => {
+        const tricky: ResultSet = {
+            ...customers,
+            rows: [
+                [1, 'say "hi", ok', "two\nlines"],
+                [2, "plain", null],
+            ],
+        };
+        expect(toCsv(tricky)).toBe('id,name,note\r\n1,"say ""hi"", ok","two\nlines"\r\n2,plain,');
     });
 
     it("writes a markdown table for an agent, numbers to the right and pipes escaped", () => {
