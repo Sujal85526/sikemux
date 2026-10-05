@@ -1,4 +1,4 @@
-import { Children, isValidElement, useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   Animated,
   Easing,
@@ -167,25 +167,21 @@ export function PasswordField(props: Omit<TextInputProps, 'secureTextEntry'>) {
   );
 }
 
+/** A list's small-caps label, with a hairline running to the right as on the Mac's rail. */
 export function SectionLabel({ children }: { children: string }) {
   const styles = useStyles(makeStyles);
-  return <Text style={styles.sectionLabel}>{children}</Text>;
-}
-
-/** Rows in one rounded group, divided by an inset hairline. */
-export function Group({ children, inset = 50 }: { children: ReactNode; inset?: number }) {
-  const styles = useStyles(makeStyles);
-  const rows = Children.toArray(children);
   return (
-    <View style={styles.group}>
-      {rows.map((row, index) => (
-        <View key={isValidElement(row) && row.key !== null ? row.key : index}>
-          {index > 0 ? <View style={[styles.divider, { marginLeft: inset }]} /> : null}
-          {row}
-        </View>
-      ))}
+    <View style={styles.sectionLabel}>
+      <Text style={styles.sectionLabelText}>{children}</Text>
+      <View style={styles.sectionRule} />
     </View>
   );
+}
+
+/** Rows straight on the ground, a little apart, the way the Mac's rail lists agents. */
+export function Rows({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
+  const styles = useStyles(makeStyles);
+  return <View style={[styles.rows, style]}>{children}</View>;
 }
 
 export function Row({
@@ -195,6 +191,7 @@ export function Row({
   end,
   onPress,
   dim,
+  bright,
   selected,
 }: {
   mark?: ReactNode;
@@ -203,11 +200,12 @@ export function Row({
   end?: ReactNode;
   onPress?: () => void;
   dim?: boolean;
+  /** Titles the row in full ink, for the one that is waiting on the person. */
+  bright?: boolean;
   selected?: boolean;
 }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
-  const type = useType();
   return (
     <Pressable
       onPress={onPress}
@@ -216,7 +214,9 @@ export function Row({
       style={({ pressed }) => [styles.row, selected && styles.rowSelected, pressed && onPress && styles.rowPressed]}>
       {mark ? <View style={styles.mark}>{mark}</View> : null}
       <View style={styles.rowBody}>
-        <Text style={[type.row, { color: dim ? colors.tertiary : selected ? colors.ink : colors.secondary }]} numberOfLines={1}>
+        <Text
+          style={[styles.rowTitle, { color: dim ? colors.tertiary : selected || bright ? colors.ink : colors.secondary }]}
+          numberOfLines={1}>
           {title}
         </Text>
         {detail ? (
@@ -416,15 +416,17 @@ const makeStyles = (colors: Palette) => {
     pressed: { opacity: 0.75 },
     disabled: { opacity: 0.5 },
 
-    sectionLabel: { ...type.label, paddingTop: 20, paddingBottom: 8, paddingHorizontal: 6 },
-    group: { borderRadius: radius.card, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.raised, overflow: 'hidden' },
-    divider: { height: StyleSheet.hairlineWidth * 2, backgroundColor: colors.border },
-    row: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 8 },
+    sectionLabel: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 18, paddingBottom: 6, paddingHorizontal: 8 },
+    sectionLabelText: { fontFamily: fonts.uiMedium, fontSize: 11, letterSpacing: 1.76, textTransform: 'uppercase', color: colors.tertiary },
+    sectionRule: { flex: 1, height: 1, backgroundColor: translucent(colors.ink, 0.09) },
+    rows: { gap: 2 },
+    row: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 9 },
     rowSelected: { backgroundColor: colors.active },
     rowPressed: { backgroundColor: colors.active },
-    mark: { width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
+    mark: { width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
     rowBody: { flex: 1, minWidth: 0 },
-    rowDetail: { ...type.meta, fontSize: 12.5, marginTop: 1 },
+    rowTitle: { ...type.row, fontSize: 14.5 },
+    rowDetail: { ...type.meta, fontSize: 12, marginTop: 1 },
     rowEnd: { minWidth: 20, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 },
 
     track: {

@@ -9,8 +9,8 @@ import { ForgetSheet } from '@/devices/ForgetSheet';
 import { ProjectSheet } from '@/devices/ProjectSheet';
 import { chatState, chatTitle, folder, providerName } from '@/devices/words';
 import { AgentIcon, DeviceIcon, Icon } from '@/ui/Icon';
-import { Button, Group, IconButton, Nav, NeedsYou, Row, Screen, SectionLabel, Track, useBottomGap, Working } from '@/ui/parts';
-import { fonts, type Palette, radius, typeFor, useColors, useStyles, useType, translucent } from '@/ui/theme';
+import { Button, IconButton, Nav, NeedsYou, Row, Rows, Screen, SectionLabel, Track, useBottomGap, Working } from '@/ui/parts';
+import { fonts, type Palette, typeFor, useColors, useStyles, useType, translucent } from '@/ui/theme';
 
 type Tab = 'agents' | 'terminals';
 
@@ -98,35 +98,36 @@ function Agents({ core, snapshot, scope }: { core: string; snapshot: Snapshot; s
           ))}
         </View>
       ) : null}
-      {asking.map((chat) => (
-        <Pressable key={chat.agentId} style={styles.ask} onPress={() => open(chat.agentId)} accessibilityRole="button">
-          <AgentIcon provider={chat.provider} size={22} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.askTitle} numberOfLines={1}>
-              {chatTitle(chat)}
-            </Text>
-            <Text style={styles.askDetail} numberOfLines={1}>
-              {where(chat, 'Needs input')}
-            </Text>
-          </View>
-          <NeedsYou />
-        </Pressable>
-      ))}
+      {asking.length ? (
+        <Rows style={styles.asking}>
+          {asking.map((chat) => (
+            <Row
+              key={chat.agentId}
+              bright
+              mark={<AgentIcon provider={chat.provider} size={20} />}
+              title={chatTitle(chat)}
+              detail={where(chat, 'Needs input')}
+              end={<NeedsYou />}
+              onPress={() => open(chat.agentId)}
+            />
+          ))}
+        </Rows>
+      ) : null}
       {idle.length ? (
         <>
           <SectionLabel>Open</SectionLabel>
-          <Group>
+          <Rows>
             {idle.map((chat) => (
               <Row
                 key={chat.agentId}
-                mark={<AgentIcon provider={chat.provider} size={22} />}
+                mark={<AgentIcon provider={chat.provider} size={20} />}
                 title={chatTitle(chat)}
                 detail={where(chat, chatState(chat))}
                 end={<ChatEnd chat={chat} />}
                 onPress={() => open(chat.agentId)}
               />
             ))}
-          </Group>
+          </Rows>
         </>
       ) : null}
       {!scoped.length ? <Text style={styles.empty}>{scope ? `No agents in ${scope.name}.` : 'No agents running.'}</Text> : null}
@@ -161,8 +162,8 @@ function Terminals({ snapshot, scope }: { snapshot: Snapshot; scope?: ProjectInf
     <>
       {[...groups].map(([project, sessions]) => (
         <View key={project}>
-          {scope ? <View style={{ height: 14 }} /> : <SectionLabel>{project}</SectionLabel>}
-          <Group>
+          {scope ? <View style={{ height: 8 }} /> : <SectionLabel>{project}</SectionLabel>}
+          <Rows>
             {sessions.map((session) => (
               <Row
                 key={session.id}
@@ -179,7 +180,7 @@ function Terminals({ snapshot, scope }: { snapshot: Snapshot; scope?: ProjectInf
                 end={session.running ? session.task ? <Working /> : <View style={styles.liveDot} /> : null}
               />
             ))}
-          </Group>
+          </Rows>
         </View>
       ))}
     </>
@@ -398,19 +399,7 @@ const makeStyles = (colors: Palette) => {
     },
     filterOn: { backgroundColor: translucent(colors.overlay, 0.9), borderColor: colors.borderStrong },
     filterText: { fontFamily: fonts.ui, fontSize: 13, color: colors.secondary },
-    ask: {
-      marginTop: 14,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 12,
-      padding: 14,
-      borderRadius: radius.card,
-      borderWidth: 1,
-      borderColor: colors.borderStrong,
-      backgroundColor: colors.overlay,
-    },
-    askTitle: { fontFamily: fonts.uiMedium, fontSize: 15.5, color: colors.ink },
-    askDetail: { ...type.meta, marginTop: 2 },
+    asking: { marginTop: 8 },
     empty: { ...type.meta, textAlign: 'center', paddingTop: 40 },
     liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.live },
     away: { flex: 1, justifyContent: 'center', paddingHorizontal: 32, paddingBottom: 120 },
