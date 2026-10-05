@@ -454,7 +454,7 @@
   .reel-track { display: flex; flex-direction: column; gap: 2px; animation: reel 26s linear infinite; }
   .reel .row { opacity: .92; }
   @keyframes reel { from { transform: translateY(0); } to { transform: translateY(-50%); } }
-  @media (prefers-reduced-motion: reduce) { .reel-track, .loader i, .dot.warn::after, .activity *, .tool.running *, .spin, .caret { animation: none !important; } }
+  @media (prefers-reduced-motion: reduce) { .reel-track, .loader i, .handshake .line::after, .dot.warn::after, .activity *, .tool.running *, .spin, .caret { animation: none !important; } }
   .welcome { position: relative; margin-top: auto; padding: 0 24px; }
   .mark-line { display: flex; align-items: center; gap: 9px; color: var(--text-primary); font-size: 15px; font-weight: 600; letter-spacing: -0.015em; }
   .welcome h2 { margin-top: 18px; color: var(--text-primary); font-size: 34px; line-height: 1.08; font-weight: 600; letter-spacing: -0.035em; }
@@ -517,6 +517,14 @@
   .how .acts { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; }
   .chip-btn { height: 36px; padding: 0 14px; border-radius: 10px; display: inline-flex; align-items: center; font-size: 14px; font-weight: 600; border: 1px solid var(--border-strong); color: var(--text-primary); }
   .chip-btn.primary { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+  .found { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 30px; }
+  .found h2 { margin-top: 28px; font-size: 25px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.15; color: var(--text-primary); }
+  .found p { margin-top: 10px; font-size: 15px; line-height: 1.5; }
+  .handshake { display: flex; align-items: center; }
+  .handshake .end { width: 64px; height: 64px; border-radius: 14px; border: 1px solid var(--border-strong); background: var(--surface-raised); display: grid; place-items: center; color: var(--text-primary); }
+  .handshake .line { position: relative; width: 84px; height: 2px; margin: 0 6px; background-image: linear-gradient(90deg, var(--gray-700) 50%, transparent 0); background-size: 6px 2px; }
+  .handshake .line::after { content: ""; position: absolute; top: -2px; left: 0; width: 6px; height: 6px; border-radius: 999px; background: var(--live); box-shadow: 0 0 10px var(--live); animation: travel 1.6s cubic-bezier(.5,0,.5,1) infinite; }
+  @keyframes travel { from { left: 0; } to { left: calc(100% - 6px); } }
 
   /* ---------- keyboards ---------- */
   .kb { flex: none; background: #1c1c21; padding: 8px 3px 30px; }
@@ -682,6 +690,23 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}Cancel</span></div>
+        <div class="found">
+          <div class="handshake"><span class="end">{{IconPhone:30}}</span><span class="line"></span><span class="end">{{IconLaptop:30}}</span></div>
+          <h2>MacBook Pro just signed in</h2>
+          <p>Click <b class="ink">Allow</b> on MacBook Pro to let this phone in.</p>
+        </div>
+        <div class="footer">
+          <div class="row boxed"><span class="mark"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span><div class="body"><div class="t" style="font-size:15px;font-weight:400">Waiting for MacBook Pro</div></div><span class="ago m">1:52</span></div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>A host just signed in</b><div class="note">When a host signs in to the account after this phone started watching it, the phone asks to join by itself, with no tap: the phone and the host, the live dot travelling between them, and the same waiting row and two minutes as Connect. A host the account already had when the phone first looked waits in Devices for a tap instead, and each host is asked about once, so one that said no is not asked again. Anything that goes wrong reads as Connect failed. On Allow the host opens.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Back</span></div>
         <div class="prompt">
           <h2>Work MacBook said no</h2>
@@ -794,7 +819,7 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Waiting for a host</b><div class="note">Signed in, with no host connected and none on the account: the ordinary Devices screen, with a dashed slot where the computer will land. The phone watches the account the whole time, and nothing changes screen when a host signs in: the slot turns into its row, with Connect at its end. The steps name the provider and email this phone signed in with, since the host must use the same account. Send me the link opens the share sheet with sikemux.com/phone, to open on the computer; Copy link copies it and reads "Copied" for a moment. This account has no picture, so its initials stand in, from the name or else the email, on the same neutral circle; while a picture loads the circle stays empty.</div></figcaption>
+      <figcaption><b>Waiting for a host</b><div class="note">Signed in, with no host connected and none on the account: the ordinary Devices screen, with a dashed slot where the computer will land. The phone watches the account the whole time, and nothing changes screen when a host signs in: the slot turns into its row, and the phone asks to join it by itself ("A host just signed in"). The steps name the provider and email this phone signed in with, since the host must use the same account. Send me the link opens the share sheet with sikemux.com/phone, to open on the computer; Copy link copies it and reads "Copied" for a moment. This account has no picture, so its initials stand in, from the name or else the email, on the same neutral circle; while a picture loads the circle stays empty.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>

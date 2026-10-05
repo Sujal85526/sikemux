@@ -1,10 +1,14 @@
 import { useEffect, useEffectEvent, useRef, useSyncExternalStore } from 'react';
 import { AppState, Platform } from 'react-native';
+import { router } from 'expo-router';
 import { useAuth } from '@clerk/expo';
 import { nativeApplicationVersion } from 'expo-application';
 import type { Device } from '@protocol';
 
 import { thisDevice } from '@/device/identity';
+import { hostsArrived } from '@/devices/arrivals';
+import { joinShowing } from '@/devices/joining';
+import { pairedDevices } from '@/devices/paired';
 import { syncPushToken } from '@/notify/token';
 import { accountHosts, registerPhone } from './api';
 import { apiUrl } from './config';
@@ -79,6 +83,24 @@ export function useAccountHostsFeed() {
 
 export function useAccountHosts(): AccountHosts {
   return useSyncExternalStore(subscribeHosts, () => accountHostsNow);
+}
+
+async function connectArrival(account: string, hosts: Device[]) {
+  const arrived = await hostsArrived(account, hosts);
+  const paired = await pairedDevices();
+  const host = arrived.find((found) => !paired.some((device) => device.core === found.key));
+  if (!host || joinShowing() || AppState.currentState !== 'active') return;
+  router.push({ pathname: '/join', params: { core: host.key, name: host.name, arrived: '1' } });
+}
+
+/** Starts connecting to a host that signs in to the account after this phone did; someone there still allows it. */
+export function useConnectArrivals() {
+  const { userId } = useAuth();
+  const { hosts, loaded } = useAccountHosts();
+  useEffect(() => {
+    if (!userId || !loaded) return;
+    connectArrival(userId, hosts).catch((error: unknown) => console.warn('sikemux: could not connect to a new host', error));
+  }, [userId, loaded, hosts]);
 }
 
 /** Keeps this phone connected to its account while the app is in front and signed in. */

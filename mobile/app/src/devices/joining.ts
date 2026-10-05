@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Platform } from 'react-native';
 import { JoinAnswer, MobileError } from '@sikemux/native';
 
@@ -6,6 +7,22 @@ import { whileJoining } from '@/device/identity';
 import { phoneName } from '@/device/name';
 import { reloadDevices } from './hub';
 import { rememberDevice, type Access } from './paired';
+
+let screens = 0;
+
+/** Whether a join screen is showing, so a host arriving meanwhile waits in Devices rather than taking over. */
+export function joinShowing(): boolean {
+  return screens > 0;
+}
+
+export function useJoinScreen() {
+  useEffect(() => {
+    screens += 1;
+    return () => {
+      screens -= 1;
+    };
+  }, []);
+}
 
 /** Asking Sikemux for a ticket, then waiting while the person at the host decides. */
 export type JoinStep = 'asking' | 'waiting';
