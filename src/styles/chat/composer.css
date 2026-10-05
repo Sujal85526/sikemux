@@ -425,14 +425,11 @@
     }
 
     /* The elapsed seconds keep saying the turn is alive without any motion. */
-    .chat-activity-label,
+    .chat-shimmer-band,
+    .chat-shimmer-copy,
     .chat-activity-loader,
     .chat-activity-mark,
     .chat-tool.live .chat-tool-icon,
-    .chat-tool.live .chat-tool-target,
-    .chat-tools-sum.live .chat-tools-label,
-    .chat-subagent.state-running .chat-subagent-task,
-    .chat-task-agent .chat-task-detail,
     .chat-subagent-spinner {
         animation: none;
     }

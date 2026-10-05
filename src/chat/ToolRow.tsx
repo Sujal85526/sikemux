@@ -31,6 +31,7 @@ import { ChatAgentContext, openLink } from "./chatAgent";
 import { ChatImage } from "./ChatImage";
 import { DiffBody } from "./DiffView";
 import { LiveSeconds } from "./LiveSeconds";
+import { Shimmer } from "./Shimmer";
 import { useCutOff } from "./useCutOff";
 import { durationLabel } from "./durationLabel";
 import { toolDetail, toolKind, toolLabel, toolPath, toolRunning, toolTarget, toolUrl } from "./toolLabels";
@@ -176,6 +177,13 @@ export const ToolRow = memo(function ToolRow({ part }: { part: Extract<ChatPart,
     const measured = part.startedAt !== undefined && part.endedAt !== undefined ? part.endedAt - part.startedAt : null;
     const elapsed = status === "cancelled" ? "stopped" : measured !== null ? durationLabel(measured) : null;
     const toggle = () => setOpen((current) => !current);
+    const targetText =
+        target || detail ? (
+            <>
+                {file ? <ChatFileRef refers={file.ref} state={file.state} label={target} size={17} /> : <ToolTarget text={target} />}
+                {detail && <span className="chat-tool-arg">{detail}</span>}
+            </>
+        ) : null;
     const lead = (
         <>
             <span className="chat-tool-tick" aria-hidden="true" />
@@ -183,9 +191,8 @@ export const ToolRow = memo(function ToolRow({ part }: { part: Extract<ChatPart,
                 <ToolKindIcon tool={tool} kind={rowKind} />
             </span>
             <span className="chat-tool-kind">{toolKind(tool)}</span>
-            <span className="chat-tool-target" ref={targetRef}>
-                {file ? <ChatFileRef refers={file.ref} state={file.state} label={target} size={17} /> : <ToolTarget text={target} />}
-                {detail && <span className="chat-tool-arg">{detail}</span>}
+            <span className={`chat-tool-target${running && targetText ? " chat-shimmer" : ""}`} ref={targetRef}>
+                {running && targetText ? <Shimmer>{targetText}</Shimmer> : targetText}
             </span>
         </>
     );

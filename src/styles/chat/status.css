@@ -86,11 +86,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    background: linear-gradient(90deg, var(--ink-faint) 40%, var(--ink) 50%, var(--ink-faint) 60%) 100% 0 / 300% 100%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    animation: chat-activity-shimmer 2.2s linear infinite;
 }
 
 .chat-activity-elapsed {
@@ -127,9 +122,87 @@
     }
 }
 
-@keyframes chat-activity-shimmer {
+/* A live label's sweep (see Shimmer.tsx). Each band is three labels wide and
+   slides one label's width per pass while its copy slides back the same
+   distance, so the text holds still and only the masks move. The two masks
+   add up to one, and plus-lighter sums the copies into the gradient a single
+   label would take. */
+.chat-shimmer {
+    position: relative;
+    isolation: isolate;
+    color: transparent;
+}
+
+.chat-shimmer-band {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 300%;
+    pointer-events: none;
+    user-select: none;
+    animation: chat-shimmer-band 2.2s linear infinite;
+}
+
+.chat-shimmer-band.dim {
+    -webkit-mask-image: linear-gradient(90deg, #000 40%, transparent 50%, #000 60%);
+    mask-image: linear-gradient(90deg, #000 40%, transparent 50%, #000 60%);
+}
+
+.chat-shimmer-band.lit {
+    -webkit-mask-image: linear-gradient(90deg, transparent 40%, #000 50%, transparent 60%);
+    mask-image: linear-gradient(90deg, transparent 40%, #000 50%, transparent 60%);
+    mix-blend-mode: plus-lighter;
+}
+
+/* Painted through background-clip like the gradient it replaces, which draws
+   glyphs lighter than plain coloured text does. */
+.chat-shimmer-copy {
+    display: block;
+    width: calc(100% / 3);
+    height: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    -webkit-background-clip: text;
+    background-clip: text;
+    animation: chat-shimmer-copy 2.2s linear infinite;
+}
+
+.chat-shimmer-band.dim > .chat-shimmer-copy {
+    background-image: linear-gradient(var(--ink-faint), var(--ink-faint));
+}
+
+.chat-shimmer-band.lit > .chat-shimmer-copy {
+    background-image: linear-gradient(var(--ink), var(--ink));
+}
+
+.chat-shimmer .chat-shimmer-copy * {
+    border-color: transparent;
+    background: none;
+    box-shadow: none;
+    color: transparent;
+}
+
+.chat-shimmer-copy :is(svg, img) {
+    visibility: hidden;
+}
+
+@keyframes chat-shimmer-band {
+    from {
+        transform: translateX(calc(-200% / 3));
+    }
     to {
-        background-position: 0 0;
+        transform: none;
+    }
+}
+
+@keyframes chat-shimmer-copy {
+    from {
+        transform: translateX(200%);
+    }
+    to {
+        transform: none;
     }
 }
 
