@@ -1055,6 +1055,9 @@ pub struct PendingDevice {
     /// device does.
     #[serde(default)]
     pub from_account: bool,
+    /// When the phone stops waiting for an answer, in milliseconds since the
+    /// Unix epoch.
+    pub expires_at: u64,
 }
 
 /// Which build of the sidecar a core runs. `source` fingerprints the code

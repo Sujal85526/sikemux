@@ -22,6 +22,8 @@ export interface PendingDevice {
     readonly name: string;
     readonly platform: string;
     readonly fromAccount: boolean;
+    /** When the phone stops waiting for an answer, in milliseconds since the epoch. */
+    readonly expiresAt: number;
 }
 
 /** Why the account let this host go: removed elsewhere, signed out, or the account was deleted. */

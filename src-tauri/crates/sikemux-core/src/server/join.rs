@@ -80,6 +80,7 @@ pub(super) async fn serve(core: Arc<Core>, connection: Connection) {
         name: clean(&hello.name, NAME_LIMIT),
         platform: clean(&hello.platform, PLATFORM_LIMIT),
         from_account: true,
+        expires_at: remote::unix_ms() + APPROVAL_TIMEOUT.as_millis() as u64,
     };
     let answered = core.remote.ask(request.clone());
     remote::announce(&core);
@@ -215,6 +216,8 @@ mod tests {
         assert_eq!(request.name, "Pixel 8");
         assert_eq!(request.platform, "android");
         assert_eq!(request.device_id, key.public().to_string());
+        let waits = request.expires_at.saturating_sub(remote::unix_ms());
+        assert!(waits > 100_000 && waits <= 120_000, "{waits}");
         host.core
             .remote
             .answer(&request.id, Some(DeviceAccess::Watch))

@@ -73,7 +73,11 @@ describe("DevicesPage", () => {
     it("asks about a phone that came from the account", async () => {
         const user = userEvent.setup();
         transport.register("remote_status", () =>
-            status({ pending: [{ id: "join-1", deviceId: PHONE, name: "Pixel 8", platform: "android", fromAccount: true }] }),
+            status({
+                pending: [
+                    { id: "join-1", deviceId: PHONE, name: "Pixel 8", platform: "android", fromAccount: true, expiresAt: Date.now() + 120_000 },
+                ],
+            }),
         );
         const answer = vi.fn(() => status());
         transport.register("remote_answer_pairing", answer);

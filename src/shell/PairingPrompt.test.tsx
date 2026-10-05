@@ -14,8 +14,22 @@ const { PairingPrompt } = await import("./PairingPrompt");
 await import("./PairingCards");
 
 const PHONE = "f0e1d2c3b4a5968778695a4b3c2d1e0ff0e1d2c3b4a5968778695a4b3c2d1e0f";
-const FROM_ACCOUNT: PendingDevice = { id: "join-1", deviceId: PHONE, name: "Pixel 8", platform: "android", fromAccount: true };
-const IPHONE: PendingDevice = { id: "request-1", deviceId: PHONE, name: "Kishore's phone", platform: "ios", fromAccount: true };
+const FROM_ACCOUNT: PendingDevice = {
+    id: "join-1",
+    deviceId: PHONE,
+    name: "Pixel 8",
+    platform: "android",
+    fromAccount: true,
+    expiresAt: Date.now() + 120_000,
+};
+const IPHONE: PendingDevice = {
+    id: "request-1",
+    deviceId: PHONE,
+    name: "Kishore's phone",
+    platform: "ios",
+    fromAccount: true,
+    expiresAt: Date.now() + 120_000,
+};
 
 function status(pending: readonly PendingDevice[] = []): RemoteStatus {
     return {

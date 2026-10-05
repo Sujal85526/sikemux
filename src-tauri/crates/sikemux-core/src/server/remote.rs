@@ -1395,6 +1395,7 @@ mod tests {
             name: "Gone".into(),
             platform: "ios".into(),
             from_account: true,
+            expires_at: unix_ms() + 120_000,
         });
         let events = [
             event(4, "device.revoked", Some(&gone.id), "client", "removed"),
