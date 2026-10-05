@@ -80,12 +80,13 @@ let notch = NotchGeometry(notchWidth: 221, height: 38, centerX: 0)
 let plain = NotchGeometry(notchWidth: 0, height: 24, centerX: 0)
 
 func render(_ name: String, agents: Set<String>? = nil, geometry: NotchGeometry = notch, height: CGFloat = 140, dev: Bool = false,
-            setup: (IslandModel) -> Void = { _ in })
+            devices: [PendingDevice] = [], setup: (IslandModel) -> Void = { _ in })
 {
     var options = Options()
     options.dev = dev
     let store = NotchStore(options: options)
     store.apply(view(keeping: agents))
+    store.apply(devices, now: Date().addingTimeInterval(-8))
     let island = IslandModel(geometry: geometry)
     setup(island)
     let size = CGSize(width: 760, height: height)
@@ -170,6 +171,9 @@ render("C4-done", agents: ["a4"])
 render("C6-hover", agents: ["a2", "a3"]) { $0.hovering = true }
 render("P1-permission", height: 260) { $0.mode = .peekAsk("a1") }
 render("P2-finished", agents: ["a2", "a4"]) { $0.mode = .peekDone("a4") }
+render("P3-connect", agents: ["a2", "a3"], height: 240, devices: [PendingDevice(id: "d1", name: "Pixel 8", platform: "android")]) {
+    $0.mode = .connect("d1")
+}
 render("O1-agents", height: 440) { $0.mode = .open }
 render("O2-new-agent", height: 300) {
     $0.mode = .open

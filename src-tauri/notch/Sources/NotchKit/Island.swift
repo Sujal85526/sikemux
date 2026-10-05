@@ -37,6 +37,8 @@ final class IslandModel {
         case closed
         case peekAsk(String)
         case peekDone(String)
+        /// A device asking to connect: open until it is answered, whatever the pointer does.
+        case connect(String)
         case open
         case drop
     }
@@ -126,13 +128,16 @@ final class IslandModel {
 
     /// Shows a peek unless the island is open, hidden, or already asking for something more pressing.
     func peek(_ peek: NotchStore.Peek, for seconds: Double) {
-        guard !isOpen, !hidden else { return }
+        if case .connect(let id) = peek { return askToConnect(id) }
+        guard !isOpen, !hidden, !asksToConnect else { return }
         switch peek {
         case .ask(let id):
             set(.peekAsk(id))
         case .done(let id):
             if case .peekAsk = mode { return }
             set(.peekDone(id))
+        case .connect:
+            return
         }
         peekTimer?.cancel()
         let timer = DispatchWorkItem { [weak self] in
@@ -141,6 +146,28 @@ final class IslandModel {
         }
         peekTimer = timer
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: timer)
+    }
+
+    /// Opens on the oldest device waiting, unless the person is busy in the island; later ones wait their turn.
+    private func askToConnect(_ id: String) {
+        guard !hidden, !holdsOpen, mode != .drop, !asksToConnect else { return }
+        peekTimer?.cancel()
+        set(.connect(id))
+    }
+
+    var asksToConnect: Bool {
+        if case .connect = mode { return true }
+        return false
+    }
+
+    /// Once a device is answered here or in Sikemux, or its request lapses, the next one asks or the island folds back.
+    func devicesChanged(_ devices: [PendingDevice]) {
+        guard case .connect(let id) = mode, !devices.contains(where: { $0.id == id }) else { return }
+        if let next = devices.first {
+            set(.connect(next.id))
+        } else {
+            set(hovering ? .open : .closed)
+        }
     }
 
     func pointer(entered: Bool, opensOnHover: Bool) {
@@ -204,7 +231,7 @@ final class IslandModel {
         switch (direction, mode) {
         case (.down, .closed), (.down, .peekDone):
             pull = travelled / SwipeTracker.threshold * 20
-        case (.up, .peekAsk), (.up, .peekDone):
+        case (.up, .peekAsk), (.up, .peekDone), (.up, .connect):
             pull = -travelled / SwipeTracker.threshold * 20
         case (.up, .open) where !holdsOpen && menu == nil && (tab == .compose || !listScrolls):
             pull = -travelled / SwipeTracker.threshold * 20
