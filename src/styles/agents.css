@@ -30,6 +30,7 @@
     --brand-grok: #fcfcfc;
     --brand-aws: #ff9900;
     --brand-bitbucket: #2684ff;
+    --brand-jira: #2684ff;
 }
 .agent-glyph {
     display: flex;

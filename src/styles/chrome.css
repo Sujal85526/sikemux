@@ -379,6 +379,9 @@
 .icon-bitbucket {
     color: var(--brand-bitbucket);
 }
+.icon-jira {
+    color: var(--brand-jira);
+}
 
 .sess-name {
     flex: 1;

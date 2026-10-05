@@ -22,7 +22,7 @@ registerFrontendPlugin({
         {
             kind: JIRA_ISSUES,
             title: "Jira",
-            icon: (size) => <JiraMark size={size} />,
+            icon: (size) => <JiraMark size={size} className="icon-jira" />,
             render: ({ paneId, visible }) => <JiraPane paneId={paneId} active={visible} />,
         },
     ],

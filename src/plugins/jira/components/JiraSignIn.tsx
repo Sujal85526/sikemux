@@ -57,7 +57,7 @@ export function JiraSignIn({ status, onSignedIn }: { status: JiraStatus | undefi
 
     return (
         <SignInScreen
-            mark={<JiraMark size={26} />}
+            mark={<JiraMark size={26} className="icon-jira" />}
             title="Connect Jira"
             lede="The tickets you are working on, beside the code, and tools for your agents to read and update them."
             foot="Sikemux keeps your sign-in in the macOS Keychain.">

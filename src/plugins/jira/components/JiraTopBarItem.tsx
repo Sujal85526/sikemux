@@ -26,7 +26,7 @@ export function JiraTopBarItem({ projectCwd }: PluginTopBarProps) {
                 data-no-window-drag
                 title={`${found.key}: ${found.summary}`}
                 onClick={() => openJiraIssue(found.key)}>
-                <JiraMark size={12} />
+                <JiraMark size={12} className="icon-jira" />
                 <span className="jira-key">{found.key}</span>
                 <StatusChip status={found.status} category={found.statusCategory} />
             </button>
