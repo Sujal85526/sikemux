@@ -1,6 +1,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useAccount } from "../account/account";
 import { REMOTE_STATUS_EVENT, type PendingDevice, type RemoteStatus } from "../api/remote";
 import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "../api/transport";
 import { getState, setState } from "../state/store";
@@ -11,24 +12,24 @@ const appWindow = vi.hoisted(() => ({ requestUserAttention: vi.fn(async () => {}
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => appWindow, UserAttentionType: { Critical: 1, Informational: 2 } }));
 
 const { PairingPrompt } = await import("./PairingPrompt");
-await import("./PairingCards");
+const { waitsLabel } = await import("./ConnectTakeover");
 
 const PHONE = "f0e1d2c3b4a5968778695a4b3c2d1e0ff0e1d2c3b4a5968778695a4b3c2d1e0f";
-const FROM_ACCOUNT: PendingDevice = {
+const PIXEL: PendingDevice = {
     id: "join-1",
     deviceId: PHONE,
     name: "Pixel 8",
     platform: "android",
     fromAccount: true,
-    expiresAt: Date.now() + 120_000,
+    expiresAt: Date.now() + 112_000,
 };
 const IPHONE: PendingDevice = {
-    id: "request-1",
+    id: "join-2",
     deviceId: PHONE,
     name: "Kishore's phone",
     platform: "ios",
     fromAccount: true,
-    expiresAt: Date.now() + 120_000,
+    expiresAt: Date.now() + 119_000,
 };
 
 function status(pending: readonly PendingDevice[] = []): RemoteStatus {
@@ -51,6 +52,7 @@ let transport: MemoryIpcTransport;
 
 beforeEach(() => {
     setState(initial, true);
+    useAccount.setState({ account: { signedIn: true, userId: "user_2abc", email: "contact@nodelike.com", name: null, picture: null } });
     transport = new MemoryIpcTransport();
     installIpcTransportForTests(transport);
     notifications.post.mockClear();
@@ -63,69 +65,92 @@ afterEach(() => {
 });
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
-const card = (name: string) => screen.queryByRole("alertdialog", { name });
-const JOIN_QUESTION = "Pixel 8 from your Sikemux account wants to connect";
+const PIXEL_ASKS = "Pixel 8 wants to connect to this computer";
+const IPHONE_ASKS = "Kishore's phone wants to connect to this computer";
+const takeover = (name: string) => screen.queryByRole("alertdialog", { name });
 
 describe("PairingPrompt", () => {
-    it("stays out of the way while no device is waiting", async () => {
+    it("stays out of the way while no phone is waiting", async () => {
         transport.register("remote_status", () => status());
         render(<PairingPrompt hasFocus={() => true} />);
         await settle();
         expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     });
 
-    it("asks about a phone from the account wherever the person is, and goes once the request ends", async () => {
+    it("takes over the window wherever the person is, Settings › Devices too, and goes once the request ends", async () => {
+        setState({ settingsOpen: true, settingsPage: "devices" });
         transport.register("remote_status", () => status());
-        render(<PairingPrompt hasFocus={() => true} />);
+        const { container } = render(
+            <>
+                <button type="button">Behind</button>
+                <PairingPrompt hasFocus={() => true} />
+            </>,
+        );
         await settle();
 
-        transport.emit(REMOTE_STATUS_EVENT, status([FROM_ACCOUNT]));
-        const prompt = await screen.findByRole("alertdialog", { name: JOIN_QUESTION });
-        expect(prompt).toHaveTextContent("Android · key " + PHONE.slice(0, 8) + " · signed in to your account");
+        transport.emit(REMOTE_STATUS_EVENT, status([PIXEL]));
+        const asking = await screen.findByRole("alertdialog", { name: PIXEL_ASKS });
+        expect(asking).toHaveTextContent("Signed in as contact@nodelike.com");
+        expect(asking).toHaveTextContent(/waits 1:5\d/);
+        expect(screen.getByRole("radio", { name: /Full control/ })).toHaveAttribute("aria-checked", "true");
+        expect(container.inert).toBe(true);
 
         transport.emit(REMOTE_STATUS_EVENT, status());
-        await waitFor(() => expect(card(JOIN_QUESTION)).not.toBeInTheDocument());
+        await waitFor(() => expect(takeover(PIXEL_ASKS)).not.toBeInTheDocument());
+        expect(container.inert).toBe(false);
     });
 
-    it("leaves the question to Settings › Devices while that page is open", async () => {
-        setState({ settingsOpen: true, settingsPage: "devices" });
-        transport.register("remote_status", () => status([FROM_ACCOUNT]));
-        render(<PairingPrompt hasFocus={() => true} />);
-        await settle();
-        expect(card(JOIN_QUESTION)).not.toBeInTheDocument();
-
-        setState({ settingsPage: "general" });
-        expect(await screen.findByRole("alertdialog", { name: JOIN_QUESTION })).toBeInTheDocument();
-    });
-
-    it("allows the phone with the access the person chose, and goes once answered", async () => {
+    it("allows the phone with the access the person chose", async () => {
         const user = userEvent.setup();
-        transport.register("remote_status", () => status([FROM_ACCOUNT]));
+        transport.register("remote_status", () => status([PIXEL]));
         const answer = vi.fn(() => status());
         transport.register("remote_answer_pairing", answer);
         render(<PairingPrompt hasFocus={() => true} />);
 
-        await screen.findByRole("alertdialog", { name: JOIN_QUESTION });
-        await user.click(screen.getByRole("button", { name: /access for this device/ }));
-        await user.click(await screen.findByRole("option", { name: /Watch only/ }));
+        await screen.findByRole("alertdialog", { name: PIXEL_ASKS });
+        await user.click(screen.getByRole("radio", { name: /Watch only/ }));
         await user.click(screen.getByRole("button", { name: "Allow" }));
 
         expect(answer).toHaveBeenCalledWith({ id: "join-1", allow: true, access: "watch" }, expect.anything());
-        await waitFor(() => expect(card(JOIN_QUESTION)).not.toBeInTheDocument());
+        await waitFor(() => expect(takeover(PIXEL_ASKS)).not.toBeInTheDocument());
     });
 
-    it("declines the phone", async () => {
+    it("answers from the keyboard, and nothing behind it hears the keys", async () => {
         const user = userEvent.setup();
-        transport.register("remote_status", () => status([FROM_ACCOUNT]));
+        transport.register("remote_status", () => status([PIXEL]));
         const answer = vi.fn(() => status());
+        transport.register("remote_answer_pairing", answer);
+        const behind = vi.fn();
+        window.addEventListener("keydown", behind);
+        render(<PairingPrompt hasFocus={() => true} />);
+
+        await screen.findByRole("alertdialog", { name: PIXEL_ASKS });
+        await user.keyboard("{ArrowDown}");
+        expect(screen.getByRole("radio", { name: /Watch only/ })).toHaveAttribute("aria-checked", "true");
+        await user.keyboard("{ArrowUp}{Enter}");
+
+        expect(answer).toHaveBeenCalledWith({ id: "join-1", allow: true, access: "full" }, expect.anything());
+        expect(behind).not.toHaveBeenCalled();
+        window.removeEventListener("keydown", behind);
+    });
+
+    it("declines with Escape, then asks about the next phone waiting", async () => {
+        const user = userEvent.setup();
+        let pending = [IPHONE, PIXEL];
+        transport.register("remote_status", () => status(pending));
+        const answer = vi.fn(() => {
+            pending = [IPHONE];
+            return status(pending);
+        });
         transport.register("remote_answer_pairing", answer);
         render(<PairingPrompt hasFocus={() => true} />);
 
-        await screen.findByRole("alertdialog", { name: JOIN_QUESTION });
-        await user.click(screen.getByRole("button", { name: "Decline" }));
+        await screen.findByRole("alertdialog", { name: PIXEL_ASKS });
+        await user.keyboard("{Escape}");
 
         expect(answer).toHaveBeenCalledWith({ id: "join-1", allow: false, access: "full" }, expect.anything());
-        await waitFor(() => expect(card(JOIN_QUESTION)).not.toBeInTheDocument());
+        expect(await screen.findByRole("alertdialog", { name: IPHONE_ASKS })).toBeInTheDocument();
+        expect(screen.getByRole("radio", { name: /Full control/ })).toHaveAttribute("aria-checked", "true");
     });
 
     it("notifies once per request while Sikemux is in the background, and not while it is in front", async () => {
@@ -134,21 +159,23 @@ describe("PairingPrompt", () => {
         render(<PairingPrompt hasFocus={() => focused} />);
         await settle();
 
-        transport.emit(REMOTE_STATUS_EVENT, status([IPHONE]));
-        await screen.findByRole("alertdialog", { name: "Kishore's phone from your Sikemux account wants to connect" });
+        transport.emit(REMOTE_STATUS_EVENT, status([PIXEL]));
+        await screen.findByRole("alertdialog", { name: PIXEL_ASKS });
         expect(notifications.post).not.toHaveBeenCalled();
 
         focused = false;
-        transport.emit(REMOTE_STATUS_EVENT, status([IPHONE, FROM_ACCOUNT]));
-        await screen.findByRole("alertdialog", { name: JOIN_QUESTION });
-        transport.emit(REMOTE_STATUS_EVENT, status([IPHONE, FROM_ACCOUNT]));
+        transport.emit(REMOTE_STATUS_EVENT, status([PIXEL, IPHONE]));
+        await waitFor(() => expect(notifications.post).toHaveBeenCalled());
+        transport.emit(REMOTE_STATUS_EVENT, status([PIXEL, IPHONE]));
         await settle();
 
         expect(notifications.post).toHaveBeenCalledTimes(1);
-        expect(notifications.post).toHaveBeenCalledWith(
-            "Pixel 8 wants to connect to this computer",
-            "It is signed in to your Sikemux account. Allow or decline it in Sikemux.",
-        );
+        expect(notifications.post).toHaveBeenCalledWith(IPHONE_ASKS, "It is signed in to your Sikemux account. Allow or decline it in Sikemux.");
         expect(appWindow.requestUserAttention).toHaveBeenCalledTimes(1);
+    });
+
+    it("counts down the minutes and seconds the phone still waits", () => {
+        expect(waitsLabel(1_000 + 112_000, 1_000)).toBe("1:52");
+        expect(waitsLabel(1_000, 5_000)).toBe("0:00");
     });
 });

@@ -188,11 +188,6 @@ label.devices-row {
     color: var(--live);
 }
 
-.device-key {
-    color: var(--text-secondary);
-    font-family: var(--mono);
-    font-size: var(--text-xs);
-}
 .device-controls {
     display: flex;
     align-items: center;

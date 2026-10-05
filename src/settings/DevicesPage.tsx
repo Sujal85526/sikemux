@@ -1,9 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { accountApi, type AccountStatus } from "../api/account";
 import { portsApi } from "../api/ports";
-import { initials, loadAccount, setAccount, useAccount } from "../account/account";
+import { AccountAvatar } from "../account/AccountAvatar";
+import { loadAccount, setAccount, useAccount } from "../account/account";
 import { remoteApi, type AccountLink, type DeviceAccess, type NotificationState, type PairedDevice, type RemoteStatus } from "../api/remote";
-import { ACCESS_OPTIONS, platformName } from "../remote/pairingRequest";
+import { ACCESS_OPTIONS, platformName } from "../remote/access";
 import * as cmd from "../state/commands";
 import { reportError } from "../state/toast";
 import { Dropdown } from "../ui/Dropdown";
@@ -191,18 +192,6 @@ function DevicesRow({
             </span>
             <span className="devices-row-control">{children}</span>
         </Tag>
-    );
-}
-
-export function AccountAvatar({ account, className }: { account: AccountStatus; className: string }) {
-    const [broken, setBroken] = useState<string | null>(null);
-    const picture = account.picture !== broken ? account.picture : null;
-    return picture ? (
-        <img className={className} src={picture} alt="" draggable={false} onError={() => setBroken(picture)} />
-    ) : (
-        <span className={className} aria-hidden="true">
-            {initials(account.name, account.email)}
-        </span>
     );
 }
 

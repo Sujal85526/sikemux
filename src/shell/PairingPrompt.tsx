@@ -2,10 +2,9 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
 import { postNotification } from "../agents/agentNotifications";
 import { remoteApi, type PendingDevice, type RemoteStatus } from "../api/remote";
-import { useStore } from "../state/store";
 import { reportError, swallow } from "../state/toast";
 
-const PairingCards = lazy(() => import("./PairingCards"));
+const ConnectTakeover = lazy(() => import("./ConnectTakeover"));
 
 /** The notification for a device that starts waiting while Sikemux is in the background. */
 export function pairingNotification(request: PendingDevice): { title: string; body: string } {
@@ -55,16 +54,20 @@ function usePendingDevices(hasFocus: () => boolean): [readonly PendingDevice[], 
 const documentHasFocus = () => document.hasFocus();
 
 /**
- * Asks about a device waiting to pair or connect over whatever screen is up, since a phone
- * gives up after two minutes and the person is rarely on Settings › Devices when it asks.
+ * Asks about the phone that has waited longest, over the whole window, since a phone gives up
+ * after two minutes. The next one waiting follows once it is answered.
  */
 export function PairingPrompt({ hasFocus = documentHasFocus }: { hasFocus?: () => boolean }) {
     const [pending, answer] = usePendingDevices(hasFocus);
-    const devicesPageOpen = useStore((s) => s.settingsOpen && s.settingsPage === "devices");
-    if (devicesPageOpen || pending.length === 0) return null;
+    const oldest = pending.reduce<PendingDevice | null>((first, request) => (!first || request.expiresAt < first.expiresAt ? request : first), null);
+    if (!oldest) return null;
     return (
         <Suspense fallback={null}>
-            <PairingCards pending={pending} onAnswer={(id, allow, access) => void answer(remoteApi.answerPairing(id, allow, access))} />
+            <ConnectTakeover
+                key={oldest.id}
+                request={oldest}
+                onAnswer={(allow, access) => answer(remoteApi.answerPairing(oldest.id, allow, access))}
+            />
         </Suspense>
     );
 }
