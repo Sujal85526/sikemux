@@ -11,13 +11,16 @@ final class NotchStore {
     private(set) var settings: NotchSettings
     /// When each agent entered the state it is in, for the times beside it.
     private(set) var since: [String: Date] = [:]
-    var error: String?
+    private(set) var error: String?
 
     @ObservationIgnored let options: Options
     @ObservationIgnored private var link: CoreLink?
     @ObservationIgnored private var startedCore = false
     @ObservationIgnored private var seenAttentions: Set<String> = []
+    /// The state each agent was last seen in, kept across a reconnect so its time does not restart.
+    @ObservationIgnored private var lastStates: [String: AgentState] = [:]
     @ObservationIgnored private var heard = false
+    @ObservationIgnored private var errorTimer: DispatchWorkItem?
     @ObservationIgnored var onPeek: ((Peek) -> Void)?
 
     enum Peek {
@@ -46,10 +49,11 @@ final class NotchStore {
             self?.error = nil
         }
         link.onEvent = { [weak self] event in self?.receive(event) }
-        link.onClose = { [weak self] _ in
+        link.onClose = { [weak self] reason in
             guard let self else { return }
             self.link = nil
-            self.apply(.empty)
+            self.disconnected()
+            if let reason { self.fail(reason) }
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.connect() }
         }
         if link.connect() {
@@ -72,43 +76,62 @@ final class NotchStore {
     }
 
     func apply(_ view: DeviceView) {
-        let before = Dictionary(uniqueKeysWithValues: agents.map { ($0.id, $0) })
+        let before = lastStates
         let fresh = view.agents
         let now = Date()
         var since: [String: Date] = [:]
         for agent in fresh {
-            let unchanged = before[agent.id]?.state == agent.state
+            let unchanged = before[agent.id] == agent.state
             since[agent.id] = unchanged ? self.since[agent.id] ?? now : now
         }
         for attention in view.attentions {
             since[attention.agentId] = Date(timeIntervalSince1970: attention.at / 1000)
         }
-        let newAsks = view.attentions.filter { !seenAttentions.contains($0.id) }
-        let finished = fresh.filter { $0.state == .done && before[$0.id].map { $0.state != .done } ?? false }
+        let newAsks = view.attentions.filter { !seenAttentions.contains($0.id) }.map(\.agentId)
+        // A terminal agent asks in its own terminal, so the notch hears only that it is now blocked.
+        let newlyBlocked = fresh.filter { !$0.isChat && $0.state == .blocked && before[$0.id] != .blocked }.map(\.id)
+        let finished = fresh.filter { $0.state == .done && before[$0.id].map { $0 != .done } ?? false }
         seenAttentions = Set(view.attentions.map(\.id))
+        lastStates = Dictionary(uniqueKeysWithValues: fresh.map { ($0.id, $0.state) })
         self.view = view
         withAnimation(Motion.open) { agents = fresh }
         self.since = since
         defer { heard = true }
         guard heard else { return }
-        if let ask = newAsks.last {
-            if settings.sound { NSSound(named: "Tink")?.play() }
-            if settings.peeks != .never { onPeek?(.ask(ask.agentId)) }
-        } else if let done = finished.last, settings.peeks == .all {
+        if let ask = (newAsks + newlyBlocked).last {
+            onPeek?(.ask(ask))
+        } else if let done = finished.last {
             onPeek?(.done(done.id))
         }
     }
 
+    /// Empties the island while the core is away. The first view after it comes
+    /// back only catches up, so what was already asked or finished does not peek again.
+    private func disconnected() {
+        heard = false
+        view = .empty
+        withAnimation(Motion.open) { agents = [] }
+    }
+
+    /// Shows what went wrong for a few seconds.
+    func fail(_ message: String) {
+        error = message
+        errorTimer?.cancel()
+        let timer = DispatchWorkItem { [weak self] in self?.error = nil }
+        errorTimer = timer
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6, execute: timer)
+    }
+
     // MARK: Actions
 
-    func answer(_ ask: Ask, agentId: String, optionId: String?) {
+    func answer(_ ask: Ask, agentId: String, optionId: String) {
         link?.request([
             "op": "acpPermissionReply",
             "agentId": agentId,
             "requestId": ask.attentionId,
-            "optionId": optionId as Any,
+            "optionId": optionId,
         ]) { [weak self] result in
-            if case .failure(let error) = result { self?.error = error.message }
+            if case .failure(let error) = result { self?.fail(error.message) }
         }
     }
 
@@ -160,7 +183,7 @@ final class NotchStore {
 
     func start(_ launch: Launch, done: @escaping (Bool) -> Void) {
         guard let link, let launcher = launcher(for: launch.provider) else {
-            error = "Open Sikemux once so the notch knows which agents it can start"
+            fail("Open Sikemux once so the notch knows which agents it can start")
             done(false)
             return
         }
@@ -181,7 +204,7 @@ final class NotchStore {
                 }
                 done(true)
             case .failure(let error):
-                self?.error = error.message
+                self?.fail(error.message)
                 done(false)
             }
         }
@@ -205,7 +228,7 @@ final class NotchStore {
     private func prompt(_ agentId: String, text: String, paths: [String]) {
         link?.request(["op": "acpPrompt", "agentId": agentId, "text": text, "paths": paths, "context": [Any]()]) {
             [weak self] result in
-            if case .failure(let error) = result { self?.error = error.message }
+            if case .failure(let error) = result { self?.fail(error.message) }
         }
     }
 

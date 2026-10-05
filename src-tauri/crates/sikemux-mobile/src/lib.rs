@@ -15,8 +15,9 @@ use base64::Engine;
 use iroh::endpoint::presets;
 use iroh::{Endpoint, EndpointAddr, RelayMode, RelayUrl, SecretKey};
 use sikemux_core::accounts::network;
-use sikemux_core::accounts::protocol::Relay;
+use sikemux_core::accounts::protocol::{JoinTicket, Relay};
 use sikemux_core::client::{ClientError, CoreClient, EventSink, Reply};
+use sikemux_core::join::{JoinHello, JoinReply};
 use sikemux_core::pairing::{self, PairError, PairingRequest};
 use sikemux_core::protocol::{
     CallId, Event, NotifyPrefs, Request, Response, SessionId, WindowCall, PROTOCOL_VERSION,
@@ -322,10 +323,28 @@ impl Device {
             pairing::pair(&endpoint, addr, request).await
         })
         .await??;
-        serde_json::to_value(access)
-            .ok()
-            .and_then(|value| value.as_str().map(str::to_owned))
-            .ok_or_else(|| invalid("the host gave an access this app does not know"))
+        access_name(access)
+    }
+
+    /// Hands the host whose key is `core` the `ticket` the accounts server
+    /// signed for it and this phone, as its JSON, and waits while the person
+    /// there decides. An allowed phone is paired as a code would pair it.
+    pub async fn join(
+        &self,
+        core: String,
+        ticket: String,
+        name: String,
+        platform: String,
+    ) -> Result<JoinAnswer, MobileError> {
+        let ticket = read_ticket(&ticket, &self.id(), &core)?;
+        let addr = core_addr(&core, &self.relays)?;
+        let (endpoint, _) = self.endpoint();
+        let hello = JoinHello {
+            ticket,
+            name,
+            platform,
+        };
+        join_with(endpoint, addr, hello).await
     }
 
     /// Opens a session with a host this phone paired with. Everything the core
@@ -345,6 +364,61 @@ impl Device {
         let (endpoint, _) = self.endpoint();
         let _ = on_runtime(async move { endpoint.close().await }).await;
     }
+}
+
+/// What the host said to a join ticket.
+#[derive(Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum JoinAnswer {
+    /// `full` or `watch`.
+    Allowed {
+        access: String,
+    },
+    Denied,
+    /// The host would not take the ticket; `reason` is a short machine word.
+    Refused {
+        reason: String,
+    },
+}
+
+fn access_name(access: sikemux_core::protocol::DeviceAccess) -> Result<String, MobileError> {
+    serde_json::to_value(access)
+        .ok()
+        .and_then(|value| value.as_str().map(str::to_owned))
+        .ok_or_else(|| invalid("the host gave an access this app does not know"))
+}
+
+async fn join_with(
+    endpoint: Endpoint,
+    addr: EndpointAddr,
+    hello: JoinHello,
+) -> Result<JoinAnswer, MobileError> {
+    let reply = on_runtime(async move { sikemux_core::join::join(&endpoint, addr, &hello).await })
+        .await?
+        .map_err(|error| MobileError::Connection {
+            message: error.to_string(),
+        })?;
+    Ok(match reply {
+        JoinReply::Allowed { access } => JoinAnswer::Allowed {
+            access: access_name(access)?,
+        },
+        JoinReply::Denied => JoinAnswer::Denied,
+        JoinReply::Refused { reason } => JoinAnswer::Refused { reason },
+    })
+}
+
+/// The ticket the accounts server gave, checked to be for this phone and the
+/// host it is about to dial, so a mix-up shows here and not as the host's
+/// refusal.
+fn read_ticket(json: &str, phone: &str, host: &str) -> Result<JoinTicket, MobileError> {
+    let ticket: JoinTicket = serde_json::from_str(json)
+        .map_err(|error| invalid(format!("the join ticket is not readable: {error}")))?;
+    if ticket.phone != phone {
+        return Err(invalid("the join ticket is for another phone"));
+    }
+    if ticket.host != host {
+        return Err(invalid("the join ticket is for another host"));
+    }
+    Ok(ticket)
 }
 
 impl Device {
@@ -629,6 +703,33 @@ impl Connection {
         };
         match self.ask(request).await? {
             Response::ChatAttached { attachment } => Ok(attachment.into()),
+            _ => Err(unexpected()),
+        }
+    }
+
+    /// The turns before event `before` of the chat's run `feed`, a page at a
+    /// time, for a chat the phone was sent only the end of.
+    pub async fn chat_history(
+        &self,
+        agent_id: String,
+        feed: String,
+        before: u64,
+        turns: u32,
+    ) -> Result<ChatHistory, MobileError> {
+        let request = Request::AcpHistory {
+            agent_id,
+            feed,
+            before,
+            turns,
+        };
+        match self.ask(request).await? {
+            Response::ChatHistory {
+                events,
+                older_before,
+            } => Ok(ChatHistory {
+                events_json: records::json(&events),
+                older_before,
+            }),
             _ => Err(unexpected()),
         }
     }
@@ -932,6 +1033,33 @@ mod tests {
             fallback[0].quic_port,
             Some(i64::from(network::DEFAULT_QUIC_PORT))
         );
+    }
+
+    #[test]
+    fn a_join_ticket_is_sent_only_to_the_host_it_names_from_the_phone_it_names() {
+        let vector: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../server/protocol/vectors/join.json"
+        ))
+        .expect("the vector is JSON");
+        let json = vector["ticket"].to_string();
+        let text = |name: &str| {
+            vector["ticket"][name]
+                .as_str()
+                .expect("a string")
+                .to_owned()
+        };
+        let (phone, host) = (text("phone"), text("host"));
+        let ticket = read_ticket(&json, &phone, &host).expect("reads");
+        assert_eq!(ticket.account, "user_2vectorTest");
+        assert!(matches!(
+            read_ticket(&json, &host, &host),
+            Err(MobileError::Invalid { message }) if message.contains("another phone")
+        ));
+        assert!(matches!(
+            read_ticket(&json, &phone, &phone),
+            Err(MobileError::Invalid { message }) if message.contains("another host")
+        ));
+        assert!(read_ticket("{}", &phone, &host).is_err());
     }
 
     #[test]

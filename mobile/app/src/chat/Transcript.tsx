@@ -6,6 +6,7 @@ import { toolKind, toolRunning, toolTarget } from '@mac/chat/toolLabels';
 import type { ChatMessage, ChatPart } from '@mac/chat/types';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import type { IconName } from '@/ui/icons.generated';
+import { Working } from '@/ui/parts';
 import { fonts, type Palette, useColors, useStyles } from '@/ui/theme';
 import { Markdown } from './Markdown';
 
@@ -175,6 +176,17 @@ export function Queued({ text }: { text: string }) {
   );
 }
 
+/** Above the first message while the host has turns from before it, which arrive as it comes into view. */
+export function Earlier() {
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={styles.earlier}>
+      <Working />
+      <Text style={styles.earlierText}>Loading earlier messages…</Text>
+    </View>
+  );
+}
+
 /** The working line: the agent's logo breathing beside what it is doing, and for how long. */
 export function Activity({ provider, label, since }: { provider: string; label: string; since: number }) {
   const styles = useStyles(makeStyles);
@@ -249,6 +261,8 @@ const makeStyles = (colors: Palette) => {
     target: { flex: 1, fontFamily: fonts.mono, fontSize: 12, color: colors.ink },
     toolEnd: { flexDirection: 'row', gap: 6 },
     endText: { fontFamily: fonts.mono, fontSize: 11, color: colors.inkDim },
+    earlier: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingTop: 10, paddingBottom: 6 },
+    earlierText: { fontFamily: fonts.ui, fontSize: 13, color: colors.tertiary },
     activity: { flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 14, marginBottom: 6 },
     activityText: { fontFamily: fonts.ui, fontSize: 13, color: colors.inkFaint },
     activityTime: { fontFamily: fonts.mono, fontSize: 10.5, color: colors.inkFaint },

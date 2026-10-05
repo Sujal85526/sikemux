@@ -235,6 +235,7 @@ export function IconAws({ size = 16, className }: IconProps) {
 }
 
 export const IconFocus = makeSvgIcon(<path d="M2 5.5V2.5h3M14 5.5V2.5h-3M2 10.5v3h3M14 10.5v3h-3" />);
+export const IconPointer = makeSvgIcon(<path d="M3.5 2.5 12.5 7.6 8.6 8.6 6.9 12.5Z" strokeLinejoin="round" />);
 export const IconChevron = makeSvgIcon(<path d="M6 4l4 4-4 4" />);
 export const IconPanelLeft = makeSvgIcon(
     <>

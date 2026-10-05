@@ -18,6 +18,10 @@ use crate::release_credits::image_type;
 const PROFILE_FILE: &str = "profile.json";
 const PICTURE_PREFIX: &str = "picture-";
 const MAX_PICTURE_BYTES: usize = 1024 * 1024;
+/// Google hands Clerk pictures of over a megabyte, so a larger one is fetched and shrunk.
+const MAX_DOWNLOAD_BYTES: usize = 8 * 1024 * 1024;
+const SHRUNK_SIZE: &str = "256";
+const SHRINK_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_REDIRECTS: usize = 5;
 const FETCH_TIMEOUT: Duration = Duration::from_secs(15);
 pub const CHECK_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
@@ -125,7 +129,9 @@ pub async fn save(dir: &Path, profile: &Profile) -> std::io::Result<()> {
     if let (Some(url), Some(path)) = (profile.picture.as_deref(), keep.as_deref()) {
         if tokio::fs::metadata(path).await.is_err() {
             if let Some(bytes) = download(url).await {
-                tokio::fs::write(path, bytes).await?;
+                if let Some(bytes) = fit(dir, bytes).await {
+                    tokio::fs::write(path, bytes).await?;
+                }
             }
         }
     }
@@ -182,7 +188,7 @@ async fn download(url: &str) -> Option<Vec<u8>> {
         || !content_type_allowed(content_type)
         || response
             .content_length()
-            .is_some_and(|length| length > MAX_PICTURE_BYTES as u64)
+            .is_some_and(|length| length > MAX_DOWNLOAD_BYTES as u64)
     {
         return None;
     }
@@ -190,12 +196,44 @@ async fn download(url: &str) -> Option<Vec<u8>> {
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.ok()?;
-        if body.len() + chunk.len() > MAX_PICTURE_BYTES {
+        if body.len() + chunk.len() > MAX_DOWNLOAD_BYTES {
             return None;
         }
         body.extend_from_slice(&chunk);
     }
-    data_url(&body).is_some().then_some(body)
+    image_type(&body).is_some().then_some(body)
+}
+
+/// The picture small enough to hand to the window, shrunk with macOS's `sips` when it is not.
+async fn fit(dir: &Path, bytes: Vec<u8>) -> Option<Vec<u8>> {
+    if data_url(&bytes).is_some() {
+        return Some(bytes);
+    }
+    if !cfg!(target_os = "macos") {
+        return None;
+    }
+    let original = dir.join(format!("{PICTURE_PREFIX}download"));
+    let shrunk = dir.join(format!("{PICTURE_PREFIX}shrunk.png"));
+    tokio::fs::write(&original, &bytes).await.ok()?;
+    let (input, output) = (original.clone(), shrunk.clone());
+    let result = tokio::task::spawn_blocking(move || {
+        let mut sips = sikemux_process::user_environment::command("/usr/bin/sips");
+        sips.args(["-Z", SHRUNK_SIZE, "-s", "format", "png"])
+            .arg(&input)
+            .arg("--out")
+            .arg(&output);
+        let ran = sikemux_process::run(&mut sips, None, SHRINK_TIMEOUT, 64 * 1024, None);
+        match ran {
+            Ok(done) if done.status.success() => std::fs::read(&output).ok(),
+            _ => None,
+        }
+    })
+    .await
+    .ok()
+    .flatten();
+    let _ = tokio::fs::remove_file(&original).await;
+    let _ = tokio::fs::remove_file(&shrunk).await;
+    result.filter(|bytes| data_url(bytes).is_some())
 }
 
 #[cfg(test)]
@@ -203,6 +241,37 @@ mod tests {
     use super::*;
 
     const PNG: &[u8] = b"\x89PNG\r\n\x1a\nrest";
+
+    /// A real 1x1 PNG, which `sips` can open, unlike the bare signature above.
+    const TINY_PNG: &[u8] = &[
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f,
+        0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0b, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0xf8,
+        0x0f, 0x04, 0x00, 0x09, 0xfb, 0x03, 0xfd, 0xfb, 0x5e, 0x6b, 0x2b, 0x00, 0x00, 0x00, 0x00,
+        0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ];
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn a_picture_too_large_for_the_window_is_shrunk() {
+        let dir = tempfile::tempdir().expect("dir");
+        let mut large = TINY_PNG.to_vec();
+        large.resize(MAX_PICTURE_BYTES + 1, 0);
+        assert!(data_url(&large).is_none());
+        let shrunk = fit(dir.path(), large).await.expect("shrunk");
+        assert!(data_url(&shrunk).is_some());
+        let left: Vec<_> = std::fs::read_dir(dir.path()).expect("dir").collect();
+        assert!(left.is_empty(), "the working files are removed");
+    }
+
+    #[tokio::test]
+    async fn a_picture_that_already_fits_is_kept_as_it_is() {
+        let dir = tempfile::tempdir().expect("dir");
+        assert_eq!(
+            fit(dir.path(), TINY_PNG.to_vec()).await.as_deref(),
+            Some(TINY_PNG)
+        );
+    }
 
     #[test]
     fn only_https_pictures_are_fetched() {

@@ -13,6 +13,9 @@ on:
       - RELEASE_NOTES.md
       # server.yml checks and deploys the backend.
       - "server/**"
+      # The phone workflows check the phone app.
+      - "mobile/**"
+      - ".github/workflows/mobile-*.yml"
   pull_request:
   workflow_dispatch:
   workflow_call:

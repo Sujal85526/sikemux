@@ -175,6 +175,7 @@
   /* ---------- chat pane ---------- */
   .chat { flex: 1; min-height: 0; overflow: hidden; padding: 6px 18px 0; display: flex; flex-direction: column; justify-content: flex-end; }
   .chat > * { flex: none; }
+  .earlier { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 0 6px; font-size: 13px; color: var(--text-tertiary); }
   .msg-user { align-self: flex-end; max-width: 84%; margin: 12px 0 8px; padding: 9px 13px; border-radius: 12px; border: 1px solid color-mix(in oklab, var(--line) 80%, transparent); background: color-mix(in oklab, var(--rail-2) 72%, transparent); color: var(--ink); font-size: 15px; line-height: 1.6; }
   code.chip { font-family: var(--mono); font-size: .86em; padding: 1px 5px; border-radius: 5px; background: var(--acc-soft); color: color-mix(in oklab, var(--acc) 74%, var(--ink)); }
   .prose { color: var(--ink); font-size: 15.5px; line-height: 1.62; margin: 6px 0 8px; }
@@ -289,7 +290,7 @@
   .tucked b { font-family: var(--ui); font-size: 13.5px; font-weight: 600; color: var(--ink); margin-right: 6px; }
   .tucked .open { font-weight: 600; color: var(--ink); }
 
-  .docked { margin: 0 10px -1px; padding: 12px 12px 12px; border: 1px solid var(--border-strong); border-bottom: 0; border-radius: 16px 16px 0 0; background: var(--surface-overlay); }
+  .docked { margin: 0 0 8px; padding: 12px; border: 1px solid var(--border-strong); border-radius: 16px; background: var(--surface-overlay); }
   .docked-head { display: flex; gap: 10px; align-items: flex-start; color: var(--ink); }
   .docked-head .ico { margin-top: 2px; }
   .docked-head > div { flex: 1; min-width: 0; }
@@ -495,6 +496,9 @@
   .digits.locked span { background: var(--surface-raised); border-color: var(--border-strong); }
   .digits.failed span { border-color: color-mix(in oklab, var(--danger) 55%, transparent); background: color-mix(in oklab, var(--danger) 7%, var(--surface-sunken)); color: color-mix(in oklab, var(--danger) 70%, var(--ink)); }
   .digits span.gap { background: none; border: 0; }
+  .dev-connect { flex: none; height: 32px; padding: 0 13px; display: grid; place-items: center; border-radius: 10px; border: 1px solid var(--border-strong); background: var(--surface-raised); font-size: 14px; font-weight: 600; color: var(--text-primary); }
+  .join-glyph { margin-top: 32px; width: 76px; height: 76px; border-radius: 18px; display: grid; place-items: center; border: 1px solid var(--border-strong); background: var(--surface-raised); color: var(--text-primary); }
+  .join-glyph.failed { border-color: color-mix(in oklab, var(--danger) 55%, transparent); background: color-mix(in oklab, var(--danger) 7%, var(--surface-sunken)); color: color-mix(in oklab, var(--danger) 70%, var(--ink)); }
 
   .big-code { font-family: var(--mono); font-size: 36px; letter-spacing: .06em; color: var(--text-primary); margin-top: 18px; }
   .waiting { display: flex; align-items: center; gap: 8px; margin-top: 22px; font-size: 13px; color: var(--text-tertiary); }
@@ -574,7 +578,7 @@
 <!-- ================================================================ -->
 <section class="flow">
   <h2>Signing in, and pairing</h2>
-  <p>The app needs a Sikemux account; hosts signed in to the same account show up in Devices. A phone still reaches a host only after someone at the host approves it. A code scanned or a link pasted inside Sikemux goes straight to "Approve on your host". A link opened from anywhere else, such as the iPhone's own Camera, first asks whether to pair.</p>
+  <p>The app needs a Sikemux account; hosts signed in to the same account show up in Devices, and connect without a code. A phone still reaches a host only after someone at the host approves it. A code scanned or a link pasted inside Sikemux goes straight to "Approve on your host". A link opened from anywhere else, such as the iPhone's own Camera, first asks whether to pair.</p>
   <div class="phones">
 
     <figure><div class="phone"><div class="island"></div>
@@ -680,6 +684,43 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}Cancel</span></div>
+        <div class="pairing">
+          <h2>Allow this phone on Work MacBook</h2>
+          <p>On Work MacBook, choose whether to let this phone in, and with what access.</p>
+          <div class="join-glyph">{{IconLaptop:34}}</div>
+        </div>
+        <div style="flex:1"></div>
+        <div class="footer">
+          <div class="row boxed"><span class="mark"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span><div class="body"><div class="t" style="font-size:15px;font-weight:400">Waiting for Work MacBook</div></div><span class="ago m">1:52</span></div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Connect, for a host on your account</b><div class="note">Tapping Connect on a host from the account comes straight here: no code, since the account vouches for this phone. Sikemux hands the phone a ten-minute invitation naming both keys, and the phone shows it to the host, which checks it without asking Sikemux. Someone at the host still decides, as with a code, and picks the access. Until the invitation reaches the host the row reads "Reaching Work MacBook"; then the rail's squares and the same two minutes as code pairing. On Allow the host opens.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}Back</span></div>
+        <div class="pairing">
+          <h2>Work MacBook said no</h2>
+          <p>Someone at Work MacBook turned this phone down.</p>
+          <div class="join-glyph failed">{{IconLaptop:34}}</div>
+        </div>
+        <div style="flex:1"></div>
+        <div class="footer">
+          <div class="btn primary">Try again</div>
+          <div class="text-link">Use a code instead</div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Connect failed</b><div class="note">Same place, the host's tile edged red, the cause in one line. Turned down on the host; no answer in two minutes ("Work MacBook did not answer"); out of reach ("Can't reach Work MacBook": asleep, offline, or remote access off); the host refused the invitation, as when it is signed out or signed in to another account ("Work MacBook couldn't let this phone in", with the reason); or Sikemux itself out of reach or the host no longer on the account. Try again asks for a fresh invitation. A code still works for any host, so it stays one tap away.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Back</span></div>
         <div class="pairing">
           <h2>Enter the code from Work MacBook</h2>
@@ -695,7 +736,7 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Code, for a host on your account</b><div class="note">The phone already knows this host's key from the account, so only the code is asked for. Three and three, as the host shows it. The sixth digit sends it, straight to "Approve on your host".</div></figcaption>
+      <figcaption><b>Code, for a host on your account</b><div class="note">Reached from "Use a code instead" when connecting without one did not work. The phone already knows this host's key from the account, so only the code is asked for. Three and three, as the host shows it. The sixth digit sends it, straight to "Approve on your host".</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -818,15 +859,15 @@
           <div class="device away">
             <div class="dev-head">
               <span class="dev-glyph">{{IconLaptop:30}}</span>
-              <div class="body"><div class="dev-name">Work MacBook</div><div class="dev-meta">On your account · not paired yet</div></div>
-              <span class="chev">{{IconChevron:14}}</span>
+              <div class="body"><div class="dev-name">Work MacBook</div><div class="dev-meta">On your account</div></div>
+              <span class="dev-connect">Connect</span>
             </div>
           </div>
 
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Devices</b><div class="note">Each card is a device with its own glyph and a presence dot. The busy one says the one thing that needs you, then who is working, with the rail's logos and squares. A device that is asleep keeps its place but drops to an outline. A host signed in to the same account but not paired with this phone comes last, outlined, and pairs with the code from that host. The account's picture sits at the top right, beside pairing, and opens the account sheet.</div></figcaption>
+      <figcaption><b>Devices</b><div class="note">Each card is a device with its own glyph and a presence dot. The busy one says the one thing that needs you, then who is working, with the rail's logos and squares. A device that is asleep keeps its place but drops to an outline. A host signed in to the same account but not paired with this phone comes last, outlined, with Connect in place of the chevron: it asks that host to let this phone in, with no code. The account's picture sits at the top right, beside pairing, and opens the account sheet.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1310,7 +1351,7 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Asking permission</b><div class="note">Docked to the top of the composer, inside the chat, and it stays until it is answered: no drawer, no scrim, nothing to fold away. The transcript stays readable above it and the composer below it. Allow is the one white button.</div></figcaption>
+      <figcaption><b>Asking permission</b><div class="note">A card of its own just above the composer, inside the chat, and it stays until it is answered: no drawer, no scrim, nothing to fold away. It keeps its own border and corners, with a gap, so the composer never looks to cover it. Allow is the one white button.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1376,6 +1417,37 @@
       </div>
       <div class="home-bar"></div></div>
       <figcaption><b>Reading back</b><div class="note">Scrolled up, the transcript holds still while the agent keeps writing below. A round arrow sits just above the composer, as on the Mac, and takes you back to the latest message. Near the end, new lines follow on their own. Text can be selected, and links open in the browser.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span>Fix the flaky PTY replay test</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border);justify-content:flex-start">
+          <div class="earlier"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>Loading earlier messages…</div>
+          <div class="msg-user"><code class="chip">usePty.test.tsx &gt; replays the snapshot once</code> fails about one run in ten on CI. Find out why and fix it without adding sleeps.</div>
+          <div class="tools"><span class="tools-sum">4 tool calls <span class="time">12s</span>{{IconChevron:11}}</span></div>
+          <div class="thought">Two writes means the attach response and the first channel message both carry the snapshot.</div>
+          <div class="prose">The channel could deliver bytes already inside the attach snapshot, so the first write landed twice whenever the channel won the race.</div>
+        </div>
+        <div class="composer-wrap jumps">
+          <span class="jump">{{IconArrowDown:16}}</span>
+          <div class="composer">
+            <div class="ta ph">Send to queue behind the running turn</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">Medium<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="ib">{{IconMic:17}}</span>
+              <span class="send"><i></i></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Scrolling back</b><div class="note">A phone opens a long chat at its last turns. Scrolling near the top fetches the turns before them from the host, a page at a time, with the rail's squares and "Loading earlier messages…" above the first message until they arrive. They slot in above without moving what is on screen. At the chat's first message the row goes and nothing takes its place.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>

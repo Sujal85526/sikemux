@@ -84,7 +84,10 @@ describe("DevicesPage", () => {
         expect(screen.getByRole("img", { name: "Pairing QR code" })).toBeInTheDocument();
         expect(screen.getByText(/Expires in 4:00/)).toBeInTheDocument();
 
-        transport.emit(REMOTE_STATUS_EVENT, status({ pending: [{ id: "request-1", deviceId: PHONE, name: "Kishore's phone", platform: "ios" }] }));
+        transport.emit(
+            REMOTE_STATUS_EVENT,
+            status({ pending: [{ id: "request-1", deviceId: PHONE, name: "Kishore's phone", platform: "ios", fromAccount: false }] }),
+        );
         expect(await screen.findByText("Kishore's phone wants to pair")).toBeInTheDocument();
         expect(screen.getByText(PHONE.slice(0, 8))).toBeInTheDocument();
 
@@ -94,6 +97,22 @@ describe("DevicesPage", () => {
 
         expect(answer).toHaveBeenCalledWith({ id: "request-1", allow: true, access: "watch" }, expect.anything());
         expect(await screen.findByText("iOS · never connected")).toBeInTheDocument();
+    });
+
+    it("asks about a phone that came from the account, with no code open", async () => {
+        const user = userEvent.setup();
+        transport.register("remote_status", () =>
+            status({ pending: [{ id: "join-1", deviceId: PHONE, name: "Pixel 8", platform: "android", fromAccount: true }] }),
+        );
+        const answer = vi.fn(() => status());
+        transport.register("remote_answer_pairing", answer);
+        render(<DevicesPage />);
+
+        const request = await screen.findByRole("group", { name: "Pixel 8 from your Sikemux account wants to connect" });
+        expect(request).toHaveTextContent("Android · key " + PHONE.slice(0, 8) + " · signed in to your account");
+        await user.click(screen.getByRole("button", { name: "Decline" }));
+
+        expect(answer).toHaveBeenCalledWith({ id: "join-1", allow: false, access: "full" }, expect.anything());
     });
 
     it("revokes a paired device", async () => {

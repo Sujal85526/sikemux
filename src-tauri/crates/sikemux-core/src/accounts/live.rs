@@ -217,6 +217,47 @@ pub fn rfc3339(ms: u64) -> String {
     )
 }
 
+/// Milliseconds since the Unix epoch for a UTC time like the server writes,
+/// `2026-10-03T00:00:30.000Z`, with or without the fraction.
+pub fn parse_rfc3339(text: &str) -> Option<u64> {
+    let text = text.strip_suffix('Z')?;
+    let (date, time) = text.split_once('T')?;
+    let number = |part: &str| -> Option<i64> {
+        part.bytes()
+            .all(|byte| byte.is_ascii_digit())
+            .then(|| part.parse().ok())?
+    };
+    let mut date = date.splitn(3, '-').map(number);
+    let (year, month, day) = (date.next()??, date.next()??, date.next()??);
+    let (time, fraction) = time.split_once('.').unwrap_or((time, ""));
+    let mut time = time.splitn(3, ':').map(number);
+    let (hour, minute, second) = (time.next()??, time.next()??, time.next()??);
+    if !(1..=12).contains(&month)
+        || !(1..=31).contains(&day)
+        || hour > 23
+        || minute > 59
+        || second > 60
+    {
+        return None;
+    }
+    let millis = if fraction.is_empty() {
+        0
+    } else {
+        let digits: String = fraction.chars().chain("00".chars()).take(3).collect();
+        number(fraction)?;
+        number(&digits)?
+    };
+    let year = year - i64::from(month <= 2);
+    let era = year.div_euclid(400);
+    let year_of_era = year.rem_euclid(400);
+    let shifted_month = (month + 9) % 12;
+    let day_of_year = (153 * shifted_month + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    let days = era * 146_097 + day_of_era - 719_468;
+    let ms = ((days * 24 + hour) * 60 + minute) * 60_000 + second * 1000 + millis;
+    u64::try_from(ms).ok()
+}
+
 /// `base` is the accounts API, `http(s)://host`.
 pub fn url(base: &str) -> String {
     let base = base.trim_end_matches('/');

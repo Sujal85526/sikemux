@@ -275,6 +275,14 @@ pub enum Request {
         agent_id: String,
         since: Option<ChatMark>,
     },
+    /// The turns before event `before` of the chat's run `feed`, as many as
+    /// `turns`, for a phone paging back from its attachment's `older_before`.
+    AcpHistory {
+        agent_id: String,
+        feed: String,
+        before: u64,
+        turns: u32,
+    },
     /// Stops the chat's events reaching this client.
     AcpDetach {
         agent_id: String,
@@ -527,6 +535,10 @@ pub enum ChatAttachment {
         turned: bool,
         replay: Vec<ChatEvent>,
         mark: ChatMark,
+        /// A phone is sent only the chat's last turns. Asking for the history
+        /// before this event, with [`Request::AcpHistory`], pages back.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        older_before: Option<u64>,
     },
     /// The events the client missed since the mark it attached with, except
     /// the prompts it sent itself. Live events follow `mark`.
@@ -725,24 +737,65 @@ pub enum ServerMessage {
     rename_all_fields = "camelCase"
 )]
 pub enum Response {
-    Spawned { id: SessionId },
+    Spawned {
+        id: SessionId,
+    },
     Done,
-    Sessions { sessions: Vec<SessionInfo> },
-    TaskOutput { page: OutputPage },
-    Manifests { report: ManifestReloadReport },
-    DetectionExplain { explain: Box<DetectionExplain> },
-    ChatStarted { start: ChatStart },
-    ChatAttached { attachment: ChatAttachment },
-    Chats { chats: Vec<ChatInfo> },
-    Steered { outcome: String },
-    ChatConfig { value: Value },
-    Remote { status: Box<RemoteStatus> },
-    Workspace { workspace: Workspace },
-    Attentions { attentions: Vec<Attention> },
-    ChatBegun { agent_id: String, start: ChatStart },
-    Host { host: HostInfo },
-    BackdropImage { data_url: Option<String> },
-    Registration { registration: HostRegistration },
+    Sessions {
+        sessions: Vec<SessionInfo>,
+    },
+    TaskOutput {
+        page: OutputPage,
+    },
+    Manifests {
+        report: ManifestReloadReport,
+    },
+    DetectionExplain {
+        explain: Box<DetectionExplain>,
+    },
+    ChatStarted {
+        start: ChatStart,
+    },
+    ChatAttached {
+        attachment: ChatAttachment,
+    },
+    /// Older events of a chat, in order. Paging goes on before `older_before`;
+    /// without one this reaches the start of what the host keeps.
+    ChatHistory {
+        events: Vec<ChatEvent>,
+        older_before: Option<u64>,
+    },
+    Chats {
+        chats: Vec<ChatInfo>,
+    },
+    Steered {
+        outcome: String,
+    },
+    ChatConfig {
+        value: Value,
+    },
+    Remote {
+        status: Box<RemoteStatus>,
+    },
+    Workspace {
+        workspace: Workspace,
+    },
+    Attentions {
+        attentions: Vec<Attention>,
+    },
+    ChatBegun {
+        agent_id: String,
+        start: ChatStart,
+    },
+    Host {
+        host: HostInfo,
+    },
+    BackdropImage {
+        data_url: Option<String>,
+    },
+    Registration {
+        registration: HostRegistration,
+    },
 }
 
 /// What the app sends the accounts server to register this core as a host.
@@ -880,7 +933,8 @@ pub struct RemoteStatus {
     /// Ids of the devices connected now.
     pub connected: Vec<String>,
     pub pairing: Option<PairingOffer>,
-    /// Devices that entered the code and wait for the person to answer.
+    /// Devices that entered the code, or came with a ticket from the account,
+    /// and wait for the person to answer.
     pub pending: Vec<PendingDevice>,
     /// The account this host is signed in to.
     pub owner: Option<String>,
@@ -1006,6 +1060,10 @@ pub struct PendingDevice {
     /// What the device calls itself. Nothing vouches for it.
     pub name: String,
     pub platform: String,
+    /// The device came with a ticket from the host's account instead of a
+    /// code.
+    #[serde(default)]
+    pub from_account: bool,
 }
 
 /// Which build of the sidecar a core runs. `source` fingerprints the code

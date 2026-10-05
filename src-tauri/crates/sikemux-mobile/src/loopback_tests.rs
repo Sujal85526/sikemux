@@ -10,7 +10,7 @@ use sikemux_core::server::{self, ServerConfig};
 
 use super::*;
 
-const WAIT: Duration = Duration::from_secs(10);
+const WAIT: Duration = Duration::from_secs(30);
 
 struct TestCore {
     _dir: tempfile::TempDir,
@@ -208,6 +208,10 @@ fn a_phone_hears_the_mac_s_view_and_asks_it_typed_questions() {
             connection.attach_chat("nobody".into(), None).await,
             Ok(ChatAttachment::Missing)
         ));
+        assert!(matches!(
+            connection.chat_history("nobody".into(), "a run".into(), 5, 10).await,
+            Err(MobileError::Refused { message }) if message.contains("not running")
+        ));
         assert!(connection.host().await.is_ok());
         assert!(matches!(
             connection.save_backdrop("/tmp".into(), "none".into()).await,
@@ -232,5 +236,43 @@ fn a_phone_the_mac_does_not_know_is_told_it_is_unpaired() {
             )
             .await;
         assert!(matches!(refused, Err(MobileError::Unpaired)));
+    });
+}
+
+fn join_vector() -> (String, SecretKey, SecretKey) {
+    let vector: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../server/protocol/vectors/join.json"
+    ))
+    .expect("the vector is JSON");
+    (
+        vector["ticket"].to_string(),
+        SecretKey::from_bytes(&[8; 32]),
+        SecretKey::from_bytes(&[7; 32]),
+    )
+}
+
+#[test]
+fn a_join_ticket_reaches_the_host_and_its_refusal_comes_back() {
+    let (ticket, core_key, phone_key) = join_vector();
+    let core = start_core(&core_key, None);
+    block_on(async {
+        let (app, _events) = CoreClient::connect(&core.socket).await.expect("app");
+        let addr = core_addr(&app).await;
+        let device = loopback_device(phone_key).await;
+        let ticket = read_ticket(&ticket, &device.id(), &core_key.public().to_string())
+            .expect("the vector names this phone and this host");
+        let hello = JoinHello {
+            ticket,
+            name: "Pixel".into(),
+            platform: "android".into(),
+        };
+        let (endpoint, _) = device.endpoint();
+        let answer = join_with(endpoint, addr, hello).await;
+        assert_eq!(
+            answer.expect("the host answers"),
+            JoinAnswer::Refused {
+                reason: "unknown_key".into()
+            }
+        );
     });
 }

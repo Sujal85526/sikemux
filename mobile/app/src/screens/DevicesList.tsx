@@ -14,7 +14,7 @@ import { channelLabel, deviceKind, deviceName, type PairedDevice } from '@/devic
 import { chatTitle, ago } from '@/devices/words';
 import { AgentIcon, DeviceIcon, Icon } from '@/ui/Icon';
 import { Button, IconButton, NeedsYou, Screen, useBottomGap, Working } from '@/ui/parts';
-import { fonts, type Palette, typeFor, useColors, useStyles } from '@/ui/theme';
+import { fonts, type Palette, radius, typeFor, useColors, useStyles } from '@/ui/theme';
 
 function summary(snapshot: Snapshot): string {
   const agents = snapshot.chats.length;
@@ -95,16 +95,16 @@ function DeviceCard({ device }: { device: PairedDevice }) {
   );
 }
 
-/** A host signed in to the same account that this phone has not paired with: it pairs with that host's code. */
+/** A host signed in to the same account that this phone has not paired with: it asks that host to let this phone in. */
 function AccountHostCard({ host }: { host: Device }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
   const channel = channelLabel(host.channel);
   return (
     <Pressable
-      onPress={() => router.push({ pathname: '/pair-code', params: { core: host.key, name: host.name } })}
+      onPress={() => router.push({ pathname: '/join', params: { core: host.key, name: host.name } })}
       accessibilityRole="button"
-      accessibilityHint="Pairs with this host's code"
+      accessibilityLabel={`Connect to ${host.name}`}
       style={({ pressed }) => [styles.card, styles.away, pressed && { opacity: 0.85 }]}>
       <View style={styles.head}>
         <View style={styles.glyph}>
@@ -115,10 +115,12 @@ function AccountHostCard({ host }: { host: Device }) {
             {host.name}
           </Text>
           <Text style={styles.meta} numberOfLines={1}>
-            {channel ? `${channel} · ` : ''}On your account · not paired yet
+            {channel ? `${channel} · ` : ''}On your account
           </Text>
         </View>
-        <Icon name="IconChevron" size={14} color={colors.rest} />
+        <View style={styles.connect}>
+          <Text style={styles.connectText}>Connect</Text>
+        </View>
       </View>
     </Pressable>
   );
@@ -188,6 +190,16 @@ const makeStyles = (colors: Palette) => {
     presenceOff: { backgroundColor: colors.ground, borderColor: colors.rest },
     name: { ...type.heading },
     meta: { ...type.meta, marginTop: 2 },
+    connect: {
+      height: 32,
+      paddingHorizontal: 13,
+      justifyContent: 'center',
+      borderRadius: radius.control,
+      borderWidth: 1,
+      borderColor: colors.borderStrong,
+      backgroundColor: colors.raised,
+    },
+    connectText: { fontFamily: fonts.uiSemibold, fontSize: 14, color: colors.ink },
     ask: {
       flexDirection: 'row',
       alignItems: 'center',

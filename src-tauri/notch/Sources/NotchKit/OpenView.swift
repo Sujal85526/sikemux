@@ -46,7 +46,7 @@ struct OpenHeader: View {
     private func select(_ tab: IslandModel.Tab) {
         island.tab = tab
         island.menu = nil
-        island.wantsKey?(tab == .compose)
+        island.keyboard?(tab == .compose ? .take : .give)
     }
 
     @ViewBuilder
@@ -104,7 +104,7 @@ struct AgentList: View {
                 Text("No agents running").font(Theme.ui(13)).foregroundStyle(Theme.inkDim)
                 Button {
                     island.tab = .compose
-                    island.wantsKey?(true)
+                    island.keyboard?(.take)
                 } label: {
                     HStack(spacing: 6) {
                         IconView(icon: Icons.plus, size: 12)
@@ -119,6 +119,7 @@ struct AgentList: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 18)
+            .onAppear { island.listScrolls = false }
         } else {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
@@ -187,7 +188,7 @@ struct RowLine: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            AgentMark(provider: agent.provider, size: 16).matchedGeometryEffect(id: agent.id, in: marks)
+            AgentMark(provider: agent.provider, size: 20).matchedGeometryEffect(id: agent.id, in: marks)
             Text(agent.title)
                 .font(Theme.ui(13, .semibold))
                 .foregroundStyle(Theme.ink)
@@ -217,7 +218,7 @@ struct AskCard: View {
             }
             .buttonStyle(.plain)
             if let ask = agent.ask {
-                CommandText(command: ask.command, darker: true).padding(.top, 10)
+                CommandText(ask: ask, darker: true).padding(.top, 10)
             }
             AnswerButtons(store: store, island: island, agent: agent, height: 28).padding(.top, 10)
         }
@@ -283,7 +284,7 @@ struct DropTargets: View {
             island.attachments = paths
             island.tab = .compose
             island.set(.open)
-            island.wantsKey?(true)
+            island.keyboard?(.take)
         } else if let agent = store.agents.first(where: { $0.id == id }) {
             store.send(paths, to: agent)
             island.set(.closed)

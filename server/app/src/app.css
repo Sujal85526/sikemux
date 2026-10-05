@@ -761,3 +761,34 @@ a.button {
 .intro h1 {
   font-size: 20px;
 }
+
+.consent-who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  font-size: 14px;
+}
+
+.consent-scopes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: -4px 0 4px;
+  padding-left: 18px;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.consent-return {
+  font-size: 13px;
+}
+
+.consent-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}

@@ -1,10 +1,15 @@
-import { randomBytes } from "node:crypto";
+import { createPrivateKey, randomBytes } from "node:crypto";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { validator, type Definitions } from "@sikemux/protocol";
 import pg from "pg";
 import { inject } from "vitest";
 
+import joinVector from "../../protocol/vectors/join.json" with { type: "json" };
 import { createApp, type Services } from "../src/app.ts";
 import { openDatabase, type Database } from "../src/db.ts";
+import type { JoinSigner } from "../src/join/signer.ts";
 import { RateLimiter } from "../src/limits.ts";
 import { createLogger } from "../src/log.ts";
 import { readNetwork } from "../src/network/network.ts";
@@ -50,6 +55,25 @@ export async function freshDatabase(): Promise<{
   };
 }
 
+/** Signs tickets with the join vector's throwaway key. */
+export const joinSigner: JoinSigner = {
+  keyId: joinVector.ticket.keyId,
+  privateKey: createPrivateKey(joinVector.privateKeyPem),
+  publicKey: joinVector.publicKey,
+  file: "vectors/join.json",
+  created: false,
+};
+
+/** A file holding the join vector's key, for configurations that need one. */
+export function joinKeyFile(): string {
+  const file = join(
+    mkdtempSync(join(tmpdir(), "sikemux-join-")),
+    "join-signing-key.pem",
+  );
+  writeFileSync(file, joinVector.privateKeyPem);
+  return file;
+}
+
 export function testApp(
   database: Database,
   limiter = new RateLimiter(),
@@ -65,6 +89,7 @@ export function testApp(
     webhookSecret: null,
     network: readNetwork({}, []),
     push: { app: "production", allowSandbox: false },
+    join: joinSigner,
     ...services,
   });
 }

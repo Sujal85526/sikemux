@@ -141,6 +141,7 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           BITBUCKET_OAUTH_SECRET: ${{ secrets.BITBUCKET_OAUTH_SECRET }}
+          JIRA_OAUTH_SECRET: ${{ secrets.JIRA_OAUTH_SECRET }}
           VERSION: ${{ steps.plan.outputs.version }}
           CHANNEL: ${{ steps.plan.outputs.channel }}
         run: |

@@ -165,11 +165,21 @@ async fn read_saved() -> AppResult<Option<Saved>> {
         .await
         .map_err(|error| AppError::Other(error.to_string()))?
         .map_err(|error| AppError::Other(error.to_string()))?;
-    Ok(text.and_then(|text| serde_json::from_str(&text).ok()))
+    Ok(text.and_then(|text| decode_saved(&text)))
+}
+
+/// The keychain takes only token-like text, so the saved sign-in goes in as base64 JSON.
+fn encode_saved(saved: &Saved) -> AppResult<String> {
+    Ok(URL_SAFE_NO_PAD.encode(serde_json::to_vec(saved)?))
+}
+
+fn decode_saved(text: &str) -> Option<Saved> {
+    let bytes = URL_SAFE_NO_PAD.decode(text.trim()).ok()?;
+    serde_json::from_slice(&bytes).ok()
 }
 
 async fn write_saved(saved: &Saved) -> AppResult<()> {
-    let text = serde_json::to_string(saved)?;
+    let text = encode_saved(saved)?;
     tokio::task::spawn_blocking(move || sikemux_keychain::write(KEY_SERVICE, key_account(), &text))
         .await
         .map_err(|error| AppError::Other(error.to_string()))?
@@ -642,6 +652,23 @@ async fn register_host(core: &CoreClient, access_token: &str, user_id: &str) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_saved_sign_in_reaches_the_keychain_as_token_like_text_and_comes_back() {
+        let saved = Saved {
+            user_id: "user_1".into(),
+            email: Some("someone@example.com".into()),
+            refresh_token: "rt.abc-def_ghi".into(),
+        };
+        let text = encode_saved(&saved).expect("encode");
+        assert!(text
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-')));
+        let back = decode_saved(&text).expect("decode");
+        assert_eq!(back.user_id, "user_1");
+        assert_eq!(back.email.as_deref(), Some("someone@example.com"));
+        assert_eq!(back.refresh_token, "rt.abc-def_ghi");
+    }
 
     #[test]
     fn the_callback_must_carry_this_sign_in_state() {

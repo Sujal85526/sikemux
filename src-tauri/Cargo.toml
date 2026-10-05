@@ -1,6 +1,6 @@
 [package]
 name = "sikemux"
-version = "0.5.0-nightly.1"
+version = "0.5.0-nightly.5"
 description = "A GUI terminal multiplexer"
 authors = ["nodelike"]
 edition = "2021"
@@ -30,12 +30,13 @@ name = "sikemux_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
-default = ["aws", "bitbucket", "bruno", "github", "rundeck", "signoz"]
+default = ["aws", "bitbucket", "bruno", "github", "jira", "rundeck", "signoz"]
 ipc-command-tests = ["tauri/test"]
 aws = ["dep:sikemux-plugin-aws"]
 bitbucket = ["dep:sikemux-plugin-bitbucket"]
 bruno = ["dep:sikemux-plugin-bruno"]
 github = ["dep:sikemux-plugin-github"]
+jira = ["dep:sikemux-plugin-jira"]
 rundeck = ["dep:sikemux-plugin-rundeck"]
 signoz = ["dep:sikemux-plugin-signoz"]
 
@@ -83,6 +84,7 @@ sikemux-plugin-aws = { path = "plugins/aws", optional = true }
 sikemux-plugin-bitbucket = { path = "plugins/bitbucket", optional = true }
 sikemux-plugin-bruno = { path = "plugins/bruno", optional = true }
 sikemux-plugin-github = { path = "plugins/github", optional = true }
+sikemux-plugin-jira = { path = "plugins/jira", optional = true }
 sikemux-plugin-rundeck = { path = "plugins/rundeck", optional = true }
 sikemux-plugin-signoz = { path = "plugins/signoz", optional = true }
 sikemux-keychain = { path = "crates/sikemux-keychain" }
@@ -153,6 +155,8 @@ opt-level = "z"
 [profile.release.package.sikemux-plugin-bruno]
 opt-level = "z"
 [profile.release.package.sikemux-plugin-github]
+opt-level = "z"
+[profile.release.package.sikemux-plugin-jira]
 opt-level = "z"
 [profile.release.package.sikemux-plugin-rundeck]
 opt-level = "z"

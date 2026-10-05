@@ -24,7 +24,7 @@ are about to push. Install it by hand in an existing clone with `make hooks`.
 | `src/state/commands/` | Every action that changes app state, one module per area                                                     |
 | `src/api/`            | Thin wrappers over Tauri `invoke` commands                                                                   |
 | `src/plugin-api/`     | The only part of the app a plugin's frontend may import                                                      |
-| `src/plugins/`        | Plugin frontends (AWS, Bitbucket, Bruno, GitHub, Rundeck, SigNoz)                                            |
+| `src/plugins/`        | Plugin frontends (AWS, Bitbucket, Bruno, GitHub, Jira, Rundeck, SigNoz)                                      |
 | `src-tauri/src/`      | Rust core: PTY, git, LSP, file watchers, browser tabs, agents, diagnostics                                   |
 | `src-tauri/crates/`   | Shared Rust crates: the terminal engine, the background core, plugin API, process runner, keychain, markdown |
 | `src-tauri/plugins/`  | Plugin backends, one crate per plugin behind a Cargo feature                                                 |

@@ -12,20 +12,21 @@ use crate::protocol::PendingDevice;
 use super::remote;
 use super::Core;
 
-const STEP: Duration = Duration::from_secs(15);
+pub(super) const STEP: Duration = Duration::from_secs(15);
 /// Time for the device to read the last answer before the connection closes.
-const LINGER: Duration = Duration::from_secs(2);
-const NAME_LIMIT: usize = 64;
-/// Pairing connections answered at once. One person pairs one device at a
-/// time; anything past this is turned away before it costs anything.
-static IN_PROGRESS: Semaphore = Semaphore::const_new(4);
-const PLATFORM_LIMIT: usize = 16;
+pub(super) const LINGER: Duration = Duration::from_secs(2);
+pub(super) const NAME_LIMIT: usize = 64;
+/// Pairing and join connections answered at once. One person pairs one
+/// device at a time; anything past this is turned away before it costs
+/// anything.
+pub(super) static IN_PROGRESS: Semaphore = Semaphore::const_new(4);
+pub(super) const PLATFORM_LIMIT: usize = 16;
 const NO_CODE: &str =
     "No pairing code is open on this host. Open Settings, then Devices, and choose Pair a device.";
 const UNREADABLE: &str = "The host could not read this device's pairing message.";
 const DECLINED: &str = "The host did not approve this device.";
 
-fn clean(text: &str, limit: usize) -> String {
+pub(super) fn clean(text: &str, limit: usize) -> String {
     let kept: String = text
         .chars()
         .filter(|character| !character.is_control())
@@ -102,6 +103,7 @@ pub(super) async fn serve(core: Arc<Core>, connection: Connection) {
         device_id: device_id.clone(),
         name: clean(&name, NAME_LIMIT),
         platform: clean(&platform, PLATFORM_LIMIT),
+        from_account: false,
     };
     let answered = core.remote.ask(request.clone());
     remote::announce(&core);

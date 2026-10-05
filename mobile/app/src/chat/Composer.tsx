@@ -26,7 +26,7 @@ function askTitle(request: AcpPermissionRequest): string {
   return 'Allow this?';
 }
 
-/** Docked on the composer until it is answered: the Mac's permission card, with the agent's own options. */
+/** Sits above the composer until it is answered: the Mac's permission card, with the agent's own options. */
 function PermissionDock({
   request,
   provider,
@@ -313,14 +313,11 @@ const makeStyles = (colors: Palette) => {
     watchText: { flex: 1, fontFamily: fonts.ui, fontSize: 13.5, lineHeight: 19, color: colors.inkDim },
 
     dock: {
-      marginHorizontal: 10,
-      marginBottom: -1,
+      marginBottom: 8,
       padding: 12,
       borderWidth: 1,
-      borderBottomWidth: 0,
       borderColor: colors.borderStrong,
-      borderTopLeftRadius: 16,
-      borderTopRightRadius: 16,
+      borderRadius: 16,
       backgroundColor: colors.overlay,
     },
     dockHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },

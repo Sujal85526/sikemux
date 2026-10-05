@@ -85,4 +85,27 @@ describe("RemoteWorkspaceBridge", () => {
         expect(titles[agentId]).toBe("Fix the login flake");
         expect(onScreen.mock.lastCall?.[0]).toEqual({ agentIds: [agentId] });
     });
+
+    it("publishes no agent on screen while the window is behind another app", async () => {
+        transport.register("remote_status", () => status(false));
+        const onScreen = vi.fn<(args: unknown) => void>();
+        transport.register("remote_publish_on_screen", onScreen);
+        render(<RemoteWorkspaceBridge />);
+        act(() => {
+            cmd.createProjectSession("/Users/me/notch");
+            cmd.addAgent("claude", undefined, "Watch the build");
+        });
+        await settle();
+        expect(onScreen.mock.lastCall?.[0]).not.toEqual({ agentIds: [] });
+        act(() => {
+            window.dispatchEvent(new Event("blur"));
+        });
+        await settle();
+        expect(onScreen.mock.lastCall?.[0]).toEqual({ agentIds: [] });
+        act(() => {
+            window.dispatchEvent(new Event("focus"));
+        });
+        await settle();
+        expect(onScreen.mock.lastCall?.[0]).not.toEqual({ agentIds: [] });
+    });
 });

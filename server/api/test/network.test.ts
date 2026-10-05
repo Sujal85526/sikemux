@@ -4,7 +4,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.ts";
 import { RateLimiter } from "../src/limits.ts";
 import { readNetwork } from "../src/network/network.ts";
-import { body, testApp, unreachableDatabase } from "./support.ts";
+import { body, joinKeyFile, testApp, unreachableDatabase } from "./support.ts";
 
 const database = unreachableDatabase();
 afterAll(() => database.close());
@@ -94,6 +94,7 @@ describe("readNetwork", () => {
         DATABASE_URL: "postgresql://sikemux@localhost/sikemux",
         CLERK_ISSUER: "https://clerk.sikemux.com",
         CLERK_MAC_CLIENT_ID: "mac_client",
+        JOIN_SIGNING_KEY_FILE: joinKeyFile(),
         RELAY_URL: "http://relay.sikemux.com",
         RELAY_QUIC_PORT: "70000",
         MINIMUM_VERSION_ANDROID_STABLE: "1.2",

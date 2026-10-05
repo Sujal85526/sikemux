@@ -279,12 +279,11 @@ function useLoop(duration: number, delay = 0) {
       value.setValue(0);
       return;
     }
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.delay(delay),
-        Animated.timing(value, { toValue: 1, duration, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      ]),
-    );
+    // A delay inside a native-driven loop stops the loop after its first run, so the offset is waited once.
+    const loop = Animated.sequence([
+      Animated.delay(delay),
+      Animated.loop(Animated.timing(value, { toValue: 1, duration, easing: Easing.inOut(Easing.ease), useNativeDriver: true })),
+    ]);
     loop.start();
     return () => loop.stop();
   }, [value, duration, delay, still]);
