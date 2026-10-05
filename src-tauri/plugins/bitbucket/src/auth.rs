@@ -228,11 +228,11 @@ pub async fn sign_in_with_browser(data_dir: &Path, sink: &StreamSink) -> Bitbuck
             "this build cannot sign in through the browser; use an API token instead".into(),
         ));
     }
-    let callback = oauth::Callback::bind().await?;
+    let callback = oauth::listen().await?;
     let state = oauth::new_state()?;
     sink.send(json!({ "url": oauth::authorize_url(&state) }))
         .map_err(|_| BitbucketError::Auth("the sign-in was closed".into()))?;
-    let code = tokio::time::timeout(BROWSER_WAIT, callback.code(&state))
+    let code = tokio::time::timeout(BROWSER_WAIT, oauth::code(&callback, &state))
         .await
         .map_err(|_| BitbucketError::Auth("nobody finished signing in".into()))??;
     drop(callback);
