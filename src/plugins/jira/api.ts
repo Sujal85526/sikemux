@@ -91,12 +91,12 @@ export function isSignedOut(error: unknown): boolean {
 
 export const refreshJira = () => invalidate((kind) => kind.startsWith("jira."));
 
-/** A revoked token makes every cached answer stale, so the next read lands on the sign-in form. */
+/** Only the sign-in status is checked again; refreshing every list would refetch the one that just failed, forever. */
 async function read<T>(method: string, params?: unknown): Promise<T> {
     try {
         return await backend.call<T>(method, params);
     } catch (error) {
-        if (isSignedOut(error)) refreshJira();
+        if (isSignedOut(error)) invalidate((kind) => kind === "jira.status");
         throw error;
     }
 }

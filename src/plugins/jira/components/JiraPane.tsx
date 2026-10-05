@@ -21,9 +21,9 @@ export function JiraPane({ paneId, active }: { paneId: string; active: boolean }
 function JiraWorkspace({ paneId, active, sites }: { paneId: string; active: boolean; sites: string[] }) {
     const view = useJiraView(paneId);
     const [jql, setJql] = useState(view.list.kind === "jql" ? view.list.jql : "");
-    const filters = useResourceEnabled(active, jiraFiltersR, view.site);
+    const site = sites.includes(view.site) ? view.site : (sites[0] ?? "");
+    const filters = useResourceEnabled(active, jiraFiltersR, site);
     const show = (list: JiraList) => updateJiraView(paneId, { list });
-    const site = view.site || sites[0] || "";
 
     return (
         <div className="jira-pane">
@@ -33,7 +33,9 @@ function JiraWorkspace({ paneId, active, sites }: { paneId: string; active: bool
                         label="Site"
                         value={site}
                         options={sites.map((host) => ({ value: host, label: host }))}
-                        onChange={(host) => updateJiraView(paneId, { site: host, issue: null })}
+                        onChange={(host) =>
+                            updateJiraView(paneId, { site: host, issue: null, ...(view.list.kind === "filter" && { list: { kind: "mine" } }) })
+                        }
                     />
                 )}
                 <div className="jira-lists">
@@ -93,12 +95,12 @@ function JiraWorkspace({ paneId, active, sites }: { paneId: string; active: bool
                 active={active}
                 empty={view.list.kind === "mine" ? "Nothing is assigned to you that is open or was done in the last two weeks." : "No issues here."}
                 jql={jqlOf(view.list)}
-                site={view.site}
+                site={site}
                 selected={view.issue}
                 onSelect={(key) => updateJiraView(paneId, { issue: key })}
             />
             {view.issue ? (
-                <IssueDetail active={active} issueKey={view.issue} site={view.site} />
+                <IssueDetail active={active} issueKey={view.issue} site={site} />
             ) : (
                 <div className="jira-detail">
                     <EmptyState message="Pick an issue to read it, comment, move it along or assign it." />
@@ -182,7 +184,7 @@ function IssueDetail({ active, issueKey, site }: { active: boolean; issueKey: st
                 <SkeletonRows rows={6} label={`Loading ${issueKey}`} />
             </div>
         );
-    return <IssueBody issue={found.data} site={site} refresh={() => void found.refresh()} />;
+    return <IssueBody key={found.data.key} issue={found.data} site={site} refresh={() => void found.refresh()} />;
 }
 
 function IssueBody({ issue, site, refresh }: { issue: JiraIssue; site: string; refresh: () => void }) {

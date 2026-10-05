@@ -75,7 +75,7 @@ describe("JiraPane", () => {
     it("lists my issues and starred filters, and opens an issue with its description and comments", async () => {
         render(<JiraPane paneId="jira-list" active />);
         const row = await screen.findByRole("listitem");
-        expect(api.search).toHaveBeenCalledWith(expect.stringContaining("assignee = currentUser()"), undefined);
+        expect(api.search).toHaveBeenCalledWith(expect.stringContaining("assignee = currentUser()"), "acme.atlassian.net");
         expect(row).toHaveTextContent("ABC-12");
         expect(row).toHaveTextContent("Fix the login race");
         expect(await screen.findByRole("button", { name: "Team bugs" })).toBeInTheDocument();
@@ -94,9 +94,9 @@ describe("JiraPane", () => {
 
         fireEvent.change(screen.getByPlaceholderText("Add a comment in markdown"), { target: { value: "Fixed in **#12**" } });
         await act(async () => fireEvent.click(screen.getByRole("button", { name: "Comment" })));
-        expect(api.comment).toHaveBeenCalledWith("ABC-12", "Fixed in **#12**", undefined);
+        expect(api.comment).toHaveBeenCalledWith("ABC-12", "Fixed in **#12**", "acme.atlassian.net");
 
         fireEvent.click(screen.getByRole("button", { name: "Current sprint" }));
-        await waitFor(() => expect(api.search).toHaveBeenCalledWith(expect.stringContaining("sprint in openSprints()"), undefined));
+        await waitFor(() => expect(api.search).toHaveBeenCalledWith(expect.stringContaining("sprint in openSprints()"), "acme.atlassian.net"));
     });
 });
