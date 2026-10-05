@@ -57,7 +57,7 @@ export function JiraSignIn({ status, onSignedIn }: { status: JiraStatus | undefi
 
     return (
         <SignInScreen
-            mark={<JiraMark size={26} className="icon-jira" />}
+            mark={<JiraMark size={26} />}
             title="Connect Jira"
             lede="The tickets you are working on, beside the code, and tools for your agents to read and update them."
             foot="Sikemux keeps your sign-in in the macOS Keychain.">
@@ -111,7 +111,7 @@ export function JiraSignIn({ status, onSignedIn }: { status: JiraStatus | undefi
                 <SignInWaiting onCancel={() => waiting.cancel()}>Finish signing in in your browser</SignInWaiting>
             ) : (
                 <button type="button" className="signin-btn primary" onClick={signInWithBrowser}>
-                    <JiraMark size={14} />
+                    <JiraMark size={14} color="currentColor" />
                     Continue with Atlassian
                 </button>
             )}
