@@ -2,22 +2,25 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JiraStatus } from "../api";
 
-const { signIn } = vi.hoisted(() => ({ signIn: vi.fn() }));
-vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>()), jiraApi: { signIn } }));
+const { signIn, signInWithBrowser } = vi.hoisted(() => ({ signIn: vi.fn(), signInWithBrowser: vi.fn() }));
+vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>()), jiraApi: { signIn, signInWithBrowser } }));
 
 import { JiraSignIn } from "./JiraSignIn";
 
 const signedIn: JiraStatus = {
     configured: true,
-    sites: [{ host: "acme.atlassian.net", email: "me@acme.dev", displayName: "Me", default: true }],
+    sites: [{ host: "acme.atlassian.net", displayName: "Me", default: true }],
     ok: true,
     authFailed: false,
     message: null,
+    browserSignIn: false,
 };
+const signedOutWithBrowser: JiraStatus = { ...signedIn, configured: false, sites: [], ok: false, browserSignIn: true };
 
 afterEach(cleanup);
 beforeEach(() => {
     signIn.mockReset();
+    signInWithBrowser.mockReset();
 });
 
 function fill(site: string, email: string, token: string) {
@@ -60,5 +63,28 @@ describe("JiraSignIn", () => {
             />,
         );
         expect(screen.getByText(/token revoked/)).toBeInTheDocument();
+    });
+
+    it("signs in through the browser first when the build can, and waits for it to come back", async () => {
+        let finish: (status: JiraStatus) => void = () => {};
+        signInWithBrowser.mockReturnValue({ done: new Promise<JiraStatus>((resolve) => (finish = resolve)), cancel: vi.fn() });
+        const onSignedIn = vi.fn();
+        render(<JiraSignIn status={signedOutWithBrowser} onSignedIn={onSignedIn} />);
+        expect(screen.queryByPlaceholderText("ATATT…")).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole("button", { name: "Continue with Atlassian" }));
+        expect(signInWithBrowser).toHaveBeenCalledOnce();
+        expect(screen.getByText("Finish signing in in your browser")).toBeInTheDocument();
+
+        await act(async () => finish(signedIn));
+        expect(onSignedIn).toHaveBeenCalledWith(signedIn);
+    });
+
+    it("keeps an API token one click away from the browser sign-in", () => {
+        render(<JiraSignIn status={signedOutWithBrowser} onSignedIn={() => {}} />);
+        fireEvent.click(screen.getByRole("button", { name: "Use an API token instead" }));
+        expect(screen.getByPlaceholderText("ATATT…")).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Sign in with the browser instead" }));
+        expect(screen.getByRole("button", { name: "Continue with Atlassian" })).toBeInTheDocument();
     });
 });

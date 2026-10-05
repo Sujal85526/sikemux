@@ -19,10 +19,11 @@ import { invalidate } from "../../../plugin-api/resources";
 
 const signedIn: JiraStatus = {
     configured: true,
-    sites: [{ host: "acme.atlassian.net", email: "me@acme.dev", displayName: "Me", default: true }],
+    sites: [{ host: "acme.atlassian.net", displayName: "Me", default: true }],
     ok: true,
     authFailed: false,
     message: null,
+    browserSignIn: false,
 };
 
 const summary = {

@@ -9,14 +9,19 @@ use crate::error::{JiraError, JiraResult};
 
 const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
-/// Where a request goes and who it is from: a Jira Cloud site, and an email with its API token.
+/// Where a request goes and who it is from: the site itself with an email and its API
+/// token, or Atlassian's API for the site with a browser sign-in's access token.
 pub struct Credentials {
     pub url: String,
-    pub email: String,
-    pub token: String,
+    pub auth: Auth,
 }
 
-fn http() -> JiraResult<&'static Client> {
+pub enum Auth {
+    Basic { email: String, token: String },
+    Bearer(String),
+}
+
+pub fn http() -> JiraResult<&'static Client> {
     static CLIENT: OnceLock<Option<Client>> = OnceLock::new();
     CLIENT
         .get_or_init(|| {
@@ -32,7 +37,7 @@ fn http() -> JiraResult<&'static Client> {
         .ok_or_else(|| JiraError::Transport("could not start the HTTP client".into()))
 }
 
-async fn read_limited(response: Response) -> JiraResult<Vec<u8>> {
+pub async fn read_limited(response: Response) -> JiraResult<Vec<u8>> {
     let too_big = || JiraError::Response("more than 16 MiB came back; narrow the query".into());
     if response
         .content_length()
@@ -84,11 +89,13 @@ pub async fn send(
     query: &[(&str, String)],
     body: Option<&Value>,
 ) -> JiraResult<Value> {
-    let mut request = http()?
-        .request(method, format!("{}{path}", credentials.url))
-        .basic_auth(&credentials.email, Some(&credentials.token))
-        .header("Accept", "application/json")
-        .query(query);
+    let request = http()?.request(method, format!("{}{path}", credentials.url));
+    let mut request = match &credentials.auth {
+        Auth::Basic { email, token } => request.basic_auth(email, Some(token)),
+        Auth::Bearer(token) => request.bearer_auth(token),
+    }
+    .header("Accept", "application/json")
+    .query(query);
     if let Some(body) = body {
         request = request.json(body);
     }
@@ -107,7 +114,7 @@ pub async fn send(
         .unwrap_or_else(|| String::from_utf8_lossy(&bytes).chars().take(400).collect());
     if matches!(status.as_u16(), 401) {
         return Err(JiraError::Auth(if message.is_empty() {
-            "the email or API token was not accepted".into()
+            "Jira did not accept the sign-in".into()
         } else {
             message
         }));

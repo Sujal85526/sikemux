@@ -1,8 +1,9 @@
 // Jira Cloud: the issues a person is working on, and tools for their agents.
 //
-//   config  — the sites signed in here, and their API tokens in the Keychain
+//   config  — the sites signed in here, and their sign-ins in the Keychain
 //   client  — the HTTP client, size limits, and Jira's error shape
-//   auth    — signing in to a site with an email and API token, and the status of each
+//   oauth   — signing in through the browser with an Atlassian account
+//   auth    — signing in with an API token or the browser, and the status of each
 //   adf     — Jira's document format to markdown and back
 //   issues  — search, one issue, comments, transitions, assignment, new issues, worklogs, filters
 
@@ -12,6 +13,7 @@ mod client;
 mod config;
 mod error;
 mod issues;
+mod oauth;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -19,7 +21,7 @@ use std::sync::Arc;
 use serde::Serialize;
 use serde_json::Value;
 use sikemux_plugin_api::{
-    params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture,
+    params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture, StreamSink,
 };
 
 use crate::error::JiraResult;
@@ -74,6 +76,25 @@ impl Plugin for Jira {
                 "worklog" => answer(issues::worklog(data_dir, params(input)?)).await,
                 "filters" => answer(issues::filters(data_dir, params(input)?)).await,
                 "keys" => reply(issues::keys_in(&params::<issues::KeysRequest>(input)?.text)),
+                _ => Err(PluginError::unknown_method(method)),
+            }
+        })
+    }
+
+    fn stream<'a>(
+        &'a self,
+        ctx: &'a PluginContext,
+        method: &'a str,
+        _input: Value,
+        sink: StreamSink,
+    ) -> PluginFuture<'a, ()> {
+        Box::pin(async move {
+            let data_dir = ctx.data_dir();
+            match method {
+                "signInWithBrowser" => {
+                    auth::sign_in_with_browser(data_dir, &sink).await?;
+                    sink.send(reply(auth::status(data_dir).await)?)
+                }
                 _ => Err(PluginError::unknown_method(method)),
             }
         })

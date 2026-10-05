@@ -8,6 +8,7 @@ publish = false
 sikemux-process = { path = "../../crates/sikemux-process" }
 sikemux-plugin-api = { path = "../../crates/sikemux-plugin-api" }
 sikemux-keychain = { path = "../../crates/sikemux-keychain" }
+sikemux-loopback = { path = "../../crates/sikemux-loopback" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 futures = "0.3"
