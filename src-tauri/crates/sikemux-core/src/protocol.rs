@@ -332,7 +332,8 @@ pub enum Request {
     },
     RemoteStatus,
     /// Lets paired devices reach the core from other machines, or stops it
-    /// and disconnects them. Kept across restarts.
+    /// and disconnects them. Only a signed-in host can turn it on. Kept across
+    /// restarts.
     SetRemoteAccess {
         enabled: bool,
     },
@@ -369,8 +370,9 @@ pub enum Request {
         user_id: String,
     },
     /// The account this host is signed in to, or none after signing out.
-    /// Signing out takes this host off the account, waiting a few seconds
-    /// for the server to confirm. Kept across restarts.
+    /// Signing in turns remote access on. Signing out turns it off and takes
+    /// this host off the account, waiting a few seconds for the server to
+    /// confirm. Kept across restarts.
     SetOwner {
         owner: Option<String>,
     },

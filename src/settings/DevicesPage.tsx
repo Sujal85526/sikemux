@@ -78,6 +78,7 @@ function useRemoteStatus(): [RemoteStatus | null, (next: Promise<RemoteStatus>, 
 
 export function DevicesPage() {
     const [status, apply] = useRemoteStatus();
+    const signedIn = useAccount((s) => s.account?.signedIn ?? false);
     const now = Date.now();
 
     return (
@@ -89,12 +90,16 @@ export function DevicesPage() {
                 <SettingsRows>
                     <SettingsRow
                         label="Allow paired devices"
-                        desc="While this is on, the background process keeps running after you quit and starts again when you log in, so your devices can always reach this host."
+                        desc={
+                            signedIn
+                                ? "While this is on, the background process keeps running after you quit and starts again when you log in, so your devices can always reach this host."
+                                : "Sign in to use Sikemux on your phone"
+                        }
                         asLabel
                         control={
                             <Switch
                                 checked={status?.enabled ?? false}
-                                disabled={!status}
+                                disabled={!status || !signedIn}
                                 onChange={(enabled) => void apply(remoteApi.setEnabled(enabled), "Remote access")}
                                 label="Allow paired devices"
                             />

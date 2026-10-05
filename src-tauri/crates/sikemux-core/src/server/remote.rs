@@ -43,6 +43,7 @@ const LEAVE_WAIT: Duration = Duration::from_secs(5);
 const LEAVE_WAIT: Duration = Duration::from_millis(300);
 const NETWORK_REFRESH: Duration = Duration::from_secs(4 * 60 * 60);
 const NETWORK_RETRY: Duration = Duration::from_secs(5 * 60);
+const SIGNED_OUT: &str = "sign in to use Sikemux on your phone";
 
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -843,20 +844,31 @@ async fn listen(core: &Arc<Core>) -> CoreResult<()> {
     Ok(())
 }
 
-pub(crate) async fn stop(core: &Arc<Core>) {
+/// Stops listening and drops every device connection, handing back the
+/// endpoint for the caller to close.
+fn halt(core: &Core) -> Option<Endpoint> {
     let running = {
         let mut inner = core.remote.lock();
         inner.pending.clear();
         inner.running.take()
     };
     core.close_device_clients(None);
-    if let Some(running) = running {
+    running.map(|running| {
         running.accept.abort();
-        running.endpoint.close().await;
+        running.endpoint
+    })
+}
+
+pub(crate) async fn stop(core: &Core) {
+    if let Some(endpoint) = halt(core) {
+        endpoint.close().await;
     }
 }
 
 pub(crate) async fn set_enabled(core: &Arc<Core>, enabled: bool) -> CoreResult<RemoteStatus> {
+    if enabled && core.remote.lock().stored.owner.is_none() {
+        return Err(SIGNED_OUT.into());
+    }
     if let Some(required) = core
         .remote
         .lock()
@@ -897,9 +909,10 @@ pub(crate) fn set_access(core: &Core, id: &str, access: DeviceAccess) -> CoreRes
     Ok(announce(core))
 }
 
-/// Signing in starts the live connection to the account. Signing out sends
-/// `leave` on it, now or on the next connection, so the account drops this
-/// host; paired devices stay.
+/// Signing in starts the live connection to the account and turns remote
+/// access on. Signing out turns remote access off and sends `leave` on the
+/// live connection, now or on the next one, so the account drops this host;
+/// paired devices stay.
 pub(crate) async fn set_owner(core: &Arc<Core>, owner: Option<String>) -> CoreResult<RemoteStatus> {
     if let Some(owner) = &owner {
         crate::accounts::check_user_id(owner).map_err(CoreError::from)?;
@@ -914,8 +927,10 @@ pub(crate) async fn set_owner(core: &Arc<Core>, owner: Option<String>) -> CoreRe
                 stored.owner = Some(owner);
                 stored.pending_leave = None;
                 stored.removed = None;
+                stored.enabled = true;
             }
             None => {
+                stored.enabled = false;
                 if let Some(previous) = stored.owner.take().filter(|_| live) {
                     stored.pending_leave = Some(previous);
                 }
@@ -923,6 +938,13 @@ pub(crate) async fn set_owner(core: &Arc<Core>, owner: Option<String>) -> CoreRe
         }
         Ok(stored.pending_leave.is_some())
     })?;
+    if core.remote.is_enabled() {
+        if let Err(error) = listen(core).await {
+            eprintln!("sikemux core: remote access did not start: {error}");
+        }
+    } else {
+        stop(core).await;
+    }
     ensure_live(core);
     if leaving {
         let confirmed = async {
@@ -1142,10 +1164,11 @@ fn apply_events(core: &Core, events: &[AccountEvent]) {
     announce(core);
 }
 
-/// The account no longer has this host: forget it, and keep why until the
-/// person signs in again. Paired devices stay.
+/// The account no longer has this host: forget it, keep why until the person
+/// signs in again, and turn remote access off. Paired devices stay.
 fn let_go(core: &Core, reason: Option<RevokeReason>) {
     let released = core.remote.change(|stored| {
+        stored.enabled = false;
         if stored.owner.take().is_some() {
             stored.removed = Some(Removal {
                 reason,
@@ -1165,6 +1188,9 @@ fn let_go(core: &Core, reason: Option<RevokeReason>) {
     });
     if let Err(error) = released {
         eprintln!("sikemux core: could not save leaving the account: {error}");
+    }
+    if let Some(endpoint) = halt(core) {
+        tokio::spawn(async move { endpoint.close().await });
     }
     core.remote.left.notify_waiters();
 }
@@ -1668,6 +1694,40 @@ mod tests {
         core.remote.lock().never_too_old = true;
         apply_network(&core, network_allowing("9.0.0")).await;
         assert_eq!(core.remote.status().update_required, None);
+    }
+
+    #[tokio::test]
+    async fn remote_access_follows_the_sign_in() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = signed_in(dir.path(), &[]);
+        core.remote.lock().stored.owner = None;
+        let refused = set_enabled(&core, true).await.unwrap_err();
+        assert_eq!(refused.to_string(), SIGNED_OUT);
+        assert!(!core.remote.is_enabled());
+
+        let status = set_owner(&core, Some("user_2abc".into())).await.unwrap();
+        assert!(status.enabled, "signing in turns remote access on");
+        assert!(core.remote.lock().running.is_some());
+
+        let status = set_owner(&core, None).await.unwrap();
+        assert!(!status.enabled, "signing out turns remote access off");
+        assert!(core.remote.lock().running.is_none());
+        let saved = read_stored(&dir.path().join("core.sock.remote.json")).unwrap();
+        assert!(!saved.enabled);
+    }
+
+    #[tokio::test]
+    async fn the_account_letting_go_of_this_host_turns_remote_access_off() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = signed_in(dir.path(), &[]);
+        set_enabled(&core, true).await.unwrap();
+        let own = core.remote.core_id().unwrap();
+        apply_events(
+            &core,
+            &[event(1, "device.revoked", Some(&own), "host", "removed")],
+        );
+        assert!(!core.remote.status().enabled);
+        assert!(core.remote.lock().running.is_none());
     }
 
     #[test]

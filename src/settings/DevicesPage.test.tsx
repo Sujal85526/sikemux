@@ -47,8 +47,17 @@ afterEach(() => {
 });
 
 describe("DevicesPage", () => {
+    it("keeps remote access off while this host is signed out", async () => {
+        transport.register("remote_status", () => status({ enabled: false }));
+        render(<DevicesPage />);
+
+        expect(await screen.findByText("Sign in to use Sikemux on your phone")).toBeInTheDocument();
+        expect(screen.getByRole("switch", { name: "Allow paired devices" })).toBeDisabled();
+    });
+
     it("turns remote access on", async () => {
         const user = userEvent.setup();
+        account = SIGNED_IN;
         transport.register("remote_status", () => status({ enabled: false }));
         const setEnabled = vi.fn(() => status());
         transport.register("remote_set_enabled", setEnabled);

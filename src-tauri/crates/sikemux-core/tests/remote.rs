@@ -85,7 +85,8 @@ impl Drop for TestCore {
     }
 }
 
-/// A core whose remote access is already on, trusting `devices`.
+/// A core signed in to an account, its remote access already on, trusting
+/// `devices`.
 fn start_core(core_key: &SecretKey, devices: &[&Device]) -> TestCore {
     start_core_with(core_key, devices, false)
 }
@@ -99,6 +100,7 @@ fn start_core_with(core_key: &SecretKey, devices: &[&Device], keeps_data: bool) 
     let stored = json!({
         "secretKey": hex::encode(core_key.to_bytes()),
         "enabled": true,
+        "owner": "user_2test",
         "devices": devices.iter().map(|device| json!({
             "id": device.id(),
             "name": device.name,

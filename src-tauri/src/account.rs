@@ -325,7 +325,8 @@ async fn refreshed_access_token(saved: &Saved) -> AppResult<String> {
 }
 
 /// Opens sign-in in the browser, waits for it, then registers this host's
-/// core with the account and records the account as its owner.
+/// core with the account and records the account as its owner, which turns
+/// remote access on.
 #[tauri::command]
 pub async fn account_sign_in(
     app: AppHandle,
@@ -375,9 +376,10 @@ pub fn account_cancel_sign_in(pending: State<'_, PendingSignIn>) {
     pending.replace(None);
 }
 
-/// Takes this host off the account, then forgets the account here. The core
-/// tells the account, now or once it is back online. Paired devices stay:
-/// they are the host's own list, approved one by one.
+/// Takes this host off the account and turns remote access off, then forgets
+/// the account here. The core tells the account, now or once it is back
+/// online. Paired devices stay: they are the host's own list, approved one by
+/// one.
 #[tauri::command]
 pub async fn account_sign_out(
     app: AppHandle,
