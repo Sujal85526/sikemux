@@ -35,6 +35,12 @@ const SLOW_ANSWER: Duration = Duration::from_secs(1);
 
 use native::Mouse;
 
+/// Runs `body` in the tab's helper world, which sees the page's DOM but none
+/// of its scripts.
+pub(super) async fn run_helper(view: &Webview, body: &str) -> Result<String, String> {
+    native::run_helper(view, body).await
+}
+
 /// Runs on a CLI broker thread, so blocking on the async runtime is safe.
 pub fn execute(app: &AppHandle, request: &HarnessRequest) -> Result<Value, String> {
     let agent_id = request

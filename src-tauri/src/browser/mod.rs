@@ -9,6 +9,7 @@
 
 pub mod agents;
 mod burst;
+mod discard;
 mod documents;
 mod favicon;
 mod history;
@@ -386,6 +387,7 @@ pub struct BrowserManager {
     #[cfg(target_os = "macos")]
     recordings: Mutex<HashMap<String, recording::Session>>,
     app: OnceLock<AppHandle>,
+    relieving: AtomicBool,
 }
 
 impl BrowserManager {
@@ -444,7 +446,9 @@ impl BrowserManager {
         url: Url,
         user_agent: &str,
     ) -> AppResult<Webview> {
-        let _ = self.app.set(app.clone());
+        if self.app.set(app.clone()).is_ok() {
+            discard::watch_pressure(app.clone());
+        }
         let window = app
             .get_window("main")
             .ok_or_else(|| AppError::Window("main window is not open".into()))?;
