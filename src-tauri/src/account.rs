@@ -712,7 +712,7 @@ mod tests {
         let remote = |owner: Option<&str>, core_id: &str| -> RemoteStatus {
             serde_json::from_value(serde_json::json!({
                 "enabled": false, "coreId": core_id, "addresses": [], "devices": [],
-                "connected": [], "pairing": null, "pending": [], "owner": owner,
+                "connected": [], "pending": [], "owner": owner,
             }))
             .unwrap()
         };

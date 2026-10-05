@@ -1,19 +1,37 @@
 //! The host's half of joining; [`crate::join`] describes the exchange.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use iroh::endpoint::{Connection, SendStream};
+use tokio::sync::Semaphore;
 
-use crate::join::{JoinHello, JoinReply, Refusal};
-use crate::pairing::{self, APPROVAL_TIMEOUT};
+use crate::join::{self, JoinHello, JoinReply, Refusal, APPROVAL_TIMEOUT};
 use crate::protocol::PendingDevice;
 
-use super::pairing::{clean, IN_PROGRESS, LINGER, NAME_LIMIT, PLATFORM_LIMIT, STEP};
 use super::remote;
 use super::Core;
 
+const STEP: Duration = Duration::from_secs(15);
+/// Time for the phone to read the answer before the connection closes.
+const LINGER: Duration = Duration::from_secs(2);
+const NAME_LIMIT: usize = 64;
+const PLATFORM_LIMIT: usize = 16;
+/// Join connections answered at once. One person adds one phone at a time;
+/// anything past this is turned away before it costs anything.
+static IN_PROGRESS: Semaphore = Semaphore::const_new(4);
+
+fn clean(text: &str, limit: usize) -> String {
+    let kept: String = text
+        .chars()
+        .filter(|character| !character.is_control())
+        .take(limit)
+        .collect();
+    kept.trim().to_owned()
+}
+
 async fn finish(writer: &mut SendStream, connection: &Connection, reply: &JoinReply) {
-    let _ = pairing::send(writer, reply).await;
+    let _ = join::send(writer, reply).await;
     let _ = writer.finish();
     let _ = tokio::time::timeout(LINGER, connection.closed()).await;
 }
@@ -40,7 +58,7 @@ pub(super) async fn serve(core: Arc<Core>, connection: Connection) {
     else {
         return;
     };
-    let Ok(hello) = pairing::receive::<JoinHello>(&mut reader, STEP).await else {
+    let Ok(hello) = join::receive::<JoinHello>(&mut reader, STEP).await else {
         refuse(&mut writer, &connection, &phone, Refusal::Unreadable).await;
         return;
     };
@@ -90,7 +108,7 @@ mod tests {
     use super::*;
     use crate::accounts::protocol::JoinTicket;
     use crate::join::vector::{vector, Vector};
-    use crate::join::{self, JOIN_ALPN};
+    use crate::join::JOIN_ALPN;
     use crate::protocol::{BuildIdentity, DeviceAccess, RemoteStatus};
 
     const ACCOUNT: &str = "user_2vectorTest";
@@ -169,6 +187,15 @@ mod tests {
             name: "Pixel 8\u{7}".into(),
             platform: "android".into(),
         }
+    }
+
+    #[test]
+    fn a_device_name_loses_control_characters_and_length() {
+        assert_eq!(
+            clean("  Kishore's\u{7}\niPhone  ", NAME_LIMIT),
+            "Kishore'siPhone"
+        );
+        assert_eq!(clean(&"x".repeat(200), NAME_LIMIT).len(), NAME_LIMIT);
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -272,10 +299,10 @@ mod tests {
 
         let connection = endpoint.connect(host.addr(), JOIN_ALPN).await.unwrap();
         let (mut writer, mut reader) = connection.open_bi().await.unwrap();
-        pairing::send(&mut writer, &serde_json::json!({ "hello": "there" }))
+        join::send(&mut writer, &serde_json::json!({ "hello": "there" }))
             .await
             .unwrap();
-        let reply: JoinReply = pairing::receive(&mut reader, WAIT).await.unwrap();
+        let reply: JoinReply = join::receive(&mut reader, WAIT).await.unwrap();
         assert_eq!(
             reply,
             JoinReply::Refused {

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { REMOTE_STATUS_EVENT, type RemoteStatus } from "../api/remote";
@@ -16,7 +16,6 @@ function status(overrides: Partial<RemoteStatus> = {}): RemoteStatus {
         addresses: ["192.168.0.2:53786"],
         devices: [],
         connected: [],
-        pairing: null,
         pending: [],
         owner: null,
         account: null,
@@ -48,7 +47,7 @@ afterEach(() => {
 });
 
 describe("DevicesPage", () => {
-    it("turns remote access on and shows the way to pair once it is", async () => {
+    it("turns remote access on", async () => {
         const user = userEvent.setup();
         transport.register("remote_status", () => status({ enabled: false }));
         const setEnabled = vi.fn(() => status());
@@ -56,50 +55,13 @@ describe("DevicesPage", () => {
         render(<DevicesPage />);
 
         expect(await screen.findByText("off")).toBeInTheDocument();
-        expect(screen.getByRole("button", { name: "Pair a device" })).toBeDisabled();
         await user.click(screen.getByRole("switch", { name: "Allow paired devices" }));
 
         expect(setEnabled).toHaveBeenCalledWith({ enabled: true }, expect.anything());
-        await waitFor(() => expect(screen.getByRole("button", { name: "Pair a device" })).toBeEnabled());
-        expect(screen.getByText(CORE.slice(0, 8))).toBeInTheDocument();
+        expect(await screen.findByText(CORE.slice(0, 8))).toBeInTheDocument();
     });
 
-    it("shows the code, then lets the person allow the device that typed it", async () => {
-        const user = userEvent.setup();
-        const expiresAt = Date.now() + 4 * 60_000;
-        transport.register("remote_status", () => status());
-        transport.register("remote_open_pairing", () =>
-            status({ pairing: { code: "482913", expiresAt, link: "sikemux://pair?core=core&code=482913" } }),
-        );
-        const answer = vi.fn(() =>
-            status({
-                devices: [{ id: PHONE, name: "Kishore's phone", platform: "ios", access: "watch", pairedAt: 1, lastSeen: null }],
-            }),
-        );
-        transport.register("remote_answer_pairing", answer);
-        render(<DevicesPage />);
-
-        await user.click(await screen.findByRole("button", { name: "Pair a device" }));
-        expect(await screen.findByText("482 913")).toBeInTheDocument();
-        expect(screen.getByRole("img", { name: "Pairing QR code" })).toBeInTheDocument();
-        expect(screen.getByText(/Expires in 4:00/)).toBeInTheDocument();
-
-        transport.emit(
-            REMOTE_STATUS_EVENT,
-            status({ pending: [{ id: "request-1", deviceId: PHONE, name: "Kishore's phone", platform: "ios", fromAccount: false }] }),
-        );
-        expect(await screen.findByText("Kishore's phone wants to pair")).toBeInTheDocument();
-        expect(screen.getByText(PHONE.slice(0, 8))).toBeInTheDocument();
-
-        await user.click(screen.getByRole("button", { name: /access for this device/ }));
-        await user.click(await screen.findByRole("option", { name: /Watch and approve/ }));
-        await user.click(screen.getByRole("button", { name: "Allow" }));
-
-        expect(answer).toHaveBeenCalledWith({ id: "request-1", allow: true, access: "watch" }, expect.anything());
-        expect(await screen.findByText("iOS · never connected")).toBeInTheDocument();
-    });
-
-    it("asks about a phone that came from the account, with no code open", async () => {
+    it("asks about a phone that came from the account", async () => {
         const user = userEvent.setup();
         transport.register("remote_status", () =>
             status({ pending: [{ id: "join-1", deviceId: PHONE, name: "Pixel 8", platform: "android", fromAccount: true }] }),

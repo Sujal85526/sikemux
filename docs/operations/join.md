@@ -1,10 +1,11 @@
 # Join tickets
 
-A phone signed in to an account can join a host on that account without a pairing code. It
-asks `POST /v1/devices/{key}/join` for a ticket naming the account, the host and itself, and
-hands it to the host over ALPN `sikemux/join/1`. The host checks the ticket on its own,
-without calling the API, then asks its owner as code pairing does. The ticket only says the
-phone and the host share an account; it never lets a phone in by itself.
+A phone joins a host only through the account both are signed in to. It asks
+`POST /v1/devices/{key}/join` for a ticket naming the account, the host and itself, and hands
+it to the host over ALPN `sikemux/join/1`. The host checks the ticket on its own, without
+calling the API, then asks its owner to allow the phone. The ticket only says the phone and
+the host share an account; it never lets a phone in by itself. A host listens only while it
+is signed in: signing in turns remote access on and signing out turns it off.
 
 ## What runs
 

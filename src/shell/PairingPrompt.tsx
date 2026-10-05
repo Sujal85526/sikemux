@@ -9,10 +9,10 @@ const PairingCards = lazy(() => import("./PairingCards"));
 
 /** The notification for a device that starts waiting while Sikemux is in the background. */
 export function pairingNotification(request: PendingDevice): { title: string; body: string } {
-    const name = request.name || "A device";
-    return request.fromAccount
-        ? { title: `${name} wants to connect to this computer`, body: "It is signed in to your Sikemux account. Allow or decline it in Sikemux." }
-        : { title: `${name} wants to pair with this computer`, body: "It typed this computer's pairing code. Allow or decline it in Sikemux." };
+    return {
+        title: `${request.name || "A phone"} wants to connect to this computer`,
+        body: "It is signed in to your Sikemux account. Allow or decline it in Sikemux.",
+    };
 }
 
 function usePendingDevices(hasFocus: () => boolean): [readonly PendingDevice[], (next: Promise<RemoteStatus>) => Promise<void>] {

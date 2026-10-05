@@ -1,8 +1,8 @@
-//! Pairs with a core and talks to it from another machine, the way the phone
-//! app will, over the real network.
+//! Talks to a core from another machine, the way the phone app does, over the
+//! real network.
 //!
 //! As the Mac, against a core's socket:
-//!   remote mac <socket> on | off | code | allow | status
+//!   remote mac <socket> on | off | allow | status
 //!   remote mac <socket> spawn
 //!   remote mac <socket> publish            offers the fake agent to devices
 //!   remote mac <socket> chat [prompt]      starts a chat with it
@@ -12,7 +12,6 @@
 //!   remote mac <socket> chats              lists the chats running on the core
 //!   remote mac <socket> sleepy             lists a sleeping chat and wakes it when asked
 //! As a device, keeping its key in `<key-file>`:
-//!   remote device <key-file> pair <core-id> <code>
 //!   remote device <key-file> sessions <core-id>
 
 use std::path::Path;
@@ -22,7 +21,6 @@ use iroh::endpoint::presets;
 use iroh::{Endpoint, EndpointAddr, RelayMode};
 use sikemux_core::accounts::network;
 use sikemux_core::client::{ClientEvent, CoreClient};
-use sikemux_core::pairing::{self, PairingRequest};
 use sikemux_core::protocol::{
     BackdropImage, ChatLaunch, ChatLauncher, DeviceAccess, Event, LaunchIdentity, ProjectInfo,
     PublishedChat, SpawnTarget, TerminalSpawn,
@@ -45,9 +43,8 @@ async fn main() -> Result<(), Failure> {
         ["mac", socket, "palette", colours @ ..] => palette(Path::new(socket), colours).await,
         ["mac", socket, "backdrop", texture, image @ ..] => backdrop(Path::new(socket), *texture == "on", image.first().copied()).await,
         ["mac", socket, action] => mac(Path::new(socket), action).await,
-        ["device", key, "pair", core, code] => pair(Path::new(key), core, code).await,
         ["device", key, "sessions", core] => sessions(Path::new(key), core).await,
-        _ => Err("usage: remote mac <socket> on|off|code|allow|status|spawn|publish|chat|say | remote device <key-file> pair <core-id> <code> | remote device <key-file> sessions <core-id>".into()),
+        _ => Err("usage: remote mac <socket> on|off|allow|status|spawn|publish|chat|say | remote device <key-file> sessions <core-id>".into()),
     }
 }
 
@@ -56,7 +53,6 @@ async fn mac(socket: &Path, action: &str) -> Result<(), Failure> {
     let status = match action {
         "on" => client.set_remote_access(true).await?,
         "off" => client.set_remote_access(false).await?,
-        "code" => client.open_pairing().await?,
         "allow" => {
             let status = client.remote_status().await?;
             let waiting = status.pending.first().ok_or("no device is waiting")?;
@@ -262,20 +258,6 @@ async fn endpoint(key_file: &Path) -> Result<Endpoint, Failure> {
 
 fn core_addr(core: &str) -> Result<EndpointAddr, Failure> {
     Ok(EndpointAddr::new(core.parse()?).with_relay_url(network::DEFAULT_RELAY.parse()?))
-}
-
-async fn pair(key_file: &Path, core: &str, code: &str) -> Result<(), Failure> {
-    let endpoint = endpoint(key_file).await?;
-    println!("this device is {}; approve it on the Mac", endpoint.id());
-    let request = PairingRequest {
-        code,
-        name: "remote example",
-        platform: "macos",
-    };
-    let access = pairing::pair(&endpoint, core_addr(core)?, request).await?;
-    println!("paired with {access:?} access");
-    endpoint.close().await;
-    Ok(())
 }
 
 async fn sessions(key_file: &Path, core: &str) -> Result<(), Failure> {

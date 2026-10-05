@@ -1,5 +1,5 @@
-//! What the phone app calls to pair with a host and talk to its core. The
-//! connection, pairing and wire format are the core's own (`sikemux-core`),
+//! What the phone app calls to join a host and talk to its core. The
+//! connection, joining and wire format are the core's own (`sikemux-core`),
 //! so the phone and the host cannot drift apart; this crate only exposes them
 //! through UniFFI, as typed calls and records.
 //!
@@ -18,7 +18,6 @@ use sikemux_core::accounts::network;
 use sikemux_core::accounts::protocol::{JoinTicket, Relay};
 use sikemux_core::client::{ClientError, CoreClient, EventSink, Reply};
 use sikemux_core::join::{JoinHello, JoinReply};
-use sikemux_core::pairing::{self, PairError, PairingRequest};
 use sikemux_core::protocol::{
     CallId, Event, NotifyPrefs, Request, Response, SessionId, WindowCall, PROTOCOL_VERSION,
 };
@@ -56,7 +55,7 @@ static RUNTIME: LazyLock<Result<tokio::runtime::Runtime, String>> = LazyLock::ne
 });
 
 /// Stops the work when the app stops waiting for it, as when a person
-/// cancels pairing.
+/// gives up joining a host.
 struct AbortOnDrop<T>(tokio::task::JoinHandle<T>);
 
 impl<T> Drop for AbortOnDrop<T> {
@@ -83,8 +82,6 @@ async fn on_runtime<T: Send + 'static>(
 pub enum MobileError {
     #[error("{message}")]
     Refused { message: String },
-    #[error("the code does not match the one on the host")]
-    WrongCode,
     #[error("{message}")]
     Connection { message: String },
     #[error("{message}")]
@@ -92,8 +89,8 @@ pub enum MobileError {
     /// The host and this app speak different versions of the core's protocol.
     #[error("this host and this app need the same Sikemux release")]
     Outdated { mac_is_older: bool },
-    /// The host forgot this phone, so it has to pair again.
-    #[error("this host no longer knows this phone; pair with it again")]
+    /// The host forgot this phone, so it has to join again.
+    #[error("this host no longer knows this phone; connect to it again")]
     Unpaired,
 }
 
@@ -118,36 +115,11 @@ impl From<ClientError> for MobileError {
     }
 }
 
-impl From<PairError> for MobileError {
-    fn from(error: PairError) -> Self {
-        match error {
-            PairError::Refused(message) => MobileError::Refused { message },
-            PairError::WrongCode => MobileError::WrongCode,
-            PairError::Connection(message) => MobileError::Connection { message },
-        }
-    }
-}
-
 /// A new device key. The app keeps it in the Keychain or Keystore; it is the
 /// device's identity to every host it pairs with.
 #[uniffi::export]
 pub fn new_device_key() -> Vec<u8> {
     SecretKey::generate().to_bytes().to_vec()
-}
-
-#[derive(uniffi::Record)]
-pub struct PairingLink {
-    pub core: String,
-    pub code: String,
-}
-
-/// Reads the link a host's pairing QR code holds.
-#[uniffi::export]
-pub fn parse_pairing_link(text: String) -> Option<PairingLink> {
-    pairing::PairingLink::parse(&text).map(|link| PairingLink {
-        core: link.core.to_string(),
-        code: link.code,
-    })
 }
 
 /// A relay from the accounts server's `GET /v1/network`, which hosts listen on
@@ -303,32 +275,9 @@ impl Device {
         sign_push(&self.key, &nonce, &token_sha256)
     }
 
-    /// Pairs with the host whose key is `core`, waiting while the person
-    /// there decides. Answers with the access they gave: `full` or `watch`.
-    pub async fn pair(
-        &self,
-        core: String,
-        code: String,
-        name: String,
-        platform: String,
-    ) -> Result<String, MobileError> {
-        let (endpoint, _) = self.endpoint();
-        let addr = core_addr(&core, &self.relays)?;
-        let access = on_runtime(async move {
-            let request = PairingRequest {
-                code: &code,
-                name: &name,
-                platform: &platform,
-            };
-            pairing::pair(&endpoint, addr, request).await
-        })
-        .await??;
-        access_name(access)
-    }
-
     /// Hands the host whose key is `core` the `ticket` the accounts server
     /// signed for it and this phone, as its JSON, and waits while the person
-    /// there decides. An allowed phone is paired as a code would pair it.
+    /// there decides. An allowed phone is paired with the host.
     pub async fn join(
         &self,
         core: String,
@@ -1067,20 +1016,6 @@ mod tests {
         let key = new_device_key();
         assert_eq!(key.len(), 32);
         assert_ne!(key, new_device_key());
-    }
-
-    #[test]
-    fn a_pairing_link_from_the_mac_reads_back() {
-        let core = SecretKey::generate().public();
-        let text = pairing::PairingLink {
-            core,
-            code: "482913".into(),
-        }
-        .to_url();
-        let link = parse_pairing_link(text).expect("a link");
-        assert_eq!(link.core, core.to_string());
-        assert_eq!(link.code, "482913");
-        assert!(parse_pairing_link("https://example.com".into()).is_none());
     }
 
     #[test]

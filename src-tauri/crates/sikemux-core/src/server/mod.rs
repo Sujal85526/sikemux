@@ -1,6 +1,5 @@
 mod access;
 mod agent;
-mod bonjour;
 mod chat;
 mod connection;
 mod entry;
@@ -9,7 +8,6 @@ mod harness;
 mod host;
 mod join;
 mod notify;
-mod pairing;
 mod prepare;
 mod remote;
 mod seen;

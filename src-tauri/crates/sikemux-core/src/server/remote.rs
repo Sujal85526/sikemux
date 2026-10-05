@@ -25,22 +25,17 @@ use crate::accounts::protocol::{
     RevokeReason,
 };
 use crate::join::{self, Expected, Refusal, TrustedKeys, JOIN_ALPN};
-use crate::pairing::{PairingLink, CODE_DIGITS, PAIR_ALPN};
 use crate::protocol::{
     AccountLink, AccountLinkState, DeviceAccess, DeviceInfo, Event, NotificationState, NotifyPrefs,
-    NotifyWhen, PairingOffer, PendingDevice, PhoneNotifications, RemoteStatus, UpdateRequired,
+    NotifyWhen, PendingDevice, PhoneNotifications, RemoteStatus, UpdateRequired,
 };
 use crate::push::NotificationKey;
 use crate::remote::CORE_ALPN;
 
 use super::access::Peer;
-use super::bonjour;
 use super::connection::{blocking, serve_client};
 use super::{Core, CoreError, CoreResult, ServerConfig};
 
-const OFFER_LIFETIME_MS: u64 = 5 * 60 * 1000;
-/// Wrong codes one pairing code survives before it is withdrawn.
-const OFFER_ATTEMPTS: u8 = 5;
 /// How long signing out waits for the account to confirm this host left.
 #[cfg(not(test))]
 const LEAVE_WAIT: Duration = Duration::from_secs(5);
@@ -127,13 +122,6 @@ struct LiveTask {
 struct Running {
     endpoint: Endpoint,
     accept: JoinHandle<()>,
-    _advert: Option<bonjour::Advert>,
-}
-
-struct Offer {
-    code: String,
-    expires_at: u64,
-    attempts_left: u8,
 }
 
 struct Pending {
@@ -149,7 +137,6 @@ struct Inner {
     stored: Stored,
     running: Option<Running>,
     connected: HashMap<String, usize>,
-    offer: Option<Offer>,
     pending: Vec<Pending>,
     accounts_api: Option<String>,
     live: Option<LiveTask>,
@@ -166,14 +153,6 @@ struct Inner {
     refused: HashSet<String>,
     #[cfg(test)]
     join_keys: Option<TrustedKeys>,
-}
-
-impl Inner {
-    fn live_offer(&self) -> Option<&Offer> {
-        self.offer
-            .as_ref()
-            .filter(|offer| offer.attempts_left > 0 && offer.expires_at > unix_ms())
-    }
 }
 
 #[derive(Default)]
@@ -282,18 +261,6 @@ impl Remote {
             addresses,
             devices: inner.stored.devices.clone(),
             connected,
-            pairing: inner
-                .live_offer()
-                .zip(inner.secret.as_ref())
-                .map(|(offer, secret)| PairingOffer {
-                    code: offer.code.clone(),
-                    expires_at: offer.expires_at,
-                    link: PairingLink {
-                        core: secret.public(),
-                        code: offer.code.clone(),
-                    }
-                    .to_url(),
-                }),
             pending: inner
                 .pending
                 .iter()
@@ -469,41 +436,6 @@ impl Remote {
             .secret
             .as_ref()
             .map(|secret| secret.public().to_string())
-    }
-
-    pub(super) fn open_offer(&self) -> CoreResult<()> {
-        let mut inner = self.lock();
-        if !inner.stored.enabled {
-            return Err("turn on remote access before pairing a device".into());
-        }
-        let code = uuid::Uuid::new_v4().as_u128() % 10u128.pow(CODE_DIGITS as u32);
-        inner.offer = Some(Offer {
-            code: format!("{code:0width$}", width = CODE_DIGITS),
-            expires_at: unix_ms() + OFFER_LIFETIME_MS,
-            attempts_left: OFFER_ATTEMPTS,
-        });
-        Ok(())
-    }
-
-    pub(super) fn close_offer(&self) {
-        self.lock().offer = None;
-    }
-
-    /// The open code, spending one of its attempts.
-    pub(super) fn attempt(&self) -> Option<String> {
-        let mut inner = self.lock();
-        inner.live_offer()?;
-        let offer = inner.offer.as_mut()?;
-        offer.attempts_left -= 1;
-        Some(offer.code.clone())
-    }
-
-    /// Withdraws `code` once a device has used it, unless another replaced it.
-    pub(super) fn spend_offer(&self, code: &str) {
-        let mut inner = self.lock();
-        if inner.offer.as_ref().is_some_and(|offer| offer.code == code) {
-            inner.offer = None;
-        }
     }
 
     pub(super) fn ask(&self, device: PendingDevice) -> oneshot::Receiver<Option<DeviceAccess>> {
@@ -897,42 +829,23 @@ async fn listen(core: &Arc<Core>) -> CoreResult<()> {
     };
     let endpoint = builder
         .secret_key(secret)
-        .alpns(vec![
-            CORE_ALPN.to_vec(),
-            PAIR_ALPN.to_vec(),
-            JOIN_ALPN.to_vec(),
-        ])
+        .alpns(vec![CORE_ALPN.to_vec(), JOIN_ALPN.to_vec()])
         .bind()
         .await
         .map_err(|error| CoreError::from(format!("remote access did not start: {error}")))?;
     let accept = tokio::spawn(accept(core.clone(), endpoint.clone()));
-    let advert = if direct_only {
-        None
-    } else {
-        let port = endpoint
-            .bound_sockets()
-            .iter()
-            .find(|address| address.is_ipv4())
-            .map(|address| address.port());
-        port.and_then(|port| bonjour::advertise(&endpoint.id().to_string(), port))
-    };
     let mut inner = core.remote.lock();
     if inner.running.is_some() {
         accept.abort();
         return Ok(());
     }
-    inner.running = Some(Running {
-        endpoint,
-        accept,
-        _advert: advert,
-    });
+    inner.running = Some(Running { endpoint, accept });
     Ok(())
 }
 
 pub(crate) async fn stop(core: &Arc<Core>) {
     let running = {
         let mut inner = core.remote.lock();
-        inner.offer = None;
         inner.pending.clear();
         inner.running.take()
     };
@@ -1289,10 +1202,6 @@ async fn serve_device(core: Arc<Core>, incoming: Incoming) {
     let Ok(connection) = incoming.await else {
         return;
     };
-    if connection.alpn() == PAIR_ALPN {
-        super::pairing::serve(core, connection).await;
-        return;
-    }
     if connection.alpn() == JOIN_ALPN {
         super::join::serve(core, connection).await;
         return;
@@ -1425,12 +1334,14 @@ mod tests {
         serde_json::from_value(event).unwrap()
     }
 
-    /// A core signed in to an account with two paired phones, saving to `dir`.
+    /// A core signed in to an account with `phones` paired, saving to `dir`
+    /// and listening only on loopback.
     fn signed_in(dir: &Path, phones: &[&DeviceInfo]) -> Arc<Core> {
         let core = Core::new(crate::protocol::BuildIdentity::default(), None).unwrap();
         {
             let mut inner = core.remote.lock();
             inner.path = Some(dir.join("core.sock.remote.json"));
+            inner.direct_only = true;
             inner.secret = Some(SecretKey::generate());
             inner.stored.owner = Some("user_2abc".into());
             inner.stored.devices = phones.iter().map(|phone| (*phone).clone()).collect();
@@ -1457,7 +1368,7 @@ mod tests {
             device_id: gone.id.clone(),
             name: "Gone".into(),
             platform: "ios".into(),
-            from_account: false,
+            from_account: true,
         });
         let events = [
             event(4, "device.revoked", Some(&gone.id), "client", "removed"),

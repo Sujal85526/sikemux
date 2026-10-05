@@ -15,7 +15,7 @@ await import("./PairingCards");
 
 const PHONE = "f0e1d2c3b4a5968778695a4b3c2d1e0ff0e1d2c3b4a5968778695a4b3c2d1e0f";
 const FROM_ACCOUNT: PendingDevice = { id: "join-1", deviceId: PHONE, name: "Pixel 8", platform: "android", fromAccount: true };
-const WITH_CODE: PendingDevice = { id: "request-1", deviceId: PHONE, name: "Kishore's phone", platform: "ios", fromAccount: false };
+const IPHONE: PendingDevice = { id: "request-1", deviceId: PHONE, name: "Kishore's phone", platform: "ios", fromAccount: true };
 
 function status(pending: readonly PendingDevice[] = []): RemoteStatus {
     return {
@@ -24,7 +24,6 @@ function status(pending: readonly PendingDevice[] = []): RemoteStatus {
         addresses: [],
         devices: [],
         connected: [],
-        pairing: null,
         pending,
         owner: "user_2abc",
         account: null,
@@ -74,12 +73,6 @@ describe("PairingPrompt", () => {
         await waitFor(() => expect(card(JOIN_QUESTION)).not.toBeInTheDocument());
     });
 
-    it("asks about a device that typed the code the same way", async () => {
-        transport.register("remote_status", () => status([WITH_CODE]));
-        render(<PairingPrompt hasFocus={() => true} />);
-        expect(await screen.findByRole("alertdialog", { name: "Kishore's phone wants to pair" })).toBeInTheDocument();
-    });
-
     it("leaves the question to Settings › Devices while that page is open", async () => {
         setState({ settingsOpen: true, settingsPage: "devices" });
         transport.register("remote_status", () => status([FROM_ACCOUNT]));
@@ -127,14 +120,14 @@ describe("PairingPrompt", () => {
         render(<PairingPrompt hasFocus={() => focused} />);
         await settle();
 
-        transport.emit(REMOTE_STATUS_EVENT, status([WITH_CODE]));
-        await screen.findByRole("alertdialog", { name: "Kishore's phone wants to pair" });
+        transport.emit(REMOTE_STATUS_EVENT, status([IPHONE]));
+        await screen.findByRole("alertdialog", { name: "Kishore's phone from your Sikemux account wants to connect" });
         expect(notifications.post).not.toHaveBeenCalled();
 
         focused = false;
-        transport.emit(REMOTE_STATUS_EVENT, status([WITH_CODE, FROM_ACCOUNT]));
+        transport.emit(REMOTE_STATUS_EVENT, status([IPHONE, FROM_ACCOUNT]));
         await screen.findByRole("alertdialog", { name: JOIN_QUESTION });
-        transport.emit(REMOTE_STATUS_EVENT, status([WITH_CODE, FROM_ACCOUNT]));
+        transport.emit(REMOTE_STATUS_EVENT, status([IPHONE, FROM_ACCOUNT]));
         await settle();
 
         expect(notifications.post).toHaveBeenCalledTimes(1);

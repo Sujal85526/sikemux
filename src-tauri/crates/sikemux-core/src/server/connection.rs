@@ -826,25 +826,6 @@ async fn run_requests(
                 };
                 workspace::start_chat(&core, &client, request_id, choice);
             }
-            Request::OpenPairing => {
-                let result = core.remote.open_offer().map(|()| remote::announce(&core));
-                client.respond(
-                    request_id,
-                    result.map(|status| Response::Remote {
-                        status: Box::new(status),
-                    }),
-                );
-            }
-            Request::ClosePairing => {
-                core.remote.close_offer();
-                let status = remote::announce(&core);
-                client.respond(
-                    request_id,
-                    Ok(Response::Remote {
-                        status: Box::new(status),
-                    }),
-                );
-            }
             Request::AnswerPairing { id, allow, access } => {
                 let result = core
                     .remote

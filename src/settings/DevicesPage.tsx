@@ -5,7 +5,6 @@ import { loadAccount, setAccount, useAccount } from "../account/account";
 import {
     remoteApi,
     shortKey,
-    spacedCode,
     type AccountLink,
     type DeviceAccess,
     type NotificationState,
@@ -18,7 +17,6 @@ import { reportError } from "../state/toast";
 import { Dropdown } from "../ui/Dropdown";
 import { Switch } from "../ui/Controls";
 import { IconTrash } from "../ui/Icons";
-import { PairingQr } from "./PairingQr";
 import { SettingsPage, SettingsRow, SettingsRows, SettingsSection } from "./SettingsLayout";
 
 const DELETE_ACCOUNT_URL = import.meta.env.DEV ? "http://localhost:5173/delete-account" : "https://app.sikemux.com/delete-account";
@@ -53,11 +51,6 @@ export function seenLabel(at: number | null, now: number): string {
     return `seen ${new Date(at).toLocaleDateString()}`;
 }
 
-function countdown(expiresAt: number, now: number): string {
-    const seconds = Math.max(0, Math.ceil((expiresAt - now) / 1000));
-    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-}
-
 function useRemoteStatus(): [RemoteStatus | null, (next: Promise<RemoteStatus>, what: string) => Promise<void>] {
     const [status, setStatus] = useState<RemoteStatus | null>(null);
     useEffect(() => {
@@ -83,21 +76,9 @@ function useRemoteStatus(): [RemoteStatus | null, (next: Promise<RemoteStatus>, 
     return [status, apply];
 }
 
-function useNow(running: boolean): number {
-    const [now, setNow] = useState(() => Date.now());
-    useEffect(() => {
-        if (!running) return;
-        setNow(Date.now());
-        const timer = window.setInterval(() => setNow(Date.now()), 1000);
-        return () => window.clearInterval(timer);
-    }, [running]);
-    return now;
-}
-
 export function DevicesPage() {
     const [status, apply] = useRemoteStatus();
-    const now = useNow(Boolean(status?.pairing));
-    const pairing = status?.pairing && status.pairing.expiresAt > now ? status.pairing : null;
+    const now = Date.now();
 
     return (
         <SettingsPage>
@@ -129,47 +110,17 @@ export function DevicesPage() {
 
             <AccountSection link={status?.account ?? null} />
 
-            <SettingsSection
-                title="Pair a device"
-                sub="Scan the code with Sikemux on your phone, or, on the same network, choose this host in the app and type the digits.">
-                {!status?.enabled ? (
-                    <p className="settings-hint">Turn on remote access to pair a device.</p>
-                ) : pairing ? (
-                    <div className="pairing-code">
-                        <PairingQr link={pairing.link} />
-                        <span className="pairing-code-copy">
-                            <span className="pairing-code-digits" aria-label={`Pairing code ${pairing.code.split("").join(" ")}`}>
-                                {spacedCode(pairing.code)}
-                            </span>
-                            <span className="pairing-code-note">Expires in {countdown(pairing.expiresAt, now)}. Each code pairs one device.</span>
-                        </span>
-                    </div>
-                ) : (
-                    <p className="settings-hint">A code lasts five minutes and is withdrawn after five wrong tries.</p>
-                )}
-                {status?.pending.map((request) => (
-                    <PendingRow
-                        key={request.id}
-                        request={request}
-                        onAnswer={(allow, access) => void apply(remoteApi.answerPairing(request.id, allow, access), "Pairing")}
-                    />
-                ))}
-                <div className="settings-actions start">
-                    {pairing ? (
-                        <button className="settings-btn" type="button" onClick={() => void apply(remoteApi.closePairing(), "Pairing")}>
-                            Cancel code
-                        </button>
-                    ) : (
-                        <button
-                            className={`settings-btn${status?.pending.length ? "" : " primary"}`}
-                            type="button"
-                            disabled={!status?.enabled}
-                            onClick={() => void apply(remoteApi.openPairing(), "Pairing")}>
-                            Pair a device
-                        </button>
-                    )}
-                </div>
-            </SettingsSection>
+            {status?.pending.length ? (
+                <SettingsSection title="Waiting to connect">
+                    {status.pending.map((request) => (
+                        <PendingRow
+                            key={request.id}
+                            request={request}
+                            onAnswer={(allow, access) => void apply(remoteApi.answerPairing(request.id, allow, access), "Pairing")}
+                        />
+                    ))}
+                </SettingsSection>
+            ) : null}
 
             <SettingsSection title="Paired devices" meta={status ? `${status.devices.length} paired` : undefined}>
                 {!status?.devices.length ? (

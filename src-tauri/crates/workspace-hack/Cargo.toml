@@ -86,7 +86,7 @@ crc32fast = { version = "1" }
 crypto-common-6f8ce4dd05d13bba = { package = "crypto-common", version = "0.2", default-features = false, features = ["rand_core"] }
 data-encoding = { version = "2" }
 derive_more = { version = "2", default-features = false, features = ["add", "add_assign", "debug", "deref", "deref_mut", "from_str", "into_iterator", "try_into"] }
-digest = { version = "0.11", features = ["alloc", "mac", "oid", "rand_core"] }
+digest = { version = "0.11", features = ["alloc", "oid", "rand_core"] }
 dispatch2 = { version = "0.3" }
 errno = { version = "0.3" }
 futures-channel = { version = "0.3" }

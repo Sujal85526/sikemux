@@ -136,7 +136,6 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     row("devices", "Remote access", "Allow paired devices", "phone mobile remote enable turn on off background"),
     section("devices", "Your account", "account sign in login google github email phones find"),
     row("devices", "Your account", "Not signed in", "sign in log in account google github email"),
-    section("devices", "Pair a device", "phone mobile code pairing add connect"),
     section("devices", "Paired devices", "phone mobile revoke remove forget access watch"),
 
     section("cloud", "Single sign-on", "sso aws gcp login"),

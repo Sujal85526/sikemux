@@ -13,7 +13,6 @@ function status(updateRequired: RemoteStatus["updateRequired"]): RemoteStatus {
         addresses: [],
         devices: [],
         connected: [],
-        pairing: null,
         pending: [],
         owner: null,
         account: null,

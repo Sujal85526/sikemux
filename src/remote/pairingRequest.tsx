@@ -15,16 +15,13 @@ export function platformName(platform: string): string {
 
 /** What a waiting device is asking, in the words the person answers. */
 export function pairingQuestion(request: PendingDevice): string {
-    return request.fromAccount
-        ? `${request.name || "A device"} from your Sikemux account wants to connect`
-        : `${request.name || "Unnamed device"} wants to pair`;
+    return `${request.name || "A device"} from your Sikemux account wants to connect`;
 }
 
 export function PairingDetail({ request }: { request: PendingDevice }) {
     return (
         <>
-            {platformName(request.platform)} · key <code className="device-key">{shortKey(request.deviceId)}</code> ·{" "}
-            {request.fromAccount ? "signed in to your account" : "it typed the right code"}
+            {platformName(request.platform)} · key <code className="device-key">{shortKey(request.deviceId)}</code> · signed in to your account
         </>
     );
 }

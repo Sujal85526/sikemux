@@ -374,11 +374,8 @@ pub enum Request {
     SetOwner {
         owner: Option<String>,
     },
-    /// Shows a new pairing code, replacing any open one. Remote access must
-    /// be on.
-    OpenPairing,
-    ClosePairing,
-    /// The person's answer to a device that entered the right code.
+    /// The person's answer to a phone that came with a ticket from the
+    /// account.
     AnswerPairing {
         id: String,
         allow: bool,
@@ -935,9 +932,8 @@ pub struct RemoteStatus {
     pub devices: Vec<DeviceInfo>,
     /// Ids of the devices connected now.
     pub connected: Vec<String>,
-    pub pairing: Option<PairingOffer>,
-    /// Devices that entered the code, or came with a ticket from the account,
-    /// and wait for the person to answer.
+    /// Phones that came with a ticket from the account and wait for the
+    /// person to answer.
     pub pending: Vec<PendingDevice>,
     /// The account this host is signed in to.
     pub owner: Option<String>,
@@ -1046,16 +1042,6 @@ pub enum AccountLinkState {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PairingOffer {
-    pub code: String,
-    /// Milliseconds since the Unix epoch.
-    pub expires_at: u64,
-    /// The core's key and the code as one `sikemux://pair` link, for a QR code.
-    pub link: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct PendingDevice {
     /// Names this request in `AnswerPairing`.
     pub id: String,
@@ -1063,8 +1049,8 @@ pub struct PendingDevice {
     /// What the device calls itself. Nothing vouches for it.
     pub name: String,
     pub platform: String,
-    /// The device came with a ticket from the host's account instead of a
-    /// code.
+    /// The device came with a ticket from the host's account, as every
+    /// device does.
     #[serde(default)]
     pub from_account: bool,
 }

@@ -15,7 +15,6 @@ function status(enabled: boolean): RemoteStatus {
         addresses: [],
         devices: [],
         connected: [],
-        pairing: null,
         pending: [],
         owner: null,
         account: null,

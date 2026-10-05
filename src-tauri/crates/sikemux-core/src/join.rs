@@ -1,18 +1,19 @@
-//! Joining a host without a code. A phone signed in to the same account as the
-//! host gets a short-lived ticket from the accounts server naming the account,
-//! the host and the phone, and hands it to the host. The host checks the
-//! ticket itself, never calling the server, and then asks the person exactly
-//! as code pairing does: the ticket only gets the phone as far as the question.
+//! Joining a host. A phone signed in to the same account as the host gets a
+//! short-lived ticket from the accounts server naming the account, the host
+//! and the phone, and hands it to the host. The host checks the ticket itself,
+//! never calling the server, and then asks the person whether to allow the
+//! phone: the ticket only gets the phone as far as the question.
 
 use std::collections::BTreeMap;
 use std::time::Duration;
 
 use iroh::{Endpoint, EndpointAddr};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 
 use crate::accounts::protocol::JoinTicket;
-use crate::pairing::{self, APPROVAL_TIMEOUT};
-use crate::protocol::DeviceAccess;
+use crate::protocol::{encode_control, read_frame_within, DeviceAccess, FrameKind};
 
 pub const JOIN_ALPN: &[u8] = b"sikemux/join/1";
 /// How far the host's clock may disagree with the server's.
@@ -21,7 +22,12 @@ pub const MAX_LIFETIME_SECS: i64 = 600;
 /// How long after a revocation a ticket issued before it could still arrive
 /// within its life.
 pub const REVOCATION_MEMORY_MS: u64 = ((MAX_LIFETIME_SECS + 2 * CLOCK_SKEW_SECS) * 1000) as u64;
+/// How long the host waits for the person at it to answer.
+pub const APPROVAL_TIMEOUT: Duration = Duration::from_secs(120);
 const STEP_TIMEOUT: Duration = Duration::from_secs(15);
+/// Every join message is a few hundred bytes. Either side reads them before
+/// it knows who sent them, so nothing larger is accepted.
+const MAX_MESSAGE_BYTES: usize = 4096;
 
 const PRODUCTION_KEYS: &[(&str, &str)] = &[(
     "prod-1",
@@ -224,6 +230,27 @@ pub fn check(
     Ok(())
 }
 
+pub(crate) async fn send(
+    writer: &mut (impl AsyncWrite + Unpin),
+    message: &impl Serialize,
+) -> std::io::Result<()> {
+    writer.write_all(&encode_control(message)?).await
+}
+
+pub(crate) async fn receive<T: DeserializeOwned>(
+    reader: &mut (impl AsyncRead + Unpin),
+    limit: Duration,
+) -> std::io::Result<T> {
+    let frame = tokio::time::timeout(limit, read_frame_within(reader, MAX_MESSAGE_BYTES))
+        .await
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "no answer in time"))??
+        .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::UnexpectedEof))?;
+    if frame.kind != FrameKind::Control {
+        return Err(std::io::Error::other("unexpected frame"));
+    }
+    Ok(serde_json::from_slice(&frame.payload)?)
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum JoinError {
     #[error("could not reach the host: {0}")]
@@ -246,10 +273,8 @@ pub async fn join(
         .await
         .map_err(connection_error)?;
     let (mut writer, mut reader) = connection.open_bi().await.map_err(connection_error)?;
-    pairing::send(&mut writer, hello)
-        .await
-        .map_err(connection_error)?;
-    let reply = pairing::receive(&mut reader, APPROVAL_TIMEOUT + STEP_TIMEOUT)
+    send(&mut writer, hello).await.map_err(connection_error)?;
+    let reply = receive(&mut reader, APPROVAL_TIMEOUT + STEP_TIMEOUT)
         .await
         .map_err(connection_error)?;
     connection.close(0u32.into(), b"answered");

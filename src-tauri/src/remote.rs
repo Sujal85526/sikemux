@@ -1,6 +1,6 @@
-//! Remote access and pairing for the Devices settings page, and the projects
-//! and agents the app offers paired devices. The core keeps the state; these
-//! commands forward to it.
+//! Remote access and the phones allowed in, for the Devices settings page,
+//! and the projects and agents the app offers paired devices. The core keeps
+//! the state; these commands forward to it.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -249,18 +249,6 @@ pub async fn remote_revoke_device(
 ) -> AppResult<RemoteStatus> {
     let client = manager.client().await?;
     client.revoke_device(id).await.map_err(core_error)
-}
-
-#[tauri::command]
-pub async fn remote_open_pairing(manager: State<'_, PtyManager>) -> AppResult<RemoteStatus> {
-    let client = manager.client().await?;
-    client.open_pairing().await.map_err(core_error)
-}
-
-#[tauri::command]
-pub async fn remote_close_pairing(manager: State<'_, PtyManager>) -> AppResult<RemoteStatus> {
-    let client = manager.client().await?;
-    client.close_pairing().await.map_err(core_error)
 }
 
 #[tauri::command]

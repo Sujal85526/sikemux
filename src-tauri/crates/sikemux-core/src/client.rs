@@ -828,14 +828,6 @@ impl CoreClient {
         }
     }
 
-    pub async fn open_pairing(&self) -> Result<RemoteStatus, ClientError> {
-        self.remote_request(Request::OpenPairing).await
-    }
-
-    pub async fn close_pairing(&self) -> Result<RemoteStatus, ClientError> {
-        self.remote_request(Request::ClosePairing).await
-    }
-
     pub async fn answer_pairing(
         &self,
         id: String,
