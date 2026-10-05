@@ -47,8 +47,8 @@ export function ForgetSheet({ device, visible, onClose }: { device: PairedDevice
           {name}
         </Text>
         <Text style={type.body}>
-          Forgetting removes this host from the phone and, if it can be reached, removes this phone from the host&apos;s paired devices. To
-          use it again, pair with its code.
+          Forgetting removes this host from the phone and, if it can be reached, removes this phone from the host&apos;s paired devices.
+          While it is on your account, it stays in Devices to connect to again.
         </Text>
         {problem ? <Text style={styles.problem}>{problem}</Text> : null}
         <Button

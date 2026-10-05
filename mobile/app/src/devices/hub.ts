@@ -80,7 +80,7 @@ function outdated(error: unknown): Outdated | undefined {
 export function problem(error: unknown): string {
   if (MobileError.Refused.instanceOf(error)) return error.inner.message;
   if (MobileError.Connection.instanceOf(error)) return error.inner.message;
-  if (MobileError.Unpaired.instanceOf(error)) return 'This host no longer knows this phone. Pair with it again.';
+  if (MobileError.Unpaired.instanceOf(error)) return 'This host no longer knows this phone. Forget it, then connect again.';
   return error instanceof Error ? error.message : String(error);
 }
 

@@ -21,7 +21,7 @@ const identity = vi.hoisted(() => ({
   })),
 }));
 vi.mock('@/device/identity', () => identity);
-vi.mock('@/devices/pairing', () => ({ phoneName: () => 'Pixel 9' }));
+vi.mock('@/device/name', () => ({ phoneName: () => 'Pixel 9' }));
 vi.mock('./config', () => ({ apiUrl: () => 'https://api.test' }));
 
 type Call = { url: string; method: string; body?: unknown; authorization?: string };

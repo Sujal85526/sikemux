@@ -8,7 +8,7 @@ const device = vi.hoisted(() => ({ join: vi.fn() }));
 const api = vi.hoisted(() => ({ joinTicket: vi.fn() }));
 const hub = vi.hoisted(() => ({ reloadDevices: vi.fn(async () => {}) }));
 
-vi.mock('@/device/identity', () => ({ whilePairing: (work: (device: unknown) => Promise<unknown>) => work(device) }));
+vi.mock('@/device/identity', () => ({ whileJoining: (work: (device: unknown) => Promise<unknown>) => work(device) }));
 vi.mock('@/account/api', async (original) => ({ ...(await original<typeof import('@/account/api')>()), ...api }));
 vi.mock('./hub', () => hub);
 vi.mock('@/account/config', () => ({ apiUrl: () => 'https://api.test' }));
@@ -58,13 +58,13 @@ describe('joining a host on the account', () => {
 
   it("says why the host refused the ticket, in the person's words where it can", async () => {
     device.join.mockResolvedValue(JoinAnswer.Refused.new({ reason: 'signed_out' }));
-    expect((await failure()).detail).toBe('Work MacBook is not signed in to Sikemux. Sign it in, or use a code.');
+    expect((await failure()).detail).toBe('Work MacBook is not signed in to Sikemux. Sign it in, then try again.');
     device.join.mockResolvedValue(JoinAnswer.Refused.new({ reason: 'wrong_account' }));
     expect((await failure()).detail).toContain('different account');
     device.join.mockResolvedValue(JoinAnswer.Refused.new({ reason: 'bad_signature' }));
     expect(await failure()).toEqual({
       title: "Work MacBook couldn't let this phone in",
-      detail: 'It turned down the invitation (bad_signature). Try again, or use a code.',
+      detail: 'It turned down the invitation (bad_signature). Try again.',
     });
   });
 

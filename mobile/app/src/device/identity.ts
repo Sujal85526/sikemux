@@ -22,7 +22,7 @@ function bytes(text: string): ArrayBuffer {
 async function deviceKey(): Promise<ArrayBuffer> {
   const stored = await SecureStore.getItemAsync(KEY_ITEM, KEY_OPTIONS);
   if (stored) {
-    if (!/^[0-9a-f]{64}$/.test(stored)) throw new Error("This phone's key is damaged; reinstall the app to pair again.");
+    if (!/^[0-9a-f]{64}$/.test(stored)) throw new Error("This phone's key is damaged; reinstall the app to connect again.");
     return bytes(stored);
   }
   const key = newDeviceKey();
@@ -31,7 +31,7 @@ async function deviceKey(): Promise<ArrayBuffer> {
 }
 
 let online: Promise<DeviceLike> | undefined;
-let pairing = 0;
+let joining = 0;
 
 /** This phone on the network, unless the app is too old to use it. A failure is not kept, so the next call tries again. */
 export function thisDevice(): Promise<DeviceLike> {
@@ -48,20 +48,20 @@ export function thisDevice(): Promise<DeviceLike> {
   return online;
 }
 
-/** Keeps the phone online while it pairs, which can outlast the app being in front. */
-export async function whilePairing<T>(work: (device: DeviceLike) => Promise<T>): Promise<T> {
-  pairing += 1;
+/** Keeps the phone online while a host decides whether to let it in, which can outlast the app being in front. */
+export async function whileJoining<T>(work: (device: DeviceLike) => Promise<T>): Promise<T> {
+  joining += 1;
   try {
     return await work(await thisDevice());
   } finally {
-    pairing -= 1;
+    joining -= 1;
   }
 }
 
 /** Takes the phone off the network while the app is away; the next call to `thisDevice` brings it back. */
 export async function goOffline() {
   const going = online;
-  if (!going || pairing > 0) return;
+  if (!going || joining > 0) return;
   online = undefined;
   const device = await going.catch(() => undefined);
   await device?.close();

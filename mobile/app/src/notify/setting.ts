@@ -44,7 +44,7 @@ export function useNotificationsChoice(): Choice {
   return useSyncExternalStore(subscribe, () => choice);
 }
 
-/** Asks once, after a pairing, whether to turn notifications on; a person who already chose is not asked. */
+/** Asks once, after a host lets the phone in, whether to turn notifications on; a person who already chose is not asked. */
 export async function offerNotifications() {
   if ((await notificationsChoice()) !== undefined) return;
   offered = true;

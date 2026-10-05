@@ -14,7 +14,7 @@ import type {
 } from '@protocol';
 
 import { thisDevice } from '@/device/identity';
-import { phoneName } from '@/devices/pairing';
+import { phoneName } from '@/device/name';
 import { apiUrl } from './config';
 
 export type TokenSource = () => Promise<string | null>;

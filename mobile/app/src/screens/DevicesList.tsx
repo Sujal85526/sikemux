@@ -1,19 +1,20 @@
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
+import { useUser } from '@clerk/expo';
+import * as Clipboard from 'expo-clipboard';
 import type { Device } from '@protocol';
 
 import { AccountSheet } from '@/account/AccountSheet';
 import { Avatar } from '@/account/Avatar';
+import { providerName } from '@/account/providers';
 import { useAccountHosts } from '@/account/session';
-import { pasteFoundLink } from '@/devices/foundLinks';
-
 import type { Snapshot } from '@/core/protocol';
 import { useLive } from '@/devices/hub';
 import { channelLabel, deviceKind, deviceName, type PairedDevice } from '@/devices/paired';
 import { chatTitle, ago } from '@/devices/words';
 import { AgentIcon, DeviceIcon, Icon } from '@/ui/Icon';
-import { Button, IconButton, NeedsYou, Screen, useBottomGap, Working } from '@/ui/parts';
+import { IconButton, NeedsYou, Screen, useBottomGap, Working } from '@/ui/parts';
 import { fonts, type Palette, radius, typeFor, useColors, useStyles } from '@/ui/theme';
 
 function summary(snapshot: Snapshot): string {
@@ -126,18 +127,92 @@ function AccountHostCard({ host }: { host: Device }) {
   );
 }
 
-function Empty() {
+const DOWNLOAD = 'https://sikemux.com/phone';
+
+/** Where the next host lands: it turns into that host's row once it signs in to the account. */
+function HostSlot() {
+  const colors = useColors();
   const styles = useStyles(makeStyles);
   return (
-    <View style={styles.empty}>
-      <Text style={styles.emptyTitle}>No hosts yet</Text>
-      <Text style={styles.emptyBody}>
-        In Sikemux on your host, open Settings → Devices and sign in to this account, or pair with the code it shows.
-      </Text>
-      <Button kind="primary" title="Scan the code on your host" onPress={() => router.push('/scan')} style={styles.emptyButton} />
-      <Pressable onPress={() => pasteFoundLink()} style={styles.paste} accessibilityRole="button">
-        <Text style={styles.pasteText}>Paste a pairing link</Text>
-      </Pressable>
+    <View style={styles.slot}>
+      <View style={styles.slotTile}>
+        <DeviceIcon kind="laptop" size={22} color={colors.tertiary} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.slotTitle}>Your computer goes here</Text>
+        <View style={styles.watching}>
+          <Working />
+          <Text style={styles.watchingText}>Watching the account</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function Step({ number, children }: { number: number; children: ReactNode }) {
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={styles.step}>
+      <View style={styles.stepNumber}>
+        <Text style={styles.stepNumberText}>{number}</Text>
+      </View>
+      <Text style={styles.stepText}>{children}</Text>
+    </View>
+  );
+}
+
+function Chip({ title, primary, onPress }: { title: string; primary?: boolean; onPress: () => void }) {
+  const styles = useStyles(makeStyles);
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      style={({ pressed }) => [styles.chip, primary && styles.chipPrimary, pressed && { opacity: 0.85 }]}>
+      <Text style={[styles.chipText, primary && styles.chipTextPrimary]}>{title}</Text>
+    </Pressable>
+  );
+}
+
+/** How to bring a host in: install Sikemux there and sign in to this account; it then asks to let this phone in. */
+function BringItIn() {
+  const styles = useStyles(makeStyles);
+  const { user } = useUser();
+  const [copied, setCopied] = useState(false);
+  const account = [providerName(user?.externalAccounts[0]?.provider), user?.primaryEmailAddress?.emailAddress].filter(Boolean).join(' · ');
+
+  useEffect(() => {
+    if (!copied) return;
+    const reset = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(reset);
+  }, [copied]);
+
+  const send = () => {
+    Share.share(Platform.OS === 'ios' ? { url: DOWNLOAD } : { message: DOWNLOAD }).catch(() => {});
+  };
+  const copy = () => {
+    Clipboard.setStringAsync(DOWNLOAD)
+      .then(() => setCopied(true))
+      .catch(() => {});
+  };
+
+  return (
+    <View style={styles.how}>
+      <Text style={styles.howTitle}>Bring it in</Text>
+      <View style={styles.steps}>
+        <Step number={1}>
+          Get Sikemux from <Text style={styles.strong}>sikemux.com</Text>
+        </Step>
+        <Step number={2}>
+          Sign in with <Text style={styles.strong}>{account || 'this account'}</Text>
+        </Step>
+        <Step number={3}>
+          Click <Text style={styles.strong}>Allow</Text> when it asks
+        </Step>
+      </View>
+      <View style={styles.chips}>
+        <Chip primary title="Send me the link" onPress={send} />
+        <Chip title={copied ? 'Copied' : 'Copy link'} onPress={copy} />
+      </View>
     </View>
   );
 }
@@ -146,29 +221,50 @@ export function DevicesList({ devices }: { devices: PairedDevice[] }) {
   const styles = useStyles(makeStyles);
   const bottom = useBottomGap();
   const [account, setAccount] = useState(false);
-  const hosts = useAccountHosts();
+  const { hosts } = useAccountHosts();
   const unpaired = hosts.filter((host) => !devices.some((device) => device.core === host.key));
+  const count = devices.length + unpaired.length;
+  // The slot stays while the list is as long as when + was pressed, so the host that fills it takes its place.
+  const [addingAt, setAddingAt] = useState<number>();
+  const waiting = count === 0 || addingAt === count;
+  const list = useRef<ScrollView>(null);
+  const reveal = useRef(false);
+
+  const add = () => {
+    reveal.current = true;
+    setAddingAt(count);
+  };
+
   return (
     <Screen>
       <View style={styles.nav}>
-        <IconButton name="IconPlus" label="Pair another device" onPress={() => router.push('/scan')} />
+        <IconButton name="IconPlus" label="Add a host" onPress={add} />
         <Pressable onPress={() => setAccount(true)} accessibilityRole="button" accessibilityLabel="Account" style={styles.account}>
           <Avatar size={28} />
         </Pressable>
       </View>
       <Text style={styles.title}>Devices</Text>
-      {devices.length || unpaired.length ? (
-        <ScrollView contentContainerStyle={[styles.list, { paddingBottom: bottom + 12 }]}>
-          {devices.map((device) => (
-            <DeviceCard key={device.core} device={device} />
-          ))}
-          {unpaired.map((host) => (
-            <AccountHostCard key={host.key} host={host} />
-          ))}
-        </ScrollView>
-      ) : (
-        <Empty />
-      )}
+      <ScrollView
+        ref={list}
+        contentContainerStyle={[styles.list, { paddingBottom: bottom + 12 }]}
+        onContentSizeChange={() => {
+          if (!reveal.current) return;
+          reveal.current = false;
+          list.current?.scrollToEnd({ animated: true });
+        }}>
+        {devices.map((device) => (
+          <DeviceCard key={device.core} device={device} />
+        ))}
+        {unpaired.map((host) => (
+          <AccountHostCard key={host.key} host={host} />
+        ))}
+        {waiting ? (
+          <>
+            <HostSlot />
+            <BringItIn />
+          </>
+        ) : null}
+      </ScrollView>
       <AccountSheet visible={account} onClose={() => setAccount(false)} />
     </Screen>
   );
@@ -228,11 +324,53 @@ const makeStyles = (colors: Palette) => {
       borderColor: colors.raised,
     },
     workText: { flex: 1, marginLeft: 6, fontFamily: fonts.ui, fontSize: 13, color: colors.secondary },
-    empty: { flex: 1, justifyContent: 'center', paddingHorizontal: 28, paddingBottom: 60 },
-    emptyTitle: { ...type.title, fontSize: 20, textAlign: 'center' },
-    emptyBody: { ...type.body, textAlign: 'center', marginTop: 8 },
-    emptyButton: { marginTop: 24 },
-    paste: { height: 44, alignItems: 'center', justifyContent: 'center' },
-    pasteText: { fontFamily: fonts.uiMedium, fontSize: 15, color: colors.secondary },
+    slot: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      padding: 14,
+      borderRadius: radius.row,
+      borderWidth: 1.5,
+      borderStyle: 'dashed',
+      borderColor: colors.borderStrong,
+    },
+    slotTile: {
+      width: 40,
+      height: 40,
+      borderRadius: radius.control,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.active,
+    },
+    slotTitle: { ...type.row, color: colors.secondary },
+    watching: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 3 },
+    watchingText: { ...type.meta, fontSize: 12.5 },
+    how: {
+      marginTop: 8,
+      padding: 16,
+      borderRadius: radius.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.raised,
+    },
+    howTitle: { fontFamily: fonts.uiSemibold, fontSize: 15, color: colors.ink },
+    steps: { marginTop: 10, gap: 9 },
+    step: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+    stepNumber: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.active },
+    stepNumberText: { fontFamily: fonts.uiSemibold, fontSize: 11.5, color: colors.ink },
+    stepText: { flex: 1, fontFamily: fonts.ui, fontSize: 14, lineHeight: 20, color: colors.secondary },
+    strong: { fontFamily: fonts.uiSemibold, color: colors.ink },
+    chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 },
+    chip: {
+      height: 36,
+      paddingHorizontal: 14,
+      justifyContent: 'center',
+      borderRadius: radius.control,
+      borderWidth: 1,
+      borderColor: colors.borderStrong,
+    },
+    chipPrimary: { backgroundColor: colors.ink, borderColor: colors.ink },
+    chipText: { fontFamily: fonts.uiSemibold, fontSize: 14, color: colors.ink },
+    chipTextPrimary: { color: colors.ground },
   });
 };

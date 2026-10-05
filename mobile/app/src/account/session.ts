@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useEffectEvent, useRef, useSyncExternalStore } from 'react';
 import { AppState, Platform } from 'react-native';
 import { useAuth } from '@clerk/expo';
 import { nativeApplicationVersion } from 'expo-application';
@@ -38,36 +38,47 @@ function hostsChanged() {
   hostsListeners.forEach((listener) => listener());
 }
 
-function useHostsVersion(): number {
-  return useSyncExternalStore(
-    (listener) => {
-      hostsListeners.add(listener);
-      return () => hostsListeners.delete(listener);
-    },
-    () => hostsVersion,
-  );
+function subscribeHosts(listener: () => void) {
+  hostsListeners.add(listener);
+  return () => hostsListeners.delete(listener);
 }
 
-/** The hosts on the account, read again whenever the live connection hears one change. */
-export function useAccountHosts(): Device[] {
+/** The hosts on the account; `loaded` once the server has answered since signing in. */
+export type AccountHosts = { hosts: Device[]; loaded: boolean };
+
+const NO_HOSTS: AccountHosts = { hosts: [], loaded: false };
+let accountHostsNow = NO_HOSTS;
+
+function publishHosts(next: AccountHosts) {
+  accountHostsNow = next;
+  hostsListeners.forEach((listener) => listener());
+}
+
+/** Reads the hosts on the account on signing in, and again whenever the live connection hears one change. */
+export function useAccountHostsFeed() {
   const { isSignedIn, getToken } = useAuth();
-  const version = useHostsVersion();
-  const [hosts, setHosts] = useState<Device[]>([]);
+  const version = useSyncExternalStore(subscribeHosts, () => hostsVersion);
   const latestGetToken = useRef(getToken);
   useEffect(() => {
     latestGetToken.current = getToken;
   });
   useEffect(() => {
-    if (!isSignedIn) return;
+    if (!isSignedIn) {
+      publishHosts(NO_HOSTS);
+      return;
+    }
     let current = true;
     accountHosts(() => latestGetToken.current())
-      .then((found) => current && setHosts(found))
+      .then((hosts) => current && publishHosts({ hosts, loaded: true }))
       .catch((error: unknown) => console.warn('sikemux: could not list the hosts on the account', error));
     return () => {
       current = false;
     };
   }, [isSignedIn, version]);
-  return hosts;
+}
+
+export function useAccountHosts(): AccountHosts {
+  return useSyncExternalStore(subscribeHosts, () => accountHostsNow);
 }
 
 /** Keeps this phone connected to its account while the app is in front and signed in. */

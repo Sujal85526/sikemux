@@ -7,19 +7,18 @@ import * as Updates from 'expo-updates';
 
 import { AccountProblem, removePhone } from '@/account/api';
 import { Avatar } from '@/account/Avatar';
+import { providerName } from '@/account/providers';
 import { signOutHere } from '@/account/leave';
 import { versionLabel } from '@/account/versionLabel';
 import { useDeviceId } from '@/device/identity';
 import { shortKey } from '@/devices/paired';
-import { phoneName } from '@/devices/pairing';
+import { phoneName } from '@/device/name';
 import { NotificationsRow } from '@/notify/NotificationsRow';
 import { stopPush } from '@/notify/token';
 import { Icon } from '@/ui/Icon';
 import { Button } from '@/ui/parts';
 import { Sheet } from '@/ui/Sheet';
 import { fonts, type Palette, typeFor, useColors, useStyles, useType } from '@/ui/theme';
-
-const PROVIDERS: Record<string, string> = { google: 'Google', github: 'GitHub' };
 
 const VERSION = versionLabel(nativeApplicationVersion, {
   id: Updates.updateId,
@@ -38,10 +37,10 @@ export function AccountSheet({ visible, onClose }: { visible: boolean; onClose: 
   const [leaving, setLeaving] = useState(false);
   const [unreachable, setUnreachable] = useState(false);
   const [problem, setProblem] = useState<string>();
-  const provider = user?.externalAccounts[0]?.provider.replace(/^oauth_/, '');
+  const provider = providerName(user?.externalAccounts[0]?.provider);
   const name = user?.fullName?.trim() || undefined;
   const email = user?.primaryEmailAddress?.emailAddress;
-  const how = provider ? `Signed in with ${PROVIDERS[provider] ?? provider}` : 'Signed in with email';
+  const how = `Signed in with ${provider ?? 'email'}`;
 
   /** Takes the notification token and then the phone off the account first, so hosts hear of it; offline, it asks before leaving them there. */
   const leave = async (anyway = false) => {

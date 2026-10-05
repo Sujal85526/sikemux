@@ -255,7 +255,7 @@
   .menu-item.on { background: var(--surface-selected); border-color: var(--border-selected); color: var(--text-primary); }
   .menu-item .check { color: var(--acc); }
 
-  /* ---------- pairing ---------- */
+  /* ---------- messages and codes ---------- */
   .stack { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 30px; gap: 10px; position: relative; }
   .stack h2 { color: var(--text-primary); font-size: 23px; font-weight: 600; letter-spacing: -0.028em; line-height: 1.2; }
   .stack p { font-size: 15px; line-height: 1.5; }
@@ -488,41 +488,35 @@
   .choices { display: flex; flex-direction: column; gap: 8px; }
   .ink { color: var(--text-primary); font-weight: 500; }
   .gone { margin: 0; padding: 0 8px 0 18px; display: flex; flex-direction: column; gap: 8px; font-size: 15px; line-height: 1.5; }
-  /* the three pairing steps share one layout so the code never moves */
-  .pairing { padding: 40px 28px 0; display: flex; flex-direction: column; align-items: center; text-align: center; }
-  .pairing h2 { color: var(--text-primary); font-size: 22px; font-weight: 600; letter-spacing: -0.028em; line-height: 1.25; text-wrap: balance; }
-  .pairing p { margin-top: 8px; min-height: 3em; font-size: 15px; line-height: 1.5; text-wrap: balance; }
-  .pairing .digits { margin-top: 32px; }
-  .digits.locked span { background: var(--surface-raised); border-color: var(--border-strong); }
-  .digits.failed span { border-color: color-mix(in oklab, var(--danger) 55%, transparent); background: color-mix(in oklab, var(--danger) 7%, var(--surface-sunken)); color: color-mix(in oklab, var(--danger) 70%, var(--ink)); }
+  /* a title, one line under it, then the thing it is about: code tiles or the host's tile */
+  .prompt { padding: 40px 28px 0; display: flex; flex-direction: column; align-items: center; text-align: center; }
+  .prompt h2 { color: var(--text-primary); font-size: 22px; font-weight: 600; letter-spacing: -0.028em; line-height: 1.25; text-wrap: balance; }
+  .prompt p { margin-top: 8px; min-height: 3em; font-size: 15px; line-height: 1.5; text-wrap: balance; }
+  .prompt .digits { margin-top: 32px; }
   .digits span.gap { background: none; border: 0; }
   .dev-connect { flex: none; height: 32px; padding: 0 13px; display: grid; place-items: center; border-radius: 10px; border: 1px solid var(--border-strong); background: var(--surface-raised); font-size: 14px; font-weight: 600; color: var(--text-primary); }
   .join-glyph { margin-top: 32px; width: 76px; height: 76px; border-radius: 18px; display: grid; place-items: center; border: 1px solid var(--border-strong); background: var(--surface-raised); color: var(--text-primary); }
   .join-glyph.failed { border-color: color-mix(in oklab, var(--danger) 55%, transparent); background: color-mix(in oklab, var(--danger) 7%, var(--surface-sunken)); color: color-mix(in oklab, var(--danger) 70%, var(--ink)); }
 
-  .big-code { font-family: var(--mono); font-size: 36px; letter-spacing: .06em; color: var(--text-primary); margin-top: 18px; }
   .waiting { display: flex; align-items: center; gap: 8px; margin-top: 22px; font-size: 13px; color: var(--text-tertiary); }
   .spin { width: 15px; height: 15px; border-radius: 999px; border: 2px solid var(--gray-300); border-top-color: var(--text-secondary); animation: spin .9s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .mini-mac { width: 210px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-raised); padding: 12px; text-align: left; margin-bottom: 26px; box-shadow: 0 20px 50px -20px rgba(0,0,0,.8); }
-  .mini-mac .hd { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--warn); }
-  .mini-mac .ttl { margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--ink); }
-  .mini-mac .sb { font-size: 10px; color: var(--ink-dim); margin-top: 1px; }
-  .mini-mac .ac { display: flex; gap: 5px; margin-top: 10px; }
-  .mini-mac .ac span { flex: 1; height: 22px; border-radius: 5px; border: 1px solid var(--line); background: var(--rail-2); font-size: 9.5px; color: var(--ink-dim); display: grid; place-items: center; }
-  .mini-mac .ac span.allow { border-color: color-mix(in oklab, var(--warn) 45%, var(--line)); color: var(--ink); }
 
-  .camera { flex: 1; position: relative; overflow: hidden; background: radial-gradient(260px 200px at 52% 40%, #34343d 0%, transparent 70%), radial-gradient(420px 300px at 30% 85%, #1d1d23 0%, transparent 70%), #101013; }
-  .finder { position: absolute; left: 50%; top: 40%; translate: -50% -50%; width: 236px; height: 236px; border-radius: 26px; box-shadow: 0 0 0 2000px rgba(5,5,7,.6); }
-  .finder i { position: absolute; width: 44px; height: 44px; border: 3px solid #fff; }
-  .finder i:nth-child(1) { left: 0; top: 0; border-right: 0; border-bottom: 0; border-top-left-radius: 26px; }
-  .finder i:nth-child(2) { right: 0; top: 0; border-left: 0; border-bottom: 0; border-top-right-radius: 26px; }
-  .finder i:nth-child(3) { left: 0; bottom: 0; border-right: 0; border-top: 0; border-bottom-left-radius: 26px; }
-  .finder i:nth-child(4) { right: 0; bottom: 0; border-left: 0; border-top: 0; border-bottom-right-radius: 26px; }
-  .finder svg { position: absolute; left: 46px; top: 46px; width: 144px; height: 144px; opacity: .5; }
-  .camera .hint { position: absolute; left: 28px; right: 28px; top: calc(40% + 148px); text-align: center; color: #fff; font-size: 15px; line-height: 1.45; }
-  .camera .bottom { position: absolute; left: 16px; right: 16px; bottom: 34px; }
-  .camera .bottom .btn { background: rgba(28,28,34,.78); border-color: rgba(255,255,255,.12); backdrop-filter: blur(20px); color: #fff; }
+
+  /* ---------- a host joining ---------- */
+  .slot { margin: 0 16px; padding: 14px; border-radius: 12px; border: 1.5px dashed var(--border-strong); display: flex; gap: 12px; align-items: center; }
+  .slot-tile { width: 40px; height: 40px; border-radius: 10px; background: var(--surface-active); display: grid; place-items: center; color: var(--text-tertiary); flex: none; }
+  .slot .t { font-size: 15.5px; font-weight: 500; color: var(--text-secondary); }
+  .slot .s { margin-top: 3px; font-size: 12.5px; color: var(--text-tertiary); display: flex; align-items: center; gap: 7px; }
+  .how { margin: 18px 16px 0; padding: 16px; border-radius: 14px; background: var(--surface-raised); border: 1px solid var(--border); }
+  .how .t { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+  .how ol { margin-top: 10px; list-style: none; display: flex; flex-direction: column; gap: 9px; counter-reset: step; }
+  .how li { display: flex; gap: 10px; font-size: 14px; line-height: 1.4; counter-increment: step; }
+  .how li::before { content: counter(step); width: 20px; height: 20px; border-radius: 999px; background: var(--surface-active); color: var(--text-primary); font-size: 11.5px; font-weight: 600; display: grid; place-items: center; flex: none; }
+  .how li b { color: var(--text-primary); font-weight: 600; }
+  .how .acts { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip-btn { height: 36px; padding: 0 14px; border-radius: 10px; display: inline-flex; align-items: center; font-size: 14px; font-weight: 600; border: 1px solid var(--border-strong); color: var(--text-primary); }
+  .chip-btn.primary { background: var(--ink); border-color: var(--ink); color: var(--bg); }
 
   /* ---------- keyboards ---------- */
   .kb { flex: none; background: #1c1c21; padding: 8px 3px 30px; }
@@ -577,8 +571,8 @@
 
 <!-- ================================================================ -->
 <section class="flow">
-  <h2>Signing in, and pairing</h2>
-  <p>The app needs a Sikemux account; hosts signed in to the same account show up in Devices, and connect without a code. A phone still reaches a host only after someone at the host approves it. A code scanned or a link pasted inside Sikemux goes straight to "Approve on your host". A link opened from anywhere else, such as the iPhone's own Camera, first asks whether to pair.</p>
+  <h2>Signing in, and connecting</h2>
+  <p>The app needs a Sikemux account, and that is the only way to a host: hosts signed in to the same account show up in Devices, and the phone connects to them with the account's word for it. A phone still reaches a host only after someone at the host allows it.</p>
   <div class="phones">
 
     <figure><div class="phone"><div class="island"></div>
@@ -650,7 +644,7 @@
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Back</span></div>
-        <div class="pairing">
+        <div class="prompt">
           <h2>Check your email</h2>
           <p>Sikemux sent a code to contact@nodelike.com, to confirm this phone is yours.</p>
           <div class="digits"><span>4</span><span>8</span><span>1</span><span class="gap"></span><span class="cur"></span><span></span><span></span></div>
@@ -664,28 +658,14 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Email code</b><div class="note">The same tiles as a pairing code. It comes for a new account, and when an account signs in on a phone it has not used before. The sixth digit sends it.</div></figcaption>
-    </figure>
-
-    <figure><div class="phone" style="background:#000"><div class="island"></div>
-      <div class="status" style="color:#fff"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
-      <div class="camera">
-        <div class="nav"><span class="back" style="color:#fff">{{IconChevron:18}}Back</span></div>
-        <div class="finder"><i></i><i></i><i></i><i></i>
-          <svg viewBox="0 0 21 21" shape-rendering="crispEdges"><path fill="#fff" d="M0 0h7v7H0zM1 1v5h5V1zM2 2h3v3H2zM14 0h7v7h-7zM15 1v5h5V1zM16 2h3v3h-3zM0 14h7v7H0zM1 15v5h5v-5zM2 16h3v3H2zM8 0h1v2H8zM10 1h2v1h-2zM9 3h3v1H9zM8 5h1v3H8zM11 6h2v2h-2zM0 8h2v1H0zM3 9h3v1H3zM8 9h4v1H8zM14 8h3v1h-3zM18 9h3v2h-3zM9 11h2v2H9zM12 12h3v1h-3zM16 12h2v3h-2zM8 14h1v3H8zM10 15h3v1h-3zM12 17h2v4h-2zM15 16h1v2h-1zM17 17h4v1h-4zM19 19h2v2h-2zM9 19h2v2H9z"/></svg>
-        </div>
-        <div class="hint">On your host, open <b>Settings → Devices</b> and point the camera at the code.</div>
-        <div class="bottom"><div class="btn">Paste a pairing link instead</div></div>
-      </div>
-      <div class="home-bar" style="background:#fff"></div></div>
-      <figcaption><b>Scan</b><div class="note">Four corners and nothing else. The first frame holding a <code>sikemux://pair</code> link moves on; there is no shutter.</div></figcaption>
+      <figcaption><b>Email code</b><div class="note">Six tiles, three and three. It comes for a new account, and when an account signs in on a phone it has not used before. The sixth digit sends it.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Cancel</span></div>
-        <div class="pairing">
+        <div class="prompt">
           <h2>Allow this phone on Work MacBook</h2>
           <p>On Work MacBook, choose whether to let this phone in, and with what access.</p>
           <div class="join-glyph">{{IconLaptop:34}}</div>
@@ -696,14 +676,14 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Connect, for a host on your account</b><div class="note">Tapping Connect on a host from the account comes straight here: no code, since the account vouches for this phone. Sikemux hands the phone a ten-minute invitation naming both keys, and the phone shows it to the host, which checks it without asking Sikemux. Someone at the host still decides, as with a code, and picks the access. Until the invitation reaches the host the row reads "Reaching Work MacBook"; then the rail's squares and the same two minutes as code pairing. On Allow the host opens.</div></figcaption>
+      <figcaption><b>Connect, for a host on your account</b><div class="note">Tapping Connect on a host from the account comes straight here, since the account vouches for this phone. Sikemux hands the phone a ten-minute invitation naming both keys, and the phone shows it to the host, which checks it without asking Sikemux. Someone at the host still decides, and picks the access. Until the invitation reaches the host the row reads "Reaching Work MacBook"; then the rail's squares and two minutes for an answer. On Allow the host opens.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Back</span></div>
-        <div class="pairing">
+        <div class="prompt">
           <h2>Work MacBook said no</h2>
           <p>Someone at Work MacBook turned this phone down.</p>
           <div class="join-glyph failed">{{IconLaptop:34}}</div>
@@ -711,67 +691,10 @@
         <div style="flex:1"></div>
         <div class="footer">
           <div class="btn primary">Try again</div>
-          <div class="text-link">Use a code instead</div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Connect failed</b><div class="note">Same place, the host's tile edged red, the cause in one line. Turned down on the host; no answer in two minutes ("Work MacBook did not answer"); out of reach ("Can't reach Work MacBook": asleep, offline, or remote access off); the host refused the invitation, as when it is signed out or signed in to another account ("Work MacBook couldn't let this phone in", with the reason); or Sikemux itself out of reach or the host no longer on the account. Try again asks for a fresh invitation. A code still works for any host, so it stays one tap away.</div></figcaption>
-    </figure>
-
-    <figure><div class="phone"><div class="island"></div>
-      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
-      <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}Back</span></div>
-        <div class="pairing">
-          <h2>Enter the code from Work MacBook</h2>
-          <p>On that host, open Settings → Devices and choose Pair a device.</p>
-          <div class="digits"><span>4</span><span>8</span><span>1</span><span class="gap"></span><span class="cur"></span><span></span><span></span></div>
-        </div>
-        <div style="flex:1"></div>
-        <div class="kb num">
-          <div class="r"><span class="k">1</span><span class="k">2</span><span class="k">3</span></div>
-          <div class="r"><span class="k">4</span><span class="k">5</span><span class="k">6</span></div>
-          <div class="r"><span class="k">7</span><span class="k">8</span><span class="k">9</span></div>
-          <div class="r"><span class="k blank"></span><span class="k">0</span><span class="k blank" style="font-size:18px">⌫</span></div>
-        </div>
-      </div>
-      <div class="home-bar"></div></div>
-      <figcaption><b>Code, for a host on your account</b><div class="note">Reached from "Use a code instead" when connecting without one did not work. The phone already knows this host's key from the account, so only the code is asked for. Three and three, as the host shows it. The sixth digit sends it, straight to "Approve on your host".</div></figcaption>
-    </figure>
-
-    <figure><div class="phone"><div class="island"></div>
-      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
-      <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}Cancel</span></div>
-        <div class="pairing">
-          <h2>Pair with this host?</h2>
-          <p>Only go on if your host shows this code right now.</p>
-          <div class="digits locked"><span>4</span><span>8</span><span>1</span><span class="gap"></span><span>2</span><span>0</span><span>7</span></div>
-          <span class="m" style="margin-top:16px">Host 5f0c21ab</span>
-        </div>
-        <div style="flex:1"></div>
-        <div class="footer"><div class="btn primary">Pair</div></div>
-      </div>
-      <div class="home-bar"></div></div>
-      <figcaption><b>A link from outside</b><div class="note">Any app can open a pairing link, so one that did not come from this app's scanner or paste waits for a tap. The code and the start of the host's key are there to check against the host's screen.</div></figcaption>
-    </figure>
-
-    <figure><div class="phone"><div class="island"></div>
-      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
-      <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}Cancel</span></div>
-        <div class="pairing">
-          <h2>Approve on MacBook Pro</h2>
-          <p>Check the host shows this code, then choose what this iPhone may do.</p>
-          <div class="digits locked"><span>4</span><span>8</span><span>1</span><span class="gap"></span><span>2</span><span>0</span><span>7</span></div>
-        </div>
-        <div style="flex:1"></div>
-        <div class="footer">
-          <div class="row boxed"><span class="mark"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span><div class="body"><div class="t" style="font-size:15px;font-weight:400">Waiting for MacBook Pro</div></div><span class="ago m">1:52</span></div>
-        </div>
-            </div>
-      <div class="home-bar"></div></div>
-      <figcaption><b>Waiting for approval</b><div class="note">The code stays where it was typed; the cursor goes and the tiles settle. Below it, the rail’s working squares until the host answers. The host picks the access, so the phone asks nothing.</div></figcaption>
+      <figcaption><b>Connect failed</b><div class="note">Same place, the host's tile edged red, the cause in one line. Turned down on the host; no answer in two minutes ("Work MacBook did not answer"); out of reach ("Can't reach Work MacBook": asleep, offline, or remote access off); the host refused the invitation, as when it is signed out or signed in to another account ("Work MacBook couldn't let this phone in", with the reason); or Sikemux itself out of reach or the host no longer on the account. Try again asks for a fresh invitation.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -787,23 +710,7 @@
         <div class="choices across"><div class="btn">Not now</div><div class="btn primary">Turn on</div></div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Notifications, after pairing</b><div class="note">Asked once, on the host the phone just paired with, because that is when a notification first means something; never at first launch. Turn on brings the system's own prompt next. Not now leaves them off, and the account sheet can turn them on later. Only a signed-in phone is asked: notifications travel through the account. Android only for now; iPhones wait for Apple's push service.</div></figcaption>
-    </figure>
-
-    <figure><div class="phone"><div class="island"></div>
-      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
-      <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}Back</span></div>
-        <div class="pairing">
-          <h2>That code has changed</h2>
-          <p>The host makes a new one every few minutes, and after a wrong one.</p>
-          <div class="digits failed"><span>4</span><span>8</span><span>1</span><span class="gap"></span><span>2</span><span>0</span><span>7</span></div>
-        </div>
-        <div style="flex:1"></div>
-        <div class="footer"><div class="btn primary">Scan again</div></div>
-      </div>
-      <div class="home-bar"></div></div>
-      <figcaption><b>Pairing failed</b><div class="note">Same place, same tiles, edged red. Every failure reads this way, its cause in one line: wrong code, refused on the host, out of reach, or two minutes with no answer, when the clock reaches 0:00.</div></figcaption>
+      <figcaption><b>Notifications, after connecting</b><div class="note">Asked once, on the host that just let the phone in, because that is when a notification first means something; never at first launch. Turn on brings the system's own prompt next. Not now leaves them off, and the account sheet can turn them on later. Only a signed-in phone is asked: notifications travel through the account. Android only for now; iPhones wait for Apple's push service.</div></figcaption>
     </figure>
 
   </div>
@@ -867,7 +774,27 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Devices</b><div class="note">Each card is a device with its own glyph and a presence dot. The busy one says the one thing that needs you, then who is working, with the rail's logos and squares. A device that is asleep keeps its place but drops to an outline. A host signed in to the same account but not paired with this phone comes last, outlined, with Connect in place of the chevron: it asks that host to let this phone in, with no code. The account's picture sits at the top right, beside pairing, and opens the account sheet.</div></figcaption>
+      <figcaption><b>Devices</b><div class="note">Each card is a device with its own glyph and a presence dot. The busy one says the one thing that needs you, then who is working, with the rail's logos and squares. A device that is asleep keeps its place but drops to an outline. A host signed in to the same account but not paired with this phone comes last, outlined, with Connect in place of the chevron: it asks that host to let this phone in, with no code. The account's picture sits at the top right and opens the account sheet. Beside it, + adds the waiting slot and the steps from "Waiting for a host" under the list, for one more host; the host that fills it takes its place.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar" style="--size:28px">C</span></span></div>
+        <div class="title-block"><h1>Devices</h1></div>
+        <div class="slot"><span class="slot-tile">{{IconLaptop:22}}</span><div><div class="t">Your computer goes here</div><div class="s"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>Watching the account</div></div></div>
+        <div class="how">
+          <div class="t">Bring it in</div>
+          <ol>
+            <li><span>Get Sikemux from <b>sikemux.com</b></span></li>
+            <li><span>Sign in with <b>Google · contact@nodelike.com</b></span></li>
+            <li><span>Click <b>Allow</b> when it asks</span></li>
+          </ol>
+          <div class="acts"><span class="chip-btn primary">Send me the link</span><span class="chip-btn">Copy link</span></div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Waiting for a host</b><div class="note">Signed in, with no host connected and none on the account: the ordinary Devices screen, with a dashed slot where the computer will land. The phone watches the account the whole time, and nothing changes screen when a host signs in: the slot turns into its row, with Connect at its end. The steps name the provider and email this phone signed in with, since the host must use the same account. Send me the link opens the share sheet with sikemux.com/phone, to open on the computer; Copy link copies it and reads "Copied" for a moment. This account has no picture, so its initials stand in, from the name or else the email, on the same neutral circle; while a picture loads the circle stays empty.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -991,7 +918,7 @@
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Back</span></div>
-        <div class="pairing">
+        <div class="prompt">
           <h2>Confirm it's you</h2>
           <p>Sikemux sent a code to c*****@nodelike.com. Enter it to delete your account.</p>
           <div class="digits"><span>4</span><span>8</span><span>1</span><span class="gap"></span><span class="cur"></span><span></span><span></span></div>
@@ -1024,22 +951,6 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar" style="--size:28px">C</span></span></div>
-        <div class="title-block"><h1>Devices</h1></div>
-        <div class="stack" style="padding-bottom:60px">
-          <h2 style="font-size:20px">No hosts yet</h2>
-          <p>In Sikemux on your host, open Settings → Devices and sign in to this account, or pair with the code it shows.</p>
-          <div class="btn primary" style="align-self:stretch;margin-top:14px">Scan the code on your host</div>
-          <div class="text-link">Paste a pairing link</div>
-        </div>
-      </div>
-      <div class="home-bar"></div></div>
-      <figcaption><b>No hosts yet</b><div class="note">Signed in, with no host paired and none on the account. A host appears here by itself once it signs in to the same account; a code still pairs one that does not. This account has no picture, so its initials stand in, from the name or else the email, on the same neutral circle; while a picture loads the circle stays empty.</div></figcaption>
-    </figure>
-
-    <figure><div class="phone"><div class="island"></div>
-      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
-      <div class="screen">
         <div class="stack" style="padding-bottom:120px">
           <h2 style="font-size:20px">Couldn't read your paired hosts</h2>
           <p>The saved list on this phone could not be read.</p>
@@ -1047,7 +958,7 @@
         <div class="footer"><div class="btn primary">Try again</div></div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>List unreadable</b><div class="note">If the saved list of hosts cannot be read, the app says so in one line instead of offering to pair from scratch.</div></figcaption>
+      <figcaption><b>List unreadable</b><div class="note">If the saved list of hosts cannot be read, the app says so in one line instead of showing an empty list.</div></figcaption>
     </figure>
 
   </div>

@@ -1,4 +1,4 @@
-const TAGS = ['Refused', 'WrongCode', 'Connection', 'Invalid', 'Outdated', 'Unpaired'] as const;
+const TAGS = ['Refused', 'Connection', 'Invalid', 'Outdated', 'Unpaired'] as const;
 type Tag = (typeof TAGS)[number];
 
 class FakeMobileError extends Error {
@@ -26,7 +26,6 @@ function notMocked(name: string): never {
 }
 
 export const newDeviceKey = (): ArrayBuffer => new Uint8Array(32).buffer;
-export const parsePairingLink = (_text: string): undefined => undefined;
 
 export class Device {
   constructor() {

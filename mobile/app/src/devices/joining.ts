@@ -2,10 +2,10 @@ import { Platform } from 'react-native';
 import { JoinAnswer, MobileError } from '@sikemux/native';
 
 import { AccountProblem, joinTicket, type TokenSource } from '@/account/api';
-import { whilePairing } from '@/device/identity';
+import { whileJoining } from '@/device/identity';
+import { phoneName } from '@/device/name';
 import { reloadDevices } from './hub';
 import { rememberDevice, type Access } from './paired';
-import { phoneName } from './pairing';
 
 /** Asking Sikemux for a ticket, then waiting while the person at the host decides. */
 export type JoinStep = 'asking' | 'waiting';
@@ -18,7 +18,7 @@ export class JoinFailed extends Error {
   }
 }
 
-/** How long the host keeps a request open (sikemux_core::pairing::APPROVAL_TIMEOUT), as for a code. */
+/** How long the host keeps a request open before it stops asking. */
 export const APPROVAL_SECONDS = 120;
 
 export function expired(host: string): JoinFailure {
@@ -29,19 +29,20 @@ export function expired(host: string): JoinFailure {
 function refusal(host: string, reason: string): JoinFailure {
   const title = `${host} couldn't let this phone in`;
   const why: Record<string, string> = {
-    signed_out: `${host} is not signed in to Sikemux. Sign it in, or use a code.`,
-    wrong_account: `${host} is signed in to a different account. Use a code instead.`,
+    signed_out: `${host} is not signed in to Sikemux. Sign it in, then try again.`,
+    wrong_account: `${host} is signed in to a different account. Sign it in to this one, then try again.`,
     revoked: 'This phone was removed from your account. Sign in again.',
     expired: `Check the clock on ${host} and on this phone, then try again.`,
     not_yet_valid: `Check the clock on ${host} and on this phone, then try again.`,
-    unknown_key: `${host} does not trust this Sikemux server. Update it, or use a code.`,
+    unknown_key: `${host} does not trust this Sikemux server. Update it, then try again.`,
   };
-  return { title, detail: why[reason] ?? `It turned down the invitation (${reason}). Try again, or use a code.` };
+  return { title, detail: why[reason] ?? `It turned down the invitation (${reason}). Try again.` };
 }
 
 function ticketFailure(host: string, error: unknown): JoinFailure {
   if (error instanceof AccountProblem) {
-    if (error.status === 404) return { title: `${host} is no longer on your account`, detail: 'Pair with its code instead.' };
+    if (error.status === 404)
+      return { title: `${host} is no longer on your account`, detail: 'Sign it in to this account, then try again.' };
     if (error.status === 429) return { title: 'Too many tries', detail: 'Wait a minute, then try again.' };
     if (error.unreachable) return { title: "Can't reach Sikemux", detail: 'Check the phone is online, then try again.' };
     return { title: "Sikemux couldn't invite this phone", detail: error.message };
@@ -58,8 +59,8 @@ function dialFailure(host: string, error: unknown): JoinFailure {
 }
 
 /**
- * Joins the account's host `core` without a code: gets a ticket from Sikemux, hands it to the host and waits while
- * someone there decides. An allowed phone keeps the host as paired, as a code would. Aborting `signal` stops it.
+ * Joins the account's host `core`: gets a ticket from Sikemux, hands it to the host and waits while someone there
+ * decides. An allowed phone keeps the host as paired. Aborting `signal` stops it.
  */
 export async function joinHost(
   host: { core: string; name: string },
@@ -73,7 +74,7 @@ export async function joinHost(
   });
   if (signal?.aborted) throw new Error('Connecting was cancelled.');
   onStep('waiting');
-  const answer = await whilePairing((device) =>
+  const answer = await whileJoining((device) =>
     device.join(host.core, JSON.stringify(ticket), phoneName(), Platform.OS, signal ? { signal } : undefined),
   ).catch((error: unknown) => {
     throw new JoinFailed(dialFailure(host.name, error));

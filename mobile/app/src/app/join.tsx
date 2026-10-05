@@ -19,7 +19,7 @@ function stopped(error: unknown): JoinFailure {
   return { title: 'Connecting stopped', detail: error instanceof Error ? error.message : String(error) };
 }
 
-/** Connects to a host on the account without a code; someone at the host still allows it. */
+/** Connects to a host on the account; someone at the host still allows it. */
 export default function Join() {
   const styles = useStyles(makeStyles);
   const colors = useColors();
@@ -93,14 +93,7 @@ export default function Join() {
       </View>
       <View style={[styles.footer, { paddingBottom: bottom }]}>
         {problem ? (
-          <>
-            <Button kind="primary" title="Try again" onPress={retry} />
-            <Button
-              kind="text"
-              title="Use a code instead"
-              onPress={() => router.replace({ pathname: '/pair-code', params: { core, name } })}
-            />
-          </>
+          <Button kind="primary" title="Try again" onPress={retry} />
         ) : (
           <View style={styles.waiting}>
             <Working />
