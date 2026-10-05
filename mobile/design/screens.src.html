@@ -378,16 +378,27 @@
   .wc-legend { display: flex; align-items: center; justify-content: flex-end; gap: 3px; margin-top: 8px; font-size: 9.5px; color: var(--text-tertiary); }
   .wc-legend i { width: 10px; }
   .wc-caption { margin-top: 12px; text-align: center; font-size: 13px; color: var(--text-tertiary); }
-  /* a device */
-  .dev-title { display: flex; align-items: center; gap: 14px; padding: 4px 18px 16px; }
-  .dev-title h1 { font-size: 24px; font-weight: 600; letter-spacing: -0.03em; color: var(--text-primary); }
-  .dev-title p { margin-top: 1px; font-size: 13px; color: var(--text-tertiary); }
-  .dev-title .presence { box-shadow: 0 0 0 2.5px var(--surface); }
-  .track .count { font-style: normal; }
-  .filters { display: flex; gap: 6px; padding: 12px 16px 2px; }
-  .filters span { height: 32px; min-width: 40px; padding: 0 12px; border-radius: 999px; display: grid; place-items: center; border: 1px solid var(--border); font-size: 13px; color: var(--text-secondary); }
-  .filters .claude { color: var(--brand-claude); } .filters .codex { color: var(--brand-codex); } .filters .hermes { color: var(--brand-hermes); } .filters .opencode { color: var(--brand-opencode); }
-  .filters span.on { background: var(--surface-active); border-color: var(--border-strong); color: var(--text-primary); }
+  /* a device's header: the host's name over its backdrop, then the tabs and the project picker */
+  .host-head { height: 168px; display: flex; flex-direction: column; justify-content: flex-end; padding: 0 18px 16px; }
+  .host-head .where { display: flex; align-items: center; gap: 8px; font-size: 13px; color: color-mix(in oklab, var(--ink) 72%, transparent); }
+  .host-head .where i { width: 7px; height: 7px; border-radius: 999px; flex: none; }
+  .host-head .where .live { background: var(--live); box-shadow: 0 0 10px var(--live); }
+  .host-head .where .off { border: 1.5px solid var(--gray-700); }
+  .host-head h1 { margin-top: 4px; font-size: 32px; font-weight: 600; letter-spacing: -0.035em; color: var(--text-primary); text-shadow: 0 2px 18px rgba(0,0,0,.65); }
+  .host-bar { display: flex; align-items: center; justify-content: space-between; padding: 4px 18px 0; }
+  .host-tabs { display: flex; align-items: center; gap: 20px; }
+  .host-tabs span { display: inline-flex; align-items: center; gap: 7px; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: var(--text-tertiary); }
+  .host-tabs span.on { color: var(--text-primary); }
+  .host-tabs .count { font-style: normal; font-size: 11px; font-weight: 600; color: var(--bg); background: var(--ink); border-radius: 999px; padding: 0 6px; line-height: 16px; }
+  .host-project { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); }
+  .host-project > span { display: grid; }
+  .host-project .folder { color: var(--live); }
+  .host-project .ch .ico { transform: rotate(90deg); color: var(--ink-faint); }
+  /* the provider filter heading the project sheet, as the provider tiles head the Mac's rail */
+  .sheet-tiles { display: flex; gap: 6px; padding: 4px 0 14px; }
+  .sheet-tiles > span { flex: 1; height: 44px; border-radius: 10px; display: grid; place-items: center; border: 1px solid var(--border); background: var(--surface-raised); font-size: 13.5px; font-weight: 500; color: var(--text-secondary); }
+  .sheet-tiles .ico { width: 20px; height: 20px; }
+  .sheet-tiles > span.on { background: var(--surface-active); border-color: var(--border-strong); color: var(--text-primary); }
   /* a host's lists, as the Mac's rail draws them: rows straight on the ground under small-caps labels */
   .glabel { display: flex; align-items: center; gap: 10px; padding: 18px 8px 6px; font-size: 11px; font-weight: 500; letter-spacing: .16em; text-transform: uppercase; color: var(--text-tertiary); }
   .glabel::after { content: ""; flex: 1; height: 1px; background: color-mix(in oklab, var(--ink) 9%, transparent); }
@@ -398,11 +409,6 @@
   .rows .row code { font-family: var(--mono); font-size: 11.5px; color: var(--text-secondary); }
   .rows .row.ask { margin-top: 8px; }
   .rows .row.ask .t { color: var(--text-primary); }
-  .scope { display: flex; padding: 0 16px 12px; }
-  .scope .pill { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 10px 0 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-raised); font-size: 13.5px; font-weight: 500; color: var(--ink); }
-  .scope .pill .folder { color: var(--live); display: grid; }
-  .scope .pill .ch { display: grid; margin-left: 1px; }
-  .scope .pill .ch .ico { transform: rotate(90deg); color: var(--ink-faint); }
   .scope-sheet { top: auto; padding: 8px 16px 34px; }
   .scope-sheet .head { display: flex; align-items: baseline; justify-content: space-between; padding: 6px 4px 12px; }
   .scope-sheet .head b { font-size: 17px; font-weight: 600; letter-spacing: -0.02em; color: var(--text-primary); }
@@ -1010,21 +1016,14 @@
 <!-- ================================================================ -->
 <section class="flow on-host">
   <h2>A device</h2>
-  <p>The Mac's agent rail at phone size: a switch for agents or terminals, the provider filter, then the agents as the rail lists them: rows straight on the ground under small-caps labels. Running agents keep the rail's green squares.</p>
+  <p>A device opens on its host's name, set large over the host's backdrop, with a line above it saying it is online and what runs on it. Under the name, Agents and Terminals as two words to switch between, and the project picker at the right. Then the list as the Mac's rail draws it: rows straight on the ground under small-caps labels. Running agents keep the rail's green squares.</p>
   <div class="phones">
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Devices</span><span style="flex:1"></span><span class="icon-btn">{{IconMore:18}}</span></div>
-        <div class="dev-title"><span class="dev-glyph">{{IconLaptop:30}}<i class="presence live"></i></span><div><h1>MacBook Pro</h1><p>3 agents · 2 terminals</p></div></div>
-        <div class="track"><span class="on">Agents <i class="count">1</i></span><span>Terminals</span></div>
-        <div class="filters">
-          <span class="on">All</span>
-          <span class="claude">{{IconClaude:17}}</span>
-          <span class="codex">{{IconCodex:17}}</span>
-          <span class="hermes">{{IconHermes:17}}</span>
-          <span class="opencode">{{IconOpenCode:17}}</span>
-        </div>
+        <div class="host-head"><div class="where"><i class="live"></i>Online · 3 agents · 2 terminals</div><h1>MacBook Pro</h1></div>
+        <div class="host-bar"><div class="host-tabs"><span class="on">Agents <i class="count">1</i></span><span>Terminals</span></div><span class="host-project"><span class="folder">{{IconFolder:14}}</span>All projects<span class="ch">{{IconChevron:12}}</span></span></div>
         <div class="pad grow">
           <div class="rows"><div class="row ask"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Remote pairing screen</div><div class="s">Needs input · wants to run <code>pnpm test</code></div></div><span class="status-slot"><span class="dot warn"></span></span></div></div>
           <div class="glabel">Open</div>
@@ -1049,8 +1048,8 @@
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Devices</span><span style="flex:1"></span><span class="icon-btn">{{IconMore:18}}</span></div>
-        <div class="dev-title"><span class="dev-glyph">{{IconLaptop:30}}<i class="presence live"></i></span><div><h1>MacBook Pro</h1><p>3 agents · 2 terminals</p></div></div>
-        <div class="track"><span>Agents <i class="count">1</i></span><span class="on">Terminals</span></div>
+        <div class="host-head"><div class="where"><i class="live"></i>Online · 3 agents · 2 terminals</div><h1>MacBook Pro</h1></div>
+        <div class="host-bar"><div class="host-tabs"><span>Agents <i class="count">1</i></span><span class="on">Terminals</span></div><span class="host-project"><span class="folder">{{IconFolder:14}}</span>All projects<span class="ch">{{IconChevron:12}}</span></span></div>
         <div class="pad grow">
           <div class="glabel">sikemux</div>
           <div class="rows">
@@ -1071,7 +1070,7 @@
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Devices</span><span style="flex:1"></span></div>
-        <div class="dev-title"><span class="dev-glyph">{{IconLaptop:30}}<i class="presence off"></i></span><div><h1>MacBook Pro</h1><p>Asleep or offline · seen 9:12</p></div></div>
+        <div class="host-head"><div class="where"><i class="off"></i>Asleep or offline · seen 9:12</div><h1>MacBook Pro</h1></div>
         <div class="stack" style="padding-bottom:120px">
           <h2 style="font-size:20px">Can't reach MacBook Pro</h2>
           <p>It may be asleep, offline, or have remote access turned off.</p>
@@ -1080,20 +1079,20 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Out of reach</b><div class="note">The device glyph keeps an empty presence ring. Reconnecting is automatic and happens again whenever the app returns to the front; Try now skips the wait between attempts.</div></figcaption>
+      <figcaption><b>Out of reach</b><div class="note">The line over the name says the host is away, with the dot hollow, and when it was last seen. Reconnecting is automatic and happens again whenever the app returns to the front; Try now skips the wait between attempts.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Devices</span><span style="flex:1"></span><span class="icon-btn">{{IconMore:18}}</span></div>
-        <div class="dev-title"><span class="dev-glyph">{{IconLaptop:30}}<i class="presence live"></i></span><div><h1>MacBook Pro</h1></div></div>
+        <div class="host-head"><div class="where"><i class="off"></i>Connecting…</div><h1>MacBook Pro</h1></div>
         <div class="stack" style="padding-bottom:120px">
-          <div class="waiting" style="margin-top:0"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>Connecting…</div>
+          <div class="waiting" style="margin-top:0"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Connecting</b><div class="note">Until the host answers, the screen holds only the rail's squares. The tabs arrive with the first list of agents and terminals.</div></figcaption>
+      <figcaption><b>Connecting</b><div class="note">Until the host answers, the line over the name says Connecting… with a hollow dot, and the screen holds only the rail's squares. The tabs and the project picker arrive with the first list of agents and terminals.</div></figcaption>
     </figure>
 
   </div>
@@ -1102,21 +1101,15 @@
 <!-- ================================================================ -->
 <section class="flow on-host">
   <h2>Project scope</h2>
-  <p>The Mac's Projects header at phone size: one pill under the device scopes both Agents and Terminals to a project, the way picking a project on the Mac scopes its rail. It opens the same searchable sheet as New chat.</p>
+  <p>The Mac's Projects header at phone size: the picker level with the tabs scopes both Agents and Terminals to a project, the way picking a project on the Mac scopes its rail. It opens the same searchable sheet as New chat, headed here by the provider filter, so the screen itself keeps only the tabs and the picker.</p>
   <div class="phones">
 
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Devices</span><span style="flex:1"></span><span class="icon-btn">{{IconMore:18}}</span></div>
-        <div class="dev-title"><span class="dev-glyph">{{IconLaptop:30}}<i class="presence live"></i></span><div><h1>MacBook Pro</h1><p>Dev · 4 agents · 3 terminals</p></div></div>
-        <div class="scope"><span class="pill"><span class="folder">{{IconFolder:14}}</span>All projects<span class="ch">{{IconChevron:10}}</span></span></div>
-        <div class="track"><span class="on">Agents <i class="count">1</i></span><span>Terminals</span></div>
-        <div class="filters">
-          <span class="on">All</span>
-          <span class="claude">{{IconClaude:17}}</span>
-          <span class="codex">{{IconCodex:17}}</span>
-        </div>
+        <div class="host-head"><div class="where"><i class="live"></i>Online · Dev · 4 agents · 3 terminals</div><h1>MacBook Pro</h1></div>
+        <div class="host-bar"><div class="host-tabs"><span class="on">Agents <i class="count">1</i></span><span>Terminals</span></div><span class="host-project"><span class="folder">{{IconFolder:14}}</span>All projects<span class="ch">{{IconChevron:12}}</span></span></div>
         <div class="pad grow">
           <div class="rows"><div class="row ask"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Remote pairing screen</div><div class="s">sikemux · Needs input</div></div><span class="status-slot"><span class="dot warn"></span></span></div></div>
           <div class="glabel">Open</div>
@@ -1129,17 +1122,19 @@
         <div class="fab">{{IconPlus:18}}New chat</div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>All projects</b><div class="note">The pill sits between the device and the Agents/Terminals switch, because it scopes both. Unscoped, each row names its project, as now.</div></figcaption>
+      <figcaption><b>All projects</b><div class="note">The picker sits on the tabs' line, at the right, because it scopes both. Unscoped it says All projects, and each row names its project.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Devices</span><span style="flex:1"></span></div>
-        <div class="dev-title"><span class="dev-glyph">{{IconLaptop:30}}<i class="presence live"></i></span><div><h1>MacBook Pro</h1><p>Dev · 4 agents · 3 terminals</p></div></div>
+        <div class="host-head"><div class="where"><i class="live"></i>Online · Dev · 4 agents · 3 terminals</div><h1>MacBook Pro</h1></div>
+        <div class="host-bar"><div class="host-tabs"><span class="on">Agents <i class="count">1</i></span><span>Terminals</span></div><span class="host-project"><span class="folder">{{IconFolder:14}}</span>All projects<span class="ch">{{IconChevron:12}}</span></span></div>
         <div class="scrim"></div>
         <div class="sheet project-sheet scope-sheet">
           <div class="grabber"></div>
+          <div class="sheet-tiles"><span class="on">All</span><span><span class="claude">{{IconClaude:20}}</span></span><span><span class="codex">{{IconCodex:20}}</span></span></div>
           <div class="head"><b>Projects</b><span>MacBook Pro</span></div>
           <div class="search">{{IconSearch:16}}<span>Search projects…</span></div>
           <div class="group">
@@ -1151,27 +1146,26 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Picking a project</b><div class="note">A short sheet over the device, titled with the host it belongs to. All projects heads the same list. Folders are the Mac rail's green; each project shows the logos of the agents in it, the white dot if one is waiting on you, and a terminal count when that is all it has.</div></figcaption>
+      <figcaption><b>Picking a project</b><div class="note">A short sheet over the device. The provider filter heads it, as the provider tiles head the Mac's rail: All, then a tile for each provider with an agent in view, shown on the Agents tab when there is more than one. Picking a provider keeps the sheet open; picking a project closes it. Below, titled with the host, All projects heads the project list. Folders are the Mac rail's green; each project shows the logos of the agents in it, the white dot if one is waiting on you, and a terminal count when that is all it has.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Devices</span><span style="flex:1"></span><span class="icon-btn">{{IconMore:18}}</span></div>
-        <div class="dev-title"><span class="dev-glyph">{{IconLaptop:30}}<i class="presence live"></i></span><div><h1>MacBook Pro</h1><p>Dev · 4 agents · 3 terminals</p></div></div>
-        <div class="scope"><span class="pill"><span class="folder">{{IconFolder:14}}</span>sikemux<span class="ch">{{IconChevron:10}}</span></span></div>
-        <div class="track"><span class="on">Agents <i class="count">1</i></span><span>Terminals</span></div>
+        <div class="host-head"><div class="where"><i class="live"></i>Online · Dev · 4 agents · 3 terminals</div><h1>MacBook Pro</h1></div>
+        <div class="host-bar"><div class="host-tabs"><span class="on">Agents <i class="count">1</i></span><span>Terminals</span></div><span class="host-project"><span class="folder">{{IconFolder:14}}</span>sikemux<span class="claude">{{IconClaude:14}}</span><span class="ch">{{IconChevron:12}}</span></span></div>
         <div class="pad grow">
           <div class="rows"><div class="row ask"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Remote pairing screen</div><div class="s">Needs input · wants to run <code>pnpm test</code></div></div><span class="status-slot"><span class="dot warn"></span></span></div></div>
           <div class="glabel">Open</div>
           <div class="rows">
-            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t">Fix the flaky PTY replay test</div><div class="s">Running a command…</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Tighten the rail spacing</div><div class="s">Editing…</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
           </div>
         </div>
         <div class="fab">{{IconPlus:18}}New chat</div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>One project</b><div class="note">The pill names the project. Rows drop the project name they no longer need, the provider filter hides when one provider is left, and New chat starts one in this project. The choice is kept per device.</div></figcaption>
+      <figcaption><b>One project, one provider</b><div class="note">The picker names the project, and carries the provider's mark while the sheet filters to one. Rows drop the project name they no longer need, and New chat starts one in this project. The project is kept per device.</div></figcaption>
     </figure>
 
   </div>
@@ -1187,9 +1181,8 @@
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Devices</span><span style="flex:1"></span><span class="icon-btn">{{IconMore:18}}</span></div>
-        <div class="dev-title"><span class="dev-glyph">{{IconLaptop:30}}<i class="presence live"></i></span><div><h1>MacBook Pro</h1><p>Dev · 4 agents · 3 terminals</p></div></div>
-        <div class="scope"><span class="pill"><span class="folder">{{IconFolder:14}}</span>sikemux<span class="ch">{{IconChevron:10}}</span></span></div>
-        <div class="track"><span class="on">Agents <i class="count">1</i></span><span>Terminals</span></div>
+        <div class="host-head"><div class="where"><i class="live"></i>Online · Dev · 4 agents · 3 terminals</div><h1>MacBook Pro</h1></div>
+        <div class="host-bar"><div class="host-tabs"><span class="on">Agents <i class="count">1</i></span><span>Terminals</span></div><span class="host-project"><span class="folder">{{IconFolder:14}}</span>sikemux<span class="ch">{{IconChevron:12}}</span></span></div>
         <div class="pad grow">
           <div class="rows"><div class="row ask"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Remote pairing screen</div><div class="s">Needs input · wants to run <code>pnpm test</code></div></div><span class="status-slot"><span class="dot warn"></span></span></div></div>
           <div class="glabel">Open</div>
@@ -1416,7 +1409,7 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Model and effort</b><div class="note">Tapping the model or effort opens one sheet: the agent and its plan, the models with the agent's icon and a check on the chosen one, effort as the same switch the device screen uses, and how much of the context is used, in the provider’s colour.</div></figcaption>
+      <figcaption><b>Model and effort</b><div class="note">Tapping the model or effort opens one sheet: the agent and its plan, the models with the agent's icon and a check on the chosen one, effort as a three-way switch, and how much of the context is used, in the provider’s colour.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>

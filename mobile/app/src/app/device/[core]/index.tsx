@@ -4,12 +4,12 @@ import { router, useLocalSearchParams } from 'expo-router';
 
 import type { ChatInfo, ProjectInfo, SessionInfo, Snapshot } from '@/core/protocol';
 import { reloadDevices, retry, useDevices, useLive } from '@/devices/hub';
-import { channelLabel, deviceKind, deviceName, updateDevice } from '@/devices/paired';
+import { channelLabel, deviceName, updateDevice } from '@/devices/paired';
 import { ForgetSheet } from '@/devices/ForgetSheet';
 import { ProjectSheet } from '@/devices/ProjectSheet';
-import { chatState, chatTitle, folder, providerName } from '@/devices/words';
-import { AgentIcon, DeviceIcon, Icon } from '@/ui/Icon';
-import { Button, IconButton, Nav, NeedsYou, Row, Rows, Screen, SectionLabel, Track, useBottomGap, Working } from '@/ui/parts';
+import { ago, chatState, chatTitle, folder } from '@/devices/words';
+import { AgentIcon, Icon } from '@/ui/Icon';
+import { Button, IconButton, Nav, NeedsYou, Row, Rows, Screen, SectionLabel, useBottomGap, Working } from '@/ui/parts';
 import { fonts, type Palette, typeFor, useColors, useStyles, useType, translucent } from '@/ui/theme';
 
 type Tab = 'agents' | 'terminals';
@@ -61,43 +61,17 @@ function ChatEnd({ chat }: { chat: ChatInfo }) {
   return null;
 }
 
-function Agents({ core, snapshot, scope }: { core: string; snapshot: Snapshot; scope?: ProjectInfo }) {
-  const colors = useColors();
+function Agents({ core, snapshot, scope, provider }: { core: string; snapshot: Snapshot; scope?: ProjectInfo; provider: string }) {
   const styles = useStyles(makeStyles);
   const open = (agentId: string) => router.push(`/device/${core}/chat/${agentId}`);
-  const [filter, setFilter] = useState<string>('all');
   const scoped = snapshot.chats.filter((chat) => !scope || inProject(scope, chat.cwd));
-  const providers = [...new Set(scoped.map((chat) => chat.provider))];
-  const shown = providers.includes(filter) ? filter : 'all';
-  const chats = scoped.filter((chat) => shown === 'all' || chat.provider === shown);
+  const chats = scoped.filter((chat) => provider === 'all' || chat.provider === provider);
   const where = (chat: ChatInfo, state: string) => (scope ? state : `${projectName(snapshot, chat.cwd)} · ${state}`);
   const asking = chats.filter((chat) => chat.pendingPermissions.length);
   const idle = chats.filter((chat) => !chat.pendingPermissions.length);
 
   return (
     <>
-      {providers.length > 1 ? (
-        <View style={styles.filters}>
-          <Pressable
-            onPress={() => setFilter('all')}
-            style={[styles.filter, shown === 'all' && styles.filterOn]}
-            accessibilityRole="button"
-            accessibilityState={{ selected: shown === 'all' }}>
-            <Text style={[styles.filterText, shown === 'all' && { color: colors.ink }]}>All</Text>
-          </Pressable>
-          {providers.map((provider) => (
-            <Pressable
-              key={provider}
-              onPress={() => setFilter(provider)}
-              style={[styles.filter, shown === provider && styles.filterOn]}
-              accessibilityRole="button"
-              accessibilityLabel={providerName(provider)}
-              accessibilityState={{ selected: shown === provider }}>
-              <AgentIcon provider={provider} size={17} />
-            </Pressable>
-          ))}
-        </View>
-      ) : null}
       {asking.length ? (
         <Rows style={styles.asking}>
           {asking.map((chat) => (
@@ -187,6 +161,39 @@ function Terminals({ snapshot, scope }: { snapshot: Snapshot; scope?: ProjectInf
   );
 }
 
+/** The host's name set large over its backdrop, under a line saying whether it is online and what runs on it. */
+function HostHead({ name, line, online }: { name: string; line: string; online: boolean }) {
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={styles.head}>
+      <View style={styles.where}>
+        <View style={online ? styles.online : styles.offline} />
+        <Text style={styles.whereText} numberOfLines={1}>
+          {line}
+        </Text>
+      </View>
+      <Text style={styles.name} numberOfLines={1}>
+        {name}
+      </Text>
+    </View>
+  );
+}
+
+function HostTab({ label, count, on, onPress }: { label: string; count?: number; on: boolean; onPress: () => void }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  return (
+    <Pressable onPress={onPress} hitSlop={12} style={styles.tab} accessibilityRole="tab" accessibilityState={{ selected: on }}>
+      <Text style={[styles.tabText, on && { color: colors.ink }]}>{label}</Text>
+      {count ? (
+        <View style={styles.count}>
+          <Text style={styles.countText}>{count}</Text>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
 function summary(snapshot: Snapshot): string {
   const terminals = snapshot.sessions.filter((session) => session.running).length;
   return `${snapshot.chats.length} agent${snapshot.chats.length === 1 ? '' : 's'} · ${terminals} terminal${terminals === 1 ? '' : 's'}`;
@@ -222,6 +229,19 @@ export default function Device() {
   const bottom = useBottomGap();
   const scope = snapshot?.workspace.projects.find((project) => project.id === device?.project);
   const asking = snapshot?.chats.filter((chat) => chat.pendingPermissions.length && (!scope || inProject(scope, chat.cwd))).length ?? 0;
+  const [filter, setFilter] = useState('all');
+  const providers = [...new Set(snapshot?.chats.filter((chat) => !scope || inProject(scope, chat.cwd)).map((chat) => chat.provider) ?? [])];
+  const provider = providers.includes(filter) ? filter : 'all';
+  const filtering = tab === 'agents' && providers.length > 1;
+  const line = behind
+    ? behind === 'host'
+      ? 'Needs a newer Sikemux'
+      : 'Update this app to connect'
+    : away
+      ? `Asleep or offline${device?.lastSeen ? ` · seen ${ago(device.lastSeen)}` : ''}`
+      : snapshot
+        ? ['Online', channel, summary(snapshot)].filter(Boolean).join(' · ')
+        : 'Connecting…';
   const scopeTo = (project: string | null) => {
     setPicking(false);
     updateDevice(core, { project: project ?? undefined }).then(reloadDevices);
@@ -231,22 +251,7 @@ export default function Device() {
     <Screen>
       <Nav back="Devices" end={device ? <IconButton name="IconMore" label="Options" onPress={() => setOptions(true)} /> : null} />
       {device ? <ForgetSheet device={device} visible={options} onClose={() => setOptions(false)} /> : null}
-      <View style={styles.header}>
-        <View style={styles.glyph}>
-          <DeviceIcon kind={deviceKind(device?.model)} color={away ? colors.tertiary : colors.ink} />
-          <View style={[styles.presence, away ? styles.presenceOff : styles.presenceOn]} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.name} numberOfLines={1}>
-            {device ? deviceName(device) : 'Host'}
-          </Text>
-          <Text style={type.meta} numberOfLines={1}>
-            {[channel, behind ? 'Needs an update' : away ? 'Asleep or offline' : snapshot ? summary(snapshot) : null]
-              .filter(Boolean)
-              .join(' · ')}
-          </Text>
-        </View>
-      </View>
+      <HostHead name={device ? deviceName(device) : 'Host'} line={line} online={!away && !!snapshot} />
       {away && !snapshot ? (
         <View style={styles.away}>
           <Text style={[type.title, { fontSize: 20, textAlign: 'center' }]}>{unreachable.title}</Text>
@@ -265,38 +270,37 @@ export default function Device() {
         <View style={styles.away}>
           <View style={styles.trying}>
             <Working />
-            <Text style={type.meta}>Connecting…</Text>
           </View>
         </View>
       ) : (
         <>
-          {snapshot?.workspace.projects.length ? (
-            <View style={styles.scope}>
-              <Pressable onPress={() => setPicking(true)} style={styles.pill} accessibilityRole="button" accessibilityLabel="Project">
+          <View style={styles.bar}>
+            <View style={styles.tabs}>
+              <HostTab label="Agents" count={asking} on={tab === 'agents'} onPress={() => setTab('agents')} />
+              <HostTab label="Terminals" on={tab === 'terminals'} onPress={() => setTab('terminals')} />
+            </View>
+            {snapshot.workspace.projects.length || filtering ? (
+              <Pressable
+                onPress={() => setPicking(true)}
+                hitSlop={12}
+                style={styles.picker}
+                accessibilityRole="button"
+                accessibilityLabel="Project">
                 <Icon name="IconFolder" size={14} color={colors.live} />
-                <Text style={styles.pillText} numberOfLines={1}>
+                <Text style={styles.pickerText} numberOfLines={1}>
                   {scope?.name ?? 'All projects'}
                 </Text>
+                {filtering && provider !== 'all' ? <AgentIcon provider={provider} size={14} /> : null}
                 <View style={{ transform: [{ rotate: '90deg' }] }}>
-                  <Icon name="IconChevron" size={10} color={colors.inkFaint} />
+                  <Icon name="IconChevron" size={12} color={colors.inkFaint} />
                 </View>
               </Pressable>
-            </View>
-          ) : null}
-          <View style={{ paddingHorizontal: 16 }}>
-            <Track<Tab>
-              value={tab}
-              onChange={setTab}
-              options={[
-                { value: 'agents', label: 'Agents', count: asking },
-                { value: 'terminals', label: 'Terminals' },
-              ]}
-            />
+            ) : null}
           </View>
           <ScrollView contentContainerStyle={[styles.body, { paddingBottom: bottom + (starts ? NEW_CHAT_HEIGHT + 24 : 24) }]}>
             {snapshot ? (
               tab === 'agents' ? (
-                <Agents core={core} snapshot={snapshot} scope={scope} />
+                <Agents core={core} snapshot={snapshot} scope={scope} provider={provider} />
               ) : (
                 <Terminals snapshot={snapshot} scope={scope} />
               )
@@ -322,6 +326,7 @@ export default function Device() {
               onChoose={scopeTo}
               all={summary(snapshot)}
               tail={(project) => <ProjectTail snapshot={snapshot} project={project} />}
+              providers={filtering ? { offered: providers, chosen: provider, onChoose: setFilter } : undefined}
             />
           ) : null}
         </>
@@ -333,12 +338,46 @@ export default function Device() {
 const makeStyles = (colors: Palette) => {
   const type = typeFor(colors);
   return StyleSheet.create({
-    header: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 18, paddingTop: 4, paddingBottom: 16 },
-    glyph: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
-    presence: { position: 'absolute', right: -1, bottom: 3, width: 10, height: 10, borderRadius: 5, borderWidth: 2.5 },
-    presenceOn: { backgroundColor: colors.live, borderColor: colors.ground },
-    presenceOff: { backgroundColor: colors.ground, borderColor: colors.rest },
-    name: { ...type.title },
+    head: { height: 168, justifyContent: 'flex-end', paddingHorizontal: 18, paddingBottom: 16 },
+    where: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    whereText: { flexShrink: 1, fontFamily: fonts.ui, fontSize: 13, color: translucent(colors.ink, 0.72) },
+    online: {
+      width: 7,
+      height: 7,
+      borderRadius: 4,
+      backgroundColor: colors.live,
+      shadowColor: colors.live,
+      shadowOpacity: 1,
+      shadowRadius: 5,
+      shadowOffset: { width: 0, height: 0 },
+    },
+    offline: { width: 7, height: 7, borderRadius: 4, borderWidth: 1.5, borderColor: colors.rest },
+    name: {
+      marginTop: 4,
+      fontFamily: fonts.uiSemibold,
+      fontSize: 32,
+      letterSpacing: -1.12,
+      color: colors.ink,
+      textShadowColor: 'rgba(0, 0, 0, 0.65)',
+      textShadowOffset: { width: 0, height: 2 },
+      textShadowRadius: 18,
+    },
+    bar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingHorizontal: 18, paddingTop: 4 },
+    tabs: { flexDirection: 'row', alignItems: 'center', gap: 20 },
+    tab: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+    tabText: { fontFamily: fonts.uiSemibold, fontSize: 15, letterSpacing: -0.15, color: colors.tertiary },
+    count: {
+      minWidth: 16,
+      height: 16,
+      borderRadius: 8,
+      paddingHorizontal: 6,
+      backgroundColor: colors.ink,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    countText: { fontFamily: fonts.uiSemibold, fontSize: 11, color: colors.ground },
+    picker: { flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
+    pickerText: { flexShrink: 1, fontFamily: fonts.ui, fontSize: 13, color: colors.secondary },
     body: { paddingHorizontal: 16 },
     newChat: {
       position: 'absolute',
@@ -358,20 +397,6 @@ const makeStyles = (colors: Palette) => {
       elevation: 8,
     },
     newChatText: { fontFamily: fonts.uiSemibold, fontSize: 15, color: colors.ground },
-    scope: { flexDirection: 'row', paddingHorizontal: 16, paddingBottom: 12 },
-    pill: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 7,
-      height: 32,
-      maxWidth: '100%',
-      paddingHorizontal: 11,
-      borderRadius: 16,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.raised,
-    },
-    pillText: { fontFamily: fonts.uiMedium, fontSize: 13.5, color: colors.ink, flexShrink: 1 },
     tail: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     faces: { flexDirection: 'row' },
     face: {
@@ -385,20 +410,6 @@ const makeStyles = (colors: Palette) => {
       justifyContent: 'center',
     },
     termCount: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-    filters: { flexDirection: 'row', gap: 6, paddingTop: 12 },
-    filter: {
-      minHeight: 32,
-      minWidth: 40,
-      paddingHorizontal: 12,
-      borderRadius: 16,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: translucent(colors.raised, 0.8),
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    filterOn: { backgroundColor: translucent(colors.overlay, 0.9), borderColor: colors.borderStrong },
-    filterText: { fontFamily: fonts.ui, fontSize: 13, color: colors.secondary },
     asking: { marginTop: 8 },
     empty: { ...type.meta, textAlign: 'center', paddingTop: 40 },
     liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.live },
