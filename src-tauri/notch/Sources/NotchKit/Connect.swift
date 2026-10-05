@@ -5,10 +5,10 @@ struct PendingDevice: Decodable, Equatable, Identifiable {
     let id: String
     let name: String
     let platform: String
+    /// When the core stops waiting, in Unix milliseconds.
+    let expiresAt: Double
 
-    /// How long the core waits for an answer before turning the device away:
-    /// `APPROVAL_TIMEOUT` in the core's join.rs.
-    static let answerWindow: TimeInterval = 120
+    var expires: Date { Date(timeIntervalSince1970: expiresAt / 1000) }
 }
 
 /// The part of the core's remote status the island shows.
@@ -42,7 +42,7 @@ struct ConnectCard: View {
                             HStack(spacing: 5) {
                                 Text("From your Sikemux account").lineLimit(1)
                                 Text("·").foregroundStyle(Theme.inkFaint)
-                                TimeLeft(asked: store.deviceAsked[device.id])
+                                TimeLeft(expires: device.expires)
                             }
                             .font(Theme.ui(12))
                             .foregroundStyle(Theme.inkDim)
@@ -68,17 +68,16 @@ struct ConnectCard: View {
 
 /// The time left to answer a device, as m:ss.
 private struct TimeLeft: View {
-    let asked: Date?
+    let expires: Date
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            Text(Self.format(asked, context.date)).monospacedDigit()
+            Text(Self.format(expires, context.date)).monospacedDigit()
         }
     }
 
-    static func format(_ asked: Date?, _ now: Date) -> String {
-        let elapsed = asked.map { now.timeIntervalSince($0) } ?? 0
-        let left = max(0, Int((PendingDevice.answerWindow - elapsed).rounded(.up)))
+    static func format(_ expires: Date, _ now: Date) -> String {
+        let left = max(0, Int(expires.timeIntervalSince(now).rounded(.up)))
         return String(format: "%d:%02d", left / 60, left % 60)
     }
 }
