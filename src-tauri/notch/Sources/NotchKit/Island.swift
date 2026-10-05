@@ -56,7 +56,10 @@ final class IslandModel {
     var yolo = true
     var attachments: [String] = []
     var dropTarget: String?
-    var composing = false
+    /// Whether this island's panel holds the keyboard, as it does once the prompt is clicked.
+    var hasKeyboard = false
+    /// The file chooser is up: the island stays open behind it.
+    var choosingFiles = false
     /// Hidden while Sikemux Dev's helper holds the notch, or over a full-screen app.
     var hidden = false
     var geometry: NotchGeometry
@@ -68,7 +71,15 @@ final class IslandModel {
     /// The island leans into a swipe: about a percent per twentieth of the way, never under 60%.
     var pullScale: CGFloat { pull == 0 ? 1 : max(0.6, 1 + pull * 0.01) }
 
-    @ObservationIgnored var wantsKey: ((Bool) -> Void)?
+    /// Whether the island holds the keyboard: `take` it now, `give` it back but
+    /// take it when the prompt is clicked, or `off` while closed.
+    enum Keyboard { case take, give, off }
+
+    @ObservationIgnored var keyboard: ((Keyboard) -> Void)?
+    /// The panel this island is drawn in, and the drawn shape within it, so the
+    /// pointer can be checked against the shape itself.
+    @ObservationIgnored var canvas: CGRect = .zero
+    @ObservationIgnored var shapeFrame: CGRect = .zero
     @ObservationIgnored private var peekTimer: DispatchWorkItem?
     @ObservationIgnored private var hoverTimer: DispatchWorkItem?
 
@@ -84,14 +95,44 @@ final class IslandModel {
             self.mode = mode
             if mode != .open { menu = nil }
         }
-        wantsKey?(mode == .open && tab == .compose)
+        if mode == .open { keyboard?(.give) } else if mode == .closed { keyboard?(.off) }
     }
 
+    /// Typing in the prompt keeps the island open when the pointer leaves; an empty prompt does not.
+    var holdsOpen: Bool {
+        if choosingFiles { return true }
+        let started = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
+        return hasKeyboard && tab == .compose && started
+    }
+
+    /// Whether the pointer is over the drawn island, give or take a few points.
+    var pointerInside: Bool {
+        guard !hidden, shapeFrame.width > 0 else { return false }
+        let shape = CGRect(
+            x: canvas.minX + shapeFrame.minX,
+            y: canvas.maxY - shapeFrame.maxY,
+            width: shapeFrame.width,
+            height: shapeFrame.height
+        )
+        return shape.insetBy(dx: -4, dy: -4).contains(NSEvent.mouseLocation)
+    }
+
+    /// The person clicked somewhere else: the island closes, and the draft waits for next time.
+    func keyboardLost() {
+        hasKeyboard = false
+        guard isOpen, !choosingFiles, !pointerInside else { return }
+        set(.closed)
+    }
+
+    /// Shows a peek unless the island is open, hidden, or already asking for something more pressing.
     func peek(_ peek: NotchStore.Peek, for seconds: Double) {
         guard !isOpen, !hidden else { return }
         switch peek {
-        case .ask(let id): set(.peekAsk(id))
-        case .done(let id): set(.peekDone(id))
+        case .ask(let id):
+            set(.peekAsk(id))
+        case .done(let id):
+            if case .peekAsk = mode { return }
+            set(.peekDone(id))
         }
         peekTimer?.cancel()
         let timer = DispatchWorkItem { [weak self] in
@@ -108,15 +149,53 @@ final class IslandModel {
         if entered {
             if !hovering, mode == .closed { Haptics.tick() }
             withAnimation(Motion.hover) { hovering = true }
-            guard opensOnHover, !isOpen else { return }
+            // A permission peek keeps its size under the pointer, so its buttons stay where they are.
+            guard opensOnHover, mode == .closed || isPeekDone else { return }
             schedule(after: 0.3) { $0.set(.open) }
         } else {
             schedule(after: 0.1) { island in
-                withAnimation(Motion.hover) { island.hovering = false }
-                guard island.mode == .open, !island.composing, island.menu == nil else { return }
-                island.set(.closed)
+                // Reordering the panel to hand back the keyboard reports a leave the pointer never made.
+                guard !island.pointerInside else { return }
+                island.left()
             }
         }
+    }
+
+    /// Catches a leave macOS never reported, as when the island shrinks or hides under a still pointer.
+    func checkPointer() {
+        guard !pointerInside else { return }
+        if hovering || (mode == .open && !holdsOpen) {
+            Debug.log("pointer left unreported, mode \(mode)")
+            hoverTimer?.cancel()
+            left()
+        }
+    }
+
+    private func left() {
+        withAnimation(Motion.hover) { hovering = false }
+        switch mode {
+        case .open where !holdsOpen, .peekAsk, .peekDone:
+            set(.closed)
+        default:
+            break
+        }
+    }
+
+    /// A peek ends once what it shows is over: the request was answered, here or anywhere else, or the agent closed.
+    func agentsChanged(_ agents: [AgentItem]) {
+        switch mode {
+        case .peekAsk(let id) where !agents.contains { $0.id == id && $0.state == .blocked }:
+            set(hovering ? .open : .closed)
+        case .peekDone(let id) where !agents.contains { $0.id == id }:
+            set(.closed)
+        default:
+            break
+        }
+    }
+
+    private var isPeekDone: Bool {
+        if case .peekDone = mode { return true }
+        return false
     }
 
     /// A two-finger swipe over the island: down opens it, up closes it, each
@@ -125,7 +204,9 @@ final class IslandModel {
         switch (direction, mode) {
         case (.down, .closed), (.down, .peekDone):
             pull = travelled / SwipeTracker.threshold * 20
-        case (.up, .open) where !composing && menu == nil && (tab == .compose || !listScrolls):
+        case (.up, .peekAsk), (.up, .peekDone):
+            pull = -travelled / SwipeTracker.threshold * 20
+        case (.up, .open) where !holdsOpen && menu == nil && (tab == .compose || !listScrolls):
             pull = -travelled / SwipeTracker.threshold * 20
         default:
             pull = 0

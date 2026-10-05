@@ -5585,7 +5585,7 @@ dependencies = [
 
 [[package]]
 name = "sikemux"
-version = "0.5.0-nightly.1"
+version = "0.5.0-nightly.5"
 dependencies = [
  "base64 0.23.1",
  "block2",
@@ -5633,6 +5633,7 @@ dependencies = [
  "sikemux-plugin-bitbucket",
  "sikemux-plugin-bruno",
  "sikemux-plugin-github",
+ "sikemux-plugin-jira",
  "sikemux-plugin-rundeck",
  "sikemux-plugin-signoz",
  "sikemux-process",
@@ -5692,6 +5693,15 @@ name = "sikemux-keychain"
 version = "0.1.0"
 dependencies = [
  "sikemux-process",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-loopback"
+version = "0.1.0"
+dependencies = [
+ "tokio",
+ "url",
  "workspace-hack",
 ]
 
@@ -5761,6 +5771,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sikemux-keychain",
+ "sikemux-loopback",
  "sikemux-plugin-api",
  "tokio",
  "url",
@@ -5795,6 +5806,23 @@ dependencies = [
  "serde",
  "serde_json",
  "sikemux-keychain",
+ "sikemux-plugin-api",
+ "sikemux-process",
+ "tokio",
+ "url",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-plugin-jira"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sikemux-keychain",
+ "sikemux-loopback",
  "sikemux-plugin-api",
  "sikemux-process",
  "tokio",

@@ -162,12 +162,12 @@ export function Welcome() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.ground },
-  reel: { height: REEL_HEIGHT, overflow: 'hidden', paddingHorizontal: 16, marginTop: 8 },
+  reel: { height: REEL_HEIGHT, flexShrink: 1, overflow: 'hidden', paddingHorizontal: 16, marginTop: 8 },
   fade: { position: 'absolute', left: 0, right: 0, height: 110 },
   row: { height: ROW, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 10 },
   rowDetail: { ...type.meta, fontSize: 12.5, marginTop: 1 },
   state: { width: 20, alignItems: 'center' },
-  copy: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: 24 },
+  copy: { flexGrow: 1, justifyContent: 'flex-end', paddingHorizontal: 24 },
   markLine: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   markText: { fontFamily: fonts.uiSemibold, fontSize: 15, color: colors.ink, letterSpacing: -0.2 },
   title: { marginTop: 18, fontFamily: fonts.uiSemibold, fontSize: 34, lineHeight: 37, letterSpacing: -1.2, color: colors.ink },

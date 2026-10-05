@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "join.json",
+  "$defs": {
+    "JoinRequest": {
+      "description": "Which host on the account the phone wants to join.",
+      "type": "object",
+      "properties": {
+        "host": { "$ref": "devices.json#/$defs/DeviceKey" }
+      },
+      "required": ["host"],
+      "additionalProperties": false
+    },
+    "JoinTicket": {
+      "description": "The server's word that a phone and a host are on the same account. The phone hands it to the host over ALPN sikemux/join/1, and the host checks it without calling the server, then still asks its owner. The signature is the server's Ed25519 signature over the UTF-8 text `sikemux-join|v1|<keyId>|<account>|<host>|<phone>|<issuedAt>|<expiresAt>`, with the times in decimal.",
+      "type": "object",
+      "properties": {
+        "v": {
+          "description": "The ticket's format. Only 1 exists.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1
+        },
+        "keyId": {
+          "description": "Which of the server's signing keys signed it: prod-1 in production, dev-1 for a local API.",
+          "type": "string",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "maxLength": 32
+        },
+        "account": {
+          "description": "The Clerk user id of the account the phone and the host are on.",
+          "type": "string",
+          "pattern": "^user_[A-Za-z0-9]+$",
+          "maxLength": 64
+        },
+        "host": { "$ref": "devices.json#/$defs/DeviceKey" },
+        "phone": { "$ref": "devices.json#/$defs/DeviceKey" },
+        "issuedAt": {
+          "description": "When the server signed it, in unix seconds.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "expiresAt": {
+          "description": "When it stops being good, in unix seconds: ten minutes after issuedAt.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "signature": { "type": "string", "pattern": "^[0-9a-f]{128}$" }
+      },
+      "required": [
+        "v",
+        "keyId",
+        "account",
+        "host",
+        "phone",
+        "issuedAt",
+        "expiresAt",
+        "signature"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

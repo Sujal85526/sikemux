@@ -1,5 +1,6 @@
 import { toolDiff, toolFailure } from "./diff";
 import { toolOutput } from "./toolOutput";
+import { toolRowArguments } from "./toolLabels";
 import type {
     AcpAsyncTask,
     AcpAvailableCommand,
@@ -174,12 +175,15 @@ function appendPart(transcript: Transcript, part: ChatPart): Transcript {
 type ToolPart = Extract<ChatPart, { kind: "tool" }>;
 
 /* Everything a running call was handed and handed back, which the transcript
-   reads once and then has no further use for. */
+   reads once and then has no further use for, apart from the few arguments
+   its row names. */
 const TOOL_PAYLOAD_KEYS = ["content", "rawInput", "rawOutput"] as const;
 
 function withoutPayload(tool: AcpToolCall): AcpToolCall {
     const kept: AcpToolCall = { ...tool };
     for (const key of TOOL_PAYLOAD_KEYS) delete kept[key];
+    const shown = toolRowArguments(tool);
+    if (shown) kept.rawInput = shown;
     return kept;
 }
 

@@ -136,11 +136,12 @@ const budgets = [
     // So does the Worktree switch's state; its button, the worktree line in the
     // transcript, the header's pull request badge and the git work load apart.
     // The project strip over a new chat's composer loads apart too. A terminal
-    // agent's resuming state and its failed-resume row live here as well.
+    // agent's resuming state and its failed-resume row live here as well, and
+    // so do Sikemux's own tool calls, drawn as a verb and what they acted on.
     label: "ACP chat lazy chunk",
     pattern: /^AgentSurface-.*\.js$/,
-    raw: 110_000,
-    gzip: 35_000,
+    raw: 120_000,
+    gzip: 38_000,
   },
   {
     // Shiki, its JavaScript regex engine and vscode-textmate, with no

@@ -4,8 +4,10 @@
 
 mod connection;
 pub(crate) mod feed;
+mod history;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
@@ -396,9 +398,21 @@ pub(crate) struct ChatRecord {
 pub(crate) struct Chats {
     chats: Mutex<HashMap<String, Arc<Chat>>>,
     next_generation: AtomicU64,
+    /// Where each chat keeps everything it said, for phones to page back.
+    history: Option<PathBuf>,
 }
 
 impl Chats {
+    pub(crate) fn new(history: Option<PathBuf>) -> Self {
+        if let Some(dir) = history.as_deref() {
+            history::clear(dir);
+        }
+        Self {
+            history,
+            ..Self::default()
+        }
+    }
+
     pub(crate) fn get(&self, agent_id: &str) -> Option<Arc<Chat>> {
         self.chats.lock().ok()?.get(agent_id).cloned()
     }
@@ -519,7 +533,11 @@ impl Chats {
             generation: self.next_generation.fetch_add(1, Ordering::Relaxed),
             commands,
             task: Mutex::new(None),
-            feed: Feed::new(launch.agent_id.clone(), launch.permission_mode.clone()),
+            feed: Feed::new(
+                launch.agent_id.clone(),
+                launch.permission_mode.clone(),
+                self.history.as_deref(),
+            ),
             permissions: Mutex::new(HashMap::new()),
             readiness: watch::channel(Readiness::Starting).0,
             running: AtomicBool::new(false),
@@ -687,6 +705,24 @@ pub(crate) async fn attach(
         },
         since,
     );
+}
+
+pub(crate) fn history(
+    core: &Core,
+    agent_id: &str,
+    feed: &str,
+    before: u64,
+    turns: u32,
+) -> CoreResult<Response> {
+    let page = core
+        .chats
+        .running(agent_id)?
+        .feed
+        .history(feed, before, turns as usize)?;
+    Ok(Response::ChatHistory {
+        events: page.events,
+        older_before: page.older_before,
+    })
 }
 
 pub(crate) fn detach(core: &Core, client: ClientId, agent_id: &str) {

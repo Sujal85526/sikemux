@@ -44,6 +44,15 @@ export function startServer(config: Config, log: Logger) {
     log.warn(
       "FCM_SERVICE_ACCOUNT_FILE is not set: pushes to Android phones answer not_set_up",
     );
+  log.info(
+    {
+      keyId: config.join.keyId,
+      publicKey: config.join.publicKey,
+      file: config.join.file,
+      created: config.join.created,
+    },
+    "signing join tickets",
+  );
   const pusher = new Pusher({
     db: database.db,
     log,
@@ -60,6 +69,7 @@ export function startServer(config: Config, log: Logger) {
     webhookSecret: config.clerkWebhookSecret,
     network: config.network,
     push: config.push,
+    join: config.join,
   });
   const server = serve(
     { fetch: app.fetch, hostname: config.host, port: config.port },

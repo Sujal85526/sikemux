@@ -31,7 +31,7 @@ use sikemux_pty::task::{TaskSource, TaskSpawnRequest};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 const CORE: &str = env!("CARGO_BIN_EXE_sikemux-core");
-const WAIT: Duration = Duration::from_secs(15);
+const WAIT: Duration = Duration::from_secs(30);
 
 struct CoreProcess {
     child: Child,

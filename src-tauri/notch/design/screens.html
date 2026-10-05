@@ -160,8 +160,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 .proj svg { flex: 0 0 auto; color: var(--ink-faint); }
 .time { min-width: 44px; text-align: right; }
 .row:hover { background: rgba(255, 255, 255, 0.07); }
-.mark { width: 16px; height: 16px; flex: 0 0 auto; }
-.mark svg { width: 16px; height: 16px; display: block; }
+.mark { width: 20px; height: 20px; flex: 0 0 auto; }
+.mark svg { width: 20px; height: 20px; display: block; }
 .text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .title { font-size: 13px; font-weight: 600; letter-spacing: -0.005em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sub { font-size: 11.5px; color: var(--ink-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -400,25 +400,25 @@ code { font-family: var(--mono); font-size: 11px; color: var(--ink); }
         <h2>Numbers for the SwiftUI port</h2>
         <table class="spec">
         <tr><td>Window</td><td>Non-activating <code>NSPanel</code>, borderless, level <code>.mainMenu + 3</code>, joins all Spaces, stationary, full-screen auxiliary,
-            never key or main. Fixed 680 × 420 transparent canvas pinned to the top centre of <code>screen.frame</code>; only the shape animates.</td></tr>
+            never key or main. Fixed 760 × 560 transparent canvas pinned to the top centre of <code>screen.frame</code>; only the shape animates.</td></tr>
         <tr><td>Notch geometry</td><td>Width = <code>frame.width − auxiliaryTopLeftArea.width − auxiliaryTopRightArea.width</code>, height = <code>safeAreaInsets.top</code>.
             Centre on the gap between the two areas, not on the screen. No notch: height = menu bar (<code>frame.maxY − visibleFrame.maxY</code>).</td></tr>
         <tr><td>Shape</td><td>Top corners curve outward into the menu bar, bottom corners inward. Radii (top / bottom): closed 6 / 14, peek 14 / 22, open 19 / 24.
             Both radii animate with the size.</td></tr>
         <tr><td>Closed wings</td><td>Each wing is as wide as what it holds: the right one holds only the count while every agent is idle, and grows
             to fit the state mark when one works or needs you. The island moves aside by half the difference so the camera stays between them. Bare agent marks at 20 pt, as the project tree draws them, 3 pt apart from overlapping.</td></tr>
-        <tr><td>Open</td><td>680 wide, height follows content up to 400, then the list scrolls. Padding: top-radius horizontally, then 12. Rows are one line, 36 tall, radius 12: mark, task, project, time, state.</td></tr>
+        <tr><td>Open</td><td>680 wide, height follows content up to 400, then the list scrolls. Padding: top-radius horizontally, then 12. Rows are one line, 36 tall, radius 12: mark at 20 pt as the rail draws it, task, project, time, state.</td></tr>
         <tr><td>Springs</td><td>Open <code>spring(response: 0.42, dampingFraction: 0.8)</code>. Close <code>spring(response: 0.45, dampingFraction: 1.0)</code>.
             Hover (shadow) <code>interactiveSpring(response: 0.38, dampingFraction: 0.8)</code>.</td></tr>
         <tr><td>Content</td><td>One shape: the band beside the camera swaps the wings for a header in place, out of and into a 20 pt blur; the body
             below enters with scale 0.8 → 1 anchored at the top and opacity 0 → 1 over 0.35 s (<code>.smooth</code>). Agent marks fly from the wings
             to their rows (<code>matchedGeometryEffect</code>). The width is set per state (open 680, permission 460), so width, height and both radii
             spring together.</td></tr>
-        <tr><td>Timing</td><td>Hover 0.3 s before opening; leave closes after 0.1 s, never while the prompt has focus. Permission peek 6 s, finished peek 3 s.</td></tr>
+        <tr><td>Timing</td><td>Hover 0.3 s before opening a closed island or a finished peek; a permission peek keeps its size under the pointer so its buttons stay put. Leave closes after 0.1 s, a peek too, unless the prompt holds the keyboard with a draft or files in it; clicking another app closes it and keeps the draft. A permission peek ends as soon as the request is answered anywhere, and a finished peek never replaces it. The keyboard is taken only when the prompt is clicked or New agent is chosen, never on hover. Permission peek 6 s, finished peek 3 s.</td></tr>
         <tr><td>Hover</td><td>Shadow on (black 70%, radius 6); the size stays. A trackpad tick (<code>.alignment</code>) when the pointer reaches a closed island.</td></tr>
-        <tr><td>Swipe</td><td>Two fingers down over a closed island open it, up over an open one close it, once they travel 140 pt along the finger direction
+        <tr><td>Swipe</td><td>Two fingers down over a closed island open it, up over an open one or a peek close it, once they travel 140 pt along the finger direction
             (twice the other axis; a mouse wheel's lines count 8 pt). While pulling, the island scales from the top, 1% per twentieth of the way, never
-            under 60%, and ticks when it crosses. A list that scrolls keeps the upward swipe.</td></tr>
+            under 60%, and ticks when it crosses. A list that scrolls, or an open picker, keeps the upward swipe.</td></tr>
         <tr><td>Haptics</td><td>A trackpad tick when the pointer reaches the closed island, a swipe crosses, a permission request peeks in, a dragged file
             opens the drop targets or snaps onto one. Off with the Haptic feedback option.</td></tr>
         <tr><td>Hit area</td><td>The drawn shape plus the menu-bar band beneath a closed island. Everything else in the canvas passes clicks through.</td></tr>
@@ -980,7 +980,7 @@ const SECTIONS = [
               leaves: "The pointer leaves, and 0.1 s later it closes.", opts: { agents: () => freshAgents(), mode: "open" } },
             { id: "O2", name: "New agent", when: "Opened, on the New agent tab.",
               shows: "Sikemux's own composer: add files, the yolo toggle, the model picker (agent mark + model, in accent), effort, project and send.",
-              leaves: "Send (⏎) starts the agent and goes to O1 with it on top. Stays open while the prompt has focus.",
+              leaves: "Send (⏎) starts the agent and goes to O1 with it on top. Stays open on leave while a draft is typed; clicking elsewhere closes it and keeps the draft.",
               opts: { agents: () => freshAgents(), mode: "open", tab: "new", draft: "Turn the notch mockup into a SwiftUI spec" } },
             { id: "O3", name: "Model picker", when: "The model picker is open on the New agent tab.",
               shows: "The composer's picker, opening downward so the island grows to hold it: search, the agents as chips, then that agent's models with a check on the current one.",

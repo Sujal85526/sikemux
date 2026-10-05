@@ -16,6 +16,8 @@ import { requireIdentity, type AuthEnv, type Verifier } from "../auth.ts";
 import type { Database, Tables } from "../db.ts";
 import { appendEvent } from "../events/log.ts";
 import { ApiFailure, readBody } from "../http.ts";
+import { joinRoutes } from "../join/routes.ts";
+import type { JoinSigner } from "../join/signer.ts";
 import { limit, type RateLimiter } from "../limits.ts";
 import { pushTokenRoutes } from "../push/routes.ts";
 import type { PushSettings } from "../push/settings.ts";
@@ -44,6 +46,7 @@ export function deviceRoutes(
   limiter: RateLimiter,
   clerk: ClerkBackend | null,
   push: Pick<PushSettings, "app" | "allowSandbox">,
+  join: JoinSigner,
 ) {
   const { db } = database;
   const perUser = (name: string, perMinute: number) =>
@@ -52,6 +55,7 @@ export function deviceRoutes(
   return new Hono<AuthEnv>()
     .use(requireIdentity(verifier, db))
     .route("/", pushTokenRoutes(database, limiter, push))
+    .route("/", joinRoutes(database, limiter, join))
     .post("/challenge", perUser("challenge", 30), async (c) => {
       const { userId } = c.get("identity");
       const nonce = randomBytes(32).toString("hex");

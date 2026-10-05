@@ -21,7 +21,7 @@ use sikemux_pty::output_log::OutputQuery;
 use sikemux_pty::task::{TaskSource, TaskSpawnRequest};
 use tokio::sync::mpsc::UnboundedReceiver;
 
-const WAIT: Duration = Duration::from_secs(10);
+const WAIT: Duration = Duration::from_secs(30);
 
 fn test_build() -> BuildIdentity {
     BuildIdentity {

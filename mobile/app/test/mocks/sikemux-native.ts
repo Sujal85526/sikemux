@@ -78,3 +78,9 @@ export const ChatAttachment = {
   Missing: tagged<Record<string, never>>('Missing'),
   Restart: tagged<Record<string, never>>('Restart'),
 };
+
+export const JoinAnswer = {
+  Allowed: tagged<{ access: string }>('Allowed'),
+  Denied: tagged<Record<string, never>>('Denied'),
+  Refused: tagged<{ reason: string }>('Refused'),
+};

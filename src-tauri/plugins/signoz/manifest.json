@@ -7,6 +7,7 @@
   "tools": [
     {
       "name": "signoz_services",
+      "row": {"verb": "service", "kind": "read", "icon": "activity", "target": ["{service}", "all services"], "detail": ["{show}"]},
       "method": "agentServices",
       "description": "Traced services with calls, errors and p99. Name a service for its overview, its endpoints or its errors grouped by message.",
       "properties": {
@@ -82,6 +83,7 @@
     },
     {
       "name": "signoz_logs",
+      "row": {"verb": "logs", "kind": "read", "icon": "activity", "target": ["{service}", "trace {traceId}", "all services"], "detail": ["“{text}”", "{expression}", "{severities}"]},
       "method": "searchLogs",
       "description": "Search logs, newest first. Fields every line shares are listed once in `shared`. Bodies over 1000 characters are clipped; pass id to read one whole.",
       "properties": {
@@ -175,6 +177,7 @@
     },
     {
       "name": "signoz_traces",
+      "row": {"verb": "traces", "kind": "read", "icon": "activity", "target": ["{traceId}", "{service}", "all services"], "detail": ["{expression}"]},
       "method": "agentTraces",
       "description": "Find traces by their root spans. Pass traceId for one trace as an outline of its root, failing spans and slowest spans; spanId opens one span.",
       "properties": {
@@ -274,6 +277,7 @@
     },
     {
       "name": "signoz_dashboards",
+      "row": {"verb": "board", "kind": "read", "icon": "activity", "target": ["{id}", "all dashboards"], "detail": ["panel {panelId}"]},
       "method": "agentDashboards",
       "description": "Saved dashboards. Pass id for one dashboard's variables and panels, and panelId as well for that panel's data.",
       "properties": {
@@ -311,6 +315,7 @@
     },
     {
       "name": "signoz_fields",
+      "row": {"verb": "fields", "kind": "search", "icon": "search", "target": ["{name}", "“{search}”", "{signal}"]},
       "method": "agentFields",
       "description": "Attribute names to filter on, matching search. Pass name for the values one attribute takes.",
       "properties": {

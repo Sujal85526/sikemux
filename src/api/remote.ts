@@ -21,13 +21,14 @@ export interface PairingOffer {
     readonly link: string;
 }
 
-/** A device that typed the right code and waits for the person to answer. */
+/** A device that typed the right code, or came with a ticket from this host's account, and waits for the person to answer. */
 export interface PendingDevice {
     readonly id: string;
     readonly deviceId: string;
     /** What the device calls itself. Nothing vouches for it. */
     readonly name: string;
     readonly platform: string;
+    readonly fromAccount: boolean;
 }
 
 /** Why the account let this host go: removed elsewhere, signed out, or the account was deleted. */

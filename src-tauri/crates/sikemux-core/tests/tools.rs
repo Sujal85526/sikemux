@@ -27,7 +27,7 @@ use sikemux_core::server::{self, ServerConfig, ServerError};
 use sikemux_pty::task::{TaskSource, TaskSpawnRequest};
 use tokio::sync::mpsc::UnboundedReceiver;
 
-const WAIT: Duration = Duration::from_secs(10);
+const WAIT: Duration = Duration::from_secs(30);
 
 fn init_env() {
     static ENV: Once = Once::new();

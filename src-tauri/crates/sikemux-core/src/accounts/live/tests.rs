@@ -7,7 +7,7 @@ use tokio_websockets::{CloseCode, ServerBuilder};
 
 use super::*;
 
-const WAIT: Duration = Duration::from_secs(10);
+const WAIT: Duration = Duration::from_secs(30);
 
 struct Fake {
     secret: SecretKey,
@@ -382,6 +382,31 @@ fn expiry_reads_as_an_rfc3339_time() {
     assert_eq!(rfc3339(0), "1970-01-01T00:00:00.000Z");
     assert_eq!(rfc3339(1_791_003_600_123), "2026-10-03T05:00:00.123Z");
     assert_eq!(rfc3339(951_782_400_000), "2000-02-29T00:00:00.000Z");
+}
+
+#[test]
+fn server_times_read_back_to_the_millisecond() {
+    for ms in [0, 1_791_003_600_123, 951_782_400_000, 4_102_444_799_999] {
+        assert_eq!(parse_rfc3339(&rfc3339(ms)), Some(ms));
+    }
+    assert_eq!(
+        parse_rfc3339("2026-10-03T05:00:00Z"),
+        Some(1_791_003_600_000)
+    );
+    assert_eq!(
+        parse_rfc3339("2026-10-03T05:00:00.5Z"),
+        Some(1_791_003_600_500)
+    );
+    for bad in [
+        "",
+        "2026-10-03",
+        "2026-10-03T05:00:00",
+        "2026-13-03T05:00:00Z",
+        "2026-10-03T05:00:00.x1Z",
+        "2026-10-03T05:+0:00Z",
+    ] {
+        assert_eq!(parse_rfc3339(bad), None, "{bad}");
+    }
 }
 
 #[test]

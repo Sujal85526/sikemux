@@ -1,0 +1,70 @@
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
+import { postNotification } from "../agents/agentNotifications";
+import { remoteApi, type PendingDevice, type RemoteStatus } from "../api/remote";
+import { useStore } from "../state/store";
+import { reportError, swallow } from "../state/toast";
+
+const PairingCards = lazy(() => import("./PairingCards"));
+
+/** The notification for a device that starts waiting while Sikemux is in the background. */
+export function pairingNotification(request: PendingDevice): { title: string; body: string } {
+    const name = request.name || "A device";
+    return request.fromAccount
+        ? { title: `${name} wants to connect to this computer`, body: "It is signed in to your Sikemux account. Allow or decline it in Sikemux." }
+        : { title: `${name} wants to pair with this computer`, body: "It typed this computer's pairing code. Allow or decline it in Sikemux." };
+}
+
+function usePendingDevices(hasFocus: () => boolean): [readonly PendingDevice[], (next: Promise<RemoteStatus>) => Promise<void>] {
+    const [pending, setPending] = useState<readonly PendingDevice[]>([]);
+    const announced = useRef(new Set<string>());
+    useEffect(() => {
+        const controller = new AbortController();
+        const show = (status: RemoteStatus) => {
+            if (!controller.signal.aborted) setPending(status.pending);
+        };
+        remoteApi
+            .subscribe(show, controller.signal)
+            .then(() => remoteApi.status())
+            .then(show)
+            .catch((error: unknown) => {
+                if (!controller.signal.aborted) swallow("pairing requests")(error);
+            });
+        return () => controller.abort();
+    }, []);
+    useEffect(() => {
+        const fresh = pending.filter((request) => !announced.current.has(request.id));
+        announced.current = new Set(pending.map((request) => request.id));
+        if (fresh.length === 0 || hasFocus()) return;
+        getCurrentWindow().requestUserAttention(UserAttentionType.Critical).catch(swallow("bounce dock icon"));
+        for (const request of fresh) {
+            const { title, body } = pairingNotification(request);
+            postNotification(title, body).catch(swallow("pairing notification"));
+        }
+    }, [pending, hasFocus]);
+    const answer = async (next: Promise<RemoteStatus>) => {
+        try {
+            setPending((await next).pending);
+        } catch (error) {
+            reportError("Pairing")(error);
+        }
+    };
+    return [pending, answer];
+}
+
+const documentHasFocus = () => document.hasFocus();
+
+/**
+ * Asks about a device waiting to pair or connect over whatever screen is up, since a phone
+ * gives up after two minutes and the person is rarely on Settings › Devices when it asks.
+ */
+export function PairingPrompt({ hasFocus = documentHasFocus }: { hasFocus?: () => boolean }) {
+    const [pending, answer] = usePendingDevices(hasFocus);
+    const devicesPageOpen = useStore((s) => s.settingsOpen && s.settingsPage === "devices");
+    if (devicesPageOpen || pending.length === 0) return null;
+    return (
+        <Suspense fallback={null}>
+            <PairingCards pending={pending} onAnswer={(id, allow, access) => void answer(remoteApi.answerPairing(id, allow, access))} />
+        </Suspense>
+    );
+}

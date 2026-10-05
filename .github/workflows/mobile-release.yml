@@ -107,6 +107,11 @@ jobs:
         run: |
           export SIKEMUX_UPLOAD_KEYSTORE="$RUNNER_TEMP/upload.keystore"
           base64 --decode <<<"$ANDROID_UPLOAD_KEYSTORE" >"$SIKEMUX_UPLOAD_KEYSTORE"
+          # The generated project gives Gradle 512 MB of metaspace, which a release build outgrows.
+          # The file has no newline at its end, so the setting starts on a line of its own.
+          sed -i '/^org.gradle.jvmargs=/d' gradle.properties
+          printf '\norg.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=2g\n' >>gradle.properties
+          grep -x 'org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=2g' gradle.properties
           # The Rust client is built for arm64-v8a and x86_64 only. The APK people sideload is for
           # phones, so arm64 alone; Play hands each device its own part of the bundle.
           ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon

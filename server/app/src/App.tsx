@@ -1,7 +1,9 @@
 import { HandleSSOCallback, useAuth, useClerk, useUser } from "@clerk/react";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 
+import { Avatar } from "./Avatar.tsx";
 import { Backdrop } from "./Backdrop.tsx";
+import { Consent, CONSENT } from "./Consent.tsx";
 import {
   AccountDeleted,
   DeleteAccount,
@@ -10,7 +12,12 @@ import {
 import { Devices, useDevices } from "./Devices.tsx";
 import { Logo } from "./icons.tsx";
 import { useLive } from "./live.ts";
-import { DELETE_ACCOUNT, takeReturn, usePath } from "./navigation.ts";
+import {
+  appReturn,
+  DELETE_ACCOUNT,
+  takeReturn,
+  usePath,
+} from "./navigation.ts";
 import { SignIn } from "./SignIn.tsx";
 
 const DELETED_QUERY = "?deleted";
@@ -40,12 +47,19 @@ export function App() {
         ? "Signing in · Sikemux"
         : path === DELETE_ACCOUNT
           ? "Delete your account · Sikemux"
-          : signedIn
-            ? "Your devices · Sikemux"
-            : "Sign in · Sikemux";
+          : path === CONSENT
+            ? "Sign in on your computer · Sikemux"
+            : signedIn
+              ? "Your devices · Sikemux"
+              : "Sign in · Sikemux";
   }, [path, signedIn, showDeleted]);
 
   const afterSignIn = () => go(takeReturn(), { replace: true });
+  const returning = isLoaded && isSignedIn ? appReturn() : null;
+
+  useEffect(() => {
+    if (returning) location.replace(returning);
+  }, [returning]);
 
   /** Reached from this page or from the account's live connection, so it may run twice. */
   const onDeleted = () => {
@@ -62,7 +76,11 @@ export function App() {
     <>
       <Backdrop />
       <div className="page">
-        {showDeleted ? (
+        {returning ? (
+          <section className="panel">
+            <p className="quiet">Taking you back to Sikemux…</p>
+          </section>
+        ) : showDeleted ? (
           <main className="center">
             <AccountDeleted />
           </main>
@@ -75,6 +93,10 @@ export function App() {
               navigateToSignUp={afterSignIn}
             />
           </section>
+        ) : path === CONSENT ? (
+          <main className="center">
+            {signedIn ? <Consent /> : <SignIn ready={isLoaded} />}
+          </main>
         ) : signedIn ? (
           <Account
             ready={isLoaded}
@@ -168,32 +190,5 @@ function Account({
         )}
       </main>
     </div>
-  );
-}
-
-/** The account's picture, or its initials on a neutral circle when it has none. */
-function Avatar() {
-  const { user } = useUser();
-  const [failed, setFailed] = useState<string>();
-  const picture = user?.hasImage ? user.imageUrl : undefined;
-  const initials =
-    [user?.firstName, user?.lastName]
-      .map((name) => name?.charAt(0) ?? "")
-      .join("") ||
-    (user?.primaryEmailAddress?.emailAddress.charAt(0) ?? "");
-  return (
-    <span className="avatar" aria-hidden="true">
-      {picture && picture !== failed ? (
-        <img
-          src={`${picture}${picture.includes("?") ? "&" : "?"}width=56&height=56&fit=crop&quality=100`}
-          alt=""
-          width={26}
-          height={26}
-          onError={() => setFailed(picture)}
-        />
-      ) : (
-        initials.toUpperCase()
-      )}
-    </span>
   );
 }

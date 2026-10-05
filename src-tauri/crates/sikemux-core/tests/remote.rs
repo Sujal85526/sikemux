@@ -88,6 +88,12 @@ impl Drop for TestCore {
 
 /// A core whose remote access is already on, trusting `devices`.
 fn start_core(core_key: &SecretKey, devices: &[&Device]) -> TestCore {
+    start_core_with(core_key, devices, false)
+}
+
+/// With `keeps_data`, the core has a data directory, where chats keep their
+/// history for phones to page through.
+fn start_core_with(core_key: &SecretKey, devices: &[&Device], keeps_data: bool) -> TestCore {
     init_env();
     let dir = tempfile::tempdir().expect("temp dir");
     let socket = dir.path().join("core.sock");
@@ -115,6 +121,7 @@ fn start_core(core_key: &SecretKey, devices: &[&Device]) -> TestCore {
             ..BuildIdentity::default()
         },
         remote_direct_only: true,
+        data_dir: keeps_data.then(|| dir.path().join("data")),
         ..ServerConfig::new(socket.clone())
     };
     let thread = std::thread::spawn(move || server::run(config));
@@ -609,6 +616,100 @@ async fn a_prompt_reaches_everyone_watching_but_its_sender_and_stays_in_the_repl
         .iter()
         .any(|event| event.kind == ChatEventKind::Prompt
             && event.payload["text"] == "from the phone"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_phone_is_sent_a_long_chat_s_last_turns_and_pages_back_to_its_start() {
+    let core_key = SecretKey::generate();
+    let phone = Device::new("Phone", DeviceAccess::Watch);
+    let core = start_core_with(&core_key, &[&phone], true);
+    let (app, mut app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    publish_fake_agent(&app).await;
+    let start = app
+        .acp_start(fake_launch("agent-long"))
+        .await
+        .expect("the app starts a chat");
+    assert!(!start.session_id.is_empty());
+    for n in 0..55 {
+        app.acp_prompt(
+            "agent-long".into(),
+            format!("turn {n}"),
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .expect("prompt");
+        loop {
+            let event = tokio::time::timeout(WAIT, app_events.recv())
+                .await
+                .expect("the turn never ended")
+                .expect("the app's connection closed");
+            if let ClientEvent::Event(Event::Chat { event, .. }) = event {
+                if event.kind == ChatEventKind::TurnCompleted {
+                    break;
+                }
+            }
+        }
+    }
+    let prompts = |events: &[sikemux_core::protocol::ChatEvent]| -> Vec<String> {
+        events
+            .iter()
+            .filter(|event| event.kind == ChatEventKind::Prompt)
+            .map(|event| {
+                event.payload["text"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned()
+            })
+            .collect()
+    };
+    let turns = |range: std::ops::Range<usize>| -> Vec<String> {
+        range.map(|n| format!("turn {n}")).collect()
+    };
+
+    let status = listening(&app).await;
+    let endpoint = phone.endpoint().await;
+    let (client, _events) = remote::connect(&endpoint, core_addr(&status))
+        .await
+        .expect("the phone connects");
+    let ChatAttachment::Live {
+        replay,
+        mark,
+        older_before: Some(before),
+        ..
+    } = client
+        .acp_attach("agent-long".into())
+        .await
+        .expect("attach")
+    else {
+        panic!("the phone is sent the chat's end, with more before it");
+    };
+    assert_eq!(prompts(&replay), turns(5..55));
+    assert_eq!(replay[0].kind, ChatEventKind::Prompt);
+
+    let (events, older) = client
+        .acp_history("agent-long".into(), mark.feed.clone(), before, 3)
+        .await
+        .expect("a watching phone reads the history");
+    assert_eq!(prompts(&events), turns(2..5));
+    let older = older.expect("there is more");
+    let (events, older) = client
+        .acp_history("agent-long".into(), mark.feed, older, 3)
+        .await
+        .expect("history");
+    assert_eq!(prompts(&events), turns(0..2));
+    assert_eq!(older, None);
+
+    let ChatAttachment::Live {
+        replay,
+        older_before,
+        ..
+    } = app.acp_attach("agent-long".into()).await.expect("attach")
+    else {
+        panic!("the app takes the chat up");
+    };
+    assert_eq!(prompts(&replay), turns(0..55));
+    assert_eq!(older_before, None);
 }
 
 #[tokio::test(flavor = "multi_thread")]

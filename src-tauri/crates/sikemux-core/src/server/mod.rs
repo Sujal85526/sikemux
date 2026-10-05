@@ -7,6 +7,7 @@ mod entry;
 mod handover;
 mod harness;
 mod host;
+mod join;
 mod notify;
 mod pairing;
 mod prepare;
@@ -312,7 +313,7 @@ impl Core {
             launching: Gauge::default(),
             listening: OnceLock::new(),
             tools: Mutex::new(None),
-            chats: chat::Chats::default(),
+            chats: chat::Chats::new(data_dir.map(|dir| dir.join("chat-history"))),
             remote: remote::Remote::default(),
             workspaces: workspace::Workspaces::default(),
             seen: seen::Seen::default(),
@@ -468,6 +469,7 @@ impl Core {
         client.close();
         self.window.unregister(client.id);
         self.chats.forget_client(client.id);
+        self.seen.client_gone(client.id);
         if let Ok(mut clients) = self.clients.lock() {
             clients.remove(&client.id);
         }

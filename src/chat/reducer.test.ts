@@ -184,6 +184,36 @@ describe("chat reducer", () => {
         expect(part.tool).not.toHaveProperty("rawInput");
     });
 
+    it("keeps only the arguments a finished call's row shows", () => {
+        const created = update(initialChatState, {
+            sessionUpdate: "tool_call",
+            toolCallId: "tool-1",
+            title: "mcp__sikemux-tools__browser_click",
+            status: "in_progress",
+            rawInput: { text: "Sign in", role: "button", report: "full", steps: [{ action: "click" }] },
+        });
+        const completed = update(created, { sessionUpdate: "tool_call_update", toolCallId: "tool-1", status: "completed" });
+        const part = completed.messages[0].parts[0];
+        if (part.kind !== "tool") throw new Error("expected tool part");
+
+        expect(part.tool.rawInput).toEqual({ text: "Sign in", role: "button" });
+    });
+
+    it("keeps the first short argument of another server's finished call", () => {
+        const created = update(initialChatState, {
+            sessionUpdate: "tool_call",
+            toolCallId: "tool-1",
+            title: "mcp__linear__create_issue",
+            status: "in_progress",
+            rawInput: { title: "Rows use underscores", body: "long\nbody" },
+        });
+        const completed = update(created, { sessionUpdate: "tool_call_update", toolCallId: "tool-1", status: "completed" });
+        const part = completed.messages[0].parts[0];
+        if (part.kind !== "tool") throw new Error("expected tool part");
+
+        expect(part.tool.rawInput).toEqual({ detail: "Rows use underscores" });
+    });
+
     it("keeps a failed call's message and drops the output it came from", () => {
         const created = update(initialChatState, {
             sessionUpdate: "tool_call",

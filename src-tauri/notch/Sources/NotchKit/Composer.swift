@@ -56,7 +56,6 @@ struct Composer: View {
         .onAppear {
             DispatchQueue.main.async { focused = true }
         }
-        .onChange(of: focused) { _, now in island.composing = now }
     }
 
     private var attachments: some View {
@@ -135,13 +134,23 @@ struct Composer: View {
         }
     }
 
+    /// The chooser needs the helper in front; afterwards the person's app is put
+    /// back in front and the prompt takes the keyboard again.
     private func chooseFiles() {
+        let previous = NSWorkspace.shared.frontmostApplication
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
+        island.choosingFiles = true
         NSApp.activate(ignoringOtherApps: true)
-        guard panel.runModal() == .OK else { return }
-        island.attachments.append(contentsOf: panel.urls.map(\.path))
+        if panel.runModal() == .OK {
+            island.attachments.append(contentsOf: panel.urls.map(\.path))
+        }
+        if let previous, previous != NSRunningApplication.current { previous.activate() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [island] in
+            island.choosingFiles = false
+            if island.isOpen { island.keyboard?(.take) }
+        }
     }
 
     private func send() {
@@ -161,7 +170,7 @@ struct Composer: View {
             island.attachments = []
             island.menu = nil
             island.tab = .agents
-            island.wantsKey?(false)
+            island.keyboard?(.give)
         }
     }
 }

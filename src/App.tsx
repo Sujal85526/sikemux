@@ -29,6 +29,7 @@ import { HarnessBridge } from "./shell/HarnessBridge";
 import { RemoteChatBridge } from "./shell/RemoteChatBridge";
 import { RemoteWorkspaceBridge } from "./shell/RemoteWorkspaceBridge";
 import { UpdateRequiredPrompt } from "./shell/UpdateRequiredPrompt";
+import { PairingPrompt } from "./shell/PairingPrompt";
 import { NotchBridge } from "./notch/NotchBridge";
 import { CliOpenBridge } from "./shell/CliOpenBridge";
 import { DeepLinkBridge } from "./shell/DeepLinkBridge";
@@ -1035,6 +1036,7 @@ export default function App() {
             <DialogHost />
             <ImageViewer />
             <VoiceCaption />
+            <PairingPrompt />
             <UpdateRequiredPrompt />
             <Toaster />
         </div>

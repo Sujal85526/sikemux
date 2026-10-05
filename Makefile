@@ -7,6 +7,7 @@ icons:
 	./scripts/icons.sh
 
 dev: export BITBUCKET_OAUTH_SECRET ?= $(shell sed -n 's/^BITBUCKET_OAUTH_SECRET=//p' .env 2>/dev/null)
+dev: export JIRA_OAUTH_SECRET ?= $(shell sed -n 's/^JIRA_OAUTH_SECRET=//p' .env 2>/dev/null)
 dev: icons
 	@node scripts/prune-target.mjs --daily >/dev/null 2>&1 &
 	pnpm dev:desktop
