@@ -1,6 +1,8 @@
 import { performanceTelemetry } from "../lib/performance";
 import type { StoreState } from "../state/store";
 import { useStore } from "../state/store";
+import { collectPanes } from "../state/layout";
+import type { Window } from "../state/types";
 import { SessionController } from "./sessionController";
 
 export interface WorkbenchRuntimeSnapshot {
@@ -28,14 +30,39 @@ function topologyRefs(state: StoreState): TopologyRefs {
     };
 }
 
+const paneSignatures = new WeakMap<Window, string>();
+
+/* The items a window holds and which one is active, without the split sizes a resize changes on every frame. */
+function paneSignature(window: Window): string {
+    let signature = paneSignatures.get(window);
+    if (signature === undefined) {
+        signature = `${window.activePaneId}|${collectPanes(window.root)
+            .map((pane) => `${pane.id}/${pane.kind}`)
+            .join(",")}`;
+        paneSignatures.set(window, signature);
+    }
+    return signature;
+}
+
+function samePanes(left: StoreState["windows"], right: StoreState["windows"]): boolean {
+    if (left === right) return true;
+    const ids = Object.keys(right);
+    if (ids.length !== Object.keys(left).length) return false;
+    return ids.every((id) => {
+        const before = left[id];
+        const after = right[id];
+        return before !== undefined && (before === after || paneSignature(before) === paneSignature(after));
+    });
+}
+
 function sameTopology(left: TopologyRefs | null, right: TopologyRefs): boolean {
     return (
         left !== null &&
         left.activeSessionId === right.activeSessionId &&
         left.sessions === right.sessions &&
         left.sessionOrder === right.sessionOrder &&
-        left.windows === right.windows &&
-        left.windowsBySession === right.windowsBySession
+        left.windowsBySession === right.windowsBySession &&
+        samePanes(left.windows, right.windows)
     );
 }
 
