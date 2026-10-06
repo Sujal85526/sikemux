@@ -457,19 +457,37 @@ function DeskOutline() {
         const pane = svg?.closest<HTMLElement>(".pane");
         const kinds = svg?.parentElement?.querySelector<HTMLElement>(".desk-kinds");
         if (!pane || !kinds || !svg || !path) return;
-        const draw = () => {
+        /* The pane resizes every frame while the desk slides; its corner and the
+           switcher do not, so those are read again only when the switcher changes. */
+        let corner = { radius: 0, gap: 0, cut: { width: 0, height: 0 } };
+        let size = { width: pane.offsetWidth, height: pane.offsetHeight };
+        const measureCorner = () => {
             const style = getComputedStyle(pane);
             const radius = parseFloat(style.borderTopLeftRadius) || 0;
             const gap = parseFloat(style.getPropertyValue("--pane-gutter")) || 0;
-            const width = pane.offsetWidth;
-            const height = pane.offsetHeight;
-            const cut = { width: kinds.offsetWidth + gap, height: kinds.offsetHeight + gap };
-            svg.setAttribute("width", String(width));
-            svg.setAttribute("height", String(height));
-            path.setAttribute("d", cutCornerOutline(width, height, cut, radius, radius + gap));
+            corner = { radius, gap, cut: { width: kinds.offsetWidth + gap, height: kinds.offsetHeight + gap } };
         };
-        const resize = new ResizeObserver(draw);
-        resize.observe(pane);
+        const draw = () => {
+            const { radius, gap, cut } = corner;
+            svg.setAttribute("width", String(size.width));
+            svg.setAttribute("height", String(size.height));
+            path.setAttribute("d", cutCornerOutline(size.width, size.height, cut, radius, radius + gap));
+        };
+        const resize = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                if (entry.target === kinds) measureCorner();
+                else {
+                    const box = entry.borderBoxSize?.[0];
+                    size = box
+                        ? { width: Math.round(box.inlineSize), height: Math.round(box.blockSize) }
+                        : { width: pane.offsetWidth, height: pane.offsetHeight };
+                }
+            }
+            draw();
+        });
+        resize.observe(pane, { box: "border-box" });
+        resize.observe(kinds);
+        measureCorner();
         draw();
         return () => resize.disconnect();
     }, []);
