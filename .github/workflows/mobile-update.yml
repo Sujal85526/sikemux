@@ -18,6 +18,8 @@ on:
       - "mobile/pnpm-lock.yaml"
       - "mobile/app/scripts/generate.mjs"
       - "mobile/app/scripts/publish-update.mjs"
+      - "mobile/app/fingerprint.config.js"
+      - "mobile/app/scripts/rust-sources.js"
       - "src/chat/**"
       - "src/ui/Icons.tsx"
       - "src/assets/agent-logos/**"
@@ -42,6 +44,8 @@ jobs:
     if: github.repository == 'nodelike/sikemux' && github.ref == 'refs/heads/main' && !inputs.update_id
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    outputs:
+      publish: ${{ steps.export.outputs.publish }}
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -94,11 +98,17 @@ jobs:
         working-directory: mobile
         run: pnpm check
 
+      # Skipped, with a warning, when no phone release was built for this runtime: the update
+      # would reach no phone, and the next phone release ships this code itself.
       - name: Export the update
+        id: export
         working-directory: mobile/app
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: node scripts/publish-update.mjs prepare android nightly "$RUNNER_TEMP/update"
 
       - name: Keep the update for signing
+        if: steps.export.outputs.publish == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: phone-update
@@ -109,6 +119,7 @@ jobs:
   publish:
     name: Sign and publish to nightly
     needs: prepare
+    if: needs.prepare.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: production

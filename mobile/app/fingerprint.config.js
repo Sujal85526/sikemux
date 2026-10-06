@@ -1,17 +1,12 @@
 const { readFileSync, readdirSync } = require('node:fs');
 const { join } = require('node:path');
 
+const { rustClientSources } = require('./scripts/rust-sources');
+
 // The runtime version is this fingerprint: an over-the-air update only reaches builds with the native code
-// it was made for. The Rust client is native code too, so its sources count, with every crate the phone links.
-const RUST = [
-  '../../rust-toolchain.toml',
-  '../../src-tauri/Cargo.toml',
-  '../../src-tauri/Cargo.lock',
-  '../../src-tauri/crates/sikemux-mobile',
-  '../../src-tauri/crates/sikemux-core',
-  '../../src-tauri/crates/sikemux-process',
-  '../../src-tauri/crates/sikemux-pty',
-];
+// it was made for. The Rust client is native code too, so what it links counts, and nothing the desktop app
+// alone builds with: a desktop release must not strand every installed phone on an old runtime.
+const RUST = rustClientSources(join(__dirname, '../../src-tauri'));
 
 // mobile/native is generated from the Rust sources above, differently on each machine, and is only linked once
 // it has been built, so the fingerprint counts its own few files instead and drops it from the linked modules.
@@ -29,11 +24,10 @@ const LINKED_MODULES = ['rncoreAutolinkingConfig:android', 'rncoreAutolinkingCon
 module.exports = {
   sourceSkips: ['ExpoConfigVersions', 'PackageJsonAndroidAndIosScriptsIfNotContainRun'],
   extraSources: [
-    ...RUST.map((filePath) => ({
-      type: filePath.endsWith('.toml') || filePath.endsWith('.lock') ? 'file' : 'dir',
-      filePath,
-      reasons: ['rustClient'],
-    })),
+    { type: 'file', filePath: '../../rust-toolchain.toml', reasons: ['rustClient'] },
+    ...RUST.crates.map((dir) => ({ type: 'dir', filePath: `../../src-tauri/crates/${dir}`, reasons: ['rustClient'] })),
+    { type: 'contents', id: 'rust/locked', contents: RUST.locked, reasons: ['rustClient'] },
+    { type: 'contents', id: 'rust/workspace', contents: RUST.settings, reasons: ['rustClient'] },
     ...NATIVE_FILES.map((name) => ({
       type: 'contents',
       id: `native/${name}`,

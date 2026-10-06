@@ -146,6 +146,18 @@ jobs:
           cp "$outputs/bundle/release/app-release.aab" "dist/Sikemux_${VERSION}_android.aab"
           ls -l dist >>"$GITHUB_STEP_SUMMARY"
 
+      # Over-the-air updates for a runtime no release was built for are not published, so each
+      # release says which runtime its build has.
+      - name: Record the build's runtime version
+        run: |
+          runtime="$(unzip -p mobile/app/android/app/build/outputs/apk/release/app-release.apk assets/fingerprint)"
+          if [[ ! "$runtime" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The APK carries no runtime version"
+            exit 1
+          fi
+          printf '%s\n' "$runtime" >dist/runtime-android.txt
+          echo "Runtime version $runtime" >>"$GITHUB_STEP_SUMMARY"
+
       - name: Keep the APK and app bundle on the run
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -165,7 +177,7 @@ jobs:
           notes="$(node mobile/app/scripts/play-release.mjs notes "$VERSION")
 
           Built from $(git rev-parse --short HEAD). Install the APK on your Android phone. A copy installed from Google Play cannot update this one, or the other way round: to switch, uninstall first."
-          gh release create "$GITHUB_REF_NAME" "dist/Sikemux_${VERSION}_android.apk" \
+          gh release create "$GITHUB_REF_NAME" "dist/Sikemux_${VERSION}_android.apk" dist/runtime-android.txt \
             --title "Sikemux for Android $VERSION" --notes "$notes" "${flags[@]}"
 
       # Last, because Google Play never takes the same version code twice: everything that can be

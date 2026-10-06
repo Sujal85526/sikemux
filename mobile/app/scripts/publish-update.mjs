@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Publishes the app's JavaScript and assets as a signed over-the-air update. Preparing and signing
 // are separate steps so CI can keep the signing key away from the build and its dependencies.
+import { Buffer } from 'node:buffer';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash, createPrivateKey, randomUUID, sign, verify, X509Certificate } from 'node:crypto';
 import {
@@ -17,7 +18,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const app = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const certificate = join(app, 'certs/updates-certificate.pem');
@@ -44,9 +45,11 @@ const CONTENT_TYPES = {
   mp4: 'video/mp4',
 };
 
+/** Why the script stopped, for whoever ran it. */
+export class Refused extends Error {}
+
 function stop(message) {
-  console.error(`\n${message}\n`);
-  process.exit(1);
+  throw new Refused(message);
 }
 
 const sha256 = (bytes) => createHash('sha256').update(bytes);
@@ -67,6 +70,16 @@ async function prepare(platform, channel, dir) {
   const stdio = ['ignore', 'pipe', 'inherit'];
   const { runtimeVersion } = JSON.parse(run('npx', ['expo-updates', 'runtimeversion:resolve', '--platform', platform], { env, stdio }));
   if (typeof runtimeVersion !== 'string') stop('The app config has no runtime version, so an update could reach any build.');
+  const reach = reaches(runtimeVersion, releasedRuntimes(platform));
+  output('publish', String(reach !== 'none'));
+  if (reach === 'unknown') console.warn(`::warning::No phone release says which runtime it has, so ${runtimeVersion} may reach no phone.`);
+  if (reach === 'none') {
+    console.warn(
+      `::warning::No released ${platform} build has runtime ${runtimeVersion}: its native code changed since the last phone ` +
+        'release, so this update would reach no phone. It is not published; the next phone release ships this code itself.',
+    );
+    return false;
+  }
 
   // An update replaces the app's config as the app sees it, so it carries the production config along.
   const expoClient = JSON.parse(run('npx', ['expo', 'config', '--type', 'public', '--json'], { env, stdio }));
@@ -117,10 +130,48 @@ async function prepare(platform, channel, dir) {
     join(dir, 'update.json'),
     `${JSON.stringify({ id, createdAt, platform, runtimeVersion, channel, commit, message }, null, 2)}\n`,
   );
+  return true;
+}
+
+/** The asset each phone release carries with the runtime version of its build. */
+export function runtimeAsset(platform) {
+  return `runtime-${platform}.txt`;
+}
+
+/** The runtime versions the newest phone releases were built with, or null when GitHub can't be asked. */
+export function releasedRuntimes(platform, gh = (args) => run('gh', args, { stdio: ['ignore', 'pipe', 'ignore'] })) {
+  let tags;
+  try {
+    tags = JSON.parse(gh(['release', 'list', '--limit', '200', '--json', 'tagName']))
+      .map((release) => release.tagName)
+      .filter((tag) => tag.startsWith('mobile-v'))
+      .slice(0, 20);
+  } catch {
+    return null;
+  }
+  const runtimes = [];
+  for (const tag of tags) {
+    try {
+      runtimes.push(gh(['release', 'download', tag, '--pattern', runtimeAsset(platform), '--output', '-']).trim());
+    } catch {
+      continue;
+    }
+  }
+  return runtimes;
+}
+
+/** Whether an update for `runtime` reaches a released build: `unknown` when no release says what it has. */
+export function reaches(runtime, released) {
+  if (!released || released.length === 0) return 'unknown';
+  return released.includes(runtime) ? 'some' : 'none';
+}
+
+function output(name, value) {
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`);
 }
 
 /** Checks the update in `dir` is whole: every asset the manifest names is there and has the hash it claims. */
-function check(dir) {
+export function check(dir) {
   const update = JSON.parse(readFileSync(join(dir, 'update.json'), 'utf8'));
   const manifestBytes = readFileSync(join(dir, 'manifest.json'));
   const manifest = JSON.parse(manifestBytes.toString('utf8'));
@@ -200,7 +251,7 @@ function publish(dir, dryRun) {
     `Runtime version ${update.runtimeVersion}`,
     `${assets} files, ${bytes} bytes; bundle ${bundle} (${statSync(bundle).size} bytes)`,
   ]);
-  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `update_id=${update.id}\n`);
+  output('update_id', update.id);
   if (dryRun) {
     console.log('Dry run: not sent.');
     return;
@@ -229,29 +280,40 @@ function usage() {
   );
 }
 
-const dryRun = process.argv.includes('--dry-run');
-const [command, ...args] = process.argv.slice(2).filter((arg) => arg !== '--dry-run');
-if (command === 'prepare' && args.length === 3) {
-  const dir = resolve(args[2]);
-  if (existsSync(dir) && readdirSync(dir).length > 0) stop(`${dir} is not empty.`);
-  await prepare(args[0], args[1], dir);
-} else if (command === 'publish' && args.length === 1) {
-  publish(resolve(args[0]), dryRun);
-} else if (command === 'promote' && args.length === 1) {
-  if (!UUID.test(args[0])) stop(`${args[0]} is not an update id.`);
-  ssh(`promote-update ${args[0]}`);
-  summarise([`Promoted ${args[0]} to stable`]);
-} else if (command === 'withdraw' && args.length === 1) {
-  if (!UUID.test(args[0])) stop(`${args[0]} is not an update id.`);
-  ssh(`withdraw-update ${args[0]}`);
-  summarise([`Withdrew ${args[0]}`]);
-} else if (command === 'roll-back' && args.length === 1) {
-  if (!UUID.test(args[0])) stop(`${args[0]} is not an update id.`);
-  rollBack(args[0]);
-} else if (PLATFORMS.includes(command) && args.length === 1) {
-  const dir = join(mkdtempSync(join(tmpdir(), 'sikemux-update-')), 'update');
-  await prepare(command, args[0], dir);
-  publish(dir, dryRun);
-} else {
-  usage();
+async function main(argv) {
+  const dryRun = argv.includes('--dry-run');
+  const [command, ...args] = argv.filter((arg) => arg !== '--dry-run');
+  if (command === 'prepare' && args.length === 3) {
+    const dir = resolve(args[2]);
+    if (existsSync(dir) && readdirSync(dir).length > 0) stop(`${dir} is not empty.`);
+    await prepare(args[0], args[1], dir);
+  } else if (command === 'publish' && args.length === 1) {
+    publish(resolve(args[0]), dryRun);
+  } else if (command === 'promote' && args.length === 1) {
+    if (!UUID.test(args[0])) stop(`${args[0]} is not an update id.`);
+    ssh(`promote-update ${args[0]}`);
+    summarise([`Promoted ${args[0]} to stable`]);
+  } else if (command === 'withdraw' && args.length === 1) {
+    if (!UUID.test(args[0])) stop(`${args[0]} is not an update id.`);
+    ssh(`withdraw-update ${args[0]}`);
+    summarise([`Withdrew ${args[0]}`]);
+  } else if (command === 'roll-back' && args.length === 1) {
+    if (!UUID.test(args[0])) stop(`${args[0]} is not an update id.`);
+    rollBack(args[0]);
+  } else if (PLATFORMS.includes(command) && args.length === 1) {
+    const dir = join(mkdtempSync(join(tmpdir(), 'sikemux-update-')), 'update');
+    if (await prepare(command, args[0], dir)) publish(dir, dryRun);
+  } else {
+    usage();
+  }
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  try {
+    await main(process.argv.slice(2));
+  } catch (error) {
+    if (!(error instanceof Refused)) throw error;
+    console.error(`\n${error.message}\n`);
+    process.exit(1);
+  }
 }
