@@ -92,7 +92,8 @@ export type ErrorCode =
   | "payload_too_large"
   | "rate_limited"
   | "internal"
-  | "unavailable";
+  | "unavailable"
+  | "reverify_required";
 
 export interface ErrorDetail {
   code: ErrorCode;

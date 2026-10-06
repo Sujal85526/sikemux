@@ -61,7 +61,7 @@ async function call<T>(token: TokenSource, path: string, init: { method?: string
   if (response.status === 204) return null as T;
   if (!response.ok) {
     const failure = (await response.json().catch(() => null)) as ApiError | null;
-    if (response.status === 403 && failure?.error?.message === 'reverify') throw new ReverifyNeeded('reverify');
+    if (failure?.error?.code === 'reverify_required') throw new ReverifyNeeded('reverify');
     throw new AccountProblem(failure?.error?.message ?? `The accounts server answered ${response.status}.`, response.status);
   }
   return (await response.json()) as T;

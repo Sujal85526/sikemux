@@ -163,6 +163,7 @@ export const schema = {
         "rate_limited",
         "internal",
         "unavailable",
+        "reverify_required",
       ],
     },
     ErrorDetail: {

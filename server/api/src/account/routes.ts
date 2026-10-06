@@ -39,7 +39,7 @@ export function accountRoutes(
           identity.factorAgeMinutes === undefined ||
           identity.factorAgeMinutes > REVERIFY_MINUTES
         )
-          throw new ApiFailure(403, "forbidden", "reverify");
+          throw new ApiFailure(403, "reverify_required", "reverify");
 
         const deletion = await markDeleted(db, {
           userId: identity.userId,

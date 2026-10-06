@@ -178,7 +178,7 @@ describe('deleteAccount', () => {
   });
 
   it('asks the person to prove it is them again when the server says reverify', async () => {
-    answers.push({ status: 403, body: { error: { code: 'forbidden', message: 'reverify', requestId: 'r' } } });
+    answers.push({ status: 403, body: { error: { code: 'reverify_required', message: 'reverify', requestId: 'r' } } });
     await expect(deleteAccount(token)).rejects.toBeInstanceOf(ReverifyNeeded);
   });
 

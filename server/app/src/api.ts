@@ -1,13 +1,20 @@
-import type { AccountDeletion, ApiError, DeviceList } from "@sikemux/protocol";
+import type {
+  AccountDeletion,
+  ApiError,
+  DeviceList,
+  ErrorCode,
+} from "@sikemux/protocol";
 
 import { config } from "./config.ts";
 
 export class ApiProblem extends Error {
   readonly status: number;
+  readonly code?: ErrorCode;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, code?: ErrorCode) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -33,6 +40,7 @@ async function call(
     throw new ApiProblem(
       body?.error.message ?? `The API answered ${response.status}.`,
       response.status,
+      body?.error.code,
     );
   }
   return response;

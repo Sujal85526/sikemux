@@ -251,7 +251,9 @@ describe("deleting an account", () => {
     ]) {
       const response = await deleteAccount("user_a", token);
       expect(response.status).toBe(403);
-      expect((await body(response, "ApiError")).error.message).toBe("reverify");
+      const { error } = await body(response, "ApiError");
+      expect(error.code).toBe("reverify_required");
+      expect(error.message).toBe("reverify");
     }
     expect(await count("select count(*)::int as n from devices")).toBe(2);
   });

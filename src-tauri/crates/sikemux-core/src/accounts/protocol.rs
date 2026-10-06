@@ -176,6 +176,8 @@ pub enum ErrorCode {
     Internal,
     #[serde(rename = "unavailable")]
     Unavailable,
+    #[serde(rename = "reverify_required")]
+    ReverifyRequired,
     /// A value added after this build, which it cannot act on.
     #[serde(other)]
     Unknown,
