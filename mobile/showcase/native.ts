@@ -4,7 +4,7 @@
  * of the network.
  */
 import { BuildChannel, ChatAttachment, ChatState, CoreEvent, MobileError, SessionKind } from '../app/test/mocks/sikemux-native';
-import { CHATS, CORE, HOST, LAUNCHERS, PANE_PICTURE, PROJECTS, SESSIONS, chatEvents, permissionPayload, setupOf } from './world';
+import { CHATS, CORE, HOST, LAUNCHERS, PANE_PICTURE, PROJECTS, RECENT, SESSIONS, chatEvents, permissionPayload, setupOf } from './world';
 
 export { BuildChannel, ChatAttachment, ChatState, CoreEvent, MobileError, SessionKind };
 
@@ -78,6 +78,14 @@ function view() {
           ]
         : [];
     }),
+    recent: RECENT.map((chat) => ({
+      id: chat.id,
+      provider: chat.provider,
+      title: chat.title,
+      project: chat.project,
+      cwd: projectPath(chat.project),
+      activeAt: BigInt(Date.now() - chat.hours * 3_600_000),
+    })),
   };
 }
 
@@ -128,6 +136,9 @@ class Connection {
   async startChat() {
     return CHATS[0].agentId;
   }
+  async resumeChat() {
+    return CHATS[0].agentId;
+  }
   async attach() {
     return { replay: new ArrayBuffer(0), alternateScreen: false, exited: false };
   }
@@ -157,4 +168,3 @@ export class Device {
 }
 
 export const newDeviceKey = (): ArrayBuffer => new Uint8Array(32).buffer;
-

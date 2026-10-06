@@ -157,6 +157,13 @@ export const CHATS: DemoChat[] = [
   },
 ];
 
+/** Saved chats the host lists as recent, with how many hours ago each was last written to. */
+export const RECENT = [
+  { id: 'claude:r1', provider: 'claude', title: 'Move checkout totals into the order service', project: 'p-shop', hours: 3 },
+  { id: 'codex:r2', provider: 'codex', title: 'Why does the pricing page shift on load', project: 'p-site', hours: 26 },
+  { id: 'claude:r3', provider: 'claude', title: 'Retry webhooks with backoff', project: 'p-api', hours: 74 },
+];
+
 export const SESSIONS = [
   { id: 11n, project: 'p-shop', task: { label: 'dev', command: 'pnpm dev', cwd: `${HOME}/acme-shop`, project: 'p-shop' } },
   { id: 12n, project: 'p-shop' },

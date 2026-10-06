@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { ChatState, type ChatInfo } from '@/core/protocol';
-import { ago, chatState, chatTitle, folder, providerName } from '@/devices/words';
+import { age, ago, chatState, chatTitle, folder, providerName } from '@/devices/words';
 
 function chat(overrides: Partial<ChatInfo> = {}): ChatInfo {
   return {
@@ -88,5 +88,11 @@ describe('ago', () => {
 
   it('says just now for a time a little in the future', () => {
     expect(ago(now + 20_000, now)).toBe('just now');
+  });
+
+  it('is as brief as the rail without the ago', () => {
+    expect(age(minutes(0.4), now)).toBe('now');
+    expect(age(minutes(3 * 60), now)).toBe('3h');
+    expect(age(minutes(24 * 60), now)).toBe('1d');
   });
 });

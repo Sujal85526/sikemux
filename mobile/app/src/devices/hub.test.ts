@@ -52,6 +52,7 @@ const VIEW = {
   sessions: [],
   chats: [],
   attentions: [],
+  recent: [],
 };
 
 let hub: Hub;

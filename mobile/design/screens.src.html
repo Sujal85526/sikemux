@@ -428,6 +428,8 @@
   .rows .row .s { font-size: 12px; }
   .rows .row code { font-family: var(--mono); font-size: 11.5px; color: var(--text-secondary); }
   .rows .row.ask { margin-top: 8px; }
+  .rows .row.more { min-height: 40px; padding-left: 38px; }
+  .rows .row.more .t { font-size: 13px; font-weight: 400; color: var(--text-tertiary); }
   .rows .row.ask .t { color: var(--text-primary); }
   .scope-sheet { top: auto; padding: 8px 16px 34px; }
   .scope-sheet .head { display: flex; align-items: baseline; justify-content: space-between; padding: 6px 4px 12px; }
@@ -1128,14 +1130,15 @@
           </div>
           <div class="glabel">Recent</div>
           <div class="rows">
-            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Split the Rundeck matrix into jobs</div></div><span class="ago">3h</span></div>
-            <div class="row"><span class="mark hermes">{{IconHermes:20}}</span><div class="body"><div class="t">Why does the shader dim the rail</div></div><span class="ago">1d</span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Split the Rundeck matrix into jobs</div><div class="s">sikemux</div></div><span class="ago">3h</span></div>
+            <div class="row"><span class="mark hermes">{{IconHermes:20}}</span><div class="body"><div class="t">Why does the shader dim the rail</div><div class="s">sikemux-front</div></div><span class="ago">1d</span></div>
+            <div class="row more"><div class="body"><div class="t">Show 12 more</div></div></div>
           </div>
         </div>
         <div class="fab">{{IconPlus:18}}New chat</div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Agents</b><div class="note">The agent waiting on you is simply the first row, with a white pulsing dot. The rest sit under small-caps labels with a hairline running right, as on the Mac's rail, with no boxes or dividers: open chats with their state at the end, recent ones with their age. The header scrolls with the list: once the name passes under the top bar, the bar takes it as its title and the Agents / Terminals row stays pinned beneath it, floating on the backdrop with no band of its own, and rows fade out as they slide under it.</div></figcaption>
+      <figcaption><b>Agents</b><div class="note">The agent waiting on you is simply the first row, with a white pulsing dot. The rest sit under small-caps labels with a hairline running right, as on the Mac's rail, with no boxes or dividers: open chats with their state at the end, then the saved chats the host's rail lists as recent, newest first, with their project while all projects are shown and their age at the end. The first ten show, and Show more brings the rest. Tapping a recent chat resumes it on the host and opens it, the squares standing in for its age while it starts; a phone that can only watch is told so under the list instead, as is why a resume failed. The project picker and the agent filter narrow both lists. The header scrolls with the list: once the name passes under the top bar, the bar takes it as its title and the Agents / Terminals row stays pinned beneath it, floating on the backdrop with no band of its own, and rows fade out as they slide under it.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>

@@ -4,14 +4,14 @@ import { router, useLocalSearchParams } from 'expo-router';
 import MaskedView from '@react-native-masked-view/masked-view';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
-import type { ChatInfo, ProjectInfo, SessionInfo, Snapshot } from '@/core/protocol';
-import { reloadDevices, retry, useDevices, useHostStatus, useLive } from '@/devices/hub';
+import type { ChatInfo, ProjectInfo, RecentInfo, SessionInfo, Snapshot } from '@/core/protocol';
+import { problem as problemOf, reloadDevices, retry, useDevices, useHostStatus, useLive } from '@/devices/hub';
 import { deviceName, type PairedDevice, updateDevice } from '@/devices/paired';
 import { ForgetSheet, useForget } from '@/devices/ForgetSheet';
 import { ProjectSheet } from '@/devices/ProjectSheet';
 import { asking as askingOf } from '@/devices/asking';
 import { summary } from '@/devices/status';
-import { chatState, chatTitle, folder } from '@/devices/words';
+import { age, chatState, chatTitle, folder } from '@/devices/words';
 import { Wants } from '@/screens/Wants';
 import { haptics } from '@/ui/haptics';
 import { useScrollPause } from '@/ui/motion';
@@ -26,6 +26,8 @@ type Tab = 'agents' | 'terminals';
 
 /** The New chat pill's height, which the list leaves room for below its last row. */
 const NEW_CHAT_HEIGHT = 52;
+/** Recent chats shown before Show more. */
+const RECENT_SHOWN = 10;
 
 function projectName(snapshot: Snapshot, cwd: string): string {
   return snapshot.workspace.projects.find((project) => project.path === cwd)?.name ?? folder(cwd);
@@ -81,7 +83,109 @@ function ChatEnd({ chat }: { chat: ChatInfo }) {
   );
 }
 
-function Agents({ core, snapshot, scope, provider }: { core: string; snapshot: Snapshot; scope?: ProjectInfo; provider: string }) {
+/** Saved chats the host's rail lists as recent; a phone with full access takes one up again. */
+function Recent({
+  core,
+  snapshot,
+  scope,
+  provider,
+  full,
+  hostName,
+}: {
+  core: string;
+  snapshot: Snapshot;
+  scope?: ProjectInfo;
+  provider: string;
+  full: boolean;
+  hostName: string;
+}) {
+  const styles = useStyles(makeStyles);
+  const type = useType();
+  const live = useLive(core);
+  const [all, setAll] = useState(false);
+  const [resuming, setResuming] = useState<string>();
+  const [note, setNote] = useState<{ text: string; failed: boolean }>();
+  const chats = snapshot.recent.filter(
+    (chat) => (!scope || chat.project === scope.id) && (provider === 'all' || chat.provider === provider),
+  );
+  if (!chats.length) return null;
+  const shown = all ? chats : chats.slice(0, RECENT_SHOWN);
+  const projectOf = (chat: RecentInfo) =>
+    snapshot.workspace.projects.find((project) => project.id === chat.project)?.name ?? folder(chat.cwd);
+
+  const resume = async (chat: RecentInfo) => {
+    if (resuming) return;
+    if (!full) {
+      haptics.warning();
+      setNote({ text: `This phone can watch ${hostName}, not resume its chats. The host can give it full access.`, failed: false });
+      return;
+    }
+    if (live.status !== 'open') {
+      haptics.failure();
+      setNote({ text: 'Not connected to the host.', failed: true });
+      return;
+    }
+    haptics.tap();
+    setNote(undefined);
+    setResuming(chat.id);
+    try {
+      const agentId = await live.connection.resumeChat(chat.id);
+      router.push(`/device/${core}/chat/${agentId}`);
+    } catch (error) {
+      haptics.failure();
+      setNote({ text: problemOf(error), failed: true });
+    } finally {
+      setResuming(undefined);
+    }
+  };
+
+  return (
+    <>
+      <SectionLabel>Recent</SectionLabel>
+      <Rows>
+        {shown.map((chat) => (
+          <Row
+            key={chat.id}
+            mark={<AgentIcon provider={chat.provider} size={20} />}
+            title={chat.title}
+            detail={scope ? undefined : projectOf(chat)}
+            end={resuming === chat.id ? <Working /> : <Text style={[type.meta, styles.age]}>{age(Number(chat.activeAt))}</Text>}
+            onPress={() => void resume(chat)}
+          />
+        ))}
+        {shown.length < chats.length ? (
+          <Pressable
+            onPress={() => setAll(true)}
+            style={({ pressed }) => [styles.more, pressed && styles.morePressed]}
+            accessibilityRole="button">
+            <Text style={styles.moreText}>Show {chats.length - shown.length} more</Text>
+          </Pressable>
+        ) : null}
+      </Rows>
+      {note ? (
+        <Text style={[styles.note, note.failed && styles.noteFailed]} accessibilityLiveRegion="polite">
+          {note.text}
+        </Text>
+      ) : null}
+    </>
+  );
+}
+
+function Agents({
+  core,
+  snapshot,
+  scope,
+  provider,
+  full,
+  hostName,
+}: {
+  core: string;
+  snapshot: Snapshot;
+  scope?: ProjectInfo;
+  provider: string;
+  full: boolean;
+  hostName: string;
+}) {
   const styles = useStyles(makeStyles);
   const open = (agentId: string) => router.push(`/device/${core}/chat/${agentId}`);
   const scoped = snapshot.chats.filter((chat) => !scope || inProject(scope, chat.cwd));
@@ -133,7 +237,10 @@ function Agents({ core, snapshot, scope, provider }: { core: string; snapshot: S
           </Rows>
         </>
       ) : null}
-      {!scoped.length ? <Text style={styles.empty}>{scope ? `No agents in ${scope.name}.` : 'No agents running.'}</Text> : null}
+      <Recent core={core} snapshot={snapshot} scope={scope} provider={provider} full={full} hostName={hostName} />
+      {!scoped.length && !snapshot.recent.some((chat) => !scope || chat.project === scope.id) ? (
+        <Text style={styles.empty}>{scope ? `No agents in ${scope.name}.` : 'No agents running.'}</Text>
+      ) : null}
     </>
   );
 }
@@ -306,7 +413,12 @@ export default function Device() {
   const scope = snapshot?.workspace.projects.find((project) => project.id === device?.project);
   const asking = snapshot?.chats.filter((chat) => chat.pendingPermissions.length && (!scope || inProject(scope, chat.cwd))).length ?? 0;
   const [filter, setFilter] = useState('all');
-  const providers = [...new Set(snapshot?.chats.filter((chat) => !scope || inProject(scope, chat.cwd)).map((chat) => chat.provider) ?? [])];
+  const providers = [
+    ...new Set([
+      ...(snapshot?.chats.filter((chat) => !scope || inProject(scope, chat.cwd)).map((chat) => chat.provider) ?? []),
+      ...(snapshot?.recent.filter((chat) => !scope || chat.project === scope.id).map((chat) => chat.provider) ?? []),
+    ]),
+  ];
   const provider = providers.includes(filter) ? filter : 'all';
   const filtering = tab === 'agents' && providers.length > 1;
   const scopeTo = (project: string | null) => {
@@ -394,7 +506,14 @@ export default function Device() {
                 <View style={styles.body}>
                   {snapshot ? (
                     tab === 'agents' ? (
-                      <Agents core={core} snapshot={snapshot} scope={scope} provider={provider} />
+                      <Agents
+                        core={core}
+                        snapshot={snapshot}
+                        scope={scope}
+                        provider={provider}
+                        full={device?.access === 'full'}
+                        hostName={hostName}
+                      />
                     ) : (
                       <Terminals snapshot={snapshot} scope={scope} />
                     )
@@ -547,6 +666,12 @@ const makeStyles = (colors: Palette) => {
     termCount: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     asking: { marginTop: 8 },
     empty: { ...type.meta, textAlign: 'center', paddingTop: 40 },
+    age: { fontSize: 12, fontVariant: ['tabular-nums'] },
+    more: { minHeight: 40, justifyContent: 'center', paddingLeft: 38, paddingRight: 8, borderRadius: 9 },
+    morePressed: { backgroundColor: colors.active },
+    moreText: { ...type.meta, fontSize: 13 },
+    note: { ...type.meta, fontSize: 12.5, paddingHorizontal: 8, paddingTop: 8 },
+    noteFailed: { color: colors.danger },
     liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.live },
     away: { flex: 1, justifyContent: 'center', paddingHorizontal: 32, paddingBottom: 120 },
     trying: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 16 },
