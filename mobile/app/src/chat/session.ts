@@ -42,8 +42,26 @@ export type Attachment = {
   problem?: string;
 };
 
-/** What waits behind the running turn. */
-export type Held = { text: string; attachments: Attachment[] };
+/** A message waiting behind the running turn. */
+export type Held = { id: string; text: string; attachments: Attachment[] };
+
+/** The messages that go out together once the turn ends; a slash command only works as the whole prompt, so it goes alone. */
+function nextBatch(queued: Held[]): Held[] {
+  const isCommand = (held: Held) => held.text.startsWith('/');
+  if (!queued.length || isCommand(queued[0])) return queued.slice(0, 1);
+  const command = queued.findIndex(isCommand);
+  return command === -1 ? queued : queued.slice(0, command);
+}
+
+function combined(messages: Held[]): { text: string; attachments: Attachment[] } {
+  return {
+    text: messages
+      .map((held) => held.text)
+      .filter(Boolean)
+      .join('\n\n'),
+    attachments: messages.flatMap((held) => held.attachments),
+  };
+}
 
 export type ChatSnapshot = {
   /** The chat as the host tells it, with what this phone sent added in place. */
@@ -59,13 +77,18 @@ export type ChatSnapshot = {
   notice: string | null;
   /** By message id. */
   unsent: ReadonlyMap<string, Unsent>;
-  queued: Held | null;
+  queued: readonly Held[];
   /** Picked for the next message. */
   attachments: readonly Attachment[];
   /** What this phone sent, by the path the host keeps it at. */
   sentFiles: ReadonlyMap<string, Attachment>;
   /** Permission requests whose answer is on its way. */
   answering: ReadonlySet<string>;
+  /** Background tasks this phone asked the host to stop. */
+  stopping: ReadonlySet<string>;
+  /** How the chat asks before acting, as this phone last set it or the host last said; null before either. */
+  permissionMode: string | null;
+  changingMode: boolean;
   hasEarlier: boolean;
   earlier: 'idle' | 'loading' | 'failed';
   /** When this phone saw the running turn begin. */
@@ -82,7 +105,8 @@ type Options = {
   read?: (uri: string) => Promise<ArrayBuffer>;
 };
 
-type Outgoing = { key: number; messageId: string; text: string; paths: string[] } & Unsent;
+/** `steer` puts it into the running turn rather than after it. */
+type Outgoing = { key: number; messageId: string; text: string; paths: string[]; steer: boolean } & Unsent;
 
 /** Where the host's history of this run of the chat goes on before what the phone holds. */
 type Cursor = { feed: string; before: bigint };
@@ -132,10 +156,14 @@ export class ChatSession {
   private notice: string | null = null;
   private outbox: Outgoing[] = [];
   private sent = 0;
-  private queued: Held | null = null;
+  private queued: Held[] = [];
   private attachments: Attachment[] = [];
   private sentFiles: ReadonlyMap<string, Attachment> = new Map();
   private answering: ReadonlySet<string> = new Set();
+  private stopping: ReadonlySet<string> = new Set();
+  private hostMode: string | undefined;
+  private mode: string | null = null;
+  private changingMode = false;
   private draft = '';
   private turnSince: number;
   /** A turn this phone started is taken as running until the host says otherwise. */
@@ -218,6 +246,11 @@ export class ChatSession {
     const up = info !== undefined && info.state === HostChatState.Ready && !info.asleep;
     const cameBack = this.hostUp === false && up;
     this.hostUp = up;
+    if (info && info.permissionMode !== this.hostMode) {
+      this.hostMode = info.permissionMode;
+      this.mode = null;
+      this.emit();
+    }
     const next = waiting ? new Set(waiting) : null;
     const same = next && this.onHost && next.size === this.onHost.size && [...next].every((id) => this.onHost?.has(id));
     if (!same && (next || this.onHost)) {
@@ -263,11 +296,7 @@ export class ChatSession {
       if (!attachments.length) return false;
     }
     if (this.busy()) {
-      const queued = this.queued;
-      this.queued = {
-        text: [queued?.text, text].filter(Boolean).join('\n\n'),
-        attachments: [...(queued?.attachments ?? []), ...attachments],
-      };
+      this.queued = [...this.queued, { id: `queued-${(this.sent += 1)}`, text, attachments }];
       this.emit();
       return true;
     }
@@ -282,12 +311,27 @@ export class ChatSession {
     this.push(entry);
   };
 
-  /** Stops the running turn. A message waiting behind it goes back to the composer rather than out. */
+  /** Puts waiting messages into the running turn now, as one, instead of after it. */
+  steer = (ids: readonly string[]) => {
+    const steered = this.queued.filter((held) => ids.includes(held.id));
+    if (!steered.length) return;
+    this.queued = this.queued.filter((held) => !ids.includes(held.id));
+    const { text, attachments } = combined(steered);
+    this.deliver(text, attachments, true);
+  };
+
+  dropQueued = (id: string) => {
+    this.queued = this.queued.filter((held) => held.id !== id);
+    this.emit();
+  };
+
+  /** Stops the running turn. Messages waiting behind it go back to the composer rather than out. */
   cancel = () => {
-    if (this.queued !== null) {
-      this.draft = [this.queued.text, this.draft].filter(Boolean).join('\n\n');
-      this.attachments = [...this.queued.attachments, ...this.attachments];
-      this.queued = null;
+    if (this.queued.length) {
+      const { text, attachments } = combined(this.queued);
+      this.draft = [text, this.draft].filter(Boolean).join('\n\n');
+      this.attachments = [...attachments, ...this.attachments];
+      this.queued = [];
     }
     this.notice = null;
     this.emit();
@@ -309,6 +353,48 @@ export class ChatSession {
       this.answering = new Set([...this.answering].filter((id) => id !== requestId));
       this.emit();
     });
+  };
+
+  stopTask = (taskId: string) => {
+    if (this.stopping.has(taskId)) return;
+    this.stopping = new Set([...this.stopping, taskId]);
+    this.notice = null;
+    this.emit();
+    this.ask((connection) => connection.stopTask(this.agentId, taskId), 'Could not stop the task').finally(() => {
+      this.stopping = new Set([...this.stopping].filter((id) => id !== taskId));
+      this.emit();
+    });
+  };
+
+  /** `bypass` runs without asking; `workspace-write` asks first. */
+  setPermissionMode = (mode: string) => {
+    if (this.changingMode) return;
+    this.changingMode = true;
+    this.notice = null;
+    this.emit();
+    this.ask(
+      (connection) => connection.setPermissionMode(this.agentId, mode),
+      'Could not change permissions',
+      () => {
+        this.mode = mode;
+      },
+    ).finally(() => {
+      this.changingMode = false;
+      this.emit();
+    });
+  };
+
+  /** Ends the chat's agent on the host. Answers whether it did. */
+  stopChat = async (): Promise<boolean> => {
+    let stopped = false;
+    await this.ask(
+      (connection) => connection.stopChat(this.agentId),
+      'Could not stop the chat',
+      () => {
+        stopped = true;
+      },
+    );
+    return stopped;
   };
 
   setConfig = (configId: string, value: string) => {
@@ -409,6 +495,9 @@ export class ChatSession {
       attachments: this.attachments,
       sentFiles: this.sentFiles,
       answering: this.answering,
+      stopping: this.stopping,
+      permissionMode: this.mode ?? this.hostMode ?? null,
+      changingMode: this.changingMode,
       hasEarlier: this.cursor !== null,
       earlier: this.earlier,
       turnSince: this.turnSince,
@@ -646,15 +735,20 @@ export class ChatSession {
     }
   }
 
-  private deliver(text: string, attachments: Attachment[]) {
+  private deliver(text: string, attachments: Attachment[], steer = false) {
     const paths = attachments.flatMap((attachment) => (attachment.path ? [attachment.path] : []));
-    this.apply([{ type: 'local_prompt', text, paths }]);
-    this.optimistic = true;
+    if (steer) {
+      this.agent = withMessage(this.agent, text, paths);
+    } else {
+      this.apply([{ type: 'local_prompt', text, paths }]);
+      this.optimistic = true;
+    }
     const entry: Outgoing = {
       key: (this.sent += 1),
       messageId: this.agent.messages[this.agent.messages.length - 1].id,
       text,
       paths,
+      steer,
       state: 'sending',
     };
     this.outbox = [...this.outbox, entry];
@@ -667,7 +761,11 @@ export class ChatSession {
     Promise.resolve()
       .then(() => {
         if (!connection?.isOpen()) throw new Error('the host is not connected');
-        return connection.prompt(this.agentId, entry.text, entry.paths);
+        if (!entry.steer) return connection.prompt(this.agentId, entry.text, entry.paths);
+        // The turn may have ended before the message reached it, and then it starts the next one.
+        return connection
+          .steer(this.agentId, entry.text, entry.paths)
+          .then((took) => (took ? undefined : connection.prompt(this.agentId, entry.text, entry.paths)));
       })
       .then(() => {
         this.outbox = this.outbox.filter((outgoing) => outgoing.key !== entry.key);
@@ -688,11 +786,12 @@ export class ChatSession {
     this.emit();
   }
 
-  /** Sends the message held behind a turn once nothing is running and the chat is open. */
+  /** Sends the messages held behind a turn once nothing is running and the chat is open. */
   private drain() {
-    if (this.queued === null || this.busy() || this.attached !== 'live' || !this.connection) return;
-    const { text, attachments } = this.queued;
-    this.queued = null;
+    if (!this.queued.length || this.busy() || this.attached !== 'live' || !this.connection) return;
+    const batch = nextBatch(this.queued);
+    this.queued = this.queued.slice(batch.length);
+    const { text, attachments } = combined(batch);
     this.deliver(text, attachments);
   }
 

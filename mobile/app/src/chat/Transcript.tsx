@@ -259,21 +259,24 @@ export function Message({
   return <Parts id={message.id} parts={message.parts} untimed={untimed} live={live} />;
 }
 
-export function Queued({ held, sentFiles }: { held: Held; sentFiles: ReadonlyMap<string, Attachment> }) {
+/** Messages waiting behind the running turn, faded where they will go. */
+export function Queued({ held, sentFiles }: { held: readonly Held[]; sentFiles: ReadonlyMap<string, Attachment> }) {
   const styles = useStyles(makeStyles);
-  const paths = held.attachments.flatMap((attachment) => (attachment.path ? [attachment.path] : []));
   return (
     <View style={styles.userRow}>
-      {paths.length ? (
-        <View style={{ opacity: 0.55 }}>
-          <SentAttachments paths={paths} sentFiles={sentFiles} />
-        </View>
-      ) : null}
-      {held.text ? (
-        <View style={[styles.bubble, { opacity: 0.55 }]}>
-          <Text style={styles.userText}>{held.text}</Text>
-        </View>
-      ) : null}
+      {held.map((message) => {
+        const paths = message.attachments.flatMap((attachment) => (attachment.path ? [attachment.path] : []));
+        return (
+          <View key={message.id} style={styles.queued}>
+            {paths.length ? <SentAttachments paths={paths} sentFiles={sentFiles} /> : null}
+            {message.text ? (
+              <View style={styles.bubble}>
+                <Text style={styles.userText}>{message.text}</Text>
+              </View>
+            ) : null}
+          </View>
+        );
+      })}
       <Text style={styles.queuedLabel}>Sends when this turn ends</Text>
     </View>
   );
@@ -370,6 +373,7 @@ const makeStyles = (colors: Palette) => {
     prose: { fontFamily: fonts.ui, fontSize: 14.5, lineHeight: 23, color: colors.ink },
     thought: { marginVertical: 8 },
     thoughtText: { fontFamily: fonts.uiItalic, fontSize: 12.5, lineHeight: 19.5, color: colors.inkFaint },
+    queued: { alignItems: 'flex-end', alignSelf: 'stretch', opacity: 0.55, marginBottom: 6 },
     showRest: { alignSelf: 'flex-start', marginTop: 6, marginBottom: 4 },
     showRestText: { fontFamily: fonts.uiMedium, fontSize: 12.5, color: colors.tertiary },
     subagent: { marginVertical: 6 },

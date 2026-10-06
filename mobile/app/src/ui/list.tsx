@@ -4,12 +4,14 @@ import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } fro
 import { fonts, type Palette, translucent, typeFor, useColors, useStyles } from './theme';
 
 /** A list's small-caps label, with a hairline running to the right as on the Mac's rail. */
-export function SectionLabel({ children }: { children: string }) {
+export function SectionLabel({ children, count, action }: { children: string; count?: number; action?: ReactNode }) {
   const styles = useStyles(makeStyles);
   return (
     <View style={styles.sectionLabel}>
       <Text style={styles.sectionLabelText}>{children}</Text>
+      {count !== undefined ? <Text style={styles.sectionCount}>{count}</Text> : null}
       <View style={styles.sectionRule} />
+      {action}
     </View>
   );
 }
@@ -66,6 +68,7 @@ const makeStyles = (colors: Palette) => {
   return StyleSheet.create({
     sectionLabel: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 18, paddingBottom: 6, paddingHorizontal: 8 },
     sectionLabelText: { fontFamily: fonts.uiMedium, fontSize: 11, letterSpacing: 1.76, textTransform: 'uppercase', color: colors.tertiary },
+    sectionCount: { marginLeft: -4, fontFamily: fonts.uiMedium, fontSize: 11, color: colors.inkDim, fontVariant: ['tabular-nums'] },
     sectionRule: { flex: 1, height: 1, backgroundColor: translucent(colors.ink, 0.09) },
     rows: { gap: 2 },
     row: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 9 },

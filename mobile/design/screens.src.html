@@ -1412,7 +1412,7 @@
 <!-- ================================================================ -->
 <section class="flow on-host">
   <h2>An agent</h2>
-  <p>The Mac's chat pane, line for line: your messages in a bubble on the right, the agent's prose with no bubble, its thinking in faint italics, tool calls as a tree with the coloured verbs, open while the agent is still adding to them and folded to "N tool calls" once it moves on, and the working line with the agent's logo breathing. The composer is the Mac's: attach, YOLO, model, effort, context ring, dictate, send or stop.</p>
+  <p>The Mac's chat pane, line for line: your messages in a bubble on the right, the agent's prose with no bubble, its thinking in faint italics, tool calls as a tree with the coloured verbs, open while the agent is still adding to them and folded to "N tool calls" once it moves on, and the working line with the agent's logo breathing. The composer is the Mac's: attach, YOLO, model, effort, context ring, send or stop. What the agent still has going sits in one line docked on the composer, and opens into a sheet.</p>
   <div class="phones">
 
     <figure><div class="phone"><div class="island"></div>
@@ -1445,14 +1445,14 @@
               <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">Medium<span class="ch">{{IconChevron:10}}</span></span>
               <span class="spacer"></span>
-              <span class="ib">{{IconMic:17}}</span>
+              <span class="ring"><i class="ctx codex" style="--p:42"></i></span>
               <span class="send"><i></i></span>
             </div>
           </div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Chat, while it works</b><div class="note">Same placeholder as the Mac, "Send to queue behind the running turn", and the same white stop button. While a command runs, the group's header says what the agent said it is for, and its seconds count up. The context ring moves to the ⋮ menu: at phone width it is the one control that does not fit.</div></figcaption>
+      <figcaption><b>Chat, while it works</b><div class="note">Same placeholder as the Mac, "Send to queue behind the running turn", and the same white stop button. While a command runs, the group's header says what the agent said it is for, and its seconds count up. The context ring sits beside send, in the agent's colour, then warm past 70% and red past 90%; a tap opens the model sheet. YOLO is a switch where the host can change it mid-chat (Claude, Codex, Hermes), dimmed while a turn runs, since the host refuses a switch then.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1483,14 +1483,14 @@
               <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
               <span class="spacer"></span>
-              <span class="ib">{{IconMic:17}}</span>
+              <span class="ring"><i class="ctx claude" style="--p:42"></i></span>
               <span class="send"><i></i></span>
             </div>
           </div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Asking permission</b><div class="note">A card of its own just above the composer, inside the chat, and it stays until it is answered: no drawer, no scrim, nothing to fold away. It keeps its own border and corners, with a gap, so the composer never looks to cover it. Allow is the one white button. The command is all there, as typed, in the code face; a long one scrolls inside the card, so nothing at its end hides behind Allow. An edit adds its +/− count. Once a button is tapped they all dim and take no second tap until the host has the answer, and when the agent offers no way to say no, Cancel comes first.</div></figcaption>
+      <figcaption><b>Asking permission</b><div class="note">A card of its own just above the composer, inside the chat, and it stays until it is answered: no drawer, no scrim, nothing to fold away. It keeps its own border and corners, with a gap, so the composer never looks to cover it. Allow is the one white button. The command is all there, as typed, in the code face; a long one scrolls inside the card, so nothing at its end hides behind Allow. An edit adds its +/− count. Once a button is tapped they all dim and take no second tap until the host has the answer, and when the agent offers no way to say no, Cancel comes first. While it waits, it takes the place of the live line.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1511,7 +1511,7 @@
               <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
               <span class="spacer"></span>
-              <span class="ib">{{IconMic:17}}</span>
+              <span class="ring"><i class="ctx claude" style="--p:42"></i></span>
               <span class="send">{{IconArrowUp:16}}</span>
             </div>
           </div>
@@ -1545,7 +1545,7 @@
               <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
               <span class="spacer"></span>
-              <span class="ib">{{IconMic:17}}</span>
+              <span class="ring"><i class="ctx claude" style="--p:42"></i></span>
               <span class="send">{{IconArrowUp:16}}</span>
             </div>
           </div>
@@ -1585,7 +1585,7 @@
               <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
               <span class="spacer"></span>
-              <span class="ib">{{IconMic:17}}</span>
+              <span class="ring"><i class="ctx claude" style="--p:42"></i></span>
               <span class="send">{{IconArrowUp:16}}</span>
             </div>
           </div>
@@ -1619,7 +1619,7 @@
               <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
               <span class="spacer"></span>
-              <span class="ib">{{IconMic:17}}</span>
+              <span class="ring"><i class="ctx claude" style="--p:42"></i></span>
               <span class="send"><i></i></span>
             </div>
           </div>
@@ -1650,7 +1650,7 @@
               <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">Medium<span class="ch">{{IconChevron:10}}</span></span>
               <span class="spacer"></span>
-              <span class="ib">{{IconMic:17}}</span>
+              <span class="ring"><i class="ctx codex" style="--p:42"></i></span>
               <span class="send"><i></i></span>
             </div>
           </div>
@@ -1681,7 +1681,7 @@
               <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">Medium<span class="ch">{{IconChevron:10}}</span></span>
               <span class="spacer"></span>
-              <span class="ib">{{IconMic:17}}</span>
+              <span class="ring"><i class="ctx codex" style="--p:42"></i></span>
               <span class="send"><i></i></span>
             </div>
           </div>
@@ -1712,7 +1712,7 @@
               <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
               <span class="spacer"></span>
-              <span class="ib">{{IconMic:17}}</span>
+              <span class="ring"><i class="ctx claude" style="--p:42"></i></span>
               <span class="send off">{{IconArrowUp:16}}</span>
             </div>
           </div>
@@ -1753,7 +1753,7 @@ expected 1 write, got 2</div>
               <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">Medium<span class="ch">{{IconChevron:10}}</span></span>
               <span class="spacer"></span>
-              <span class="ib">{{IconMic:17}}</span>
+              <span class="ring"><i class="ctx codex" style="--p:42"></i></span>
               <span class="send">{{IconArrowUp:16}}</span>
             </div>
           </div>
@@ -1784,14 +1784,14 @@ expected 1 write, got 2</div>
               <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
               <span class="spacer"></span>
-              <span class="ib">{{IconMic:17}}</span>
+              <span class="ring"><i class="ctx claude" style="--p:42"></i></span>
               <span class="send">{{IconArrowUp:16}}</span>
             </div>
           </div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Slash commands</b><div class="note">The placeholder offers "/ for commands" only when the agent has some. Typing a slash lists the ones that start with what is typed, each in its own box, and a tap puts it in the composer.</div></figcaption>
+      <figcaption><b>Slash commands</b><div class="note">The placeholder offers "/ for commands" only when the agent has some. Typing a slash lists the ones with what is typed anywhere in their name, eight at most as on the Mac, each in its own box, and a tap puts it in the composer.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1822,7 +1822,7 @@ expected 1 write, got 2</div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Model and effort</b><div class="note">Tapping the model or effort opens one sheet: the agent and its plan, the models with the agent's icon and a check on the chosen one, effort as a three-way switch, and how much of the context is used, in the provider’s colour.</div></figcaption>
+      <figcaption><b>Model and effort</b><div class="note">Tapping the model or effort opens one sheet: the agent and its plan, the models with the agent's icon and a check on the chosen one, effort as a three-way switch, and how much of the context is used, in the provider’s colour, with what the session has cost when the agent says.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1894,6 +1894,141 @@ expected 1 write, got 2</div>
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>E2E suite on CI</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="msg-user">Get the e2e suite green on CI, and keep an eye on the preview deploy while you work.</div>
+          <div class="sub"><div class="sub-head"><span class="chev">{{IconChevron:10}}</span><span class="claude">{{IconClaude:15}}</span><span class="nm">Explore</span><span class="tk">Find where the flaky checkout selector lives</span><span class="calls">6 calls</span><span class="st"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div></div>
+          <div class="sub"><div class="sub-head"><span class="chev">{{IconChevron:10}}</span><span class="claude">{{IconClaude:15}}</span><span class="nm">Review</span><span class="tk">Read the last three CI runs for the same failure</span><span class="calls">3 calls</span><span class="st"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div></div>
+          <div class="tools">
+            <span class="tools-sum open"><span class="said">Run the e2e suite against the preview</span><span class="time">2 calls</span><span class="time">14s</span>{{IconChevron:11}}</span>
+            <div class="tools-body">
+              <div class="tool"><span class="tick"></span><span class="k-read">{{IconFile:12}}</span><span class="kind k-read">read</span><span class="target">playwright.config.ts</span><span class="end">9ms</span></div>
+              <div class="tool running"><span class="tick"></span><span class="k-run">{{IconCommand:12}}</span><span class="kind k-run">run</span><span class="target">pnpm e2e --project=chromium</span><span class="end">14s</span></div>
+            </div>
+          </div>
+          <div class="activity"><span class="glyph claude">{{IconClaude:20}}</span><span class="lbl">Running a command…</span><span class="el">31s</span></div>
+        </div>
+        <div class="composer-wrap">
+          <div class="live-strip"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="pcs"><span class="pc"><span class="claude">{{IconClaude:12}}</span><span><b>2</b> subagents</span></span><span class="pc">{{IconCommand:12}}<span><b>1</b> shell</span></span><span class="pc">{{IconTimer:12}}<span><b>1</b> monitor</span></span></span><span class="up">{{IconChevron:10}}</span></div>
+          <div class="composer">
+            <div class="ta ph">Send to queue behind the running turn</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="ring"><i class="ctx claude" style="--p:58"></i></span>
+              <span class="send"><i></i></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>What is still going</b><div class="note">A turn ends long before the work it started does, so what the Mac stacks over its composer sits here as one line docked on the composer's top edge: running subagents with the agent's mark, background tasks counted by the kind the agent names them (shells, monitors), messages waiting behind the turn, and the plan's progress while a step is left. The rail's squares lead while anything runs. With more than three kinds the words drop and the counts stay. It shows only while something is live, and a permission request or the slash-command list takes its place. A tap opens the sheet beside.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>E2E suite on CI</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="msg-user">Get the e2e suite green on CI, and keep an eye on the preview deploy while you work.</div>
+          <div class="sub"><div class="sub-head"><span class="chev">{{IconChevron:10}}</span><span class="claude">{{IconClaude:15}}</span><span class="nm">Explore</span><span class="tk">Find where the flaky checkout selector lives</span><span class="calls">6 calls</span><span class="st"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div></div>
+          <div class="sub"><div class="sub-head"><span class="chev">{{IconChevron:10}}</span><span class="claude">{{IconClaude:15}}</span><span class="nm">Review</span><span class="tk">Read the last three CI runs for the same failure</span><span class="calls">3 calls</span><span class="st"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div></div>
+          <div class="tools">
+            <span class="tools-sum open"><span class="said">Run the e2e suite against the preview</span><span class="time">2 calls</span><span class="time">14s</span>{{IconChevron:11}}</span>
+            <div class="tools-body">
+              <div class="tool"><span class="tick"></span><span class="k-read">{{IconFile:12}}</span><span class="kind k-read">read</span><span class="target">playwright.config.ts</span><span class="end">9ms</span></div>
+              <div class="tool running"><span class="tick"></span><span class="k-run">{{IconCommand:12}}</span><span class="kind k-run">run</span><span class="target">pnpm e2e --project=chromium</span><span class="end">14s</span></div>
+            </div>
+          </div>
+          <div class="activity"><span class="glyph claude">{{IconClaude:20}}</span><span class="lbl">Running a command…</span><span class="el">31s</span></div>
+        </div>
+        <div class="composer-wrap">
+          <div class="live-strip"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="pcs"><span class="pc"><span class="claude">{{IconClaude:12}}</span><span><b>2</b> subagents</span></span><span class="pc">{{IconCommand:12}}<span><b>1</b> shell</span></span><span class="pc">{{IconTimer:12}}<span><b>1</b> monitor</span></span></span><span class="up">{{IconChevron:10}}</span></div>
+          <div class="composer">
+            <div class="ta ph">Send to queue behind the running turn</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="ring"><i class="ctx claude" style="--p:58"></i></span>
+              <span class="send"><i></i></span>
+            </div>
+          </div>
+        </div>
+        <div class="scrim"></div>
+        <div class="sheet" style="padding:8px 16px 34px">
+          <div class="grabber"></div>
+          <div class="glabel" style="padding-top:4px">Subagents <span class="n">2</span></div>
+          <div class="rows">
+            <div class="row"><span class="mark claude">{{IconClaude:16}}</span><div class="body"><div class="t">Explore</div><div class="s">search data-test=checkout</div></div><span class="ends"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:16}}</span><div class="body"><div class="t">Review</div><div class="s">read run-18234.log</div></div><span class="ends"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+          </div>
+          <div class="glabel">Shell <span class="n">1</span></div>
+          <div class="rows">
+            <div class="row"><span class="mark">{{IconCommand:15}}</span><div class="body"><div class="t">pnpm dev --port 5174</div><div class="s">Local:   http://localhost:5174/</div></div><span class="ends"><span class="mini">Stop</span></span></div>
+          </div>
+          <div class="glabel">Monitor <span class="n">1</span></div>
+          <div class="rows">
+            <div class="row"><span class="mark">{{IconTimer:15}}</span><div class="body"><div class="t">Preview deploy</div><div class="s">Waiting for the build to finish</div></div><span class="ends"><span class="mini">Stop</span></span></div>
+          </div>
+          <div class="glabel acts">Queued <span class="n">2</span><span class="act mini">Steer all</span></div>
+          <div class="rows">
+            <div class="row"><span class="mark">{{IconClock:15}}</span><div class="body"><div class="t">Skip the visual snapshots for now</div></div><span class="ends"><span class="mini">Steer</span><span class="drop-x">{{IconClose:11}}</span></span></div>
+            <div class="row"><span class="mark">{{IconClock:15}}</span><div class="body"><div class="t">Then open a PR against main</div></div><span class="ends"><span class="mini">Steer</span><span class="drop-x">{{IconClose:11}}</span></span></div>
+          </div>
+          <div class="glabel acts">Plan<span class="prog">2 of 4</span></div>
+          <div class="steps">
+            <div class="step done"><span>{{IconCheck:14}}</span>Reproduce the failure locally</div>
+            <div class="step done"><span>{{IconCheck:14}}</span>Find the selector the checkout test waits on</div>
+            <div class="step now"><span><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span>Wait on the element, not the network</div>
+            <div class="step"><span><i class="dot off"></i></span>Run the suite three times on CI</div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>All of it, in a sheet</b><div class="note">The strip opens the Mac's live stack, section by section under the rail's small-caps labels: subagents with what each is doing now, background tasks grouped by kind with what they last said and a Stop each where the agent allows it, the queue with Steer on each and Steer all, and the plan as a checklist: done steps checked and quiet, the one in hand with the squares, the rest as hollow dots. Steer appears only when the agent takes a message mid-turn and a turn is running; it puts the message into the turn now, and if the turn ended first it goes as the next prompt. × takes a message off the queue. Buttons are gapped chips, each with its own border.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Remote pairing screen</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="prose">The pairing screen builds. Three cleanups next, then the tests.</div>
+          <div class="tools"><span class="tools-sum">4 tool calls <span class="time">2s</span>{{IconChevron:11}}</span></div>
+        </div>
+        <div class="composer-wrap">
+          <div class="docked">
+            <div class="docked-head">{{IconShieldBolt:16}}<div><b>Run a command?</b><span>Claude Code needs permission to continue</span></div><span class="pager"><span class="pg prev off">{{IconChevron:12}}</span>1 of 3<span class="pg">{{IconChevron:12}}</span></span></div>
+            <div class="dock-cmd"><b>$</b>rm -rf src/settings/legacy</div>
+            <div class="docked-acts"><span>Reject</span><span>Always allow</span><span class="go">Allow</span></div>
+          </div>
+          <div class="composer">
+            <div class="ta ph">Send to queue behind the running turn</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="ring"><i class="ctx claude" style="--p:58"></i></span>
+              <span class="send"><i></i></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Several requests at once</b><div class="note">Subagents can each stop for permission at the same moment. The card shows one at a time with "1 of 3" and arrows in its corner to page through them; answering one brings the next. A single request has no pager.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span>Fix the flaky PTY replay test</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat" style="border-top:1px solid var(--border)">
           <div class="tools">
@@ -1927,7 +2062,7 @@ expected 1 write, got 2</div>
               <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">Medium<span class="ch">{{IconChevron:10}}</span></span>
               <span class="spacer"></span>
-              <span class="ib">{{IconMic:17}}</span>
+              <span class="ring"><i class="ctx codex" style="--p:74"></i></span>
               <span class="send">{{IconArrowUp:16}}</span>
             </div>
           </div>
@@ -1936,6 +2071,7 @@ expected 1 write, got 2</div>
       <div class="home-bar"></div></div>
       <figcaption><b>Commands, servers and tasks</b><div class="note">A call to another MCP server is named for the server, in the Mac's green, with its first short argument after the target. A command opens as the Mac's terminal: <code>$</code> and the whole command with a copy button, what it printed folded to 12 lines with "Show all N lines", and the exit code when it failed. A background task that ends leaves a line saying how, with its summary; a tap opens the summary in full.</div></figcaption>
     </figure>
+
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
@@ -1958,6 +2094,7 @@ expected 1 write, got 2</div>
           <div class="activity"><span class="glyph claude">{{IconClaude:20}}</span><span class="lbl">Thinking…</span><span class="el">48s</span></div>
         </div>
         <div class="composer-wrap">
+          <div class="live-strip"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="pcs"><span class="pc"><span class="claude">{{IconClaude:12}}</span><span><b>1</b> subagent</span></span></span><span class="up">{{IconChevron:10}}</span></div>
           <div class="composer">
             <div class="ta ph">Send to queue behind the running turn</div>
             <div class="bar">
@@ -1966,15 +2103,88 @@ expected 1 write, got 2</div>
               <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
               <span class="spacer"></span>
-              <span class="ib">{{IconMic:17}}</span>
+              <span class="ring"><i class="ctx claude" style="--p:58"></i></span>
               <span class="send"><i></i></span>
             </div>
           </div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>A subagent's own thread</b><div class="note">Each subagent is one bordered line in the transcript: the agent's mark, its name, the first line of its task, how many calls it made and how it stands: the squares while it works, a green check when done, red when it failed or was lost, a quiet × when stopped. A tap opens what it did, drawn the way the chat draws everything else, indented under it with no tray.</div></figcaption>
+      <figcaption><b>A subagent's own thread</b><div class="note">Each subagent is one bordered line in the transcript: the agent's mark, its name, the first line of its task, how many calls it made and how it stands: the squares while it works, a green check when done, red when it failed or was lost, a quiet × when stopped. A tap opens what it did, drawn the way the chat draws everything else, indented under it with no tray. What it is doing now lives in the strip instead.</div></figcaption>
     </figure>
+
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span>Fix the flaky PTY replay test</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="msg-user">Good. Run the whole terminal suite, then commit it.</div>
+          <div class="tools"><span class="tools-sum">3 tool calls <span class="time">7s</span>{{IconChevron:11}}</span></div>
+          <div class="prose">All 214 terminal tests pass, and the fix is committed.</div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer">
+            <div class="ta ph">Ask about this project</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">Medium<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="ring"><i class="ctx codex" style="--p:74"></i></span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="grabber"></div>
+          <div class="sources">
+            <span>{{IconClock:19}}Recent prompts</span>
+            <span>{{IconCopy:19}}Copy link</span>
+            <span class="danger">{{IconStop:19}}Stop chat</span>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>The chat's menu</b><div class="note">The ⋮ in the header: Recent prompts, Copy link, which opens this chat on any phone paired with the host, and Stop chat, which asks once more and then ends the agent on the host, with anything it still has running, and goes back. A phone that can only watch has no Stop.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span>Fix the flaky PTY replay test</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="prose">All 214 terminal tests pass, and the fix is committed.</div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer focus">
+            <div class="ta ph">Ask about this project</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">Medium<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="ring"><i class="ctx codex" style="--p:74"></i></span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="grabber"></div>
+          <div class="ps-label" style="padding-top:0">Sent in this chat</div>
+          <div class="recent-row">{{IconClock:15}}<span>Good. Run the whole terminal suite, then commit it.</span></div>
+          <div class="recent-row">{{IconClock:15}}<span>Run only the attach tests first</span></div>
+          <div class="recent-row">{{IconClock:15}}<span>`usePty.test.tsx &gt; replays the snapshot once` fails about one run in ten on CI. Find out why and fix it without adding sleeps.</span></div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Recent prompts</b><div class="note">The Mac's up arrow, for a thumb: pulling an empty composer up, or Recent prompts in the menu, lists what was sent in this chat, newest first, two lines each. A tap puts it back in the composer to edit or send again.</div></figcaption>
+    </figure>
+
   </div>
 </section>
 

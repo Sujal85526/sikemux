@@ -15,10 +15,14 @@ import { useLocalSearchParams } from 'expo-router';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 
 import { activityText, composerPlaceholder } from '@mac/chat/chatStatus';
+import { sentPrompts } from '@mac/chat/promptHistory';
 import { activeToolLabel } from '@mac/chat/toolLabels';
 import type { ChatMessage, ChatState } from '@mac/chat/types';
-import { askTitle, Composer } from '@/chat/Composer';
+import { ChatMenu } from '@/chat/ChatMenu';
+import { askTitle, Composer, RecentSheet } from '@/chat/Composer';
 import { FoldsContext } from '@/chat/folds';
+import { LiveSheet, LiveStrip } from '@/chat/Live';
+import { hasLiveWork, liveKey, liveWork } from '@/chat/liveWork';
 import { Activity, Earlier, Message, ProviderContext, Queued } from '@/chat/Transcript';
 import { useChat } from '@/chat/useChat';
 import { retry as reconnect, useDevices, useLive, type Live } from '@/devices/hub';
@@ -29,6 +33,7 @@ import { haptics } from '@/ui/haptics';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Button } from '@/ui/controls';
 import { pauseBackdrop } from '@/ui/motion';
+import { goBack } from '@/ui/navigate';
 import { Nav, Screen, useBottomGap } from '@/ui/screen';
 import { Working } from '@/ui/status';
 import { fonts, type Palette, typeFor, useColors, useStyles, useType } from '@/ui/theme';
@@ -123,6 +128,23 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
   const request = chat.permissions[0];
   const liveId = state.running ? state.messages[state.messages.length - 1]?.id : undefined;
   const marks = useMemo(() => [chat.replayed, chat.unsent, chat.sentFiles, liveId], [chat.replayed, chat.unsent, chat.sentFiles, liveId]);
+  const fresh = useMemo(() => liveWork(state, chat.queued), [state, chat.queued]);
+  // The strip redraws, and with it the composer, only when what it counts changes, not on every word streamed.
+  const [work, setWork] = useState(fresh);
+  if (liveKey(fresh) !== liveKey(work)) setWork(fresh);
+  const sent = useMemo(
+    () =>
+      sentPrompts(
+        state.messages,
+        chat.queued.map((held) => held.text),
+      ),
+    [state.messages, chat.queued],
+  );
+  const [showLive, setShowLive] = useState(false);
+  const [menu, setMenu] = useState(false);
+  const [recent, setRecent] = useState(false);
+  const openLive = () => setShowLive(true);
+  const openRecent = () => setRecent(true);
   useEffect(() => dismissCardsFor(core, agentId), [core, agentId]);
   useArrivals(state.running, request?.requestId, {
     done: `${providerName(provider)} finished`,
@@ -148,6 +170,11 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
   const toEnd = () => requestAnimationFrame(() => list.current?.scrollToEnd({ animated: true }));
   const activity = activityText({ ...state, permissions: chat.permissions }, activeToolLabel(state.messages));
   const title = state.title ?? (info ? chatTitle(info) : providerName(provider));
+  const watchOnly = access === 'watch';
+  const steerable = state.capabilities.steering === true && state.running && !watchOnly;
+  const liveShown = hasLiveWork(fresh) && chat.attached === 'live';
+  const recalls = sent.length > 0 && !watchOnly;
+  const strip = liveShown ? <LiveStrip work={work} provider={provider} onOpen={openLive} /> : null;
   const unreachable = chat.attached !== 'live' && live.status === 'closed';
   const status = unreachable ? (
     <View style={styles.missing}>
@@ -179,6 +206,16 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
             </Text>
           </>
         }
+        end={
+          <Pressable
+            onPress={() => setMenu(true)}
+            hitSlop={6}
+            style={({ pressed }) => [styles.more, pressed && { backgroundColor: colors.active }]}
+            accessibilityRole="button"
+            accessibilityLabel="Chat actions">
+            <Icon name="IconMoreVertical" size={16} color={colors.tertiary} />
+          </Pressable>
+        }
       />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         {chat.attached !== 'live' && !state.messages.length ? (
@@ -209,7 +246,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                   onStartReached={chat.hasEarlier && chat.earlier === 'idle' ? session.loadEarlier : undefined}
                   ListFooterComponent={
                     <>
-                      {chat.queued ? <Queued held={chat.queued} sentFiles={chat.sentFiles} /> : null}
+                      {chat.queued.length ? <Queued held={chat.queued} sentFiles={chat.sentFiles} /> : null}
                       {activity ? <Activity provider={provider} label={activity} since={chat.turnSince} /> : null}
                       {state.error ? <Text style={styles.error}>{state.error}</Text> : null}
                     </>
@@ -249,21 +286,68 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
               setup={state.setup}
               usage={state.usage}
               commands={state.commands}
-              request={request}
-              answering={request ? chat.answering.has(request.requestId) : false}
+              requests={chat.permissions}
+              answering={chat.answering}
               placeholder={placeholderFor(state, live.status !== 'open')}
-              permissionMode={info?.permissionMode ?? ''}
-              watchOnly={access === 'watch'}
+              permissionMode={chat.permissionMode ?? info?.permissionMode ?? ''}
+              modeLocked={
+                state.running || chat.permissions.length > 0 || chat.changingMode || state.connection !== 'ready' || live.status !== 'open'
+              }
+              watchOnly={watchOnly}
               offline={live.status !== 'open'}
               hostName={hostName}
               onSent={toEnd}
               attachments={chat.attachments}
+              strip={strip}
+              onRecent={recalls ? openRecent : undefined}
             />
           </>
         ) : state.messages.length ? (
           <View style={[styles.bottomStatus, { paddingBottom: bottom }]}>{status}</View>
         ) : null}
       </KeyboardAvoidingView>
+      <LiveSheet
+        visible={showLive && liveShown}
+        onClose={() => setShowLive(false)}
+        work={fresh}
+        provider={provider}
+        steerable={steerable}
+        canAct={!watchOnly}
+        stopping={chat.stopping}
+        onStopTask={session.stopTask}
+        onSteer={(ids) => {
+          session.steer(ids);
+          toEnd();
+        }}
+        onDrop={session.dropQueued}
+      />
+      <RecentSheet
+        visible={recent}
+        prompts={sent}
+        onClose={() => setRecent(false)}
+        onPick={(text) => {
+          session.setDraft(text);
+          setRecent(false);
+        }}
+      />
+      <ChatMenu
+        visible={menu}
+        onClose={() => setMenu(false)}
+        core={core}
+        agentId={agentId}
+        agentName={providerName(provider)}
+        hostName={hostName}
+        onRecent={recalls ? openRecent : undefined}
+        onStop={
+          watchOnly || chat.attached !== 'live'
+            ? undefined
+            : async () => {
+                const stopped = await session.stopChat();
+                if (stopped) goBack();
+                return stopped;
+              }
+        }
+      />
     </Screen>
   );
 }
@@ -272,6 +356,7 @@ const makeStyles = (colors: Palette) => {
   const type = typeFor(colors);
   return StyleSheet.create({
     title: { fontFamily: fonts.uiSemibold, fontSize: 16, letterSpacing: -0.25, color: colors.ink, flexShrink: 1 },
+    more: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
     transcript: { flex: 1, borderTopWidth: 1, borderTopColor: colors.border },
     alone: { justifyContent: 'flex-end' },
     content: { paddingHorizontal: 18, paddingTop: 6, paddingBottom: 12 },
