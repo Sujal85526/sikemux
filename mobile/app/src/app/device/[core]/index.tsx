@@ -3,11 +3,15 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 
 import type { ChatInfo, ProjectInfo, SessionInfo, Snapshot } from '@/core/protocol';
-import { reloadDevices, retry, useDevices, useLive } from '@/devices/hub';
-import { channelLabel, deviceName, updateDevice } from '@/devices/paired';
-import { ForgetSheet } from '@/devices/ForgetSheet';
+import { reloadDevices, retry, useDevices, useHostStatus, useLive } from '@/devices/hub';
+import { deviceName, type PairedDevice, updateDevice } from '@/devices/paired';
+import { ForgetSheet, useForget } from '@/devices/ForgetSheet';
 import { ProjectSheet } from '@/devices/ProjectSheet';
-import { ago, chatState, chatTitle, folder } from '@/devices/words';
+import { asking as askingOf } from '@/devices/asking';
+import { summary } from '@/devices/status';
+import { chatState, chatTitle, folder } from '@/devices/words';
+import { Wants } from '@/screens/Wants';
+import { haptics } from '@/ui/haptics';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Button, IconButton, Nav, NeedsYou, Row, Rows, Screen, SectionLabel, useBottomGap, Working } from '@/ui/parts';
 import { fonts, type Palette, typeFor, useColors, useStyles, useType, translucent } from '@/ui/theme';
@@ -68,6 +72,7 @@ function Agents({ core, snapshot, scope, provider }: { core: string; snapshot: S
   const chats = scoped.filter((chat) => provider === 'all' || chat.provider === provider);
   const where = (chat: ChatInfo, state: string) => (scope ? state : `${projectName(snapshot, chat.cwd)} · ${state}`);
   const asking = chats.filter((chat) => chat.pendingPermissions.length);
+  const attentionOf = (chat: ChatInfo) => snapshot.attentions.find((known) => known.agentId === chat.agentId && askingOf(known));
   const idle = chats.filter((chat) => !chat.pendingPermissions.length);
 
   return (
@@ -80,7 +85,15 @@ function Agents({ core, snapshot, scope, provider }: { core: string; snapshot: S
               bright
               mark={<AgentIcon provider={chat.provider} size={20} />}
               title={chatTitle(chat)}
-              detail={where(chat, 'Needs input')}
+              detail={
+                attentionOf(chat) ? (
+                  <>
+                    Needs input · <Wants attention={attentionOf(chat)} />
+                  </>
+                ) : (
+                  where(chat, 'Needs input')
+                )
+              }
               end={<NeedsYou />}
               onPress={() => open(chat.agentId)}
             />
@@ -172,7 +185,7 @@ function HostHead({ name, line, online }: { name: string; line: string; online: 
           {line}
         </Text>
       </View>
-      <Text style={styles.name} numberOfLines={1}>
+      <Text style={styles.name} numberOfLines={1} maxFontSizeMultiplier={1.4} accessibilityRole="header">
         {name}
       </Text>
     </View>
@@ -187,16 +200,38 @@ function HostTab({ label, count, on, onPress }: { label: string; count?: number;
       <Text style={[styles.tabText, on && { color: colors.ink }]}>{label}</Text>
       {count ? (
         <View style={styles.count}>
-          <Text style={styles.countText}>{count}</Text>
+          <Text style={styles.countText} maxFontSizeMultiplier={1.3}>
+            {count}
+          </Text>
         </View>
       ) : null}
     </Pressable>
   );
 }
 
-function summary(snapshot: Snapshot): string {
-  const terminals = snapshot.sessions.filter((session) => session.running).length;
-  return `${snapshot.chats.length} agent${snapshot.chats.length === 1 ? '' : 's'} · ${terminals} terminal${terminals === 1 ? '' : 's'}`;
+/** The host turned this phone away: only forgetting it here and connecting again helps. */
+function Unpaired({ device }: { device?: PairedDevice }) {
+  const styles = useStyles(makeStyles);
+  const type = useType();
+  const { forgetting, problem, leave } = useForget(device);
+  return (
+    <View style={styles.away}>
+      <Text style={[type.title, { fontSize: 20, textAlign: 'center' }]} accessibilityRole="header">
+        This host no longer knows this phone
+      </Text>
+      <Text style={[type.body, { textAlign: 'center', marginTop: 8 }]}>
+        It was removed on the host. Forget it here, then connect to it again from Devices.
+      </Text>
+      {problem ? <Text style={styles.problem}>{problem}</Text> : null}
+      <Button
+        kind="danger"
+        title={forgetting ? 'Forgetting…' : 'Forget this host'}
+        onPress={() => void leave()}
+        disabled={forgetting || !device}
+        style={styles.retry}
+      />
+    </View>
+  );
 }
 
 export { Crashed as ErrorBoundary } from '@/screens/Crashed';
@@ -209,15 +244,15 @@ export default function Device() {
   const { devices } = useDevices();
   const device = devices.find((known) => known.core === core);
   const live = useLive(core);
+  const status = useHostStatus(core);
   const [tab, setTab] = useState<Tab>(linkedTab === 'terminals' ? 'terminals' : 'agents');
   const [followedLink, setFollowedLink] = useState(linkedTab);
   if (linkedTab !== followedLink) {
     setFollowedLink(linkedTab);
     if (linkedTab === 'agents' || linkedTab === 'terminals') setTab(linkedTab);
   }
-  const away = live.status === 'closed';
-  const channel = channelLabel(device?.channel);
-  const behind = live.status === 'closed' ? live.outdated : undefined;
+  const behind = status.outdated;
+  const away = live.status === 'closed' || !!status.problem;
   const unreachable =
     behind === 'host'
       ? { title: 'This host needs a newer Sikemux', body: 'Update Sikemux on the host, then come back here.' }
@@ -227,7 +262,7 @@ export default function Device() {
   const snapshot = live.snapshot;
   const [picking, setPicking] = useState(false);
   const [options, setOptions] = useState(false);
-  const starts = device?.access === 'full' && !away && tab === 'agents';
+  const starts = device?.access === 'full' && status.online && tab === 'agents';
   const bottom = useBottomGap();
   const scope = snapshot?.workspace.projects.find((project) => project.id === device?.project);
   const asking = snapshot?.chats.filter((chat) => chat.pendingPermissions.length && (!scope || inProject(scope, chat.cwd))).length ?? 0;
@@ -235,26 +270,25 @@ export default function Device() {
   const providers = [...new Set(snapshot?.chats.filter((chat) => !scope || inProject(scope, chat.cwd)).map((chat) => chat.provider) ?? [])];
   const provider = providers.includes(filter) ? filter : 'all';
   const filtering = tab === 'agents' && providers.length > 1;
-  const line = behind
-    ? behind === 'host'
-      ? 'Needs a newer Sikemux'
-      : 'Update this app to connect'
-    : away
-      ? `Asleep or offline${device?.lastSeen ? ` · seen ${ago(device.lastSeen)}` : ''}`
-      : snapshot
-        ? ['Online', channel, summary(snapshot)].filter(Boolean).join(' · ')
-        : 'Connecting…';
   const scopeTo = (project: string | null) => {
     setPicking(false);
-    updateDevice(core, { project: project ?? undefined }).then(reloadDevices);
+    updateDevice(core, { project: project ?? undefined })
+      .then(reloadDevices)
+      .catch(() => {});
+  };
+  const switchTo = (next: Tab) => {
+    if (next !== tab) haptics.select();
+    setTab(next);
   };
 
   return (
     <Screen>
       <Nav back="Devices" end={device ? <IconButton name="IconMore" label="Options" onPress={() => setOptions(true)} /> : null} />
       {device ? <ForgetSheet device={device} visible={options} onClose={() => setOptions(false)} /> : null}
-      <HostHead name={device ? deviceName(device) : 'Host'} line={line} online={!away && !!snapshot} />
-      {away && !snapshot ? (
+      <HostHead name={device ? deviceName(device) : 'Host'} line={status.line} online={status.online} />
+      {status.unpaired ? (
+        <Unpaired device={device} />
+      ) : away && !snapshot ? (
         <View style={styles.away}>
           <Text style={[type.title, { fontSize: 20, textAlign: 'center' }]}>{unreachable.title}</Text>
           <Text style={[type.body, { textAlign: 'center', marginTop: 8 }]}>{unreachable.body}</Text>
@@ -264,7 +298,14 @@ export default function Device() {
                 <Working />
                 <Text style={type.meta}>Trying again</Text>
               </View>
-              <Button title="Try now" onPress={() => retry(core)} style={styles.retry} />
+              <Button
+                title="Try now"
+                onPress={() => {
+                  haptics.tap();
+                  retry(core);
+                }}
+                style={styles.retry}
+              />
             </>
           )}
         </View>
@@ -277,9 +318,9 @@ export default function Device() {
       ) : (
         <>
           <View style={styles.bar}>
-            <View style={styles.tabs}>
-              <HostTab label="Agents" count={asking} on={tab === 'agents'} onPress={() => setTab('agents')} />
-              <HostTab label="Terminals" on={tab === 'terminals'} onPress={() => setTab('terminals')} />
+            <View style={styles.tabs} accessibilityRole="tablist">
+              <HostTab label="Agents" count={asking} on={tab === 'agents'} onPress={() => switchTo('agents')} />
+              <HostTab label="Terminals" on={tab === 'terminals'} onPress={() => switchTo('terminals')} />
             </View>
             {snapshot.workspace.projects.length || filtering ? (
               <Pressable
@@ -299,7 +340,10 @@ export default function Device() {
               </Pressable>
             ) : null}
           </View>
-          <ScrollView contentContainerStyle={[styles.body, { paddingBottom: bottom + (starts ? NEW_CHAT_HEIGHT + 24 : 24) }]}>
+          <ScrollView
+            style={status.online ? undefined : styles.stale}
+            accessibilityHint={status.online ? undefined : 'Out of date until the host answers again'}
+            contentContainerStyle={[styles.body, { paddingBottom: bottom + (starts ? NEW_CHAT_HEIGHT + 24 : 24) }]}>
             {snapshot ? (
               tab === 'agents' ? (
                 <Agents core={core} snapshot={snapshot} scope={scope} provider={provider} />
@@ -340,7 +384,7 @@ export default function Device() {
 const makeStyles = (colors: Palette) => {
   const type = typeFor(colors);
   return StyleSheet.create({
-    head: { height: 168, justifyContent: 'flex-end', paddingHorizontal: 18, paddingBottom: 16 },
+    head: { minHeight: 168, justifyContent: 'flex-end', paddingHorizontal: 18, paddingBottom: 16 },
     where: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     whereText: { flexShrink: 1, fontFamily: fonts.ui, fontSize: 13, color: translucent(colors.ink, 0.72) },
     online: {
@@ -370,7 +414,7 @@ const makeStyles = (colors: Palette) => {
     tabText: { fontFamily: fonts.uiSemibold, fontSize: 15, letterSpacing: -0.15, color: colors.tertiary },
     count: {
       minWidth: 16,
-      height: 16,
+      minHeight: 16,
       borderRadius: 8,
       paddingHorizontal: 6,
       backgroundColor: colors.ink,
@@ -418,5 +462,7 @@ const makeStyles = (colors: Palette) => {
     away: { flex: 1, justifyContent: 'center', paddingHorizontal: 32, paddingBottom: 120 },
     trying: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 16 },
     retry: { marginTop: 24 },
+    stale: { opacity: 0.5 },
+    problem: { ...type.meta, color: colors.danger, textAlign: 'center', marginTop: 12 },
   });
 };

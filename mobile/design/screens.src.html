@@ -841,7 +841,7 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Devices</b><div class="note">Each card is a device with its own glyph and a presence dot. The busy one says the one thing that needs you, then who is working, with the rail's logos and squares. A device that is asleep keeps its place but drops to an outline. A host signed in to the same account but not paired with this phone comes last, outlined, with Connect in place of the chevron: it asks that host to let this phone in, with no code. The account's picture sits at the top right and opens the account sheet. Beside it, + adds the waiting slot and the steps from "Waiting for a host" under the list, for one more host; the host that fills it takes its place.</div></figcaption>
+      <figcaption><b>Devices</b><div class="note">Each card is a device with its own glyph and a presence dot. The busy one says the one thing that needs you, then who is working, with the rail's logos and squares. A device that is asleep keeps its place but drops to an outline. A host signed in to the same account but not paired with this phone comes last, outlined, with Connect in place of the chevron: it asks that host to let this phone in, with no code. The account's picture sits at the top right and opens the account sheet. Beside it, + adds the waiting slot and the steps from "Waiting for a host" under the list, for one more host; the host that fills it takes its place, and the slot's × puts it away. A card stays lit while its host is being reached again and drops to an outline only once a try fails, so it doesn't flicker. Pulling the list down reads the saved hosts again and reaches every host at once.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -861,7 +861,7 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Waiting for a host</b><div class="note">Signed in, with no host connected and none on the account: the ordinary Devices screen, with a dashed slot where the computer will land. The phone watches the account the whole time, and nothing changes screen when a host signs in: the slot turns into its row, and the phone asks to join it by itself ("A host just signed in"). The steps name the provider and email this phone signed in with, since the host must use the same account. Send me the link opens the share sheet with sikemux.com/phone, to open on the computer; Copy link copies it and reads "Copied" for a moment. This account has no picture, so its initials stand in, from the name or else the email, on the same neutral circle; while a picture loads the circle stays empty.</div></figcaption>
+      <figcaption><b>Waiting for a host</b><div class="note">Signed in, with no host connected and none on the account: the ordinary Devices screen, with a dashed slot where the computer will land. The phone watches the account the whole time, and nothing changes screen when a host signs in: the slot turns into its row, and the phone asks to join it by itself ("A host just signed in"). The steps name the provider and email this phone signed in with, since the host must use the same account. Send me the link opens the share sheet with sikemux.com/phone, to open on the computer; Copy link copies it and reads "Copied" for a moment. Until the account has answered, a phone with nothing paired shows only the rail's squares and "Looking for hosts on your account", never these steps; if the account can't be read it says so in one line and tries again when Sikemux answers. This account has no picture, so its initials stand in, from the name or else the email, on the same neutral circle; while a picture loads the circle stays empty.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1186,6 +1186,40 @@
       <div class="home-bar"></div></div>
       <figcaption><b>Connecting</b><div class="note">Until the host answers, the line over the name says Connecting… with a hollow dot, and the screen holds only the rail's squares. The tabs and the project picker arrive with the first list of agents and terminals.</div></figcaption>
     </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}Devices</span><span style="flex:1"></span><span class="icon-btn">{{IconMore:18}}</span></div>
+        <div class="host-head"><div class="where"><i class="off"></i>Reconnecting…</div><h1>MacBook Pro</h1></div>
+        <div class="host-bar"><div class="host-tabs"><span class="on">Agents <i class="count">1</i></span><span>Terminals</span></div><span class="host-project"><span class="folder">{{IconFolder:14}}</span>All projects<span class="ch">{{IconChevron:12}}</span></span></div>
+        <div class="pad grow" style="opacity:.5">
+          <div class="rows"><div class="row ask"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Remote pairing screen</div><div class="s">Needs input · wants to run <code>pnpm test</code></div></div><span class="status-slot"><span class="dot warn"></span></span></div></div>
+          <div class="glabel">Open</div>
+          <div class="rows">
+            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t">Fix the flaky PTY replay test</div><div class="s">sikemux · Running a command…</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Reconnecting</b><div class="note">Only a host that answers now is Online with the green dot. While the phone reaches it again, the line reads Reconnecting… with the dot hollow, and the last list it sent stays, dimmed, since it may be out of date. New chat waits for the host. If the try fails the line turns to Asleep or offline and the list stays dimmed.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}Devices</span><span style="flex:1"></span><span class="icon-btn">{{IconMore:18}}</span></div>
+        <div class="host-head"><div class="where"><i class="off"></i>No longer knows this phone</div><h1>MacBook Pro</h1></div>
+        <div class="stack" style="padding-bottom:120px">
+          <h2 style="font-size:20px">This host no longer knows this phone</h2>
+          <p>It was removed on the host. Forget it here, then connect to it again from Devices.</p>
+          <div class="btn danger" style="align-self:stretch;margin-top:12px">Forget this host</div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Removed on the host</b><div class="note">When the host has unpaired this phone, trying again can't help, so the phone stops trying and says so. Forget this host forgets it here and goes back to Devices, where a host on the account offers Connect again.</div></figcaption>
+    </figure>
+
 
   </div>
 </section>

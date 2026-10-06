@@ -10,16 +10,14 @@ import { forgetBackdrop } from './backdrop';
 import { forget } from './hub';
 import { deviceName, type PairedDevice } from './paired';
 
-/** The device screen's options: for now, forgetting the host. */
-export function ForgetSheet({ device, visible, onClose }: { device: PairedDevice; visible: boolean; onClose: () => void }) {
-  const styles = useStyles(makeStyles);
-  const type = useType();
+/** Forgets a host and goes back to Devices; a failure stays to be shown. */
+export function useForget(device: PairedDevice | undefined, done?: () => void) {
   const [forgetting, setForgetting] = useState(false);
   const [problem, setProblem] = useState<string>();
   const busy = useRef(false);
-  const name = deviceName(device);
 
   const leave = async () => {
+    if (!device) return;
     if (busy.current) return;
     busy.current = true;
     setForgetting(true);
@@ -36,9 +34,19 @@ export function ForgetSheet({ device, visible, onClose }: { device: PairedDevice
       forgetBackdrop(device.backdrop);
     } catch {}
     haptics.success();
-    onClose();
+    done?.();
     goHome();
   };
+
+  return { forgetting, problem, leave };
+}
+
+/** The device screen's options: for now, forgetting the host. */
+export function ForgetSheet({ device, visible, onClose }: { device: PairedDevice; visible: boolean; onClose: () => void }) {
+  const styles = useStyles(makeStyles);
+  const type = useType();
+  const { forgetting, problem, leave } = useForget(device, onClose);
+  const name = deviceName(device);
 
   return (
     <Sheet visible={visible} onClose={onClose}>
