@@ -17,7 +17,7 @@ import { AgentIcon, Icon } from '@/ui/Icon';
 import { Button, IconButton } from '@/ui/controls';
 import { Row, Rows, SectionLabel } from '@/ui/list';
 import { Nav, Screen, useBottomGap } from '@/ui/screen';
-import { NeedsYou, Working } from '@/ui/status';
+import { NeedsYou, SubagentCount, Working } from '@/ui/status';
 import { fonts, isLight, type Palette, typeFor, useColors, useStyles, useType, translucent } from '@/ui/theme';
 
 type Tab = 'agents' | 'terminals';
@@ -63,10 +63,20 @@ function ProjectTail({ snapshot, project }: { snapshot: Snapshot; project: Proje
   );
 }
 
-function ChatEnd({ chat }: { chat: ChatInfo }) {
+function ChatStatus({ chat }: { chat: ChatInfo }) {
   if (chat.pendingPermissions.length) return <NeedsYou />;
   if (chat.running) return <Working />;
   return null;
+}
+
+function ChatEnd({ chat }: { chat: ChatInfo }) {
+  if (!chat.subagents) return <ChatStatus chat={chat} />;
+  return (
+    <>
+      <SubagentCount count={chat.subagents} />
+      <ChatStatus chat={chat} />
+    </>
+  );
 }
 
 function Agents({ core, snapshot, scope, provider }: { core: string; snapshot: Snapshot; scope?: ProjectInfo; provider: string }) {
@@ -98,7 +108,7 @@ function Agents({ core, snapshot, scope, provider }: { core: string; snapshot: S
                   where(chat, 'Needs input')
                 )
               }
-              end={<NeedsYou />}
+              end={<ChatEnd chat={chat} />}
               onPress={() => open(chat.agentId)}
             />
           ))}

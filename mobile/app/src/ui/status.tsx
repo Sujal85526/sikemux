@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Animated, Easing, StyleSheet, View } from 'react-native';
+import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 
+import { Icon } from './Icon';
 import { useStill } from './motion';
-import { type Palette, useColors, useStyles } from './theme';
+import { fonts, type Palette, translucent, useColors, useStyles } from './theme';
 
 function useLoop(still: boolean, duration: number, delay = 0) {
   const [value] = useState(() => new Animated.Value(0));
@@ -60,6 +61,18 @@ export function NeedsYou() {
   );
 }
 
+/** The subagents an agent still has running, as the Mac's tabs and rail count them. */
+export function SubagentCount({ count }: { count: number }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={styles.subagents} accessible accessibilityLabel={`${count} ${count === 1 ? 'subagent' : 'subagents'} running`}>
+      <Icon name="IconAgent" size={11} color={translucent(colors.live, 0.75)} filled />
+      <Text style={styles.subagentCount}>{count}</Text>
+    </View>
+  );
+}
+
 export function Dot({ color, size = 8, hollow }: { color: string; size?: number; hollow?: boolean }) {
   return (
     <View
@@ -78,5 +91,7 @@ const makeStyles = (colors: Palette) => {
     dotBox: { width: 16, height: 16, alignItems: 'center', justifyContent: 'center' },
     ring: { position: 'absolute', width: 16, height: 16, borderRadius: 8, borderWidth: 1.5, borderColor: colors.ink },
     dot: { width: 8, height: 8, borderRadius: 4 },
+    subagents: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+    subagentCount: { fontFamily: fonts.uiMedium, fontSize: 12, color: colors.tertiary, fontVariant: ['tabular-nums'] },
   });
 };

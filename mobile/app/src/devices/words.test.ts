@@ -11,6 +11,7 @@ function chat(overrides: Partial<ChatInfo> = {}): ChatInfo {
     state: ChatState.Ready,
     running: false,
     pendingPermissions: [],
+    subagents: 0,
     permissionMode: 'default',
     asleep: false,
     unread: false,
