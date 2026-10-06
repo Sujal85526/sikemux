@@ -5,10 +5,10 @@ import type { ProjectInfo } from '@/core/protocol';
 import { providerName } from '@/devices/words';
 import { AgentIcon, DrawnIcon, Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
-import { fonts, type Palette, radius, typeFor, useColors, useStyles, useType } from '@/ui/theme';
+import { fonts, keyboardFor, type Palette, radius, typeFor, useColors, useStyles, useType } from '@/ui/theme';
 
 function home(path: string): string {
-  return path.replace(/^\/Users\/[^/]+/, '~');
+  return path.replace(/^\/(Users|home)\/[^/]+/, '~');
 }
 
 type Props = {
@@ -61,6 +61,7 @@ export function ProjectSheet({ visible, onClose, device, projects, chosen, onCho
   const styles = useStyles(makeStyles);
   const type = useType();
   const [query, setQuery] = useState('');
+  if (!visible && query) setQuery('');
   const needle = query.trim().toLowerCase();
   const found = projects.filter((project) => `${project.name} ${project.path}`.toLowerCase().includes(needle));
   const showAll = all !== undefined && !needle;
@@ -69,7 +70,7 @@ export function ProjectSheet({ visible, onClose, device, projects, chosen, onCho
     onChoose(project);
   };
   return (
-    <Sheet visible={visible} onClose={onClose} tall={projects.length > 6}>
+    <Sheet visible={visible} onClose={onClose} tall={projects.length > 6} scrolls>
       {providers ? <ProviderTiles {...providers} /> : null}
       <View style={styles.head}>
         <Text style={styles.title}>Projects</Text>
@@ -85,12 +86,12 @@ export function ProjectSheet({ visible, onClose, device, projects, chosen, onCho
           style={styles.searchInput}
           autoCorrect={false}
           autoCapitalize="none"
-          keyboardAppearance="dark"
+          keyboardAppearance={keyboardFor(colors)}
           returnKeyType="go"
           onSubmitEditing={() => found[0] && choose(found[0].id)}
         />
       </View>
-      <ScrollView keyboardShouldPersistTaps="handled" style={{ marginTop: 12 }}>
+      <ScrollView keyboardShouldPersistTaps="handled" style={styles.list}>
         <View style={styles.group}>
           {showAll ? (
             <Pressable onPress={() => choose(null)} style={[styles.row, chosen === null && styles.rowOn]} accessibilityRole="button">
@@ -166,6 +167,7 @@ const makeStyles = (colors: Palette) => {
       backgroundColor: colors.sunken,
     },
     searchInput: { flex: 1, fontFamily: fonts.ui, fontSize: 15.5, color: colors.ink },
+    list: { marginTop: 12, flexShrink: 1 },
     group: { borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.raised, overflow: 'hidden' },
     row: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 56, paddingHorizontal: 14, paddingVertical: 8 },
     rowOn: { backgroundColor: colors.active },

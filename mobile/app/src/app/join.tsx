@@ -5,7 +5,7 @@ import { useAuth } from '@clerk/expo';
 import * as Haptics from 'expo-haptics';
 
 import { APPROVAL_SECONDS, expired, JoinFailed, joinHost, useJoinScreen, type JoinFailure, type JoinStep } from '@/devices/joining';
-import { useStill } from '@/ui/Backdrop';
+import { useStill } from '@/ui/motion';
 import { DeviceIcon, Icon } from '@/ui/Icon';
 import { Button, Nav, Screen, useBottomGap, Working } from '@/ui/parts';
 import { offerNotifications } from '@/notify/setting';

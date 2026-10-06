@@ -72,6 +72,11 @@ export function isLight(palette: Palette): boolean {
   return 0.2126 * red + 0.7152 * green + 0.0722 * blue > 0.5;
 }
 
+/** The system keyboard drawn to match the palette. */
+export function keyboardFor(palette: Palette): 'light' | 'dark' {
+  return isLight(palette) ? 'light' : 'dark';
+}
+
 const PaletteContext = createContext<Palette>(defaultPalette);
 
 /** Draws everything under it in a palette; a device's screens use that host's. */

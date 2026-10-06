@@ -1,11 +1,12 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, AppState, Image, PixelRatio, StyleSheet, View } from 'react-native';
+import { Animated, Image, PixelRatio, StyleSheet, View } from 'react-native';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { GLView, type ExpoWebGLRenderingContext } from 'expo-gl';
 import { useIsFocused } from 'expo-router';
 import { ditheringFragmentShader, getShaderColorFromString, imageDitheringFragmentShader } from '@paper-design/shaders';
 
 import type { DeviceBackdrop } from '@/devices/backdrop';
+import { useAppActive, useCovered, useStill } from './motion';
 import { useColors, type Palette } from './theme';
 import { uploadPicture } from './picture';
 import { vertexShaderSource } from './vertexShader.generated';
@@ -15,8 +16,9 @@ export const BackdropContext = createContext<DeviceBackdrop | undefined>(undefin
 
 /** Every backdrop reads one clock, so the grain carries on across screens instead of restarting. */
 const ORIGIN = Date.now();
-/** The Mac ticks its grain at 30 fps, 20 on battery; a phone is always on battery. */
-const FRAME_MS = 50;
+/** The Mac ticks its grain at 30 fps, 20 on battery; a phone draws it on its JavaScript thread, so slower still. */
+const FRAME_MS = 80;
+const FADE_MS = 400;
 /** Where the grain rests when motion is reduced, as on the Mac. */
 const STILL_MS = 2500;
 
@@ -89,6 +91,8 @@ type Surface = {
   buffer: WebGLBuffer | null;
   position: number;
   time: WebGLUniformLocation | null;
+  resolution: WebGLUniformLocation | null;
+  size: [number, number];
 };
 
 function mount(gl: ExpoWebGLRenderingContext, fragment: string, uniforms: Record<string, Uniform>): Surface | null {
@@ -125,7 +129,15 @@ function mount(gl: ExpoWebGLRenderingContext, fragment: string, uniforms: Record
     else if (value.length === 2) gl.uniform2fv(location, value);
     else gl.uniform4fv(location, value);
   }
-  return { gl, program, buffer, position, time: gl.getUniformLocation(program, 'u_time') };
+  return {
+    gl,
+    program,
+    buffer,
+    position,
+    time: gl.getUniformLocation(program, 'u_time'),
+    resolution: gl.getUniformLocation(program, 'u_resolution'),
+    size: [gl.drawingBufferWidth, gl.drawingBufferHeight],
+  };
 }
 
 /** expo-gl presents a frame with GL calls of its own, so each frame binds everything again. */
@@ -136,6 +148,10 @@ function draw(surface: Surface, frameMs: number) {
   gl.enableVertexAttribArray(surface.position);
   gl.vertexAttribPointer(surface.position, 2, gl.FLOAT, false, 0, 0);
   gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+  if (surface.size[0] !== gl.drawingBufferWidth || surface.size[1] !== gl.drawingBufferHeight) {
+    surface.size = [gl.drawingBufferWidth, gl.drawingBufferHeight];
+    if (surface.resolution) gl.uniform2fv(surface.resolution, surface.size);
+  }
   gl.clearColor(0, 0, 0, 0);
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
@@ -144,26 +160,6 @@ function draw(surface: Surface, frameMs: number) {
   gl.drawArrays(gl.TRIANGLES, 0, 6);
   gl.flush();
   gl.endFrameEXP();
-}
-
-/** Whether the person asked the system to reduce motion. */
-export function useStill(): boolean {
-  const [still, setStill] = useState(false);
-  useEffect(() => {
-    AccessibilityInfo.isReduceMotionEnabled().then(setStill);
-    const listener = AccessibilityInfo.addEventListener('reduceMotionChanged', setStill);
-    return () => listener.remove();
-  }, []);
-  return still;
-}
-
-function useAppActive(): boolean {
-  const [active, setActive] = useState(AppState.currentState === 'active');
-  useEffect(() => {
-    const listener = AppState.addEventListener('change', (state) => setActive(state === 'active'));
-    return () => listener.remove();
-  }, []);
-  return active;
 }
 
 /**
@@ -175,12 +171,18 @@ export function Backdrop() {
   const colors = useColors();
   const focused = useIsFocused();
   const active = useAppActive();
+  const covered = useCovered();
   const still = useStill();
   const [aspect, setAspect] = useState<number>();
   const picture = backdrop?.texture ? backdrop.image : undefined;
-  const moving = !picture && focused && active && !still;
+  const moving = !picture && focused && active && !covered && !still;
   const loops = useRef(new Set<Loop>());
   const movingNow = useRef(moving);
+  const [shown] = useState(() => new Animated.Value(0));
+  const show = () => {
+    if (still) shown.setValue(1);
+    else Animated.timing(shown, { toValue: 1, duration: FADE_MS, useNativeDriver: true }).start();
+  };
 
   useEffect(() => {
     if (!picture) return;
@@ -222,11 +224,16 @@ export function Backdrop() {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       const loading = uploadPicture(gl, picture);
-      if (loading) loading.then(() => draw(surface, 0));
-      else draw(surface, 0);
+      const reveal = () => {
+        draw(surface, 0);
+        show();
+      };
+      if (loading) loading.then(reveal).catch(() => {});
+      else reveal();
       return;
     }
     draw(surface, still ? STILL_MS * speed : (Date.now() - ORIGIN) * speed);
+    show();
     // The loop holds this surface itself: a screen can mount more than one before settling on one.
     let timer: ReturnType<typeof setTimeout> | undefined;
     const tick = () => {
@@ -248,11 +255,13 @@ export function Backdrop() {
 
   return (
     <View pointerEvents="none" style={[styles.band, { height: band }]}>
-      <GLView
-        key={`${picture ?? 'grain'}:${colors.ground}:${colors.shaderDot}`}
-        style={[StyleSheet.absoluteFill, { opacity: strength }]}
-        onContextCreate={ready}
-      />
+      <Animated.View style={[StyleSheet.absoluteFill, { opacity: Animated.multiply(shown, strength) }]}>
+        <GLView
+          key={`${picture ?? 'grain'}:${colors.ground}:${colors.shaderDot}`}
+          style={StyleSheet.absoluteFill}
+          onContextCreate={ready}
+        />
+      </Animated.View>
       {/* The Mac masks the field out by the band's end; covering it with the ground does the same on an opaque screen. */}
       <Svg style={StyleSheet.absoluteFill} width="100%" height="100%">
         <Defs>

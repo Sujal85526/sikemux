@@ -17,7 +17,8 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
-import { Backdrop, useStill } from './Backdrop';
+import { Backdrop } from './Backdrop';
+import { useStill } from './motion';
 import { DrawnIcon, Icon } from './Icon';
 import { fonts, type Palette, radius, typeFor, useColors, useStyles, useType, translucent } from './theme';
 
@@ -271,9 +272,8 @@ export function Track<T extends string>({
   );
 }
 
-function useLoop(duration: number, delay = 0) {
+function useLoop(still: boolean, duration: number, delay = 0) {
   const [value] = useState(() => new Animated.Value(0));
-  const still = useStill();
   useEffect(() => {
     if (still) {
       value.setValue(0);
@@ -292,9 +292,9 @@ function useLoop(duration: number, delay = 0) {
 
 const TWINKLE = [1200, 1580, 900, 1400, 1050, 1300, 950, 1500, 1150];
 
-function TwinkleCell({ period, index }: { period: number; index: number }) {
+function TwinkleCell({ period, index, still }: { period: number; index: number; still: boolean }) {
   const styles = useStyles(makeStyles);
-  const phase = useLoop(period, (index * 230) % period);
+  const phase = useLoop(still, period, (index * 230) % period);
   const opacity = phase.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.2, 1, 0.2] });
   return <Animated.View style={[styles.cell, { opacity }]} />;
 }
@@ -302,10 +302,11 @@ function TwinkleCell({ period, index }: { period: number; index: number }) {
 /** An agent at work: the rail's three-by-three twinkling squares. */
 export function Working() {
   const styles = useStyles(makeStyles);
+  const still = useStill();
   return (
     <View style={styles.loader} accessible accessibilityLabel="Working">
       {TWINKLE.map((period, index) => (
-        <TwinkleCell key={index} period={period} index={index} />
+        <TwinkleCell key={index} period={period} index={index} still={still} />
       ))}
     </View>
   );
@@ -315,7 +316,8 @@ export function Working() {
 export function NeedsYou() {
   const colors = useColors();
   const styles = useStyles(makeStyles);
-  const phase = useLoop(2000);
+  const still = useStill();
+  const phase = useLoop(still, 2000);
   const scale = phase.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1.8] });
   const opacity = phase.interpolate({ inputRange: [0, 1], outputRange: [0.9, 0] });
   return (
