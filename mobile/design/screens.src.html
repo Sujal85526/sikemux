@@ -686,9 +686,9 @@
   .notice .nm { font-family: var(--mono); font-size: 11.5px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .notice .w { font-size: 12px; }
   .notice .sm { margin-top: 3px; font-size: 12px; line-height: 17px; color: var(--ink-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .held { outline: 2px solid color-mix(in oklab, var(--acc) 30%, transparent); outline-offset: 2px; }
-  .hold-meta { padding: 0 6px 10px; font-size: 12.5px; color: var(--text-tertiary); }
-  .hold-preview { padding: 0 6px 14px; font-size: 14px; line-height: 20px; color: var(--text-secondary); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .msg-strip { display: flex; align-items: center; gap: 8px; height: 24px; margin-top: 6px; color: var(--ink-dim); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .msg-strip .cp { width: 24px; height: 24px; display: grid; place-items: center; }
+  .msg-strip .rate { margin-left: auto; font-family: var(--mono); font-style: italic; }
   .sources > span.danger { color: var(--danger); }
   .recent-row { display: flex; align-items: flex-start; gap: 12px; padding: 11px 8px; font-size: 14.5px; line-height: 20px; color: var(--text-secondary); }
   .recent-row .ico { margin-top: 2px; color: var(--ink-faint); }
@@ -2119,11 +2119,10 @@ expected 1 write, got 2</div>
         <div class="chat" style="border-top:1px solid var(--border)">
           <div class="msg-user">Show the download size next to the button.</div>
           <div class="tools"><span class="tools-sum">2 tool calls <span class="time">3s</span>{{IconChevron:11}}</span></div>
-          <div class="held">
-            <div class="prose" style="margin-top:0">Done. The size is read from the latest release at build time:</div>
-            <div class="code-box">const dmg = assets.find((a) =&gt;
+          <div class="prose" style="margin-top:0">Done. The size is read from the latest release at build time:</div>
+          <div class="code-box">const dmg = assets.find((a) =&gt;
   a.name.endsWith("_aarch64.dmg"));<span class="cp">{{IconCopy:12}}</span></div>
-          </div>
+          <div class="msg-strip"><span class="cp">{{IconCopy:15}}</span><span class="when">Today, 21:07 · took 2m 04s</span><span class="rate">~48 tok/s</span></div>
         </div>
         <div class="composer-wrap">
           <div class="composer">
@@ -2139,19 +2138,10 @@ expected 1 write, got 2</div>
             </div>
           </div>
         </div>
-        <div class="scrim"></div>
-        <div class="sheet">
-          <div class="grabber"></div>
-          <div class="hold-meta">Today, 21:07 · took 2m 04s · ~48 tok/s</div>
-          <div class="hold-preview">Done. The size is read from the latest release at build time: const dmg = assets.find((a) =&gt; a.name.endsWith("_aarch64.dmg"));</div>
-          <div class="sources">
-            <span>{{IconCopy:19}}Copy</span>
-            <span>{{IconPointer:19}}Select text</span>
-          </div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Holding a message</b><div class="note">A long press on a message, yours or the agent's answer, opens a short sheet: when it was sent, and for an answer how long the turn took and roughly how fast it wrote, as the Mac's message footer says; then Copy, and Select text, which shows the whole message with the system's selection handles. An answer is all of its prose across the tool calls in between. Code blocks keep their own copy button in the corner.</div></figcaption>
+      <figcaption><b>Tapping a message</b><div class="note">A tap on a message, yours or the agent's answer, shows the strip the Mac shows under it on hover: Copy, when it was sent or finished and how long the turn took, and roughly how fast it wrote. Another tap, or a tap on another message, hides it. An answer is all of its prose across the tool calls in between, so its strip sits under its last part. The text itself is selectable where it stands: a long press selects it. Code blocks keep their own copy button in the corner.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>

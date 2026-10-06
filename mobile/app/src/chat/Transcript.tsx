@@ -2,9 +2,11 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { durationLabel } from '@mac/chat/durationLabel';
+import { rateLabel, sentLabel, type RowMeta } from '@mac/chat/messageMeta';
 import { cutLongText } from '@mac/chat/longText';
 import { subagentTask } from '@mac/chat/transcript';
 import type { AcpContentBlock, AcpSubagent, AcpTaskNotice, ChatMessage, ChatPart } from '@mac/chat/types';
+import { CopyButton } from '@/ui/CopyButton';
 import { haptics } from '@/ui/haptics';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Working } from '@/ui/status';
@@ -20,7 +22,6 @@ import { ToolGroup, type ToolPart } from './Tools';
 export const ProviderContext = createContext('agent');
 
 /** How long a press is held before it opens a message's actions. */
-const HOLD_MS = 350;
 
 /**
  * A message too long to draw at once shows its start and the rest on a tap, unless the person
@@ -219,13 +220,33 @@ function Content({ block }: { block: AcpContentBlock }) {
   );
 }
 
+/** What the Mac shows under a message on hover: Copy, when it was sent or finished and how long it took, and how fast it was written. */
+function Strip({ meta, mine }: { meta: RowMeta; mine: boolean }) {
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={[styles.strip, mine && styles.stripMine]}>
+      <CopyButton value={meta.text} label={mine ? 'message' : 'reply'} size={15} style={styles.stripCopy} />
+      {meta.at !== null ? (
+        <Text style={styles.stripTime}>
+          {meta.took === null ? sentLabel(meta.at) : `${sentLabel(meta.at)} · took ${durationLabel(meta.took)}`}
+        </Text>
+      ) : null}
+      {meta.rate !== null ? <Text style={styles.stripRate}>{rateLabel(meta.rate)}</Text> : null}
+    </View>
+  );
+}
+
+/** A long press is the text's own, for selecting it, so it must not also count as a tap. */
+const keepLongPress = () => {};
+
 export function Message({
   message,
   live = false,
   untimed = false,
   unsent,
   onRetry,
-  onHold,
+  onTap,
+  strip,
   sentFiles,
 }: {
   message: ChatMessage;
@@ -233,16 +254,18 @@ export function Message({
   untimed?: boolean;
   unsent?: Unsent;
   onRetry?: (messageId: string) => void;
-  /** A long press, which opens the message's actions. */
-  onHold?: (message: ChatMessage) => void;
+  /** A tap, which shows or hides the strip under the message it belongs to. */
+  onTap?: (message: ChatMessage) => void;
+  /** The strip under this message, while it is shown. */
+  strip?: RowMeta | null;
   sentFiles: ReadonlyMap<string, Attachment>;
 }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
-  const hold = onHold
+  const tap = onTap
     ? () => {
         haptics.select();
-        onHold(message);
+        onTap(message);
       }
     : undefined;
   if (message.role === 'user') {
@@ -253,16 +276,13 @@ export function Message({
         {message.attachments?.length ? <SentAttachments paths={message.attachments} sentFiles={sentFiles} /> : null}
         {text || !message.attachments?.length ? (
           <Pressable
-            onLongPress={hold}
-            delayLongPress={HOLD_MS}
-            style={({ pressed }) => [
-              styles.bubble,
-              unsent?.state === 'sending' && { opacity: 0.7 },
-              failed && styles.failedBubble,
-              pressed && hold && { backgroundColor: colors.overlay },
-            ]}
-            accessibilityHint={hold ? 'Hold for copy and the time it was sent' : undefined}>
-            <Text style={styles.userText}>{text}</Text>
+            onPress={tap}
+            onLongPress={keepLongPress}
+            style={[styles.bubble, unsent?.state === 'sending' && { opacity: 0.7 }, failed && styles.failedBubble]}
+            accessibilityHint={tap ? 'Tap for copy and the time it was sent' : undefined}>
+            <Text style={styles.userText} selectable>
+              {text}
+            </Text>
           </Pressable>
         ) : null}
         {failed ? (
@@ -279,13 +299,16 @@ export function Message({
           </Pressable>
         ) : unsent?.state === 'sending' ? (
           <Text style={styles.queuedLabel}>Sending…</Text>
+        ) : strip ? (
+          <Strip meta={strip} mine />
         ) : null}
       </View>
     );
   }
   return (
-    <Pressable onLongPress={hold} delayLongPress={HOLD_MS} accessibilityHint={hold ? 'Hold for copy and how long it took' : undefined}>
+    <Pressable onPress={tap} onLongPress={keepLongPress} accessibilityHint={tap ? 'Tap for copy and how long it took' : undefined}>
       <Parts id={message.id} parts={message.parts} untimed={untimed} live={live} />
+      {strip ? <Strip meta={strip} mine={false} /> : null}
     </Pressable>
   );
 }
@@ -404,6 +427,11 @@ const makeStyles = (colors: Palette) => {
     retry: { color: colors.ink, fontFamily: fonts.uiMedium },
     queued: { alignItems: 'flex-end', alignSelf: 'stretch', opacity: 0.55, marginBottom: 6 },
     queuedLabel: { fontFamily: fonts.ui, fontSize: 11, color: colors.inkFaint, marginTop: 4 },
+    strip: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 24, marginTop: 6 },
+    stripMine: { justifyContent: 'flex-end' },
+    stripCopy: { width: 24, height: 24 },
+    stripTime: { fontFamily: fonts.ui, fontSize: 11, fontVariant: ['tabular-nums'], color: colors.inkDim },
+    stripRate: { marginLeft: 'auto', fontFamily: fonts.mono, fontSize: 11, fontStyle: 'italic', color: colors.inkDim },
     prose: { fontFamily: fonts.ui, fontSize: 14.5, lineHeight: 23, color: colors.ink },
     thought: { marginVertical: 8 },
     thoughtText: { fontFamily: fonts.uiItalic, fontSize: 12.5, lineHeight: 19.5, color: colors.inkFaint },

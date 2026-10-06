@@ -15,7 +15,6 @@ import { useLocalSearchParams } from 'expo-router';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 
 import { activityText, composerPlaceholder } from '@mac/chat/chatStatus';
-import type { RowMeta } from '@mac/chat/messageMeta';
 import { sentPrompts } from '@mac/chat/promptHistory';
 import { activeToolLabel } from '@mac/chat/toolLabels';
 import type { ChatMessage, ChatState } from '@mac/chat/types';
@@ -24,8 +23,7 @@ import { askTitle, Composer, RecentSheet } from '@/chat/Composer';
 import { FoldsContext } from '@/chat/folds';
 import { LiveSheet, LiveStrip } from '@/chat/Live';
 import { hasLiveWork, liveKey, liveWork } from '@/chat/liveWork';
-import { heldMeta } from '@/chat/messageMeta';
-import { MessageSheet } from '@/chat/MessageSheet';
+import { stripMeta, stripOwner } from '@/chat/messageMeta';
 import { Activity, Earlier, Message, ProviderContext, Queued } from '@/chat/Transcript';
 import { useChat } from '@/chat/useChat';
 import { retry as reconnect, useDevices, useLive, type Live } from '@/devices/hub';
@@ -130,7 +128,16 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
   const state = chat.agent;
   const request = chat.permissions[0];
   const liveId = state.running ? state.messages[state.messages.length - 1]?.id : undefined;
-  const marks = useMemo(() => [chat.replayed, chat.unsent, chat.sentFiles, liveId], [chat.replayed, chat.unsent, chat.sentFiles, liveId]);
+  const [open, setOpen] = useState<string>();
+  const openStrip = useMemo(() => (open ? stripMeta(state.messages, open) : null), [open, state.messages]);
+  const onTap = (message: ChatMessage) => {
+    const owner = stripOwner(state.messages, message.id);
+    setOpen((shown) => (shown === owner ? undefined : owner));
+  };
+  const marks = useMemo(
+    () => [chat.replayed, chat.unsent, chat.sentFiles, liveId, open, openStrip],
+    [chat.replayed, chat.unsent, chat.sentFiles, liveId, open, openStrip],
+  );
   const fresh = useMemo(() => liveWork(state, chat.queued), [state, chat.queued]);
   // The strip redraws, and with it the composer, only when what it counts changes, not on every word streamed.
   const [work, setWork] = useState(fresh);
@@ -146,8 +153,6 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
   const [showLive, setShowLive] = useState(false);
   const [menu, setMenu] = useState(false);
   const [recent, setRecent] = useState(false);
-  const [held, setHeld] = useState<RowMeta | null>(null);
-  const onHold = (message: ChatMessage) => setHeld(heldMeta(state.messages, message.id));
   const openLive = () => setShowLive(true);
   const openRecent = () => setRecent(true);
   useEffect(() => dismissCardsFor(core, agentId), [core, agentId]);
@@ -242,7 +247,8 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                       untimed={chat.replayed.has(item.id)}
                       unsent={chat.unsent.get(item.id)}
                       onRetry={session.retrySend}
-                      onHold={onHold}
+                      onTap={onTap}
+                      strip={item.id === open ? openStrip : undefined}
                       sentFiles={chat.sentFiles}
                     />
                   )}
@@ -327,7 +333,6 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
         }}
         onDrop={session.dropQueued}
       />
-      <MessageSheet meta={held} onClose={() => setHeld(null)} />
       <RecentSheet
         visible={recent}
         prompts={sent}
