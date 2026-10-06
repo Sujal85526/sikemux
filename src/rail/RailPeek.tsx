@@ -11,8 +11,7 @@ interface RailPeekProps {
 const CLOSE_DURATION_MS = 180;
 const EDGE_REACH_PX = 28;
 
-function withinEdgeReach(root: HTMLElement, edge: PeekEdge, event: PointerEvent) {
-    const rect = root.getBoundingClientRect();
+function withinEdgeReach(rect: DOMRect, edge: PeekEdge, event: PointerEvent) {
     if (event.clientY < rect.top || event.clientY > rect.bottom) return false;
     return edge === "start" ? event.clientX <= rect.left + EDGE_REACH_PX : event.clientX >= rect.right - EDGE_REACH_PX;
 }
@@ -49,19 +48,34 @@ export function RailPeek({ edge, children }: RailPeekProps) {
     );
 
     useEffect(() => {
+        const root = rootRef.current;
+        if (!root) return;
+        /* Measured when it changes rather than on every move, which would
+           force a layout in the middle of whatever is animating. */
+        let rect: DOMRect | null = null;
+        const forget = () => {
+            rect = null;
+        };
+        const resize = new ResizeObserver(() => {
+            rect = root.getBoundingClientRect();
+        });
+        resize.observe(root);
         const onPointerMove = (event: PointerEvent) => {
-            const root = rootRef.current;
-            if (!root || event.buttons !== 0) return;
+            if (event.buttons !== 0) return;
             const overPeek = event.target instanceof Node && root.contains(event.target);
-            if (overPeek || withinEdgeReach(root, edge, event)) {
+            rect ??= root.getBoundingClientRect();
+            if (overPeek || withinEdgeReach(rect, edge, event)) {
                 if (phaseRef.current !== "open") open();
             } else if (phaseRef.current === "open") {
                 close();
             }
         };
         window.addEventListener("pointermove", onPointerMove);
+        window.addEventListener("resize", forget);
         return () => {
+            resize.disconnect();
             window.removeEventListener("pointermove", onPointerMove);
+            window.removeEventListener("resize", forget);
             clearCloseTimer();
         };
     }, [edge, open, close, clearCloseTimer]);
