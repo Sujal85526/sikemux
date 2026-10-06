@@ -1,4 +1,4 @@
-import { Fragment, useMemo, type ReactNode } from 'react';
+import { Fragment, memo, useMemo, type ReactNode } from 'react';
 import { Linking, ScrollView, StyleSheet, Text, View, type TextStyle } from 'react-native';
 
 import { fonts, type Palette, useStyles } from '@/ui/theme';
@@ -122,13 +122,13 @@ function inline(text: string, styles: Styles): ReactNode[] {
   });
 }
 
-function Blocks({ blocks, first, style, styles }: { blocks: Block[]; first: number; style: TextStyle; styles: Styles }) {
-  return blocks.map((block, index) => {
-    const key = first + index;
+/** One block, drawn again only when its own text changes, so a streaming message redraws just its tail. */
+const BlockView = memo(
+  function BlockView({ block, style, styles }: { block: Block; style: TextStyle; styles: Styles }) {
     switch (block.kind) {
       case 'code':
         return (
-          <ScrollView key={key} horizontal style={styles.code} contentContainerStyle={{ padding: 10 }}>
+          <ScrollView horizontal style={styles.code} contentContainerStyle={{ padding: 10 }}>
             <Text style={styles.codeText} selectable>
               {block.text}
             </Text>
@@ -136,13 +136,13 @@ function Blocks({ blocks, first, style, styles }: { blocks: Block[]; first: numb
         );
       case 'heading':
         return (
-          <Text key={key} style={[style, styles.bold]} selectable>
+          <Text style={[style, styles.bold]} selectable accessibilityRole="header">
             {inline(block.text, styles)}
           </Text>
         );
       case 'item':
         return (
-          <View key={key} style={styles.item}>
+          <View style={styles.item}>
             <Text style={[style, styles.marker]}>{block.marker}</Text>
             <Text style={[style, { flex: 1 }]} selectable>
               {inline(block.text, styles)}
@@ -151,13 +151,19 @@ function Blocks({ blocks, first, style, styles }: { blocks: Block[]; first: numb
         );
       default:
         return (
-          <Text key={key} style={style} selectable>
+          <Text style={style} selectable>
             {inline(block.text, styles)}
           </Text>
         );
     }
-  });
-}
+  },
+  (before, after) =>
+    before.style === after.style &&
+    before.styles === after.styles &&
+    before.block.kind === after.block.kind &&
+    before.block.text === after.block.text &&
+    (before.block.kind !== 'item' || after.block.kind !== 'item' || before.block.marker === after.block.marker),
+);
 
 export function Markdown({ text, style }: { text: string; style: TextStyle }) {
   const source = text.replace(/\r\n/g, '\n');
@@ -170,8 +176,9 @@ function Parsed({ settled, tail, style }: { settled: string; tail: string; style
   const done = useMemo(() => blocks(settled), [settled]);
   return (
     <View style={styles.stack}>
-      <Blocks blocks={done} first={0} style={style} styles={styles} />
-      <Blocks blocks={blocks(tail)} first={done.length} style={style} styles={styles} />
+      {[...done, ...blocks(tail)].map((block, index) => (
+        <BlockView key={index} block={block} style={style} styles={styles} />
+      ))}
     </View>
   );
 }
