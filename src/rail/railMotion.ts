@@ -63,32 +63,62 @@ export const leavingRail = leavingRef<HTMLElement>(
     },
     {
         onRemove: (rail) => {
-            // Only the docked rail: the hover peek's copy has its own way out.
-            if (!rail.parentElement?.classList.contains("body")) return false;
+            // Only the docked rail, and only one on screen: the hover peek's copy has its own way out.
+            if (!rail.parentElement?.classList.contains("body") || isStowed(rail)) return false;
             leavingFrom.set(rail, { tuck: currentTuck(rail), opacity: Number(getComputedStyle(rail).opacity) });
         },
     },
 );
 
-/** Opens a rail out from under the stage, but not when the window first draws it. */
-export function useRailEntrance(visible: boolean, selector: string): void {
-    const was = useRef(visible);
+/* A docked rail stays mounted while it is hidden, so showing it again only moves it rather than building it. */
+const isStowed = (rail: HTMLElement) => rail.style.display === "none";
+
+function stow(rail: HTMLElement): void {
+    for (const running of rail.getAnimations()) running.cancel();
+    rail.style.display = "none";
+}
+
+function tuckAway(rail: HTMLElement): void {
+    const midway = rail.getAnimations().length > 0;
+    const from = midway ? currentTuck(rail) : 0;
+    const opacity = midway ? Number(getComputedStyle(rail).opacity) : 1;
+    const full = fullTuck(rail);
+    const run = move(rail, from, full, full, opacity);
+    if (!run) return stow(rail);
+    void run.finished.then(
+        () => stow(rail),
+        () => {},
+    );
+}
+
+function bringOut(rail: HTMLElement, selector: string): void {
+    const midway = !isStowed(rail) && rail.getAnimations().length > 0;
+    let from = midway ? currentTuck(rail) : Infinity;
+    let opacity = midway ? Number(getComputedStyle(rail).opacity) : 0;
+    rail.style.removeProperty("display");
+    const full = fullTuck(rail);
+    /* A rail that came back while its last copy was still closing takes over from where that one has got to. */
+    const leaving = document.querySelector<HTMLElement>(`.shell > .body > ${selector}.is-leaving`);
+    if (leaving) {
+        from = currentTuck(leaving);
+        opacity = Number(getComputedStyle(leaving).opacity);
+        leaving.remove();
+    }
+    move(rail, Math.min(from, full), 0, full, opacity);
+}
+
+/** Opens and closes a docked rail from under the stage, but not when the window first draws it. */
+export function useRailDock(visible: boolean, present: boolean, selector: string): void {
+    const was = useRef(visible && present);
     useLayoutEffect(() => {
-        const opened = visible && !was.current;
-        was.current = visible;
-        if (!opened) return;
+        const open = visible && present;
+        const opened = open && !was.current;
+        const closed = !open && was.current;
+        was.current = open;
         const rail = document.querySelector<HTMLElement>(`.shell > .body > ${selector}:not(.is-leaving)`);
         if (!rail) return;
-        const full = fullTuck(rail);
-        /* Reopened while still closing: take over from where the closing one has got to. */
-        const leaving = document.querySelector<HTMLElement>(`.shell > .body > ${selector}.is-leaving`);
-        if (!leaving) {
-            move(rail, full, 0, full, 0);
-            return;
-        }
-        const from = currentTuck(leaving);
-        const opacity = Number(getComputedStyle(leaving).opacity);
-        leaving.remove();
-        move(rail, from, 0, full, opacity);
-    }, [visible, selector]);
+        if (opened) bringOut(rail, selector);
+        else if (closed) tuckAway(rail);
+        else if (!open) stow(rail);
+    }, [visible, present, selector]);
 }

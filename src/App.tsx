@@ -101,7 +101,7 @@ import { pluginsApi } from "./api/plugins";
 import "./plugins/builtin";
 import { recordAgentTurns } from "./state/activityRecorder";
 import { useInstalledPlugins } from "./plugins/installed";
-import { useRailEntrance } from "./rail/railMotion";
+import { useRailDock } from "./rail/railMotion";
 
 const SettingsPanel = lazy(() => import("./settings/SettingsPanel").then((module) => ({ default: module.SettingsPanel })));
 
@@ -701,8 +701,8 @@ export default function App() {
     const sideRailVisible = useStore((s) => s.sideRailOpen);
     const agentRailVisible = useStore((s) => s.agentRailOpen);
     const activeSessionIsProject = useStore((s) => s.sessions[s.activeSessionId]?.kind === "project");
-    useRailEntrance(sideRailVisible, ".side-rail");
-    useRailEntrance(agentRailVisible && activeSessionIsProject, ".agent-rail");
+    useRailDock(sideRailVisible, true, ".side-rail");
+    useRailDock(agentRailVisible, activeSessionIsProject, ".agent-rail");
     const pickerOpen = useStore((s) => s.pickerOpen);
     const agentPaletteOpen = useStore((s) => s.agentPaletteOpen);
     const filePaletteOpen = useStore((s) => s.filePaletteOpen);
@@ -975,7 +975,7 @@ export default function App() {
             <AgentLifecycleManager />
             <TopBar />
             <div className="body">
-                {sideRailVisible && <SideRail />}
+                <SideRail />
                 {sideRailVisible && <RailResizer edge="start" />}
                 {!sideRailVisible && (
                     <RailPeek edge="start">
@@ -990,7 +990,7 @@ export default function App() {
                         </Suspense>
                     )}
                 </main>
-                {agentRailVisible && activeSessionIsProject && <AgentRail />}
+                {activeSessionIsProject && <AgentRail />}
                 {agentRailVisible && activeSessionIsProject && <RailResizer edge="end" />}
                 {!agentRailVisible && activeSessionIsProject && (
                     <RailPeek edge="end">
