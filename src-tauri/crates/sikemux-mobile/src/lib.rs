@@ -227,18 +227,63 @@ fn core_addr(core: &str, relays: &[Relay]) -> Result<EndpointAddr, MobileError> 
         .fold(addr, EndpointAddr::with_relay_url))
 }
 
+/// This phone's key, which proves who it is to the accounts server without
+/// the phone going on the network.
+#[derive(uniffi::Object)]
+pub struct DeviceIdentity {
+    key: SecretKey,
+}
+
 #[uniffi::export]
-impl Device {
-    /// Comes online with the key from [`new_device_key`], reaching hosts
-    /// through `relays`, best first.
+impl DeviceIdentity {
+    /// The key from [`new_device_key`].
     #[uniffi::constructor]
-    pub async fn create(key: Vec<u8>, relays: Vec<RelaySetting>) -> Result<Arc<Self>, MobileError> {
+    pub fn new(key: Vec<u8>) -> Result<Arc<Self>, MobileError> {
         let bytes: [u8; 32] = key
             .try_into()
             .map_err(|_| invalid("a device key is 32 bytes"))?;
+        Ok(Arc::new(Self {
+            key: SecretKey::from_bytes(&bytes),
+        }))
+    }
+
+    /// The key hosts and the accounts server know this phone by.
+    pub fn id(&self) -> String {
+        self.key.public().to_string()
+    }
+
+    /// This phone's signature, in hex, over the text that registers it with
+    /// the account `user_id`, for the accounts server's challenge `nonce`.
+    pub fn sign_registration(&self, nonce: String, user_id: String) -> Result<String, MobileError> {
+        sign_registration(&self.key, &nonce, &user_id)
+    }
+
+    /// This phone's signature, in hex, that proves its key on the accounts
+    /// server's live connection, for that connection's challenge `nonce`.
+    pub fn sign_live(&self, nonce: String) -> Result<String, MobileError> {
+        sign_live(&self.key, &nonce)
+    }
+
+    /// This phone's signature, in hex, that sends its notifications to the push
+    /// token whose SHA-256 is `token_sha256`, for the accounts server's
+    /// challenge `nonce`.
+    pub fn sign_push(&self, nonce: String, token_sha256: String) -> Result<String, MobileError> {
+        sign_push(&self.key, &nonce, &token_sha256)
+    }
+}
+
+#[uniffi::export]
+impl Device {
+    /// Comes online as `identity`, reaching hosts through `relays`, best
+    /// first.
+    #[uniffi::constructor]
+    pub async fn create(
+        identity: Arc<DeviceIdentity>,
+        relays: Vec<RelaySetting>,
+    ) -> Result<Arc<Self>, MobileError> {
         #[cfg(target_os = "android")]
         android::ensure_context().map_err(|message| MobileError::Connection { message })?;
-        let key = SecretKey::from_bytes(&bytes);
+        let key = identity.key.clone();
         let relays = relays_from(relays);
         let endpoint = bind(key.clone(), &relays).await?;
         Ok(Arc::new(Self {
@@ -1072,6 +1117,22 @@ mod tests {
         let key = new_device_key();
         assert_eq!(key.len(), 32);
         assert_ne!(key, new_device_key());
+    }
+
+    #[test]
+    fn an_identity_is_the_key_s_and_signs_without_going_online() {
+        let key = SecretKey::generate();
+        let identity = DeviceIdentity::new(key.to_bytes().to_vec()).expect("an identity");
+        assert_eq!(identity.id(), key.public().to_string());
+        let nonce = "ab".repeat(32);
+        assert_eq!(
+            identity.sign_live(nonce.clone()).expect("signs"),
+            sign_live(&key, &nonce).expect("signs")
+        );
+        assert!(matches!(
+            DeviceIdentity::new(vec![1; 31]),
+            Err(MobileError::Invalid { .. })
+        ));
     }
 
     #[test]
