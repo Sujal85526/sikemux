@@ -8,7 +8,7 @@ import type { Device } from '@protocol';
 import { AccountSheet } from '@/account/AccountSheet';
 import { Avatar } from '@/account/Avatar';
 import { providerName } from '@/account/providers';
-import { useAccountHosts } from '@/account/session';
+import { retryHosts, useAccountHosts } from '@/account/session';
 import { reloadDevices, retry, useHostStatus, useLive } from '@/devices/hub';
 import { channelLabel, deviceKind, deviceName, type PairedDevice } from '@/devices/paired';
 import { asking as askingOf } from '@/devices/asking';
@@ -17,7 +17,7 @@ import { chatTitle } from '@/devices/words';
 import { haptics } from '@/ui/haptics';
 import { AgentIcon, DeviceIcon, Icon } from '@/ui/Icon';
 import { Wants } from './Wants';
-import { IconButton } from '@/ui/controls';
+import { Button, IconButton } from '@/ui/controls';
 import { Screen, useBottomGap } from '@/ui/screen';
 import { NeedsYou, Working } from '@/ui/status';
 import { fonts, type Palette, radius, typeFor, useColors, useStyles } from '@/ui/theme';
@@ -150,9 +150,8 @@ function AccountNote({ problem }: { problem?: string }) {
   return (
     <View style={styles.note} accessibilityLiveRegion="polite">
       {problem ? null : <Working />}
-      <Text style={styles.noteText}>
-        {problem ? "Couldn't list the hosts on your account. Trying again when Sikemux answers." : 'Looking for hosts on your account'}
-      </Text>
+      <Text style={styles.noteText}>{problem ? "Couldn't list the hosts on your account." : 'Looking for hosts on your account'}</Text>
+      {problem ? <Button title="Try again" onPress={retryHosts} /> : null}
     </View>
   );
 }
@@ -253,6 +252,7 @@ export function DevicesList({ devices }: { devices: PairedDevice[] }) {
   const refresh = () => {
     setRefreshing(true);
     devices.forEach((device) => retry(device.core));
+    retryHosts();
     reloadDevices()
       .catch(() => {})
       .finally(() => setRefreshing(false));

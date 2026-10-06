@@ -1,13 +1,13 @@
 import { memo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import * as Haptics from 'expo-haptics';
 
 import { toolDiff } from '@mac/chat/diff';
 import { pickerSlots, sessionConfigs, type SessionConfig } from '@mac/chat/sessionConfig';
 import { toolKind, toolLabel, toolPath } from '@mac/chat/toolLabels';
 import type { AcpAvailableCommand, AcpPermissionRequest, AcpToolCall, ChatState } from '@mac/chat/types';
 import { providerName } from '@/devices/words';
+import { haptics } from '@/ui/haptics';
 import { AgentIcon, Icon, isProvider } from '@/ui/Icon';
 import { Track } from '@/ui/controls';
 import { useKeyboardShown } from '@/ui/screen';
@@ -95,7 +95,7 @@ function PermissionDock({
               key={option.optionId || option.name}
               disabled={busy}
               onPress={() => {
-                Haptics.selectionAsync();
+                haptics.select();
                 onAnswer(option.optionId || null);
               }}
               style={({ pressed }) => [styles.act, go && styles.actGo, pressed && { opacity: 0.8 }, busy && { opacity: 0.5 }]}
@@ -294,7 +294,7 @@ export const Composer = memo(function Composer({
   const send = () => {
     const text = draft.trim();
     if (!text || offline) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.tap();
     session.send(text);
     // Clearing the state alone leaves text the keyboard is still composing.
     input.current?.clear();

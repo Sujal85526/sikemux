@@ -1,10 +1,9 @@
-import { router } from 'expo-router';
-
 import { forget } from '@/devices/hub';
 import { pairedDevices } from '@/devices/paired';
 import { choose } from '@/notify/setting';
 import { forgetPush } from '@/notify/token';
 import { rotateDeviceKey } from '@/device/rotate';
+import { goHome } from '@/ui/navigate';
 import { sayFarewell, type Farewell } from './farewell';
 import { forgetCursor, stopLive } from './live';
 
@@ -32,7 +31,7 @@ export function signOutHere(signOut: () => Promise<unknown>, { farewell = null, 
     if (!confirmed)
       await rotateDeviceKey().catch((error: unknown) => console.warn('sikemux: could not make this phone a new device', error));
     await signOut().catch((error: unknown) => console.warn('sikemux: Clerk could not sign out', error));
-    router.replace('/');
+    goHome();
   })().finally(() => {
     leaving = undefined;
   });

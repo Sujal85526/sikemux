@@ -71,7 +71,7 @@ export function useAccountHostsFeed() {
 }
 
 /** Reads the hosts again, unless the last read worked; the live connection keeps a good list current. */
-function retryHosts() {
+export function retryHosts() {
   if (!accountHostsNow.loaded || accountHostsNow.problem) hostsChanged();
 }
 

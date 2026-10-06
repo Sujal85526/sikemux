@@ -34,13 +34,13 @@ describe('signOutHere', () => {
     live.stopLive.mockImplementation(() => order.push('live'));
     token.forgetPush.mockImplementation(async () => void order.push('push'));
     hub.forget.mockImplementation(async (core) => void order.push(`forget ${core}`));
-    const replace = vi.spyOn(router, 'replace');
+    const home = vi.spyOn(router, 'dismissTo');
     const signOut = vi.fn(async () => void order.push('clerk'));
     await signOutHere(signOut, { confirmed: true });
     expect(order).toEqual(['live', 'push', 'forget host-a', 'forget host-b', 'clerk']);
     expect(setting.choose).toHaveBeenCalledWith(undefined);
     expect(live.forgetCursor).toHaveBeenCalledTimes(1);
-    expect(replace).toHaveBeenCalledWith('/');
+    expect(home).toHaveBeenCalledWith('/');
   });
 
   it('keeps the device key when the server took the phone off the account', async () => {

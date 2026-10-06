@@ -13,7 +13,6 @@ import {
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
-import * as Haptics from 'expo-haptics';
 
 import { activityText, composerPlaceholder } from '@mac/chat/chatStatus';
 import { activeToolLabel } from '@mac/chat/toolLabels';
@@ -25,8 +24,10 @@ import { retry as reconnect, useDevices, useLive, type Live } from '@/devices/hu
 import { dismissCardsFor } from '@/notify/cards';
 import { deviceName } from '@/devices/paired';
 import { chatTitle, providerName } from '@/devices/words';
+import { haptics } from '@/ui/haptics';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Button } from '@/ui/controls';
+import { pauseBackdrop } from '@/ui/motion';
 import { Nav, Screen, useBottomGap } from '@/ui/screen';
 import { Working } from '@/ui/status';
 import { fonts, type Palette, typeFor, useColors, useStyles, useType } from '@/ui/theme';
@@ -83,14 +84,16 @@ function useArrivals(running: boolean, waiting: string | undefined, said: { done
   const asked = useRef(waiting);
   useEffect(() => {
     if (was.current && !running) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
       AccessibilityInfo.announceForAccessibility(said.done);
     }
     was.current = running;
   }, [running, said.done]);
+  // A streaming reply needs the JavaScript thread more than the moving backdrop does.
+  useEffect(() => (running ? pauseBackdrop() : undefined), [running]);
   useEffect(() => {
     if (waiting && waiting !== asked.current) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      haptics.warning();
       AccessibilityInfo.announceForAccessibility(said.asks);
     }
     asked.current = waiting;
