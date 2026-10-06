@@ -43,7 +43,8 @@ function AgentSheet({
               key={launcher.id}
               onPress={() => onChoose(launcher)}
               style={[styles.agent, on && styles.agentOn]}
-              accessibilityRole="button">
+              accessibilityRole="button"
+              accessibilityState={{ selected: on }}>
               <AgentIcon provider={launcher.provider} size={22} />
               <Text style={[styles.agentText, on && { color: colors.ink }]} numberOfLines={1}>
                 {launcher.label}

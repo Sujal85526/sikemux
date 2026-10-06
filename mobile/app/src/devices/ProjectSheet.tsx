@@ -94,7 +94,11 @@ export function ProjectSheet({ visible, onClose, device, projects, chosen, onCho
       <ScrollView keyboardShouldPersistTaps="handled" style={styles.list}>
         <View style={styles.group}>
           {showAll ? (
-            <Pressable onPress={() => choose(null)} style={[styles.row, chosen === null && styles.rowOn]} accessibilityRole="button">
+            <Pressable
+              onPress={() => choose(null)}
+              style={[styles.row, chosen === null && styles.rowOn]}
+              accessibilityRole="button"
+              accessibilityState={{ selected: chosen === null }}>
               <DrawnIcon name="folders" size={16} color={colors.live} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.name}>All projects</Text>
@@ -110,7 +114,8 @@ export function ProjectSheet({ visible, onClose, device, projects, chosen, onCho
                 key={project.id}
                 onPress={() => choose(project.id)}
                 style={[styles.row, on && styles.rowOn, (showAll || index > 0) && styles.divided]}
-                accessibilityRole="button">
+                accessibilityRole="button"
+                accessibilityState={{ selected: on }}>
                 <Icon name="IconFolder" size={16} color={colors.live} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.name}>{project.name}</Text>
