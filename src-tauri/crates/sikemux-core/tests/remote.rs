@@ -12,7 +12,8 @@ use sikemux_core::client::{probe, ClientError, ClientEvent, CoreClient};
 use sikemux_core::protocol::{
     Attention, AttentionKind, BackdropImage, BuildIdentity, ChatAttachment, ChatEventKind,
     ChatLaunch, ChatLauncher, ChatState, DeviceAccess, DeviceView, Event, LaunchIdentity,
-    ProjectInfo, PublishedChat, RemoteStatus, SessionId, SpawnTarget, TerminalSpawn,
+    ProjectInfo, PublishedChat, PublishedRecent, RemoteStatus, SessionId, SpawnTarget,
+    TerminalSpawn,
 };
 use sikemux_core::remote::{self, SecretKey};
 use sikemux_core::server::{self, ServerConfig, ServerError};
@@ -807,6 +808,56 @@ async fn a_watching_device_cannot_start_a_chat() {
         refusal(client.publish_workspace(Vec::new(), Vec::new()).await)
             .contains("only Sikemux on this host")
     );
+}
+
+fn recent_chat(session_id: &str) -> PublishedRecent {
+    PublishedRecent {
+        launcher: "opencode".into(),
+        provider: "opencode".into(),
+        session_id: session_id.into(),
+        title: "Fix the login flake".into(),
+        cwd: std::env::temp_dir(),
+        active_at: 1_700_000_000_000,
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_device_resumes_a_recent_chat_the_app_published() {
+    let core_key = SecretKey::generate();
+    let phone = Device::new("Phone", DeviceAccess::Full);
+    let watcher = Device::new("Watcher", DeviceAccess::Watch);
+    let core = start_core(&core_key, &[&phone, &watcher]);
+    let (app, _app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    publish_fake_agent(&app).await;
+    app.publish_recent(vec![recent_chat("saved-1")])
+        .await
+        .expect("publish recent");
+    let status = listening(&app).await;
+
+    let endpoint = phone.endpoint().await;
+    let (client, mut events) = remote::connect(&endpoint, core_addr(&status))
+        .await
+        .expect("the phone connects");
+    let view = until_view(&mut events, |view| !view.recent.is_empty()).await;
+    let recent = &view.recent[0];
+    assert_eq!(recent.title, "Fix the login flake");
+    assert_eq!(recent.project, "sess-tmp");
+
+    let watch_endpoint = watcher.endpoint().await;
+    let (watching, _watch_events) = remote::connect(&watch_endpoint, core_addr(&status))
+        .await
+        .expect("the watcher connects");
+    assert!(refusal(watching.resume_chat(recent.id.clone()).await).contains("watch"));
+    assert!(refusal(client.resume_chat("opencode:unknown".into()).await).contains("recent"));
+
+    let (agent_id, start) = client
+        .resume_chat(recent.id.clone())
+        .await
+        .expect("the phone resumes the chat");
+    assert_eq!(start.session_id, "saved-1");
+    let view = until_view(&mut events, |view| view.recent.is_empty()).await;
+    assert!(view.chats.iter().any(|chat| chat.agent_id == agent_id));
+    assert!(refusal(client.resume_chat(recent.id.clone()).await).contains("already open"));
 }
 
 /// The next view the core sends that `wanted` accepts.

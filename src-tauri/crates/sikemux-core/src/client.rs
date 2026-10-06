@@ -26,9 +26,9 @@ use crate::protocol::{
     read_frame_sync, Attention, BackdropImage, BuildIdentity, CallId, ChatAttachment, ChatContext,
     ChatEvent, ChatInfo, ChatLaunch, ChatLauncher, ChatMark, ChatStart, ClientMessage,
     DeviceAccess, Event, FrameKind, HostRegistration, LaunchIdentity, ProjectInfo, PublishedChat,
-    RemoteStatus, Request, RequestId, Response, RunSelector, ServerMessage, SessionId, SessionInfo,
-    SpawnTarget, WindowAnswer, WindowCall, Workspace, MAX_FRAME_BYTES, OLDEST_PROTOCOL_VERSION,
-    PROTOCOL, PROTOCOL_VERSION,
+    PublishedRecent, RemoteStatus, Request, RequestId, Response, RunSelector, ServerMessage,
+    SessionId, SessionInfo, SpawnTarget, WindowAnswer, WindowCall, Workspace, MAX_FRAME_BYTES,
+    OLDEST_PROTOCOL_VERSION, PROTOCOL, PROTOCOL_VERSION,
 };
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -807,6 +807,10 @@ impl CoreClient {
             .await
     }
 
+    pub async fn publish_recent(&self, chats: Vec<PublishedRecent>) -> Result<(), ClientError> {
+        self.request_done(Request::PublishRecent { chats }).await
+    }
+
     pub async fn publish_on_screen(&self, agent_ids: Vec<String>) -> Result<(), ClientError> {
         self.request_done(Request::PublishOnScreen { agent_ids })
             .await
@@ -852,6 +856,21 @@ impl CoreClient {
             project,
             permission_mode: None,
             model,
+            effort: None,
+        };
+        match self.request(request).await? {
+            Response::ChatBegun { agent_id, start } => Ok((agent_id, start)),
+            _ => Err(ClientError::UnexpectedReply),
+        }
+    }
+
+    /// Takes up again a chat the app published as recent, by its id in the
+    /// device view. Answers like [`Self::start_chat`].
+    pub async fn resume_chat(&self, recent: String) -> Result<(String, ChatStart), ClientError> {
+        let request = Request::ResumeChat {
+            recent,
+            permission_mode: None,
+            model: None,
             effort: None,
         };
         match self.request(request).await? {

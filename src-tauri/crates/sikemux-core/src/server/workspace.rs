@@ -12,7 +12,8 @@ use serde_json::Value;
 
 use crate::protocol::{
     Backdrop, BackdropImage, ChatInfo, ChatLaunch, ChatLauncher, ChatState, Event, LauncherInfo,
-    ProjectInfo, PublishedChat, RequestId, Response, Workspace, WAKE_WAIT,
+    ProjectInfo, PublishedChat, PublishedRecent, RecentInfo, RequestId, Response, Workspace,
+    WAKE_WAIT,
 };
 
 use super::chat;
@@ -22,6 +23,8 @@ use super::{Core, CoreError, CoreResult};
 const MAX_PROJECTS: usize = 512;
 const MAX_LAUNCHERS: usize = 64;
 const MAX_CHATS: usize = 1024;
+const MAX_RECENT: usize = 100;
+const MAX_SESSION_ID_CHARS: usize = 512;
 const MAX_TITLE_CHARS: usize = 200;
 const MAX_COLOURS: usize = 64;
 /// A phone-sized JPEG is a few hundred kilobytes; this leaves room without letting one fill a frame.
@@ -34,6 +37,7 @@ struct Published {
     launchers: Vec<ChatLauncher>,
     chats: Vec<PublishedChat>,
     titles: BTreeMap<String, String>,
+    recent: Vec<PublishedRecent>,
     /// Each provider's `configOptions` from its last session, by provider.
     config_options: BTreeMap<String, Value>,
     palette: BTreeMap<String, String>,
@@ -52,6 +56,27 @@ pub(crate) struct ChatChoice {
     pub permission_mode: Option<String>,
     pub model: Option<String>,
     pub effort: Option<String>,
+    /// The provider's session to load instead of opening a new one.
+    pub resume_id: Option<String>,
+}
+
+/// What a device asked of a recent chat it takes up again.
+pub(crate) struct ResumeChoice {
+    pub recent: String,
+    pub permission_mode: Option<String>,
+    pub model: Option<String>,
+    pub effort: Option<String>,
+}
+
+fn recent_id(chat: &PublishedRecent) -> String {
+    format!("{}:{}", chat.provider, chat.session_id)
+}
+
+fn running_now(chat: &PublishedRecent, open: &[ChatInfo]) -> bool {
+    open.iter().any(|live| {
+        live.provider == chat.provider
+            && live.session_id.as_deref() == Some(chat.session_id.as_str())
+    })
 }
 
 impl Workspaces {
@@ -133,6 +158,83 @@ impl Workspaces {
         published.chats = chats;
         published.titles = titles;
         Ok(())
+    }
+
+    pub(crate) fn publish_recent(&self, chats: Vec<PublishedRecent>) -> CoreResult<()> {
+        let oversized = |chat: &PublishedRecent| {
+            chat.title.chars().count() > MAX_TITLE_CHARS
+                || chat.session_id.is_empty()
+                || chat.session_id.chars().count() > MAX_SESSION_ID_CHARS
+        };
+        if chats.len() > MAX_RECENT || chats.iter().any(oversized) {
+            return Err("the app published more recent chats than the core keeps".into());
+        }
+        self.lock().recent = chats;
+        Ok(())
+    }
+
+    /// The recent chats a device may take up again: those in a project the
+    /// app has open, leaving out any running now.
+    pub(crate) fn recent(&self, open: &[ChatInfo]) -> Vec<RecentInfo> {
+        let published = self.lock();
+        published
+            .recent
+            .iter()
+            .filter(|chat| !running_now(chat, open))
+            .filter_map(|chat| {
+                let project = published
+                    .projects
+                    .iter()
+                    .find(|project| project.path == chat.cwd)?;
+                Some(RecentInfo {
+                    id: recent_id(chat),
+                    provider: chat.provider.clone(),
+                    title: chat.title.clone(),
+                    project: project.id.clone(),
+                    cwd: chat.cwd.clone(),
+                    active_at: chat.active_at,
+                })
+            })
+            .collect()
+    }
+
+    /// How to start the recent chat a device chose, the way it would start a new one.
+    fn resume_choice(&self, choice: ResumeChoice, open: &[ChatInfo]) -> CoreResult<ChatChoice> {
+        let published = self.lock();
+        let chat = published
+            .recent
+            .iter()
+            .find(|chat| recent_id(chat) == choice.recent)
+            .ok_or_else(|| {
+                CoreError::from(
+                    "that chat is no longer among the recent ones in Sikemux on this host",
+                )
+            })?;
+        if running_now(chat, open) {
+            return Err("that chat is already open on this host".into());
+        }
+        let project = published
+            .projects
+            .iter()
+            .find(|project| project.path == chat.cwd)
+            .ok_or_else(|| {
+                CoreError::from("that chat's project is not open in Sikemux on this host")
+            })?;
+        let launcher = published
+            .launchers
+            .iter()
+            .find(|launcher| launcher.id == chat.launcher && launcher.provider == chat.provider)
+            .ok_or_else(|| {
+                CoreError::from("Sikemux on this host can no longer start that chat's agent")
+            })?;
+        Ok(ChatChoice {
+            launcher: launcher.id.clone(),
+            project: project.id.clone(),
+            permission_mode: choice.permission_mode,
+            model: choice.model,
+            effort: choice.effort,
+            resume_id: Some(chat.session_id.clone()),
+        })
     }
 
     /// What the app calls an agent terminal.
@@ -260,7 +362,7 @@ impl Workspaces {
             args: launcher.args.clone(),
             env,
             mcp_servers: tools.into_iter().collect(),
-            resume_id: None,
+            resume_id: choice.resume_id,
             permission_mode: choice
                 .permission_mode
                 .unwrap_or_else(|| launcher.permission_mode.clone()),
@@ -371,6 +473,19 @@ pub(crate) fn start_chat(
     }
 }
 
+/// Takes up a recent chat again, answering like [`start_chat`].
+pub(crate) fn resume_chat(
+    core: &Arc<Core>,
+    client: &Arc<ClientConn>,
+    request_id: RequestId,
+    choice: ResumeChoice,
+) {
+    match core.workspaces.resume_choice(choice, &core.chats.list()) {
+        Ok(choice) => start_chat(core, client, request_id, choice),
+        Err(error) => client.respond(request_id, Err(error)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -403,6 +518,27 @@ mod tests {
             project: "sess-1".into(),
             permission_mode: None,
             model: Some("opus".into()),
+            effort: None,
+            resume_id: None,
+        }
+    }
+
+    fn recent(session_id: &str, cwd: &str) -> PublishedRecent {
+        PublishedRecent {
+            launcher: "claude:work".into(),
+            provider: "claude".into(),
+            session_id: session_id.into(),
+            title: "Fix the login flake".into(),
+            cwd: cwd.into(),
+            active_at: 1_000,
+        }
+    }
+
+    fn resuming(recent: &str) -> ResumeChoice {
+        ResumeChoice {
+            recent: recent.into(),
+            permission_mode: None,
+            model: None,
             effort: None,
         }
     }
@@ -452,6 +588,101 @@ mod tests {
         let mut wrong = choice();
         wrong.launcher = "gemini".into();
         assert!(workspaces.launch(wrong, "agent-1", None).is_err());
+    }
+
+    #[test]
+    fn a_device_sees_recent_chats_in_open_projects_but_not_running_ones() {
+        let workspaces = Workspaces::default();
+        workspaces
+            .publish(vec![project()], vec![launcher()])
+            .unwrap();
+        workspaces
+            .publish_recent(vec![
+                recent("s1", "/Users/me/sikemux"),
+                recent("s2", "/Users/me/sikemux"),
+                recent("s3", "/Users/me/closed"),
+            ])
+            .unwrap();
+        let running = workspaces.listed(Vec::new());
+        let shown = workspaces.recent(&running);
+        assert_eq!(
+            shown
+                .iter()
+                .map(|chat| chat.id.as_str())
+                .collect::<Vec<_>>(),
+            ["claude:s1", "claude:s2"]
+        );
+        assert_eq!(shown[0].project, "sess-1");
+        assert!(!serde_json::to_string(&shown)
+            .unwrap()
+            .contains("claude:work"));
+
+        let mut live = ChatInfo {
+            agent_id: "agent-1".into(),
+            provider: "claude".into(),
+            title: None,
+            cwd: "/Users/me/sikemux".into(),
+            session_id: Some("s1".into()),
+            state: ChatState::Ready,
+            running: false,
+            pending_permissions: Vec::new(),
+            subagents: 0,
+            started_by: None,
+            launcher: None,
+            permission_mode: String::new(),
+            model: None,
+            effort: None,
+            asleep: false,
+            unread: false,
+            active_at: None,
+        };
+        assert_eq!(workspaces.recent(std::slice::from_ref(&live)).len(), 1);
+        live.provider = "codex".into();
+        assert_eq!(workspaces.recent(&[live]).len(), 2);
+    }
+
+    #[test]
+    fn a_recent_chat_resumes_with_its_launcher_in_its_project() {
+        let workspaces = Workspaces::default();
+        workspaces
+            .publish(vec![project()], vec![launcher()])
+            .unwrap();
+        workspaces
+            .publish_recent(vec![recent("s1", "/Users/me/sikemux")])
+            .unwrap();
+        let choice = workspaces
+            .resume_choice(resuming("claude:s1"), &[])
+            .unwrap();
+        let launch = workspaces.launch(choice, "agent-1", None).unwrap();
+        assert_eq!(launch.resume_id.as_deref(), Some("s1"));
+        assert_eq!(launch.cwd, PathBuf::from("/Users/me/sikemux"));
+        assert_eq!(launch.provider, "claude");
+        assert_eq!(launch.permission_mode, "bypass");
+    }
+
+    #[test]
+    fn only_a_published_recent_chat_resumes() {
+        let workspaces = Workspaces::default();
+        workspaces
+            .publish(vec![project()], vec![launcher()])
+            .unwrap();
+        workspaces
+            .publish_recent(vec![recent("s1", "/Users/me/sikemux")])
+            .unwrap();
+        assert!(workspaces
+            .resume_choice(resuming("claude:other"), &[])
+            .is_err());
+        assert!(workspaces.resume_choice(resuming("s1"), &[]).is_err());
+        workspaces.publish_recent(Vec::new()).unwrap();
+        assert!(workspaces
+            .resume_choice(resuming("claude:s1"), &[])
+            .is_err());
+        let mut elsewhere = recent("s2", "/Users/me/sikemux");
+        elsewhere.launcher = "codex".into();
+        workspaces.publish_recent(vec![elsewhere]).unwrap();
+        assert!(workspaces
+            .resume_choice(resuming("claude:s2"), &[])
+            .is_err());
     }
 
     #[test]

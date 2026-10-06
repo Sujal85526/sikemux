@@ -231,6 +231,32 @@ impl From<core::Attention> for Attention {
     }
 }
 
+/// A saved chat the host's app lists as recent, which `resume_chat` takes up again.
+#[derive(uniffi::Record)]
+pub struct RecentInfo {
+    pub id: String,
+    pub provider: String,
+    pub title: String,
+    /// The id of the host's project it ran in.
+    pub project: String,
+    pub cwd: String,
+    /// Milliseconds since the Unix epoch.
+    pub active_at: u64,
+}
+
+impl From<core::RecentInfo> for RecentInfo {
+    fn from(chat: core::RecentInfo) -> Self {
+        Self {
+            id: chat.id,
+            provider: chat.provider,
+            title: chat.title,
+            project: chat.project,
+            cwd: chat.cwd.display().to_string(),
+            active_at: chat.active_at,
+        }
+    }
+}
+
 /// Everything the phone shows of one host.
 #[derive(uniffi::Record)]
 pub struct DeviceView {
@@ -238,6 +264,8 @@ pub struct DeviceView {
     pub sessions: Vec<SessionInfo>,
     pub chats: Vec<ChatInfo>,
     pub attentions: Vec<Attention>,
+    /// Newest first.
+    pub recent: Vec<RecentInfo>,
 }
 
 impl From<core::DeviceView> for DeviceView {
@@ -247,6 +275,7 @@ impl From<core::DeviceView> for DeviceView {
             sessions: view.sessions.into_iter().map(Into::into).collect(),
             chats: view.chats.into_iter().map(Into::into).collect(),
             attentions: view.attentions.into_iter().map(Into::into).collect(),
+            recent: view.recent.into_iter().map(Into::into).collect(),
         }
     }
 }

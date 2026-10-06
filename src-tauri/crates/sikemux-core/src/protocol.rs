@@ -418,6 +418,11 @@ pub enum Request {
         chats: Vec<PublishedChat>,
         titles: BTreeMap<String, String>,
     },
+    /// The saved chats the app lists as recent, newest first and none it has
+    /// open, so devices can take one up again. Replaces the last list.
+    PublishRecent {
+        chats: Vec<PublishedRecent>,
+    },
     /// The agents the person is looking at in the app now, replacing the
     /// last list. An agent on screen is never left unread.
     PublishOnScreen {
@@ -440,6 +445,14 @@ pub enum Request {
     StartChat {
         launcher: String,
         project: String,
+        permission_mode: Option<String>,
+        model: Option<String>,
+        effort: Option<String>,
+    },
+    /// Takes up again one of the saved chats the app published as recent,
+    /// named by its [`RecentInfo::id`], and answers like `StartChat`.
+    ResumeChat {
+        recent: String,
         permission_mode: Option<String>,
         model: Option<String>,
         effort: Option<String>,
@@ -475,6 +488,36 @@ pub struct PublishedChat {
     pub title: Option<String>,
     pub cwd: PathBuf,
     pub asleep: bool,
+}
+
+/// A saved chat as the app lists it among its recent ones.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublishedRecent {
+    /// The app's launcher that takes it up again.
+    pub launcher: String,
+    pub provider: String,
+    /// The provider's own id for the session, which it loads to resume it.
+    pub session_id: String,
+    pub title: String,
+    pub cwd: PathBuf,
+    /// When it was last written to, in Unix milliseconds.
+    pub active_at: u64,
+}
+
+/// What a device learns of a recent chat: never the launcher behind it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentInfo {
+    /// Names it in `ResumeChat`.
+    pub id: String,
+    pub provider: String,
+    pub title: String,
+    /// The app's project it ran in.
+    pub project: String,
+    pub cwd: PathBuf,
+    /// Unix milliseconds.
+    pub active_at: u64,
 }
 
 /// Something read elsewhere and handed to the agent whole, such as an issue.
@@ -1253,6 +1296,8 @@ pub struct DeviceView {
     pub sessions: Vec<SessionInfo>,
     pub chats: Vec<ChatInfo>,
     pub attentions: Vec<Attention>,
+    /// Saved chats the app lists as recent, newest first, none of them open.
+    pub recent: Vec<RecentInfo>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -60,7 +60,8 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::AcpStop { .. }
         | Request::AcpSetPermissionMode { .. }
         | Request::AcpSetConfig { .. }
-        | Request::StartChat { .. } => Needs::Full,
+        | Request::StartChat { .. }
+        | Request::ResumeChat { .. } => Needs::Full,
         Request::Configure { .. }
         | Request::ListManifests
         | Request::ReloadManifests
@@ -79,6 +80,7 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::SetOwner { .. }
         | Request::PublishWorkspace { .. }
         | Request::PublishAgents { .. }
+        | Request::PublishRecent { .. }
         | Request::PublishOnScreen { .. }
         | Request::WatchView
         | Request::FocusAgent { .. }
@@ -166,6 +168,7 @@ mod tests {
             Request::SetOwner {
                 owner: Some("user_attacker".into()),
             },
+            Request::PublishRecent { chats: Vec::new() },
         ] {
             assert_eq!(refusal(Some(DeviceAccess::Full), &request), LOCAL_ONLY);
         }
@@ -190,6 +193,12 @@ mod tests {
             },
             Request::AcpCancel {
                 agent_id: "a".into(),
+            },
+            Request::ResumeChat {
+                recent: "claude:s1".into(),
+                permission_mode: None,
+                model: None,
+                effort: None,
             },
         ] {
             assert_eq!(refusal(watch, &request), WATCH_ONLY);

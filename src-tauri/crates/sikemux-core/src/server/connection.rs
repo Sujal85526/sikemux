@@ -755,6 +755,10 @@ async fn run_requests(
                 let result = core.workspaces.publish_agents(chats, titles);
                 client.respond(request_id, result.map(|()| Response::Done));
             }
+            Request::PublishRecent { chats } => {
+                let result = core.workspaces.publish_recent(chats);
+                client.respond(request_id, result.map(|()| Response::Done));
+            }
             Request::PublishOnScreen { agent_ids } => {
                 core.seen.on_screen(client.id, agent_ids);
                 client.respond(request_id, Ok(Response::Done));
@@ -834,8 +838,23 @@ async fn run_requests(
                     permission_mode,
                     model,
                     effort,
+                    resume_id: None,
                 };
                 workspace::start_chat(&core, &client, request_id, choice);
+            }
+            Request::ResumeChat {
+                recent,
+                permission_mode,
+                model,
+                effort,
+            } => {
+                let choice = workspace::ResumeChoice {
+                    recent,
+                    permission_mode,
+                    model,
+                    effort,
+                };
+                workspace::resume_chat(&core, &client, request_id, choice);
             }
             Request::AnswerPairing { id, allow, access } => {
                 let result = core

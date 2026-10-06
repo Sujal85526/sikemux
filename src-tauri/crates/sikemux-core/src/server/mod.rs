@@ -533,11 +533,13 @@ impl Core {
         let chats = self.chat_infos();
         let mut attentions = self.chats.attentions();
         attentions.sort_by(|a, b| (a.at, &a.id).cmp(&(b.at, &b.id)));
+        let recent = self.workspaces.recent(&chats);
         let view = DeviceView {
             workspace: self.workspaces.view(),
             sessions,
             chats,
             attentions,
+            recent,
         };
         encode_control(&ServerMessage::Event {
             event: Event::DeviceView { view },

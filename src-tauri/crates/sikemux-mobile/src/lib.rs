@@ -833,6 +833,22 @@ impl Connection {
         }
     }
 
+    /// Takes up again one of the host's recent chats, by its id in the view,
+    /// and answers with the chat's agent id. A host too old to know the
+    /// request refuses it.
+    pub async fn resume_chat(&self, recent: String) -> Result<String, MobileError> {
+        let request = Request::ResumeChat {
+            recent,
+            permission_mode: None,
+            model: None,
+            effort: None,
+        };
+        match self.ask(request).await? {
+            Response::ChatBegun { agent_id, .. } => Ok(agent_id),
+            _ => Err(unexpected()),
+        }
+    }
+
     /// Gives the host the 32-byte `key` it seals this phone's notifications
     /// with, under `key_id`, and what the phone wants to hear about, as JSON:
     /// `{needsYou, finished, problems, when, muted}`. A host older than
