@@ -53,6 +53,7 @@
       "./plugins/notifications",
       "./plugins/backup-rules",
       "./plugins/scene-lifecycle",
+      "./plugins/spm-ids",
       [
         "expo-splash-screen",
         {
