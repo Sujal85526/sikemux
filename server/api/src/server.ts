@@ -10,6 +10,7 @@ import { openDatabase } from "./db.ts";
 import { RateLimiter } from "./limits.ts";
 import { attachLive } from "./live/server.ts";
 import type { Logger } from "./log.ts";
+import { ApnsProvider } from "./push/apns.ts";
 import { FcmProvider } from "./push/fcm.ts";
 import { Pusher } from "./push/send.ts";
 
@@ -44,6 +45,16 @@ export function startServer(config: Config, log: Logger) {
     log.warn(
       "FCM_SERVICE_ACCOUNT_FILE is not set: pushes to Android phones answer not_set_up",
     );
+  const apns = config.push.apns
+    ? new ApnsProvider(config.push.apns, { topic: config.push.apns.topic })
+    : null;
+  if (apns)
+    log.info(
+      { keyId: config.push.apns?.keyId, topic: config.push.apns?.topic },
+      "pushing to iOS through APNs",
+    );
+  else
+    log.warn("APNS_KEY_FILE is not set: pushes to iPhones answer not_set_up");
   log.info(
     {
       keyId: config.join.keyId,
@@ -57,7 +68,10 @@ export function startServer(config: Config, log: Logger) {
     db: database.db,
     log,
     limiter,
-    providers: fcm ? { fcm } : {},
+    providers: {
+      ...(fcm ? { fcm } : {}),
+      ...(apns ? { apns } : {}),
+    },
   });
   const app = createApp({
     database,

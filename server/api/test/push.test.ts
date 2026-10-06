@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,6 +20,7 @@ import type { Database } from "../src/db.ts";
 import { pushTokenMessage, signedBy } from "../src/devices/signature.ts";
 import { RateLimiter } from "../src/limits.ts";
 import { CLOSE } from "../src/live/options.ts";
+import { ApnsProvider } from "../src/push/apns.ts";
 import { FcmProvider, readServiceAccount } from "../src/push/fcm.ts";
 import type { PushMessage } from "../src/push/provider.ts";
 import { Pusher } from "../src/push/send.ts";
@@ -43,6 +45,10 @@ import {
 } from "./live.ts";
 import { body, testApp } from "./support.ts";
 import { macToken, sessionToken } from "./tokens.ts";
+
+const apnsKey = generateKeyPairSync("ec", {
+  namedCurve: "prime256v1",
+}).privateKey;
 
 let database: Database;
 let drop: () => Promise<void>;
@@ -521,6 +527,7 @@ describe("FCM settings", () => {
       app: "production",
       allowSandbox: false,
       fcm: null,
+      apns: null,
     });
     expect(readPush({ PUSH_APP: "dev" }, problems).allowSandbox).toBe(true);
     expect(problems).toEqual([]);
@@ -556,6 +563,43 @@ describe("a host's push", () => {
       },
     ]);
     expect((await storedTokens())[0]?.last_ok_at).not.toBeNull();
+  });
+
+  it("reaches an iPhone through the APNs server its token came from", async () => {
+    const sent: { origin: string; path: unknown }[] = [];
+    await startLive({
+      providers: {
+        apns: new ApnsProvider(
+          { keyId: "ABC123DEFG", teamId: "D577WD6Z5U", privateKey: apnsKey },
+          {
+            topic: "com.nodelike.sikemux.mobile",
+            endpoints: {
+              production: "https://prod",
+              sandbox: "https://sandbox",
+            },
+            transport: (origin, headers) => {
+              sent.push({ origin, path: headers[":path"] });
+              return Promise.resolve({ status: 200, headers: {}, body: "" });
+            },
+          },
+        ),
+      },
+    });
+    const mac = await registered(app, "user_a", "host");
+    const phone = await registered(app, "user_a", "client");
+    expect(
+      (
+        await putToken("user_a", phone, "apns-token", {
+          platform: "apns",
+          apnsEnvironment: "production",
+        })
+      ).status,
+    ).toBe(200);
+    const peer = await liveHost(mac);
+    expect(await pushed(peer, push(phone.key))).toBe("sent");
+    expect(sent).toEqual([
+      { origin: "https://prod", path: "/3/device/apns-token" },
+    ]);
   });
 
   it("goes only to phones on the host's own account", async () => {

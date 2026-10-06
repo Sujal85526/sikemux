@@ -1,4 +1,8 @@
-import type { PushKind, PushPlatform } from "@sikemux/protocol";
+import type {
+  ApnsEnvironment,
+  PushKind,
+  PushPlatform,
+} from "@sikemux/protocol";
 
 /** One notification for one phone, as a platform's push service receives it. */
 export interface PushMessage {
@@ -8,6 +12,8 @@ export interface PushMessage {
   blob: string;
   /** How long the platform may keep trying to reach the phone. */
   ttlSeconds: number;
+  /** Which of Apple's push servers issued an iOS token. */
+  apnsEnvironment?: ApnsEnvironment;
 }
 
 /** What a push service did with one attempt. */
