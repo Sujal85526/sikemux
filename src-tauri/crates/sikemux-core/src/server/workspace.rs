@@ -180,6 +180,7 @@ impl Workspaces {
                 state: ChatState::Stopped,
                 running: false,
                 pending_permissions: Vec::new(),
+                subagents: 0,
                 started_by: None,
                 launcher: None,
                 permission_mode: String::new(),

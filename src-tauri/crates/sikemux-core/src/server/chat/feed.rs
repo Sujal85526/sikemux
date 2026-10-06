@@ -3,7 +3,7 @@
 //! or loaded is kept, so a client that attaches later rebuilds the chat from
 //! the same events the others watched arrive.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -105,6 +105,32 @@ fn session_title(payload: &Value) -> Option<&str> {
         .as_str()
         .map(str::trim)
         .filter(|title| !title.is_empty())
+}
+
+/// Keeps `running` to the subagents the parent session has going. A subagent's
+/// own updates arrive under its session id and never change the count.
+fn track_subagent(running: &mut HashSet<String>, payload: &Value) {
+    let in_subagent = payload
+        .get("sessionId")
+        .and_then(Value::as_str)
+        .is_some_and(|session| running.contains(session));
+    let Some(update) = payload.get("update") else {
+        return;
+    };
+    let Some(id) = update.get("subagentSessionId").and_then(Value::as_str) else {
+        return;
+    };
+    match update.get("sessionUpdate").and_then(Value::as_str) {
+        Some("subagent_spawned") if !in_subagent => {
+            running.insert(id.to_owned());
+        }
+        Some("subagent_state_update") => {
+            if update.get("state").and_then(Value::as_str) != Some("running") {
+                running.remove(id);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn chunk(payload: &Value) -> Option<Chunk<'_>> {
@@ -469,6 +495,7 @@ struct Inner {
     start: Option<ChatStart>,
     permission_mode: String,
     title: Option<String>,
+    subagents: HashSet<String>,
     /// The session ended, so nobody new is let in to wait for events that
     /// will not come.
     closed: bool,
@@ -506,6 +533,7 @@ impl Feed {
                 start: None,
                 permission_mode,
                 title: None,
+                subagents: HashSet::new(),
                 closed: false,
             }),
         })
@@ -594,6 +622,7 @@ impl Feed {
             if let Some(title) = session_title(&payload) {
                 inner.title = Some(title.to_owned());
             }
+            track_subagent(&mut inner.subagents, &payload);
             inner.pending.push(payload);
             if !inner.flush_scheduled {
                 inner.flush_scheduled = true;
@@ -604,6 +633,10 @@ impl Feed {
                 });
             }
             return;
+        }
+        // A turn that ends takes the subagents it started with it, as clients settle them.
+        if kind == ChatEventKind::TurnCompleted {
+            inner.subagents.clear();
         }
         self.flush_locked(&mut inner);
         self.broadcast(&mut inner, kind, payload);
@@ -745,6 +778,13 @@ impl Feed {
         self.inner.lock().ok()?.title.clone()
     }
 
+    pub(crate) fn running_subagents(&self) -> u32 {
+        self.inner
+            .lock()
+            .map(|inner| inner.subagents.len() as u32)
+            .unwrap_or_default()
+    }
+
     pub(crate) fn start(&self) -> Option<ChatStart> {
         self.inner.lock().ok()?.start.clone()
     }
@@ -784,6 +824,23 @@ mod tests {
 
     fn kinds(replay: &Replay) -> Vec<ChatEventKind> {
         replay.events().iter().map(|event| event.kind).collect()
+    }
+
+    #[test]
+    fn subagents_count_from_spawn_until_they_stop() {
+        let update =
+            |session: &str, update: Value| json!({ "sessionId": session, "update": update });
+        let spawned =
+            |id: &str| json!({ "sessionUpdate": "subagent_spawned", "subagentSessionId": id });
+        let state = |id: &str, state: &str| json!({ "sessionUpdate": "subagent_state_update", "subagentSessionId": id, "state": state });
+        let mut running = HashSet::new();
+        track_subagent(&mut running, &update("s", spawned("a")));
+        track_subagent(&mut running, &update("s", spawned("b")));
+        track_subagent(&mut running, &update("a", spawned("nested")));
+        track_subagent(&mut running, &update("s", state("a", "running")));
+        assert_eq!(running.len(), 2);
+        track_subagent(&mut running, &update("s", state("a", "completed")));
+        assert_eq!(running, HashSet::from(["b".to_owned()]));
     }
 
     #[test]

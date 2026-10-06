@@ -167,6 +167,8 @@ pub struct ChatInfo {
     pub state: ChatState,
     pub running: bool,
     pub pending_permissions: Vec<String>,
+    /// Subagents still running for it.
+    pub subagents: u32,
     pub started_by: Option<String>,
     pub launcher: Option<String>,
     pub permission_mode: String,
@@ -191,6 +193,7 @@ impl From<core::ChatInfo> for ChatInfo {
             },
             running: chat.running,
             pending_permissions: chat.pending_permissions,
+            subagents: chat.subagents,
             started_by: chat.started_by,
             launcher: chat.launcher,
             permission_mode: chat.permission_mode,

@@ -19,7 +19,7 @@ use sikemux_pty::task::{TaskSource, TaskSpawnRequest};
 use crate::cli::protocol::{CliOpenRequest, HarnessRequest};
 
 pub const PROTOCOL: &str = "sikemux-core";
-pub const PROTOCOL_VERSION: u32 = 9;
+pub const PROTOCOL_VERSION: u32 = 10;
 /// The oldest version a device may speak and still be served. A change a
 /// device from an older release can still read bumps only `PROTOCOL_VERSION`,
 /// so phones waiting on an app store review keep working.
@@ -580,6 +580,9 @@ pub struct ChatInfo {
     pub state: ChatState,
     pub running: bool,
     pub pending_permissions: Vec<String>,
+    /// Subagents still running for it.
+    #[serde(default)]
+    pub subagents: u32,
     /// The paired device that started it. The app started the rest.
     pub started_by: Option<String>,
     /// The app's launcher a device started it with.
