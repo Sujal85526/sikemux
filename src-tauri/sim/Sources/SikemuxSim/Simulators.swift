@@ -132,8 +132,12 @@ actor Simulators {
     }
 
     /// Starts following a device's log the first time it is asked for, filtered to one process if one is named.
+    /// Once the whole device is followed, a process's lines come from there, kept since it started.
     func logs(on udid: String?, process: String?, after cursor: Int, limit: Int) async throws -> [String: Any] {
         let simulator = try await booted(udid)
+        if let process, let device = tails["\(simulator.udid) "] {
+            return device.tail.read(process: process, after: cursor, limit: limit)
+        }
         let key = "\(simulator.udid) \(process ?? "")"
         if tails[key] == nil {
             let tail = LogTail()

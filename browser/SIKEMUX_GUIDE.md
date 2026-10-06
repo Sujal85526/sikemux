@@ -603,7 +603,7 @@ a deep link.
 `cursor`: start at `0` and pass back the `cursor` it returns, as with
 `task_read`. It holds what apps log themselves, through `Logger`, `os_log`
 or `NSLog`; Apple's frameworks are left out. Ask for your app by `process`, its
-executable name, to read only its lines; the cursor is the same either way. `limit` caps the
+executable name: its lines are kept apart, and that cursor counts only them. `limit` caps the
 lines in one read; `more` says lines are waiting, and `dropped` that older ones
 went before you read them. `sim_detach`
 lets go of the device; it keeps running, and stays on your desk for the person.

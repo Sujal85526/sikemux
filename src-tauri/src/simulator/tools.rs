@@ -29,8 +29,6 @@ const CHANGE_READS: usize = 5;
 const EDGE: f64 = 10.0;
 const MAX_ELEMENTS: usize = 200;
 const DEFAULT_LOG_LINES: usize = 200;
-/// As many lines as the helper keeps, read whole when one process's lines are picked out.
-const KEPT_LOG_LINES: usize = 2000;
 /// An agent cannot see the person's screen, so attaching says where the device went.
 const SHOWN_ON_DESK: &str =
     "live on your desk in Sikemux, beside the person, who sees what you do and can use it too";
@@ -296,25 +294,11 @@ pub(super) async fn run(
                 .get("limit")
                 .and_then(Value::as_u64)
                 .map_or(DEFAULT_LOG_LINES, |limit| limit as usize);
-            let Some(process) = text("process") else {
-                return manager
-                    .request(
-                        "logs",
-                        json!({ "udid": device.udid, "after": cursor, "limit": limit }),
-                    )
-                    .await;
-            };
-            // The helper follows the whole device from sim.attach, so reading one
-            // process's lines picks them out of that same feed rather than
-            // starting a fresh, native, process-only tail too late to catch
-            // what it logged before this was first asked for.
-            let read = manager
-                .request(
-                    "logs",
-                    json!({ "udid": device.udid, "after": cursor, "limit": KEPT_LOG_LINES }),
-                )
-                .await?;
-            Ok(lines_of(&read, cursor, process, limit))
+            let mut fields = json!({ "udid": device.udid, "after": cursor, "limit": limit });
+            if let Some(process) = text("process") {
+                fields["process"] = process.into();
+            }
+            manager.request("logs", fields).await
         }
         "sim.rotate" => {
             let device = attached(manager, agent_id)?;
@@ -827,43 +811,6 @@ pub(super) fn labelled(elements: &[Element], name: &str) -> Result<(f64, f64), S
             ))
         }
     }
-}
-
-/// A process's own lines from a read of the device's log, at most `limit`, with
-/// the cursor to read on from. The helper numbers lines from 1 and hands back
-/// the number of the last one it read.
-pub(super) fn lines_of(read: &Value, after: u64, process: &str, limit: usize) -> Value {
-    let lines = read["lines"].as_array().cloned().unwrap_or_default();
-    let last = read["cursor"].as_u64().unwrap_or(after);
-    let first = last + 1 - lines.len() as u64;
-    let mut kept = Vec::new();
-    let mut cursor = last;
-    for (number, line) in (first..).zip(&lines) {
-        let Some(text) = line.as_str() else { continue };
-        if process_of(text) != Some(process) {
-            continue;
-        }
-        if kept.len() == limit {
-            cursor = number - 1;
-            break;
-        }
-        kept.push(text.to_owned());
-    }
-    json!({
-        "lines": kept,
-        "cursor": cursor,
-        "more": cursor < last || read["more"].as_bool().unwrap_or(false),
-        "dropped": read["dropped"].as_u64().unwrap_or(0),
-    })
-}
-
-/// A compact log line names its process before the bracket holding its id:
-/// `2026-10-03 14:00:00.123 Df Maps[1234:5678] message`.
-fn process_of(line: &str) -> Option<&str> {
-    line.split_whitespace()
-        .find_map(|word| word.split_once('['))
-        .map(|(name, _)| name)
-        .filter(|name| !name.is_empty())
 }
 
 /// Where to tap: an element number from the latest read, or a point.

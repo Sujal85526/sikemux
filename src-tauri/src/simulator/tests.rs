@@ -48,7 +48,7 @@ mod tools {
     use super::{helper, real_helper};
     use crate::simulator::tools::{
         changes, choose_device, edge_warning, element_lines, elements_from, inspect, labelled,
-        launching, lines_of, run, tap_point, Device,
+        launching, run, tap_point, Device,
     };
 
     /// Attaches the way an agent does when a first boot outlasts one call: by asking again.
@@ -244,28 +244,6 @@ mod tools {
         assert!(labelled(&twice, "Sett")
             .unwrap_err()
             .contains("2 elements match"));
-    }
-
-    #[test]
-    fn reads_one_process_from_the_device_log_and_where_to_read_on() {
-        let read = json!({
-            "lines": [
-                "2026-10-03 14:00:00.1 Df SimFixture[10:1] tapped",
-                "2026-10-03 14:00:00.2 Df Maps[11:1] moved",
-                "2026-10-03 14:00:00.3 Df SimFixture[10:1] typed",
-                "2026-10-03 14:00:00.4 Df SimFixture[10:1] scrolled",
-            ],
-            "cursor": 14,
-            "more": false,
-        });
-        let first = lines_of(&read, 10, "SimFixture", 2);
-        assert_eq!(first["lines"].as_array().unwrap().len(), 2);
-        assert_eq!(first["cursor"], json!(13));
-        assert_eq!(first["more"], json!(true));
-        let all = lines_of(&read, 10, "SimFixture", 10);
-        assert_eq!(all["cursor"], json!(14));
-        assert_eq!(all["more"], json!(false));
-        assert_eq!(lines_of(&read, 10, "Notes", 10)["lines"], json!([]));
     }
 
     #[test]
