@@ -10,7 +10,8 @@ import { problem as problemOf, useLive } from '@/devices/hub';
 import { ProjectSheet } from '@/devices/ProjectSheet';
 import { haptics } from '@/ui/haptics';
 import { AgentIcon, Icon } from '@/ui/Icon';
-import { Nav, Screen, useKeyboardShown, Working } from '@/ui/parts';
+import { Nav, Screen, useKeyboardShown } from '@/ui/screen';
+import { Working } from '@/ui/status';
 import { Sheet, SheetLabel } from '@/ui/Sheet';
 import { fonts, type Palette, useColors, useStyles, useType } from '@/ui/theme';
 

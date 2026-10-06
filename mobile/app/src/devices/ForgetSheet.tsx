@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { haptics } from '@/ui/haptics';
 import { goHome } from '@/ui/navigate';
-import { Button } from '@/ui/parts';
+import { Button } from '@/ui/controls';
 import { Sheet } from '@/ui/Sheet';
 import { fonts, type Palette, useStyles, useType } from '@/ui/theme';
 import { forgetBackdrop } from './backdrop';

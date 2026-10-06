@@ -8,7 +8,8 @@ import { errorCode, explain } from '@/account/clerkErrors';
 import { chooseFactor, CONFIRM_WORD, confirmed, deletion, REVERIFY_HINT, START } from '@/account/deletion';
 import { signOutHere } from '@/account/leave';
 import { CodeEntry } from '@/ui/CodeEntry';
-import { Button, Field, Nav, PasswordField, Screen, useBottomGap } from '@/ui/parts';
+import { Button, Field, PasswordField } from '@/ui/controls';
+import { Nav, Screen, useBottomGap } from '@/ui/screen';
 import { type Palette, typeFor, useStyles } from '@/ui/theme';
 
 const GONE = [

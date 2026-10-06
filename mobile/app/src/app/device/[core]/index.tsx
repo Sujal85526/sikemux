@@ -14,7 +14,10 @@ import { Wants } from '@/screens/Wants';
 import { haptics } from '@/ui/haptics';
 import { useScrollPause } from '@/ui/motion';
 import { AgentIcon, Icon } from '@/ui/Icon';
-import { Button, IconButton, Nav, NeedsYou, Row, Rows, Screen, SectionLabel, useBottomGap, Working } from '@/ui/parts';
+import { Button, IconButton } from '@/ui/controls';
+import { Row, Rows, SectionLabel } from '@/ui/list';
+import { Nav, Screen, useBottomGap } from '@/ui/screen';
+import { NeedsYou, Working } from '@/ui/status';
 import { fonts, isLight, type Palette, typeFor, useColors, useStyles, useType, translucent } from '@/ui/theme';
 
 type Tab = 'agents' | 'terminals';

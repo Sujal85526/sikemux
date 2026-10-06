@@ -1,7 +1,8 @@
 import { StyleSheet, Text, View } from 'react-native';
 
 import { sayFarewell, type Farewell as Reason } from '@/account/farewell';
-import { Button, Screen, useBottomGap } from '@/ui/parts';
+import { Button } from '@/ui/controls';
+import { Screen, useBottomGap } from '@/ui/screen';
 import { type Palette, typeFor, useStyles } from '@/ui/theme';
 
 const WORDS: Record<Reason, { title: string; body: string }> = {

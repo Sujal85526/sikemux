@@ -7,7 +7,7 @@ import { toolKind, toolRunning, toolTarget } from '@mac/chat/toolLabels';
 import type { AcpContentBlock, ChatMessage, ChatPart } from '@mac/chat/types';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import type { IconName } from '@/ui/icons.generated';
-import { Working } from '@/ui/parts';
+import { Working } from '@/ui/status';
 import { fonts, type Palette, useColors, useStyles } from '@/ui/theme';
 import { Folds } from './folds';
 import { Markdown } from './Markdown';

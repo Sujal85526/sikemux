@@ -5,7 +5,8 @@ import { useSignIn, useSignUp } from '@clerk/expo';
 import { errorCode, explain } from '@/account/clerkErrors';
 import { CodeEntry } from '@/ui/CodeEntry';
 import { goBack, goHome } from '@/ui/navigate';
-import { Button, Field, Nav, PasswordField, Screen } from '@/ui/parts';
+import { Button, Field, PasswordField } from '@/ui/controls';
+import { Nav, Screen } from '@/ui/screen';
 import { fonts, type Palette, typeFor, useStyles } from '@/ui/theme';
 
 /** Why an emailed code is asked for: a phone new to the account, a new account, or a new password. */

@@ -26,7 +26,9 @@ import { dismissCardsFor } from '@/notify/cards';
 import { deviceName } from '@/devices/paired';
 import { chatTitle, providerName } from '@/devices/words';
 import { AgentIcon, Icon } from '@/ui/Icon';
-import { Button, Nav, Screen, useBottomGap, Working } from '@/ui/parts';
+import { Button } from '@/ui/controls';
+import { Nav, Screen, useBottomGap } from '@/ui/screen';
+import { Working } from '@/ui/status';
 import { fonts, type Palette, typeFor, useColors, useStyles, useType } from '@/ui/theme';
 
 /** How near the end, as a share of the transcript's height, still counts as reading the latest. */

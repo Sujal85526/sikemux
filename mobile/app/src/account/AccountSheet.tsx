@@ -18,7 +18,7 @@ import { phoneName } from '@/device/name';
 import { NotificationsRow } from '@/notify/NotificationsRow';
 import { stopPush } from '@/notify/token';
 import { Icon } from '@/ui/Icon';
-import { Button } from '@/ui/parts';
+import { Button } from '@/ui/controls';
 import { Sheet } from '@/ui/Sheet';
 import { restartToUpdate, useUpdateWaiting } from '@/updates/overTheAir';
 import { fonts, type Palette, typeFor, useColors, useStyles, useType } from '@/ui/theme';

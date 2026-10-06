@@ -11,7 +11,9 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { GitHubMark, GoogleG } from '@/ui/brands';
 import { AgentIcon, Icon } from '@/ui/Icon';
-import { Button, Dot, NeedsYou, useBottomGap, Working } from '@/ui/parts';
+import { Button } from '@/ui/controls';
+import { useBottomGap } from '@/ui/screen';
+import { Dot, NeedsYou, Working } from '@/ui/status';
 import { defaultPalette as colors, fonts, typeFor } from '@/ui/theme';
 
 WebBrowser.maybeCompleteAuthSession();

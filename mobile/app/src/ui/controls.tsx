@@ -1,0 +1,211 @@
+import { useState, type ReactNode } from 'react';
+import {
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  type StyleProp,
+  type TextInputProps,
+  type TextStyle,
+  type ViewStyle,
+} from 'react-native';
+
+import { DrawnIcon, Icon } from './Icon';
+import { fonts, keyboardFor, type Palette, radius, translucent, useColors, useStyles } from './theme';
+
+export function IconButton({ name, onPress, label }: { name: Parameters<typeof Icon>[0]['name']; onPress?: () => void; label: string }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  return (
+    <Pressable style={styles.iconButton} onPress={onPress} accessibilityRole="button" accessibilityLabel={label}>
+      <Icon name={name} size={18} color={colors.tertiary} />
+    </Pressable>
+  );
+}
+
+type ButtonKind = 'primary' | 'neutral' | 'danger' | 'text';
+
+export function Button({
+  title,
+  onPress,
+  kind = 'neutral',
+  disabled,
+  icon,
+  style,
+}: {
+  title: string;
+  onPress?: () => void;
+  kind?: ButtonKind;
+  disabled?: boolean;
+  /** Drawn before the title, such as a sign-in provider's logo. */
+  icon?: ReactNode;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const styles = useStyles(makeStyles);
+  const fill = useStyles(buttonFill);
+  const ink = useStyles(buttonInk);
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityState={{ disabled }}
+      style={({ pressed }) => [styles.button, fill[kind], pressed && styles.pressed, disabled && styles.disabled, style]}>
+      {icon}
+      <Text style={[styles.buttonText, ink[kind]]}>{title}</Text>
+    </Pressable>
+  );
+}
+
+/** A text box in the app's controls: sunken, rounded, edged in the accent while typing in it. */
+export function Field(props: TextInputProps) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  const [focused, setFocused] = useState(false);
+  return (
+    <TextInput
+      placeholderTextColor={colors.tertiary}
+      selectionColor={colors.accent}
+      keyboardAppearance={keyboardFor(colors)}
+      {...props}
+      onFocus={(event) => {
+        setFocused(true);
+        props.onFocus?.(event);
+      }}
+      onBlur={(event) => {
+        setFocused(false);
+        props.onBlur?.(event);
+      }}
+      style={[styles.field, focused && styles.fieldFocused, props.style]}
+    />
+  );
+}
+
+export function PasswordField(props: Omit<TextInputProps, 'secureTextEntry'>) {
+  const styles = useStyles(makeStyles);
+  const colors = useColors();
+  const [shown, setShown] = useState(false);
+  return (
+    <View>
+      <Field {...props} secureTextEntry={!shown} style={[styles.passwordField, props.style]} />
+      <Pressable
+        onPress={() => setShown((was) => !was)}
+        style={styles.reveal}
+        accessibilityRole="button"
+        accessibilityLabel={shown ? 'Hide password' : 'Show password'}
+        hitSlop={6}>
+        {shown ? <DrawnIcon name="eyeOff" size={18} color={colors.tertiary} /> : <Icon name="IconEye" size={18} color={colors.tertiary} />}
+      </Pressable>
+    </View>
+  );
+}
+
+/** The rail's scope track: two or three options, the chosen one lifted. */
+export function Track<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: T; label: string; count?: number }[];
+  value: T;
+  onChange: (value: T) => void;
+}) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={styles.track} accessibilityRole="tablist">
+      {options.map((option) => {
+        const on = option.value === value;
+        return (
+          <Pressable
+            key={option.value}
+            onPress={() => onChange(option.value)}
+            style={[styles.trackOption, on && styles.trackOn]}
+            hitSlop={{ top: 4, bottom: 4 }}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: on }}>
+            <Text style={[styles.trackText, on && { color: colors.ink }]}>{option.label}</Text>
+            {option.count ? (
+              <View style={styles.count}>
+                <Text style={styles.countText} maxFontSizeMultiplier={1.3}>
+                  {option.count}
+                </Text>
+              </View>
+            ) : null}
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+const buttonFill = (colors: Palette): Record<ButtonKind, ViewStyle> => ({
+  primary: { backgroundColor: colors.ink, borderColor: colors.ink },
+  neutral: { backgroundColor: colors.raised, borderColor: colors.border },
+  danger: { backgroundColor: colors.raised, borderColor: colors.border },
+  text: { backgroundColor: 'transparent', borderColor: 'transparent', minHeight: 44 },
+});
+
+const buttonInk = (colors: Palette): Record<ButtonKind, TextStyle> => ({
+  primary: { color: colors.ground },
+  neutral: { color: colors.ink },
+  danger: { color: colors.danger },
+  text: { color: colors.secondary, fontFamily: fonts.uiMedium },
+});
+
+const makeStyles = (colors: Palette) => {
+  return StyleSheet.create({
+    iconButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+    button: {
+      minHeight: 50,
+      paddingVertical: 8,
+      borderRadius: radius.row,
+      borderWidth: 1,
+      flexDirection: 'row',
+      gap: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 16,
+    },
+    buttonText: { fontFamily: fonts.uiSemibold, fontSize: 16 },
+    field: {
+      height: 50,
+      borderRadius: radius.row,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.sunken,
+      paddingHorizontal: 14,
+      fontFamily: fonts.ui,
+      fontSize: 16,
+      color: colors.ink,
+    },
+    fieldFocused: { borderColor: colors.borderSelected },
+    passwordField: { paddingRight: 48 },
+    reveal: { position: 'absolute', right: 0, top: 0, bottom: 0, width: 48, alignItems: 'center', justifyContent: 'center' },
+    pressed: { opacity: 0.75 },
+    disabled: { opacity: 0.5 },
+    track: {
+      minHeight: 36,
+      padding: 3,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: translucent(colors.raised, 0.8),
+      flexDirection: 'row',
+    },
+    trackOption: { flex: 1, borderRadius: 7, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 },
+    trackOn: { backgroundColor: colors.active },
+    trackText: { fontFamily: fonts.ui, fontSize: 13, color: colors.tertiary },
+    count: {
+      minWidth: 16,
+      minHeight: 16,
+      borderRadius: 8,
+      paddingHorizontal: 5,
+      backgroundColor: colors.ink,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    countText: { fontFamily: fonts.uiSemibold, fontSize: 11, color: colors.ground },
+  });
+};

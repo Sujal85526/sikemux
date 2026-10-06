@@ -17,7 +17,9 @@ import { chatTitle } from '@/devices/words';
 import { haptics } from '@/ui/haptics';
 import { AgentIcon, DeviceIcon, Icon } from '@/ui/Icon';
 import { Wants } from './Wants';
-import { IconButton, NeedsYou, Screen, useBottomGap, Working } from '@/ui/parts';
+import { IconButton } from '@/ui/controls';
+import { Screen, useBottomGap } from '@/ui/screen';
+import { NeedsYou, Working } from '@/ui/status';
 import { fonts, type Palette, radius, typeFor, useColors, useStyles } from '@/ui/theme';
 
 function DeviceCard({ device }: { device: PairedDevice }) {

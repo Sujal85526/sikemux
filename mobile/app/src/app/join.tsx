@@ -8,7 +8,9 @@ import { useStill } from '@/ui/motion';
 import { DeviceIcon, Icon } from '@/ui/Icon';
 import { haptics } from '@/ui/haptics';
 import { goBack } from '@/ui/navigate';
-import { Button, Nav, Screen, useBottomGap, Working } from '@/ui/parts';
+import { Button } from '@/ui/controls';
+import { Nav, Screen, useBottomGap } from '@/ui/screen';
+import { Working } from '@/ui/status';
 import { offerNotifications } from '@/notify/setting';
 import { fonts, type Palette, radius, translucent, typeFor, useColors, useStyles, useType } from '@/ui/theme';
 

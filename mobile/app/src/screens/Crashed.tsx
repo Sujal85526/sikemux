@@ -2,7 +2,8 @@ import { StyleSheet, Text, View } from 'react-native';
 import type { ErrorBoundaryProps } from 'expo-router';
 
 import { goHome } from '@/ui/navigate';
-import { Button, Screen, useBottomGap } from '@/ui/parts';
+import { Button } from '@/ui/controls';
+import { Screen, useBottomGap } from '@/ui/screen';
 import { type Palette, typeFor, useStyles } from '@/ui/theme';
 
 /** What a screen shows in place of itself when drawing it threw. */

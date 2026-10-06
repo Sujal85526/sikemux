@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '@clerk/expo';
 
-import { Button } from '@/ui/parts';
+import { Button } from '@/ui/controls';
 import { Sheet } from '@/ui/Sheet';
 import { fonts, type Palette, typeFor, useStyles } from '@/ui/theme';
 import { choose, closeOffer, useOffered } from './setting';

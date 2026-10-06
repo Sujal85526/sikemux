@@ -1,7 +1,8 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { reloadAppAsync } from 'expo';
 
-import { Button, Screen, useBottomGap } from '@/ui/parts';
+import { Button } from '@/ui/controls';
+import { Screen, useBottomGap } from '@/ui/screen';
 import { type Palette, typeFor, useStyles } from '@/ui/theme';
 
 /** Shown when the account can't be read at launch: the first launch offline, or the accounts server out of reach. */

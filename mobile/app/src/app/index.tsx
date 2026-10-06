@@ -8,7 +8,8 @@ import { reloadDevices, useDevices } from '@/devices/hub';
 import { DevicesList } from '@/screens/DevicesList';
 import { Farewell } from '@/screens/Farewell';
 import { Welcome } from '@/screens/Welcome';
-import { Button, Screen, useBottomGap } from '@/ui/parts';
+import { Button } from '@/ui/controls';
+import { Screen, useBottomGap } from '@/ui/screen';
 import { typeFor, useStyles, type Palette } from '@/ui/theme';
 
 function Unreadable({ problem }: { problem: string }) {
