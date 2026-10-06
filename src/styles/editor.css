@@ -204,8 +204,9 @@
     cursor: pointer;
 }
 /* A menu shows its current item the way a native one does, with the row's tint rather than the focus ring. */
-.tree-ctx-item:hover,
-.tree-ctx-item:focus-visible {
+/* Inside the menu, so it outranks the app-wide [tabindex]:focus-visible ring that loads later. */
+.tree-ctx-menu .tree-ctx-item:hover,
+.tree-ctx-menu .tree-ctx-item:focus-visible {
     box-shadow: none;
     background: var(--surface-selected);
     color: var(--text-primary);

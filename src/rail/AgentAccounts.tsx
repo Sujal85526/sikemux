@@ -110,7 +110,7 @@ export function AgentAccountsPanel({
                 onClick={(event) => {
                     readOthers();
                     const box = event.currentTarget.getBoundingClientRect();
-                    setMenu({ x: box.left, y: box.bottom + 4 });
+                    setMenu({ x: box.left, y: box.top - 4 });
                 }}>
                 <span className="agent-account-avatar" style={{ background: current.accent }} aria-hidden="true">
                     {initial(current.name)}
@@ -128,7 +128,7 @@ export function AgentAccountsPanel({
                 </span>
                 <IconChevron size={10} className="agent-account-chevron" />
             </button>
-            {menu && <TreeContextMenu x={menu.x} y={menu.y} items={items} onClose={() => setMenu(null)} />}
+            {menu && <TreeContextMenu x={menu.x} y={menu.y} above items={items} onClose={() => setMenu(null)} />}
 
             {adding && <AddAccount provider={provider} providerLabel={providerLabel} onDone={() => setAdding(false)} />}
             {signedOut || signing ? <AccountSignIn profile={current} /> : <UsageWindows usage={usage} />}

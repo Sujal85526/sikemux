@@ -859,6 +859,7 @@ export function TreeContextMenu({
     items,
     onClose,
     alignRight = false,
+    above = false,
 }: {
     x: number;
     y: number;
@@ -866,6 +867,8 @@ export function TreeContextMenu({
     onClose: () => void;
     /** Hang the menu left of `x` instead of right of it, for buttons at a right edge. */
     alignRight?: boolean;
+    /** Open upward with its bottom at `y`, for buttons at the foot of the window. */
+    above?: boolean;
 }) {
     const ref = useRef<HTMLDivElement>(null);
     const [pos, setPos] = useState({ left: x, top: y });
@@ -876,11 +879,11 @@ export function TreeContextMenu({
         const r = el.getBoundingClientRect();
         const pad = 6;
         let left = alignRight ? x - r.width : x;
-        let top = y;
+        let top = above ? Math.max(pad, y - r.height) : y;
         if (left + r.width > window.innerWidth - pad) left = Math.max(pad, window.innerWidth - r.width - pad);
         if (top + r.height > window.innerHeight - pad) top = Math.max(pad, window.innerHeight - r.height - pad);
         setPos({ left, top });
-    }, [x, y, alignRight]);
+    }, [x, y, alignRight, above]);
 
     /* A click on the page lands in the page, never on the scrim, but it takes the
        window's focus with it, so losing focus closes the menu as a click away would. */
