@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 
 import type { ChatInfo, ProjectInfo, SessionInfo, Snapshot } from '@/core/protocol';
@@ -291,6 +291,12 @@ export default function Device() {
       .then(reloadDevices)
       .catch(() => {});
   };
+  const [scrolled] = useState(() => new Animated.Value(0));
+  const [headHeight, setHeadHeight] = useState(0);
+  // The large name hands over to the bar's own title as it scrolls under it, and the tabs then stay put.
+  const titleShown = scrolled.interpolate({ inputRange: [headHeight - 48, headHeight - 12], outputRange: [0, 1], extrapolate: 'clamp' });
+  const barStuck = scrolled.interpolate({ inputRange: [headHeight - 8, headHeight], outputRange: [0, 1], extrapolate: 'clamp' });
+  const hostName = device ? deviceName(device) : 'Host';
   const switchTo = (next: Tab) => {
     if (next !== tab) haptics.select();
     setTab(next);
@@ -298,9 +304,19 @@ export default function Device() {
 
   return (
     <Screen>
-      <Nav back="Devices" end={device ? <IconButton name="IconMore" label="Options" onPress={() => setOptions(true)} /> : null} />
+      <Nav
+        back="Devices"
+        title={
+          snapshot ? (
+            <Animated.Text style={[styles.navName, { opacity: titleShown }]} numberOfLines={1}>
+              {hostName}
+            </Animated.Text>
+          ) : undefined
+        }
+        end={device ? <IconButton name="IconMore" label="Options" onPress={() => setOptions(true)} /> : null}
+      />
       {device ? <ForgetSheet device={device} visible={options} onClose={() => setOptions(false)} /> : null}
-      <HostHead name={device ? deviceName(device) : 'Host'} line={status.line} online={status.online} />
+      {snapshot && !status.unpaired ? null : <HostHead name={hostName} line={status.line} online={status.online} />}
       {status.unpaired ? (
         <Unpaired device={device} />
       ) : away && !snapshot ? (
@@ -332,42 +348,53 @@ export default function Device() {
         </View>
       ) : (
         <>
-          <View style={styles.bar}>
-            <View style={styles.tabs} accessibilityRole="tablist">
-              <HostTab label="Agents" count={asking} on={tab === 'agents'} onPress={() => switchTo('agents')} />
-              <HostTab label="Terminals" on={tab === 'terminals'} onPress={() => switchTo('terminals')} />
-            </View>
-            {snapshot.workspace.projects.length || filtering ? (
-              <Pressable
-                onPress={() => setPicking(true)}
-                hitSlop={12}
-                style={styles.picker}
-                accessibilityRole="button"
-                accessibilityLabel="Project">
-                <Icon name="IconFolder" size={14} color={colors.live} />
-                <Text style={styles.pickerText} numberOfLines={1}>
-                  {scope?.name ?? 'All projects'}
-                </Text>
-                {filtering && provider !== 'all' ? <AgentIcon provider={provider} size={14} /> : null}
-                <View style={{ transform: [{ rotate: '90deg' }] }}>
-                  <Icon name="IconChevron" size={12} color={colors.inkFaint} />
-                </View>
-              </Pressable>
-            ) : null}
-          </View>
-          <ScrollView
+          <Animated.ScrollView
             {...scrollPause}
+            onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrolled } } }], { useNativeDriver: true })}
+            scrollEventThrottle={16}
+            stickyHeaderIndices={[1]}
             style={status.online ? undefined : styles.stale}
             accessibilityHint={status.online ? undefined : 'Out of date until the host answers again'}
-            contentContainerStyle={[styles.body, { paddingBottom: bottom + (starts ? NEW_CHAT_HEIGHT + 24 : 24) }]}>
-            {snapshot ? (
-              tab === 'agents' ? (
-                <Agents core={core} snapshot={snapshot} scope={scope} provider={provider} />
-              ) : (
-                <Terminals snapshot={snapshot} scope={scope} />
-              )
-            ) : null}
-          </ScrollView>
+            contentContainerStyle={{ paddingBottom: bottom + (starts ? NEW_CHAT_HEIGHT + 24 : 24) }}>
+            <View onLayout={(event) => setHeadHeight(event.nativeEvent.layout.height)}>
+              <HostHead name={hostName} line={status.line} online={status.online} />
+            </View>
+            <View>
+              <Animated.View pointerEvents="none" style={[styles.barGround, { opacity: barStuck }]} />
+              <View style={styles.bar}>
+                <View style={styles.tabs} accessibilityRole="tablist">
+                  <HostTab label="Agents" count={asking} on={tab === 'agents'} onPress={() => switchTo('agents')} />
+                  <HostTab label="Terminals" on={tab === 'terminals'} onPress={() => switchTo('terminals')} />
+                </View>
+                {snapshot.workspace.projects.length || filtering ? (
+                  <Pressable
+                    onPress={() => setPicking(true)}
+                    hitSlop={12}
+                    style={styles.picker}
+                    accessibilityRole="button"
+                    accessibilityLabel="Project">
+                    <Icon name="IconFolder" size={14} color={colors.live} />
+                    <Text style={styles.pickerText} numberOfLines={1}>
+                      {scope?.name ?? 'All projects'}
+                    </Text>
+                    {filtering && provider !== 'all' ? <AgentIcon provider={provider} size={14} /> : null}
+                    <View style={{ transform: [{ rotate: '90deg' }] }}>
+                      <Icon name="IconChevron" size={12} color={colors.inkFaint} />
+                    </View>
+                  </Pressable>
+                ) : null}
+              </View>
+            </View>
+            <View style={styles.body}>
+              {snapshot ? (
+                tab === 'agents' ? (
+                  <Agents core={core} snapshot={snapshot} scope={scope} provider={provider} />
+                ) : (
+                  <Terminals snapshot={snapshot} scope={scope} />
+                )
+              ) : null}
+            </View>
+          </Animated.ScrollView>
           {starts ? (
             <Pressable
               onPress={() => router.push(scope ? `/device/${core}/new?project=${encodeURIComponent(scope.id)}` : `/device/${core}/new`)}
@@ -424,7 +451,22 @@ const makeStyles = (colors: Palette) => {
       textShadowOffset: { width: 0, height: 2 },
       textShadowRadius: 18,
     },
-    bar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingHorizontal: 18, paddingTop: 4 },
+    bar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+      paddingHorizontal: 18,
+      paddingTop: 6,
+      paddingBottom: 8,
+    },
+    barGround: {
+      ...StyleSheet.absoluteFill,
+      backgroundColor: colors.ground,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    navName: { fontFamily: fonts.uiSemibold, fontSize: 16, letterSpacing: -0.25, color: colors.ink },
     tabs: { flexDirection: 'row', alignItems: 'center', gap: 20 },
     tab: { flexDirection: 'row', alignItems: 'center', gap: 7 },
     tabText: { fontFamily: fonts.uiSemibold, fontSize: 15, letterSpacing: -0.15, color: colors.tertiary },
