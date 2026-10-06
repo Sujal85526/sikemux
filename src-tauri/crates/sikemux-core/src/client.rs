@@ -23,8 +23,8 @@ use tokio::task::JoinHandle;
 use crate::protocol::frozen::{FrozenReply, FrozenRequest};
 use crate::protocol::{
     decode_output, decode_snapshot, encode_control, encode_frozen, encode_input, read_frame,
-    read_frame_sync, Attention, BackdropImage, BuildIdentity, CallId, ChatAttachment, ChatContext,
-    ChatEvent, ChatInfo, ChatLaunch, ChatLauncher, ChatMark, ChatStart, ClientMessage,
+    read_frame_sync, Attention, BackdropImage, BuildIdentity, CallId, ChatAccount, ChatAttachment,
+    ChatContext, ChatEvent, ChatInfo, ChatLaunch, ChatLauncher, ChatMark, ChatStart, ClientMessage,
     DeviceAccess, Event, FrameKind, HostRegistration, LaunchIdentity, ProjectInfo, PublishedChat,
     PublishedRecent, RemoteStatus, Request, RequestId, Response, RunSelector, ServerMessage,
     SessionId, SessionInfo, SpawnTarget, WindowAnswer, WindowCall, Workspace, MAX_FRAME_BYTES,
@@ -730,6 +730,15 @@ impl CoreClient {
             Response::ChatConfig { value } => Ok(value),
             _ => Err(ClientError::UnexpectedReply),
         }
+    }
+
+    pub async fn acp_switch_account(
+        &self,
+        agent_id: String,
+        account: ChatAccount,
+    ) -> Result<(), ClientError> {
+        self.request_done(Request::AcpSwitchAccount { agent_id, account })
+            .await
     }
 
     async fn remote_request(&self, request: Request) -> Result<RemoteStatus, ClientError> {

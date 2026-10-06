@@ -86,7 +86,8 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::WatchView
         | Request::FocusAgent { .. }
         | Request::PublishPalette { .. }
-        | Request::PublishBackdrop { .. } => Needs::Local,
+        | Request::PublishBackdrop { .. }
+        | Request::AcpSwitchAccount { .. } => Needs::Local,
     }
 }
 

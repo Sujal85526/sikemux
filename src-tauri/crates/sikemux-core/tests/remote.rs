@@ -392,6 +392,8 @@ async fn publish_fake_agent_asking(app: &CoreClient, permission_mode: &str) {
         args: vec!["acp".into()],
         env: [("SECRET_TOKEN".to_owned(), "do-not-share".to_owned())].into(),
         permission_mode: permission_mode.into(),
+        account: None,
+        fallbacks: Vec::new(),
     };
     let project = ProjectInfo {
         id: "sess-tmp".into(),
@@ -705,6 +707,8 @@ fn fake_launch(agent_id: &str) -> ChatLaunch {
         permission_mode: "bypass".into(),
         model: None,
         effort: None,
+        account: None,
+        fallbacks: Vec::new(),
     }
 }
 

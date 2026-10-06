@@ -183,6 +183,8 @@ fn launcher() -> ChatLauncher {
         args: Vec::new(),
         env: Default::default(),
         permission_mode: "default".into(),
+        account: None,
+        fallbacks: Vec::new(),
     }
 }
 

@@ -2,6 +2,7 @@
 //! them and how it reads what they send back. The connections themselves run
 //! in the server.
 
+pub mod account;
 pub mod air;
 pub mod native;
 

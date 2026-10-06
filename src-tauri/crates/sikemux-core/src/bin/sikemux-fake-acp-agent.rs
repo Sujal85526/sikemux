@@ -9,7 +9,14 @@
 //! - `hold MS` says `holding`, waits, then says `held`, or stops early on a
 //!   cancel;
 //! - `exit CODE` ends the process at once;
+//! - `who` says which account the process runs as;
 //! - anything else is echoed back.
+//!
+//! The account is `FAKE_ACP_ACCOUNT`. An account named in `FAKE_ACP_LIMITED`
+//! has run out of usage, and every turn on it fails the way Claude's adapter
+//! reports that. When `FAKE_ACP_SIGN_IN` names a file, the process reads who
+//! is signed in from it once, as it starts, and refuses every prompt while
+//! nobody was.
 
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
@@ -27,6 +34,8 @@ struct Agent {
     cancelled: AtomicBool,
     next_request: AtomicU64,
     model: Mutex<String>,
+    account: String,
+    signed_in: bool,
 }
 
 impl Agent {
@@ -223,6 +232,10 @@ fn run_turn(agent: &Agent, session_id: &str, text: &str) -> &'static str {
             "end_turn"
         }
         "exit" => std::process::exit(argument.unwrap_or(1) as i32),
+        "who" => {
+            say(&format!("account {}", agent.account));
+            "end_turn"
+        }
         _ => {
             say(&format!("echo: {text}"));
             "end_turn"
@@ -277,6 +290,29 @@ fn handle(agent: &Arc<Agent>, message: Value, sessions: &AtomicU64) {
             replay_history(agent, &session_id);
             agent.reply(&id, json!({ "configOptions": agent.config() }));
         }
+        ("session/prompt", Some(id)) if !agent.signed_in => agent.send(json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": { "code": -32000, "message": "Authentication required" },
+        })),
+        ("session/prompt", Some(id)) if limited(&agent.account) => {
+            let session_id = params["sessionId"].as_str().unwrap_or_default().to_owned();
+            record(&session_id, "user", &prompt_text(&params));
+            agent.reply(
+                &id,
+                json!({
+                    "stopReason": "end_turn",
+                    "_meta": { "jetbrains": { "air": { "version": 1, "sessionFailure": {
+                        "id": "turn:error",
+                        "revision": 1,
+                        "category": "limit",
+                        "severity": "error",
+                        "title": format!("{} hit its usage limit", agent.account),
+                        "actions": [],
+                    } } } },
+                }),
+            );
+        }
         ("session/prompt", Some(id)) => {
             let agent = agent.clone();
             std::thread::spawn(move || {
@@ -306,13 +342,26 @@ fn handle(agent: &Arc<Agent>, message: Value, sessions: &AtomicU64) {
     }
 }
 
+fn limited(account: &str) -> bool {
+    std::env::var("FAKE_ACP_LIMITED")
+        .unwrap_or_default()
+        .split(',')
+        .any(|limited| limited == account)
+}
+
 fn main() {
+    let signed_in = match std::env::var_os("FAKE_ACP_SIGN_IN") {
+        Some(path) => std::fs::read_to_string(path).is_ok_and(|who| !who.trim().is_empty()),
+        None => true,
+    };
     let agent = Arc::new(Agent {
         out: Mutex::new(std::io::stdout()),
         waiting: Mutex::new(HashMap::new()),
         cancelled: AtomicBool::new(false),
         next_request: AtomicU64::new(1),
         model: Mutex::new("fast".into()),
+        account: std::env::var("FAKE_ACP_ACCOUNT").unwrap_or_else(|_| "main".into()),
+        signed_in,
     });
     let sessions = AtomicU64::new(1);
     for line in std::io::stdin().lock().lines() {

@@ -13,8 +13,9 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 use sikemux_core::client::{probe, ClientEvent, CoreClient};
 use sikemux_core::protocol::{
-    encode_control, read_frame_sync, BuildIdentity, ChatAttachment, ChatEvent, ChatEventKind,
-    ChatLaunch, ChatState, ClientMessage, Event, Request, PROTOCOL, PROTOCOL_VERSION,
+    encode_control, read_frame_sync, BuildIdentity, ChatAccount, ChatAttachment, ChatEvent,
+    ChatEventKind, ChatLaunch, ChatState, ClientMessage, Event, Request, PROTOCOL,
+    PROTOCOL_VERSION,
 };
 use sikemux_core::server::{self, ServerConfig, ServerError};
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -206,6 +207,8 @@ fn chat_launch(agent_id: &str, permission_mode: &str) -> ChatLaunch {
         permission_mode: permission_mode.into(),
         model: Some("slow".into()),
         effort: None,
+        account: None,
+        fallbacks: Vec::new(),
     }
 }
 
@@ -530,4 +533,138 @@ async fn a_chat_that_cannot_start_says_why() {
     let error = client.acp_start(relative).await.expect_err("start");
     assert!(error.to_string().contains("absolute"), "{error}");
     assert!(client.acp_list().await.expect("list").is_empty());
+}
+
+fn account(id: &str, label: &str) -> ChatAccount {
+    ChatAccount {
+        id: id.into(),
+        label: label.into(),
+        env: BTreeMap::from([("FAKE_ACP_ACCOUNT".to_string(), id.to_string())]),
+    }
+}
+
+/// A launch whose sessions outlive its agent process, on the `personal`
+/// account, with `limited` accounts out of usage.
+fn account_launch(agent_id: &str, history: &std::path::Path, limited: &str) -> ChatLaunch {
+    let mut launch = chat_launch(agent_id, "workspace-write");
+    let personal = account("personal", "Personal");
+    launch.env.extend(personal.env.clone());
+    launch.env.insert(
+        "FAKE_ACP_DIR".into(),
+        history.to_string_lossy().into_owned(),
+    );
+    launch.env.insert("FAKE_ACP_LIMITED".into(), limited.into());
+    launch.account = Some(personal);
+    launch
+}
+
+fn turns_completed(events: &[ChatEvent]) -> usize {
+    events
+        .iter()
+        .filter(|event| event.kind == ChatEventKind::TurnCompleted)
+        .count()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sign_in_made_elsewhere_reaches_the_chat_on_its_next_prompt() {
+    let core = TestCore::start();
+    let (client, mut chat) = core.connect().await;
+    let history = tempfile::tempdir().expect("history");
+    let sign_in = history.path().join("signed-in");
+    std::fs::write(&sign_in, "").expect("sign out");
+    let mut launch = account_launch("agent-k", history.path(), "");
+    launch.env.insert(
+        "FAKE_ACP_SIGN_IN".into(),
+        sign_in.to_string_lossy().into_owned(),
+    );
+    client.acp_start(launch).await.expect("start");
+
+    client
+        .acp_prompt("agent-k".into(), "who".into(), Vec::new(), Vec::new())
+        .await
+        .expect("prompt");
+    let refused = chat.until_kind(ChatEventKind::Error).await;
+    assert_eq!(refused.payload["failure"]["kind"], "signIn", "{refused:?}");
+    assert_eq!(refused.payload["failure"]["account"], "personal");
+
+    // The agent read the sign-in once, when it started, so only a new one
+    // sees the person sign in.
+    std::fs::write(&sign_in, "me").expect("sign in");
+    client
+        .acp_prompt("agent-k".into(), "who".into(), Vec::new(), Vec::new())
+        .await
+        .expect("prompt");
+    chat.until_kind(ChatEventKind::TurnCompleted).await;
+    assert_eq!(chat.text(), "account personal");
+    let after = &chat.heard[chat.cursor..];
+    assert!(after.iter().all(|event| event.kind != ChatEventKind::Error));
+    let listed = client.acp_list().await.expect("list");
+    assert_eq!(listed.len(), 1);
+    assert!(!listed[0].running);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_chat_that_runs_out_carries_on_with_the_next_account() {
+    let core = TestCore::start();
+    let (client, mut chat) = core.connect().await;
+    let history = tempfile::tempdir().expect("history");
+    let mut launch = account_launch("agent-l", history.path(), "personal");
+    launch.fallbacks = vec![account("work", "Work")];
+    let start = client.acp_start(launch).await.expect("start");
+
+    client
+        .acp_prompt("agent-l".into(), "who".into(), Vec::new(), Vec::new())
+        .await
+        .expect("prompt");
+    let switched = chat
+        .until(|event| {
+            event.kind == ChatEventKind::SessionUpdate
+                && updates(std::slice::from_ref(event))
+                    .iter()
+                    .any(|update| update["update"]["sessionUpdate"] == "account_switched")
+        })
+        .await;
+    let notice = updates(std::slice::from_ref(&switched))
+        .into_iter()
+        .find(|update| update["update"]["sessionUpdate"] == "account_switched")
+        .expect("notice");
+    assert_eq!(notice["sessionId"], start.session_id.as_str());
+    assert_eq!(notice["update"]["account"], "work");
+    assert_eq!(notice["update"]["from"], "Personal");
+    assert_eq!(notice["update"]["reason"], "limit");
+
+    chat.until_kind(ChatEventKind::TurnCompleted).await;
+    assert_eq!(chat.text(), "account work");
+    assert_eq!(turns_completed(&chat.heard), 1);
+    assert!(chat
+        .heard
+        .iter()
+        .all(|event| event.kind != ChatEventKind::Error));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_chat_out_of_accounts_says_so_and_takes_one_the_person_picks() {
+    let core = TestCore::start();
+    let (client, mut chat) = core.connect().await;
+    let history = tempfile::tempdir().expect("history");
+    let mut launch = account_launch("agent-m", history.path(), "personal,work");
+    launch.fallbacks = vec![account("work", "Work")];
+    client.acp_start(launch).await.expect("start");
+
+    client
+        .acp_prompt("agent-m".into(), "who".into(), Vec::new(), Vec::new())
+        .await
+        .expect("prompt");
+    let failed = chat.until_kind(ChatEventKind::Error).await;
+    assert_eq!(failed.payload["failure"]["kind"], "limit", "{failed:?}");
+    assert_eq!(failed.payload["failure"]["account"], "work");
+    assert_eq!(failed.payload["message"], "work hit its usage limit");
+    assert_eq!(turns_completed(&chat.heard), 1);
+
+    client
+        .acp_switch_account("agent-m".into(), account("spare", "Spare"))
+        .await
+        .expect("switch");
+    chat.until_kind(ChatEventKind::TurnCompleted).await;
+    assert_eq!(chat.text(), "account spare");
 }

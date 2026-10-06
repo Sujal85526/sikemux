@@ -368,6 +368,8 @@ impl Workspaces {
                 .unwrap_or_else(|| launcher.permission_mode.clone()),
             model: choice.model,
             effort: choice.effort,
+            account: launcher.account.clone(),
+            fallbacks: launcher.fallbacks.clone(),
         })
     }
 }
@@ -501,6 +503,8 @@ mod tests {
             args: vec!["adapter.js".into()],
             env: BTreeMap::from([("ANTHROPIC_API_KEY".into(), "secret".into())]),
             permission_mode: "bypass".into(),
+            account: None,
+            fallbacks: Vec::new(),
         }
     }
 

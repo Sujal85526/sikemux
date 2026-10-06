@@ -105,6 +105,8 @@ async fn publish(socket: &Path) -> Result<(), Failure> {
         args: vec!["acp".into()],
         env: Default::default(),
         permission_mode: "workspace-write".into(),
+        account: None,
+        fallbacks: Vec::new(),
     };
     let project = ProjectInfo {
         id: "tmp".into(),
@@ -244,6 +246,8 @@ async fn sleepy(socket: &Path) -> Result<(), Failure> {
             permission_mode: "workspace-write".into(),
             model: None,
             effort: None,
+            account: None,
+            fallbacks: Vec::new(),
         };
         client.acp_start(launch).await?;
         println!("woke {woken}");

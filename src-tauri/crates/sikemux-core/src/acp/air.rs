@@ -10,9 +10,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 const EXTENSION_VERSION: u8 = 1;
-const EXTENSION_CAPABILITIES: [&str; 2] = ["asyncTasks", "nativeSubagentSessions"];
+const EXTENSION_CAPABILITIES: [&str; 3] =
+    ["asyncTasks", "nativeSubagentSessions", "sessionFailure"];
 
-/// Asks the agent for async task and subagent session updates.
+/// Asks the agent for async task and subagent session updates, and for a
+/// failed turn's cause as data rather than as text in the transcript.
 pub fn client_capabilities() -> ClientCapabilities {
     let mut meta = Meta::new();
     meta.insert(
@@ -106,9 +108,10 @@ mod tests {
         let capabilities = serde_json::to_value(client_capabilities()).unwrap();
         assert_eq!(
             capabilities.pointer("/_meta/jetbrains/air"),
-            Some(
-                &json!({ "version": 1, "capabilities": ["asyncTasks", "nativeSubagentSessions"] })
-            )
+            Some(&json!({
+                "version": 1,
+                "capabilities": ["asyncTasks", "nativeSubagentSessions", "sessionFailure"],
+            }))
         );
     }
 

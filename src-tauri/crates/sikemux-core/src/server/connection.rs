@@ -966,6 +966,10 @@ async fn run_requests(
                     );
                 });
             }
+            Request::AcpSwitchAccount { agent_id, account } => {
+                let result = chat::switch_account(&core, &agent_id, account);
+                client.respond(request_id, result.map(|()| Response::Done));
+            }
         }
     }
 }

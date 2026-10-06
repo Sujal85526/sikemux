@@ -537,6 +537,8 @@ pub(crate) async fn launcher(app: &AppHandle, spec: LauncherSpec) -> Result<Chat
         args: program.args,
         env: program.env,
         permission_mode: spec.permission_mode,
+        account: None,
+        fallbacks: Vec::new(),
     })
 }
 
@@ -606,6 +608,8 @@ pub async fn acp_start(
         permission_mode,
         model,
         effort,
+        account: None,
+        fallbacks: Vec::new(),
     };
     let client = core(&pty).await?;
     let started = client

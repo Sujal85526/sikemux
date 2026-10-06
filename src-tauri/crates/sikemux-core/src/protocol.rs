@@ -349,6 +349,12 @@ pub enum Request {
         config_id: String,
         value: String,
     },
+    /// Starts the chat's agent again on `account`, on the same session. A turn
+    /// that just failed because of the old account is sent again.
+    AcpSwitchAccount {
+        agent_id: String,
+        account: ChatAccount,
+    },
     RemoteStatus,
     /// Lets paired devices reach the core from other machines, or stops it
     /// and disconnects them. Only a signed-in host can turn it on. Kept across
@@ -488,6 +494,23 @@ pub struct ChatLaunch {
     pub permission_mode: String,
     pub model: Option<String>,
     pub effort: Option<String>,
+    /// The account the agent signs in as, when the app names one.
+    #[serde(default)]
+    pub account: Option<ChatAccount>,
+    /// Accounts the chat moves to, in order, when its own runs out of usage.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fallbacks: Vec<ChatAccount>,
+}
+
+/// One of the person's accounts with a provider, as the variables that point
+/// the agent at it. They replace the provider's account variables in the
+/// launch's environment.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatAccount {
+    pub id: String,
+    pub label: String,
+    pub env: BTreeMap<String, String>,
 }
 
 /// A chat as the app lists it.
@@ -902,6 +925,10 @@ pub struct ChatLauncher {
     pub args: Vec<String>,
     pub env: BTreeMap<String, String>,
     pub permission_mode: String,
+    #[serde(default)]
+    pub account: Option<ChatAccount>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fallbacks: Vec<ChatAccount>,
 }
 
 /// What a device learns about a launcher: never its program or environment.
