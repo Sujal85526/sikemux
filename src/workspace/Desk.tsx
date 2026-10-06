@@ -350,6 +350,7 @@ function DeskSession({
 
     return (
         <section ref={sectionRef} className={`desk ${agentType}`} data-desk data-agent-id={agentId} aria-label={`${agentType} desk`}>
+            <DeskOutline />
             <div className="desk-head">
                 <DeskKinds items={items} shown={kind} agentType={agentType} onShow={showKind} />
                 <TabBar
@@ -411,6 +412,71 @@ function DeskSession({
                 })}
             </div>
         </section>
+    );
+}
+
+/**
+ * The desk's edge with its top-left corner cut away: up the left side, round
+ * under the switcher, up beside it and along the top. `cut` is the size of the
+ * corner taken out, and `inner` the radius of the curve that hugs the switcher.
+ */
+function cutCornerOutline(width: number, height: number, cut: { width: number; height: number }, radius: number, inner: number): string {
+    const left = 0.5;
+    const top = 0.5;
+    const right = width - 0.5;
+    const bottom = height - 0.5;
+    const stepX = cut.width + 0.5;
+    const stepY = cut.height + 0.5;
+    return [
+        `M ${left} ${stepY + radius}`,
+        `A ${radius} ${radius} 0 0 1 ${left + radius} ${stepY}`,
+        `H ${stepX - inner}`,
+        `A ${inner} ${inner} 0 0 0 ${stepX} ${stepY - inner}`,
+        `V ${top + radius}`,
+        `A ${radius} ${radius} 0 0 1 ${stepX + radius} ${top}`,
+        `H ${right - radius}`,
+        `A ${radius} ${radius} 0 0 1 ${right} ${top + radius}`,
+        `V ${bottom - radius}`,
+        `A ${radius} ${radius} 0 0 1 ${right - radius} ${bottom}`,
+        `H ${left + radius}`,
+        `A ${radius} ${radius} 0 0 1 ${left} ${bottom - radius}`,
+        "Z",
+    ].join(" ");
+}
+
+/* The pane would draw a plain rounded edge, so the desk draws its own: one that
+   steps round the switcher, a pane's gap away from it on both sides. It is
+   redrawn straight from the pane's size, which changes every frame while the
+   desk slides open. */
+function DeskOutline() {
+    const svgRef = useRef<SVGSVGElement>(null);
+    const pathRef = useRef<SVGPathElement>(null);
+    useLayoutEffect(() => {
+        const svg = svgRef.current;
+        const path = pathRef.current;
+        const pane = svg?.closest<HTMLElement>(".pane");
+        const kinds = svg?.parentElement?.querySelector<HTMLElement>(".desk-kinds");
+        if (!pane || !kinds || !svg || !path) return;
+        const draw = () => {
+            const style = getComputedStyle(pane);
+            const radius = parseFloat(style.borderTopLeftRadius) || 0;
+            const gap = parseFloat(style.getPropertyValue("--pane-gutter")) || 0;
+            const width = pane.offsetWidth;
+            const height = pane.offsetHeight;
+            const cut = { width: kinds.offsetWidth + gap, height: kinds.offsetHeight + gap };
+            svg.setAttribute("width", String(width));
+            svg.setAttribute("height", String(height));
+            path.setAttribute("d", cutCornerOutline(width, height, cut, radius, radius + gap));
+        };
+        const resize = new ResizeObserver(draw);
+        resize.observe(pane);
+        draw();
+        return () => resize.disconnect();
+    }, []);
+    return (
+        <svg ref={svgRef} className="desk-outline" aria-hidden="true">
+            <path ref={pathRef} />
+        </svg>
     );
 }
 
