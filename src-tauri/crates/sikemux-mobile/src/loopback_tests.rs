@@ -24,8 +24,14 @@ impl Drop for TestCore {
         let _ = std::thread::spawn(move || {
             let runtime = tokio::runtime::Runtime::new().expect("runtime");
             runtime.block_on(async {
-                if let Ok((client, _events)) = CoreClient::connect(&socket).await {
-                    let _ = client.shutdown(true).await;
+                let deadline = Instant::now() + WAIT;
+                while Instant::now() < deadline {
+                    if let Ok((client, _events)) = CoreClient::connect(&socket).await {
+                        if client.shutdown(true).await.is_ok() {
+                            return;
+                        }
+                    }
+                    tokio::time::sleep(Duration::from_millis(50)).await;
                 }
             });
         })
@@ -120,6 +126,7 @@ async fn loopback_device(key: SecretKey) -> Device {
             endpoint,
             generation: 0,
             reached: HashSet::new(),
+            closed: false,
         }),
         renewing: tokio::sync::Mutex::new(()),
     }
@@ -128,7 +135,16 @@ async fn loopback_device(key: SecretKey) -> Device {
 /// Keeps the views it hears, and throws back every batch the way a broken
 /// screen would.
 #[derive(Default)]
-struct Views(Mutex<Vec<DeviceView>>);
+struct Views {
+    views: Mutex<Vec<DeviceView>>,
+    closed: AtomicBool,
+}
+
+impl Views {
+    fn closed(&self) -> bool {
+        self.closed.load(Ordering::Acquire)
+    }
+}
 
 impl CoreListener for Views {
     fn output(&self, _session: u64, _bytes: Vec<u8>) -> Result<(), ListenerError> {
@@ -138,7 +154,7 @@ impl CoreListener for Views {
     fn events(&self, events: Vec<CoreEvent>) -> Result<(), ListenerError> {
         for event in events {
             if let CoreEvent::View { view } = event {
-                self.0.lock().unwrap().push(view);
+                self.views.lock().unwrap().push(view);
             }
         }
         Err(ListenerError::Failed {
@@ -147,6 +163,7 @@ impl CoreListener for Views {
     }
 
     fn closed(&self) -> Result<(), ListenerError> {
+        self.closed.store(true, Ordering::Release);
         Ok(())
     }
 }
@@ -193,7 +210,7 @@ fn a_phone_hears_the_mac_s_view_and_asks_it_typed_questions() {
             .await
             .expect("publish");
         let deadline = Instant::now() + WAIT;
-        while !views.0.lock().unwrap().iter().any(|view| {
+        while !views.views.lock().unwrap().iter().any(|view| {
             view.workspace
                 .projects
                 .iter()
@@ -266,7 +283,7 @@ fn a_join_ticket_reaches_the_host_and_its_refusal_comes_back() {
             name: "Pixel".into(),
             platform: "android".into(),
         };
-        let (endpoint, _) = device.endpoint();
+        let (endpoint, _) = device.endpoint().expect("online");
         let answer = join_with(endpoint, addr, hello).await;
         assert_eq!(
             answer.expect("the host answers"),
@@ -274,5 +291,96 @@ fn a_join_ticket_reaches_the_host_and_its_refusal_comes_back() {
                 reason: "unknown_key".into()
             }
         );
+    });
+}
+
+async fn until(what: &str, done: impl Fn() -> bool) {
+    let deadline = Instant::now() + WAIT;
+    while !done() {
+        assert!(Instant::now() < deadline, "{what} never happened");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+#[test]
+fn closing_a_connection_fails_what_waits_on_it_and_tells_the_app_nothing_more() {
+    let core_key = SecretKey::generate();
+    let phone_key = SecretKey::generate();
+    let core = start_core(&core_key, Some(&phone_key));
+    block_on(async {
+        let (app, _events) = CoreClient::connect(&core.socket).await.expect("app");
+        let addr = core_addr(&app).await;
+        app.publish_agents(
+            vec![sikemux_core::protocol::PublishedChat {
+                agent_id: "agent-sleepy".into(),
+                provider: "opencode".into(),
+                title: None,
+                cwd: std::env::temp_dir(),
+                asleep: true,
+            }],
+            Default::default(),
+        )
+        .await
+        .expect("publish chats");
+        let device = loopback_device(phone_key).await;
+        let views = Arc::new(Views::default());
+        let connection = device
+            .connect_to(core_key.public().to_string(), addr, views.clone())
+            .await
+            .expect("the phone connects");
+
+        let waiting = connection.clone();
+        let wake = tokio::spawn(async move {
+            let asked = Instant::now();
+            (
+                waiting.wake_chat("agent-sleepy".into()).await,
+                asked.elapsed(),
+            )
+        });
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        connection.close();
+        let (woken, waited) = wake.await.expect("wake task");
+        assert!(matches!(woken, Err(MobileError::Connection { .. })));
+        assert!(
+            waited < Duration::from_secs(5),
+            "a closed connection does not wait out the request"
+        );
+        assert!(!connection.is_open());
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(!views.closed(), "the app closed it and hears nothing more");
+    });
+}
+
+#[test]
+fn a_renewed_endpoint_closes_the_connections_on_the_old_one_and_a_closed_phone_stays_off() {
+    let core_key = SecretKey::generate();
+    let phone_key = SecretKey::generate();
+    let core = start_core(&core_key, Some(&phone_key));
+    block_on(async {
+        let (app, _events) = CoreClient::connect(&core.socket).await.expect("app");
+        let addr = core_addr(&app).await;
+        let device = loopback_device(phone_key).await;
+        let core_id = core_key.public().to_string();
+        let views = Arc::new(Views::default());
+        let _connection = device
+            .connect_to(core_id.clone(), addr.clone(), views.clone())
+            .await
+            .expect("the phone connects");
+
+        device.renew_after_failing(&core_id, 0).await;
+        until("the old endpoint's connection closing", || views.closed()).await;
+        assert_eq!(device.endpoint().expect("online").1, 1);
+
+        device.lock().reached.insert(core_id.clone());
+        device.close().await;
+        device.renew_after_failing(&core_id, 1).await;
+        assert!(device.lock().closed);
+        assert_eq!(device.lock().generation, 1, "a closed phone never renews");
+        assert!(matches!(
+            device
+                .connect_to(core_id, addr, Arc::new(Views::default()))
+                .await,
+            Err(MobileError::Connection { .. })
+        ));
     });
 }

@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use iroh::endpoint::{ConnectionError, VarInt};
+use iroh::endpoint::{Connection, ConnectionError, VarInt};
 use iroh::{Endpoint, EndpointAddr};
 use tokio::sync::mpsc;
 
@@ -22,6 +22,19 @@ pub async fn connect_with(
     core: impl Into<EndpointAddr>,
     sink: Arc<dyn EventSink>,
 ) -> Result<CoreClient, ClientError> {
+    open_with(endpoint, core, sink)
+        .await
+        .map(|(client, _)| client)
+}
+
+/// Like [`connect_with`], with the connection under the session, which ends
+/// it at once when closed. The session otherwise lasts as long as a request
+/// still waits on it.
+pub async fn open_with(
+    endpoint: &Endpoint,
+    core: impl Into<EndpointAddr>,
+    sink: Arc<dyn EventSink>,
+) -> Result<(CoreClient, Connection), ClientError> {
     let connection = endpoint
         .connect(core, CORE_ALPN)
         .await
@@ -34,14 +47,17 @@ pub async fn connect_with(
         CoreClient::connect_device_streams(recv, send, sink).await
     }
     .await;
-    opened.map_err(|error| match connection.close_reason() {
-        Some(ConnectionError::ApplicationClosed(close))
-            if close.error_code == VarInt::from_u32(NOT_PAIRED) =>
-        {
-            ClientError::NotPaired
-        }
-        _ => error,
-    })
+    match opened {
+        Ok(client) => Ok((client, connection)),
+        Err(error) => Err(match connection.close_reason() {
+            Some(ConnectionError::ApplicationClosed(close))
+                if close.error_code == VarInt::from_u32(NOT_PAIRED) =>
+            {
+                ClientError::NotPaired
+            }
+            _ => error,
+        }),
+    }
 }
 
 pub async fn connect(

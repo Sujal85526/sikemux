@@ -8,6 +8,7 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
@@ -20,6 +21,7 @@ use sikemux_core::client::{ClientError, CoreClient, EventSink, Reply};
 use sikemux_core::join::{JoinHello, JoinReply};
 use sikemux_core::protocol::{
     CallId, Event, NotifyPrefs, Request, Response, SessionId, WindowCall, OLDEST_PROTOCOL_VERSION,
+    WAKE_WAIT,
 };
 use sikemux_core::remote;
 use tokio::sync::mpsc;
@@ -40,6 +42,8 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 /// answered by then has most likely gone, though the connection has not
 /// noticed yet.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+/// Past the host's own wait, so its reason for giving up reaches the app.
+const WAKE_TIMEOUT: Duration = Duration::from_secs(WAKE_WAIT.as_secs() + 15);
 
 /// iroh and the core's client both need a Tokio runtime, which the phone's
 /// JavaScript thread does not have. The phone talks to a few hosts at most, so
@@ -155,6 +159,8 @@ struct Online {
     endpoint: Endpoint,
     generation: u64,
     reached: HashSet<String>,
+    /// The app took the phone off the network; it comes back as a new device.
+    closed: bool,
 }
 
 /// This phone on the network, known by its key.
@@ -212,17 +218,13 @@ fn notify_prefs(json: &str) -> Result<NotifyPrefs, MobileError> {
     })
 }
 
+/// A host listens on one of the relays, so the phone offers iroh all of them.
 fn core_addr(core: &str, relays: &[Relay]) -> Result<EndpointAddr, MobileError> {
     let addr = EndpointAddr::new(core.parse().map_err(invalid)?);
-    Ok(
-        match relays
-            .iter()
-            .find_map(|relay| relay.url.parse::<RelayUrl>().ok())
-        {
-            Some(relay) => addr.with_relay_url(relay),
-            None => addr,
-        },
-    )
+    Ok(relays
+        .iter()
+        .filter_map(|relay| relay.url.parse::<RelayUrl>().ok())
+        .fold(addr, EndpointAddr::with_relay_url))
 }
 
 #[uniffi::export]
@@ -246,6 +248,7 @@ impl Device {
                 endpoint,
                 generation: 0,
                 reached: HashSet::new(),
+                closed: false,
             }),
             renewing: tokio::sync::Mutex::new(()),
         }))
@@ -287,7 +290,7 @@ impl Device {
     ) -> Result<JoinAnswer, MobileError> {
         let ticket = read_ticket(&ticket, &self.id(), &core)?;
         let addr = core_addr(&core, &self.relays)?;
-        let (endpoint, _) = self.endpoint();
+        let (endpoint, _) = self.endpoint()?;
         let hello = JoinHello {
             ticket,
             name,
@@ -310,7 +313,11 @@ impl Device {
     /// Takes the phone off the network until the app makes a new device. Open
     /// connections end with it.
     pub async fn close(&self) {
-        let (endpoint, _) = self.endpoint();
+        let endpoint = {
+            let mut online = self.lock();
+            online.closed = true;
+            online.endpoint.clone()
+        };
         let _ = on_runtime(async move { endpoint.close().await }).await;
     }
 }
@@ -377,16 +384,17 @@ impl Device {
         addr: EndpointAddr,
         listener: Arc<dyn CoreListener>,
     ) -> Result<Arc<Connection>, MobileError> {
-        let (endpoint, generation) = self.endpoint();
+        let (endpoint, generation) = self.endpoint()?;
+        let open = Arc::new(AtomicBool::new(true));
         let (deliveries, queue) = mpsc::unbounded_channel();
-        deliver(listener, queue);
+        deliver(listener, queue, open.clone());
         let sink = Arc::new(ListenerSink(deliveries));
         let attempt = on_runtime(async move {
-            tokio::time::timeout(CONNECT_TIMEOUT, remote::connect_with(&endpoint, addr, sink)).await
+            tokio::time::timeout(CONNECT_TIMEOUT, remote::open_with(&endpoint, addr, sink)).await
         })
         .await?;
-        let client = match attempt {
-            Ok(Ok(client)) => client,
+        let (client, link) = match attempt {
+            Ok(Ok(opened)) => opened,
             Ok(Err(
                 error @ (ClientError::Core(_)
                 | ClientError::VersionMismatch { .. }
@@ -406,6 +414,8 @@ impl Device {
         self.lock().reached.insert(core);
         Ok(Arc::new(Connection {
             client: Mutex::new(Some(Arc::new(client))),
+            link,
+            open,
         }))
     }
 
@@ -415,29 +425,47 @@ impl Device {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    fn endpoint(&self) -> (Endpoint, u64) {
+    fn endpoint(&self) -> Result<(Endpoint, u64), MobileError> {
         let online = self.lock();
-        (online.endpoint.clone(), online.generation)
+        if online.closed {
+            return Err(MobileError::Connection {
+                message: "this phone went off the network".into(),
+            });
+        }
+        Ok((online.endpoint.clone(), online.generation))
     }
 
     /// Once a connection to a host closes, iroh 1.3 can leave the endpoint
     /// unable to reach that host again, while a new endpoint with the same key
     /// reaches it at once. A host this endpoint never reached is most likely
-    /// just away, so it keeps the endpoint. Connections still open on the old
-    /// endpoint keep it alive until they end.
+    /// just away, so it keeps the endpoint.
+    ///
+    /// The relay sends this key's traffic to its newest endpoint only, so the
+    /// old one closes along with every connection on it, and the app connects
+    /// to those hosts again.
     async fn renew_after_failing(&self, core: &str, generation: u64) {
         let _renewing = self.renewing.lock().await;
         {
             let online = self.lock();
-            if online.generation != generation || !online.reached.contains(core) {
+            if online.closed || online.generation != generation || !online.reached.contains(core) {
                 return;
             }
         }
-        if let Ok(fresh) = bind(self.key.clone(), &self.relays).await {
+        let Ok(fresh) = bind(self.key.clone(), &self.relays).await else {
+            return;
+        };
+        let retired = {
             let mut online = self.lock();
-            online.endpoint = fresh;
-            online.generation += 1;
-            online.reached.clear();
+            if online.closed {
+                fresh
+            } else {
+                online.generation += 1;
+                online.reached.clear();
+                std::mem::replace(&mut online.endpoint, fresh)
+            }
+        };
+        if let Ok(runtime) = RUNTIME.as_ref() {
+            runtime.spawn(async move { retired.close().await });
         }
     }
 }
@@ -499,7 +527,12 @@ impl EventSink for ListenerSink {
 
 /// Calls into the app wait for its JavaScript thread, so they run on a thread
 /// of their own. Events that queued up meanwhile go over in one call.
-fn deliver(listener: Arc<dyn CoreListener>, mut queue: mpsc::UnboundedReceiver<Delivery>) {
+/// Nothing reaches the app once it closed the connection itself.
+fn deliver(
+    listener: Arc<dyn CoreListener>,
+    mut queue: mpsc::UnboundedReceiver<Delivery>,
+    open: Arc<AtomicBool>,
+) {
     let spawned = std::thread::Builder::new()
         .name("sikemux-listener".into())
         .spawn(move || {
@@ -507,6 +540,9 @@ fn deliver(listener: Arc<dyn CoreListener>, mut queue: mpsc::UnboundedReceiver<D
             while let Some(first) = queue.blocking_recv() {
                 let mut next = Some(first);
                 while let Some(delivery) = next.take() {
+                    if !open.load(Ordering::Acquire) {
+                        return;
+                    }
                     match delivery {
                         Delivery::Event(event) => events.push(event),
                         Delivery::Output(session, bytes) => {
@@ -520,6 +556,9 @@ fn deliver(listener: Arc<dyn CoreListener>, mut queue: mpsc::UnboundedReceiver<D
                         }
                     }
                     next = queue.try_recv().ok();
+                }
+                if !open.load(Ordering::Acquire) {
+                    return;
                 }
                 flush(listener.as_ref(), &mut events);
             }
@@ -547,6 +586,8 @@ pub struct AttachedScreen {
 #[derive(uniffi::Object)]
 pub struct Connection {
     client: Mutex<Option<Arc<CoreClient>>>,
+    link: iroh::endpoint::Connection,
+    open: Arc<AtomicBool>,
 }
 
 fn not_answered() -> MobileError {
@@ -571,10 +612,14 @@ impl Connection {
     }
 
     async fn reply(&self, request: Request) -> Result<Reply, MobileError> {
+        self.reply_within(request, REQUEST_TIMEOUT).await
+    }
+
+    async fn reply_within(&self, request: Request, wait: Duration) -> Result<Reply, MobileError> {
         let client = self.client()?;
         on_runtime(async move {
             let answer = client.submit(request, |reply| reply)?;
-            match tokio::time::timeout(REQUEST_TIMEOUT, answer).await {
+            match tokio::time::timeout(wait, answer).await {
                 Ok(reply) => Ok(reply??),
                 Err(_) => Err(not_answered()),
             }
@@ -634,9 +679,16 @@ impl Connection {
         Ok(Some(path.display().to_string()))
     }
 
-    /// Starts a chat the host's app put to sleep. Answers once it runs.
+    /// Starts a chat the host's app put to sleep. Answers once it is ready to
+    /// take up.
     pub async fn wake_chat(&self, agent_id: String) -> Result<(), MobileError> {
-        self.done(Request::AcpWake { agent_id }).await
+        match self
+            .reply_within(Request::AcpWake { agent_id }, WAKE_TIMEOUT)
+            .await?
+        {
+            Reply::Response(Response::Done) => Ok(()),
+            _ => Err(unexpected()),
+        }
     }
 
     /// Takes up a chat. Its events follow on the listener; drop those
@@ -828,11 +880,14 @@ impl Connection {
         self.client().is_ok_and(|client| client.is_connected())
     }
 
-    /// What the phone already sent still reaches the host.
+    /// Ends the session now: requests still waiting fail, and the listener
+    /// hears nothing more, not even that it closed.
     pub fn close(&self) {
+        self.open.store(false, Ordering::Release);
         if let Ok(mut client) = self.client.lock() {
             client.take();
         }
+        self.link.close(0u32.into(), b"closed by the phone");
     }
 }
 
@@ -956,7 +1011,7 @@ mod tests {
     }
 
     #[test]
-    fn hosts_are_dialled_through_the_first_usable_relay_and_never_none() {
+    fn hosts_are_dialled_through_every_usable_relay_and_never_none() {
         let setting = |url: &str, quic_port| RelaySetting {
             url: url.into(),
             quic_port,
@@ -964,16 +1019,17 @@ mod tests {
         let relays = relays_from(vec![
             setting("not a relay", None),
             setting("https://relay.example/", Some(7842)),
+            setting("https://second.relay.example/", None),
         ]);
-        assert_eq!(relays.len(), 1);
+        assert_eq!(relays.len(), 2);
         assert_eq!(relays[0].quic_port, Some(7842));
         let core = SecretKey::generate().public().to_string();
         let addr = core_addr(&core, &relays).expect("an address");
+        let mut dialled: Vec<String> = addr.relay_urls().map(ToString::to_string).collect();
+        dialled.sort();
         assert_eq!(
-            addr.relay_urls()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>(),
-            vec!["https://relay.example/"]
+            dialled,
+            ["https://relay.example/", "https://second.relay.example/"]
         );
 
         let fallback = relays_from(Vec::new());
@@ -1133,7 +1189,7 @@ mod tests {
         sink.output(7, b"ab");
         sink.event(chat_event(3));
         sink.closed();
-        deliver(recorder.clone(), queue);
+        deliver(recorder.clone(), queue, Arc::new(AtomicBool::new(true)));
         assert_eq!(
             delivered(&recorder),
             ["events 2", "output 7 2", "events 1", "closed"]
@@ -1152,7 +1208,7 @@ mod tests {
         sink.output(1, b"x");
         sink.event(chat_event(2));
         sink.closed();
-        deliver(recorder.clone(), queue);
+        deliver(recorder.clone(), queue, Arc::new(AtomicBool::new(true)));
         assert_eq!(
             delivered(&recorder),
             ["events 1", "output 1 1", "events 1", "closed"]
