@@ -150,16 +150,16 @@ function check(dir) {
   return { update, manifestBytes, assets: named.size, bytes };
 }
 
-function signManifest(manifestBytes) {
+function signForPhones(bytes) {
   const pem = process.env.UPDATES_SIGNING_KEY;
   if (!pem) stop('UPDATES_SIGNING_KEY is not set: it holds the PEM private key updates are signed with.');
   const key = createPrivateKey(pem);
-  const signature = sign('sha256', manifestBytes, key);
+  const signature = sign('sha256', bytes, key);
   const cert = new X509Certificate(readFileSync(certificate));
   const now = Date.now();
   if (now < Date.parse(cert.validFrom) || now > Date.parse(cert.validTo)) stop('The update certificate has expired or is not valid yet.');
-  if (!verify('sha256', manifestBytes, cert.publicKey, signature)) {
-    stop(`UPDATES_SIGNING_KEY is not the key of ${certificate}: phones would refuse this update.`);
+  if (!verify('sha256', bytes, cert.publicKey, signature)) {
+    stop(`UPDATES_SIGNING_KEY is not the key of ${certificate}: phones would refuse what it signs.`);
   }
   return signature.toString('base64');
 }
@@ -188,7 +188,7 @@ function ssh(command, input) {
 
 function publish(dir, dryRun) {
   const { update, manifestBytes, assets, bytes } = check(dir);
-  writeFileSync(join(dir, 'manifest.sig'), signManifest(manifestBytes));
+  writeFileSync(join(dir, 'manifest.sig'), signForPhones(manifestBytes));
 
   const bundle = join(dir, '..', `sikemux-update-${update.id}.tar.gz`);
   // COPYFILE_DISABLE keeps macOS's tar from adding ._ files for extended attributes.
@@ -209,12 +209,23 @@ function publish(dir, dryRun) {
   summarise([`Published ${update.id} to ${update.channel}`]);
 }
 
+/** Withdraws the update and sends a signed order for phones that took it to go back to the code in their build. */
+function rollBack(id) {
+  const directive = JSON.stringify({ type: 'rollBackToEmbedded', parameters: { commitTime: new Date().toISOString() } });
+  const file = join(mkdtempSync(join(tmpdir(), 'sikemux-rollback-')), 'directive.json');
+  writeFileSync(file, JSON.stringify({ directive, signature: signForPhones(Buffer.from(directive)) }));
+  ssh(`roll-back-update ${id}`, file);
+  summarise([`Rolled phones back from ${id} to the code in their build`]);
+}
+
 function usage() {
   stop(
     'usage: publish-update.mjs prepare <android|ios> <nightly|stable> <dir>\n' +
       '       publish-update.mjs publish <dir> [--dry-run]\n' +
       '       publish-update.mjs <android|ios> <nightly|stable> [--dry-run]\n' +
-      '       publish-update.mjs promote <update id>',
+      '       publish-update.mjs promote <update id>\n' +
+      '       publish-update.mjs withdraw <update id>\n' +
+      '       publish-update.mjs roll-back <update id>',
   );
 }
 
@@ -230,6 +241,13 @@ if (command === 'prepare' && args.length === 3) {
   if (!UUID.test(args[0])) stop(`${args[0]} is not an update id.`);
   ssh(`promote-update ${args[0]}`);
   summarise([`Promoted ${args[0]} to stable`]);
+} else if (command === 'withdraw' && args.length === 1) {
+  if (!UUID.test(args[0])) stop(`${args[0]} is not an update id.`);
+  ssh(`withdraw-update ${args[0]}`);
+  summarise([`Withdrew ${args[0]}`]);
+} else if (command === 'roll-back' && args.length === 1) {
+  if (!UUID.test(args[0])) stop(`${args[0]} is not an update id.`);
+  rollBack(args[0]);
 } else if (PLATFORMS.includes(command) && args.length === 1) {
   const dir = join(mkdtempSync(join(tmpdir(), 'sikemux-update-')), 'update');
   await prepare(command, args[0], dir);
