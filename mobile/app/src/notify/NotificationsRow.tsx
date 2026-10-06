@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Linking, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { Linking, Platform, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { useAuth } from '@clerk/expo';
 
 import { Icon } from '@/ui/Icon';
@@ -7,7 +7,7 @@ import { fonts, type Palette, typeFor, useColors, useStyles, useType } from '@/u
 import { useNotificationsChoice } from './setting';
 import { notificationsSupported, turnOff, turnOn, useNotificationsAllowed } from './switch';
 
-/** The account sheet's switch for notifications, and the way to Android's settings when the system blocks them. */
+/** The account sheet's switch for notifications, and the way to the system's settings when it blocks them. */
 export function NotificationsRow() {
   const colors = useColors();
   const styles = useStyles(makeStyles);
@@ -37,7 +37,9 @@ export function NotificationsRow() {
         <Text style={styles.title}>Notifications</Text>
         {blocked ? (
           <Pressable onPress={() => void Linking.openSettings()} accessibilityRole="link" hitSlop={8}>
-            <Text style={[type.meta, styles.link]}>Allow them in Android settings</Text>
+            <Text style={[type.meta, styles.link]}>
+              {Platform.OS === 'ios' ? 'Allow them in Settings' : 'Allow them in Android settings'}
+            </Text>
           </Pressable>
         ) : (
           <Text style={type.meta}>When agents need you or finish</Text>

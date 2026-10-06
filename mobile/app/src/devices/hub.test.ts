@@ -11,7 +11,7 @@ vi.mock('@/device/identity', () => identity);
 const native = vi.hoisted(() => ({
   notifier: {
     removeKey: vi.fn(),
-    shown: vi.fn((): { tag: string; host: string }[] => []),
+    shown: vi.fn(async (): Promise<{ tag: string; host: string }[]> => []),
     dismiss: vi.fn(),
   },
 }));
@@ -304,7 +304,7 @@ describe('the hub', () => {
   });
 
   it('withdraws the notification key and the cards when forgetting, and does not bring the host back', async () => {
-    native.notifier.shown.mockReturnValue([
+    native.notifier.shown.mockResolvedValue([
       { tag: 'mine', host: 'host' },
       { tag: 'theirs', host: 'other' },
     ]);
@@ -313,7 +313,7 @@ describe('the hub', () => {
     expect(connection.clearNotifications).toHaveBeenCalled();
     expect(connection.clearNotifications.mock.invocationCallOrder[0]).toBeLessThan(connection.unpair.mock.invocationCallOrder[0]);
     expect(native.notifier.removeKey).toHaveBeenCalledWith('host');
-    expect(native.notifier.dismiss.mock.calls).toEqual([['mine']]);
+    await vi.waitFor(() => expect(native.notifier.dismiss.mock.calls).toEqual([['mine']]));
     hub.watch('host');
     hub.onChatEvents('host', () => {});
     expect(hub.liveOf('host')).toMatchObject({ status: 'closed' });

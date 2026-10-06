@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import type {
   AccountDeletion,
   ApiError,
+  ApnsEnvironment,
   Challenge,
   Device,
   DeviceList,
@@ -93,15 +94,15 @@ export async function removePhone(token: TokenSource): Promise<void> {
   }
 }
 
-/** Sends this phone's notifications to an FCM token, proving the phone holds its key. */
+/** Sends this phone's notifications to its FCM or APNs token, proving the phone holds its key. */
 export async function setPushToken(
   token: TokenSource,
-  push: { token: string; tokenSha256: string; app: PushApp },
+  push: { token: string; tokenSha256: string; app: PushApp; apnsEnvironment?: ApnsEnvironment },
 ): Promise<PushTokenState> {
   const challenge = await call<Challenge>(token, '/v1/devices/challenge', { method: 'POST' });
   const device = await deviceIdentity();
   const registration: PushTokenRegistration = {
-    platform: 'fcm',
+    ...(push.apnsEnvironment ? { platform: 'apns', apnsEnvironment: push.apnsEnvironment } : { platform: 'fcm' }),
     token: push.token,
     app: push.app,
     nonce: challenge.nonce,

@@ -16,6 +16,7 @@ import { useAccountHostsFeed, useAccountSequence, useConnectArrivals } from '@/a
 import { goOffline } from '@/device/identity';
 import { useDevices } from '@/devices/hub';
 import { NotificationsOffer } from '@/notify/NotificationsOffer';
+import { useNotificationResponses } from '@/notify/responses';
 import { currentRelays, useUpdateRequired } from '@/network/network';
 import { useOverTheAirUpdates } from '@/updates/overTheAir';
 import { Crashed } from '@/screens/Crashed';
@@ -106,8 +107,15 @@ function Routes({ background }: { background: string }) {
         </Stack.Protected>
       </Stack>
       <NotificationsOffer />
+      <NotificationResponses />
     </>
   );
+}
+
+/** Mounted with the screens, so a tapped card can open its chat. */
+function NotificationResponses() {
+  useNotificationResponses();
+  return null;
 }
 
 function PhoneOnAccount() {

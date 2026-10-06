@@ -14,28 +14,28 @@ export function settledCards(shown: ShownCard[], host: string, snapshot: Snapsho
     .map((card) => card.tag);
 }
 
+/** Removes the shown cards that `pick` chooses. */
+function dismissShown(pick: (shown: ShownCard[]) => string[]) {
+  if (!notifier) return;
+  notifier
+    .shown()
+    .then((shown) => pick(shown).forEach((tag) => notifier?.dismiss(tag)))
+    .catch((error: unknown) => console.warn('sikemux: could not tidy the notification cards', error));
+}
+
 /** Removes the cards a host's current view shows are settled, as the app hears it. */
 export function reconcileCards(host: string, snapshot: Snapshot) {
-  if (!notifier) return;
-  settledCards(notifier.shown(), host, snapshot).forEach((tag) => notifier?.dismiss(tag));
+  dismissShown((shown) => settledCards(shown, host, snapshot));
 }
 
 /** Removes the cards about one agent, once the person is looking at it. */
 export function dismissCardsFor(host: string, agent: string) {
-  if (!notifier) return;
-  notifier
-    .shown()
-    .filter((card) => card.host === host && card.agent === agent)
-    .forEach((card) => notifier?.dismiss(card.tag));
+  dismissShown((shown) => shown.filter((card) => card.host === host && card.agent === agent).map((card) => card.tag));
 }
 
 /** Removes every card from a host, as when it is forgotten. */
 export function dismissHostCards(host: string) {
-  if (!notifier) return;
-  notifier
-    .shown()
-    .filter((card) => card.host === host)
-    .forEach((card) => notifier?.dismiss(card.tag));
+  dismissShown((shown) => shown.filter((card) => card.host === host).map((card) => card.tag));
 }
 
 export type CardAnswer = { tag: string; host: string; agent: string; request: string; option: string; allow: boolean };
@@ -77,7 +77,7 @@ export async function answerFromCard(answer: CardAnswer): Promise<AnswerOutcome>
   }
 }
 
-/** The task Android runs, without a screen, when Allow or Reject is tapped on a card. */
+/** Answers from a card's Allow or Reject: Android runs it without a screen, iOS once the button has opened the app. */
 export async function answerTask(data: CardAnswer) {
   const outcome = await answerFromCard(data);
   notifier?.settle(data.tag, outcome);

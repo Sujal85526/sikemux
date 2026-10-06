@@ -241,11 +241,7 @@ function listener(core: string, found: Entry, attempt: object): CoreListener {
       if (!view) return;
       // The host sends its view as soon as it lets the phone in, which can be before `connect` answers.
       set(core, found, { ...found.live, snapshot: view });
-      try {
-        reconcileCards(core, view);
-      } catch (error) {
-        console.warn('sikemux: could not tidy the notification cards', error);
-      }
+      reconcileCards(core, view);
     },
     closed() {
       if (current() && found.live.status === 'open') drop(core, 'The connection closed.');

@@ -9,7 +9,7 @@ import { withdrawKey } from './keys';
 import { choose } from './setting';
 import { notificationsAllowed, stopPush, syncPushToken } from './token';
 
-/** Whether this phone can have notifications at all: Android only until iOS has Apple's push service. */
+/** Whether this build carries the native half of notifications, which opens and shows what hosts send. */
 export const notificationsSupported = notifier !== null;
 
 /** Turns notifications on, asking the system first; answers whether the system allows them. */

@@ -860,7 +860,7 @@
         <div class="choices across"><div class="btn">Not now</div><div class="btn primary">Turn on</div></div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Notifications, after connecting</b><div class="note">Asked once, on the host that just let the phone in, because that is when a notification first means something; never at first launch. Turn on brings the system's own prompt next. Not now leaves them off, and the account sheet can turn them on later. Closing the sheet any other way decides nothing, so it is asked again when the next host lets the phone in. Only a signed-in phone is asked: notifications travel through the account. Android only for now; iPhones wait for Apple's push service.</div></figcaption>
+      <figcaption><b>Notifications, after connecting</b><div class="note">Asked once, on the host that just let the phone in, because that is when a notification first means something; never at first launch. Turn on brings the system's own prompt next. Not now leaves them off, and the account sheet can turn them on later. Closing the sheet any other way decides nothing, so it is asked again when the next host lets the phone in. Only a signed-in phone is asked: notifications travel through the account.</div></figcaption>
     </figure>
 
   </div>
@@ -990,7 +990,7 @@
         <div class="sheet-version">Sikemux 0.1.0-nightly.5 · update 1b46d28 (6 Oct)</div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Notifications, not allowed</b><div class="note">The switch says whether notifications reach this phone. On, it hands the phone's address for them to Sikemux and a key to each paired host; off, it takes both back. When Android has notifications turned off for the app, the switch reads off and the line under it opens the app's Android settings. Signing out takes the address back before anything else.</div></figcaption>
+      <figcaption><b>Notifications, not allowed</b><div class="note">The switch says whether notifications reach this phone. On, it hands the phone's address for them to Sikemux and a key to each paired host; off, it takes both back. When the system has notifications turned off for the app, the switch reads off and the line under it opens the app's settings: "Allow them in Android settings" on Android, "Allow them in Settings" on an iPhone. Signing out takes the address back before anything else.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -2430,7 +2430,7 @@ expected 1 write, got 2</div>
         </div>
       </div>
       <div class="home-bar" style="background:#fff"></div></div>
-      <figcaption><b>Notification</b><div class="note">Allow or Reject straight from the lock screen; Allow asks for the phone's lock first. "Always allow" is left to the chat, where you can see what you would be allowing. Tapping the card opens the chat. A request answered on the computer or another phone takes its card away.</div></figcaption>
+      <figcaption><b>Notification</b><div class="note">Allow or Reject straight from the lock screen; Allow asks for the phone's lock first. On an iPhone both open the app on the chat and answer from there, since iOS gives an app in the background too little time to reach the computer. "Always allow" is left to the chat, where you can see what you would be allowing. Tapping the card opens the chat. A request answered on the computer or another phone takes its card away.</div></figcaption>
     </figure>
 
     <figure><div class="phone" style="background:#000"><div class="island"></div>
@@ -2453,7 +2453,7 @@ expected 1 write, got 2</div>
         </div>
       </div>
       <div class="home-bar" style="background:#fff"></div></div>
-      <figcaption><b>Answering</b><div class="note">The card says the answer is on its way while the phone reaches the host itself, then how it went; "Allowed" fades after a few seconds. When the host can't be reached the card stays, and opens the chat to answer there. A request already answered elsewhere just goes.</div></figcaption>
+      <figcaption><b>Answering</b><div class="note">On Android the card says the answer is on its way while the phone reaches the host itself, then how it went; "Allowed" fades after a few seconds. When the host can't be reached the card stays, and opens the chat to answer there. A request already answered elsewhere just goes. On an iPhone the chat itself shows the answer, and the card goes once it is in.</div></figcaption>
     </figure>
 
     <figure><div class="phone" style="background:#000"><div class="island"></div>

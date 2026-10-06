@@ -1,5 +1,9 @@
 {
-  "platforms": ["android"],
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["NotifyModule"],
+    "appDelegateSubscribers": ["NotifyAppDelegateSubscriber"]
+  },
   "android": {
     "modules": ["com.nodelike.sikemux.notify.NotifyModule"]
   }
