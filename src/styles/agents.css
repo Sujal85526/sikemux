@@ -714,13 +714,12 @@
     }
 }
 
-/* Accounts — one card per account the person keeps with the provider. Each
-   card has its own border and corner, with a gap between them; the account
-   new chats start on is tinted rather than marked down an edge. */
+/* Accounts — a plain list. The one new chats start on is the one with its
+   limits open; the others are single lines that lift on hover. */
 .agent-accounts-list {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 2px;
 }
 .agent-account {
     display: flex;
@@ -728,15 +727,16 @@
     gap: 9px;
     min-width: 0;
 }
-.agent-accounts[data-several="true"] .agent-account {
-    padding: 7px 8px;
-    border: 1px solid var(--border);
+.agent-accounts[data-several="true"] .agent-account:not(.current) {
+    margin-inline: -6px;
+    padding: 3px 6px;
     border-radius: var(--radius-2);
 }
+.agent-accounts[data-several="true"] .agent-account:not(.current):hover {
+    background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+}
 .agent-accounts[data-several="true"] .agent-account.current {
-    padding-bottom: 10px;
-    border-color: color-mix(in srgb, var(--usage-fill) 38%, var(--border));
-    background: color-mix(in srgb, var(--usage-fill) 7%, transparent);
+    padding-bottom: 8px;
 }
 .agent-account-line {
     display: flex;
