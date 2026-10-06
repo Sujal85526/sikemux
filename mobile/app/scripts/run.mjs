@@ -35,7 +35,9 @@ if (!bindingsExist() || libraries(platform).length === 0) {
 if (platform === 'ios' && rest.includes('--device') && readBuild('ios')?.simOnly) {
   stop('The Rust client was built for the simulator only: run `pnpm native:ios` in mobile/ to add the device slice.');
 }
-if (variant === 'production') {
+// A production build in the Debug configuration runs from Metro against the real accounts, on any Rust build.
+const release = rest.some((arg) => /^release$/i.test(arg));
+if (variant === 'production' && release) {
   const profile = readBuild(platform)?.profile;
   if (profile !== 'mobile') {
     stop(

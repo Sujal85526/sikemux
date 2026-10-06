@@ -14,6 +14,12 @@ const GOOGLE = {
   },
 };
 
+/** Where accounts live: production's Clerk instance and api.sikemux.com, or Clerk's development instance and the Mac's own server. */
+const ACCOUNTS = {
+  production: { clerkPublishableKey: 'pk_live_Y2xlcmsuc2lrZW11eC5jb20k', apiUrl: 'https://api.sikemux.com' },
+  dev: { clerkPublishableKey: 'pk_test_aW1tZW5zZS1sbGFtYS02NjY4LmNsZXJrLmFjY291bnRzLmRldiQ' },
+};
+
 function googleSignIn({ web, ios }) {
   return {
     EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID: web,
@@ -58,7 +64,7 @@ module.exports = ({ config }) => {
     const code = versionCode(version, config.version);
     return {
       ...config,
-      extra: { ...config.extra, ...googleSignIn(GOOGLE.production) },
+      extra: { ...config.extra, ...googleSignIn(GOOGLE.production), ...ACCOUNTS.production },
       ios: { ...config.ios, buildNumber: String(code) },
       android: { ...config.android, versionCode: code, googleServicesFile: './firebase/google-services.json' },
       runtimeVersion: { policy: 'fingerprint' },
@@ -69,7 +75,7 @@ module.exports = ({ config }) => {
     ...config,
     name: 'Sikemux Dev',
     updates: { enabled: false },
-    extra: { ...config.extra, ...googleSignIn(GOOGLE.dev) },
+    extra: { ...config.extra, ...googleSignIn(GOOGLE.dev), ...ACCOUNTS.dev },
     scheme: 'sikemux-dev',
     ios: {
       ...config.ios,
