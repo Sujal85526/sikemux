@@ -694,7 +694,11 @@ pub(super) async fn run(
                                 );
                                 continue;
                             }
-                            let notice = switch_notice(&launch, &account, "chosen");
+                            let moves = launch
+                                .account
+                                .as_ref()
+                                .is_none_or(|current| current.id != account.id);
+                            let notice = moves.then(|| switch_notice(&launch, &account, "chosen"));
                             let moved = on_account(&provider, &launch, &account);
                             if let Some(launch) = chat.relaunch(&moved) {
                                 let replay = failed_prompt.take();
@@ -706,7 +710,7 @@ pub(super) async fn run(
                                     replay,
                                     exhausted: Vec::new(),
                                     signed_in_again: false,
-                                    notice: Some(notice),
+                                    notice,
                                 }));
                             }
                         }
