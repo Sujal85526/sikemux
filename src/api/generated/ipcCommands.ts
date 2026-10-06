@@ -229,6 +229,8 @@ export const IPC_COMMANDS = [
     "sim_call",
     "sim_watch",
     "sim_unwatch",
+    "simulator_set_enabled",
+    "simulator_setup",
 ] as const;
 
 export type IpcCommand = (typeof IPC_COMMANDS)[number];

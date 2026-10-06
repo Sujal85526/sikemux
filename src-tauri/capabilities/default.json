@@ -246,6 +246,8 @@
     "allow-sim-prepare",
     "allow-sim-call",
     "allow-sim-watch",
-    "allow-sim-unwatch"
+    "allow-sim-unwatch",
+    "allow-simulator-set-enabled",
+    "allow-simulator-setup"
   ]
 }

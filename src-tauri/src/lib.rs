@@ -38,6 +38,7 @@ mod remote;
 mod search;
 mod settings;
 mod sim;
+mod simulator;
 mod ssh;
 mod state;
 mod system;
@@ -57,6 +58,7 @@ use plugins::PluginHost;
 use pty::PtyManager;
 use sikemux_process as bounded_process;
 use sim::SimManager;
+use simulator::SimulatorManager;
 use tauri::Manager;
 use voice::VoiceManager;
 
@@ -211,6 +213,9 @@ pub fn run() {
                 &_app.path().app_data_dir()?.join("plugins"),
                 &_app.package_info().version,
             )?);
+            let sim = SimManager::default();
+            _app.manage(sim.clone());
+            _app.manage(SimulatorManager::for_app(_app.handle().clone(), sim));
             wheel::watch(_app.handle());
             _app.state::<PtyManager>().start(_app.handle());
             // See-through window — same recipe as nackle (NSWindow opaque=NO,
@@ -254,7 +259,6 @@ pub fn run() {
         .manage(remote::PublishedBackdrop::default())
         .manage(BrowserManager::default())
         .manage(VoiceManager::default())
-        .manage(SimManager::default())
         .manage(preview::Previews::default())
         .register_asynchronous_uri_scheme_protocol(preview::SCHEME, preview::handle)
         .invoke_handler(tauri::generate_handler![
@@ -487,6 +491,8 @@ pub fn run() {
             sim::sim_call,
             sim::sim_watch,
             sim::sim_unwatch,
+            simulator::simulator_set_enabled,
+            simulator::simulator_setup,
         ])
         .build(tauri::generate_context!())
         .expect("error while building sikemux")

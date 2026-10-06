@@ -229,4 +229,6 @@ pub const IPC_COMMANDS: &[&str] = &[
     "sim_call",
     "sim_watch",
     "sim_unwatch",
+    "simulator_set_enabled",
+    "simulator_setup",
 ];
