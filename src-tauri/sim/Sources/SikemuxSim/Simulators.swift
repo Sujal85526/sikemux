@@ -10,6 +10,8 @@ actor Simulators {
     private var touch: [String: SimulatorHID] = [:]
     private var tails: [String: (tail: LogTail, task: Task<Void, Never>)] = [:]
     private var streams: [String: FrameStream] = [:]
+    /// The orientation each device was last turned to here, for runtimes that cannot report it.
+    private var turned: [String: String] = [:]
 
     func devices() throws -> [[String: Any]] {
         try set().allSimulators.map { simulator in
@@ -38,11 +40,16 @@ actor Simulators {
             throw Failure(
                 reason: "badRequest", message: "Unknown orientation \(name). Use portrait, portraitUpsideDown, landscapeLeft or landscapeRight.")
         }
-        try await booted(udid).orientation.set(orientation)
+        let simulator = try await booted(udid)
+        try await simulator.orientation.set(orientation)
+        turned[simulator.udid] = name
     }
 
+    /// Older runtimes cannot report the orientation, so the last one set here stands in, else portrait.
     func orientation(_ udid: String?) async throws -> String {
-        "\(try await booted(udid).orientation.current().rawValue)"
+        let simulator = try await booted(udid)
+        if let current = try? await simulator.orientation.current() { return "\(current.rawValue)" }
+        return turned[simulator.udid] ?? "portrait"
     }
 
     /// A swipe starting at a side of the screen is tagged with it, so iOS treats it as the system
@@ -51,7 +58,7 @@ actor Simulators {
         let simulator = try await booted(udid)
         guard let info = simulator.screenInfo, info.scale > 0 else { return .none }
         let scale = Double(info.scale)
-        let sideways = try await simulator.orientation.current().rawValue.hasPrefix("landscape")
+        let sideways = try await orientation(udid).hasPrefix("landscape")
         let (short, long) = (Double(info.widthPixels) / scale, Double(info.heightPixels) / scale)
         let (width, height) = sideways ? (long, short) : (short, long)
         let reach = 10.0

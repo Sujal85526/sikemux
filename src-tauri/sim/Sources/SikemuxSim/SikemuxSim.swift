@@ -86,7 +86,10 @@ struct SikemuxSim {
         case "screen":
             return try await simulators.screen(udid)
         case "orientation":
-            if let name = request.orientation { try await simulators.orient(udid, to: name) }
+            if let name = request.orientation {
+                try await simulators.orient(udid, to: name)
+                return ["orientation": name]
+            }
             return ["orientation": try await simulators.orientation(udid)]
         case "touchPath":
             try await simulators.send(try touchPath(try require(request.points, "points")), to: udid)
