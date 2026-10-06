@@ -22,12 +22,27 @@
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
-      }
+      },
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED"
+      ]
     },
     "plugins": [
       "expo-router",
       ["expo-secure-store", { "configureAndroidBackup": false }],
       "expo-web-browser",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Sikemux attaches the photos you pick to a chat on your computer.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ],
       "@clerk/expo",
       "@clerk/expo-google-signin",
       "./plugins/link-system-configuration",

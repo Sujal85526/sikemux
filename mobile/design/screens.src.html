@@ -244,6 +244,22 @@
   .send { width: 34px; height: 34px; border-radius: 999px; background: var(--ink); color: var(--bg); display: grid; place-items: center; flex: none; }
   .send.off { opacity: .28; }
   .send i { width: 10px; height: 10px; border-radius: 2px; background: currentColor; display: block; }
+  .attachments { display: flex; gap: 7px; padding: 4px 4px 2px; }
+  .attachments > span { position: relative; flex: none; height: 58px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-sunken); overflow: hidden; }
+  .attachments > .thumb { width: 76px; }
+  .attachments > .file { display: flex; align-items: center; gap: 8px; max-width: 190px; padding: 0 30px 0 10px; color: var(--ink-dim); }
+  .attachments .x { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 999px; background: var(--ink); color: var(--bg); display: grid; place-items: center; }
+  .attachments .sending { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(9, 9, 11, .55); }
+  .attachments .sending i { width: 16px; height: 16px; border-radius: 999px; border: 2px solid color-mix(in oklab, var(--ink) 30%, transparent); border-top-color: var(--ink); display: block; }
+  .file-words { min-width: 0; }
+  .file-words b { display: block; font-family: var(--mono); font-size: 12px; font-weight: 400; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .file-words span { display: block; margin-top: 2px; font-size: 11px; color: var(--ink-faint); }
+  .photo, .attachments > .photo { background: radial-gradient(circle at 72% 30%, #ffca85 0 9%, transparent 10%), linear-gradient(160deg, #2b2147 0%, #5b3fa8 45%, #a277ff 62%, #1d2a3a 63%, #101a24 100%); }
+  .sent-files { align-self: flex-end; display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: flex-end; gap: 6px; max-width: 84%; margin: 12px 0 -6px; }
+  .sent-files .thumb { width: 132px; height: 99px; border-radius: 10px; border: 1px solid var(--border); }
+  .sent-files .file { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-raised); color: var(--ink-dim); }
+  .sources { display: grid; gap: 8px; padding-bottom: 4px; }
+  .sources > span { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 14px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface-raised); font-size: 15.5px; font-weight: 500; color: var(--ink); }
   .composer-wrap.jumps { position: relative; }
   .jump { position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%); width: 34px; height: 34px; border-radius: 999px; display: grid; place-items: center; border: 1px solid var(--border); background: color-mix(in oklab, var(--surface-raised) 55%, var(--surface-sunken)); color: var(--ink-dim); box-shadow: 0 6px 18px rgba(0,0,0,.52); }
 
@@ -1448,6 +1464,108 @@
       </div>
       <div class="home-bar"></div></div>
       <figcaption><b>Writing</b><div class="note">Focus edges the composer in the selection colour, and the stop square becomes the Mac's up arrow. Return makes a new line; the arrow sends.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Download size on the hero</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="msg-user">Show the download size next to the button.</div>
+          <div class="tools"><span class="tools-sum">2 tool calls <span class="time">3s</span>{{IconChevron:11}}</span></div>
+          <div class="prose">Done. The size comes from the latest release's DMG at build time, then from the visitor's browser.</div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer">
+            <div class="ta ph">Ask about this project</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="ib">{{IconMic:17}}</span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="grabber"></div>
+          <div class="sources">
+            <span>{{IconImage:19}}Photos</span>
+            <span>{{IconFile:19}}Files</span>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Adding photos and files</b><div class="note">The + at the left of the composer, where the Mac's is, opens a short sheet with Photos and Files. Photos opens the system's photo picker, which needs no access to the library; Files opens the Files app. A phone that can only watch has no +.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Download size on the hero</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="msg-user">Show the download size next to the button.</div>
+          <div class="tools"><span class="tools-sum">2 tool calls <span class="time">3s</span>{{IconChevron:11}}</span></div>
+          <div class="prose">Done. The size comes from the latest release's DMG at build time, then from the visitor's browser.</div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer focus">
+            <div class="attachments">
+              <span class="thumb photo"><span class="x">{{IconClose:10}}</span></span>
+              <span class="file">{{IconFile:20}}<span class="file-words"><b>hero-copy.md</b><span>4 KB</span></span><span class="x">{{IconClose:10}}</span></span>
+            </div>
+            <div class="ta">Match this screenshot, using the copy in the file<span class="caret"></span></div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="ib">{{IconMic:17}}</span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Attachments, before sending</b><div class="note">What was picked sits in a row above the text, as on the Mac: a photo as a small rounded thumbnail, a file as its icon, name and size, each with an × to take it off. Photos go as JPEG, at most 2048 pixels on their longest side, so HEIC from the camera reads everywhere. A file over 10 MB is left out with a line saying so. Send puts each file on the host first, with a spinner on it, and sends the message only once all are there; one that did not get there turns red, and a tap tries again. Sent behind a running turn, the files wait with the message.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Download size on the hero</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="msg-user">Show the download size next to the button.</div>
+          <div class="tools"><span class="tools-sum">2 tool calls <span class="time">3s</span>{{IconChevron:11}}</span></div>
+          <div class="prose">Done. The size comes from the latest release's DMG at build time, then from the visitor's browser.</div>
+          <div class="sent-files">
+            <span class="thumb photo"></span>
+            <span class="file">{{IconFile:16}}<span class="file-words"><b>hero-copy.md</b><span>4 KB</span></span></span>
+          </div>
+          <div class="msg-user">Match this screenshot, using the copy in the file</div>
+          <div class="activity"><span class="glyph claude">{{IconClaude:20}}</span><span class="lbl">Reading…</span><span class="el">2s</span></div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer">
+            <div class="ta ph">Send to queue behind the running turn</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="ib">{{IconMic:17}}</span>
+              <span class="send"><i></i></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Sent with attachments</b><div class="note">The message carries its files above the bubble, at its right edge, as the Mac's chat shows them. A photo sent from this phone shows from the phone's own copy; a file, or anything sent from the computer, shows as a chip with its name. The agent gets the path of each, which the host keeps beside the pictures pasted into its own chats.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>

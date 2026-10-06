@@ -1,5 +1,5 @@
 import { memo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { toolDiff } from '@mac/chat/diff';
@@ -13,8 +13,10 @@ import { Track } from '@/ui/controls';
 import { useKeyboardShown } from '@/ui/screen';
 import { Sheet } from '@/ui/Sheet';
 import { brand, fonts, type Palette, useColors, useStyles } from '@/ui/theme';
+import { ComposerAttachments } from './Attachments';
 import { ComposerInput } from './ComposerInput';
-import type { ChatSession } from './session';
+import { pickFiles, pickPhotos } from './pick';
+import { MAX_ATTACHMENTS, type Attachment, type ChatSession } from './session';
 import { useDraft } from './useChat';
 
 function current(config?: SessionConfig): string | undefined {
@@ -223,6 +225,44 @@ function ConfigSheet({
   );
 }
 
+type Source = 'photos' | 'files';
+
+/** Where a message's photos and files come from. */
+function AttachSheet({
+  visible,
+  onClose,
+  onPick,
+  onDismiss,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onPick: (source: Source) => void;
+  onDismiss: () => void;
+}) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  const sources: { source: Source; label: string; icon: 'IconImage' | 'IconFile' }[] = [
+    { source: 'photos', label: 'Photos', icon: 'IconImage' },
+    { source: 'files', label: 'Files', icon: 'IconFile' },
+  ];
+  return (
+    <Sheet visible={visible} onClose={onClose} onDismiss={onDismiss}>
+      <View style={styles.sources}>
+        {sources.map(({ source, label, icon }) => (
+          <Pressable
+            key={source}
+            onPress={() => onPick(source)}
+            style={({ pressed }) => [styles.source, pressed && { backgroundColor: colors.active }]}
+            accessibilityRole="button">
+            <Icon name={icon} size={19} color={colors.ink} />
+            <Text style={styles.sourceText}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </Sheet>
+  );
+}
+
 export const Composer = memo(function Composer({
   session,
   provider,
@@ -238,6 +278,7 @@ export const Composer = memo(function Composer({
   offline,
   hostName,
   onSent,
+  attachments,
 }: {
   session: ChatSession;
   provider: string;
@@ -255,10 +296,16 @@ export const Composer = memo(function Composer({
   offline: boolean;
   hostName: string;
   onSent: () => void;
+  /** Picked for the next message. */
+  attachments: readonly Attachment[];
 }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
   const draft = useDraft(session);
+  const [adding, setAdding] = useState(false);
+  const source = useRef<Source | null>(null);
+  const uploading = attachments.some((attachment) => attachment.upload === 'sending');
+  const room = MAX_ATTACHMENTS - attachments.length;
   const [focused, setFocused] = useState(false);
   const input = useRef<TextInput>(null);
   const [sheet, setSheet] = useState(false);
@@ -291,15 +338,36 @@ export const Composer = memo(function Composer({
     );
   }
 
+  const sendable = Boolean(draft.trim()) || attachments.length > 0;
   const send = () => {
     const text = draft.trim();
-    if (!text || offline) return;
+    if (!sendable || offline || uploading) return;
     haptics.tap();
-    session.send(text);
-    // Clearing the state alone leaves text the keyboard is still composing.
-    input.current?.clear();
-    session.setDraft('');
-    onSent();
+    void session.send(text).then((sent) => {
+      if (!sent) return;
+      // Clearing the state alone leaves text the keyboard is still composing.
+      input.current?.clear();
+      session.setDraft('');
+      onSent();
+    });
+  };
+
+  const pick = (from: Source) => {
+    const picking = from === 'photos' ? pickPhotos(room) : pickFiles(room);
+    picking
+      .then(session.attach)
+      .catch((error: unknown) => session.report(`could not pick: ${error instanceof Error ? error.message : String(error)}`));
+  };
+  // iOS shows a picker only once the sheet over the screen has gone.
+  const choose = (from: Source) => {
+    setAdding(false);
+    if (Platform.OS === 'ios') source.current = from;
+    else pick(from);
+  };
+  const dismissed = () => {
+    const from = source.current;
+    source.current = null;
+    if (from) pick(from);
   };
 
   return (
@@ -307,9 +375,11 @@ export const Composer = memo(function Composer({
       {dock}
       <Commands commands={commands} typed={draft} onPick={(name) => session.setDraft(`/${name} `)} />
       <View style={[styles.composer, focused && { borderColor: colors.borderSelected }]}>
+        {attachments.length ? <ComposerAttachments attachments={attachments} onRemove={session.removeAttachment} onRetry={send} /> : null}
         <ComposerInput
           ref={input}
           value={draft}
+          editable={!uploading}
           onChangeText={session.setDraft}
           placeholder={placeholder}
           accessibilityLabel="Message"
@@ -317,6 +387,19 @@ export const Composer = memo(function Composer({
           onBlur={() => setFocused(false)}
         />
         <View style={styles.bar}>
+          <Pressable
+            onPress={() => setAdding(true)}
+            disabled={uploading || room <= 0}
+            style={({ pressed }) => [
+              styles.add,
+              pressed && { backgroundColor: colors.active },
+              (uploading || room <= 0) && { opacity: 0.4 },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Add photos or files"
+            accessibilityState={{ disabled: uploading || room <= 0 }}>
+            <Icon name="IconPlus" size={17} color={colors.inkDim} />
+          </Pressable>
           <View style={styles.yolo} accessible accessibilityLabel={yolo ? 'Runs without asking' : 'Asks before acting'}>
             <Icon name={yolo ? 'IconShieldBolt' : 'IconShield'} size={13} color={yolo ? colors.accent : colors.inkFaint} />
             <Text style={[styles.yoloText, yolo && { color: colors.accent }]}>{yolo ? 'yolo' : 'safe'}</Text>
@@ -349,15 +432,21 @@ export const Composer = memo(function Composer({
             </Pressable>
           ) : null}
           <View style={{ flex: 1 }} />
-          {draft.trim() || !running ? (
+          {sendable || !running ? (
             <Pressable
               onPress={send}
-              style={[styles.send, (!draft.trim() || offline) && { opacity: 0.28 }]}
-              disabled={offline}
+              style={[styles.send, (!sendable || offline) && { opacity: 0.28 }]}
+              disabled={offline || uploading}
               accessibilityRole="button"
-              accessibilityLabel={offline ? `Send, waiting for ${hostName}` : running ? 'Send after this turn' : 'Send'}
-              accessibilityState={{ disabled: offline || !draft.trim() }}>
-              <Icon name="IconArrowUp" size={16} color={colors.ground} />
+              accessibilityLabel={
+                uploading ? 'Sending files' : offline ? `Send, waiting for ${hostName}` : running ? 'Send after this turn' : 'Send'
+              }
+              accessibilityState={{ disabled: offline || !sendable, busy: uploading }}>
+              {uploading ? (
+                <ActivityIndicator size="small" color={colors.ground} />
+              ) : (
+                <Icon name="IconArrowUp" size={16} color={colors.ground} />
+              )}
             </Pressable>
           ) : (
             <Pressable onPress={session.cancel} style={styles.send} accessibilityRole="button" accessibilityLabel="Stop">
@@ -366,6 +455,7 @@ export const Composer = memo(function Composer({
           )}
         </View>
       </View>
+      <AttachSheet visible={adding} onClose={() => setAdding(false)} onPick={choose} onDismiss={dismissed} />
       <ConfigSheet
         visible={sheet}
         onClose={() => setSheet(false)}
@@ -386,6 +476,7 @@ const makeStyles = (colors: Palette) => {
     wrap: { paddingHorizontal: 10, paddingTop: 8, paddingBottom: 6 },
     composer: { padding: 6, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.composer },
     bar: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingTop: 6 },
+    add: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
     yolo: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 34, paddingHorizontal: 8 },
     yoloText: { fontFamily: fonts.uiSemibold, fontSize: 11, letterSpacing: 0.9, textTransform: 'uppercase', color: colors.inkFaint },
     picker: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 34, paddingHorizontal: 7, borderRadius: 7, maxWidth: 160 },
@@ -446,6 +537,19 @@ const makeStyles = (colors: Palette) => {
     commandName: { fontFamily: fonts.mono, fontSize: 13, color: colors.accent },
     commandText: { flex: 1, fontFamily: fonts.ui, fontSize: 13, color: colors.tertiary },
 
+    sources: { gap: 8, paddingBottom: 4 },
+    source: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      minHeight: 52,
+      paddingHorizontal: 14,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.raised,
+    },
+    sourceText: { fontFamily: fonts.uiMedium, fontSize: 15.5, color: colors.ink },
     sheetHead: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4 },
     sheetTitle: { fontFamily: fonts.uiSemibold, fontSize: 17, letterSpacing: -0.35, color: colors.ink },
     sheetLabel: {

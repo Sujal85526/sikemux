@@ -107,7 +107,7 @@ export default function NewChat() {
         agentId = await live.connection.startChat(launcher.id, project.id);
         setStarted(agentId);
       }
-      await live.connection.prompt(agentId, text);
+      await live.connection.prompt(agentId, text, []);
       router.replace(`/device/${core}/chat/${agentId}`);
     } catch (error) {
       busy.current = false;

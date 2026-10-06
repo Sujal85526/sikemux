@@ -121,7 +121,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
   const state = chat.agent;
   const request = chat.permissions[0];
   const liveId = state.running ? state.messages[state.messages.length - 1]?.id : undefined;
-  const marks = useMemo(() => [chat.replayed, chat.unsent, liveId], [chat.replayed, chat.unsent, liveId]);
+  const marks = useMemo(() => [chat.replayed, chat.unsent, chat.sentFiles, liveId], [chat.replayed, chat.unsent, chat.sentFiles, liveId]);
   useEffect(() => dismissCardsFor(core, agentId), [core, agentId]);
   useArrivals(state.running, request?.requestId, {
     done: `${providerName(provider)} finished`,
@@ -198,13 +198,14 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                     untimed={chat.replayed.has(item.id)}
                     unsent={chat.unsent.get(item.id)}
                     onRetry={session.retrySend}
+                    sentFiles={chat.sentFiles}
                   />
                 )}
                 ListHeaderComponent={chat.hasEarlier ? <Earlier failed={chat.earlier === 'failed'} onRetry={session.loadEarlier} /> : null}
                 onStartReached={chat.hasEarlier && chat.earlier === 'idle' ? session.loadEarlier : undefined}
                 ListFooterComponent={
                   <>
-                    {chat.queued ? <Queued text={chat.queued} /> : null}
+                    {chat.queued ? <Queued held={chat.queued} sentFiles={chat.sentFiles} /> : null}
                     {activity ? <Activity provider={provider} label={activity} since={chat.turnSince} /> : null}
                     {state.error ? <Text style={styles.error}>{state.error}</Text> : null}
                   </>
@@ -251,6 +252,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
               offline={live.status !== 'open'}
               hostName={hostName}
               onSent={toEnd}
+              attachments={chat.attachments}
             />
           </>
         ) : state.messages.length ? (

@@ -6,6 +6,7 @@ import {
   type ChatMark,
   type ConnectionLike,
 } from '@sikemux/native';
+import { File } from 'expo-file-system';
 
 import { recordOf } from '@mac/chat/acpEvents';
 import { chatReducer, initialChatState } from '@mac/chat/reducer';
@@ -22,6 +23,28 @@ export type Attached = 'attaching' | 'live' | 'missing';
 /** A message this phone wrote that the host has not taken yet. */
 export type Unsent = { state: 'sending' | 'failed'; problem?: string };
 
+/** The host's own limit on a file sent to a chat. */
+export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+export const MAX_ATTACHMENTS = 10;
+
+/** A photo or file picked on this phone for the next message. */
+export type Attachment = {
+  id: string;
+  kind: 'image' | 'file';
+  name: string;
+  mime: string;
+  /** Where it is on this phone. */
+  uri: string;
+  size: number;
+  /** Where the host keeps it, once it is there. */
+  path?: string;
+  upload?: 'sending' | 'failed';
+  problem?: string;
+};
+
+/** What waits behind the running turn. */
+export type Held = { text: string; attachments: Attachment[] };
+
 export type ChatSnapshot = {
   /** The chat as the host tells it, with what this phone sent added in place. */
   agent: ChatState;
@@ -36,7 +59,11 @@ export type ChatSnapshot = {
   notice: string | null;
   /** By message id. */
   unsent: ReadonlyMap<string, Unsent>;
-  queued: string | null;
+  queued: Held | null;
+  /** Picked for the next message. */
+  attachments: readonly Attachment[];
+  /** What this phone sent, by the path the host keeps it at. */
+  sentFiles: ReadonlyMap<string, Attachment>;
   /** Permission requests whose answer is on its way. */
   answering: ReadonlySet<string>;
   hasEarlier: boolean;
@@ -51,9 +78,11 @@ type Options = {
   /** Runs once before the next frame is drawn; returns how to call that off. */
   frame?: (run: () => void) => () => void;
   now?: () => number;
+  /** The contents of a file on this phone. */
+  read?: (uri: string) => Promise<ArrayBuffer>;
 };
 
-type Outgoing = { key: number; messageId: string; text: string } & Unsent;
+type Outgoing = { key: number; messageId: string; text: string; paths: string[] } & Unsent;
 
 /** Where the host's history of this run of the chat goes on before what the phone holds. */
 type Cursor = { feed: string; before: bigint };
@@ -74,14 +103,18 @@ function reason(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function readFile(uri: string): Promise<ArrayBuffer> {
+  return new File(uri).arrayBuffer();
+}
+
 function animationFrame(run: () => void): () => void {
   const frame = requestAnimationFrame(run);
   return () => cancelAnimationFrame(frame);
 }
 
 /** Adds a message from this phone without saying a turn has begun, for one the host has not taken. */
-function withMessage(state: ChatState, text: string): ChatState {
-  const next = chatReducer(state, { type: 'local_prompt', text, paths: [] });
+function withMessage(state: ChatState, text: string, paths: string[]): ChatState {
+  const next = chatReducer(state, { type: 'local_prompt', text, paths });
   return { ...next, running: state.running, suppressUserEcho: state.suppressUserEcho };
 }
 
@@ -99,7 +132,9 @@ export class ChatSession {
   private notice: string | null = null;
   private outbox: Outgoing[] = [];
   private sent = 0;
-  private queued: string | null = null;
+  private queued: Held | null = null;
+  private attachments: Attachment[] = [];
+  private sentFiles: ReadonlyMap<string, Attachment> = new Map();
   private answering: ReadonlySet<string> = new Set();
   private draft = '';
   private turnSince: number;
@@ -192,14 +227,52 @@ export class ChatSession {
     if (cameBack && this.connection && this.attached !== 'attaching') this.restart();
   };
 
-  send = (text: string) => {
-    this.notice = null;
-    if (this.busy()) {
-      this.queued = this.queued === null ? text : `${this.queued}\n\n${text}`;
-      this.emit();
-      return;
+  /** Adds what was picked for the next message, leaving out what the host would refuse. */
+  attach = (picked: Attachment[]) => {
+    const tooBig = picked.filter((attachment) => attachment.size > MAX_ATTACHMENT_BYTES);
+    const fits = picked.filter((attachment) => attachment.size <= MAX_ATTACHMENT_BYTES);
+    const room = Math.max(0, MAX_ATTACHMENTS - this.attachments.length);
+    this.attachments = [...this.attachments, ...fits.slice(0, room)];
+    if (tooBig.length) {
+      const names = tooBig.map((attachment) => attachment.name).join(', ');
+      this.notice = `${names} ${tooBig.length === 1 ? 'is' : 'are'} over 10 MB, too big to send`;
+    } else if (fits.length > room) {
+      this.notice = `a message takes at most ${MAX_ATTACHMENTS} files`;
+    } else {
+      this.notice = null;
     }
-    this.deliver(text);
+    this.emit();
+  };
+
+  removeAttachment = (id: string) => {
+    if (this.uploading()) return;
+    this.attachments = this.attachments.filter((attachment) => attachment.id !== id);
+    this.emit();
+  };
+
+  /**
+   * Sends the message once every file picked for it is on the host. Answers whether it went out
+   * or waits behind the turn; when a file did not get there, it stays in the composer to try again.
+   */
+  send = async (text: string): Promise<boolean> => {
+    this.notice = null;
+    let attachments: Attachment[] = [];
+    if (this.attachments.length) {
+      if (this.uploading()) return false;
+      attachments = await this.upload();
+      if (!attachments.length) return false;
+    }
+    if (this.busy()) {
+      const queued = this.queued;
+      this.queued = {
+        text: [queued?.text, text].filter(Boolean).join('\n\n'),
+        attachments: [...(queued?.attachments ?? []), ...attachments],
+      };
+      this.emit();
+      return true;
+    }
+    this.deliver(text, attachments);
+    return true;
   };
 
   retrySend = (messageId: string) => {
@@ -212,7 +285,8 @@ export class ChatSession {
   /** Stops the running turn. A message waiting behind it goes back to the composer rather than out. */
   cancel = () => {
     if (this.queued !== null) {
-      this.draft = [this.queued, this.draft].filter(Boolean).join('\n\n');
+      this.draft = [this.queued.text, this.draft].filter(Boolean).join('\n\n');
+      this.attachments = [...this.queued.attachments, ...this.attachments];
       this.queued = null;
     }
     this.notice = null;
@@ -248,6 +322,12 @@ export class ChatSession {
         if (options) this.agent = chatReducer(this.agent, { type: 'config', options });
       },
     );
+  };
+
+  /** Says what went wrong where the person is looking. */
+  report = (text: string) => {
+    this.notice = text;
+    this.emit();
   };
 
   dismissNotice = () => {
@@ -326,6 +406,8 @@ export class ChatSession {
       notice: this.notice,
       unsent: this.unsentView(),
       queued: this.queued,
+      attachments: this.attachments,
+      sentFiles: this.sentFiles,
       answering: this.answering,
       hasEarlier: this.cursor !== null,
       earlier: this.earlier,
@@ -342,6 +424,37 @@ export class ChatSession {
       this.unsentMap = new Map(this.outbox.map(({ messageId, state, problem }) => [messageId, { state, problem }]));
     }
     return this.unsentMap;
+  }
+
+  private uploading() {
+    return this.attachments.some((attachment) => attachment.upload === 'sending');
+  }
+
+  private patch(id: string, change: Partial<Attachment>) {
+    this.attachments = this.attachments.map((attachment) => (attachment.id === id ? { ...attachment, ...change } : attachment));
+    this.emit();
+  }
+
+  /** Puts each picked file the host does not have yet on it, one at a time. Answers them all once all got there. */
+  private async upload(): Promise<Attachment[]> {
+    const connection = this.connection;
+    const waiting = this.attachments.filter((attachment) => !attachment.path);
+    for (const attachment of waiting) this.patch(attachment.id, { upload: 'sending', problem: undefined });
+    for (const attachment of waiting) {
+      try {
+        if (!connection?.isOpen()) throw new Error('the host is not connected');
+        const bytes = await (this.options.read ?? readFile)(attachment.uri);
+        const path = await connection.attachFile(this.agentId, attachment.name, attachment.mime, bytes);
+        this.sentFiles = new Map([...this.sentFiles, [path, attachment]]);
+        this.patch(attachment.id, { upload: undefined, path });
+      } catch (error) {
+        this.patch(attachment.id, { upload: 'failed', problem: reason(error) });
+      }
+    }
+    if (this.attachments.some((attachment) => !attachment.path)) return [];
+    const sent = this.attachments;
+    this.attachments = [];
+    return sent;
   }
 
   private busy() {
@@ -482,7 +595,7 @@ export class ChatSession {
 
     // The replay has what the host took; what it did not take is put back after it.
     this.outbox = this.outbox.map((outgoing) => {
-      agent = withMessage(agent, outgoing.text);
+      agent = withMessage(agent, outgoing.text, outgoing.paths);
       return { ...outgoing, messageId: agent.messages[agent.messages.length - 1].id };
     });
 
@@ -533,13 +646,15 @@ export class ChatSession {
     }
   }
 
-  private deliver(text: string) {
-    this.apply([{ type: 'local_prompt', text, paths: [] }]);
+  private deliver(text: string, attachments: Attachment[]) {
+    const paths = attachments.flatMap((attachment) => (attachment.path ? [attachment.path] : []));
+    this.apply([{ type: 'local_prompt', text, paths }]);
     this.optimistic = true;
     const entry: Outgoing = {
       key: (this.sent += 1),
       messageId: this.agent.messages[this.agent.messages.length - 1].id,
       text,
+      paths,
       state: 'sending',
     };
     this.outbox = [...this.outbox, entry];
@@ -552,7 +667,7 @@ export class ChatSession {
     Promise.resolve()
       .then(() => {
         if (!connection?.isOpen()) throw new Error('the host is not connected');
-        return connection.prompt(this.agentId, entry.text);
+        return connection.prompt(this.agentId, entry.text, entry.paths);
       })
       .then(() => {
         this.outbox = this.outbox.filter((outgoing) => outgoing.key !== entry.key);
@@ -576,9 +691,9 @@ export class ChatSession {
   /** Sends the message held behind a turn once nothing is running and the chat is open. */
   private drain() {
     if (this.queued === null || this.busy() || this.attached !== 'live' || !this.connection) return;
-    const text = this.queued;
+    const { text, attachments } = this.queued;
     this.queued = null;
-    this.deliver(text);
+    this.deliver(text, attachments);
   }
 
   private ask<T>(request: (connection: ConnectionLike) => Promise<T>, what: string, then?: (answer: T) => void): Promise<void> {

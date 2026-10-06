@@ -11,7 +11,8 @@ import { Working } from '@/ui/status';
 import { fonts, type Palette, useColors, useStyles } from '@/ui/theme';
 import { Folds } from './folds';
 import { Markdown } from './Markdown';
-import type { Unsent } from './session';
+import { SentAttachments } from './Attachments';
+import type { Attachment, Held, Unsent } from './session';
 
 /** Where the transcript keeps which tool groups and rows are open. */
 export const FoldsContext = createContext(new Folds());
@@ -299,24 +300,30 @@ export function Message({
   untimed = false,
   unsent,
   onRetry,
+  sentFiles,
 }: {
   message: ChatMessage;
   live?: boolean;
   untimed?: boolean;
   unsent?: Unsent;
   onRetry?: (messageId: string) => void;
+  sentFiles: ReadonlyMap<string, Attachment>;
 }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
   if (message.role === 'user') {
     const failed = unsent?.state === 'failed';
+    const text = userText(message);
     return (
       <View style={styles.userRow}>
-        <View style={[styles.bubble, unsent?.state === 'sending' && { opacity: 0.7 }, failed && styles.failedBubble]}>
-          <Text style={styles.userText} selectable>
-            {userText(message)}
-          </Text>
-        </View>
+        {message.attachments?.length ? <SentAttachments paths={message.attachments} sentFiles={sentFiles} /> : null}
+        {text || !message.attachments?.length ? (
+          <View style={[styles.bubble, unsent?.state === 'sending' && { opacity: 0.7 }, failed && styles.failedBubble]}>
+            <Text style={styles.userText} selectable>
+              {text}
+            </Text>
+          </View>
+        ) : null}
         {failed ? (
           <Pressable
             onPress={() => onRetry?.(message.id)}
@@ -338,13 +345,21 @@ export function Message({
   return <Assistant message={message} untimed={untimed} live={live} />;
 }
 
-export function Queued({ text }: { text: string }) {
+export function Queued({ held, sentFiles }: { held: Held; sentFiles: ReadonlyMap<string, Attachment> }) {
   const styles = useStyles(makeStyles);
+  const paths = held.attachments.flatMap((attachment) => (attachment.path ? [attachment.path] : []));
   return (
     <View style={styles.userRow}>
-      <View style={[styles.bubble, { opacity: 0.55 }]}>
-        <Text style={styles.userText}>{text}</Text>
-      </View>
+      {paths.length ? (
+        <View style={{ opacity: 0.55 }}>
+          <SentAttachments paths={paths} sentFiles={sentFiles} />
+        </View>
+      ) : null}
+      {held.text ? (
+        <View style={[styles.bubble, { opacity: 0.55 }]}>
+          <Text style={styles.userText}>{held.text}</Text>
+        </View>
+      ) : null}
       <Text style={styles.queuedLabel}>Sends when this turn ends</Text>
     </View>
   );

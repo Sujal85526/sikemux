@@ -128,6 +128,9 @@ class Connection {
 
   async detachChat() {}
   async prompt() {}
+  async attachFile(_agentId: string, name: string) {
+    return `/Users/demo/Library/Caches/com.nodelike.sikemux/pasted/${name}`;
+  }
   async cancel() {}
   async answerPermission() {}
   async setChatConfig(_agentId: string, _configId: string, value: string) {

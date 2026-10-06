@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatAttachment, ChatState, MobileError, type ChatInfo, type ConnectionLike } from '@sikemux/native';
 
 import type { ChatDelivery } from '@/devices/hub';
-import { ChatSession } from './session';
+import { ChatSession, type Attachment } from './session';
 
 const FEED = 'feed-1';
 const event = (kind: string, payload: Record<string, unknown> = {}) => ({ kind, payload });
@@ -39,7 +39,8 @@ function fakeConnection(attachment: unknown) {
     wakeChat: vi.fn(async () => {}),
     attachChat: vi.fn(async (_agent: string, _since?: { feed: string; seq: bigint }) => attachment),
     detachChat: vi.fn(async () => {}),
-    prompt: vi.fn(async () => {}),
+    prompt: vi.fn(async (_agent: string, _text: string, _paths: string[]) => {}),
+    attachFile: vi.fn(async (_agent: string, name: string, _mime: string, _bytes: ArrayBuffer) => `/host/pasted/${name}`),
     cancel: vi.fn(async () => {}),
     answerPermission: vi.fn(async () => {}),
     setChatConfig: vi.fn(async () => '{}'),
@@ -51,6 +52,7 @@ function harness() {
   let take: ((deliveries: ChatDelivery[]) => void) | undefined;
   const frames: (() => void)[] = [];
   const session = new ChatSession('agent', {
+    read: async () => new ArrayBuffer(4),
     listen: (listen) => {
       take = listen;
       return () => {
@@ -71,6 +73,16 @@ function harness() {
   const drawFrame = () => frames.splice(0).forEach((run) => run());
   return { session, deliver, startAt, drawFrame };
 }
+
+let picks = 0;
+const picked = (name: string, kind: 'image' | 'file', size = 1000): Attachment => ({
+  id: `pick-${(picks += 1)}`,
+  kind,
+  name,
+  mime: kind === 'image' ? 'image/jpeg' : 'application/octet-stream',
+  uri: `file:///picked/${name}`,
+  size,
+});
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 const texts = (session: ChatSession) =>
@@ -211,13 +223,13 @@ describe('a chat session', () => {
     session.hold(connection as unknown as ConnectionLike);
     await settle();
     session.send('next');
-    expect(session.snapshot().queued).toBe('next');
+    expect(session.snapshot().queued).toEqual({ text: 'next', attachments: [] });
 
     startAt(1);
     deliver(event('turn_completed'));
     drawFrame();
     await settle();
-    expect(connection.prompt).toHaveBeenCalledWith('agent', 'next');
+    expect(connection.prompt).toHaveBeenCalledWith('agent', 'next', []);
     expect(session.snapshot().queued).toBeNull();
   });
 
@@ -238,6 +250,67 @@ describe('a chat session', () => {
     expect(connection.prompt).not.toHaveBeenCalled();
     expect(session.snapshot().queued).toBeNull();
     expect(session.draftText()).toBe('next\n\nand also');
+  });
+
+  it('puts the picked files on the host before sending their paths with the message', async () => {
+    const { session } = harness();
+    const connection = fakeConnection(live([], 0));
+    session.hold(connection as unknown as ConnectionLike);
+    await settle();
+    session.attach([picked('shot.jpg', 'image'), picked('notes.txt', 'file')]);
+
+    const sending = session.send('look');
+    expect(session.snapshot().attachments.map((attachment) => attachment.upload)).toEqual(['sending', 'sending']);
+    expect(session.snapshot().agent.messages).toHaveLength(0);
+    expect(await sending).toBe(true);
+    expect(connection.attachFile.mock.calls.map((call) => call[1])).toEqual(['shot.jpg', 'notes.txt']);
+    expect(connection.prompt).toHaveBeenCalledWith('agent', 'look', ['/host/pasted/shot.jpg', '/host/pasted/notes.txt']);
+    const { agent, attachments, sentFiles } = session.snapshot();
+    expect(attachments).toHaveLength(0);
+    expect(agent.messages.at(-1)?.attachments).toEqual(['/host/pasted/shot.jpg', '/host/pasted/notes.txt']);
+    expect(sentFiles.get('/host/pasted/shot.jpg')?.uri).toBe('file:///picked/shot.jpg');
+  });
+
+  it('holds the message while a file did not reach the host, and sends only the rest again', async () => {
+    const { session } = harness();
+    const connection = fakeConnection(live([], 0));
+    connection.attachFile.mockRejectedValueOnce(MobileError.Connection.new({ message: 'the connection dropped' }));
+    session.hold(connection as unknown as ConnectionLike);
+    await settle();
+    session.attach([picked('a.jpg', 'image'), picked('b.pdf', 'file')]);
+
+    expect(await session.send('both')).toBe(false);
+    const [first, second] = session.snapshot().attachments;
+    expect(first).toMatchObject({ upload: 'failed', problem: 'the connection dropped' });
+    expect(second.path).toBe('/host/pasted/b.pdf');
+    expect(connection.prompt).not.toHaveBeenCalled();
+
+    expect(await session.send('both')).toBe(true);
+    expect(connection.attachFile).toHaveBeenCalledTimes(3);
+    expect(connection.prompt).toHaveBeenCalledWith('agent', 'both', ['/host/pasted/a.jpg', '/host/pasted/b.pdf']);
+  });
+
+  it("leaves out files over the host's limit and says so", () => {
+    const { session } = harness();
+    session.attach([picked('movie.mov', 'file', 11 * 1024 * 1024), picked('ok.png', 'image')]);
+    const { attachments, notice } = session.snapshot();
+    expect(attachments.map((attachment) => attachment.name)).toEqual(['ok.png']);
+    expect(notice).toBe('movie.mov is over 10 MB, too big to send');
+  });
+
+  it('hands held files back to the composer on Stop', async () => {
+    const { session } = harness();
+    const connection = fakeConnection(live([event('turn_started')], 1, true));
+    session.hold(connection as unknown as ConnectionLike);
+    await settle();
+    session.attach([picked('shot.jpg', 'image')]);
+    await session.send('next');
+    expect(session.snapshot().queued?.attachments.map((attachment) => attachment.path)).toEqual(['/host/pasted/shot.jpg']);
+
+    session.cancel();
+    expect(session.snapshot().attachments.map((attachment) => attachment.path)).toEqual(['/host/pasted/shot.jpg']);
+    await session.send('next');
+    expect(connection.attachFile).toHaveBeenCalledTimes(1);
   });
 
   it('takes the chat up again when the host brings it back', async () => {

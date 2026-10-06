@@ -49,12 +49,15 @@ export function Sheet({
   onClose,
   tall,
   scrolls,
+  onDismiss,
   children,
 }: {
   visible: boolean;
   onClose: () => void;
   tall?: boolean;
   scrolls?: boolean;
+  /** Once the sheet is off the screen, as what it chose may need to show a screen of its own. */
+  onDismiss?: () => void;
   children: ReactNode;
 }) {
   const styles = useStyles(makeStyles);
@@ -118,7 +121,7 @@ export function Sheet({
   const bottom = keyboard ? keyboard + 12 : insets.bottom + 12;
 
   return (
-    <Modal visible={mounted} transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
+    <Modal visible={mounted} transparent animationType="none" onRequestClose={onClose} onDismiss={onDismiss} statusBarTranslucent>
       <Animated.View style={[StyleSheet.absoluteFill, styles.scrim, { opacity: progress }]}>
         <Pressable style={{ flex: 1 }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
       </Animated.View>
