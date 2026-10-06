@@ -11,13 +11,13 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sikemux_core::acp::{bounded_text, native};
 use sikemux_core::client::{ClientError, CoreClient, Reply};
 use sikemux_core::protocol::{
-    ChatAttachment, ChatContext, ChatEvent, ChatEventKind, ChatInfo, ChatLaunch, ChatLauncher,
-    ChatStart, Request, Response,
+    ChatAccount, ChatAttachment, ChatContext, ChatEvent, ChatEventKind, ChatInfo, ChatLaunch,
+    ChatLauncher, ChatStart, Request, Response,
 };
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -445,6 +445,48 @@ fn valid_environment_key(key: &str) -> bool {
         && key.len() <= 128
 }
 
+/// One of the person's accounts, as the page names it.
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountRequest {
+    id: String,
+    label: String,
+    config_path: Option<String>,
+}
+
+fn chat_account(provider: &str, account: &AccountRequest) -> ChatAccount {
+    if let Some(kind) = crate::agents::accounts::kind(provider) {
+        crate::agents::accounts::link_shared(kind, account.config_path.as_deref());
+    }
+    ChatAccount {
+        id: account.id.clone(),
+        label: account.label.clone(),
+        env: crate::agents::accounts::account_environment(provider, account.config_path.as_deref())
+            .into_iter()
+            .collect(),
+    }
+}
+
+/// The accounts a chat on `config_path` may move to: only those that keep
+/// chats where it does, since a chat moves by being loaded from there.
+fn fallback_accounts(
+    provider: &str,
+    config_path: Option<&str>,
+    fallbacks: &[AccountRequest],
+) -> Vec<ChatAccount> {
+    fallbacks
+        .iter()
+        .filter(|fallback| {
+            crate::agents::accounts::sessions_shared(
+                provider,
+                config_path,
+                fallback.config_path.as_deref(),
+            )
+        })
+        .map(|fallback| chat_account(provider, fallback))
+        .collect()
+}
+
 fn failure(error: ClientError) -> String {
     error.to_string()
 }
@@ -558,6 +600,8 @@ pub async fn acp_start(
     model: Option<String>,
     effort: Option<String>,
     environment_keys: Vec<String>,
+    account: Option<AccountRequest>,
+    fallbacks: Option<Vec<AccountRequest>>,
 ) -> Result<ChatStart, String> {
     bounded_text("agent id", &agent_id, MAX_AGENT_ID)?;
     bounded_text("provider", &provider, 64)?;
@@ -608,8 +652,14 @@ pub async fn acp_start(
         permission_mode,
         model,
         effort,
-        account: None,
-        fallbacks: Vec::new(),
+        account: account
+            .as_ref()
+            .map(|account| chat_account(&provider, account)),
+        fallbacks: fallback_accounts(
+            &provider,
+            config_path.as_deref(),
+            fallbacks.as_deref().unwrap_or_default(),
+        ),
     };
     let client = core(&pty).await?;
     let started = client
@@ -745,6 +795,23 @@ pub async fn acp_attach(
         );
     }
     Ok(attachment)
+}
+
+/// Moves a running chat to another account, on the same session.
+#[tauri::command]
+pub async fn acp_switch_account(
+    pty: State<'_, PtyManager>,
+    agent_id: String,
+    provider: String,
+    account: AccountRequest,
+) -> Result<(), String> {
+    bounded_text("agent id", &agent_id, MAX_AGENT_ID)?;
+    let account = chat_account(&provider, &account);
+    core(&pty)
+        .await?
+        .acp_switch_account(agent_id, account)
+        .await
+        .map_err(failure)
 }
 
 /// The chats the core runs, for the page to stop the ones it no longer shows.
