@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Agent, ProviderProfile, Session } from "../state/types";
-import { remoteChats, remoteWorkspace } from "./workspace";
+import { remoteChats, remoteRecent, remoteWorkspace } from "./workspace";
 
 function project(id: string, cwd: string): Session {
     return { id, name: cwd.split("/").at(-1) ?? id, kind: "project", cwd, pinned: false, activeWindowId: `${id}-window` };
@@ -62,5 +62,32 @@ describe("remoteChats", () => {
             { agentId: "a", provider: "claude", title: "Fix the login flow", cwd: "/Users/me/sikemux", asleep: false },
             { agentId: "b", provider: "claude", title: null, cwd: "/Users/me/sikemux", asleep: true },
         ]);
+    });
+});
+
+describe("remoteRecent", () => {
+    it("resumes each saved chat with the launcher of the profile the rail lists it under", () => {
+        const profiles = [profile("work", "Work", "claude"), profile("home", "Home", "claude")];
+        const chat = (agent: "claude" | "opencode", id: string, title: string) => ({
+            agent,
+            id,
+            title,
+            mtime: 1_700_000_000,
+            project: "/Users/me/sikemux",
+        });
+        const recent = remoteRecent([chat("claude", "c1", "Fix the login flow"), chat("opencode", "o1", "x".repeat(300))], profiles, {
+            claude: "home",
+        });
+        expect(recent[0]).toEqual({
+            launcher: "claude:home",
+            provider: "claude",
+            sessionId: "c1",
+            title: "Fix the login flow",
+            cwd: "/Users/me/sikemux",
+            activeAt: 1_700_000_000_000,
+        });
+        expect(recent[1].launcher).toBe("opencode");
+        expect(recent[1].title).toHaveLength(200);
+        expect(remoteRecent([chat("claude", "c1", "t")], profiles, {})[0].launcher).toBe("claude:work");
     });
 });

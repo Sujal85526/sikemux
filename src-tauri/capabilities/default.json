@@ -53,6 +53,7 @@
     "allow-remote-answer-pairing",
     "allow-remote-publish-workspace",
     "allow-remote-publish-agents",
+    "allow-remote-publish-recent",
     "allow-remote-publish-on-screen",
     "allow-notch-configure",
     "allow-remote-publish-palette",

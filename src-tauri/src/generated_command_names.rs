@@ -35,6 +35,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "remote_answer_pairing",
     "remote_publish_workspace",
     "remote_publish_agents",
+    "remote_publish_recent",
     "remote_publish_on_screen",
     "notch_configure",
     "remote_publish_palette",

@@ -1,9 +1,16 @@
 import { AGENT_NAMES, CHAT_AGENT_TYPES, agentSupportsChat, normalizePermissionMode } from "../agents/agentLaunch";
+import { selectedProviderProfile } from "../agents/agentProfiles";
 import { agentCwd } from "../agents/agentPtyContext";
-import type { LauncherRequest, PublishedChat, PublishedProject } from "../api/remote";
+import type { RecentChat } from "../api/agents";
+import type { LauncherRequest, PublishedChat, PublishedProject, PublishedRecent } from "../api/remote";
 import { agentWindowId, ownerSessionId } from "../state/selectors";
 import type { StoreState } from "../state/store";
-import type { AgentPermissionMode, AgentType, ProviderProfile, Session } from "../state/types";
+import type { AgentPermissionMode, AgentType, ProviderProfile, ProviderProfileSelection, Session } from "../state/types";
+
+/** The longest title the core keeps. */
+const MAX_TITLE_CHARS = 200;
+
+const launcherId = (type: AgentType, profile?: ProviderProfile) => (profile ? `${type}:${profile.id}` : type);
 
 export interface RemoteWorkspace {
     readonly projects: PublishedProject[];
@@ -28,9 +35,9 @@ export function remoteWorkspace(
     const launchers = CHAT_AGENT_TYPES.flatMap((type): LauncherRequest[] => {
         const mode = normalizePermissionMode(type, permissionMode);
         const own = profiles.filter((profile) => profile.provider === type);
-        if (own.length === 0) return [{ id: type, provider: type, label: AGENT_NAMES[type], environmentKeys: [], permissionMode: mode }];
+        if (own.length === 0) return [{ id: launcherId(type), provider: type, label: AGENT_NAMES[type], environmentKeys: [], permissionMode: mode }];
         return own.map((profile) => ({
-            id: `${type}:${profile.id}`,
+            id: launcherId(type, profile),
             provider: type,
             label: own.length > 1 ? `${AGENT_NAMES[type]} · ${profile.name}` : AGENT_NAMES[type],
             configPath: profile.configPath,
@@ -46,6 +53,29 @@ export function remoteWorkspace(
 export function profileOfLauncher(launcher: string | null, profiles: readonly ProviderProfile[], type: AgentType): string | undefined {
     const profileId = launcher?.startsWith(`${type}:`) ? launcher.slice(type.length + 1) : undefined;
     return profiles.some((profile) => profile.id === profileId && profile.provider === type) ? profileId : undefined;
+}
+
+/**
+ * The rail's recent chats as paired devices list them, each resumed with the launcher of the profile the rail lists it
+ * under.
+ */
+export function remoteRecent(
+    chats: readonly RecentChat[],
+    profiles: readonly ProviderProfile[],
+    selections: ProviderProfileSelection,
+): PublishedRecent[] {
+    return chats.map((chat) => {
+        const own = profiles.filter((profile) => profile.provider === chat.agent);
+        const profile = own.length ? (selectedProviderProfile(chat.agent, profiles, selections) ?? own[0]) : undefined;
+        return {
+            launcher: launcherId(chat.agent, profile),
+            provider: chat.agent,
+            sessionId: chat.id,
+            title: Array.from(chat.title).slice(0, MAX_TITLE_CHARS).join(""),
+            cwd: chat.project,
+            activeAt: chat.mtime * 1000,
+        };
+    });
 }
 
 /** What the person named each agent, by agent id, for the notch and paired devices to show. */

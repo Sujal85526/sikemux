@@ -1,10 +1,17 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { agentSupportsChat } from "../agents/agentLaunch";
+import { selectedAgentRuntimeProfiles } from "../agents/agentProfiles";
+import { agentApi } from "../api/agents";
 import { remoteApi, type PublishedChat } from "../api/remote";
+import { getIpcTransport } from "../api/transport";
 import { backdropPicture, grainDotColor } from "../remote/backdrop";
 import { usePaneImage } from "../lib/paneImage";
 import { readPalette } from "../remote/palette";
-import { remoteChats, remoteTitles, remoteWorkspace } from "../remote/workspace";
+import { remoteChats, remoteRecent, remoteTitles, remoteWorkspace } from "../remote/workspace";
+import { useResourceEnabled } from "../state/resources";
+import { agentCatalogR } from "../state/resources.defs";
+import type { AgentType } from "../state/types";
 import { activeAgentId } from "../state/selectors";
 import { currentTheme, subscribeTheme } from "../themes/bus";
 import { swallow } from "../state/toast";
@@ -12,6 +19,10 @@ import { useStore } from "../state/store";
 
 /** Long enough that opening or renaming several projects publishes once. */
 export const PUBLISH_DELAY_MS = 400;
+/** How many of the newest saved chats paired devices can resume. */
+export const RECENT_LIMIT = 30;
+/** Picks up saved chats written while no change event reached the app. */
+export const RECENT_REFRESH_MS = 120_000;
 
 /**
  * Tells the core which projects and agents can be started and what the app calls its agents, for the notch and paired
@@ -93,11 +104,86 @@ export function RemoteWorkspaceBridge() {
         return () => window.clearTimeout(timer);
     }, [chats, titles]);
 
+    usePublishRecent(enabled);
+
     useEffect(() => {
         remoteApi.publishOnScreen(onScreen ? [onScreen] : []).catch(swallow("tell the core which agent is on screen"));
     }, [onScreen]);
 
     return null;
+}
+
+/** The newest saved chats across the chat agents and open projects, none of them open, for paired devices to resume. */
+function usePublishRecent(enabled: boolean) {
+    const profiles = useStore((s) => s.providerProfiles);
+    const selections = useStore((s) => s.selectedProviderProfileIds);
+    const runtimeProfiles = useMemo(() => selectedAgentRuntimeProfiles(profiles, selections), [profiles, selections]);
+    const catalog = useResourceEnabled(enabled, agentCatalogR, runtimeProfiles);
+    const sessions = useStore((s) => s.sessions);
+    const sessionOrder = useStore((s) => s.sessionOrder);
+    const agents = useStore((s) => s.agents);
+    const request = useMemo(() => {
+        const providers = (catalog.data ?? [])
+            .filter((agent) => agent.available !== false && agentSupportsChat(agent.type))
+            .map((agent) => ({ agent: agent.type, configPath: agent.configPath ?? null }));
+        const projects = sessionOrder
+            .map((id) => sessions[id])
+            .filter((session) => session?.kind === "project" && session.cwd)
+            .map((session) => session.cwd);
+        const exclude = Object.values(agents)
+            .map((agent) => ({ agent: agent.type, id: agent.resumeId ?? agent.id }))
+            .sort((a, b) => `${a.agent}\0${a.id}`.localeCompare(`${b.agent}\0${b.id}`));
+        return JSON.stringify({ providers, projects, exclude });
+    }, [catalog.data, sessions, sessionOrder, agents]);
+    const profilesRef = useRef({ profiles, selections });
+    profilesRef.current = { profiles, selections };
+
+    useEffect(() => {
+        if (!enabled) return;
+        const { providers, projects, exclude } = JSON.parse(request) as {
+            providers: { agent: AgentType; configPath: string | null }[];
+            projects: string[];
+            exclude: { agent: AgentType; id: string }[];
+        };
+        const controller = new AbortController();
+        let last: string | undefined;
+        const publish = () => {
+            const page =
+                providers.length && projects.length
+                    ? agentApi.recent({ providers, projects, limit: RECENT_LIMIT, exclude })
+                    : Promise.resolve({ sessions: [] });
+            page.then((found) => {
+                if (controller.signal.aborted) return;
+                const chats = remoteRecent(found.sessions, profilesRef.current.profiles, profilesRef.current.selections);
+                const json = JSON.stringify(chats);
+                if (json === last) return;
+                last = json;
+                return remoteApi.publishRecent(chats);
+            }).catch(swallow("publish recent chats to paired devices"));
+        };
+        let timer = window.setTimeout(publish, PUBLISH_DELAY_MS);
+        const soon = () => {
+            window.clearTimeout(timer);
+            timer = window.setTimeout(publish, PUBLISH_DELAY_MS);
+        };
+        const refresh = window.setInterval(publish, RECENT_REFRESH_MS);
+        getIpcTransport()
+            .subscribe<{ agent: AgentType; cwd: string }>(
+                "agent_sessions_changed",
+                ({ payload }) => {
+                    if (providers.some((provider) => provider.agent === payload.agent) && projects.includes(payload.cwd)) soon();
+                },
+                { signal: controller.signal },
+            )
+            .catch((error: unknown) => {
+                if (!controller.signal.aborted) swallow("recent chats listener")(error);
+            });
+        return () => {
+            controller.abort();
+            window.clearTimeout(timer);
+            window.clearInterval(refresh);
+        };
+    }, [enabled, request]);
 }
 
 /** Whether the app's window is the one the person is using: a window behind another app is not looked at. */

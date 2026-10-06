@@ -89,6 +89,17 @@ export interface PublishedChat {
     readonly asleep: boolean;
 }
 
+/** A saved chat the rail lists as recent, which a paired device may take up again with `launcher`. */
+export interface PublishedRecent {
+    readonly launcher: string;
+    readonly provider: string;
+    readonly sessionId: string;
+    readonly title: string;
+    readonly cwd: string;
+    /** Unix milliseconds. */
+    readonly activeAt: number;
+}
+
 /** One chat agent the app offers paired devices; the app works out how to run it. */
 export interface LauncherRequest {
     readonly id: string;
@@ -112,6 +123,7 @@ export const remoteApi = {
         invoke<void>("remote_publish_workspace", { projects, launchers }),
     publishAgents: (chats: readonly PublishedChat[], titles: Readonly<Record<string, string>>) =>
         invoke<void>("remote_publish_agents", { chats, titles }),
+    publishRecent: (chats: readonly PublishedRecent[]) => invoke<void>("remote_publish_recent", { chats }),
     publishOnScreen: (agentIds: readonly string[]) => invoke<void>("remote_publish_on_screen", { agentIds }),
     publishPalette: (palette: Readonly<Record<string, string>>) => invoke<void>("remote_publish_palette", { palette }),
     publishBackdrop: (texture: boolean, image: { readonly id: string; readonly dataUrl: string } | null) =>

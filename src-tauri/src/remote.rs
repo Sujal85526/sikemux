@@ -8,7 +8,8 @@ use std::sync::{Arc, Mutex};
 use serde::Deserialize;
 use sikemux_core::client::CoreClient;
 use sikemux_core::protocol::{
-    BackdropImage, ChatLauncher, DeviceAccess, ProjectInfo, PublishedChat, RemoteStatus,
+    BackdropImage, ChatLauncher, DeviceAccess, ProjectInfo, PublishedChat, PublishedRecent,
+    RemoteStatus,
 };
 use tauri::{AppHandle, Manager, State};
 
@@ -36,6 +37,10 @@ type AgentList = (Vec<PublishedChat>, BTreeMap<String, String>);
 /// The agents the app last listed, sent again like the workspace.
 #[derive(Default)]
 pub struct PublishedAgents(Mutex<Option<AgentList>>);
+
+/// The recent chats the app last listed, sent again like the workspace.
+#[derive(Default)]
+pub struct PublishedRecentChats(Mutex<Option<Vec<PublishedRecent>>>);
 
 /// The agents the app last showed, sent again like the workspace.
 #[derive(Default)]
@@ -135,6 +140,19 @@ pub async fn remote_publish_agents(
 }
 
 #[tauri::command]
+pub async fn remote_publish_recent(
+    manager: State<'_, PtyManager>,
+    published: State<'_, PublishedRecentChats>,
+    chats: Vec<PublishedRecent>,
+) -> AppResult<()> {
+    if let Ok(mut last) = published.0.lock() {
+        *last = Some(chats.clone());
+    }
+    let client = manager.client().await?;
+    client.publish_recent(chats).await.map_err(core_error)
+}
+
+#[tauri::command]
 pub async fn remote_publish_on_screen(
     manager: State<'_, PtyManager>,
     published: State<'_, PublishedOnScreen>,
@@ -188,6 +206,14 @@ pub(crate) async fn connected(
     if let Some((chats, titles)) = agents {
         if let Err(error) = client.publish_agents(chats, titles).await {
             eprintln!("Sikemux could not tell its core which agents it has: {error}");
+        }
+    }
+    let recent = app
+        .try_state::<PublishedRecentChats>()
+        .and_then(|published| published.0.lock().ok().and_then(|last| last.clone()));
+    if let Some(chats) = recent {
+        if let Err(error) = client.publish_recent(chats).await {
+            eprintln!("Sikemux could not tell its core which chats are recent: {error}");
         }
     }
     let on_screen = app
