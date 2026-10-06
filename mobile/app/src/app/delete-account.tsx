@@ -77,7 +77,7 @@ export default function DeleteAccount() {
       return;
     }
     dispatch({ type: 'deleted' });
-    await signOutHere(() => signOut(), 'deleted-here');
+    await signOutHere(() => signOut(), { farewell: 'deleted-here', confirmed: true });
   };
 
   const check = async (entry: string) => {

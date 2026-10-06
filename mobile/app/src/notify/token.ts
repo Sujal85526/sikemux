@@ -83,8 +83,12 @@ export async function stopPush(token: TokenSource): Promise<void> {
   await SecureStore.deleteItemAsync(ITEM);
 }
 
-/** Forgets everything notifications kept on this phone, as signing out does. */
+/**
+ * Forgets everything notifications kept on this phone, as signing out does, and has the system drop its
+ * token, so a server that never heard of the sign-out has nothing left to send to.
+ */
 export async function forgetPush(): Promise<void> {
   notifier?.removeAll();
   await SecureStore.deleteItemAsync(ITEM);
+  if (notifier) await Notifications.unregisterForNotificationsAsync();
 }

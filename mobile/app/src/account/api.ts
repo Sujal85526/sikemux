@@ -38,7 +38,12 @@ export class AccountProblem extends Error {
 export class ReverifyNeeded extends Error {}
 
 async function call<T>(token: TokenSource, path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
-  const bearer = await token();
+  let bearer: string | null;
+  try {
+    bearer = await token();
+  } catch {
+    throw new AccountProblem("Can't reach Sikemux. Check the phone is online.");
+  }
   if (!bearer) throw new AccountProblem('Sign in again.', 401);
   let response: Response;
   try {
@@ -83,7 +88,7 @@ export async function removePhone(token: TokenSource): Promise<void> {
   try {
     await call<null>(token, `/v1/devices/${device.id()}`, { method: 'DELETE' });
   } catch (error) {
-    if (error instanceof AccountProblem && (error.status === 404 || error.status === 401)) return;
+    if (error instanceof AccountProblem && error.status === 404) return;
     throw error;
   }
 }
@@ -111,7 +116,7 @@ export async function clearPushToken(token: TokenSource): Promise<void> {
   try {
     await call<null>(token, `/v1/devices/${device.id()}/push`, { method: 'DELETE' });
   } catch (error) {
-    if (error instanceof AccountProblem && (error.status === 404 || error.status === 401)) return;
+    if (error instanceof AccountProblem && error.status === 404) return;
     throw error;
   }
 }

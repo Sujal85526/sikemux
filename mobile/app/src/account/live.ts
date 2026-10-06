@@ -23,6 +23,8 @@ export type LiveDeps = {
   cursor: Cursor;
   /** A host joined, changed or left the account: the list of hosts is stale. */
   hostsChanged(): void;
+  /** The server took this phone's hello, so the account is reachable again. */
+  ready?(): void;
   /** This phone is no longer on the account. Called once; the connection stays closed after it. */
   gone(reason: RevokeReason): void;
   random?: () => number;
@@ -92,6 +94,13 @@ export class LiveAccount {
   start() {
     if (this.running || this.ended) return;
     this.running = true;
+    this.attempt = 0;
+    this.open();
+  }
+
+  /** Tries again now rather than when the backoff says, as when the phone's network comes back. */
+  nudge() {
+    if (!this.running || this.socket) return;
     this.attempt = 0;
     this.open();
   }
@@ -180,6 +189,7 @@ export class LiveAccount {
         this.attempt = 0;
         this.heartbeatMs = message.heartbeatMs;
         this.heard();
+        this.deps.ready?.();
         return;
       case 'events':
         return this.events(socket, message.events);

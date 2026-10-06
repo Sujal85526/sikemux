@@ -116,6 +116,21 @@ describe('removePhone', () => {
     const failure = await removePhone(token).catch((error: unknown) => error);
     expect((failure as AccountProblem).unreachable).toBe(true);
   });
+
+  it('does not count a refused sign-in as the phone being off the account', async () => {
+    answers.push({ status: 401, body: { error: { code: 'unauthorized', message: 'Sign in again.', requestId: 'r' } } });
+    const failure = await removePhone(token).catch((error: unknown) => error);
+    expect((failure as AccountProblem).status).toBe(401);
+  });
+
+  it('reports Clerk failing to hand over a token as out of reach', async () => {
+    const failure = await removePhone(async () => {
+      throw new Error('network');
+    }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(AccountProblem);
+    expect((failure as AccountProblem).unreachable).toBe(true);
+    expect(calls).toEqual([]);
+  });
 });
 
 describe('setPushToken', () => {
@@ -162,7 +177,7 @@ describe('deleteAccount', () => {
     expect(calls[0]).toMatchObject({ url: 'https://api.test/v1/account', method: 'DELETE', authorization: 'Bearer session-token' });
   });
 
-  it('asks for a fresh sign-in when the server says reverify', async () => {
+  it('asks the person to prove it is them again when the server says reverify', async () => {
     answers.push({ status: 403, body: { error: { code: 'forbidden', message: 'reverify', requestId: 'r' } } });
     await expect(deleteAccount(token)).rejects.toBeInstanceOf(ReverifyNeeded);
   });

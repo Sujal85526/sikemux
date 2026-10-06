@@ -9,6 +9,7 @@ import { AccountProblem, removePhone } from '@/account/api';
 import { Avatar } from '@/account/Avatar';
 import { providerName } from '@/account/providers';
 import { signOutHere } from '@/account/leave';
+import { retryRegistration, useAccountStatus } from '@/account/session';
 import { versionLabel } from '@/account/versionLabel';
 import { useDeviceId } from '@/device/identity';
 import { shortKey } from '@/devices/paired';
@@ -35,32 +36,30 @@ export function AccountSheet({ visible, onClose }: { visible: boolean; onClose: 
   const { signOut, getToken } = useAuth();
   const { user } = useUser();
   const id = useDeviceId();
+  const status = useAccountStatus();
   const [leaving, setLeaving] = useState(false);
-  const [unreachable, setUnreachable] = useState(false);
-  const [problem, setProblem] = useState<string>();
+  const [unconfirmed, setUnconfirmed] = useState<string>();
   const provider = providerName(user?.externalAccounts[0]?.provider);
   const name = user?.fullName?.trim() || undefined;
   const email = user?.primaryEmailAddress?.emailAddress;
   const how = `Signed in with ${provider ?? 'email'}`;
 
-  /** Takes the notification token and then the phone off the account first, so hosts hear of it; offline, it asks before leaving them there. */
+  /** Takes the notification token and then the phone off the account first, so hosts hear of it; when that fails, it asks before leaving them there. */
   const leave = async (anyway = false) => {
     setLeaving(true);
-    setUnreachable(false);
-    setProblem(undefined);
-    try {
-      if (!anyway) {
+    if (!anyway) {
+      setUnconfirmed(undefined);
+      try {
         await stopPush(() => getToken());
         await removePhone(() => getToken());
+      } catch (error) {
+        setLeaving(false);
+        setUnconfirmed(whyNotConfirmed(error));
+        return;
       }
-    } catch (error) {
-      setLeaving(false);
-      if (error instanceof AccountProblem && !error.unreachable) setProblem(error.message);
-      else setUnreachable(true);
-      return;
     }
     try {
-      await signOutHere(() => signOut());
+      await signOutHere(() => signOut(), { confirmed: !anyway });
       onClose();
     } finally {
       setLeaving(false);
@@ -68,8 +67,7 @@ export function AccountSheet({ visible, onClose }: { visible: boolean; onClose: 
   };
 
   const close = () => {
-    setUnreachable(false);
-    setProblem(undefined);
+    setUnconfirmed(undefined);
     onClose();
   };
 
@@ -97,12 +95,18 @@ export function AccountSheet({ visible, onClose }: { visible: boolean; onClose: 
             This phone{id ? ' · ' : ''}
             {id ? <Text style={type.mono}>{shortKey(id)}</Text> : null}
           </Text>
+          {status?.step === 'failed' ? <Text style={styles.problem}>Not on your account yet: {status.problem}</Text> : null}
         </View>
+        {status?.step === 'failed' ? (
+          <Pressable onPress={retryRegistration} accessibilityRole="button" hitSlop={8}>
+            <Text style={styles.action}>Try again</Text>
+          </Pressable>
+        ) : null}
       </View>
       <NotificationsRow />
-      {unreachable ? (
+      {unconfirmed ? (
         <>
-          <Text style={styles.noteTitle}>Can&apos;t reach Sikemux</Text>
+          <Text style={styles.noteTitle}>{unconfirmed}</Text>
           <Text style={[styles.note, styles.noteAfterTitle]}>
             Signing out now leaves this phone on your account until you remove it at app.sikemux.com.
           </Text>
@@ -119,7 +123,6 @@ export function AccountSheet({ visible, onClose }: { visible: boolean; onClose: 
       ) : (
         <>
           <Text style={styles.note}>Signing out takes this phone off your account and forgets every host paired with it.</Text>
-          {problem ? <Text style={styles.problem}>{problem}</Text> : null}
           <Button kind="danger" title={leaving ? 'Signing out…' : 'Sign out'} disabled={leaving} onPress={() => void leave()} />
         </>
       )}
@@ -136,6 +139,10 @@ export function AccountSheet({ visible, onClose }: { visible: boolean; onClose: 
       <Text style={styles.version}>Sikemux {VERSION}</Text>
     </Sheet>
   );
+}
+
+function whyNotConfirmed(error: unknown): string {
+  return error instanceof AccountProblem && !error.unreachable ? error.message : "Can't reach Sikemux";
 }
 
 const makeStyles = (colors: Palette) => {
@@ -159,7 +166,8 @@ const makeStyles = (colors: Palette) => {
     note: { ...type.meta, lineHeight: 19, paddingHorizontal: 8, paddingTop: 10, paddingBottom: 12 },
     noteTitle: { fontFamily: fonts.uiSemibold, fontSize: 15, color: colors.ink, paddingHorizontal: 8, paddingTop: 12 },
     noteAfterTitle: { paddingTop: 4 },
-    problem: { ...type.meta, color: colors.danger, paddingHorizontal: 8, paddingBottom: 12 },
+    problem: { ...type.meta, color: colors.danger },
+    action: { fontFamily: fonts.uiMedium, fontSize: 15, color: colors.accent },
     choices: { gap: 8 },
     link: { height: 44, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
     linkText: { fontFamily: fonts.uiMedium, fontSize: 15, color: colors.secondary },

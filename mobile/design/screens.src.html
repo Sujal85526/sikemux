@@ -690,7 +690,7 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Email code</b><div class="note">Six tiles, three and three. It comes for a new account, and when an account signs in on a phone it has not used before. The sixth digit sends it.</div></figcaption>
+      <figcaption><b>Email code</b><div class="note">Six tiles, three and three. It comes for a new account, and when an account signs in on a phone it has not used before. The sixth digit sends it. A wrong code edges the tiles red and leaves the keyboard up for the next try. Screen readers hear the tiles as one Code field with the digits typed so far.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -708,7 +708,7 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Connect, for a host on your account</b><div class="note">Tapping Connect on a host from the account comes straight here, since the account vouches for this phone. Sikemux hands the phone a ten-minute invitation naming both keys, and the phone shows it to the host, which checks it without asking Sikemux. Someone at the host still decides, and picks the access. Until the invitation reaches the host the row reads "Reaching Work MacBook"; then the rail's squares and two minutes for an answer. On Allow the host opens.</div></figcaption>
+      <figcaption><b>Connect, for a host on your account</b><div class="note">Tapping Connect on a host from the account comes straight here, since the account vouches for this phone. Sikemux hands the phone a ten-minute invitation naming both keys, and the phone shows it to the host, which checks it without asking Sikemux. Someone at the host still decides, and picks the access. Until the invitation reaches the host the row reads "Reaching Work MacBook"; then the rail's squares and two minutes for an answer, counted on the clock, so time spent in another app counts. On Allow the host opens.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -912,8 +912,32 @@
         <div class="sheet-version">Sikemux 0.1.0-nightly.5 · update 1b46d28 (6 Oct)</div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Signing out, offline</b><div class="note">Signing out first takes this phone off the account, so every host hears of it, even one that is asleep. When the accounts server can't be reached, the sheet says what signing out now would leave behind and lets the person choose. A server that answers with a problem shows it in red above Sign out instead.</div></figcaption>
+      <figcaption><b>Signing out, offline</b><div class="note">Signing out first takes this phone off the account, so every host hears of it, even one that is asleep. When that fails, the sheet says what signing out now would leave behind and lets the person choose: the title is "Can't reach Sikemux" when the server is out of reach, or what the server answered when it refused. Signing out anyway also makes this phone a new device and drops its notification address, so the account it leaves can't reach it and the next sign-in starts clean.</div></figcaption>
     </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen" style="opacity:.35">
+        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
+        <div class="title-block"><h1>Devices</h1></div>
+      </div>
+      <div class="sheet">
+        <div class="grabber"></div>
+        <div class="account-head">
+          <span class="avatar photo" style="--size:44px"></span>
+          <div style="min-width:0"><div class="t">Kishore Gunalan</div><div class="s">contact@nodelike.com</div><div class="s">Signed in with Google</div></div>
+        </div>
+        <div class="row boxed"><span class="mark">{{IconPhone:18}}</span><div class="body"><div class="t" style="font-size:15px">Kishore's Pixel</div><div class="s">This phone · <span class="m">3308a907</span></div><div class="s" style="color:var(--danger)">Not on your account yet: Can't reach Sikemux. Check the phone is online.</div></div><span style="font-size:15px;font-weight:500;color:var(--acc)">Try again</span></div>
+        <div class="row boxed" style="margin-top:8px"><span class="mark">{{IconInbox:18}}</span><div class="body"><div class="t" style="font-size:15px">Notifications</div><div class="s">When agents need you or finish</div></div><span class="toggle"></span></div>
+        <div class="sheet-note">Signing out takes this phone off your account and forgets every host paired with it.</div>
+        <div class="btn danger">Sign out</div>
+        <div class="text-link" style="height:44px;line-height:44px;margin-top:4px">Delete account…</div>
+        <div class="sheet-version">Sikemux 0.1.0-nightly.5 · update 1b46d28 (6 Oct)</div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Not on the account yet</b><div class="note">After signing in, the phone adds itself to the account first, and only then sends its notification address and opens its live connection, which the server takes only from a phone on the account. When adding it fails, the phone row says why in red. It tries again by itself while the server is out of reach, at once when the phone comes back online or to the front, and Try again asks now.</div></figcaption>
+    </figure>
+
 
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
@@ -1009,6 +1033,33 @@
       <div class="home-bar"></div></div>
       <figcaption><b>List unreadable</b><div class="note">If the saved list of hosts cannot be read, the app says so in one line instead of showing an empty list.</div></figcaption>
     </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="stack" style="padding-bottom:120px">
+          <h2 style="font-size:22px">Can't reach Sikemux</h2>
+          <p>This phone needs the internet once to load your account. Check the connection, then try again.</p>
+        </div>
+        <div class="footer"><div class="btn primary">Try again</div></div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Account out of reach</b><div class="note">The splash stays up until the account and the saved hosts are read, so the app never opens on a blank screen. The account is kept on the phone, so later launches open offline on what it last knew. Only a phone that has never loaded it, and can't reach Sikemux for ten seconds, shows this. Try again starts the app over.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="stack" style="padding-bottom:120px">
+          <h2 style="font-size:22px">Something went wrong</h2>
+          <p>Cannot read properties of undefined (reading 'chats')</p>
+        </div>
+        <div class="footer"><div class="btn primary">Try again</div><div class="text-link" style="height:44px;line-height:44px;margin-top:4px">Go to Devices</div></div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>A screen failed</b><div class="note">When drawing a screen fails, that screen says so in its place, with what went wrong in one selectable line, instead of closing the app. Try again draws it once more; Go to Devices leaves it.</div></figcaption>
+    </figure>
+
 
   </div>
 </section>
@@ -1146,7 +1197,7 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Picking a project</b><div class="note">A short sheet over the device. The provider filter heads it, as the provider tiles head the Mac's rail: All, then a tile for each provider with an agent in view, shown on the Agents tab when there is more than one. Picking a provider keeps the sheet open; picking a project closes it. Below, titled with the host, All projects heads the project list. Folders are the Mac rail's green; each project shows the logos of the agents in it, the white dot if one is waiting on you, and a terminal count when that is all it has.</div></figcaption>
+      <figcaption><b>Picking a project</b><div class="note">A short sheet over the device. The provider filter heads it, as the provider tiles head the Mac's rail: All, then a tile for each provider with an agent in view, shown on the Agents tab when there is more than one. Picking a provider keeps the sheet open; picking a project closes it, and so does dragging the sheet down or tapping the dimmed screen, as with every sheet. A sheet taller than the screen scrolls, and one with a search field rises above the keyboard. Below, titled with the host, All projects heads the project list. Folders are the Mac rail's green; each project shows the logos of the agents in it, the white dot if one is waiting on you, and a terminal count when that is all it has.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1565,6 +1616,34 @@
       <div class="home-bar"></div></div>
       <figcaption><b>Project, searching</b><div class="note">Typing filters both groups at once with the Mac's fuzzy match; the matched letters brighten. Go picks the first result, and the strip shows the new project.</div></figcaption>
     </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}Cancel</span><span class="mid"><span>New chat</span></span><span class="end"></span></div>
+        <div class="welcome-chat">
+          <div class="wc-head"><span class="claude">{{IconClaude:36}}</span><b>sikemux</b></div>
+          <div class="wc-caption">Reconnecting to the host… The chat starts once it answers.</div>
+        </div>
+        <div class="composer-wrap">
+          <div class="project-strip">
+            <span class="ps-project"><span class="folder">{{IconFolder:13}}</span><b>sikemux</b><span class="ch">{{IconChevron:10}}</span></span>
+          </div>
+          <div class="composer">
+            <div class="ta">Run the tests and fix what fails</div>
+            <div class="bar">
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Claude Code<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="send off">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>New chat, host away</b><div class="note">When Send can't start a chat, the welcome says why in place of the calendar: the host is reconnecting or not connected yet, or it has no project open to start one in. Send wakes as soon as the reason goes. A second tap while a chat is starting does nothing, so one tap starts one chat.</div></figcaption>
+    </figure>
+
 
   </div>
 </section>

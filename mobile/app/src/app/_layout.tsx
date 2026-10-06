@@ -12,11 +12,10 @@ import { resourceCache } from '@clerk/expo/resource-cache';
 import { tokenCache } from '@clerk/expo/token-cache';
 
 import { CLERK_PUBLISHABLE_KEY } from '@/account/config';
-import { useAccountHostsFeed, useAccountLive, useConnectArrivals, useRegisterPhone } from '@/account/session';
+import { useAccountHostsFeed, useAccountSequence, useConnectArrivals } from '@/account/session';
 import { goOffline } from '@/device/identity';
 import { useDevices } from '@/devices/hub';
 import { NotificationsOffer } from '@/notify/NotificationsOffer';
-import { usePushToken } from '@/notify/switch';
 import { currentRelays, useUpdateRequired } from '@/network/network';
 import { Crashed } from '@/screens/Crashed';
 import { Unreachable } from '@/screens/Unreachable';
@@ -111,10 +110,8 @@ function Routes({ background }: { background: string }) {
 }
 
 function PhoneOnAccount() {
-  useRegisterPhone();
-  useAccountLive();
+  useAccountSequence();
   useAccountHostsFeed();
   useConnectArrivals();
-  usePushToken();
   return null;
 }
