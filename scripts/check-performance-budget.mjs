@@ -167,13 +167,14 @@ const budgets = [
     // the top bar's listening ports chip one more for its menu. Taking
     // terminals and tasks back from the core at launch added a little more.
     // The account picture in the top bar and renaming tabs added a little more.
+    // The iOS Simulator's agent tool rows and its Settings section added a little more.
     label:
       "default-path JavaScript except the highlighter and its grammar chunks",
     pattern: new RegExp(
       `^(?!(?:highlighter|paper-shaders|xterm-webgl|${diffLanguageChunkNames.join("|")})-).*\\.js$`,
     ),
-    raw: 3_520_000,
-    gzip: 1_140_000,
+    raw: 3_540_000,
+    gzip: 1_150_000,
   },
   {
     label: "opt-in shader renderer",
