@@ -179,15 +179,27 @@ export function useStageMotion(active: boolean): void {
     }, [active]);
 }
 
+/* Screens nobody can see keep the width they had while the stage changes width,
+   so they lay out once when it settles rather than on every frame of the move. */
+function holdHiddenScreens(held: boolean) {
+    const area = document.querySelector<HTMLElement>(".window-area");
+    if (!area) return;
+    if (held) area.style.setProperty("--held-screen-width", `${area.getBoundingClientRect().width}px`);
+    else area.style.removeProperty("--held-screen-width");
+    area.classList.toggle("holding-screens", held);
+}
+
 /** Say that something on the stage is moving until the returned release is called. */
 export function holdStageMotion(): () => void {
     holds += 1;
+    if (holds === 1) holdHiddenScreens(true);
     refreshStageMoving();
     let released = false;
     return () => {
         if (released) return;
         released = true;
         holds -= 1;
+        if (holds === 0) holdHiddenScreens(false);
         refreshStageMoving();
     };
 }

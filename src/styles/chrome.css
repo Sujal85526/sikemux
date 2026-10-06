@@ -680,6 +680,10 @@
 .window-layer:not(.painted) {
     visibility: hidden;
 }
+.window-area.holding-screens .window-layer:not(.painted) {
+    right: auto;
+    width: var(--held-screen-width);
+}
 /* A hidden layer is still a running layer. `visibility: hidden` takes it off
    the screen but leaves its animations ticking, and every tick still resolves
    style and recomputes what the compositor needs — for a pane nobody can see.
