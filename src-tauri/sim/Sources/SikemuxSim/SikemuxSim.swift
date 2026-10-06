@@ -60,17 +60,19 @@ struct SikemuxSim {
         case "tree":
             return ["elements": try await simulators.tree(udid)]
         case "tap":
-            let point = try require(request.x, request.y)
+            let point = try await simulators.touchPoint(try require(request.x, request.y), on: udid)
             try await simulators.send(.tapAt(x: point.x, y: point.y, duration: request.duration ?? 0.05), to: udid)
         case "tapLabel":
             let frame = try await simulators.frame(of: try require(request.label, "label"), on: udid, wait: min(max(request.wait ?? 2, 0), 30))
-            try await simulators.send(.tapAt(x: frame.midX, y: frame.midY, duration: 0.05), to: udid)
+            let center = try await simulators.touchPoint(CGPoint(x: frame.midX, y: frame.midY), on: udid)
+            try await simulators.send(.tapAt(x: center.x, y: center.y, duration: 0.05), to: udid)
             return ["frame": ["x": frame.minX, "y": frame.minY, "width": frame.width, "height": frame.height]]
         case "swipe":
             let from = try require(request.x, request.y), to = try require(request.toX, request.toY)
             let edge = try await simulators.edge(at: from, on: udid)
+            let start = try await simulators.touchPoint(from, on: udid), end = try await simulators.touchPoint(to, on: udid)
             try await simulators.send(
-                .swipe(from.x, yStart: from.y, xEnd: to.x, yEnd: to.y, delta: 0, duration: request.duration ?? 0.3, edge: edge), to: udid)
+                .swipe(start.x, yStart: start.y, xEnd: end.x, yEnd: end.y, delta: 0, duration: request.duration ?? 0.3, edge: edge), to: udid)
         case "touch":
             let point = try require(request.x, request.y)
             let direction: SimulatorHIDDirection
@@ -92,9 +94,9 @@ struct SikemuxSim {
             }
             return ["orientation": try await simulators.orientation(udid)]
         case "touchPath":
-            try await simulators.send(try touchPath(try require(request.points, "points")), to: udid)
+            try await simulators.send(try touchPath(try await simulators.touchPoints(try require(request.points, "points"), on: udid)), to: udid)
         case "touch2Path":
-            try await simulators.send(try twoFingerPath(try require(request.points, "points")), to: udid)
+            try await simulators.send(try twoFingerPath(try await simulators.touchPoints(try require(request.points, "points"), on: udid)), to: udid)
         case "text":
             var events: [SimulatorHIDEvent] = []
             for key in try Keyboard.keys(for: try require(request.text, "text")) {

@@ -12,6 +12,9 @@ actor Simulators {
     private var streams: [String: FrameStream] = [:]
     /// The orientation each device was last turned to here, for runtimes that cannot report it.
     private var turned: [String: String] = [:]
+    /// Devices whose runtime cannot report its orientation, and so turns by the older event that
+    /// leaves touches in the screen's own portrait points.
+    private var portraitTouches: Set<String> = []
 
     func devices() throws -> [[String: Any]] {
         try set().allSimulators.map { simulator in
@@ -49,7 +52,40 @@ actor Simulators {
     func orientation(_ udid: String?) async throws -> String {
         let simulator = try await booted(udid)
         if let current = try? await simulator.orientation.current() { return "\(current.rawValue)" }
+        portraitTouches.insert(simulator.udid)
         return turned[simulator.udid] ?? "portrait"
+    }
+
+    /// Where to touch a point given in the turned screen's points. Runtimes that report their
+    /// orientation take those as they are; on the others the screen keeps its portrait points, and a
+    /// turned app is drawn sideways in them.
+    func touchPoint(_ point: CGPoint, on udid: String?) async throws -> CGPoint {
+        let simulator = try await booted(udid)
+        guard portraitTouches.contains(simulator.udid), let info = simulator.screenInfo, info.scale > 0 else { return point }
+        let scale = Double(info.scale)
+        let portrait = CGSize(width: Double(info.widthPixels) / scale, height: Double(info.heightPixels) / scale)
+        return Self.portraitPoint(point, turned: turned[simulator.udid], screen: portrait)
+    }
+
+    /// Where a point on a turned screen is drawn on its portrait screen, `screen` in points.
+    static func portraitPoint(_ point: CGPoint, turned: String?, screen: CGSize) -> CGPoint {
+        switch turned {
+        case "landscapeLeft": CGPoint(x: screen.width - point.y, y: point.x)
+        case "landscapeRight": CGPoint(x: point.y, y: screen.height - point.x)
+        case "portraitUpsideDown": CGPoint(x: screen.width - point.x, y: screen.height - point.y)
+        default: point
+        }
+    }
+
+    func touchPoints(_ points: [TouchPoint], on udid: String?) async throws -> [TouchPoint] {
+        var placed: [TouchPoint] = []
+        for point in points {
+            let first = try await touchPoint(CGPoint(x: point.x, y: point.y), on: udid)
+            var second: CGPoint?
+            if let x2 = point.x2, let y2 = point.y2 { second = try await touchPoint(CGPoint(x: x2, y: y2), on: udid) }
+            placed.append(TouchPoint(x: first.x, y: first.y, x2: second.map { Double($0.x) }, y2: second.map { Double($0.y) }, t: point.t))
+        }
+        return placed
     }
 
     /// A swipe starting at a side of the screen is tagged with it, so iOS treats it as the system
