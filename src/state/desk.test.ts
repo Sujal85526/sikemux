@@ -1,5 +1,7 @@
+import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { browserApi } from "../api/browser";
+import { simApi, type SimAttached } from "../api/sim";
 import {
     closeDeskItem,
     openDesk,
@@ -16,11 +18,17 @@ import { deskEditorId, deskItemsOf, shownDeskItem } from "./desks";
 import { taskPtyBindings } from "../tasks/nativeRuntime";
 import { collectPanes } from "./layout";
 import { agentIdsOf, agentPaneId, shownDeskPaneId } from "./selectors";
+import { useSimulatorReveal } from "./simulatorReveal";
 import { getState, setState } from "./store";
 
 vi.mock("../api/browser", async () => {
     const actual = await vi.importActual<typeof import("../api/browser")>("../api/browser");
     return { ...actual, browserApi: { ...actual.browserApi, snapshot: vi.fn(), newTab: vi.fn(), closeTab: vi.fn(), closeAgent: vi.fn() } };
+});
+
+vi.mock("../api/sim", async () => {
+    const actual = await vi.importActual<typeof import("../api/sim")>("../api/sim");
+    return { ...actual, simApi: { ...actual.simApi, subscribeAttached: vi.fn() } };
 });
 
 const initial = getState();
@@ -246,6 +254,20 @@ describe("the desk", () => {
         expect(getState().desks["agent-1"].simulators).toEqual([{ id: first, udid: null, deviceName: null }]);
         expect(getState().desks["agent-1"].active).toBe(`simulator:${first}`);
         expect(collectPanes(getState().windows.window.root).map((pane) => pane.kind)).toEqual(["agent", "desk"]);
+    });
+
+    it("shows the device an agent attaches on that agent's desk", async () => {
+        let attach: (attached: SimAttached) => void = () => {};
+        vi.mocked(simApi.subscribeAttached).mockImplementation(async (listener) => {
+            attach = listener;
+            return () => {};
+        });
+        renderHook(() => useSimulatorReveal());
+        await vi.waitFor(() => expect(simApi.subscribeAttached).toHaveBeenCalled());
+
+        act(() => attach({ agentId: "agent-1", udid: "UDID-1", name: "iPhone 17" }));
+
+        expect(getState().desks["agent-1"].simulators).toEqual([expect.objectContaining({ udid: "UDID-1", deviceName: "iPhone 17" })]);
     });
 
     it("remembers the device a simulator tab shows, and lets the tab go with its neighbour shown", () => {

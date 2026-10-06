@@ -31,6 +31,20 @@ export type SimTouchPhase = "down" | "move" | "up";
 
 export type SimEvent = { type: "progress"; fraction: number };
 
+/** The device an agent attached with `sim_attach`, which its desk then shows. */
+export interface SimAttached {
+    agentId: string;
+    udid: string;
+    name: string;
+}
+
+/** What Settings shows about the simulator. */
+export interface SimSetup {
+    xcode: string | null;
+    runtimes: string[];
+    helper: string;
+}
+
 type Request = { type: string; udid?: string } & Record<string, unknown>;
 
 const call = <T>(request: Request) => invoke<T>("sim_call", { request });
@@ -58,4 +72,9 @@ export const simApi = {
     unwatch: (id: number) => invoke<void>("sim_unwatch", { id }),
     subscribe: (listener: (event: SimEvent) => void, signal: AbortSignal): Promise<IpcUnsubscribe> =>
         getIpcTransport().subscribe<SimEvent>("sim", (event) => listener(event.payload), { signal }),
+    setup: () => invoke<SimSetup>("simulator_setup"),
+    /** Whether agents started from now on get the `sim_*` tools. */
+    offerToAgents: (enabled: boolean) => invoke<void>("simulator_set_enabled", { enabled }),
+    subscribeAttached: (listener: (attached: SimAttached) => void, signal: AbortSignal): Promise<IpcUnsubscribe> =>
+        getIpcTransport().subscribe<SimAttached>("simulator-attached", (event) => listener(event.payload), { signal }),
 };
