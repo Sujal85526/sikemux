@@ -74,7 +74,11 @@ class Notifier(private val context: Context) {
       .setOngoing(state == Answer.SENDING)
       .setContentIntent(open(tag, url))
     text?.let { builder.setContentText(it) }
-    if (state == Answer.DONE) builder.setTimeoutAfter(SETTLED_MS)
+    when (state) {
+      Answer.SENDING -> builder.setTimeoutAfter(SENDING_MS)
+      Answer.DONE -> builder.setTimeoutAfter(SETTLED_MS)
+      Answer.FAILED -> Unit
+    }
     post(tag, builder)
   }
 
@@ -211,6 +215,9 @@ class Notifier(private val context: Context) {
     const val PROBLEMS = "problems"
     const val ID = 7
     const val SETTLED_MS = 4_000L
+
+    /** Longer than the answer's own time limit, so a card left saying it is sending goes when the app died sending it. */
+    const val SENDING_MS = AnswerService.TIMEOUT_MS + 5_000L
     const val SCHEME_META = "com.nodelike.sikemux.scheme"
     private const val HOST_SCHEME = "sikemux://"
     private const val EXTRA_HOST = "sikemux.host"

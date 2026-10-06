@@ -29,7 +29,7 @@ class AnswerService : HeadlessJsTaskService() {
     const val REJECTED = "rejected"
     const val GONE = "gone"
     const val FAILED = "failed"
-    private const val TIMEOUT_MS = 25_000L
+    const val TIMEOUT_MS = 25_000L
     private val pending = mutableMapOf<String, Waiting>()
 
     fun waiting(tag: String, hostName: String, url: String?) {
