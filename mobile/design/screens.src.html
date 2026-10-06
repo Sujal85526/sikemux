@@ -184,12 +184,12 @@
   .thought { color: var(--ink-faint); font-size: 12.5px; line-height: 1.56; font-style: italic; margin: 8px 0; }
 
   .tools { font-family: var(--mono); font-size: 11.5px; margin: 6px 0; }
-  .tools-sum { display: inline-flex; align-items: center; gap: 8px; height: 26px; color: var(--ink-dim); font-family: var(--ui); font-size: 12.5px; }
+  .tools-sum { display: inline-flex; align-items: center; gap: 8px; height: 24px; color: var(--ink-dim); font-family: var(--ui); font-size: 12.5px; }
   .tools-sum .time { font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; }
   .tools-sum .ico { opacity: .7; }
   .tools-sum.open .ico { transform: rotate(90deg); }
   .tools-body { margin-left: 6px; padding: 2px 0; }
-  .tool { position: relative; display: grid; grid-template-columns: 10px 14px auto minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 26px; }
+  .tool { position: relative; display: grid; grid-template-columns: 10px 14px auto minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 22px; }
   .tool::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 1px; background: var(--tree-spine); }
   .tool:last-child::before { bottom: 50%; }
   .tool .tick { height: 1px; background: var(--tree-tick); }
@@ -637,8 +637,8 @@
   .live-strip b { font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; }
   .live-strip .up .ico { transform: rotate(-90deg); color: var(--ink-faint); }
   .live-strip + .composer { position: relative; }
-  .ctx { --c: var(--acc); display: block; width: 18px; height: 18px; border-radius: 50%; background: conic-gradient(var(--c) calc(var(--p) * 1%), var(--border) 0);
-    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.2px), #000 calc(100% - 2.2px)); mask: radial-gradient(farthest-side, transparent calc(100% - 2.2px), #000 calc(100% - 2.2px)); }
+  .ctx { --c: var(--acc); display: block; width: 14px; height: 14px; border-radius: 50%; background: conic-gradient(var(--c) calc(var(--p) * 1%), var(--border) 0);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 1.8px), #000 calc(100% - 1.8px)); mask: radial-gradient(farthest-side, transparent calc(100% - 1.8px), #000 calc(100% - 1.8px)); }
   .ctx.claude { --c: var(--brand-claude); } .ctx.codex { --c: var(--brand-codex); } .ctx.warm { --c: var(--warn); } .ctx.hot { --c: var(--danger); }
   .glabel .n { margin-left: -4px; letter-spacing: 0; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
   .glabel.acts::after { order: 2; }
@@ -1444,8 +1444,8 @@
               <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
               <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">Medium<span class="ch">{{IconChevron:10}}</span></span>
-              <span class="spacer"></span>
               <span class="ring"><i class="ctx codex" style="--p:42"></i></span>
+              <span class="spacer"></span>
               <span class="send"><i></i></span>
             </div>
           </div>
@@ -1482,8 +1482,8 @@
               <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
               <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
-              <span class="spacer"></span>
               <span class="ring"><i class="ctx claude" style="--p:42"></i></span>
+              <span class="spacer"></span>
               <span class="send"><i></i></span>
             </div>
           </div>
@@ -1510,8 +1510,8 @@
               <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
               <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
-              <span class="spacer"></span>
               <span class="ring"><i class="ctx claude" style="--p:42"></i></span>
+              <span class="spacer"></span>
               <span class="send">{{IconArrowUp:16}}</span>
             </div>
           </div>
@@ -1544,8 +1544,8 @@
               <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
               <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
-              <span class="spacer"></span>
               <span class="ring"><i class="ctx claude" style="--p:42"></i></span>
+              <span class="spacer"></span>
               <span class="send">{{IconArrowUp:16}}</span>
             </div>
           </div>
@@ -1584,8 +1584,8 @@
               <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
               <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
-              <span class="spacer"></span>
               <span class="ring"><i class="ctx claude" style="--p:42"></i></span>
+              <span class="spacer"></span>
               <span class="send">{{IconArrowUp:16}}</span>
             </div>
           </div>
@@ -1618,8 +1618,8 @@
               <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
               <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
-              <span class="spacer"></span>
               <span class="ring"><i class="ctx claude" style="--p:42"></i></span>
+              <span class="spacer"></span>
               <span class="send"><i></i></span>
             </div>
           </div>
@@ -1649,8 +1649,8 @@
               <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
               <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">Medium<span class="ch">{{IconChevron:10}}</span></span>
-              <span class="spacer"></span>
               <span class="ring"><i class="ctx codex" style="--p:42"></i></span>
+              <span class="spacer"></span>
               <span class="send"><i></i></span>
             </div>
           </div>
@@ -1680,8 +1680,8 @@
               <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
               <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">Medium<span class="ch">{{IconChevron:10}}</span></span>
-              <span class="spacer"></span>
               <span class="ring"><i class="ctx codex" style="--p:42"></i></span>
+              <span class="spacer"></span>
               <span class="send"><i></i></span>
             </div>
           </div>
@@ -1711,8 +1711,8 @@
               <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
               <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
-              <span class="spacer"></span>
               <span class="ring"><i class="ctx claude" style="--p:42"></i></span>
+              <span class="spacer"></span>
               <span class="send off">{{IconArrowUp:16}}</span>
             </div>
           </div>
@@ -1752,8 +1752,8 @@ expected 1 write, got 2</div>
               <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
               <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">Medium<span class="ch">{{IconChevron:10}}</span></span>
-              <span class="spacer"></span>
               <span class="ring"><i class="ctx codex" style="--p:42"></i></span>
+              <span class="spacer"></span>
               <span class="send">{{IconArrowUp:16}}</span>
             </div>
           </div>
@@ -1783,8 +1783,8 @@ expected 1 write, got 2</div>
               <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
               <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
-              <span class="spacer"></span>
               <span class="ring"><i class="ctx claude" style="--p:42"></i></span>
+              <span class="spacer"></span>
               <span class="send">{{IconArrowUp:16}}</span>
             </div>
           </div>
@@ -1917,8 +1917,8 @@ expected 1 write, got 2</div>
               <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
               <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
-              <span class="spacer"></span>
               <span class="ring"><i class="ctx claude" style="--p:58"></i></span>
+              <span class="spacer"></span>
               <span class="send"><i></i></span>
             </div>
           </div>
@@ -1954,8 +1954,8 @@ expected 1 write, got 2</div>
               <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
               <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
-              <span class="spacer"></span>
               <span class="ring"><i class="ctx claude" style="--p:58"></i></span>
+              <span class="spacer"></span>
               <span class="send"><i></i></span>
             </div>
           </div>
@@ -2015,8 +2015,8 @@ expected 1 write, got 2</div>
               <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
               <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
-              <span class="spacer"></span>
               <span class="ring"><i class="ctx claude" style="--p:58"></i></span>
+              <span class="spacer"></span>
               <span class="send"><i></i></span>
             </div>
           </div>
@@ -2061,8 +2061,8 @@ expected 1 write, got 2</div>
               <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
               <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">Medium<span class="ch">{{IconChevron:10}}</span></span>
-              <span class="spacer"></span>
               <span class="ring"><i class="ctx codex" style="--p:74"></i></span>
+              <span class="spacer"></span>
               <span class="send">{{IconArrowUp:16}}</span>
             </div>
           </div>
@@ -2102,8 +2102,8 @@ expected 1 write, got 2</div>
               <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
               <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
-              <span class="spacer"></span>
               <span class="ring"><i class="ctx claude" style="--p:58"></i></span>
+              <span class="spacer"></span>
               <span class="send"><i></i></span>
             </div>
           </div>
@@ -2134,8 +2134,8 @@ expected 1 write, got 2</div>
               <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
               <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
-              <span class="spacer"></span>
               <span class="ring"><i class="ctx claude" style="--p:58"></i></span>
+              <span class="spacer"></span>
               <span class="send">{{IconArrowUp:16}}</span>
             </div>
           </div>
@@ -2172,8 +2172,8 @@ expected 1 write, got 2</div>
               <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
               <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">Medium<span class="ch">{{IconChevron:10}}</span></span>
-              <span class="spacer"></span>
               <span class="ring"><i class="ctx codex" style="--p:74"></i></span>
+              <span class="spacer"></span>
               <span class="send">{{IconArrowUp:16}}</span>
             </div>
           </div>
@@ -2207,8 +2207,8 @@ expected 1 write, got 2</div>
               <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
               <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">Medium<span class="ch">{{IconChevron:10}}</span></span>
-              <span class="spacer"></span>
               <span class="ring"><i class="ctx codex" style="--p:74"></i></span>
+              <span class="spacer"></span>
               <span class="send">{{IconArrowUp:16}}</span>
             </div>
           </div>

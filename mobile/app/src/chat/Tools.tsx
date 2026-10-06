@@ -346,12 +346,12 @@ export function ToolGroup({ id, parts, untimed, live }: { id: string; parts: Too
 const makeStyles = (colors: Palette) => {
   return StyleSheet.create({
     group: { marginVertical: 6 },
-    summary: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 26, alignSelf: 'flex-start', maxWidth: '100%' },
+    summary: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 24, alignSelf: 'flex-start', maxWidth: '100%' },
     summaryText: { flexShrink: 1, fontFamily: fonts.ui, fontSize: 12.5, color: colors.inkDim },
     summaryTime: { fontFamily: fonts.mono, fontSize: 11, color: colors.inkDim },
     chevron: { opacity: 0.7 },
-    body: { marginLeft: 6, paddingVertical: 2 },
-    row: { flexDirection: 'row', alignItems: 'center', minHeight: 26, gap: 8 },
+    body: { marginLeft: 6 },
+    row: { flexDirection: 'row', alignItems: 'center', minHeight: 22, gap: 8 },
     cancelled: { opacity: 0.6 },
     spine: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 1, backgroundColor: colors.treeSpine },
     // The last row's spine bends into its tick, ending on the row's middle like the Mac's.

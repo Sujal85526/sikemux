@@ -194,8 +194,8 @@ function usageColor(usage: ContextUsage, provider: string, colors: Palette): str
   return provider === 'claude' || provider === 'codex' ? brand[provider] : colors.accent;
 }
 
-const RING = 18;
-const RING_STROKE = 2.2;
+const RING = 14;
+const RING_STROKE = 1.8;
 
 /** How much of the context window the chat has used, as the Mac's composer rings it. A tap opens the settings sheet. */
 function ContextRing({ usage, provider, onPress }: { usage: ContextUsage; provider: string; onPress: () => void }) {
@@ -584,8 +584,8 @@ export const Composer = memo(function Composer({
               </View>
             </Pressable>
           ) : null}
-          <View style={{ flex: 1 }} />
           {usage ? <ContextRing usage={usage} provider={provider} onPress={() => setSheet(true)} /> : null}
+          <View style={{ flex: 1 }} />
           {sendable || !running ? (
             <Pressable
               onPress={send}
