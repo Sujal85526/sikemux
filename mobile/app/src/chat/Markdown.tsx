@@ -1,6 +1,7 @@
 import { Fragment, memo, useMemo, type ReactNode } from 'react';
 import { Linking, ScrollView, StyleSheet, Text, View, type TextStyle } from 'react-native';
 
+import { CopyButton } from '@/ui/CopyButton';
 import { fonts, type Palette, useStyles } from '@/ui/theme';
 
 type Block =
@@ -128,11 +129,14 @@ const BlockView = memo(
     switch (block.kind) {
       case 'code':
         return (
-          <ScrollView horizontal style={styles.code} contentContainerStyle={{ padding: 10 }}>
-            <Text style={styles.codeText} selectable>
-              {block.text}
-            </Text>
-          </ScrollView>
+          <View style={styles.code}>
+            <ScrollView horizontal contentContainerStyle={styles.codePad} showsHorizontalScrollIndicator={false}>
+              <Text style={styles.codeText} selectable>
+                {block.text}
+              </Text>
+            </ScrollView>
+            <CopyButton value={block.text} label="code" size={12} style={styles.codeCopy} />
+          </View>
         );
       case 'heading':
         return (
@@ -150,11 +154,7 @@ const BlockView = memo(
           </View>
         );
       default:
-        return (
-          <Text style={style} selectable>
-            {inline(block.text, styles)}
-          </Text>
-        );
+        return <Text style={style}>{inline(block.text, styles)}</Text>;
     }
   },
   (before, after) =>
@@ -192,6 +192,8 @@ const makeStyles = (colors: Palette) =>
     item: { flexDirection: 'row', gap: 8, paddingLeft: 2 },
     marker: { color: colors.tertiary, minWidth: 14 },
     code: { borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.sunken },
+    codePad: { padding: 10, paddingRight: 34 },
+    codeCopy: { position: 'absolute', top: 3, right: 3, backgroundColor: colors.sunken },
     codeText: { fontFamily: fonts.mono, fontSize: 11.5, lineHeight: 17, color: colors.ink },
   });
 

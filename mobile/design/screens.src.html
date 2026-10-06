@@ -628,6 +628,67 @@
   .backdrop-pick button:hover { background: var(--surface-hover); color: var(--text-primary); }
   .backdrop-pick button.on { background: var(--surface-selected); border-color: var(--border-selected); color: var(--text-primary); }
   .backdrop-pick input { display: none; }
+
+  /* what is still going, docked on the composer: the Mac's live stack in one line */
+  .live-strip { display: flex; align-items: center; gap: 10px; height: 34px; margin: 0 14px -1px; padding: 0 10px 0 12px; border: 1px solid var(--border); border-bottom: 0; border-radius: 12px 12px 0 0; background: color-mix(in oklab, var(--surface-raised) 55%, var(--surface-sunken)); font-size: 12px; color: var(--text-tertiary); white-space: nowrap; }
+  .live-strip .pcs { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; overflow: hidden; }
+  .live-strip .pc { display: inline-flex; align-items: center; gap: 5px; }
+  .live-strip .pc .ico { color: var(--ink-dim); }
+  .live-strip b { font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .live-strip .up .ico { transform: rotate(-90deg); color: var(--ink-faint); }
+  .live-strip + .composer { position: relative; }
+  .ctx { --c: var(--acc); display: block; width: 18px; height: 18px; border-radius: 50%; background: conic-gradient(var(--c) calc(var(--p) * 1%), var(--border) 0);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.2px), #000 calc(100% - 2.2px)); mask: radial-gradient(farthest-side, transparent calc(100% - 2.2px), #000 calc(100% - 2.2px)); }
+  .ctx.claude { --c: var(--brand-claude); } .ctx.codex { --c: var(--brand-codex); } .ctx.warm { --c: var(--warn); } .ctx.hot { --c: var(--danger); }
+  .glabel .n { margin-left: -4px; letter-spacing: 0; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+  .glabel.acts::after { order: 2; }
+  .glabel .act { order: 3; }
+  .glabel .prog { order: 3; letter-spacing: 0; text-transform: none; color: var(--ink-dim); }
+  .mini { flex: none; height: 28px; min-width: 52px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border-strong); display: grid; place-items: center; font-size: 12.5px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--ink); }
+  .drop-x { flex: none; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--ink-dim); }
+  .row .ends { display: flex; align-items: center; gap: 8px; }
+  .steps { display: flex; flex-direction: column; }
+  .step { display: flex; align-items: flex-start; gap: 10px; padding: 7px 8px; font-size: 14px; line-height: 20px; color: var(--text-secondary); }
+  .step > span:first-child { width: 20px; height: 20px; flex: none; display: grid; place-items: center; color: var(--ink-dim); }
+  .step.done { color: var(--text-tertiary); }
+  .step.now { color: var(--ink); }
+  .docked-head .pager { flex: none; display: flex; align-items: center; gap: 2px; margin-top: -2px; font-size: 12px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+  .docked-head .pager .pg { width: 26px; height: 26px; margin: 0; display: grid; place-items: center; color: var(--text-secondary); }
+  .pager .pg.prev .ico { transform: rotate(180deg); } .pager .pg.off { opacity: .3; }
+  .term-box { margin: 2px 0 6px 18px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-sunken); font-family: var(--mono); overflow: hidden; }
+  .term-box .cmdline { display: flex; align-items: flex-start; gap: 7px; padding: 7px 4px 7px 9px; font-size: 11.5px; line-height: 17px; color: var(--ink); }
+  .term-box .cmdline > b { font-weight: 400; color: color-mix(in oklab, var(--cmd) 70%, var(--ink-dim)); }
+  .term-box .cmdline > span:nth-child(2) { flex: 1; min-width: 0; }
+  .term-box .cp { flex: none; width: 26px; height: 26px; margin-top: -4px; display: grid; place-items: center; color: var(--ink-faint); }
+  .term-box .out { position: relative; padding: 7px 30px 7px 9px; border-top: 1px solid var(--border); font-size: 11px; line-height: 16px; color: var(--ink-dim); white-space: pre; overflow: hidden; }
+  .term-box .out .cp { position: absolute; top: 3px; right: 3px; margin: 0; }
+  .term-box .more { padding: 7px 9px; border-top: 1px solid var(--border); font-size: 10.5px; color: var(--ink-faint); }
+  .term-box .exit { padding: 0 9px 7px; font-size: 10.5px; color: var(--danger); }
+  .tools-sum .said { color: var(--text-secondary); }
+  .tool .arg { color: var(--ink-dim); }
+  .k-mcp { color: color-mix(in oklab, var(--live) 66%, var(--ink-dim)); }
+  .sub { margin: 6px 0; }
+  .sub-head { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 11px 0 10px; border-radius: 10px; border: 1px solid var(--border); background: color-mix(in oklab, var(--surface-raised) 60%, transparent); }
+  .sub-head > .chev .ico { color: var(--ink-dim); opacity: .7; }
+  .sub-head.open > .chev .ico { transform: rotate(90deg); }
+  .sub-head .nm { flex: none; max-width: 45%; font-family: var(--mono); font-size: 11.5px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sub-head .tk { flex: 1; min-width: 0; font-size: 12px; color: var(--ink-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sub-head .calls { font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); }
+  .sub-head .st { width: 14px; display: grid; place-items: center; }
+  .sub-body { padding: 4px 0 0 14px; }
+  .notice { align-self: flex-start; max-width: 100%; margin: 5px 0; padding: 6px 10px; border-radius: 9px; border: 1px solid var(--border); }
+  .notice .h { display: flex; align-items: center; gap: 7px; color: var(--ink-faint); }
+  .notice .nm { font-family: var(--mono); font-size: 11.5px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .notice .w { font-size: 12px; }
+  .notice .sm { margin-top: 3px; font-size: 12px; line-height: 17px; color: var(--ink-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .held { outline: 2px solid color-mix(in oklab, var(--acc) 30%, transparent); outline-offset: 2px; }
+  .hold-meta { padding: 0 6px 10px; font-size: 12.5px; color: var(--text-tertiary); }
+  .hold-preview { padding: 0 6px 14px; font-size: 14px; line-height: 20px; color: var(--text-secondary); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .sources > span.danger { color: var(--danger); }
+  .recent-row { display: flex; align-items: flex-start; gap: 12px; padding: 11px 8px; font-size: 14.5px; line-height: 20px; color: var(--text-secondary); }
+  .recent-row .ico { margin-top: 2px; color: var(--ink-faint); }
+  .code-box { position: relative; margin: 6px 0 8px; padding: 10px 34px 10px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-sunken); font-family: var(--mono); font-size: 11.5px; line-height: 17px; color: var(--ink); white-space: pre; overflow: hidden; }
+  .code-box .cp { position: absolute; top: 3px; right: 3px; width: 26px; height: 26px; display: grid; place-items: center; color: var(--ink-faint); }
 </style>
 </head>
 <body>
@@ -1391,7 +1452,7 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Chat, while it works</b><div class="note">Same placeholder as the Mac, "Send to queue behind the running turn", and the same white stop button. The context ring moves to the ⋮ menu: at phone width it is the one control that does not fit.</div></figcaption>
+      <figcaption><b>Chat, while it works</b><div class="note">Same placeholder as the Mac, "Send to queue behind the running turn", and the same white stop button. While a command runs, the group's header says what the agent said it is for, and its seconds count up. The context ring moves to the ⋮ menu: at phone width it is the one control that does not fit.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1699,7 +1760,7 @@ expected 1 write, got 2</div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Opening a tool call</b><div class="note">A row that changed a file, printed something or failed opens on a tap: the change with a few lines around it, what it printed, or why it failed, scrolling inside its own box. Groups and rows stay as they were left while the list scrolls. Something the phone asked for that did not happen, like a stop or a setting, shows over the composer until it is dismissed. Stop also hands a queued message back to the composer instead of sending it.</div></figcaption>
+      <figcaption><b>Opening a tool call</b><div class="note">A row that changed a file, printed something or failed opens on a tap: the change with a few lines around it, what it printed, or why it failed, scrolling inside its own box. A command opens as a terminal: <code>$</code> and the command, then what it printed folded to 12 lines with "Show all", the exit code when it failed, and a copy button on each. Groups and rows stay as they were left while the list scrolls. Something the phone asked for that did not happen, like a stop or a setting, shows over the composer until it is dismissed. Stop also hands a queued message back to the composer instead of sending it.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1829,6 +1890,91 @@ expected 1 write, got 2</div>
       <figcaption><b>Could not open</b><div class="note">A chat the host cannot wake or attach says why in one line, with Try again under it in place of the composer. While the phone is still reaching the host the squares read "Reaching MacBook Pro…" instead of "Opening the chat…"; if it cannot reach it, the line says so and Try again reconnects before opening the chat.</div></figcaption>
     </figure>
 
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span>Fix the flaky PTY replay test</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="tools">
+            <span class="tools-sum open">3 tool calls <span class="time">8s</span>{{IconChevron:11}}</span>
+            <div class="tools-body">
+              <div class="tool"><span class="tick"></span><span class="k-mcp">{{IconPlug:12}}</span><span class="kind k-mcp">linear</span><span class="target">get issue <span class="arg">SKX-142</span></span><span class="end">412ms</span></div>
+              <div class="tool"><span class="tick"></span><span style="color:var(--danger)">{{IconWarning:12}}</span><span class="kind" style="color:var(--danger)">run</span><span class="target">pnpm vitest run src/terminal</span><span class="end">6s</span></div>
+            </div>
+            <div class="term-box">
+              <div class="cmdline"><b>$</b><span>pnpm vitest run src/terminal</span><span class="cp">{{IconCopy:12}}</span></div>
+              <div class="out"> ✓ src/terminal/keys.test.ts (41)
+ ✓ src/terminal/links.test.ts (18)
+ ❯ src/terminal/usePty.test.tsx (12)
+   × replays the snapshot once
+     → expected 1 write, got 2
+ Test Files  1 failed | 11 passed (12)
+      Tests  1 failed | 213 passed (214)<span class="cp">{{IconCopy:12}}</span></div>
+              <div class="more">Show all 38 lines</div>
+              <div class="exit">exit 1</div>
+            </div>
+            <div class="tools-body" style="padding-top:0"><div class="tool"><span class="tick"></span><span class="k-edit">{{IconPencil:12}}</span><span class="kind k-edit">edit</span><span class="target">ptyController.ts</span><span class="end"><span class="add">+2</span><span class="del">−1</span></span></div></div>
+          </div>
+          <div class="notice"><div class="h">{{IconTimer:12}}<span class="nm">pnpm dev --port 5174</span><span class="w">stopped</span></div><div class="sm">Served the preview for 14 minutes; last request GET /checkout 200</div></div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer">
+            <div class="ta ph">Ask about this project</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">Medium<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="ib">{{IconMic:17}}</span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Commands, servers and tasks</b><div class="note">A call to another MCP server is named for the server, in the Mac's green, with its first short argument after the target. A command opens as the Mac's terminal: <code>$</code> and the whole command with a copy button, what it printed folded to 12 lines with "Show all N lines", and the exit code when it failed. A background task that ends leaves a line saying how, with its summary; a tap opens the summary in full.</div></figcaption>
+    </figure>
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>E2E suite on CI</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="sub"><div class="sub-head open"><span class="chev">{{IconChevron:10}}</span><span class="claude">{{IconClaude:15}}</span><span class="nm">Explore</span><span class="tk">Find where the flaky checkout selector lives</span><span class="calls">3 calls</span><span class="st" style="color:var(--live)">{{IconCheck:13}}</span></div>
+            <div class="sub-body">
+              <div class="tools">
+                <span class="tools-sum open">3 tool calls <span class="time">2s</span>{{IconChevron:11}}</span>
+                <div class="tools-body">
+                  <div class="tool"><span class="tick"></span><span class="k-read">{{IconSearch:12}}</span><span class="kind k-read">search</span><span class="target">data-test="checkout"</span><span class="end">88ms</span></div>
+                  <div class="tool"><span class="tick"></span><span class="k-read">{{IconFile:12}}</span><span class="kind k-read">read</span><span class="target">CheckoutButton.tsx</span><span class="end">7ms</span></div>
+                  <div class="tool"><span class="tick"></span><span class="k-read">{{IconFile:12}}</span><span class="kind k-read">read</span><span class="target">checkout.spec.ts</span><span class="end">6ms</span></div>
+                </div>
+              </div>
+              <div class="prose" style="font-size:13.5px">The test waits on <code class="chip">networkidle</code>, but the button mounts after a second fetch.</div>
+            </div>
+          </div>
+          <div class="sub"><div class="sub-head"><span class="chev">{{IconChevron:10}}</span><span class="claude">{{IconClaude:15}}</span><span class="nm">Review</span><span class="tk">Read the last three CI runs for the same failure</span><span class="calls">5 calls</span><span class="st"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div></div>
+          <div class="activity"><span class="glyph claude">{{IconClaude:20}}</span><span class="lbl">Thinking…</span><span class="el">48s</span></div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer">
+            <div class="ta ph">Send to queue behind the running turn</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="ib">{{IconMic:17}}</span>
+              <span class="send"><i></i></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>A subagent's own thread</b><div class="note">Each subagent is one bordered line in the transcript: the agent's mark, its name, the first line of its task, how many calls it made and how it stands: the squares while it works, a green check when done, red when it failed or was lost, a quiet × when stopped. A tap opens what it did, drawn the way the chat draws everything else, indented under it with no tray.</div></figcaption>
+    </figure>
   </div>
 </section>
 

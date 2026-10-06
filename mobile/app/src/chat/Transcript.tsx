@@ -1,208 +1,137 @@
-import { createContext, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { Animated, Easing, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { createContext, useContext, useEffect, useState } from 'react';
+import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { collapseDiff } from '@mac/chat/diff';
 import { durationLabel } from '@mac/chat/durationLabel';
-import { toolKind, toolRunning, toolTarget } from '@mac/chat/toolLabels';
-import type { AcpContentBlock, ChatMessage, ChatPart } from '@mac/chat/types';
+import { cutLongText } from '@mac/chat/longText';
+import { subagentTask } from '@mac/chat/transcript';
+import type { AcpContentBlock, AcpSubagent, AcpTaskNotice, ChatMessage, ChatPart } from '@mac/chat/types';
 import { AgentIcon, Icon } from '@/ui/Icon';
-import type { IconName } from '@/ui/icons.generated';
 import { Working } from '@/ui/status';
-import { fonts, type Palette, useColors, useStyles } from '@/ui/theme';
-import { Folds } from './folds';
+import { fonts, type Palette, translucent, useColors, useStyles } from '@/ui/theme';
+import { FoldsContext, useFold } from './folds';
 import { Markdown } from './Markdown';
 import { SentAttachments } from './Attachments';
 import type { Attachment, Held, Unsent } from './session';
+import { ToolGroup, type ToolPart } from './Tools';
 
-/** Where the transcript keeps which tool groups and rows are open. */
-export const FoldsContext = createContext(new Folds());
-
-function useFold(id: string, otherwise: boolean): [boolean, (open: boolean) => void] {
-  const folds = useContext(FoldsContext);
-  const open = useSyncExternalStore(folds.subscribe, () => folds.isOpen(id, otherwise));
-  return [open, (next) => folds.set(id, next)];
-}
-
-/** Lines of a change shown under its row; the host's diff view has the rest. */
-const DIFF_ROWS = 120;
-
-type ToolPart = Extract<ChatPart, { kind: 'tool' }>;
-
-/** The verb, icon and colour of each kind of call, as the Mac's tool rows draw them. */
-function look(kind: string, colors: Palette): { icon: IconName; color: string } {
-  switch (kind) {
-    case 'run':
-      return { icon: 'IconCommand', color: colors.toolRun };
-    case 'read':
-      return { icon: 'IconFile', color: colors.toolRead };
-    case 'search':
-      return { icon: 'IconSearch', color: colors.toolRead };
-    case 'fetch':
-      return { icon: 'IconGlobe', color: colors.toolRead };
-    case 'edit':
-    case 'move':
-      return { icon: 'IconPencil', color: colors.toolEdit };
-    case 'delete':
-      return { icon: 'IconPencil', color: colors.toolDelete };
-    default:
-      return { icon: 'IconAgent', color: colors.inkDim };
-  }
-}
-
-/** Scrolls both ways inside the transcript, so long output keeps to a few lines of the screen. */
-function DetailBox({ children }: { children: ReactNode }) {
-  const styles = useStyles(makeStyles);
-  return (
-    <ScrollView style={styles.detailBox} nestedScrollEnabled>
-      <ScrollView horizontal contentContainerStyle={styles.detailPad}>
-        {children}
-      </ScrollView>
-    </ScrollView>
-  );
-}
-
-function ToolDetail({ part }: { part: ToolPart }) {
-  const colors = useColors();
-  const styles = useStyles(makeStyles);
-  const diff = part.diff ? collapseDiff(part.diff.lines, 2) : null;
-  const shown = diff?.rows.slice(0, DIFF_ROWS) ?? [];
-  const more = (diff?.rows.length ?? 0) - shown.length;
-  return (
-    <View style={styles.detail}>
-      {part.failure ? (
-        <Text style={[styles.detailText, { color: colors.danger }]} selectable>
-          {part.failure}
-        </Text>
-      ) : null}
-      {diff ? (
-        <DetailBox>
-          <View>
-            {shown.map((row, index) =>
-              'gap' in row ? (
-                <Text key={index} style={[styles.detailText, { color: colors.inkFaint }]}>
-                  ⋯ {row.gap} unchanged line{row.gap === 1 ? '' : 's'}
-                </Text>
-              ) : (
-                <Text
-                  key={index}
-                  style={[
-                    styles.detailText,
-                    row.sign === '+' && { color: colors.gitAdded },
-                    row.sign === '-' && { color: colors.gitDeleted },
-                  ]}
-                  selectable>
-                  {row.sign} {row.text}
-                </Text>
-              ),
-            )}
-            {more > 0 ? <Text style={[styles.detailText, { color: colors.inkFaint }]}>{more} more lines on the host</Text> : null}
-          </View>
-        </DetailBox>
-      ) : null}
-      {part.output?.text ? (
-        <DetailBox>
-          <Text style={styles.detailText} selectable>
-            {part.output.text}
-            {part.output.cut ? '\n…' : ''}
-          </Text>
-        </DetailBox>
-      ) : null}
-      {part.output?.image ? (
-        <Image
-          source={{ uri: `data:${part.output.image.mimeType};base64,${part.output.image.data}` }}
-          style={styles.image}
-          resizeMode="contain"
-          accessibilityIgnoresInvertColors
-        />
-      ) : null}
-    </View>
-  );
-}
-
-function ToolRow({ part, last, untimed, group }: { part: ToolPart; last: boolean; untimed: boolean; group: string }) {
-  const colors = useColors();
-  const styles = useStyles(makeStyles);
-  const kind = toolKind(part.tool);
-  const { icon, color } = look(kind, colors);
-  const failed = part.tool.status === 'failed';
-  const running = toolRunning(part.tool);
-  const spent =
-    !untimed && part.startedAt && part.endedAt && part.endedAt > part.startedAt ? durationLabel(part.endedAt - part.startedAt) : null;
-  const opens = !!(part.failure || part.diff || part.output?.text || part.output?.image);
-  const [open, setOpen] = useFold(`${group}/${part.id}`, false);
-  const target = toolTarget(part.tool);
-  return (
-    <View>
-      <Pressable
-        style={styles.tool}
-        onPress={opens ? () => setOpen(!open) : undefined}
-        disabled={!opens}
-        accessibilityRole={opens ? 'button' : undefined}
-        accessibilityLabel={`${kind} ${target}${failed ? ', failed' : running ? ', running' : ''}`}
-        accessibilityState={opens ? { expanded: open } : undefined}>
-        <View style={last && !open ? styles.elbow : styles.spine} />
-        <View style={[styles.tick, last && !open && { backgroundColor: 'transparent' }]} />
-        <Icon name={failed ? 'IconWarning' : icon} size={12} color={failed ? colors.danger : color} />
-        <Text style={[styles.kind, { color: failed ? colors.danger : color }]}>{kind}</Text>
-        <Text style={[styles.target, running && { color: colors.inkDim }]} numberOfLines={1}>
-          {target}
-        </Text>
-        <View style={styles.toolEnd}>
-          {part.diff ? (
-            <Text style={styles.endText}>
-              <Text style={{ color: colors.gitAdded }}>+{part.diff.adds}</Text>{' '}
-              <Text style={{ color: colors.gitDeleted }}>−{part.diff.dels}</Text>
-            </Text>
-          ) : null}
-          {!part.diff && spent ? <Text style={styles.endText}>{spent}</Text> : null}
-        </View>
-      </Pressable>
-      {open ? (
-        <View style={styles.detailRow}>
-          {last ? null : <View style={styles.spine} />}
-          <ToolDetail part={part} />
-        </View>
-      ) : null}
-    </View>
-  );
-}
+/** The chat's agent, whose mark its subagents carry. */
+export const ProviderContext = createContext('agent');
 
 /**
- * A run of calls stays open while the agent is still adding to it, as on the Mac, and folds once
- * something follows it or the turn ends; watching each call instead shuts it in the gaps between them.
+ * A message too long to draw at once shows its start and the rest on a tap, unless the person
+ * watched it stream in.
  */
-function ToolGroup({ id, parts, untimed, live }: { id: string; parts: ToolPart[]; untimed: boolean; live: boolean }) {
+function LongText({ id, text, live, style }: { id: string; text: string; live: boolean; style: object }) {
+  const styles = useStyles(makeStyles);
+  const folds = useContext(FoldsContext);
+  const [whole, setWhole] = useFold(`whole/${id}`, false);
+  if (live) folds.streamed.add(id);
+  const cut = whole || folds.streamed.has(id) ? null : cutLongText(text);
+  return (
+    <>
+      <Markdown text={cut ? cut.head : text} style={style} />
+      {cut ? (
+        <Pressable onPress={() => setWhole(true)} hitSlop={6} style={styles.showRest} accessibilityRole="button">
+          <Text style={styles.showRestText}>Show the rest · {Math.round(cut.hidden / 1000)}k more characters</Text>
+        </Pressable>
+      ) : null}
+    </>
+  );
+}
+
+const SUBAGENT_WORDS: Record<AcpSubagent['state'], string> = {
+  running: 'working',
+  completed: 'done',
+  failed: 'failed',
+  cancelled: 'stopped',
+  disconnected: 'lost',
+};
+
+function SubagentMark({ state }: { state: AcpSubagent['state'] }) {
+  const colors = useColors();
+  if (state === 'running') return <Working />;
+  if (state === 'completed') return <Icon name="IconCheck" size={13} color={colors.live} />;
+  if (state === 'failed') return <Icon name="IconWarning" size={12} color={colors.danger} />;
+  if (state === 'disconnected') return <Icon name="IconPlug" size={12} color={colors.danger} />;
+  return <Icon name="IconClose" size={11} color={colors.inkFaint} />;
+}
+
+/** What a subagent did, kept to one line until it is opened; what it is doing now is over the composer. */
+function Subagent({ subagent, untimed }: { subagent: AcpSubagent; untimed: boolean }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
-  const working = parts.some((part) => toolRunning(part.tool));
-  const [open, setOpen] = useFold(id, live || working);
-  const started = parts[0]?.startedAt;
-  const ended = parts[parts.length - 1]?.endedAt;
+  const provider = useContext(ProviderContext);
+  const [open, setOpen] = useFold(`subagent/${subagent.sessionId}`, false);
+  const parts = subagent.messages.flatMap((message) => message.parts);
+  const calls = parts.filter((part) => part.kind === 'tool').length;
+  const running = subagent.state === 'running';
   return (
-    <View style={styles.tools}>
+    <View style={styles.subagent}>
       <Pressable
         onPress={() => setOpen(!open)}
-        style={styles.summary}
-        hitSlop={6}
+        style={({ pressed }) => [styles.subagentHead, pressed && { backgroundColor: colors.active }]}
         accessibilityRole="button"
-        accessibilityLabel={`${parts.length} tool call${parts.length === 1 ? '' : 's'}${working ? ', running' : ''}`}
+        accessibilityLabel={`Subagent ${subagent.name}, ${SUBAGENT_WORDS[subagent.state]}${calls ? `, ${calls} calls` : ''}`}
         accessibilityState={{ expanded: open }}>
-        <Text style={styles.summaryText}>
-          {parts.length} tool call{parts.length === 1 ? '' : 's'}
+        <View style={[styles.chevron, open && { transform: [{ rotate: '90deg' }] }]}>
+          <Icon name="IconChevron" size={10} color={colors.inkDim} />
+        </View>
+        <AgentIcon provider={provider} size={15} />
+        <Text style={styles.subagentName} numberOfLines={1}>
+          {subagent.name}
         </Text>
-        {!untimed && started && ended && ended > started ? <Text style={styles.summaryTime}>{durationLabel(ended - started)}</Text> : null}
-        <View style={[styles.summaryChevron, open && { transform: [{ rotate: '90deg' }] }]}>
-          <Icon name="IconChevron" size={11} color={colors.inkDim} />
+        <Text style={styles.subagentTask} numberOfLines={1}>
+          {subagentTask(subagent.task)}
+        </Text>
+        {calls ? (
+          <Text style={styles.subagentCalls}>
+            {calls} {calls === 1 ? 'call' : 'calls'}
+          </Text>
+        ) : null}
+        <View style={styles.subagentMark}>
+          <SubagentMark state={subagent.state} />
         </View>
       </Pressable>
       {open ? (
-        <View style={styles.toolsBody}>
-          {parts.map((part, index) => (
-            <ToolRow key={part.id} part={part} last={index === parts.length - 1} untimed={untimed} group={id} />
-          ))}
+        <View style={styles.subagentBody}>
+          {parts.length ? (
+            <Parts id={`subagent/${subagent.sessionId}`} parts={parts} untimed={untimed} live={running} />
+          ) : (
+            <Text style={styles.empty}>No output yet.</Text>
+          )}
         </View>
       ) : null}
     </View>
+  );
+}
+
+/** A background task that reached its end, and what it said of how it went. */
+function Notice({ id, notice }: { id: string; notice: AcpTaskNotice }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  const [open, setOpen] = useFold(`notice/${id}`, false);
+  const summary = notice.summary?.trim();
+  return (
+    <Pressable
+      onPress={summary ? () => setOpen(!open) : undefined}
+      disabled={!summary}
+      style={styles.notice}
+      accessibilityRole={summary ? 'button' : undefined}
+      accessibilityLabel={`${notice.name} ${notice.state}${summary ? `. ${summary}` : ''}`}
+      accessibilityState={summary ? { expanded: open } : undefined}>
+      <View style={styles.noticeHead}>
+        <Icon name="IconTimer" size={12} color={notice.state === 'failed' ? colors.danger : colors.inkFaint} />
+        <Text style={styles.noticeName} numberOfLines={1}>
+          {notice.name}
+        </Text>
+        <Text style={[styles.noticeState, notice.state === 'failed' && { color: colors.danger }]}>{notice.state}</Text>
+      </View>
+      {summary ? (
+        <Text style={styles.noticeSummary} numberOfLines={open ? undefined : 1} selectable={open}>
+          {summary}
+        </Text>
+      ) : null}
+    </Pressable>
   );
 }
 
@@ -210,10 +139,11 @@ function userText(message: ChatMessage): string {
   return message.parts.flatMap((part) => (part.kind === 'text' ? [part.text] : [])).join('\n');
 }
 
-function Assistant({ message, untimed, live }: { message: ChatMessage; untimed: boolean; live: boolean }) {
+/** A message's parts in order, with each run of tool calls drawn as one group. */
+function Parts({ id, parts, untimed, live }: { id: string; parts: ChatPart[]; untimed: boolean; live: boolean }) {
   const styles = useStyles(makeStyles);
   const runs: (ChatPart | ToolPart[])[] = [];
-  for (const part of message.parts) {
+  for (const part of parts) {
     const previous = runs[runs.length - 1];
     if (part.kind === 'tool') {
       if (Array.isArray(previous)) previous.push(part);
@@ -223,37 +153,21 @@ function Assistant({ message, untimed, live }: { message: ChatMessage; untimed: 
   return (
     <>
       {runs.map((run, index) => {
-        if (Array.isArray(run))
-          return (
-            <ToolGroup
-              key={run[0].id}
-              id={`${message.id}/${run[0].id}`}
-              parts={run}
-              untimed={untimed}
-              live={live && index === runs.length - 1}
-            />
-          );
+        const last = live && index === runs.length - 1;
+        if (Array.isArray(run)) return <ToolGroup key={run[0].id} id={`${id}/${run[0].id}`} parts={run} untimed={untimed} live={last} />;
         switch (run.kind) {
           case 'text':
-            return run.text.trim() ? <Markdown key={run.id} text={run.text} style={styles.prose} /> : null;
+            return run.text.trim() ? <LongText key={run.id} id={run.id} text={run.text} live={last} style={styles.prose} /> : null;
           case 'thought':
             return run.text.trim() ? (
-              <Text key={run.id} style={styles.thought}>
-                {run.text.trim()}
-              </Text>
+              <View key={run.id} style={styles.thought}>
+                <LongText id={run.id} text={run.text.trim()} live={last} style={styles.thoughtText} />
+              </View>
             ) : null;
           case 'subagent':
-            return (
-              <Text key={run.id} style={styles.note}>
-                {run.subagent.name} · {run.subagent.state}
-              </Text>
-            );
+            return <Subagent key={run.id} subagent={run.subagent} untimed={untimed} />;
           case 'notice':
-            return (
-              <Text key={run.id} style={styles.note}>
-                {run.notice.name} {run.notice.state}
-              </Text>
-            );
+            return <Notice key={run.id} id={run.id} notice={run.notice} />;
           case 'content':
             return <Content key={run.id} block={run.content} />;
           default:
@@ -342,7 +256,7 @@ export function Message({
       </View>
     );
   }
-  return <Assistant message={message} untimed={untimed} live={live} />;
+  return <Parts id={message.id} parts={message.parts} untimed={untimed} live={live} />;
 }
 
 export function Queued({ held, sentFiles }: { held: Held; sentFiles: ReadonlyMap<string, Attachment> }) {
@@ -451,43 +365,48 @@ const makeStyles = (colors: Palette) => {
       backgroundColor: colors.raised,
     },
     resourceText: { flexShrink: 1, fontFamily: fonts.mono, fontSize: 12, color: colors.ink },
-    detailRow: { flexDirection: 'row' },
-    detail: { flex: 1, gap: 6, marginLeft: 18, marginVertical: 4 },
-    detailBox: { maxHeight: 260, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.sunken },
-    detailPad: { padding: 9 },
-    detailText: { fontFamily: fonts.mono, fontSize: 11, lineHeight: 16, color: colors.secondary },
     retry: { color: colors.ink, fontFamily: fonts.uiMedium },
     queuedLabel: { fontFamily: fonts.ui, fontSize: 11, color: colors.inkFaint, marginTop: 4 },
     prose: { fontFamily: fonts.ui, fontSize: 14.5, lineHeight: 23, color: colors.ink },
-    thought: { fontFamily: fonts.uiItalic, fontSize: 12.5, lineHeight: 19.5, color: colors.inkFaint, marginVertical: 8 },
-    note: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.inkDim, marginVertical: 6 },
-    tools: { marginVertical: 6 },
-    summary: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 26, alignSelf: 'flex-start' },
-    summaryText: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.inkDim },
-    summaryTime: { fontFamily: fonts.mono, fontSize: 11, color: colors.inkDim },
-    summaryChevron: { opacity: 0.7 },
-    toolsBody: { marginLeft: 6, paddingVertical: 2 },
-    tool: { flexDirection: 'row', alignItems: 'center', minHeight: 26, gap: 8 },
-    spine: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 1, backgroundColor: colors.treeSpine },
-    // The last row's spine bends into its tick, ending on the row's middle like the Mac's.
-    elbow: {
-      position: 'absolute',
-      left: 0,
-      top: 0,
-      bottom: '50%',
-      width: 10,
-      marginBottom: -0.5,
-      borderLeftWidth: 1,
-      borderBottomWidth: 1,
-      borderBottomLeftRadius: 4,
-      borderLeftColor: colors.treeSpine,
-      borderBottomColor: colors.treeTick,
+    thought: { marginVertical: 8 },
+    thoughtText: { fontFamily: fonts.uiItalic, fontSize: 12.5, lineHeight: 19.5, color: colors.inkFaint },
+    showRest: { alignSelf: 'flex-start', marginTop: 6, marginBottom: 4 },
+    showRestText: { fontFamily: fonts.uiMedium, fontSize: 12.5, color: colors.tertiary },
+    subagent: { marginVertical: 6 },
+    subagentHead: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      minHeight: 36,
+      paddingLeft: 10,
+      paddingRight: 11,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: translucent(colors.raised, 0.6),
     },
-    tick: { width: 10, height: 1, backgroundColor: colors.treeTick },
-    kind: { fontFamily: fonts.mono, fontSize: 11.5 },
-    target: { flex: 1, fontFamily: fonts.mono, fontSize: 11.5, color: colors.ink },
-    toolEnd: { flexDirection: 'row', gap: 6 },
-    endText: { fontFamily: fonts.mono, fontSize: 10.5, color: colors.inkDim },
+    chevron: { opacity: 0.7 },
+    subagentName: { flexShrink: 0, maxWidth: '45%', fontFamily: fonts.mono, fontSize: 11.5, color: colors.ink },
+    subagentTask: { flex: 1, fontFamily: fonts.ui, fontSize: 12, color: colors.inkFaint },
+    subagentCalls: { fontFamily: fonts.mono, fontSize: 10.5, color: colors.inkFaint },
+    subagentMark: { width: 14, alignItems: 'center' },
+    subagentBody: { paddingLeft: 14, paddingTop: 4 },
+    empty: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.inkFaint, paddingVertical: 6 },
+    notice: {
+      alignSelf: 'flex-start',
+      maxWidth: '100%',
+      gap: 3,
+      marginVertical: 5,
+      paddingVertical: 6,
+      paddingHorizontal: 10,
+      borderRadius: 9,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    noticeHead: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+    noticeName: { flexShrink: 1, fontFamily: fonts.mono, fontSize: 11.5, color: colors.ink },
+    noticeState: { fontFamily: fonts.ui, fontSize: 12, color: colors.inkFaint },
+    noticeSummary: { fontFamily: fonts.ui, fontSize: 12, lineHeight: 17, color: colors.inkFaint },
     earlier: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingTop: 10, paddingBottom: 6 },
     earlierText: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.tertiary },
     activity: { flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 14, marginBottom: 6 },

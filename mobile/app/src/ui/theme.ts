@@ -39,6 +39,7 @@ export const defaultPalette = {
   toolEdit: '#cdaf86',
   toolDelete: '#c25e4b',
   toolRun: '#d966ae',
+  toolMcp: '#6fd6b9',
   /** The pane grain's dots: the raised surface on a dark theme. */
   shaderDot: '#19191e',
 };

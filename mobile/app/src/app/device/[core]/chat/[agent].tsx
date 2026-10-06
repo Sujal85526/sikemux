@@ -18,7 +18,8 @@ import { activityText, composerPlaceholder } from '@mac/chat/chatStatus';
 import { activeToolLabel } from '@mac/chat/toolLabels';
 import type { ChatMessage, ChatState } from '@mac/chat/types';
 import { askTitle, Composer } from '@/chat/Composer';
-import { Activity, Earlier, FoldsContext, Message, Queued } from '@/chat/Transcript';
+import { FoldsContext } from '@/chat/folds';
+import { Activity, Earlier, Message, ProviderContext, Queued } from '@/chat/Transcript';
 import { useChat } from '@/chat/useChat';
 import { retry as reconnect, useDevices, useLive, type Live } from '@/devices/hub';
 import { dismissCardsFor } from '@/notify/cards';
@@ -183,55 +184,59 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
         {chat.attached !== 'live' && !state.messages.length ? (
           <View style={[styles.transcript, styles.alone, { paddingBottom: bottom }]}>{status}</View>
         ) : (
-          <FoldsContext value={session.folds}>
-            <View style={styles.transcript}>
-              <FlashList
-                ref={list}
-                data={state.messages}
-                keyExtractor={(message) => message.id}
-                getItemType={(message) => message.role}
-                extraData={marks}
-                renderItem={({ item }) => (
-                  <Message
-                    message={item}
-                    live={item.id === liveId}
-                    untimed={chat.replayed.has(item.id)}
-                    unsent={chat.unsent.get(item.id)}
-                    onRetry={session.retrySend}
-                    sentFiles={chat.sentFiles}
-                  />
-                )}
-                ListHeaderComponent={chat.hasEarlier ? <Earlier failed={chat.earlier === 'failed'} onRetry={session.loadEarlier} /> : null}
-                onStartReached={chat.hasEarlier && chat.earlier === 'idle' ? session.loadEarlier : undefined}
-                ListFooterComponent={
-                  <>
-                    {chat.queued ? <Queued held={chat.queued} sentFiles={chat.sentFiles} /> : null}
-                    {activity ? <Activity provider={provider} label={activity} since={chat.turnSince} /> : null}
-                    {state.error ? <Text style={styles.error}>{state.error}</Text> : null}
-                  </>
-                }
-                contentContainerStyle={styles.content}
-                maintainVisibleContentPosition={{
-                  startRenderingFromBottom: true,
-                  autoscrollToBottomThreshold: FOLLOW,
-                  animateAutoScrollToBottom: false,
-                }}
-                onScroll={onScroll}
-                scrollEventThrottle={100}
-                keyboardDismissMode="interactive"
-              />
-              {away ? (
-                <Pressable
-                  onPress={toEnd}
-                  style={styles.jump}
-                  hitSlop={8}
-                  accessibilityRole="button"
-                  accessibilityLabel="Jump to latest message">
-                  <Icon name="IconArrowDown" size={16} color={colors.inkDim} />
-                </Pressable>
-              ) : null}
-            </View>
-          </FoldsContext>
+          <ProviderContext value={provider}>
+            <FoldsContext value={session.folds}>
+              <View style={styles.transcript}>
+                <FlashList
+                  ref={list}
+                  data={state.messages}
+                  keyExtractor={(message) => message.id}
+                  getItemType={(message) => message.role}
+                  extraData={marks}
+                  renderItem={({ item }) => (
+                    <Message
+                      message={item}
+                      live={item.id === liveId}
+                      untimed={chat.replayed.has(item.id)}
+                      unsent={chat.unsent.get(item.id)}
+                      onRetry={session.retrySend}
+                      sentFiles={chat.sentFiles}
+                    />
+                  )}
+                  ListHeaderComponent={
+                    chat.hasEarlier ? <Earlier failed={chat.earlier === 'failed'} onRetry={session.loadEarlier} /> : null
+                  }
+                  onStartReached={chat.hasEarlier && chat.earlier === 'idle' ? session.loadEarlier : undefined}
+                  ListFooterComponent={
+                    <>
+                      {chat.queued ? <Queued held={chat.queued} sentFiles={chat.sentFiles} /> : null}
+                      {activity ? <Activity provider={provider} label={activity} since={chat.turnSince} /> : null}
+                      {state.error ? <Text style={styles.error}>{state.error}</Text> : null}
+                    </>
+                  }
+                  contentContainerStyle={styles.content}
+                  maintainVisibleContentPosition={{
+                    startRenderingFromBottom: true,
+                    autoscrollToBottomThreshold: FOLLOW,
+                    animateAutoScrollToBottom: false,
+                  }}
+                  onScroll={onScroll}
+                  scrollEventThrottle={100}
+                  keyboardDismissMode="interactive"
+                />
+                {away ? (
+                  <Pressable
+                    onPress={toEnd}
+                    style={styles.jump}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Jump to latest message">
+                    <Icon name="IconArrowDown" size={16} color={colors.inkDim} />
+                  </Pressable>
+                ) : null}
+              </View>
+            </FoldsContext>
+          </ProviderContext>
         )}
         {chat.attached === 'live' ? (
           <>
