@@ -52,17 +52,21 @@ export function ComposerAttachments({
               disabled={!broken}
               onPress={onRetry}
               style={[styles.item, attachment.kind === 'image' ? styles.thumb : styles.fileItem, broken && { borderColor: colors.danger }]}
+              // A tile that can be taken off leaves its × reachable as a button of its own.
+              accessible={broken}
               accessibilityRole={broken ? 'button' : undefined}
               accessibilityLabel={
                 broken
                   ? `${attachment.name} did not reach the host${attachment.problem ? `: ${attachment.problem}` : ''}. Try again`
-                  : `${attachment.name}${sending ? ', sending' : ''}`
+                  : undefined
               }>
-              {attachment.kind === 'image' ? (
-                <Image source={{ uri: attachment.uri }} style={styles.thumbImage} resizeMode="cover" />
-              ) : (
-                <FileChip name={attachment.name} size={attachment.size} tall />
-              )}
+              <View style={styles.tileBody} accessible={!broken} accessibilityLabel={`${attachment.name}${sending ? ', sending' : ''}`}>
+                {attachment.kind === 'image' ? (
+                  <Image source={{ uri: attachment.uri }} style={styles.thumbImage} resizeMode="cover" />
+                ) : (
+                  <FileChip name={attachment.name} size={attachment.size} tall />
+                )}
+              </View>
               {sending || broken ? (
                 <View style={styles.veil}>
                   {sending ? <ActivityIndicator color={colors.ink} /> : <Icon name="IconRefresh" size={18} color={colors.ink} />}
@@ -125,6 +129,7 @@ const makeStyles = (colors: Palette) => {
     row: { gap: 7, paddingHorizontal: 4, paddingTop: 4, paddingBottom: 2 },
     item: { height: 58, borderRadius: 9, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.sunken, overflow: 'hidden' },
     thumb: { width: 76 },
+    tileBody: { flex: 1, justifyContent: 'center' },
     thumbImage: { width: '100%', height: '100%' },
     fileItem: { maxWidth: 190, justifyContent: 'center' },
     veil: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(9, 9, 11, 0.55)' },
