@@ -637,6 +637,15 @@ async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
         .find(|chat| chat.agent_id == "agent-sleepy")
         .expect("listed");
     assert!(!sleepy.asleep);
+    assert_eq!(
+        sleepy.state,
+        ChatState::Ready,
+        "a wake is answered once the chat is ready"
+    );
+    assert!(matches!(
+        client.acp_attach("agent-sleepy".into()).await,
+        Ok(ChatAttachment::Live { .. })
+    ));
 
     app.publish_palette([("ground".to_owned(), "#0f0f13".to_owned())].into())
         .await
@@ -1034,4 +1043,58 @@ async fn a_device_that_reconnects_hears_only_what_it_missed_and_detaching_stops_
             "a detached device hears nothing of the chat"
         );
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_device_holding_a_mark_from_before_the_chat_restarted_is_sent_the_new_run_whole() {
+    let core_key = SecretKey::generate();
+    let phone = Device::new("Phone", DeviceAccess::Full);
+    let core = start_core(&core_key, &[&phone]);
+    let (app, _app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    publish_fake_agent(&app).await;
+    let status = listening(&app).await;
+    let endpoint = phone.endpoint().await;
+    let (client, mut events) = remote::connect(&endpoint, core_addr(&status))
+        .await
+        .expect("the phone connects");
+    app.acp_start(fake_launch("agent-again"))
+        .await
+        .expect("the app starts a chat");
+    let ChatAttachment::Live { mark: before, .. } = client
+        .acp_attach("agent-again".into())
+        .await
+        .expect("attach")
+    else {
+        panic!("the chat is running");
+    };
+    client
+        .acp_prompt(
+            "agent-again".into(),
+            "first run".into(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .expect("prompt");
+    let heard = numbered_until(&mut events, "first run").await;
+    let seen = sikemux_core::protocol::ChatMark {
+        feed: before.feed.clone(),
+        seq: heard.last().map_or(before.seq, |(seq, _)| *seq),
+    };
+
+    app.acp_stop("agent-again".into()).await.expect("stop");
+    app.acp_start(fake_launch("agent-again"))
+        .await
+        .expect("the app starts it again");
+    let ChatAttachment::Live { mark, replay, .. } = client
+        .acp_attach_since("agent-again".into(), Some(seen))
+        .await
+        .expect("attach")
+    else {
+        panic!("a mark from the run before is answered with the whole new run");
+    };
+    assert_ne!(mark.feed, before.feed);
+    assert!(!replay
+        .iter()
+        .any(|event| event.payload.to_string().contains("first run")));
 }

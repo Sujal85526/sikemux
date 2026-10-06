@@ -672,6 +672,12 @@ pub(crate) fn resume(core: &Arc<Core>, record: ChatRecord) {
     }
 }
 
+/// Answers once the running chat is ready, or says why it never got there.
+pub(crate) async fn until_ready(core: &Core, agent_id: &str) -> CoreResult<()> {
+    let chat = core.chats.running(agent_id)?;
+    chat.until_ready().await.map(drop).map_err(CoreError::from)
+}
+
 pub(crate) async fn attach(
     core: &Arc<Core>,
     client: &Arc<ClientConn>,

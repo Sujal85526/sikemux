@@ -12,7 +12,7 @@ use serde_json::Value;
 
 use crate::protocol::{
     Backdrop, BackdropImage, ChatInfo, ChatLaunch, ChatLauncher, ChatState, Event, LauncherInfo,
-    ProjectInfo, PublishedChat, RequestId, Response, Workspace,
+    ProjectInfo, PublishedChat, RequestId, Response, Workspace, WAKE_WAIT,
 };
 
 use super::chat;
@@ -27,8 +27,6 @@ const MAX_COLOURS: usize = 64;
 /// A phone-sized JPEG is a few hundred kilobytes; this leaves room without letting one fill a frame.
 const MAX_IMAGE_BYTES: usize = 3 * 1024 * 1024;
 const MAX_COLOUR_CHARS: usize = 64;
-/// Long enough for an agent's adapter and CLI to come back up.
-const WAKE_WAIT: Duration = Duration::from_secs(30);
 
 #[derive(Default)]
 struct Published {
@@ -295,12 +293,29 @@ fn running(core: &Core, agent_id: &str) -> bool {
         .any(|chat| chat.agent_id == agent_id)
 }
 
-/// Has the app start a chat it put to sleep, and waits for it to run.
+/// Has the app start a chat it put to sleep, and answers once the chat is
+/// ready, so a device taking it up next finds it there.
 pub(crate) async fn wake_chat(core: &Arc<Core>, agent_id: String) -> CoreResult<Response> {
-    if running(core, &agent_id) {
-        return Ok(Response::Done);
+    let deadline = tokio::time::Instant::now() + WAKE_WAIT;
+    if !running(core, &agent_id) {
+        ask_to_wake(core, &agent_id)?;
+        while !running(core, &agent_id) {
+            if tokio::time::Instant::now() >= deadline {
+                return Err(DID_NOT_WAKE.into());
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
     }
-    match core.workspaces.published(&agent_id) {
+    tokio::time::timeout_at(deadline, chat::until_ready(core, &agent_id))
+        .await
+        .map_err(|_| CoreError::from(DID_NOT_WAKE))??;
+    Ok(Response::Done)
+}
+
+const DID_NOT_WAKE: &str = "the chat did not wake; open it in Sikemux on the host";
+
+fn ask_to_wake(core: &Core, agent_id: &str) -> CoreResult<()> {
+    match core.workspaces.published(agent_id) {
         None => return Err("that chat is no longer open in Sikemux on this host".into()),
         Some(false) => {
             return Err(
@@ -313,16 +328,9 @@ pub(crate) async fn wake_chat(core: &Arc<Core>, agent_id: String) -> CoreResult<
         return Err("open Sikemux on the host to wake this chat".into());
     }
     core.broadcast_local(&Event::WakeChat {
-        agent_id: agent_id.clone(),
+        agent_id: agent_id.to_owned(),
     });
-    let deadline = tokio::time::Instant::now() + WAKE_WAIT;
-    while tokio::time::Instant::now() < deadline {
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        if running(core, &agent_id) {
-            return Ok(Response::Done);
-        }
-    }
-    Err("the chat did not wake; open it in Sikemux on the host".into())
+    Ok(())
 }
 
 /// Starts the chat and answers `client` once its session is ready. The chat

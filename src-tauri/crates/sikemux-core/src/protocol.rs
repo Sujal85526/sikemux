@@ -20,6 +20,10 @@ use crate::cli::protocol::{CliOpenRequest, HarnessRequest};
 
 pub const PROTOCOL: &str = "sikemux-core";
 pub const PROTOCOL_VERSION: u32 = 9;
+/// How long a core waits for a sleeping chat it was asked to wake to come
+/// back up, its agent's adapter and CLI with it. A device waits longer, so the
+/// core's reason for giving up reaches it.
+pub const WAKE_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
 /// Room for the largest attach snapshot plus its header.
 pub const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 
