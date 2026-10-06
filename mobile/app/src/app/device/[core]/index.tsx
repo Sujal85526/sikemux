@@ -52,8 +52,8 @@ function ProjectTail({ snapshot, project }: { snapshot: Snapshot; project: Proje
       {chats.length ? (
         <View style={styles.faces}>
           {chats.slice(0, 3).map((chat, index) => (
-            <View key={chat.agentId} style={[styles.face, index > 0 && { marginLeft: -7 }]}>
-              <AgentIcon provider={chat.provider} size={14} />
+            <View key={chat.agentId} style={[styles.face, index > 0 && { marginLeft: -4 }]}>
+              <AgentIcon provider={chat.provider} size={16} />
             </View>
           ))}
         </View>
@@ -664,16 +664,7 @@ const makeStyles = (colors: Palette) => {
     newChatText: { fontFamily: fonts.uiSemibold, fontSize: 15, color: colors.ground },
     tail: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     faces: { flexDirection: 'row' },
-    face: {
-      width: 26,
-      height: 26,
-      borderRadius: 13,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.overlay,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
+    face: { width: 16, height: 16, alignItems: 'center', justifyContent: 'center' },
     termCount: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     asking: { marginTop: 8 },
     empty: { ...type.meta, textAlign: 'center', paddingTop: 40 },

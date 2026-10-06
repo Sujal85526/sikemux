@@ -106,6 +106,8 @@
   .nav .mid { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--text-primary); font-weight: 600; font-size: 16px; letter-spacing: -0.015em; }
   .nav .mid span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .nav .end { width: 76px; display: flex; justify-content: flex-end; }
+  .nav.titled { height: 56px; padding: 0 8px 0 16px; margin-bottom: 6px; }
+  .nav.titled h1 { flex: 1; font-size: 26px; font-weight: 600; letter-spacing: -0.028em; color: var(--text-primary); }
   .icon-btn { width: 40px; height: 40px; border-radius: 999px; display: grid; place-items: center; color: var(--text-tertiary); }
 
   .title-block { padding: 2px 16px 14px; }
@@ -460,7 +462,7 @@
   .scope-sheet .row .path { direction: rtl; text-align: left; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .scope-sheet .tail { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; }
   .scope-sheet .tail .num { font-size: 13px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
-  .scope-sheet .tail .faces > span { width: 26px; height: 26px; border: 1px solid var(--border); box-shadow: 0 0 0 2px var(--surface-raised); background: var(--surface-overlay); margin-right: -7px; }
+  .scope-sheet .tail .faces > span { width: 16px; height: 16px; margin-right: -4px; }
   .scope-sheet .tail .faces > span:last-child { margin-right: 0; }
   .scope-sheet .tail .tcount { color: var(--text-tertiary); display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
   .scope-sheet .check { color: var(--text-primary); display: grid; }
@@ -492,7 +494,8 @@
   .dev-work { display: flex; align-items: center; gap: 10px; padding: 12px 16px 14px; font-size: 13px; color: var(--text-secondary); }
   .dev-work .loader { margin-left: auto; }
   .faces { display: flex; }
-  .faces > span { width: 26px; height: 26px; border-radius: 999px; display: grid; place-items: center; background: var(--surface-overlay); box-shadow: 0 0 0 2px var(--surface-raised); margin-right: -6px; }
+  /* the Mac rail's stack: bare glyphs, pulled together over the room each one draws around itself */
+  .faces > span { width: 18px; height: 18px; display: grid; place-items: center; margin-right: -5px; }
   .faces > span:last-child { margin-right: 0; }
   /* welcome: the rail itself, drifting past */
   .reel { flex: 0 1 340px; min-height: 0; margin-top: 8px; overflow: hidden; padding: 0 16px;
@@ -876,8 +879,7 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
-        <div class="title-block"><h1>Devices</h1></div>
+        <div class="nav titled"><h1>Devices</h1><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
         <div class="pad grow devices">
 
           <div class="device">
@@ -892,7 +894,7 @@
               <span class="dot warn"></span>
             </div>
             <div class="dev-work">
-              <span class="faces"><span class="claude">{{IconClaude:16}}</span><span class="codex">{{IconCodex:16}}</span><span class="hermes">{{IconHermes:16}}</span></span>
+              <span class="faces"><span class="claude">{{IconClaude:18}}</span><span class="codex">{{IconCodex:18}}</span><span class="hermes">{{IconHermes:18}}</span></span>
               <span>3 working</span>
               <span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
             </div>
@@ -931,8 +933,7 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar" style="--size:28px">C</span></span></div>
-        <div class="title-block"><h1>Devices</h1></div>
+        <div class="nav titled"><h1>Devices</h1><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar" style="--size:28px">C</span></span></div>
         <div class="slot"><span class="slot-tile">{{IconLaptop:22}}</span><div><div class="t">Your computer goes here</div><div class="s"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>Watching the account</div></div></div>
         <div class="how">
           <div class="t">Bring it in</div>
@@ -951,8 +952,7 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen" style="opacity:.35">
-        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
-        <div class="title-block"><h1>Devices</h1></div>
+        <div class="nav titled"><h1>Devices</h1><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
       </div>
       <div class="sheet">
         <div class="grabber"></div>
@@ -974,8 +974,7 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen" style="opacity:.35">
-        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
-        <div class="title-block"><h1>Devices</h1></div>
+        <div class="nav titled"><h1>Devices</h1><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
       </div>
       <div class="sheet">
         <div class="grabber"></div>
@@ -997,8 +996,7 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen" style="opacity:.35">
-        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
-        <div class="title-block"><h1>Devices</h1></div>
+        <div class="nav titled"><h1>Devices</h1><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
       </div>
       <div class="sheet">
         <div class="grabber"></div>
@@ -1020,8 +1018,7 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen" style="opacity:.35">
-        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
-        <div class="title-block"><h1>Devices</h1></div>
+        <div class="nav titled"><h1>Devices</h1><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
       </div>
       <div class="sheet">
         <div class="grabber"></div>
@@ -1043,8 +1040,7 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen" style="opacity:.35">
-        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
-        <div class="title-block"><h1>Devices</h1></div>
+        <div class="nav titled"><h1>Devices</h1><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
       </div>
       <div class="sheet">
         <div class="grabber"></div>
@@ -1350,8 +1346,8 @@
           <div class="search">{{IconSearch:16}}<span>Search projects…</span></div>
           <div class="group">
             <div class="row on"><span class="mark all">{{IconFolders:16}}</span><div class="body"><div class="t">All projects</div><div class="s">4 agents · 3 terminals</div></div><span class="check">{{IconCheck:16}}</span></div>
-            <div class="row"><span class="mark folder">{{IconFolder:16}}</span><div class="body"><div class="t">sikemux</div><div class="s"><span class="m path">&lrm;~/proj/pers/sikemux&lrm;</span></div></div><span class="tail"><span class="dot warn"></span><span class="faces"><span class="claude">{{IconClaude:14}}</span><span class="codex">{{IconCodex:14}}</span></span></span></div>
-            <div class="row"><span class="mark folder">{{IconFolder:16}}</span><div class="body"><div class="t">sikemux-front</div><div class="s"><span class="m path">&lrm;~/projects/personal/sikemux-front&lrm;</span></div></div><span class="tail"><span class="faces"><span class="claude">{{IconClaude:14}}</span><span class="claude">{{IconClaude:14}}</span></span></span></div>
+            <div class="row"><span class="mark folder">{{IconFolder:16}}</span><div class="body"><div class="t">sikemux</div><div class="s"><span class="m path">&lrm;~/proj/pers/sikemux&lrm;</span></div></div><span class="tail"><span class="dot warn"></span><span class="faces"><span class="claude">{{IconClaude:16}}</span><span class="codex">{{IconCodex:16}}</span></span></span></div>
+            <div class="row"><span class="mark folder">{{IconFolder:16}}</span><div class="body"><div class="t">sikemux-front</div><div class="s"><span class="m path">&lrm;~/projects/personal/sikemux-front&lrm;</span></div></div><span class="tail"><span class="faces"><span class="claude">{{IconClaude:16}}</span><span class="claude">{{IconClaude:16}}</span></span></span></div>
             <div class="row"><span class="mark folder">{{IconFolder:16}}</span><div class="body"><div class="t">api-docs</div><div class="s"><span class="m path">&lrm;~/proj/swishx/api-docs&lrm;</span></div></div><span class="tail"><span class="tcount">{{IconCommand:13}}1</span></span></div>
           </div>
         </div>

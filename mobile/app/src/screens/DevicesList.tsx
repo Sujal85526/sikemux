@@ -73,9 +73,9 @@ function DeviceCard({ device }: { device: PairedDevice }) {
       {working.length ? (
         <View style={styles.work}>
           <View style={styles.faces}>
-            {working.slice(0, 4).map((chat) => (
-              <View key={chat.agentId} style={styles.face}>
-                <AgentIcon provider={chat.provider} size={15} />
+            {working.slice(0, 4).map((chat, index) => (
+              <View key={chat.agentId} style={[styles.face, index > 0 && styles.faceAfter]}>
+                <AgentIcon provider={chat.provider} size={18} />
               </View>
             ))}
           </View>
@@ -261,12 +261,14 @@ export function DevicesList({ devices }: { devices: PairedDevice[] }) {
   return (
     <Screen>
       <View style={styles.nav}>
+        <Text style={styles.title} accessibilityRole="header">
+          Devices
+        </Text>
         <IconButton name="IconPlus" label="Add a host" onPress={add} />
         <Pressable onPress={() => setAccount(true)} accessibilityRole="button" accessibilityLabel="Account" style={styles.account}>
           <Avatar size={28} />
         </Pressable>
       </View>
-      <Text style={styles.title}>Devices</Text>
       <ScrollView
         ref={list}
         contentContainerStyle={[styles.list, { paddingBottom: bottom + 12 }]}
@@ -299,9 +301,9 @@ export function DevicesList({ devices }: { devices: PairedDevice[] }) {
 const makeStyles = (colors: Palette) => {
   const type = typeFor(colors);
   return StyleSheet.create({
-    nav: { height: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8, paddingHorizontal: 8 },
+    nav: { height: 56, flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 16, paddingRight: 8, marginBottom: 6 },
     account: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-    title: { ...type.title, fontSize: 26, paddingHorizontal: 16, paddingBottom: 14 },
+    title: { ...type.title, flex: 1, fontSize: 26 },
     list: { paddingHorizontal: 16, gap: 10 },
     card: { borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.raised, overflow: 'hidden' },
     away: { backgroundColor: 'transparent' },
@@ -338,18 +340,9 @@ const makeStyles = (colors: Palette) => {
     askDetail: { ...type.meta, fontSize: 12.5, marginTop: 1 },
     work: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 14 },
     faces: { flexDirection: 'row' },
-    face: {
-      width: 26,
-      height: 26,
-      borderRadius: 13,
-      marginRight: -6,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: colors.overlay,
-      borderWidth: 2,
-      borderColor: colors.raised,
-    },
-    workText: { flex: 1, marginLeft: 6, fontFamily: fonts.ui, fontSize: 13, color: colors.secondary },
+    face: { width: 18, height: 18, alignItems: 'center', justifyContent: 'center' },
+    faceAfter: { marginLeft: -5 },
+    workText: { flex: 1, fontFamily: fonts.ui, fontSize: 13, color: colors.secondary },
     slot: {
       flexDirection: 'row',
       alignItems: 'center',
