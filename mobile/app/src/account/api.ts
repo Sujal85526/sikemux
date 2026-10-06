@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import type {
   AccountDeletion,
+  AccountDeletionRequest,
   ApiError,
   ApnsEnvironment,
   Challenge,
@@ -134,7 +135,8 @@ export async function joinTicket(token: TokenSource, host: string): Promise<Join
   return call<JoinTicket>(token, `/v1/devices/${device.id()}/join`, { method: 'POST', body: request });
 }
 
-/** Deletes the account and every device on it. */
-export async function deleteAccount(token: TokenSource): Promise<AccountDeletion> {
-  return call<AccountDeletion>(token, '/v1/account', { method: 'DELETE' });
+/** Deletes the account and every device on it, with Apple's code for the server to revoke when it signs in with Apple. */
+export async function deleteAccount(token: TokenSource, appleAuthorizationCode?: string): Promise<AccountDeletion> {
+  const request: AccountDeletionRequest | undefined = appleAuthorizationCode ? { appleAuthorizationCode } : undefined;
+  return call<AccountDeletion>(token, '/v1/account', { method: 'DELETE', body: request });
 }

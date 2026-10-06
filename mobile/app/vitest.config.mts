@@ -9,6 +9,7 @@ const mocked = [
   '@sikemux/native',
   '@react-native-community/netinfo',
   'expo',
+  'expo-apple-authentication',
   'expo-application',
   'expo-clipboard',
   'expo-crypto',

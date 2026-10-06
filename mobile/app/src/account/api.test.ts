@@ -175,6 +175,13 @@ describe('deleteAccount', () => {
     answers.push({ status: 202, body: { status: 'deleted', requestedAt: '2026-10-03T10:00:00.000Z' } });
     await expect(deleteAccount(token)).resolves.toEqual({ status: 'deleted', requestedAt: '2026-10-03T10:00:00.000Z' });
     expect(calls[0]).toMatchObject({ url: 'https://api.test/v1/account', method: 'DELETE', authorization: 'Bearer session-token' });
+    expect(calls[0]?.body).toBeUndefined();
+  });
+
+  it("sends Apple's code for the server to revoke", async () => {
+    answers.push({ status: 202, body: { status: 'deleted', requestedAt: '2026-10-03T10:00:00.000Z' } });
+    await deleteAccount(token, 'apple-code');
+    expect(calls[0]).toMatchObject({ method: 'DELETE', body: { appleAuthorizationCode: 'apple-code' } });
   });
 
   it('asks the person to prove it is them again when the server says reverify', async () => {
