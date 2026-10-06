@@ -285,11 +285,11 @@ final class NotchStore {
         return projects.max { (counts[$0.name] ?? 0) < (counts[$1.name] ?? 0) } ?? projects.first
     }
 
-    var rollup: (state: AgentState, count: Int)? {
-        for state in [AgentState.blocked, .working, .done] {
+    /// How many agents need you, work and are done, most pressing first, leaving out the states no agent is in.
+    var rollups: [(state: AgentState, count: Int)] {
+        [AgentState.blocked, .working, .done].compactMap { state in
             let count = agents.filter { $0.state == state }.count
-            if count > 0 { return (state, count) }
+            return count > 0 ? (state, count) : nil
         }
-        return nil
     }
 }

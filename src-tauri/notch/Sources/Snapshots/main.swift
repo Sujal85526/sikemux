@@ -168,6 +168,7 @@ render("O5-with-idle", agents: ["a2", "a5"], height: 300) { $0.mode = .open }
 render("C2-working", agents: ["a2", "a3"])
 render("C3-needs-you")
 render("C4-done", agents: ["a4"])
+render("C4b-working-and-done", agents: ["a2", "a3", "a4"])
 render("C6-hover", agents: ["a2", "a3"]) { $0.hovering = true }
 render("P1-permission", height: 260) { $0.mode = .peekAsk("a1") }
 render("P2-finished", agents: ["a2", "a4"]) { $0.mode = .peekDone("a4") }
