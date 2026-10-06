@@ -138,10 +138,12 @@ const budgets = [
     // The project strip over a new chat's composer loads apart too. A terminal
     // agent's resuming state and its failed-resume row live here as well, and
     // so do Sikemux's own tool calls, drawn as a verb and what they acted on.
+    // A turn that needs a sign-in or hit a usage limit offers the account to
+    // move to on its error, and the move shows in the transcript.
     label: "ACP chat lazy chunk",
     pattern: /^AgentSurface-.*\.js$/,
-    raw: 120_000,
-    gzip: 38_000,
+    raw: 125_000,
+    gzip: 39_000,
   },
   {
     // Shiki, its JavaScript regex engine and vscode-textmate, with no
@@ -167,13 +169,14 @@ const budgets = [
     // the top bar's listening ports chip one more for its menu. Taking
     // terminals and tasks back from the core at launch added a little more.
     // The account picture in the top bar and renaming tabs added a little more.
+    // So did the agent accounts in the rail's footer and the desk's tab kinds.
     label:
       "default-path JavaScript except the highlighter and its grammar chunks",
     pattern: new RegExp(
       `^(?!(?:highlighter|paper-shaders|xterm-webgl|${diffLanguageChunkNames.join("|")})-).*\\.js$`,
     ),
-    raw: 3_520_000,
-    gzip: 1_140_000,
+    raw: 3_600_000,
+    gzip: 1_170_000,
   },
   {
     label: "opt-in shader renderer",
@@ -206,10 +209,11 @@ const budgets = [
     // weight/style plus an icons face, each carrying an explicit
     // unicode-range so the ~930 KB icons file only downloads once a PUA
     // glyph is actually rendered. Plugin panes bring their own sheets.
+    // The rail's account cards and the desk's stepped edge and tab kinds add to it.
     label: "application CSS",
     pattern: /^index-.*\.css$/,
-    raw: 223_000,
-    gzip: 39_000,
+    raw: 230_000,
+    gzip: 40_500,
   },
   {
     label: "settings lazy CSS",
