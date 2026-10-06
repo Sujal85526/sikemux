@@ -1,6 +1,8 @@
 import type { Network } from "@sikemux/protocol";
 import type { Level } from "pino";
 
+import { readAppleSignIn } from "./account/apple.ts";
+import type { AppleKey } from "./apple-key.ts";
 import { readJoinSigner, type JoinSigner } from "./join/signer.ts";
 import { readNetwork } from "./network/network.ts";
 import { readPush, type PushSettings } from "./push/settings.ts";
@@ -27,6 +29,8 @@ export interface Config extends MigrationConfig {
   /** What GET /v1/network answers: the relay apps use and the oldest app versions allowed. */
   network: Network;
   push: PushSettings;
+  /** The key Sign in with Apple takes the API's client secrets with, or null when it is not set up. */
+  appleSignIn: AppleKey | null;
   /** The key join tickets are signed with. */
   join: JoinSigner;
 }
@@ -116,6 +120,7 @@ export function loadConfig(
 
   const network = readNetwork(env, problems);
   const push = readPush(env, problems);
+  const appleSignIn = readAppleSignIn(env, problems);
   const join = readJoinSigner(env, problems, release);
   const logLevel = readLogLevel();
   const host = read("HOST", "127.0.0.1");
@@ -131,6 +136,7 @@ export function loadConfig(
     clerkWebhookSecret,
     network,
     push,
+    appleSignIn,
     join: join as JoinSigner,
     logLevel,
   });

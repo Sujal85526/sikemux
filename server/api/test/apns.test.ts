@@ -10,10 +10,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import type { AppleKey } from "../src/apple-key.ts";
 import {
   ApnsProvider,
   GENERIC_ALERT,
-  type ApnsKey,
   type ApnsReply,
 } from "../src/push/apns.ts";
 import type { PushMessage } from "../src/push/provider.ts";
@@ -101,7 +101,7 @@ async function fakeApns(publicKey: KeyObject): Promise<FakeApns> {
 const { publicKey, privateKey } = generateKeyPairSync("ec", {
   namedCurve: "prime256v1",
 });
-const key: ApnsKey = { keyId: "ABC123DEFG", teamId: "D577WD6Z5U", privateKey };
+const key: AppleKey = { keyId: "ABC123DEFG", teamId: "D577WD6Z5U", privateKey };
 const TOPIC = "com.nodelike.sikemux.mobile";
 
 const message: PushMessage = {

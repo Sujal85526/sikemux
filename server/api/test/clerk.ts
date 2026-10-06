@@ -4,6 +4,8 @@ import type { ClerkBackend } from "../src/account/clerk.ts";
 export class FakeClerk implements ClerkBackend {
   readonly deleted: string[] = [];
   readonly revoked: string[] = [];
+  /** The Apple access tokens Clerk holds for each user. */
+  readonly appleTokens = new Map<string, string[]>();
   failing = false;
 
   async deleteUser(userId: string) {
@@ -14,5 +16,10 @@ export class FakeClerk implements ClerkBackend {
   async revokeSession(sessionId: string) {
     if (this.failing) throw new Error("Clerk answered 500");
     this.revoked.push(sessionId);
+  }
+
+  async appleAccessTokens(userId: string) {
+    if (this.failing) throw new Error("Clerk answered 500");
+    return this.appleTokens.get(userId) ?? [];
   }
 }

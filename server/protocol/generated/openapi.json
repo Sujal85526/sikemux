@@ -386,12 +386,30 @@
       "delete": {
         "operationId": "deleteAccount",
         "summary": "Delete your account and take every device off it",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountDeletionRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
-            "description": "The account is deleted here. Repeating the call answers the same way.",
+            "description": "The account is deleted here. Repeating the call answers the same way. Revoking Sign in with Apple is tried once, and the deletion goes ahead whether or not it works.",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/AccountDeletion" }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not a valid AccountDeletionRequest.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
               }
             }
           },
@@ -460,6 +478,19 @@
           "requestedAt": { "type": "string", "format": "date-time" }
         },
         "required": ["status", "requestedAt"],
+        "additionalProperties": false
+      },
+      "AccountDeletionRequest": {
+        "description": "What the phone may send when it deletes an account. The body can be left out.",
+        "type": "object",
+        "properties": {
+          "appleAuthorizationCode": {
+            "description": "A code Sign in with Apple gave the phone moments ago. The server trades it for a token and revokes that, so Apple stops treating the person as signed in to Sikemux.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
         "additionalProperties": false
       },
       "AccountDeletionStatus": {

@@ -539,6 +539,7 @@ export function openapi(definitions, routes) {
         "summary",
         "auth",
         "request",
+        "requestOptional",
         "query",
         "responses",
         "upgrade",
@@ -564,6 +565,8 @@ export function openapi(definitions, routes) {
     } else if (route.messages) {
       fail(where, "only WebSocket routes have messages");
     }
+    if (route.requestOptional !== undefined && !route.request)
+      fail(where, "requestOptional needs a request");
     if (seen.has(route.operationId))
       fail(where, `operationId "${route.operationId}" is used twice`);
     seen.add(route.operationId);
@@ -627,7 +630,12 @@ export function openapi(definitions, routes) {
       ...messages,
       ...(parameters.length ? { parameters } : {}),
       ...(route.request
-        ? { requestBody: { required: true, content: named(route.request) } }
+        ? {
+            requestBody: {
+              required: route.requestOptional !== true,
+              content: named(route.request),
+            },
+          }
         : {}),
       responses,
     };

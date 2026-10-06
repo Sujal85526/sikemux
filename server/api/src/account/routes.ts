@@ -1,10 +1,11 @@
-import type { AccountDeletion } from "@sikemux/protocol";
+import type { AccountDeletion, PushApp } from "@sikemux/protocol";
 import { Hono } from "hono";
 
 import { requireIdentity, type AuthEnv, type Verifier } from "../auth.ts";
 import type { Database } from "../db.ts";
-import { ApiFailure } from "../http.ts";
+import { ApiFailure, readOptionalBody } from "../http.ts";
 import { limit, type RateLimiter } from "../limits.ts";
+import { revokeAppleSignIn, type AppleSignIn } from "./apple.ts";
 import type { ClerkBackend } from "./clerk.ts";
 import { deleteInClerk, markDeleted } from "./deletion.ts";
 
@@ -16,6 +17,8 @@ export function accountRoutes(
   verifier: Verifier,
   limiter: RateLimiter,
   clerk: ClerkBackend | null,
+  apple: AppleSignIn | null,
+  app: PushApp,
 ) {
   return new Hono<AuthEnv>()
     .use(requireIdentity(verifier, db, { allowDeleted: true }))
@@ -40,6 +43,7 @@ export function accountRoutes(
           identity.factorAgeMinutes > REVERIFY_MINUTES
         )
           throw new ApiFailure(403, "reverify_required", "reverify");
+        const request = await readOptionalBody(c, "AccountDeletionRequest");
 
         const deletion = await markDeleted(db, {
           userId: identity.userId,
@@ -49,6 +53,11 @@ export function accountRoutes(
         });
         const log = c.get("log");
         log.info({ at: deletion.requestedAt }, "deleted an account");
+        await revokeAppleSignIn(db, apple, clerk, log, {
+          userId: identity.userId,
+          code: request?.appleAuthorizationCode,
+          app,
+        });
         const deleted =
           deletion.deletedInClerk ||
           (await deleteInClerk(db, clerk, log, identity.userId));

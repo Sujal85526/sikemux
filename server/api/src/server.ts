@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 import type { Server } from "node:http";
 
+import { appleSignIn } from "./account/apple.ts";
 import { clerkBackend } from "./account/clerk.ts";
 import { sweepClerk } from "./account/clerk-sweeper.ts";
 import { createApp } from "./app.ts";
@@ -32,6 +33,16 @@ export function startServer(config: Config, log: Logger) {
   if (!clerk)
     log.warn(
       "CLERK_SECRET_KEY is not set: deleted accounts and removed phones' sessions wait to be deleted in Clerk",
+    );
+  const apple = config.appleSignIn ? appleSignIn(config.appleSignIn) : null;
+  if (apple)
+    log.info(
+      { keyId: config.appleSignIn?.keyId },
+      "revoking Sign in with Apple when accounts are deleted",
+    );
+  else
+    log.warn(
+      "APPLE_SIGNIN_KEY_FILE is not set: deleting an account cannot revoke Sign in with Apple",
     );
   if (!config.clerkWebhookSecret)
     log.warn("CLERK_WEBHOOK_SECRET is not set: Clerk's webhooks are refused");
@@ -80,6 +91,7 @@ export function startServer(config: Config, log: Logger) {
     verifier,
     limiter,
     clerk,
+    appleSignIn: apple,
     webhookSecret: config.clerkWebhookSecret,
     network: config.network,
     push: config.push,

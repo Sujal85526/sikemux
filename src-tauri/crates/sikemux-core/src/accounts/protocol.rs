@@ -11,6 +11,15 @@ pub struct AccountDeletion {
     pub requested_at: String,
 }
 
+/// What the phone may send when it deletes an account. The body can be left out.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountDeletionRequest {
+    /// A code Sign in with Apple gave the phone moments ago. The server trades it for a token and revokes that, so Apple stops treating the person as signed in to Sikemux.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub apple_authorization_code: Option<String>,
+}
+
 /// Deleted once Clerk confirms it deleted the sign-in too; deleting until then, while the server retries.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum AccountDeletionStatus {
@@ -574,6 +583,7 @@ pub(crate) fn round_trip(name: &str, json: &str) -> Option<super::RoundTrip> {
     use super::through;
     Some(match name {
         "AccountDeletion" => through::<AccountDeletion>(json),
+        "AccountDeletionRequest" => through::<AccountDeletionRequest>(json),
         "AccountDeletionStatus" => through::<AccountDeletionStatus>(json),
         "AccountEvent" => through::<AccountEvent>(json),
         "AccountEventType" => through::<AccountEventType>(json),

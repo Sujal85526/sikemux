@@ -188,10 +188,16 @@
       "operationId": "deleteAccount",
       "summary": "Delete your account and take every device off it",
       "auth": "session",
+      "request": "AccountDeletionRequest",
+      "requestOptional": true,
       "responses": {
         "202": {
-          "description": "The account is deleted here. Repeating the call answers the same way.",
+          "description": "The account is deleted here. Repeating the call answers the same way. Revoking Sign in with Apple is tried once, and the deletion goes ahead whether or not it works.",
           "body": "AccountDeletion"
+        },
+        "400": {
+          "description": "The body is not a valid AccountDeletionRequest.",
+          "body": "ApiError"
         },
         "403": {
           "description": "Only the phone and web app may delete an account, after verifying the sign-in again in the last 10 minutes (message reverify).",

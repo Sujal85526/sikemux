@@ -465,6 +465,33 @@ describe("bundle and openapi", () => {
     ).toThrow(/auth is one of none, session, device, webhook/);
   });
 
+  it("marks a request body the caller may leave out", () => {
+    const withErrors = new Map([
+      ...collect(device),
+      ...collect(document("common.json", { ApiError: { type: "string" } })),
+    ]);
+    const route = {
+      method: "post",
+      path: "/v1/devices",
+      operationId: "registerDevice",
+      summary: "",
+      auth: "session",
+      request: "Device",
+      responses: {},
+    };
+    const body = (extra: object) =>
+      openapi(withErrors, { routes: [{ ...route, ...extra }] }).paths[
+        "/v1/devices"
+      ].post.requestBody.required;
+    expect(body({})).toBe(true);
+    expect(body({ requestOptional: true })).toBe(false);
+    expect(() =>
+      openapi(withErrors, {
+        routes: [{ ...route, request: undefined, requestOptional: true }],
+      }),
+    ).toThrow(/requestOptional needs a request/);
+  });
+
   it("refuses routes outside /v1", () => {
     expect(() =>
       openapi(collect(device), {

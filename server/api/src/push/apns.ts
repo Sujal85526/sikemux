@@ -1,5 +1,3 @@
-import { createPrivateKey, sign, type KeyObject } from "node:crypto";
-import { readFileSync } from "node:fs";
 import {
   connect,
   constants,
@@ -10,14 +8,8 @@ import {
 
 import type { ApnsEnvironment, PushApp } from "@sikemux/protocol";
 
+import { signAppleToken, type AppleKey } from "../apple-key.ts";
 import type { Delivery, PushMessage, PushProvider } from "./provider.ts";
-
-/** The token-signing key Apple hands out as a .p8 file, and who it belongs to. */
-export interface ApnsKey {
-  keyId: string;
-  teamId: string;
-  privateKey: KeyObject;
-}
 
 /** Each build of the phone app is its own topic: the bundle id it was signed as. */
 export const APNS_TOPICS: Record<PushApp, string> = {
@@ -40,45 +32,12 @@ export const GENERIC_ALERT = {
   body: "An agent on your computer needs you",
 };
 
-/** Reads a .p8 key file, throwing a message that names what is wrong with it. */
-export function readApnsKey(path: string): KeyObject {
-  let pem: string;
-  try {
-    pem = readFileSync(path, "utf8");
-  } catch (error) {
-    throw new Error(
-      `cannot be read (${(error as NodeJS.ErrnoException).code ?? "unknown error"})`,
-      { cause: error },
-    );
-  }
-  let key: KeyObject;
-  try {
-    key = createPrivateKey(pem);
-  } catch {
-    throw new Error("is not a PEM private key");
-  }
-  if (
-    key.asymmetricKeyType !== "ec" ||
-    key.asymmetricKeyDetails?.namedCurve !== "prime256v1"
-  )
-    throw new Error("is not a P-256 key, as Apple's .p8 keys are");
-  return key;
-}
-
-function base64url(value: string | Buffer): string {
-  return Buffer.from(value).toString("base64url");
-}
-
 /** The ES256 provider token Apple checks on every request. */
-export function signProviderToken(key: ApnsKey, nowMs: number): string {
-  const header = { alg: "ES256", kid: key.keyId };
-  const claims = { iss: key.teamId, iat: Math.floor(nowMs / 1000) };
-  const unsigned = `${base64url(JSON.stringify(header))}.${base64url(JSON.stringify(claims))}`;
-  const signature = sign("sha256", Buffer.from(unsigned), {
-    key: key.privateKey,
-    dsaEncoding: "ieee-p1363",
+export function signProviderToken(key: AppleKey, nowMs: number): string {
+  return signAppleToken(key, {
+    iss: key.teamId,
+    iat: Math.floor(nowMs / 1000),
   });
-  return `${unsigned}.${base64url(signature)}`;
 }
 
 export interface ApnsReply {
@@ -185,7 +144,7 @@ const DEAD = new Set([
  * take a card away.
  */
 export class ApnsProvider implements PushProvider {
-  private readonly key: ApnsKey;
+  private readonly key: AppleKey;
   private readonly topic: string;
   private readonly endpoints: Record<ApnsEnvironment, string>;
   private readonly transport: ApnsTransport;
@@ -193,7 +152,7 @@ export class ApnsProvider implements PushProvider {
   private readonly now: () => number;
   private providerToken: { value: string; refreshAt: number } | null = null;
 
-  constructor(key: ApnsKey, options: ApnsOptions) {
+  constructor(key: AppleKey, options: ApnsOptions) {
     this.key = key;
     this.topic = options.topic;
     this.endpoints = options.endpoints ?? ENDPOINTS;

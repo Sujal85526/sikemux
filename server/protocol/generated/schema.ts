@@ -15,6 +15,21 @@ export const schema = {
       required: ["status", "requestedAt"],
       additionalProperties: false,
     },
+    AccountDeletionRequest: {
+      description:
+        "What the phone may send when it deletes an account. The body can be left out.",
+      type: "object",
+      properties: {
+        appleAuthorizationCode: {
+          description:
+            "A code Sign in with Apple gave the phone moments ago. The server trades it for a token and revokes that, so Apple stops treating the person as signed in to Sikemux.",
+          type: "string",
+          minLength: 1,
+          maxLength: 512,
+        },
+      },
+      additionalProperties: false,
+    },
     AccountDeletionStatus: {
       description:
         "Deleted once Clerk confirms it deleted the sign-in too; deleting until then, while the server retries.",

@@ -86,6 +86,7 @@ export function testApp(
     verifier,
     limiter,
     clerk: null,
+    appleSignIn: null,
     webhookSecret: null,
     network: readNetwork({}, []),
     push: { app: "production", allowSandbox: false },

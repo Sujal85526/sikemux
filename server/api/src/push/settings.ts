@@ -1,8 +1,7 @@
-import type { KeyObject } from "node:crypto";
-
 import type { PushApp } from "@sikemux/protocol";
 
-import { APNS_TOPICS, readApnsKey, type ApnsKey } from "./apns.ts";
+import { readAppleKeySettings, type AppleKey } from "../apple-key.ts";
+import { APNS_TOPICS } from "./apns.ts";
 import { readServiceAccount, type ServiceAccount } from "./fcm.ts";
 
 export interface PushSettings {
@@ -13,13 +12,10 @@ export interface PushSettings {
   /** The Firebase service account FCM sends as, or null when Android pushes are not set up. */
   fcm: ServiceAccount | null;
   /** The key APNs takes this server's pushes with, or null when iPhone pushes are not set up. */
-  apns: (ApnsKey & { topic: string }) | null;
+  apns: (AppleKey & { topic: string }) | null;
 }
 
 const APPS: readonly PushApp[] = ["production", "dev"];
-
-/** Apple's key and team ids are ten capital letters and digits. */
-const APPLE_ID = /^[A-Z0-9]{10}$/;
 
 /**
  * Reads PUSH_APP ("production" by default), APNS_ALLOW_SANDBOX ("1" to allow),
@@ -63,21 +59,6 @@ function readApns(
   app: PushApp,
   problems: string[],
 ): PushSettings["apns"] {
-  const path = env.APNS_KEY_FILE?.trim();
-  if (!path) return null;
-  const keyId = env.APNS_KEY_ID?.trim() ?? "";
-  const teamId = env.APNS_TEAM_ID?.trim() ?? "";
-  const before = problems.length;
-  if (!APPLE_ID.test(keyId))
-    problems.push("APNS_KEY_ID is not a key id like ABC123DEFG");
-  if (!APPLE_ID.test(teamId))
-    problems.push("APNS_TEAM_ID is not a team id like D577WD6Z5U");
-  let privateKey: KeyObject | undefined;
-  try {
-    privateKey = readApnsKey(path);
-  } catch (error) {
-    problems.push(`APNS_KEY_FILE ${path} ${(error as Error).message}`);
-  }
-  if (!privateKey || problems.length > before) return null;
-  return { keyId, teamId, privateKey, topic: APNS_TOPICS[app] };
+  const key = readAppleKeySettings(env, "APNS", problems);
+  return key && { ...key, topic: APNS_TOPICS[app] };
 }
