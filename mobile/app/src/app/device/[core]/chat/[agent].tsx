@@ -366,7 +366,7 @@ const makeStyles = (colors: Palette) => {
     more: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
     transcript: { flex: 1, borderTopWidth: 1, borderTopColor: colors.border },
     alone: { justifyContent: 'flex-end' },
-    content: { paddingHorizontal: 18, paddingTop: 6, paddingBottom: 12 },
+    content: { paddingHorizontal: 18, paddingTop: 6, paddingBottom: 28 },
     jump: {
       position: 'absolute',
       bottom: 8,
