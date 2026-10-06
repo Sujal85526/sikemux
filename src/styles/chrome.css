@@ -170,13 +170,12 @@
     line-height: 1.4;
     pointer-events: none;
 }
-/* Anchored to the bottom so the newest words stay in view as the text grows. */
+/* Scrolls rather than clips; the caption keeps the newest words in view. */
 .voice-caption-lines {
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-    max-height: 2lh;
-    overflow: hidden;
+    max-height: 4lh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    pointer-events: auto;
 }
 .voice-caption p {
     margin: 0;
