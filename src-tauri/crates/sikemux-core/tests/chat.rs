@@ -72,6 +72,7 @@ impl Drop for TestCore {
                 ClientMessage::Hello {
                     protocol: PROTOCOL.into(),
                     version: PROTOCOL_VERSION,
+                    newest: None,
                 },
                 ClientMessage::Request {
                     request_id: 1,

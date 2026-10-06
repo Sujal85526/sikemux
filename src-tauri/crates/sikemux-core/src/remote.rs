@@ -31,7 +31,7 @@ pub async fn connect_with(
             .open_bi()
             .await
             .map_err(|error| ClientError::Handshake(error.to_string()))?;
-        CoreClient::connect_streams(recv, send, sink).await
+        CoreClient::connect_device_streams(recv, send, sink).await
     }
     .await;
     opened.map_err(|error| match connection.close_reason() {

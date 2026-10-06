@@ -107,6 +107,7 @@ fn shutdown_sync(socket: &Path) {
     let hello = ClientMessage::Hello {
         protocol: PROTOCOL.into(),
         version: PROTOCOL_VERSION,
+        newest: None,
     };
     let shutdown = ClientMessage::Request {
         request_id: 1,
@@ -299,6 +300,7 @@ async fn handshake_succeeds_and_a_wrong_version_is_rejected() {
     let hello = ClientMessage::Hello {
         protocol: PROTOCOL.into(),
         version: PROTOCOL_VERSION + 1,
+        newest: None,
     };
     stream
         .write_all(&encode_control(&hello).expect("hello"))

@@ -19,7 +19,7 @@ use sikemux_core::accounts::protocol::{JoinTicket, Relay};
 use sikemux_core::client::{ClientError, CoreClient, EventSink, Reply};
 use sikemux_core::join::{JoinHello, JoinReply};
 use sikemux_core::protocol::{
-    CallId, Event, NotifyPrefs, Request, Response, SessionId, WindowCall, PROTOCOL_VERSION,
+    CallId, Event, NotifyPrefs, Request, Response, SessionId, WindowCall, OLDEST_PROTOCOL_VERSION,
 };
 use sikemux_core::remote;
 use tokio::sync::mpsc;
@@ -86,8 +86,8 @@ pub enum MobileError {
     Connection { message: String },
     #[error("{message}")]
     Invalid { message: String },
-    /// The host and this app speak different versions of the core's protocol.
-    #[error("this host and this app need the same Sikemux release")]
+    /// The host and this app have no version of the core's protocol in common.
+    #[error("{}", if *mac_is_older { "update Sikemux on this host to reach it from this app" } else { "update this app to reach this host" })]
     Outdated { mac_is_older: bool },
     /// The host forgot this phone, so it has to join again.
     #[error("this host no longer knows this phone; connect to it again")]
@@ -105,7 +105,7 @@ impl From<ClientError> for MobileError {
         match error {
             ClientError::Core(message) => MobileError::Refused { message },
             ClientError::VersionMismatch { version, .. } => MobileError::Outdated {
-                mac_is_older: version < PROTOCOL_VERSION,
+                mac_is_older: version < OLDEST_PROTOCOL_VERSION,
             },
             ClientError::NotPaired => MobileError::Unpaired,
             other => MobileError::Connection {
@@ -1039,6 +1039,27 @@ mod tests {
         assert!(matches!(
             MobileError::from(ClientError::Disconnected),
             MobileError::Connection { .. }
+        ));
+    }
+
+    #[test]
+    fn a_host_that_turns_this_phone_away_is_named_the_older_by_the_newest_it_speaks() {
+        let mismatch = |version| {
+            MobileError::from(ClientError::VersionMismatch {
+                version,
+                pid: 1,
+                message: String::new(),
+            })
+        };
+        assert!(matches!(
+            mismatch(OLDEST_PROTOCOL_VERSION - 1),
+            MobileError::Outdated { mac_is_older: true }
+        ));
+        assert!(matches!(
+            mismatch(OLDEST_PROTOCOL_VERSION),
+            MobileError::Outdated {
+                mac_is_older: false
+            }
         ));
     }
 

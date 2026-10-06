@@ -20,6 +20,10 @@ use crate::cli::protocol::{CliOpenRequest, HarnessRequest};
 
 pub const PROTOCOL: &str = "sikemux-core";
 pub const PROTOCOL_VERSION: u32 = 9;
+/// The oldest version a device may speak and still be served. A change a
+/// device from an older release can still read bumps only `PROTOCOL_VERSION`,
+/// so phones waiting on an app store review keep working.
+pub const OLDEST_PROTOCOL_VERSION: u32 = 9;
 /// How long a core waits for a sleeping chat it was asked to wake to come
 /// back up, its agent's adapter and CLI with it. A device waits longer, so the
 /// core's reason for giving up reaches it.
@@ -180,9 +184,13 @@ pub struct Frame {
     rename_all_fields = "camelCase"
 )]
 pub enum ClientMessage {
+    /// A client speaks every version from `version` to `newest`. A core from
+    /// before versions were agreed reads only `version`, so it is the oldest.
     Hello {
         protocol: String,
         version: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        newest: Option<u32>,
     },
     Request {
         request_id: RequestId,
@@ -190,19 +198,14 @@ pub enum ClientMessage {
     },
     /// The client has finished with this many output bytes of a session it is
     /// attached to. Never answered.
-    Ack {
-        id: SessionId,
-        bytes: usize,
-    },
+    Ack { id: SessionId, bytes: usize },
     /// The window's answer to a [`ServerMessage::WindowCall`].
     WindowReply {
         call_id: CallId,
         answer: WindowAnswer,
     },
     /// Every editor tab a waiting `open` call opened has closed.
-    WindowOpenClosed {
-        call_id: CallId,
-    },
+    WindowOpenClosed { call_id: CallId },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -703,14 +706,16 @@ pub struct Continuation {
     rename_all_fields = "camelCase"
 )]
 pub enum ServerMessage {
+    /// `version` is the one both sides speak from here on.
     HelloAck {
         protocol: String,
         version: u32,
         pid: u32,
         build: BuildIdentity,
     },
-    /// Sent instead of `HelloAck` when the client speaks another version; the
-    /// core then closes the connection.
+    /// Sent instead of `HelloAck` when the client speaks no version the core
+    /// does; `version` is the newest the core speaks. The core then closes
+    /// the connection.
     HelloRejected {
         protocol: String,
         version: u32,

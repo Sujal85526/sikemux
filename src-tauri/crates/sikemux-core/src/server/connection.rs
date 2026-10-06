@@ -11,7 +11,7 @@ use tokio::sync::{mpsc, Notify};
 use crate::protocol::{
     decode_input, encode_control, fits, read_frame, ClientMessage, Event, FrameKind,
     HostRegistration, LaunchIdentity, Request, RequestId, Response, ServerMessage, SessionId,
-    SpawnTarget, PROTOCOL, PROTOCOL_VERSION,
+    SpawnTarget, OLDEST_PROTOCOL_VERSION, PROTOCOL, PROTOCOL_VERSION,
 };
 
 use super::access::{self, Needs, Peer};
@@ -173,6 +173,19 @@ async fn write_direct(writer: &mut FrameWriter, message: &ServerMessage) {
     }
 }
 
+/// The newest version both sides speak. The app and its own core ship
+/// together and must match, so a local client that differs is told to
+/// replace the core.
+fn agreed_version(peer: &Peer, oldest: u32, newest: u32) -> Option<u32> {
+    let core_oldest = if peer.is_local() {
+        PROTOCOL_VERSION
+    } else {
+        OLDEST_PROTOCOL_VERSION
+    };
+    let agreed = newest.min(PROTOCOL_VERSION);
+    (agreed >= oldest.max(core_oldest)).then_some(agreed)
+}
+
 async fn handshake(
     core: &Arc<Core>,
     peer: &Peer,
@@ -194,35 +207,33 @@ async fn handshake(
     }
     let pid = std::process::id();
     match serde_json::from_slice::<ClientMessage>(&frame.payload) {
-        Ok(ClientMessage::Hello { protocol, version })
-            if protocol == PROTOCOL && version == PROTOCOL_VERSION =>
-        {
-            write_direct(
-                writer,
-                &ServerMessage::HelloAck {
+        Ok(ClientMessage::Hello {
+            protocol,
+            version,
+            newest,
+        }) => {
+            let newest = newest.unwrap_or(version);
+            let agreed = (protocol == PROTOCOL)
+                .then(|| agreed_version(peer, version, newest))
+                .flatten();
+            let reply = match agreed {
+                Some(agreed) => ServerMessage::HelloAck {
                     protocol: PROTOCOL.into(),
-                    version: PROTOCOL_VERSION,
+                    version: agreed,
                     pid,
                     build: core.build.clone(),
                 },
-            )
-            .await;
-            true
-        }
-        Ok(ClientMessage::Hello { protocol, version }) => {
-            write_direct(
-                writer,
-                &ServerMessage::HelloRejected {
+                None => ServerMessage::HelloRejected {
                     protocol: PROTOCOL.into(),
                     version: PROTOCOL_VERSION,
                     pid,
                     message: format!(
-                        "this core speaks {PROTOCOL} version {PROTOCOL_VERSION}, the client asked for {protocol} version {version}"
+                        "this core speaks {PROTOCOL} version {PROTOCOL_VERSION}, the client asked for {protocol} versions {version} to {newest}"
                     ),
                 },
-            )
-            .await;
-            false
+            };
+            write_direct(writer, &reply).await;
+            agreed.is_some()
         }
         _ => {
             write_direct(
@@ -971,5 +982,33 @@ mod tests {
         assert_eq!(super::unreadable_request_id(later), Some(12));
         assert_eq!(super::unreadable_request_id(br#"{"type":"ack"}"#), None);
         assert_eq!(super::unreadable_request_id(b"not json"), None);
+    }
+
+    #[test]
+    fn a_device_is_served_in_the_newest_version_both_sides_speak() {
+        use super::{agreed_version, Peer, OLDEST_PROTOCOL_VERSION, PROTOCOL_VERSION};
+        let phone = Peer::Device { id: "phone".into() };
+        let (oldest, newest) = (OLDEST_PROTOCOL_VERSION, PROTOCOL_VERSION);
+        assert_eq!(agreed_version(&phone, oldest, oldest), Some(oldest));
+        assert_eq!(agreed_version(&phone, oldest, newest + 3), Some(newest));
+        assert_eq!(agreed_version(&phone, newest + 1, newest + 3), None);
+        assert_eq!(agreed_version(&phone, oldest - 2, oldest - 1), None);
+        assert_eq!(agreed_version(&Peer::Local, newest, newest), Some(newest));
+        assert_eq!(agreed_version(&Peer::Local, newest - 1, newest - 1), None);
+    }
+
+    #[test]
+    fn a_hello_from_before_versions_were_agreed_still_reads() {
+        let hello: crate::protocol::ClientMessage =
+            serde_json::from_str(r#"{"type":"hello","protocol":"sikemux-core","version":9}"#)
+                .expect("reads");
+        assert!(matches!(
+            hello,
+            crate::protocol::ClientMessage::Hello {
+                version: 9,
+                newest: None,
+                ..
+            }
+        ));
     }
 }
