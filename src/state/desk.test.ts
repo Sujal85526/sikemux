@@ -1,6 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { browserApi } from "../api/browser";
-import { closeDeskItem, openDesk, openDeskTerminal, openFileOnDesk, removeDeskPane, revealDesk, selectDeskItem, toggleDesk } from "./commands";
+import {
+    closeDeskItem,
+    cycleDeskTab,
+    openDesk,
+    openDeskTerminal,
+    openFileOnDesk,
+    removeDeskPane,
+    revealDesk,
+    selectDeskItem,
+    toggleDesk,
+} from "./commands";
 import { deskEditorId, deskItemsOf, shownDeskItem } from "./desks";
 import { taskPtyBindings } from "../tasks/nativeRuntime";
 import { collectPanes } from "./layout";
@@ -225,6 +235,30 @@ describe("the desk", () => {
         expect(getState().desks["agent-1"].terminals).toEqual([]);
         const items = deskItemsOf(getState(), "agent-1");
         expect(shownDeskItem(getState().desks["agent-1"], items)).toBe("file:/code/a.ts");
+    });
+
+    it("shows the next terminal when a terminal closes, even with a file between them", () => {
+        const first = openDeskTerminal("agent-1", { terminalKey: "task-web", label: "Web", cwd: "/code" });
+        openFileOnDesk("agent-1", "/code/a.ts");
+        setState({ editorViews: { [deskEditorId("agent-1")]: { openTabs: ["/code/a.ts"], activePath: "/code/a.ts" } } } as never);
+        openDeskTerminal("agent-1", { terminalKey: "task-api", label: "API", cwd: "/code" });
+        const api = deskItemsOf(getState(), "agent-1").find((item) => item.kind === "terminal" && item.terminal.label === "API")!;
+
+        closeDeskItem("agent-1", api);
+
+        expect(getState().desks["agent-1"].active).toBe(`terminal:${first}`);
+    });
+
+    it("steps through the tabs of the kind on show and skips the others", () => {
+        const web = openDeskTerminal("agent-1", { terminalKey: "task-web", label: "Web", cwd: "/code" });
+        openFileOnDesk("agent-1", "/code/a.ts");
+        setState({ editorViews: { [deskEditorId("agent-1")]: { openTabs: ["/code/a.ts"], activePath: "/code/a.ts" } } } as never);
+        const api = openDeskTerminal("agent-1", { terminalKey: "task-api", label: "API", cwd: "/code" });
+
+        cycleDeskTab("agent-1", 1);
+        expect(getState().desks["agent-1"].active).toBe(`terminal:${web}`);
+        cycleDeskTab("agent-1", 1);
+        expect(getState().desks["agent-1"].active).toBe(`terminal:${api}`);
     });
 
     it("shows a file that is picked from the strip in the desk's editor", () => {

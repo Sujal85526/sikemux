@@ -1,11 +1,12 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode, type RefObject } from "react";
 import { animate } from "../lib/motion";
 import { deskAppearing, onDeskMotion } from "../state/deskMotion";
 import { browserApi, BLANK_URL, type BrowserBounds, type BrowserHole, type BrowserSnapshot } from "../api/browser";
 import { onStageFrame, stageMoving, useNativeViewHoles, useNativeViewsOccluded, useStageMoving, type NativeViewHole } from "../state/nativeViews";
 import type { AgentType, PtyContext, Session, Window as WindowT } from "../state/types";
 import { reportError } from "../state/toast";
-import { AgentIcon, IconChevron, IconPlus, IconRefresh, WindowIcon } from "../ui/Icons";
+import { AgentIcon, IconChevron, IconCommand, IconEditor, IconGlobe, IconPlus, IconRefresh, WindowIcon } from "../ui/Icons";
+import { Tooltip } from "../ui/Tooltip";
 import { FileIcon } from "../ui/FileIcon";
 import { SiteIcon } from "../ui/SiteIcon";
 import { AddressBar } from "./AddressBar";
@@ -22,9 +23,13 @@ import {
     EMPTY_DESK,
     EMPTY_STRIP,
     isShown,
+    itemOfKind,
     shownDeskItem,
+    shownKind,
     takeDeskRestore,
     terminalKey,
+    type DeskItem,
+    type DeskKind,
 } from "../state/desks";
 import { TerminalPane } from "../terminal/TerminalPane";
 import { basename } from "../lib/paths";
@@ -108,8 +113,8 @@ function measurePage(host: HTMLElement): Placement {
 
 /**
  * An agent's desk, as an ordinary leaf in the window layout: its browser
- * pages, the files it opened and the task terminals it started, under one
- * strip.
+ * pages, the files it opened and the task terminals it started, one kind
+ * at a time.
  *
  * It is a sibling of the agent it belongs to rather than something drawn
  * inside it, so it is split, resized, focused and closed by the same layout
@@ -222,6 +227,18 @@ function DeskSession({
     const restoring = useStore((state) => !!state.deskRestores[paneId]);
     const items = useMemo(() => deskItems(desk, snapshot, files), [desk, snapshot, files]);
     const shown = shownDeskItem(desk, items);
+    const kind = shownKind(shown);
+    const kindItems = useMemo(() => items.filter((item) => item.kind === kind), [items, kind]);
+
+    const lastShown = useRef(new Map<DeskKind, string>());
+    useEffect(() => {
+        if (kind && shown) lastShown.current.set(kind, shown);
+    }, [kind, shown]);
+    const showKind = (next: DeskKind) => {
+        const item = itemOfKind(items, next, snapshot, lastShown.current.get(next));
+        if (item) cmd.selectDeskItem(agentId, item);
+        else if (next === "browser") cmd.newBrowserTab(agentId);
+    };
 
     const refresh = useCallback(async () => {
         await refreshBrowserStrip(agentId);
@@ -270,7 +287,7 @@ function DeskSession({
         onEmpty();
     }, [desk.reveal, items.length, onEmpty, restoring, visible]);
 
-    const tabs = items.map((item): TabDescriptor => {
+    const tabs = kindItems.map((item): TabDescriptor => {
         const tabActive = isShown(item, shown, snapshot);
         if (item.kind === "browser") {
             const { tab } = item;
@@ -333,23 +350,26 @@ function DeskSession({
 
     return (
         <section ref={sectionRef} className={`desk ${agentType}`} data-desk data-agent-id={agentId} aria-label={`${agentType} desk`}>
-            <TabBar
-                variant="desk"
-                ariaLabel="Desk tabs"
-                tabs={tabs}
-                onSelect={(key) => {
-                    const item = itemFor(key);
-                    if (item) cmd.selectDeskItem(agentId, item);
-                }}
-                onClose={(key) => {
-                    const item = itemFor(key);
-                    if (item) cmd.closeDeskItem(agentId, item);
-                }}
-                onAdd={() => cmd.newBrowserTab(agentId)}
-                addIcon={<IconPlus size={13} />}
-                addTitle={withShortcut("New browser tab", newTabShortcut)}
-                addLabel="New browser tab"
-            />
+            <div className="desk-head">
+                <DeskKinds items={items} shown={kind} agentType={agentType} onShow={showKind} />
+                <TabBar
+                    variant="desk"
+                    ariaLabel="Desk tabs"
+                    tabs={tabs}
+                    onSelect={(key) => {
+                        const item = itemFor(key);
+                        if (item) cmd.selectDeskItem(agentId, item);
+                    }}
+                    onClose={(key) => {
+                        const item = itemFor(key);
+                        if (item) cmd.closeDeskItem(agentId, item);
+                    }}
+                    onAdd={kind === "browser" || kind === null ? () => cmd.newBrowserTab(agentId) : undefined}
+                    addIcon={<IconPlus size={13} />}
+                    addTitle={withShortcut("New browser tab", newTabShortcut)}
+                    addLabel="New browser tab"
+                />
+            </div>
             <div className="desk-body">
                 <BrowserPage
                     paneId={paneId}
@@ -391,6 +411,51 @@ function DeskSession({
                 })}
             </div>
         </section>
+    );
+}
+
+const KINDS: { kind: DeskKind; label: string; icon: ReactNode }[] = [
+    { kind: "browser", label: "Browser", icon: <IconGlobe size={14} /> },
+    { kind: "file", label: "Files", icon: <IconEditor size={14} /> },
+    { kind: "terminal", label: "Terminals", icon: <IconCommand size={14} /> },
+];
+
+/* Which kind of tab the strip beside it lists. A kind with nothing in it has
+   nothing to switch to, except the browser, which opens a page. */
+function DeskKinds({
+    items,
+    shown,
+    agentType,
+    onShow,
+}: {
+    items: readonly DeskItem[];
+    shown: DeskKind | null;
+    agentType: AgentType;
+    onShow: (kind: DeskKind) => void;
+}) {
+    return (
+        <div className="desk-kinds" role="tablist" aria-label="Desk views">
+            {KINDS.map(({ kind, label, icon }) => {
+                const ofKind = items.filter((item) => item.kind === kind);
+                const busy = kind !== shown && ofKind.some((item) => item.kind === "browser" && item.tab.acting);
+                const empty = ofKind.length === 0 && kind !== "browser";
+                const name = busy ? `${label}, ${agentType} is working here` : label;
+                return (
+                    <Tooltip key={kind} label={ofKind.length ? `${label} · ${ofKind.length}` : label}>
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={kind === shown}
+                            aria-label={name}
+                            disabled={empty}
+                            className={`desk-kind${kind === shown ? " on" : ""}${busy ? " busy" : ""}`}
+                            onClick={() => onShow(kind)}>
+                            {icon}
+                        </button>
+                    </Tooltip>
+                );
+            })}
+        </div>
     );
 }
 

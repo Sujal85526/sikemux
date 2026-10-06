@@ -62,19 +62,72 @@
    modern-shell.css. What is left here is the two things a desk tab does not
    share with a workspace tab: it sits over a pane of its own, and a page title
    is long enough to need a cap on how much room it may take. */
-.tabbar.v-desk {
-    gap: 2px;
+.desk-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     min-width: 0;
-    height: 34px;
-    padding-inline: 6px;
+    padding-left: 3px;
     border-bottom: 1px solid var(--border);
-    background: transparent;
 }
 
 /* One hairline between the desk's chrome and what it shows: on a page it runs
    under the address row instead of between the tabs and the address. */
-.desk:has(> .desk-body > .desk-page:not([hidden])) .tabbar.v-desk {
+.desk:has(> .desk-body > .desk-page:not([hidden])) .desk-head {
     border-bottom-color: transparent;
+}
+
+.desk-head .tabbar.v-desk {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100%;
+    padding-inline: 0 6px;
+    background: transparent;
+}
+
+/* The outline sits as far inside the desk's edge as the icons sit inside it. */
+.desk-kinds {
+    display: flex;
+    flex: none;
+    gap: 2px;
+    height: 27px;
+    padding: 3px;
+    border-radius: calc(var(--radius-2) + 3px);
+    box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.desk-kind {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 21px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--ink-faint);
+    cursor: pointer;
+    transition:
+        background-color var(--dur-1) linear,
+        color var(--dur-1) linear;
+}
+
+.desk-kind:hover:not(:disabled) {
+    background: var(--surface-hover);
+    color: var(--ink);
+}
+
+.desk-kind.on {
+    background: color-mix(in srgb, var(--ink) 7%, transparent);
+    color: var(--acc);
+}
+
+.desk-kind.busy {
+    color: var(--desk-agent);
+}
+
+.desk-kind:disabled {
+    opacity: 0.4;
+    cursor: default;
 }
 
 /* A width, not a share of the strip or a flex basis. The tab list is as wide

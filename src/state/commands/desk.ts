@@ -13,6 +13,7 @@ import {
     fileKey,
     isShown,
     shownDeskItem,
+    shownKind,
     terminalKey,
     type DeskItem,
 } from "../desks";
@@ -377,10 +378,10 @@ export function closeDeskItem(agentId: string, item: DeskItem): void {
     const items = deskItemsOf(getState(), agentId);
     const desk = getState().desks[agentId] ?? EMPTY_DESK;
     const shown = shownDeskItem(desk, items);
-    const strip = getState().browserStrips[agentId];
-    if (strip && isShown(item, shown, strip)) {
-        const at = items.findIndex((candidate) => candidate.key === item.key);
-        const next = items[at + 1] ?? items[at - 1];
+    if (isShown(item, shown, getState().browserStrips[agentId] ?? EMPTY_STRIP)) {
+        const sameKind = items.filter((candidate) => candidate.kind === item.kind);
+        const at = sameKind.findIndex((candidate) => candidate.key === item.key);
+        const next = sameKind[at + 1] ?? sameKind[at - 1] ?? items.find((candidate) => candidate.key !== item.key);
         if (next) selectDeskItem(agentId, next);
     }
     if (item.kind === "browser") {
@@ -413,11 +414,13 @@ export function closeShownDeskTab(agentId: string): boolean {
     return !!item;
 }
 
+/** Moves along the tabs of the kind on show; the other kinds are a switch away. */
 export function cycleDeskTab(agentId: string, delta: number): void {
     const state = getState();
-    const items = deskItemsOf(state, agentId);
+    const everything = deskItemsOf(state, agentId);
+    const shown = shownDeskItem(state.desks[agentId] ?? EMPTY_DESK, everything);
+    const items = everything.filter((item) => item.kind === shownKind(shown));
     if (items.length < 2) return;
-    const shown = shownDeskItem(state.desks[agentId] ?? EMPTY_DESK, items);
     const current = Math.max(
         0,
         items.findIndex((item) => isShown(item, shown, state.browserStrips[agentId] ?? EMPTY_STRIP)),
