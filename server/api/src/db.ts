@@ -95,6 +95,18 @@ export interface Tables {
     update_id: string;
     channel: string;
     assigned_at: CreatedAt;
+    withdrawn_at: ColumnType<Date | null, never, Date | null>;
+  };
+  update_rollbacks: {
+    id: Generated<string>;
+    update_id: string;
+    platform: string;
+    runtime_version: string;
+    channel: string;
+    directive: Buffer;
+    signature: string;
+    commit_time: Date;
+    assigned_at: CreatedAt;
   };
   audit: {
     id: Generated<string>;

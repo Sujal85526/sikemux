@@ -13,8 +13,40 @@ import { startServer } from "./server.ts";
 import {
   promoteUpdate,
   publishUpdate,
+  rollBackUpdate,
   UpdateRefused,
+  withdrawUpdate,
 } from "./updates/publish.ts";
+
+const UPDATE_COMMANDS = [
+  "publish-update",
+  "promote-update",
+  "withdraw-update",
+  "roll-back-update",
+];
+const MAX_DIRECTIVE_FILE_BYTES = 16 * 1024;
+
+const updatesCertificate = () =>
+  readFileSync(new URL("./updates-certificate.pem", import.meta.url), "utf8");
+
+/** Reads the `{ directive, signature }` file CI sends to roll phones back. */
+function readDirectiveFile(path: string) {
+  const bytes = readFileSync(path);
+  if (bytes.length > MAX_DIRECTIVE_FILE_BYTES)
+    throw new UpdateRefused("The directive file is too large.");
+  let value: unknown;
+  try {
+    value = JSON.parse(bytes.toString("utf8"));
+  } catch {
+    throw new UpdateRefused("The directive file is not JSON.");
+  }
+  const { directive, signature } = (value ?? {}) as Record<string, unknown>;
+  if (typeof directive !== "string" || typeof signature !== "string")
+    throw new UpdateRefused(
+      "The directive file must hold a directive and a signature, both strings.",
+    );
+  return { directive: Buffer.from(directive, "utf8"), signature };
+}
 
 function startLogging(level: Level) {
   const log = createLogger(level);
@@ -49,7 +81,7 @@ if (command === "serve") {
   } finally {
     await database.close();
   }
-} else if (command === "publish-update" || command === "promote-update") {
+} else if (UPDATE_COMMANDS.includes(command)) {
   const config = loadMigrationConfig(process.env);
   const log = startLogging(config.logLevel);
   const [first, second] = process.argv.slice(3);
@@ -63,10 +95,7 @@ if (command === "serve") {
       const published = await publishUpdate(database.db, {
         dir: resolve(first),
         assetsDir: resolve(second),
-        certificate: readFileSync(
-          new URL("./updates-certificate.pem", import.meta.url),
-          "utf8",
-        ),
+        certificate: updatesCertificate(),
       });
       log.info(
         published,
@@ -74,6 +103,26 @@ if (command === "serve") {
           ? "published an update"
           : "the update was already published",
       );
+    } else if (command === "withdraw-update") {
+      if (!first) throw new UpdateRefused("usage: withdraw-update <update id>");
+      const withdrawn = await withdrawUpdate(database.db, first);
+      log.info(
+        withdrawn,
+        withdrawn.channels.length > 0
+          ? "withdrew an update"
+          : "the update was already withdrawn",
+      );
+    } else if (command === "roll-back-update") {
+      if (!first || !second)
+        throw new UpdateRefused(
+          "usage: roll-back-update <update id> <directive file>",
+        );
+      const rolledBack = await rollBackUpdate(database.db, {
+        id: first,
+        ...readDirectiveFile(resolve(second)),
+        certificate: updatesCertificate(),
+      });
+      log.info(rolledBack, "rolled phones back from an update");
     } else {
       if (!first) throw new UpdateRefused("usage: promote-update <update id>");
       const promoted = await promoteUpdate(database.db, first);
@@ -107,7 +156,7 @@ if (command === "serve") {
 } else {
   startLogging("info").fatal(
     { command },
-    "unknown command; use serve, migrate, purge, publish-update or promote-update",
+    `unknown command; use serve, migrate, purge or ${UPDATE_COMMANDS.join(", ")}`,
   );
   process.exitCode = 2;
 }

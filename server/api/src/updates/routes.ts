@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { Hono } from "hono";
+import { sql } from "kysely";
 
 import type { Database } from "../db.ts";
 import { ApiFailure, type Env } from "../http.ts";
@@ -18,7 +19,10 @@ const RESPONSE_HEADERS = {
   "cache-control": "private, max-age=0",
 };
 
-/** Expo's update protocol, version 1. Phones send headers, not JSON, so it sits outside /v1. */
+/**
+ * Expo's update protocol, version 1. Phones send headers, not JSON, so it sits outside /v1. Each
+ * channel serves whatever was put on it last: an update, or a signed order to roll back.
+ */
 export function updateRoutes({ db }: Database, limiter: RateLimiter) {
   return new Hono<Env>().get(
     "/manifest",
@@ -53,46 +57,67 @@ export function updateRoutes({ db }: Database, limiter: RateLimiter) {
           `expo-channel-name is one of ${CHANNELS.join(", ")}.`,
         );
 
-      const update = await db
-        .selectFrom("updates")
-        .innerJoin("update_channels", "update_channels.update_id", "updates.id")
-        .select(["updates.id", "updates.manifest", "updates.signature"])
-        .where("updates.platform", "=", platform)
-        .where("updates.runtime_version", "=", runtimeVersion)
-        .where("update_channels.channel", "=", channel)
-        .orderBy("updates.created_at", "desc")
-        .orderBy("updates.published_at", "desc")
+      const part = await db
+        .selectFrom("update_rollbacks")
+        .select([
+          sql<string>`'directive'`.as("name"),
+          "directive as body",
+          "signature",
+          "assigned_at",
+        ])
+        .where("platform", "=", platform)
+        .where("runtime_version", "=", runtimeVersion)
+        .where("channel", "=", channel)
+        .unionAll(
+          db
+            .selectFrom("updates")
+            .innerJoin(
+              "update_channels",
+              "update_channels.update_id",
+              "updates.id",
+            )
+            .select([
+              sql<string>`'manifest'`.as("name"),
+              "updates.manifest as body",
+              "updates.signature",
+              "update_channels.assigned_at",
+            ])
+            .where("updates.platform", "=", platform)
+            .where("updates.runtime_version", "=", runtimeVersion)
+            .where("update_channels.channel", "=", channel)
+            .where("update_channels.withdrawn_at", "is", null),
+        )
+        .orderBy("assigned_at", "desc")
+        .orderBy("name")
         .limit(1)
         .executeTakeFirst();
 
       for (const [name, value] of Object.entries(RESPONSE_HEADERS))
         c.header(name, value);
       // Protocol 1 reads an empty 204 as "nothing new", which needs no signature.
-      if (!update) return c.body(null, 204);
+      if (!part) return c.body(null, 204);
 
-      const boundary = boundaryFor(update.manifest);
+      const boundary = boundaryFor(part.body);
       const head = Buffer.from(
         [
           `--${boundary}`,
           "content-type: application/json; charset=utf-8",
-          'content-disposition: form-data; name="manifest"',
-          `expo-signature: sig="${update.signature}", keyid="main", alg="rsa-v1_5-sha256"`,
+          `content-disposition: form-data; name="${part.name}"`,
+          `expo-signature: sig="${part.signature}", keyid="main", alg="rsa-v1_5-sha256"`,
           "",
           "",
         ].join("\r\n"),
       );
       const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
       c.header("content-type", `multipart/mixed; boundary=${boundary}`);
-      return c.body(
-        new Uint8Array(Buffer.concat([head, update.manifest, tail])),
-      );
+      return c.body(new Uint8Array(Buffer.concat([head, part.body, tail])));
     },
   );
 }
 
-function boundaryFor(manifest: Buffer): string {
+function boundaryFor(body: Buffer): string {
   for (;;) {
     const boundary = `sikemux-${randomBytes(16).toString("hex")}`;
-    if (!manifest.includes(boundary)) return boundary;
+    if (!body.includes(boundary)) return boundary;
   }
 }
