@@ -302,6 +302,24 @@
   .docked-acts span { flex: 1; height: 38px; border-radius: 10px; display: grid; place-items: center; font-size: 14px; font-weight: 500; border: 1px solid var(--border-strong); color: var(--ink); }
   .docked-acts span:first-child { color: var(--text-secondary); }
   .docked-acts .go { background: var(--ink); border-color: var(--ink); color: var(--bg); font-weight: 600; }
+  .docked .dock-cmd.long { max-height: 96px; overflow: hidden; white-space: pre-wrap; word-break: break-all; }
+  .dock-cmd .diff { display: block; margin-top: 4px; }
+  .reconnect { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-overlay); font-size: 13px; color: var(--text-secondary); }
+  .reconnect > span:nth-child(2) { flex: 1; min-width: 0; }
+  .reconnect b { font-weight: 600; color: var(--ink); }
+  .reconnect .no { color: var(--danger); }
+  .msg-user.failed { border-color: var(--danger); margin-bottom: 4px; }
+  .unsent { align-self: flex-end; display: flex; align-items: center; gap: 5px; margin-bottom: 8px; font-size: 12px; font-weight: 500; color: var(--ink-faint); }
+  .unsent .no { color: var(--danger); }
+  .unsent b { font-weight: 500; color: var(--ink); }
+  .commands { display: flex; flex-direction: column; gap: 4px; margin: 0 0 8px; }
+  .commands span { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-overlay); font-size: 13px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; }
+  .commands code { font-family: var(--mono); color: var(--acc); }
+  .tool-detail { margin: 4px 0 6px 24px; padding: 9px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-sunken); font-family: var(--mono); font-size: 11px; line-height: 16px; color: var(--text-secondary); white-space: pre; overflow: hidden; }
+  .tool-detail .a { color: var(--git-added); }
+  .tool-detail .d { color: var(--git-deleted); }
+  .tool-detail .gap { color: var(--ink-faint); }
+  .tool-detail.failure { color: var(--danger); white-space: pre-wrap; }
 
   /* model and effort sheet */
   .picker-sheet { padding: 8px 16px 46px; }
@@ -1338,7 +1356,7 @@
         <div class="composer-wrap">
           <div class="docked">
             <div class="docked-head">{{IconShieldBolt:16}}<div><b>Run a command?</b><span>Claude Code needs permission to continue</span></div></div>
-            <div class="dock-cmd"><b>$</b> pnpm test src/settings</div>
+            <div class="dock-cmd long"><b>$</b>pnpm test src/settings &amp;&amp; git add src/settings &amp;&amp; git commit -m "test(settings): cover the pairing QR" &amp;&amp; rm -rf build/.cache</div>
             <div class="docked-acts"><span>Reject</span><span>Always allow</span><span class="go">Allow</span></div>
           </div>
           <div class="composer">
@@ -1356,7 +1374,7 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Asking permission</b><div class="note">A card of its own just above the composer, inside the chat, and it stays until it is answered: no drawer, no scrim, nothing to fold away. It keeps its own border and corners, with a gap, so the composer never looks to cover it. Allow is the one white button.</div></figcaption>
+      <figcaption><b>Asking permission</b><div class="note">A card of its own just above the composer, inside the chat, and it stays until it is answered: no drawer, no scrim, nothing to fold away. It keeps its own border and corners, with a gap, so the composer never looks to cover it. Allow is the one white button. The command is all there, as typed, in the code face; a long one scrolls inside the card, so nothing at its end hides behind Allow. An edit adds its +/− count. Once a button is tapped they all dim and take no second tap until the host has the answer, and when the agent offers no way to say no, Cancel comes first.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1463,6 +1481,109 @@
           <div class="msg-user">Show the download size next to the button.</div>
           <div class="tools"><span class="tools-sum">2 tool calls <span class="time">3s</span>{{IconChevron:11}}</span></div>
           <div class="prose">Done. The size comes from the latest release's DMG at build time, then from the visitor's browser.</div>
+          <div class="msg-user failed">Make it say "MB" with one decimal</div>
+          <div class="unsent"><span class="no">{{IconWarning:12}}</span><span class="no">Not sent</span>·<b>Retry</b></div>
+        </div>
+        <div class="composer-wrap">
+          <div class="reconnect"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span>Reconnecting to MacBook Pro…</span><b>Try now</b></div>
+          <div class="composer">
+            <div class="ta ph">Reconnect to continue this conversation</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="ib">{{IconMic:17}}</span>
+              <span class="send off">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Out of reach</b><div class="note">When the host drops away the chat stays on screen and a bar over the composer says the phone is reconnecting, with Try now; once retries stop it says it can't reach the host and why. A message the host never took keeps its place with a red edge and "Not sent · Retry" under it. Going back and opening the chat again finds it as it was left, draft and queued message included.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span>Fix the flaky PTY replay test</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="tools">
+            <span class="tools-sum open">2 tool calls <span class="time">7s</span>{{IconChevron:11}}</span>
+            <div class="tools-body">
+              <div class="tool"><span class="tick"></span><span class="k-edit">{{IconPencil:12}}</span><span class="kind k-edit">edit</span><span class="target">ptyController.ts</span><span class="end"><span class="add">+2</span><span class="del">−1</span></span></div>
+              <div class="tool-detail"><span class="gap">⋯ 41 unchanged lines</span>
+  if (this.snapshotPending) {
+<span class="d">-   this.write(bytes);</span>
+<span class="a">+   this.held.push(bytes);</span>
+<span class="a">+   return;</span>
+  }</div>
+              <div class="tool"><span class="tick"></span><span style="color:var(--danger)">{{IconWarning:12}}</span><span class="kind" style="color:var(--danger)">run</span><span class="target">pnpm vitest run src/terminal</span><span class="end">6s</span></div>
+              <div class="tool-detail failure">FAIL usePty.test.tsx &gt; replays the snapshot once
+expected 1 write, got 2</div>
+            </div>
+          </div>
+        </div>
+        <div class="composer-wrap">
+          <div class="reconnect"><span class="no">{{IconWarning:13}}</span><span>Could not stop the turn: the host is not connected.</span><span>{{IconClose:13}}</span></div>
+          <div class="composer">
+            <div class="ta">Run only the attach tests first</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">Medium<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="ib">{{IconMic:17}}</span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Opening a tool call</b><div class="note">A row that changed a file, printed something or failed opens on a tap: the change with a few lines around it, what it printed, or why it failed, scrolling inside its own box. Groups and rows stay as they were left while the list scrolls. Something the phone asked for that did not happen, like a stop or a setting, shows over the composer until it is dismissed. Stop also hands a queued message back to the composer instead of sending it.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Remote pairing screen</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="prose">The pairing screen builds and the Devices page shows the waiting phone.</div>
+        </div>
+        <div class="composer-wrap">
+          <div class="commands">
+            <span><code>/compact</code>Clear the history but keep a summary</span>
+            <span><code>/context</code>Show what fills the context</span>
+            <span><code>/cost</code>Show what this session cost</span>
+          </div>
+          <div class="composer focus">
+            <div class="ta">/c<span class="caret"></span></div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="ib">{{IconMic:17}}</span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Slash commands</b><div class="note">The placeholder offers "/ for commands" only when the agent has some. Typing a slash lists the ones that start with what is typed, each in its own box, and a tap puts it in the composer.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Download size on the hero</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="msg-user">Show the download size next to the button.</div>
+          <div class="tools"><span class="tools-sum">2 tool calls <span class="time">3s</span>{{IconChevron:11}}</span></div>
+          <div class="prose">Done. The size comes from the latest release's DMG at build time, then from the visitor's browser.</div>
         </div>
         <div class="scrim"></div>
         <div class="sheet picker-sheet">
@@ -1524,13 +1645,18 @@
           <div class="prose">Done. The size comes from the latest release's DMG at build time, then from the visitor's browser, so it stays right between deploys.</div>
         </div>
         <div class="composer-wrap">
+          <div class="docked">
+            <div class="docked-head">{{IconShieldBolt:16}}<div><b>Change a file?</b><span>Claude Code needs permission to continue</span></div></div>
+            <div class="dock-cmd">src/settings/PairingQr.tsx<span class="diff"><span class="add">+18</span> <span class="del">−4</span></span></div>
+            <div class="docked-acts"><span>Reject</span><span class="go">Allow</span></div>
+          </div>
           <div class="composer" style="display:flex;align-items:center;gap:10px;padding:14px;color:var(--ink-dim);font-size:13.5px;line-height:1.45">
             {{IconEye:17}}<span>Watching. This phone can answer permission requests on MacBook Pro; the host can give it full access.</span>
           </div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Watch only</b><div class="note">Where the composer would be, one line saying what this phone may do and where that is decided.</div></figcaption>
+      <figcaption><b>Watch only</b><div class="note">Where the composer would be, one line saying what this phone may do and where that is decided. A permission request still docks above it, since a watching phone may answer one.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>

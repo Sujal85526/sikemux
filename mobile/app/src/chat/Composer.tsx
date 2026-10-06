@@ -1,24 +1,27 @@
-import { useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { memo, useRef, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 
+import { toolDiff } from '@mac/chat/diff';
 import { pickerSlots, sessionConfigs, type SessionConfig } from '@mac/chat/sessionConfig';
-import { toolKind, toolTarget } from '@mac/chat/toolLabels';
-import type { AcpPermissionRequest, ChatState } from '@mac/chat/types';
+import { toolKind, toolLabel, toolPath } from '@mac/chat/toolLabels';
+import type { AcpAvailableCommand, AcpPermissionRequest, AcpToolCall, ChatState } from '@mac/chat/types';
 import { providerName } from '@/devices/words';
 import { AgentIcon, Icon, isProvider } from '@/ui/Icon';
 import { Track, useKeyboardShown } from '@/ui/parts';
 import { Sheet } from '@/ui/Sheet';
-import { ComposerInput } from './ComposerInput';
 import { brand, fonts, type Palette, useColors, useStyles } from '@/ui/theme';
+import { ComposerInput } from './ComposerInput';
+import type { ChatSession } from './session';
+import { useDraft } from './useChat';
 
 function current(config?: SessionConfig): string | undefined {
   if (!config) return undefined;
   return config.options.find((option) => option.value === config.currentValue)?.label ?? config.currentValue;
 }
 
-function askTitle(request: AcpPermissionRequest): string {
+export function askTitle(request: AcpPermissionRequest): string {
   const kind = toolKind(request.toolCall);
   if (kind === 'run') return 'Run a command?';
   if (kind === 'edit' || kind === 'move' || kind === 'delete') return 'Change a file?';
@@ -26,14 +29,27 @@ function askTitle(request: AcpPermissionRequest): string {
   return 'Allow this?';
 }
 
-/** Sits above the composer until it is answered: the Mac's permission card, with the agent's own options. */
+/** All of what the agent asks to run or touch, since the end of a command can change what it does. */
+function asked(tool: AcpToolCall): string {
+  const command = (tool.rawInput as { command?: unknown } | undefined)?.command;
+  if (typeof command === 'string' && command.trim()) return command.trim();
+  if (Array.isArray(command) && command.every((word) => typeof word === 'string')) return command.join(' ');
+  return toolPath(tool) ?? toolLabel(tool.title).name.trim();
+}
+
+/**
+ * Sits above the composer until it is answered: the Mac's permission card, with the agent's own
+ * options, and Cancel when none of them says no.
+ */
 function PermissionDock({
   request,
   provider,
+  busy,
   onAnswer,
 }: {
   request: AcpPermissionRequest;
   provider: string;
+  busy: boolean;
   onAnswer: (optionId: string | null) => void;
 }) {
   const colors = useColors();
@@ -41,35 +57,49 @@ function PermissionDock({
   const rejects = request.options.filter((option) => option.kind.startsWith('reject'));
   const always = request.options.filter((option) => option.kind === 'allow_always');
   const once = request.options.filter((option) => option.kind === 'allow_once');
-  const ordered = [...rejects, ...always, ...once];
+  const cancel = rejects.length ? [] : [{ optionId: '', name: 'Cancel', kind: 'reject_once' }];
+  const ordered = [...cancel, ...rejects, ...always, ...once];
   const primary = once[0] ?? always[0];
+  const run = toolKind(request.toolCall) === 'run';
+  const diff = toolDiff(request.toolCall);
+  const title = askTitle(request);
   return (
-    <View style={styles.dock}>
+    <View
+      style={styles.dock}
+      accessibilityRole="alert"
+      accessibilityLabel={`${title} ${providerName(provider)} needs permission to continue`}>
       <View style={styles.dockHead}>
         <Icon name="IconShieldBolt" size={16} color={colors.ink} />
         <View style={{ flex: 1 }}>
-          <Text style={styles.dockTitle}>{askTitle(request)}</Text>
+          <Text style={styles.dockTitle}>{title}</Text>
           <Text style={styles.dockDetail}>{providerName(provider)} needs permission to continue</Text>
         </View>
       </View>
-      <View style={styles.dockCmd}>
-        <Text style={styles.dockCmdText} numberOfLines={3}>
-          {toolKind(request.toolCall) === 'run' ? <Text style={{ color: colors.toolRun }}>$ </Text> : null}
-          {toolTarget(request.toolCall)}
+      <ScrollView style={styles.dockCmd} contentContainerStyle={styles.dockCmdPad} nestedScrollEnabled>
+        <Text style={styles.dockCmdText} selectable>
+          {run ? <Text style={{ color: colors.toolRun }}>$ </Text> : null}
+          {asked(request.toolCall)}
         </Text>
-      </View>
+        {diff ? (
+          <Text style={[styles.dockCmdText, { marginTop: 4 }]}>
+            <Text style={{ color: colors.gitAdded }}>+{diff.adds}</Text> <Text style={{ color: colors.gitDeleted }}>−{diff.dels}</Text>
+          </Text>
+        ) : null}
+      </ScrollView>
       <View style={styles.dockActs}>
-        {(ordered.length ? ordered : [{ optionId: '', name: 'Cancel', kind: 'reject_once' }]).map((option) => {
+        {ordered.map((option) => {
           const go = option === primary;
           return (
             <Pressable
               key={option.optionId || option.name}
+              disabled={busy}
               onPress={() => {
                 Haptics.selectionAsync();
                 onAnswer(option.optionId || null);
               }}
-              style={({ pressed }) => [styles.act, go && styles.actGo, pressed && { opacity: 0.8 }]}
-              accessibilityRole="button">
+              style={({ pressed }) => [styles.act, go && styles.actGo, pressed && { opacity: 0.8 }, busy && { opacity: 0.5 }]}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: busy, busy }}>
               <Text
                 style={[styles.actText, go && styles.actGoText, option.kind.startsWith('reject') && { color: colors.secondary }]}
                 numberOfLines={1}>
@@ -79,6 +109,32 @@ function PermissionDock({
           );
         })}
       </View>
+    </View>
+  );
+}
+
+/** The agent's slash commands that start with what is typed, while only a command is typed. */
+function Commands({ commands, typed, onPick }: { commands: AcpAvailableCommand[]; typed: string; onPick: (name: string) => void }) {
+  const styles = useStyles(makeStyles);
+  const prefix = /^\/(\S*)$/.exec(typed)?.[1];
+  if (prefix === undefined) return null;
+  const matches = commands.filter((command) => command.name.startsWith(prefix)).slice(0, 6);
+  if (!matches.length) return null;
+  return (
+    <View style={styles.commands} accessibilityRole="menu">
+      {matches.map((command) => (
+        <Pressable
+          key={command.name}
+          onPress={() => onPick(command.name)}
+          style={({ pressed }) => [styles.command, pressed && { opacity: 0.8 }]}
+          accessibilityRole="menuitem"
+          accessibilityLabel={`/${command.name}, ${command.description}`}>
+          <Text style={styles.commandName}>/{command.name}</Text>
+          <Text style={styles.commandText} numberOfLines={1}>
+            {command.description}
+          </Text>
+        </Pressable>
+      ))}
     </View>
   );
 }
@@ -166,50 +222,69 @@ function ConfigSheet({
   );
 }
 
-export function Composer({
-  state,
+export const Composer = memo(function Composer({
+  session,
   provider,
+  running,
+  setup,
+  usage,
+  commands,
+  request,
+  answering,
   placeholder,
   permissionMode,
   watchOnly,
   offline,
-  onSend,
-  onStop,
-  onAnswer,
-  onConfig,
+  hostName,
+  onSent,
 }: {
-  state: ChatState;
+  session: ChatSession;
   provider: string;
+  running: boolean;
+  setup: ChatState['setup'];
+  usage: ChatState['usage'];
+  commands: AcpAvailableCommand[];
+  /** The permission request to answer first, if any. */
+  request: AcpPermissionRequest | undefined;
+  answering: boolean;
   placeholder: string;
   permissionMode: string;
   watchOnly: boolean;
   /** The host is out of reach, so a message is kept until it is back. */
   offline: boolean;
-  onSend: (text: string) => void;
-  onStop: () => void;
-  onAnswer: (requestId: string, optionId: string | null) => void;
-  onConfig: (configId: string, value: string) => void;
+  hostName: string;
+  onSent: () => void;
 }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
-  const [draft, setDraft] = useState('');
+  const draft = useDraft(session);
   const [focused, setFocused] = useState(false);
   const input = useRef<TextInput>(null);
   const [sheet, setSheet] = useState(false);
   const typing = useKeyboardShown();
-  const configs = sessionConfigs(state.setup);
+  const configs = sessionConfigs(setup);
   const slots = pickerSlots(configs, provider as never);
   const model = current(slots[0]?.config);
   const effort = current(slots[1]?.config);
-  const request = state.permissions[0];
   const yolo = permissionMode === 'bypass' || permissionMode === 'bypassPermissions' || permissionMode === 'full-access';
+  const dock = request ? (
+    <PermissionDock
+      request={request}
+      provider={provider}
+      busy={answering}
+      onAnswer={(option) => session.answer(request.requestId, option)}
+    />
+  ) : null;
 
   if (watchOnly) {
     return (
       <SafeAreaView edges={typing ? [] : ['bottom']} style={styles.wrap}>
+        {dock}
         <View style={[styles.composer, styles.watch]}>
           <Icon name="IconEye" size={17} color={colors.inkDim} />
-          <Text style={styles.watchText}>Watching. This phone can answer permission requests; the host can give it full access.</Text>
+          <Text style={styles.watchText}>
+            Watching. This phone can answer permission requests on {hostName}; the host can give it full access.
+          </Text>
         </View>
       </SafeAreaView>
     );
@@ -219,26 +294,29 @@ export function Composer({
     const text = draft.trim();
     if (!text || offline) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onSend(text);
+    session.send(text);
     // Clearing the state alone leaves text the keyboard is still composing.
     input.current?.clear();
-    setDraft('');
+    session.setDraft('');
+    onSent();
   };
 
   return (
     <SafeAreaView edges={typing ? [] : ['bottom']} style={styles.wrap}>
-      {request ? <PermissionDock request={request} provider={provider} onAnswer={(option) => onAnswer(request.requestId, option)} /> : null}
+      {dock}
+      <Commands commands={commands} typed={draft} onPick={(name) => session.setDraft(`/${name} `)} />
       <View style={[styles.composer, focused && { borderColor: colors.borderSelected }]}>
         <ComposerInput
           ref={input}
           value={draft}
-          onChangeText={setDraft}
+          onChangeText={session.setDraft}
           placeholder={placeholder}
+          accessibilityLabel="Message"
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
         />
         <View style={styles.bar}>
-          <View style={styles.yolo}>
+          <View style={styles.yolo} accessible accessibilityLabel={yolo ? 'Runs without asking' : 'Asks before acting'}>
             <Icon name={yolo ? 'IconShieldBolt' : 'IconShield'} size={13} color={yolo ? colors.accent : colors.inkFaint} />
             <Text style={[styles.yoloText, yolo && { color: colors.accent }]}>{yolo ? 'yolo' : 'safe'}</Text>
           </View>
@@ -247,7 +325,7 @@ export function Composer({
               style={styles.picker}
               onPress={() => setSheet(true)}
               accessibilityRole="button"
-              accessibilityLabel="Model and effort">
+              accessibilityLabel={`Model, ${model}`}>
               <AgentIcon provider={provider} size={16} />
               <Text style={[styles.pickerText, { color: colors.accent }]} numberOfLines={1}>
                 {model}
@@ -258,7 +336,11 @@ export function Composer({
             </Pressable>
           ) : null}
           {effort ? (
-            <Pressable style={styles.picker} onPress={() => setSheet(true)} accessibilityRole="button">
+            <Pressable
+              style={styles.picker}
+              onPress={() => setSheet(true)}
+              accessibilityRole="button"
+              accessibilityLabel={`Effort, ${effort}`}>
               <Text style={styles.pickerText}>{effort}</Text>
               <View style={{ transform: [{ rotate: '90deg' }], opacity: 0.6 }}>
                 <Icon name="IconChevron" size={10} color={colors.inkDim} />
@@ -266,18 +348,18 @@ export function Composer({
             </Pressable>
           ) : null}
           <View style={{ flex: 1 }} />
-          {draft.trim() || !state.running ? (
+          {draft.trim() || !running ? (
             <Pressable
               onPress={send}
               style={[styles.send, (!draft.trim() || offline) && { opacity: 0.28 }]}
               disabled={offline}
               accessibilityRole="button"
-              accessibilityLabel="Send"
+              accessibilityLabel={offline ? `Send, waiting for ${hostName}` : running ? 'Send after this turn' : 'Send'}
               accessibilityState={{ disabled: offline || !draft.trim() }}>
               <Icon name="IconArrowUp" size={16} color={colors.ground} />
             </Pressable>
           ) : (
-            <Pressable onPress={onStop} style={styles.send} accessibilityRole="button" accessibilityLabel="Stop">
+            <Pressable onPress={session.cancel} style={styles.send} accessibilityRole="button" accessibilityLabel="Stop">
               <View style={styles.stop} />
             </Pressable>
           )}
@@ -288,15 +370,15 @@ export function Composer({
         onClose={() => setSheet(false)}
         provider={provider}
         configs={configs}
-        usage={state.usage}
+        usage={usage}
         onPick={(config, value) => {
-          onConfig(config.id, value);
+          session.setConfig(config.id, value);
           setSheet(false);
         }}
       />
     </SafeAreaView>
   );
-}
+});
 
 const makeStyles = (colors: Palette) => {
   return StyleSheet.create({
@@ -325,13 +407,13 @@ const makeStyles = (colors: Palette) => {
     dockDetail: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.tertiary, marginTop: 1 },
     dockCmd: {
       marginTop: 10,
-      paddingVertical: 9,
-      paddingHorizontal: 11,
+      maxHeight: 150,
       borderRadius: 10,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.sunken,
     },
+    dockCmdPad: { paddingVertical: 9, paddingHorizontal: 11 },
     dockCmdText: { fontFamily: fonts.mono, fontSize: 12.5, lineHeight: 18, color: colors.ink },
     dockActs: { flexDirection: 'row', gap: 6, marginTop: 10 },
     act: {
@@ -347,6 +429,21 @@ const makeStyles = (colors: Palette) => {
     actGo: { backgroundColor: colors.ink, borderColor: colors.ink },
     actText: { fontFamily: fonts.uiMedium, fontSize: 14, color: colors.ink },
     actGoText: { fontFamily: fonts.uiSemibold, color: colors.ground },
+
+    commands: { gap: 4, marginBottom: 8 },
+    command: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      minHeight: 40,
+      paddingHorizontal: 12,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.overlay,
+    },
+    commandName: { fontFamily: fonts.mono, fontSize: 13, color: colors.accent },
+    commandText: { flex: 1, fontFamily: fonts.ui, fontSize: 13, color: colors.tertiary },
 
     sheetHead: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4 },
     sheetTitle: { fontFamily: fonts.uiSemibold, fontSize: 17, letterSpacing: -0.35, color: colors.ink },
