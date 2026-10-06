@@ -46,6 +46,7 @@
       ],
       "@clerk/expo",
       "@clerk/expo-google-signin",
+      "expo-apple-authentication",
       "./plugins/link-system-configuration",
       "./plugins/rustls-platform-verifier",
       "./plugins/small-apk",

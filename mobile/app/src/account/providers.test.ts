@@ -6,7 +6,8 @@ describe('the provider an account signs in with', () => {
   it('reads the names Clerk gives in the words the sign-in buttons use', () => {
     expect(providerName('oauth_google')).toBe('Google');
     expect(providerName('github')).toBe('GitHub');
-    expect(providerName('oauth_apple')).toBe('apple');
+    expect(providerName('oauth_apple')).toBe('Apple');
+    expect(providerName('oauth_gitlab')).toBe('gitlab');
     expect(providerName(undefined)).toBeUndefined();
   });
 });

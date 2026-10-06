@@ -1,4 +1,4 @@
-const PROVIDERS: Record<string, string> = { google: 'Google', github: 'GitHub' };
+const PROVIDERS: Record<string, string> = { google: 'Google', github: 'GitHub', apple: 'Apple' };
 
 /** The name of the provider an account signs in with, as Clerk calls it ("oauth_google" or "google"); none for email. */
 export function providerName(provider: string | undefined): string | undefined {
