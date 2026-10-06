@@ -4,16 +4,17 @@ import { paletteFrom, type Palette } from '@/ui/theme';
 import { reloadDevices, useDevices, useLive } from './hub';
 import { updateDevice } from './paired';
 
+/** The palettes used most recently, oldest first; enough for every paired host and a few theme changes. */
 const known = new Map<string, Palette>();
+const KEEP = 16;
 
 /** One palette object per set of colours, so styles built for it are built once. */
 function stable(colours: Record<string, string> | undefined): Palette {
   const key = JSON.stringify(colours ?? {});
-  let palette = known.get(key);
-  if (!palette) {
-    palette = paletteFrom(colours);
-    known.set(key, palette);
-  }
+  const palette = known.get(key) ?? paletteFrom(colours);
+  known.delete(key);
+  known.set(key, palette);
+  if (known.size > KEEP) known.delete(known.keys().next().value!);
   return palette;
 }
 
