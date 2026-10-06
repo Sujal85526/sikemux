@@ -80,6 +80,16 @@ export async function goOffline() {
   await device?.close();
 }
 
+/**
+ * Makes this phone a new device: the account may still hold the old key, and anything it signed for
+ * that account must not follow the phone into another one.
+ */
+export async function rotateDeviceKey(): Promise<void> {
+  await SecureStore.deleteItemAsync(KEY_ITEM, KEY_OPTIONS);
+  identity = undefined;
+  await goOffline();
+}
+
 /** This phone's key. */
 export function useDeviceId(): string | undefined {
   const [id, setId] = useState<string>();

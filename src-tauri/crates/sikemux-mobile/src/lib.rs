@@ -304,25 +304,6 @@ impl Device {
         self.key.public().to_string()
     }
 
-    /// This phone's signature, in hex, over the text that registers it with
-    /// the account `user_id`, for the accounts server's challenge `nonce`.
-    pub fn sign_registration(&self, nonce: String, user_id: String) -> Result<String, MobileError> {
-        sign_registration(&self.key, &nonce, &user_id)
-    }
-
-    /// This phone's signature, in hex, that proves its key on the accounts
-    /// server's live connection, for that connection's challenge `nonce`.
-    pub fn sign_live(&self, nonce: String) -> Result<String, MobileError> {
-        sign_live(&self.key, &nonce)
-    }
-
-    /// This phone's signature, in hex, that sends its notifications to the push
-    /// token whose SHA-256 is `token_sha256`, for the accounts server's
-    /// challenge `nonce`.
-    pub fn sign_push(&self, nonce: String, token_sha256: String) -> Result<String, MobileError> {
-        sign_push(&self.key, &nonce, &token_sha256)
-    }
-
     /// Hands the host whose key is `core` the `ticket` the accounts server
     /// signed for it and this phone, as its JSON, and waits while the person
     /// there decides. An allowed phone is paired with the host.

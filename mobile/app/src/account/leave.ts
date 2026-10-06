@@ -2,7 +2,7 @@ import { forget } from '@/devices/hub';
 import { pairedDevices } from '@/devices/paired';
 import { choose } from '@/notify/setting';
 import { forgetPush } from '@/notify/token';
-import { rotateDeviceKey } from '@/device/rotate';
+import { rotateDeviceKey } from '@/device/identity';
 import { goHome } from '@/ui/navigate';
 import { sayFarewell, type Farewell } from './farewell';
 import { forgetCursor, stopLive } from './live';
