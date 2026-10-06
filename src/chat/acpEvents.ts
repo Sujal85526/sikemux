@@ -1,5 +1,5 @@
 import type { AcpEvent } from "../api/acp";
-import type { AcpPermissionRequest, ChatAction } from "./types";
+import type { AcpPermissionRequest, ChatAction, ChatFailure } from "./types";
 
 export function recordOf(value: unknown): Record<string, unknown> | null {
     return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
@@ -40,4 +40,12 @@ export function promptAction(payload: Record<string, unknown>): ChatAction | nul
     if (typeof payload.text !== "string") return null;
     const paths = Array.isArray(payload.paths) ? payload.paths.filter((path): path is string => typeof path === "string") : [];
     return { type: "local_prompt", text: payload.text, paths };
+}
+
+/** Why a turn failed, when the core says it was the account's doing. */
+export function failureOf(event: AcpEvent): ChatFailure | undefined {
+    const failure = recordOf(event.payload.failure);
+    const kind = failure?.kind;
+    if (kind !== "signIn" && kind !== "limit" && kind !== "other") return undefined;
+    return { kind, account: typeof failure?.account === "string" ? failure.account : null };
 }

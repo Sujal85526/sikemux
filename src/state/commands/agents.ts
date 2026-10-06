@@ -85,6 +85,21 @@ export function setAgentModelPreferences(id: string, model: string | undefined, 
     });
 }
 
+/** Puts the agent on another of the person's accounts, keeping its session: the chat moved there and carries on. */
+export function setAgentAccount(id: string, profileId: string): void {
+    mutate((d) => {
+        const agent = d.agents[id];
+        const profile = d.providerProfiles.find((item) => item.id === profileId && item.provider === agent?.type);
+        if (!agent || !profile || agent.profileId === profile.id) return;
+        agent.profileId = profile.id;
+        const options = profileLaunchOptions(profile, agent.model, agent.effort);
+        const executable = profile.executablePath || agent.executablePath;
+        const mode = agent.permissionMode ?? (agent.skipPermissions ? "bypass" : "workspace-write");
+        agent.startup = agentStartup(agent.type, agent.resumeId, mode, executable, options);
+        agent.directCommand = agentDirectCommand(agent.type, agent.resumeId, mode, executable, options);
+    });
+}
+
 export function setAgentPermissionMode(id: string, requestedMode: AgentPermissionMode): void {
     mutate((d) => {
         const currentAgent = d.agents[id];

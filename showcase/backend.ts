@@ -347,6 +347,14 @@ export class ShowcaseBackend implements IpcTransport {
       "agent_usage",
       ({ agent }) => AGENT_USAGE[agent as keyof typeof AGENT_USAGE] ?? null,
     );
+    this.on("agent_account_status", ({ agent }) => ({
+      signedIn: true,
+      email: "edon@acme.dev",
+      plan: null,
+      organization: null,
+      method: "subscription",
+      sessions: `/demo/${String(agent)}/sessions`,
+    }));
     this.on("acp_attach", () => ({ status: "missing" }));
     this.on("acp_list", () => []);
     this.on("pty_sessions", () => []);

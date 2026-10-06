@@ -229,6 +229,10 @@
     color: var(--danger);
 }
 
+.chat-notice.account .chat-notice-name {
+    font-family: inherit;
+}
+
 .chat-notice-summary {
     min-width: 0;
     overflow: hidden;

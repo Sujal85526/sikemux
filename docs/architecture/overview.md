@@ -274,6 +274,15 @@ An agent runs on one of two transports.
   `CHAT_AGENT_TYPES` in `src/agents/agentLaunch.ts` lists the chat-capable agents, and
   `src/chat/AgentSurface.tsx` switches one agent between chat and terminal views.
 
+**Accounts.** A Claude or Codex account is a provider profile whose directory holds one
+sign-in (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`). `src-tauri/src/agents/accounts.rs` makes extra
+ones as `~/.claude-<name>` or `~/.codex-<name>`, links the default directory's chats and
+settings into them, and signs in and out through the CLI's own login. A chat agent holds its
+sign-in from when it started, so `server/chat/connection.rs` starts it again on the same
+session when `acp/account.rs` reads a different account in its files, or when a turn fails
+asking for a sign-in. At a usage limit it moves the chat to the next signed-in account the
+launch names, when the person turned that on, and says so in the transcript.
+
 **Harness tools.** Agents on both transports get Sikemux's tools through
 `sikemux-editor --tools-mcp`. `src-tauri/src/browser/agents.rs` knows how to register it with
 each agent host. Tools are declared once in `browser/tools.json`, one-line descriptions

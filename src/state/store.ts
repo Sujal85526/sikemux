@@ -93,6 +93,8 @@ export interface DomainState {
     railDensity: RailDensity;
     /** The agent rail shows every CLI's chats instead of one provider's. */
     agentRailAllAgents: boolean;
+    /** Providers whose chats move to the next signed-in account when one runs out of usage. */
+    accountAutoSwitch: Partial<Record<"claude" | "codex", boolean>>;
     agentRailScope: AgentRailScope;
     onboardingComplete: boolean;
     lastSeenVersion: string;
@@ -262,6 +264,7 @@ export const useStore = create<StoreState>(() => {
         keptRunningNoticeShown: false,
         railDensity: "comfortable",
         agentRailAllAgents: false,
+        accountAutoSwitch: {},
         agentRailScope: "project",
         onboardingComplete: false,
         lastSeenVersion: "",

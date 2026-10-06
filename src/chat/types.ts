@@ -82,6 +82,20 @@ export interface AcpTaskNotice {
     summary?: string;
 }
 
+/** The chat moved to another of the person's accounts, by itself at a usage limit or when asked. */
+export interface AccountMove {
+    label: string;
+    from?: string;
+    reason: "limit" | "chosen";
+}
+
+/** Why the last turn failed, when it was the account's doing. */
+export interface ChatFailure {
+    kind: "signIn" | "limit" | "other";
+    /** The profile id of the account it failed on. */
+    account: string | null;
+}
+
 export type ChatPart =
     | { id: string; kind: "text"; text: string }
     | { id: string; kind: "thought"; text: string }
@@ -90,7 +104,8 @@ export type ChatPart =
        change it made, what it printed, and what it left behind when it failed. */
     | { id: string; kind: "tool"; tool: AcpToolCall; diff?: ToolDiff; output?: ToolOutput; failure?: string; startedAt?: number; endedAt?: number }
     | { id: string; kind: "subagent"; subagent: AcpSubagent }
-    | { id: string; kind: "notice"; notice: AcpTaskNotice };
+    | { id: string; kind: "notice"; notice: AcpTaskNotice }
+    | { id: string; kind: "account"; move: AccountMove };
 
 export interface ChatMessage {
     id: string;
@@ -124,6 +139,7 @@ export interface ChatState {
     running: boolean;
     suppressUserEcho: boolean;
     error: string | null;
+    failure: ChatFailure | null;
     title: string | null;
     stopReason: string | null;
     nextId: number;
@@ -143,7 +159,7 @@ export type ChatAction =
     | { type: "turn_completed"; stopReason?: string }
     | { type: "permission_requested"; request: AcpPermissionRequest }
     | { type: "permission_cleared"; requestId: string }
-    | { type: "error"; message: string };
+    | { type: "error"; message: string; failure?: ChatFailure };
 
 /* One run of a code fence that reads as one colour, and the lines they make up.
    A run with nothing set is plain text, which keeps the colour the stylesheet

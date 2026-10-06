@@ -13,6 +13,17 @@ export interface AcpStartOptions {
     model?: string;
     effort?: string;
     environmentKeys?: string[];
+    /** The account the agent signs in as. */
+    account?: AcpAccount;
+    /** Accounts the chat moves to, in order, when its own runs out of usage. */
+    fallbacks?: AcpAccount[];
+}
+
+/** One of the person's accounts with the chat's provider: a profile, by its directory. */
+export interface AcpAccount {
+    id: string;
+    label: string;
+    configPath?: string;
 }
 
 export interface AcpStartResponse {
@@ -90,6 +101,8 @@ export const acpApi = {
             model: options.model ?? null,
             effort: options.effort ?? null,
             environmentKeys: options.environmentKeys ?? [],
+            account: options.account ?? null,
+            fallbacks: options.fallbacks ?? [],
         }),
     attach: (options: AcpAttachOptions): Promise<AcpAttachment> =>
         invoke<AcpAttachment>("acp_attach", {
@@ -112,6 +125,8 @@ export const acpApi = {
     permissionReply: (agentId: string, requestId: string, optionId?: string): Promise<void> =>
         invoke<void>("acp_permission_reply", { agentId, requestId, optionId: optionId ?? null }),
     stop: (agentId: string): Promise<void> => invoke<void>("acp_stop", { agentId }),
+    switchAccount: (agentId: string, provider: AgentType, account: AcpAccount): Promise<void> =>
+        invoke<void>("acp_switch_account", { agentId, provider, account }),
     subscribe: (listener: (event: AcpEvent) => void, signal?: AbortSignal): Promise<IpcUnsubscribe> =>
         getIpcTransport().subscribe<AcpEvent>("acp_event", (event) => listener(event.payload), { signal }),
 };

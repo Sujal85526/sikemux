@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState, type Dispatch } from "react";
 import { acpApi, type AcpEvent, type AcpStartResponse } from "../api/acp";
 import type { Agent, AgentPermissionMode, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
+import { getState } from "../state/store";
+import { acpAccount, fallbackAccounts } from "../agents/accounts";
 import type { FoldMemory } from "./longText";
-import { eventMessage, permissionRequest, promptAction, recordOf, statusFromEvent } from "./acpEvents";
+import { eventMessage, failureOf, permissionRequest, promptAction, recordOf, statusFromEvent } from "./acpEvents";
 import { permissionModeOf } from "./chatStatus";
 import { afterSessionEnd, sessionEndOf, type Recovery } from "./sessionRecovery";
 import { claimChat } from "./chatClaims";
@@ -39,6 +41,8 @@ export function useAcpSession({
     const updateTimerRef = useRef<number | null>(null);
     const agentRef = useRef(agent);
     agentRef.current = agent;
+    const profileRef = useRef(profile);
+    profileRef.current = profile;
     const sessionIdRef = useRef<string | null>(null);
     const lifecycleRef = useRef<Promise<unknown>>(Promise.resolve());
     /* Set when the core came back still running this chat: the session is
@@ -124,6 +128,15 @@ export function useAcpSession({
             }
         };
 
+        /* The chat already runs on the new account, so the agent is taken up
+           where it is rather than started again on it. */
+        const noteAccount = (profileId: string) => {
+            const known = getState().providerProfiles.some((item) => item.id === profileId && item.provider === agentRef.current.type);
+            if (!known || agentRef.current.profileId === profileId) return;
+            reattachingRef.current = true;
+            cmd.setAgentAccount(agent.id, profileId);
+        };
+
         const handleEvent = (event: AcpEvent) => {
             if (!mounted || event.agentId !== agent.id) return;
             if (event.kind !== "session_update") flushUpdates();
@@ -131,6 +144,9 @@ export function useAcpSession({
                 dispatch({ type: "status", state: statusFromEvent(event) });
                 noteEnd(event);
             } else if (event.kind === "ready") {
+                /* The core starts the agent again under a running chat after a
+                   sign-in or on another account, sometimes on a new session. */
+                if (typeof event.payload.sessionId === "string" && sessionIdRef.current) sessionIdRef.current = event.payload.sessionId;
                 dispatch({
                     type: "ready",
                     capabilities: recordOf(event.payload.capabilities) ?? {},
@@ -143,6 +159,7 @@ export function useAcpSession({
                     if (!row) continue;
                     const update = recordOf(row.update);
                     const sessionId = typeof row.sessionId === "string" ? row.sessionId : null;
+                    if (update?.sessionUpdate === "account_switched" && typeof update.account === "string") noteAccount(update.account);
                     if (update && sessionId) queueUpdate(sessionId, update);
                 }
             } else if (event.kind === "prompt") {
@@ -161,7 +178,7 @@ export function useAcpSession({
             } else if (event.kind === "permission_request") {
                 const request = permissionRequest(event.payload);
                 if (request) dispatch({ type: "permission_requested", request });
-            } else if (event.kind === "error") dispatch({ type: "error", message: eventMessage(event) });
+            } else if (event.kind === "error") dispatch({ type: "error", message: eventMessage(event), failure: failureOf(event) });
             else if (event.kind === "reattach") {
                 reattachingRef.current = true;
                 setRestartKey((value) => value + 1);
@@ -191,6 +208,8 @@ export function useAcpSession({
                     if (attached.status === "restart") await acpApi.stop(current.id);
                     if (!mounted) return;
                     appliedMode = permissionModeOf(current);
+                    const { providerProfiles, accountAutoSwitch } = getState();
+                    const account = profileRef.current;
                     response = await acpApi.start({
                         agentId: current.id,
                         provider: current.type,
@@ -202,6 +221,8 @@ export function useAcpSession({
                         model: current.model,
                         effort: current.effort,
                         environmentKeys: JSON.parse(environmentKeys) as string[],
+                        account: account ? acpAccount(account) : undefined,
+                        fallbacks: fallbackAccounts(account, providerProfiles, accountAutoSwitch),
                     });
                 }
                 if (!mounted) return;

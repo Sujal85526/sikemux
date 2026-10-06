@@ -264,6 +264,7 @@
 
 .chat-error {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     margin-top: 12px;
@@ -273,6 +274,36 @@
     background: color-mix(in srgb, var(--danger) 8%, transparent);
     color: color-mix(in srgb, var(--danger) 72%, var(--ink));
     font-size: var(--text-2xs);
+}
+
+.chat-error > span:not(.chat-error-actions) {
+    flex: 1 1 12em;
+    min-width: 0;
+    white-space: pre-line;
+}
+
+/* What fixes the failure sits beside it: a sign-in, or another account. */
+.chat-error-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+}
+
+.chat-error-actions button {
+    height: 26px;
+    padding: 0 10px;
+    border: 1px solid var(--line);
+    background: var(--rail-2);
+    color: var(--ink-dim);
+    font-size: calc(10.5px * var(--chat-text-em, 1));
+    white-space: nowrap;
+}
+
+.chat-error-actions button:hover {
+    border-color: var(--acc-line);
+    color: var(--ink);
 }
 
 .chat-permission {

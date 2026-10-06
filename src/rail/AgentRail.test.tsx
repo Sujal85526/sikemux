@@ -7,11 +7,23 @@ const mocks = vi.hoisted(() => ({
     saved: vi.fn(),
     recent: vi.fn(),
     usage: vi.fn(),
+    account: vi.fn(),
+    addAccount: vi.fn(),
+    signIn: vi.fn(),
     renameSession: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock("../api/agents", () => ({
-    agentApi: { available: mocks.available, recent: mocks.recent, usage: mocks.usage, renameSession: mocks.renameSession },
+    agentApi: {
+        available: mocks.available,
+        recent: mocks.recent,
+        usage: mocks.usage,
+        account: mocks.account,
+        addAccount: mocks.addAccount,
+        signIn: mocks.signIn,
+        onSignInPage: () => Promise.resolve(() => {}),
+        renameSession: mocks.renameSession,
+    },
 }));
 
 interface Saved {
@@ -99,7 +111,16 @@ beforeEach(() => {
             { label: "7d", usedPercent: 12, resetsAt: Math.floor(Date.now() / 1000) + 4 * 86_400, windowMinutes: 10_080 },
         ],
     });
-    invalidate((kind) => kind === "agents.catalog" || kind === "agents.sessions" || kind === "agents.usage");
+    mocks.account.mockImplementation(async (_agent: string, _executable?: string, configPath?: string) => ({
+        signedIn: true,
+        email: configPath ? "work@example.com" : "me@example.com",
+        plan: null,
+        organization: null,
+        method: "subscription",
+        sessions: "/home/me/.codex/sessions",
+    }));
+    mocks.signIn.mockResolvedValue(undefined);
+    invalidate((kind) => kind === "agents.catalog" || kind === "agents.sessions" || kind === "agents.usage" || kind === "agents.account");
 });
 
 afterEach(() => {
@@ -161,12 +182,12 @@ describe("agent rail", () => {
         const user = userEvent.setup();
         render(<AgentRailBody />);
 
-        expect(await screen.findByRole("region", { name: "Codex plan limits" })).toBeInTheDocument();
+        expect(await screen.findByRole("region", { name: "Codex accounts" })).toBeInTheDocument();
         expect(await screen.findByRole("meter", { name: "5h usage" })).toHaveAttribute("aria-valuenow", "37");
         expect(screen.getByText("reset 1h 30m")).toBeInTheDocument();
 
         await user.click(screen.getByRole("tab", { name: "Claude" }));
-        expect(await screen.findByRole("region", { name: "Claude plan limits" })).toBeInTheDocument();
+        expect(await screen.findByRole("region", { name: "Claude accounts" })).toBeInTheDocument();
         expect(await screen.findByRole("meter", { name: "7d usage" })).toHaveAttribute("aria-valuenow", "82");
         expect(mocks.usage).toHaveBeenCalledWith("codex", "codex", undefined);
         expect(mocks.usage).toHaveBeenCalledWith("claude", "claude", undefined);
@@ -194,7 +215,7 @@ describe("agent rail", () => {
         render(<AgentRailBody />);
 
         expect(await screen.findByRole("tab", { name: "Hermes" })).toBeInTheDocument();
-        expect(screen.queryByRole("region", { name: /plan limits/i })).not.toBeInTheDocument();
+        expect(screen.queryByRole("region", { name: /accounts/i })).not.toBeInTheDocument();
         expect(mocks.usage).not.toHaveBeenCalled();
     });
 
@@ -284,7 +305,7 @@ describe("agent rail", () => {
         expect(await screen.findByRole("button", { name: /Claude chat/ })).toBeInTheDocument();
         expect(screen.getByRole("button", { name: /Codex chat/ })).toBeInTheDocument();
         expect(getState().agentRailAllAgents).toBe(true);
-        expect(screen.queryByRole("region", { name: /plan limits/i })).not.toBeInTheDocument();
+        expect(screen.queryByRole("region", { name: /accounts/i })).not.toBeInTheDocument();
 
         await user.click(screen.getByRole("tab", { name: "Claude" }));
         expect(getState().agentRailAllAgents).toBe(false);
@@ -356,14 +377,15 @@ describe("agent rail", () => {
         await waitFor(() => expect(agentIdsOf(getState(), "sess-project")).not.toContain("agent-open"));
     });
 
-    it("shows no account picker when the provider has one account", async () => {
+    it("shows the one account without the switch that moves chats between accounts", async () => {
         render(<AgentRailBody />);
 
-        expect(await screen.findByRole("region", { name: "Codex plan limits" })).toBeInTheDocument();
-        expect(screen.queryByRole("button", { name: "Codex account" })).not.toBeInTheDocument();
+        expect(await screen.findByRole("region", { name: "Codex accounts" })).toBeInTheDocument();
+        expect(await screen.findByText("me@example.com")).toBeInTheDocument();
+        expect(screen.queryByRole("switch")).not.toBeInTheDocument();
     });
 
-    it("switches the account from the limits footer and reads the new account's limits and chats", async () => {
+    it("starts new chats on another account from its card and reads that account's limits and chats", async () => {
         mocks.available.mockImplementation(async (profiles: { type: string; configPath?: string }[]) => [
             {
                 type: "codex",
@@ -384,22 +406,21 @@ describe("agent rail", () => {
         const user = userEvent.setup();
         render(<AgentRailBody />);
 
-        expect(await screen.findByRole("button", { name: "Codex account" })).toHaveTextContent("Codex");
+        expect(await screen.findByText("work@example.com")).toBeInTheDocument();
         await waitFor(() => expect(mocks.usage).toHaveBeenCalledWith("codex", "codex", undefined));
+        await waitFor(() => expect(mocks.usage).toHaveBeenCalledWith("codex", "codex", "~/.codex-work"));
 
-        await user.click(screen.getByRole("button", { name: "Codex account" }));
-        await user.click(screen.getByRole("option", { name: /Work/ }));
+        await user.click(screen.getByRole("button", { name: "Use Work for new chats" }));
 
         expect(getState().selectedProviderProfileIds.codex).toBe("codex-work");
-        await waitFor(() => expect(mocks.usage).toHaveBeenCalledWith("codex", "codex", "~/.codex-work"));
         await waitFor(() =>
             expect(mocks.recent).toHaveBeenCalledWith(expect.objectContaining({ providers: [{ agent: "codex", configPath: "~/.codex-work" }] })),
         );
-        expect(screen.getByRole("button", { name: "Codex account" })).toHaveTextContent("Work");
+        expect(screen.getByRole("button", { name: "Work, used for new chats" })).toBeDisabled();
         expect(screen.getByRole("tab", { name: "Codex" })).toHaveAttribute("aria-selected", "true");
     });
 
-    it("opens the agents settings page from the account picker", async () => {
+    it("turns on moving chats to the next account once there are two", async () => {
         setState((state) => ({
             providerProfiles: [
                 ...state.providerProfiles,
@@ -409,11 +430,50 @@ describe("agent rail", () => {
         const user = userEvent.setup();
         render(<AgentRailBody />);
 
-        await user.click(await screen.findByRole("button", { name: "Codex account" }));
-        await user.click(screen.getByRole("option", { name: "Manage accounts…" }));
+        await user.click(await screen.findByRole("switch", { name: /Move Codex chats to another account/ }));
+        expect(getState().accountAutoSwitch.codex).toBe(true);
+    });
+
+    it("offers a sign-in for an account that is signed out", async () => {
+        mocks.account.mockResolvedValue({
+            signedIn: false,
+            email: null,
+            plan: null,
+            organization: null,
+            method: null,
+            sessions: "/home/me/.codex/sessions",
+        });
+        const user = userEvent.setup();
+        render(<AgentRailBody />);
+
+        expect(await screen.findByText("Signed out")).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Sign in" }));
+        await waitFor(() => expect(mocks.signIn).toHaveBeenCalledWith("codex", undefined, undefined));
+    });
+
+    it("adds an account in a folder of its own and signs it in", async () => {
+        mocks.addAccount.mockResolvedValue("~/.codex-work");
+        const user = userEvent.setup();
+        render(<AgentRailBody />);
+
+        await user.click(await screen.findByRole("button", { name: "Add a Codex account" }));
+        await user.type(screen.getByRole("textbox", { name: "New Codex account name" }), "Work{Enter}");
+
+        await waitFor(() => expect(mocks.addAccount).toHaveBeenCalledWith("codex", "Work"));
+        await waitFor(() =>
+            expect(getState().providerProfiles.some((profile) => profile.name === "Work" && profile.configPath === "~/.codex-work")).toBe(true),
+        );
+        await waitFor(() => expect(mocks.signIn).toHaveBeenCalledWith("codex", undefined, "~/.codex-work"));
+    });
+
+    it("opens the agents settings page from an account's menu", async () => {
+        const user = userEvent.setup();
+        render(<AgentRailBody />);
+
+        await user.click(await screen.findByRole("button", { name: "Codex account actions" }));
+        await user.click(screen.getByRole("menuitem", { name: "Account settings…" }));
 
         expect(getState()).toMatchObject({ settingsOpen: true, settingsPage: "agents" });
-        expect(getState().selectedProviderProfileIds.codex).toBe("builtin-codex");
     });
 
     it("asks for the next page as the list scrolls to its end", async () => {

@@ -121,6 +121,7 @@ const PERSISTED_KEYS = [
     "keptRunningNoticeShown",
     "railDensity",
     "agentRailAllAgents",
+    "accountAutoSwitch",
     "agentRailScope",
     "onboardingComplete",
     "lastSeenVersion",
@@ -185,6 +186,7 @@ function packPrefs(s: StoreState): PersistedPrefs {
         keptRunningNoticeShown: s.keptRunningNoticeShown,
         railDensity: s.railDensity,
         agentRailAllAgents: s.agentRailAllAgents,
+        accountAutoSwitch: s.accountAutoSwitch,
         agentRailScope: s.agentRailScope,
         onboardingComplete: s.onboardingComplete,
         lastSeenVersion: s.lastSeenVersion,
@@ -358,6 +360,13 @@ function normaliseProviderProfiles(value: unknown, fallback: ProviderProfile[]):
         if (profiles.length >= 50) break;
     }
     return profiles;
+}
+
+function normaliseAccountAutoSwitch(value: unknown): StoreState["accountAutoSwitch"] {
+    const saved = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+    const result: StoreState["accountAutoSwitch"] = {};
+    for (const provider of ["claude", "codex"] as const) if (saved[provider] === true) result[provider] = true;
+    return result;
 }
 
 function normaliseProviderProfileSelection(
@@ -1080,6 +1089,7 @@ export function applyHydrate(raw: string): HydrationResult {
         keptRunningNoticeShown: prefs.keptRunningNoticeShown === true,
         railDensity: prefs.railDensity === "compact" || prefs.railDensity === "comfortable" ? prefs.railDensity : cur.railDensity,
         agentRailAllAgents: prefs.agentRailAllAgents === true,
+        accountAutoSwitch: normaliseAccountAutoSwitch(prefs.accountAutoSwitch),
         agentRailScope: prefs.agentRailScope === "all" ? "all" : "project",
         onboardingComplete:
             typeof prefs.onboardingComplete === "boolean"

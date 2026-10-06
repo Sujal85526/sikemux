@@ -870,4 +870,27 @@ describe("chat reducer", () => {
 
         expect(orphan.messages[0].parts).toEqual(spawned.messages[0].parts);
     });
+
+    it("says in the transcript which account the chat moved to and why", () => {
+        const moved = update(initialChatState, {
+            sessionUpdate: "account_switched",
+            account: "work",
+            label: "Work",
+            from: "Personal",
+            reason: "limit",
+        });
+
+        expect(moved.messages).toHaveLength(1);
+        expect(moved.messages[0].parts[0]).toMatchObject({ kind: "account", move: { label: "Work", from: "Personal", reason: "limit" } });
+    });
+
+    it("keeps why a turn failed until the chat runs again", () => {
+        const ready = chatReducer(initialChatState, { type: "ready", capabilities: {}, setup: {} });
+        const failed = chatReducer(ready, { type: "error", message: "You've hit your limit", failure: { kind: "limit", account: "personal" } });
+        expect(failed.failure).toEqual({ kind: "limit", account: "personal" });
+
+        const restarting = chatReducer(failed, { type: "status", state: "starting" });
+        expect(restarting.failure).toBeNull();
+        expect(restarting.error).toBeNull();
+    });
 });
