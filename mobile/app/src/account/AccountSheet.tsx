@@ -20,6 +20,7 @@ import { stopPush } from '@/notify/token';
 import { Icon } from '@/ui/Icon';
 import { Button } from '@/ui/parts';
 import { Sheet } from '@/ui/Sheet';
+import { restartToUpdate, useUpdateWaiting } from '@/updates/overTheAir';
 import { fonts, type Palette, typeFor, useColors, useStyles, useType } from '@/ui/theme';
 
 const VERSION = versionLabel(versionFromBuild(nativeBuildVersion) ?? nativeApplicationVersion, process.env.EXPO_PUBLIC_COMMIT ?? null, {
@@ -37,6 +38,7 @@ export function AccountSheet({ visible, onClose }: { visible: boolean; onClose: 
   const { user } = useUser();
   const id = useDeviceId();
   const status = useAccountStatus();
+  const updateWaiting = useUpdateWaiting();
   const [leaving, setLeaving] = useState(false);
   const [unconfirmed, setUnconfirmed] = useState<string>();
   const provider = providerName(user?.externalAccounts[0]?.provider);
@@ -136,6 +138,11 @@ export function AccountSheet({ visible, onClose }: { visible: boolean; onClose: 
         accessibilityRole="button">
         <Text style={styles.linkText}>Delete account…</Text>
       </Pressable>
+      {updateWaiting ? (
+        <Pressable onPress={restartToUpdate} style={styles.link} accessibilityRole="button">
+          <Text style={[styles.linkText, styles.update]}>Restart to update</Text>
+        </Pressable>
+      ) : null}
       <Text style={styles.version}>Sikemux {VERSION}</Text>
     </Sheet>
   );
@@ -168,6 +175,7 @@ const makeStyles = (colors: Palette) => {
     noteAfterTitle: { paddingTop: 4 },
     problem: { ...type.meta, color: colors.danger },
     action: { fontFamily: fonts.uiMedium, fontSize: 15, color: colors.accent },
+    update: { color: colors.accent },
     choices: { gap: 8 },
     link: { height: 44, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
     linkText: { fontFamily: fonts.uiMedium, fontSize: 15, color: colors.secondary },

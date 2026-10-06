@@ -17,6 +17,7 @@ import { goOffline } from '@/device/identity';
 import { useDevices } from '@/devices/hub';
 import { NotificationsOffer } from '@/notify/NotificationsOffer';
 import { currentRelays, useUpdateRequired } from '@/network/network';
+import { useOverTheAirUpdates } from '@/updates/overTheAir';
 import { Crashed } from '@/screens/Crashed';
 import { Unreachable } from '@/screens/Unreachable';
 import { UpdateRequired } from '@/screens/UpdateRequired';
@@ -110,6 +111,7 @@ function Routes({ background }: { background: string }) {
 }
 
 function PhoneOnAccount() {
+  useOverTheAirUpdates();
   useAccountSequence();
   useAccountHostsFeed();
   useConnectArrivals();
