@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import MaskedView from '@react-native-masked-view/masked-view';
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import type { ChatInfo, ProjectInfo, SessionInfo, Snapshot } from '@/core/protocol';
 import { reloadDevices, retry, useDevices, useHostStatus, useLive } from '@/devices/hub';
@@ -206,6 +208,28 @@ function HostHead({ name, line, online }: { name: string; line: string; online: 
   );
 }
 
+/** How far rows take to fade out as they reach the tabs pinned at the top. */
+const FADE = 22;
+
+/** The list's mask: nothing shows under the pinned tabs, and rows fade in just below them. */
+function UnderBar({ height }: { height: number }) {
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={{ height }} />
+      <Svg width="100%" height={FADE}>
+        <Defs>
+          <LinearGradient id="under-bar" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor="#000" stopOpacity={0} />
+            <Stop offset="1" stopColor="#000" stopOpacity={1} />
+          </LinearGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100%" height="100%" fill="url(#under-bar)" />
+      </Svg>
+      <View style={{ flex: 1, backgroundColor: '#000' }} />
+    </View>
+  );
+}
+
 function HostTab({ label, count, on, onPress }: { label: string; count?: number; on: boolean; onPress: () => void }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
@@ -295,7 +319,13 @@ export default function Device() {
   const [headHeight, setHeadHeight] = useState(0);
   // The large name hands over to the bar's own title as it scrolls under it, and the tabs then stay put.
   const titleShown = scrolled.interpolate({ inputRange: [headHeight - 48, headHeight - 12], outputRange: [0, 1], extrapolate: 'clamp' });
-  const barStuck = scrolled.interpolate({ inputRange: [headHeight - 8, headHeight], outputRange: [0, 1], extrapolate: 'clamp' });
+  const [barHeight, setBarHeight] = useState(34);
+  // The tabs ride under the header, then stop at the top bar while the list keeps going under them.
+  const barTop = scrolled.interpolate({
+    inputRange: [-1000, 0, headHeight],
+    outputRange: [headHeight + 1000, headHeight, 0],
+    extrapolateRight: 'clamp',
+  });
   const hostName = device ? deviceName(device) : 'Host';
   const switchTo = (next: Tab) => {
     if (next !== tab) haptics.select();
@@ -348,19 +378,33 @@ export default function Device() {
         </View>
       ) : (
         <>
-          <Animated.ScrollView
-            {...scrollPause}
-            onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrolled } } }], { useNativeDriver: true })}
-            scrollEventThrottle={16}
-            stickyHeaderIndices={[1]}
-            style={status.online ? undefined : styles.stale}
-            accessibilityHint={status.online ? undefined : 'Out of date until the host answers again'}
-            contentContainerStyle={{ paddingBottom: bottom + (starts ? NEW_CHAT_HEIGHT + 24 : 24) }}>
-            <View onLayout={(event) => setHeadHeight(event.nativeEvent.layout.height)}>
-              <HostHead name={hostName} line={status.line} online={status.online} />
-            </View>
-            <View>
-              <Animated.View pointerEvents="none" style={[styles.barGround, { opacity: barStuck }]} />
+          <View style={styles.list}>
+            <MaskedView style={styles.list} maskElement={<UnderBar height={barHeight} />}>
+              <Animated.ScrollView
+                {...scrollPause}
+                onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrolled } } }], { useNativeDriver: true })}
+                scrollEventThrottle={16}
+                style={status.online ? undefined : styles.stale}
+                accessibilityHint={status.online ? undefined : 'Out of date until the host answers again'}
+                contentContainerStyle={{ paddingBottom: bottom + (starts ? NEW_CHAT_HEIGHT + 24 : 24) }}>
+                <View onLayout={(event) => setHeadHeight(event.nativeEvent.layout.height)}>
+                  <HostHead name={hostName} line={status.line} online={status.online} />
+                </View>
+                <View style={{ height: barHeight }} />
+                <View style={styles.body}>
+                  {snapshot ? (
+                    tab === 'agents' ? (
+                      <Agents core={core} snapshot={snapshot} scope={scope} provider={provider} />
+                    ) : (
+                      <Terminals snapshot={snapshot} scope={scope} />
+                    )
+                  ) : null}
+                </View>
+              </Animated.ScrollView>
+            </MaskedView>
+            <Animated.View
+              onLayout={(event) => setBarHeight(event.nativeEvent.layout.height)}
+              style={[styles.barFloat, { transform: [{ translateY: barTop }] }]}>
               <View style={styles.bar}>
                 <View style={styles.tabs} accessibilityRole="tablist">
                   <HostTab label="Agents" count={asking} on={tab === 'agents'} onPress={() => switchTo('agents')} />
@@ -384,17 +428,8 @@ export default function Device() {
                   </Pressable>
                 ) : null}
               </View>
-            </View>
-            <View style={styles.body}>
-              {snapshot ? (
-                tab === 'agents' ? (
-                  <Agents core={core} snapshot={snapshot} scope={scope} provider={provider} />
-                ) : (
-                  <Terminals snapshot={snapshot} scope={scope} />
-                )
-              ) : null}
-            </View>
-          </Animated.ScrollView>
+            </Animated.View>
+          </View>
           {starts ? (
             <Pressable
               onPress={() => router.push(scope ? `/device/${core}/new?project=${encodeURIComponent(scope.id)}` : `/device/${core}/new`)}
@@ -460,12 +495,8 @@ const makeStyles = (colors: Palette) => {
       paddingTop: 6,
       paddingBottom: 8,
     },
-    barGround: {
-      ...StyleSheet.absoluteFill,
-      backgroundColor: colors.ground,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.border,
-    },
+    list: { flex: 1 },
+    barFloat: { position: 'absolute', top: 0, left: 0, right: 0 },
     navName: { fontFamily: fonts.uiSemibold, fontSize: 16, letterSpacing: -0.25, color: colors.ink },
     tabs: { flexDirection: 'row', alignItems: 'center', gap: 20 },
     tab: { flexDirection: 'row', alignItems: 'center', gap: 7 },
