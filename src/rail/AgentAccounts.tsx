@@ -182,8 +182,8 @@ function accountMenu({
         });
     }
     items.push({ label: "Add account…", icon: <IconPlus size={11} />, run: onAdd });
-    items.push({ label: signedIn ? `Sign in to ${current.name} again` : `Sign in to ${current.name}`, run: () => void signIn(current) });
-    if (signedIn) items.push({ label: `Sign out of ${current.name}`, run: () => void signOut(current).catch(reportError("Sign out")) });
+    if (signedIn) items.push({ label: "Sign out", run: () => void signOut(current).catch(reportError("Sign out")) });
+    else items.push({ label: "Sign in", run: () => void signIn(current) });
     items.push({ sep: true }, { label: "Account settings…", run: () => cmd.openSettings("agents") });
     if (!current.id.startsWith("builtin-"))
         items.push({ label: `Remove ${current.name}`, danger: true, run: () => cmd.deleteProviderProfile(current.id) });
