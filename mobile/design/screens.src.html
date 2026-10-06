@@ -1657,7 +1657,7 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Reading back</b><div class="note">Scrolled up, the transcript holds still while the agent keeps writing below. A round arrow sits just above the composer, as on the Mac, and takes you back to the latest message. Near the end, new lines follow on their own. Text can be selected, and links open in the browser.</div></figcaption>
+      <figcaption><b>Reading back</b><div class="note">Scrolled up, the transcript holds still while the agent keeps writing below. A round arrow sits just above the composer, as on the Mac, and takes you back to the latest message. Near the end, new lines follow on their own. Links open in the browser; holding a message opens its actions, where its text can be copied or selected.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -2113,6 +2113,47 @@ expected 1 write, got 2</div>
       <figcaption><b>A subagent's own thread</b><div class="note">Each subagent is one bordered line in the transcript: the agent's mark, its name, the first line of its task, how many calls it made and how it stands: the squares while it works, a green check when done, red when it failed or was lost, a quiet × when stopped. A tap opens what it did, drawn the way the chat draws everything else, indented under it with no tray. What it is doing now lives in the strip instead.</div></figcaption>
     </figure>
 
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Download size on the hero</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="msg-user">Show the download size next to the button.</div>
+          <div class="tools"><span class="tools-sum">2 tool calls <span class="time">3s</span>{{IconChevron:11}}</span></div>
+          <div class="held">
+            <div class="prose" style="margin-top:0">Done. The size is read from the latest release at build time:</div>
+            <div class="code-box">const dmg = assets.find((a) =&gt;
+  a.name.endsWith("_aarch64.dmg"));<span class="cp">{{IconCopy:12}}</span></div>
+          </div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer">
+            <div class="ta ph">Ask about this project</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="ring"><i class="ctx claude" style="--p:58"></i></span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="grabber"></div>
+          <div class="hold-meta">Today, 21:07 · took 2m 04s · ~48 tok/s</div>
+          <div class="hold-preview">Done. The size is read from the latest release at build time: const dmg = assets.find((a) =&gt; a.name.endsWith("_aarch64.dmg"));</div>
+          <div class="sources">
+            <span>{{IconCopy:19}}Copy</span>
+            <span>{{IconPointer:19}}Select text</span>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Holding a message</b><div class="note">A long press on a message, yours or the agent's answer, opens a short sheet: when it was sent, and for an answer how long the turn took and roughly how fast it wrote, as the Mac's message footer says; then Copy, and Select text, which shows the whole message with the system's selection handles. An answer is all of its prose across the tool calls in between. Code blocks keep their own copy button in the corner.</div></figcaption>
+    </figure>
 
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>

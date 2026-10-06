@@ -131,16 +131,14 @@ const BlockView = memo(
         return (
           <View style={styles.code}>
             <ScrollView horizontal contentContainerStyle={styles.codePad} showsHorizontalScrollIndicator={false}>
-              <Text style={styles.codeText} selectable>
-                {block.text}
-              </Text>
+              <Text style={styles.codeText}>{block.text}</Text>
             </ScrollView>
             <CopyButton value={block.text} label="code" size={12} style={styles.codeCopy} />
           </View>
         );
       case 'heading':
         return (
-          <Text style={[style, styles.bold]} selectable accessibilityRole="header">
+          <Text style={[style, styles.bold]} accessibilityRole="header">
             {inline(block.text, styles)}
           </Text>
         );
@@ -148,9 +146,7 @@ const BlockView = memo(
         return (
           <View style={styles.item}>
             <Text style={[style, styles.marker]}>{block.marker}</Text>
-            <Text style={[style, { flex: 1 }]} selectable>
-              {inline(block.text, styles)}
-            </Text>
+            <Text style={[style, { flex: 1 }]}>{inline(block.text, styles)}</Text>
           </View>
         );
       default:

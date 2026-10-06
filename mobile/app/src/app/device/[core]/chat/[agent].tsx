@@ -15,6 +15,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 
 import { activityText, composerPlaceholder } from '@mac/chat/chatStatus';
+import type { RowMeta } from '@mac/chat/messageMeta';
 import { sentPrompts } from '@mac/chat/promptHistory';
 import { activeToolLabel } from '@mac/chat/toolLabels';
 import type { ChatMessage, ChatState } from '@mac/chat/types';
@@ -23,6 +24,8 @@ import { askTitle, Composer, RecentSheet } from '@/chat/Composer';
 import { FoldsContext } from '@/chat/folds';
 import { LiveSheet, LiveStrip } from '@/chat/Live';
 import { hasLiveWork, liveKey, liveWork } from '@/chat/liveWork';
+import { heldMeta } from '@/chat/messageMeta';
+import { MessageSheet } from '@/chat/MessageSheet';
 import { Activity, Earlier, Message, ProviderContext, Queued } from '@/chat/Transcript';
 import { useChat } from '@/chat/useChat';
 import { retry as reconnect, useDevices, useLive, type Live } from '@/devices/hub';
@@ -143,6 +146,8 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
   const [showLive, setShowLive] = useState(false);
   const [menu, setMenu] = useState(false);
   const [recent, setRecent] = useState(false);
+  const [held, setHeld] = useState<RowMeta | null>(null);
+  const onHold = (message: ChatMessage) => setHeld(heldMeta(state.messages, message.id));
   const openLive = () => setShowLive(true);
   const openRecent = () => setRecent(true);
   useEffect(() => dismissCardsFor(core, agentId), [core, agentId]);
@@ -237,6 +242,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                       untimed={chat.replayed.has(item.id)}
                       unsent={chat.unsent.get(item.id)}
                       onRetry={session.retrySend}
+                      onHold={onHold}
                       sentFiles={chat.sentFiles}
                     />
                   )}
@@ -321,6 +327,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
         }}
         onDrop={session.dropQueued}
       />
+      <MessageSheet meta={held} onClose={() => setHeld(null)} />
       <RecentSheet
         visible={recent}
         prompts={sent}

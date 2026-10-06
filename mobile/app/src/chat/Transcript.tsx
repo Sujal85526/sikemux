@@ -5,6 +5,7 @@ import { durationLabel } from '@mac/chat/durationLabel';
 import { cutLongText } from '@mac/chat/longText';
 import { subagentTask } from '@mac/chat/transcript';
 import type { AcpContentBlock, AcpSubagent, AcpTaskNotice, ChatMessage, ChatPart } from '@mac/chat/types';
+import { haptics } from '@/ui/haptics';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Working } from '@/ui/status';
 import { fonts, type Palette, translucent, useColors, useStyles } from '@/ui/theme';
@@ -16,6 +17,9 @@ import { ToolGroup, type ToolPart } from './Tools';
 
 /** The chat's agent, whose mark its subagents carry. */
 export const ProviderContext = createContext('agent');
+
+/** How long a press is held before it opens a message's actions. */
+const HOLD_MS = 350;
 
 /**
  * A message too long to draw at once shows its start and the rest on a tap, unless the person
@@ -214,6 +218,7 @@ export function Message({
   untimed = false,
   unsent,
   onRetry,
+  onHold,
   sentFiles,
 }: {
   message: ChatMessage;
@@ -221,10 +226,18 @@ export function Message({
   untimed?: boolean;
   unsent?: Unsent;
   onRetry?: (messageId: string) => void;
+  /** A long press, which opens the message's actions. */
+  onHold?: (message: ChatMessage) => void;
   sentFiles: ReadonlyMap<string, Attachment>;
 }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
+  const hold = onHold
+    ? () => {
+        haptics.select();
+        onHold(message);
+      }
+    : undefined;
   if (message.role === 'user') {
     const failed = unsent?.state === 'failed';
     const text = userText(message);
@@ -232,11 +245,18 @@ export function Message({
       <View style={styles.userRow}>
         {message.attachments?.length ? <SentAttachments paths={message.attachments} sentFiles={sentFiles} /> : null}
         {text || !message.attachments?.length ? (
-          <View style={[styles.bubble, unsent?.state === 'sending' && { opacity: 0.7 }, failed && styles.failedBubble]}>
-            <Text style={styles.userText} selectable>
-              {text}
-            </Text>
-          </View>
+          <Pressable
+            onLongPress={hold}
+            delayLongPress={HOLD_MS}
+            style={({ pressed }) => [
+              styles.bubble,
+              unsent?.state === 'sending' && { opacity: 0.7 },
+              failed && styles.failedBubble,
+              pressed && hold && { backgroundColor: colors.overlay },
+            ]}
+            accessibilityHint={hold ? 'Hold for copy and the time it was sent' : undefined}>
+            <Text style={styles.userText}>{text}</Text>
+          </Pressable>
         ) : null}
         {failed ? (
           <Pressable
@@ -256,7 +276,11 @@ export function Message({
       </View>
     );
   }
-  return <Parts id={message.id} parts={message.parts} untimed={untimed} live={live} />;
+  return (
+    <Pressable onLongPress={hold} delayLongPress={HOLD_MS} accessibilityHint={hold ? 'Hold for copy and how long it took' : undefined}>
+      <Parts id={message.id} parts={message.parts} untimed={untimed} live={live} />
+    </Pressable>
+  );
 }
 
 /** Messages waiting behind the running turn, faded where they will go. */
@@ -369,11 +393,11 @@ const makeStyles = (colors: Palette) => {
     },
     resourceText: { flexShrink: 1, fontFamily: fonts.mono, fontSize: 12, color: colors.ink },
     retry: { color: colors.ink, fontFamily: fonts.uiMedium },
+    queued: { alignItems: 'flex-end', alignSelf: 'stretch', opacity: 0.55, marginBottom: 6 },
     queuedLabel: { fontFamily: fonts.ui, fontSize: 11, color: colors.inkFaint, marginTop: 4 },
     prose: { fontFamily: fonts.ui, fontSize: 14.5, lineHeight: 23, color: colors.ink },
     thought: { marginVertical: 8 },
     thoughtText: { fontFamily: fonts.uiItalic, fontSize: 12.5, lineHeight: 19.5, color: colors.inkFaint },
-    queued: { alignItems: 'flex-end', alignSelf: 'stretch', opacity: 0.55, marginBottom: 6 },
     showRest: { alignSelf: 'flex-start', marginTop: 6, marginBottom: 4 },
     showRestText: { fontFamily: fonts.uiMedium, fontSize: 12.5, color: colors.tertiary },
     subagent: { marginVertical: 6 },
