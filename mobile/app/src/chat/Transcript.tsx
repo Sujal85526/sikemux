@@ -166,11 +166,15 @@ function ToolRow({ part, last, untimed, group }: { part: ToolPart; last: boolean
   );
 }
 
-function ToolGroup({ id, parts, untimed }: { id: string; parts: ToolPart[]; untimed: boolean }) {
+/**
+ * A run of calls stays open while the agent is still adding to it, as on the Mac, and folds once
+ * something follows it or the turn ends; watching each call instead shuts it in the gaps between them.
+ */
+function ToolGroup({ id, parts, untimed, live }: { id: string; parts: ToolPart[]; untimed: boolean; live: boolean }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
   const working = parts.some((part) => toolRunning(part.tool));
-  const [open, setOpen] = useFold(id, working);
+  const [open, setOpen] = useFold(id, live || working);
   const started = parts[0]?.startedAt;
   const ended = parts[parts.length - 1]?.endedAt;
   return (
@@ -205,7 +209,7 @@ function userText(message: ChatMessage): string {
   return message.parts.flatMap((part) => (part.kind === 'text' ? [part.text] : [])).join('\n');
 }
 
-function Assistant({ message, untimed }: { message: ChatMessage; untimed: boolean }) {
+function Assistant({ message, untimed, live }: { message: ChatMessage; untimed: boolean; live: boolean }) {
   const styles = useStyles(makeStyles);
   const runs: (ChatPart | ToolPart[])[] = [];
   for (const part of message.parts) {
@@ -218,7 +222,16 @@ function Assistant({ message, untimed }: { message: ChatMessage; untimed: boolea
   return (
     <>
       {runs.map((run, index) => {
-        if (Array.isArray(run)) return <ToolGroup key={run[0].id} id={`${message.id}/${run[0].id}`} parts={run} untimed={untimed} />;
+        if (Array.isArray(run))
+          return (
+            <ToolGroup
+              key={run[0].id}
+              id={`${message.id}/${run[0].id}`}
+              parts={run}
+              untimed={untimed}
+              live={live && index === runs.length - 1}
+            />
+          );
         switch (run.kind) {
           case 'text':
             return run.text.trim() ? <Markdown key={run.id} text={run.text} style={styles.prose} /> : null;
@@ -282,11 +295,13 @@ function Content({ block }: { block: AcpContentBlock }) {
 
 export function Message({
   message,
+  live = false,
   untimed = false,
   unsent,
   onRetry,
 }: {
   message: ChatMessage;
+  live?: boolean;
   untimed?: boolean;
   unsent?: Unsent;
   onRetry?: (messageId: string) => void;
@@ -320,7 +335,7 @@ export function Message({
       </View>
     );
   }
-  return <Assistant message={message} untimed={untimed} />;
+  return <Assistant message={message} untimed={untimed} live={live} />;
 }
 
 export function Queued({ text }: { text: string }) {

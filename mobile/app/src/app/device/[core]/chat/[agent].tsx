@@ -120,7 +120,8 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
   const { session, chat } = useChat(core, agentId);
   const state = chat.agent;
   const request = chat.permissions[0];
-  const marks = useMemo(() => [chat.replayed, chat.unsent], [chat.replayed, chat.unsent]);
+  const liveId = state.running ? state.messages[state.messages.length - 1]?.id : undefined;
+  const marks = useMemo(() => [chat.replayed, chat.unsent, liveId], [chat.replayed, chat.unsent, liveId]);
   useEffect(() => dismissCardsFor(core, agentId), [core, agentId]);
   useArrivals(state.running, request?.requestId, {
     done: `${providerName(provider)} finished`,
@@ -193,6 +194,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                 renderItem={({ item }) => (
                   <Message
                     message={item}
+                    live={item.id === liveId}
                     untimed={chat.replayed.has(item.id)}
                     unsent={chat.unsent.get(item.id)}
                     onRetry={session.retrySend}
