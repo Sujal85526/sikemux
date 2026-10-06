@@ -41,6 +41,27 @@ actor Simulators {
         try await booted(udid).orientation.set(orientation)
     }
 
+    func orientation(_ udid: String?) async throws -> String {
+        "\(try await booted(udid).orientation.current().rawValue)"
+    }
+
+    /// A swipe starting at a side of the screen is tagged with it, so iOS treats it as the system
+    /// gesture a finger there would make: home, back, Notification Center or Control Center.
+    func edge(at point: CGPoint, on udid: String?) async throws -> SimulatorHIDEdge {
+        let simulator = try await booted(udid)
+        guard let info = simulator.screenInfo, info.scale > 0 else { return .none }
+        let scale = Double(info.scale)
+        let sideways = try await simulator.orientation.current().rawValue.hasPrefix("landscape")
+        let (short, long) = (Double(info.widthPixels) / scale, Double(info.heightPixels) / scale)
+        let (width, height) = sideways ? (long, short) : (short, long)
+        let reach = 10.0
+        if point.y >= height - reach { return .bottom }
+        if point.y <= reach { return .top }
+        if point.x <= reach { return .left }
+        if point.x >= width - reach { return .right }
+        return .none
+    }
+
     func runtimes() throws -> [[String: Any]] {
         _ = try set()
         return (control?.serviceContext.supportedRuntimes() ?? []).map { runtime in
@@ -60,8 +81,14 @@ actor Simulators {
         try await set().shutdown(simulator)
     }
 
-    func screenshot(_ udid: String?) async throws -> Data {
-        try await booted(udid).screenshot.takeForRepl(cropRect: nil, asPNG: true)
+    /// `pointSize` draws one pixel per point, a ninth of a Retina screenshot's pixels, for agents to read.
+    func screenshot(_ udid: String?, jpeg: Bool = false, pointSize: Bool = false) async throws -> (data: Data, width: Int, height: Int) {
+        let simulator = try await booted(udid)
+        let scale = pointSize ? Double(simulator.screenInfo?.scale ?? 1) : 1
+        let configuration = ScreenshotConfiguration(
+            encoding: jpeg ? .jpeg(quality: 0.8) : .png, scale: scale > 1 ? .factor(1 / scale) : .native)
+        let shot = try await simulator.screenshot.take(configuration: configuration)
+        return (shot.imageData, Int(shot.size.width), Int(shot.size.height))
     }
 
     func tree(_ udid: String?) async throws -> Any {
@@ -106,6 +133,10 @@ actor Simulators {
             var arguments = ["--style", "compact"]
             if let process {
                 arguments += ["--predicate", "process == \"\(process.replacingOccurrences(of: "\"", with: ""))\""]
+            } else {
+                // Apple's frameworks log thousands of activity and debug entries a second, many with no
+                // subsystem to exclude them by; ordinary log messages at Info and above keep an app's own.
+                arguments += ["--type", "log", "--level", "info", "--predicate", "NOT (subsystem BEGINSWITH \"com.apple.\")"]
             }
             let operation = try await simulator.log.tail(arguments: arguments, consumer: tail.consumer)
             tail.attach(operation)

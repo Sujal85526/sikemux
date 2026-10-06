@@ -49,13 +49,14 @@ struct SikemuxSim {
         case "shutdown":
             try await simulators.shutdown(udid)
         case "screenshot":
-            let png = try await simulators.screenshot(udid)
+            let jpeg = request.format == "jpeg"
+            let shot = try await simulators.screenshot(udid, jpeg: jpeg, pointSize: request.pointSize ?? false)
             if let given = request.path {
                 let path = (given as NSString).expandingTildeInPath
-                try png.write(to: URL(fileURLWithPath: path))
-                return ["path": path, "bytes": png.count]
+                try shot.data.write(to: URL(fileURLWithPath: path))
+                return ["path": path, "bytes": shot.data.count, "width": shot.width, "height": shot.height]
             }
-            return ["png": png.base64EncodedString()]
+            return [jpeg ? "jpeg" : "png": shot.data.base64EncodedString(), "width": shot.width, "height": shot.height]
         case "tree":
             return ["elements": try await simulators.tree(udid)]
         case "tap":
@@ -67,8 +68,9 @@ struct SikemuxSim {
             return ["frame": ["x": frame.minX, "y": frame.minY, "width": frame.width, "height": frame.height]]
         case "swipe":
             let from = try require(request.x, request.y), to = try require(request.toX, request.toY)
+            let edge = try await simulators.edge(at: from, on: udid)
             try await simulators.send(
-                .swipe(from.x, yStart: from.y, xEnd: to.x, yEnd: to.y, delta: 0, duration: request.duration ?? 0.3), to: udid)
+                .swipe(from.x, yStart: from.y, xEnd: to.x, yEnd: to.y, delta: 0, duration: request.duration ?? 0.3, edge: edge), to: udid)
         case "touch":
             let point = try require(request.x, request.y)
             let direction: SimulatorHIDDirection
@@ -84,7 +86,8 @@ struct SikemuxSim {
         case "screen":
             return try await simulators.screen(udid)
         case "orientation":
-            try await simulators.orient(udid, to: try require(request.orientation, "orientation"))
+            if let name = request.orientation { try await simulators.orient(udid, to: name) }
+            return ["orientation": try await simulators.orientation(udid)]
         case "touchPath":
             try await simulators.send(try touchPath(try require(request.points, "points")), to: udid)
         case "touch2Path":
@@ -203,7 +206,7 @@ struct SikemuxSim {
         }
         guard passed, let udid else { exit(1) }
         var ok = await step("boot") { try await simulators.boot(udid); return udid }
-        ok = await step("screenshot") { "\(try await simulators.screenshot(udid).count) bytes" } && ok
+        ok = await step("screenshot") { "\(try await simulators.screenshot(udid).data.count) bytes" } && ok
         ok = await step("tree") { "\(String(describing: try await simulators.tree(udid)).count) characters" } && ok
         ok = await step("tap") { try await simulators.send(.tapAt(x: 1, y: 1), to: udid); return "at 1,1" } && ok
         exit(ok ? 0 : 1)
