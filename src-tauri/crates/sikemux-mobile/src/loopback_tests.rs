@@ -239,6 +239,19 @@ fn a_phone_hears_the_mac_s_view_and_asks_it_typed_questions() {
             Err(MobileError::Refused { message }) if message.contains("not running")
         ));
         assert!(matches!(
+            connection.steer("nobody".into(), "and the tests".into(), Vec::new()).await,
+            Err(MobileError::Refused { message }) if message.contains("not running")
+        ));
+        assert!(matches!(
+            connection.stop_task("nobody".into(), "shell".into()).await,
+            Err(MobileError::Refused { message }) if message.contains("not running")
+        ));
+        assert!(matches!(
+            connection.set_permission_mode("nobody".into(), "bypass".into()).await,
+            Err(MobileError::Refused { message }) if message.contains("not running")
+        ));
+        assert!(connection.stop_chat("nobody".into()).await.is_ok());
+        assert!(matches!(
             connection.attach_file("nobody".into(), "big.bin".into(), String::new(), vec![0; 10 * 1024 * 1024 + 1]).await,
             Err(MobileError::Invalid { message }) if message.contains("10 MB")
         ));

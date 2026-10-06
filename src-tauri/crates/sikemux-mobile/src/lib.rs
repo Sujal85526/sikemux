@@ -813,6 +813,48 @@ impl Connection {
         self.done(Request::AcpCancel { agent_id }).await
     }
 
+    /// Puts a message into the running turn. Answers whether the agent took
+    /// it; when the turn ended first, send it with [`Self::prompt`] instead.
+    pub async fn steer(
+        &self,
+        agent_id: String,
+        text: String,
+        paths: Vec<String>,
+    ) -> Result<bool, MobileError> {
+        let request = Request::AcpSteer {
+            agent_id,
+            text,
+            paths,
+            context: Vec::new(),
+        };
+        match self.ask(request).await? {
+            Response::Steered { outcome } => Ok(outcome != "promptRequired"),
+            _ => Err(unexpected()),
+        }
+    }
+
+    /// Stops one of the chat's background tasks, such as a shell it left
+    /// running.
+    pub async fn stop_task(&self, agent_id: String, task_id: String) -> Result<(), MobileError> {
+        self.done(Request::AcpStopTask { agent_id, task_id }).await
+    }
+
+    /// `mode` is `bypass` to run without asking or `workspace-write` to ask
+    /// first. The host refuses while a turn runs.
+    pub async fn set_permission_mode(
+        &self,
+        agent_id: String,
+        mode: String,
+    ) -> Result<(), MobileError> {
+        self.done(Request::AcpSetPermissionMode { agent_id, mode })
+            .await
+    }
+
+    /// Ends the chat's agent on the host.
+    pub async fn stop_chat(&self, agent_id: String) -> Result<(), MobileError> {
+        self.done(Request::AcpStop { agent_id }).await
+    }
+
     /// `option_id` absent turns the request down.
     pub async fn answer_permission(
         &self,
