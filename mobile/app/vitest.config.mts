@@ -7,6 +7,7 @@ const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 const mocked = [
   'react-native',
   '@sikemux/native',
+  '@react-native-community/netinfo',
   'expo',
   'expo-application',
   'expo-clipboard',

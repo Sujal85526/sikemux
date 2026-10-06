@@ -4,6 +4,7 @@ import type { MinimumVersions, Relay } from '@protocol';
 import type { RelaySetting } from '@sikemux/native';
 
 import { apiUrl } from '@/account/config';
+import { onNetworkChange } from './connectivity';
 import { installedRelease } from './installed';
 import { tooOld } from './versions';
 
@@ -112,10 +113,14 @@ export function currentRelays(): Promise<Relay[]> {
   return relays;
 }
 
-/** Asks the server again on the next connection, unless its last answer came through; for when the network comes back. */
+/** Asks the server again on the next connection, unless its last answer came through. */
 export function askForRelaysAgain() {
   if (reading && !reading.fresh) reading = undefined;
 }
+
+onNetworkChange((change) => {
+  if (change === 'regained') askForRelaysAgain();
+});
 
 export function relaySettings(relays: Relay[]): RelaySetting[] {
   return relays.map((relay) => ({ url: relay.url, quicPort: relay.quicPort ?? undefined }));
