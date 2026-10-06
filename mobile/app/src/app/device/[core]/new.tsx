@@ -55,6 +55,8 @@ function AgentSheet({
   );
 }
 
+export { Crashed as ErrorBoundary } from '@/screens/Crashed';
+
 export default function NewChat() {
   const colors = useColors();
   const styles = useStyles(makeStyles);

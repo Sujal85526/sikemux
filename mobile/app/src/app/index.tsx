@@ -1,4 +1,6 @@
+import { useEffect } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { router, useIsFocused } from 'expo-router';
 import { useAuth } from '@clerk/expo';
 
 import { useFarewell } from '@/account/farewell';
@@ -25,14 +27,26 @@ function Unreadable({ problem }: { problem: string }) {
   );
 }
 
+export { Crashed as ErrorBoundary } from '@/screens/Crashed';
+
+/** Whether launch has decided between Devices and the one host; it opens that host only once. */
+let launched = false;
+
 export default function Home() {
-  const { isLoaded, isSignedIn } = useAuth();
-  const { devices, loaded, problem } = useDevices();
+  const { isSignedIn } = useAuth();
+  const { devices, problem } = useDevices();
   const farewell = useFarewell();
-  if (!isLoaded) return null;
+  const focused = useIsFocused();
+  const only = isSignedIn && devices.length === 1 ? devices[0].core : undefined;
+
+  useEffect(() => {
+    if (launched || !isSignedIn) return;
+    launched = true;
+    if (focused && only) router.push(`/device/${only}`);
+  }, [isSignedIn, focused, only]);
+
   if (!isSignedIn) return farewell ? <Farewell reason={farewell} /> : <Welcome />;
   if (problem) return <Unreadable problem={problem} />;
-  if (!loaded) return null;
   return <DevicesList devices={devices} />;
 }
 

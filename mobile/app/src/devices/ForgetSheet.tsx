@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { router } from 'expo-router';
-import * as Haptics from 'expo-haptics';
 
+import { haptics } from '@/ui/haptics';
+import { goHome } from '@/ui/navigate';
 import { Button } from '@/ui/parts';
 import { Sheet } from '@/ui/Sheet';
 import { fonts, type Palette, useStyles, useType } from '@/ui/theme';
@@ -35,9 +35,9 @@ export function ForgetSheet({ device, visible, onClose }: { device: PairedDevice
     try {
       forgetBackdrop(device.backdrop);
     } catch {}
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    haptics.success();
     onClose();
-    router.replace('/');
+    goHome();
   };
 
   return (

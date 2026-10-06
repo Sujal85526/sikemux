@@ -15,9 +15,9 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
 
 import { Backdrop } from './Backdrop';
+import { goBack } from './navigate';
 import { useStill } from './motion';
 import { DrawnIcon, Icon } from './Icon';
 import { fonts, type Palette, radius, typeFor, useColors, useStyles, useType, translucent } from './theme';
@@ -56,12 +56,7 @@ export function Nav({ back, title, end, onBack }: { back?: string; title?: React
   const styles = useStyles(makeStyles);
   return (
     <View style={styles.nav}>
-      <Pressable
-        style={styles.back}
-        onPress={onBack ?? (() => router.back())}
-        hitSlop={8}
-        accessibilityRole="button"
-        accessibilityLabel={back ?? 'Back'}>
+      <Pressable style={styles.back} onPress={onBack ?? goBack} hitSlop={8} accessibilityRole="button" accessibilityLabel={back ?? 'Back'}>
         <View style={styles.backChevron}>
           <Icon name="IconChevron" size={18} color={colors.secondary} />
         </View>

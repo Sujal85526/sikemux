@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@clerk/expo';
-import * as Haptics from 'expo-haptics';
 
 import { APPROVAL_SECONDS, expired, JoinFailed, joinHost, useJoinScreen, type JoinFailure, type JoinStep } from '@/devices/joining';
 import { useStill } from '@/ui/motion';
 import { DeviceIcon, Icon } from '@/ui/Icon';
+import { haptics } from '@/ui/haptics';
+import { goBack } from '@/ui/navigate';
 import { Button, Nav, Screen, useBottomGap, Working } from '@/ui/parts';
 import { offerNotifications } from '@/notify/setting';
 import { fonts, type Palette, radius, typeFor, useColors, useStyles, useType } from '@/ui/theme';
@@ -60,6 +61,8 @@ function stopped(error: unknown): JoinFailure {
 }
 
 /** Connects to a host on the account; someone at the host still allows it. `arrived` marks a host that just signed in. */
+export { Crashed as ErrorBoundary } from '@/screens/Crashed';
+
 export default function Join() {
   const styles = useStyles(makeStyles);
   const colors = useColors();
@@ -85,7 +88,7 @@ export default function Join() {
     joinHost({ core, name }, () => tokenRef.current(), setStep, controller.signal)
       .then(() => {
         if (controller.signal.aborted) return;
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        haptics.success();
         router.replace(`/device/${core}`);
         offerNotifications().catch(() => {});
       })
@@ -115,8 +118,7 @@ export default function Join() {
 
   const leave = () => {
     joining.current?.abort();
-    if (router.canGoBack()) router.back();
-    else router.replace('/');
+    goBack();
   };
 
   const bottom = useBottomGap();

@@ -199,6 +199,8 @@ function summary(snapshot: Snapshot): string {
   return `${snapshot.chats.length} agent${snapshot.chats.length === 1 ? '' : 's'} · ${terminals} terminal${terminals === 1 ? '' : 's'}`;
 }
 
+export { Crashed as ErrorBoundary } from '@/screens/Crashed';
+
 export default function Device() {
   const colors = useColors();
   const styles = useStyles(makeStyles);
