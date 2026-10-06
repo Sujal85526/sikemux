@@ -36,6 +36,7 @@
       "./plugins/release-signing",
       "./plugins/notifications",
       "./plugins/backup-rules",
+      "./plugins/scene-lifecycle",
       [
         "expo-splash-screen",
         {
