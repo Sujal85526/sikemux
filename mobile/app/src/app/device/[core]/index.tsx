@@ -318,8 +318,11 @@ function HostHead({ name, line, online }: { name: string; line: string; online: 
 /** How far rows take to fade out as they reach the tabs pinned at the top. */
 const FADE = 22;
 
-/** The list's mask: nothing shows under the pinned tabs, and rows fade in just below them. */
-function UnderBar({ height }: { height: number }) {
+/**
+ * The list's mask: once the tabs are pinned, nothing shows under them and rows fade in just below.
+ * Until then `open` keeps the whole list shown, so the header is never cut.
+ */
+function UnderBar({ height, open }: { height: number; open: Animated.AnimatedInterpolation<number> }) {
   return (
     <View style={{ flex: 1 }}>
       <View style={{ height }} />
@@ -333,6 +336,9 @@ function UnderBar({ height }: { height: number }) {
         <Rect x="0" y="0" width="100%" height="100%" fill="url(#under-bar)" />
       </Svg>
       <View style={{ flex: 1, backgroundColor: '#000' }} />
+      <Animated.View
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: height + FADE, backgroundColor: '#000', opacity: open }}
+      />
     </View>
   );
 }
@@ -433,6 +439,11 @@ export default function Device() {
   const titleShown = scrolled.interpolate({ inputRange: [headHeight - 48, headHeight - 12], outputRange: [0, 1], extrapolate: 'clamp' });
   const [barHeight, setBarHeight] = useState(34);
   // The tabs ride under the header, then stop at the top bar while the list keeps going under them.
+  const unpinned = scrolled.interpolate({
+    inputRange: [headHeight - barHeight - FADE, headHeight],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
   const barTop = scrolled.interpolate({
     inputRange: [-1000, 0, headHeight],
     outputRange: [headHeight + 1000, headHeight, 0],
@@ -491,7 +502,7 @@ export default function Device() {
       ) : (
         <>
           <View style={styles.list}>
-            <MaskedView style={styles.list} maskElement={<UnderBar height={barHeight} />}>
+            <MaskedView style={styles.list} maskElement={<UnderBar height={barHeight} open={unpinned} />}>
               <Animated.ScrollView
                 {...scrollPause}
                 onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrolled } } }], { useNativeDriver: true })}
@@ -581,7 +592,7 @@ export default function Device() {
 const makeStyles = (colors: Palette) => {
   const type = typeFor(colors);
   return StyleSheet.create({
-    head: { minHeight: 168, justifyContent: 'flex-end', paddingHorizontal: 18, paddingBottom: 16 },
+    head: { paddingHorizontal: 18, paddingTop: 10, paddingBottom: 16 },
     where: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     whereText: { flexShrink: 1, fontFamily: fonts.ui, fontSize: 13, color: translucent(colors.ink, 0.72) },
     online: {
