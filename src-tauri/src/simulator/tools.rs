@@ -14,6 +14,9 @@ use sikemux_core::cli::protocol::HarnessRequest;
 /// reported as still going and finishes in the background.
 const BOOT_TIMEOUT: Duration = Duration::from_secs(60);
 const SETTLE_STEP: Duration = Duration::from_millis(300);
+/// A device reports itself booted a little before its screen can be read; this waits up to 30 s.
+const SCREEN_READY_READS: usize = 30;
+const SCREEN_READY_STEP: Duration = Duration::from_secs(1);
 /// Enough reads for an app to finish launching, about three and a half seconds.
 const SETTLE_READS: usize = 12;
 /// Elements whose centre is above this are the status bar's: time, signal, battery.
@@ -114,6 +117,12 @@ pub(super) async fn run(
             let _ = manager
                 .request("logs", json!({ "udid": device.udid, "limit": 1 }))
                 .await;
+            for _ in 0..SCREEN_READY_READS {
+                if read_screen(manager, &device).await.is_ok() {
+                    break;
+                }
+                tokio::time::sleep(SCREEN_READY_STEP).await;
+            }
             let mut state = settled_state(manager, agent_id, None, Report::Full).await?;
             state["shown"] = SHOWN_ON_DESK.into();
             Ok(state)
