@@ -9,12 +9,25 @@
       "name": "db_databases",
       "method": "agentDatabases",
       "description": "The databases the person saved in Sikemux: name, engine, where it is, and whether you may change data in it.",
+      "row": {
+        "verb": "list",
+        "kind": "read",
+        "icon": "info",
+        "target": ["saved databases"]
+      },
       "properties": {}
     },
     {
       "name": "db_tables",
       "method": "agentTables",
       "description": "A saved database's schemas, and the tables and views in one of them.",
+      "row": {
+        "verb": "tables",
+        "kind": "read",
+        "icon": "eye",
+        "target": ["{database}"],
+        "detail": ["{schema}"]
+      },
       "properties": {
         "database": {
           "type": "string",
@@ -25,14 +38,19 @@
           "description": "Default: public for PostgreSQL, main for SQLite."
         }
       },
-      "required": [
-        "database"
-      ]
+      "required": ["database"]
     },
     {
       "name": "db_describe",
       "method": "agentDescribe",
       "description": "A table or view's columns with types, nullability and defaults, its primary key, indexes and foreign keys.",
+      "row": {
+        "verb": "describe",
+        "kind": "read",
+        "icon": "info",
+        "target": ["{table}"],
+        "detail": ["{database}"]
+      },
       "properties": {
         "database": {
           "type": "string"
@@ -44,15 +62,19 @@
           "type": "string"
         }
       },
-      "required": [
-        "database",
-        "table"
-      ]
+      "required": ["database", "table"]
     },
     {
       "name": "db_query",
       "method": "agentQuery",
       "description": "Run SQL on a saved database. Read-only and one statement per call unless the person let agents change data there.",
+      "row": {
+        "verb": "query",
+        "kind": "execute",
+        "icon": "run",
+        "target": ["{sql}"],
+        "detail": ["{database}"]
+      },
       "properties": {
         "database": {
           "type": "string"
@@ -66,10 +88,7 @@
           "description": "Rows kept from each statement. Default 100."
         }
       },
-      "required": [
-        "database",
-        "sql"
-      ]
+      "required": ["database", "sql"]
     }
   ]
 }
