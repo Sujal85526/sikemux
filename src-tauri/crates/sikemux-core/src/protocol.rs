@@ -1288,6 +1288,11 @@ pub enum Event {
         id: SessionId,
     },
     AgentState(AgentStateEvent),
+    /// Sent only to local clients: a phone showed these agents, so what they
+    /// last did has been seen.
+    AgentsSeen {
+        agent_ids: Vec<String>,
+    },
     /// Sent only to the clients that started or attached to the chat.
     /// `seq` counts the chat's events, so a client can tell which ones the
     /// attach answer already held.

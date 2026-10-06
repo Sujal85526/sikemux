@@ -150,6 +150,7 @@ impl EventSink for AppSink {
             Event::ShellMetadata(metadata) => self.emit(PTY_SHELL_METADATA_EVENT, metadata),
             Event::TaskOutput { .. } => {}
             Event::AgentState(state) => self.emit("agent_state_changed", state),
+            Event::AgentsSeen { agent_ids } => self.emit("agents_seen", agent_ids),
             Event::Chat {
                 agent_id, event, ..
             } => crate::acp::deliver(&self.app, &agent_id, event),

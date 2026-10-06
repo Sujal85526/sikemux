@@ -450,6 +450,15 @@ impl Chats {
         self.chats.lock().ok()?.get(agent_id).cloned()
     }
 
+    /// The chats a client has taken up and hears the events of.
+    pub(crate) fn followed_by(&self, client: ClientId) -> Vec<String> {
+        self.all()
+            .into_iter()
+            .filter(|chat| chat.feed.has_subscriber(client))
+            .map(|chat| chat.agent_id().to_owned())
+            .collect()
+    }
+
     fn all(&self) -> Vec<Arc<Chat>> {
         self.chats
             .lock()
