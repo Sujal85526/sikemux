@@ -12,9 +12,10 @@ import { summary } from '@/devices/status';
 import { chatState, chatTitle, folder } from '@/devices/words';
 import { Wants } from '@/screens/Wants';
 import { haptics } from '@/ui/haptics';
+import { useScrollPause } from '@/ui/motion';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Button, IconButton, Nav, NeedsYou, Row, Rows, Screen, SectionLabel, useBottomGap, Working } from '@/ui/parts';
-import { fonts, type Palette, typeFor, useColors, useStyles, useType, translucent } from '@/ui/theme';
+import { fonts, isLight, type Palette, typeFor, useColors, useStyles, useType, translucent } from '@/ui/theme';
 
 type Tab = 'agents' | 'terminals';
 
@@ -245,6 +246,7 @@ export default function Device() {
   const device = devices.find((known) => known.core === core);
   const live = useLive(core);
   const status = useHostStatus(core);
+  const scrollPause = useScrollPause();
   const [tab, setTab] = useState<Tab>(linkedTab === 'terminals' ? 'terminals' : 'agents');
   const [followedLink, setFollowedLink] = useState(linkedTab);
   if (linkedTab !== followedLink) {
@@ -341,6 +343,7 @@ export default function Device() {
             ) : null}
           </View>
           <ScrollView
+            {...scrollPause}
             style={status.online ? undefined : styles.stale}
             accessibilityHint={status.online ? undefined : 'Out of date until the host answers again'}
             contentContainerStyle={[styles.body, { paddingBottom: bottom + (starts ? NEW_CHAT_HEIGHT + 24 : 24) }]}>
@@ -404,7 +407,7 @@ const makeStyles = (colors: Palette) => {
       fontSize: 32,
       letterSpacing: -1.12,
       color: colors.ink,
-      textShadowColor: 'rgba(0, 0, 0, 0.65)',
+      textShadowColor: isLight(colors) ? 'transparent' : 'rgba(0, 0, 0, 0.65)',
       textShadowOffset: { width: 0, height: 2 },
       textShadowRadius: 18,
     },

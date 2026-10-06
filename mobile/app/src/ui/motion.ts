@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { AccessibilityInfo, AppState } from 'react-native';
 
 /** One system setting, followed once for the whole app however many components read it. */
@@ -46,30 +46,46 @@ export function useAppActive(): boolean {
   return useSyncExternalStore(appActive.subscribe, appActive.get);
 }
 
-let covers = 0;
-const coverListeners = new Set<() => void>();
+let pauses = 0;
+const pauseListeners = new Set<() => void>();
 
-/** Marks the screen as hidden under a sheet until the returned function is called. */
-export function coverScreen(): () => void {
-  covers += 1;
-  coverListeners.forEach((listen) => listen());
+function pausesChanged(by: number) {
+  pauses += by;
+  pauseListeners.forEach((listen) => listen());
+}
+
+/** Stills the backdrop until the returned function is called: a sheet covers it, or the screen is scrolling. */
+export function pauseBackdrop(): () => void {
+  pausesChanged(1);
   let released = false;
   return () => {
     if (released) return;
     released = true;
-    covers -= 1;
-    coverListeners.forEach((listen) => listen());
+    pausesChanged(-1);
   };
 }
 
-function subscribeCovers(listener: () => void) {
-  coverListeners.add(listener);
+function subscribePauses(listener: () => void) {
+  pauseListeners.add(listener);
   return () => {
-    coverListeners.delete(listener);
+    pauseListeners.delete(listener);
   };
 }
 
-/** Whether a sheet covers the screen. */
-export function useCovered(): boolean {
-  return useSyncExternalStore(subscribeCovers, () => covers > 0);
+export function useBackdropPaused(): boolean {
+  return useSyncExternalStore(subscribePauses, () => pauses > 0);
+}
+
+/** Scroll handlers that still the backdrop while a list moves, so scrolling keeps the JavaScript thread free. */
+export function useScrollPause() {
+  const held = useRef<() => void>(undefined);
+  useEffect(() => () => held.current?.(), []);
+  const hold = () => {
+    held.current ??= pauseBackdrop();
+  };
+  const letGo = () => {
+    held.current?.();
+    held.current = undefined;
+  };
+  return { onScrollBeginDrag: hold, onMomentumScrollBegin: hold, onScrollEndDrag: letGo, onMomentumScrollEnd: letGo };
 }

@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { coverScreen, useStill } from './motion';
+import { pauseBackdrop, useStill } from './motion';
 import { fonts, type Palette, useStyles } from './theme';
 
 const OPEN_MS = 260;
@@ -72,7 +72,7 @@ export function Sheet({
   useEffect(() => {
     if (!visible) return;
     drag.setValue(0);
-    return coverScreen();
+    return pauseBackdrop();
   }, [visible, drag]);
 
   useEffect(() => {

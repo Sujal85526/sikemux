@@ -6,7 +6,7 @@ import { useIsFocused } from 'expo-router';
 import { ditheringFragmentShader, getShaderColorFromString, imageDitheringFragmentShader } from '@paper-design/shaders';
 
 import type { DeviceBackdrop } from '@/devices/backdrop';
-import { useAppActive, useCovered, useStill } from './motion';
+import { useAppActive, useBackdropPaused, useStill } from './motion';
 import { useColors, type Palette } from './theme';
 import { uploadPicture } from './picture';
 import { vertexShaderSource } from './vertexShader.generated';
@@ -171,11 +171,11 @@ export function Backdrop() {
   const colors = useColors();
   const focused = useIsFocused();
   const active = useAppActive();
-  const covered = useCovered();
+  const paused = useBackdropPaused();
   const still = useStill();
   const [aspect, setAspect] = useState<number>();
   const picture = backdrop?.texture ? backdrop.image : undefined;
-  const moving = !picture && focused && active && !covered && !still;
+  const moving = !picture && focused && active && !paused && !still;
   const loops = useRef(new Set<Loop>());
   const movingNow = useRef(moving);
   const [shown] = useState(() => new Animated.Value(0));
