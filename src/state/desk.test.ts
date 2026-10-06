@@ -154,6 +154,13 @@ describe("the desk", () => {
         expect(browserApi.closeAgent).not.toHaveBeenCalled();
     });
 
+    it("opens the address over the new page when the desk had none", async () => {
+        toggleDesk("agent-1");
+        await vi.waitFor(() => expect(browserApi.newTab).toHaveBeenCalledWith("agent-1"));
+
+        expect(getState().deskAddressOpen).toBe("agent-1");
+    });
+
     it("shows the tabs it already has instead of opening another", async () => {
         const tab = {
             id: "tab-1",
@@ -173,6 +180,7 @@ describe("the desk", () => {
 
         expect(collectPanes(getState().windows.window.root).map((pane) => pane.kind)).toEqual(["agent", "desk"]);
         expect(browserApi.newTab).not.toHaveBeenCalled();
+        expect(getState().deskAddressOpen).toBeNull();
     });
 
     it("comes on screen for an agent that puts something on it, without taking focus from the agent", () => {

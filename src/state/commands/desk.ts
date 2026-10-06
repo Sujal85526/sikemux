@@ -75,7 +75,12 @@ export function toggleDesk(agentId: string): void {
     if (getState().desks[agentId]?.terminals.length || getState().editorViews[deskEditorId(agentId)]?.openTabs.length) return;
     void browserApi
         .snapshot(agentId)
-        .then((snapshot) => (snapshot.tabs.length === 0 ? browserApi.newTab(agentId) : undefined))
+        .then((snapshot) => {
+            if (snapshot.tabs.length > 0) return;
+            setDeskActive(agentId, BROWSER_ACTIVE);
+            openDeskAddress(agentId);
+            return browserApi.newTab(agentId);
+        })
         .catch(reportError("open browser tab"));
 }
 
