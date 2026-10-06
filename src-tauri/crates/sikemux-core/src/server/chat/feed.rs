@@ -142,6 +142,11 @@ fn is_kept(kind: ChatEventKind) -> bool {
     !matches!(kind, ChatEventKind::Status | ChatEventKind::Ready)
 }
 
+fn asks(event: &ChatEvent, request_id: &str) -> bool {
+    event.kind == ChatEventKind::PermissionRequest
+        && event.payload.get("requestId").and_then(Value::as_str) == Some(request_id)
+}
+
 fn session_update_kind(payload: &Value) -> Option<&str> {
     payload.pointer("/update/sessionUpdate")?.as_str()
 }
@@ -368,8 +373,7 @@ impl Replay {
     pub(crate) fn forget_permission(&mut self, request_id: &str) {
         let mut freed = 0;
         self.entries.retain(|entry| {
-            let answered = entry.event.kind == ChatEventKind::PermissionRequest
-                && entry.event.payload.get("requestId").and_then(Value::as_str) == Some(request_id);
+            let answered = asks(&entry.event, request_id);
             if answered {
                 freed += entry.bytes;
             }
@@ -420,6 +424,19 @@ impl Recent {
             self.bytes -= dropped.bytes;
             self.kept_after = dropped.seq;
         }
+    }
+
+    /// A client catching up is not asked a request someone already answered.
+    fn forget_permission(&mut self, request_id: &str) {
+        let mut freed = 0;
+        self.sent.retain(|sent| {
+            let answered = asks(&sent.event, request_id);
+            if answered {
+                freed += sent.bytes;
+            }
+            !answered
+        });
+        self.bytes -= freed;
     }
 
     fn since(&self, seq: u64, peer: &Peer) -> Option<Vec<ChatEvent>> {
@@ -735,6 +752,7 @@ impl Feed {
     pub(crate) fn forget_permission(&self, request_id: &str) {
         if let Ok(mut inner) = self.inner.lock() {
             inner.replay.forget_permission(request_id);
+            inner.recent.forget_permission(request_id);
         }
     }
 
@@ -878,6 +896,27 @@ mod tests {
         assert_eq!(events[0].payload["requestId"], "b");
         assert!(replay.bytes < before);
         assert!(!replay.is_trimmed());
+    }
+
+    #[test]
+    fn a_client_catching_up_is_not_asked_an_answered_permission_request() {
+        let mut recent = Recent::default();
+        for (seq, request_id) in [(1, "a"), (2, "b")] {
+            recent.push(Sent {
+                seq,
+                event: ChatEvent {
+                    kind: ChatEventKind::PermissionRequest,
+                    payload: json!({ "requestId": request_id }),
+                },
+                bytes: 10,
+                sender: None,
+            });
+        }
+        recent.forget_permission("a");
+        let missed = recent.since(0, &Peer::Local).expect("still kept");
+        assert_eq!(missed.len(), 1);
+        assert_eq!(missed[0].payload["requestId"], "b");
+        assert_eq!(recent.bytes, 10);
     }
 
     #[test]
