@@ -124,10 +124,10 @@ fn track_subagent(running: &mut HashSet<String>, payload: &Value) {
         Some("subagent_spawned") if !in_subagent => {
             running.insert(id.to_owned());
         }
-        Some("subagent_state_update") => {
-            if update.get("state").and_then(Value::as_str) != Some("running") {
-                running.remove(id);
-            }
+        Some("subagent_state_update")
+            if update.get("state").and_then(Value::as_str) != Some("running") =>
+        {
+            running.remove(id);
         }
         _ => {}
     }
