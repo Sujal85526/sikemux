@@ -36,6 +36,7 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::TaskOutput { .. }
         | Request::AcpList
         | Request::AcpAttach { .. }
+        | Request::AcpHistory { .. }
         | Request::AcpDetach { .. }
         | Request::AcpWake { .. }
         | Request::BackdropImage
@@ -73,8 +74,6 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::SetRemoteAccess { .. }
         | Request::SetDeviceAccess { .. }
         | Request::RevokeDevice { .. }
-        | Request::OpenPairing
-        | Request::ClosePairing
         | Request::AnswerPairing { .. }
         | Request::SignRegistration { .. }
         | Request::SetOwner { .. }
@@ -155,7 +154,6 @@ mod tests {
             Request::Configure { manifest_dir: None },
             Request::SetRemoteAccess { enabled: false },
             Request::RevokeDevice { id: "other".into() },
-            Request::OpenPairing,
             Request::AnswerPairing {
                 id: "request".into(),
                 allow: true,

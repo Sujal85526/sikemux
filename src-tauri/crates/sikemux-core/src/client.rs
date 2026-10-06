@@ -24,10 +24,10 @@ use crate::protocol::frozen::{FrozenReply, FrozenRequest};
 use crate::protocol::{
     decode_output, decode_snapshot, encode_control, encode_frozen, encode_input, read_frame,
     read_frame_sync, Attention, BackdropImage, BuildIdentity, CallId, ChatAttachment, ChatContext,
-    ChatInfo, ChatLaunch, ChatLauncher, ChatMark, ChatStart, ClientMessage, DeviceAccess, Event,
-    FrameKind, HostRegistration, LaunchIdentity, ProjectInfo, PublishedChat, RemoteStatus, Request,
-    RequestId, Response, RunSelector, ServerMessage, SessionId, SessionInfo, SpawnTarget,
-    WindowAnswer, WindowCall, Workspace, MAX_FRAME_BYTES, PROTOCOL, PROTOCOL_VERSION,
+    ChatEvent, ChatInfo, ChatLaunch, ChatLauncher, ChatMark, ChatStart, ClientMessage,
+    DeviceAccess, Event, FrameKind, HostRegistration, LaunchIdentity, ProjectInfo, PublishedChat,
+    RemoteStatus, Request, RequestId, Response, RunSelector, ServerMessage, SessionId, SessionInfo,
+    SpawnTarget, WindowAnswer, WindowCall, Workspace, MAX_FRAME_BYTES, PROTOCOL, PROTOCOL_VERSION,
 };
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -546,6 +546,30 @@ impl CoreClient {
         }
     }
 
+    /// The chat's turns before event `before` of its run `feed`, and where
+    /// the page before them starts, for a client shown only the chat's end.
+    pub async fn acp_history(
+        &self,
+        agent_id: String,
+        feed: String,
+        before: u64,
+        turns: u32,
+    ) -> Result<(Vec<ChatEvent>, Option<u64>), ClientError> {
+        let request = Request::AcpHistory {
+            agent_id,
+            feed,
+            before,
+            turns,
+        };
+        match self.request(request).await? {
+            Response::ChatHistory {
+                events,
+                older_before,
+            } => Ok((events, older_before)),
+            _ => Err(ClientError::UnexpectedReply),
+        }
+    }
+
     /// No more of the chat's events reach this client.
     pub async fn acp_detach(&self, agent_id: String) -> Result<(), ClientError> {
         self.request_done(Request::AcpDetach { agent_id }).await
@@ -802,14 +826,6 @@ impl CoreClient {
             Response::ChatBegun { agent_id, start } => Ok((agent_id, start)),
             _ => Err(ClientError::UnexpectedReply),
         }
-    }
-
-    pub async fn open_pairing(&self) -> Result<RemoteStatus, ClientError> {
-        self.remote_request(Request::OpenPairing).await
-    }
-
-    pub async fn close_pairing(&self) -> Result<RemoteStatus, ClientError> {
-        self.remote_request(Request::ClosePairing).await
     }
 
     pub async fn answer_pairing(

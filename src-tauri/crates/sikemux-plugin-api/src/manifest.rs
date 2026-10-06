@@ -37,6 +37,9 @@ pub struct AgentTool {
     pub properties: Map<String, Value>,
     #[serde(default)]
     pub required: Vec<String>,
+    /// How the chat pane draws a call to this tool; `pnpm agent-tools:check` validates it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub row: Option<Value>,
 }
 
 impl Manifest {

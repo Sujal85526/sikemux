@@ -1,10 +1,14 @@
-import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useEffectEvent, useRef, useSyncExternalStore } from 'react';
 import { AppState, Platform } from 'react-native';
+import { router } from 'expo-router';
 import { useAuth } from '@clerk/expo';
 import { nativeApplicationVersion } from 'expo-application';
 import type { Device } from '@protocol';
 
 import { thisDevice } from '@/device/identity';
+import { hostsArrived } from '@/devices/arrivals';
+import { joinShowing } from '@/devices/joining';
+import { pairedDevices } from '@/devices/paired';
 import { syncPushToken } from '@/notify/token';
 import { accountHosts, registerPhone } from './api';
 import { apiUrl } from './config';
@@ -38,36 +42,65 @@ function hostsChanged() {
   hostsListeners.forEach((listener) => listener());
 }
 
-function useHostsVersion(): number {
-  return useSyncExternalStore(
-    (listener) => {
-      hostsListeners.add(listener);
-      return () => hostsListeners.delete(listener);
-    },
-    () => hostsVersion,
-  );
+function subscribeHosts(listener: () => void) {
+  hostsListeners.add(listener);
+  return () => hostsListeners.delete(listener);
 }
 
-/** The hosts on the account, read again whenever the live connection hears one change. */
-export function useAccountHosts(): Device[] {
+/** The hosts on the account; `loaded` once the server has answered since signing in. */
+export type AccountHosts = { hosts: Device[]; loaded: boolean };
+
+const NO_HOSTS: AccountHosts = { hosts: [], loaded: false };
+let accountHostsNow = NO_HOSTS;
+
+function publishHosts(next: AccountHosts) {
+  accountHostsNow = next;
+  hostsListeners.forEach((listener) => listener());
+}
+
+/** Reads the hosts on the account on signing in, and again whenever the live connection hears one change. */
+export function useAccountHostsFeed() {
   const { isSignedIn, getToken } = useAuth();
-  const version = useHostsVersion();
-  const [hosts, setHosts] = useState<Device[]>([]);
+  const version = useSyncExternalStore(subscribeHosts, () => hostsVersion);
   const latestGetToken = useRef(getToken);
   useEffect(() => {
     latestGetToken.current = getToken;
   });
   useEffect(() => {
-    if (!isSignedIn) return;
+    if (!isSignedIn) {
+      publishHosts(NO_HOSTS);
+      return;
+    }
     let current = true;
     accountHosts(() => latestGetToken.current())
-      .then((found) => current && setHosts(found))
+      .then((hosts) => current && publishHosts({ hosts, loaded: true }))
       .catch((error: unknown) => console.warn('sikemux: could not list the hosts on the account', error));
     return () => {
       current = false;
     };
   }, [isSignedIn, version]);
-  return hosts;
+}
+
+export function useAccountHosts(): AccountHosts {
+  return useSyncExternalStore(subscribeHosts, () => accountHostsNow);
+}
+
+async function connectArrival(account: string, hosts: Device[]) {
+  const arrived = await hostsArrived(account, hosts);
+  const paired = await pairedDevices();
+  const host = arrived.find((found) => !paired.some((device) => device.core === found.key));
+  if (!host || joinShowing() || AppState.currentState !== 'active') return;
+  router.push({ pathname: '/join', params: { core: host.key, name: host.name, arrived: '1' } });
+}
+
+/** Starts connecting to a host that signs in to the account after this phone did; someone there still allows it. */
+export function useConnectArrivals() {
+  const { userId } = useAuth();
+  const { hosts, loaded } = useAccountHosts();
+  useEffect(() => {
+    if (!userId || !loaded) return;
+    connectArrival(userId, hosts).catch((error: unknown) => console.warn('sikemux: could not connect to a new host', error));
+  }, [userId, loaded, hosts]);
 }
 
 /** Keeps this phone connected to its account while the app is in front and signed in. */

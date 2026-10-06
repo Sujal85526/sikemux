@@ -14,6 +14,8 @@ pub fn plugins() -> Vec<Arc<dyn Plugin>> {
         sikemux_plugin_database::plugin(),
         #[cfg(feature = "github")]
         sikemux_plugin_github::plugin(),
+        #[cfg(feature = "jira")]
+        sikemux_plugin_jira::plugin(),
         #[cfg(feature = "rundeck")]
         sikemux_plugin_rundeck::plugin(),
         #[cfg(feature = "signoz")]

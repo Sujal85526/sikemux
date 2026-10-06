@@ -1,4 +1,5 @@
 import type { ChatMessage } from "./types";
+import { SHIMMER_COPY } from "./Shimmer";
 
 export interface ChatFindOptions {
     caseSensitive: boolean;
@@ -40,7 +41,9 @@ export function findMatches(messages: readonly ChatMessage[], pattern: RegExp | 
  */
 export function rangesIn(root: Node, pattern: RegExp): Range[] {
     const nodes: Text[] = [];
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode: (node) => (node.parentElement?.closest(SHIMMER_COPY) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+    });
     for (let node = walker.nextNode(); node; node = walker.nextNode()) nodes.push(node as Text);
     const starts: number[] = [];
     let text = "";

@@ -21,24 +21,21 @@ use tokio::task::JoinHandle;
 use crate::accounts::live::{self, Link, Push, Want};
 use crate::accounts::network;
 use crate::accounts::protocol::{
-    AccountEvent, AccountEventType, LiveApp, Network, Platform, PushResult, Relay, RevokeReason,
+    AccountEvent, AccountEventType, JoinTicket, LiveApp, Network, Platform, PushResult, Relay,
+    RevokeReason,
 };
-use crate::pairing::{PairingLink, CODE_DIGITS, PAIR_ALPN};
+use crate::join::{self, Expected, Refusal, TrustedKeys, JOIN_ALPN};
 use crate::protocol::{
     AccountLink, AccountLinkState, DeviceAccess, DeviceInfo, Event, NotificationState, NotifyPrefs,
-    NotifyWhen, PairingOffer, PendingDevice, PhoneNotifications, RemoteStatus, UpdateRequired,
+    NotifyWhen, PendingDevice, PhoneNotifications, RemoteStatus, UpdateRequired,
 };
 use crate::push::NotificationKey;
 use crate::remote::CORE_ALPN;
 
 use super::access::Peer;
-use super::bonjour;
 use super::connection::{blocking, serve_client};
 use super::{Core, CoreError, CoreResult, ServerConfig};
 
-const OFFER_LIFETIME_MS: u64 = 5 * 60 * 1000;
-/// Wrong codes one pairing code survives before it is withdrawn.
-const OFFER_ATTEMPTS: u8 = 5;
 /// How long signing out waits for the account to confirm this host left.
 #[cfg(not(test))]
 const LEAVE_WAIT: Duration = Duration::from_secs(5);
@@ -46,6 +43,7 @@ const LEAVE_WAIT: Duration = Duration::from_secs(5);
 const LEAVE_WAIT: Duration = Duration::from_millis(300);
 const NETWORK_REFRESH: Duration = Duration::from_secs(4 * 60 * 60);
 const NETWORK_RETRY: Duration = Duration::from_secs(5 * 60);
+const SIGNED_OUT: &str = "sign in to use Sikemux on your phone";
 
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -72,6 +70,10 @@ struct Stored {
     /// about, by device id.
     #[serde(default)]
     notifications: BTreeMap<String, PhoneNotify>,
+    /// When the account lately revoked each phone, in milliseconds since the
+    /// epoch, by device id. A join ticket issued before then is refused.
+    #[serde(default)]
+    revoked: BTreeMap<String, u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -121,13 +123,6 @@ struct LiveTask {
 struct Running {
     endpoint: Endpoint,
     accept: JoinHandle<()>,
-    _advert: Option<bonjour::Advert>,
-}
-
-struct Offer {
-    code: String,
-    expires_at: u64,
-    attempts_left: u8,
 }
 
 struct Pending {
@@ -143,7 +138,6 @@ struct Inner {
     stored: Stored,
     running: Option<Running>,
     connected: HashMap<String, usize>,
-    offer: Option<Offer>,
     pending: Vec<Pending>,
     accounts_api: Option<String>,
     live: Option<LiveTask>,
@@ -158,14 +152,8 @@ struct Inner {
     pushed: HashMap<String, (NotificationState, u64)>,
     /// Phones the account will not pass notifications to.
     refused: HashSet<String>,
-}
-
-impl Inner {
-    fn live_offer(&self) -> Option<&Offer> {
-        self.offer
-            .as_ref()
-            .filter(|offer| offer.attempts_left > 0 && offer.expires_at > unix_ms())
-    }
+    #[cfg(test)]
+    join_keys: Option<TrustedKeys>,
 }
 
 #[derive(Default)]
@@ -274,18 +262,6 @@ impl Remote {
             addresses,
             devices: inner.stored.devices.clone(),
             connected,
-            pairing: inner
-                .live_offer()
-                .zip(inner.secret.as_ref())
-                .map(|(offer, secret)| PairingOffer {
-                    code: offer.code.clone(),
-                    expires_at: offer.expires_at,
-                    link: PairingLink {
-                        core: secret.public(),
-                        code: offer.code.clone(),
-                    }
-                    .to_url(),
-                }),
             pending: inner
                 .pending
                 .iter()
@@ -391,6 +367,11 @@ impl Remote {
         inner.stored.devices = devices;
     }
 
+    #[cfg(test)]
+    pub(crate) fn listen_on_loopback(&self) {
+        self.lock().direct_only = true;
+    }
+
     pub(crate) fn outbox(&self) -> Arc<live::Outbox> {
         self.lock().outbox.clone()
     }
@@ -458,41 +439,6 @@ impl Remote {
             .map(|secret| secret.public().to_string())
     }
 
-    pub(super) fn open_offer(&self) -> CoreResult<()> {
-        let mut inner = self.lock();
-        if !inner.stored.enabled {
-            return Err("turn on remote access before pairing a device".into());
-        }
-        let code = uuid::Uuid::new_v4().as_u128() % 10u128.pow(CODE_DIGITS as u32);
-        inner.offer = Some(Offer {
-            code: format!("{code:0width$}", width = CODE_DIGITS),
-            expires_at: unix_ms() + OFFER_LIFETIME_MS,
-            attempts_left: OFFER_ATTEMPTS,
-        });
-        Ok(())
-    }
-
-    pub(super) fn close_offer(&self) {
-        self.lock().offer = None;
-    }
-
-    /// The open code, spending one of its attempts.
-    pub(super) fn attempt(&self) -> Option<String> {
-        let mut inner = self.lock();
-        inner.live_offer()?;
-        let offer = inner.offer.as_mut()?;
-        offer.attempts_left -= 1;
-        Some(offer.code.clone())
-    }
-
-    /// Withdraws `code` once a device has used it, unless another replaced it.
-    pub(super) fn spend_offer(&self, code: &str) {
-        let mut inner = self.lock();
-        if inner.offer.as_ref().is_some_and(|offer| offer.code == code) {
-            inner.offer = None;
-        }
-    }
-
     pub(super) fn ask(&self, device: PendingDevice) -> oneshot::Receiver<Option<DeviceAccess>> {
         let (answer, answered) = oneshot::channel();
         self.lock().pending.push(Pending { device, answer });
@@ -527,6 +473,62 @@ impl Remote {
         }
         let _ = pending.answer.send(access);
         Ok(())
+    }
+
+    /// Checks a join ticket from the phone `phone` proved it is. Answers with
+    /// the access the phone has if it is paired already.
+    pub(super) fn check_join(
+        &self,
+        ticket: &JoinTicket,
+        phone: &str,
+    ) -> Result<Option<DeviceAccess>, Refusal> {
+        let keys = self.join_keys();
+        let inner = self.lock();
+        let host = inner
+            .secret
+            .as_ref()
+            .map(|secret| secret.public().to_string())
+            .unwrap_or_default();
+        join::check(
+            ticket,
+            &keys,
+            &Expected {
+                owner: inner.stored.owner.as_deref(),
+                host: &host,
+                phone,
+                now: (unix_ms() / 1000) as i64,
+                revoked_at_ms: inner.stored.revoked.get(phone).copied(),
+            },
+        )?;
+        Ok(inner
+            .stored
+            .devices
+            .iter()
+            .find(|device| device.id == phone)
+            .map(|device| device.access))
+    }
+
+    fn join_keys(&self) -> TrustedKeys {
+        #[cfg(test)]
+        if let Some(keys) = self.lock().join_keys.clone() {
+            return keys;
+        }
+        TrustedKeys::for_this_build()
+    }
+
+    #[cfg(test)]
+    pub(super) fn trust_join_key(&self, id: &str, key: [u8; 32]) {
+        let mut keys = TrustedKeys::default();
+        keys.insert(id, key);
+        self.lock().join_keys = Some(keys);
+    }
+
+    /// Withdraws whatever `device_id` asked before, so a phone that tries
+    /// again waits on one request.
+    pub(super) fn forget_device_requests(&self, device_id: &str) {
+        self.lock()
+            .pending
+            .retain(|pending| pending.device.device_id != device_id);
     }
 
     pub(super) fn forget_pending(&self, id: &str) {
@@ -828,49 +830,45 @@ async fn listen(core: &Arc<Core>) -> CoreResult<()> {
     };
     let endpoint = builder
         .secret_key(secret)
-        .alpns(vec![CORE_ALPN.to_vec(), PAIR_ALPN.to_vec()])
+        .alpns(vec![CORE_ALPN.to_vec(), JOIN_ALPN.to_vec()])
         .bind()
         .await
         .map_err(|error| CoreError::from(format!("remote access did not start: {error}")))?;
     let accept = tokio::spawn(accept(core.clone(), endpoint.clone()));
-    let advert = if direct_only {
-        None
-    } else {
-        let port = endpoint
-            .bound_sockets()
-            .iter()
-            .find(|address| address.is_ipv4())
-            .map(|address| address.port());
-        port.and_then(|port| bonjour::advertise(&endpoint.id().to_string(), port))
-    };
     let mut inner = core.remote.lock();
     if inner.running.is_some() {
         accept.abort();
         return Ok(());
     }
-    inner.running = Some(Running {
-        endpoint,
-        accept,
-        _advert: advert,
-    });
+    inner.running = Some(Running { endpoint, accept });
     Ok(())
 }
 
-pub(crate) async fn stop(core: &Arc<Core>) {
+/// Stops listening and drops every device connection, handing back the
+/// endpoint for the caller to close.
+fn halt(core: &Core) -> Option<Endpoint> {
     let running = {
         let mut inner = core.remote.lock();
-        inner.offer = None;
         inner.pending.clear();
         inner.running.take()
     };
     core.close_device_clients(None);
-    if let Some(running) = running {
+    running.map(|running| {
         running.accept.abort();
-        running.endpoint.close().await;
+        running.endpoint
+    })
+}
+
+pub(crate) async fn stop(core: &Core) {
+    if let Some(endpoint) = halt(core) {
+        endpoint.close().await;
     }
 }
 
 pub(crate) async fn set_enabled(core: &Arc<Core>, enabled: bool) -> CoreResult<RemoteStatus> {
+    if enabled && core.remote.lock().stored.owner.is_none() {
+        return Err(SIGNED_OUT.into());
+    }
     if let Some(required) = core
         .remote
         .lock()
@@ -911,9 +909,10 @@ pub(crate) fn set_access(core: &Core, id: &str, access: DeviceAccess) -> CoreRes
     Ok(announce(core))
 }
 
-/// Signing in starts the live connection to the account. Signing out sends
-/// `leave` on it, now or on the next connection, so the account drops this
-/// host; paired devices stay.
+/// Signing in starts the live connection to the account and turns remote
+/// access on. Signing out turns remote access off and sends `leave` on the
+/// live connection, now or on the next one, so the account drops this host;
+/// paired devices stay.
 pub(crate) async fn set_owner(core: &Arc<Core>, owner: Option<String>) -> CoreResult<RemoteStatus> {
     if let Some(owner) = &owner {
         crate::accounts::check_user_id(owner).map_err(CoreError::from)?;
@@ -928,8 +927,10 @@ pub(crate) async fn set_owner(core: &Arc<Core>, owner: Option<String>) -> CoreRe
                 stored.owner = Some(owner);
                 stored.pending_leave = None;
                 stored.removed = None;
+                stored.enabled = true;
             }
             None => {
+                stored.enabled = false;
                 if let Some(previous) = stored.owner.take().filter(|_| live) {
                     stored.pending_leave = Some(previous);
                 }
@@ -937,6 +938,13 @@ pub(crate) async fn set_owner(core: &Arc<Core>, owner: Option<String>) -> CoreRe
         }
         Ok(stored.pending_leave.is_some())
     })?;
+    if core.remote.is_enabled() {
+        if let Err(error) = listen(core).await {
+            eprintln!("sikemux core: remote access did not start: {error}");
+        }
+    } else {
+        stop(core).await;
+    }
     ensure_live(core);
     if leaving {
         let confirmed = async {
@@ -1096,7 +1104,11 @@ fn apply_events(core: &Core, events: &[AccountEvent]) {
         match event.r#type {
             AccountEventType::DeviceRevoked => match event.key.as_deref() {
                 Some(key) if Some(key) == own.as_deref() => released = Some(event.reason),
-                Some(key) => revoked.push((key.to_owned(), event.reason)),
+                Some(key) => revoked.push((
+                    key.to_owned(),
+                    event.reason,
+                    live::parse_rfc3339(&event.at).unwrap_or_else(unix_ms),
+                )),
                 None => {}
             },
             AccountEventType::AccountDeleted => {
@@ -1108,12 +1120,16 @@ fn apply_events(core: &Core, events: &[AccountEvent]) {
     let last = events.iter().map(|event| event.id).max().unwrap_or(0);
     let forgotten = core.remote.change(|stored| {
         let mut forgotten = Vec::new();
-        for (key, reason) in &revoked {
+        for (key, reason, at) in &revoked {
             if let Some(index) = stored.devices.iter().position(|device| &device.id == key) {
                 forgotten.push((stored.devices.remove(index), *reason));
             }
             stored.notifications.remove(key);
+            let latest = stored.revoked.entry(key.clone()).or_default();
+            *latest = (*latest).max(*at);
         }
+        let forgettable = unix_ms().saturating_sub(join::REVOCATION_MEMORY_MS);
+        stored.revoked.retain(|_, at| *at >= forgettable);
         stored.account_event_id = stored.account_event_id.max(last);
         Ok(forgotten)
     });
@@ -1126,7 +1142,7 @@ fn apply_events(core: &Core, events: &[AccountEvent]) {
         inner.pending.retain(|pending| {
             !revoked
                 .iter()
-                .any(|(key, _)| *key == pending.device.device_id)
+                .any(|(key, _, _)| *key == pending.device.device_id)
         });
     }
     for (device, reason) in &forgotten {
@@ -1148,10 +1164,11 @@ fn apply_events(core: &Core, events: &[AccountEvent]) {
     announce(core);
 }
 
-/// The account no longer has this host: forget it, and keep why until the
-/// person signs in again. Paired devices stay.
+/// The account no longer has this host: forget it, keep why until the person
+/// signs in again, and turn remote access off. Paired devices stay.
 fn let_go(core: &Core, reason: Option<RevokeReason>) {
     let released = core.remote.change(|stored| {
+        stored.enabled = false;
         if stored.owner.take().is_some() {
             stored.removed = Some(Removal {
                 reason,
@@ -1171,6 +1188,9 @@ fn let_go(core: &Core, reason: Option<RevokeReason>) {
     });
     if let Err(error) = released {
         eprintln!("sikemux core: could not save leaving the account: {error}");
+    }
+    if let Some(endpoint) = halt(core) {
+        tokio::spawn(async move { endpoint.close().await });
     }
     core.remote.left.notify_waiters();
 }
@@ -1208,8 +1228,8 @@ async fn serve_device(core: Arc<Core>, incoming: Incoming) {
     let Ok(connection) = incoming.await else {
         return;
     };
-    if connection.alpn() == PAIR_ALPN {
-        super::pairing::serve(core, connection).await;
+    if connection.alpn() == JOIN_ALPN {
+        super::join::serve(core, connection).await;
         return;
     }
     let id = connection.remote_id().to_string();
@@ -1263,6 +1283,7 @@ mod tests {
             removed: None,
             network: None,
             notifications: BTreeMap::new(),
+            revoked: BTreeMap::new(),
             devices: vec![DeviceInfo {
                 id: SecretKey::generate().public().to_string(),
                 name: "Phone".into(),
@@ -1339,12 +1360,14 @@ mod tests {
         serde_json::from_value(event).unwrap()
     }
 
-    /// A core signed in to an account with two paired phones, saving to `dir`.
+    /// A core signed in to an account with `phones` paired, saving to `dir`
+    /// and listening only on loopback.
     fn signed_in(dir: &Path, phones: &[&DeviceInfo]) -> Arc<Core> {
         let core = Core::new(crate::protocol::BuildIdentity::default(), None).unwrap();
         {
             let mut inner = core.remote.lock();
             inner.path = Some(dir.join("core.sock.remote.json"));
+            inner.direct_only = true;
             inner.secret = Some(SecretKey::generate());
             inner.stored.owner = Some("user_2abc".into());
             inner.stored.devices = phones.iter().map(|phone| (*phone).clone()).collect();
@@ -1371,6 +1394,8 @@ mod tests {
             device_id: gone.id.clone(),
             name: "Gone".into(),
             platform: "ios".into(),
+            from_account: true,
+            expires_at: unix_ms() + 120_000,
         });
         let events = [
             event(4, "device.revoked", Some(&gone.id), "client", "removed"),
@@ -1386,6 +1411,92 @@ mod tests {
         let saved = read_stored(&dir.path().join("core.sock.remote.json")).unwrap();
         assert_eq!(saved.account_event_id, 6);
         assert_eq!(saved.devices, vec![kept]);
+    }
+
+    fn ticket_for(core: &Core, phone: &str, issued_at: u64) -> JoinTicket {
+        let vector = crate::join::vector::vector();
+        core.remote
+            .trust_join_key(&vector.ticket.key_id, vector.public);
+        vector.signed(|ticket| {
+            ticket.account = "user_2abc".into();
+            ticket.host = core.remote.core_id().unwrap();
+            ticket.phone = phone.into();
+            ticket.issued_at = issued_at as i64;
+            ticket.expires_at = issued_at as i64 + 600;
+        })
+    }
+
+    fn revoked_at(id: i64, key: &str, at_ms: u64) -> AccountEvent {
+        let mut event = event(id, "device.revoked", Some(key), "client", "signed_out");
+        event.at = live::rfc3339(at_ms);
+        event
+    }
+
+    #[tokio::test]
+    async fn a_join_ticket_issued_before_the_account_revoked_the_phone_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = signed_in(dir.path(), &[]);
+        let phone = SecretKey::generate().public().to_string();
+        let issued = unix_ms() / 1000 - 30;
+        let ticket = ticket_for(&core, &phone, issued);
+        assert_eq!(core.remote.check_join(&ticket, &phone), Ok(None));
+
+        apply_events(&core, &[revoked_at(1, &phone, issued * 1000 + 10_000)]);
+        assert_eq!(
+            core.remote.check_join(&ticket, &phone),
+            Err(Refusal::Revoked)
+        );
+        let saved = read_stored(&dir.path().join("core.sock.remote.json")).unwrap();
+        assert_eq!(saved.revoked.get(&phone), Some(&(issued * 1000 + 10_000)));
+
+        let reissued = ticket_for(&core, &phone, issued + 20);
+        assert_eq!(core.remote.check_join(&reissued, &phone), Ok(None));
+    }
+
+    #[tokio::test]
+    async fn revocations_too_old_to_matter_are_not_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = signed_in(dir.path(), &[]);
+        let (old, recent) = (
+            SecretKey::generate().public().to_string(),
+            SecretKey::generate().public().to_string(),
+        );
+        let now = unix_ms();
+        apply_events(
+            &core,
+            &[
+                revoked_at(1, &old, now - crate::join::REVOCATION_MEMORY_MS - 1_000),
+                revoked_at(2, &recent, now - 1_000),
+            ],
+        );
+        let kept: Vec<String> = core.remote.lock().stored.revoked.keys().cloned().collect();
+        assert_eq!(kept, vec![recent]);
+    }
+
+    #[tokio::test]
+    async fn a_signed_out_host_refuses_every_join_ticket() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = signed_in(dir.path(), &[]);
+        let phone = SecretKey::generate().public().to_string();
+        let ticket = ticket_for(&core, &phone, unix_ms() / 1000);
+        core.remote.lock().stored.owner = None;
+        assert_eq!(
+            core.remote.check_join(&ticket, &phone),
+            Err(Refusal::SignedOut)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_paired_phone_with_a_ticket_keeps_the_access_it_has() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut paired = phone("Paired");
+        paired.access = DeviceAccess::Watch;
+        let core = signed_in(dir.path(), &[&paired]);
+        let ticket = ticket_for(&core, &paired.id, unix_ms() / 1000);
+        assert_eq!(
+            core.remote.check_join(&ticket, &paired.id),
+            Ok(Some(DeviceAccess::Watch))
+        );
     }
 
     #[tokio::test]
@@ -1584,6 +1695,40 @@ mod tests {
         core.remote.lock().never_too_old = true;
         apply_network(&core, network_allowing("9.0.0")).await;
         assert_eq!(core.remote.status().update_required, None);
+    }
+
+    #[tokio::test]
+    async fn remote_access_follows_the_sign_in() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = signed_in(dir.path(), &[]);
+        core.remote.lock().stored.owner = None;
+        let refused = set_enabled(&core, true).await.unwrap_err();
+        assert_eq!(refused.to_string(), SIGNED_OUT);
+        assert!(!core.remote.is_enabled());
+
+        let status = set_owner(&core, Some("user_2abc".into())).await.unwrap();
+        assert!(status.enabled, "signing in turns remote access on");
+        assert!(core.remote.lock().running.is_some());
+
+        let status = set_owner(&core, None).await.unwrap();
+        assert!(!status.enabled, "signing out turns remote access off");
+        assert!(core.remote.lock().running.is_none());
+        let saved = read_stored(&dir.path().join("core.sock.remote.json")).unwrap();
+        assert!(!saved.enabled);
+    }
+
+    #[tokio::test]
+    async fn the_account_letting_go_of_this_host_turns_remote_access_off() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = signed_in(dir.path(), &[]);
+        set_enabled(&core, true).await.unwrap();
+        let own = core.remote.core_id().unwrap();
+        apply_events(
+            &core,
+            &[event(1, "device.revoked", Some(&own), "host", "removed")],
+        );
+        assert!(!core.remote.status().enabled);
+        assert!(core.remote.lock().running.is_none());
     }
 
     #[test]

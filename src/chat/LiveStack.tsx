@@ -3,6 +3,7 @@ import { PRIMARY_SHORTCUT } from "../lib/platform";
 import { AgentIcon, IconClock, IconClose, IconCommand, IconTimer } from "../ui/Icons";
 import { ChatAgentContext } from "./chatAgent";
 import { queuedLabel, type QueuedMessage } from "./queuedMessages";
+import { Shimmer } from "./Shimmer";
 import { groupTasks, subagentActivity, taskDetail } from "./transcript";
 import type { AcpAsyncTask, AcpSubagent } from "./types";
 
@@ -47,7 +48,9 @@ export function RunningSubagents({ subagents }: { subagents: AcpSubagent[] }) {
                 <div className="chat-task chat-task-agent" key={subagent.sessionId}>
                     <AgentIcon type={agentType} size={16} className={`agent-glyph ${agentType}`} />
                     <span className="chat-task-name">{subagent.name}</span>
-                    <span className="chat-task-detail">{subagentActivity(subagent)}</span>
+                    <span className="chat-task-detail chat-shimmer">
+                        <Shimmer>{subagentActivity(subagent)}</Shimmer>
+                    </span>
                     <span className="chat-task-spinner" aria-hidden="true" />
                 </div>
             ))}

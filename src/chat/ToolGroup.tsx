@@ -3,6 +3,7 @@ import { animate, EASE_IN, foldedFrames, leavingRef } from "../lib/motion";
 import { IconChevron } from "../ui/Icons";
 import { toolDescription } from "./toolOutput";
 import { LiveSeconds } from "./LiveSeconds";
+import { Shimmer } from "./Shimmer";
 import { ToolRow } from "./ToolRow";
 import { durationLabel } from "./durationLabel";
 import { toolKind, toolRunning } from "./toolLabels";
@@ -78,21 +79,25 @@ export function ToolGroup({ tools, live }: { tools: Extract<ChatPart, { kind: "t
         0,
     );
     /* One column for every call in the run, as wide as the longest name in it:
-       a run of reads stays tight, one that called an MCP server gets the room. */
+       a run of reads stays tight, one that called an MCP server gets the room.
+       The extra pixel is for layout rounding, which otherwise cuts an exact fit. */
     const kindWidth = Math.min(16, Math.max(4, ...tools.map((part) => toolKind(part.tool).length)));
     // While a call runs, the header says what Claude said it is for; a finished run counts its calls.
     const said = current ? toolDescription(current.tool) : null;
+    const callCount = `${tools.length} tool ${tools.length === 1 ? "call" : "calls"}`;
     return (
         <div className="chat-tools" ref={groupRef}>
             <button type="button" className={`chat-tools-sum${current ? " live" : ""}`} aria-expanded={open} onClick={() => setReader(!open)}>
                 {said ? (
                     <>
-                        <span className="chat-tools-label said">{said}</span>
+                        <span className="chat-tools-label said chat-shimmer">
+                            <Shimmer>{said}</Shimmer>
+                        </span>
                         {tools.length > 1 && <span className="chat-tools-calls">{tools.length} calls</span>}
                     </>
                 ) : (
-                    <span className="chat-tools-label">
-                        {tools.length} tool {tools.length === 1 ? "call" : "calls"}
+                    <span className={`chat-tools-label${current ? " chat-shimmer" : ""}`}>
+                        {current ? <Shimmer>{callCount}</Shimmer> : callCount}
                     </span>
                 )}
                 {current ? (
@@ -103,7 +108,7 @@ export function ToolGroup({ tools, live }: { tools: Extract<ChatPart, { kind: "t
                 <IconChevron size={10} className="chat-tools-chevron" />
             </button>
             {open && (
-                <div className="chat-tools-body" ref={foldToolBody} style={{ "--chat-kind": `${kindWidth}ch` } as CSSProperties}>
+                <div className="chat-tools-body" ref={foldToolBody} style={{ "--chat-kind": `calc(${kindWidth}ch + 1px)` } as CSSProperties}>
                     {tools.map((part) => (
                         <ToolRow key={part.id} part={part} />
                     ))}

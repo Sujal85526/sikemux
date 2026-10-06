@@ -788,36 +788,6 @@
     display: flex;
 }
 
-.yolo-switch-option.armed.active {
-    box-shadow: none;
-}
-/* The masked gradient ring needs its own radius, or it paints a sharp rectangle
-   over the rounded segment. The colours move by sliding a wide strip behind the
-   window this cuts, which the compositor can do without repainting. */
-.yolo-switch-option.armed.active .yolo-ring {
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    padding: 1px;
-    overflow: hidden;
-    -webkit-mask:
-        linear-gradient(#000 0 0) content-box,
-        linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-    pointer-events: none;
-}
-.yolo-switch-option.armed.active .yolo-ring::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: 400%;
-    background-image: var(--yolo-rainbow);
-    background-size: 50% 100%;
-    animation: yolo-slide 5s linear infinite;
-}
 .yolo-switch-option.armed.active .yolo-switch-label {
     color: transparent;
     background: var(--yolo-rainbow);
@@ -827,30 +797,13 @@
     -webkit-text-fill-color: transparent;
 }
 .yolo-switch-option.armed.active .yolo-switch-glyph {
-    /* Not animated: `color` is not a compositor property, so cycling it
-       repainted the glyph and resolved style on every frame, in every pane
-       holding a live agent. The ring beside it already carries the motion. */
     color: var(--acc);
-}
-
-/* One full turn of the rainbow: the strip is four windows wide and carries two
-   turns of it, so half of it is exactly one. */
-@keyframes yolo-slide {
-    from {
-        transform: translateX(0);
-    }
-    to {
-        transform: translateX(-50%);
-    }
 }
 
 @media (prefers-reduced-motion: reduce) {
     .agent-state-loader i,
     .loading-ring,
-    .proj-pip.is-working::after,
-    .yolo-switch-option.armed.active::before,
-    .yolo-switch-option.armed.active .yolo-switch-label,
-    .yolo-switch-option.armed.active .yolo-switch-glyph {
+    .proj-pip.is-working::after {
         animation: none;
     }
 }

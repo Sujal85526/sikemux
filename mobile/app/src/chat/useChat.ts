@@ -1,57 +1,31 @@
 import { useCallback, useEffect, useEffectEvent, useReducer, useRef, useState } from 'react';
 import { ChatAttachment, MobileError, type ChatMark } from '@sikemux/native';
 
-import { permissionRequest, promptAction, recordOf, statusFromEvent } from '@mac/chat/acpEvents';
+import { recordOf } from '@mac/chat/acpEvents';
 import { chatReducer, initialChatState } from '@mac/chat/reducer';
-import type { ChatAction, ChatState } from '@mac/chat/types';
+import type { ChatAction, ChatMessage, ChatState } from '@mac/chat/types';
 
 import type { CoreChatEvent } from '@/core/protocol';
 import { onChatEvents, problem as problemOf, useLive, type ChatDelivery } from '@/devices/hub';
+import { actions, parsed } from './chatEvents';
+import { earlierMessages, PAGE_TURNS, withEarlier } from './earlier';
 
-/** The same mapping the Mac's useAcpSession does from a core chat event to the reducer. */
-function actions(event: CoreChatEvent): ChatAction[] {
-  const payload = event.payload;
-  switch (event.kind) {
-    case 'status':
-      return [{ type: 'status', state: statusFromEvent({ payload } as never) }];
-    case 'ready':
-      return [{ type: 'ready', capabilities: recordOf(payload.capabilities) ?? {}, setup: recordOf(payload.setup) ?? {} }];
-    case 'session_update': {
-      const rows = Array.isArray(payload.updates) ? payload.updates : [payload];
-      return rows.flatMap((entry): ChatAction[] => {
-        const row = recordOf(entry);
-        const update = row && recordOf(row.update);
-        return update && typeof row.sessionId === 'string' ? [{ type: 'session_update', sessionId: row.sessionId, update }] : [];
-      });
-    }
-    case 'prompt': {
-      const prompted = promptAction(payload);
-      return prompted ? [prompted] : [];
-    }
-    case 'turn_started':
-      return [{ type: 'turn_started' }];
-    case 'turn_completed':
-      return [{ type: 'turn_completed', stopReason: typeof payload.stopReason === 'string' ? payload.stopReason : undefined }];
-    case 'permission_request': {
-      const request = permissionRequest(payload);
-      return request ? [{ type: 'permission_requested', request }] : [];
-    }
-    case 'error':
-      return [{ type: 'error', message: typeof payload.message === 'string' ? payload.message : 'The agent stopped.' }];
+type Change =
+  { type: 'apply'; actions: ChatAction[] } | { type: 'replace'; state: ChatState } | { type: 'earlier'; messages: ChatMessage[] };
+
+function reduce(state: ChatState, change: Change): ChatState {
+  switch (change.type) {
+    case 'replace':
+      return change.state;
+    case 'earlier':
+      return withEarlier(state, change.messages);
     default:
-      return [];
+      return change.actions.reduce(chatReducer, state);
   }
 }
 
-function parsed(json: string): ChatAction[] {
-  return (JSON.parse(json) as CoreChatEvent[]).flatMap(actions);
-}
-
-type Change = { type: 'apply'; actions: ChatAction[] } | { type: 'replace'; state: ChatState };
-
-function reduce(state: ChatState, change: Change): ChatState {
-  return change.type === 'replace' ? change.state : change.actions.reduce(chatReducer, state);
-}
+/** Where the host's history of this run of the chat goes on before what the phone holds. */
+type Earlier = { feed: string; before: bigint };
 
 function reduceAll(state: ChatState, batch: ChatAction[]): ChatState {
   return batch.reduce(chatReducer, state);
@@ -72,6 +46,10 @@ export type ChatView = {
   answer: (requestId: string, optionId: string | null) => void;
   setConfig: (configId: string, value: string) => void;
   retry: () => void;
+  /** The host has turns from before the first message shown. */
+  hasEarlier: boolean;
+  /** Fetches the turns before the first message shown, unless that is already under way. */
+  loadEarlier: () => void;
 };
 
 const TOO_LONG = 'This chat is longer than the host keeps for the phone. Open it on the host to carry on.';
@@ -89,6 +67,11 @@ export function useChat(core: string, agentId: string): ChatView {
   /** Where this chat's events got to, so a reconnect asks only for what it missed. */
   const mark = useRef<ChatMark | undefined>(undefined);
   const [resumable, setResumable] = useState(false);
+  const [earlier, setEarlier] = useState<Earlier | null>(null);
+  const fetchingEarlier = useRef(false);
+  const earlierPages = useRef(0);
+  /** Counts attaches, so a page that comes back after the chat was taken up again is dropped. */
+  const attaches = useRef(0);
 
   const [run, setRun] = useState({ connection, core, agentId, attempt });
   if (run.connection !== connection || run.core !== core || run.agentId !== agentId || run.attempt !== attempt) {
@@ -112,6 +95,7 @@ export function useChat(core: string, agentId: string): ChatView {
   useEffect(() => {
     if (!connection) return;
     let current = true;
+    attaches.current += 1;
     let held: ChatDelivery[] | undefined = [];
     let pending: ChatAction[] = [];
     let frame: number | undefined;
@@ -162,6 +146,7 @@ export function useChat(core: string, agentId: string): ChatView {
           ]);
           setReplayed(new Set(reduceAll(initialChatState, replay).messages.map((message) => message.id)));
           change({ type: 'replace', state: rebuilt });
+          setEarlier(inner.olderBefore === undefined ? null : { feed: inner.mark.feed, before: inner.olderBefore });
           mark.current = inner.mark;
           setResumable(true);
         } else if (ChatAttachment.Resumed.instanceOf(attachment)) {
@@ -268,11 +253,48 @@ export function useChat(core: string, agentId: string): ChatView {
     [agentId, fail, withConnection],
   );
 
+  const loadEarlier = useCallback(() => {
+    const open = connectionRef.current;
+    if (!earlier || !open || fetchingEarlier.current) return;
+    fetchingEarlier.current = true;
+    const attach = attaches.current;
+    open
+      .chatHistory(agentId, earlier.feed, earlier.before, PAGE_TURNS)
+      .then((page) => {
+        if (attach !== attaches.current) return;
+        earlierPages.current += 1;
+        const messages = earlierMessages(parsed(page.eventsJson), earlierPages.current);
+        setReplayed((ids) => new Set([...ids, ...messages.map((message) => message.id)]));
+        change({ type: 'earlier', messages });
+        setEarlier(page.olderBefore === undefined ? null : { feed: earlier.feed, before: page.olderBefore });
+      })
+      .catch((error: unknown) => {
+        if (attach === attaches.current && MobileError.Refused.instanceOf(error)) setEarlier(null);
+      })
+      .finally(() => {
+        fetchingEarlier.current = false;
+      });
+  }, [agentId, earlier]);
+
   const retry = useCallback(() => {
     mark.current = undefined;
     setResumable(false);
     setAttempt((count) => count + 1);
   }, []);
 
-  return { state, replayed, attached, connected: connection !== undefined, problem, queued, send, cancel, answer, setConfig, retry };
+  return {
+    state,
+    replayed,
+    attached,
+    connected: connection !== undefined,
+    problem,
+    queued,
+    send,
+    cancel,
+    answer,
+    setConfig,
+    retry,
+    hasEarlier: earlier !== null,
+    loadEarlier,
+  };
 }

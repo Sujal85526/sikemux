@@ -1,6 +1,6 @@
-//! Remote access and pairing for the Devices settings page, and the projects
-//! and agents the app offers paired devices. The core keeps the state; these
-//! commands forward to it.
+//! Remote access and the phones allowed in, for the Devices settings page,
+//! and the projects and agents the app offers paired devices. The core keeps
+//! the state; these commands forward to it.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -210,23 +210,25 @@ pub async fn remote_status(manager: State<'_, PtyManager>) -> AppResult<RemoteSt
     client.remote_status().await.map_err(core_error)
 }
 
+/// Keeps the login item in step with remote access, which the switch turns
+/// on and off, and so do signing in and out.
+pub(crate) fn follow_remote_access(app: &AppHandle, enabled: bool) {
+    let identifier = app.config().identifier.clone();
+    let launch = app
+        .try_state::<PtyManager>()
+        .and_then(|manager| manager.core_launch());
+    tauri::async_runtime::spawn_blocking(move || {
+        login_item::sync(&identifier, launch.as_ref(), enabled);
+    });
+}
+
 #[tauri::command]
 pub async fn remote_set_enabled(
-    app: AppHandle,
     manager: State<'_, PtyManager>,
     enabled: bool,
 ) -> AppResult<RemoteStatus> {
     let client = manager.client().await?;
-    let status = client
-        .set_remote_access(enabled)
-        .await
-        .map_err(core_error)?;
-    login_item::sync(
-        &app.config().identifier,
-        manager.core_launch().as_ref(),
-        status.enabled,
-    );
-    Ok(status)
+    client.set_remote_access(enabled).await.map_err(core_error)
 }
 
 #[tauri::command]
@@ -249,18 +251,6 @@ pub async fn remote_revoke_device(
 ) -> AppResult<RemoteStatus> {
     let client = manager.client().await?;
     client.revoke_device(id).await.map_err(core_error)
-}
-
-#[tauri::command]
-pub async fn remote_open_pairing(manager: State<'_, PtyManager>) -> AppResult<RemoteStatus> {
-    let client = manager.client().await?;
-    client.open_pairing().await.map_err(core_error)
-}
-
-#[tauri::command]
-pub async fn remote_close_pairing(manager: State<'_, PtyManager>) -> AppResult<RemoteStatus> {
-    let client = manager.client().await?;
-    client.close_pairing().await.map_err(core_error)
 }
 
 #[tauri::command]

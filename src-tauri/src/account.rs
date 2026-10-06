@@ -165,11 +165,21 @@ async fn read_saved() -> AppResult<Option<Saved>> {
         .await
         .map_err(|error| AppError::Other(error.to_string()))?
         .map_err(|error| AppError::Other(error.to_string()))?;
-    Ok(text.and_then(|text| serde_json::from_str(&text).ok()))
+    Ok(text.and_then(|text| decode_saved(&text)))
+}
+
+/// The keychain takes only token-like text, so the saved sign-in goes in as base64 JSON.
+fn encode_saved(saved: &Saved) -> AppResult<String> {
+    Ok(URL_SAFE_NO_PAD.encode(serde_json::to_vec(saved)?))
+}
+
+fn decode_saved(text: &str) -> Option<Saved> {
+    let bytes = URL_SAFE_NO_PAD.decode(text.trim()).ok()?;
+    serde_json::from_slice(&bytes).ok()
 }
 
 async fn write_saved(saved: &Saved) -> AppResult<()> {
-    let text = serde_json::to_string(saved)?;
+    let text = encode_saved(saved)?;
     tokio::task::spawn_blocking(move || sikemux_keychain::write(KEY_SERVICE, key_account(), &text))
         .await
         .map_err(|error| AppError::Other(error.to_string()))?
@@ -315,7 +325,8 @@ async fn refreshed_access_token(saved: &Saved) -> AppResult<String> {
 }
 
 /// Opens sign-in in the browser, waits for it, then registers this host's
-/// core with the account and records the account as its owner.
+/// core with the account and records the account as its owner, which turns
+/// remote access on.
 #[tauri::command]
 pub async fn account_sign_in(
     app: AppHandle,
@@ -365,9 +376,10 @@ pub fn account_cancel_sign_in(pending: State<'_, PendingSignIn>) {
     pending.replace(None);
 }
 
-/// Takes this host off the account, then forgets the account here. The core
-/// tells the account, now or once it is back online. Paired devices stay:
-/// they are the host's own list, approved one by one.
+/// Takes this host off the account and turns remote access off, then forgets
+/// the account here. The core tells the account, now or once it is back
+/// online. Paired devices stay: they are the host's own list, approved one by
+/// one.
 #[tauri::command]
 pub async fn account_sign_out(
     app: AppHandle,
@@ -644,6 +656,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_saved_sign_in_reaches_the_keychain_as_token_like_text_and_comes_back() {
+        let saved = Saved {
+            user_id: "user_1".into(),
+            email: Some("someone@example.com".into()),
+            refresh_token: "rt.abc-def_ghi".into(),
+        };
+        let text = encode_saved(&saved).expect("encode");
+        assert!(text
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-')));
+        let back = decode_saved(&text).expect("decode");
+        assert_eq!(back.user_id, "user_1");
+        assert_eq!(back.email.as_deref(), Some("someone@example.com"));
+        assert_eq!(back.refresh_token, "rt.abc-def_ghi");
+    }
+
+    #[test]
     fn the_callback_must_carry_this_sign_in_state() {
         assert_eq!(
             callback("/callback?code=abc&state=s1", "s1"),
@@ -685,7 +714,7 @@ mod tests {
         let remote = |owner: Option<&str>, core_id: &str| -> RemoteStatus {
             serde_json::from_value(serde_json::json!({
                 "enabled": false, "coreId": core_id, "addresses": [], "devices": [],
-                "connected": [], "pairing": null, "pending": [], "owner": owner,
+                "connected": [], "pending": [], "owner": owner,
             }))
             .unwrap()
         };

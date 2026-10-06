@@ -11,7 +11,7 @@ import { ClerkProvider } from '@clerk/expo';
 import { tokenCache } from '@clerk/expo/token-cache';
 
 import { CLERK_PUBLISHABLE_KEY } from '@/account/config';
-import { useAccountLive, useRegisterPhone } from '@/account/session';
+import { useAccountHostsFeed, useAccountLive, useConnectArrivals, useRegisterPhone } from '@/account/session';
 import { goOffline } from '@/device/identity';
 import { NotificationsOffer } from '@/notify/NotificationsOffer';
 import { usePushToken } from '@/notify/switch';
@@ -70,6 +70,8 @@ export default function RootLayout() {
 function PhoneOnAccount() {
   useRegisterPhone();
   useAccountLive();
+  useAccountHostsFeed();
+  useConnectArrivals();
   usePushToken();
   return null;
 }

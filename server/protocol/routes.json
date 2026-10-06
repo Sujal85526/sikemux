@@ -136,6 +136,32 @@
       }
     },
     {
+      "method": "post",
+      "path": "/v1/devices/{key}/join",
+      "operationId": "createJoinTicket",
+      "summary": "A ticket for this phone to join one of your hosts without a code",
+      "auth": "session",
+      "request": "JoinRequest",
+      "responses": {
+        "200": {
+          "description": "The ticket, good for ten minutes. The host still asks its owner before letting the phone in.",
+          "body": "JoinTicket"
+        },
+        "403": {
+          "description": "Only the phone and web app's sign-ins may ask; a host's sign-in cannot.",
+          "body": "ApiError"
+        },
+        "404": {
+          "description": "None of your phones has that key, or none of your hosts has the host's.",
+          "body": "ApiError"
+        },
+        "429": {
+          "description": "More than 10 tickets for this phone in a minute.",
+          "body": "ApiError"
+        }
+      }
+    },
+    {
       "method": "get",
       "path": "/v1/live",
       "operationId": "openLive",

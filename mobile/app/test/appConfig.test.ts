@@ -54,3 +54,11 @@ describe('build numbers', () => {
     expect(versionFromBuild(stable.ios.buildNumber)).toBe(expo.version);
   });
 });
+
+describe('release builds', () => {
+  it("keep expo-gl's classes, which its C++ and Expo's view registry look up by name", () => {
+    const buildProperties = expo.plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === 'expo-build-properties');
+    const rules = (buildProperties?.[1] as { android: { extraProguardRules: string } }).android.extraProguardRules;
+    expect(rules.split('\n')).toContain('-keep class expo.modules.gl.** { *; }');
+  });
+});

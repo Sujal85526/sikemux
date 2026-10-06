@@ -5,6 +5,7 @@ import {
   AccountProblem,
   clearPushToken,
   deleteAccount,
+  joinTicket,
   registerPhone,
   removePhone,
   ReverifyNeeded,
@@ -20,7 +21,7 @@ const identity = vi.hoisted(() => ({
   })),
 }));
 vi.mock('@/device/identity', () => identity);
-vi.mock('@/devices/pairing', () => ({ phoneName: () => 'Pixel 9' }));
+vi.mock('@/device/name', () => ({ phoneName: () => 'Pixel 9' }));
 vi.mock('./config', () => ({ apiUrl: () => 'https://api.test' }));
 
 type Call = { url: string; method: string; body?: unknown; authorization?: string };
@@ -178,6 +179,39 @@ describe('accountHosts', () => {
     const hosts = await accountHosts(token);
     expect(calls[0]?.url).toBe('https://api.test/v1/devices?role=host');
     expect(hosts.map((host) => host.name)).toEqual(['Studio']);
+  });
+});
+
+describe('joinTicket', () => {
+  const ticket = {
+    v: 1,
+    keyId: 'prod-1',
+    account: 'user_2abc',
+    host: 'cd'.repeat(32),
+    phone: 'ab'.repeat(32),
+    issuedAt: 1791000000,
+    expiresAt: 1791000600,
+    signature: 'ef'.repeat(64),
+  };
+
+  it("asks for a ticket in this phone's name for the host it means to join", async () => {
+    answers.push({ status: 200, body: ticket });
+    await expect(joinTicket(token, 'cd'.repeat(32))).resolves.toEqual(ticket);
+    expect(calls[0]).toEqual({
+      url: `https://api.test/v1/devices/${'ab'.repeat(32)}/join`,
+      method: 'POST',
+      authorization: 'Bearer session-token',
+      body: { host: 'cd'.repeat(32) },
+    });
+  });
+
+  it('keeps the status of a refusal, so a host gone from the account reads differently from a busy server', async () => {
+    answers.push({ status: 404, body: { error: { code: 'not_found', message: 'None of your hosts has that key.', requestId: 'r' } } });
+    const gone = await joinTicket(token, 'cd'.repeat(32)).catch((error: unknown) => error);
+    expect(gone).toBeInstanceOf(AccountProblem);
+    expect((gone as AccountProblem).status).toBe(404);
+    answers.push({ status: 429, body: { error: { code: 'rate_limited', message: 'Too many tickets.', requestId: 'r' } } });
+    expect(((await joinTicket(token, 'cd'.repeat(32)).catch((error: unknown) => error)) as AccountProblem).status).toBe(429);
   });
 });
 

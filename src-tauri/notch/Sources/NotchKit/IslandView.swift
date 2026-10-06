@@ -24,6 +24,7 @@ struct IslandView: View {
         .animation(.smooth, value: island.pull)
         .preferredColorScheme(.dark)
         .onChange(of: store.agents) { _, agents in island.agentsChanged(agents) }
+        .onChange(of: store.devices) { _, devices in island.devicesChanged(devices) }
     }
 
     private var geometry: NotchGeometry { island.geometry }
@@ -36,7 +37,7 @@ struct IslandView: View {
     private var expanded: Bool {
         switch island.mode {
         case .closed, .peekDone: return false
-        case .peekAsk, .open, .drop: return true
+        case .peekAsk, .connect, .open, .drop: return true
         }
     }
 
@@ -44,7 +45,7 @@ struct IslandView: View {
         switch island.mode {
         case .closed, .peekDone: return Radii.closed
         case .peekAsk: return Radii.peek
-        case .open, .drop: return Radii.open
+        case .connect, .open, .drop: return Radii.open
         }
     }
 
@@ -53,6 +54,7 @@ struct IslandView: View {
         case .closed: return ClosedWings.width(store, geometry)
         case .peekDone: return geometry.notchWidth + 2 * FinishedWings.wing
         case .peekAsk: return 460
+        case .connect: return 560
         case .open, .drop: return 680
         }
     }
@@ -61,7 +63,7 @@ struct IslandView: View {
         switch island.mode {
         case .closed, .peekDone: return 0
         case .peekAsk: return Radii.peek.top + 8
-        case .open, .drop: return Radii.open.top + 12
+        case .connect, .open, .drop: return Radii.open.top + 12
         }
     }
 
@@ -90,7 +92,7 @@ struct IslandView: View {
         .shadow(color: lifted ? .black.opacity(0.7) : .clear, radius: 6)
         .onHover { island.pointer(entered: $0, opensOnHover: store.settings.openWith == .hover) }
         .onTapGesture {
-            if !island.isOpen { island.set(.open) }
+            if !island.isOpen, !island.asksToConnect { island.set(.open) }
         }
         .onExitCommand { island.set(.closed) }
         .offset(x: shift)
@@ -110,6 +112,8 @@ struct IslandView: View {
             case .peekAsk(let id):
                 AskHeader(agent: store.agents.first { $0.id == id }, geometry: geometry, marks: marks)
                     .transition(.inPlace)
+            case .connect:
+                Color.clear
             case .open:
                 OpenHeader(store: store, island: island)
                     .transition(.inPlace)
@@ -131,6 +135,8 @@ struct IslandView: View {
         switch island.mode {
         case .peekAsk(let id):
             AskBody(store: store, island: island, agent: store.agents.first { $0.id == id })
+        case .connect(let id):
+            ConnectCard(store: store, device: store.devices.first { $0.id == id })
         case .drop:
             DropTargets(store: store, island: island)
         default:

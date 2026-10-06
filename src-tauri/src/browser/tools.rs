@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager, Webview};
 
 use super::viewport::Viewport;
-use super::{BrowserManager, BLANK_URL};
+use super::{BrowserManager, DownloadState, BLANK_URL};
 use sikemux_core::cli::protocol::HarnessRequest;
 
 const PAGE_SCRIPT: &str = include_str!("page.js");
@@ -15,6 +15,8 @@ const RECORDS_SCRIPT: &str = include_str!("records.js");
 const EVAL_TIMEOUT: Duration = Duration::from_secs(10);
 const LOAD_TIMEOUT: Duration = Duration::from_secs(20);
 const SETTLE: Duration = Duration::from_millis(250);
+const DOWNLOAD_WAIT: Duration = Duration::from_secs(15);
+const DOWNLOAD_POLL: Duration = Duration::from_millis(100);
 const MAX_WAIT_MS: u64 = 30_000;
 const SCRIPT_TIMEOUT_MS: u64 = 30_000;
 /// The sidecar stops waiting for any reply after 70 seconds.
@@ -35,6 +37,12 @@ const SLOW_ANSWER: Duration = Duration::from_secs(1);
 
 use native::Mouse;
 
+/// Runs `body` in the tab's helper world, which sees the page's DOM but none
+/// of its scripts.
+pub(super) async fn run_helper(view: &Webview, body: &str) -> Result<String, String> {
+    native::run_helper(view, body).await
+}
+
 /// Runs on a CLI broker thread, so blocking on the async runtime is safe.
 pub fn execute(app: &AppHandle, request: &HarnessRequest) -> Result<Value, String> {
     let agent_id = request
@@ -46,9 +54,14 @@ pub fn execute(app: &AppHandle, request: &HarnessRequest) -> Result<Value, Strin
     let mut marks = Vec::new();
     if acts_on_a_tab {
         manager.announce_acting(app, agent_id);
+        let reloading = manager.reloading(agent_id);
         marks.extend(manager.mark_acting(app, agent_id));
+        if reloading {
+            wait_for_reload(&manager, agent_id);
+        }
     }
     let before = tab_ids(&manager, agent_id);
+    let download_mark = manager.download_mark(agent_id);
     let sends_input = matches!(
         request.method.as_str(),
         "browser.click"
@@ -75,15 +88,42 @@ pub fn execute(app: &AppHandle, request: &HarnessRequest) -> Result<Value, Strin
         marks.extend(manager.mark_acting(app, agent_id));
         manager.release_acting(app, agent_id, marks);
     }
-    if request.method != "browser.navigate" {
-        if let Ok(Value::Object(map)) = &mut result {
+    if let Ok(Value::Object(map)) = &mut result {
+        if request.method != "browser.navigate" {
             let opened = opened_tabs(&manager, agent_id, &before);
             if !opened.is_empty() {
                 map.insert("openedTabs".into(), json!(opened));
             }
         }
+        let saved = saved_files(&manager, agent_id, download_mark);
+        if !saved.is_empty() {
+            map.entry("downloads").or_insert(json!(saved));
+        }
     }
     result
+}
+
+/// Files the action made the page download, given a moment to finish so the
+/// agent gets a path it can use straight away.
+fn saved_files(manager: &BrowserManager, agent_id: &str, mark: u64) -> Vec<Value> {
+    let deadline = Instant::now() + DOWNLOAD_WAIT;
+    loop {
+        let files = manager.downloads_since(agent_id, mark);
+        let unfinished = files
+            .iter()
+            .any(|file| file.state == DownloadState::Started);
+        if !unfinished || Instant::now() >= deadline {
+            return files.into_iter().map(|file| json!(file)).collect();
+        }
+        std::thread::sleep(DOWNLOAD_POLL);
+    }
+}
+
+/// An unloaded tab loads its page again before the agent's tools touch it.
+fn wait_for_reload(manager: &BrowserManager, agent_id: &str) {
+    if let Ok((tab_id, _)) = manager.active_view(agent_id) {
+        tauri::async_runtime::block_on(manager.wait_until_loaded(agent_id, &tab_id, LOAD_TIMEOUT));
+    }
 }
 
 fn tab_ids(manager: &BrowserManager, agent_id: &str) -> Vec<String> {
@@ -129,6 +169,10 @@ async fn run(
             manager
                 .switch_tab(app, agent_id, &id)
                 .map_err(|error| error.to_string())?;
+            if manager.reloading(agent_id) {
+                let _ = manager.active_view(agent_id);
+                manager.wait_until_loaded(agent_id, &id, LOAD_TIMEOUT).await;
+            }
             read_state(&manager, agent_id, "changes", false).await
         }
         "browser.tab.close" => {
@@ -201,7 +245,12 @@ async fn run(
                 return call(&view, "extract", &[json!(selector)]).await;
             }
             let full_text = params.get("fullText").and_then(Value::as_bool) == Some(true);
-            read_state(&manager, agent_id, "full", full_text).await
+            let mut result = read_state(&manager, agent_id, "full", full_text).await?;
+            let downloads = manager.recent_downloads(agent_id);
+            if !downloads.is_empty() {
+                result["downloads"] = json!(downloads);
+            }
+            Ok(result)
         }
         "browser.find" => {
             let query = text("query").ok_or("query is required")?;

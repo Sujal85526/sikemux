@@ -7,10 +7,11 @@ import { activityText, composerPlaceholder } from '@mac/chat/chatStatus';
 import { activeToolLabel } from '@mac/chat/toolLabels';
 import type { ChatMessage } from '@mac/chat/types';
 import { Composer } from '@/chat/Composer';
-import { Activity, Message, Queued } from '@/chat/Transcript';
+import { Activity, Earlier, Message, Queued } from '@/chat/Transcript';
 import { useChat } from '@/chat/useChat';
-import { useDevices, useLive } from '@/devices/hub';
+import { retry as reconnect, useDevices, useLive } from '@/devices/hub';
 import { dismissCardsFor } from '@/notify/cards';
+import { deviceName } from '@/devices/paired';
 import { chatTitle, providerName } from '@/devices/words';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Button, Nav, Screen, useBottomGap, Working } from '@/ui/parts';
@@ -41,7 +42,9 @@ export default function Chat() {
   const { core, agent } = useLocalSearchParams<{ core: string; agent: string }>();
   const live = useLive(core);
   const { devices } = useDevices();
-  const access = devices.find((device) => device.core === core)?.access ?? 'full';
+  const device = devices.find((paired) => paired.core === core);
+  const access = device?.access ?? 'full';
+  const hostName = device ? deviceName(device) : 'the host';
   const info = live.snapshot?.chats.find((chat) => chat.agentId === agent);
   const provider = info?.provider ?? 'agent';
   const chat = useChat(core, agent);
@@ -61,18 +64,25 @@ export default function Chat() {
   };
   const activity = activityText(state, activeToolLabel(state.messages));
   const title = state.title ?? (info ? chatTitle(info) : providerName(provider));
-  const status =
-    chat.attached === 'missing' ? (
-      <View style={styles.missing}>
-        <Text style={styles.gone}>{chat.problem ? capitalised(chat.problem) : 'This chat is no longer running on the host.'}</Text>
-        <Button title="Try again" onPress={chat.retry} />
-      </View>
-    ) : chat.attached === 'attaching' ? (
-      <View style={styles.attaching}>
-        <Working />
-        <Text style={type.meta}>{info?.asleep ? 'Waking the chat…' : 'Opening the chat…'}</Text>
-      </View>
-    ) : null;
+  const unreachable = chat.attached !== 'live' && live.status === 'closed';
+  const status = unreachable ? (
+    <View style={styles.missing}>
+      <Text style={styles.gone}>{`Can't reach ${hostName}. ${capitalised(live.problem)}`}</Text>
+      <Button title="Try again" onPress={() => reconnect(core)} />
+    </View>
+  ) : chat.attached === 'missing' ? (
+    <View style={styles.missing}>
+      <Text style={styles.gone}>{chat.problem ? capitalised(chat.problem) : 'This chat is no longer running on the host.'}</Text>
+      <Button title="Try again" onPress={chat.retry} />
+    </View>
+  ) : chat.attached === 'attaching' ? (
+    <View style={styles.attaching}>
+      <Working />
+      <Text style={type.meta}>
+        {live.status === 'connecting' ? `Reaching ${hostName}…` : info?.asleep ? 'Waking the chat…' : 'Opening the chat…'}
+      </Text>
+    </View>
+  ) : null;
 
   return (
     <Screen>
@@ -98,7 +108,8 @@ export default function Chat() {
               getItemType={(message) => message.role}
               extraData={chat.replayed}
               renderItem={({ item }) => <Message message={item} untimed={chat.replayed.has(item.id)} />}
-              ListHeaderComponent={chat.attached === 'live' ? null : status}
+              ListHeaderComponent={chat.attached !== 'live' ? status : chat.hasEarlier ? <Earlier /> : null}
+              onStartReached={chat.hasEarlier ? chat.loadEarlier : undefined}
               ListFooterComponent={
                 <>
                   {chat.queued ? <Queued text={chat.queued} /> : null}

@@ -117,12 +117,15 @@ git tag mobile-v0.1.0-nightly.1 && git push origin mobile-v0.1.0-nightly.1
 
 Android needs a version code that grows with every upload. `app.config.js` derives it from the tag: `0.5.0-nightly.3` is `50003`, and `0.5.0` itself is `50099`, so a stable build always follows its own nightlies. Minor and patch numbers stay below 100, and nightlies below 99. The iOS build number is the same code, and the app reads its release back from it to compare with the oldest version `GET /v1/network` allows.
 
-The run checks the phone app, builds the Rust client with the small `mobile` profile, and builds the APK and the Play app bundle. It refuses either unless it is signed with the Play upload key. It attaches the APK to a GitHub release of the tag, marked a prerelease for a nightly, and never as the latest release: sikemux.com takes its Mac download from that one. The app bundle stays on the run until uploads to Google Play are added.
+The run checks the phone app, builds the Rust client with the small `mobile` profile, and builds the APK and the Play app bundle. It refuses either unless it is signed with the Play upload key. It attaches the APK to a GitHub release of the tag, marked a prerelease for a nightly, and never as the latest release: sikemux.com takes its Mac download from that one. Last, it puts the app bundle on Google Play: a nightly on the closed testing track, where testers get it, and a stable release on production. Google Play keeps production closed until the closed test has had 12 testers for 14 days, so a stable tag fails at that step until then.
 
-| Name                      | Kind   | Holds                                              |
-| ------------------------- | ------ | -------------------------------------------------- |
-| `ANDROID_UPLOAD_KEYSTORE` | secret | the upload keystore, base64                        |
-| `ANDROID_UPLOAD_PASSWORD` | secret | its password, which is also the key's own password |
+Every phone release needs its notes in `mobile/RELEASE_NOTES.md`, committed before the tag: a `# <version>` heading, then what changed in plain text, at most 500 characters. Google Play shows them as "What's new" and the GitHub release opens with them. The run checks the file before it builds and stops if the heading is for another version, so `node scripts/play-release.mjs notes <version>` in `mobile/app` shows what Google Play will get.
+
+| Name                      | Kind   | Holds                                                                                         |
+| ------------------------- | ------ | --------------------------------------------------------------------------------------------- |
+| `ANDROID_UPLOAD_KEYSTORE` | secret | the upload keystore, base64                                                                   |
+| `ANDROID_UPLOAD_PASSWORD` | secret | its password, which is also the key's own password                                            |
+| `PLAY_SERVICE_ACCOUNT`    | secret | the `sikemux-play-release` service account's JSON key, allowed to release in the Play Console |
 
 Locally, `pnpm android:release` in `mobile/` signs with the same key: the keystore from `~/.config/sikemux/release/upload.keystore` and its password from the Keychain entry "Sikemux Android upload key".
 

@@ -1,0 +1,18 @@
+[package]
+name = "sikemux-loopback"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+url = "2"
+tokio = { version = "1", features = ["macros", "rt", "time", "net", "io-util"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }
+
+[lints]
+workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+workspace-hack = { version = "0.1", path = "../workspace-hack" }

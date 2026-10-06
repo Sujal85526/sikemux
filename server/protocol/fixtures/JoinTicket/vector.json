@@ -1,0 +1,10 @@
+{
+  "v": 1,
+  "keyId": "vector-1",
+  "account": "user_2vectorTest",
+  "host": "1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca",
+  "phone": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+  "issuedAt": 1791000000,
+  "expiresAt": 1791000600,
+  "signature": "0a3ab17b6d6112a7c2a20c1d2e35d21416816da0531bc373fa7dc3b721c735817d9a4cd6493bb2d82ad1cf2fdbab4df26ddf40d170ca8abe0016a9ed9e624504"
+}

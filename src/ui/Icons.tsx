@@ -210,6 +210,12 @@ export const IconPhone = makeSvgIcon(
         <path d="M7.2 11.8h1.6" />
     </>,
 );
+export const IconLaptop = makeSvgIcon(
+    <>
+        <rect x="3" y="3.2" width="10" height="7.3" rx="1.2" />
+        <path d="M1.6 12.6h12.8" />
+    </>,
+);
 export const IconLock = makeSvgIcon(
     <>
         <rect x="3.5" y="7" width="9" height="6.5" rx="1.5" />
@@ -235,6 +241,7 @@ export function IconAws({ size = 16, className }: IconProps) {
 }
 
 export const IconFocus = makeSvgIcon(<path d="M2 5.5V2.5h3M14 5.5V2.5h-3M2 10.5v3h3M14 10.5v3h-3" />);
+export const IconPointer = makeSvgIcon(<path d="M3.5 2.5 12.5 7.6 8.6 8.6 6.9 12.5Z" strokeLinejoin="round" />);
 export const IconChevron = makeSvgIcon(<path d="M6 4l4 4-4 4" />);
 export const IconPanelLeft = makeSvgIcon(
     <>

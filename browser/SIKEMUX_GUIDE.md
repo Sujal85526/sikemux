@@ -47,8 +47,8 @@ This page is what to know before your first call. Call `guide` again with a
   rather than sleeps or screenshots taken to see whether something finished.
 - Every state says whether the tab is `visible` to the person; do not tell
   them a page is on their screen when it is not.
-- Plugin tools (`github_*`, `bitbucket_*`, `db_*`, `signoz_*`) are listed only
-  when they can work here: signed in, and for GitHub or Bitbucket a remote of this
+- Plugin tools (`github_*`, `bitbucket_*`, `db_*`, `jira_*`, `signoz_*`) are listed
+  only when they can work here: signed in, and for GitHub or Bitbucket a remote of this
   project on that host. If one you need is missing, ask the person to sign in
   from its pane in Sikemux and restart you.
 
@@ -447,6 +447,14 @@ state when you have not read it yet.
 When an action makes the page open a tab of its own, as a link with a new
 window target does, the result lists it under `openedTabs`, and that tab is
 now the current one. Tabs do not survive a restart of Sikemux.
+
+Files a page downloads are saved to `~/Downloads`. When your click, press or
+navigation starts one, the result lists it under `downloads` with its `path`,
+`state` and `bytes`, after waiting up to 15 seconds for it to finish. A
+download that starts later shows up in the next result, such as a
+`browser_wait`, and `browser_state` lists the tabs' recent downloads. Click the
+page's own download link and move the file from that path; never read a file's
+bytes back through `browser_evaluate`.
 
 ## browser-evidence: Screenshots, drawings and recordings
 

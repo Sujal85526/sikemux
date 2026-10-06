@@ -1,0 +1,18 @@
+{
+  "description": "A join ticket signed by a throwaway server key that nothing trusts. The phone is the key whose secret is 32 bytes of 7 and the host the one of 32 bytes of 8. The server and the core both check it.",
+  "secretKey": "06885dce3ddadc5ad19e033559862e0879085d1599ae7f39bc6b0e80f5ed876c",
+  "publicKey": "6d40b315d14f2eafe6b431241eb9963845e4afe3170000abe5b5e52306893670",
+  "privateKeyPem": "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIAaIXc492txa0Z4DNVmGLgh5CF0Vma5/ObxrDoD17Yds\n-----END PRIVATE KEY-----\n",
+  "message": "sikemux-join|v1|vector-1|user_2vectorTest|1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca|ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c|1791000000|1791000600",
+  "signature": "0a3ab17b6d6112a7c2a20c1d2e35d21416816da0531bc373fa7dc3b721c735817d9a4cd6493bb2d82ad1cf2fdbab4df26ddf40d170ca8abe0016a9ed9e624504",
+  "ticket": {
+    "v": 1,
+    "keyId": "vector-1",
+    "account": "user_2vectorTest",
+    "host": "1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca",
+    "phone": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+    "issuedAt": 1791000000,
+    "expiresAt": 1791000600,
+    "signature": "0a3ab17b6d6112a7c2a20c1d2e35d21416816da0531bc373fa7dc3b721c735817d9a4cd6493bb2d82ad1cf2fdbab4df26ddf40d170ca8abe0016a9ed9e624504"
+  }
+}

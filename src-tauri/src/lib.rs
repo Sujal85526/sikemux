@@ -228,6 +228,14 @@ pub fn run() {
                         }
                     }
                 }
+                // The desktop smoke test runs behind other windows, where WebKit would pause this page.
+                if std::env::var_os("SIKEMUX_RUN_WHEN_COVERED").is_some() {
+                    if let Some(webview) = _app.get_webview("main") {
+                        let _ = webview.with_webview(|platform| {
+                            browser::macos::keep_shown_page_running_when_covered(platform.inner())
+                        });
+                    }
+                }
             }
             Ok(())
         })
@@ -274,13 +282,11 @@ pub fn run() {
             remote::remote_set_enabled,
             remote::remote_set_device_access,
             remote::remote_revoke_device,
-            remote::remote_open_pairing,
             account::account_status,
             account::account_refresh_profile,
             account::account_sign_in,
             account::account_cancel_sign_in,
             account::account_sign_out,
-            remote::remote_close_pairing,
             remote::remote_answer_pairing,
             remote::remote_publish_workspace,
             remote::remote_publish_agents,

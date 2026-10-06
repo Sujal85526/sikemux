@@ -11,8 +11,7 @@
       "bundleIdentifier": "com.nodelike.sikemux.mobile",
       "supportsTablet": true,
       "infoPlist": {
-        "NSLocalNetworkUsageDescription": "Sikemux finds the computers on your network that you can pair with.",
-        "NSBonjourServices": ["_sikemux._udp"]
+        "NSLocalNetworkUsageDescription": "Sikemux reaches your hosts directly when they are on the same network."
       },
       "icon": "../../src-tauri/icons/sikemux.icon"
     },
@@ -46,14 +45,6 @@
       ],
       "expo-font",
       [
-        "expo-camera",
-        {
-          "cameraPermission": "Sikemux uses the camera to scan the pairing code on your computer.",
-          "microphonePermission": false,
-          "recordAudioAndroid": false
-        }
-      ],
-      [
         "expo-build-properties",
         {
           "android": {
@@ -61,7 +52,7 @@
             "useLegacyPackaging": true,
             "enableMinifyInReleaseBuilds": true,
             "enableShrinkResourcesInReleaseBuilds": true,
-            "extraProguardRules": "-keep, includedescriptorclasses class org.rustls.platformverifier.** { *; }\n-dontwarn kotlin.MustUseReturnValues"
+            "extraProguardRules": "-keep, includedescriptorclasses class org.rustls.platformverifier.** { *; }\n-keep class expo.modules.gl.** { *; }\n-dontwarn kotlin.MustUseReturnValues"
           }
         }
       ]

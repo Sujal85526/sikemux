@@ -189,6 +189,7 @@ impl Workspaces {
                 effort: None,
                 asleep: chat.asleep,
                 unread: false,
+                active_at: None,
             })
             .collect();
         running.extend(stopped);

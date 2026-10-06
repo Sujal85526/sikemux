@@ -1,21 +1,72 @@
-import { memo, useContext, useRef, useState } from "react";
+import { memo, useContext, useRef, useState, type ComponentType } from "react";
 import { CopyButton } from "../ui/CopyButton";
 import { hasPrimaryModifier } from "../lib/platform";
-import { IconAgent, IconChevron, IconCommand, IconFile, IconGlobe, IconPencil, IconPlug, IconSearch, IconWarning } from "../ui/Icons";
+import {
+    IconActivity,
+    IconAgent,
+    IconArrowDown,
+    IconChevron,
+    IconClock,
+    IconCommand,
+    IconEditor,
+    IconEye,
+    IconFile,
+    IconGlobe,
+    IconImage,
+    IconInfo,
+    IconPencil,
+    IconPlug,
+    IconPointer,
+    IconPullRequest,
+    IconRefresh,
+    IconRun,
+    IconSearch,
+    IconStop,
+    IconWarning,
+    IconWindow,
+} from "../ui/Icons";
 import type { ToolOutput } from "./toolOutput";
 import { ChatFileRef, useFileRef } from "./FileRef";
 import { ChatAgentContext, openLink } from "./chatAgent";
 import { ChatImage } from "./ChatImage";
 import { DiffBody } from "./DiffView";
 import { LiveSeconds } from "./LiveSeconds";
+import { Shimmer } from "./Shimmer";
 import { useCutOff } from "./useCutOff";
 import { durationLabel } from "./durationLabel";
-import { toolKind, toolLabel, toolPath, toolRunning, toolTarget, toolUrl } from "./toolLabels";
+import { toolDetail, toolKind, toolLabel, toolPath, toolRunning, toolTarget, toolUrl } from "./toolLabels";
+import { sikemuxToolRow, type ToolRowIcon } from "./toolRows";
 import { attachmentName } from "./transcript";
 import type { AcpToolCall, ChatPart } from "./types";
 
+const ROW_ICONS: Record<ToolRowIcon, ComponentType<{ size?: number }>> = {
+    activity: IconActivity,
+    "arrow-down": IconArrowDown,
+    clock: IconClock,
+    command: IconCommand,
+    editor: IconEditor,
+    eye: IconEye,
+    file: IconFile,
+    globe: IconGlobe,
+    image: IconImage,
+    info: IconInfo,
+    pencil: IconPencil,
+    pointer: IconPointer,
+    "pull-request": IconPullRequest,
+    refresh: IconRefresh,
+    run: IconRun,
+    search: IconSearch,
+    stop: IconStop,
+    window: IconWindow,
+};
+
 function ToolKindIcon({ tool, kind }: { tool: AcpToolCall; kind?: string }) {
     if (tool.status === "failed") return <IconWarning size={11} />;
+    const row = sikemuxToolRow(tool);
+    if (row) {
+        const RowIcon = ROW_ICONS[row.icon];
+        return <RowIcon size={11} />;
+    }
     switch (kind) {
         case "mcp":
             return <IconPlug size={11} />;
@@ -105,13 +156,15 @@ export const ToolRow = memo(function ToolRow({ part }: { part: Extract<ChatPart,
     const [open, setOpen] = useState(false);
     const targetRef = useRef<HTMLSpanElement>(null);
     const tool = part.tool;
-    // An MCP call is named for the server it went to, whatever kind it claims.
-    const rowKind = toolLabel(tool.title).scope !== undefined ? "mcp" : tool.kind;
+    /* Our own tools are coloured by the kind they declare, like the built-in
+       ones; another MCP call is named for the server it went to. */
+    const rowKind = sikemuxToolRow(tool)?.kind ?? (toolLabel(tool.title).scope !== undefined ? "mcp" : tool.kind);
     const { diff, output, failure } = part;
     const status = tool.status ?? "pending";
     const running = toolRunning(tool);
     const file = useFileRef(toolPath(tool));
     const target = toolTarget(tool);
+    const detail = toolDetail(tool);
     const linked = !file && toolUrl(target) !== null;
     const command = tool.kind === "execute" ? tool.title.trim() : null;
     /* The row holds one line of a command, so the whole of it is worth
@@ -124,6 +177,13 @@ export const ToolRow = memo(function ToolRow({ part }: { part: Extract<ChatPart,
     const measured = part.startedAt !== undefined && part.endedAt !== undefined ? part.endedAt - part.startedAt : null;
     const elapsed = status === "cancelled" ? "stopped" : measured !== null ? durationLabel(measured) : null;
     const toggle = () => setOpen((current) => !current);
+    const targetText =
+        target || detail ? (
+            <>
+                {file ? <ChatFileRef refers={file.ref} state={file.state} label={target} size={17} /> : <ToolTarget text={target} />}
+                {detail && <span className="chat-tool-arg">{detail}</span>}
+            </>
+        ) : null;
     const lead = (
         <>
             <span className="chat-tool-tick" aria-hidden="true" />
@@ -131,8 +191,8 @@ export const ToolRow = memo(function ToolRow({ part }: { part: Extract<ChatPart,
                 <ToolKindIcon tool={tool} kind={rowKind} />
             </span>
             <span className="chat-tool-kind">{toolKind(tool)}</span>
-            <span className="chat-tool-target" ref={targetRef}>
-                {file ? <ChatFileRef refers={file.ref} state={file.state} label={target} size={17} /> : <ToolTarget text={target} />}
+            <span className={`chat-tool-target${running && targetText ? " chat-shimmer" : ""}`} ref={targetRef}>
+                {running && targetText ? <Shimmer>{targetText}</Shimmer> : targetText}
             </span>
         </>
     );

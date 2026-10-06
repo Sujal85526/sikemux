@@ -44,6 +44,8 @@ jobs:
           echo "channel=$channel" >>"$GITHUB_OUTPUT"
           echo "SIKEMUX_MOBILE_VERSION=$version" >>"$GITHUB_ENV"
           echo "SIKEMUX_MOBILE_CHANNEL=$channel" >>"$GITHUB_ENV"
+          # The account sheet shows which commit the build's own code came from.
+          echo "EXPO_PUBLIC_COMMIT=$(git rev-parse --short=7 HEAD)" >>"$GITHUB_ENV"
           echo "Releasing Android $channel $version from $(git rev-parse HEAD)" >>"$GITHUB_STEP_SUMMARY"
 
       - name: Setup pnpm
@@ -60,6 +62,13 @@ jobs:
           cache-dependency-path: |
             pnpm-lock.yaml
             mobile/pnpm-lock.yaml
+
+      # Google Play takes the notes with the bundle at the end of the run; a stale or overlong file
+      # would only fail there, after the build.
+      - name: Check the release notes
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: node mobile/app/scripts/play-release.mjs notes "$VERSION"
 
       - name: Use the runner's Java 17 and Android NDK
         run: |
@@ -153,8 +162,16 @@ jobs:
           # Never the latest release: sikemux.com takes its Mac download from that one.
           flags=(--latest=false --verify-tag)
           [[ "$CHANNEL" == "nightly" ]] && flags+=(--prerelease)
-          notes="Sikemux for Android $VERSION, built from $(git rev-parse --short HEAD).
+          notes="$(node mobile/app/scripts/play-release.mjs notes "$VERSION")
 
-          Install the APK on your Android phone. A copy installed from Google Play cannot update this one, or the other way round: to switch, uninstall first."
+          Built from $(git rev-parse --short HEAD). Install the APK on your Android phone. A copy installed from Google Play cannot update this one, or the other way round: to switch, uninstall first."
           gh release create "$GITHUB_REF_NAME" "dist/Sikemux_${VERSION}_android.apk" \
             --title "Sikemux for Android $VERSION" --notes "$notes" "${flags[@]}"
+
+      # Last, because Google Play never takes the same version code twice: everything that can be
+      # run again has already succeeded.
+      - name: Put the app bundle on Google Play
+        env:
+          PLAY_SERVICE_ACCOUNT: ${{ secrets.PLAY_SERVICE_ACCOUNT }}
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: node mobile/app/scripts/play-release.mjs upload "$VERSION" "dist/Sikemux_${VERSION}_android.aab"

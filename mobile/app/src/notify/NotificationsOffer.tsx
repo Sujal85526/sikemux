@@ -7,7 +7,7 @@ import { fonts, type Palette, typeFor, useStyles } from '@/ui/theme';
 import { choose, closeOffer, useOffered } from './setting';
 import { notificationsSupported, turnOn } from './switch';
 
-/** Asked once, after the first pairing on a signed-in phone, since notifications reach it through the account. */
+/** Asked once, after the first host lets a signed-in phone in, since notifications reach it through the account. */
 export function NotificationsOffer() {
   const styles = useStyles(makeStyles);
   const { isSignedIn, getToken } = useAuth();

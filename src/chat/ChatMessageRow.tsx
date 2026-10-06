@@ -14,6 +14,7 @@ import { ToolRow } from "./ToolRow";
 import { attachmentName, formatDetail, groupParts, subagentTask } from "./transcript";
 import type { AcpSubagent, AcpTaskNotice, ChatMessage, ChatPart } from "./types";
 import { ContextChipLabel } from "./ContextChip";
+import { Shimmer } from "./Shimmer";
 import { splitSentContext, type SentContext } from "./promptContext";
 
 function embeddedContext(content: Extract<ChatPart, { kind: "content" }>["content"]): SentContext | null {
@@ -184,7 +185,13 @@ function SubagentPart({ subagent }: { subagent: AcpSubagent }) {
                     <AgentIcon type={agentType} size={18} className={`agent-glyph ${agentType}`} />
                 </span>
                 <span className="chat-subagent-name">{subagent.name}</span>
-                <span className="chat-subagent-task">{subagentTask(subagent.task)}</span>
+                {subagent.state === "running" ? (
+                    <span className="chat-subagent-task chat-shimmer">
+                        <Shimmer>{subagentTask(subagent.task)}</Shimmer>
+                    </span>
+                ) : (
+                    <span className="chat-subagent-task">{subagentTask(subagent.task)}</span>
+                )}
                 <span className="chat-subagent-end">
                     {calls > 0 && (
                         <span className="chat-subagent-calls">

@@ -14,20 +14,16 @@ export interface PairedDevice {
     readonly lastSeen: number | null;
 }
 
-export interface PairingOffer {
-    readonly code: string;
-    readonly expiresAt: number;
-    /** The host's key and the code as one `sikemux://pair` link, which the QR code holds. */
-    readonly link: string;
-}
-
-/** A device that typed the right code and waits for the person to answer. */
+/** A phone that came with a ticket from this host's account and waits for the person to answer. */
 export interface PendingDevice {
     readonly id: string;
     readonly deviceId: string;
     /** What the device calls itself. Nothing vouches for it. */
     readonly name: string;
     readonly platform: string;
+    readonly fromAccount: boolean;
+    /** When the phone stops waiting for an answer, in milliseconds since the epoch. */
+    readonly expiresAt: number;
 }
 
 /** Why the account let this host go: removed elsewhere, signed out, or the account was deleted. */
@@ -69,7 +65,6 @@ export interface RemoteStatus {
     readonly addresses: readonly string[];
     readonly devices: readonly PairedDevice[];
     readonly connected: readonly string[];
-    readonly pairing: PairingOffer | null;
     readonly pending: readonly PendingDevice[];
     /** The account this host is signed in to. */
     readonly owner: string | null;
@@ -112,8 +107,6 @@ export const remoteApi = {
     setEnabled: (enabled: boolean) => invoke<RemoteStatus>("remote_set_enabled", { enabled }),
     setDeviceAccess: (id: string, access: DeviceAccess) => invoke<RemoteStatus>("remote_set_device_access", { id, access }),
     revokeDevice: (id: string) => invoke<RemoteStatus>("remote_revoke_device", { id }),
-    openPairing: () => invoke<RemoteStatus>("remote_open_pairing"),
-    closePairing: () => invoke<RemoteStatus>("remote_close_pairing"),
     answerPairing: (id: string, allow: boolean, access: DeviceAccess) => invoke<RemoteStatus>("remote_answer_pairing", { id, allow, access }),
     publishWorkspace: (projects: readonly PublishedProject[], launchers: readonly LauncherRequest[]) =>
         invoke<void>("remote_publish_workspace", { projects, launchers }),
@@ -130,9 +123,4 @@ export const remoteApi = {
 /** The first eight characters of a key, enough to tell two devices apart by eye. */
 export function shortKey(key: string): string {
     return key.slice(0, 8);
-}
-
-/** `482913` as `482 913`, the way people read a code aloud. */
-export function spacedCode(code: string): string {
-    return code.length === 6 ? `${code.slice(0, 3)} ${code.slice(3)}` : code;
 }

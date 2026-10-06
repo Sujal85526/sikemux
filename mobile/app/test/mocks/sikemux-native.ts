@@ -1,4 +1,4 @@
-const TAGS = ['Refused', 'WrongCode', 'Connection', 'Invalid', 'Outdated', 'Unpaired'] as const;
+const TAGS = ['Refused', 'Connection', 'Invalid', 'Outdated', 'Unpaired'] as const;
 type Tag = (typeof TAGS)[number];
 
 class FakeMobileError extends Error {
@@ -26,7 +26,6 @@ function notMocked(name: string): never {
 }
 
 export const newDeviceKey = (): ArrayBuffer => new Uint8Array(32).buffer;
-export const parsePairingLink = (_text: string): undefined => undefined;
 
 export class Device {
   constructor() {
@@ -77,4 +76,10 @@ export const ChatAttachment = {
   Resumed: tagged<{ eventsJson: string; mark: { feed: string; seq: bigint } }>('Resumed'),
   Missing: tagged<Record<string, never>>('Missing'),
   Restart: tagged<Record<string, never>>('Restart'),
+};
+
+export const JoinAnswer = {
+  Allowed: tagged<{ access: string }>('Allowed'),
+  Denied: tagged<Record<string, never>>('Denied'),
+  Refused: tagged<{ reason: string }>('Refused'),
 };

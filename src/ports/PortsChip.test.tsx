@@ -54,8 +54,9 @@ describe("PortsChip", () => {
         expect(chip.textContent).toBe("2");
         const menu = await openMenu("2 listening ports");
         expect(menu.hasAttribute("data-overlay")).toBe(true);
-        expect([...menu.querySelectorAll(".tb-port-addr")].map((node) => node.textContent)).toEqual(["localhost:3000", "localhost:5173"]);
-        expect([...menu.querySelectorAll(".tb-port-meta")].map((node) => node.textContent)).toEqual(["next-server · Claude", "vite · npm run dev"]);
+        expect([...menu.querySelectorAll(".tb-port-addr")].map((node) => node.textContent)).toEqual([":3000", ":5173"]);
+        expect([...menu.querySelectorAll(".tb-port-lead")].map((node) => node.getAttribute("title"))).toEqual(["next-server", "vite"]);
+        expect([...menu.querySelectorAll(".tb-port-owner-label")].map((node) => node.textContent)).toEqual(["Claude", "npm run dev"]);
     });
 
     it("opens a port on the desk of the agent that worked last, with the browser, copy and reveal beside it", async () => {
@@ -65,7 +66,7 @@ describe("PortsChip", () => {
         await renderChip();
         await openMenu("1 listening port");
 
-        expect(screen.getByText("opens on Codex's desk")).toBeTruthy();
+        expect(screen.getByText("Codex")).toBeTruthy();
         fireEvent.click(screen.getByRole("menuitem", { name: "Open localhost:5173 on Codex's desk" }));
         expect(openPortOnDesk).toHaveBeenCalledWith("agent-2", "http://localhost:5173/");
         expect(screen.queryByRole("menu")).toBeNull();
@@ -89,10 +90,24 @@ describe("PortsChip", () => {
         await renderChip();
         await openMenu("1 listening port");
 
-        expect(screen.getByText("no agent running · opens in your browser")).toBeTruthy();
+        expect(screen.getByText("No agent running · opens in your browser")).toBeTruthy();
         expect(screen.queryByRole("menuitem", { name: "Open in your browser" })).toBeNull();
         fireEvent.click(screen.getByRole("menuitem", { name: "Open localhost:8080 in your browser" }));
         expect(openPortExternally).toHaveBeenCalledWith("http://localhost:8080/");
+        expect(openPortOnDesk).not.toHaveBeenCalled();
+    });
+
+    it("copies with ⌘C and opens in the browser with ⌘↵ from the focused row", async () => {
+        seedProjects();
+        listening.mockResolvedValue([terminalPort(5173, { paneId: "pane-1", project: "/code" })]);
+        await renderChip();
+        await openMenu("1 listening port");
+        fireEvent.keyDown(screen.getByRole("menuitem", { name: /^Open localhost:5173/ }), { key: "c", metaKey: true });
+        expect(copyPortUrl).toHaveBeenCalledWith("http://localhost:5173/");
+
+        await openMenu("1 listening port");
+        fireEvent.keyDown(screen.getByRole("menuitem", { name: /^Open localhost:5173/ }), { key: "Enter", metaKey: true });
+        expect(openPortExternally).toHaveBeenCalledWith("http://localhost:5173/");
         expect(openPortOnDesk).not.toHaveBeenCalled();
     });
 

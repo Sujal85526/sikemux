@@ -62,6 +62,12 @@ sees terminal bytes or prompts.
   pairing code comes with a QR code holding the core's key, so a phone can find the Mac
   before it has paired.
 
+## Notes
+
+- 2026-10-05: Code pairing and the Bonjour advert are gone. Phones join only through the
+  account they share with the host (ADR 0009, `docs/operations/join.md`), and the person
+  still allows each one on the host. Remote access needs the host signed in.
+
 ## Alternatives considered
 
 - **Noise over TCP with our own relay.** Much smaller, but no hole punching, so every

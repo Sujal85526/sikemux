@@ -62,7 +62,7 @@ final class Panels {
         guard !shown.isEmpty else { return }
         let settings = store.settings
         let isAsk: Bool
-        if case .ask = peek { isAsk = true } else { isAsk = false }
+        if case .done = peek { isAsk = false } else { isAsk = true }
         if isAsk, settings.sound { NSSound(named: "Tink")?.play() }
         guard settings.peeks == .all || (isAsk && settings.peeks == .needsYou) else { return }
         if isAsk { Haptics.tick() }
@@ -161,7 +161,7 @@ final class Panels {
             if current != pointerScreen { rebuild() }
         }
         let yielding = !store.options.dev && store.settings.yieldToDev && Handover.devIsRunning(stateDir: store.options.stateDir)
-        let needsYou = store.agents.contains { $0.state == .blocked }
+        let needsYou = store.agents.contains { $0.state == .blocked } || !store.devices.isEmpty
         let fullScreen = FullScreen.displays()
         for (_, entry) in panels {
             entry.island.checkPointer()

@@ -178,7 +178,7 @@
 }
 
 /* Beside the borderless pickers the toggle is text too: the rainbow word
-   carries YOLO, and the ring and key hint stay in the pane header. */
+   carries YOLO, and the key hint stays in the pane header. */
 .chat-composer-bar .yolo-toggle {
     padding: 0 11px;
     border-color: transparent;
@@ -193,7 +193,6 @@
     background: color-mix(in srgb, var(--ink) 7%, transparent);
 }
 
-.chat-composer-bar .yolo-ring,
 .chat-composer-bar .yolo-hint {
     display: none;
 }
@@ -426,14 +425,11 @@
     }
 
     /* The elapsed seconds keep saying the turn is alive without any motion. */
-    .chat-activity-label,
+    .chat-shimmer-band,
+    .chat-shimmer-copy,
     .chat-activity-loader,
     .chat-activity-mark,
     .chat-tool.live .chat-tool-icon,
-    .chat-tool.live .chat-tool-target,
-    .chat-tools-sum.live .chat-tools-label,
-    .chat-subagent.state-running .chat-subagent-task,
-    .chat-task-agent .chat-task-detail,
     .chat-subagent-spinner {
         animation: none;
     }
@@ -444,12 +440,6 @@
 
     .chat-context-fill {
         transition: none;
-    }
-
-    .yolo-toggle.on .yolo-ring::before,
-    .yolo-toggle.on .yolo-label,
-    .yolo-toggle.on .yolo-glyph {
-        animation: none;
     }
 }
 

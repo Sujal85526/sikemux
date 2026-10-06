@@ -1,5 +1,6 @@
 import { fsapi } from "../api/fs";
 import { joinPath } from "../lib/paths";
+import { errMessage } from "../state/toast";
 
 export const PROJECT_CONFIG_FILE = "sikemux.json";
 export const PROJECT_CONFIG_VERSION = 1 as const;
@@ -548,7 +549,7 @@ export async function fingerprintProjectConfigSource(source: string): Promise<st
 }
 
 function isMissingFileError(error: unknown): boolean {
-    const detail = error instanceof Error ? `${error.name} ${error.message}` : String(error);
+    const detail = error instanceof Error ? `${error.name} ${error.message}` : errMessage(error);
     return /\b(enoent|not found|no such file|os error 2)\b/i.test(detail);
 }
 
@@ -559,8 +560,7 @@ export async function loadProjectConfig(rootPath: string, readFile: ReadProjectF
         source = await readFile(path);
     } catch (error) {
         if (isMissingFileError(error)) return { status: "absent", path };
-        const detail = error instanceof Error ? error.message : String(error);
-        return { status: "invalid", path, errors: [issue("$", "read-failed", `Could not read ${PROJECT_CONFIG_FILE}: ${detail}`)] };
+        return { status: "invalid", path, errors: [issue("$", "read-failed", `Could not read ${PROJECT_CONFIG_FILE}: ${errMessage(error)}`)] };
     }
 
     if (new TextEncoder().encode(source).byteLength > MAX_CONFIG_BYTES) {

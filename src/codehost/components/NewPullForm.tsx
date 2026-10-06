@@ -11,6 +11,7 @@ import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
 import { Checkbox, Dropdown, EmptyState, IconClose, IconGit, IconPush, PRIMARY_SHORTCUT, SkeletonRows, Tooltip } from "../../plugin-api/ui";
 import { requestOpenFile, setGitView } from "../../state/commands";
 import { useStore } from "../../state/store";
+import { DEFAULT_GIT_VIEW } from "../../state/types";
 import { hostApi, type RepoRef } from "../api";
 import { defaultBase, isUsualBase } from "../compose";
 import { useHost } from "../registry";
@@ -310,7 +311,7 @@ function CompareHistory({
     selected: string | null;
     onSelect: (sha: string | null) => void;
 }) {
-    const open = useStore((s) => s.gitViews[paneId]?.historyOpen ?? false);
+    const open = useStore((s) => s.gitViews[paneId]?.historyOpen ?? DEFAULT_GIT_VIEW.historyOpen);
     const height = useStore((s) => s.gitViews[paneId]?.historyHeight ?? null);
     const index = selected ? commits.findIndex((row) => row.full_hash === selected) : -1;
     return (

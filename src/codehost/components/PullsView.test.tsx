@@ -138,9 +138,7 @@ it("lists the pull request's commits in the history fold, newest first, and show
     render(view(31));
     const toggle = await screen.findByRole("button", { name: /^Commits/ });
     await waitFor(() => expect(toggle).toHaveTextContent("2"));
-    expect(toggle).toHaveTextContent("feat: second");
 
-    await user.click(toggle);
     const rows = await screen.findAllByRole("button", { name: /feat: / });
     expect(rows.map((row) => row.getAttribute("aria-label"))).toEqual(["bbbbbbb feat: second", "aaaaaaa feat: first"]);
 
@@ -594,7 +592,6 @@ describe("an open pull request", () => {
 
     it("goes back from a commit to all of the changes", async () => {
         render(view(31));
-        await userEvent.click(await screen.findByRole("button", { name: /^Commits/ }));
         await userEvent.click((await screen.findAllByRole("button", { name: /feat: / }))[0]);
         expect(await screen.findByTestId("commit-review")).toBeInTheDocument();
         await userEvent.click(screen.getByRole("button", { name: "All changes" }));
@@ -603,7 +600,6 @@ describe("an open pull request", () => {
 
     it("cannot open a commit of a repository that is not checked out here", async () => {
         detail({}, { cwd: null });
-        await userEvent.click(await screen.findByRole("button", { name: /^Commits/ }));
         await userEvent.click((await screen.findAllByRole("button", { name: /feat: / }))[0]);
         expect(await screen.findByText("This repository is not checked out here, so its commits cannot be opened.")).toBeInTheDocument();
     });
@@ -628,7 +624,6 @@ describe("a pull request's commits", () => {
     it("forgets the commit picked once the fold is closed", async () => {
         render(view(31));
         const toggle = await screen.findByRole("button", { name: /^Commits/ });
-        await userEvent.click(toggle);
         await userEvent.click((await screen.findAllByRole("button", { name: /feat: / }))[0]);
         expect(await screen.findByTestId("commit-review")).toBeInTheDocument();
         await userEvent.click(toggle);
@@ -657,7 +652,6 @@ describe("a pull request's commits", () => {
                 />
             </InHost>,
         );
-        await userEvent.click(await screen.findByRole("button", { name: /^Commits/ }));
         expect(await screen.findByRole("button", { name: /feat: anon/ })).toBeInTheDocument();
         await waitFor(() => expect(api.image).toHaveBeenCalledWith("https://example.test/grace.png"));
     });

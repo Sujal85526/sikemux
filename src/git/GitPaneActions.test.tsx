@@ -473,7 +473,6 @@ describe("history", () => {
     it("searches the commits and says when nothing matches", async () => {
         const user = userEvent.setup();
         renderPane();
-        await user.click(screen.getByRole("button", { name: /History/ }));
         await user.click(screen.getByRole("button", { name: "Search commits" }));
         const search = screen.getByRole("textbox", { name: "Search commits" });
         expect(search).toHaveFocus();
@@ -491,7 +490,6 @@ describe("history", () => {
     it("focuses the first commit when a search that matched nothing is dropped", async () => {
         const user = userEvent.setup();
         renderPane();
-        await user.click(screen.getByRole("button", { name: /History/ }));
         await user.click(screen.getByRole("button", { name: "Search commits" }));
         await user.type(screen.getByRole("textbox", { name: "Search commits" }), "nope{Escape}");
         await waitFor(() => expect(screen.getByRole("button", { name: "c0 subject 0" })).toHaveFocus());
@@ -976,7 +974,7 @@ describe("toolbar", () => {
         h.overview = { status: "error", error: "fatal: bad object", refresh: vi.fn().mockResolvedValue(undefined) };
         renderPane();
         expect(screen.getByText("git error")).toBeInTheDocument();
-        expect(screen.getByText("fatal: bad object")).toBeInTheDocument();
+        expect(screen.getAllByText("fatal: bad object")[0]).toBeInTheDocument();
         expect(screen.getByRole("button", { name: "detached" })).toBeInTheDocument();
     });
 
@@ -1025,7 +1023,7 @@ describe("keyboard", () => {
         renderPane();
         press("2");
         press("h");
-        expect(view().historyOpen).toBe(false);
+        expect(view()).toMatchObject({ historyOpen: true, panel: "branches" });
 
         const filter = screen.getByPlaceholderText("Filter branches");
         await user.type(filter, "feat{Enter}");
@@ -1056,11 +1054,12 @@ describe("details", () => {
     it("closes the history with h and leaves the file list where it was", async () => {
         const user = userEvent.setup();
         renderPane();
-        press("h");
         await user.click(row("b.ts"));
-        expect(view()).toMatchObject({ historyOpen: true, panel: "files" });
+        press("h");
+        expect(view()).toMatchObject({ historyOpen: true, panel: "commits" });
         press("h");
         expect(view()).toMatchObject({ historyOpen: false, panel: "files" });
+        expect(row("b.ts")).toHaveClass("sel");
     });
 
     it("stages nothing when a marked range holds only staged files", async () => {

@@ -249,9 +249,9 @@ describe("SettingsPanel navigation", () => {
         transport.register("remote_status", () => new Promise(() => {}));
         transport.register("account_status", () => new Promise(() => {}));
         cmd.openSettings("devices", "Your account");
-        render(<SettingsPanel />);
+        const { container } = render(<SettingsPanel />);
 
-        const section = screen.getByRole("heading", { name: "Your account" }).closest<HTMLElement>("[data-settings-target]");
+        const section = container.querySelector<HTMLElement>('[data-settings-target="Your account"]');
         await vi.waitFor(() => expect(section).toHaveAttribute("data-settings-flash"));
         expect(getState().settingsTarget).toBeNull();
         resetIpcTransportForTests();

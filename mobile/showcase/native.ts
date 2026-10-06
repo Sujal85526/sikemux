@@ -153,13 +153,8 @@ export class Device {
     return new Connection(listener);
   }
 
-  async pair() {
-    return CORE;
-  }
-
   async close() {}
 }
 
 export const newDeviceKey = (): ArrayBuffer => new Uint8Array(32).buffer;
 
-export const parsePairingLink = (): undefined => undefined;

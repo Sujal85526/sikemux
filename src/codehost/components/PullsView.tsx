@@ -25,6 +25,7 @@ import { FileIcon } from "../../ui/FileIcon";
 import { basename, dirname } from "../../lib/paths";
 import { requestOpenFile, setGitView } from "../../state/commands";
 import { useStore } from "../../state/store";
+import { DEFAULT_GIT_VIEW } from "../../state/types";
 import { hostApi, failureMessage, type MergeMethod, type Pull, type RepoRef, type Run } from "../api";
 import { pullCommitsR, pullFilesR, pullR, pullReviewsR, pullsR, runsR, timelineR } from "../resources";
 import { checksSummary, formatAgo, isUnfinished, OUTCOME_LABEL, overallOutcome, type Outcome } from "../runStatus";
@@ -624,7 +625,7 @@ function PullHistory({
     selected: string | null;
     onSelect: (sha: string | null) => void;
 }) {
-    const open = useStore((s) => s.gitViews[paneId]?.historyOpen ?? false);
+    const open = useStore((s) => s.gitViews[paneId]?.historyOpen ?? DEFAULT_GIT_VIEW.historyOpen);
     const height = useStore((s) => s.gitViews[paneId]?.historyHeight ?? null);
     const host = useHost();
     const commits = useResourceEnabled(active, pullCommitsR, repo, number);

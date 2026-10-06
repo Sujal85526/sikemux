@@ -318,6 +318,8 @@ pub enum ChatAttachment {
         turned: bool,
         replay_json: String,
         mark: ChatMark,
+        /// The replay is the chat's end. `chat_history` pages back from here.
+        older_before: Option<u64>,
     },
     /// What the phone missed since the mark it attached with.
     Resumed {
@@ -329,7 +331,15 @@ pub enum ChatAttachment {
     Restart,
 }
 
-fn json(value: &impl serde::Serialize) -> String {
+/// Earlier events of a chat, as `{ kind, payload }` JSON, oldest first.
+#[derive(uniffi::Record)]
+pub struct ChatHistory {
+    pub events_json: String,
+    /// Where the page before this one ends; absent at the chat's start.
+    pub older_before: Option<u64>,
+}
+
+pub(crate) fn json(value: &impl serde::Serialize) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| "null".into())
 }
 
@@ -343,6 +353,7 @@ impl From<core::ChatAttachment> for ChatAttachment {
                 turned,
                 replay,
                 mark,
+                older_before,
             } => Self::Live {
                 session_id: start.session_id,
                 capabilities_json: json(&start.capabilities),
@@ -352,6 +363,7 @@ impl From<core::ChatAttachment> for ChatAttachment {
                 turned,
                 replay_json: json(&replay),
                 mark: mark.into(),
+                older_before,
             },
             core::ChatAttachment::Resumed { events, mark } => Self::Resumed {
                 events_json: json(&events),

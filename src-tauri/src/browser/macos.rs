@@ -207,6 +207,17 @@ pub fn keep_running_when_covered(pointer: *mut c_void, keep_running: bool) {
     }
 }
 
+/// Keeps a page already on screen running while other windows cover it. WebKit
+/// only looks again at whether a page shows when its view is hidden or shown.
+pub fn keep_shown_page_running_when_covered(pointer: *mut c_void) {
+    keep_running_when_covered(pointer, true);
+    let Some(webview) = webview_from(pointer) else {
+        return;
+    };
+    webview.setHidden(true);
+    webview.setHidden(false);
+}
+
 pub fn forget(tab_id: &str) {
     let _ = answer_dialog(tab_id, false, None);
     TABS.with(|tabs| {
@@ -398,12 +409,13 @@ pub fn clip(pointer: *mut c_void, clip_left: f64, clip_right: f64, holes: Vec<(N
             whole.size.height,
         ),
     );
-    let holes: Vec<(NSRect, f64)> = holes
+    let holes: Vec<(NSRect, NSRect, f64)> = holes
         .into_iter()
-        .filter_map(|(hole, radius)| {
-            let hole = intersection(hole, visible)?;
+        .filter_map(|(whole_hole, radius)| {
+            let hole = intersection(whole_hole, visible)?;
             Some((
                 hole,
+                whole_hole,
                 radius
                     .min(hole.size.width / 2.0)
                     .min(hole.size.height / 2.0),
@@ -417,7 +429,7 @@ pub fn clip(pointer: *mut c_void, clip_left: f64, clip_right: f64, holes: Vec<(N
         } else {
             all.insert(
                 view_key(&webview),
-                holes.iter().map(|(hole, _)| *hole).collect(),
+                holes.iter().map(|(hole, _, _)| *hole).collect(),
             );
         }
     });
@@ -467,14 +479,8 @@ pub fn clip(pointer: *mut c_void, clip_left: f64, clip_right: f64, holes: Vec<(N
             // SAFETY: a null transform means none, and `path` is a fresh path only we hold.
             unsafe {
                 CGMutablePath::add_rect(Some(&path), std::ptr::null(), flip(visible));
-                for (hole, radius) in &holes {
-                    CGMutablePath::add_rounded_rect(
-                        Some(&path),
-                        std::ptr::null(),
-                        flip(*hole),
-                        *radius,
-                        *radius,
-                    );
+                for (hole, whole_hole, radius) in &holes {
+                    add_hole(&path, flip(*hole), flip(*whole_hole), *radius);
                 }
             }
             if !matches!(masks.get(&key), Some(PageMask::Shape(_))) {
@@ -547,6 +553,38 @@ pub fn dim(pointer: *mut c_void, alpha: f64) {
 
 fn view_key(view: &NSView) -> usize {
     view as *const NSView as usize
+}
+
+/// Round only the corners `hole` shares with `whole_hole`. Where the page's edge
+/// cuts a menu short, the cut stays square instead of curving into the menu.
+fn add_hole(path: &CGMutablePath, hole: NSRect, whole_hole: NSRect, radius: f64) {
+    let same = |a: f64, b: f64| (a - b).abs() < 0.5;
+    let (min_x, min_y) = (hole.origin.x, hole.origin.y);
+    let (max_x, max_y) = (min_x + hole.size.width, min_y + hole.size.height);
+    let left = same(min_x, whole_hole.origin.x);
+    let right = same(max_x, whole_hole.origin.x + whole_hole.size.width);
+    let low = same(min_y, whole_hole.origin.y);
+    let high = same(max_y, whole_hole.origin.y + whole_hole.size.height);
+    let corner = |x: bool, y: bool| if x && y { radius } else { 0.0 };
+    let path = Some(path);
+    let none = std::ptr::null();
+    // SAFETY: a null transform means none.
+    unsafe {
+        CGMutablePath::move_to_point(path, none, (min_x + max_x) / 2.0, min_y);
+        CGMutablePath::add_arc_to_point(path, none, max_x, min_y, max_x, max_y, corner(right, low));
+        CGMutablePath::add_arc_to_point(
+            path,
+            none,
+            max_x,
+            max_y,
+            min_x,
+            max_y,
+            corner(right, high),
+        );
+        CGMutablePath::add_arc_to_point(path, none, min_x, max_y, min_x, min_y, corner(left, high));
+        CGMutablePath::add_arc_to_point(path, none, min_x, min_y, max_x, min_y, corner(left, low));
+    }
+    CGMutablePath::close_subpath(path);
 }
 
 fn intersection(a: NSRect, b: NSRect) -> Option<NSRect> {

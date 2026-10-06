@@ -215,43 +215,6 @@
     font: inherit;
 }
 
-.yolo-toggle.on {
-    border-color: transparent;
-}
-
-/* The ring sits on the border, so it needs the inset and a radius one px wider
-   than the button's own. The colours move by sliding a wide strip behind the
-   window this cuts, which the compositor can do without repainting. */
-.yolo-toggle.on .yolo-ring {
-    position: absolute;
-    inset: -1px;
-    padding: 1px;
-    border-radius: calc(var(--radius-control) + 1px);
-    overflow: hidden;
-    -webkit-mask:
-        linear-gradient(#000 0 0) content-box,
-        linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-    pointer-events: none;
-}
-
-.yolo-toggle.on .yolo-ring::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: 400%;
-    background-image: var(--yolo-rainbow);
-    background-size: 50% 100%;
-    animation: yolo-slide 5s linear infinite;
-}
-
-.agent-surface-header .yolo-toggle.on .yolo-ring {
-    border-radius: var(--radius-full);
-}
-
 .yolo-toggle.on .yolo-label {
     color: transparent;
     background: var(--yolo-rainbow);
@@ -262,9 +225,6 @@
 }
 
 .yolo-toggle.on .yolo-glyph {
-    /* Not animated: `color` is not a compositor property, so cycling it
-       repainted the glyph and resolved style on every frame, in every pane
-       holding a live agent. The ring beside it already carries the motion. */
     color: var(--acc);
 }
 

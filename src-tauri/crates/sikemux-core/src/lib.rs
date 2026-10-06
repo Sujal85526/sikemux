@@ -9,7 +9,7 @@ pub mod cli;
 pub mod client;
 pub mod harness;
 #[cfg(unix)]
-pub mod pairing;
+pub mod join;
 pub mod protocol;
 #[cfg(unix)]
 pub mod push;

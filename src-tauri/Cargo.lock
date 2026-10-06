@@ -2330,15 +2330,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
-name = "hkdf"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4aaa26c720c68b866f2c96ef5c1264b3e6f473fe5d4ce61cd44bbe913e553018"
-dependencies = [
- "hmac",
-]
-
-[[package]]
 name = "hmac"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5750,7 +5741,7 @@ dependencies = [
 
 [[package]]
 name = "sikemux"
-version = "0.5.0-nightly.1"
+version = "0.5.0-nightly.6"
 dependencies = [
  "base64 0.23.1",
  "block2",
@@ -5799,6 +5790,7 @@ dependencies = [
  "sikemux-plugin-bruno",
  "sikemux-plugin-database",
  "sikemux-plugin-github",
+ "sikemux-plugin-jira",
  "sikemux-plugin-rundeck",
  "sikemux-plugin-signoz",
  "sikemux-process",
@@ -5829,7 +5821,6 @@ dependencies = [
  "base64 0.22.1",
  "futures-util",
  "hex",
- "hmac",
  "iroh",
  "libc",
  "portable-pty",
@@ -5840,7 +5831,6 @@ dependencies = [
  "sha2 0.11.0",
  "sikemux-process",
  "sikemux-pty",
- "spake2",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
@@ -5858,6 +5848,15 @@ name = "sikemux-keychain"
 version = "0.1.0"
 dependencies = [
  "sikemux-process",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-loopback"
+version = "0.1.0"
+dependencies = [
+ "tokio",
+ "url",
  "workspace-hack",
 ]
 
@@ -5927,6 +5926,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sikemux-keychain",
+ "sikemux-loopback",
  "sikemux-plugin-api",
  "tokio",
  "url",
@@ -5981,6 +5981,23 @@ dependencies = [
  "serde",
  "serde_json",
  "sikemux-keychain",
+ "sikemux-plugin-api",
+ "sikemux-process",
+ "tokio",
+ "url",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-plugin-jira"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sikemux-keychain",
+ "sikemux-loopback",
  "sikemux-plugin-api",
  "sikemux-process",
  "tokio",
@@ -6164,19 +6181,6 @@ dependencies = [
  "gobject-sys",
  "libc",
  "system-deps",
-]
-
-[[package]]
-name = "spake2"
-version = "0.5.0-pre.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d5601a88f45d069ad786f75c4fb13e7f127b0aadda913fb2cd65948d3c9a561"
-dependencies = [
- "curve25519-dalek",
- "getrandom 0.4.3",
- "hkdf",
- "rand_core 0.10.1",
- "sha2 0.11.0",
 ]
 
 [[package]]

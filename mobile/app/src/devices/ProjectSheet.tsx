@@ -2,9 +2,10 @@ import { useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import type { ProjectInfo } from '@/core/protocol';
-import { DrawnIcon, Icon } from '@/ui/Icon';
+import { providerName } from '@/devices/words';
+import { AgentIcon, DrawnIcon, Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
-import { fonts, type Palette, typeFor, useColors, useStyles, useType } from '@/ui/theme';
+import { fonts, type Palette, radius, typeFor, useColors, useStyles, useType } from '@/ui/theme';
 
 function home(path: string): string {
   return path.replace(/^\/Users\/[^/]+/, '~');
@@ -23,10 +24,39 @@ type Props = {
   all?: string;
   /** What runs in a project, shown at the end of its row. */
   tail?: (project: ProjectInfo) => ReactNode;
+  /** A provider filter over the sheet, as the provider tiles head the Mac's rail; 'all' shows every provider. */
+  providers?: { offered: string[]; chosen: string; onChoose: (provider: string) => void };
 };
 
+function ProviderTiles({ offered, chosen, onChoose }: NonNullable<Props['providers']>) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={styles.tiles}>
+      {['all', ...offered].map((provider) => {
+        const on = provider === chosen;
+        return (
+          <Pressable
+            key={provider}
+            onPress={() => onChoose(provider)}
+            style={[styles.tile, on && styles.tileOn]}
+            accessibilityRole="button"
+            accessibilityLabel={provider === 'all' ? 'All agents' : providerName(provider)}
+            accessibilityState={{ selected: on }}>
+            {provider === 'all' ? (
+              <Text style={[styles.tileText, on && { color: colors.ink }]}>All</Text>
+            ) : (
+              <AgentIcon provider={provider} size={20} />
+            )}
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 /** The host's project switcher: the projects open in its app, searched by name or path. */
-export function ProjectSheet({ visible, onClose, device, projects, chosen, onChoose, all, tail }: Props) {
+export function ProjectSheet({ visible, onClose, device, projects, chosen, onChoose, all, tail, providers }: Props) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
   const type = useType();
@@ -40,6 +70,7 @@ export function ProjectSheet({ visible, onClose, device, projects, chosen, onCho
   };
   return (
     <Sheet visible={visible} onClose={onClose} tall={projects.length > 6}>
+      {providers ? <ProviderTiles {...providers} /> : null}
       <View style={styles.head}>
         <Text style={styles.title}>Projects</Text>
         {device ? <Text style={type.meta}>{device}</Text> : null}
@@ -109,6 +140,19 @@ const makeStyles = (colors: Palette) => {
       paddingTop: 2,
       paddingBottom: 12,
     },
+    tiles: { flexDirection: 'row', gap: 6, paddingTop: 4, paddingBottom: 14 },
+    tile: {
+      flex: 1,
+      height: 44,
+      borderRadius: radius.control,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.raised,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    tileOn: { backgroundColor: colors.active, borderColor: colors.borderStrong },
+    tileText: { fontFamily: fonts.uiMedium, fontSize: 13.5, color: colors.secondary },
     title: { fontFamily: fonts.uiSemibold, fontSize: 17, letterSpacing: -0.35, color: colors.ink },
     search: {
       flexDirection: 'row',

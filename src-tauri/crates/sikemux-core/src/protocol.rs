@@ -275,6 +275,14 @@ pub enum Request {
         agent_id: String,
         since: Option<ChatMark>,
     },
+    /// The turns before event `before` of the chat's run `feed`, as many as
+    /// `turns`, for a phone paging back from its attachment's `older_before`.
+    AcpHistory {
+        agent_id: String,
+        feed: String,
+        before: u64,
+        turns: u32,
+    },
     /// Stops the chat's events reaching this client.
     AcpDetach {
         agent_id: String,
@@ -324,7 +332,8 @@ pub enum Request {
     },
     RemoteStatus,
     /// Lets paired devices reach the core from other machines, or stops it
-    /// and disconnects them. Kept across restarts.
+    /// and disconnects them. Only a signed-in host can turn it on. Kept across
+    /// restarts.
     SetRemoteAccess {
         enabled: bool,
     },
@@ -361,16 +370,14 @@ pub enum Request {
         user_id: String,
     },
     /// The account this host is signed in to, or none after signing out.
-    /// Signing out takes this host off the account, waiting a few seconds
-    /// for the server to confirm. Kept across restarts.
+    /// Signing in turns remote access on. Signing out turns it off and takes
+    /// this host off the account, waiting a few seconds for the server to
+    /// confirm. Kept across restarts.
     SetOwner {
         owner: Option<String>,
     },
-    /// Shows a new pairing code, replacing any open one. Remote access must
-    /// be on.
-    OpenPairing,
-    ClosePairing,
-    /// The person's answer to a device that entered the right code.
+    /// The person's answer to a phone that came with a ticket from the
+    /// account.
     AnswerPairing {
         id: String,
         allow: bool,
@@ -527,6 +534,10 @@ pub enum ChatAttachment {
         turned: bool,
         replay: Vec<ChatEvent>,
         mark: ChatMark,
+        /// A phone is sent only the chat's last turns. Asking for the history
+        /// before this event, with [`Request::AcpHistory`], pages back.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        older_before: Option<u64>,
     },
     /// The events the client missed since the mark it attached with, except
     /// the prompts it sent itself. Live events follow `mark`.
@@ -574,6 +585,9 @@ pub struct ChatInfo {
     /// It finished a turn or asked for something while the person was not
     /// looking at it in the app.
     pub unread: bool,
+    /// When it last opened, started work, finished or asked for something,
+    /// in Unix milliseconds. Unknown for chats from before the core started.
+    pub active_at: Option<u64>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -725,24 +739,65 @@ pub enum ServerMessage {
     rename_all_fields = "camelCase"
 )]
 pub enum Response {
-    Spawned { id: SessionId },
+    Spawned {
+        id: SessionId,
+    },
     Done,
-    Sessions { sessions: Vec<SessionInfo> },
-    TaskOutput { page: OutputPage },
-    Manifests { report: ManifestReloadReport },
-    DetectionExplain { explain: Box<DetectionExplain> },
-    ChatStarted { start: ChatStart },
-    ChatAttached { attachment: ChatAttachment },
-    Chats { chats: Vec<ChatInfo> },
-    Steered { outcome: String },
-    ChatConfig { value: Value },
-    Remote { status: Box<RemoteStatus> },
-    Workspace { workspace: Workspace },
-    Attentions { attentions: Vec<Attention> },
-    ChatBegun { agent_id: String, start: ChatStart },
-    Host { host: HostInfo },
-    BackdropImage { data_url: Option<String> },
-    Registration { registration: HostRegistration },
+    Sessions {
+        sessions: Vec<SessionInfo>,
+    },
+    TaskOutput {
+        page: OutputPage,
+    },
+    Manifests {
+        report: ManifestReloadReport,
+    },
+    DetectionExplain {
+        explain: Box<DetectionExplain>,
+    },
+    ChatStarted {
+        start: ChatStart,
+    },
+    ChatAttached {
+        attachment: ChatAttachment,
+    },
+    /// Older events of a chat, in order. Paging goes on before `older_before`;
+    /// without one this reaches the start of what the host keeps.
+    ChatHistory {
+        events: Vec<ChatEvent>,
+        older_before: Option<u64>,
+    },
+    Chats {
+        chats: Vec<ChatInfo>,
+    },
+    Steered {
+        outcome: String,
+    },
+    ChatConfig {
+        value: Value,
+    },
+    Remote {
+        status: Box<RemoteStatus>,
+    },
+    Workspace {
+        workspace: Workspace,
+    },
+    Attentions {
+        attentions: Vec<Attention>,
+    },
+    ChatBegun {
+        agent_id: String,
+        start: ChatStart,
+    },
+    Host {
+        host: HostInfo,
+    },
+    BackdropImage {
+        data_url: Option<String>,
+    },
+    Registration {
+        registration: HostRegistration,
+    },
 }
 
 /// What the app sends the accounts server to register this core as a host.
@@ -879,8 +934,8 @@ pub struct RemoteStatus {
     pub devices: Vec<DeviceInfo>,
     /// Ids of the devices connected now.
     pub connected: Vec<String>,
-    pub pairing: Option<PairingOffer>,
-    /// Devices that entered the code and wait for the person to answer.
+    /// Phones that came with a ticket from the account and wait for the
+    /// person to answer.
     pub pending: Vec<PendingDevice>,
     /// The account this host is signed in to.
     pub owner: Option<String>,
@@ -989,16 +1044,6 @@ pub enum AccountLinkState {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PairingOffer {
-    pub code: String,
-    /// Milliseconds since the Unix epoch.
-    pub expires_at: u64,
-    /// The core's key and the code as one `sikemux://pair` link, for a QR code.
-    pub link: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct PendingDevice {
     /// Names this request in `AnswerPairing`.
     pub id: String,
@@ -1006,6 +1051,13 @@ pub struct PendingDevice {
     /// What the device calls itself. Nothing vouches for it.
     pub name: String,
     pub platform: String,
+    /// The device came with a ticket from the host's account, as every
+    /// device does.
+    #[serde(default)]
+    pub from_account: bool,
+    /// When the phone stops waiting for an answer, in milliseconds since the
+    /// Unix epoch.
+    pub expires_at: u64,
 }
 
 /// Which build of the sidecar a core runs. `source` fingerprints the code
@@ -1088,6 +1140,9 @@ pub struct SessionInfo {
     /// The agent finished or asked for something while the person was not
     /// looking at it in the app.
     pub unread: bool,
+    /// When the agent last started work, finished or asked for something, in
+    /// Unix milliseconds.
+    pub active_at: Option<u64>,
 }
 
 /// A task's launch request without its environment.

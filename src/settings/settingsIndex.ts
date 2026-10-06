@@ -56,7 +56,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     section(
         "plugins",
         "Built-in plugins",
-        "aws bruno database postgres postgresql sqlite sql github actions rundeck signoz enable disable switch off turn on extensions integrations",
+        "aws bruno database postgres postgresql sqlite sql github actions jira rundeck signoz enable disable switch off turn on extensions integrations",
     ),
     section("general", "Project folders", "repos repositories directories roots scan depth index picker"),
     section("general", "Session transfer", "export import clipboard move machine bundle copy"),
@@ -136,12 +136,9 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     section("cli", "Shell integration", "install terminal path sikemux-editor"),
     section("cli", "Usage", "editor git commit open"),
 
-    section("devices", "Remote access", "phone mobile iphone android remote away connect host"),
-    row("devices", "Remote access", "Allow paired devices", "phone mobile remote enable turn on off background"),
-    section("devices", "Your account", "account sign in login google github email phones find"),
-    row("devices", "Your account", "Not signed in", "sign in log in account google github email"),
-    section("devices", "Pair a device", "phone mobile code pairing add connect"),
-    section("devices", "Paired devices", "phone mobile revoke remove forget access watch"),
+    section("devices", "Your account", "account sign in sign out login google github email delete"),
+    section("devices", "Remote access", "phone mobile iphone android remote away connect host enable turn on off"),
+    section("devices", "Phones", "phone mobile iphone android qr code scan revoke remove forget access watch full control"),
 
     section("cloud", "Single sign-on", "sso aws gcp login"),
     row("cloud", "Single sign-on", "Browser app", "chrome safari firefox arc"),

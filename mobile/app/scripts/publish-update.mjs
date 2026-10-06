@@ -62,7 +62,8 @@ async function prepare(platform, channel, dir) {
   const { generate } = await import('./generate.mjs');
   await generate();
 
-  const env = { ...process.env, APP_VARIANT: 'production', SIKEMUX_MOBILE_CHANNEL: channel };
+  const commit = run('git', ['rev-parse', 'HEAD']).trim();
+  const env = { ...process.env, APP_VARIANT: 'production', SIKEMUX_MOBILE_CHANNEL: channel, EXPO_PUBLIC_COMMIT: commit.slice(0, 7) };
   const stdio = ['ignore', 'pipe', 'inherit'];
   const { runtimeVersion } = JSON.parse(run('npx', ['expo-updates', 'runtimeversion:resolve', '--platform', platform], { env, stdio }));
   if (typeof runtimeVersion !== 'string') stop('The app config has no runtime version, so an update could reach any build.');
@@ -99,7 +100,6 @@ async function prepare(platform, channel, dir) {
     keys.add(asset.key);
   }
 
-  const commit = run('git', ['rev-parse', 'HEAD']).trim();
   const message = run('git', ['log', '-1', '--format=%s', commit]).trim();
   const id = randomUUID();
   const createdAt = new Date().toISOString();

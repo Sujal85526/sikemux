@@ -6,13 +6,15 @@ import type {
   Device,
   DeviceList,
   DeviceRegistration,
+  JoinRequest,
+  JoinTicket,
   PushApp,
   PushTokenRegistration,
   PushTokenState,
 } from '@protocol';
 
 import { thisDevice } from '@/device/identity';
-import { phoneName } from '@/devices/pairing';
+import { phoneName } from '@/device/name';
 import { apiUrl } from './config';
 
 export type TokenSource = () => Promise<string | null>;
@@ -117,6 +119,13 @@ export async function clearPushToken(token: TokenSource): Promise<void> {
 /** The hosts signed in to the account. */
 export async function accountHosts(token: TokenSource): Promise<Device[]> {
   return (await call<DeviceList>(token, '/v1/devices?role=host')).devices;
+}
+
+/** The server's signed word that this phone and `host` are on the same account, for the host to check before it asks its owner. */
+export async function joinTicket(token: TokenSource, host: string): Promise<JoinTicket> {
+  const device = await thisDevice();
+  const request: JoinRequest = { host };
+  return call<JoinTicket>(token, `/v1/devices/${device.id()}/join`, { method: 'POST', body: request });
 }
 
 /** Deletes the account and every device on it. */
