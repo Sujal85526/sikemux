@@ -25,7 +25,7 @@ export function NotificationsOffer() {
   };
 
   return (
-    <Sheet visible={visible} onClose={notNow}>
+    <Sheet visible={visible} onClose={closeOffer}>
       <Text style={styles.title}>Turn on notifications?</Text>
       <Text style={styles.note}>
         Get told when an agent stops to ask, finishes, or runs into a problem. What it&apos;s doing is encrypted on your computer; only this
