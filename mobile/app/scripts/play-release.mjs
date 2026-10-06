@@ -1,8 +1,11 @@
 // Puts a signed app bundle on Google Play with the release notes for its version: a nightly on
-// the closed testing track, a stable release on production.
+// the closed testing track, a stable release on production, where it starts with a share of phones
+// and widens once it holds up.
 //
 //   node scripts/play-release.mjs notes 0.1.0-nightly.5
 //   node scripts/play-release.mjs upload 0.1.0-nightly.5 dist/Sikemux_0.1.0-nightly.5_android.aab
+//   node scripts/play-release.mjs rollout 0.5        half of production phones
+//   node scripts/play-release.mjs rollout 1          every phone
 //
 // `upload` signs in as the service account whose JSON key is in PLAY_SERVICE_ACCOUNT.
 import { Buffer } from 'node:buffer';
@@ -35,6 +38,27 @@ export function releaseNotes(version, text = readFileSync(NOTES, 'utf8')) {
 
 export function track(version) {
   return version.includes('-nightly.') ? 'alpha' : 'production';
+}
+
+/** The share of production phones a stable release reaches first. */
+export const FIRST_ROLLOUT = 0.1;
+
+/** The release a new bundle makes on its track: testers get a nightly at once, production phones a stable one in stages. */
+export function trackRelease(version, versionCode, notes) {
+  const release = { name: version, versionCodes: [String(versionCode)], releaseNotes: [{ language: 'en-US', text: notes }] };
+  return track(version) === 'production'
+    ? { ...release, status: 'inProgress', userFraction: FIRST_ROLLOUT }
+    : { ...release, status: 'completed' };
+}
+
+/** The production releases with the one rolling out widened to `fraction`, or finished at 1. */
+export function widened(releases, fraction) {
+  if (!(fraction > 0 && fraction <= 1)) throw new Error(`${fraction} is not a share of phones between 0 and 1`);
+  const rolling = releases.find((release) => release.status === 'inProgress');
+  if (!rolling) throw new Error('No production release is rolling out');
+  if (fraction <= rolling.userFraction) throw new Error(`${rolling.name} already reaches ${rolling.userFraction} of phones`);
+  const next = fraction === 1 ? { ...rolling, status: 'completed', userFraction: undefined } : { ...rolling, userFraction: fraction };
+  return fraction === 1 ? [next] : releases.map((release) => (release === rolling ? next : release));
 }
 
 function base64url(value) {
@@ -82,20 +106,25 @@ async function upload(version, bundle) {
   await call(token, `${API}/edits/${edit.id}/tracks/${name}`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      track: name,
-      releases: [
-        {
-          name: version,
-          versionCodes: [String(uploaded.versionCode)],
-          status: 'completed',
-          releaseNotes: [{ language: 'en-US', text: notes }],
-        },
-      ],
-    }),
+    body: JSON.stringify({ track: name, releases: [trackRelease(version, uploaded.versionCode, notes)] }),
   });
   await call(token, `${API}/edits/${edit.id}:commit`, { method: 'POST' });
-  console.log(`Google Play: ${version} (version code ${uploaded.versionCode}) is out on ${name}`);
+  const reach = name === 'production' ? ` to ${FIRST_ROLLOUT * 100}% of phones; widen it with \`rollout\`` : '';
+  console.log(`Google Play: ${version} (version code ${uploaded.versionCode}) is out on ${name}${reach}`);
+}
+
+async function rollout(fraction) {
+  const token = await accessToken(JSON.parse(process.env.PLAY_SERVICE_ACCOUNT ?? ''));
+  const edit = await call(token, `${API}/edits`, { method: 'POST' });
+  const current = await call(token, `${API}/edits/${edit.id}/tracks/production`);
+  const releases = widened(current.releases ?? [], fraction);
+  await call(token, `${API}/edits/${edit.id}/tracks/production`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ track: 'production', releases }),
+  });
+  await call(token, `${API}/edits/${edit.id}:commit`, { method: 'POST' });
+  console.log(`Google Play: production now reaches ${fraction * 100}% of phones`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
@@ -103,8 +132,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   try {
     if (command === 'notes' && version) console.log(releaseNotes(version));
     else if (command === 'upload' && version && bundle) await upload(version, bundle);
+    else if (command === 'rollout' && version) await rollout(Number(version));
     else {
-      console.error('usage: play-release.mjs notes <version> | upload <version> <bundle.aab>');
+      console.error('usage: play-release.mjs notes <version> | upload <version> <bundle.aab> | rollout <share of phones>');
       process.exit(2);
     }
   } catch (error) {
