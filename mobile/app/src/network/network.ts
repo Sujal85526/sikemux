@@ -13,6 +13,8 @@ export const DEFAULT_RELAYS: Relay[] = [{ url: 'https://relay.sikemux.com/', reg
 const FETCH_TIMEOUT_MS = 3000;
 /** The server lets its answer be cached for five minutes, so asking sooner learns nothing. */
 const FRESH_FOR_MS = 5 * 60_000;
+/** After the server could not be reached, each new connection does not wait on it again for this long. */
+const UNREACHED_FOR_MS = 30_000;
 
 /** The last answer, for when the server is out of reach. Nothing in it is secret. */
 const saved = new File(Paths.document, 'network.json');
@@ -21,7 +23,7 @@ export type UpdateRequired = { current: string; minimum: string };
 
 let required: UpdateRequired | null = null;
 const listeners = new Set<() => void>();
-let reading: { at: number; relays: Promise<Relay[]> } | undefined;
+let reading: { until: number; fresh: boolean; relays: Promise<Relay[]> } | undefined;
 
 function usableRelays(value: unknown): Relay[] {
   if (!Array.isArray(value)) return [];
@@ -92,20 +94,27 @@ async function readRelays(): Promise<{ relays: Relay[]; fresh: boolean }> {
 
 /** The relays hosts listen on, best first: the server's answer, else the last one saved, else the built-in relay. */
 export function currentRelays(): Promise<Relay[]> {
-  if (reading && Date.now() - reading.at < FRESH_FOR_MS) return reading.relays;
+  if (reading && Date.now() < reading.until) return reading.relays;
   const read = readRelays();
   const relays = read.then((result) => result.relays);
-  const current = { at: Date.now(), relays };
+  const current = { until: Date.now() + FRESH_FOR_MS, fresh: true, relays };
   reading = current;
   read.then(
     (result) => {
-      if (!result.fresh && reading === current) reading = undefined;
+      if (result.fresh || reading !== current) return;
+      current.fresh = false;
+      current.until = Date.now() + UNREACHED_FOR_MS;
     },
     () => {
       if (reading === current) reading = undefined;
     },
   );
   return relays;
+}
+
+/** Asks the server again on the next connection, unless its last answer came through; for when the network comes back. */
+export function askForRelaysAgain() {
+  if (reading && !reading.fresh) reading = undefined;
 }
 
 export function relaySettings(relays: Relay[]): RelaySetting[] {
