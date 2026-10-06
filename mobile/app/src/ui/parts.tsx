@@ -20,7 +20,7 @@ import { Backdrop } from './Backdrop';
 import { goBack } from './navigate';
 import { useStill } from './motion';
 import { DrawnIcon, Icon } from './Icon';
-import { fonts, type Palette, radius, typeFor, useColors, useStyles, useType, translucent } from './theme';
+import { fonts, keyboardFor, type Palette, radius, typeFor, useColors, useStyles, translucent } from './theme';
 
 /** Space under a screen's last content: the system's home bar or gesture bar, then a little air. */
 export function useBottomGap(): number {
@@ -129,7 +129,7 @@ export function Field(props: TextInputProps) {
     <TextInput
       placeholderTextColor={colors.tertiary}
       selectionColor={colors.accent}
-      keyboardAppearance="dark"
+      keyboardAppearance={keyboardFor(colors)}
       {...props}
       onFocus={(event) => {
         setFocused(true);
@@ -188,7 +188,6 @@ export function Row({
   onPress,
   dim,
   bright,
-  selected,
 }: {
   mark?: ReactNode;
   title: string;
@@ -198,7 +197,6 @@ export function Row({
   dim?: boolean;
   /** Titles the row in full ink, for the one that is waiting on the person. */
   bright?: boolean;
-  selected?: boolean;
 }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
@@ -206,13 +204,10 @@ export function Row({
     <Pressable
       onPress={onPress}
       accessibilityRole={onPress ? 'button' : undefined}
-      accessibilityState={selected === undefined ? undefined : { selected }}
-      style={({ pressed }) => [styles.row, selected && styles.rowSelected, pressed && onPress && styles.rowPressed]}>
+      style={({ pressed }) => [styles.row, pressed && onPress && styles.rowPressed]}>
       {mark ? <View style={styles.mark}>{mark}</View> : null}
       <View style={styles.rowBody}>
-        <Text
-          style={[styles.rowTitle, { color: dim ? colors.tertiary : selected || bright ? colors.ink : colors.secondary }]}
-          numberOfLines={1}>
+        <Text style={[styles.rowTitle, { color: dim ? colors.tertiary : bright ? colors.ink : colors.secondary }]} numberOfLines={1}>
           {title}
         </Text>
         {detail ? (
@@ -224,11 +219,6 @@ export function Row({
       {end ? <View style={styles.rowEnd}>{end}</View> : null}
     </Pressable>
   );
-}
-
-export function Mono({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
-  const type = useType();
-  return <Text style={[type.mono, style as object]}>{children}</Text>;
 }
 
 /** The rail's scope track: two or three options, the chosen one lifted. */
@@ -244,7 +234,7 @@ export function Track<T extends string>({
   const colors = useColors();
   const styles = useStyles(makeStyles);
   return (
-    <View style={styles.track}>
+    <View style={styles.track} accessibilityRole="tablist">
       {options.map((option) => {
         const on = option.value === value;
         return (
@@ -252,12 +242,15 @@ export function Track<T extends string>({
             key={option.value}
             onPress={() => onChange(option.value)}
             style={[styles.trackOption, on && styles.trackOn]}
+            hitSlop={{ top: 4, bottom: 4 }}
             accessibilityRole="tab"
             accessibilityState={{ selected: on }}>
             <Text style={[styles.trackText, on && { color: colors.ink }]}>{option.label}</Text>
             {option.count ? (
               <View style={styles.count}>
-                <Text style={styles.countText}>{option.count}</Text>
+                <Text style={styles.countText} maxFontSizeMultiplier={1.3}>
+                  {option.count}
+                </Text>
               </View>
             ) : null}
           </Pressable>
@@ -334,34 +327,11 @@ export function Dot({ color, size = 8, hollow }: { color: string; size?: number;
   );
 }
 
-export function CodeTiles({ code, state = 'typing' }: { code: string; state?: 'typing' | 'locked' | 'failed' }) {
-  const styles = useStyles(makeStyles);
-  const digits = Array.from({ length: 6 }, (_, index) => code[index] ?? '');
-  const current = code.length;
-  return (
-    <View style={styles.tiles}>
-      {digits.map((digit, index) => (
-        <View key={index} style={[styles.tileWrap, index === 3 && { marginLeft: 6 }]}>
-          <View
-            style={[
-              styles.tile,
-              state === 'typing' && index === current && styles.tileCurrent,
-              state === 'locked' && styles.tileLocked,
-              state === 'failed' && styles.tileFailed,
-            ]}>
-            <Text style={[styles.tileText, state === 'failed' && { color: '#f3a7ab' }]}>{digit}</Text>
-          </View>
-        </View>
-      ))}
-    </View>
-  );
-}
-
 const buttonFill = (colors: Palette): Record<ButtonKind, ViewStyle> => ({
   primary: { backgroundColor: colors.ink, borderColor: colors.ink },
   neutral: { backgroundColor: colors.raised, borderColor: colors.border },
   danger: { backgroundColor: colors.raised, borderColor: colors.border },
-  text: { backgroundColor: 'transparent', borderColor: 'transparent', minHeight: 40 },
+  text: { backgroundColor: 'transparent', borderColor: 'transparent', minHeight: 44 },
 });
 
 const buttonInk = (colors: Palette): Record<ButtonKind, TextStyle> => ({
@@ -382,7 +352,7 @@ const makeStyles = (colors: Palette) => {
     navTitle: { flex: 1, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
     navTitleText: { fontFamily: fonts.uiSemibold, fontSize: 16, letterSpacing: -0.25, color: colors.ink },
     navEnd: { minWidth: 76, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center' },
-    iconButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+    iconButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
 
     button: {
       minHeight: 50,
@@ -418,7 +388,6 @@ const makeStyles = (colors: Palette) => {
     sectionRule: { flex: 1, height: 1, backgroundColor: translucent(colors.ink, 0.09) },
     rows: { gap: 2 },
     row: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 9 },
-    rowSelected: { backgroundColor: colors.active },
     rowPressed: { backgroundColor: colors.active },
     mark: { width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
     rowBody: { flex: 1, minWidth: 0 },
@@ -440,7 +409,7 @@ const makeStyles = (colors: Palette) => {
     trackText: { fontFamily: fonts.ui, fontSize: 13, color: colors.tertiary },
     count: {
       minWidth: 16,
-      height: 16,
+      minHeight: 16,
       borderRadius: 8,
       paddingHorizontal: 5,
       backgroundColor: colors.ink,
@@ -454,22 +423,5 @@ const makeStyles = (colors: Palette) => {
     dotBox: { width: 16, height: 16, alignItems: 'center', justifyContent: 'center' },
     ring: { position: 'absolute', width: 16, height: 16, borderRadius: 8, borderWidth: 1.5, borderColor: colors.ink },
     dot: { width: 8, height: 8, borderRadius: 4 },
-
-    tiles: { flexDirection: 'row', gap: 8, justifyContent: 'center' },
-    tileWrap: {},
-    tile: {
-      width: 46,
-      height: 58,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.sunken,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    tileCurrent: { borderColor: colors.borderSelected },
-    tileLocked: { backgroundColor: colors.raised, borderColor: colors.borderStrong },
-    tileFailed: { borderColor: 'rgba(255, 103, 103, 0.55)', backgroundColor: '#140b0d' },
-    tileText: { fontFamily: fonts.mono, fontSize: 26, color: colors.ink },
   });
 };

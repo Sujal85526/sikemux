@@ -1,14 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import * as Haptics from 'expo-haptics';
 
 import { composerPlaceholder } from '@mac/chat/chatStatus';
 import { ComposerInput } from '@/chat/ComposerInput';
 import type { LauncherInfo } from '@/core/protocol';
 import { problem as problemOf, useLive } from '@/devices/hub';
 import { ProjectSheet } from '@/devices/ProjectSheet';
+import { haptics } from '@/ui/haptics';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Nav, Screen, useKeyboardShown, Working } from '@/ui/parts';
 import { Sheet, SheetLabel } from '@/ui/Sheet';
@@ -82,11 +82,21 @@ export default function NewChat() {
   );
   const yolo = launcher?.permissionMode === 'bypass' || launcher?.permissionMode === 'bypassPermissions';
   const sendable = Boolean(draft.trim() && launcher && project && live.status === 'open' && !starting);
+  const blocked =
+    live.status !== 'open'
+      ? live.snapshot
+        ? 'Reconnecting to the host… The chat starts once it answers.'
+        : 'Not connected to the host yet.'
+      : workspace && !project
+        ? 'Open a project in Sikemux on the host to start a chat in it.'
+        : undefined;
+  const busy = useRef(false);
 
   const start = async () => {
     const text = draft.trim();
-    if (!text || !launcher || !project || live.status !== 'open') return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (busy.current || !text || !launcher || !project || live.status !== 'open') return;
+    busy.current = true;
+    haptics.tap();
     setStarting(true);
     setProblem(undefined);
     try {
@@ -98,6 +108,8 @@ export default function NewChat() {
       await live.connection.prompt(agentId, text);
       router.replace(`/device/${core}/chat/${agentId}`);
     } catch (error) {
+      busy.current = false;
+      haptics.failure();
       setProblem(problemOf(error));
       setStarting(false);
     }
@@ -114,6 +126,11 @@ export default function NewChat() {
             <Text style={[type.meta, { textAlign: 'center' }]}>Open Sikemux on the host so it can offer its agents.</Text>
           ) : null}
           {problem ? <Text style={styles.problem}>{problem}</Text> : null}
+          {!problem && blocked ? (
+            <Text style={[type.meta, { textAlign: 'center' }]} accessibilityLiveRegion="polite">
+              {blocked}
+            </Text>
+          ) : null}
         </View>
         <SafeAreaView edges={typing ? [] : ['bottom']} style={styles.wrap}>
           {project ? (
@@ -142,6 +159,7 @@ export default function NewChat() {
                   style={styles.picker}
                   onPress={() => setSheet('agent')}
                   disabled={Boolean(started)}
+                  hitSlop={5}
                   accessibilityRole="button"
                   accessibilityLabel="Agent">
                   <AgentIcon provider={launcher.provider} size={16} />
@@ -155,10 +173,12 @@ export default function NewChat() {
               <Pressable
                 onPress={start}
                 disabled={!sendable}
+                hitSlop={5}
                 style={[styles.send, !sendable && { opacity: 0.28 }]}
                 accessibilityRole="button"
                 accessibilityLabel="Start"
-                accessibilityState={{ disabled: !sendable }}>
+                accessibilityHint={blocked}
+                accessibilityState={{ disabled: !sendable, busy: starting }}>
                 {starting ? <Working /> : <Icon name="IconArrowUp" size={16} color={colors.ground} />}
               </Pressable>
             </View>

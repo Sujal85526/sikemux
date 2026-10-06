@@ -236,7 +236,7 @@ const makeStyles = (colors: Palette) => {
     centered: { textAlign: 'center' },
     tiles: { marginTop: 24 },
     problem: { ...type.meta, color: colors.danger, marginTop: 4 },
-    link: { height: 40, alignItems: 'center', justifyContent: 'center' },
+    link: { minHeight: 44, alignItems: 'center', justifyContent: 'center' },
     linkText: { fontFamily: fonts.uiMedium, fontSize: 15, color: colors.secondary },
   });
 };
