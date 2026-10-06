@@ -1,8 +1,10 @@
-import { MobileError, type CoreListener } from '@sikemux/native';
+import { AppState } from 'react-native';
+import { MobileError, type ConnectionLike, type CoreListener } from '@sikemux/native';
 
 import { notifier, type AnswerOutcome, type ShownCard } from '../../modules/notify';
 import type { Snapshot } from '@/core/protocol';
-import { thisDevice } from '@/device/identity';
+import { goOffline, whileJoining } from '@/device/identity';
+import { openConnections } from '@/devices/hub';
 
 /** Permission cards whose request the host no longer has: it was answered or withdrawn elsewhere. */
 export function settledCards(shown: ShownCard[], host: string, snapshot: Snapshot): string[] {
@@ -27,6 +29,15 @@ export function dismissCardsFor(host: string, agent: string) {
     .forEach((card) => notifier?.dismiss(card.tag));
 }
 
+/** Removes every card from a host, as when it is forgotten. */
+export function dismissHostCards(host: string) {
+  if (!notifier) return;
+  notifier
+    .shown()
+    .filter((card) => card.host === host)
+    .forEach((card) => notifier?.dismiss(card.tag));
+}
+
 export type CardAnswer = { tag: string; host: string; agent: string; request: string; option: string; allow: boolean };
 
 const quiet: CoreListener = {
@@ -39,20 +50,30 @@ export function isGone(error: unknown): boolean {
   return MobileError.Refused.instanceOf(error) && /no longer pending/.test(error.inner.message);
 }
 
-/** Answers a permission request from its card over the phone's own connection to the host. */
+/**
+ * Answers a permission request from its card: over the connection the app already holds to the host, or else over
+ * one of its own that keeps the phone online until the answer is in.
+ */
 export async function answerFromCard(answer: CardAnswer): Promise<AnswerOutcome> {
-  let connection;
+  const send = (connection: ConnectionLike) => connection.answerPermission(answer.agent, answer.request, answer.option);
   try {
-    const device = await thisDevice();
-    connection = await device.connect(answer.host, quiet);
-    await connection.answerPermission(answer.agent, answer.request, answer.option);
+    const held = openConnections().find(([host]) => host === answer.host)?.[1];
+    if (held) await send(held);
+    else {
+      await whileJoining(async (device) => {
+        const connection = await device.connect(answer.host, quiet);
+        try {
+          await send(connection);
+        } finally {
+          connection.close();
+        }
+      });
+    }
     return answer.allow ? 'answered' : 'rejected';
   } catch (error) {
     if (isGone(error)) return 'gone';
     console.warn('sikemux: could not answer from the notification', error);
     return 'failed';
-  } finally {
-    connection?.close();
   }
 }
 
@@ -60,4 +81,6 @@ export async function answerFromCard(answer: CardAnswer): Promise<AnswerOutcome>
 export async function answerTask(data: CardAnswer) {
   const outcome = await answerFromCard(data);
   notifier?.settle(data.tag, outcome);
+  // Started for this answer alone, the phone would otherwise stay on the network with no app to use it.
+  if (AppState.currentState !== 'active' && openConnections().length === 0) await goOffline();
 }

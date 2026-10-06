@@ -5,7 +5,7 @@ import { JoinAnswer, MobileError } from '@sikemux/native';
 import { AccountProblem, joinTicket, type TokenSource } from '@/account/api';
 import { whileJoining } from '@/device/identity';
 import { phoneName } from '@/device/name';
-import { reloadDevices } from './hub';
+import { rejoined, reloadDevices } from './hub';
 import { rememberDevice, type Access } from './paired';
 
 let screens = 0;
@@ -103,6 +103,7 @@ export async function joinHost(
   if (JoinAnswer.Refused.instanceOf(answer)) throw new JoinFailed(refusal(host.name, answer.inner.reason));
   const access = answer.inner.access as Access;
   await rememberDevice({ core: host.core, access, pairedAt: Date.now(), name: host.name });
+  rejoined(host.core);
   await reloadDevices();
   return access;
 }

@@ -2,11 +2,17 @@ import { describe, expect, it, vi } from 'vitest';
 import { MobileError } from '@sikemux/native';
 
 import type { Snapshot } from '@/core/protocol';
-import { answerFromCard, settledCards } from './cards';
+import { AppState } from '../../test/mocks/react-native';
+import { answerFromCard, answerTask, settledCards } from './cards';
 
 const connection = vi.hoisted(() => ({ answerPermission: vi.fn(async () => {}), close: vi.fn() }));
 const device = vi.hoisted(() => ({ connect: vi.fn(async () => connection) }));
-vi.mock('@/device/identity', () => ({ thisDevice: async () => device }));
+const identity = vi.hoisted(() => ({
+  thisDevice: async () => device,
+  whileJoining: vi.fn(async <T>(work: (held: typeof device) => Promise<T>) => work(device)),
+  goOffline: vi.fn(async () => {}),
+}));
+vi.mock('@/device/identity', () => identity);
 
 const HOST = 'ea'.repeat(32);
 
@@ -29,8 +35,9 @@ describe('settledCards', () => {
 describe('answerFromCard', () => {
   const answer = { tag: 't', host: HOST, agent: 'chat-7f3a', request: 'r1', option: 'allow', allow: true };
 
-  it('answers over its own connection to the host, and closes it', async () => {
+  it('answers over its own connection to the host, kept online until done, and closes it', async () => {
     expect(await answerFromCard(answer)).toBe('answered');
+    expect(identity.whileJoining).toHaveBeenCalled();
     expect(device.connect).toHaveBeenCalledWith(HOST, expect.anything());
     expect(connection.answerPermission).toHaveBeenCalledWith('chat-7f3a', 'r1', 'allow');
     expect(connection.close).toHaveBeenCalled();
@@ -42,5 +49,12 @@ describe('answerFromCard', () => {
     expect(await answerFromCard(answer)).toBe('gone');
     device.connect.mockRejectedValueOnce(MobileError.Connection.new({ message: 'this host did not answer in time' }));
     expect(await answerFromCard(answer)).toBe('failed');
+  });
+
+  it('takes the phone off the network again after answering with the app away', async () => {
+    AppState.emit('background');
+    await answerTask(answer);
+    expect(identity.goOffline).toHaveBeenCalled();
+    AppState.emit('active');
   });
 });
