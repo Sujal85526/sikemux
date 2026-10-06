@@ -1,41 +1,55 @@
 name: Mobile update
-run-name: ${{ inputs.update_id && format('Promote phone update {0} to stable', inputs.update_id) || format('Phone update from {0}', github.sha) }}
+run-name: ${{ inputs.update_id && format('{0} phone update {1}', inputs.action, inputs.update_id) || format('Phone update from {0}', github.sha) }}
 
 # The phone's JavaScript and assets go out over the air: every push to main that changes them
-# publishes an Android update to nightly, and running this by hand with an update id promotes that
-# update to stable once the owner approves. Phones only take an update made for their runtime
-# version, so one that needs new native code waits for the build that has it.
+# publishes an Android update to nightly. Running this by hand with an update id, once the owner
+# approves, promotes that update to stable, withdraws it from every channel so phones that have not
+# taken it never do, or rolls back the phones that took it to the code in their build. Phones only
+# take an update made for their runtime version, so one that needs new native code waits for the
+# build that has it. test/updatePaths.test.ts fails when the bundle reads a file these paths miss.
 on:
   push:
     branches: [main]
     paths:
       - "mobile/app/src/**"
       - "mobile/app/assets/**"
+      - "mobile/app/index.ts"
+      - "mobile/app/modules/*/index.ts"
       - "mobile/app/app.json"
       - "mobile/app/app.config.js"
+      - "mobile/app/fingerprint.config.js"
       - "mobile/app/metro.config.js"
+      - "mobile/app/tsconfig.json"
       - "mobile/app/package.json"
       - "mobile/pnpm-lock.yaml"
       - "mobile/app/scripts/generate.mjs"
       - "mobile/app/scripts/publish-update.mjs"
-      - "mobile/app/fingerprint.config.js"
       - "mobile/app/scripts/rust-sources.js"
+      - "src/agents/agentLaunch.ts"
       - "src/chat/**"
+      - "src/lib/paths.ts"
+      - "src/lib/platform.ts"
+      - "src/terminal/interactions.ts"
       - "src/ui/Icons.tsx"
       - "src/assets/agent-logos/**"
       - .github/workflows/mobile-update.yml
   workflow_dispatch:
     inputs:
       update_id:
-        description: Update to promote to stable. Leave empty to publish main to nightly.
+        description: Update to act on. Leave empty to publish main to nightly.
         required: false
         default: ""
+      action:
+        description: What to do with that update.
+        type: choice
+        options: [promote, withdraw, roll-back]
+        default: promote
 
 permissions:
   contents: read
 
 concurrency:
-  group: mobile-update-${{ inputs.update_id && 'promote' || 'publish' }}
+  group: mobile-update-${{ inputs.update_id && 'manage' || 'publish' }}
   cancel-in-progress: false
 
 jobs:
@@ -158,7 +172,7 @@ jobs:
           node mobile/app/scripts/publish-update.mjs publish "$RUNNER_TEMP/update"
 
   approve:
-    name: Approve promoting to stable
+    name: Approve ${{ inputs.action }}
     if: github.repository == 'nodelike/sikemux' && github.ref == 'refs/heads/main' && inputs.update_id
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -166,11 +180,12 @@ jobs:
     steps:
       - name: Approved
         env:
+          ACTION: ${{ inputs.action }}
           UPDATE_ID: ${{ inputs.update_id }}
-        run: echo "Promoting $UPDATE_ID to stable" >>"$GITHUB_STEP_SUMMARY"
+        run: echo "Approved to $ACTION $UPDATE_ID" >>"$GITHUB_STEP_SUMMARY"
 
-  promote:
-    name: Promote to stable
+  manage:
+    name: ${{ inputs.action }} on citadel
     needs: approve
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -194,10 +209,13 @@ jobs:
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
 
-      - name: Promote it on citadel
+      # Rolling back signs the order phones obey with the update key, like an update.
+      - name: Act on citadel
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          ACTION: ${{ inputs.action }}
           UPDATE_ID: ${{ inputs.update_id }}
+          UPDATES_SIGNING_KEY: ${{ inputs.action == 'roll-back' && secrets.UPDATES_SIGNING_KEY || '' }}
         run: |
           export DEPLOY_SSH_KEY_FILE=~/.ssh/deploy_key
-          node mobile/app/scripts/publish-update.mjs promote "$UPDATE_ID"
+          node mobile/app/scripts/publish-update.mjs "$ACTION" "$UPDATE_ID"
