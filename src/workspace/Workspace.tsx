@@ -6,6 +6,7 @@ import type { Agent, CorePaneKind, Divider, PaneKind, PaneNode, Rect, Session, T
 import { isPluginKind, type PluginKind } from "../plugins/kinds";
 import { pluginSurface } from "../plugins/registry";
 import { collectPanes, computeLayout, findSplit, MIN_FRAC, openSides } from "../state/layout";
+import { cellPlacement, dividerKey, dividerPlacement, stackPlacement } from "../state/layoutPaint";
 import * as cmd from "../state/commands";
 import { getState, useStore } from "../state/store";
 import {
@@ -60,7 +61,6 @@ const CORE_PANE_ROLE: Record<CorePaneKind, WindowRole> = {
 };
 
 const paneRole = (kind: PaneKind): WindowRole => (isPluginKind(kind) ? kind : CORE_PANE_ROLE[kind]);
-const pct = (n: number) => `${n * 100}%`;
 
 /*
  * How many off-screen workbench screens stay mounted.
@@ -714,6 +714,7 @@ const WindowLayer = memo(function WindowLayer({
         <div
             ref={layerRef}
             className={`window-layer${live ? " live" : ""}${painted ? " painted" : ""}`}
+            data-window-id={win.id}
             id={live ? `workspace-content-${session.id}` : undefined}
             role="tabpanel"
             aria-labelledby={active ? `workspace-tab-${session.id}-${encodeURIComponent(tabRefKey(active))}` : undefined}
@@ -737,11 +738,9 @@ const WindowLayer = memo(function WindowLayer({
                     <div
                         key={p.id}
                         className={`pane-cell${inStack.has(p.id) ? " in-stack" : ""}`}
+                        data-pane-cell={p.id}
                         style={{
-                            left: pct(rect.x),
-                            top: pct(rect.y),
-                            width: pct(rect.w),
-                            height: pct(rect.h),
+                            ...cellPlacement(rect),
                             visibility: shown ? undefined : "hidden",
                             zIndex: isZoomed ? 2 : 1,
                         }}>
@@ -779,10 +778,7 @@ const WindowLayer = memo(function WindowLayer({
             })}
             {!zoomActive &&
                 stacks.map((stack) => (
-                    <div
-                        key={stack.splitId}
-                        className="stack-strip"
-                        style={{ left: pct(stack.rect.x), top: pct(stack.rect.y), width: pct(stack.rect.w) }}>
+                    <div key={stack.splitId} className="stack-strip" data-stack={stack.splitId} style={stackPlacement(stack.rect)}>
                         <TabBar
                             variant="stack"
                             ariaLabel="Panes in this stack"
@@ -802,25 +798,13 @@ const WindowLayer = memo(function WindowLayer({
                         />
                     </div>
                 ))}
-            {live && !zoomActive && dividers.map((d) => <DividerHandle key={`${d.splitId}:${d.index}`} d={d} windowId={win.id} areaRef={areaRef} />)}
+            {live && !zoomActive && dividers.map((d) => <DividerHandle key={dividerKey(d)} d={d} windowId={win.id} areaRef={areaRef} />)}
         </div>
     );
 });
 
 function DividerHandle({ d, windowId, areaRef }: { d: Divider; windowId: string; areaRef: RefObject<HTMLDivElement | null> }) {
     const horizontal = d.dir === "row";
-
-    const style = horizontal
-        ? {
-              left: pct(d.rect.x + d.at * d.rect.w),
-              top: pct(d.rect.y),
-              height: pct(d.rect.h),
-          }
-        : {
-              top: pct(d.rect.y + d.at * d.rect.h),
-              left: pct(d.rect.x),
-              width: pct(d.rect.w),
-          };
 
     const onPointerDown = (e: ReactPointerEvent) => {
         e.preventDefault();
@@ -912,7 +896,8 @@ function DividerHandle({ d, windowId, areaRef }: { d: Divider; windowId: string;
     return (
         <div
             className={`divider divider-${d.dir}`}
-            style={style}
+            data-divider={dividerKey(d)}
+            style={dividerPlacement(d)}
             role="separator"
             tabIndex={0}
             aria-orientation={horizontal ? "vertical" : "horizontal"}

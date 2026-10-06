@@ -283,3 +283,44 @@ describe("the desk", () => {
         expect(getState().editorViews[deskEditorId("agent-1")].activePath).toBe("/code/b.ts");
     });
 });
+
+describe("the desk sliding", () => {
+    it("moves its panes on the page every frame and tells the store only where it lands", () => {
+        const frames: FrameRequestCallback[] = [];
+        vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+        vi.stubGlobal("cancelAnimationFrame", () => {});
+        document.body.animate = vi.fn();
+        const layer = document.createElement("div");
+        layer.className = "window-layer";
+        layer.dataset.windowId = "window";
+        document.body.append(layer);
+        try {
+            openDesk("agent-1");
+            const deskId = collectPanes(getState().windows.window.root)[1].id;
+            for (const id of ["agent-1", deskId]) {
+                const cell = document.createElement("div");
+                cell.dataset.paneCell = id;
+                layer.append(cell);
+            }
+            const deskCell = layer.querySelector<HTMLElement>(`[data-pane-cell="${deskId}"]`)!;
+            const sizes = () => (getState().windows.window.root as { sizes: number[] }).sizes;
+            const folded = sizes();
+            expect(folded[1]).toBeLessThan(0.05);
+
+            const step = (at: number) => frames.splice(0).forEach((frame) => frame(at));
+            step(performance.now() + 100);
+            expect(sizes()).toEqual(folded);
+            const midway = parseFloat(deskCell.style.width);
+            expect(midway).toBeGreaterThan(5);
+            expect(midway).toBeLessThan(50);
+
+            step(performance.now() + 1000);
+            expect(sizes()).toEqual([0.5, 0.5]);
+            expect(deskCell.style.width).toBe("50%");
+        } finally {
+            layer.remove();
+            delete (document.body as Partial<HTMLElement>).animate;
+            vi.unstubAllGlobals();
+        }
+    });
+});

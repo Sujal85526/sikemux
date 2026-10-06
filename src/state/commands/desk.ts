@@ -23,6 +23,7 @@ import { holdStageMotion } from "../nativeViews";
 import { canAnimate } from "../../lib/motion";
 import { activeAgentId, shownDeskPaneId } from "../selectors";
 import { collectPanes, computeLayout, findSplit, makePane, newId, removePane, setSplitSizes, splitPane } from "../layout";
+import { paintLayout } from "../layoutPaint";
 import type { Desk, LayoutNode, SplitNode } from "../types";
 import { setEditorView } from "./editor";
 import { dirtyPathsForPane, dropDeskPaneState, guardDiscardDirty } from "./shared";
@@ -170,6 +171,8 @@ interface DeskTravel {
     open: number[];
     closed: number[];
     heading: DeskHeading;
+    /** The sizes the store holds while the desk moves; it only learns where the desk lands. */
+    committed: number[];
     from: number[];
     last: number[];
     begun: number;
@@ -194,7 +197,8 @@ function windowHolding(paneId: string): string | undefined {
 
 /* The desk opens and closes the way a divider drag would: the agent gives up
    exactly the room the desk takes, so the two read as one movement. Each frame
-   is a size change like a drag's, so terminals and the browser page follow it.
+   is placed straight on the page, so terminals and the browser page follow it
+   without the whole app re-rendering, and the store hears where it lands.
    Returns false when there was nothing to move, and the caller does it at once. */
 function travelDesk(paneId: string, heading: DeskHeading, open?: number[]): boolean {
     let travel = travels.get(paneId);
@@ -210,6 +214,7 @@ function travelDesk(paneId: string, heading: DeskHeading, open?: number[]): bool
             open: sizes,
             closed: folded(sizes, found.index),
             heading,
+            committed: found.split.sizes,
             from: found.split.sizes,
             last: found.split.sizes,
             begun: 0,
@@ -232,7 +237,7 @@ function travelDesk(paneId: string, heading: DeskHeading, open?: number[]): bool
         heading,
         ms: travel.ms,
         openShare: shareOf(setSplitSizes(root, travel.splitId, travel.open), paneId),
-        currentShare: shareOf(root, paneId),
+        currentShare: shareOf(setSplitSizes(root, travel.splitId, travel.last), paneId),
         appearing: false,
     });
     if (!travel.frame) travel.frame = requestAnimationFrame((now) => stepDesk(paneId, now));
@@ -245,24 +250,35 @@ function stepDesk(paneId: string, now: number): void {
     travel.frame = 0;
     const current = findSplitIn(travel.windowId, travel.splitId);
     /* A divider drag or a removed pane took the split over, so it stays where it was put. */
-    if (!current || current.sizes.length !== travel.last.length || current.sizes.some((size, i) => size !== travel.last[i])) {
-        settle(paneId, travel);
+    if (!current || current.sizes.length !== travel.committed.length || current.sizes.some((size, i) => size !== travel.committed[i])) {
+        settle(paneId, travel, false);
         return;
     }
     const to = travel.heading === "open" ? travel.open : travel.closed;
     const t = Math.min(1, Math.max(0, (now - travel.begun) / travel.ms));
     const eased = 1 - (1 - t) ** 4;
     travel.last = t === 1 ? to : to.map((size, i) => travel.from[i] + (size - travel.from[i]) * eased);
-    setSizes(travel.windowId, travel.splitId, travel.last);
+    paintWindow(travel.windowId, (root) => setSplitSizes(root, travel.splitId, travel.last));
     if (t < 1) {
         travel.frame = requestAnimationFrame((next) => stepDesk(paneId, next));
         return;
     }
-    settle(paneId, travel);
+    settle(paneId, travel, true);
 }
 
-function settle(paneId: string, travel: DeskTravel): void {
+/* React only writes a style it renders differently, so the page is put back in step with the store once a move is over. */
+function paintWindow(windowId: string, sizing: (root: LayoutNode) => LayoutNode = (root) => root): void {
+    const st = getState();
+    const win = st.windows[windowId];
+    if (win) paintLayout(windowId, sizing(win.root), win.activePaneId, st.zoomedPaneId);
+}
+
+function settle(paneId: string, travel: DeskTravel, landed: boolean): void {
     travels.delete(paneId);
+    if (travel.heading === "open") {
+        if (landed) setSizes(travel.windowId, travel.splitId, travel.open);
+        paintWindow(travel.windowId);
+    }
     travel.release();
     announceDeskMotion(paneId, { kind: "settled" });
     if (travel.heading === "closed") removeDeskPane(paneId);
