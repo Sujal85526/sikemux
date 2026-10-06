@@ -158,6 +158,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 .row .title, .ask-head .title { flex: 1 1 auto; min-width: 0; }
 .proj { display: inline-flex; align-items: center; gap: 4px; flex: 0 1 auto; min-width: 0; max-width: 150px; font-size: 11.5px; color: var(--ink-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .proj svg { flex: 0 0 auto; color: var(--ink-faint); }
+.subagents { display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto; font-size: 11px; font-weight: 500; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+.subagents svg { fill: currentColor; stroke: none; color: color-mix(in srgb, var(--live) 75%, transparent); }
 .time { min-width: 44px; text-align: right; }
 .row:hover { background: rgba(255, 255, 255, 0.07); }
 .mark { width: 20px; height: 20px; flex: 0 0 auto; }
@@ -501,6 +503,7 @@ async function loadIcons() {
         arrowUp: icon("IconArrowUp", 15),
         check: icon("IconCheck", 14),
         chevron: icon("IconChevron", 10),
+        agent: icon("IconAgent", 10),
     };
 }
 const MARK = `<img src="../../../brand/mark/mark-white.svg" alt="">`;
@@ -516,7 +519,7 @@ function freshAgents() {
     return [
         { id: "a1", type: "claude", title: "Fix the login flake", project: "sikemux", state: "blocked", time: "2:14",
           ask: { tool: "Bash", cmd: "pnpm test --filter core -- --runInBand" } },
-        { id: "a2", type: "codex", title: "Refactor the auth middleware", project: "server", state: "working", time: "4:12" },
+        { id: "a2", type: "codex", title: "Refactor the auth middleware", project: "server", state: "working", time: "4:12", subagents: 3 },
         { id: "a3", type: "opencode", title: "Draft the notch spec", project: "sikemux", state: "working", time: "0:48" },
         { id: "a4", type: "grok", title: "Bump Astro to 6", project: "sikemux-front", state: "done", unread: true, time: "1m ago" },
     ];
@@ -786,7 +789,7 @@ class Island {
                         </div>` : `
                         <div class="row">
                             <span class="mark">${ICON[a.type]}</span>
-                            <span class="title">${a.title}</span><span class="proj">${GLYPH.folderSmall}${a.project}</span>
+                            <span class="title">${a.title}</span>${a.subagents ? `<span class="subagents">${GLYPH.agent}${a.subagents}</span>` : ""}<span class="proj">${GLYPH.folderSmall}${a.project}</span>
                             <span class="time">${a.time}</span>${stateMark(a.state)}
                         </div>`).join("")}`).join("");
             }

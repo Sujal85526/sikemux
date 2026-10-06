@@ -194,6 +194,7 @@ struct RowLine: View {
                 .foregroundStyle(Theme.ink)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            if agent.subagents > 0 { SubagentCount(count: agent.subagents) }
             ProjectLabel(project: agent.project).frame(maxWidth: 150, alignment: .trailing).fixedSize()
             if agent.state != .idle {
                 SinceText(state: agent.state, since: store.since[agent.id]).frame(minWidth: 44, alignment: .trailing)
