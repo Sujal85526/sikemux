@@ -1297,6 +1297,7 @@ pub struct DeviceView {
     pub chats: Vec<ChatInfo>,
     pub attentions: Vec<Attention>,
     /// Saved chats the app lists as recent, newest first, none of them open.
+    #[serde(default)]
     pub recent: Vec<RecentInfo>,
 }
 
@@ -1493,6 +1494,26 @@ pub async fn read_frame_within<R: tokio::io::AsyncRead + Unpin>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_device_reads_the_view_of_a_core_from_before_recent_chats() {
+        let mut view = serde_json::to_value(DeviceView {
+            workspace: Workspace {
+                projects: Vec::new(),
+                launchers: Vec::new(),
+                palette: BTreeMap::new(),
+                backdrop: Backdrop::default(),
+            },
+            sessions: Vec::new(),
+            chats: Vec::new(),
+            attentions: Vec::new(),
+            recent: Vec::new(),
+        })
+        .unwrap();
+        view.as_object_mut().unwrap().remove("recent");
+        let read: DeviceView = serde_json::from_value(view).unwrap();
+        assert!(read.recent.is_empty());
+    }
 
     #[test]
     fn frames_carry_a_big_endian_length_that_counts_the_kind_byte() {
