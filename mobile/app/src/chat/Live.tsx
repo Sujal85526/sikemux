@@ -1,10 +1,12 @@
-import { Fragment, type ReactNode } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
+import { ActivityIndicator, Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { subagentActivity, taskDetail } from '@mac/chat/transcript';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { SectionLabel } from '@/ui/list';
+import { useStill } from '@/ui/motion';
 import { Sheet } from '@/ui/Sheet';
+import { Shimmer } from '@/ui/Shimmer';
 import { Dot, Working } from '@/ui/status';
 import { fonts, type Palette, useColors, useStyles } from '@/ui/theme';
 import type { LiveWork, PlanEntry } from './liveWork';
@@ -25,6 +27,31 @@ const WORDED = 3;
  * One line docked on the composer saying what is still going: subagents, background tasks by
  * kind, waiting messages and the plan's progress. A tap opens all of it.
  */
+/** How long the strip shows one live thing before it turns to the next. */
+const TURN_MS = 3200;
+
+/** Which of `count` live lines the strip shows, turning to the next with a short fade. */
+function useTurns(count: number): { index: number; shown: Animated.Value } {
+  const still = useStill();
+  const [index, setIndex] = useState(0);
+  const [shown] = useState(() => new Animated.Value(1));
+  useEffect(() => {
+    if (count < 2) return;
+    const timer = setInterval(() => {
+      if (still) {
+        setIndex((current) => current + 1);
+        return;
+      }
+      Animated.timing(shown, { toValue: 0, duration: 140, useNativeDriver: true }).start(() => {
+        setIndex((current) => current + 1);
+        Animated.timing(shown, { toValue: 1, duration: 140, useNativeDriver: true }).start();
+      });
+    }, TURN_MS);
+    return () => clearInterval(timer);
+  }, [count, still, shown]);
+  return { index, shown };
+}
+
 export function LiveStrip({ work, provider, onOpen }: { work: LiveWork; provider: string; onOpen: () => void }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
@@ -67,8 +94,15 @@ export function LiveStrip({ work, provider, onOpen }: { work: LiveWork; provider
         ]
       : []),
   ];
-  const worded = pieces.length <= WORDED;
   const working = work.subagents.length > 0 || work.tasks.some(([, tasks]) => tasks.some((task) => task.state === 'running'));
+  const lines = [
+    ...work.subagents.map((subagent) => `${subagent.name} · ${subagentActivity(subagent)}`),
+    ...work.tasks.flatMap(([, tasks]) =>
+      tasks.filter((task) => task.state === 'running').map((task) => [task.name, taskDetail(task)].filter(Boolean).join(' · ')),
+    ),
+  ];
+  const line = useTurns(lines.length);
+  const worded = !lines.length && pieces.length <= WORDED;
   return (
     <Pressable
       onPress={onOpen}
@@ -76,7 +110,14 @@ export function LiveStrip({ work, provider, onOpen }: { work: LiveWork; provider
       accessibilityRole="button"
       accessibilityLabel={`${pieces.map((piece) => `${piece.count} ${piece.word}`).join(', ')}. Show`}>
       {working ? <Working /> : null}
-      <View style={styles.pieces}>
+      {lines.length ? (
+        <Animated.View style={[styles.live, { opacity: line.shown }]}>
+          <Shimmer style={styles.liveText} layout={styles.liveLayout}>
+            {lines[line.index % lines.length]}
+          </Shimmer>
+        </Animated.View>
+      ) : null}
+      <View style={[styles.pieces, lines.length > 0 && styles.piecesAfter]}>
         {pieces.map((piece) => (
           <View key={piece.key} style={styles.piece}>
             {piece.icon}
@@ -311,6 +352,10 @@ const makeStyles = (colors: Palette) => {
       backgroundColor: colors.composer,
     },
     pieces: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, overflow: 'hidden' },
+    piecesAfter: { flex: 0, gap: 10 },
+    live: { flex: 1, minWidth: 0 },
+    liveLayout: { flexShrink: 1 },
+    liveText: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.secondary },
     piece: { flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 1 },
     pieceText: { fontFamily: fonts.ui, fontSize: 12, color: colors.tertiary },
     count: { fontFamily: fonts.uiMedium, color: colors.ink, fontVariant: ['tabular-nums'] },

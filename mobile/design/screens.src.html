@@ -636,6 +636,8 @@
   .live-strip .pc .ico { color: var(--ink-dim); }
   .live-strip b { font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; }
   .live-strip .up .ico { transform: rotate(-90deg); color: var(--ink-faint); }
+  .live-strip .live-line { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; color: transparent; background: linear-gradient(90deg, var(--text-secondary) 0%, var(--ink) 45%, var(--text-secondary) 90%) 0 0 / 200% 100%; -webkit-background-clip: text; background-clip: text; animation: shimmer 2.2s linear infinite; }
+  .live-strip .pcs.after { flex: none; gap: 10px; }
   .live-strip + .composer { position: relative; }
   .ctx { --c: var(--acc); display: block; width: 14px; height: 14px; border-radius: 50%; background: conic-gradient(var(--c) calc(var(--p) * 1%), var(--border) 0);
     -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 1.8px), #000 calc(100% - 1.8px)); mask: radial-gradient(farthest-side, transparent calc(100% - 1.8px), #000 calc(100% - 1.8px)); }
@@ -1909,7 +1911,7 @@ expected 1 write, got 2</div>
           <div class="activity"><span class="glyph claude">{{IconClaude:20}}</span><span class="lbl">Running a command…</span><span class="el">31s</span></div>
         </div>
         <div class="composer-wrap">
-          <div class="live-strip"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="pcs"><span class="pc"><span class="claude">{{IconClaude:12}}</span><span><b>2</b> subagents</span></span><span class="pc">{{IconCommand:12}}<span><b>1</b> shell</span></span><span class="pc">{{IconTimer:12}}<span><b>1</b> monitor</span></span></span><span class="up">{{IconChevron:10}}</span></div>
+          <div class="live-strip"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="live-line">Explore · read src/server/chat/feed.rs</span><span class="pcs after"><span class="pc"><span class="claude">{{IconClaude:12}}</span><b>2</b></span><span class="pc">{{IconCommand:12}}<b>1</b></span><span class="pc">{{IconTimer:12}}<b>1</b></span></span><span class="up">{{IconChevron:10}}</span></div>
           <div class="composer">
             <div class="ta ph">Send to queue behind the running turn</div>
             <div class="bar">
@@ -1925,7 +1927,7 @@ expected 1 write, got 2</div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>What is still going</b><div class="note">A turn ends long before the work it started does, so what the Mac stacks over its composer sits here as one line docked on the composer's top edge: running subagents with the agent's mark, background tasks counted by the kind the agent names them (shells, monitors), messages waiting behind the turn, and the plan's progress while a step is left. The rail's squares lead while anything runs. With more than three kinds the words drop and the counts stay. It shows only while something is live, and a permission request or the slash-command list takes its place. A tap opens the sheet beside.</div></figcaption>
+      <figcaption><b>What is still going</b><div class="note">While something runs, the line leads with what it is doing now, shimmering, and turns to the next running subagent or task every few seconds; the counts shrink to icons and numbers at the end. A turn ends long before the work it started does, so what the Mac stacks over its composer sits here as one line docked on the composer's top edge: running subagents with the agent's mark, background tasks counted by the kind the agent names them (shells, monitors), messages waiting behind the turn, and the plan's progress while a step is left. The rail's squares lead while anything runs. With more than three kinds the words drop and the counts stay. It shows only while something is live, and a permission request or the slash-command list takes its place. A tap opens the sheet beside.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1946,7 +1948,7 @@ expected 1 write, got 2</div>
           <div class="activity"><span class="glyph claude">{{IconClaude:20}}</span><span class="lbl">Running a command…</span><span class="el">31s</span></div>
         </div>
         <div class="composer-wrap">
-          <div class="live-strip"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="pcs"><span class="pc"><span class="claude">{{IconClaude:12}}</span><span><b>2</b> subagents</span></span><span class="pc">{{IconCommand:12}}<span><b>1</b> shell</span></span><span class="pc">{{IconTimer:12}}<span><b>1</b> monitor</span></span></span><span class="up">{{IconChevron:10}}</span></div>
+          <div class="live-strip"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="live-line">Explore · read src/server/chat/feed.rs</span><span class="pcs after"><span class="pc"><span class="claude">{{IconClaude:12}}</span><b>2</b></span><span class="pc">{{IconCommand:12}}<b>1</b></span><span class="pc">{{IconTimer:12}}<b>1</b></span></span><span class="up">{{IconChevron:10}}</span></div>
           <div class="composer">
             <div class="ta ph">Send to queue behind the running turn</div>
             <div class="bar">
@@ -2094,7 +2096,7 @@ expected 1 write, got 2</div>
           <div class="activity"><span class="glyph claude">{{IconClaude:20}}</span><span class="lbl">Thinking…</span><span class="el">48s</span></div>
         </div>
         <div class="composer-wrap">
-          <div class="live-strip"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="pcs"><span class="pc"><span class="claude">{{IconClaude:12}}</span><span><b>1</b> subagent</span></span></span><span class="up">{{IconChevron:10}}</span></div>
+          <div class="live-strip"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="live-line">Plan · read src/chat/Live.tsx</span><span class="pcs after"><span class="pc"><span class="claude">{{IconClaude:12}}</span><b>1</b></span></span><span class="up">{{IconChevron:10}}</span></div>
           <div class="composer">
             <div class="ta ph">Send to queue behind the running turn</div>
             <div class="bar">
