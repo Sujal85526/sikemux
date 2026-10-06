@@ -3,21 +3,18 @@ import { agentApi, type AgentUsage } from "../api/agents";
 import { AccountSignIn } from "../agents/AccountSignIn";
 import { accountsOf, signIn, signOut, useSignIn, type AccountProvider } from "../agents/accounts";
 import { selectedProviderProfile } from "../agents/agentProfiles";
-import { usePageVisible } from "../hooks/usePageVisible";
 import * as cmd from "../state/commands";
-import { invalidate, type ResourceHandle, useResource, useResourceEnabled } from "../state/resources";
+import { fetchResource, invalidate, peekResource, type ResourceHandle, useResource } from "../state/resources";
 import { agentAccountR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { reportError } from "../state/toast";
 import type { ProviderProfile } from "../state/types";
-import { Switch } from "../ui/Controls";
-import { IconMore, IconPlus, IconRefresh } from "../ui/Icons";
+import { IconCheck, IconChevron, IconPlus, IconRefresh } from "../ui/Icons";
 import { CountUp } from "../ui/RollingText";
 import { Tooltip } from "../ui/Tooltip";
 import { TreeContextMenu, type CtxItem } from "./FileTree";
 import { planLabel, resetCountdown, resetTitle, usagePeak, usageTone } from "./usageFormat";
 
-const USAGE_REFRESH_MS = 5 * 60_000;
 const ACCENTS: Record<AccountProvider, string> = { claude: "#d97757", codex: "#7a9dff" };
 
 function useMinuteClock(): number {
@@ -29,10 +26,14 @@ function useMinuteClock(): number {
     return now;
 }
 
+function initial(name: string): string {
+    return name.trim().charAt(0).toUpperCase() || "?";
+}
+
 /**
- * The rail's footer: every account the person keeps with the provider, who
- * each is signed in as and how much it has left. The one new chats start on
- * shows its limits in full.
+ * The rail's footer: the plan limits of the account new chats start on, under
+ * a card that says which account that is. The card opens the person's other
+ * accounts with the provider, and what can be done with them.
  */
 export function AgentAccountsPanel({
     provider,
@@ -52,184 +53,141 @@ export function AgentAccountsPanel({
     const accounts = useMemo(() => accountsOf(provider, profiles), [provider, profiles]);
     const current = selectedProviderProfile(provider, profiles, selections) ?? accounts[0];
     const [adding, setAdding] = useState(false);
+    const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
     const providerLabel = label ?? (provider === "claude" ? "Claude" : "Codex");
-    const several = accounts.length > 1;
+    const status = useResource(agentAccountR, provider, current?.executablePath, current?.configPath);
+    const signing = useSignIn(current?.id ?? "");
+    const signedOut = status.data?.signedIn === false;
+
+    /* The menu names each other account by who it is signed in as and how
+       much it has used, read ahead so it is there when the menu opens. */
+    const readOthers = () => {
+        for (const account of accounts) {
+            if (account.id === current?.id) continue;
+            void fetchResource(agentAccountR, provider, account.executablePath, account.configPath)
+                .then((other) => (other.signedIn ? fetchResource(agentUsageR, provider, command, account.configPath) : undefined))
+                .catch(() => {});
+        }
+    };
+    useEffect(readOthers, [accounts.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const refresh = () => invalidate((kind, args) => (kind === "agents.account" || kind === "agents.usage") && args[0] === provider);
 
+    if (!current) return null;
+    const items = accountMenu({
+        provider,
+        accounts,
+        current,
+        command,
+        signedIn: status.data?.signedIn === true,
+        autoSwitch,
+        onAdd: () => setAdding(true),
+    });
+
     return (
-        <section className={`agent-usage agent-accounts ${provider}`} data-several={several || adding} aria-label={`${providerLabel} accounts`}>
+        <section className={`agent-usage agent-accounts ${provider}`} aria-label={`${providerLabel} plan limits`}>
             <div className="panel-head agent-usage-head">
-                <span className="panel-label">{several ? "Accounts" : "Account"}</span>
+                <span className="panel-label">Limits</span>
                 <span className="panel-rule" />
-                <Tooltip label={`Refresh ${providerLabel} accounts and limits`}>
+                <Tooltip label={`Refresh ${providerLabel} plan limits`}>
                     <button
                         type="button"
                         className="rail-group-add"
-                        aria-label={`Refresh ${providerLabel} accounts and limits`}
+                        aria-label={`Refresh ${providerLabel} plan limits`}
                         disabled={usage.status === "loading"}
                         onClick={refresh}>
                         <IconRefresh size={11} />
                     </button>
                 </Tooltip>
-                <Tooltip label={`Add a ${providerLabel} account`}>
-                    <button type="button" className="rail-group-add" aria-label={`Add a ${providerLabel} account`} onClick={() => setAdding(true)}>
-                        <IconPlus size={11} />
-                    </button>
-                </Tooltip>
             </div>
 
-            <div className="agent-accounts-list">
-                {accounts.map((account) =>
-                    account.id === current?.id ? (
-                        <CurrentAccount key={account.id} provider={provider} account={account} usage={usage} several={several} />
-                    ) : (
-                        <OtherAccount key={account.id} provider={provider} account={account} command={command} />
-                    ),
-                )}
-                {adding && <AddAccount provider={provider} providerLabel={providerLabel} onDone={() => setAdding(false)} />}
-            </div>
-
-            {several && (
-                <label className="agent-accounts-switch">
-                    <span>
-                        <b>Move chats when one runs out</b>
-                        <small>Carries a chat on to the next signed-in account at a usage limit.</small>
+            <button
+                type="button"
+                className="agent-account-switch"
+                aria-haspopup="menu"
+                aria-expanded={menu !== null}
+                aria-label={`${providerLabel} account: ${current.name}`}
+                onClick={(event) => {
+                    readOthers();
+                    const box = event.currentTarget.getBoundingClientRect();
+                    setMenu({ x: box.left, y: box.bottom + 4 });
+                }}>
+                <span className="agent-account-avatar" style={{ background: current.accent }} aria-hidden="true">
+                    {initial(current.name)}
+                </span>
+                <span className="agent-account-id">
+                    <span className="agent-account-title">
+                        <span className="agent-account-name">{current.name}</span>
+                        {(usage.data?.plan ?? status.data?.plan) && (
+                            <span className="agent-account-plan">{planLabel((usage.data?.plan ?? status.data?.plan)!)}</span>
+                        )}
                     </span>
-                    <Switch
-                        checked={autoSwitch}
-                        onChange={(on) => cmd.setAccountAutoSwitch(provider, on)}
-                        label={`Move ${providerLabel} chats to another account at a usage limit`}
-                    />
-                </label>
-            )}
+                    <span className="agent-account-who" data-signed-out={signedOut ? "true" : undefined}>
+                        {signedOut ? "Signed out" : (status.data?.email ?? status.data?.organization ?? " ")}
+                    </span>
+                </span>
+                <IconChevron size={10} className="agent-account-chevron" />
+            </button>
+            {menu && <TreeContextMenu x={menu.x} y={menu.y} items={items} onClose={() => setMenu(null)} />}
+
+            {adding && <AddAccount provider={provider} providerLabel={providerLabel} onDone={() => setAdding(false)} />}
+            {signedOut || signing ? <AccountSignIn profile={current} /> : <UsageWindows usage={usage} />}
         </section>
     );
 }
 
-function useAccountStatus(provider: AccountProvider, account: ProviderProfile) {
-    return useResource(agentAccountR, provider, account.executablePath, account.configPath);
-}
-
-function accountMenu(provider: AccountProvider, account: ProviderProfile, current: boolean, signedIn: boolean): CtxItem[] {
-    const items: CtxItem[] = [];
-    if (!current) items.push({ label: "Use for new chats", run: () => cmd.selectProviderProfile(provider, account.id) });
-    items.push({ label: signedIn ? "Sign in again" : "Sign in", run: () => void signIn(account) });
-    if (signedIn) items.push({ label: "Sign out", run: () => void signOut(account).catch(reportError("Sign out")) });
-    items.push({ sep: true }, { label: "Account settings…", run: () => cmd.openSettings("agents") });
-    if (!account.id.startsWith("builtin-"))
-        items.push({ label: "Remove from Sikemux", danger: true, run: () => cmd.deleteProviderProfile(account.id) });
-    return items;
-}
-
-function AccountLine({
+function accountMenu({
     provider,
-    account,
+    accounts,
     current,
-    plan,
-    peak,
+    command,
+    signedIn,
+    autoSwitch,
+    onAdd,
 }: {
     provider: AccountProvider;
-    account: ProviderProfile;
-    current: boolean;
-    plan?: string | null;
-    peak?: number;
-}) {
-    const status = useAccountStatus(provider, account);
-    const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-    const signedIn = status.data?.signedIn === true;
-    const who = status.data?.email ?? (status.data && !signedIn ? "Signed out" : (status.data?.organization ?? null));
-    const shownPlan = plan ?? status.data?.plan ?? null;
-    const pick = () => {
-        if (!current) cmd.selectProviderProfile(provider, account.id);
-    };
-    return (
-        <div className="agent-account-line">
-            <button
-                type="button"
-                className="agent-account-pick"
-                disabled={current}
-                aria-label={current ? `${account.name}, used for new chats` : `Use ${account.name} for new chats`}
-                onClick={pick}>
-                <span className="agent-account-mark" style={{ background: account.accent }} aria-hidden="true" />
-                <span className="agent-account-name">{account.name}</span>
-                {who && (
-                    <span className="agent-account-who" data-signed-out={status.data && !signedIn ? "true" : undefined} title={who}>
-                        {who}
-                    </span>
-                )}
-            </button>
-            {peak != null && (
-                <Tooltip label={`${Math.round(peak)}% of its busiest limit used`}>
-                    <span className="agent-account-peak" data-tone={usageTone(peak)}>
-                        {Math.round(peak)}%
-                    </span>
-                </Tooltip>
-            )}
-            {shownPlan && <span className="agent-usage-plan">{planLabel(shownPlan)}</span>}
-            <button
-                type="button"
-                className="agent-account-more"
-                aria-label={`${account.name} account actions`}
-                onClick={(event) => {
-                    const box = event.currentTarget.getBoundingClientRect();
-                    setMenu({ x: box.right, y: box.bottom + 4 });
-                }}>
-                <IconMore size={12} />
-            </button>
-            {menu && (
-                <TreeContextMenu
-                    x={menu.x}
-                    y={menu.y}
-                    alignRight
-                    items={accountMenu(provider, account, current, signedIn)}
-                    onClose={() => setMenu(null)}
-                />
-            )}
-        </div>
-    );
-}
-
-function CurrentAccount({
-    provider,
-    account,
-    usage,
-    several,
-}: {
-    provider: AccountProvider;
-    account: ProviderProfile;
-    usage: ResourceHandle<AgentUsage>;
-    several: boolean;
-}) {
-    const status = useAccountStatus(provider, account);
-    const signing = useSignIn(account.id);
-    const signedOut = status.data?.signedIn === false;
-    return (
-        <div className="agent-account current" data-signed-out={signedOut ? "true" : undefined}>
-            {(several || status.data) && <AccountLine provider={provider} account={account} current plan={usage.data?.plan} />}
-            {signedOut || signing ? <AccountSignIn profile={account} /> : <UsageWindows usage={usage} />}
-        </div>
-    );
-}
-
-function OtherAccount({ provider, account, command }: { provider: AccountProvider; account: ProviderProfile; command?: string }) {
-    const visible = usePageVisible();
-    const status = useAccountStatus(provider, account);
-    const signing = useSignIn(account.id);
-    const signedIn = status.data?.signedIn === true;
-    const usage = useResourceEnabled(signedIn, agentUsageR, provider, command, account.configPath);
-    const refresh = usage.refresh;
-    useEffect(() => {
-        if (!visible || !signedIn) return;
-        const timer = window.setInterval(() => void refresh(), USAGE_REFRESH_MS);
-        return () => window.clearInterval(timer);
-    }, [visible, signedIn, refresh]);
-    return (
-        <div className="agent-account" data-signed-out={status.data && !signedIn ? "true" : undefined}>
-            <AccountLine provider={provider} account={account} current={false} plan={usage.data?.plan} peak={usagePeak(usage.data)} />
-            {(signing || (status.data && !signedIn)) && <AccountSignIn profile={account} />}
-        </div>
-    );
+    accounts: ProviderProfile[];
+    current: ProviderProfile;
+    command?: string;
+    signedIn: boolean;
+    autoSwitch: boolean;
+    onAdd: () => void;
+}): CtxItem[] {
+    const items: CtxItem[] = accounts.map((account) => {
+        if (account.id === current.id) return { label: account.name, hint: "In use", icon: <IconCheck size={11} /> };
+        const status = peekResource(agentAccountR, provider, account.executablePath, account.configPath);
+        const peak = usagePeak(peekResource(agentUsageR, provider, command, account.configPath));
+        const hint = status && !status.signedIn ? "Signed out" : peak != null ? `${Math.round(peak)}% used` : (status?.email ?? undefined);
+        return {
+            label: account.name,
+            hint,
+            icon: (
+                <span className="agent-account-avatar small" style={{ background: account.accent }}>
+                    {initial(account.name)}
+                </span>
+            ),
+            run: () => {
+                cmd.selectProviderProfile(provider, account.id);
+                if (status && !status.signedIn) void signIn(account);
+            },
+        };
+    });
+    items.push({ sep: true });
+    if (accounts.length > 1) {
+        items.push({
+            label: "Move chats at a limit",
+            hint: autoSwitch ? "On" : "Off",
+            icon: autoSwitch ? <IconCheck size={11} /> : undefined,
+            run: () => cmd.setAccountAutoSwitch(provider, !autoSwitch),
+        });
+    }
+    items.push({ label: "Add account…", icon: <IconPlus size={11} />, run: onAdd });
+    items.push({ label: signedIn ? `Sign in to ${current.name} again` : `Sign in to ${current.name}`, run: () => void signIn(current) });
+    if (signedIn) items.push({ label: `Sign out of ${current.name}`, run: () => void signOut(current).catch(reportError("Sign out")) });
+    items.push({ sep: true }, { label: "Account settings…", run: () => cmd.openSettings("agents") });
+    if (!current.id.startsWith("builtin-"))
+        items.push({ label: `Remove ${current.name}`, danger: true, run: () => cmd.deleteProviderProfile(current.id) });
+    return items;
 }
 
 function UsageWindows({ usage }: { usage: ResourceHandle<AgentUsage> }) {

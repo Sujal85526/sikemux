@@ -182,12 +182,12 @@ describe("agent rail", () => {
         const user = userEvent.setup();
         render(<AgentRailBody />);
 
-        expect(await screen.findByRole("region", { name: "Codex accounts" })).toBeInTheDocument();
+        expect(await screen.findByRole("region", { name: "Codex plan limits" })).toBeInTheDocument();
         expect(await screen.findByRole("meter", { name: "5h usage" })).toHaveAttribute("aria-valuenow", "37");
         expect(screen.getByText("reset 1h 30m")).toBeInTheDocument();
 
         await user.click(screen.getByRole("tab", { name: "Claude" }));
-        expect(await screen.findByRole("region", { name: "Claude accounts" })).toBeInTheDocument();
+        expect(await screen.findByRole("region", { name: "Claude plan limits" })).toBeInTheDocument();
         expect(await screen.findByRole("meter", { name: "7d usage" })).toHaveAttribute("aria-valuenow", "82");
         expect(mocks.usage).toHaveBeenCalledWith("codex", "codex", undefined);
         expect(mocks.usage).toHaveBeenCalledWith("claude", "claude", undefined);
@@ -215,7 +215,7 @@ describe("agent rail", () => {
         render(<AgentRailBody />);
 
         expect(await screen.findByRole("tab", { name: "Hermes" })).toBeInTheDocument();
-        expect(screen.queryByRole("region", { name: /accounts/i })).not.toBeInTheDocument();
+        expect(screen.queryByRole("region", { name: /plan limits/i })).not.toBeInTheDocument();
         expect(mocks.usage).not.toHaveBeenCalled();
     });
 
@@ -305,7 +305,7 @@ describe("agent rail", () => {
         expect(await screen.findByRole("button", { name: /Claude chat/ })).toBeInTheDocument();
         expect(screen.getByRole("button", { name: /Codex chat/ })).toBeInTheDocument();
         expect(getState().agentRailAllAgents).toBe(true);
-        expect(screen.queryByRole("region", { name: /accounts/i })).not.toBeInTheDocument();
+        expect(screen.queryByRole("region", { name: /plan limits/i })).not.toBeInTheDocument();
 
         await user.click(screen.getByRole("tab", { name: "Claude" }));
         expect(getState().agentRailAllAgents).toBe(false);
@@ -377,15 +377,17 @@ describe("agent rail", () => {
         await waitFor(() => expect(agentIdsOf(getState(), "sess-project")).not.toContain("agent-open"));
     });
 
-    it("shows the one account without the switch that moves chats between accounts", async () => {
+    it("names the account its limits belong to, without moving chats when there is only one", async () => {
+        const user = userEvent.setup();
         render(<AgentRailBody />);
 
-        expect(await screen.findByRole("region", { name: "Codex accounts" })).toBeInTheDocument();
+        expect(await screen.findByRole("region", { name: "Codex plan limits" })).toBeInTheDocument();
         expect(await screen.findByText("me@example.com")).toBeInTheDocument();
-        expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Codex account: Codex" }));
+        expect(screen.queryByRole("menuitem", { name: /Move chats at a limit/ })).not.toBeInTheDocument();
     });
 
-    it("starts new chats on another account from its card and reads that account's limits and chats", async () => {
+    it("starts new chats on another account from the account menu and reads its limits and chats", async () => {
         mocks.available.mockImplementation(async (profiles: { type: string; configPath?: string }[]) => [
             {
                 type: "codex",
@@ -406,21 +408,20 @@ describe("agent rail", () => {
         const user = userEvent.setup();
         render(<AgentRailBody />);
 
-        expect(await screen.findByText("work@example.com")).toBeInTheDocument();
         await waitFor(() => expect(mocks.usage).toHaveBeenCalledWith("codex", "codex", undefined));
-        await waitFor(() => expect(mocks.usage).toHaveBeenCalledWith("codex", "codex", "~/.codex-work"));
-
-        await user.click(screen.getByRole("button", { name: "Use Work for new chats" }));
+        await user.click(await screen.findByRole("button", { name: "Codex account: Codex" }));
+        await user.click(screen.getByRole("menuitem", { name: /Work/ }));
 
         expect(getState().selectedProviderProfileIds.codex).toBe("codex-work");
+        await waitFor(() => expect(mocks.usage).toHaveBeenCalledWith("codex", "codex", "~/.codex-work"));
         await waitFor(() =>
             expect(mocks.recent).toHaveBeenCalledWith(expect.objectContaining({ providers: [{ agent: "codex", configPath: "~/.codex-work" }] })),
         );
-        expect(screen.getByRole("button", { name: "Work, used for new chats" })).toBeDisabled();
-        expect(screen.getByRole("tab", { name: "Codex" })).toHaveAttribute("aria-selected", "true");
+        expect(await screen.findByRole("button", { name: "Codex account: Work" })).toBeInTheDocument();
+        expect(await screen.findByText("work@example.com")).toBeInTheDocument();
     });
 
-    it("turns on moving chats to the next account once there are two", async () => {
+    it("turns on moving chats to the next account from the account menu", async () => {
         setState((state) => ({
             providerProfiles: [
                 ...state.providerProfiles,
@@ -430,7 +431,8 @@ describe("agent rail", () => {
         const user = userEvent.setup();
         render(<AgentRailBody />);
 
-        await user.click(await screen.findByRole("switch", { name: /Move Codex chats to another account/ }));
+        await user.click(await screen.findByRole("button", { name: "Codex account: Codex" }));
+        await user.click(screen.getByRole("menuitem", { name: /Move chats at a limit/ }));
         expect(getState().accountAutoSwitch.codex).toBe(true);
     });
 
@@ -456,7 +458,8 @@ describe("agent rail", () => {
         const user = userEvent.setup();
         render(<AgentRailBody />);
 
-        await user.click(await screen.findByRole("button", { name: "Add a Codex account" }));
+        await user.click(await screen.findByRole("button", { name: "Codex account: Codex" }));
+        await user.click(screen.getByRole("menuitem", { name: /Add account/ }));
         await user.type(screen.getByRole("textbox", { name: "New Codex account name" }), "Work{Enter}");
 
         await waitFor(() => expect(mocks.addAccount).toHaveBeenCalledWith("codex", "Work"));
@@ -466,11 +469,11 @@ describe("agent rail", () => {
         await waitFor(() => expect(mocks.signIn).toHaveBeenCalledWith("codex", undefined, "~/.codex-work"));
     });
 
-    it("opens the agents settings page from an account's menu", async () => {
+    it("opens the agents settings page from the account menu", async () => {
         const user = userEvent.setup();
         render(<AgentRailBody />);
 
-        await user.click(await screen.findByRole("button", { name: "Codex account actions" }));
+        await user.click(await screen.findByRole("button", { name: "Codex account: Codex" }));
         await user.click(screen.getByRole("menuitem", { name: "Account settings…" }));
 
         expect(getState()).toMatchObject({ settingsOpen: true, settingsPage: "agents" });
