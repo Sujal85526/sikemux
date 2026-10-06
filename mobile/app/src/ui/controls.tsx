@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   StyleSheet,
   Text,
@@ -31,6 +32,7 @@ export function Button({
   onPress,
   kind = 'neutral',
   disabled,
+  busy,
   icon,
   style,
 }: {
@@ -38,6 +40,8 @@ export function Button({
   onPress?: () => void;
   kind?: ButtonKind;
   disabled?: boolean;
+  /** Working on what the press started: a spinner takes the icon's place, and the button stays as bright. */
+  busy?: boolean;
   /** Drawn before the title, such as a sign-in provider's logo. */
   icon?: ReactNode;
   style?: StyleProp<ViewStyle>;
@@ -48,11 +52,11 @@ export function Button({
   return (
     <Pressable
       onPress={onPress}
-      disabled={disabled}
+      disabled={disabled || busy}
       accessibilityRole="button"
-      accessibilityState={{ disabled }}
+      accessibilityState={{ disabled, busy }}
       style={({ pressed }) => [styles.button, fill[kind], pressed && styles.pressed, disabled && styles.disabled, style]}>
-      {icon}
+      {busy ? <ActivityIndicator size="small" color={StyleSheet.flatten(ink[kind]).color} style={styles.spinner} /> : icon}
       <Text style={[styles.buttonText, ink[kind]]}>{title}</Text>
     </Pressable>
   );
@@ -185,6 +189,7 @@ const makeStyles = (colors: Palette) => {
     reveal: { position: 'absolute', right: 0, top: 0, bottom: 0, width: 48, alignItems: 'center', justifyContent: 'center' },
     pressed: { opacity: 0.75 },
     disabled: { opacity: 0.5 },
+    spinner: { width: 18, height: 18 },
     track: {
       minHeight: 36,
       padding: 3,

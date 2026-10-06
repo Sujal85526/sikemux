@@ -120,6 +120,7 @@ function useProviderSignIn() {
   const [busy, setBusy] = useState<Provider>();
   const [problem, setProblem] = useState<string>();
   const start = async (strategy: Provider) => {
+    if (busy) return;
     setBusy(strategy);
     setProblem(undefined);
     try {
@@ -158,7 +159,7 @@ export function Welcome() {
           <Button
             title="Continue with Apple"
             icon={<AppleMark color={colors.ink} />}
-            disabled={provider.busy !== undefined}
+            busy={provider.busy === 'oauth_apple'}
             onPress={() => provider.start('oauth_apple')}
             style={styles.provider}
           />
@@ -166,14 +167,14 @@ export function Welcome() {
         <Button
           title="Continue with Google"
           icon={<GoogleG />}
-          disabled={provider.busy !== undefined}
+          busy={provider.busy === 'oauth_google'}
           onPress={() => provider.start('oauth_google')}
           style={styles.provider}
         />
         <Button
           title="Continue with GitHub"
           icon={<GitHubMark color={colors.ink} />}
-          disabled={provider.busy !== undefined}
+          busy={provider.busy === 'oauth_github'}
           onPress={() => provider.start('oauth_github')}
           style={styles.provider}
         />
