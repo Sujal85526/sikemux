@@ -7,7 +7,7 @@ import * as Notifications from 'expo-notifications';
 import type { Device } from '@protocol';
 
 import { notifier } from '../../modules/notify';
-import { thisDevice } from '@/device/identity';
+import { deviceIdentity } from '@/device/identity';
 import { hostsArrived } from '@/devices/arrivals';
 import { joinShowing } from '@/devices/joining';
 import { pairedDevices } from '@/devices/paired';
@@ -140,8 +140,8 @@ export function useAccountSequence() {
         socket.onclose = (event) => on.closed(event.code);
         return socket;
       },
-      key: async () => (await thisDevice()).id(),
-      sign: async (nonce) => (await thisDevice()).signLive(nonce),
+      key: async () => (await deviceIdentity()).id(),
+      sign: async (nonce) => (await deviceIdentity()).signLive(nonce),
       token: () => token(),
       app: { platform: Platform.OS === 'ios' ? 'ios' : 'android', version: nativeApplicationVersion ?? 'unknown' },
       cursor: savedCursor,

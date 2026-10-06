@@ -6,7 +6,7 @@ import type { PushApp } from '@protocol';
 
 import { notifier } from '../../modules/notify';
 import { clearPushToken, setPushToken, type TokenSource } from '@/account/api';
-import { thisDevice } from '@/device/identity';
+import { deviceIdentity } from '@/device/identity';
 import { notificationsChoice } from './setting';
 
 /** What the server last took from this phone, so an unchanged token is not sent again. */
@@ -61,7 +61,7 @@ export function syncPushToken(token: TokenSource): Promise<void> {
       if (sent) await stopPush(token);
       return;
     }
-    const device = await thisDevice();
+    const device = await deviceIdentity();
     notifier.setPhone(device.id());
     const { data } = await Notifications.getDevicePushTokenAsync();
     const pushToken = String(data);

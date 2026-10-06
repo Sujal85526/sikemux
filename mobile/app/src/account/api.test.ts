@@ -14,7 +14,7 @@ import {
 import { errorCode, explain } from './clerkErrors';
 
 const identity = vi.hoisted(() => ({
-  thisDevice: vi.fn(async () => ({
+  deviceIdentity: vi.fn(async () => ({
     id: () => 'ab'.repeat(32),
     signRegistration: vi.fn((nonce: string, userId: string) => `signed:${nonce}:${userId}`),
     signPush: vi.fn((nonce: string, tokenSha256: string) => `pushed:${nonce}:${tokenSha256}`),

@@ -14,7 +14,7 @@ vi.mock('@/account/api', () => api);
 const native = vi.hoisted(() => ({ notifier: { setPhone: vi.fn(), removeAll: vi.fn() } }));
 vi.mock('../../modules/notify', () => native);
 
-vi.mock('@/device/identity', () => ({ thisDevice: async () => ({ id: () => 'ab'.repeat(32) }) }));
+vi.mock('@/device/identity', () => ({ deviceIdentity: async () => ({ id: () => 'ab'.repeat(32) }) }));
 
 const token = async () => 'session';
 const TOKEN_SHA = 'c'.repeat(64);

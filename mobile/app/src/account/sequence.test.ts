@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 import { AccountProblem } from './api';
 import { AccountSequence, type AccountStatus, type SequenceDeps } from './sequence';
 
-vi.mock('@/device/identity', () => ({ thisDevice: async () => ({}) }));
+vi.mock('@/device/identity', () => ({ deviceIdentity: async () => ({}) }));
 vi.mock('./config', () => ({ apiUrl: () => 'https://api.test' }));
 
 type Pending = { resolve(): void; reject(error: unknown): void };

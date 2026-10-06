@@ -13,7 +13,7 @@ import type {
   PushTokenState,
 } from '@protocol';
 
-import { thisDevice } from '@/device/identity';
+import { deviceIdentity } from '@/device/identity';
 import { phoneName } from '@/device/name';
 import { apiUrl } from './config';
 
@@ -70,7 +70,7 @@ async function call<T>(token: TokenSource, path: string, init: { method?: string
 /** Adds this phone to the account, proving it holds its key. Doing it again only updates its name. */
 export async function registerPhone(token: TokenSource, userId: string): Promise<Device> {
   const challenge = await call<Challenge>(token, '/v1/devices/challenge', { method: 'POST' });
-  const device = await thisDevice();
+  const device = await deviceIdentity();
   const registration: DeviceRegistration = {
     key: device.id(),
     role: 'client',
@@ -84,7 +84,7 @@ export async function registerPhone(token: TokenSource, userId: string): Promise
 
 /** Takes this phone off the account, as signing out does. A phone the account no longer has is already off it. */
 export async function removePhone(token: TokenSource): Promise<void> {
-  const device = await thisDevice();
+  const device = await deviceIdentity();
   try {
     await call<null>(token, `/v1/devices/${device.id()}`, { method: 'DELETE' });
   } catch (error) {
@@ -99,7 +99,7 @@ export async function setPushToken(
   push: { token: string; tokenSha256: string; app: PushApp },
 ): Promise<PushTokenState> {
   const challenge = await call<Challenge>(token, '/v1/devices/challenge', { method: 'POST' });
-  const device = await thisDevice();
+  const device = await deviceIdentity();
   const registration: PushTokenRegistration = {
     platform: 'fcm',
     token: push.token,
@@ -112,7 +112,7 @@ export async function setPushToken(
 
 /** Stops the server sending this phone notifications. A phone the account no longer has gets none anyway. */
 export async function clearPushToken(token: TokenSource): Promise<void> {
-  const device = await thisDevice();
+  const device = await deviceIdentity();
   try {
     await call<null>(token, `/v1/devices/${device.id()}/push`, { method: 'DELETE' });
   } catch (error) {
@@ -128,7 +128,7 @@ export async function accountHosts(token: TokenSource): Promise<Device[]> {
 
 /** The server's signed word that this phone and `host` are on the same account, for the host to check before it asks its owner. */
 export async function joinTicket(token: TokenSource, host: string): Promise<JoinTicket> {
-  const device = await thisDevice();
+  const device = await deviceIdentity();
   const request: JoinRequest = { host };
   return call<JoinTicket>(token, `/v1/devices/${device.id()}/join`, { method: 'POST', body: request });
 }
