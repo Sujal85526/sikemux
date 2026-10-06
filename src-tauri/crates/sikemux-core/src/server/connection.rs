@@ -19,7 +19,8 @@ use super::host;
 use super::prepare::{prepare_task, prepare_terminal};
 use super::session::{self, PendingStart};
 use super::{
-    agent, chat, harness, remote, upgrade, window, workspace, Core, CoreError, CoreResult,
+    agent, attachments, chat, harness, remote, upgrade, window, workspace, Core, CoreError,
+    CoreResult,
 };
 
 pub(crate) type ClientId = u64;
@@ -673,6 +674,32 @@ async fn run_requests(
                         result.map(|outcome| Response::Steered { outcome }),
                     );
                 });
+            }
+            Request::AttachFile {
+                agent_id,
+                name,
+                mime,
+                data,
+            } => {
+                let dir = core
+                    .listening
+                    .get()
+                    .and_then(|listening| listening.config.attachment_dir.clone())
+                    .ok_or_else(|| CoreError::from("this host has nowhere to keep files"));
+                match core.chats.running(&agent_id).and(dir) {
+                    Ok(dir) => {
+                        tokio::spawn(async move {
+                            let result =
+                                blocking(move || attachments::save(&dir, &name, &mime, &data))
+                                    .await;
+                            client.respond(
+                                request_id,
+                                result.map(|path| Response::Attached { path }),
+                            );
+                        });
+                    }
+                    Err(error) => client.respond(request_id, Err(error)),
+                }
             }
             Request::AcpCancel { agent_id } => {
                 let result = chat::cancel(&core, &agent_id);

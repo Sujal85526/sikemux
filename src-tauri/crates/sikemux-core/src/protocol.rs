@@ -30,6 +30,9 @@ pub const OLDEST_PROTOCOL_VERSION: u32 = 9;
 pub const WAKE_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
 /// Room for the largest attach snapshot plus its header.
 pub const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
+/// The largest file a device may send for a chat. Sent as base64, it still
+/// fits in one frame.
+pub const MAX_ATTACHMENT_BYTES: usize = 10 * 1024 * 1024;
 
 pub type SessionId = u64;
 pub type RequestId = u64;
@@ -312,6 +315,15 @@ pub enum Request {
         text: String,
         paths: Vec<String>,
         context: Vec<ChatContext>,
+    },
+    /// A file from a device for a chat's next message, `data` in base64. Kept
+    /// on the host beside the pictures pasted into the app's chats, and
+    /// answered with its path there for the prompt's `paths`.
+    AttachFile {
+        agent_id: String,
+        name: String,
+        mime: String,
+        data: String,
     },
     AcpCancel {
         agent_id: String,
@@ -852,6 +864,9 @@ pub enum Response {
     },
     Registration {
         registration: HostRegistration,
+    },
+    Attached {
+        path: PathBuf,
     },
 }
 

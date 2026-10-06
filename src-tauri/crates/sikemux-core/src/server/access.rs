@@ -55,6 +55,7 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::AcpStart { .. }
         | Request::AcpPrompt { .. }
         | Request::AcpSteer { .. }
+        | Request::AttachFile { .. }
         | Request::AcpCancel { .. }
         | Request::AcpStopTask { .. }
         | Request::AcpStop { .. }
@@ -193,6 +194,12 @@ mod tests {
             },
             Request::AcpCancel {
                 agent_id: "a".into(),
+            },
+            Request::AttachFile {
+                agent_id: "a".into(),
+                name: "shot.jpg".into(),
+                mime: "image/jpeg".into(),
+                data: String::new(),
             },
             Request::ResumeChat {
                 recent: "claude:s1".into(),

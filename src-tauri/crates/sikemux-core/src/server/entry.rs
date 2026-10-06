@@ -144,6 +144,10 @@ pub fn main(args: impl Iterator<Item = String>, build: BuildIdentity) -> i32 {
         cli_endpoint: args
             .cli_endpoint
             .or_else(crate::cli::endpoint::default_endpoint_path),
+        attachment_dir: args
+            .data_dir
+            .as_deref()
+            .and_then(super::attachments::pasted_dir),
         data_dir: args.data_dir,
         build,
         remote_direct_only: false,

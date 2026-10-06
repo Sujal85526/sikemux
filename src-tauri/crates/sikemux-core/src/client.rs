@@ -630,6 +630,28 @@ impl CoreClient {
         .await
     }
 
+    /// Sends a file for the chat's next message and answers with where the
+    /// host keeps it, for the prompt's `paths`.
+    pub async fn attach_file(
+        &self,
+        agent_id: String,
+        name: String,
+        mime: String,
+        bytes: &[u8],
+    ) -> Result<PathBuf, ClientError> {
+        use base64::Engine;
+        let request = Request::AttachFile {
+            agent_id,
+            name,
+            mime,
+            data: base64::engine::general_purpose::STANDARD.encode(bytes),
+        };
+        match self.request(request).await? {
+            Response::Attached { path } => Ok(path),
+            _ => Err(ClientError::UnexpectedReply),
+        }
+    }
+
     pub async fn acp_steer(
         &self,
         agent_id: String,

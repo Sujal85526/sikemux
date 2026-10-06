@@ -20,8 +20,8 @@ use sikemux_core::accounts::protocol::{JoinTicket, Relay};
 use sikemux_core::client::{ClientError, CoreClient, EventSink, Reply};
 use sikemux_core::join::{JoinHello, JoinReply};
 use sikemux_core::protocol::{
-    CallId, Event, NotifyPrefs, Request, Response, SessionId, WindowCall, OLDEST_PROTOCOL_VERSION,
-    WAKE_WAIT,
+    CallId, Event, NotifyPrefs, Request, Response, SessionId, WindowCall, MAX_ATTACHMENT_BYTES,
+    OLDEST_PROTOCOL_VERSION, WAKE_WAIT,
 };
 use sikemux_core::remote;
 use tokio::sync::mpsc;
@@ -42,6 +42,8 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 /// answered by then has most likely gone, though the connection has not
 /// noticed yet.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+/// Room for the largest file over a slow relay.
+const UPLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 /// Past the host's own wait, so its reason for giving up reaches the app.
 const WAKE_TIMEOUT: Duration = Duration::from_secs(WAKE_WAIT.as_secs() + 15);
 
@@ -766,14 +768,45 @@ impl Connection {
         self.done(Request::AcpDetach { agent_id }).await
     }
 
-    pub async fn prompt(&self, agent_id: String, text: String) -> Result<(), MobileError> {
+    /// `paths` are files on the host, such as those [`Self::attach_file`]
+    /// answers with.
+    pub async fn prompt(
+        &self,
+        agent_id: String,
+        text: String,
+        paths: Vec<String>,
+    ) -> Result<(), MobileError> {
         self.done(Request::AcpPrompt {
             agent_id,
             text,
-            paths: Vec::new(),
+            paths,
             context: Vec::new(),
         })
         .await
+    }
+
+    /// Sends a file for the chat's next message and answers with where the
+    /// host keeps it. A host too old to know the request refuses it.
+    pub async fn attach_file(
+        &self,
+        agent_id: String,
+        name: String,
+        mime: String,
+        bytes: Vec<u8>,
+    ) -> Result<String, MobileError> {
+        if bytes.len() > MAX_ATTACHMENT_BYTES {
+            return Err(invalid("a file sent to a chat can be at most 10 MB"));
+        }
+        let request = Request::AttachFile {
+            agent_id,
+            name,
+            mime,
+            data: base64::engine::general_purpose::STANDARD.encode(bytes),
+        };
+        match self.reply_within(request, UPLOAD_TIMEOUT).await? {
+            Reply::Response(Response::Attached { path }) => Ok(path.display().to_string()),
+            _ => Err(unexpected()),
+        }
     }
 
     pub async fn cancel(&self, agent_id: String) -> Result<(), MobileError> {

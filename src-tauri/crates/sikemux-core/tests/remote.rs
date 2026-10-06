@@ -13,7 +13,7 @@ use sikemux_core::protocol::{
     Attention, AttentionKind, BackdropImage, BuildIdentity, ChatAttachment, ChatEventKind,
     ChatLaunch, ChatLauncher, ChatState, DeviceAccess, DeviceView, Event, LaunchIdentity,
     ProjectInfo, PublishedChat, PublishedRecent, RemoteStatus, SessionId, SpawnTarget,
-    TerminalSpawn,
+    TerminalSpawn, MAX_ATTACHMENT_BYTES,
 };
 use sikemux_core::remote::{self, SecretKey};
 use sikemux_core::server::{self, ServerConfig, ServerError};
@@ -124,6 +124,7 @@ fn start_core_with(core_key: &SecretKey, devices: &[&Device], keeps_data: bool) 
         },
         remote_direct_only: true,
         data_dir: keeps_data.then(|| dir.path().join("data")),
+        attachment_dir: Some(dir.path().join("pasted")),
         ..ServerConfig::new(socket.clone())
     };
     let thread = std::thread::spawn(move || server::run(config));
@@ -808,6 +809,121 @@ async fn a_watching_device_cannot_start_a_chat() {
         refusal(client.publish_workspace(Vec::new(), Vec::new()).await)
             .contains("only Sikemux on this host")
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_device_sends_a_file_for_a_chat_and_the_agent_is_given_its_path() {
+    let core_key = SecretKey::generate();
+    let phone = Device::new("Phone", DeviceAccess::Full);
+    let watcher = Device::new("Watcher", DeviceAccess::Watch);
+    let core = start_core(&core_key, &[&phone, &watcher]);
+    let (app, mut app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    publish_fake_agent(&app).await;
+    let status = listening(&app).await;
+    let endpoint = phone.endpoint().await;
+    let (client, mut events) = remote::connect(&endpoint, core_addr(&status))
+        .await
+        .expect("the phone connects");
+    let (agent_id, _) = client
+        .start_chat("opencode".into(), "sess-tmp".into(), None)
+        .await
+        .expect("the phone starts a chat");
+    app.acp_attach(agent_id.clone())
+        .await
+        .expect("the app watches");
+
+    let picture = vec![0xffu8, 0xd8, 0xff, 0xe0, 1, 2, 3];
+    let path = client
+        .attach_file(
+            agent_id.clone(),
+            "../../IMG_0042".into(),
+            "image/jpeg".into(),
+            &picture,
+        )
+        .await
+        .expect("the phone sends a picture");
+    assert!(path.ends_with("pasted/IMG_0042.jpg"), "{}", path.display());
+    assert_eq!(std::fs::read(&path).expect("the host keeps it"), picture);
+    let again = client
+        .attach_file(
+            agent_id.clone(),
+            "IMG_0042.jpg".into(),
+            "image/jpeg".into(),
+            b"x",
+        )
+        .await
+        .expect("the same name again");
+    assert!(
+        again.ends_with("pasted/IMG_0042 (1).jpg"),
+        "{}",
+        again.display()
+    );
+    let largest = vec![7u8; MAX_ATTACHMENT_BYTES];
+    let kept = client
+        .attach_file(agent_id.clone(), "big.bin".into(), String::new(), &largest)
+        .await
+        .expect("a file at the limit");
+    assert_eq!(
+        std::fs::metadata(kept).expect("kept").len(),
+        largest.len() as u64
+    );
+    assert!(refusal(
+        client
+            .attach_file(
+                agent_id.clone(),
+                "bigger.bin".into(),
+                String::new(),
+                &[largest, vec![7]].concat()
+            )
+            .await
+    )
+    .contains("10 MB"));
+
+    assert!(refusal(
+        client
+            .attach_file(
+                "no-such-chat".into(),
+                "a.txt".into(),
+                "text/plain".into(),
+                b"a"
+            )
+            .await
+    )
+    .contains("not running"));
+    let watch_endpoint = watcher.endpoint().await;
+    let (watching, _watch_events) = remote::connect(&watch_endpoint, core_addr(&status))
+        .await
+        .expect("the watcher connects");
+    assert!(refusal(
+        watching
+            .attach_file(agent_id.clone(), "a.txt".into(), "text/plain".into(), b"a")
+            .await
+    )
+    .contains("watch"));
+
+    let sent = path.to_string_lossy().into_owned();
+    client
+        .acp_prompt(
+            agent_id.clone(),
+            "look at this".into(),
+            vec![sent.clone()],
+            Vec::new(),
+        )
+        .await
+        .expect("prompt");
+    let prompt = loop {
+        let event = tokio::time::timeout(WAIT, app_events.recv())
+            .await
+            .expect("the app never heard the prompt")
+            .expect("the app's connection closed");
+        if let ClientEvent::Event(Event::Chat { event, .. }) = event {
+            if event.kind == ChatEventKind::Prompt {
+                break event;
+            }
+        }
+    };
+    assert_eq!(prompt.payload["paths"], json!([sent]));
+    until_said(&mut events, &agent_id, "look at this").await;
 }
 
 fn recent_chat(session_id: &str) -> PublishedRecent {

@@ -1,5 +1,6 @@
 mod access;
 mod agent;
+mod attachments;
 mod chat;
 mod connection;
 mod entry;
@@ -63,6 +64,9 @@ pub struct ServerConfig {
     /// The app's data directory, for the harness journal and tool tally.
     /// Without it they are kept in memory, or not at all.
     pub data_dir: Option<PathBuf>,
+    /// Where files devices send for a chat are kept. Without it devices
+    /// cannot send files.
+    pub attachment_dir: Option<PathBuf>,
     /// Remote access listens on loopback only, with no relay and without
     /// publishing the core's address. For tests.
     pub remote_direct_only: bool,
@@ -79,6 +83,7 @@ impl ServerConfig {
             build: BuildIdentity::default(),
             cli_endpoint: None,
             data_dir: None,
+            attachment_dir: None,
             remote_direct_only: false,
             accounts_api: None,
         }

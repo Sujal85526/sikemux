@@ -426,7 +426,7 @@ impl Chats {
             .unwrap_or_default()
     }
 
-    fn running(&self, agent_id: &str) -> CoreResult<Arc<Chat>> {
+    pub(crate) fn running(&self, agent_id: &str) -> CoreResult<Arc<Chat>> {
         self.get(agent_id).ok_or_else(|| NOT_RUNNING.into())
     }
 
