@@ -11,6 +11,7 @@ import { CopyButton } from '@/ui/CopyButton';
 import { Icon } from '@/ui/Icon';
 import type { IconName } from '@/ui/icons.generated';
 import { fonts, type Palette, useColors, useStyles } from '@/ui/theme';
+import { Shimmer } from '@/ui/Shimmer';
 import { useFold } from './folds';
 
 export type ToolPart = Extract<ChatPart, { kind: 'tool' }>;
@@ -265,10 +266,17 @@ function ToolRow({
         <Text style={[styles.mono, { color, minWidth: kindWidth }]} numberOfLines={1}>
           {toolKind(tool)}
         </Text>
-        <Text style={[styles.mono, styles.target, running && { color: colors.inkDim }]} numberOfLines={1}>
-          {target}
-          {detail ? <Text style={{ color: colors.inkDim }}> {detail}</Text> : null}
-        </Text>
+        {running ? (
+          <Shimmer style={[styles.mono, { color: colors.inkDim }]} layout={styles.targetLayout}>
+            {target}
+            {detail ? ` ${detail}` : null}
+          </Shimmer>
+        ) : (
+          <Text style={[styles.mono, styles.target]} numberOfLines={1}>
+            {target}
+            {detail ? <Text style={{ color: colors.inkDim }}> {detail}</Text> : null}
+          </Text>
+        )}
         <View style={styles.end}>
           {part.diff ? (
             <Text style={styles.endText}>
@@ -319,9 +327,15 @@ export function ToolGroup({ id, parts, untimed, live }: { id: string; parts: Too
         accessibilityRole="button"
         accessibilityLabel={`${said ?? calls}${current ? ', running' : ''}`}
         accessibilityState={{ expanded: open }}>
-        <Text style={[styles.summaryText, said !== null && { color: colors.secondary }]} numberOfLines={1}>
-          {said ?? calls}
-        </Text>
+        {current ? (
+          <Shimmer style={[styles.summaryText, said !== null && { color: colors.secondary }]} layout={styles.summaryLabel}>
+            {said ?? calls}
+          </Shimmer>
+        ) : (
+          <Text style={styles.summaryText} numberOfLines={1}>
+            {calls}
+          </Text>
+        )}
         {said !== null && parts.length > 1 ? <Text style={styles.summaryTime}>{parts.length} calls</Text> : null}
         {current ? (
           <LiveSeconds key={current.id} since={current.startedAt} spent={spent} style={styles.summaryTime} />
@@ -348,6 +362,7 @@ const makeStyles = (colors: Palette) => {
     group: { marginVertical: 6 },
     summary: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 24, alignSelf: 'flex-start', maxWidth: '100%' },
     summaryText: { flexShrink: 1, fontFamily: fonts.ui, fontSize: 12.5, color: colors.inkDim },
+    summaryLabel: { flexShrink: 1 },
     summaryTime: { fontFamily: fonts.mono, fontSize: 11, color: colors.inkDim },
     chevron: { opacity: 0.7 },
     body: { marginLeft: 6 },
@@ -371,6 +386,7 @@ const makeStyles = (colors: Palette) => {
     tick: { width: 10, height: 1, backgroundColor: colors.treeTick },
     mono: { fontFamily: fonts.mono, fontSize: 11.5 },
     target: { flex: 1, color: colors.ink },
+    targetLayout: { flex: 1 },
     end: { flexDirection: 'row', gap: 6 },
     endText: { fontFamily: fonts.mono, fontSize: 10.5, color: colors.inkDim },
     detailRow: { flexDirection: 'row' },

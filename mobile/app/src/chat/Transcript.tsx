@@ -9,6 +9,7 @@ import { haptics } from '@/ui/haptics';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Working } from '@/ui/status';
 import { fonts, type Palette, translucent, useColors, useStyles } from '@/ui/theme';
+import { Shimmer } from '@/ui/Shimmer';
 import { FoldsContext, useFold } from './folds';
 import { Markdown } from './Markdown';
 import { SentAttachments } from './Attachments';
@@ -84,9 +85,15 @@ function Subagent({ subagent, untimed }: { subagent: AcpSubagent; untimed: boole
         <Text style={styles.subagentName} numberOfLines={1}>
           {subagent.name}
         </Text>
-        <Text style={styles.subagentTask} numberOfLines={1}>
-          {subagentTask(subagent.task)}
-        </Text>
+        {running ? (
+          <Shimmer style={styles.subagentTask} layout={styles.subagentTaskLayout}>
+            {subagentTask(subagent.task)}
+          </Shimmer>
+        ) : (
+          <Text style={styles.subagentTask} numberOfLines={1}>
+            {subagentTask(subagent.task)}
+          </Text>
+        )}
         {calls ? (
           <Text style={styles.subagentCalls}>
             {calls} {calls === 1 ? 'call' : 'calls'}
@@ -354,7 +361,9 @@ export function Activity({ provider, label, since }: { provider: string; label: 
       <Animated.View style={{ opacity: breath }}>
         <AgentIcon provider={provider} size={20} />
       </Animated.View>
-      <Text style={styles.activityText}>{label}</Text>
+      <Shimmer style={styles.activityText} layout={styles.activityLabel}>
+        {label}
+      </Shimmer>
       {seconds > 0 ? <Text style={styles.activityTime}>{durationLabel(seconds * 1000)}</Text> : null}
     </View>
   );
@@ -416,6 +425,7 @@ const makeStyles = (colors: Palette) => {
     chevron: { opacity: 0.7 },
     subagentName: { flexShrink: 0, maxWidth: '45%', fontFamily: fonts.mono, fontSize: 11.5, color: colors.ink },
     subagentTask: { flex: 1, fontFamily: fonts.ui, fontSize: 12, color: colors.inkFaint },
+    subagentTaskLayout: { flex: 1 },
     subagentCalls: { fontFamily: fonts.mono, fontSize: 10.5, color: colors.inkFaint },
     subagentMark: { width: 14, alignItems: 'center' },
     subagentBody: { paddingLeft: 14, paddingTop: 4 },
@@ -439,6 +449,7 @@ const makeStyles = (colors: Palette) => {
     earlierText: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.tertiary },
     activity: { flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 14, marginBottom: 6 },
     activityText: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.inkFaint },
+    activityLabel: { flexShrink: 1 },
     activityTime: { fontFamily: fonts.mono, fontSize: 10, color: colors.inkFaint },
   });
 };
