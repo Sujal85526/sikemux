@@ -11,7 +11,7 @@ import { useStore } from "../state/store";
 import { activeAgentId, agentIdsOf, agentsAwaitingInput } from "../state/selectors";
 import { type Agent, type AgentType, type ProviderProfile, type ProviderProfileSelection } from "../state/types";
 import { AgentIcon, IconClose, IconInbox, IconPlus, IconRefresh, IconSearch } from "../ui/Icons";
-import { AgentStateIndicator } from "../agents/AgentStateIndicator";
+import { AgentStateIndicator, SubagentCount } from "../agents/AgentStateIndicator";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
 import { AgentContextMenu } from "../workspace/AgentContextMenu";
 import { sortByAttention } from "../state/agentStatus";
@@ -92,6 +92,7 @@ export function AgentRailBody() {
     const session = useStore((s) => s.sessions[s.activeSessionId]);
     const activityById = useStore((s) => s.agentActivity);
     const backgroundById = useStore((s) => s.agentBackgroundWork);
+    const subagentsById = useStore((s) => s.agentSubagents);
     const windowsBySession = useStore((s) => s.windowsBySession);
     const windowsById = useStore((s) => s.windows);
     const agentsById = useStore((s) => s.agents);
@@ -425,6 +426,7 @@ export function AgentRailBody() {
                                             }}>
                                             {glyph}
                                             <span className="agent-title">{a.title}</span>
+                                            {(subagentsById[a.id] ?? 0) > 0 && <SubagentCount count={subagentsById[a.id]} />}
                                         </button>
                                     )}
                                     <AgentStateMark state={activityById[a.id]?.state} background={(backgroundById[a.id] ?? 0) > 0} />

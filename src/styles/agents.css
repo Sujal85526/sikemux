@@ -204,7 +204,8 @@
     stroke: none;
     color: color-mix(in srgb, var(--live) 70%, var(--text-tertiary));
 }
-.tab-wrap.active .subagent-count {
+.tab-wrap.active .subagent-count,
+.agent-row.active .subagent-count {
     color: var(--text-secondary);
 }
 @keyframes agent-activity-spin {

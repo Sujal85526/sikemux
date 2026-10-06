@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { AgentStateIndicator } from "../agents/AgentStateIndicator";
+import { AgentStateIndicator, SubagentCount } from "../agents/AgentStateIndicator";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { activeAgentId, agentIdsOf } from "../state/selectors";
@@ -33,6 +33,7 @@ export function AllProjectsAgents() {
     const agents = useStore((s) => s.agents);
     const activity = useStore((s) => s.agentActivity);
     const background = useStore((s) => s.agentBackgroundWork);
+    const subagents = useStore((s) => s.agentSubagents);
     const shownAgentId = useStore((s) => activeAgentId(s, s.sessions[s.activeSessionId]));
 
     const open = useMemo(() => {
@@ -72,6 +73,7 @@ export function AllProjectsAgents() {
                                         <AgentIcon type={agent.type} size={20} />
                                     </span>
                                     <span className="agent-title">{agent.title}</span>
+                                    {(subagents[agent.id] ?? 0) > 0 && <SubagentCount count={subagents[agent.id]} />}
                                 </button>
                                 {bucket !== "idle" && (
                                     <span className="row-status">
