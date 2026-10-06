@@ -274,6 +274,7 @@ function shareOf(root: LayoutNode, paneId: string): number {
 }
 
 function foldDesk(paneId: string): void {
+    if (getState().deskAddressOpen === getState().deskPanes[paneId]) closeDeskAddress();
     if (!canAnimate(document.body) || !travelDesk(paneId, "closed")) removeDeskPane(paneId);
 }
 

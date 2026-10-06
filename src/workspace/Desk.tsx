@@ -701,7 +701,14 @@ function BrowserPage({
                 {blank && addressFloating && <div className="browser-dim" style={{ opacity: UNDER_ADDRESS_DIM }} />}
             </div>
             {addressFloating && (
-                <FloatingAddress over={viewportRef} tabId={activeTab?.id} pageAddress={pageAddress} onGo={go} onClose={cmd.closeDeskAddress} />
+                <FloatingAddress
+                    over={viewportRef}
+                    paneId={paneId}
+                    tabId={activeTab?.id}
+                    pageAddress={pageAddress}
+                    onGo={go}
+                    onClose={cmd.closeDeskAddress}
+                />
             )}
         </div>
     );

@@ -1,12 +1,8 @@
-import { useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 import { createPortal } from "react-dom";
+import { deskAppearing } from "../state/deskMotion";
+import { onStageFrame, useStageMoving } from "../state/nativeViews";
 import { AddressBar } from "./AddressBar";
-
-interface Place {
-    left: number;
-    top: number;
-    width: number;
-}
 
 const MAX_WIDTH = 680;
 const MARGIN = 16;
@@ -17,6 +13,7 @@ const MARGIN = 16;
  */
 export function FloatingAddress({
     over,
+    paneId,
     tabId,
     pageAddress,
     onGo,
@@ -24,58 +21,62 @@ export function FloatingAddress({
 }: {
     /** The page area the panel sits over. */
     over: RefObject<HTMLElement | null>;
+    /** The desk pane the page is on, which the panel travels and fades with. */
+    paneId: string;
     tabId: string | undefined;
     pageAddress: string;
     onGo: (url: string) => void;
     onClose: () => void;
 }) {
     const panelRef = useRef<HTMLDivElement>(null);
-    const [area, setArea] = useState<DOMRect | null>(null);
-    const [height, setHeight] = useState(0);
+    const placeRef = useRef(() => {});
+    const moving = useStageMoving();
 
+    /* Placed straight from a measurement, like the page under it: while the desk
+       slides open the page moves without changing size, so nothing else would
+       tell the panel to follow. The field sits a little above the middle of the
+       page and the list grows down from it, rising only as far as a long list
+       needs to stay on the page. */
     useLayoutEffect(() => {
         const page = over.current;
-        if (!page) return;
-        const measure = () => setArea(page.getBoundingClientRect());
-        measure();
-        const observer = new ResizeObserver(measure);
+        const panel = panelRef.current;
+        if (!page || !panel) return;
+        let frame = 0;
+        const place = () => {
+            frame = 0;
+            const area = page.getBoundingClientRect();
+            const width = Math.min(MAX_WIDTH, area.width - 2 * MARGIN);
+            const top = Math.max(area.top + MARGIN, Math.min(area.top + area.height * 0.36, area.bottom - panel.offsetHeight - MARGIN));
+            const pane = page.closest<HTMLElement>(".pane");
+            panel.style.left = `${area.left + (area.width - width) / 2}px`;
+            panel.style.top = `${top}px`;
+            panel.style.width = `${width}px`;
+            panel.style.opacity = deskAppearing(paneId) ? "0" : pane ? getComputedStyle(pane).opacity : "";
+        };
+        const schedule = () => {
+            if (!frame) frame = requestAnimationFrame(place);
+        };
+        placeRef.current = place;
+        place();
+        const observer = new ResizeObserver(schedule);
         observer.observe(page);
-        window.addEventListener("resize", measure);
+        observer.observe(panel);
+        window.addEventListener("resize", schedule);
         return () => {
             observer.disconnect();
-            window.removeEventListener("resize", measure);
+            if (frame) cancelAnimationFrame(frame);
+            window.removeEventListener("resize", schedule);
         };
-    }, [over]);
+    }, [over, paneId]);
 
-    useLayoutEffect(() => {
-        const panel = panelRef.current;
-        if (!panel) return;
-        const measure = () => setHeight(panel.offsetHeight);
-        measure();
-        const observer = new ResizeObserver(measure);
-        observer.observe(panel);
-        return () => observer.disconnect();
-    }, []);
-
-    /* The field sits a little above the middle of the page and the list grows
-       down from it, rising only as far as a long list needs to stay on the page. */
-    const place = useMemo<Place | null>(() => {
-        if (!area) return null;
-        const width = Math.min(MAX_WIDTH, area.width - 2 * MARGIN);
-        return {
-            left: area.left + (area.width - width) / 2,
-            top: Math.max(area.top + MARGIN, Math.min(area.top + area.height * 0.36, area.bottom - height - MARGIN)),
-            width,
-        };
-    }, [area, height]);
+    useEffect(() => {
+        placeRef.current();
+        if (!moving) return;
+        return onStageFrame(() => placeRef.current());
+    }, [moving]);
 
     return createPortal(
-        <div
-            ref={panelRef}
-            className="address-float"
-            role="dialog"
-            aria-label="Open address"
-            style={place ? { left: place.left, top: place.top, width: place.width } : { visibility: "hidden" }}>
+        <div ref={panelRef} className="address-float" role="dialog" aria-label="Open address">
             <AddressBar floating tabId={tabId} pageAddress={pageAddress} onGo={onGo} onLeave={onClose} />
         </div>,
         document.body,

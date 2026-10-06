@@ -154,11 +154,15 @@ describe("the desk", () => {
         expect(browserApi.closeAgent).not.toHaveBeenCalled();
     });
 
-    it("opens the address over the new page when the desk had none", async () => {
+    it("opens the address over the new page when the desk had none, and shuts it with the desk", async () => {
         toggleDesk("agent-1");
         await vi.waitFor(() => expect(browserApi.newTab).toHaveBeenCalledWith("agent-1"));
 
         expect(getState().deskAddressOpen).toBe("agent-1");
+
+        toggleDesk("agent-1");
+
+        expect(getState().deskAddressOpen).toBeNull();
     });
 
     it("shows the tabs it already has instead of opening another", async () => {
