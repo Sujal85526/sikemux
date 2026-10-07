@@ -310,8 +310,22 @@ fn answer(name: &str, result: Result<Value, String>) -> Value {
 }
 
 /// A screenshot is the one answer an agent reads as a picture rather than as
-/// JSON, so it travels as an image block with the page's name beside it.
+/// JSON, so it travels as an image block with the page's name beside it. A
+/// page preview's picture travels the same way, with the rest of its answer.
 fn content_for(name: &str, value: &Value) -> Vec<Value> {
+    if name == "page_preview" {
+        if let Some(data) = value.get("data").and_then(Value::as_str) {
+            let mut rest = value.clone();
+            if let Some(fields) = rest.as_object_mut() {
+                fields.remove("data");
+                fields.remove("mimeType");
+            }
+            return vec![
+                json!({ "type": "image", "data": data, "mimeType": value["mimeType"] }),
+                text(&rest.to_string()),
+            ];
+        }
+    }
     if name == "browser_screenshot" {
         if let Some(data) = value.get("data").and_then(Value::as_str) {
             let field = |key: &str| value.get(key).and_then(Value::as_str).unwrap_or_default();

@@ -57,6 +57,8 @@ export const TOOL_ROWS = {
     task_read: { verb: "read", kind: "read", icon: "file", target: ["{taskId}", "{executionId}"], detail: ["“{search}”"] },
     task_stop: { verb: "stop", kind: "execute", icon: "stop", target: ["{taskId}", "{executionId}"] },
     ui_open: { verb: "show", kind: "read", icon: "window", target: ["{path}:{line}", "{path}", "{kind}"] },
+    page_preview: { verb: "preview", kind: "read", icon: "eye", target: ["{path}"] },
+    page_show: { verb: "show", kind: "read", icon: "window", target: ["{title}"] },
     events_wait: { verb: "wait", kind: "think", icon: "clock", target: ["for {executionId}", "for events"] },
     app_console: { verb: "read", kind: "read", icon: "info", target: ["the app console"] },
     bitbucket_pulls: {

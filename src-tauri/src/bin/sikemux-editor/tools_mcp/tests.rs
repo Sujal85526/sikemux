@@ -465,6 +465,25 @@ fn a_screenshot_comes_back_as_an_image() {
     );
 }
 
+#[test]
+fn a_page_preview_comes_back_as_an_image_and_its_measurements() {
+    let blocks = content_for(
+        "page_preview",
+        &json!({
+            "data": "aGk=",
+            "mimeType": "image/jpeg",
+            "contentHeight": 312,
+            "console": { "messages": [] },
+        }),
+    );
+    assert_eq!(blocks[0]["type"], json!("image"));
+    assert_eq!(blocks[0]["mimeType"], json!("image/jpeg"));
+    assert_eq!(
+        field(&blocks[1], "text"),
+        "{\"console\":{\"messages\":[]},\"contentHeight\":312}"
+    );
+}
+
 /// The numbers drawn on an annotated picture are only useful beside the list
 /// saying what each one is.
 #[test]
