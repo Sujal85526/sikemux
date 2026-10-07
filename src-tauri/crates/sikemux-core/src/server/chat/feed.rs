@@ -122,6 +122,13 @@ fn session_title(payload: &Value) -> Option<&str> {
         .filter(|title| !title.is_empty())
 }
 
+/// Subagents outlive the turn that started them, but not one that was cancelled.
+/// The agent says so itself; this covers one that does not, as clients do.
+fn cancels_subagents(kind: ChatEventKind, payload: &Value) -> bool {
+    kind == ChatEventKind::TurnCompleted
+        && payload.get("stopReason").and_then(Value::as_str) == Some("cancelled")
+}
+
 /// Keeps `running` to the subagents the parent session has going. A subagent's
 /// own updates arrive under its session id and never change the count.
 fn track_subagent(running: &mut HashSet<String>, payload: &Value) {
@@ -331,11 +338,14 @@ impl Replay {
         self.standing.push((holds, index, event.clone()));
     }
 
+    fn forget_subagents(&mut self) {
+        self.standing
+            .retain(|(held, ..)| !matches!(held, Holds::Subagent(_)));
+    }
+
     fn note_standing(&mut self, kind: ChatEventKind, index: u64, event: &ChatEvent) {
-        // A turn that ends takes the subagents it started with it, as clients settle them.
-        if kind == ChatEventKind::TurnCompleted {
-            self.standing
-                .retain(|(held, ..)| !matches!(held, Holds::Subagent(_)));
+        if cancels_subagents(kind, &event.payload) {
+            self.forget_subagents();
             return;
         }
         if kind != ChatEventKind::SessionUpdate {
@@ -725,8 +735,11 @@ impl Feed {
             }
             return;
         }
-        // A turn that ends takes the subagents it started with it, as clients settle them.
-        if kind == ChatEventKind::TurnCompleted {
+        // An agent starting again knows nothing of the old one's subagents.
+        if kind == ChatEventKind::Status {
+            inner.replay.forget_subagents();
+        }
+        if kind == ChatEventKind::Status || cancels_subagents(kind, &payload) {
             inner.subagents.clear();
         }
         self.flush_locked(&mut inner);
@@ -1306,12 +1319,13 @@ mod tests {
                 ("plan".to_owned(), "second".to_owned()),
                 ("async_task_spawned".to_owned(), "shell".to_owned()),
                 ("async_task_progress".to_owned(), "shell".to_owned()),
+                ("subagent_spawned".to_owned(), "helper".to_owned()),
             ]
         );
     }
 
     #[test]
-    fn a_running_subagent_stands_until_it_stops_or_its_turn_ends() {
+    fn a_running_subagent_stands_until_it_stops_or_its_turn_is_cancelled() {
         let mut replay = Replay::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS, None);
         let spawned = |id: &str| {
             update(
@@ -1341,7 +1355,37 @@ mod tests {
             ChatEventKind::TurnCompleted,
             &json!({ "stopReason": "end_turn" }),
         );
+        assert_eq!(held(&replay), ["b"]);
+        replay.push(ChatEventKind::TurnStarted, &json!({}));
+        replay.push(
+            ChatEventKind::TurnCompleted,
+            &json!({ "stopReason": "cancelled" }),
+        );
         assert!(held(&replay).is_empty());
+    }
+
+    #[tokio::test]
+    async fn subagents_outlive_their_turn_but_not_the_agent() {
+        let feed = Feed::new("agent".into(), "default".into(), None);
+        let spawned = json!({ "sessionId": "s", "update": { "sessionUpdate": "subagent_spawned", "subagentSessionId": "a" } });
+        feed.emit(ChatEventKind::TurnStarted, json!({}));
+        feed.emit(ChatEventKind::SessionUpdate, spawned.clone());
+        feed.emit(
+            ChatEventKind::TurnCompleted,
+            json!({ "stopReason": "end_turn" }),
+        );
+        assert_eq!(feed.running_subagents(), 1);
+
+        feed.emit(ChatEventKind::Status, json!({ "state": "starting" }));
+        assert_eq!(feed.running_subagents(), 0);
+        assert!(feed.inner.lock().unwrap().replay.standing.is_empty());
+
+        feed.emit(ChatEventKind::SessionUpdate, spawned);
+        feed.emit(
+            ChatEventKind::TurnCompleted,
+            json!({ "stopReason": "cancelled" }),
+        );
+        assert_eq!(feed.running_subagents(), 0);
     }
 
     #[tokio::test]

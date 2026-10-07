@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { chatReducer, initialChatState } from "./reducer";
+import { runningSubagents } from "./transcript";
 import type { ChatState } from "./types";
 
 const ROOT_SESSION = "session-1";
@@ -880,16 +881,29 @@ describe("chat reducer", () => {
         expect(chatReducer(initialChatState, { type: "reset", hold: true }).awaitingReplay).toBe(false);
     });
 
-    it("cancels a running subagent that had only written text when the turn ends", () => {
+    it("keeps a subagent going after the turn that started it ends", () => {
+        const spawned = update(initialChatState, { sessionUpdate: "subagent_spawned", subagentSessionId: "sub-1" });
+        const working = update(spawned, { sessionUpdate: "tool_call", toolCallId: "tool-1", title: "Grep", status: "in_progress" }, "sub-1");
+        const ended = chatReducer(working, { type: "turn_completed", stopReason: "end_turn" });
+
+        expect(ended.messages).toBe(working.messages);
+        expect(runningSubagents(ended.messages)).toHaveLength(1);
+
+        const later = update(ended, { sessionUpdate: "tool_call_update", toolCallId: "tool-1", status: "completed" }, "sub-1");
+        const done = update(later, { sessionUpdate: "subagent_state_update", subagentSessionId: "sub-1", state: "completed" });
+        expect(runningSubagents(done.messages)).toEqual([]);
+    });
+
+    it("stops a subagent when its agent goes away or starts again", () => {
         const spawned = update(initialChatState, { sessionUpdate: "subagent_spawned", subagentSessionId: "sub-1" });
         const wrote = update(spawned, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Looking" } }, "sub-1");
-        const ended = chatReducer(wrote, { type: "turn_completed" });
+        const ended = chatReducer(wrote, { type: "turn_completed", stopReason: "end_turn" });
 
-        const before = wrote.messages[0].parts[0];
-        const part = ended.messages[0].parts[0];
-        if (part.kind !== "subagent" || before.kind !== "subagent") throw new Error("expected a subagent");
-        expect(part.subagent.state).toBe("cancelled");
-        expect(part.subagent.messages).toBe(before.subagent.messages);
+        for (const state of ["stopped", "error", "starting"] as const) {
+            const part = chatReducer(ended, { type: "status", state }).messages[0].parts[0];
+            if (part.kind !== "subagent") throw new Error("expected a subagent");
+            expect(part.subagent.state).toBe("cancelled");
+        }
     });
 
     it("keeps a subagent's transcript as is when its session sends an update it cannot place", () => {

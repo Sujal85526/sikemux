@@ -278,11 +278,9 @@ function transcriptUpdate(transcript: Transcript, update: Record<string, unknown
 
 const TOOL_ENDED = ["completed", "failed", "cancelled"];
 
-/* A turn that ends takes its unfinished work with it. The agent sends no last
-   word for a call or a subagent it was cut off in the middle of, so anything
-   still marked as working would sit there spinning for the rest of the
-   session. The turn ending is the news, so the transcript writes it down. */
-function settleParts(parts: ChatPart[], at: number): ChatPart[] | null {
+/* The agent sends no last word for work it was cut off in, so it would spin
+   forever. A subagent can outlive its turn, so only `endSubagents` stops it. */
+function settleParts(parts: ChatPart[], at: number, endSubagents: boolean): ChatPart[] | null {
     let changed = false;
     const settled = parts.map((part) => {
         if (part.kind === "tool") {
@@ -291,8 +289,9 @@ function settleParts(parts: ChatPart[], at: number): ChatPart[] | null {
             return settleTool({ ...part, tool: { ...part.tool, status: "cancelled" }, endedAt: part.endedAt ?? at });
         }
         if (part.kind !== "subagent") return part;
-        const messages = settleMessages(part.subagent.messages, at);
         const running = part.subagent.state === "running";
+        if (running && !endSubagents) return part;
+        const messages = settleMessages(part.subagent.messages, at, true);
         if (!messages && !running) return part;
         changed = true;
         return {
@@ -303,10 +302,10 @@ function settleParts(parts: ChatPart[], at: number): ChatPart[] | null {
     return changed ? settled : null;
 }
 
-function settleMessages(messages: ChatMessage[], at: number): ChatMessage[] | null {
+function settleMessages(messages: ChatMessage[], at: number, endSubagents: boolean): ChatMessage[] | null {
     let changed = false;
     const settled = messages.map((message) => {
-        const parts = settleParts(message.parts, at);
+        const parts = settleParts(message.parts, at, endSubagents);
         if (!parts) return message;
         changed = true;
         return { ...message, parts };
@@ -314,9 +313,25 @@ function settleMessages(messages: ChatMessage[], at: number): ChatMessage[] | nu
     return changed ? settled : null;
 }
 
-function settleState(state: ChatState): ChatState {
-    const messages = settleMessages(state.messages, Date.now());
+function settleState(state: ChatState, endSubagents: boolean): ChatState {
+    const messages = settleMessages(state.messages, Date.now(), endSubagents);
     return messages ? { ...state, messages, revision: state.revision + 1 } : state;
+}
+
+function stopSubagents(state: ChatState): ChatState {
+    let changed = false;
+    const at = Date.now();
+    const messages = state.messages.map((message) => {
+        if (!message.parts.some((part) => part.kind === "subagent" && part.subagent.state === "running")) return message;
+        changed = true;
+        const parts = message.parts.map((part) => {
+            if (part.kind !== "subagent" || part.subagent.state !== "running") return part;
+            const settled = settleMessages(part.subagent.messages, at, true);
+            return { ...part, subagent: { ...part.subagent, state: "cancelled" as const, ...(settled ? { messages: settled } : {}) } };
+        });
+        return { ...message, parts };
+    });
+    return changed ? { ...state, messages, revision: state.revision + 1 } : state;
 }
 
 function findSubagent(messages: ChatMessage[], sessionId: string): { messageIndex: number; partIndex: number } | null {
@@ -434,8 +449,10 @@ function contextUsage(update: Record<string, unknown>): ContextUsage | null {
         : { used, size };
 }
 
+/* A cancelled turn takes its subagents with it, and the agent says so itself;
+   settling them here as well covers one that does not. */
 function endTurn(state: ChatState, stopReason: string | null): ChatState {
-    const settled = settleState(state);
+    const settled = settleState(state, stopReason === "cancelled");
     const last = settled.messages.at(-1);
     // Only a turn this side watched run has a finish worth stamping.
     const messages =
@@ -469,7 +486,12 @@ function sessionUpdate(state: ChatState, sessionId: string, update: Record<strin
             const subagentSessionId = textOf(update.subagentSessionId);
             const subagentState = SUBAGENT_STATES.find((candidate) => candidate === update.state);
             if (!subagentSessionId || !subagentState) return state;
-            return patchSubagent(state, subagentSessionId, (subagent) => ({ ...subagent, state: subagentState })) ?? state;
+            return (
+                patchSubagent(state, subagentSessionId, (subagent) => {
+                    const messages = subagentState === "running" ? null : settleMessages(subagent.messages, Date.now(), true);
+                    return { ...subagent, state: subagentState, ...(messages ? { messages } : {}) };
+                }) ?? state
+            );
         }
         case "async_task_spawned":
             return spawnTask(state, update);
@@ -531,7 +553,13 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
                 : initialChatState;
         case "status":
             return {
-                ...(action.state === "stopped" || action.state === "error" ? settleState(state) : state),
+                /* Starting again, as when the chat moves to another account, is a
+                   new agent that knows nothing of the old one's subagents. */
+                ...(action.state === "stopped" || action.state === "error"
+                    ? settleState(state, true)
+                    : action.state === "starting"
+                      ? stopSubagents(state)
+                      : state),
                 connection: action.state,
                 running: action.state === "stopped" || action.state === "error" ? false : state.running,
                 permissions: action.state === "stopped" || action.state === "error" ? [] : state.permissions,
