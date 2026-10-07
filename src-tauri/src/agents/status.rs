@@ -138,19 +138,16 @@ pub(super) fn opencode_status<'a>(
     environment: impl IntoIterator<Item = (&'a str, &'a str)>,
 ) -> AgentStatus {
     let plain = without_escapes(listing);
-    let stored = plain
-        .lines()
-        .filter_map(|line| {
-            let words: Vec<&str> = line
-                .trim_matches(|c: char| !c.is_alphanumeric())
-                .split_whitespace()
-                .collect();
-            match words.as_slice() {
-                [count, noun, ..] if noun.starts_with("credential") => count.parse::<u32>().ok(),
-                _ => None,
-            }
-        })
-        .last();
+    let stored = plain.lines().rev().find_map(|line| {
+        let words: Vec<&str> = line
+            .trim_matches(|c: char| !c.is_alphanumeric())
+            .split_whitespace()
+            .collect();
+        match words.as_slice() {
+            [count, noun, ..] if noun.starts_with("credential") => count.parse::<u32>().ok(),
+            _ => None,
+        }
+    });
     if stored.is_some_and(|count| count > 0) {
         return AgentStatus::Ready { account: None };
     }
