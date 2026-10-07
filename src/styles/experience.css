@@ -329,6 +329,21 @@
     color: var(--text-tertiary);
 }
 
+.welcome-agent-name {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.2;
+}
+
+.welcome-agent-name small {
+    color: var(--text-tertiary);
+    font-size: var(--text-2xs);
+}
+
+.welcome-agents li.is-signed-out small {
+    color: var(--warn);
+}
+
 .welcome-agents li.is-missing .agent-glyph {
     opacity: 0.4;
     filter: grayscale(1);

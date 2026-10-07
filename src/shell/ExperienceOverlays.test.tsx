@@ -10,8 +10,8 @@ vi.mock("../state/resources", () => ({
     useResourceEnabled: (enabled: boolean) => ({
         data: enabled
             ? [
-                  { type: "codex", label: "Codex", available: false },
-                  { type: "claude", label: "Claude" },
+                  { type: "codex", label: "Codex", available: false, status: { state: "missing" } },
+                  { type: "claude", label: "Claude", status: { state: "signedOut" } },
               ]
             : undefined,
         status: enabled ? ("ok" as const) : ("idle" as const),
@@ -56,6 +56,13 @@ afterEach(() => {
 });
 
 describe("Onboarding", () => {
+    it("says which agents are signed out or not installed", () => {
+        openOnboarding();
+        expect(screen.getByText("Signed out")).toBeInTheDocument();
+        expect(screen.getByText("Not installed")).toBeInTheDocument();
+        expect(screen.getByText("Claude").closest("li")).toHaveClass("is-signed-out");
+    });
+
     it("focuses the first move and shows custom shortcuts", async () => {
         openOnboarding({ "project.open": "Ctrl+Shift+KeyO" });
 
