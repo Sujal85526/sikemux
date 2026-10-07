@@ -44,6 +44,8 @@ import { VoiceCaption } from "./voice/VoiceCaption";
 import { useBackdropImage } from "./hooks/useBackdropImage";
 import { useBrowserDownloads } from "./state/browserDownloads";
 import { useBrowserReveal } from "./state/browserReveal";
+import { useSimulatorReveal } from "./state/simulatorReveal";
+import { simApi } from "./api/sim";
 import { useBrowserStrips } from "./state/browserStrips";
 import { filesApi } from "./api/files";
 import { emit } from "./state/bus";
@@ -696,6 +698,7 @@ export default function App() {
     useVoiceDictation();
     useBrowserDownloads();
     useBrowserReveal();
+    useSimulatorReveal();
     useBrowserStrips();
     useRailWidthVars();
     const [bootReady, setBootReady] = useState(false);
@@ -710,6 +713,10 @@ export default function App() {
     const filePaletteOpen = useStore((s) => s.filePaletteOpen);
     const newTabPaletteOpen = useStore((s) => s.newTabPaletteOpen);
     const installedPlugins = useInstalledPlugins();
+    const iosSimulator = useStore((s) => s.iosSimulator);
+    useEffect(() => {
+        void simApi.offerToAgents(iosSimulator).catch(swallow("switch the iOS Simulator"));
+    }, [iosSimulator]);
     const disabledPlugins = useStore((s) => s.disabledPlugins);
     useEffect(() => {
         void pluginsApi.setDisabled(disabledPlugins).catch(swallow("switch plugins"));

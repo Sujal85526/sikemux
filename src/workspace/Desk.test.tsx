@@ -22,6 +22,12 @@ vi.mock("../terminal/TerminalPane", () => ({
     ),
 }));
 
+vi.mock("../sim/SimulatorPane", () => ({
+    SimulatorPane: ({ simulator, visible }: { simulator: { id: string }; visible: boolean }) => (
+        <div data-testid="desk-simulator" data-simulator={simulator.id} data-visible={String(visible)} />
+    ),
+}));
+
 vi.mock("../api/browser", async () => {
     const actual = await vi.importActual<typeof import("../api/browser")>("../api/browser");
     return {
@@ -572,6 +578,7 @@ describe("DeskHost", () => {
                     order: ["file:/repo/src/a.ts", "browser:tab-one", "terminal:term-web"],
                     active: "file:/repo/src/a.ts",
                     terminals: [{ id: "term-web", terminalKey: "task-web", label: "Web", cwd: "/repo" }],
+                    simulators: [],
                     reveal: null,
                 },
             },
@@ -612,7 +619,7 @@ describe("DeskHost", () => {
         vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [], activeTabId: null });
         setState({
             browserStrips: {},
-            desks: { "agent-one": { order: ["file:/repo/a.ts"], active: "file:/repo/a.ts", terminals: [], reveal: null } },
+            desks: { "agent-one": { order: ["file:/repo/a.ts"], active: "file:/repo/a.ts", terminals: [], simulators: [], reveal: null } },
             editorViews: { [deskEditorId("agent-one")]: { openTabs: ["/repo/a.ts"], activePath: "/repo/a.ts" } },
         } as never);
         renderPane();
@@ -628,7 +635,7 @@ describe("DeskHost", () => {
         vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [], activeTabId: null });
         setState({
             browserStrips: {},
-            desks: { "agent-one": { order: ["file:/repo/a.ts"], active: "file:/repo/a.ts", terminals: [], reveal: null } },
+            desks: { "agent-one": { order: ["file:/repo/a.ts"], active: "file:/repo/a.ts", terminals: [], simulators: [], reveal: null } },
             editorViews: { [deskEditorId("agent-one")]: { openTabs: ["/repo/a.ts"], activePath: "/repo/a.ts" } },
         } as never);
         renderPane();
@@ -638,11 +645,41 @@ describe("DeskHost", () => {
         expect(screen.getByRole("menuitem", { name: "Copy Relative Path" })).toBeInTheDocument();
     });
 
+    it("names the simulator's tab after its device and shows its pane only while the tab is chosen", async () => {
+        setState({
+            desks: {
+                "agent-one": {
+                    order: ["file:/repo/src/a.ts", "simulator:sim-1"],
+                    active: "simulator:sim-1",
+                    terminals: [],
+                    simulators: [{ id: "sim-1", udid: "UDID-1", deviceName: "iPhone 17" }],
+                    reveal: null,
+                },
+            },
+            editorViews: { [deskEditorId("agent-one")]: { openTabs: ["/repo/src/a.ts"], activePath: "/repo/src/a.ts" } },
+        } as never);
+        renderPane();
+
+        expect(await screen.findByRole("tab", { name: /iPhone 17/ })).toBeInTheDocument();
+        expect(screen.getByTestId("desk-simulator")).toHaveAttribute("data-visible", "true");
+
+        fireEvent.click(within(screen.getByRole("tablist", { name: "Desk views" })).getByRole("tab", { name: "Files" }));
+
+        expect(getState().desks["agent-one"].active).toBe("file:/repo/src/a.ts");
+        expect(screen.getByTestId("desk-simulator")).toHaveAttribute("data-visible", "false");
+    });
+
     it("stays open for a file that is still on its way to the editor", async () => {
         vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [], activeTabId: null });
         setState({
             desks: {
-                "agent-one": { order: ["file:/repo/b.ts"], active: "file:/repo/b.ts", terminals: [], reveal: { path: "/repo/b.ts", seq: 1 } },
+                "agent-one": {
+                    order: ["file:/repo/b.ts"],
+                    active: "file:/repo/b.ts",
+                    terminals: [],
+                    simulators: [],
+                    reveal: { path: "/repo/b.ts", seq: 1 },
+                },
             },
         } as never);
         renderPane();

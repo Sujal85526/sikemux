@@ -235,6 +235,13 @@ export const IPC_COMMANDS = [
     "voice_stop",
     "voice_cancel",
     "voice_shutdown",
+    "sim_status",
+    "sim_prepare",
+    "sim_call",
+    "sim_watch",
+    "sim_unwatch",
+    "simulator_set_enabled",
+    "simulator_setup",
 ] as const;
 
 export type IpcCommand = (typeof IPC_COMMANDS)[number];

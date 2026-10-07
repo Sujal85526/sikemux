@@ -29,18 +29,21 @@ fi
 shopt -s nullglob
 DMGS=("$BUNDLE"/dmg/*.dmg)
 VOICES=("$ROOT"/src-tauri/binaries/sikemux-voice-*)
+SIMS=("$ROOT"/src-tauri/binaries/sikemux-sim-*)
 shopt -u nullglob
 [[ ${#DMGS[@]} -eq 1 ]] || fail "expected exactly one DMG, found ${#DMGS[@]}"
 [[ ${#VOICES[@]} -eq 1 ]] || fail "expected exactly one voice helper, found ${#VOICES[@]}"
+[[ ${#SIMS[@]} -eq 1 ]] || fail "expected exactly one simulator helper, found ${#SIMS[@]}"
 DMG="${DMGS[0]}"
 VOICE="${VOICES[0]}"
-for file in "$DMG" "$TAR" "$SIG" "$VOICE" "$MANIFEST"; do
+SIM="${SIMS[0]}"
+for file in "$DMG" "$TAR" "$SIG" "$VOICE" "$SIM" "$MANIFEST"; do
   [[ -s "$file" ]] || fail "$file is missing or empty"
 done
 [[ "$(node -p "require('$MANIFEST').version")" == "$VERSION" ]] || fail "$MANIFEST is not for v$VERSION"
 
-STABLE_GH_CMD=(gh release create "v$VERSION" --verify-tag --title "v$VERSION" --notes "$NOTES" "$DMG" "$TAR" "$SIG" "$VOICE" "$MANIFEST")
-NIGHTLY_GH_CMD=(gh release create "v$VERSION" --verify-tag --title "v$VERSION" --notes "$NOTES" --prerelease "$DMG" "$TAR" "$SIG" "$VOICE")
+STABLE_GH_CMD=(gh release create "v$VERSION" --verify-tag --title "v$VERSION" --notes "$NOTES" "$DMG" "$TAR" "$SIG" "$VOICE" "$SIM" "$MANIFEST")
+NIGHTLY_GH_CMD=(gh release create "v$VERSION" --verify-tag --title "v$VERSION" --notes "$NOTES" --prerelease "$DMG" "$TAR" "$SIG" "$VOICE" "$SIM")
 POINTER_NOTES="Update feed for the nightly channel.
 
 The installable build for this feed is [v$VERSION](https://github.com/nodelike/sikemux/releases/tag/v$VERSION).

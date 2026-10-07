@@ -118,6 +118,7 @@ const PERSISTED_KEYS = [
     "agentNotifications",
     "notch",
     "voiceDictation",
+    "iosSimulator",
     "notificationsIntroduced",
     "keptRunningNoticeShown",
     "railDensity",
@@ -183,6 +184,7 @@ function packPrefs(s: StoreState): PersistedPrefs {
         agentNotifications: s.agentNotifications,
         notch: s.notch,
         voiceDictation: s.voiceDictation,
+        iosSimulator: s.iosSimulator,
         notificationsIntroduced: s.notificationsIntroduced,
         keptRunningNoticeShown: s.keptRunningNoticeShown,
         railDensity: s.railDensity,
@@ -1069,6 +1071,7 @@ export function applyHydrate(raw: string): HydrationResult {
                     order: view.files.map(fileKey),
                     active: view.tabs.length > 0 ? BROWSER_ACTIVE : view.files[0] ? fileKey(view.files[0]) : null,
                     terminals: [],
+                    simulators: [],
                     reveal: null,
                 };
             }
@@ -1147,6 +1150,7 @@ export function applyHydrate(raw: string): HydrationResult {
         agentNotifications: typeof prefs.agentNotifications === "boolean" ? prefs.agentNotifications : cur.agentNotifications,
         notch: normaliseNotchSettings(prefs.notch),
         voiceDictation: prefs.voiceDictation === true,
+        iosSimulator: typeof prefs.iosSimulator === "boolean" ? prefs.iosSimulator : cur.iosSimulator,
         notificationsIntroduced: prefs.notificationsIntroduced === true,
         keptRunningNoticeShown: prefs.keptRunningNoticeShown === true,
         railDensity: prefs.railDensity === "compact" || prefs.railDensity === "comfortable" ? prefs.railDensity : cur.railDensity,

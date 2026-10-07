@@ -8,8 +8,9 @@ import { notify, reportError } from "../state/toast";
 import { copyText } from "../lib/clipboard";
 import { fsapi } from "../api/fs";
 import { deskTabMenu } from "./deskTabMenu";
-import { AgentIcon, IconChevron, IconCommand, IconEditor, IconGlobe, IconPlus, IconRefresh, WindowIcon } from "../ui/Icons";
+import { AgentIcon, IconChevron, IconCommand, IconEditor, IconGlobe, IconPhone, IconPlus, IconRefresh, WindowIcon } from "../ui/Icons";
 import { Tooltip } from "../ui/Tooltip";
+import { IS_MACOS } from "../lib/platform";
 import { FileIcon } from "../ui/FileIcon";
 import { SiteIcon } from "../ui/SiteIcon";
 import { AddressBar } from "./AddressBar";
@@ -30,6 +31,7 @@ import {
     shownDeskItem,
     shownKind,
     takeDeskRestore,
+    simulatorKey,
     terminalKey,
     type DeskItem,
     type DeskKind,
@@ -40,6 +42,7 @@ import * as cmd from "../state/commands";
 import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
 
 const EditorPane = lazy(() => import("../editor/EditorPane").then((module) => ({ default: module.EditorPane })));
+const SimulatorPane = lazy(() => import("../sim/SimulatorPane").then((module) => ({ default: module.SimulatorPane })));
 const NO_FILES: readonly string[] = [];
 const NO_DIRTY: readonly string[] = [];
 /** How dark the page goes under the ⌘L address, so the panel stands apart from it. */
@@ -241,6 +244,7 @@ function DeskSession({
         const item = itemOfKind(items, next, snapshot, lastShown.current.get(next));
         if (item) cmd.selectDeskItem(agentId, item);
         else if (next === "browser") cmd.newBrowserTab(agentId);
+        else if (next === "simulator") cmd.openDeskSimulator(agentId);
     };
 
     const refresh = useCallback(async () => {
@@ -321,6 +325,20 @@ function DeskSession({
                 active: tabActive,
                 icon: <FileIcon name={name} size={18} />,
                 dirty: dirty.includes(item.path),
+            };
+        }
+        if (item.kind === "simulator") {
+            const label = item.simulator.deviceName ?? "Simulator";
+            return {
+                id: item.key,
+                label,
+                title: `iOS Simulator · ${label}`,
+                active: tabActive,
+                icon: (
+                    <span className="agent-glyph sim">
+                        <IconPhone size={13} />
+                    </span>
+                ),
             };
         }
         return {
@@ -422,6 +440,16 @@ function DeskSession({
                         </div>
                     );
                 })}
+                {desk.simulators.map((simulator) => {
+                    const showing = shown === simulatorKey(simulator.id);
+                    return (
+                        <div key={simulator.id} className="desk-simulator" hidden={!showing}>
+                            <Suspense fallback={null}>
+                                <SimulatorPane agentId={agentId} simulator={simulator} visible={visible && showing} />
+                            </Suspense>
+                        </div>
+                    );
+                })}
             </div>
         </section>
     );
@@ -514,10 +542,11 @@ const KINDS: { kind: DeskKind; label: string; icon: ReactNode }[] = [
     { kind: "browser", label: "Browser", icon: <IconGlobe size={14} /> },
     { kind: "file", label: "Files", icon: <IconEditor size={14} /> },
     { kind: "terminal", label: "Terminals", icon: <IconCommand size={14} /> },
+    ...(IS_MACOS ? [{ kind: "simulator" as const, label: "iOS Simulator", icon: <IconPhone size={14} /> }] : []),
 ];
 
 /* Which kind of tab the strip beside it lists. A kind with nothing in it has
-   nothing to switch to, except the browser, which opens a page. */
+   nothing to switch to, except the browser and the simulator, which open one. */
 function DeskKinds({
     items,
     shown,
@@ -534,7 +563,7 @@ function DeskKinds({
             {KINDS.map(({ kind, label, icon }) => {
                 const ofKind = items.filter((item) => item.kind === kind);
                 const busy = kind !== shown && ofKind.some((item) => item.kind === "browser" && item.tab.acting);
-                const empty = ofKind.length === 0 && kind !== "browser";
+                const empty = ofKind.length === 0 && kind !== "browser" && kind !== "simulator";
                 const name = busy ? `${label}, ${agentType} is working here` : label;
                 return (
                     <Tooltip key={kind} label={ofKind.length ? `${label} · ${ofKind.length}` : label}>

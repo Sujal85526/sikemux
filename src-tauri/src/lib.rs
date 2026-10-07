@@ -38,6 +38,8 @@ mod release_credits;
 mod remote;
 mod search;
 mod settings;
+mod sim;
+mod simulator;
 mod ssh;
 mod state;
 mod system;
@@ -56,6 +58,8 @@ use observability::UiWatchdogState;
 use plugins::PluginHost;
 use pty::PtyManager;
 use sikemux_process as bounded_process;
+use sim::SimManager;
+use simulator::SimulatorManager;
 use tauri::Manager;
 use voice::VoiceManager;
 
@@ -214,6 +218,9 @@ pub fn run() {
                 &_app.path().app_data_dir()?.join("plugins"),
                 &_app.package_info().version,
             )?);
+            let sim = SimManager::default();
+            _app.manage(sim.clone());
+            _app.manage(SimulatorManager::for_app(_app.handle().clone(), sim));
             wheel::watch(_app.handle());
             _app.state::<PtyManager>().start(_app.handle());
             // See-through window — same recipe as nackle (NSWindow opaque=NO,
@@ -498,6 +505,13 @@ pub fn run() {
             voice::voice_stop,
             voice::voice_cancel,
             voice::voice_shutdown,
+            sim::sim_status,
+            sim::sim_prepare,
+            sim::sim_call,
+            sim::sim_watch,
+            sim::sim_unwatch,
+            simulator::simulator_set_enabled,
+            simulator::simulator_setup,
         ])
         .build(tauri::generate_context!())
         .expect("error while building sikemux")
@@ -533,6 +547,9 @@ pub fn run() {
                 }
                 if let Some(voice) = app_handle.try_state::<VoiceManager>() {
                     voice.drain();
+                }
+                if let Some(sim) = app_handle.try_state::<SimManager>() {
+                    sim.drain();
                 }
                 lsp::drain_all();
             }

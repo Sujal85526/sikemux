@@ -16,6 +16,10 @@ pub struct Tool {
     description: String,
     properties: Map<String, Value>,
     required: Vec<String>,
+    /// Set on tools listed only where they can work, such as `simulator` for
+    /// the iOS Simulator tools on a Mac with Xcode.
+    #[serde(default)]
+    pub offered: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -40,6 +44,20 @@ impl Manifest {
             "browser/tools.json names a guide this binary did not compile in"
         );
         manifest
+    }
+
+    /// Leaves out the simulator tools unless the app said this Mac can run them.
+    pub fn offering(mut self, simulator: bool) -> Self {
+        if !simulator {
+            self.tools.retain(|tool| tool.offered.is_none());
+        }
+        self
+    }
+
+    fn offers_simulator(&self) -> bool {
+        self.tools
+            .iter()
+            .any(|tool| tool.offered.as_deref() == Some("simulator"))
     }
 
     pub fn guide_name(&self) -> &str {
@@ -76,7 +94,7 @@ impl Manifest {
     }
 
     pub fn instructions(&self) -> String {
-        format!(
+        let mut instructions = format!(
             "Sikemux drives the person's open project and this agent's browser tabs. Call {} before the first task launch or browser click. \
              When the person asks you to open, show or preview a web page, use browser_navigate: it opens on your desk beside them, not in their own browser. \
              Desk tabs run the same WebKit as Sikemux and Safari, so check web pages there rather than in headless Chromium. \
@@ -85,7 +103,14 @@ impl Manifest {
              build one and show it above your text. Load {} with page_preview and page_show, and read its topic pages before your first page. \
              An HTML page you wrote yourself, including charts and mockups the person asks to see, goes in your reply with page_show; never serve it or open it in a tab with browser_navigate.",
             self.guide.name, self.guide.name
-        )
+        );
+        if self.offers_simulator() {
+            instructions.push_str(
+                " To check an iOS app, sim_attach a simulator, read it with sim_state and act with sim_tap, sim_type and sim_swipe; load them together. \
+                 sim_attach shows the device live on your desk beside the person, as browser_navigate does a page, so do not look for Simulator.app or open screenshots elsewhere to show it.",
+            );
+        }
+        instructions
     }
 
     pub fn tool(&self, name: &str) -> Option<&Tool> {

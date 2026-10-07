@@ -87,6 +87,8 @@ export interface DomainState {
     agentNotifications: boolean;
     notch: import("../notch/notchSettings").NotchSettings;
     voiceDictation: boolean;
+    /** Agents get the iOS Simulator tools on a Mac that can run it. */
+    iosSimulator: boolean;
     notificationsIntroduced: boolean;
     /** The person was told once that terminals keep running after Sikemux quits. */
     keptRunningNoticeShown: boolean;
@@ -260,6 +262,7 @@ export const useStore = create<StoreState>(() => {
         agentNotifications: true,
         notch: DEFAULT_NOTCH_SETTINGS,
         voiceDictation: false,
+        iosSimulator: true,
         notificationsIntroduced: false,
         keptRunningNoticeShown: false,
         railDensity: "comfortable",

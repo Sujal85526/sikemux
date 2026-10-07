@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { sendTestNotification } from "../agents/agentNotifications";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { invokeCommand as invoke } from "../api/invoke";
+import { simApi, type SimSetup } from "../api/sim";
 import {
     eventToKeybinding,
     findKeybindingConflict,
@@ -713,6 +714,7 @@ function AgentsPage() {
 
             {IS_MACOS && <VoiceSection />}
             {IS_MACOS && <NotchSection />}
+            {IS_MACOS && <SimulatorSection />}
         </SettingsPage>
     );
 }
@@ -1802,6 +1804,38 @@ function NotchSection() {
                         />
                     }
                 />
+            </SettingsRows>
+        </SettingsSection>
+    );
+}
+
+function SimulatorSection() {
+    const enabled = useStore((s) => s.iosSimulator);
+    const [setup, setSetup] = useState<SimSetup | null>(null);
+    useEffect(() => {
+        let current = true;
+        void simApi
+            .setup()
+            .then((found) => current && setSetup(found))
+            .catch(() => {});
+        return () => {
+            current = false;
+        };
+    }, []);
+    const xcode = setup ? (setup.xcode ?? "No Xcode is selected. Install Xcode, or choose one with xcode-select.") : "Checking…";
+    const runtimes = setup ? setup.runtimes.join(", ") || "None installed. Add one in Xcode's Components settings." : "Checking…";
+    return (
+        <SettingsSection title="iOS Simulator">
+            <SettingsRows>
+                <SettingsRow
+                    label="Let agents drive the iOS Simulator"
+                    desc="Agents tap, type and read simulators without asking, as they do browser tabs, and their screenshots go to the agent's provider. Applies to agents started after a change."
+                    asLabel
+                    control={<Switch checked={enabled} onChange={cmd.setIosSimulator} label="Let agents drive the iOS Simulator" />}
+                />
+                <SettingsRow label="Xcode" desc={xcode} />
+                <SettingsRow label="iOS runtimes" desc={runtimes} />
+                <SettingsRow label="Simulator helper" desc={setup ? `The helper that drives simulators is ${setup.helper}.` : "Checking…"} />
             </SettingsRows>
         </SettingsSection>
     );
