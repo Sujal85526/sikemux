@@ -113,7 +113,10 @@ pub fn run() {
     // resolve the way they do in `make dev`. Reading the login shell takes as
     // long as the user's rc files, so it runs while the window is created.
     cli_paths::link_cli_for_children();
-    sikemux_process::user_environment::provide(system::user_environment);
+    sikemux_process::user_environment::provide(
+        system::user_environment,
+        sikemux_pty::user_shell::login_shell_generation,
+    );
     std::thread::spawn(sikemux_process::user_environment::warm);
 
     frame_rate::render_at_display_rate();

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::process::Command;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock, RwLock};
 
 /// Variables every child process gets on top of this process's own
 /// environment. Launched from the Dock, the app has none of the user's shell
@@ -12,23 +12,51 @@ pub struct UserEnvironment {
     pub variables: HashMap<String, String>,
 }
 
-static SOURCE: OnceLock<fn() -> UserEnvironment> = OnceLock::new();
-static ENVIRONMENT: OnceLock<UserEnvironment> = OnceLock::new();
-
-/// Registers how to build the environment. A process that never registers one
-/// gives its children exactly what it inherited.
-pub fn provide(source: fn() -> UserEnvironment) {
-    let _ = SOURCE.set(source);
+struct Source {
+    build: fn() -> UserEnvironment,
+    /// Changes when what `build` reads from has changed, such as a login shell
+    /// that answered after the first build gave up waiting for it.
+    generation: fn() -> u64,
 }
 
-/// Builds the environment now so the first spawn does not pay for it. A
-/// caller that arrives while this is still running waits for the same result.
+static SOURCE: OnceLock<Source> = OnceLock::new();
+static ENVIRONMENT: RwLock<Option<(u64, Arc<UserEnvironment>)>> = RwLock::new(None);
+
+/// Registers how to build the environment, and how to tell it has gone stale.
+/// A process that never registers one gives its children exactly what it
+/// inherited.
+pub fn provide(build: fn() -> UserEnvironment, generation: fn() -> u64) {
+    let _ = SOURCE.set(Source { build, generation });
+}
+
+/// Builds the environment now so the first spawn does not pay for it.
 pub fn warm() {
     let _ = environment();
 }
 
-fn environment() -> &'static UserEnvironment {
-    ENVIRONMENT.get_or_init(|| SOURCE.get().map(|source| source()).unwrap_or_default())
+fn environment() -> Arc<UserEnvironment> {
+    let Some(source) = SOURCE.get() else {
+        return Arc::default();
+    };
+    let generation = (source.generation)();
+    if let Ok(cached) = ENVIRONMENT.read() {
+        if let Some((built, environment)) = cached.as_ref() {
+            if *built == generation {
+                return environment.clone();
+            }
+        }
+    }
+    let mut cached = ENVIRONMENT
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some((built, environment)) = cached.as_ref() {
+        if *built == generation {
+            return environment.clone();
+        }
+    }
+    let environment = Arc::new((source.build)());
+    *cached = Some((generation, environment.clone()));
+    environment
 }
 
 /// A `Command` that runs with the user's environment, and finds `program` on
