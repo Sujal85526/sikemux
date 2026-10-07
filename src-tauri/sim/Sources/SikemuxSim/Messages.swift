@@ -22,7 +22,6 @@ struct Request: Decodable {
     let after: Int?
     let generation: Int?
     let limit: Int?
-    let fps: Int?
     let scale: Double?
     let format: String?
     let wait: Double?

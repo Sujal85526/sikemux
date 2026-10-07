@@ -12,7 +12,7 @@ actor Simulators {
     private var touch: [String: Task<SimulatorHID, Error>] = [:]
     private var tails: [String: Task<LogTail, Error>] = [:]
     private var boots: [String: Task<Void, Error>] = [:]
-    private var streams: [String: FrameStream] = [:]
+    private var streams: [String: Task<FrameStream, Error>] = [:]
     /// The orientation each device was last turned to here, for runtimes that cannot report it.
     private var turned: [String: String] = [:]
     /// Devices whose runtime cannot report its orientation, and so turns by the older event that
@@ -163,8 +163,8 @@ actor Simulators {
             Task { try? await following?.value.stop() }
         }
         for key in streams.keys where key.hasPrefix(udid + " ") {
-            let stream = streams.removeValue(forKey: key)
-            Task { await Self.stop(stream) }
+            let starting = streams.removeValue(forKey: key)
+            Task { await Self.stop(starting) }
         }
     }
 
@@ -258,9 +258,11 @@ actor Simulators {
         Task { try? await following?.value.stop() }
     }
 
-    /// One stream per device and format, shared by every viewer. H.264 sends a key frame each second so a
-    /// late viewer starts within one; MJPEG is for a viewer whose H.264 decoder will not start.
-    func stream(on udid: String?, format: String, fps: Int, scale: Double?) async throws -> [String: Any] {
+    /// One stream per device and format, shared by every viewer and stopped once the last has been gone
+    /// for `grace` seconds, so hiding and showing the screen again reuses it. Frames are encoded only when
+    /// the screen changes, at most 60 a second. Each new viewer is sent a key frame at once, and H.264
+    /// sends another every four seconds.
+    func stream(on udid: String?, format: String, scale: Double?) async throws -> [String: Any] {
         let simulator = try await booted(udid)
         let videoFormat: VideoStreamFormat
         switch format {
@@ -269,20 +271,58 @@ actor Simulators {
         default: throw Failure(reason: "badRequest", message: "Unknown stream format \(format). Use h264 or mjpeg.")
         }
         let key = "\(simulator.udid) \(format)"
-        if streams[key] == nil {
-            let stream = try FrameStream()
-            try await stream.listen()
+        let starting = streams[key] ?? Task {
             let configuration = VideoStreamConfiguration(
-                format: videoFormat, framesPerSecond: fps, rateControl: nil, scaleFactor: scale, keyFrameRate: 1)
-            stream.operation = try await simulator.videoStream.create(configuration: configuration, to: stream)
-            streams[key] = stream
+                format: videoFormat, framesPerSecond: nil, rateControl: nil, scaleFactor: scale, keyFrameRate: 4)
+            return try await Self.start(configuration, on: simulator, format: format) { [weak self] in
+                Task { await self?.stopWhenUnwatched(key) }
+            }
         }
-        let stream = streams[key]!
+        streams[key] = starting
+        let stream: FrameStream
+        do {
+            stream = try await starting.value
+        } catch {
+            if streams[key] == starting { streams[key] = nil }
+            throw error
+        }
+        stream.expectViewer()
+        Task { await stopWhenUnwatched(key) }
         var answer: [String: Any] = ["port": Int(stream.port), "token": stream.token, "format": format]
         if format == "h264" { answer["transport"] = "annex-b" }
         return answer
     }
 
+    static let grace: TimeInterval = 2
+
+    private static func start(
+        _ configuration: VideoStreamConfiguration, on simulator: Simulator, format: String, onQuiet: @escaping @Sendable () -> Void
+    ) async throws -> FrameStream {
+        let stream = try FrameStream(framesDependOnEachOther: format == "h264")
+        stream.onQuiet = onQuiet
+        do {
+            try await stream.listen()
+            let operation = try await simulator.videoStream.create(configuration: configuration, to: stream)
+            stream.operation = operation
+            if let video = operation as? SimulatorVideoStream { stream.requestKeyFrame = { video.requestKeyFrame() } }
+            stream.requestKeyFrame()
+            return stream
+        } catch {
+            stream.stop()
+            let name = format == "h264" ? "H.264" : "MJPEG"
+            throw Failure(reason: "streamUnavailable", message: "Could not start the \(name) screen stream: \(Failure.describe(error))")
+        }
+    }
+
+    private func stopWhenUnwatched(_ key: String) async {
+        guard let starting = streams[key] else { return }
+        try? await Task.sleep(nanoseconds: UInt64(Self.grace * 1_000_000_000))
+        guard streams[key] == starting, let stream = try? await starting.value, stream.unwatched(for: Self.grace) else { return }
+        streams[key] = nil
+        await Self.stop(starting)
+    }
+
+    /// Stops a device's streams at once, whoever is watching.
     func stopStream(on udid: String?, format: String?) async throws {
         let device = try find(udid).udid
         for key in streams.keys where key.hasPrefix(device + " ") && (format == nil || key == "\(device) \(format!)") {
@@ -290,9 +330,10 @@ actor Simulators {
         }
     }
 
-    private static func stop(_ stream: FrameStream?) async {
-        try? await stream?.operation?.stopStreaming()
-        stream?.stop()
+    private static func stop(_ starting: Task<FrameStream, Error>?) async {
+        guard let stream = try? await starting?.value else { return }
+        try? await stream.operation?.stopStreaming()
+        stream.stop()
     }
 
     func install(_ path: String, on udid: String?) async throws -> String {
