@@ -32,13 +32,20 @@ actor Simulators {
         }
     }
 
-    /// The device's screen in points, which is what touches are given in, and its pixels per point.
+    /// The device's screen in points as it is turned now, which is what touches are given in, which way it
+    /// is turned, and its pixels per point. Screenshots and streamed frames stay upright whichever way it is.
     func screen(_ udid: String?) async throws -> [String: Any] {
-        guard let info = try await booted(udid).screenInfo else {
+        guard let info = try await booted(udid).screenInfo, info.scale > 0 else {
             throw Failure(reason: "simulator", message: "The device did not report its screen size")
         }
         let scale = Double(info.scale)
-        return ["width": Double(info.widthPixels) / scale, "height": Double(info.heightPixels) / scale, "scale": scale]
+        let orientation = try await orientation(udid)
+        let size = Self.turnedSize(CGSize(width: Double(info.widthPixels) / scale, height: Double(info.heightPixels) / scale), orientation)
+        return ["width": size.width, "height": size.height, "scale": scale, "orientation": orientation]
+    }
+
+    static func turnedSize(_ upright: CGSize, _ orientation: String) -> CGSize {
+        orientation.hasPrefix("landscape") ? CGSize(width: upright.height, height: upright.width) : upright
     }
 
     func orient(_ udid: String?, to name: String) async throws {

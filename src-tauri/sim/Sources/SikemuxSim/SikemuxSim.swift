@@ -84,7 +84,7 @@ struct SikemuxSim {
             try await simulators.send(
                 .swipe(start.x, yStart: start.y, xEnd: end.x, yEnd: end.y, delta: 0, duration: request.duration ?? 0.3, edge: edge), to: udid)
         case "touch":
-            let point = try require(request.x, request.y)
+            let point = try await simulators.touchPoint(try require(request.x, request.y), on: udid)
             let direction: SimulatorHIDDirection
             switch try require(request.phase, "phase") {
             case "down", "move": direction = .down

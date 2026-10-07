@@ -20,4 +20,11 @@ final class PortraitPointTests: XCTestCase {
         XCTAssertEqual(Simulators.portraitPoint(point, turned: "portrait", screen: screen), point)
         XCTAssertEqual(Simulators.portraitPoint(point, turned: nil, screen: screen), point)
     }
+
+    func testATurnedScreenIsWiderThanItIsTall() {
+        XCTAssertEqual(Simulators.turnedSize(screen, "landscapeLeft"), CGSize(width: 874, height: 402))
+        XCTAssertEqual(Simulators.turnedSize(screen, "landscapeRight"), CGSize(width: 874, height: 402))
+        XCTAssertEqual(Simulators.turnedSize(screen, "portraitUpsideDown"), screen)
+        XCTAssertEqual(Simulators.turnedSize(screen, "faceUp"), screen)
+    }
 }
