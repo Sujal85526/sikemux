@@ -5,7 +5,9 @@ The first nightly on the 0.5.1 line. Nightlies are signed and delivered exactly 
 ## New since 0.5.0
 
 - **Agents can show you a page.** An agent builds a page, checks it with `page_preview`, and shows it with `page_show`, and the page sits right in its reply. Sikemux keeps the pages agents build.
+- **Spaces** switch in a full-width track with line icons, and you edit one with a right-click.
 - Stopping a background task no longer leaves the chat stuck working.
+- Picking an agent in the notch island brings Sikemux in front of the app you were in.
 - The desk's right edge shows again.
 - In the command palette, a command's description sits under its title.
 
