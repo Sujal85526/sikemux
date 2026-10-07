@@ -55,7 +55,7 @@ struct IslandView: View {
         case .peekDone: return geometry.notchWidth + 2 * FinishedWings.wing
         case .peekAsk: return 460
         case .connect: return 560
-        case .open, .drop: return 680
+        case .open, .drop: return geometry.hasNotch ? 680 : 560
         }
     }
 
@@ -127,7 +127,13 @@ struct IslandView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: geometry.height)
+        .frame(height: bandHeight)
+    }
+
+    /// Without a notch the menu bar is shorter than the header's controls, so an
+    /// expanded island takes a notch's height to keep them off the screen edge.
+    private var bandHeight: CGFloat {
+        expanded && !geometry.hasNotch ? max(geometry.height, 38) : geometry.height
     }
 
     @ViewBuilder
