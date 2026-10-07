@@ -187,3 +187,128 @@ jobs:
           PLAY_SERVICE_ACCOUNT: ${{ secrets.PLAY_SERVICE_ACCOUNT }}
           VERSION: ${{ steps.plan.outputs.version }}
         run: node mobile/app/scripts/play-release.mjs upload "$VERSION" "dist/Sikemux_${VERSION}_android.aab"
+
+  ios:
+    name: Build iOS and send it to TestFlight
+    runs-on: macos-26
+    timeout-minutes: 120
+    environment: release
+    env:
+      APP_VARIANT: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Resolve version and channel
+        id: plan
+        run: |
+          version="${GITHUB_REF_NAME#mobile-v}"
+          base="$(node -p "require('./mobile/app/app.json').expo.version")"
+          if [[ "${version%%-*}" != "$base" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME is not a release of $base, the version in mobile/app/app.json"
+            exit 1
+          fi
+          if [[ "$version" == *-* ]]; then channel=nightly; else channel=stable; fi
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "SIKEMUX_MOBILE_VERSION=$version" >>"$GITHUB_ENV"
+          echo "SIKEMUX_MOBILE_CHANNEL=$channel" >>"$GITHUB_ENV"
+          echo "EXPO_PUBLIC_COMMIT=$(git rev-parse --short=7 HEAD)" >>"$GITHUB_ENV"
+          echo "Releasing iOS $channel $version from $(git rev-parse HEAD)" >>"$GITHUB_STEP_SUMMARY"
+
+      # The newest Xcode on the image, leaving betas out.
+      - name: Choose Xcode
+        run: |
+          xcode="$(printf '%s\n' /Applications/Xcode_*.app | grep -vi beta | sort -V | tail -n 1)"
+          sudo xcode-select -s "$xcode"
+          xcodebuild -version | head -n 1 >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          package_json_file: mobile/package.json
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            mobile/pnpm-lock.yaml
+
+      - name: Setup Rust
+        run: |
+          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)"
+          rustup toolchain install "$channel" --profile minimal --no-self-update \
+            --target aarch64-apple-ios --target aarch64-apple-ios-sim
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri
+          shared-key: mobile-ios
+
+      - name: Install the desktop app's dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install phone dependencies
+        working-directory: mobile
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the Rust client
+        working-directory: mobile
+        run: pnpm native:ios:release
+
+      - name: Generate the iOS project
+        working-directory: mobile/app
+        run: node scripts/run.mjs prebuild ios production
+
+      # Xcode signs with the App Store Connect API key: it makes or fetches the certificate and the
+      # profiles for the app and its notification extension, and sends the build to TestFlight.
+      - name: Archive, sign and send to TestFlight
+        id: upload
+        working-directory: mobile/app/ios
+        env:
+          APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          key="$RUNNER_TEMP/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+          printf '%s\n' "$APP_STORE_CONNECT_KEY" >"$key"
+          auth=(-allowProvisioningUpdates -authenticationKeyPath "$key"
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID")
+          archive="$RUNNER_TEMP/Sikemux.xcarchive"
+          xcodebuild -workspace Sikemux.xcworkspace -scheme Sikemux -configuration Release \
+            -destination generic/platform=iOS -archivePath "$archive" "${auth[@]}" archive
+          cat >"$RUNNER_TEMP/export.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>D577WD6Z5U</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+            <key>uploadSymbols</key><true/>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath "$archive" -exportOptionsPlist "$RUNNER_TEMP/export.plist" \
+            -exportPath "$RUNNER_TEMP/export" "${auth[@]}"
+          rm "$key"
+          build="$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleVersion' "$archive/Info.plist")"
+          echo "build=$build" >>"$GITHUB_OUTPUT"
+          echo "Sent build $build to TestFlight" >>"$GITHUB_STEP_SUMMARY"
+
+      # The app brings its own standard encryption, so each build is asked about it; answering
+      # here keeps it from waiting at Missing Compliance once Apple has processed it.
+      - name: Answer the build's export compliance
+        working-directory: mobile/app
+        env:
+          APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          BUILD: ${{ steps.upload.outputs.build }}
+        run: node scripts/testflight.mjs compliance "$BUILD"
