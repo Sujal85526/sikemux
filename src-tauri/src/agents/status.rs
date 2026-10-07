@@ -3,11 +3,14 @@
 // `Unknown` is an honest answer rather than a failure.
 
 use std::collections::HashMap;
+use std::path::Path;
+use std::process::Stdio;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
+use super::accounts::{agent_account_status, agent_command};
 use super::AgentKind;
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
@@ -151,6 +154,82 @@ pub(super) fn opencode_status<'a>(
     }
 }
 
+/// Long enough for a CLI that starts slowly; a check that takes longer answers `Unknown`.
+const CHECK_TIMEOUT: Duration = Duration::from_secs(12);
+
+async fn exit_code_and_output(
+    agent: AgentKind,
+    program: &Path,
+    config_path: Option<&str>,
+    args: &[&str],
+) -> Option<(Option<i32>, String)> {
+    let mut command = agent_command(agent, program, config_path);
+    command
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    let output = tokio::time::timeout(CHECK_TIMEOUT, command.output())
+        .await
+        .ok()?
+        .ok()?;
+    Some((
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+    ))
+}
+
+/// Asks the agent's own CLI whether it is signed in, with the profile's environment so it answers
+/// for the right account. A check that fails or times out says `Unknown` rather than signed out.
+pub(super) async fn check_sign_in(
+    agent: AgentKind,
+    program: &Path,
+    config_path: Option<&str>,
+) -> AgentStatus {
+    match agent {
+        AgentKind::Claude | AgentKind::Codex => {
+            let account = agent_account_status(
+                agent,
+                Some(program.to_string_lossy().into_owned()),
+                config_path.map(str::to_string),
+            )
+            .await;
+            match account {
+                Ok(account) if account.is_signed_in() => AgentStatus::Ready {
+                    account: account.method().map(str::to_string),
+                },
+                Ok(_) => AgentStatus::SignedOut,
+                Err(_) => AgentStatus::Unknown,
+            }
+        }
+        AgentKind::Pi => {
+            match exit_code_and_output(agent, program, config_path, &["auth", "check", "--json"])
+                .await
+            {
+                Some((code, _)) => pi_status(code),
+                None => AgentStatus::Unknown,
+            }
+        }
+        AgentKind::Opencode => {
+            let Some((_, listing)) =
+                exit_code_and_output(agent, program, config_path, &["auth", "list"]).await
+            else {
+                return AgentStatus::Unknown;
+            };
+            let providers = crate::model_providers::environment(agent.as_str()).await;
+            let shell = sikemux_pty::user_shell::login_shell_environment();
+            let environment = shell
+                .iter()
+                .chain(providers.iter())
+                .map(|(name, value)| (name.as_str(), value.as_str()));
+            opencode_status(&listing, environment)
+        }
+        // Hermes answers in free text that changes with the provider, and Grok and OMP have no
+        // check; a chat that is refused for sign-in marks them signed out instead.
+        AgentKind::Hermes | AgentKind::Grok | AgentKind::Omp => AgentStatus::Unknown,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,6 +280,89 @@ mod tests {
         );
         forget_all_statuses();
         assert_eq!(cached_status(AgentKind::Claude, home), None);
+    }
+
+    #[cfg(unix)]
+    fn fake_cli(dir: &Path, script: &str) -> std::path::PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join("agent");
+        std::fs::write(&path, format!("#!/bin/sh\n{script}\n")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn pi_is_asked_with_auth_check() {
+        let dir = tempfile::tempdir().unwrap();
+        let ready = fake_cli(
+            dir.path(),
+            r#"[ "$1 $2" = "auth check" ] && exit 0; exit 64"#,
+        );
+        assert_eq!(
+            check_sign_in(AgentKind::Pi, &ready, None).await,
+            AgentStatus::Ready { account: None }
+        );
+        let signed_out = fake_cli(dir.path(), "exit 1");
+        assert_eq!(
+            check_sign_in(AgentKind::Pi, &signed_out, None).await,
+            AgentStatus::SignedOut
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn opencode_is_asked_for_its_credentials() {
+        let dir = tempfile::tempdir().unwrap();
+        let listed = fake_cli(
+            dir.path(),
+            r#"[ "$1 $2" = "auth list" ] && printf '┌  Credentials\n│\n└  2 credentials\n'"#,
+        );
+        assert_eq!(
+            check_sign_in(AgentKind::Opencode, &listed, None).await,
+            AgentStatus::Ready { account: None }
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn claude_answers_through_its_account_check() {
+        let dir = tempfile::tempdir().unwrap();
+        let signed_in = fake_cli(
+            dir.path(),
+            r#"[ "$1" = "--version" ] && echo "2.1.0 (Claude Code)" && exit 0
+[ "$1 $2" = "auth status" ] && echo '{"loggedIn":true,"authMethod":"claude.ai","email":"a@b.c"}' && exit 0
+exit 64"#,
+        );
+        assert_eq!(
+            check_sign_in(AgentKind::Claude, &signed_in, None).await,
+            AgentStatus::Ready {
+                account: Some("subscription".into())
+            }
+        );
+        let other = tempfile::tempdir().unwrap();
+        let signed_out = fake_cli(
+            other.path(),
+            r#"[ "$1" = "--version" ] && echo "2.1.0 (Claude Code)" && exit 0
+echo '{"loggedIn":false,"authMethod":"none"}'; exit 1"#,
+        );
+        assert_eq!(
+            check_sign_in(AgentKind::Claude, &signed_out, None).await,
+            AgentStatus::SignedOut
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn agents_without_a_check_say_they_cannot_tell() {
+        let dir = tempfile::tempdir().unwrap();
+        let program = fake_cli(dir.path(), "exit 0");
+        for agent in [AgentKind::Hermes, AgentKind::Grok, AgentKind::Omp] {
+            assert_eq!(
+                check_sign_in(agent, &program, None).await,
+                AgentStatus::Unknown
+            );
+        }
     }
 
     #[test]

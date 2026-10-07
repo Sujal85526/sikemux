@@ -255,6 +255,17 @@ pub struct AgentAccountStatus {
     sessions: Option<String>,
 }
 
+impl AgentAccountStatus {
+    pub(super) fn is_signed_in(&self) -> bool {
+        self.signed_in
+    }
+
+    /// How the account signs in, such as `subscription` or `apiKey`.
+    pub(super) fn method(&self) -> Option<&str> {
+        self.method.as_deref()
+    }
+}
+
 fn parse_claude_status(text: &str) -> Option<AgentAccountStatus> {
     let status: Value = serde_json::from_str(text.trim()).ok()?;
     let text_of = |key: &str| {
@@ -307,7 +318,11 @@ fn parse_codex_status(result: &Value) -> AgentAccountStatus {
     }
 }
 
-fn agent_command(agent: AgentKind, executable: &Path, config_path: Option<&str>) -> Command {
+pub(super) fn agent_command(
+    agent: AgentKind,
+    executable: &Path,
+    config_path: Option<&str>,
+) -> Command {
     let mut command = Command::from(sikemux_process::user_environment::command(executable));
     apply_login_environment(&mut command);
     apply_process_config(&mut command, agent.as_str(), config_path);
