@@ -1,8 +1,8 @@
 name: Mobile release
 run-name: Mobile release ${{ github.ref_name }}
 
-# A phone release starts from a mobile-v* tag, separate from the Mac's v* tags, and waits for the
-# owner's approval on the release environment like the Mac release does.
+# A phone release starts from a mobile-v* tag, separate from the Mac's v* tags. A stable one waits
+# for the owner's approval on the release environment; a nightly publishes once its checks pass.
 on:
   push:
     tags: ["mobile-v*"]
@@ -15,11 +15,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  approve:
+    name: Approve the stable release
+    if: ${{ !contains(github.ref_name, '-nightly.') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: approval
+    steps:
+      - name: Approved
+        run: echo "Approved ${GITHUB_REF_NAME}" >>"$GITHUB_STEP_SUMMARY"
+
   android:
     name: Build, verify, and publish Android
     runs-on: ubuntu-latest
     timeout-minutes: 90
     environment: release
+    needs: approve
+    if: ${{ !cancelled() && (needs.approve.result == 'success' || needs.approve.result == 'skipped') }}
     permissions:
       contents: write
     env:
@@ -193,6 +205,8 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 120
     environment: release
+    needs: approve
+    if: ${{ !cancelled() && (needs.approve.result == 'success' || needs.approve.result == 'skipped') }}
     env:
       APP_VARIANT: production
     steps:

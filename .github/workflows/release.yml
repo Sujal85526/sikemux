@@ -15,6 +15,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  approve:
+    name: Approve the stable release
+    if: ${{ !contains(github.ref_name, '-nightly.') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: approval
+    steps:
+      - name: Approved
+        run: echo "Approved ${GITHUB_REF_NAME}" >>"$GITHUB_STEP_SUMMARY"
+
   pushed-checks:
     name: Checks already run on this commit
     runs-on: ubuntu-latest
@@ -49,10 +59,11 @@ jobs:
 
   release:
     name: Build, verify, and publish
-    needs: [pushed-checks, checks]
+    needs: [approve, pushed-checks, checks]
     if: >-
       !cancelled() && needs.pushed-checks.result == 'success' &&
-      (needs.pushed-checks.outputs.passed == 'true' || needs.checks.result == 'success')
+      (needs.pushed-checks.outputs.passed == 'true' || needs.checks.result == 'success') &&
+      (needs.approve.result == 'success' || needs.approve.result == 'skipped')
     runs-on: macos-26
     timeout-minutes: 90
     environment: release

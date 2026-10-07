@@ -17,7 +17,7 @@ If a release fails before it publishes, fix it and move the tag onto the fix. On
 git tag -f v0.4.1 && git push -f origin v0.4.1
 ```
 
-The workflow takes its signing material from the `release` environment:
+Every release takes its signing material from the `release` environment:
 
 | Name                                                                                                                                       | Kind                    | Needed for         |
 | ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------- | ------------------ |
@@ -25,7 +25,7 @@ The workflow takes its signing material from the `release` environment:
 | `RELEASE_NOTARIZED`                                                                                                                        | variable, `1` to enable | notarized releases |
 | `APPLE_CERTIFICATE` (base64 `.p12`), `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | secrets                 | notarized releases |
 
-Limit the environment's deployment refs to `main`, `release/*`, and `v*` tags, and add yourself as a required reviewer so nothing publishes unapproved.
+The `release` environment holds the secrets and has no reviewer. A stable release first waits on its "Approve the stable release" job, which runs on the `approval` environment: that one holds nothing and has the owner as its required reviewer. A nightly skips the approval and publishes as soon as its checks pass. The approval can be given while the checks are still running.
 
 Run `scripts/release.sh` locally without `--publish` to preview a release: it builds, signs, and verifies everything without touching GitHub.
 
@@ -107,7 +107,7 @@ If you have an Apple Developer membership, set `RELEASE_NOTARIZED=1` with the De
 
 ## Releasing the phone app
 
-The phone app releases on its own schedule from the **Mobile release** workflow, started by a `mobile-v*` tag. Only the owner can create, move or delete one, and like a Mac release it waits for the owner's approval on the `release` environment.
+The phone app releases on its own schedule from the **Mobile release** workflow, started by a `mobile-v*` tag. Only the owner can create, move or delete one. Like a Mac release, a stable one waits for the owner's approval on the `release` environment, and a nightly publishes once its checks pass.
 
 ```bash
 git tag mobile-v0.1.0-nightly.1 && git push origin mobile-v0.1.0-nightly.1
