@@ -8,8 +8,7 @@ export function useSimulatorReveal(): void {
         const controller = new AbortController();
         void simApi
             .subscribeAttached(({ agentId, udid, name }) => {
-                const id = cmd.openDeskSimulator(agentId, { focus: false });
-                cmd.setDeskSimulatorDevice(agentId, id, { udid, name });
+                cmd.openDeskSimulator(agentId, { focus: false, device: { udid, name } });
             }, controller.signal)
             .catch(() => {});
         return () => controller.abort();

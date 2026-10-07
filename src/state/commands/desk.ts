@@ -372,25 +372,44 @@ export function openDeskTerminal(
     return id;
 }
 
-/** Shows the iOS Simulator on the agent's desk; a desk has one, which the person and the agent share. */
-export function openDeskSimulator(agentId: string, opts: { focus?: boolean } = {}): string {
+function agentHasPane(state: Pick<StoreState, "windows">, agentId: string): boolean {
+    return Object.values(state.windows).some((win) => collectPanes(win.root).some((pane) => pane.id === agentId));
+}
+
+/**
+ * Shows the iOS Simulator on the agent's desk; a desk has one, which the person and the agent share.
+ * Without focus it only comes to the front of a desk that shows nothing else.
+ */
+export function openDeskSimulator(agentId: string, opts: { focus?: boolean; device?: DeskSimulatorDevice } = {}): string | null {
+    if (!agentHasPane(getState(), agentId)) return null;
+    const focus = opts.focus ?? true;
     let id = "";
-    openDesk(agentId, { focus: opts.focus ?? true });
+    openDesk(agentId, { focus });
     mutate((d) => {
         const desk = ensureDesk(d, agentId);
+        const showing = shownDeskItem(desk, deskItemsOf(d, agentId));
         let simulator = desk.simulators[0];
         if (!simulator) {
             simulator = { id: newId("desk-simulator"), udid: null, deviceName: null };
             desk.simulators.push(simulator);
             desk.order.push(simulatorKey(simulator.id));
         }
-        desk.active = simulatorKey(simulator.id);
+        if (opts.device) {
+            simulator.udid = opts.device.udid;
+            simulator.deviceName = opts.device.name;
+        }
+        if (focus || showing === null) desk.active = simulatorKey(simulator.id);
         id = simulator.id;
     });
     return id;
 }
 
-export function setDeskSimulatorDevice(agentId: string, id: string, device: { udid: string; name: string } | null): void {
+export interface DeskSimulatorDevice {
+    udid: string;
+    name: string;
+}
+
+export function setDeskSimulatorDevice(agentId: string, id: string, device: DeskSimulatorDevice | null): void {
     mutate((d) => {
         const simulator = d.desks[agentId]?.simulators.find((candidate) => candidate.id === id);
         if (!simulator) return;
