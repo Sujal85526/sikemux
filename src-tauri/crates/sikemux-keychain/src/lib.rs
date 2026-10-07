@@ -62,7 +62,7 @@ fn security(args: &[&str], input: Option<&[u8]>) -> KeychainResult<std::process:
         ));
     }
     sikemux_process::run(
-        sikemux_process::user_environment::command("security").args(args),
+        sikemux_process::user_environment::command("/usr/bin/security").args(args),
         input,
         TIMEOUT,
         OUTPUT_LIMIT,
