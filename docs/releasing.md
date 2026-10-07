@@ -9,7 +9,7 @@ git tag v0.4.1 && git push origin v0.4.1
 
 `make preflight` runs the two checks the pre-push hook does not: it launches the real app the way CI's desktop E2E job does, and builds the DMG against its size limit. Either failing would otherwise surface only in the Release run.
 
-A run is titled with its tag, so the approval names what it will publish, and it stops if the tag disagrees with `package.json`. The workflow reads the version from `package.json`, runs the full CI suite, then builds, verifies, and publishes with `scripts/release.sh`. A prerelease version goes to the nightly channel and any other version to stable. Only one release runs at a time, and each run keeps its built artifacts.
+A run is titled with its tag, so the approval names what it will publish, and it stops if the tag disagrees with `package.json`. The workflow reads the version from `package.json` and builds and verifies with `scripts/release.sh` while the full CI suite runs. Once both pass, `scripts/publish-release.sh` publishes the build. A prerelease version goes to the nightly channel and any other version to stable. Only one release runs at a time, and each run keeps its built artifacts.
 
 If a release fails before it publishes, fix it and move the tag onto the fix. Only the owner can move a release tag, and moving it starts a fresh run:
 

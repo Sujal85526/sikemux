@@ -57,18 +57,17 @@ jobs:
     if: needs.pushed-checks.outputs.passed != 'true'
     uses: ./.github/workflows/ci.yml
 
-  release:
-    name: Build, verify, and publish
-    needs: [approve, pushed-checks, checks]
-    if: >-
-      !cancelled() && needs.pushed-checks.result == 'success' &&
-      (needs.pushed-checks.outputs.passed == 'true' || needs.checks.result == 'success') &&
-      (needs.approve.result == 'success' || needs.approve.result == 'skipped')
+  # The build runs alongside the checks; only publishing waits for them.
+  build:
+    name: Build and verify
+    needs: approve
+    if: ${{ !cancelled() && (needs.approve.result == 'success' || needs.approve.result == 'skipped') }}
     runs-on: macos-26
     timeout-minutes: 90
     environment: release
-    permissions:
-      contents: write
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      channel: ${{ steps.plan.outputs.channel }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -137,7 +136,7 @@ jobs:
           while read -r existing; do keychains+=("${existing//\"/}"); done < <(security list-keychains -d user)
           security list-keychains -d user -s "${keychains[@]}"
 
-      - name: Build, verify, and publish
+      - name: Build and verify
         env:
           GH_TOKEN: ${{ github.token }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -169,3 +168,33 @@ jobs:
             src-tauri/target/release/bundle/latest.json
             src-tauri/binaries/sikemux-voice-*
             latest.json
+
+  publish:
+    name: Publish
+    needs: [build, pushed-checks, checks]
+    if: >-
+      !cancelled() && needs.build.result == 'success' && needs.pushed-checks.result == 'success' &&
+      (needs.pushed-checks.outputs.passed == 'true' || needs.checks.result == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Fetch the verified build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sikemux-${{ needs.build.outputs.version }}
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+          CHANNEL: ${{ needs.build.outputs.channel }}
+        run: |
+          flags=()
+          [[ "$CHANNEL" == "nightly" ]] && flags+=(--nightly)
+          ./scripts/publish-release.sh "$VERSION" "$(cat RELEASE_NOTES.md)" "${flags[@]}"
