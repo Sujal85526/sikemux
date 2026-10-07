@@ -73,6 +73,8 @@ export interface FrontendPlugin {
     readonly surfaces: readonly PluginSurface[];
     readonly open: () => void;
     readonly openTitle: string;
+    /** Its logo in its own colours, on each call an agent makes to its tools. */
+    readonly mark?: (size: number) => ReactNode;
     /** A default shortcut for `open`, like "Alt+KeyA"; people can change it in Settings. */
     readonly openShortcut?: string;
     readonly shortcuts?: readonly PluginShortcut[];

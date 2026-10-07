@@ -28,5 +28,6 @@ registerFrontendPlugin({
     ],
     open: openJira,
     openTitle: "Open Jira",
+    mark: (size) => <JiraMark size={size} />,
     TopBarItem: JiraTopBar,
 });

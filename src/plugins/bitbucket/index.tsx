@@ -41,5 +41,6 @@ registerFrontendPlugin({
     surfaces: [],
     open: () => void openGitArea("pulls"),
     openTitle: "Open Bitbucket",
+    mark: (size) => <BitbucketMark size={size} className="icon-bitbucket" />,
     TopBarItem: hostCiGlyph(BITBUCKET_PLUGIN_ID),
 });
