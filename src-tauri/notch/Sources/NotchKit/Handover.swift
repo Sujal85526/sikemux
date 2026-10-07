@@ -13,7 +13,7 @@ enum Handover {
     static func claim(stateDir: String, dev: Bool) -> Bool {
         try? FileManager.default.createDirectory(atPath: stateDir, withIntermediateDirectories: true)
         let path = lockPath(stateDir: stateDir, dev: dev)
-        let descriptor = open(path, O_RDWR | O_CREAT, 0o600)
+        let descriptor = open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0o600)
         guard descriptor >= 0 else { return false }
         if flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
             if let text = try? String(contentsOfFile: path, encoding: .utf8),
@@ -39,7 +39,7 @@ enum Handover {
 
     /// Whether Sikemux Dev's helper is running now.
     static func devIsRunning(stateDir: String) -> Bool {
-        let descriptor = open(lockPath(stateDir: stateDir, dev: true), O_RDONLY)
+        let descriptor = open(lockPath(stateDir: stateDir, dev: true), O_RDONLY | O_CLOEXEC)
         guard descriptor >= 0 else { return false }
         defer { close(descriptor) }
         if flock(descriptor, LOCK_SH | LOCK_NB) == 0 {
