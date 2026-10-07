@@ -7,8 +7,11 @@ import Foundation
 /// The device work. One per helper process, so CoreSimulator is loaded once and HID connections are reused.
 actor Simulators {
     private var control: SimulatorControlBootstrap?
-    private var touch: [String: SimulatorHID] = [:]
-    private var tails: [String: (tail: LogTail, task: Task<Void, Never>)] = [:]
+    /// Each table holds a task from the moment it starts, so a second request arriving while the
+    /// first is still connecting waits for it instead of starting another.
+    private var touch: [String: Task<SimulatorHID, Error>] = [:]
+    private var tails: [String: Task<LogTail, Error>] = [:]
+    private var boots: [String: Task<Void, Error>] = [:]
     private var streams: [String: FrameStream] = [:]
     /// The orientation each device was last turned to here, for runtimes that cannot report it.
     private var turned: [String: String] = [:]
@@ -17,8 +20,9 @@ actor Simulators {
     private var portraitTouches: Set<String> = []
 
     func devices() throws -> [[String: Any]] {
-        try set().allSimulators.map { simulator in
-            [
+        try iPhones().map { simulator in
+            if simulator.state != .booted { forget(simulator.udid) }
+            return [
                 "udid": simulator.udid,
                 "name": simulator.name,
                 "state": simulator.state == .booted ? "booted" : simulator.state == .shutdown ? "shutdown" : "busy",
@@ -51,8 +55,11 @@ actor Simulators {
     /// Older runtimes cannot report the orientation, so the last one set here stands in, else portrait.
     func orientation(_ udid: String?) async throws -> String {
         let simulator = try await booted(udid)
-        if let current = try? await simulator.orientation.current() { return "\(current.rawValue)" }
-        portraitTouches.insert(simulator.udid)
+        do {
+            return try await simulator.orientation.current().rawValue
+        } catch where unsupportedSimulatorCapability(in: error) != nil {
+            portraitTouches.insert(simulator.udid)
+        } catch {}
         return turned[simulator.udid] ?? "portrait"
     }
 
@@ -112,16 +119,53 @@ actor Simulators {
         }
     }
 
+    /// Boots a device, or waits for the boot already under way, until it can be used.
     func boot(_ udid: String?) async throws {
         let simulator = try find(udid)
-        if simulator.state != .booted { try await simulator.lifecycle.boot(.default) }
-        try await simulator.lifecycle.resolveUsable()
+        if simulator.state != .booted { forget(simulator.udid) }
+        let booting = boots[simulator.udid] ?? Task { try await Self.bootUntilUsable(simulator) }
+        boots[simulator.udid] = booting
+        defer { if boots[simulator.udid] == booting { boots[simulator.udid] = nil } }
+        try await booting.value
+    }
+
+    static let bootLimit: TimeInterval = 150
+
+    private static func bootUntilUsable(_ simulator: Simulator) async throws {
+        let started = Date()
+        func deadline() -> PollDeadline {
+            PollDeadline(timeout: max(bootLimit - Date().timeIntervalSince(started), 1), waitingFor: "\(simulator.name) to boot")
+        }
+        do {
+            if simulator.state == .shuttingDown { try await TargetResolveLeavesState(simulator, .shuttingDown, deadline: deadline()) }
+            if simulator.state == .shutdown { try await simulator.lifecycle.boot(SimulatorBootConfiguration(options: [], environment: [:])) }
+            try await simulator.lifecycle.resolveUsable(deadline: deadline())
+        } catch is PollTimeoutError {
+            throw Failure(
+                reason: "bootTimeout",
+                message: "\(simulator.name) did not finish booting in \(Int(bootLimit)) seconds. Shut it down and boot it again.")
+        }
     }
 
     func shutdown(_ udid: String?) async throws {
         let simulator = try find(udid)
-        touch[simulator.udid] = nil
+        forget(simulator.udid)
         try await set().shutdown(simulator)
+    }
+
+    /// Drops what is held for a device that is not running, whoever shut it down, so its next use starts afresh.
+    private func forget(_ udid: String) {
+        touch[udid] = nil
+        turned[udid] = nil
+        portraitTouches.remove(udid)
+        for key in tails.keys where key.hasPrefix(udid + " ") {
+            let following = tails.removeValue(forKey: key)
+            Task { try? await following?.value.stop() }
+        }
+        for key in streams.keys where key.hasPrefix(udid + " ") {
+            let stream = streams.removeValue(forKey: key)
+            Task { await Self.stop(stream) }
+        }
     }
 
     /// `pointSize` draws one pixel per point, a ninth of a Retina screenshot's pixels, for agents to read.
@@ -141,41 +185,53 @@ actor Simulators {
     }
 
     /// Looks again every quarter second until `wait` runs out, since a label is often still on its way in
-    /// just after a tap, a key press or a screen change.
+    /// just after a tap, a key press or a screen change, and a screen just booted has no accessibility yet.
     func frame(of label: String, on udid: String?, wait: TimeInterval) async throws -> CGRect {
         let automation = try await booted(udid).uiAutomation(backend: .accessibility)
         let deadline = Date().addingTimeInterval(wait)
         while true {
             do {
                 return try await automation.frame(.marker(value: label, key: .label, depth: .max))
-            } catch UIAutomationError.elementNotFound, UIAutomationError.elementNotOnScreen {
+            } catch UIAutomationError.elementNotFound, UIAutomationError.elementNotOnScreen, AccessibilityError.noTranslationObject {
                 guard Date() < deadline else { throw Failure(reason: "notFound", message: "Nothing labelled \"\(label)\" is on screen") }
                 try await Task.sleep(nanoseconds: 250_000_000)
             }
         }
     }
 
+    /// A connection that fails is dropped and made again once, since the device may have restarted
+    /// since it was made.
     func send(_ event: SimulatorHIDEvent, to udid: String?) async throws {
         let simulator = try await booted(udid)
-        let hid: SimulatorHID
-        if let connected = touch[simulator.udid] {
-            hid = connected
-        } else {
-            hid = try await simulator.hid.connect()
-            touch[simulator.udid] = hid
+        let connecting = connection(to: simulator)
+        do {
+            try await connecting.value.send(event: event, logger: simulator.logger)
+        } catch where !(error is CancellationError) {
+            if touch[simulator.udid] == connecting { touch[simulator.udid] = nil }
+            try await connection(to: simulator).value.send(event: event, logger: simulator.logger)
         }
-        try await hid.send(event: event, logger: simulator.logger)
+    }
+
+    private func connection(to simulator: Simulator) -> Task<SimulatorHID, Error> {
+        if let connecting = touch[simulator.udid] { return connecting }
+        let connecting = Task { try await simulator.hid.connect() }
+        touch[simulator.udid] = connecting
+        return connecting
     }
 
     /// Starts following a device's log the first time it is asked for, filtered to one process if one is named.
     /// Once the whole device is followed, a process's lines come from there, kept since it started.
     func logs(on udid: String?, process: String?, after cursor: Int, generation: Int?, limit: Int) async throws -> [String: Any] {
         let simulator = try await booted(udid)
-        if let process, let device = tails["\(simulator.udid) "] {
-            return device.tail.read(process: process, after: cursor, limit: limit, generation: generation)
+        if let process, tails["\(simulator.udid) "] != nil {
+            return try await follow(simulator, process: nil).read(process: process, after: cursor, limit: limit, generation: generation)
         }
+        return try await follow(simulator, process: process).read(after: cursor, limit: limit, generation: generation)
+    }
+
+    private func follow(_ simulator: Simulator, process: String?) async throws -> LogTail {
         let key = "\(simulator.udid) \(process ?? "")"
-        if tails[key] == nil {
+        let following = tails[key] ?? Task {
             let tail = LogTail()
             var arguments = ["--style", "compact"]
             if let process {
@@ -185,17 +241,21 @@ actor Simulators {
                 // subsystem to exclude them by; ordinary log messages at Info and above keep an app's own.
                 arguments += ["--type", "log", "--level", "info", "--predicate", "NOT (subsystem BEGINSWITH \"com.apple.\")"]
             }
-            let operation = try await simulator.log.tail(arguments: arguments, consumer: tail.consumer)
-            tail.attach(operation)
-            let task = Task { _ = try? await operation.waitUntilCompleted() }
-            tails[key] = (tail, task)
+            tail.attach(try await simulator.log.tail(arguments: arguments, consumer: tail.consumer))
+            return tail
         }
-        return tails[key]!.tail.read(after: cursor, limit: limit, generation: generation)
+        tails[key] = following
+        do {
+            return try await following.value
+        } catch {
+            if tails[key] == following { tails[key] = nil }
+            throw error
+        }
     }
 
     func stopLogs(on udid: String?, process: String?) throws {
-        let key = "\(try find(udid).udid) \(process ?? "")"
-        tails.removeValue(forKey: key)?.task.cancel()
+        let following = tails.removeValue(forKey: "\(try find(udid).udid) \(process ?? "")")
+        Task { try? await following?.value.stop() }
     }
 
     /// One stream per device and format, shared by every viewer. H.264 sends a key frame each second so a
@@ -226,10 +286,13 @@ actor Simulators {
     func stopStream(on udid: String?, format: String?) async throws {
         let device = try find(udid).udid
         for key in streams.keys where key.hasPrefix(device + " ") && (format == nil || key == "\(device) \(format!)") {
-            let stream = streams.removeValue(forKey: key)
-            try? await stream?.operation?.stopStreaming()
-            stream?.stop()
+            await Self.stop(streams.removeValue(forKey: key))
         }
+    }
+
+    private static func stop(_ stream: FrameStream?) async {
+        try? await stream?.operation?.stopStreaming()
+        stream?.stop()
     }
 
     func install(_ path: String, on udid: String?) async throws -> String {
@@ -262,8 +325,17 @@ actor Simulators {
         return started.set
     }
 
+    /// The iOS devices whose runtime is installed; watchOS, tvOS and visionOS ones, and any left
+    /// behind by a deleted runtime, cannot be driven here.
+    private func iPhones() throws -> [Simulator] {
+        try set().allSimulators.filter { simulator in
+            let runtime: SimRuntime? = simulator.device.runtime
+            return simulator.device.available && runtime?.available == true && runtime?.platformIdentifier == "com.apple.platform.iphonesimulator"
+        }
+    }
+
     private func find(_ udid: String?) throws -> Simulator {
-        let simulators = try set().allSimulators
+        let simulators = try iPhones()
         if simulators.isEmpty {
             throw Failure(reason: "noRuntime", message: "No iOS simulators. Add an iOS runtime in Xcode > Settings > Components.")
         }
@@ -282,6 +354,7 @@ actor Simulators {
     private func booted(_ udid: String?) async throws -> Simulator {
         let simulator = try find(udid)
         guard simulator.state == .booted else {
+            forget(simulator.udid)
             throw Failure(reason: "notBooted", message: "\(simulator.name) is not running. Boot it first.")
         }
         return simulator

@@ -14,14 +14,18 @@ final class LogTail: @unchecked Sendable {
     private var all = Lines()
     private var byProcess: [String: (lines: Lines, used: Int)] = [:]
     private var uses = 0
-    private(set) var operation: (any LogOperation)?
+    private var following: Task<Void, Never>?
 
     lazy var consumer: any DataConsumer = FBBlockDataConsumer.asynchronousLineConsumer { [weak self] line in
         self?.append(line)
     }
 
     func attach(_ operation: any LogOperation) {
-        self.operation = operation
+        following = Task { _ = try? await operation.waitUntilCompleted() }
+    }
+
+    func stop() {
+        following?.cancel()
     }
 
     func append(_ line: String) {

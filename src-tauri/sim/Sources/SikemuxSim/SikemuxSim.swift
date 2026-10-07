@@ -22,6 +22,8 @@ struct SikemuxSim {
         }
         for await line in lines {
             switch Request.read(line) {
+            case let .success(request) where Self.input.contains(request.type):
+                lanes.run(on: request.udid) { await respond(to: request, with: simulators) }
             case let .success(request):
                 Task { await respond(to: request, with: simulators) }
             case let .failure(unreadable):
@@ -29,6 +31,10 @@ struct SikemuxSim {
             }
         }
     }
+
+    /// What a finger or a key does on a device, kept in the order it arrived, one at a time per device.
+    static let input: Set<String> = ["tap", "swipe", "touch", "touchPath", "touch2Path", "key", "text", "button"]
+    static let lanes = InputLanes()
 
     static func respond(to request: Request, with simulators: Simulators) async {
         do {
@@ -67,8 +73,10 @@ struct SikemuxSim {
             try await simulators.send(.tapAt(x: point.x, y: point.y, duration: request.duration ?? 0.05), to: udid)
         case "tapLabel":
             let frame = try await simulators.frame(of: try require(request.label, "label"), on: udid, wait: min(max(request.wait ?? 2, 0), 30))
-            let center = try await simulators.touchPoint(CGPoint(x: frame.midX, y: frame.midY), on: udid)
-            try await simulators.send(.tapAt(x: center.x, y: center.y, duration: 0.05), to: udid)
+            try await lanes.run(on: udid) {
+                let center = try await simulators.touchPoint(CGPoint(x: frame.midX, y: frame.midY), on: udid)
+                try await simulators.send(.tapAt(x: center.x, y: center.y, duration: 0.05), to: udid)
+            }.value
             return ["frame": ["x": frame.minX, "y": frame.minY, "width": frame.width, "height": frame.height]]
         case "swipe":
             let from = try require(request.x, request.y), to = try require(request.toX, request.toY)
@@ -218,5 +226,27 @@ struct SikemuxSim {
         ok = await step("tree") { "\(String(describing: try await simulators.tree(udid)).count) characters" } && ok
         ok = await step("tap") { try await simulators.send(.tapAt(x: 1, y: 1), to: udid); return "at 1,1" } && ok
         exit(ok ? 0 : 1)
+    }
+}
+
+/// One queue per device for input, so a person's touches and an agent's taps or typing never
+/// interleave on the same screen. Different devices, and everything that is not input, run at once.
+final class InputLanes: @unchecked Sendable {
+    private let lock = NSLock()
+    private var last: [String: Task<Void, Never>] = [:]
+
+    /// Starts `work` once everything queued before it on the device has finished.
+    @discardableResult
+    func run<T: Sendable>(on udid: String?, _ work: @escaping @Sendable () async throws -> T) -> Task<T, Error> {
+        lock.lock()
+        defer { lock.unlock() }
+        let key = udid ?? ""
+        let previous = last[key]
+        let task = Task<T, Error> {
+            await previous?.value
+            return try await work()
+        }
+        last[key] = Task { _ = try? await task.value }
+        return task
     }
 }
