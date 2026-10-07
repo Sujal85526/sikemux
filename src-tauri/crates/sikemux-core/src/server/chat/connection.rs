@@ -248,6 +248,7 @@ impl Turns {
                             }
                             None => {
                                 settle();
+                                answering.answered.store(true, Ordering::Release);
                                 answering.emit(ChatEventKind::TurnCompleted, payload);
                             }
                         }
@@ -409,20 +410,7 @@ pub(super) async fn run(
 
                 let tool_servers = servers(&chat, &launch);
                 let can_load = initialize.agent_capabilities.load_session;
-                let (session_id, mut setup) = if let Some(existing) = launch.resume_id.clone() {
-                    if !initialize.agent_capabilities.load_session {
-                        return Err(agent_client_protocol::Error::invalid_params()
-                            .data("This agent cannot load existing sessions"));
-                    }
-                    let response = connection
-                        .send_request(native::LoadSession(
-                            LoadSessionRequest::new(existing.clone(), &launch.cwd)
-                                .mcp_servers(tool_servers),
-                        ))
-                        .block_task()
-                        .await?;
-                    (existing, response.0)
-                } else {
+                let open_new = async |tool_servers: Vec<McpServer>| {
                     let response = connection
                         .send_request(native::NewSession(
                             NewSessionRequest::new(&launch.cwd).mcp_servers(tool_servers),
@@ -438,7 +426,31 @@ pub(super) async fn run(
                                 .data("The agent opened a session without an id")
                         })?
                         .to_owned();
-                    (session_id, response.0)
+                    Ok::<_, agent_client_protocol::Error>((session_id, response.0))
+                };
+                let (session_id, mut setup) = if let Some(existing) = launch.resume_id.clone() {
+                    if !initialize.agent_capabilities.load_session {
+                        return Err(agent_client_protocol::Error::invalid_params()
+                            .data("This agent cannot load existing sessions"));
+                    }
+                    let loaded = connection
+                        .send_request(native::LoadSession(
+                            LoadSessionRequest::new(existing.clone(), &launch.cwd)
+                                .mcp_servers(tool_servers.clone()),
+                        ))
+                        .block_task()
+                        .await;
+                    match loaded {
+                        Ok(response) => (existing, response.0),
+                        // A chat whose turns all failed may have nothing saved
+                        // to load, and starting again is all there is to do.
+                        Err(_) if quiet_load && !chat.has_answered() => {
+                            open_new(tool_servers).await?
+                        }
+                        Err(error) => return Err(error),
+                    }
+                } else {
+                    open_new(tool_servers).await?
                 };
                 let _ = loaded_session.set(session_id.clone());
 

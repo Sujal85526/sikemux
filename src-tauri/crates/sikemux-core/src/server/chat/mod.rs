@@ -112,6 +112,8 @@ pub(crate) struct Chat {
     /// The agent is working on a turn nobody here prompted.
     pub unprompted: AtomicBool,
     turned: AtomicBool,
+    /// A turn of this chat was answered, so its provider has it saved.
+    pub answered: AtomicBool,
     approving: AtomicBool,
 }
 
@@ -380,6 +382,12 @@ impl Chat {
         }
     }
 
+    /// Whether the provider has a saved session to load: one a turn answered,
+    /// or one the chat was resumed from.
+    pub(crate) fn has_answered(&self) -> bool {
+        self.answered.load(Ordering::Acquire) || self.launch.resume_id.is_some()
+    }
+
     fn kept_by_provider(&self) -> bool {
         self.turned.load(Ordering::Acquire) || self.launch.resume_id.is_some()
     }
@@ -585,6 +593,7 @@ impl Chats {
             running: AtomicBool::new(false),
             unprompted: AtomicBool::new(false),
             turned: AtomicBool::new(false),
+            answered: AtomicBool::new(false),
             approving: AtomicBool::new(crate::acp::approves_for_user(&launch.permission_mode)),
             current: Mutex::new(launch.clone()),
             launch,

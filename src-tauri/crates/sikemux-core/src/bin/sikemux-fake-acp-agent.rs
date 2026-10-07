@@ -16,7 +16,8 @@
 //! has run out of usage, and every turn on it fails the way Claude's adapter
 //! reports that. When `FAKE_ACP_SIGN_IN` names a file, the process reads who
 //! is signed in from it once, as it starts, and refuses every prompt while
-//! nobody was.
+//! nobody was. With `FAKE_ACP_STRICT_LOAD` set, loading a session that never
+//! saved a turn fails the way Claude's adapter does.
 
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
@@ -284,6 +285,17 @@ fn handle(agent: &Arc<Agent>, message: Value, sessions: &AtomicU64) {
                 &id,
                 json!({ "sessionId": session_id, "configOptions": agent.config() }),
             );
+        }
+        ("session/load", Some(id))
+            if std::env::var_os("FAKE_ACP_STRICT_LOAD").is_some()
+                && !history_file(params["sessionId"].as_str().unwrap_or_default())
+                    .is_some_and(|path| path.exists()) =>
+        {
+            agent.send(json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": { "code": -32002, "message": "Resource not found", "data": { "uri": params["sessionId"] } },
+            }));
         }
         ("session/load", Some(id)) => {
             let session_id = params["sessionId"].as_str().unwrap_or_default().to_owned();

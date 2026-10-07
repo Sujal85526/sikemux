@@ -668,3 +668,39 @@ async fn a_chat_out_of_accounts_says_so_and_takes_one_the_person_picks() {
     chat.until_kind(ChatEventKind::TurnCompleted).await;
     assert_eq!(chat.text(), "account spare");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_chat_signed_in_after_its_agent_started_answers_on_a_fresh_session() {
+    let core = TestCore::start();
+    let (client, mut chat) = core.connect().await;
+    let history = tempfile::tempdir().expect("history");
+    let sign_in = history.path().join("signed-in");
+    std::fs::write(&sign_in, "").expect("sign out");
+    let mut launch = account_launch("agent-n", history.path(), "");
+    launch.env.insert(
+        "FAKE_ACP_SIGN_IN".into(),
+        sign_in.to_string_lossy().into_owned(),
+    );
+    launch.env.insert("FAKE_ACP_STRICT_LOAD".into(), "1".into());
+    let start = client.acp_start(launch).await.expect("start");
+
+    // The agent read the sign-in before this, and its session saved nothing.
+    std::fs::write(&sign_in, "me").expect("sign in");
+    client
+        .acp_prompt("agent-n".into(), "who".into(), Vec::new(), Vec::new())
+        .await
+        .expect("prompt");
+    let ready = chat
+        .until(|event| {
+            event.kind == ChatEventKind::Ready
+                && event.payload["sessionId"] != start.session_id.as_str()
+        })
+        .await;
+    assert_ne!(ready.payload["sessionId"], start.session_id.as_str());
+    chat.until_kind(ChatEventKind::TurnCompleted).await;
+    assert_eq!(chat.text(), "account personal");
+    assert!(chat
+        .heard
+        .iter()
+        .all(|event| event.kind != ChatEventKind::Error));
+}
