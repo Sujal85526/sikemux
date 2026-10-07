@@ -290,6 +290,7 @@ export const AVAILABLE_AGENTS = [
     command: "claude",
     available: true,
     defaultModel: "opus",
+    status: { state: "ready", account: "subscription" },
     defaultEffort: "high",
   },
   {
@@ -298,6 +299,7 @@ export const AVAILABLE_AGENTS = [
     command: "codex",
     available: true,
     defaultModel: "gpt-5.5",
+    status: { state: "signedOut" },
     defaultEffort: "medium",
   },
   {
@@ -306,6 +308,7 @@ export const AVAILABLE_AGENTS = [
     command: "hermes",
     available: true,
     defaultModel: null,
+    status: { state: "unknown" },
     defaultEffort: null,
   },
   {
@@ -314,6 +317,7 @@ export const AVAILABLE_AGENTS = [
     command: "pi",
     available: true,
     defaultModel: null,
+    status: { state: "ready", account: null },
     defaultEffort: null,
   },
   {
@@ -322,6 +326,7 @@ export const AVAILABLE_AGENTS = [
     command: "opencode",
     available: true,
     defaultModel: null,
+    status: { state: "ready", account: "apiKey" },
     defaultEffort: null,
   },
 ];
