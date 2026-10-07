@@ -394,6 +394,7 @@ async fn publish_fake_agent_asking(app: &CoreClient, permission_mode: &str) {
         permission_mode: permission_mode.into(),
         account: None,
         fallbacks: Vec::new(),
+        status: None,
     };
     let project = ProjectInfo {
         id: "sess-tmp".into(),

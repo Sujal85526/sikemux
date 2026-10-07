@@ -929,6 +929,9 @@ pub struct ChatLauncher {
     pub account: Option<ChatAccount>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fallbacks: Vec<ChatAccount>,
+    /// Whether the agent is ready, signed out, missing or broken, as the app last saw it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 }
 
 /// What a device learns about a launcher: never its program or environment.
@@ -942,6 +945,9 @@ pub struct LauncherInfo {
     /// The `configOptions` the provider's last session offered, such as its
     /// models and effort levels, or null before one has started.
     pub config_options: Value,
+    /// Whether the agent is ready, signed out, missing or broken; absent when the app has not said.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

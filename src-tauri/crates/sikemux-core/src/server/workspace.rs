@@ -323,6 +323,7 @@ impl Workspaces {
                         .get(&launcher.provider)
                         .cloned()
                         .unwrap_or(Value::Null),
+                    status: launcher.status.clone(),
                 })
                 .collect(),
             palette: published.palette.clone(),
@@ -505,6 +506,7 @@ mod tests {
             permission_mode: "bypass".into(),
             account: None,
             fallbacks: Vec::new(),
+            status: None,
         }
     }
 
@@ -557,6 +559,25 @@ mod tests {
         assert!(shown.contains("Claude Code (work)"));
         assert!(!shown.contains("secret"));
         assert!(!shown.contains("adapter.js"));
+    }
+
+    #[test]
+    fn a_device_sees_whether_each_launcher_is_signed_in() {
+        let workspaces = Workspaces::default();
+        let signed_out = ChatLauncher {
+            status: Some("signedOut".into()),
+            ..launcher()
+        };
+        workspaces
+            .publish(vec![project()], vec![signed_out])
+            .unwrap();
+        let view = workspaces.view();
+        assert_eq!(view.launchers[0].status.as_deref(), Some("signedOut"));
+        workspaces
+            .publish(vec![project()], vec![launcher()])
+            .unwrap();
+        let shown = serde_json::to_value(workspaces.view()).unwrap();
+        assert!(shown["launchers"][0].get("status").is_none());
     }
 
     #[test]

@@ -107,6 +107,7 @@ async fn publish(socket: &Path) -> Result<(), Failure> {
         permission_mode: "workspace-write".into(),
         account: None,
         fallbacks: Vec::new(),
+        status: None,
     };
     let project = ProjectInfo {
         id: "tmp".into(),
