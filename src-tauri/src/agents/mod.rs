@@ -3,6 +3,7 @@ mod config;
 pub(crate) mod executable;
 pub(crate) mod models;
 pub(crate) mod sessions;
+pub(crate) mod status;
 pub(crate) mod usage;
 pub(crate) mod watch;
 
