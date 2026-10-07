@@ -29,6 +29,7 @@ mod markdown;
 mod model_providers;
 mod notch;
 pub mod observability;
+mod pages;
 mod plugins;
 mod ports;
 mod preview;
@@ -77,9 +78,10 @@ pub(crate) fn install_tls_crypto() {
 
 /// The app window only ever shows the app. A link that would load another
 /// page in it would replace the whole workspace and end every running shell.
+/// WebKit asks the same of every frame, so the chat's page frames pass too.
 fn main_window_may_load(url: &tauri::Url) -> bool {
     match url.scheme() {
-        "tauri" => url.host_str() == Some("localhost"),
+        "tauri" | "page" => url.host_str() == Some("localhost"),
         "http" if cfg!(debug_assertions) => {
             url.host_str() == Some("localhost") && url.port() == Some(1420)
         }
@@ -258,6 +260,8 @@ pub fn run() {
         .manage(VoiceManager::default())
         .manage(preview::Previews::default())
         .register_asynchronous_uri_scheme_protocol(preview::SCHEME, preview::handle)
+        .manage(pages::Pages::default())
+        .register_asynchronous_uri_scheme_protocol(pages::SCHEME, pages::handle)
         .invoke_handler(tauri::generate_handler![
             acp::acp_start,
             acp::acp_attach,
@@ -361,6 +365,9 @@ pub fn run() {
             fs::read_text_file_limited,
             fs::open_in_default_app,
             preview::preview_file,
+            pages::page_theme,
+            pages::page_publish,
+            pages::page_open,
             document_preview::document_preview_show,
             document_preview::document_preview_hide,
             fs::write_file,
@@ -540,6 +547,8 @@ mod main_window_navigation_tests {
         assert!(allows("tauri://localhost/"));
         assert!(allows("tauri://localhost/index.html#settings"));
         assert!(allows("http://localhost:1420/"));
+        assert!(allows("page://localhost/0123456789abcdef0123456789abcdef"));
+        assert!(!allows("page://evil.example/"));
         assert!(!allows("https://example.com/"));
         assert!(!allows("http://localhost:3000/"));
         assert!(!allows("tauri://evil.example/"));

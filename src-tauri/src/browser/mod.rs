@@ -393,6 +393,11 @@ pub struct BrowserManager {
 }
 
 impl BrowserManager {
+    /// A loopback address a tab can load `path` from.
+    pub(crate) fn local_file_url(&self, path: &Path) -> Result<String, String> {
+        self.local_files.url_for(path)
+    }
+
     pub fn snapshot(&self, agent_id: &str) -> AppResult<BrowserSnapshot> {
         validate_agent_id(agent_id)?;
         Ok(self
