@@ -4,6 +4,8 @@ import type { Agent, AgentPermissionMode, ProviderProfile } from "../state/types
 import * as cmd from "../state/commands";
 import { getState } from "../state/store";
 import { acpAccount, fallbackAccounts } from "../agents/accounts";
+import { noteSignedOut } from "../agents/statusRefresh";
+import { swallow } from "../state/toast";
 import type { FoldMemory } from "./longText";
 import { eventMessage, failureOf, permissionRequest, promptAction, recordOf, statusFromEvent } from "./acpEvents";
 import { permissionModeOf } from "./chatStatus";
@@ -178,8 +180,12 @@ export function useAcpSession({
             } else if (event.kind === "permission_request") {
                 const request = permissionRequest(event.payload);
                 if (request) dispatch({ type: "permission_requested", request });
-            } else if (event.kind === "error") dispatch({ type: "error", message: eventMessage(event), failure: failureOf(event) });
-            else if (event.kind === "reattach") {
+            } else if (event.kind === "error") {
+                const failure = failureOf(event);
+                dispatch({ type: "error", message: eventMessage(event), failure });
+                if (failure?.kind === "signIn")
+                    void noteSignedOut(agentRef.current.type, profile?.configPath).catch(swallow("mark agent signed out"));
+            } else if (event.kind === "reattach") {
                 reattachingRef.current = true;
                 setRestartKey((value) => value + 1);
             }

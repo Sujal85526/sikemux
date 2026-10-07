@@ -1,5 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { agentApi } from "../api/agents";
+import type { AgentType } from "../state/types";
 import { invalidate } from "../state/resources";
 import { swallow } from "../state/toast";
 
@@ -45,4 +46,14 @@ export function watchFocusForAgentStatus(refresh: () => Promise<void> = statusRe
         unlisten?.();
         window.removeEventListener("focus", onFocus);
     };
+}
+
+/** A chat refused for sign-in: the account is signed out now, whatever its CLI last said. */
+export async function noteSignedOut(
+    agent: AgentType,
+    configPath: string | undefined,
+    deps: Pick<StatusRefreshDeps, "invalidate"> & { mark: typeof agentApi.markSignedOut } = { invalidate, mark: agentApi.markSignedOut },
+): Promise<void> {
+    await deps.mark(agent, configPath);
+    deps.invalidate((kind) => kind === "agents.catalog" || kind === "agents.account");
 }
