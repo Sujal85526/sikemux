@@ -262,6 +262,7 @@
     "allow-simulator-set-enabled",
     "allow-simulator-setup",
     "allow-simulator-attachments",
-    "allow-simulator-set-desk-device"
+    "allow-simulator-set-desk-device",
+    "allow-simulator-orientation"
   ]
 }

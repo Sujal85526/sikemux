@@ -245,6 +245,7 @@ export const IPC_COMMANDS = [
     "simulator_setup",
     "simulator_attachments",
     "simulator_set_desk_device",
+    "simulator_orientation",
 ] as const;
 
 export type IpcCommand = (typeof IPC_COMMANDS)[number];

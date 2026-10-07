@@ -224,6 +224,7 @@ pub fn run() {
             let sim = SimManager::default();
             _app.manage(sim.clone());
             _app.manage(SimulatorManager::for_app(_app.handle().clone(), sim));
+            tauri::async_runtime::spawn_blocking(simulator::offered);
             wheel::watch(_app.handle());
             _app.state::<PtyManager>().start(_app.handle());
             // See-through window — same recipe as nackle (NSWindow opaque=NO,
@@ -518,6 +519,7 @@ pub fn run() {
             simulator::simulator_setup,
             simulator::simulator_attachments,
             simulator::simulator_set_desk_device,
+            simulator::simulator_orientation,
         ])
         .build(tauri::generate_context!())
         .expect("error while building sikemux")
@@ -553,6 +555,9 @@ pub fn run() {
                 }
                 if let Some(voice) = app_handle.try_state::<VoiceManager>() {
                     voice.drain();
+                }
+                if let Some(simulators) = app_handle.try_state::<SimulatorManager>() {
+                    simulators.drain();
                 }
                 if let Some(sim) = app_handle.try_state::<SimManager>() {
                     sim.drain();

@@ -6,6 +6,7 @@
 mod harness;
 mod manifest;
 
+use std::collections::HashMap;
 use std::io::{BufRead, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -14,6 +15,7 @@ use std::time::Duration;
 use serde_json::{json, Value};
 
 use manifest::{Manifest, Tool};
+use sikemux_core::cli::protocol::{SIM_CANCEL_METHOD, SIM_OFFERED_METHOD};
 
 const LATEST_PROTOCOL_VERSION: &str = "2025-11-25";
 const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &[
@@ -23,6 +25,8 @@ const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &[
     LATEST_PROTOCOL_VERSION,
 ];
 const PARENT_CHECK_INTERVAL: Duration = Duration::from_secs(2);
+/// Asking whether to list the simulator tools must not hold up the host's handshake for long.
+const OFFER_TIMEOUT: Duration = Duration::from_secs(3);
 
 pub fn run() -> i32 {
     let agent_id = match agent_id() {
@@ -33,9 +37,16 @@ pub fn run() -> i32 {
         }
     };
     watch_parent();
-    let simulator = std::env::var_os("SIKEMUX_TOOLS_SIMULATOR").is_some();
+    let simulator = simulator_offered(&agent_id);
     serve(Arc::new(Manifest::load().offering(simulator)), agent_id);
     0
+}
+
+/// The app decides whether this agent gets the simulator tools, for chats it
+/// started and chats a phone started alike, and remembers what it said.
+fn simulator_offered(agent_id: &str) -> bool {
+    harness::call_within(agent_id, SIM_OFFERED_METHOD, &json!({}), OFFER_TIMEOUT)
+        .is_ok_and(|answer| answer["offered"] == true)
 }
 
 fn agent_id() -> Result<String, String> {
@@ -131,6 +142,7 @@ fn serve(manifest: Arc<Manifest>, agent_id: String) {
     let plugins = Arc::new(PluginTools::default());
     let relay: Arc<Relay<'static>> =
         Arc::new(move |method: &str, params: &Value| harness::call(&agent_id, method, params));
+    let calls = Arc::new(Calls::default());
     for line in std::io::stdin().lock().lines() {
         let Ok(line) = line else { break };
         if line.trim().is_empty() {
@@ -145,8 +157,17 @@ fn serve(manifest: Arc<Manifest>, agent_id: String) {
         };
         let params = message.get("params").cloned().unwrap_or_else(|| json!({}));
         let Some(id) = message.get("id").filter(|id| !id.is_null()).cloned() else {
-            if method == "notifications/initialized" {
-                initialized.store(true, Ordering::Release);
+            match method {
+                "notifications/initialized" => initialized.store(true, Ordering::Release),
+                "notifications/cancelled" => {
+                    if let Some(name) = params.get("requestId").and_then(|id| calls.cancel(id)) {
+                        if name.starts_with("sim_") {
+                            let relay = Arc::clone(&relay);
+                            std::thread::spawn(move || relay(SIM_CANCEL_METHOD, &json!({})));
+                        }
+                    }
+                }
+                _ => {}
             }
             continue;
         };
@@ -176,21 +197,55 @@ fn serve(manifest: Arc<Manifest>, agent_id: String) {
                 name,
                 arguments,
             } => {
-                let (manifest, plugins, relay) = (
+                let (manifest, plugins, relay, calls) = (
                     Arc::clone(&manifest),
                     Arc::clone(&plugins),
                     Arc::clone(&relay),
+                    Arc::clone(&calls),
                 );
+                calls.start(&id, &name);
                 // A call waits on the app, so it runs off the read loop; a host
                 // that pipelines a ping behind a navigation still gets answered.
                 std::thread::spawn(move || {
-                    emit(&reply(
-                        id,
-                        call(&manifest, &plugins, &*relay, &name, &arguments),
-                    ));
+                    let answer = call(&manifest, &plugins, &*relay, &name, &arguments);
+                    if calls.finish(&id) {
+                        emit(&reply(id, answer));
+                    }
                 });
             }
         }
+    }
+}
+
+/// Tool calls still running, by request id. A call the host cancelled is
+/// not answered, as MCP asks.
+#[derive(Default)]
+struct Calls(Mutex<HashMap<String, (String, bool)>>);
+
+impl Calls {
+    fn start(&self, id: &Value, name: &str) {
+        self.lock().insert(id.to_string(), (name.to_owned(), false));
+    }
+
+    /// Marks the call cancelled, and names its tool.
+    fn cancel(&self, id: &Value) -> Option<String> {
+        let mut calls = self.lock();
+        let (name, cancelled) = calls.get_mut(&id.to_string())?;
+        *cancelled = true;
+        Some(name.clone())
+    }
+
+    /// Whether the finished call should still be answered.
+    fn finish(&self, id: &Value) -> bool {
+        self.lock()
+            .remove(&id.to_string())
+            .is_none_or(|(_, cancelled)| !cancelled)
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, (String, bool)>> {
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
 

@@ -14,7 +14,10 @@ use sikemux_pty::output_log::{OutputPage, OutputQuery};
 use tokio::sync::watch;
 use tokio::time::Instant;
 
-use crate::cli::protocol::{is_browser_method, is_plugin_method, is_sim_method, HarnessRequest};
+use crate::cli::protocol::{
+    is_browser_method, is_plugin_method, is_sim_method, HarnessRequest, SIM_CANCEL_METHOD,
+    SIM_OFFERED_METHOD,
+};
 use crate::harness::command::{command_cwd, command_label, command_task_id, COMMAND_TASK_PREFIX};
 use crate::harness::journal::{JournalRecord, Journals};
 use crate::harness::runs::{CommandLaunch, Launch, Run, RunStatus, Runs, RunsRecord};
@@ -931,7 +934,7 @@ async fn output_appears(
 /// method. Listing plugin tools is not a call.
 fn tool_name(request: &HarnessRequest) -> Option<String> {
     match request.method.as_str() {
-        "plugins.tools" => None,
+        "plugins.tools" | SIM_OFFERED_METHOD | SIM_CANCEL_METHOD => None,
         "plugins.call" => request
             .params
             .get("tool")

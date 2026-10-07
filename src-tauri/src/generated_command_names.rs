@@ -245,4 +245,5 @@ pub const IPC_COMMANDS: &[&str] = &[
     "simulator_setup",
     "simulator_attachments",
     "simulator_set_desk_device",
+    "simulator_orientation",
 ];

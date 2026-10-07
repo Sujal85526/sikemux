@@ -88,7 +88,11 @@ export const simApi = {
     text: (udid: string, text: string) => call<void>({ type: "text", udid, text }),
     key: (udid: string, key: string) => call<void>({ type: "key", udid, key }),
     button: (udid: string, button: SimButton) => call<void>({ type: "button", udid, button }),
-    orientation: (udid: string, orientation: SimOrientation) => call<void>({ type: "orientation", udid, orientation }),
+    /** Turns the device, or without an orientation reads which way it is turned; resolves to the orientation. */
+    orientation: (udid: string, orientation?: SimOrientation) => invoke<SimOrientation>("simulator_orientation", { udid, orientation }),
+    /** Drags a finger from one point to another, in device points. */
+    swipe: (udid: string, from: { x: number; y: number }, to: { x: number; y: number }, durationMs?: number) =>
+        call<void>({ type: "swipe", udid, x: from.x, y: from.y, toX: to.x, toY: to.y, duration: durationMs == null ? undefined : durationMs / 1000 }),
     screenshot: (udid: string, path: string) => call<{ path: string }>({ type: "screenshot", udid, path }),
     /**
      * Streams the screen through the app; resolves to the id `unwatch` takes.

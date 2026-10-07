@@ -207,8 +207,13 @@ pub fn is_browser_method(method: &str) -> bool {
     BROWSER_METHODS.contains(&method)
 }
 
+/// The tools server asks this as it starts: whether its agent gets the simulator tools.
+pub const SIM_OFFERED_METHOD: &str = "sim.offered";
+/// The tools server sends this when the agent cancels a simulator call it is waiting on.
+pub const SIM_CANCEL_METHOD: &str = "sim.cancel";
+
 pub fn is_sim_method(method: &str) -> bool {
-    SIM_METHODS.contains(&method)
+    SIM_METHODS.contains(&method) || method == SIM_OFFERED_METHOD || method == SIM_CANCEL_METHOD
 }
 
 pub fn is_plugin_method(method: &str) -> bool {

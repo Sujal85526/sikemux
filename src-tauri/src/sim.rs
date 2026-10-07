@@ -311,7 +311,11 @@ fn parse_reply(line: &str) -> Option<(u64, Reply)> {
                 .get("message")
                 .and_then(Value::as_str)
                 .unwrap_or("the simulator failed");
-            Some((id, Err(AppError::Other(message.to_owned()))))
+            let message = match fields.get("reason").and_then(Value::as_str) {
+                Some(reason @ "streamUnavailable") => format!("{message} ({reason})"),
+                _ => message.to_owned(),
+            };
+            Some((id, Err(AppError::Other(message))))
         }
         _ => None,
     }
@@ -773,6 +777,15 @@ mod tests {
             UNREAD_FRAMES as usize + 5,
             "reading on once the page catches up"
         );
+    }
+
+    #[test]
+    fn a_stream_the_helper_cannot_encode_says_so_by_name() {
+        let (_, reply) = parse_reply(
+            r#"{"id":4,"type":"error","reason":"streamUnavailable","message":"No H.264 encoder."}"#,
+        )
+        .unwrap();
+        assert!(reply.unwrap_err().to_string().contains("streamUnavailable"));
     }
 
     #[test]

@@ -62,7 +62,14 @@ fn fake_app(proving_token: &'static str, answer: Value) -> FakeSikemux {
 
 impl FakeSikemux {
     fn relay(&self, method: &str, params: Value) -> Result<Value, String> {
-        harness::relay(&self.endpoint, "/project", "agent-one", method, &params)
+        harness::relay(
+            &self.endpoint,
+            "/project",
+            "agent-one",
+            method,
+            &params,
+            harness::REPLY_TIMEOUT,
+        )
     }
 
     fn received(self) -> Value {
@@ -309,6 +316,7 @@ fn a_missing_app_fails_without_a_connection() {
             "agent-one",
             "workspace.inspect",
             &json!({}),
+            harness::REPLY_TIMEOUT,
         ),
         Err("Sikemux is not running".into())
     );
