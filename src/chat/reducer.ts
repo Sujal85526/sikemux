@@ -9,6 +9,7 @@ import type {
     AcpContentChunk,
     AcpSubagent,
     AcpTaskNotice,
+    AgentNotice,
     AcpToolCall,
     ChatAction,
     ChatMessage,
@@ -408,6 +409,20 @@ function patchTask(state: ChatState, update: Record<string, unknown>): ChatState
     return { ...state, tasks, revision: state.revision + 1 };
 }
 
+function agentNotice(state: ChatState, update: Record<string, unknown>): ChatState {
+    const title = textOf(update.title);
+    /* The stopped task's own line already says so. */
+    if (!title || title === "Task stopped by user") return state;
+    const severity = update.severity === "warning" || update.severity === "error" ? update.severity : "info";
+    const description = textOf(update.description);
+    const notice: AgentNotice = { severity, title, ...(description ? { description } : {}) };
+    return {
+        ...state,
+        ...appendPart(state, { id: `agent-notice-${state.revision}`, kind: "agent_notice", notice }),
+        revision: state.revision + 1,
+    };
+}
+
 function contextUsage(update: Record<string, unknown>): ContextUsage | null {
     const { used, size } = update;
     if (typeof used !== "number" || typeof size !== "number" || !Number.isFinite(used) || !Number.isFinite(size) || size <= 0) return null;
@@ -459,6 +474,8 @@ function sessionUpdate(state: ChatState, sessionId: string, update: Record<strin
         case "async_task_progress":
         case "async_task_state_update":
             return patchTask(state, update);
+        case "notice":
+            return agentNotice(state, update);
         case "plan":
             return { ...state, plan: update, suppressUserEcho: false, revision: state.revision + 1 };
         case "available_commands_update":

@@ -749,6 +749,21 @@ describe("chat reducer", () => {
         expect(stopped.messages[0].parts[0]).toEqual({ id: "notice-task-1", kind: "notice", notice: { name: "Build", state: "stopped" } });
     });
 
+    it("shows the agent's notices in the transcript, apart from its own word on a stopped task", () => {
+        const warned = update(initialChatState, {
+            sessionUpdate: "notice",
+            severity: "warning",
+            title: "Fast mode turned off",
+            description: "Usage limit.",
+        });
+        expect(warned.messages[0].parts[0]).toMatchObject({
+            kind: "agent_notice",
+            notice: { severity: "warning", title: "Fast mode turned off", description: "Usage limit." },
+        });
+
+        expect(update(warned, { sessionUpdate: "notice", severity: "info", title: "Task stopped by user", description: "Build." })).toBe(warned);
+    });
+
     it("keeps the plan, title and config the session reports", () => {
         const plan = { sessionUpdate: "plan", entries: [{ content: "Write tests", status: "pending" }] };
         const state = replay(initialChatState, [

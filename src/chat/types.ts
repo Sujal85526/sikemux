@@ -82,6 +82,13 @@ export interface AcpTaskNotice {
     summary?: string;
 }
 
+/** Something the agent tells the person outside its reply, like a model fallback. */
+export interface AgentNotice {
+    severity: "info" | "warning" | "error";
+    title: string;
+    description?: string;
+}
+
 /** The chat moved to another of the person's accounts, by itself at a usage limit or when asked. */
 export interface AccountMove {
     label: string;
@@ -105,6 +112,7 @@ export type ChatPart =
     | { id: string; kind: "tool"; tool: AcpToolCall; diff?: ToolDiff; output?: ToolOutput; failure?: string; startedAt?: number; endedAt?: number }
     | { id: string; kind: "subagent"; subagent: AcpSubagent }
     | { id: string; kind: "notice"; notice: AcpTaskNotice }
+    | { id: string; kind: "agent_notice"; notice: AgentNotice }
     | { id: string; kind: "account"; move: AccountMove };
 
 export interface ChatMessage {
