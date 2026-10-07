@@ -94,6 +94,8 @@
     "allow-state-load",
     "allow-state-save",
     "allow-available-agents",
+    "allow-refresh-agent-statuses",
+    "allow-mark-agent-signed-out",
     "allow-agent-models",
     "allow-agent-usage",
     "allow-agent-account-add",

@@ -339,6 +339,8 @@ pub fn run() {
             state::state_load,
             state::state_save,
             agents::executable::available_agents,
+            agents::status::refresh_agent_statuses,
+            agents::status::mark_agent_signed_out,
             agents::models::agent_models,
             agents::usage::agent_usage,
             agents::accounts::agent_account_add,

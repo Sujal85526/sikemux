@@ -76,6 +76,8 @@ pub const IPC_COMMANDS: &[&str] = &[
     "state_load",
     "state_save",
     "available_agents",
+    "refresh_agent_statuses",
+    "mark_agent_signed_out",
     "agent_models",
     "agent_usage",
     "agent_account_add",

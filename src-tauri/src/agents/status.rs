@@ -68,10 +68,24 @@ pub(crate) fn forget_status(agent: AgentKind, config_path: Option<&str>) {
 }
 
 /// Forgets every answer, as when the person comes back to the app after signing in somewhere else.
-pub(crate) fn forget_all_statuses() {
+fn forget_all_statuses() {
     if let Ok(mut cache) = status_cache().lock() {
         cache.clear();
     }
+}
+
+/// Forgets every status, so the next look asks each agent again. Called when the person comes back
+/// to the app, since they may have signed in or out in a terminal meanwhile.
+#[tauri::command]
+pub fn refresh_agent_statuses() {
+    forget_all_statuses();
+}
+
+/// Marks an account signed out at once, when a chat on it was refused for sign-in. Its own CLI may
+/// still think it is signed in, for example when the token was revoked.
+#[tauri::command]
+pub fn mark_agent_signed_out(agent: AgentKind, config_path: Option<String>) {
+    remember_status(agent, config_path.as_deref(), AgentStatus::SignedOut);
 }
 
 /// Provider keys OpenCode reads from the environment; any one of them is a way in.
@@ -377,6 +391,22 @@ echo '{"loggedIn":false,"authMethod":"none"}'; exit 1"#,
                 AgentStatus::Unknown
             );
         }
+    }
+
+    #[test]
+    fn a_chat_refused_for_sign_in_marks_its_account_signed_out() {
+        let profile = "/tmp/sikemux-status-refused";
+        remember_status(
+            AgentKind::Codex,
+            Some(profile),
+            AgentStatus::Ready { account: None },
+        );
+        mark_agent_signed_out(AgentKind::Codex, Some(profile.to_string()));
+        assert_eq!(
+            cached_status(AgentKind::Codex, Some(profile)),
+            Some(AgentStatus::SignedOut)
+        );
+        forget_status(AgentKind::Codex, Some(profile));
     }
 
     #[test]
