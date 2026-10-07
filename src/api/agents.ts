@@ -3,6 +3,14 @@ import { getIpcTransport, type IpcUnsubscribe } from "./transport";
 import type { AgentRuntimeProfile } from "../agents/agentProfiles";
 import type { AgentEffort, AgentType } from "../state/types";
 
+/** Whether an agent can be used right now; `unknown` when its CLI has no way to say if it is signed in. */
+export type AgentStatus =
+    | { state: "missing" }
+    | { state: "broken"; reason: string }
+    | { state: "signedOut" }
+    | { state: "ready"; account: string | null }
+    | { state: "unknown" };
+
 export interface AgentInfo {
     type: AgentType;
     label: string;
@@ -16,6 +24,7 @@ export interface AgentInfo {
     defaultModel: string | null;
     /** Effective reasoning effort inherited from the CLI's own user configuration. */
     defaultEffort: AgentEffort | null;
+    status?: AgentStatus;
 }
 
 export interface AgentModelInfo {
@@ -152,6 +161,9 @@ export interface SavedSessionContext {
 
 export const agentApi = {
     available: fetchAvailable,
+    /** Forgets every agent's status, so the next look asks each one again. */
+    refreshStatuses: (): Promise<void> => invoke<void>("refresh_agent_statuses"),
+    markSignedOut: (agent: AgentType, configPath?: string): Promise<void> => invoke<void>("mark_agent_signed_out", { agent, configPath }),
     models: (agent: AgentType, executablePath?: string, configPath?: string): Promise<AgentModelInfo[]> =>
         invoke<AgentModelInfo[]>("agent_models", { agent, executablePath, configPath }),
     usage: (agent: AgentType, executablePath?: string, configPath?: string): Promise<AgentUsage> =>
