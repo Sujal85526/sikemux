@@ -61,8 +61,7 @@ struct SikemuxSim {
             let jpeg = request.format == "jpeg"
             let shot = try await simulators.screenshot(udid, jpeg: jpeg, pointSize: request.pointSize ?? false)
             if let given = request.path {
-                let path = (given as NSString).expandingTildeInPath
-                try shot.data.write(to: URL(fileURLWithPath: path))
+                let path = try writeScreenshot(shot.data, to: given)
                 return ["path": path, "bytes": shot.data.count, "width": shot.width, "height": shot.height]
             }
             return [jpeg ? "jpeg" : "png": shot.data.base64EncodedString(), "width": shot.width, "height": shot.height]
@@ -146,6 +145,23 @@ struct SikemuxSim {
             throw Failure(reason: "protocol", message: "Unknown request \(request.type)")
         }
         return [:]
+    }
+
+    /// Writes to `given`, `~` meaning the home folder, into a folder that must already exist.
+    static func writeScreenshot(_ data: Data, to given: String) throws -> String {
+        let path = (given as NSString).expandingTildeInPath
+        guard path.hasPrefix("/") else { throw Failure(reason: "badRequest", message: "A screenshot path must be absolute: \(given)") }
+        var isFolder: ObjCBool = false
+        let folder = (path as NSString).deletingLastPathComponent
+        guard FileManager.default.fileExists(atPath: folder, isDirectory: &isFolder), isFolder.boolValue else {
+            throw Failure(reason: "badRequest", message: "There is no folder \(folder) to save the screenshot in")
+        }
+        do {
+            try data.write(to: URL(fileURLWithPath: path))
+        } catch {
+            throw Failure(reason: "badRequest", message: "Could not save the screenshot to \(path): \(Failure.describe(error))")
+        }
+        return path
     }
 
     private static func require<T>(_ value: T?, _ name: String) throws -> T {

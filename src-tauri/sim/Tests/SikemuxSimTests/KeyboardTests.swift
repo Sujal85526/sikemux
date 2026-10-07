@@ -25,4 +25,8 @@ final class KeyboardTests: XCTestCase {
             XCTAssertTrue(failure.message.contains("é"))
         }
     }
+
+    func testEveryLineEndingTypesAsReturn() throws {
+        XCTAssertEqual(try Keyboard.keys(for: "a\r\nb\rc\n").map(\.code), [4, 40, 5, 40, 6, 40])
+    }
 }
