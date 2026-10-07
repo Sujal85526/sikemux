@@ -154,13 +154,33 @@ class Connection {
   }
 }
 
+const PHONE_ID = 'a3f9c27e51d04b8e9c6f2a7d18e3b5c40f9e7a2d6b1c8e5f3a0d9c7b6e4f2a1d';
+
+export class DeviceIdentity {
+  id() {
+    return PHONE_ID;
+  }
+
+  signLive() {
+    return '';
+  }
+
+  signRegistration() {
+    return '';
+  }
+
+  signPush() {
+    return '';
+  }
+}
+
 export class Device {
   static async create() {
     return new Device();
   }
 
   id() {
-    return 'a3f9c27e51d04b8e9c6f2a7d18e3b5c40f9e7a2d6b1c8e5f3a0d9c7b6e4f2a1d';
+    return PHONE_ID;
   }
 
   async connect(_core: string, listener: Listener) {
