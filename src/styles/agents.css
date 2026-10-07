@@ -803,45 +803,18 @@
     color: var(--text-tertiary);
     transform: rotate(90deg);
 }
-.agent-account.adding {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-bottom: 12px;
-}
-.agent-account-name-input {
-    flex: 1 1 auto;
-    min-width: 0;
-    height: 24px;
-    padding: 0 7px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    background: transparent;
-    color: var(--text-primary);
-    font-size: var(--text-2xs);
-}
-.agent-account-name-input:focus {
-    border-color: color-mix(in srgb, var(--usage-fill) 55%, var(--border));
-    outline: none;
-}
-.agent-account.adding button,
-.agent-accounts .account-sign-in button {
-    flex: 0 0 auto;
-    height: 24px;
-    padding: 0 8px;
-    border: 1px solid var(--border);
+.agent-usage-link {
+    padding: 0;
+    border: 0;
     background: transparent;
     color: var(--text-secondary);
-    font-size: var(--text-3xs);
-    white-space: nowrap;
+    font: inherit;
+    font-style: normal;
+    text-decoration: underline;
+    text-underline-offset: 2px;
 }
-.agent-account.adding button:hover:not(:disabled),
-.agent-accounts .account-sign-in button:hover {
-    border-color: color-mix(in srgb, var(--usage-fill) 50%, var(--border));
+.agent-usage-link:hover {
     color: var(--text-primary);
-}
-.agent-account.adding button:disabled {
-    opacity: 0.5;
 }
 
 /* A sign-in through the agent's own login, here and on a chat's error. */

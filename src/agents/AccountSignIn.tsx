@@ -8,7 +8,18 @@ import { cancelSignIn, dismissSignIn, signIn, submitSignInCode, useSignIn } from
  * Signs one account in through its CLI's own login. While the browser is out,
  * it offers the page again and a place for the code some sign-ins show.
  */
-export function AccountSignIn({ profile, label = "Sign in", onSignedIn }: { profile: ProviderProfile; label?: string; onSignedIn?: () => void }) {
+export function AccountSignIn({
+    profile,
+    label = "Sign in",
+    onSignedIn,
+    buttonClass,
+}: {
+    profile: ProviderProfile;
+    label?: string;
+    onSignedIn?: () => void;
+    /** Where the buttons should look like the controls around them, such as in Settings. */
+    buttonClass?: string;
+}) {
     const state = useSignIn(profile.id);
     const [code, setCode] = useState<string | null>(null);
 
@@ -17,13 +28,16 @@ export function AccountSignIn({ profile, label = "Sign in", onSignedIn }: { prof
             <span className="account-sign-in waiting">
                 <span className="account-sign-in-note">Finish signing in in your browser</span>
                 {state.url && (
-                    <button type="button" onClick={() => void portsApi.openExternal(state.url!).catch(reportError("Open sign-in page"))}>
+                    <button
+                        type="button"
+                        className={buttonClass}
+                        onClick={() => void portsApi.openExternal(state.url!).catch(reportError("Open sign-in page"))}>
                         Open page
                     </button>
                 )}
                 {state.url &&
                     (code === null ? (
-                        <button type="button" onClick={() => setCode("")}>
+                        <button type="button" className={buttonClass} onClick={() => setCode("")}>
                             Paste code
                         </button>
                     ) : (
@@ -45,7 +59,7 @@ export function AccountSignIn({ profile, label = "Sign in", onSignedIn }: { prof
                             />
                         </form>
                     ))}
-                <button type="button" onClick={() => cancelSignIn(profile)}>
+                <button type="button" className={buttonClass} onClick={() => cancelSignIn(profile)}>
                     Cancel
                 </button>
             </span>
@@ -65,7 +79,7 @@ export function AccountSignIn({ profile, label = "Sign in", onSignedIn }: { prof
                     {state.message}
                 </span>
             )}
-            <button type="button" onClick={start}>
+            <button type="button" className={buttonClass} onClick={start}>
                 {state?.phase === "failed" ? "Try again" : label}
             </button>
         </span>

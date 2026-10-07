@@ -377,14 +377,11 @@ describe("agent rail", () => {
         await waitFor(() => expect(agentIdsOf(getState(), "sess-project")).not.toContain("agent-open"));
     });
 
-    it("names the account its limits belong to, without moving chats when there is only one", async () => {
-        const user = userEvent.setup();
+    it("names the account its limits belong to", async () => {
         render(<AgentRailBody />);
 
         expect(await screen.findByRole("region", { name: "Codex plan limits" })).toBeInTheDocument();
         expect(await screen.findByText("me@example.com")).toBeInTheDocument();
-        await user.click(screen.getByRole("button", { name: "Codex account: Codex" }));
-        expect(screen.queryByRole("menuitem", { name: /Move chats at a limit/ })).not.toBeInTheDocument();
     });
 
     it("starts new chats on another account from the account menu and reads its limits and chats", async () => {
@@ -421,22 +418,7 @@ describe("agent rail", () => {
         expect(await screen.findByText("work@example.com")).toBeInTheDocument();
     });
 
-    it("turns on moving chats to the next account from the account menu", async () => {
-        setState((state) => ({
-            providerProfiles: [
-                ...state.providerProfiles,
-                { id: "codex-work", name: "Work", provider: "codex", accent: "#7a9dff", configPath: "~/.codex-work" },
-            ],
-        }));
-        const user = userEvent.setup();
-        render(<AgentRailBody />);
-
-        await user.click(await screen.findByRole("button", { name: "Codex account: Codex" }));
-        await user.click(screen.getByRole("menuitem", { name: /Move chats at a limit/ }));
-        expect(getState().accountAutoSwitch.codex).toBe(true);
-    });
-
-    it("offers a sign-in for an account that is signed out", async () => {
+    it("sends a signed-out account to Settings to sign in", async () => {
         mocks.account.mockResolvedValue({
             signedIn: false,
             email: null,
@@ -448,35 +430,20 @@ describe("agent rail", () => {
         const user = userEvent.setup();
         render(<AgentRailBody />);
 
-        expect(await screen.findByText("Signed out")).toBeInTheDocument();
-        await user.click(screen.getByRole("button", { name: "Sign in" }));
-        await waitFor(() => expect(mocks.signIn).toHaveBeenCalledWith("codex", undefined, undefined));
+        await user.click(await screen.findByRole("button", { name: "Sign in from Settings" }));
+        expect(getState()).toMatchObject({ settingsOpen: true, settingsPage: "agents", settingsTarget: "Codex accounts" });
+        expect(mocks.signIn).not.toHaveBeenCalled();
     });
 
-    it("adds an account in a folder of its own and signs it in", async () => {
-        mocks.addAccount.mockResolvedValue("~/.codex-work");
+    it("leaves managing accounts to Settings", async () => {
         const user = userEvent.setup();
         render(<AgentRailBody />);
 
         await user.click(await screen.findByRole("button", { name: "Codex account: Codex" }));
-        await user.click(screen.getByRole("menuitem", { name: /Add account/ }));
-        await user.type(screen.getByRole("textbox", { name: "New Codex account name" }), "Work{Enter}");
+        expect(screen.queryByRole("menuitem", { name: /Add account|Sign out|Remove/ })).not.toBeInTheDocument();
+        await user.click(screen.getByRole("menuitem", { name: "Manage accounts…" }));
 
-        await waitFor(() => expect(mocks.addAccount).toHaveBeenCalledWith("codex", "Work"));
-        await waitFor(() =>
-            expect(getState().providerProfiles.some((profile) => profile.name === "Work" && profile.configPath === "~/.codex-work")).toBe(true),
-        );
-        await waitFor(() => expect(mocks.signIn).toHaveBeenCalledWith("codex", undefined, "~/.codex-work"));
-    });
-
-    it("opens the agents settings page from the account menu", async () => {
-        const user = userEvent.setup();
-        render(<AgentRailBody />);
-
-        await user.click(await screen.findByRole("button", { name: "Codex account: Codex" }));
-        await user.click(screen.getByRole("menuitem", { name: "Account settings…" }));
-
-        expect(getState()).toMatchObject({ settingsOpen: true, settingsPage: "agents" });
+        expect(getState()).toMatchObject({ settingsOpen: true, settingsPage: "agents", settingsTarget: "Codex accounts" });
     });
 
     it("asks for the next page as the list scrolls to its end", async () => {

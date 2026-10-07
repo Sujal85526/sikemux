@@ -1,21 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { agentApi, type AgentUsage } from "../api/agents";
-import { AccountSignIn } from "../agents/AccountSignIn";
-import { accountsOf, signIn, signOut, useSignIn, type AccountProvider } from "../agents/accounts";
+import type { AgentUsage } from "../api/agents";
+import { accountsOf, type AccountProvider } from "../agents/accounts";
+import { accountsSectionTitle } from "../settings/AccountsSection";
 import { selectedProviderProfile } from "../agents/agentProfiles";
 import * as cmd from "../state/commands";
 import { fetchResource, invalidate, peekResource, type ResourceHandle, useResource } from "../state/resources";
 import { agentAccountR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
-import { reportError } from "../state/toast";
 import type { ProviderProfile } from "../state/types";
-import { IconCheck, IconChevron, IconPlus, IconRefresh } from "../ui/Icons";
+import { IconCheck, IconChevron, IconRefresh } from "../ui/Icons";
 import { CountUp } from "../ui/RollingText";
 import { Tooltip } from "../ui/Tooltip";
 import { TreeContextMenu, type CtxItem } from "./FileTree";
 import { planLabel, resetCountdown, resetTitle, usagePeak, usageTone } from "./usageFormat";
-
-const ACCENTS: Record<AccountProvider, string> = { claude: "#d97757", codex: "#7a9dff" };
 
 function useMinuteClock(): number {
     const [now, setNow] = useState(() => Date.now());
@@ -49,14 +46,11 @@ export function AgentAccountsPanel({
 }) {
     const profiles = useStore((s) => s.providerProfiles);
     const selections = useStore((s) => s.selectedProviderProfileIds);
-    const autoSwitch = useStore((s) => s.accountAutoSwitch[provider] === true);
     const accounts = useMemo(() => accountsOf(provider, profiles), [provider, profiles]);
     const current = selectedProviderProfile(provider, profiles, selections) ?? accounts[0];
-    const [adding, setAdding] = useState(false);
     const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
     const providerLabel = label ?? (provider === "claude" ? "Claude" : "Codex");
     const status = useResource(agentAccountR, provider, current?.executablePath, current?.configPath);
-    const signing = useSignIn(current?.id ?? "");
     const signedOut = status.data?.signedIn === false;
 
     /* The menu names each other account by who it is signed in as and how
@@ -74,15 +68,7 @@ export function AgentAccountsPanel({
     const refresh = () => invalidate((kind, args) => (kind === "agents.account" || kind === "agents.usage") && args[0] === provider);
 
     if (!current) return null;
-    const items = accountMenu({
-        provider,
-        accounts,
-        current,
-        command,
-        signedIn: status.data?.signedIn === true,
-        autoSwitch,
-        onAdd: () => setAdding(true),
-    });
+    const items = accountMenu(provider, accounts, current, command);
 
     return (
         <section className={`agent-usage agent-accounts ${provider}`} aria-label={`${providerLabel} plan limits`}>
@@ -130,29 +116,27 @@ export function AgentAccountsPanel({
             </button>
             {menu && <TreeContextMenu x={menu.x} y={menu.y} above items={items} onClose={() => setMenu(null)} />}
 
-            {adding && <AddAccount provider={provider} providerLabel={providerLabel} onDone={() => setAdding(false)} />}
-            {signedOut || signing ? <AccountSignIn profile={current} /> : <UsageWindows usage={usage} />}
+            {signedOut ? (
+                <div className="agent-usage-empty">
+                    {current.name} is signed out.{" "}
+                    <button type="button" className="agent-usage-link" onClick={() => manageAccounts(provider)}>
+                        Sign in from Settings
+                    </button>
+                </div>
+            ) : (
+                <UsageWindows usage={usage} />
+            )}
         </section>
     );
 }
 
-function accountMenu({
-    provider,
-    accounts,
-    current,
-    command,
-    signedIn,
-    autoSwitch,
-    onAdd,
-}: {
-    provider: AccountProvider;
-    accounts: ProviderProfile[];
-    current: ProviderProfile;
-    command?: string;
-    signedIn: boolean;
-    autoSwitch: boolean;
-    onAdd: () => void;
-}): CtxItem[] {
+function manageAccounts(provider: AccountProvider): void {
+    cmd.openSettings("agents", accountsSectionTitle(provider));
+}
+
+/* Only which account new chats use is chosen here; everything done to an
+   account happens in Settings. */
+function accountMenu(provider: AccountProvider, accounts: ProviderProfile[], current: ProviderProfile, command?: string): CtxItem[] {
     const items: CtxItem[] = accounts.map((account) => {
         if (account.id === current.id) return { label: account.name, hint: "In use", icon: <IconCheck size={11} /> };
         const status = peekResource(agentAccountR, provider, account.executablePath, account.configPath);
@@ -166,27 +150,10 @@ function accountMenu({
                     {initial(account.name)}
                 </span>
             ),
-            run: () => {
-                cmd.selectProviderProfile(provider, account.id);
-                if (status && !status.signedIn) void signIn(account);
-            },
+            run: () => cmd.selectProviderProfile(provider, account.id),
         };
     });
-    items.push({ sep: true });
-    if (accounts.length > 1) {
-        items.push({
-            label: "Move chats at a limit",
-            hint: autoSwitch ? "On" : "Off",
-            icon: autoSwitch ? <IconCheck size={11} /> : undefined,
-            run: () => cmd.setAccountAutoSwitch(provider, !autoSwitch),
-        });
-    }
-    items.push({ label: "Add account…", icon: <IconPlus size={11} />, run: onAdd });
-    if (signedIn) items.push({ label: "Sign out", run: () => void signOut(current).catch(reportError("Sign out")) });
-    else items.push({ label: "Sign in", run: () => void signIn(current) });
-    items.push({ sep: true }, { label: "Account settings…", run: () => cmd.openSettings("agents") });
-    if (!current.id.startsWith("builtin-"))
-        items.push({ label: `Remove ${current.name}`, danger: true, run: () => cmd.deleteProviderProfile(current.id) });
+    items.push({ sep: true }, { label: "Manage accounts…", run: () => manageAccounts(provider) });
     return items;
 }
 
@@ -239,59 +206,5 @@ function UsageWindows({ usage }: { usage: ResourceHandle<AgentUsage> }) {
                 );
             })}
         </>
-    );
-}
-
-/* A new account gets a directory of its own that shares the default one's
-   chats and settings, then signs in there straight away. */
-function AddAccount({ provider, providerLabel, onDone }: { provider: AccountProvider; providerLabel: string; onDone: () => void }) {
-    const [name, setName] = useState("");
-    const [busy, setBusy] = useState(false);
-    const add = async () => {
-        const trimmed = name.trim();
-        if (!trimmed || busy) return;
-        setBusy(true);
-        try {
-            const configPath = await agentApi.addAccount(provider, trimmed);
-            const profile: ProviderProfile = {
-                id: `profile-${Date.now().toString(36)}`,
-                name: trimmed,
-                provider,
-                accent: ACCENTS[provider],
-                configPath,
-                environmentKeys: [],
-            };
-            cmd.saveProviderProfile(profile);
-            onDone();
-            void signIn(profile);
-        } catch (error) {
-            reportError("Add account")(error);
-            setBusy(false);
-        }
-    };
-    return (
-        <form
-            className="agent-account adding"
-            onSubmit={(event) => {
-                event.preventDefault();
-                void add();
-            }}>
-            <input
-                autoFocus
-                className="agent-account-name-input"
-                aria-label={`New ${providerLabel} account name`}
-                placeholder="Name it, like Work"
-                value={name}
-                disabled={busy}
-                maxLength={40}
-                onChange={(event) => setName(event.target.value)}
-                onKeyDown={(event) => {
-                    if (event.key === "Escape") onDone();
-                }}
-            />
-            <button type="submit" disabled={!name.trim() || busy}>
-                Add and sign in
-            </button>
-        </form>
     );
 }

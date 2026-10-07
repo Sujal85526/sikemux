@@ -85,6 +85,10 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     section("about", "Help", "what's new changelog diagnostics welcome onboarding"),
 
     section("agents", "Launch boundary", "permissions yolo sandbox safety bypass approval"),
+    section("agents", "Claude accounts", "sign in login logout email subscription max pro switch rotate limit"),
+    row("agents", "Claude accounts", "Another account", "add second work personal sign in"),
+    section("agents", "Codex accounts", "sign in login logout email chatgpt plus pro switch rotate limit"),
+    row("agents", "Codex accounts", "Another account", "add second work personal sign in"),
     section("agents", "Provider profiles", "claude codex gemini accounts"),
     row("agents", "Provider profiles", "Name", "profile"),
     row("agents", "Provider profiles", "Provider", "claude codex gemini"),
