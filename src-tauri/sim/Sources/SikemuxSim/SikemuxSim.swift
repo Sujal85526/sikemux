@@ -21,19 +21,22 @@ struct SikemuxSim {
             }
         }
         for await line in lines {
-            guard let data = line.data(using: .utf8), let request = try? JSONDecoder().decode(Request.self, from: data) else {
-                Output.failure(nil, "protocol", "Could not read the request: \(line.prefix(200))")
-                continue
+            switch Request.read(line) {
+            case let .success(request):
+                Task { await respond(to: request, with: simulators) }
+            case let .failure(unreadable):
+                Output.failure(unreadable.id, "protocol", unreadable.message)
             }
-            Task {
-                do {
-                    Output.result(request.id, try await handle(request, with: simulators))
-                } catch let failure as Failure {
-                    Output.failure(request.id, failure.reason, failure.message)
-                } catch {
-                    Output.failure(request.id, "simulator", "\(error)")
-                }
-            }
+        }
+    }
+
+    static func respond(to request: Request, with simulators: Simulators) async {
+        do {
+            Output.result(request.id, try await handle(request, with: simulators))
+        } catch let failure as Failure {
+            Output.failure(request.id, failure.reason, failure.message)
+        } catch {
+            Output.failure(request.id, "simulator", Failure.describe(error))
         }
     }
 
@@ -197,7 +200,7 @@ struct SikemuxSim {
                 print(String(format: "ok    %-12@ %6.0f ms  %@", name as NSString, Date().timeIntervalSince(started) * 1000, detail as NSString))
                 return true
             } catch {
-                print("fail  \(name)  \((error as? Failure)?.message ?? "\(error)")")
+                print("fail  \(name)  \(Failure.describe(error))")
                 return false
             }
         }

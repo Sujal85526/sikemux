@@ -148,8 +148,8 @@ actor Simulators {
         while true {
             do {
                 return try await automation.frame(.marker(value: label, key: .label, depth: .max))
-            } catch {
-                guard Date() < deadline else { throw Failure(reason: "notFound", message: "\(error)") }
+            } catch UIAutomationError.elementNotFound, UIAutomationError.elementNotOnScreen {
+                guard Date() < deadline else { throw Failure(reason: "notFound", message: "Nothing labelled \"\(label)\" is on screen") }
                 try await Task.sleep(nanoseconds: 250_000_000)
             }
         }
@@ -254,8 +254,9 @@ actor Simulators {
     private func set() throws -> SimulatorSet {
         if let control { return control.set }
         guard FileManager.default.fileExists(atPath: "/Library/Developer/PrivateFrameworks/CoreSimulator.framework") else {
-            throw Failure(reason: "noXcode", message: "The iOS Simulator needs Xcode. Install it from the App Store and open it once.")
+            throw Failure(reason: "noXcode", message: Xcode.missing)
         }
+        try Xcode.choose()
         let started = try SimulatorControlBootstrap.withConfiguration(SimulatorControlConfiguration(deviceSetPath: nil, logger: nil))
         control = started
         return started.set
