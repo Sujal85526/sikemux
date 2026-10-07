@@ -34,6 +34,9 @@ const SHOWN_ON_DESK: &str =
     "live on your desk in Sikemux, beside the person, who sees what you do and can use it too";
 /// Tells the window an agent attached a simulator, so its desk can show it.
 pub const ATTACHED_EVENT: &str = "simulator-attached";
+pub const DETACHED_EVENT: &str = "simulator-detached";
+/// True while one of an agent's calls is driving its device, as the browser's acting highlight.
+pub const ACTING_EVENT: &str = "simulator-acting";
 
 pub fn execute(app: &AppHandle, request: &HarnessRequest) -> Result<Value, String> {
     let agent_id = request
@@ -41,6 +44,14 @@ pub fn execute(app: &AppHandle, request: &HarnessRequest) -> Result<Value, Strin
         .as_deref()
         .ok_or("simulator tools need the agent's id")?;
     let manager = app.state::<SimulatorManager>();
+    let acting = drives(&request.method);
+    if acting {
+        let _ = app.emit_to(
+            "main",
+            ACTING_EVENT,
+            json!({ "agentId": agent_id, "acting": true }),
+        );
+    }
     let result = tauri::async_runtime::block_on(run(
         &manager,
         agent_id,
@@ -48,6 +59,16 @@ pub fn execute(app: &AppHandle, request: &HarnessRequest) -> Result<Value, Strin
         &request.method,
         &request.params,
     ));
+    if acting {
+        let _ = app.emit_to(
+            "main",
+            ACTING_EVENT,
+            json!({ "agentId": agent_id, "acting": false }),
+        );
+    }
+    if request.method == "sim.detach" && result.is_ok() {
+        let _ = app.emit_to("main", DETACHED_EVENT, json!({ "agentId": agent_id }));
+    }
     if request.method == "sim.attach" && result.is_ok() {
         if let Some(device) = manager.attached(agent_id) {
             let _ = app.emit_to(
@@ -58,6 +79,14 @@ pub fn execute(app: &AppHandle, request: &HarnessRequest) -> Result<Value, Strin
         }
     }
     result
+}
+
+/// Whether a method acts on the device, rather than only reading what is there.
+fn drives(method: &str) -> bool {
+    !matches!(
+        method,
+        "sim.devices" | "sim.state" | "sim.screenshot" | "sim.logs" | "sim.detach"
+    )
 }
 
 pub(super) async fn run(
@@ -88,7 +117,9 @@ pub(super) async fn run(
         }
         "sim.attach" => {
             let devices = list_devices(manager).await?;
-            let mut device = choose_device(&devices, text("device"))?.clone();
+            let desk = manager.desk_device(agent_id);
+            let wanted = text("device").or(desk.as_deref());
+            let mut device = choose_device(&devices, wanted)?.clone();
             let boot = manager.request("boot", json!({ "udid": device.udid }));
             match tokio::time::timeout(BOOT_TIMEOUT, boot).await {
                 Ok(booted) => booted?,
@@ -103,7 +134,7 @@ pub(super) async fn run(
                 .request("screen", json!({ "udid": device.udid }))
                 .await?;
             device.screen = screen["width"].as_f64().zip(screen["height"].as_f64());
-            manager.attach(agent_id, device.clone());
+            manager.attach(agent_id, project, device.clone());
             if let Ok(turned) = manager
                 .request("orientation", json!({ "udid": device.udid }))
                 .await

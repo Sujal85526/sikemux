@@ -208,6 +208,9 @@ pub fn run() {
                 if let Some(plugins) = webview.try_state::<PluginHost>() {
                     plugins.drain();
                 }
+                if let Some(sim) = webview.try_state::<SimManager>() {
+                    sim.drop_watches();
+                }
                 lsp::drain_all();
             }
         })
@@ -510,8 +513,11 @@ pub fn run() {
             sim::sim_call,
             sim::sim_watch,
             sim::sim_unwatch,
+            sim::sim_watch_read,
             simulator::simulator_set_enabled,
             simulator::simulator_setup,
+            simulator::simulator_attachments,
+            simulator::simulator_set_desk_device,
         ])
         .build(tauri::generate_context!())
         .expect("error while building sikemux")

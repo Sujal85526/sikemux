@@ -258,7 +258,10 @@
     "allow-sim-call",
     "allow-sim-watch",
     "allow-sim-unwatch",
+    "allow-sim-watch-read",
     "allow-simulator-set-enabled",
-    "allow-simulator-setup"
+    "allow-simulator-setup",
+    "allow-simulator-attachments",
+    "allow-simulator-set-desk-device"
   ]
 }

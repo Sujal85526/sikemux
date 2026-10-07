@@ -38,6 +38,32 @@ export interface SimAttached {
     name: string;
 }
 
+/** An agent's device, with the project the agent works in. */
+export interface SimAttachment extends SimAttached {
+    project: string;
+}
+
+/** An agent let go of its device: it detached, stopped, or moved to another. */
+export interface SimDetached {
+    agentId: string;
+}
+
+/** `acting` is true while one of the agent's calls drives its device. */
+export interface SimActing {
+    agentId: string;
+    acting: boolean;
+}
+
+/** A screen stream ended without `unwatch`, because the helper's stream stopped. */
+export interface SimWatchEnded {
+    id: number;
+    reason: string;
+}
+
+/** Frames are reported read in batches this size, so the stream keeps sending. */
+const READ_BATCH = 4;
+const watchEnds = new Map<number, AbortController>();
+
 /** What Settings shows about the simulator. */
 export interface SimSetup {
     xcode: string | null;
@@ -63,13 +89,54 @@ export const simApi = {
     button: (udid: string, button: SimButton) => call<void>({ type: "button", udid, button }),
     orientation: (udid: string, orientation: SimOrientation) => call<void>({ type: "orientation", udid, orientation }),
     screenshot: (udid: string, path: string) => call<{ path: string }>({ type: "screenshot", udid, path }),
-    /** Streams the screen through the app; resolves to the id `unwatch` takes. */
-    watch: (udid: string, format: SimStreamFormat, onFrame: (frame: ArrayBuffer) => void) => {
+    /**
+     * Streams the screen through the app; resolves to the id `unwatch` takes.
+     * `onEnd` hears why a stream stopped on its own; start a new watch to carry on.
+     */
+    watch: async (udid: string, format: SimStreamFormat, onFrame: (frame: ArrayBuffer) => void, onEnd?: (reason: string) => void) => {
         const channel = new Channel<ArrayBuffer>();
-        channel.onmessage = onFrame;
-        return invoke<number>("sim_watch", { udid, format, onFrame: channel });
+        let id: number | null = null;
+        let frames = 0;
+        const reportRead = () => {
+            if (id != null) void invoke<void>("sim_watch_read", { id, frames }).catch(() => {});
+        };
+        channel.onmessage = (frame) => {
+            onFrame(frame);
+            frames += 1;
+            if (frames % READ_BATCH === 0) reportRead();
+        };
+        const ends = new AbortController();
+        const ended: SimWatchEnded[] = [];
+        await getIpcTransport().subscribe<SimWatchEnded>(
+            "simulator-watch-ended",
+            (event) => {
+                if (id == null) ended.push(event.payload);
+                else if (event.payload.id === id) finish(event.payload.reason);
+            },
+            { signal: ends.signal },
+        );
+        const finish = (reason: string) => {
+            ends.abort();
+            if (id != null) watchEnds.delete(id);
+            onEnd?.(reason);
+        };
+        try {
+            id = await invoke<number>("sim_watch", { udid, format, onFrame: channel });
+        } catch (error) {
+            ends.abort();
+            throw error;
+        }
+        watchEnds.set(id, ends);
+        reportRead();
+        const early = ended.find((end) => end.id === id);
+        if (early) finish(early.reason);
+        return id;
     },
-    unwatch: (id: number) => invoke<void>("sim_unwatch", { id }),
+    unwatch: (id: number) => {
+        watchEnds.get(id)?.abort();
+        watchEnds.delete(id);
+        return invoke<void>("sim_unwatch", { id });
+    },
     subscribe: (listener: (event: SimEvent) => void, signal: AbortSignal): Promise<IpcUnsubscribe> =>
         getIpcTransport().subscribe<SimEvent>("sim", (event) => listener(event.payload), { signal }),
     setup: () => invoke<SimSetup>("simulator_setup"),
@@ -77,4 +144,15 @@ export const simApi = {
     offerToAgents: (enabled: boolean) => invoke<void>("simulator_set_enabled", { enabled }),
     subscribeAttached: (listener: (attached: SimAttached) => void, signal: AbortSignal): Promise<IpcUnsubscribe> =>
         getIpcTransport().subscribe<SimAttached>("simulator-attached", (event) => listener(event.payload), { signal }),
+    subscribeDetached: (listener: (detached: SimDetached) => void, signal: AbortSignal): Promise<IpcUnsubscribe> =>
+        getIpcTransport().subscribe<SimDetached>("simulator-detached", (event) => listener(event.payload), { signal }),
+    subscribeActing: (listener: (acting: SimActing) => void, signal: AbortSignal): Promise<IpcUnsubscribe> =>
+        getIpcTransport().subscribe<SimActing>("simulator-acting", (event) => listener(event.payload), { signal }),
+    /** Every agent's device, for "in use by" in the device picker. */
+    attachments: () => invoke<SimAttachment[]>("simulator_attachments"),
+    /**
+     * The person picked `udid` on an agent's desk: an attached agent moves to it
+     * (a `simulator-attached` event follows), and one not yet attached gets it on `sim_attach`.
+     */
+    setDeskDevice: (agentId: string, udid: string) => invoke<void>("simulator_set_desk_device", { agentId, udid }),
 };
