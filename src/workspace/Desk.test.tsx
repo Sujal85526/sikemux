@@ -624,6 +624,20 @@ describe("DeskHost", () => {
         expect(browserApi.newTab).toHaveBeenCalledWith("agent-one");
     });
 
+    it("offers a file tab's path, absolute and within the project, on right-click", async () => {
+        vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [], activeTabId: null });
+        setState({
+            browserStrips: {},
+            desks: { "agent-one": { order: ["file:/repo/a.ts"], active: "file:/repo/a.ts", terminals: [], reveal: null } },
+            editorViews: { [deskEditorId("agent-one")]: { openTabs: ["/repo/a.ts"], activePath: "/repo/a.ts" } },
+        } as never);
+        renderPane();
+
+        fireEvent.contextMenu(await screen.findByRole("tab", { name: "a.ts" }));
+        expect(screen.getByRole("menuitem", { name: "Copy Path" })).toBeInTheDocument();
+        expect(screen.getByRole("menuitem", { name: "Copy Relative Path" })).toBeInTheDocument();
+    });
+
     it("stays open for a file that is still on its way to the editor", async () => {
         vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [], activeTabId: null });
         setState({

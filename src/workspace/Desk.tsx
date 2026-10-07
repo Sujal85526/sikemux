@@ -4,7 +4,10 @@ import { deskAppearing, onDeskMotion } from "../state/deskMotion";
 import { browserApi, BLANK_URL, type BrowserBounds, type BrowserHole, type BrowserSnapshot } from "../api/browser";
 import { onStageFrame, stageMoving, useNativeViewHoles, useNativeViewsOccluded, useStageMoving, type NativeViewHole } from "../state/nativeViews";
 import type { AgentType, PtyContext, Session, Window as WindowT } from "../state/types";
-import { reportError } from "../state/toast";
+import { notify, reportError } from "../state/toast";
+import { copyText } from "../lib/clipboard";
+import { fsapi } from "../api/fs";
+import { deskTabMenu } from "./deskTabMenu";
 import { AgentIcon, IconChevron, IconCommand, IconEditor, IconGlobe, IconPlus, IconRefresh, WindowIcon } from "../ui/Icons";
 import { Tooltip } from "../ui/Tooltip";
 import { FileIcon } from "../ui/FileIcon";
@@ -364,6 +367,15 @@ function DeskSession({
                     onClose={(key) => {
                         const item = itemFor(key);
                         if (item) cmd.closeDeskItem(agentId, item);
+                    }}
+                    buildMenu={(key) => {
+                        const item = itemFor(key);
+                        if (!item) return [];
+                        return deskTabMenu(item, session.kind === "project" && session.cwd ? session.cwd : null, {
+                            copy: (text, label) => void copyText(text).then(() => notify("success", `copied ${label}`), reportError("copy")),
+                            reveal: (path) => void fsapi.revealInFinder(path).catch(reportError("reveal")),
+                            close: () => cmd.closeDeskItem(agentId, item),
+                        });
                     }}
                     onAdd={kind === "browser" || kind === null ? () => cmd.newBrowserTab(agentId) : undefined}
                     addIcon={<IconPlus size={13} />}
