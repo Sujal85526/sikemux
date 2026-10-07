@@ -3,6 +3,7 @@ import { sendTestNotification } from "../agents/agentNotifications";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { invokeCommand as invoke } from "../api/invoke";
 import { simApi, type SimSetup } from "../api/sim";
+import { simUsable, useSimStatus } from "../sim/simStatus";
 import {
     eventToKeybinding,
     findKeybindingConflict,
@@ -1809,21 +1810,35 @@ function NotchSection() {
     );
 }
 
+function xcodeDescription(path: string | null): string {
+    if (!path) return "No Xcode is selected. Install Xcode, or choose one with xcode-select.";
+    if (path.includes("CommandLineTools"))
+        return "Only the Command Line Tools are selected, and simulators need Xcode. Install Xcode, or choose it with xcode-select.";
+    return path;
+}
+
 function SimulatorSection() {
     const enabled = useStore((s) => s.iosSimulator);
-    const [setup, setSetup] = useState<SimSetup | null>(null);
+    const status = useSimStatus();
+    const [setup, setSetup] = useState<SimSetup | "unread" | null>(null);
+    const usable = simUsable(status);
     useEffect(() => {
+        if (!usable) return;
         let current = true;
-        void simApi
-            .setup()
-            .then((found) => current && setSetup(found))
-            .catch(() => {});
+        void simApi.setup().then(
+            (found) => current && setSetup(found),
+            () => current && setSetup("unread"),
+        );
         return () => {
             current = false;
         };
-    }, []);
-    const xcode = setup ? (setup.xcode ?? "No Xcode is selected. Install Xcode, or choose one with xcode-select.") : "Checking…";
-    const runtimes = setup ? setup.runtimes.join(", ") || "None installed. Add one in Xcode's Components settings." : "Checking…";
+    }, [usable]);
+    const unavailable = status && !usable ? (status.reason ?? "The iOS Simulator is not available here.") : null;
+    const read = (describe: (found: SimSetup) => string) =>
+        setup === null ? "Checking…" : setup === "unread" ? "Could not read the developer tools." : describe(setup);
+    const xcode = unavailable ?? read((found) => xcodeDescription(found.xcode));
+    const runtimes = read((found) => found.runtimes.join(", ") || "None installed. Add one in Xcode's Components settings.");
+    const helper = read((found) => `The helper that drives simulators is ${found.helper}.`);
     return (
         <SettingsSection title="iOS Simulator">
             <SettingsRows>
@@ -1834,8 +1849,8 @@ function SimulatorSection() {
                     control={<Switch checked={enabled} onChange={cmd.setIosSimulator} label="Let agents drive the iOS Simulator" />}
                 />
                 <SettingsRow label="Xcode" desc={xcode} />
-                <SettingsRow label="iOS runtimes" desc={runtimes} />
-                <SettingsRow label="Simulator helper" desc={setup ? `The helper that drives simulators is ${setup.helper}.` : "Checking…"} />
+                {!unavailable && <SettingsRow label="iOS runtimes" desc={runtimes} />}
+                {!unavailable && <SettingsRow label="Simulator helper" desc={helper} />}
             </SettingsRows>
         </SettingsSection>
     );

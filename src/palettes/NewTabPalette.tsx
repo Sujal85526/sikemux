@@ -6,7 +6,7 @@ import { useShortcutLabel } from "../commands/useShortcutLabel";
 import { useModalFocus } from "../hooks/useModalFocus";
 import { useMouseActive } from "../hooks/useMouseActive";
 import { IconAgent, IconCommand, IconCommit, IconEditor, IconGlobe, IconPhone, IconSearch } from "../ui/Icons";
-import { IS_MACOS } from "../lib/platform";
+import { simUsable, useSimStatus } from "../sim/simStatus";
 import { leavingOverlay } from "../lib/motion";
 
 interface TabChoice {
@@ -26,6 +26,7 @@ export function NewTabPalette() {
         return id ? state.agents[id] : undefined;
     });
     const project = session?.kind === "project";
+    const simulatorUsable = simUsable(useSimStatus());
     const shortcuts = {
         terminal: useShortcutLabel("terminal.new"),
         agent: useShortcutLabel("agent.choose"),
@@ -65,7 +66,7 @@ export function NewTabPalette() {
             open: cmd.newDeskBrowserTab,
             disabled: !browserAgent,
         },
-        ...(IS_MACOS
+        ...(simulatorUsable
             ? [
                   {
                       id: "simulator",
