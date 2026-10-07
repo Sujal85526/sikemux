@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type WheelEvent } from "react";
 import { simApi, type SimDevice, type SimOrientation, type SimScreen, type SimStreamFormat } from "../api/sim";
+import { AGENT_NAMES } from "../agents/agentLaunch";
 import { readClipboardText } from "../lib/clipboard";
+import { basename } from "../lib/paths";
 import * as cmd from "../state/commands";
+import { confirmDialog } from "../state/dialog";
+import { useSimulatorActing, useSimulatorAttachments } from "../state/simulatorAgents";
+import { getState, useStore } from "../state/store";
 import type { DeskSimulator } from "../state/types";
 import { notify, reportError } from "../state/toast";
 import { Dropdown } from "../ui/Dropdown";
@@ -72,11 +77,16 @@ export function scrollSwipe(canvas: CanvasBox, screen: SimScreen, start: Point, 
     }));
 }
 
-/** What a key press sends to the device: a named key, the character it types, or nothing. */
 export function keyForDevice(event: { key: string; metaKey: boolean; ctrlKey: boolean }): { key: string } | { text: string } | null {
     if (event.metaKey || event.ctrlKey) return null;
     if (NAMED_KEYS.has(event.key)) return { key: event.key };
     return [...event.key].length === 1 ? { text: event.key } : null;
+}
+
+function deviceDetail(device: SimDevice, heldByProject: string | undefined): string {
+    const running = device.state === "booted" ? " · running" : "";
+    const held = heldByProject ? ` · In use by ${basename(heldByProject)}` : "";
+    return `${device.runtime}${running}${held}`;
 }
 
 export function screenshotPath(deviceName: string, at: Date): string {
@@ -121,6 +131,8 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
     const [format, setFormat] = useState<SimStreamFormat>("h264");
     const [latency, setLatency] = useState<number | null>(null);
     const [turn, setTurn] = useState(0);
+    const [streamEnded, setStreamEnded] = useState(false);
+    const [streamAttempt, setStreamAttempt] = useState(0);
     const player = useRef<ScreenPlayer | null>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     // Input goes out in the order it happened; the helper answers requests in parallel.
@@ -139,6 +151,13 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
     const udid = device?.udid ?? null;
     const booted = device?.state === "booted";
     const starting = power === "booting" || device?.state === "busy";
+    const agentType = useStore((state) => state.agents[agentId]?.type);
+    const agentName = agentType ? AGENT_NAMES[agentType] : "The agent";
+    const attachments = useSimulatorAttachments();
+    const acting = useSimulatorActing(agentId);
+    const ownDevice = attachments[agentId] ?? null;
+    const heldBy = (target: string) =>
+        Object.values(attachments).find((attachment) => attachment.udid === target && attachment.agentId !== agentId) ?? null;
 
     const refresh = useCallback(async () => {
         try {
@@ -157,7 +176,7 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
     }, [agentId]);
 
     useEffect(() => {
-        if (status) return;
+        if (status || statusProblem) return;
         let alive = true;
         loadSimStatus().then(
             () => alive && setStatusProblem(null),
@@ -216,9 +235,14 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
         const canvas = canvasRef.current;
         if (!udid || !booted || !shown || !canvas) return;
         setStreamProblem(null);
+        setStreamEnded(false);
         const playing = playScreen(udid, canvas, {
             onError: setStreamProblem,
             onFirstFrame: () => setFramed(true),
+            onEnded: () => {
+                setStreamEnded(true);
+                void refresh();
+            },
             ...(import.meta.env.DEV ? { onFps: setFps, onFormat: setFormat, onLatency: setLatency } : {}),
         });
         player.current = playing;
@@ -226,9 +250,16 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
             playing.stop();
             player.current = null;
         };
-    }, [udid, booted, shown]);
+    }, [udid, booted, shown, streamAttempt, refresh]);
 
     useEffect(() => setFramed(false), [udid, booted]);
+
+    useEffect(() => {
+        const current = gesture.current;
+        if (!acting || !current || !udid) return;
+        gesture.current = null;
+        input.current = input.current.then(() => simApi.touch(udid, "up", current.last.x, current.last.y)).catch(reportError("simulator input"));
+    }, [acting, udid]);
 
     const send = (work: () => Promise<unknown>) => {
         input.current = input.current.then(work).catch(reportError("simulator input"));
@@ -250,7 +281,7 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
     };
 
     const pointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
-        if (!udid || !screen || !framed || gesture.current || !event.isPrimary || event.button !== 0) return;
+        if (!udid || !screen || !framed || acting || gesture.current || !event.isPrimary || event.button !== 0) return;
         const canvas = event.currentTarget;
         const rect = canvas.getBoundingClientRect();
         const point = devicePoint(canvasBox(canvas, rect), screen, event.clientX, event.clientY);
@@ -282,7 +313,7 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
     };
 
     const wheel = (event: WheelEvent<HTMLCanvasElement>) => {
-        if (!udid || !screen || !framed || gesture.current) return;
+        if (!udid || !screen || !framed || acting || gesture.current) return;
         let current = scroll.current;
         if (!current) {
             const canvas = canvasBox(event.currentTarget, event.currentTarget.getBoundingClientRect());
@@ -308,7 +339,7 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
     useEffect(() => () => window.clearTimeout(scroll.current?.timer), []);
 
     const keyDown = (event: KeyboardEvent<HTMLCanvasElement>) => {
-        if (!udid) return;
+        if (!udid || acting) return;
         if (event.metaKey && !event.ctrlKey && !event.altKey && event.key.toLowerCase() === "v") {
             event.preventDefault();
             action(() => readClipboardText().then((text) => (text ? simApi.text(udid, text) : undefined)));
@@ -323,6 +354,17 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
     const togglePower = async () => {
         if (!udid || power || starting) return;
         setActionProblem(null);
+        const holder = Object.values(attachments).find((attachment) => attachment.udid === udid);
+        if (booted && holder) {
+            const type = getState().agents[holder.agentId]?.type;
+            const confirmed = await confirmDialog({
+                title: `Shut down ${device?.name ?? "this device"}?`,
+                body: `${type ? AGENT_NAMES[type] : "An agent"} is using this device.`,
+                confirmLabel: "Shut down",
+                destructive: true,
+            });
+            if (!confirmed) return;
+        }
         setPower(booted ? "shuttingDown" : "booting");
         try {
             await (booted ? simApi.shutdown(udid) : simApi.boot(udid));
@@ -381,11 +423,13 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
                     options={(devices ?? []).map((candidate) => ({
                         value: candidate.udid,
                         label: candidate.name,
-                        detail: `${candidate.runtime}${candidate.state === "booted" ? " · running" : ""}`,
+                        detail: deviceDetail(candidate, heldBy(candidate.udid)?.project),
                     }))}
                     onChange={(next) => {
                         const picked = devices?.find((candidate) => candidate.udid === next);
-                        if (picked) cmd.setDeskSimulatorDevice(agentId, simulator.id, { udid: picked.udid, name: picked.name });
+                        if (!picked) return;
+                        cmd.setDeskSimulatorDevice(agentId, simulator.id, { udid: picked.udid, name: picked.name });
+                        void simApi.setDeskDevice(agentId, picked.udid).catch(reportError("move the agent to that device"));
                     }}
                     disabled={!devices}
                 />
@@ -413,23 +457,52 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
                     </span>
                 )}
             </div>
+            {ownDevice && ownDevice.udid !== simulator.udid && (
+                <div className="sim-note">
+                    <span>
+                        {agentName} is on {ownDevice.name}
+                    </span>
+                    <button
+                        type="button"
+                        className="sim-chip"
+                        onClick={() => cmd.setDeskSimulatorDevice(agentId, simulator.id, { udid: ownDevice.udid, name: ownDevice.name })}>
+                        Show it
+                    </button>
+                </div>
+            )}
             {problem && <div className="sim-problem">{problem}</div>}
             <div className="sim-stage">
                 {booted ? (
-                    <canvas
-                        ref={canvasRef}
-                        className={`sim-screen${framed ? " framed" : ""}`}
-                        tabIndex={0}
-                        data-takes-keys
-                        aria-label={`${device?.name ?? "Simulator"} screen`}
-                        onPointerDown={pointerDown}
-                        onPointerMove={pointerMove}
-                        onPointerUp={pointerEnd}
-                        onPointerCancel={pointerEnd}
-                        onLostPointerCapture={pointerEnd}
-                        onWheel={wheel}
-                        onKeyDown={keyDown}
-                    />
+                    <>
+                        <canvas
+                            ref={canvasRef}
+                            className={`sim-screen${framed ? " framed" : ""}${acting ? " locked" : ""}`}
+                            tabIndex={0}
+                            data-takes-keys
+                            aria-label={`${device?.name ?? "Simulator"} screen`}
+                            onPointerDown={pointerDown}
+                            onPointerMove={pointerMove}
+                            onPointerUp={pointerEnd}
+                            onPointerCancel={pointerEnd}
+                            onLostPointerCapture={pointerEnd}
+                            onWheel={wheel}
+                            onKeyDown={keyDown}
+                        />
+                        {streamEnded ? (
+                            <div className="sim-overlay">
+                                <span>The screen stopped.</span>
+                                <button type="button" className="sim-chip" onClick={() => setStreamAttempt((attempt) => attempt + 1)}>
+                                    Reconnect
+                                </button>
+                            </div>
+                        ) : (
+                            acting && (
+                                <div className="sim-overlay" role="status">
+                                    {agentName} is using the device
+                                </div>
+                            )
+                        )}
+                    </>
                 ) : starting ? (
                     <EmptyState icon={<span className="loading-ring" />} message={`Booting ${device?.name ?? "the device"}…`} />
                 ) : (

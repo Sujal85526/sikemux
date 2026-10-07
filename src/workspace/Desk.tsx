@@ -19,6 +19,7 @@ import { forgetPageStill, usePageStill, useStillUpkeep } from "./pageStills";
 import { TabBar, type TabDescriptor } from "./TabBar";
 import { getState, useStore } from "../state/store";
 import { refreshBrowserStrip } from "../state/browserStrips";
+import { useSimulatorActing } from "../state/simulatorAgents";
 import {
     BROWSER_ACTIVE,
     deskEditorId,
@@ -231,6 +232,7 @@ function DeskSession({
     const files = useStore((state) => state.editorViews[editorId]?.openTabs) ?? NO_FILES;
     const dirty = useStore((state) => state.dirtyEditorPaths[editorId]) ?? NO_DIRTY;
     const restoring = useStore((state) => !!state.deskRestores[paneId]);
+    const simulatorActing = useSimulatorActing(agentId);
     const items = useMemo(() => deskItems(desk, snapshot, files), [desk, snapshot, files]);
     const shown = shownDeskItem(desk, items);
     const kind = shownKind(shown);
@@ -334,6 +336,12 @@ function DeskSession({
                 label,
                 title: `iOS Simulator · ${label}`,
                 active: tabActive,
+                className: simulatorActing ? "acting" : undefined,
+                accessory: simulatorActing ? (
+                    <span className={`agent-glyph ${agentType}`} role="img" aria-label={`${agentType} is working on this device`}>
+                        <AgentIcon type={agentType} size={16} />
+                    </span>
+                ) : undefined,
                 icon: (
                     <span className="agent-glyph sim">
                         <IconPhone size={13} />
@@ -373,7 +381,7 @@ function DeskSession({
         <section ref={sectionRef} className={`desk ${agentType}`} data-desk data-agent-id={agentId} aria-label={`${agentType} desk`}>
             <DeskOutline />
             <div className="desk-head">
-                <DeskKinds items={items} shown={kind} agentType={agentType} onShow={showKind} />
+                <DeskKinds items={items} shown={kind} agentType={agentType} simulatorActing={simulatorActing} onShow={showKind} />
                 <TabBar
                     variant="desk"
                     ariaLabel="Desk tabs"
@@ -551,18 +559,22 @@ function DeskKinds({
     items,
     shown,
     agentType,
+    simulatorActing,
     onShow,
 }: {
     items: readonly DeskItem[];
     shown: DeskKind | null;
     agentType: AgentType;
+    simulatorActing: boolean;
     onShow: (kind: DeskKind) => void;
 }) {
     return (
         <div className="desk-kinds" role="tablist" aria-label="Desk views">
             {KINDS.map(({ kind, label, icon }) => {
                 const ofKind = items.filter((item) => item.kind === kind);
-                const busy = kind !== shown && ofKind.some((item) => item.kind === "browser" && item.tab.acting);
+                const busy =
+                    kind !== shown &&
+                    ofKind.some((item) => (item.kind === "browser" && item.tab.acting) || (item.kind === "simulator" && simulatorActing));
                 const empty = ofKind.length === 0 && kind !== "browser" && kind !== "simulator";
                 const name = busy ? `${label}, ${agentType} is working here` : label;
                 return (

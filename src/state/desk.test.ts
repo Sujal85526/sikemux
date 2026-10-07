@@ -29,7 +29,16 @@ vi.mock("../api/browser", async () => {
 
 vi.mock("../api/sim", async () => {
     const actual = await vi.importActual<typeof import("../api/sim")>("../api/sim");
-    return { ...actual, simApi: { ...actual.simApi, subscribeAttached: vi.fn() } };
+    return {
+        ...actual,
+        simApi: {
+            ...actual.simApi,
+            subscribeAttached: vi.fn(),
+            subscribeDetached: vi.fn(async () => () => {}),
+            subscribeActing: vi.fn(async () => () => {}),
+            attachments: vi.fn(async () => []),
+        },
+    };
 });
 
 const initial = getState();

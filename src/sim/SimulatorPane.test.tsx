@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { simApi } from "../api/sim";
+import { noteSimulatorActing, noteSimulatorAttached, noteSimulatorDetached } from "../state/simulatorAgents";
 import { playScreen } from "./screenStream";
 import { devicePoint, keyForDevice, screenshotPath, scrollSwipe, SimulatorPane } from "./SimulatorPane";
 
@@ -17,6 +18,7 @@ vi.mock("../api/sim", () => ({
         boot: vi.fn(),
         shutdown: vi.fn(),
         subscribeAttached: vi.fn(),
+        setDeskDevice: vi.fn(),
     },
 }));
 
@@ -97,6 +99,7 @@ describe("the simulator pane", () => {
 
     afterEach(() => {
         cleanup();
+        noteSimulatorDetached("agent-1");
         vi.clearAllMocks();
     });
 
@@ -155,5 +158,32 @@ describe("the simulator pane", () => {
         await waitFor(() => expect(vi.mocked(simApi.touch).mock.calls.map((call) => call[1])).toEqual(["down", "move", "up"]));
         const [, , upX] = vi.mocked(simApi.touch).mock.calls[2];
         expect(upX).toBe(402);
+    });
+
+    it("keeps the person's hands off the device while the agent drives it", async () => {
+        const surface = await showScreen();
+        act(() => noteSimulatorActing("agent-1", true));
+
+        expect(screen.getByRole("status")).toHaveTextContent("is using the device");
+        fireEvent.pointerDown(surface, pointer(400, 350));
+        fireEvent.keyDown(surface, { key: "a" });
+        expect(simApi.touch).not.toHaveBeenCalled();
+        expect(simApi.text).not.toHaveBeenCalled();
+
+        act(() => noteSimulatorActing("agent-1", false));
+        expect(screen.queryByRole("status")).not.toBeInTheDocument();
+        fireEvent.pointerDown(surface, pointer(400, 350));
+        await waitFor(() => expect(simApi.touch).toHaveBeenCalledWith("UDID-1", "down", expect.any(Number), expect.any(Number)));
+    });
+
+    it("says when the agent is on another device", async () => {
+        await showScreen();
+        act(() => noteSimulatorAttached({ agentId: "agent-1", udid: "UDID-2", name: "iPad Air" }));
+
+        expect(screen.getByText(/is on iPad Air/)).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Show it" })).toBeInTheDocument();
+
+        act(() => noteSimulatorDetached("agent-1"));
+        expect(screen.queryByText(/is on iPad Air/)).not.toBeInTheDocument();
     });
 });

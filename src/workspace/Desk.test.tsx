@@ -5,6 +5,7 @@ import { occludeNativeViews, setNativeViewHoles, useStageMotion } from "../state
 import { useToasts } from "../state/toast";
 import { getState, setState } from "../state/store";
 import { deskEditorId } from "../state/desks";
+import { noteSimulatorActing } from "../state/simulatorAgents";
 import { taskPtyBindings } from "../tasks/nativeRuntime";
 import type { Session, Window as WindowT } from "../state/types";
 import * as cmd from "../state/commands";
@@ -21,6 +22,8 @@ vi.mock("../terminal/TerminalPane", () => ({
         <div data-testid="desk-terminal" data-pane={context.paneId} data-visible={String(visible)} />
     ),
 }));
+
+vi.mock("../lib/platform", async () => ({ ...(await vi.importActual<typeof import("../lib/platform")>("../lib/platform")), IS_MACOS: true }));
 
 vi.mock("../sim/SimulatorPane", () => ({
     SimulatorPane: ({ simulator, visible }: { simulator: { id: string }; visible: boolean }) => (
@@ -667,6 +670,34 @@ describe("DeskHost", () => {
 
         expect(getState().desks["agent-one"].active).toBe("file:/repo/src/a.ts");
         expect(screen.getByTestId("desk-simulator")).toHaveAttribute("data-visible", "false");
+    });
+
+    it("marks the simulator's tab and its kind while the agent drives the device", async () => {
+        setState({
+            desks: {
+                "agent-one": {
+                    order: ["file:/repo/src/a.ts", "simulator:sim-1"],
+                    active: "file:/repo/src/a.ts",
+                    terminals: [],
+                    simulators: [{ id: "sim-1", udid: "UDID-1", deviceName: "iPhone 17" }],
+                    reveal: null,
+                },
+            },
+            editorViews: { [deskEditorId("agent-one")]: { openTabs: ["/repo/src/a.ts"], activePath: "/repo/src/a.ts" } },
+        } as never);
+        renderPane();
+        const kinds = screen.getByRole("tablist", { name: "Desk views" });
+        expect(within(kinds).getByRole("tab", { name: "iOS Simulator" })).not.toHaveClass("busy");
+
+        act(() => noteSimulatorActing("agent-one", true));
+        expect(within(kinds).getByRole("tab", { name: "iOS Simulator, codex is working here" })).toHaveClass("busy");
+
+        fireEvent.click(within(kinds).getByRole("tab", { name: /iOS Simulator/ }));
+        const working = await screen.findByRole("img", { name: "codex is working on this device" });
+        expect(working.closest(".tab-wrap")).toHaveClass("acting");
+
+        act(() => noteSimulatorActing("agent-one", false));
+        expect(screen.queryByRole("img", { name: "codex is working on this device" })).not.toBeInTheDocument();
     });
 
     it("stays open for a file that is still on its way to the editor", async () => {
