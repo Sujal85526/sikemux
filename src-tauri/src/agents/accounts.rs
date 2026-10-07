@@ -23,6 +23,7 @@ use tokio::sync::oneshot;
 
 use super::config::agent_config_root;
 use super::executable::{apply_login_environment, apply_process_config, expand_user_path};
+use super::status::forget_status;
 use super::usage::{codex_app_server, forget_agent_usage};
 use super::AgentKind;
 
@@ -500,6 +501,7 @@ pub async fn agent_account_sign_in(
         running.remove(&key);
     }
     forget_agent_usage(agent, config_path.as_deref());
+    forget_status(agent, config_path.as_deref());
     match ended {
         Ok(Some(Ok(status))) if status.success() => Ok(()),
         Ok(Some(_)) => Err(match tail.last() {
@@ -578,6 +580,7 @@ pub async fn agent_account_sign_out(
         .map_err(|_| "Sign-out took too long".to_string())?
         .map_err(|_| format!("Could not start the {} sign-out", agent.as_str()))?;
     forget_agent_usage(agent, config_path.as_deref());
+    forget_status(agent, config_path.as_deref());
     if status.success() {
         Ok(())
     } else {
