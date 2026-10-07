@@ -1,4 +1,5 @@
-import { useContext, useMemo, type ReactNode } from "react";
+import { Children, useContext, useMemo, type ReactNode } from "react";
+import { linkPlugin } from "../plugins/registry";
 import { CopyButton } from "../ui/CopyButton";
 import { FileIcon } from "../ui/FileIcon";
 import { hasPrimaryModifier } from "../lib/platform";
@@ -21,6 +22,23 @@ import { decodedFenceName } from "./transcript";
    A name the message only mentioned in passing arrives here too, marked as a
    guess. It is a file when the project has one by that name, and the words the
    agent wrote when it has not. */
+/* A link to a service a plugin speaks for leads with that service's mark. The
+   mark is held to the first letter so a line never ends on it alone. */
+function MarkedText({ mark, children }: { mark: ReactNode; children?: ReactNode }) {
+    const [first, ...rest] = Children.toArray(children);
+    const letter = typeof first === "string" ? [...first][0] : undefined;
+    return (
+        <>
+            <span className="chat-link-lead">
+                <span className="chat-link-mark">{mark}</span>
+                {letter ?? first}
+            </span>
+            {letter !== undefined && (first as string).slice(letter.length)}
+            {rest}
+        </>
+    );
+}
+
 function ChatLink({ href, guess, children }: { href: string; guess?: PathGuess; children?: ReactNode }) {
     const imagePath = localImagePath(href);
     const preview = useImagePreview(guess ? null : imagePath);
@@ -38,6 +56,7 @@ function ChatLink({ href, guess, children }: { href: string; guess?: PathGuess; 
         );
     if (guess === "code") return <code>{children}</code>;
     if (guess === "text") return <>{children}</>;
+    const mark = linkPlugin(href)?.mark?.(13);
     return (
         <a
             href={href}
@@ -45,7 +64,7 @@ function ChatLink({ href, guess, children }: { href: string; guess?: PathGuess; 
                 event.preventDefault();
                 if (href) openLink(href, agentId, hasPrimaryModifier(event));
             }}>
-            {children}
+            {mark ? <MarkedText mark={mark}>{children}</MarkedText> : children}
         </a>
     );
 }
