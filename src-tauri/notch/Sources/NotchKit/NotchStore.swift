@@ -184,6 +184,7 @@ final class NotchStore {
     /// Shows the agent in Sikemux, opening the app first when its window is closed.
     func focus(_ agentId: String) {
         guard let link else { return }
+        bringAppForward()
         link.request(["op": "focusAgent", "agentId": agentId]) { [weak self] result in
             guard case .failure = result, let self else { return }
             self.openApp()
@@ -198,6 +199,19 @@ final class NotchStore {
                 if case .failure = result { self?.retryFocus(agentId, attempts: attempts - 1) }
             }
         }
+    }
+
+    /// macOS refuses to bring forward an app the person did not click, so the
+    /// helper, which took the click, takes the front and hands it to Sikemux.
+    private func bringAppForward() {
+        guard let app = options.app else { return }
+        let url = URL(fileURLWithPath: app).standardizedFileURL
+        guard let running = NSWorkspace.shared.runningApplications.first(where: {
+            $0.bundleURL?.standardizedFileURL == url || $0.executableURL?.standardizedFileURL == url
+        }) else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.yieldActivation(to: running)
+        running.activate()
     }
 
     func openApp() {
