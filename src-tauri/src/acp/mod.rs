@@ -669,6 +669,8 @@ pub(crate) struct LauncherSpec {
     pub executable_path: Option<String>,
     pub environment_keys: Vec<String>,
     pub permission_mode: String,
+    /// The agent's status as the app last saw it, passed on to devices.
+    pub status: Option<String>,
 }
 
 /// What [`acp_start`] would run for `spec`, for the core to start without
@@ -717,6 +719,7 @@ pub(crate) async fn launcher(app: &AppHandle, spec: LauncherSpec) -> Result<Chat
         permission_mode: spec.permission_mode,
         account: None,
         fallbacks: Vec::new(),
+        status: spec.status,
     })
 }
 

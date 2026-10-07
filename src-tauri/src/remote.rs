@@ -57,6 +57,8 @@ pub struct LauncherRequest {
     #[serde(default)]
     environment_keys: Vec<String>,
     permission_mode: String,
+    #[serde(default)]
+    status: Option<String>,
 }
 
 #[tauri::command]
@@ -77,6 +79,7 @@ pub async fn remote_publish_workspace(
             executable_path: request.executable_path,
             environment_keys: request.environment_keys,
             permission_mode: request.permission_mode,
+            status: request.status,
         };
         if let Ok(launcher) = crate::acp::launcher(&app, spec).await {
             ready.push(launcher);
