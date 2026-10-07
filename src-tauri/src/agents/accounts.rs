@@ -579,7 +579,12 @@ pub(crate) fn account_environment(
         return Vec::new();
     };
     let Some(path) = config_path.map(str::trim).filter(|path| !path.is_empty()) else {
-        return Vec::new();
+        // The default account is wherever the person's shell points the agent.
+        return sikemux_pty::user_shell::login_shell_environment()
+            .get(variable)
+            .filter(|path| !path.is_empty())
+            .map(|path| vec![(variable.to_owned(), path.clone())])
+            .unwrap_or_default();
     };
     let root = agent_config_root(provider, Some(path)).unwrap_or_else(|| expand_user_path(path));
     vec![(variable.to_owned(), root.to_string_lossy().into_owned())]
