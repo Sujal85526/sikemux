@@ -1,0 +1,28 @@
+name: Release probe
+
+# Temporary: shows why creating a release with the workflow token returns 403.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Try creating draft releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for tag in v0.5.1-nightly.1 nightly "probe-${GITHUB_RUN_ID}"; do
+            echo "::group::tag ${tag}"
+            gh api -i -X POST "repos/${GITHUB_REPOSITORY}/releases" \
+              -f tag_name="${tag}" -f target_commitish="${GITHUB_SHA}" -f name="probe ${tag}" \
+              -F draft=true -F prerelease=true >out.txt 2>&1 || true
+            grep -iE '^HTTP/|x-accepted-github-permissions|x-github-request-id|"message"|"documentation_url"|"errors"' out.txt || cat out.txt
+            id="$(sed -n 's/^{"url".*"id":\([0-9]*\),.*/\1/p' out.txt | head -1)"
+            [ -n "${id}" ] && gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/${id}" && echo "deleted draft ${id}"
+            echo "::endgroup::"
+          done
