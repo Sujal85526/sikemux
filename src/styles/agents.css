@@ -714,57 +714,37 @@
     }
 }
 
-/* The account new chats start on, as one card between the head and its
-   limits; it opens the person's other accounts. Greys only, so the limits
-   below stay the one place the provider's colour speaks. */
+/* The account new chats start on, named in the head of its limits. Greys
+   only, so the limits below stay the one place the provider's colour speaks. */
 .agent-account-switch {
     display: flex;
+    flex: 0 1 auto;
     align-items: center;
-    gap: 8px;
-    width: 100%;
+    gap: 5px;
     min-width: 0;
-    margin-bottom: 12px;
-    padding: 6px 8px 6px 7px;
-    border: 1px solid var(--border);
+    height: 20px;
+    padding: 0 5px 0 3px;
+    border: 0;
     background: transparent;
     color: var(--text-primary);
     text-align: left;
 }
 .agent-account-switch:hover,
 .agent-account-switch[aria-expanded="true"] {
-    border-color: color-mix(in srgb, var(--text-tertiary) 45%, var(--border));
-    background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+    background: var(--surface-hover);
 }
 .agent-account-avatar {
     display: grid;
     flex: 0 0 auto;
     place-items: center;
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    color: #0f0f13;
-    font-size: 10.5px;
-    font-weight: 650;
-    line-height: 1;
-}
-.agent-account-avatar.small {
     width: 14px;
     height: 14px;
+    border-radius: 50%;
+    color: #0f0f13;
     font-size: 8px;
-}
-.agent-account-id {
-    display: flex;
-    flex: 1 1 auto;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-}
-.agent-account-title {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-    line-height: 1.2;
+    font-weight: 650;
+    letter-spacing: 0;
+    line-height: 1;
 }
 .agent-account-name {
     min-width: 0;
@@ -772,36 +752,65 @@
     color: var(--text-primary);
     font-size: var(--text-2xs);
     font-weight: var(--weight-medium);
+    letter-spacing: 0;
     text-overflow: ellipsis;
+    text-transform: none;
     white-space: nowrap;
 }
 .agent-account-plan {
     flex: 0 0 auto;
-    padding: 1px 5px;
+    padding: 1px 4px;
     border-radius: 4px;
     background: color-mix(in srgb, var(--text-primary) 7%, transparent);
     color: var(--text-secondary);
-    font-size: 9px;
+    font-size: 8.5px;
     letter-spacing: 0.04em;
     line-height: 1.3;
     text-transform: uppercase;
-}
-.agent-account-who {
-    min-width: 0;
-    overflow: hidden;
-    color: var(--text-tertiary);
-    font-size: var(--text-3xs);
-    line-height: 1.2;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.agent-account-who[data-signed-out="true"] {
-    color: color-mix(in srgb, var(--warn) 75%, var(--text-tertiary));
 }
 .agent-account-chevron {
     flex: 0 0 auto;
     color: var(--text-tertiary);
     transform: rotate(90deg);
+}
+.agent-account-switch[aria-expanded="true"] .agent-account-chevron {
+    transform: rotate(-90deg);
+}
+
+/* The accounts open as wide as the limits they sit over. */
+.tree-ctx-menu.agent-account-menu {
+    gap: 2px;
+    font-family: inherit;
+}
+.agent-account-menu .tree-ctx-item {
+    gap: 8px;
+    padding: 6px;
+    border: 1px solid transparent;
+}
+.agent-account-menu .tree-ctx-icon {
+    margin-right: 0;
+}
+.agent-account-menu .agent-account-avatar {
+    width: 20px;
+    height: 20px;
+    font-size: 9.5px;
+}
+.agent-account-menu .tree-ctx-label {
+    font-size: var(--text-2xs);
+}
+.tree-ctx-detail {
+    display: block;
+    overflow: hidden;
+    color: var(--text-tertiary);
+    font-size: var(--text-3xs);
+    text-overflow: ellipsis;
+}
+.agent-account-menu .tree-ctx-hint {
+    font-variant-numeric: tabular-nums;
+}
+.tree-ctx-menu.agent-account-menu .tree-ctx-item.selected {
+    border-color: var(--border-selected);
+    background: var(--surface-selected);
 }
 .agent-usage-link {
     padding: 0;

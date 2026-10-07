@@ -248,6 +248,8 @@ pub async fn agent_account_add(agent: AgentKind, name: String) -> Result<String,
 #[serde(rename_all = "camelCase")]
 pub struct AgentAccountStatus {
     signed_in: bool,
+    /// The person's own name on the account, where the agent keeps one.
+    name: Option<String>,
     email: Option<String>,
     plan: Option<String>,
     organization: Option<String>,
@@ -282,6 +284,7 @@ fn parse_claude_status(text: &str) -> Option<AgentAccountStatus> {
             .get("loggedIn")
             .and_then(Value::as_bool)
             .unwrap_or(false),
+        name: None,
         email: text_of("email"),
         plan: text_of("subscriptionType"),
         organization: text_of("orgName"),
@@ -294,6 +297,30 @@ fn parse_claude_status(text: &str) -> Option<AgentAccountStatus> {
         }),
         sessions: None,
     })
+}
+
+/// `auth status` leaves the name out; Claude keeps it in the account's
+/// `.claude.json`, which holds no credentials.
+fn claude_account_name(config: &Value) -> Option<String> {
+    let account = config.get("oauthAccount")?;
+    ["displayName", "fullName"]
+        .into_iter()
+        .filter_map(|key| account.get(key).and_then(Value::as_str))
+        .map(str::trim)
+        .find(|name| !name.is_empty())
+        .map(str::to_owned)
+}
+
+/// Claude puts `.claude.json` inside a chosen config folder, but beside the
+/// default `~/.claude` folder rather than in it.
+fn claude_config_file(config_path: Option<&str>) -> Option<PathBuf> {
+    let root = agent_config_root("claude", config_path)?;
+    let inside = root.join(".claude.json");
+    if inside.exists() {
+        return Some(inside);
+    }
+    let home = crate::system::user_home();
+    (root == home.join(".claude")).then(|| home.join(".claude.json"))
 }
 
 fn parse_codex_status(result: &Value) -> AgentAccountStatus {
@@ -311,6 +338,7 @@ fn parse_codex_status(result: &Value) -> AgentAccountStatus {
     });
     AgentAccountStatus {
         signed_in: account.is_some(),
+        name: None,
         email: text_of("email"),
         plan: text_of("planType"),
         organization: None,
@@ -365,6 +393,12 @@ pub async fn agent_account_status(
         ),
         _ => return Err("Only Claude and Codex keep separate accounts".into()),
     };
+    if matches!(agent, AgentKind::Claude) && status.signed_in {
+        status.name = claude_config_file(config_path.as_deref())
+            .and_then(|file| std::fs::read(file).ok())
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            .and_then(|config| claude_account_name(&config));
+    }
     status.sessions = sessions_root(agent, config_path.as_deref())
         .map(|path| path.to_string_lossy().into_owned());
     Ok(status)
@@ -700,6 +734,16 @@ mod tests {
         assert!(!out.signed_in);
         assert_eq!(out.method, None);
         assert_eq!(parse_claude_status("not json"), None);
+    }
+
+    #[test]
+    fn claude_keeps_the_account_name_beside_the_sign_in() {
+        let config =
+            json!({ "oauthAccount": { "displayName": "Kishore", "fullName": "Kishore G" } });
+        assert_eq!(claude_account_name(&config).as_deref(), Some("Kishore"));
+        let full = json!({ "oauthAccount": { "displayName": " ", "fullName": "Kishore G" } });
+        assert_eq!(claude_account_name(&full).as_deref(), Some("Kishore G"));
+        assert_eq!(claude_account_name(&json!({ "projects": {} })), None);
     }
 
     #[test]

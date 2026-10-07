@@ -366,6 +366,7 @@ export class ShowcaseBackend implements IpcTransport {
     this.on("model_providers", () => []);
     this.on("agent_account_status", ({ agent, configPath }) => ({
       signedIn: true,
+      name: null,
       email:
         OTHER_ACCOUNTS[String(configPath).split("/").pop() ?? ""]?.email ??
         "edon@acme.dev",

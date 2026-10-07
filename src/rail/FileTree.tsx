@@ -54,10 +54,13 @@ const TREE_VIRTUALIZE_AFTER = 150;
 
 export interface CtxItem {
     label?: string;
+    /** A second, quieter line under the label. */
+    detail?: string;
     hint?: string;
     icon?: ReactNode;
     danger?: boolean;
     disabled?: boolean;
+    selected?: boolean;
     sep?: boolean;
     run?: () => void;
 }
@@ -860,11 +863,16 @@ export function TreeContextMenu({
     onClose,
     alignRight = false,
     above = false,
+    width,
+    className,
 }: {
     x: number;
     y: number;
     items: CtxItem[];
     onClose: () => void;
+    /** Pins the menu to this width, for one that should line up with what opened it. */
+    width?: number;
+    className?: string;
     /** Hang the menu left of `x` instead of right of it, for buttons at a right edge. */
     alignRight?: boolean;
     /** Open upward with its bottom at `y`, for buttons at the foot of the window. */
@@ -931,8 +939,8 @@ export function TreeContextMenu({
                     event.stopPropagation();
                     buttons[next]?.focus();
                 }}
-                className="tree-ctx-menu"
-                style={{ left: pos.left, top: pos.top }}
+                className={`tree-ctx-menu${className ? ` ${className}` : ""}`}
+                style={{ left: pos.left, top: pos.top, ...(width ? { width, minWidth: width, maxWidth: width } : {}) }}
                 onClick={(e) => e.stopPropagation()}>
                 {items.map((it, i) =>
                     it.sep ? (
@@ -944,7 +952,7 @@ export function TreeContextMenu({
                             disabled={it.disabled}
                             role="menuitem"
                             tabIndex={-1}
-                            className={`tree-ctx-item${it.danger ? " danger" : ""}${it.disabled ? " disabled" : ""}`}
+                            className={`tree-ctx-item${it.danger ? " danger" : ""}${it.disabled ? " disabled" : ""}${it.selected ? " selected" : ""}`}
                             onPointerMove={(event) => {
                                 if (!it.disabled && document.activeElement !== event.currentTarget) event.currentTarget.focus();
                             }}
@@ -956,6 +964,11 @@ export function TreeContextMenu({
                             {it.icon && <span className="tree-ctx-icon">{it.icon}</span>}
                             <span className="tree-ctx-label" title={it.label}>
                                 {it.label}
+                                {it.detail && (
+                                    <small className="tree-ctx-detail" title={it.detail}>
+                                        {it.detail}
+                                    </small>
+                                )}
                             </span>
                             {it.hint && (
                                 <span className="tree-ctx-hint" title={it.hint}>

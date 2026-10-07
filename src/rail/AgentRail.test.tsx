@@ -113,6 +113,7 @@ beforeEach(() => {
     });
     mocks.account.mockImplementation(async (_agent: string, _executable?: string, configPath?: string) => ({
         signedIn: true,
+        name: null,
         email: configPath ? "work@example.com" : "me@example.com",
         plan: null,
         organization: null,
@@ -381,7 +382,30 @@ describe("agent rail", () => {
         render(<AgentRailBody />);
 
         expect(await screen.findByRole("region", { name: "Codex plan limits" })).toBeInTheDocument();
-        expect(await screen.findByText("me@example.com")).toBeInTheDocument();
+        expect(await screen.findByTitle("me@example.com")).toBeInTheDocument();
+    });
+
+    it("goes by the name on the account until the person names it", async () => {
+        mocks.account.mockImplementation(async (_agent: string, _executable?: string, configPath?: string) => ({
+            signedIn: true,
+            name: configPath ? "Someone" : "Kishore",
+            email: configPath ? "work@example.com" : "me@example.com",
+            plan: null,
+            organization: null,
+            method: "subscription",
+            sessions: "/home/me/.codex/sessions",
+        }));
+        setState((state) => ({
+            providerProfiles: [
+                ...state.providerProfiles,
+                { id: "codex-work", name: "Work", provider: "codex", accent: "#7a9dff", configPath: "~/.codex-work" },
+            ],
+        }));
+        const user = userEvent.setup();
+        render(<AgentRailBody />);
+
+        await user.click(await screen.findByRole("button", { name: "Codex account: Kishore" }));
+        expect(await screen.findByRole("menuitem", { name: /Work/ })).toBeInTheDocument();
     });
 
     it("starts new chats on another account from the account menu and reads its limits and chats", async () => {
@@ -415,12 +439,13 @@ describe("agent rail", () => {
             expect(mocks.recent).toHaveBeenCalledWith(expect.objectContaining({ providers: [{ agent: "codex", configPath: "~/.codex-work" }] })),
         );
         expect(await screen.findByRole("button", { name: "Codex account: Work" })).toBeInTheDocument();
-        expect(await screen.findByText("work@example.com")).toBeInTheDocument();
+        expect(await screen.findByTitle("work@example.com")).toBeInTheDocument();
     });
 
     it("sends a signed-out account to Settings to sign in", async () => {
         mocks.account.mockResolvedValue({
             signedIn: false,
+            name: null,
             email: null,
             plan: null,
             organization: null,

@@ -137,6 +137,8 @@ export interface LiveAgentSession {
 /** Who one account is signed in as, in the agent's own words. */
 export interface AgentAccountStatus {
     signedIn: boolean;
+    /** The person's own name on the account, where the agent keeps one. */
+    name: string | null;
     email: string | null;
     plan: string | null;
     organization: string | null;
