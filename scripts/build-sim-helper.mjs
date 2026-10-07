@@ -22,6 +22,7 @@ const simDir = join(tauriDir, "sim");
 const idbDir = join(simDir, "idb");
 const buildDir = join(simDir, ".build");
 const args = process.argv.slice(2);
+const dev = args.includes("--dev");
 const name = "sikemux-sim";
 const deploymentTarget = "15.0";
 
@@ -30,6 +31,13 @@ const frameworks = join(simDir, "Frameworks");
 function fail(message) {
   console.error(`Simulator helper build failed: ${message}`);
   process.exit(1);
+}
+
+// `make dev` builds the app without the simulator helper on a Mac that cannot build it.
+function missing(message) {
+  if (!dev) fail(message);
+  console.warn(`- skipping the simulator helper: ${message}`);
+  process.exit(0);
 }
 
 function run(command, commandArgs, options = {}) {
@@ -68,8 +76,9 @@ function filesIn(dir) {
     .sort();
 }
 
-function fingerprint(paths) {
+function fingerprint(paths, extra = []) {
   const hash = createHash("sha256");
+  for (const value of extra) hash.update(`${value}\0`);
   for (const path of paths)
     for (const file of statSync(path).isDirectory() ? filesIn(path) : [path]) {
       hash.update(relative(root, file));
@@ -91,52 +100,103 @@ const archs = {
 }[target];
 if (!archs) fail(`unsupported target ${target}`);
 
-const developerDir = run("xcode-select", ["-p"], { capture: true });
+function canBuildSimulators(dir) {
+  return existsSync(join(dir, "Platforms", "iPhoneSimulator.platform"));
+}
+
+const developerDir = [
+  run("xcode-select", ["-p"], { capture: true }),
+  "/Applications/Xcode.app/Contents/Developer",
+].find(canBuildSimulators);
+if (!developerDir)
+  missing(
+    "it needs Xcode; select it with `sudo xcode-select -s /Applications/Xcode.app`",
+  );
+const xcodebuild = spawnSync("xcodebuild", ["-version"], {
+  encoding: "utf8",
+  env: { ...process.env, DEVELOPER_DIR: developerDir },
+});
+if (xcodebuild.status !== 0)
+  missing(
+    `xcodebuild cannot run (${(xcodebuild.stderr || xcodebuild.error?.message || "").trim().split("\n")[0]}); open Xcode once to finish setting it up`,
+  );
+const xcodeVersion = xcodebuild.stdout.trim();
+// A dev build makes FBControlCore for this Mac alone; a release needs both.
+const frameworkArchs = dev ? archs : ["arm64", "x86_64"];
 
 // FBControlCore's Swift and Objective-C halves import each other, which one
-// SwiftPM target cannot hold, so XcodeGen and xcodebuild build it for both
-// architectures into the xcframework Package.swift links. It is rebuilt only
-// when its sources or its spec change.
+// SwiftPM target cannot hold, so XcodeGen and xcodebuild build it into the
+// xcframework Package.swift links. It is rebuilt only when its sources, its
+// spec, the Xcode or the architectures change.
 function buildFBControlCore() {
   const spec = join(simDir, "FBControlCore.yml");
   const xcframework = join(frameworks, "FBControlCore.xcframework");
   const stamp = join(frameworks, "FBControlCore.fingerprint");
-  const current = fingerprint([join(idbDir, "FBControlCore"), spec]);
-  if (existsSync(stamp) && readFileSync(stamp, "utf8") === current) return;
+  const current = fingerprint(
+    [join(idbDir, "FBControlCore"), spec],
+    [xcodeVersion, ...frameworkArchs],
+  );
+  const archive = join(frameworks, "FBControlCore.a");
+  if (
+    existsSync(archive) &&
+    existsSync(stamp) &&
+    readFileSync(stamp, "utf8") === current
+  )
+    return;
   if (spawnSync("xcodegen", ["--version"]).status !== 0)
-    fail("XcodeGen is needed to build FBControlCore: brew install xcodegen");
+    missing("it needs XcodeGen: brew install xcodegen");
   console.log("- building FBControlCore (once per change to it)");
   const xcode = join(buildDir, "xcode");
   rmSync(xcode, { recursive: true, force: true });
   rmSync(frameworks, { recursive: true, force: true });
+  const env = { DEVELOPER_DIR: developerDir };
   run("xcodegen", ["generate", "--spec", spec, "--quiet"], { cwd: simDir });
-  run("xcodebuild", [
-    "-project",
-    join(simDir, "FBControlCore.xcodeproj"),
-    "-target",
-    "FBControlCore",
-    "-configuration",
-    "Release",
-    "-sdk",
-    "macosx",
-    "-quiet",
-    "-skipMacroValidation",
-    "ARCHS=arm64 x86_64",
-    "ONLY_ACTIVE_ARCH=NO",
-    "ENABLE_USER_SCRIPT_SANDBOXING=NO",
-    `SYMROOT=${join(xcode, "products")}`,
-    `OBJROOT=${join(xcode, "objects")}`,
-    "build",
-  ]);
+  run(
+    "xcodebuild",
+    [
+      "-project",
+      join(simDir, "FBControlCore.xcodeproj"),
+      "-target",
+      "FBControlCore",
+      "-configuration",
+      "Release",
+      "-sdk",
+      "macosx",
+      "-quiet",
+      "-skipMacroValidation",
+      `ARCHS=${frameworkArchs.join(" ")}`,
+      "ONLY_ACTIVE_ARCH=NO",
+      "ENABLE_USER_SCRIPT_SANDBOXING=NO",
+      `SYMROOT=${join(xcode, "products")}`,
+      `OBJROOT=${join(xcode, "objects")}`,
+      "build",
+    ],
+    { env },
+  );
   // Built and linked by the same compiler, so the framework carries a binary Swift module and no interface.
-  run("xcodebuild", [
-    "-create-xcframework",
-    "-allow-internal-distribution",
-    "-framework",
-    join(xcode, "products", "Release", "FBControlCore.framework"),
-    "-output",
-    xcframework,
-  ]);
+  run(
+    "xcodebuild",
+    [
+      "-create-xcframework",
+      "-allow-internal-distribution",
+      "-framework",
+      join(xcode, "products", "Release", "FBControlCore.framework"),
+      "-output",
+      xcframework,
+    ],
+    { env },
+  );
+  // The same archive at a path that does not depend on its architectures, for Package.swift to force-load.
+  copyFileSync(
+    join(
+      xcode,
+      "products",
+      "Release",
+      "FBControlCore.framework",
+      "FBControlCore",
+    ),
+    archive,
+  );
   writeFileSync(stamp, current);
 }
 
