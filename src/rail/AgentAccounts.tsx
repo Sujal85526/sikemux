@@ -23,8 +23,10 @@ function useMinuteClock(): number {
     return now;
 }
 
-function initial(name: string): string {
-    return name.trim().charAt(0).toUpperCase() || "?";
+function initials(name: string): string {
+    const words = name.trim().split(/\s+/).filter(Boolean);
+    const letters = words.length > 1 ? words[0][0] + words[1][0] : (words[0]?.slice(0, 2) ?? "");
+    return letters.toUpperCase() || "?";
 }
 
 /* A profile still under its built-in name says nothing about whose account
@@ -97,8 +99,8 @@ export function AgentAccountsPanel({
                         const box = head.current!.getBoundingClientRect();
                         setMenu({ x: box.left, y: box.top - 6, width: box.width });
                     }}>
-                    <span className="agent-account-avatar" style={{ background: current.accent }} aria-hidden="true">
-                        {initial(name)}
+                    <span className="agent-account-mark" aria-hidden="true">
+                        {initials(name)}
                     </span>
                     <span className="agent-account-name">{name}</span>
                     {plan && <span className="agent-account-plan">{planLabel(plan)}</span>}
@@ -166,8 +168,8 @@ function accountMenu(
             hint: !signedOut && peak != null ? `${Math.round(peak)}%` : undefined,
             selected,
             icon: (
-                <span className="agent-account-avatar" style={{ background: account.accent }}>
-                    {initial(name)}
+                <span className="agent-account-mark" aria-hidden="true">
+                    {initials(name)}
                 </span>
             ),
             run: selected ? undefined : () => cmd.selectProviderProfile(provider, account.id),

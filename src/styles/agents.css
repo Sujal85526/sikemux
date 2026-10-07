@@ -733,16 +733,18 @@
 .agent-account-switch[aria-expanded="true"] {
     background: var(--surface-hover);
 }
-.agent-account-avatar {
+.agent-account-mark {
     display: grid;
     flex: 0 0 auto;
     place-items: center;
-    width: 14px;
-    height: 14px;
+    width: 17px;
+    height: 17px;
+    border: 1px solid var(--border);
     border-radius: 50%;
-    color: #0f0f13;
-    font-size: 8px;
-    font-weight: 650;
+    color: var(--text-secondary);
+    font-family: var(--mono);
+    font-size: 7.5px;
+    font-weight: 500;
     letter-spacing: 0;
     line-height: 1;
 }
@@ -790,10 +792,14 @@
 .agent-account-menu .tree-ctx-icon {
     margin-right: 0;
 }
-.agent-account-menu .agent-account-avatar {
-    width: 20px;
-    height: 20px;
-    font-size: 9.5px;
+.agent-account-menu .agent-account-mark {
+    width: 22px;
+    height: 22px;
+    font-size: 8.5px;
+}
+.agent-account-menu .tree-ctx-item.selected .agent-account-mark {
+    border-color: var(--border-selected);
+    color: var(--text-primary);
 }
 .agent-account-menu .tree-ctx-label {
     font-size: var(--text-2xs);
