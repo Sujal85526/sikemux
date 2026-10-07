@@ -139,11 +139,12 @@ const budgets = [
     // agent's resuming state and its failed-resume row live here as well, and
     // so do Sikemux's own tool calls, drawn as a verb and what they acted on.
     // A turn that needs a sign-in or hit a usage limit offers the account to
-    // move to on its error, and the move shows in the transcript.
+    // move to on its error, and the move shows in the transcript. A page an
+    // agent built and shows sits in its reply too.
     label: "ACP chat lazy chunk",
     pattern: /^AgentSurface-.*\.js$/,
-    raw: 125_000,
-    gzip: 39_000,
+    raw: 130_000,
+    gzip: 41_000,
   },
   {
     // Shiki, its JavaScript regex engine and vscode-textmate, with no
