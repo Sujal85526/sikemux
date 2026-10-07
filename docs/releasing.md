@@ -39,11 +39,9 @@ Both channels create a versioned GitHub release holding the build. A stable cut 
 
 Stable is cut from a `release/<major.minor>` branch and nightly from `main`. A nightly targets whichever version comes next, whether that is a patch, a minor or a major, and a stable release of that version overtakes its nightlies for nightly users too.
 
-A hotfix cut from a release branch claims a version as well. When it claims the one the nightlies are building toward, the Nightly channel moves onto the hotfix, because the updater takes the newest version across both feeds, and loses whatever `main` had that the hotfix did not until a later nightly passes it. Before cutting such a hotfix, publish a nightly at the version after it, so the hotfix lands below the nightlies instead of over them.
-
 ## Version numbers
 
-A nightly is a prerelease of the version after the latest stable one. Once a stable `0.x.y` ships, number `main`'s nightlies at the next minor, `0.(x+1).0-nightly.N`, rather than the next patch. Patch hotfixes on the release branch then always land below the nightlies and never take the Nightly channel over.
+A nightly is a prerelease of the next stable release. After a stable `0.x.y`, `main`'s nightlies are `0.x.(y+1)-nightly.N`, or `0.(x+1).0-nightly.N` when the next release is a bigger one. Stable releases come every few days, each a promoted nightly.
 
 ## Promoting a nightly to stable
 
@@ -57,7 +55,9 @@ None of this lands on `main`. Commits made to `main` meanwhile stay out of the r
 
 ## Hotfixes
 
-Fix the bug on `main` as usual, then cherry-pick only that commit onto `release/<major.minor>`, bump to the next patch, write short notes and tag it. If `main` has rewritten the code since, make the fix on the release branch instead and redo it on `main`. Never merge a release branch into `main`, or `main` into a release branch for a hotfix.
+A hotfix is the next release, shipped early. Fix the bug on `main`, ship a nightly, and promote that nightly to stable. It takes the version the nightlies were already building toward, so nothing collides, and it carries whatever else is on `main`.
+
+Cherry-pick onto `release/<major.minor>` only when `main` holds something too risky to ship, such as a half-finished refactor during a security fix. The cherry-picked hotfix then takes the version the nightlies are building toward, and the updater takes the newest version across both channels, so first bump `main` to the patch after it and publish that nightly. Then cherry-pick only the fix onto the release branch, bump to the claimed patch, write short notes and tag it. Never merge a release branch into `main`, or `main` into a release branch.
 
 ## Committing to a release branch from the shared checkout
 

@@ -29,7 +29,10 @@
   `release/<major.minor>`, and their version bump and notes go only there.
 - Never check out `release/*` in this shared checkout. Commit to it from objects with a
   temporary index, as `docs/releasing.md` shows.
-- After a stable `0.x.y`, number `main`'s nightlies `0.(x+1).0-nightly.N`.
+- After a stable `0.x.y`, `main`'s nightlies build toward the next release:
+  `0.x.(y+1)-nightly.N`, or `0.(x+1).0-nightly.N` for a bigger one. A hotfix is that next
+  release shipped early: fix on `main`, ship a nightly, promote it. Cherry-pick onto
+  `release/*` only in an emergency, as `docs/releasing.md` describes.
 
 ## Mobile app
 
