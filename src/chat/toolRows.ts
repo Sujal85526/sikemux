@@ -50,8 +50,13 @@ export interface ToolRowText {
 
 const SIKEMUX_TOOL = /sikemux-tools(?:__|[./:]\s*)([a-z][a-z0-9_]*)/;
 
+/** The tool's name without the server hosts put in front of it. */
+export function sikemuxToolName(title: string): string {
+    return SIKEMUX_TOOL.exec(title)?.[1] ?? title.trim();
+}
+
 function rowSpec(title: string): ToolRowSpec | null {
-    const name = SIKEMUX_TOOL.exec(title)?.[1] ?? title.trim();
+    const name = sikemuxToolName(title);
     return Object.hasOwn(TOOL_ROWS, name) ? TOOL_ROWS[name as keyof typeof TOOL_ROWS] : null;
 }
 

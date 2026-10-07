@@ -81,6 +81,17 @@ describe("groupParts", () => {
         expect(groups.map((group) => ("tools" in group ? group.tools.map((part) => part.id) : group.id))).toEqual(["a", ["b", "c"], "d", ["e"]]);
     });
 
+    it("lets a page an agent showed stand between the calls around it", () => {
+        const shown: ChatPart = {
+            id: "p",
+            kind: "tool",
+            tool: { toolCallId: "p", title: "mcp__sikemux-tools__page_show" },
+            page: { id: "0".repeat(32), title: "Chart" },
+        };
+        const groups = groupParts([tool("a"), shown, tool("b")]);
+        expect(groups.map((group) => ("tools" in group ? group.tools.map((part) => part.id) : group.id))).toEqual([["a"], "p", ["b"]]);
+    });
+
     it("names a tool group after its first call", () => {
         expect(groupParts([tool("b"), tool("c")])[0].id).toBe("b");
     });

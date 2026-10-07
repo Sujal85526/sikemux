@@ -65,6 +65,7 @@ import { confirmDialog } from "./state/dialog";
 import { invalidate } from "./state/resources";
 import { getState, useStore } from "./state/store";
 import { applyTheme, applyWindowOpacity, registerCustomThemes } from "./themes/bus";
+import { startPageTheme } from "./chat/pageTheme";
 import { applyTerminalFontSize } from "./terminal/fontSize";
 import { applyChatTextScale } from "./chat/textScale";
 import { applyEditorTextScale } from "./editor/textScale";
@@ -758,6 +759,7 @@ export default function App() {
                     const st = getState();
                     registerCustomThemes(st.customThemes);
                     applyTheme(st.themeId);
+                    startPageTheme();
                     applyWindowOpacity(st.windowOpacity);
                     applyTerminalFontSize(st.terminalFontSize);
                     applyChatTextScale(st.chatTextScale);

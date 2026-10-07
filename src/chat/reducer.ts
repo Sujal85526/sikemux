@@ -1,4 +1,5 @@
 import { toolDiff, toolFailure } from "./diff";
+import { toolPage } from "./pages";
 import { toolOutput } from "./toolOutput";
 import { toolRowArguments } from "./toolLabels";
 import type {
@@ -197,12 +198,13 @@ function withoutPayload(tool: AcpToolCall): AcpToolCall {
 function settleTool(part: ToolPart): ToolPart {
     const diff = toolDiff(part.tool);
     const output = toolOutput(part.tool);
+    const page = toolPage(part.tool);
     const failure = output ? null : toolFailure(part.tool);
     return {
         ...part,
         tool: withoutPayload(part.tool),
         ...(diff ? { diff } : {}),
-        ...(output ? { output } : {}),
+        ...(page ? { page } : output ? { output } : {}),
         ...(failure ? { failure } : {}),
     };
 }

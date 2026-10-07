@@ -1,3 +1,4 @@
+import type { PageRef } from "../api/pages";
 import type { ToolDiff } from "./diff";
 import type { ToolOutput } from "./toolOutput";
 import type { SentContext } from "./promptContext";
@@ -109,7 +110,17 @@ export type ChatPart =
     | { id: string; kind: "content"; content: AcpContentBlock }
     /* A finished call is read once and kept as what the transcript shows: the
        change it made, what it printed, and what it left behind when it failed. */
-    | { id: string; kind: "tool"; tool: AcpToolCall; diff?: ToolDiff; output?: ToolOutput; failure?: string; startedAt?: number; endedAt?: number }
+    | {
+          id: string;
+          kind: "tool";
+          tool: AcpToolCall;
+          diff?: ToolDiff;
+          output?: ToolOutput;
+          page?: PageRef;
+          failure?: string;
+          startedAt?: number;
+          endedAt?: number;
+      }
     | { id: string; kind: "subagent"; subagent: AcpSubagent }
     | { id: string; kind: "notice"; notice: AcpTaskNotice }
     | { id: string; kind: "agent_notice"; notice: AgentNotice }

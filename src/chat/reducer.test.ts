@@ -261,6 +261,19 @@ describe("chat reducer", () => {
         expect(part.tool).not.toHaveProperty("rawInput");
     });
 
+    it("keeps the page a finished page_show showed in place of what it printed", () => {
+        const page = { id: "0123456789abcdef0123456789abcdef", title: "Revenue", height: 300 };
+        const shown = replay(initialChatState, [
+            { sessionUpdate: "tool_call", toolCallId: "page-1", title: "mcp__sikemux-tools__page_show", status: "in_progress" },
+            { sessionUpdate: "tool_call_update", toolCallId: "page-1", status: "completed", rawOutput: JSON.stringify({ page, note: "shown" }) },
+        ]);
+        const part = toolPart(shown);
+
+        expect(part.page).toEqual(page);
+        expect(part.output).toBeUndefined();
+        expect(part.tool).not.toHaveProperty("rawOutput");
+    });
+
     it("keeps a picture too big to hold by name rather than by its bytes", () => {
         const streamed = update(initialChatState, {
             sessionUpdate: "agent_message_chunk",

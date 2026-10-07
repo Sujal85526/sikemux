@@ -9,6 +9,7 @@ import { ChatFileRef, useFileRef } from "./FileRef";
 import { ChatAgentContext } from "./chatAgent";
 import { ChatImage } from "./ChatImage";
 import { FoldedMarkdown } from "./ChatMarkdown";
+import { ChatPage } from "./ChatPage";
 import { ToolGroup } from "./ToolGroup";
 import { ToolRow } from "./ToolRow";
 import { attachmentName, formatDetail, groupParts, subagentTask } from "./transcript";
@@ -100,7 +101,7 @@ const MessagePart = memo(function MessagePart({ part, live, typed }: { part: Cha
             </div>
         );
     }
-    if (part.kind === "tool") return <ToolRow part={part} />;
+    if (part.kind === "tool") return part.page ? <ChatPage page={part.page} /> : <ToolRow part={part} />;
     if (part.kind === "subagent") return <SubagentPart subagent={part.subagent} />;
     if (part.kind === "notice") return <NoticePart notice={part.notice} />;
     if (part.kind === "agent_notice") return <AgentNoticePart notice={part.notice} />;
