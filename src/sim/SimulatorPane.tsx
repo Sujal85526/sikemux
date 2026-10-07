@@ -388,7 +388,10 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
     };
     const rotate = () => {
         if (!udid) return;
-        const turn = Math.max(0, TURNS.findIndex((orientation) => orientation === screen?.orientation));
+        const turn = Math.max(
+            0,
+            TURNS.findIndex((orientation) => orientation === screen?.orientation),
+        );
         const next = TURNS[(turn + 1) % TURNS.length];
         action(() => simApi.orientation(udid, next).then(() => setScreenAsked((asked) => asked + 1)));
     };
