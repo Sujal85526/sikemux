@@ -59,6 +59,9 @@
 .sess-icon.ssh {
     color: color-mix(in oklab, var(--cmd) 70%, var(--ink-dim));
 }
+.agent-glyph.sim {
+    color: color-mix(in oklab, var(--acc) 70%, var(--ink-dim));
+}
 .agent-glyph.files {
     color: color-mix(in oklab, var(--git-modified) 76%, var(--ink-dim));
 }

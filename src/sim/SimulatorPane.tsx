@@ -1,90 +1,207 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
-import { simApi, type SimDevice, type SimOrientation, type SimScreen, type SimStatus, type SimStreamFormat } from "../api/sim";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type WheelEvent } from "react";
+import { simApi, type SimDevice, type SimOrientation, type SimScreen, type SimStreamFormat } from "../api/sim";
+import { readClipboardText } from "../lib/clipboard";
 import * as cmd from "../state/commands";
 import type { DeskSimulator } from "../state/types";
 import { notify, reportError } from "../state/toast";
 import { Dropdown } from "../ui/Dropdown";
 import { EmptyState } from "../ui/Panel";
-import { playScreen } from "./screenStream";
+import { useDocumentVisible } from "./documentVisible";
+import { playScreen, type ScreenPlayer } from "./screenStream";
+import { loadSimStatus, prepareSim, simUsable, useSimStatus } from "./simStatus";
 import "../styles/simulator.css";
 
-const NAMED_KEYS = new Set(["Enter", "Escape", "Backspace", "Tab", "Delete", "ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"]);
+const NAMED_KEYS = new Set(["Enter", "Escape", "Backspace", "Delete", "ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"]);
 const TURNS: SimOrientation[] = ["portrait", "landscapeLeft", "portraitUpsideDown", "landscapeRight"];
+const REFRESH_MS = 5000;
+const WHEEL_SETTLE_MS = 80;
+const SWIPE_STEPS = 6;
 
-/** Where a pointer is on the device, in points, for a canvas drawn with `object-fit: contain`. */
-export function devicePoint(
-    canvas: { width: number; height: number; rect: { left: number; top: number; width: number; height: number } },
-    screen: SimScreen,
-    clientX: number,
-    clientY: number,
-): { x: number; y: number } | null {
+export interface Point {
+    x: number;
+    y: number;
+}
+
+export interface CanvasBox {
+    width: number;
+    height: number;
+    rect: { left: number; top: number; width: number; height: number };
+}
+
+const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+export const isIosDevice = (device: SimDevice): boolean => /^(iOS|iPadOS)\b/.test(device.runtime);
+
+/** The screen in points, turned on its side when the frames are, so a point maps the way the picture shows it. */
+function screenAsDrawn(canvas: CanvasBox, screen: SimScreen): { width: number; height: number } {
+    const framesSideways = canvas.width > canvas.height;
+    const screenSideways = screen.width > screen.height;
+    return framesSideways === screenSideways ? screen : { width: screen.height, height: screen.width };
+}
+
+/** Device points per CSS pixel of the canvas, which is drawn with `object-fit: contain`. */
+function pointsPerPixel(canvas: CanvasBox, screen: SimScreen): number {
+    const fit = Math.min(canvas.rect.width / canvas.width, canvas.rect.height / canvas.height);
+    return screenAsDrawn(canvas, screen).width / (canvas.width * fit);
+}
+
+/** Where a pointer is on the device, in points. Off the screen it is null, or the nearest edge when clamped. */
+export function devicePoint(canvas: CanvasBox, screen: SimScreen, clientX: number, clientY: number, opts: { clamp?: boolean } = {}): Point | null {
     if (!canvas.width || !canvas.height) return null;
+    const shown = screenAsDrawn(canvas, screen);
     const fit = Math.min(canvas.rect.width / canvas.width, canvas.rect.height / canvas.height);
     const left = canvas.rect.left + (canvas.rect.width - canvas.width * fit) / 2;
     const top = canvas.rect.top + (canvas.rect.height - canvas.height * fit) / 2;
-    const x = ((clientX - left) / fit) * (screen.width / canvas.width);
-    const y = ((clientY - top) / fit) * (screen.height / canvas.height);
-    return x < 0 || y < 0 || x > screen.width || y > screen.height ? null : { x, y };
+    const x = ((clientX - left) / fit) * (shown.width / canvas.width);
+    const y = ((clientY - top) / fit) * (shown.height / canvas.height);
+    if (opts.clamp) return { x: Math.min(Math.max(x, 0), shown.width), y: Math.min(Math.max(y, 0), shown.height) };
+    return x < 0 || y < 0 || x > shown.width || y > shown.height ? null : { x, y };
 }
 
+/** A finger drawn from `start` the way a scroll of `dx`, `dy` pixels moves the page, kept on the screen. */
+export function scrollSwipe(canvas: CanvasBox, screen: SimScreen, start: Point, dx: number, dy: number): Point[] {
+    const shown = screenAsDrawn(canvas, screen);
+    const scale = pointsPerPixel(canvas, screen);
+    const end = {
+        x: Math.min(Math.max(start.x - dx * scale, 0), shown.width),
+        y: Math.min(Math.max(start.y - dy * scale, 0), shown.height),
+    };
+    return Array.from({ length: SWIPE_STEPS + 1 }, (_, step) => ({
+        x: start.x + ((end.x - start.x) * step) / SWIPE_STEPS,
+        y: start.y + ((end.y - start.y) * step) / SWIPE_STEPS,
+    }));
+}
+
+/** What a key press sends to the device: a named key, the character it types, or nothing. */
+export function keyForDevice(event: { key: string; metaKey: boolean; ctrlKey: boolean }): { key: string } | { text: string } | null {
+    if (event.metaKey || event.ctrlKey) return null;
+    if (NAMED_KEYS.has(event.key)) return { key: event.key };
+    return [...event.key].length === 1 ? { text: event.key } : null;
+}
+
+export function screenshotPath(deviceName: string, at: Date): string {
+    const name =
+        deviceName
+            .replace(/[^\p{L}\p{N} ._()-]+/gu, "-")
+            .replace(/^[\s.-]+/, "")
+            .trim() || "Device";
+    const stamp = at.toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    return `~/Desktop/Simulator ${name} ${stamp}.png`;
+}
+
+interface Gesture {
+    pointerId: number;
+    rect: DOMRect;
+    last: Point;
+}
+
+interface Scroll {
+    start: Point;
+    canvas: CanvasBox;
+    dx: number;
+    dy: number;
+    timer: number;
+}
+
+const canvasBox = (canvas: HTMLCanvasElement, rect: DOMRect): CanvasBox => ({ width: canvas.width, height: canvas.height, rect });
+
 export function SimulatorPane({ agentId, simulator, visible }: { agentId: string; simulator: DeskSimulator; visible: boolean }) {
-    const [status, setStatus] = useState<SimStatus | null>(null);
-    const [download, setDownload] = useState<number | null>(null);
+    const status = useSimStatus();
+    const [statusProblem, setStatusProblem] = useState<string | null>(null);
+    const [prepare, setPrepare] = useState<{ fraction: number } | { error: string } | null>(null);
+    const [prepareAttempt, setPrepareAttempt] = useState(0);
     const [devices, setDevices] = useState<SimDevice[] | null>(null);
-    const [problem, setProblem] = useState<string | null>(null);
-    const [busy, setBusy] = useState(false);
+    const [listProblem, setListProblem] = useState<string | null>(null);
+    const [streamProblem, setStreamProblem] = useState<string | null>(null);
+    const [actionProblem, setActionProblem] = useState<string | null>(null);
+    const [power, setPower] = useState<"booting" | "shuttingDown" | null>(null);
     const [screen, setScreen] = useState<SimScreen | null>(null);
+    const [framed, setFramed] = useState(false);
     const [fps, setFps] = useState(0);
     const [format, setFormat] = useState<SimStreamFormat>("h264");
-    const [turn, setTurn] = useState(0);
     const [latency, setLatency] = useState<number | null>(null);
-    const player = useRef<ReturnType<typeof playScreen> | null>(null);
+    const [turn, setTurn] = useState(0);
+    const player = useRef<ScreenPlayer | null>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     // Input goes out in the order it happened; the helper answers requests in parallel.
     const input = useRef<Promise<unknown>>(Promise.resolve());
+    const gesture = useRef<Gesture | null>(null);
+    const pendingMove = useRef<Point | null>(null);
+    const scroll = useRef<Scroll | null>(null);
+    const latest = useRef(simulator);
+    latest.current = simulator;
 
+    const documentVisible = useDocumentVisible();
+    const shown = visible && documentVisible;
+    const usable = simUsable(status);
+    const installed = !!status?.installed;
     const device = devices?.find((candidate) => candidate.udid === simulator.udid) ?? null;
     const udid = device?.udid ?? null;
     const booted = device?.state === "booted";
+    const starting = power === "booting" || device?.state === "busy";
 
     const refresh = useCallback(async () => {
         try {
-            const list = await simApi.devices();
+            const list = (await simApi.devices()).filter(isIosDevice);
             setDevices(list);
-            setProblem(null);
-            const current = list.find((candidate) => candidate.udid === simulator.udid);
+            setListProblem(null);
+            const { id, udid: showing, deviceName } = latest.current;
+            const current = list.find((candidate) => candidate.udid === showing);
             const pick =
                 current ?? list.find((candidate) => candidate.state === "booted") ?? list.find((candidate) => candidate.name.startsWith("iPhone"));
-            if (pick && pick.udid !== simulator.udid) cmd.setDeskSimulatorDevice(agentId, simulator.id, { udid: pick.udid, name: pick.name });
+            if (pick && (pick.udid !== showing || pick.name !== deviceName))
+                cmd.setDeskSimulatorDevice(agentId, id, { udid: pick.udid, name: pick.name });
         } catch (error) {
-            setProblem(error instanceof Error ? error.message : String(error));
+            setListProblem(message(error));
         }
-    }, [agentId, simulator.id, simulator.udid]);
+    }, [agentId]);
 
     useEffect(() => {
+        if (status) return;
         let alive = true;
-        void simApi.status().then((next) => alive && setStatus(next), reportError("simulator status"));
+        loadSimStatus().then(
+            () => alive && setStatusProblem(null),
+            (error: unknown) => alive && setStatusProblem(message(error)),
+        );
         return () => {
             alive = false;
         };
-    }, []);
+    }, [status, statusProblem]);
 
     useEffect(() => {
-        if (!status?.supported || status.installed) return;
+        if (!usable || installed || !shown) return;
+        let alive = true;
         const controller = new AbortController();
-        void simApi.subscribe((event) => setDownload(event.fraction), controller.signal);
-        setDownload(0);
-        simApi
-            .prepare()
-            .then(() => setStatus({ ...status, installed: true }))
-            .catch((error) => setProblem(String(error)))
-            .finally(() => setDownload(null));
-        return () => controller.abort();
-    }, [status]);
+        void simApi.subscribe((event) => alive && setPrepare({ fraction: event.fraction }), controller.signal).catch(() => {});
+        setPrepare({ fraction: 0 });
+        prepareSim().then(
+            () => alive && setPrepare(null),
+            (error: unknown) => alive && setPrepare({ error: message(error) }),
+        );
+        return () => {
+            alive = false;
+            controller.abort();
+        };
+    }, [usable, installed, shown, prepareAttempt]);
+
+    const ready = usable && installed;
+    useEffect(() => {
+        if (!ready || !shown) return;
+        void refresh();
+        const timer = window.setInterval(() => void refresh(), REFRESH_MS);
+        return () => window.clearInterval(timer);
+    }, [ready, shown, refresh]);
 
     useEffect(() => {
-        if (status?.supported && status.installed && visible) void refresh();
-    }, [status, visible, refresh]);
+        if (!ready) return;
+        const controller = new AbortController();
+        void simApi
+            .subscribeAttached((attached) => {
+                if (attached.agentId === agentId) void refresh();
+            }, controller.signal)
+            .catch(() => {});
+        return () => controller.abort();
+    }, [ready, agentId, refresh]);
 
     useEffect(() => {
         if (!udid || !booted) return setScreen(null);
@@ -97,80 +214,164 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!udid || !booted || !visible || !canvas) return;
-        const playing = playScreen(udid, canvas, { onFps: setFps, onFormat: setFormat, onError: setProblem, onLatency: setLatency });
+        if (!udid || !booted || !shown || !canvas) return;
+        setStreamProblem(null);
+        const playing = playScreen(udid, canvas, {
+            onError: setStreamProblem,
+            onFirstFrame: () => setFramed(true),
+            ...(import.meta.env.DEV ? { onFps: setFps, onFormat: setFormat, onLatency: setLatency } : {}),
+        });
         player.current = playing;
         return () => {
             playing.stop();
             player.current = null;
         };
-    }, [udid, booted, visible]);
+    }, [udid, booted, shown]);
+
+    useEffect(() => setFramed(false), [udid, booted]);
 
     const send = (work: () => Promise<unknown>) => {
         input.current = input.current.then(work).catch(reportError("simulator input"));
     };
-
-    const pointAt = (event: PointerEvent<HTMLCanvasElement>) => {
-        const canvas = canvasRef.current;
-        if (!canvas || !screen) return null;
-        return devicePoint(
-            { width: canvas.width, height: canvas.height, rect: canvas.getBoundingClientRect() },
-            screen,
-            event.clientX,
-            event.clientY,
-        );
+    const action = (work: () => Promise<unknown>) => {
+        setActionProblem(null);
+        send(work);
     };
-    const touch = (phase: "down" | "move" | "up") => (event: PointerEvent<HTMLCanvasElement>) => {
-        if (!udid || (phase === "move" && !event.currentTarget.hasPointerCapture(event.pointerId))) return;
-        if (phase === "down") {
-            event.currentTarget.setPointerCapture(event.pointerId);
-            player.current?.markInput();
+
+    const queueMove = (target: string, point: Point) => {
+        const waiting = pendingMove.current !== null;
+        pendingMove.current = point;
+        if (waiting) return;
+        send(() => {
+            const next = pendingMove.current;
+            pendingMove.current = null;
+            return next ? simApi.touch(target, "move", next.x, next.y) : Promise.resolve();
+        });
+    };
+
+    const pointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
+        if (!udid || !screen || !framed || gesture.current || !event.isPrimary || event.button !== 0) return;
+        const canvas = event.currentTarget;
+        const rect = canvas.getBoundingClientRect();
+        const point = devicePoint(canvasBox(canvas, rect), screen, event.clientX, event.clientY);
+        if (!point) return;
+        canvas.setPointerCapture(event.pointerId);
+        gesture.current = { pointerId: event.pointerId, rect, last: point };
+        setActionProblem(null);
+        player.current?.markInput();
+        send(() => simApi.touch(udid, "down", point.x, point.y));
+    };
+    const pointerMove = (event: PointerEvent<HTMLCanvasElement>) => {
+        const current = gesture.current;
+        if (!udid || !screen || !current || current.pointerId !== event.pointerId) return;
+        const point = devicePoint(canvasBox(event.currentTarget, current.rect), screen, event.clientX, event.clientY, { clamp: true });
+        if (!point) return;
+        current.last = point;
+        queueMove(udid, point);
+    };
+    const pointerEnd = (event: PointerEvent<HTMLCanvasElement>) => {
+        const current = gesture.current;
+        if (!udid || !current || current.pointerId !== event.pointerId) return;
+        gesture.current = null;
+        const lifted =
+            event.type === "pointerup" && screen
+                ? devicePoint(canvasBox(event.currentTarget, current.rect), screen, event.clientX, event.clientY, { clamp: true })
+                : null;
+        const point = lifted ?? current.last;
+        send(() => simApi.touch(udid, "up", point.x, point.y));
+    };
+
+    const wheel = (event: WheelEvent<HTMLCanvasElement>) => {
+        if (!udid || !screen || !framed || gesture.current) return;
+        let current = scroll.current;
+        if (!current) {
+            const canvas = canvasBox(event.currentTarget, event.currentTarget.getBoundingClientRect());
+            const start = devicePoint(canvas, screen, event.clientX, event.clientY);
+            if (!start) return;
+            current = scroll.current = { start, canvas, dx: 0, dy: 0, timer: 0 };
         }
-        const point = pointAt(event);
-        if (point) send(() => simApi.touch(udid, phase, point.x, point.y));
+        const lines = event.deltaMode === 1 ? 16 : 1;
+        current.dx += event.deltaX * lines;
+        current.dy += event.deltaY * lines;
+        window.clearTimeout(current.timer);
+        const settled = current;
+        current.timer = window.setTimeout(() => {
+            scroll.current = null;
+            const path = scrollSwipe(settled.canvas, screen, settled.start, settled.dx, settled.dy);
+            player.current?.markInput();
+            send(() => simApi.touch(udid, "down", path[0].x, path[0].y));
+            for (const point of path.slice(1, -1)) send(() => simApi.touch(udid, "move", point.x, point.y));
+            const end = path[path.length - 1];
+            send(() => simApi.touch(udid, "up", end.x, end.y));
+        }, WHEEL_SETTLE_MS);
     };
-    const type = (event: KeyboardEvent<HTMLCanvasElement>) => {
-        if (!udid || event.metaKey || event.ctrlKey || event.altKey) return;
-        if (NAMED_KEYS.has(event.key)) send(() => simApi.key(udid, event.key));
-        else if (event.key.length === 1) send(() => simApi.text(udid, event.key));
-        else return;
+    useEffect(() => () => window.clearTimeout(scroll.current?.timer), []);
+
+    const keyDown = (event: KeyboardEvent<HTMLCanvasElement>) => {
+        if (!udid) return;
+        if (event.metaKey && !event.ctrlKey && !event.altKey && event.key.toLowerCase() === "v") {
+            event.preventDefault();
+            action(() => readClipboardText().then((text) => (text ? simApi.text(udid, text) : undefined)));
+            return;
+        }
+        const press = keyForDevice(event);
+        if (!press) return;
         event.preventDefault();
+        action(() => ("key" in press ? simApi.key(udid, press.key) : simApi.text(udid, press.text)));
     };
 
-    const power = async () => {
-        if (!udid) return;
-        setBusy(true);
+    const togglePower = async () => {
+        if (!udid || power || starting) return;
+        setActionProblem(null);
+        setPower(booted ? "shuttingDown" : "booting");
         try {
             await (booted ? simApi.shutdown(udid) : simApi.boot(udid));
-            await refresh();
         } catch (error) {
-            setProblem(error instanceof Error ? error.message : String(error));
+            setActionProblem(message(error));
         } finally {
-            setBusy(false);
+            setPower(null);
+            await refresh();
         }
     };
     const rotate = () => {
         if (!udid) return;
         const next = (turn + 1) % TURNS.length;
-        send(() => simApi.orientation(udid, TURNS[next]).then(() => setTurn(next)));
+        action(() => simApi.orientation(udid, TURNS[next]).then(() => setTurn(next)));
     };
     const screenshot = () => {
         if (!udid || !device) return;
-        const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-        send(() =>
-            simApi
-                .screenshot(udid, `~/Desktop/Simulator ${device.name} ${stamp}.png`)
-                .then(() => notify("success", "Screenshot saved to the Desktop")),
-        );
+        const path = screenshotPath(device.name, new Date());
+        action(() => simApi.screenshot(udid, path).then(() => notify("success", "Screenshot saved to the Desktop")));
     };
 
-    if (status && !status.supported)
-        return <EmptyState title="iOS Simulator" message={status.reason ?? "The iOS Simulator is not available here."} />;
-    if (download !== null) return <EmptyState title="Getting the simulator helper" message={`Downloading… ${Math.round(download * 100)}%`} />;
-    if (problem && !devices) return <EmptyState title="iOS Simulator" message={problem} tone="error" />;
+    if (statusProblem)
+        return (
+            <EmptyState
+                title="iOS Simulator"
+                message={statusProblem}
+                tone="error"
+                action={{ label: "Retry", onClick: () => setStatusProblem(null) }}
+            />
+        );
+    if (status && !usable) return <EmptyState title="iOS Simulator" message={status.reason ?? "The iOS Simulator is not available here."} />;
+    if (status && !installed) {
+        if (prepare && "error" in prepare)
+            return (
+                <EmptyState
+                    title="Could not get the simulator helper"
+                    message={prepare.error}
+                    tone="error"
+                    action={{ label: "Retry", onClick: () => setPrepareAttempt((attempt) => attempt + 1) }}
+                />
+            );
+        return <EmptyState title="Getting the simulator helper" message={`Downloading… ${Math.round((prepare?.fraction ?? 0) * 100)}%`} />;
+    }
+    if (listProblem && !devices)
+        return <EmptyState title="iOS Simulator" message={listProblem} tone="error" action={{ label: "Retry", onClick: () => void refresh() }} />;
     if (devices && devices.length === 0)
         return <EmptyState title="No iOS simulators" message="Add an iOS runtime in Xcode › Settings › Components, then reopen this tab." />;
 
+    const problem = actionProblem ?? streamProblem;
     return (
         <div className="sim-pane">
             <div className="sim-bar">
@@ -188,14 +389,14 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
                     }}
                     disabled={!devices}
                 />
-                <button type="button" className="sim-chip" onClick={() => void power()} disabled={!udid || busy}>
-                    {busy ? (booted ? "Shutting down…" : "Booting…") : booted ? "Shut down" : "Boot"}
+                <button type="button" className="sim-chip" onClick={() => void togglePower()} disabled={!udid || !!power || starting}>
+                    {starting ? "Booting…" : power === "shuttingDown" ? "Shutting down…" : booted ? "Shut down" : "Boot"}
                 </button>
                 <span className="sim-chips">
-                    <button type="button" className="sim-chip" disabled={!booted} onClick={() => udid && send(() => simApi.button(udid, "home"))}>
+                    <button type="button" className="sim-chip" disabled={!booted} onClick={() => udid && action(() => simApi.button(udid, "home"))}>
                         Home
                     </button>
-                    <button type="button" className="sim-chip" disabled={!booted} onClick={() => udid && send(() => simApi.button(udid, "lock"))}>
+                    <button type="button" className="sim-chip" disabled={!booted} onClick={() => udid && action(() => simApi.button(udid, "lock"))}>
                         Lock
                     </button>
                     <button type="button" className="sim-chip" disabled={!booted} onClick={rotate}>
@@ -205,30 +406,36 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
                         Screenshot
                     </button>
                 </span>
-                {import.meta.env.DEV && booted && visible && (
+                {import.meta.env.DEV && booted && shown && (
                     <span className="sim-fps" title="Frames drawn in the last second, the format, and the last tap → frame time (dev builds only)">
                         {fps} fps · {format === "h264" ? "H.264" : "MJPEG"}
                         {latency !== null && ` · tap→frame ${Math.round(latency)} ms`}
                     </span>
                 )}
             </div>
-            {problem && devices && <div className="sim-problem">{problem}</div>}
+            {problem && <div className="sim-problem">{problem}</div>}
             <div className="sim-stage">
                 {booted ? (
                     <canvas
                         ref={canvasRef}
-                        className="sim-screen"
+                        className={`sim-screen${framed ? " framed" : ""}`}
                         tabIndex={0}
+                        data-takes-keys
                         aria-label={`${device?.name ?? "Simulator"} screen`}
-                        onPointerDown={touch("down")}
-                        onPointerMove={touch("move")}
-                        onPointerUp={touch("up")}
-                        onKeyDown={type}
+                        onPointerDown={pointerDown}
+                        onPointerMove={pointerMove}
+                        onPointerUp={pointerEnd}
+                        onPointerCancel={pointerEnd}
+                        onLostPointerCapture={pointerEnd}
+                        onWheel={wheel}
+                        onKeyDown={keyDown}
                     />
+                ) : starting ? (
+                    <EmptyState icon={<span className="loading-ring" />} message={`Booting ${device?.name ?? "the device"}…`} />
                 ) : (
                     <EmptyState
                         message={device ? `${device.name} is not running.` : "Pick a device."}
-                        action={device ? { label: "Boot", onClick: () => void power() } : undefined}
+                        action={device ? { label: "Boot", onClick: () => void togglePower() } : undefined}
                     />
                 )}
             </div>

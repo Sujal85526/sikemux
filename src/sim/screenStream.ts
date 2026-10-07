@@ -29,6 +29,7 @@ export interface ScreenStreamEvents {
     /** From a touch going out to the next frame drawn, in milliseconds. */
     onLatency?: (ms: number) => void;
     onFormat?: (format: SimStreamFormat) => void;
+    onFirstFrame?: () => void;
     onError: (message: string) => void;
 }
 
@@ -54,6 +55,7 @@ export function playScreen(udid: string, canvas: HTMLCanvasElement, events: Scre
     let decodingImage = false;
     let format: SimStreamFormat = "h264";
     let drawn = 0;
+    let framed = false;
     const onFps = events.onFps;
     const fpsTimer = onFps
         ? window.setInterval(() => {
@@ -69,6 +71,10 @@ export function playScreen(udid: string, canvas: HTMLCanvasElement, events: Scre
             canvas.height = height;
         }
         context.drawImage(image, 0, 0, width, height);
+        if (!framed) {
+            framed = true;
+            events.onFirstFrame?.();
+        }
         drawn += 1;
         if (inputAt !== null) {
             events.onLatency?.(performance.now() - inputAt);
