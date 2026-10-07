@@ -1,4 +1,5 @@
 import type { PluginKind } from "../../plugins/kinds";
+import type { SpaceIcon } from "../projectSpaces";
 
 /**
  * How a split arranges its children.
@@ -199,8 +200,8 @@ export type DiffTarget = { kind: "worktree"; path: string } | { kind: "commit"; 
 export interface ProjectSpace {
     id: string;
     name: string;
-    /** An emoji, or empty to show the name's first letter instead. */
-    icon: string;
+    /** Empty when the person removed it; the space then shows only its name. */
+    icon: SpaceIcon | "";
 }
 
 export interface Session {
