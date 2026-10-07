@@ -478,9 +478,9 @@ function DeskOutline() {
                 if (entry.target === kinds) measureCorner();
                 else {
                     const box = entry.borderBoxSize?.[0];
-                    size = box
-                        ? { width: Math.round(box.inlineSize), height: Math.round(box.blockSize) }
-                        : { width: pane.offsetWidth, height: pane.offsetHeight };
+                    /* Unrounded: on a pane a fraction of a pixel wide, a rounded-up size
+                       puts the right and bottom edges outside the pane, which clips them. */
+                    size = box ? { width: box.inlineSize, height: box.blockSize } : { width: pane.offsetWidth, height: pane.offsetHeight };
                 }
             }
             draw();
