@@ -1,5 +1,7 @@
 import { Children, useContext, useMemo, type ReactNode } from "react";
+import { isPluginEnabled } from "../plugins/enabled";
 import { linkPlugin } from "../plugins/registry";
+import { useStore } from "../state/store";
 import { CopyButton } from "../ui/CopyButton";
 import { FileIcon } from "../ui/FileIcon";
 import { hasPrimaryModifier } from "../lib/platform";
@@ -44,6 +46,8 @@ function ChatLink({ href, guess, children }: { href: string; guess?: PathGuess; 
     const preview = useImagePreview(guess ? null : imagePath);
     const file = useFileRef(href);
     const agentId = useContext(ChatAgentContext).id;
+    const service = linkPlugin(href);
+    const serviceOn = useStore((s) => service !== undefined && isPluginEnabled(service.id, s.disabledPlugins));
     if (preview && imagePath) return <ChatImage src={preview} path={imagePath} />;
     if (file)
         return (
@@ -56,7 +60,7 @@ function ChatLink({ href, guess, children }: { href: string; guess?: PathGuess; 
         );
     if (guess === "code") return <code>{children}</code>;
     if (guess === "text") return <>{children}</>;
-    const mark = linkPlugin(href)?.mark?.(13);
+    const mark = serviceOn ? service?.mark?.(13) : undefined;
     return (
         <a
             href={href}

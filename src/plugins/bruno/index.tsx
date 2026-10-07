@@ -41,6 +41,7 @@ registerFrontendPlugin({
     ],
     open: () => openBrunoSession(),
     openTitle: "Open Bruno",
+    mark: (size) => <IconBruno size={size} />,
     openShortcut: IS_MACOS ? "Meta+Alt+KeyB" : "Ctrl+Alt+KeyB",
     shortcuts: [
         {

@@ -18,5 +18,6 @@ registerFrontendPlugin({
     ],
     open: openAwsSession,
     openTitle: "Open AWS",
+    mark: (size) => <IconAws size={size} className="icon-aws" />,
     openShortcut: IS_MACOS ? "Meta+Alt+KeyA" : "Ctrl+Alt+KeyA",
 });

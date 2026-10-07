@@ -21,6 +21,7 @@ registerFrontendPlugin({
     ],
     open: openRundeckSession,
     openTitle: "Open Rundeck deploy center",
+    mark: (size) => <IconRundeck size={Math.round(size * 0.87)} />,
     Overlay: RundeckOverlay,
     TopBarItem: RundeckTopBarItem,
 });

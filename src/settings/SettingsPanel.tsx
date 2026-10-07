@@ -1591,6 +1591,7 @@ function PluginsPage() {
                                 label={title}
                                 desc={`${plugin.id}${version ? ` · ${version}` : ""}`}
                                 asLabel
+                                icon={plugin.mark?.(20)}
                                 control={
                                     <Switch
                                         checked={!disabled.includes(plugin.id)}

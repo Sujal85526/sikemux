@@ -73,7 +73,7 @@ export interface FrontendPlugin {
     readonly surfaces: readonly PluginSurface[];
     readonly open: () => void;
     readonly openTitle: string;
-    /** Its logo in its own colours, on each call an agent makes to its tools. */
+    /** Its logo in its own colours: in Settings, and on each call an agent makes to its tools. */
     readonly mark?: (size: number) => ReactNode;
     /** Hosts whose links in the chat carry its mark. A leading dot takes every subdomain. */
     readonly linkHosts?: readonly string[];

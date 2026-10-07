@@ -34,6 +34,7 @@ export function SettingsRow({
     wide = false,
     stack = false,
     asLabel = false,
+    icon,
     control,
     children,
 }: {
@@ -42,14 +43,16 @@ export function SettingsRow({
     wide?: boolean;
     stack?: boolean;
     asLabel?: boolean;
+    icon?: ReactNode;
     control?: ReactNode;
     children?: ReactNode;
 }) {
     const Tag = asLabel ? "label" : "div";
     return (
         <Tag
-            className={`settings-row${wide ? " wide" : ""}${stack ? " stack" : ""}`}
+            className={`settings-row${wide ? " wide" : ""}${stack ? " stack" : ""}${icon ? " has-icon" : ""}`}
             data-settings-target={typeof label === "string" ? label : undefined}>
+            {icon && <span className="settings-row-icon">{icon}</span>}
             <span className="settings-row-copy">
                 <span className="settings-row-label">{label}</span>
                 {desc && <span className="settings-row-desc">{desc}</span>}
