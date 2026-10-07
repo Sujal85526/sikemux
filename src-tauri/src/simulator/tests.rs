@@ -270,9 +270,9 @@ mod tools {
               "supportedDeviceTypes": [{ "identifier": "iphone16", "productFamily": "iPhone" }] },
             { "identifier": "ios27", "version": "27.0", "platform": "iOS", "isAvailable": true,
               "supportedDeviceTypes": [
-                { "identifier": "iphone17", "productFamily": "iPhone" },
+                { "identifier": "ipad", "productFamily": "iPad" },
                 { "identifier": "iphone18", "productFamily": "iPhone" },
-                { "identifier": "ipad", "productFamily": "iPad" } ] },
+                { "identifier": "iphone17", "productFamily": "iPhone" } ] },
             { "identifier": "ios28", "version": "28.0", "platform": "iOS", "isAvailable": false,
               "supportedDeviceTypes": [{ "identifier": "iphone19", "productFamily": "iPhone" }] },
             { "identifier": "watch", "version": "30.0", "platform": "watchOS", "isAvailable": true,

@@ -677,7 +677,8 @@ async fn create_device(
         .ok_or_else(|| format!("the new simulator {udid} did not appear"))
 }
 
-/// The newest iOS runtime installed, and the newest iPhone it runs, as `simctl create` takes them.
+/// The newest iOS runtime installed, and the newest iPhone it runs, which
+/// `simctl` lists first, as `simctl create` takes them.
 pub(super) fn newest_iphone(runtimes: &Value) -> Option<(String, String)> {
     let runtime = runtimes["runtimes"]
         .as_array()?
@@ -693,7 +694,7 @@ pub(super) fn newest_iphone(runtimes: &Value) -> Option<(String, String)> {
     let kind = runtime["supportedDeviceTypes"]
         .as_array()?
         .iter()
-        .rfind(|kind| kind["productFamily"] == "iPhone")?;
+        .find(|kind| kind["productFamily"] == "iPhone")?;
     Some((
         kind["identifier"].as_str()?.to_owned(),
         runtime["identifier"].as_str()?.to_owned(),
