@@ -661,7 +661,7 @@ describe("DeskHost", () => {
         renderPane();
 
         expect(await screen.findByRole("tab", { name: /iPhone 17/ })).toBeInTheDocument();
-        expect(screen.getByTestId("desk-simulator")).toHaveAttribute("data-visible", "true");
+        expect(await screen.findByTestId("desk-simulator")).toHaveAttribute("data-visible", "true");
 
         fireEvent.click(within(screen.getByRole("tablist", { name: "Desk views" })).getByRole("tab", { name: "Files" }));
 
