@@ -110,6 +110,11 @@ pub async fn pty_spawn(
     ) {
         env.extend(crate::model_providers::environment(agent_type).await);
     }
+    if let Some(path) = crate::system::child_path() {
+        if !env.iter().any(|(key, _)| key == "PATH") {
+            env.push(("PATH".into(), path));
+        }
+    }
     let client = manager.client().await?;
     let id = client
         .spawn(
@@ -151,9 +156,12 @@ pub struct TaskSpawnResult {
 pub async fn task_spawn(
     app: AppHandle,
     manager: State<'_, PtyManager>,
-    request: TaskSpawnRequest,
+    mut request: TaskSpawnRequest,
     on_exit: Channel<TaskProcessExit>,
 ) -> AppResult<TaskSpawnResult> {
+    if let Some(path) = crate::system::child_path() {
+        request.env.entry("PATH".into()).or_insert(path);
+    }
     let operation = global_observability().slow_operation(
         "pty.task_spawn",
         Duration::from_millis(50),

@@ -402,13 +402,9 @@ fn native_program(executable: &Path, arguments: &[&str], environment_keys: &[Str
 
 /// The variables the person's profile names, with this app's values, since
 /// the core may have started before they were set.
-/// The PATH this app worked out for the person's tools. A background core
-/// keeps the environment it first started with through every update, so a
-/// launch names the PATH itself rather than inheriting the core's.
 fn with_user_path(env: &mut BTreeMap<String, String>) {
-    if let Some(path) = sikemux_process::user_environment::var_os("PATH") {
-        env.entry("PATH".into())
-            .or_insert_with(|| path.to_string_lossy().into_owned());
+    if let Some(path) = crate::system::child_path() {
+        env.entry("PATH".into()).or_insert(path);
     }
 }
 

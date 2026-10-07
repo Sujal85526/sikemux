@@ -107,6 +107,14 @@ fn user_path() -> Option<String> {
     std::env::join_paths(paths).ok()?.into_string().ok()
 }
 
+/// The PATH this app worked out for the person's tools, for a process the
+/// background core starts. The core keeps the environment it first started
+/// with through every update, so the app names the PATH on each launch.
+pub fn child_path() -> Option<String> {
+    sikemux_process::user_environment::var_os("PATH")
+        .map(|path| path.to_string_lossy().into_owned())
+}
+
 pub fn user_home() -> PathBuf {
     std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
