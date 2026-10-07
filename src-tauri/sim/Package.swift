@@ -1,4 +1,5 @@
 // swift-tools-version:6.0
+import Foundation
 import PackageDescription
 
 // The parts of facebook/idb (MIT) the helper drives the iOS Simulator with,
@@ -8,6 +9,8 @@ import PackageDescription
 let root = Context.packageDirectory
 let developerDir = Context.environment["DEVELOPER_DIR"] ?? "/Applications/Xcode.app/Contents/Developer"
 let privateHeaders = "\(root)/idb/PrivateHeaders"
+let xcframework = "\(root)/Frameworks/FBControlCore.xcframework"
+let fbControlCore = "\(xcframework)/" + ((try? FileManager.default.contentsOfDirectory(atPath: xcframework))?.first { $0.hasPrefix("macos-") } ?? "macos")
 let privateModules = [
     "AXRuntime", "CoreSimulatorUtilities", "DTXConnectionServices", "SimulatorKit",
     "AccessibilityPlatformTranslation", "CoreSimDeviceIO", "CoreSimulator", "SimulatorApp",
@@ -48,7 +51,7 @@ let package = Package(
                         ["-Xlinker", "-weak_library", "-Xlinker", "\(privateHeaders)/\($0)/\($0).tbd"]
                     }
                         // FBControlCore adds Objective-C categories that nothing references by name.
-                        + ["-Xlinker", "-all_load"]
+                        + ["-Xlinker", "-force_load", "-Xlinker", "\(fbControlCore)/FBControlCore.framework/FBControlCore"]
                 )
             ]
         ),
