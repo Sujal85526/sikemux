@@ -154,6 +154,20 @@ pub(super) fn opencode_status<'a>(
     }
 }
 
+/// The status of an agent whose binary was found: from the last minute's answer, or asked now.
+pub(super) async fn signed_in_status(
+    agent: AgentKind,
+    program: &Path,
+    config_path: Option<&str>,
+) -> AgentStatus {
+    if let Some(status) = cached_status(agent, config_path) {
+        return status;
+    }
+    let status = check_sign_in(agent, program, config_path).await;
+    remember_status(agent, config_path, status.clone());
+    status
+}
+
 /// Long enough for a CLI that starts slowly; a check that takes longer answers `Unknown`.
 const CHECK_TIMEOUT: Duration = Duration::from_secs(12);
 
