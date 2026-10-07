@@ -2,7 +2,7 @@
 import PackageDescription
 
 // The parts of facebook/idb (MIT) the helper drives the iOS Simulator with,
-// copied in under idb/. FBControlCore's Swift and Objective-C halves import
+// copied in under idb/ from commit 45e96c070ce62ee1df14ba21ccd8c07b720a8684. FBControlCore's Swift and Objective-C halves import
 // each other, which one SwiftPM target cannot hold, so build-sim-helper.mjs
 // builds it with XcodeGen into Frameworks/FBControlCore.xcframework first.
 let root = Context.packageDirectory

@@ -138,9 +138,10 @@ jobs:
     name: iOS Simulator helper
     # idb's simulator libraries need Xcode 26 or newer.
     runs-on: macos-26
+    timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -151,9 +152,9 @@ jobs:
       - name: Run the helper's tests
         run: swift test --package-path src-tauri/sim
 
-      - name: Note the Xcode and idb it was checked against
-        run: |
-          echo "Checked with $(xcodebuild -version | head -1), idb $(cut -c1-12 src-tauri/sim/idb/COMMIT)" >>"$GITHUB_STEP_SUMMARY"
+      # idb is copied in from facebook/idb at 45e96c0, as Package.swift says.
+      - name: Note the Xcode it was checked against
+        run: echo "Checked with $(xcodebuild -version | head -1)" >>"$GITHUB_STEP_SUMMARY"
 
       - name: Build the app the end-to-end test drives
         run: node scripts/build-sim-fixture.mjs
@@ -161,14 +162,24 @@ jobs:
       - name: Setup Rust
         run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)" --profile minimal --no-self-update
 
+      - name: Build dependencies with light optimisation
+        run: printf '[profile.dev.package."*"]\nopt-level = %s\n' "$DEPS_OPT_LEVEL" >>"${CARGO_HOME:-$HOME/.cargo}/config.toml"
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri
+          key: deps-opt-level-${{ env.DEPS_OPT_LEVEL }}
+          cache-on-failure: true
+
       - name: Prepare Tauri resource placeholder
         run: mkdir -p src-tauri/icons/build && touch src-tauri/icons/build/Assets.car
 
       # A runner's first boot of a device takes minutes, longer than one tool call waits.
-      - name: Boot an iPhone simulator
+      - name: Boot an iPhone 17 Pro simulator
+        timeout-minutes: 10
         run: |
-          udid=$(xcrun simctl list devices available --json |
-            python3 -c 'import json,sys; print(next(d["udid"] for ds in json.load(sys.stdin)["devices"].values() for d in ds if d["name"].startswith("iPhone")))')
+          udid=$(xcrun simctl create "Sikemux CI" com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro)
           xcrun simctl boot "$udid"
           xcrun simctl bootstatus "$udid" -b
           echo "SIKEMUX_SIM_DEVICE=$udid" >>"$GITHUB_ENV"
