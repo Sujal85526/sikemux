@@ -20,13 +20,21 @@ export async function chooseDecoder(
 const webCodecsSupports = async (config: VideoDecoderConfig) =>
     typeof VideoDecoder !== "undefined" && (await VideoDecoder.isConfigSupported(config).catch(() => ({ supported: false }))).supported === true;
 
+/** Frames waiting in the decoder past which the stream skips ahead to the next key frame rather than fall further behind. */
+const DECODE_BACKLOG = 3;
+
 export interface ScreenStreamEvents {
     /** Frames drawn in the last second. */
-    onFps: (fps: number) => void;
+    onFps?: (fps: number) => void;
     /** From a touch going out to the next frame drawn, in milliseconds. */
     onLatency?: (ms: number) => void;
-    onFormat: (format: SimStreamFormat) => void;
+    onFormat?: (format: SimStreamFormat) => void;
     onError: (message: string) => void;
+}
+
+export interface ScreenPlayer {
+    stop: () => void;
+    markInput: () => void;
 }
 
 /**
@@ -34,21 +42,28 @@ export interface ScreenStreamEvents {
  * the app on a Tauri channel. Nothing else depends on it: taps, screenshots and
  * the accessibility tree work with no stream running.
  */
-export function playScreen(udid: string, canvas: HTMLCanvasElement, events: ScreenStreamEvents): { stop: () => void; markInput: () => void } {
+export function playScreen(udid: string, canvas: HTMLCanvasElement, events: ScreenStreamEvents): ScreenPlayer {
     const context = canvas.getContext("2d");
     let stopped = false;
     let watch: Promise<number> | null = null;
     let inputAt: number | null = null;
     let decoder: VideoDecoder | null = null;
+    let choice: DecoderChoice | null = null;
+    let configuring = false;
+    let waitingForKey = false;
+    let decodingImage = false;
     let format: SimStreamFormat = "h264";
     let drawn = 0;
-    const fpsTimer = window.setInterval(() => {
-        events.onFps(drawn);
-        drawn = 0;
-    }, 1000);
+    const onFps = events.onFps;
+    const fpsTimer = onFps
+        ? window.setInterval(() => {
+              onFps(drawn);
+              drawn = 0;
+          }, 1000)
+        : null;
 
     const draw = (image: CanvasImageSource, width: number, height: number) => {
-        if (!context) return;
+        if (!context || stopped) return;
         if (canvas.width !== width || canvas.height !== height) {
             canvas.width = width;
             canvas.height = height;
@@ -63,8 +78,8 @@ export function playScreen(udid: string, canvas: HTMLCanvasElement, events: Scre
 
     const open = async (wanted: SimStreamFormat) => {
         format = wanted;
-        events.onFormat(wanted);
-        watch = simApi.watch(udid, wanted, (frame) => void receive(new Uint8Array(frame)));
+        events.onFormat?.(wanted);
+        watch = simApi.watch(udid, wanted, (frame) => void receive(frame));
         await watch;
     };
 
@@ -74,45 +89,68 @@ export function playScreen(udid: string, canvas: HTMLCanvasElement, events: Scre
         watch = null;
     };
 
+    const closeDecoder = () => {
+        if (decoder && decoder.state !== "closed") decoder.close();
+        decoder = null;
+    };
+
     const fallBackToMjpeg = (reason: string) => {
         if (format === "mjpeg" || stopped) return;
         console.warn(`simulator screen: ${reason}; showing MJPEG instead`);
-        if (decoder && decoder.state !== "closed") decoder.close();
-        decoder = null;
+        closeDecoder();
         close();
-        void simApi.stopStream(udid, "h264").catch(() => {});
         void open("mjpeg").catch((error) => events.onError(String(error)));
     };
 
-    let choice: DecoderChoice | null = null;
-    let configuring = false;
-    const receive = async (bytes: Uint8Array) => {
-        if (stopped) return;
-        if (format === "mjpeg") {
-            const image = await createImageBitmap(new Blob([bytes.slice()], { type: "image/jpeg" }));
+    const drawJpeg = async (frame: ArrayBuffer) => {
+        if (decodingImage) return;
+        decodingImage = true;
+        try {
+            const image = await createImageBitmap(new Blob([frame], { type: "image/jpeg" }));
             draw(image, image.width, image.height);
             image.close();
-            return;
+        } finally {
+            decodingImage = false;
         }
+    };
+
+    const startDecoder = async (sps: Uint8Array, pps: Uint8Array) => {
+        configuring = true;
+        choice = await chooseDecoder(sps, pps, webCodecsSupports);
+        if (stopped) return false;
+        if (choice.kind === "mjpeg") {
+            fallBackToMjpeg("no H.264 decoder for this stream");
+            return false;
+        }
+        decoder = new VideoDecoder({
+            output: (frame) => {
+                draw(frame, frame.displayWidth, frame.displayHeight);
+                frame.close();
+            },
+            error: (error) => fallBackToMjpeg(`the H.264 decoder failed: ${error.message}`),
+        });
+        decoder.configure(choice.config);
+        return true;
+    };
+
+    const receive = async (frame: ArrayBuffer) => {
+        if (stopped) return;
+        if (format === "mjpeg") return drawJpeg(frame);
+        const bytes = new Uint8Array(frame);
         const units = splitUnits(bytes);
         const key = isKeyFrame(units);
         if (!decoder) {
             const sps = units.find((unit) => unitType(unit) === SPS);
             const pps = units.find((unit) => unitType(unit) === PPS);
             if (!key || !sps || !pps || configuring) return;
-            configuring = true;
-            choice = await chooseDecoder(sps, pps, webCodecsSupports);
-            if (choice.kind === "mjpeg") return fallBackToMjpeg("no H.264 decoder for this stream");
-            decoder = new VideoDecoder({
-                output: (frame) => {
-                    draw(frame, frame.displayWidth, frame.displayHeight);
-                    frame.close();
-                },
-                error: (error) => fallBackToMjpeg(`the H.264 decoder failed: ${error.message}`),
-            });
-            decoder.configure(choice.config);
+            if (!(await startDecoder(sps, pps))) return;
         }
-        if (decoder.state !== "configured") return;
+        if (!decoder || decoder.state !== "configured") return;
+        if (!key && (waitingForKey || decoder.decodeQueueSize >= DECODE_BACKLOG)) {
+            waitingForKey = true;
+            return;
+        }
+        waitingForKey = false;
         try {
             decoder.decode(
                 new EncodedVideoChunk({
@@ -131,10 +169,9 @@ export function playScreen(udid: string, canvas: HTMLCanvasElement, events: Scre
     return {
         stop: () => {
             stopped = true;
-            window.clearInterval(fpsTimer);
+            if (fpsTimer !== null) window.clearInterval(fpsTimer);
             close();
-            if (decoder && decoder.state !== "closed") decoder.close();
-            void simApi.stopStream(udid).catch(() => {});
+            closeDecoder();
         },
         markInput: () => {
             inputAt = performance.now();
