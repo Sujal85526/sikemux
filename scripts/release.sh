@@ -369,8 +369,8 @@ python3 -m json.tool "$MANIFEST" >/dev/null
 snapshot_expected
 
 [[ "$(git rev-parse HEAD)" == "$HEAD_SHA" ]] || fail "HEAD moved during the release; rebuild from a settled tree"
-STABLE_GH_CMD=(gh release create "v$VERSION" --target "$HEAD_SHA" --title "v$VERSION" --notes "$NOTES" "$DMG" "$TAR" "$SIG" "$VOICE" "$MANIFEST")
-NIGHTLY_GH_CMD=(gh release create "v$VERSION" --target "$HEAD_SHA" --title "v$VERSION" --notes "$NOTES" --prerelease "$DMG" "$TAR" "$SIG" "$VOICE")
+STABLE_GH_CMD=(gh release create "v$VERSION" --verify-tag --title "v$VERSION" --notes "$NOTES" "$DMG" "$TAR" "$SIG" "$VOICE" "$MANIFEST")
+NIGHTLY_GH_CMD=(gh release create "v$VERSION" --verify-tag --title "v$VERSION" --notes "$NOTES" --prerelease "$DMG" "$TAR" "$SIG" "$VOICE")
 POINTER_NOTES="Update feed for the nightly channel.
 
 The installable build for this feed is [v$VERSION](https://github.com/nodelike/sikemux/releases/tag/v$VERSION).
