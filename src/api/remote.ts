@@ -109,6 +109,8 @@ export interface LauncherRequest {
     readonly executablePath?: string;
     readonly environmentKeys: readonly string[];
     readonly permissionMode: string;
+    /** Whether the agent is ready, signed out, missing or broken, for devices to show. */
+    readonly status?: string;
 }
 
 export const REMOTE_STATUS_EVENT = "remote_status_changed";
