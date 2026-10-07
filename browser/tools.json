@@ -719,7 +719,7 @@
       "row": {"verb": "list", "kind": "read", "icon": "window", "target": ["simulators"]},
       "method": "sim.devices",
       "offered": "simulator",
-      "description": "List the iOS simulators Xcode has, and which one you are attached to.",
+      "description": "List the iOS simulators, the one you hold, and which other agents hold.",
       "properties": {},
       "required": []
     },
@@ -728,7 +728,7 @@
       "row": {"verb": "attach", "kind": "move", "icon": "window", "target": ["{device}", "a simulator"]},
       "method": "sim.attach",
       "offered": "simulator",
-      "description": "Attach an iOS simulator by name or udid, booting it if needed, and read its screen.",
+      "description": "Attach a simulator by name or udid, else your project's own; boots it if needed and reads its screen.",
       "properties": {
         "device": {
           "type": "string",
@@ -831,7 +831,7 @@
     },
     {
       "name": "sim_type",
-      "row": {"verb": "type", "kind": "edit", "icon": "pencil", "target": ["“{text}”"]},
+      "row": {"verb": "type", "kind": "edit", "icon": "pencil", "target": ["into the focused field"]},
       "method": "sim.type",
       "offered": "simulator",
       "description": "Type text into the focused field on the attached simulator.",
@@ -866,8 +866,7 @@
             "side",
             "siri",
             "volumeUp",
-            "volumeDown",
-            "applePay"
+            "volumeDown"
           ]
         },
         "report": {
@@ -979,7 +978,7 @@
       "row": {"verb": "install", "kind": "execute", "icon": "file", "target": ["{path}"]},
       "method": "sim.install",
       "offered": "simulator",
-      "description": "Install a built .app on the attached simulator. A relative path is read from the project.",
+      "description": "Install a built .app from inside the project on the attached simulator.",
       "properties": {
         "path": {
           "type": "string",
@@ -1124,7 +1123,7 @@
       "row": {"verb": "read", "kind": "read", "icon": "info", "target": ["{process} logs", "the simulator log"]},
       "method": "sim.logs",
       "offered": "simulator",
-      "description": "Read the attached simulator's log by cursor, all of it or one process's.",
+      "description": "Read the attached simulator's log by cursor and generation, all of it or one process's.",
       "properties": {
         "process": {
           "type": "string",
@@ -1134,6 +1133,9 @@
         "cursor": {
           "type": "integer",
           "minimum": 0
+        },
+        "generation": {
+          "type": "integer"
         },
         "limit": {
           "type": "integer",
@@ -1148,7 +1150,7 @@
       "row": {"verb": "detach", "kind": "move", "icon": "window", "target": ["the simulator"]},
       "method": "sim.detach",
       "offered": "simulator",
-      "description": "Let go of the attached simulator. It keeps running.",
+      "description": "Let go of the attached simulator, for another agent to use.",
       "properties": {},
       "required": []
     },

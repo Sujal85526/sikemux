@@ -56,7 +56,7 @@ export const TOOL_ROWS = {
     sim_state: { verb: "read", kind: "read", icon: "eye", target: ["the simulator screen"] },
     sim_tap: { verb: "tap", kind: "edit", icon: "pointer", target: ["“{label}”", "element {index}", "{x}, {y}"] },
     sim_swipe: { verb: "swipe", kind: "edit", icon: "pointer", target: ["{fromX}, {fromY} → {toX}, {toY}"] },
-    sim_type: { verb: "type", kind: "edit", icon: "pencil", target: ["“{text}”"] },
+    sim_type: { verb: "type", kind: "edit", icon: "pencil", target: ["into the focused field"] },
     sim_button: { verb: "press", kind: "edit", icon: "command", target: ["{button}"] },
     sim_rotate: { verb: "rotate", kind: "edit", icon: "refresh", target: ["to {orientation}"] },
     sim_screenshot: { verb: "shot", kind: "read", icon: "image", target: ["the simulator"] },
