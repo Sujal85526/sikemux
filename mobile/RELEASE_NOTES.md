@@ -1,3 +1,3 @@
-# 0.1.0-nightly.7
+# 0.1.0-nightly.8
 
-• Up to date with Sikemux 0.5 on your computer, so the app keeps getting updates.
+• The same app as 0.1.0-nightly.7, built again alongside the first iPhone release.
