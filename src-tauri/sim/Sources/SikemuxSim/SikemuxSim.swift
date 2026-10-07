@@ -114,7 +114,7 @@ struct SikemuxSim {
             try await simulators.send(.shortButtonPress(try button(try require(request.button, "button"))), to: udid)
         case "logs":
             return try await simulators.logs(
-                on: udid, process: request.process, after: request.after ?? 0, limit: min(max(request.limit ?? 200, 1), LogTail.capacity))
+                on: udid, process: request.process, after: request.after ?? 0, generation: request.generation, limit: min(max(request.limit ?? 200, 1), LogTail.capacity))
         case "stopLogs":
             try await simulators.stopLogs(on: udid, process: request.process)
         case "stream":

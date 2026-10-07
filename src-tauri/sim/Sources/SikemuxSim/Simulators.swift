@@ -169,10 +169,10 @@ actor Simulators {
 
     /// Starts following a device's log the first time it is asked for, filtered to one process if one is named.
     /// Once the whole device is followed, a process's lines come from there, kept since it started.
-    func logs(on udid: String?, process: String?, after cursor: Int, limit: Int) async throws -> [String: Any] {
+    func logs(on udid: String?, process: String?, after cursor: Int, generation: Int?, limit: Int) async throws -> [String: Any] {
         let simulator = try await booted(udid)
         if let process, let device = tails["\(simulator.udid) "] {
-            return device.tail.read(process: process, after: cursor, limit: limit)
+            return device.tail.read(process: process, after: cursor, limit: limit, generation: generation)
         }
         let key = "\(simulator.udid) \(process ?? "")"
         if tails[key] == nil {
@@ -190,7 +190,7 @@ actor Simulators {
             let task = Task { _ = try? await operation.waitUntilCompleted() }
             tails[key] = (tail, task)
         }
-        return tails[key]!.tail.read(after: cursor, limit: limit)
+        return tails[key]!.tail.read(after: cursor, limit: limit, generation: generation)
     }
 
     func stopLogs(on udid: String?, process: String?) throws {

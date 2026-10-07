@@ -20,6 +20,7 @@ struct Request: Decodable {
     let points: [TouchPoint]?
     let process: String?
     let after: Int?
+    let generation: Int?
     let limit: Int?
     let fps: Int?
     let scale: Double?
