@@ -2,7 +2,13 @@
 // Every agent answers sign-in its own way, and some cannot answer at all, so
 // `Unknown` is an honest answer rather than a failure.
 
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
+
 use serde::Serialize;
+
+use super::AgentKind;
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 #[serde(tag = "state", rename_all = "camelCase")]
@@ -18,6 +24,51 @@ pub enum AgentStatus {
     Ready { account: Option<String> },
     /// The agent has no reliable way to say whether it is signed in.
     Unknown,
+}
+
+/// How long an answer about sign-in is trusted. Checking starts the agent's CLI, so a list
+/// redrawn every few seconds should not start them all again.
+const STATUS_TTL: Duration = Duration::from_secs(60);
+
+fn status_cache() -> &'static Mutex<HashMap<String, (Instant, AgentStatus)>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, (Instant, AgentStatus)>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// One account: an agent and the profile folder it keeps its sign-in in.
+fn account_key(agent: AgentKind, config_path: Option<&str>) -> String {
+    format!("{}\0{}", agent.as_str(), config_path.unwrap_or(""))
+}
+
+pub(super) fn cached_status(agent: AgentKind, config_path: Option<&str>) -> Option<AgentStatus> {
+    let key = account_key(agent, config_path);
+    let mut cache = status_cache().lock().ok()?;
+    let (stored, status) = cache.get(&key)?;
+    if stored.elapsed() < STATUS_TTL {
+        return Some(status.clone());
+    }
+    cache.remove(&key);
+    None
+}
+
+pub(super) fn remember_status(agent: AgentKind, config_path: Option<&str>, status: AgentStatus) {
+    if let Ok(mut cache) = status_cache().lock() {
+        cache.insert(account_key(agent, config_path), (Instant::now(), status));
+    }
+}
+
+/// Forgets one account's answer, as after it signs in or out from Sikemux.
+pub(crate) fn forget_status(agent: AgentKind, config_path: Option<&str>) {
+    if let Ok(mut cache) = status_cache().lock() {
+        cache.remove(&account_key(agent, config_path));
+    }
+}
+
+/// Forgets every answer, as when the person comes back to the app after signing in somewhere else.
+pub(crate) fn forget_all_statuses() {
+    if let Ok(mut cache) = status_cache().lock() {
+        cache.clear();
+    }
 }
 
 /// Provider keys OpenCode reads from the environment; any one of them is a way in.
@@ -125,6 +176,31 @@ mod tests {
             .unwrap(),
             serde_json::json!({ "state": "broken", "reason": "exit 127" })
         );
+    }
+
+    #[test]
+    fn answers_are_kept_per_account_until_forgotten() {
+        let work = Some("/tmp/sikemux-status-work");
+        let home = Some("/tmp/sikemux-status-home");
+        remember_status(AgentKind::Claude, work, AgentStatus::SignedOut);
+        remember_status(
+            AgentKind::Claude,
+            home,
+            AgentStatus::Ready { account: None },
+        );
+        assert_eq!(
+            cached_status(AgentKind::Claude, work),
+            Some(AgentStatus::SignedOut)
+        );
+        assert_eq!(cached_status(AgentKind::Codex, work), None);
+        forget_status(AgentKind::Claude, work);
+        assert_eq!(cached_status(AgentKind::Claude, work), None);
+        assert_eq!(
+            cached_status(AgentKind::Claude, home),
+            Some(AgentStatus::Ready { account: None })
+        );
+        forget_all_statuses();
+        assert_eq!(cached_status(AgentKind::Claude, home), None);
     }
 
     #[test]
