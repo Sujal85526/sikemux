@@ -31,6 +31,7 @@ class FakeDecoder {
 }
 
 let sendFrame: (frame: ArrayBuffer) => void = () => {};
+let endWatch: (reason: string) => void = () => {};
 
 beforeEach(() => {
     FakeDecoder.made = [];
@@ -45,9 +46,10 @@ beforeEach(() => {
             }
         },
     );
-    vi.mocked(simApi.watch).mockImplementation((_udid, _format, onFrame) => {
+    vi.mocked(simApi.watch).mockImplementation(async (_udid, _format, onFrame, onEnd) => {
         sendFrame = onFrame;
-        return Promise.resolve(7);
+        endWatch = (reason) => onEnd?.(reason);
+        return 7;
     });
     vi.mocked(simApi.unwatch).mockResolvedValue(undefined);
 });
@@ -67,6 +69,27 @@ describe("playing a device's screen", () => {
         await settle();
         expect(simApi.unwatch).toHaveBeenCalledWith(7);
         expect(simApi.stopStream).not.toHaveBeenCalled();
+    });
+
+    it("says when the stream stops on its own, and not once it was stopped", async () => {
+        const onEnded = vi.fn();
+        const player = playScreen("UDID", canvas, { onError: vi.fn(), onEnded });
+        await settle();
+        endWatch("the helper stopped");
+        expect(onEnded).toHaveBeenCalledWith("the helper stopped");
+
+        player.stop();
+        endWatch("again");
+        expect(onEnded).toHaveBeenCalledTimes(1);
+    });
+
+    it("falls back to JPEG frames when the helper cannot stream H.264", async () => {
+        vi.mocked(simApi.watch).mockRejectedValueOnce({ reason: "streamUnavailable", message: "no encoder" });
+        const onError = vi.fn();
+        playScreen("UDID", canvas, { onError });
+        await settle();
+        expect(vi.mocked(simApi.watch).mock.calls.map((call) => call[1])).toEqual(["h264", "mjpeg"]);
+        expect(onError).not.toHaveBeenCalled();
     });
 
     it("makes no decoder when it stops while one is being chosen", async () => {

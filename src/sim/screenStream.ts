@@ -23,6 +23,8 @@ const webCodecsSupports = async (config: VideoDecoderConfig) =>
 /** Frames waiting in the decoder past which the stream skips ahead to the next key frame rather than fall further behind. */
 const DECODE_BACKLOG = 3;
 
+const unavailable = (error: unknown) => (error instanceof Error ? error.message : (JSON.stringify(error) ?? "")).includes("streamUnavailable");
+
 export interface ScreenStreamEvents {
     /** Frames drawn in the last second. */
     onFps?: (fps: number) => void;
@@ -30,6 +32,8 @@ export interface ScreenStreamEvents {
     onLatency?: (ms: number) => void;
     onFormat?: (format: SimStreamFormat) => void;
     onFirstFrame?: () => void;
+    /** The stream stopped on its own; a new `playScreen` carries on. */
+    onEnded?: (reason: string) => void;
     onError: (message: string) => void;
 }
 
@@ -85,7 +89,17 @@ export function playScreen(udid: string, canvas: HTMLCanvasElement, events: Scre
     const open = async (wanted: SimStreamFormat) => {
         format = wanted;
         events.onFormat?.(wanted);
-        watch = simApi.watch(udid, wanted, (frame) => void receive(frame));
+        watch = simApi.watch(
+            udid,
+            wanted,
+            (frame) => void receive(frame),
+            (reason) => {
+                if (stopped) return;
+                watch = null;
+                if (format === "h264" && unavailable(reason)) fallBackToMjpeg("the helper has no H.264 stream for this device");
+                else events.onEnded?.(reason);
+            },
+        );
         await watch;
     };
 
@@ -170,7 +184,10 @@ export function playScreen(udid: string, canvas: HTMLCanvasElement, events: Scre
         }
     };
 
-    void open("h264").catch((error) => events.onError(String(error)));
+    void open("h264").catch((error) => {
+        if (unavailable(error)) fallBackToMjpeg("the helper has no H.264 stream for this device");
+        else events.onError(String(error));
+    });
 
     return {
         stop: () => {
