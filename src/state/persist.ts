@@ -14,8 +14,8 @@ import { normalizePermissionMode } from "../agents/agentLaunch";
 import { clampRailWidth } from "../lib/railWidths";
 import { mergePinnedIntoRoots, normaliseProjectRoots, pruneOnDemandWindows } from "./commands";
 import { agentPaneId } from "./selectors";
-import { collectPanes, removePane } from "./layout";
-import { BROWSER_ACTIVE, deskEditorId, deskView, fileKey } from "./desks";
+import { collectPanes, newId, removePane } from "./layout";
+import { BROWSER_ACTIVE, deskEditorId, deskView, fileKey, simulatorKey } from "./desks";
 import { agentDirectCommand, agentStartup } from "./commands";
 import { agentWindow } from "./agentWindow";
 import { getState, setState, useStore, type StoreState } from "./store";
@@ -1067,11 +1067,15 @@ export function applyHydrate(raw: string): HydrationResult {
                 deskPanes[itemId] = view.agentId;
                 deskRestores[itemId] = view;
                 editorViews[deskEditorId(view.agentId)] = { openTabs: view.files, activePath: view.files[0] ?? null };
+                const simulators = view.simulator
+                    ? [{ id: newId("desk-simulator"), udid: view.simulator.udid, deviceName: view.simulator.name }]
+                    : [];
+                const simulatorKeys = simulators.map((simulator) => simulatorKey(simulator.id));
                 desks[view.agentId] = {
-                    order: view.files.map(fileKey),
-                    active: view.tabs.length > 0 ? BROWSER_ACTIVE : view.files[0] ? fileKey(view.files[0]) : null,
+                    order: [...view.files.map(fileKey), ...simulatorKeys],
+                    active: view.tabs.length > 0 ? BROWSER_ACTIVE : view.files[0] ? fileKey(view.files[0]) : (simulatorKeys[0] ?? null),
                     terminals: [],
-                    simulators: [],
+                    simulators,
                     reveal: null,
                 };
             }

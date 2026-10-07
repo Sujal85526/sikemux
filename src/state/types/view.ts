@@ -14,12 +14,18 @@ export interface DeskBrowserTab {
     title: string;
 }
 
-/** What a desk needs to come back: whose desk it is, and the pages and files that were on it. */
+/** What a desk needs to come back: whose desk it is, and the pages, files and simulator that were on it. */
 export interface DeskView {
     agentId: string;
     tabs: DeskBrowserTab[];
     activeIndex: number;
     files: string[];
+    simulator?: DeskSavedSimulator;
+}
+
+export interface DeskSavedSimulator {
+    udid: string | null;
+    name: string | null;
 }
 
 /** A task terminal an agent started, shown on its desk and bound to the task's process by `id`. */

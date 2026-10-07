@@ -402,6 +402,39 @@ describe("frontend persistence", () => {
         expect(getState().browserStrips).toEqual({});
     });
 
+    it("brings back a desk that holds only a simulator, showing the device it showed", async () => {
+        const sid = getState().activeSessionId;
+        const agent: Agent = { id: "agent-phone", type: "claude", title: "testing the app", startup: "claude", resumeId: "session-8" };
+        setState((s) => {
+            const slices = withAgents(s, sid, [agent]);
+            return {
+                ...slices,
+                sessions: { ...s.sessions, [sid]: { ...s.sessions[sid], kind: "project", activeWindowId: agentWindowId(slices, agent.id)! } },
+            };
+        });
+        cmd.openDeskSimulator(agent.id, { device: { udid: "UDID-1", name: "iPhone 17" } });
+        const windowId = agentWindowId(getState(), agent.id)!;
+        const paneId = collectPanes(getState().windows[windowId].root).find((pane) => pane.kind === "desk")!.id;
+        invoke.mockResolvedValue(undefined);
+
+        expect(await flushPersist()).toBe(true);
+        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
+        expect(saved.itemStates[paneId].state).toEqual({
+            agentId: agent.id,
+            tabs: [],
+            activeIndex: 0,
+            files: [],
+            simulator: { udid: "UDID-1", name: "iPhone 17" },
+        });
+
+        applyHydrate(JSON.stringify(saved));
+
+        expect(getState().deskPanes[paneId]).toBe(agent.id);
+        const desk = getState().desks[agent.id];
+        expect(desk.simulators).toEqual([expect.objectContaining({ udid: "UDID-1", deviceName: "iPhone 17" })]);
+        expect(desk.active).toBe(`simulator:${desk.simulators[0].id}`);
+    });
+
     it("drops a desk with nothing left to open, and one whose agent did not come back", async () => {
         const sid = getState().activeSessionId;
         const agent: Agent = { id: "agent-browsing", type: "claude", title: "reading docs", startup: "claude", resumeId: "session-7" };

@@ -89,9 +89,16 @@ export function deskView(paneId: string): DeskView | null {
     const strip = state.browserStrips[agentId] ?? EMPTY_STRIP;
     const saved = strip.tabs.filter((tab) => tab.url && tab.url !== BLANK_URL).slice(0, DESK_PERSISTENCE_LIMITS.maxTabs);
     const tabs = pending ? pending.tabs : saved.map((tab) => ({ url: tab.url, title: tab.title.slice(0, DESK_PERSISTENCE_LIMITS.maxTitleLength) }));
-    if (tabs.length === 0 && files.length === 0) return null;
+    const simulator = state.desks[agentId]?.simulators[0];
+    if (tabs.length === 0 && files.length === 0 && !simulator) return null;
     const active = pending ? pending.activeIndex : saved.findIndex((tab) => tab.id === strip.activeTabId);
-    return { agentId, tabs, activeIndex: active < 0 ? 0 : active, files: [...files] };
+    return {
+        agentId,
+        tabs,
+        activeIndex: active < 0 ? 0 : active,
+        files: [...files],
+        ...(simulator ? { simulator: { udid: simulator.udid, name: simulator.deviceName } } : {}),
+    };
 }
 
 /**
