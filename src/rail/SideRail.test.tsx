@@ -209,7 +209,7 @@ describe("project spaces", () => {
         render(<SideRail />);
 
         fireEvent.contextMenu(screen.getByRole("button", { name: "gamma" }));
-        fireEvent.click(screen.getByText("H Home"));
+        fireEvent.click(screen.getByRole("menuitem", { name: "Home" }));
         expect(getState().projectSpaces["/gamma"]).toBe(home);
 
         fireEvent.contextMenu(screen.getByRole("button", { name: "gamma" }));

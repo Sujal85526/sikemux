@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import * as cmd from "./commands";
-import { firstGrapheme, isProjectShown, spaceBadge } from "./projectSpaces";
+import { firstGrapheme, isProjectShown } from "./projectSpaces";
 import { getState, setState } from "./store";
 
 const initial = getState();
@@ -48,9 +48,7 @@ describe("spaces", () => {
         expect(getState().activeSpaceId).toBe(home);
     });
 
-    it("badges a space with its emoji, or else the first letter of its name", () => {
-        expect(spaceBadge({ id: "a", name: "work", icon: "" })).toBe("W");
-        expect(spaceBadge({ id: "b", name: "work", icon: "💼" })).toBe("💼");
+    it("keeps an emoji made of several code points whole", () => {
         expect(firstGrapheme("👩🏽‍🚀 crew")).toBe("👩🏽‍🚀");
     });
 });

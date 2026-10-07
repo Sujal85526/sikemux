@@ -1,4 +1,4 @@
-import type { ProjectSpace, Session } from "./types";
+import type { Session } from "./types";
 
 export const MAX_SPACE_NAME_LENGTH = 40;
 
@@ -20,7 +20,5 @@ export function firstGrapheme(text: string): string {
     const first = new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text.trim())[Symbol.iterator]().next();
     return first.done ? "" : first.value.segment;
 }
-
-export const spaceBadge = (space: ProjectSpace): string => space.icon || firstGrapheme(space.name).toUpperCase();
 
 export const spaceName = (name: string): string => name.trim().slice(0, MAX_SPACE_NAME_LENGTH);

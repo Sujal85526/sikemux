@@ -33,7 +33,7 @@ import { isPluginKind, pluginIdOf } from "../plugins/kinds";
 import { leavingRail } from "./railMotion";
 import { LEAVES_SETTINGS } from "../settings/leaveSettings";
 import { TreeContextMenu, type CtxItem } from "./FileTree";
-import { shownProjects, spaceBadge } from "../state/projectSpaces";
+import { shownProjects } from "../state/projectSpaces";
 import type { ProjectSpace } from "../state/types";
 import { confirmDialog, promptDialog } from "../state/dialog";
 
@@ -447,7 +447,7 @@ function spaceItems(space: ProjectSpace): CtxItem[] {
                     confirmLabel: "Save",
                 }).then((icon) => icon !== null && cmd.setSpaceIcon(space.id, icon)),
         },
-        ...(space.icon ? [{ label: "Use First Letter as Icon", run: () => cmd.setSpaceIcon(space.id, "") }] : []),
+        ...(space.icon ? [{ label: "Remove Icon", run: () => cmd.setSpaceIcon(space.id, "") }] : []),
         { sep: true },
         {
             label: "Delete Space…",
@@ -495,7 +495,7 @@ function SpaceSwitch({ spaces, activeSpaceId, onMenu }: { spaces: readonly Proje
         <div className="space-switch">
             <div className="space-options" role="radiogroup" aria-label="Projects shown">
                 {option(null, "All")}
-                {spaces.map((space) => option(space.id, space.name, spaceBadge(space), space))}
+                {spaces.map((space) => option(space.id, space.name, space.icon, space))}
             </div>
             {add}
         </div>
@@ -506,7 +506,7 @@ function projectSpaceItems(session: Session, spaces: readonly ProjectSpace[], cu
     const mark = (selected: boolean) => (selected ? "✓" : undefined);
     return [
         ...spaces.map((space) => ({
-            label: `${spaceBadge(space)}  ${space.name}`,
+            label: space.icon ? `${space.icon}  ${space.name}` : space.name,
             hint: mark(current === space.id),
             run: () => cmd.setProjectSpace(session.cwd, space.id),
         })),
