@@ -43,13 +43,28 @@ pub fn user_environment() -> UserEnvironment {
 
 #[cfg(unix)]
 fn user_path() -> Option<String> {
-    let shell_path = login_shell_path().unwrap_or_default();
-
-    // Always-union: even if the shell extraction succeeded, append the
-    // common user-local bin dirs in case they live in ~/.zshrc (which
-    // login shells don't source) or in non-zsh setups. Idempotent —
-    // duplicates are harmless to PATH lookup.
     let home = std::env::var("HOME").unwrap_or_default();
+    let inherited = std::env::var("PATH").unwrap_or_default();
+    let cli = crate::cli_paths::cli_link_directory().and_then(Path::to_str);
+    Some(join_user_path(
+        cli,
+        login_shell_path().unwrap_or_default(),
+        &home,
+        &inherited,
+    ))
+}
+
+/// The folders macOS keeps its own tools in. Claude Code reads its sign-in
+/// with `/usr/bin/security`, so a PATH without these signs every agent out.
+#[cfg(unix)]
+const SYSTEM_PATH: [&str; 4] = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"];
+
+/// The login shell's PATH when it could be read, then the common user-local
+/// folders, which can live in rc files a login shell does not source, then
+/// whatever the app was started with and the system folders. Reading the
+/// shell can time out, so the last two are what keep children working then.
+#[cfg(unix)]
+fn join_user_path(cli: Option<&str>, shell_path: &str, home: &str, inherited: &str) -> String {
     let extra = [
         format!("{home}/.local/bin"),
         format!("{home}/.cargo/bin"),
@@ -67,24 +82,18 @@ fn user_path() -> Option<String> {
         "/opt/homebrew/sbin".to_string(),
         "/usr/local/bin".to_string(),
     ];
-    let cli = crate::cli_paths::cli_link_directory().and_then(Path::to_str);
     let mut parts: Vec<&str> = cli.into_iter().collect();
-    for part in shell_path.split(':').filter(|s| !s.is_empty()) {
+    let candidates = shell_path
+        .split(':')
+        .chain(extra.iter().map(String::as_str))
+        .chain(inherited.split(':'))
+        .chain(SYSTEM_PATH);
+    for part in candidates.filter(|part| !part.is_empty()) {
         if !parts.contains(&part) {
             parts.push(part);
         }
     }
-    for d in &extra {
-        if !parts.contains(&d.as_str()) {
-            parts.push(d.as_str());
-        }
-    }
-    // Fall back to the launchd minimal set if shell extraction failed AND
-    // none of the extras hit — guarantees `/usr/bin` etc. stay reachable.
-    if parts.is_empty() {
-        parts = vec!["/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"];
-    }
-    Some(parts.join(":"))
+    parts.join(":")
 }
 
 /// Windows desktop applications inherit the user's PATH, so only the CLI link
@@ -540,6 +549,32 @@ pub async fn boot_init() -> AppResult<BootInfo> {
 mod executable_tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[cfg(unix)]
+    #[test]
+    fn the_system_folders_stay_on_path_when_the_login_shell_cannot_be_read() {
+        let path = join_user_path(Some("/Users/me/.config/sikemux/bin"), "", "/Users/me", "");
+        let parts: Vec<&str> = path.split(':').collect();
+        assert_eq!(parts.first(), Some(&"/Users/me/.config/sikemux/bin"));
+        for system in ["/usr/bin", "/bin", "/usr/sbin", "/sbin"] {
+            assert!(parts.contains(&system), "{system} missing from {path}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_login_shell_path_leads_and_nothing_repeats() {
+        let path = join_user_path(
+            None,
+            "/Users/me/.nvm/bin:/usr/bin:/bin",
+            "/Users/me",
+            "/usr/bin:/bin:/usr/sbin:/sbin",
+        );
+        let parts: Vec<&str> = path.split(':').collect();
+        assert_eq!(&parts[..3], ["/Users/me/.nvm/bin", "/usr/bin", "/bin"]);
+        let mut seen = std::collections::HashSet::new();
+        assert!(parts.iter().all(|part| seen.insert(*part)), "{path}");
+    }
 
     #[test]
     fn executable_lookup_continues_after_a_rejected_candidate() {
