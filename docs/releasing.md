@@ -129,7 +129,7 @@ Every phone release needs its notes in `mobile/RELEASE_NOTES.md`, committed befo
 
 The same run builds the iPhone app on a macOS runner and sends it to TestFlight, as build number the version code above. Xcode signs it with the App Store Connect API key: it makes or fetches the distribution certificate and the profiles for the app and its notification extension itself. Internal testers get each build once Apple has processed it; a stable build is then submitted for App Store review by hand.
 
-The app brings its own standard encryption (TLS and QUIC from rustls), so each build is asked about export compliance in App Store Connect before testers get it: it uses standard encryption algorithms in addition to Apple's, and is not sold in France. That needs no documentation. Apple accepts a declaration with a code to put in the app only for proprietary encryption or for sale in France, so the app carries no `ITSAppUsesNonExemptEncryption` key until it is sold there.
+The app brings its own standard encryption (TLS and QUIC from rustls) and is not sold in France. For that answer, standard algorithms in addition to Apple's and no sale in France, App Store Connect records a build as using no non-exempt encryption, so the app says so itself with `ITSAppUsesNonExemptEncryption` set to false and builds skip the question. Selling in France needs a French encryption declaration first, and then the key changes to the code App Store Connect gives for it.
 
 | Name                          | Kind   | Holds                                                     |
 | ----------------------------- | ------ | --------------------------------------------------------- |
