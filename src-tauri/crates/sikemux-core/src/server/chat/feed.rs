@@ -22,6 +22,8 @@ use super::history::{History, Page, MAX_HISTORY_BYTES};
 /// notification on its own costs a script eval in the webview, and an adapter
 /// sends one per token.
 const FLUSH: Duration = Duration::from_millis(16);
+/// Streamed updates go out early once a batch holds this much.
+const BATCH_BYTES: usize = 1024 * 1024;
 pub(crate) const MAX_REPLAY_BYTES: usize = 8 * 1024 * 1024;
 pub(crate) const MAX_REPLAY_EVENTS: usize = 20_000;
 /// Roughly what an event costs beyond its payload once it is on the wire.
@@ -288,13 +290,14 @@ impl Replay {
         true
     }
 
-    pub(crate) fn push(&mut self, kind: ChatEventKind, payload: &Value) {
+    /// Keeps `payload`, answering with about how many bytes it took.
+    pub(crate) fn push(&mut self, kind: ChatEventKind, payload: &Value) -> usize {
         if !is_kept(kind) {
-            return;
+            return 0;
         }
         if kind == ChatEventKind::SessionUpdate && self.join_text(payload) {
             self.trim();
-            return;
+            return chunk(payload).map_or(0, |chunk| chunk.text.len());
         }
         let starts_turn = self.starts_turn(kind, payload);
         if let Some(previous) = self.entries.back_mut() {
@@ -331,6 +334,7 @@ impl Replay {
         });
         self.bytes += bytes;
         self.trim();
+        bytes
     }
 
     fn hold(&mut self, holds: Holds, index: u64, event: &ChatEvent) {
@@ -634,6 +638,7 @@ struct Inner {
     recent: Recent,
     replay: Replay,
     pending: Vec<Value>,
+    pending_bytes: usize,
     flush_scheduled: bool,
     start: Option<ChatStart>,
     permission_mode: String,
@@ -672,6 +677,7 @@ impl Feed {
                 recent: Recent::default(),
                 replay: Replay::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS, history),
                 pending: Vec::new(),
+                pending_bytes: 0,
                 flush_scheduled: false,
                 start: None,
                 permission_mode,
@@ -739,6 +745,7 @@ impl Feed {
             return;
         }
         let updates = std::mem::take(&mut inner.pending);
+        inner.pending_bytes = 0;
         self.broadcast(
             inner,
             ChatEventKind::SessionUpdate,
@@ -760,13 +767,20 @@ impl Feed {
         let Ok(mut inner) = self.inner.lock() else {
             return;
         };
-        inner.replay.push(kind, &payload);
+        let bytes = inner.replay.push(kind, &payload);
         if kind == ChatEventKind::SessionUpdate {
             if let Some(title) = session_title(&payload) {
                 inner.title = Some(title.to_owned());
             }
             track_subagent(&mut inner.subagents, &payload);
             inner.pending.push(payload);
+            inner.pending_bytes += bytes;
+            // A loaded chat replays its history all at once, and in one batch
+            // it would outgrow what a client can be sent.
+            if inner.pending_bytes >= BATCH_BYTES {
+                self.flush_locked(&mut inner);
+                return;
+            }
             if !inner.flush_scheduled {
                 inner.flush_scheduled = true;
                 let feed = self.clone();

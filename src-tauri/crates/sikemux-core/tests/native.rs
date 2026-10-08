@@ -612,3 +612,47 @@ async fn live_claude_streams_edits_and_resumes() {
     assert!(users.iter().any(|text| text.contains("alpha")), "{users:?}");
     assert!(!users.iter().any(|text| text.contains("beta")), "{users:?}");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_long_claude_chat_comes_back_whole() {
+    let config = tempfile::tempdir().expect("config");
+    let session = uuid::Uuid::new_v4().to_string();
+    let project = config.path().join("projects").join("fake");
+    std::fs::create_dir_all(&project).expect("project");
+    let mut transcript = String::new();
+    let mut parent = Value::Null;
+    for turn in 0..200 {
+        let (asked, answered) = (format!("q{turn}"), format!("a{turn}"));
+        for (uuid, record) in [
+            (
+                asked.clone(),
+                serde_json::json!({ "type": "user", "message": { "role": "user", "content": [{ "type": "text", "text": format!("question {turn}") }] } }),
+            ),
+            (
+                answered.clone(),
+                serde_json::json!({ "type": "assistant", "message": { "id": format!("msg{turn}"), "role": "assistant", "model": "fake", "content": [{ "type": "text", "text": "x".repeat(100_000) }] } }),
+            ),
+        ] {
+            let mut record = record;
+            record["uuid"] = Value::String(uuid.clone());
+            record["parentUuid"] = parent.clone();
+            record["sessionId"] = Value::String(session.clone());
+            transcript.push_str(&record.to_string());
+            transcript.push('\n');
+            parent = Value::String(uuid);
+        }
+    }
+    std::fs::write(project.join(format!("{session}.jsonl")), transcript).expect("transcript");
+
+    let core = TestCore::start();
+    let (client, mut chat) = core.connect().await;
+    let mut launch = claude_launch("claude-long", config.path());
+    launch.resume_id = Some(session);
+    client.acp_start(launch).await.expect("resume");
+    chat.until_kind(ChatEventKind::Ready).await;
+    let answers = updates(&chat.heard)
+        .into_iter()
+        .filter(|update| update["update"]["sessionUpdate"] == "agent_message_chunk")
+        .count();
+    assert_eq!(answers, 200);
+}

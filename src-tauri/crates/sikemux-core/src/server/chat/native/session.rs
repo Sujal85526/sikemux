@@ -42,6 +42,41 @@ impl From<&Replay> for Prompt {
     }
 }
 
+/// The most of any one text an update carries. The chat shows only the first
+/// few hundred lines of what a tool printed, and a long chat loaded again
+/// would otherwise send all of it.
+const MAX_TEXT: usize = 128 * 1024;
+/// The largest picture an update carries, as base64. The chat keeps none
+/// bigger.
+const MAX_IMAGE: usize = 2 * 1024 * 1024;
+
+/// Cuts every text in `value` down to what the chat can show.
+fn slim(value: &mut Value) {
+    match value {
+        Value::String(text) if text.len() > MAX_TEXT => {
+            let mut end = MAX_TEXT;
+            while !text.is_char_boundary(end) {
+                end -= 1;
+            }
+            text.truncate(end);
+            text.push('…');
+        }
+        Value::Array(items) => items.iter_mut().for_each(slim),
+        Value::Object(fields) => {
+            let picture = fields.get("data").and_then(Value::as_str).map(str::len);
+            if picture.is_some_and(|len| len > MAX_IMAGE) {
+                fields.remove("data");
+            }
+            for (key, field) in fields.iter_mut() {
+                if key != "data" {
+                    slim(field);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
 /// How a turn this side started ended.
 pub(crate) enum TurnEnd {
     /// The `turn_completed` payload, such as `{"stopReason": "end_turn"}`.
@@ -73,10 +108,11 @@ pub(crate) struct Sink {
 }
 
 impl Sink {
-    pub fn update(&self, session_id: &str, update: Value) {
+    pub fn update(&self, session_id: &str, mut update: Value) {
         if self.quiet.load(Ordering::Acquire) {
             return;
         }
+        slim(&mut update);
         self.chat.emit(
             ChatEventKind::SessionUpdate,
             json!({ "sessionId": session_id, "update": update }),
@@ -609,5 +645,30 @@ async fn begin<B: Backend>(chat: &Arc<Chat>, backend: &mut B, turn: u64, prompt:
     if let Err(error) = backend.prompt(turn, prompt).await {
         chat.running.store(false, Ordering::Release);
         chat.emit(ChatEventKind::Error, error_message(error));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn long_texts_are_cut_and_pictures_kept_whole() {
+        let long = "é".repeat(MAX_TEXT);
+        let picture = "A".repeat(MAX_TEXT * 2);
+        let mut update = json!({
+            "rawOutput": long,
+            "content": [{ "type": "image", "data": picture, "mimeType": "image/png" }],
+            "huge": [{ "type": "image", "source": { "type": "base64", "data": "A".repeat(MAX_IMAGE + 1) } }],
+        });
+        slim(&mut update);
+        let cut = update["rawOutput"].as_str().unwrap();
+        assert!(cut.len() <= MAX_TEXT + '…'.len_utf8());
+        assert!(cut.ends_with('…'));
+        assert_eq!(
+            update["content"][0]["data"].as_str().map(str::len),
+            Some(MAX_TEXT * 2)
+        );
+        assert!(update["huge"][0]["source"].get("data").is_none());
     }
 }

@@ -334,3 +334,20 @@ fn a_subagents_own_transcript_replays_inside_its_child_session() {
         && update["state"] == "completed"));
     assert_eq!(resumed_model(&records).as_deref(), Some("claude-opus-5-5"));
 }
+
+#[test]
+fn a_transcript_read_in_pieces_keeps_its_order() {
+    let line = |n: usize| {
+        json!({ "type": "user", "uuid": format!("u{n}"), "message": { "content": "x".repeat(2048) } })
+            .to_string()
+    };
+    let text: String = (0..(PIECE_BYTES * 3 / 2048))
+        .map(|n| line(n) + "\n")
+        .collect();
+    let entries = parse_entries(text.as_bytes());
+    assert_eq!(entries.len(), PIECE_BYTES * 3 / 2048);
+    assert!(entries
+        .iter()
+        .enumerate()
+        .all(|(n, entry)| entry["uuid"] == format!("u{n}")));
+}

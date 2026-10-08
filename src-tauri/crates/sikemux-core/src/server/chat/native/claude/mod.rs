@@ -332,16 +332,26 @@ impl Backend for Claude {
             .resume_id
             .clone()
             .unwrap_or_else(|| Uuid::new_v4().to_string());
-        let mut resumed_model = None;
-        if launch.resume_id.is_some() {
-            if let Some(path) = replay::transcript_path(&config_dir(launch), &session_id) {
+        // Claude takes a moment to start, so the saved chat is read and
+        // replayed while it does.
+        let replaying = launch.resume_id.is_some().then(|| {
+            let (dir, id, cwd, sink) = (
+                config_dir(launch),
+                session_id.clone(),
+                launch.cwd.clone(),
+                sink.clone(),
+            );
+            tokio::task::spawn_blocking(move || -> Result<Option<String>, String> {
+                let Some(path) = replay::transcript_path(&dir, &id) else {
+                    return Ok(None);
+                };
                 let records = replay::with_subagents(&path, replay::read_chain(&path)?);
-                resumed_model = replay::resumed_model(&records);
-                for (session, update) in replay::replay(&records, &session_id, &launch.cwd) {
+                for (session, update) in replay::replay(&records, &id, &cwd) {
                     sink.update(&session, update);
                 }
-            }
-        }
+                Ok(replay::resumed_model(&records))
+            })
+        });
         let start = match launch.resume_id.as_deref() {
             Some(id) => Start::Resume { id, at: None },
             None => Start::New(&session_id),
@@ -360,6 +370,10 @@ impl Backend for Claude {
             wanted.as_deref(),
         )
         .await?;
+        let resumed_model = match replaying {
+            Some(replaying) => replaying.await.map_err(|error| error.to_string())??,
+            None => None,
+        };
         let models: Vec<Value> = initialized
             .get("models")
             .and_then(Value::as_array)

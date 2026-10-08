@@ -125,7 +125,41 @@ fn spawns(record: &Value, tool_use_id: &str) -> bool {
         })
 }
 
+/// A transcript bigger than this is read on several threads, in pieces of
+/// about this size.
+const PIECE_BYTES: usize = 8 * 1024 * 1024;
+
 fn parse_entries(bytes: &[u8]) -> Vec<Value> {
+    let threads = std::thread::available_parallelism()
+        .map_or(1, usize::from)
+        .min(bytes.len() / PIECE_BYTES + 1);
+    if threads <= 1 {
+        return parse_lines(bytes);
+    }
+    let mut pieces = Vec::with_capacity(threads);
+    let mut start = 0;
+    for piece in 1..threads {
+        let mut end = (bytes.len() * piece / threads).max(start);
+        while end < bytes.len() && bytes[end] != b'\n' {
+            end += 1;
+        }
+        pieces.push(&bytes[start..end]);
+        start = end;
+    }
+    pieces.push(&bytes[start..]);
+    std::thread::scope(|scope| {
+        let parsing: Vec<_> = pieces
+            .into_iter()
+            .map(|piece| scope.spawn(move || parse_lines(piece)))
+            .collect();
+        parsing
+            .into_iter()
+            .flat_map(|parsed| parsed.join().unwrap_or_default())
+            .collect()
+    })
+}
+
+fn parse_lines(bytes: &[u8]) -> Vec<Value> {
     bytes
         .split(|byte| *byte == b'\n')
         .filter_map(|line| {
