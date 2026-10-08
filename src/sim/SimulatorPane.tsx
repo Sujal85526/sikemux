@@ -20,7 +20,7 @@ import { loadSimStatus, prepareSim, simUsable, useSimStatus } from "./simStatus"
 import "../styles/simulator.css";
 
 const NAMED_KEYS = new Set(["Enter", "Escape", "Backspace", "Delete", "ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"]);
-const TURNS: SimOrientation[] = ["portrait", "landscapeLeft", "portraitUpsideDown", "landscapeRight"];
+const TURNS: SimOrientation[] = ["portrait", "landscapeRight", "portraitUpsideDown", "landscapeLeft"];
 const REFRESH_MS = 5000;
 const WHEEL_LIFT_MS = 90;
 /** A stream that ran this long before ending comes back on its own; one that ends sooner waits for Reconnect. */

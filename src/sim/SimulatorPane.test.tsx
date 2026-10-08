@@ -13,6 +13,7 @@ vi.mock("../api/sim", () => ({
         devices: vi.fn(),
         screen: vi.fn(),
         mask: vi.fn(() => Promise.resolve(null)),
+        orientation: vi.fn(() => Promise.resolve("landscapeRight")),
         touch: vi.fn(),
         text: vi.fn(),
         key: vi.fn(),
@@ -131,6 +132,15 @@ describe("the simulator pane", () => {
         clientX: x,
         clientY: y,
         ...extra,
+    });
+
+    it("rotates clockwise, the way its button's arrow points", async () => {
+        const slots = chrome();
+        await showScreen(slots);
+
+        fireEvent.click(slots.tools.querySelector('[aria-label="Rotate"]')!);
+
+        await waitFor(() => expect(simApi.orientation).toHaveBeenCalledWith("UDID-1", "landscapeRight"));
     });
 
     it("puts its controls and running mark in the desk's strip", async () => {
