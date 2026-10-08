@@ -921,6 +921,15 @@ async fn run_requests(
                     }),
                 );
             }
+            Request::AllowDevices { devices } => {
+                let result = core.remote.allow(devices).map(|()| remote::announce(&core));
+                client.respond(
+                    request_id,
+                    result.map(|status| Response::Remote {
+                        status: Box::new(status),
+                    }),
+                );
+            }
             Request::Unpair => {
                 let Peer::Device { id } = &client.peer else {
                     client.respond(

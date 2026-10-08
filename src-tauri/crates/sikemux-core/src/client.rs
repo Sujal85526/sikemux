@@ -23,12 +23,12 @@ use tokio::task::JoinHandle;
 use crate::protocol::frozen::{FrozenReply, FrozenRequest};
 use crate::protocol::{
     decode_output, decode_snapshot, encode_control, encode_frozen, encode_input, read_frame,
-    read_frame_sync, Attention, BackdropImage, BuildIdentity, CallId, ChatAccount, ChatAttachment,
-    ChatContext, ChatEvent, ChatInfo, ChatLaunch, ChatLauncher, ChatMark, ChatStart, ClientMessage,
-    DeviceAccess, Event, FrameKind, HostRegistration, LaunchIdentity, ProjectInfo, PublishedChat,
-    PublishedRecent, RemoteStatus, Request, RequestId, Response, RunSelector, ServerMessage,
-    SessionId, SessionInfo, SpawnTarget, WindowAnswer, WindowCall, Workspace, MAX_FRAME_BYTES,
-    OLDEST_PROTOCOL_VERSION, PROTOCOL, PROTOCOL_VERSION,
+    read_frame_sync, AllowedDevice, Attention, BackdropImage, BuildIdentity, CallId, ChatAccount,
+    ChatAttachment, ChatContext, ChatEvent, ChatInfo, ChatLaunch, ChatLauncher, ChatMark,
+    ChatStart, ClientMessage, DeviceAccess, Event, FrameKind, HostRegistration, LaunchIdentity,
+    ProjectInfo, PublishedChat, PublishedRecent, RemoteStatus, Request, RequestId, Response,
+    RunSelector, ServerMessage, SessionId, SessionInfo, SpawnTarget, WindowAnswer, WindowCall,
+    Workspace, MAX_FRAME_BYTES, OLDEST_PROTOCOL_VERSION, PROTOCOL, PROTOCOL_VERSION,
 };
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -941,6 +941,13 @@ impl CoreClient {
     ) -> Result<RemoteStatus, ClientError> {
         self.remote_request(Request::AnswerPairing { id, allow, access })
             .await
+    }
+
+    pub async fn allow_devices(
+        &self,
+        devices: Vec<AllowedDevice>,
+    ) -> Result<RemoteStatus, ClientError> {
+        self.remote_request(Request::AllowDevices { devices }).await
     }
 }
 

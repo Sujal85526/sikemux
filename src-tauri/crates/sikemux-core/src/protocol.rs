@@ -421,6 +421,12 @@ pub enum Request {
         allow: bool,
         access: DeviceAccess,
     },
+    /// Phones on the account the person let in when signing this host in.
+    /// One already waiting to join gets in at once; the others get in
+    /// without asking when they first connect.
+    AllowDevices {
+        devices: Vec<AllowedDevice>,
+    },
     /// The projects the app has open and how it starts each chat agent,
     /// replacing what it published before. Kept in memory only, since a
     /// launcher's environment may hold secrets; the app publishes again
@@ -1037,6 +1043,16 @@ pub struct DeviceInfo {
     /// Milliseconds since the Unix epoch.
     pub paired_at: u64,
     pub last_seen: Option<u64>,
+}
+
+/// A phone the person lets in ahead of it asking, by its account key.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AllowedDevice {
+    pub id: String,
+    pub name: String,
+    pub platform: String,
+    pub access: DeviceAccess,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
