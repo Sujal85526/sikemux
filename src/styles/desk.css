@@ -91,7 +91,7 @@
 /* No line under the tabs: the desk's edge stepping round the switcher is the
    only one. The tabs start a pane's gap past that step. */
 .desk-head {
-    --desk-kinds-w: calc(3 * 24px + 2 * 2px + 2 * 4px);
+    --desk-kinds-w: calc(var(--desk-kinds) * 24px + (var(--desk-kinds) - 1) * 2px + 2 * 4px);
     display: flex;
     align-items: center;
     min-width: 0;

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode, type RefObject } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { animate } from "../lib/motion";
 import { deskAppearing, onDeskMotion } from "../state/deskMotion";
 import { browserApi, BLANK_URL, type BrowserBounds, type BrowserHole, type BrowserSnapshot } from "../api/browser";
@@ -380,7 +380,7 @@ function DeskSession({
     return (
         <section ref={sectionRef} className={`desk ${agentType}`} data-desk data-agent-id={agentId} aria-label={`${agentType} desk`}>
             <DeskOutline />
-            <div className="desk-head">
+            <div className="desk-head" style={{ "--desk-kinds": KINDS.length } as CSSProperties}>
                 <DeskKinds items={items} shown={kind} agentType={agentType} simulatorActing={simulatorActing} onShow={showKind} />
                 <TabBar
                     variant="desk"
