@@ -46,6 +46,9 @@ const makeSvgIcon = (children: React.ReactNode, opts?: { fill?: string; viewBox?
         );
     };
 
+/* Drawn on a 24 grid at the same weight as the 16-grid icons beside them. */
+const makeSvgIcon24 = (children: React.ReactNode) => makeSvgIcon(<g strokeWidth={2.1}>{children}</g>, { viewBox: "0 0 24 24" });
+
 export function Logo({ size = 16, className }: IconProps) {
     return (
         <svg width={size} height={size} viewBox="0 -30 420 420" fill="currentColor" className={className} aria-hidden="true">
@@ -683,3 +686,134 @@ export function IconSparkle({ size = 16 }: { size?: number }) {
         </svg>
     );
 }
+
+export const IconWrench = makeSvgIcon24(
+    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.4-3.4a6 6 0 0 1-7.9 7.9l-6.6 6.6a2.1 2.1 0 0 1-3-3l6.6-6.6a6 6 0 0 1 7.9-7.9z" />,
+);
+export const IconMove = makeSvgIcon24(<path d="M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3" />);
+export const IconLogLines = makeSvgIcon24(<path d="M8 6h12M8 12h12M8 18h8M4 6h.01M4 12h.01M4 18h.01" />);
+/** A page shown inside a reply: a frame with a header band. */
+export const IconPanel = makeSvgIcon24(
+    <>
+        <rect x="3" y="4" width="18" height="16" rx="2.5" />
+        <path d="M3 9h18" />
+    </>,
+);
+export const IconClick = makeSvgIcon24(
+    <>
+        <path d="M9 9l11 4.5-4.6 1.1-1.1 4.6z" />
+        <path d="M5.5 3.5l1 2.5M3.5 5.5l2.5 1M11 3l-.5 2.5" />
+    </>,
+);
+export const IconText = makeSvgIcon24(<path d="M5 7V5h14v2M12 5v14M9 19h6" />);
+export const IconKeyboard = makeSvgIcon24(
+    <>
+        <rect x="2.5" y="5" width="19" height="14" rx="2.5" />
+        <path d="M6.5 9h.01M10 9h.01M14 9h.01M17.5 9h.01M6.5 12.5h.01M17.5 12.5h.01M10 12.5h4M8 16h8" />
+    </>,
+);
+export const IconSteps = makeSvgIcon24(
+    <>
+        <path d="M10 6h10M10 12h10M10 18h10" />
+        <circle cx="5" cy="6" r="1.4" />
+        <circle cx="5" cy="12" r="1.4" />
+        <circle cx="5" cy="18" r="1.4" />
+    </>,
+);
+export const IconUpload = makeSvgIcon24(<path d="M20 15v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3M16 8l-4-4-4 4M12 4v11" />);
+export const IconMessage = makeSvgIcon24(<path d="M20 14a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z" />);
+export const IconResize = makeSvgIcon24(<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />);
+export const IconMouse = makeSvgIcon24(
+    <>
+        <rect x="6" y="3" width="12" height="18" rx="6" />
+        <path d="M12 7v3" />
+    </>,
+);
+export const IconNetwork = makeSvgIcon24(<path d="M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4" />);
+export const IconHighlighter = makeSvgIcon24(
+    <>
+        <path d="M9 11l-6 6v3h9l3-3" />
+        <path d="M21 12l-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L13 4" />
+    </>,
+);
+export const IconRecord = makeSvgIcon24(
+    <>
+        <circle cx="12" cy="12" r="8.5" />
+        <circle cx="12" cy="12" r="3.2" fill="currentColor" stroke="none" />
+    </>,
+);
+export const IconHourglass = makeSvgIcon24(<path d="M6 3h12M6 21h12M7 3v3.5a5 5 0 0 0 10 0V3M7 21v-3.5a5 5 0 0 1 10 0V21" />);
+export const IconTabs = makeSvgIcon24(
+    <>
+        <rect x="3" y="8" width="18" height="12" rx="2.2" />
+        <path d="M6 8V6a1.5 1.5 0 0 1 1.5-1.5h4A1.5 1.5 0 0 1 13 6v2M15.5 4.5h2A1.5 1.5 0 0 1 19 6v2" />
+    </>,
+);
+/** A finger landing on glass: the touch and the ring it sends out. */
+export const IconTap = makeSvgIcon24(
+    <>
+        <circle cx="12" cy="12" r="2.5" />
+        <circle cx="12" cy="12" r="7.5" strokeDasharray="2.4 3" />
+    </>,
+);
+export const IconSwipe = makeSvgIcon24(
+    <>
+        <circle cx="6" cy="12" r="2.4" />
+        <path d="M10 12h10M17 9l3 3-3 3" />
+    </>,
+);
+export const IconHomeButton = makeSvgIcon24(
+    <>
+        <circle cx="12" cy="12" r="8.5" />
+        <rect x="9" y="9" width="6" height="6" rx="1.6" />
+    </>,
+);
+export const IconLink = makeSvgIcon24(
+    <path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1.2 1.2M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1.2-1.2" />,
+);
+export const IconUnlink = makeSvgIcon24(
+    <path d="M17.5 12.5l2-2a4.5 4.5 0 0 0-6.4-6.4l-2 2M6.5 11.5l-2 2a4.5 4.5 0 0 0 6.4 6.4l2-2M8 3v3M3 8h3M16 21v-3M21 16h-3" />,
+);
+export const IconTouchPath = makeSvgIcon24(
+    <>
+        <circle cx="18" cy="6" r="2.2" />
+        <circle cx="6" cy="18" r="2.2" />
+        <path d="M7.5 16.5C9 9 12 7 15.8 6.5" strokeDasharray="0.1 3" />
+    </>,
+);
+export const IconPinch = makeSvgIcon24(<path d="M4 14h6v6M20 10h-6V4M14 10l6-6M4 20l6-6" />);
+/** Moving an issue on to another status. */
+export const IconStatus = makeSvgIcon24(
+    <>
+        <circle cx="12" cy="12" r="8.5" />
+        <path d="M8.5 12h7M12.5 8.5L16 12l-3.5 3.5" />
+    </>,
+);
+export const IconSquarePlus = makeSvgIcon24(
+    <>
+        <rect x="3.5" y="3.5" width="17" height="17" rx="3" />
+        <path d="M8 12h8M12 8v8" />
+    </>,
+);
+export const IconWorkflow = makeSvgIcon24(
+    <>
+        <rect x="3" y="3" width="8" height="8" rx="2" />
+        <rect x="13" y="13" width="8" height="8" rx="2" />
+        <path d="M7 11v3a2 2 0 0 0 2 2h4" />
+    </>,
+);
+/** A trace's spans, each starting where the one above it called it. */
+export const IconWaterfall = makeSvgIcon24(
+    <>
+        <path d="M4 6h8M8 11h9M11 16h9" />
+        <path d="M4 20V4" opacity={0.5} />
+    </>,
+);
+export const IconDashboard = makeSvgIcon24(
+    <>
+        <rect x="3" y="3" width="7.5" height="9" rx="1.5" />
+        <rect x="13.5" y="3" width="7.5" height="5" rx="1.5" />
+        <rect x="13.5" y="11" width="7.5" height="10" rx="1.5" />
+        <rect x="3" y="15" width="7.5" height="6" rx="1.5" />
+    </>,
+);
