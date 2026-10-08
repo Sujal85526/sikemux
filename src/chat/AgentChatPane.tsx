@@ -75,6 +75,7 @@ export function AgentChatPane({
     const paneRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const scrollContentRef = useRef<HTMLDivElement>(null);
+    const rowsRef = useRef<HTMLDivElement>(null);
     const agentLockedRef = useRef(false);
     if (state.messages.length > 0) agentLockedRef.current = true;
     const [changingConfig, setChangingConfig] = useState(false);
@@ -82,6 +83,15 @@ export function AgentChatPane({
 
     useMessageArrival(scrollRef, displayState.messages);
     const [rowSizes] = useState(rowEstimator);
+
+    const { atBottom, noteGesture, onScroll, jumpToBottom, leaveBottom, followRows } = useStickToBottom({
+        scrollRef,
+        contentRef: scrollContentRef,
+        rowsRef,
+        visible,
+        messageCount: displayState.messages.length,
+        revision: displayState.revision,
+    });
 
     /* A restored transcript opens on estimated row heights, and every row that
        measures taller or shorter than the estimate moves the bottom. Anchoring
@@ -104,8 +114,17 @@ export function AgentChatPane({
            folds by animation then pushes the rest along with it instead of
            overlapping them for a frame and catching up. */
         directDomUpdates: true,
+        onChange: followRows,
     });
     virtualizer.shouldAdjustScrollPositionOnItemSizeChange = holdsReadingPlace;
+    const { containerRef } = virtualizer;
+    const placeRows = useCallback(
+        (node: HTMLDivElement | null) => {
+            rowsRef.current = node;
+            containerRef(node);
+        },
+        [containerRef],
+    );
 
     useEffect(() => {
         if (!active) return;
@@ -185,13 +204,6 @@ export function AgentChatPane({
         [state.messages, queued],
     );
 
-    const { atBottom, noteGesture, onScroll, jumpToBottom, leaveBottom } = useStickToBottom({
-        scrollRef,
-        contentRef: scrollContentRef,
-        visible,
-        messageCount: displayState.messages.length,
-        revision: displayState.revision,
-    });
     const scrollByReader = useCallback(
         (deltaY: number) => {
             noteGesture();
@@ -347,7 +359,7 @@ export function AgentChatPane({
                                     </div>
                                 )}
                                 <FoldMemoryContext value={foldMemory}>
-                                    <div className="chat-virtual-space" ref={virtualizer.containerRef}>
+                                    <div className="chat-virtual-space" ref={placeRows}>
                                         {virtualizer.getVirtualItems().map((item) => {
                                             const message = displayState.messages[item.index];
                                             const meta = rowMeta(displayState.messages, item.index);

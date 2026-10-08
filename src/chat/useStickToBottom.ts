@@ -6,12 +6,14 @@ export const BOTTOM_SLACK = 72;
 export function useStickToBottom({
     scrollRef,
     contentRef,
+    rowsRef,
     visible,
     messageCount,
     revision,
 }: {
     scrollRef: RefObject<HTMLDivElement | null>;
     contentRef: RefObject<HTMLDivElement | null>;
+    rowsRef: RefObject<HTMLDivElement | null>;
     visible: boolean;
     messageCount: number;
     revision: number;
@@ -38,21 +40,42 @@ export function useStickToBottom({
     }, []);
 
     /*
-     * A restored session opens on estimated row heights. Landing at the
-     * estimated bottom mounts the real rows, they measure taller, and the
-     * bottom moves again — so one scroll after the messages arrive stops
-     * short. Watching the content's height instead re-pins through every
-     * settling pass, and through markdown and highlighting that arrive late.
+     * A restored session opens on estimated row heights, and each row that
+     * measures taller moves the bottom again, as does markdown or highlighting
+     * that arrives late. The rows report that through the list itself; the
+     * rest of the transcript, like the activity line and permission cards, is
+     * watched here. Watching the whole content would watch a box around the
+     * rows, which the browser can only report a frame late.
      */
+    const rowsHeightRef = useRef<number | null>(null);
+    const followRows = useCallback(
+        (rows: { getTotalSize(): number }) => {
+            const height = rows.getTotalSize();
+            if (height === rowsHeightRef.current) return;
+            rowsHeightRef.current = height;
+            if (stickToBottomRef.current) pinToBottom();
+        },
+        [pinToBottom],
+    );
+
     useLayoutEffect(() => {
         const content = contentRef.current;
         if (!content || typeof ResizeObserver === "undefined") return;
-        const observer = new ResizeObserver(() => {
+        const resized = new ResizeObserver(() => {
             if (stickToBottomRef.current) pinToBottom();
         });
-        observer.observe(content);
-        return () => observer.disconnect();
-    }, [contentRef, pinToBottom]);
+        const watch = () => {
+            resized.disconnect();
+            for (const child of content.children) if (child !== rowsRef.current) resized.observe(child);
+        };
+        watch();
+        const added = new MutationObserver(watch);
+        added.observe(content, { childList: true });
+        return () => {
+            added.disconnect();
+            resized.disconnect();
+        };
+    }, [contentRef, rowsRef, pinToBottom]);
 
     useLayoutEffect(() => {
         if (!visible || !stickToBottomRef.current || messageCount === 0) return;
@@ -89,5 +112,5 @@ export function useStickToBottom({
         setAtBottom(false);
     };
 
-    return { atBottom, noteGesture, onScroll, jumpToBottom, leaveBottom };
+    return { atBottom, noteGesture, onScroll, jumpToBottom, leaveBottom, followRows };
 }

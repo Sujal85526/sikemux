@@ -121,8 +121,9 @@ class TestResizeObserver {
 
 const nextFrame = () => act(async () => new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve())));
 
-function reportResize(target: Element) {
-    const entries = [{ target } as ResizeObserverEntry];
+function reportResize(target: Element, height?: number) {
+    const borderBoxSize = height === undefined ? undefined : [{ blockSize: height, inlineSize: 0 }];
+    const entries = [{ target, borderBoxSize } as unknown as ResizeObserverEntry];
     const observer = {} as ResizeObserver;
     act(() => resizeCallbacks.get(target)?.forEach((callback) => callback(entries, observer)));
 }
@@ -130,6 +131,7 @@ function reportResize(target: Element) {
 function fakeScroller(element: HTMLElement, clientHeight: number) {
     let scrollTop = 0;
     let scrollHeight = clientHeight;
+    let rowHeight = 0;
     Object.defineProperty(element, "clientHeight", { configurable: true, get: () => clientHeight });
     Object.defineProperty(element, "scrollHeight", { configurable: true, get: () => scrollHeight });
     Object.defineProperty(element, "scrollTop", {
@@ -150,10 +152,13 @@ function fakeScroller(element: HTMLElement, clientHeight: number) {
             scrollTop = top;
             fireEvent.scroll(element);
         },
+        // The last row measuring taller, which the list reports as it places it.
         grow(height: number) {
+            const rows = element.querySelectorAll(".chat-virtual-row");
+            const row = rows[rows.length - 1];
+            rowHeight += height - scrollHeight;
             scrollHeight = height;
-            const content = element.querySelector(".chat-scroll-content");
-            if (content) reportResize(content);
+            if (row) reportResize(row, rowHeight);
             fireEvent.scroll(element);
         },
     };
@@ -1382,6 +1387,9 @@ describe("AgentChatPane", () => {
 
         const scroller = document.querySelector(".chat-scroll") as HTMLElement;
         const view = fakeScroller(scroller, 400);
+        Object.defineProperty(scroller, "offsetWidth", { configurable: true, get: () => 600 });
+        Object.defineProperty(scroller, "offsetHeight", { configurable: true, get: () => 400 });
+        reportResize(scroller);
         view.scrollTo(600);
         expect(screen.queryByRole("button", { name: "Jump to latest message" })).not.toBeInTheDocument();
 
