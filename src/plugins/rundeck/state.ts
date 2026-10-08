@@ -215,6 +215,14 @@ export function openRundeckJob(job: JobRef, options: { paneId?: string | null; b
     setStack(paneId, [...base, service, ...deploy]);
 }
 
+export const jobRefOf = (level: JobRef): JobRef => ({
+    project: level.project,
+    jobId: level.jobId,
+    name: level.name,
+    group: level.group,
+    repoPath: level.repoPath,
+});
+
 /** Opens one run of a job, with the job underneath so Back leads to it. */
 export function openRundeckExecution(job: JobRef, executionId: number): void {
     const paneId = openSurface(RUNDECK_DEPLOY);

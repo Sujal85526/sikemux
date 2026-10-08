@@ -1,22 +1,34 @@
+import { create } from "zustand";
 import { notify, notifyDesktop, swallow } from "../../plugin-api/host";
 import { invalidate } from "../../plugin-api/resources";
 import { rundeckApi, type RundeckExecution } from "./api";
 import { runNotice } from "./runNotice";
 import { openRundeckExecution, rundeckSettings, type JobRef } from "./state";
 
-const watching = new Set<number>();
+const useWatching = create<{ ids: ReadonlySet<number> }>(() => ({ ids: new Set() }));
+
+const setWatching = (id: number, on: boolean) =>
+    useWatching.setState(({ ids }) => {
+        const next = new Set(ids);
+        if (on) next.add(id);
+        else next.delete(id);
+        return { ids: next };
+    });
+
+/** Whether Sikemux will say when this run ends. */
+export const useWatchingRun = (executionId: number): boolean => useWatching((state) => state.ids.has(executionId));
 
 /**
  * Follows a run the person started until it ends, wherever they are in the app, then tells them how it went:
  * a toast inside Sikemux, and a desktop notification when Sikemux is in the background.
  */
 export async function watchRun(job: JobRef, executionId: number, hasFocus: () => boolean = () => document.hasFocus()): Promise<void> {
-    if (watching.has(executionId)) return;
-    watching.add(executionId);
+    if (useWatching.getState().ids.has(executionId)) return;
+    setWatching(executionId, true);
     let streamId: number | null = null;
     let ended = false;
     const stop = () => {
-        watching.delete(executionId);
+        setWatching(executionId, false);
         if (streamId !== null) void rundeckApi.watchStop(streamId).catch(swallow("stop watching a run"));
     };
     const finish = (execution: RundeckExecution) => {
@@ -34,7 +46,7 @@ export async function watchRun(job: JobRef, executionId: number, hasFocus: () =>
         });
         if (ended) stop();
     } catch (error) {
-        watching.delete(executionId);
+        setWatching(executionId, false);
         throw error;
     }
 }
