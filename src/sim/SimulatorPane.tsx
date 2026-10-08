@@ -22,6 +22,8 @@ const NAMED_KEYS = new Set(["Enter", "Escape", "Backspace", "Delete", "ArrowRigh
 const TURNS: SimOrientation[] = ["portrait", "landscapeLeft", "portraitUpsideDown", "landscapeRight"];
 const REFRESH_MS = 5000;
 const WHEEL_LIFT_MS = 90;
+/** A stream that ran this long before ending comes back on its own; one that ends sooner waits for Reconnect. */
+const RECONNECT_AFTER_MS = 3000;
 
 export interface Point {
     x: number;
@@ -247,12 +249,14 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
         if (!udid || !booted || !shown || !canvas) return;
         setStreamProblem(null);
         setStreamEnded(false);
+        const startedAt = performance.now();
         const playing = playScreen(udid, canvas, {
             onError: setStreamProblem,
             onFirstFrame: () => setFramed(true),
             onEnded: () => {
-                setStreamEnded(true);
                 void refresh();
+                if (performance.now() - startedAt > RECONNECT_AFTER_MS) setStreamAttempt((attempt) => attempt + 1);
+                else setStreamEnded(true);
             },
             ...(import.meta.env.DEV ? { onFps: setFps, onFormat: setFormat, onLatency: setLatency } : {}),
         });
