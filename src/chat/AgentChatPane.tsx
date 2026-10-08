@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { useVirtualizer, type VirtualItem, type Virtualizer } from "@tanstack/react-virtual";
+import { measureElement, useVirtualizer, type VirtualItem, type Virtualizer } from "@tanstack/react-virtual";
 import { acpApi } from "../api/acp";
 import { effortConfig, sessionConfigs, type SessionConfig } from "./sessionConfig";
 import { rowMeta } from "./messageMeta";
@@ -24,6 +24,7 @@ import { PermissionRequest } from "./PermissionRequest";
 import { BackgroundTasks, QueuedMessages, RunningSubagents } from "./LiveStack";
 import { ChatComposer } from "./ChatComposer";
 import { useMessageArrival } from "./useMessageArrival";
+import { rowEstimator } from "./rowEstimate";
 import { useAcpSession } from "./useAcpSession";
 import { useSavedUsage } from "./useSavedUsage";
 import { usePromptQueue } from "./usePromptQueue";
@@ -80,6 +81,7 @@ export function AgentChatPane({
     const configPending = useRef(false);
 
     useMessageArrival(scrollRef, displayState.messages);
+    const [rowSizes] = useState(rowEstimator);
 
     /* A restored transcript opens on estimated row heights, and every row that
        measures taller or shorter than the estimate moves the bottom. Anchoring
@@ -87,7 +89,12 @@ export function AgentChatPane({
     const virtualizer = useVirtualizer({
         count: displayState.messages.length,
         getScrollElement: () => scrollRef.current,
-        estimateSize: () => 76,
+        estimateSize: (index) => rowSizes.estimate(displayState.messages[index]),
+        measureElement: (element, entry, list) => {
+            const size = measureElement(element, entry, list);
+            rowSizes.learn(displayState.messages[list.indexFromElement(element)], size);
+            return size;
+        },
         overscan: 8,
         anchorTo: "end",
         scrollEndThreshold: BOTTOM_SLACK,
