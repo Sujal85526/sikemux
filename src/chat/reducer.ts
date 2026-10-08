@@ -1,13 +1,16 @@
 import { toolDiff, toolFailure } from "./diff";
+import { toolPage } from "./pages";
 import { toolOutput } from "./toolOutput";
 import { toolRowArguments } from "./toolLabels";
 import type {
+    AccountMove,
     AcpAsyncTask,
     AcpAvailableCommand,
     AcpContentBlock,
     AcpContentChunk,
     AcpSubagent,
     AcpTaskNotice,
+    AgentNotice,
     AcpToolCall,
     ChatAction,
     ChatMessage,
@@ -29,6 +32,7 @@ export const initialChatState: ChatState = {
     running: false,
     suppressUserEcho: false,
     error: null,
+    failure: null,
     title: null,
     stopReason: null,
     nextId: 1,
@@ -194,12 +198,13 @@ function withoutPayload(tool: AcpToolCall): AcpToolCall {
 function settleTool(part: ToolPart): ToolPart {
     const diff = toolDiff(part.tool);
     const output = toolOutput(part.tool);
+    const page = toolPage(part.tool);
     const failure = output ? null : toolFailure(part.tool);
     return {
         ...part,
         tool: withoutPayload(part.tool),
         ...(diff ? { diff } : {}),
-        ...(output ? { output } : {}),
+        ...(page ? { page } : output ? { output } : {}),
         ...(failure ? { failure } : {}),
     };
 }
@@ -406,6 +411,20 @@ function patchTask(state: ChatState, update: Record<string, unknown>): ChatState
     return { ...state, tasks, revision: state.revision + 1 };
 }
 
+function agentNotice(state: ChatState, update: Record<string, unknown>): ChatState {
+    const title = textOf(update.title);
+    /* The stopped task's own line already says so. */
+    if (!title || title === "Task stopped by user") return state;
+    const severity = update.severity === "warning" || update.severity === "error" ? update.severity : "info";
+    const description = textOf(update.description);
+    const notice: AgentNotice = { severity, title, ...(description ? { description } : {}) };
+    return {
+        ...state,
+        ...appendPart(state, { id: `agent-notice-${state.revision}`, kind: "agent_notice", notice }),
+        revision: state.revision + 1,
+    };
+}
+
 function contextUsage(update: Record<string, unknown>): ContextUsage | null {
     const { used, size } = update;
     if (typeof used !== "number" || typeof size !== "number" || !Number.isFinite(used) || !Number.isFinite(size) || size <= 0) return null;
@@ -457,6 +476,8 @@ function sessionUpdate(state: ChatState, sessionId: string, update: Record<strin
         case "async_task_progress":
         case "async_task_state_update":
             return patchTask(state, update);
+        case "notice":
+            return agentNotice(state, update);
         case "plan":
             return { ...state, plan: update, suppressUserEcho: false, revision: state.revision + 1 };
         case "available_commands_update":
@@ -480,6 +501,13 @@ function sessionUpdate(state: ChatState, sessionId: string, update: Record<strin
         case "usage_update": {
             const usage = contextUsage(update);
             return usage ? { ...state, usage, revision: state.revision + 1 } : state;
+        }
+        case "account_switched": {
+            const label = textOf(update.label);
+            if (!label) return state;
+            const from = textOf(update.from);
+            const move: AccountMove = { label, ...(from ? { from } : {}), reason: update.reason === "limit" ? "limit" : "chosen" };
+            return { ...state, ...appendPart(state, { id: `account-${state.nextId}`, kind: "account", move }), revision: state.revision + 1 };
         }
         case "session_info_update":
             return { ...state, title: typeof update.title === "string" ? update.title : state.title, revision: state.revision + 1 };
@@ -509,9 +537,10 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
                 permissions: action.state === "stopped" || action.state === "error" ? [] : state.permissions,
                 tasks: action.state === "stopped" || action.state === "error" ? [] : state.tasks,
                 error: action.state === "error" ? state.error : null,
+                failure: action.state === "error" ? state.failure : null,
             };
         case "ready":
-            return { ...state, connection: "ready", capabilities: action.capabilities, setup: action.setup, error: null };
+            return { ...state, connection: "ready", capabilities: action.capabilities, setup: action.setup, error: null, failure: null };
         case "local_prompt": {
             const id = `local-${state.nextId}`;
             return {
@@ -531,6 +560,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
                 suppressUserEcho: true,
                 running: true,
                 error: null,
+                failure: null,
                 revision: state.revision + 1,
             };
         }
@@ -541,7 +571,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
                 action.update,
             );
         case "turn_started":
-            return { ...state, running: true, stopReason: null, error: null, revision: state.revision + 1 };
+            return { ...state, running: true, stopReason: null, error: null, failure: null, revision: state.revision + 1 };
         case "turn_completed":
             return endTurn(state, action.stopReason ?? null);
         case "permission_requested":
@@ -563,6 +593,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
                 running: false,
                 permissions: [],
                 error: action.message,
+                failure: action.failure ?? null,
                 revision: state.revision + 1,
             };
     }

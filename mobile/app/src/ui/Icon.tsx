@@ -13,9 +13,11 @@ function svg(xml: string): JsxAST | null {
   return parsed.get(xml) ?? null;
 }
 
-export function Icon({ name, size = 16, color }: { name: IconName; size?: number; color?: string }) {
+/** `filled` paints a line icon solid, as the Mac's stylesheet does for some of them. */
+export function Icon({ name, size = 16, color, filled }: { name: IconName; size?: number; color?: string; filled?: boolean }) {
   const colors = useColors();
-  return <SvgAst ast={svg(ICONS[name])} override={{ width: size, height: size, color: color ?? colors.secondary }} />;
+  const xml = filled ? ICONS[name].replace('fill="none" stroke="currentColor"', 'fill="currentColor" stroke="none"') : ICONS[name];
+  return <SvgAst ast={svg(xml)} override={{ width: size, height: size, color: color ?? colors.secondary }} />;
 }
 
 export function DrawnIcon({ name, size = 16, color }: { name: keyof typeof DRAWN_ICONS; size?: number; color?: string }) {

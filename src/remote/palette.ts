@@ -36,6 +36,7 @@ export const PALETTE_TOKENS: Readonly<Record<string, string>> = {
     toolEdit: "color-mix(in oklab, var(--git-modified) 76%, var(--ink-dim))",
     toolDelete: "color-mix(in oklab, var(--git-deleted) 76%, var(--ink-dim))",
     toolRun: "color-mix(in oklab, var(--cmd) 70%, var(--ink-dim))",
+    toolMcp: "color-mix(in oklab, var(--live) 66%, var(--ink-dim))",
 };
 
 function hex(part: number): string {

@@ -23,11 +23,12 @@ use tokio::task::JoinHandle;
 use crate::protocol::frozen::{FrozenReply, FrozenRequest};
 use crate::protocol::{
     decode_output, decode_snapshot, encode_control, encode_frozen, encode_input, read_frame,
-    read_frame_sync, Attention, BackdropImage, BuildIdentity, CallId, ChatAttachment, ChatContext,
-    ChatEvent, ChatInfo, ChatLaunch, ChatLauncher, ChatMark, ChatStart, ClientMessage,
+    read_frame_sync, Attention, BackdropImage, BuildIdentity, CallId, ChatAccount, ChatAttachment,
+    ChatContext, ChatEvent, ChatInfo, ChatLaunch, ChatLauncher, ChatMark, ChatStart, ClientMessage,
     DeviceAccess, Event, FrameKind, HostRegistration, LaunchIdentity, ProjectInfo, PublishedChat,
-    RemoteStatus, Request, RequestId, Response, RunSelector, ServerMessage, SessionId, SessionInfo,
-    SpawnTarget, WindowAnswer, WindowCall, Workspace, MAX_FRAME_BYTES, PROTOCOL, PROTOCOL_VERSION,
+    PublishedRecent, RemoteStatus, Request, RequestId, Response, RunSelector, ServerMessage,
+    SessionId, SessionInfo, SpawnTarget, WindowAnswer, WindowCall, Workspace, MAX_FRAME_BYTES,
+    OLDEST_PROTOCOL_VERSION, PROTOCOL, PROTOCOL_VERSION,
 };
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -154,10 +155,22 @@ fn hello_reply(message: ServerMessage) -> Result<CoreHello, ClientError> {
     }
 }
 
+/// The app and its own core ship together, so they speak one version.
 fn hello_frame() -> Result<Vec<u8>, ClientError> {
     Ok(encode_control(&ClientMessage::Hello {
         protocol: PROTOCOL.into(),
         version: PROTOCOL_VERSION,
+        newest: None,
+    })?)
+}
+
+/// A device and a core on another machine update apart, so a device offers
+/// every version it speaks.
+fn device_hello_frame() -> Result<Vec<u8>, ClientError> {
+    Ok(encode_control(&ClientMessage::Hello {
+        protocol: PROTOCOL.into(),
+        version: OLDEST_PROTOCOL_VERSION,
+        newest: Some(PROTOCOL_VERSION),
     })?)
 }
 
@@ -214,11 +227,30 @@ impl CoreClient {
 
     pub async fn connect_streams(
         read_half: impl AsyncRead + Send + Unpin + 'static,
-        mut write_half: impl AsyncWrite + Send + Unpin + 'static,
+        write_half: impl AsyncWrite + Send + Unpin + 'static,
         sink: Arc<dyn EventSink>,
     ) -> Result<Self, ClientError> {
+        Self::open(read_half, write_half, sink, hello_frame()?).await
+    }
+
+    /// Like [`Self::connect_streams`], for a device reaching a core on
+    /// another machine, which may run another release.
+    pub async fn connect_device_streams(
+        read_half: impl AsyncRead + Send + Unpin + 'static,
+        write_half: impl AsyncWrite + Send + Unpin + 'static,
+        sink: Arc<dyn EventSink>,
+    ) -> Result<Self, ClientError> {
+        Self::open(read_half, write_half, sink, device_hello_frame()?).await
+    }
+
+    async fn open(
+        read_half: impl AsyncRead + Send + Unpin + 'static,
+        mut write_half: impl AsyncWrite + Send + Unpin + 'static,
+        sink: Arc<dyn EventSink>,
+        hello: Vec<u8>,
+    ) -> Result<Self, ClientError> {
         let mut reader = BufReader::with_capacity(256 * 1024, read_half);
-        write_half.write_all(&hello_frame()?).await?;
+        write_half.write_all(&hello).await?;
         let frame = tokio::time::timeout(HANDSHAKE_TIMEOUT, read_frame(&mut reader))
             .await
             .map_err(|_| ClientError::Handshake("timed out".into()))??
@@ -598,6 +630,28 @@ impl CoreClient {
         .await
     }
 
+    /// Sends a file for the chat's next message and answers with where the
+    /// host keeps it, for the prompt's `paths`.
+    pub async fn attach_file(
+        &self,
+        agent_id: String,
+        name: String,
+        mime: String,
+        bytes: &[u8],
+    ) -> Result<PathBuf, ClientError> {
+        use base64::Engine;
+        let request = Request::AttachFile {
+            agent_id,
+            name,
+            mime,
+            data: base64::engine::general_purpose::STANDARD.encode(bytes),
+        };
+        match self.request(request).await? {
+            Response::Attached { path } => Ok(path),
+            _ => Err(ClientError::UnexpectedReply),
+        }
+    }
+
     pub async fn acp_steer(
         &self,
         agent_id: String,
@@ -676,6 +730,15 @@ impl CoreClient {
             Response::ChatConfig { value } => Ok(value),
             _ => Err(ClientError::UnexpectedReply),
         }
+    }
+
+    pub async fn acp_switch_account(
+        &self,
+        agent_id: String,
+        account: ChatAccount,
+    ) -> Result<(), ClientError> {
+        self.request_done(Request::AcpSwitchAccount { agent_id, account })
+            .await
     }
 
     async fn remote_request(&self, request: Request) -> Result<RemoteStatus, ClientError> {
@@ -775,6 +838,10 @@ impl CoreClient {
             .await
     }
 
+    pub async fn publish_recent(&self, chats: Vec<PublishedRecent>) -> Result<(), ClientError> {
+        self.request_done(Request::PublishRecent { chats }).await
+    }
+
     pub async fn publish_on_screen(&self, agent_ids: Vec<String>) -> Result<(), ClientError> {
         self.request_done(Request::PublishOnScreen { agent_ids })
             .await
@@ -820,6 +887,21 @@ impl CoreClient {
             project,
             permission_mode: None,
             model,
+            effort: None,
+        };
+        match self.request(request).await? {
+            Response::ChatBegun { agent_id, start } => Ok((agent_id, start)),
+            _ => Err(ClientError::UnexpectedReply),
+        }
+    }
+
+    /// Takes up again a chat the app published as recent, by its id in the
+    /// device view. Answers like [`Self::start_chat`].
+    pub async fn resume_chat(&self, recent: String) -> Result<(String, ChatStart), ClientError> {
+        let request = Request::ResumeChat {
+            recent,
+            permission_mode: None,
+            model: None,
             effort: None,
         };
         match self.request(request).await? {

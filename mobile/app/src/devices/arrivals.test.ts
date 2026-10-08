@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Device } from '@protocol';
 
-import { clear as clearDisk } from '../../test/mocks/expo-file-system';
+import { File, clear as clearDisk } from '../../test/mocks/expo-file-system';
 
 function host(name: string, key: string): Device {
   return { key: key.repeat(64), role: 'host', name, platform: 'macos', createdAt: '2026-10-05T10:00:00Z', lastSeenAt: null };
@@ -50,5 +50,11 @@ describe('hosts arriving on the account', () => {
     await hostsArrived('user_1', []);
     const [first, second] = await Promise.all([hostsArrived('user_1', [LAPTOP]), hostsArrived('user_1', [LAPTOP])]);
     expect([first, second]).toEqual([[LAPTOP], []]);
+  });
+
+  it('takes a damaged list as a first look rather than stopping', async () => {
+    new File('file:///document/seen-hosts.json').write('{"account":');
+    expect(await hostsArrived('user_1', [STUDIO])).toEqual([]);
+    expect(await hostsArrived('user_1', [STUDIO, MINI])).toEqual([MINI]);
   });
 });

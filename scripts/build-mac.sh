@@ -45,19 +45,19 @@ if [[ "${REQUIRE_SIGNED_APP:-0}" != "1" && -z "${APPLE_SIGNING_IDENTITY:-}" ]]; 
 fi
 
 "$ROOT/scripts/icons.sh"
-if [[ -n "$TARGET" ]]; then
-  node "$ROOT/scripts/build-cli-sidecar.mjs" --target "$TARGET"
-  node "$ROOT/scripts/build-voice-helper.mjs" --target "$TARGET"
-  node "$ROOT/scripts/build-notch-helper.mjs" --target "$TARGET"
-else
-  node "$ROOT/scripts/build-cli-sidecar.mjs"
-  node "$ROOT/scripts/build-voice-helper.mjs"
-  node "$ROOT/scripts/build-notch-helper.mjs"
-fi
+TARGET_ARGS=()
+[[ -n "$TARGET" ]] && TARGET_ARGS=(--target "$TARGET")
+node "$ROOT/scripts/build-voice-helper.mjs" ${TARGET_ARGS[@]+"${TARGET_ARGS[@]}"}
+node "$ROOT/scripts/build-notch-helper.mjs" ${TARGET_ARGS[@]+"${TARGET_ARGS[@]}"}
+# Tauri refuses to build until the sidecar file exists, but the real sidecar
+# comes out of the same build, so an empty file stands in until then.
+SIDECAR="$ROOT/src-tauri/binaries/sikemux-editor-${TARGET:-$(rustc -vV | sed -n 's/^host: //p')}"
+[[ -e "$SIDECAR" ]] || : >"$SIDECAR"
 printf '→ pnpm tauri build --no-bundle'
 printf ' %q' "${BUILD_ARGS[@]}"
 echo
 pnpm tauri build --no-bundle "${BUILD_ARGS[@]}"
+node "$ROOT/scripts/build-cli-sidecar.mjs" --from-app-build ${TARGET_ARGS[@]+"${TARGET_ARGS[@]}"}
 printf '→ pnpm tauri bundle'
 printf ' %q' "${BUILD_ARGS[@]}"
 echo

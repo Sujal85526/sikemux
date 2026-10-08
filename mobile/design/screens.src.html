@@ -106,6 +106,8 @@
   .nav .mid { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--text-primary); font-weight: 600; font-size: 16px; letter-spacing: -0.015em; }
   .nav .mid span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .nav .end { width: 76px; display: flex; justify-content: flex-end; }
+  .nav.titled { height: 56px; padding: 0 8px 0 16px; margin-bottom: 6px; }
+  .nav.titled h1 { flex: 1; font-size: 26px; font-weight: 600; letter-spacing: -0.028em; color: var(--text-primary); }
   .icon-btn { width: 40px; height: 40px; border-radius: 999px; display: grid; place-items: center; color: var(--text-tertiary); }
 
   .title-block { padding: 2px 16px 14px; }
@@ -165,6 +167,8 @@
   .dot.idle { background: var(--gray-700); }
   .dot.off { border: 1.5px solid var(--gray-700); }
   .status-slot { width: 20px; display: grid; place-items: center; flex: none; }
+  .subagents { display: inline-flex; align-items: center; gap: 3px; flex: none; margin-right: 6px; font: 500 12px var(--ui); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+  .subagents svg { width: 11px; height: 11px; fill: currentColor; stroke: none; color: color-mix(in srgb, var(--live) 75%, transparent); }
 
   /* ---------- buttons ---------- */
   .btn { display: flex; align-items: center; justify-content: center; gap: 8px; height: 50px; border-radius: 12px; font-size: 16px; font-weight: 600; border: 1px solid var(--border); background: var(--surface-raised); color: var(--text-primary); }
@@ -173,7 +177,7 @@
   .footer { flex: none; padding: 12px 16px 34px; display: flex; flex-direction: column; gap: 8px; }
 
   /* ---------- chat pane ---------- */
-  .chat { flex: 1; min-height: 0; overflow: hidden; padding: 6px 18px 0; display: flex; flex-direction: column; justify-content: flex-end; }
+  .chat { flex: 1; min-height: 0; overflow: hidden; padding: 6px 18px 20px; display: flex; flex-direction: column; justify-content: flex-end; }
   .chat > * { flex: none; }
   .earlier { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 0 6px; font-size: 12.5px; color: var(--text-tertiary); }
   .msg-user { align-self: flex-end; max-width: 84%; margin: 12px 0 8px; padding: 9px 13px; border-radius: 12px; border: 1px solid color-mix(in oklab, var(--line) 80%, transparent); background: color-mix(in oklab, var(--rail-2) 72%, transparent); color: var(--ink); font-size: 14px; line-height: 1.57; }
@@ -182,12 +186,12 @@
   .thought { color: var(--ink-faint); font-size: 12.5px; line-height: 1.56; font-style: italic; margin: 8px 0; }
 
   .tools { font-family: var(--mono); font-size: 11.5px; margin: 6px 0; }
-  .tools-sum { display: inline-flex; align-items: center; gap: 8px; height: 26px; color: var(--ink-dim); font-family: var(--ui); font-size: 12.5px; }
+  .tools-sum { display: inline-flex; align-items: center; gap: 8px; height: 24px; color: var(--ink-dim); font-family: var(--ui); font-size: 12.5px; }
   .tools-sum .time { font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; }
   .tools-sum .ico { opacity: .7; }
   .tools-sum.open .ico { transform: rotate(90deg); }
   .tools-body { margin-left: 6px; padding: 2px 0; }
-  .tool { position: relative; display: grid; grid-template-columns: 10px 14px auto minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 26px; }
+  .tool { position: relative; display: grid; grid-template-columns: 10px 14px auto minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 22px; }
   .tool::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 1px; background: var(--tree-spine); }
   .tool:last-child::before { bottom: 50%; }
   .tool .tick { height: 1px; background: var(--tree-tick); }
@@ -242,6 +246,22 @@
   .send { width: 34px; height: 34px; border-radius: 999px; background: var(--ink); color: var(--bg); display: grid; place-items: center; flex: none; }
   .send.off { opacity: .28; }
   .send i { width: 10px; height: 10px; border-radius: 2px; background: currentColor; display: block; }
+  .attachments { display: flex; gap: 7px; padding: 4px 4px 2px; }
+  .attachments > span { position: relative; flex: none; height: 58px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-sunken); overflow: hidden; }
+  .attachments > .thumb { width: 76px; }
+  .attachments > .file { display: flex; align-items: center; gap: 8px; max-width: 190px; padding: 0 30px 0 10px; color: var(--ink-dim); }
+  .attachments .x { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 999px; background: var(--ink); color: var(--bg); display: grid; place-items: center; }
+  .attachments .sending { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(9, 9, 11, .55); }
+  .attachments .sending i { width: 16px; height: 16px; border-radius: 999px; border: 2px solid color-mix(in oklab, var(--ink) 30%, transparent); border-top-color: var(--ink); display: block; }
+  .file-words { min-width: 0; }
+  .file-words b { display: block; font-family: var(--mono); font-size: 12px; font-weight: 400; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .file-words span { display: block; margin-top: 2px; font-size: 11px; color: var(--ink-faint); }
+  .photo, .attachments > .photo { background: radial-gradient(circle at 72% 30%, #ffca85 0 9%, transparent 10%), linear-gradient(160deg, #2b2147 0%, #5b3fa8 45%, #a277ff 62%, #1d2a3a 63%, #101a24 100%); }
+  .sent-files { align-self: flex-end; display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: flex-end; gap: 6px; max-width: 84%; margin: 12px 0 -6px; }
+  .sent-files .thumb { width: 132px; height: 99px; border-radius: 10px; border: 1px solid var(--border); }
+  .sent-files .file { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-raised); color: var(--ink-dim); }
+  .sources { display: grid; gap: 8px; padding-bottom: 4px; }
+  .sources > span { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 14px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface-raised); font-size: 15.5px; font-weight: 500; color: var(--ink); }
   .composer-wrap.jumps { position: relative; }
   .jump { position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%); width: 34px; height: 34px; border-radius: 999px; display: grid; place-items: center; border: 1px solid var(--border); background: color-mix(in oklab, var(--surface-raised) 55%, var(--surface-sunken)); color: var(--ink-dim); box-shadow: 0 6px 18px rgba(0,0,0,.52); }
 
@@ -302,6 +322,24 @@
   .docked-acts span { flex: 1; height: 38px; border-radius: 10px; display: grid; place-items: center; font-size: 14px; font-weight: 500; border: 1px solid var(--border-strong); color: var(--ink); }
   .docked-acts span:first-child { color: var(--text-secondary); }
   .docked-acts .go { background: var(--ink); border-color: var(--ink); color: var(--bg); font-weight: 600; }
+  .docked .dock-cmd.long { max-height: 96px; overflow: hidden; white-space: pre-wrap; word-break: break-all; }
+  .dock-cmd .diff { display: block; margin-top: 4px; }
+  .reconnect { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-overlay); font-size: 13px; color: var(--text-secondary); }
+  .reconnect > span:nth-child(2) { flex: 1; min-width: 0; }
+  .reconnect b { font-weight: 600; color: var(--ink); }
+  .reconnect .no { color: var(--danger); }
+  .msg-user.failed { border-color: var(--danger); margin-bottom: 4px; }
+  .unsent { align-self: flex-end; display: flex; align-items: center; gap: 5px; margin-bottom: 8px; font-size: 12px; font-weight: 500; color: var(--ink-faint); }
+  .unsent .no { color: var(--danger); }
+  .unsent b { font-weight: 500; color: var(--ink); }
+  .commands { display: flex; flex-direction: column; gap: 4px; margin: 0 0 8px; }
+  .commands span { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-overlay); font-size: 13px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; }
+  .commands code { font-family: var(--mono); color: var(--acc); }
+  .tool-detail { margin: 4px 0 6px 24px; padding: 9px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-sunken); font-family: var(--mono); font-size: 11px; line-height: 16px; color: var(--text-secondary); white-space: pre; overflow: hidden; }
+  .tool-detail .a { color: var(--git-added); }
+  .tool-detail .d { color: var(--git-deleted); }
+  .tool-detail .gap { color: var(--ink-faint); }
+  .tool-detail.failure { color: var(--danger); white-space: pre-wrap; }
 
   /* model and effort sheet */
   .picker-sheet { padding: 8px 16px 46px; }
@@ -379,7 +417,7 @@
   .wc-legend i { width: 10px; }
   .wc-caption { margin-top: 12px; text-align: center; font-size: 13px; color: var(--text-tertiary); }
   /* a device's header: the host's name over its backdrop, then the tabs and the project picker */
-  .host-head { height: 168px; display: flex; flex-direction: column; justify-content: flex-end; padding: 0 18px 16px; }
+  .host-head { padding: 10px 18px 16px; }
   .host-head .where { display: flex; align-items: center; gap: 8px; font-size: 13px; color: color-mix(in oklab, var(--ink) 72%, transparent); }
   .host-head .where i { width: 7px; height: 7px; border-radius: 999px; flex: none; }
   .host-head .where .live { background: var(--live); box-shadow: 0 0 10px var(--live); }
@@ -408,6 +446,8 @@
   .rows .row .s { font-size: 12px; }
   .rows .row code { font-family: var(--mono); font-size: 11.5px; color: var(--text-secondary); }
   .rows .row.ask { margin-top: 8px; }
+  .rows .row.more { min-height: 40px; padding-left: 38px; }
+  .rows .row.more .t { font-size: 13px; font-weight: 400; color: var(--text-tertiary); }
   .rows .row.ask .t { color: var(--text-primary); }
   .scope-sheet { top: auto; padding: 8px 16px 34px; }
   .scope-sheet .head { display: flex; align-items: baseline; justify-content: space-between; padding: 6px 4px 12px; }
@@ -422,7 +462,7 @@
   .scope-sheet .row .path { direction: rtl; text-align: left; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .scope-sheet .tail { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; }
   .scope-sheet .tail .num { font-size: 13px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
-  .scope-sheet .tail .faces > span { width: 26px; height: 26px; border: 1px solid var(--border); box-shadow: 0 0 0 2px var(--surface-raised); background: var(--surface-overlay); margin-right: -7px; }
+  .scope-sheet .tail .faces > span { width: 16px; height: 16px; margin-right: -4px; }
   .scope-sheet .tail .faces > span:last-child { margin-right: 0; }
   .scope-sheet .tail .tcount { color: var(--text-tertiary); display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
   .scope-sheet .check { color: var(--text-primary); display: grid; }
@@ -454,10 +494,11 @@
   .dev-work { display: flex; align-items: center; gap: 10px; padding: 12px 16px 14px; font-size: 13px; color: var(--text-secondary); }
   .dev-work .loader { margin-left: auto; }
   .faces { display: flex; }
-  .faces > span { width: 26px; height: 26px; border-radius: 999px; display: grid; place-items: center; background: var(--surface-overlay); box-shadow: 0 0 0 2px var(--surface-raised); margin-right: -6px; }
+  /* the Mac rail's stack: bare glyphs, pulled together over the room each one draws around itself */
+  .faces > span { width: 18px; height: 18px; display: grid; place-items: center; margin-right: -5px; }
   .faces > span:last-child { margin-right: 0; }
   /* welcome: the rail itself, drifting past */
-  .reel { position: absolute; left: 0; right: 0; top: 54px; height: 360px; overflow: hidden; padding: 0 16px;
+  .reel { flex: 0 1 340px; min-height: 0; margin-top: 8px; overflow: hidden; padding: 0 16px;
     -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 24%, #000 52%, transparent 94%);
     mask-image: linear-gradient(to bottom, transparent 0%, #000 24%, #000 52%, transparent 94%); }
   .reel-track { display: flex; flex-direction: column; gap: 2px; animation: reel 26s linear infinite; }
@@ -590,6 +631,69 @@
   .backdrop-pick button:hover { background: var(--surface-hover); color: var(--text-primary); }
   .backdrop-pick button.on { background: var(--surface-selected); border-color: var(--border-selected); color: var(--text-primary); }
   .backdrop-pick input { display: none; }
+
+  /* what is still going, docked on the composer: the Mac's live stack in one line */
+  .live-strip { display: flex; align-items: center; gap: 10px; height: 34px; margin: 0 14px -1px; padding: 0 10px 0 12px; border: 1px solid var(--border); border-bottom: 0; border-radius: 12px 12px 0 0; background: color-mix(in oklab, var(--surface-raised) 55%, var(--surface-sunken)); font-size: 12px; color: var(--text-tertiary); white-space: nowrap; }
+  .live-strip .pcs { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; overflow: hidden; }
+  .live-strip .pc { display: inline-flex; align-items: center; gap: 5px; }
+  .live-strip .pc .ico { color: var(--ink-dim); }
+  .live-strip b { font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .live-strip .up .ico { transform: rotate(-90deg); color: var(--ink-faint); }
+  .live-strip .live-line { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; color: transparent; background: linear-gradient(90deg, var(--text-secondary) 0%, var(--ink) 45%, var(--text-secondary) 90%) 0 0 / 200% 100%; -webkit-background-clip: text; background-clip: text; animation: shimmer 2.2s linear infinite; }
+  .live-strip .pcs.after { flex: none; gap: 10px; }
+  .live-strip + .composer { position: relative; }
+  .ctx { --c: var(--acc); display: block; width: 14px; height: 14px; border-radius: 50%; background: conic-gradient(var(--c) calc(var(--p) * 1%), var(--border) 0);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 1.8px), #000 calc(100% - 1.8px)); mask: radial-gradient(farthest-side, transparent calc(100% - 1.8px), #000 calc(100% - 1.8px)); }
+  .ctx.claude { --c: var(--brand-claude); } .ctx.codex { --c: var(--brand-codex); } .ctx.warm { --c: var(--warn); } .ctx.hot { --c: var(--danger); }
+  .glabel .n { margin-left: -4px; letter-spacing: 0; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+  .glabel.acts::after { order: 2; }
+  .glabel .act { order: 3; }
+  .glabel .prog { order: 3; letter-spacing: 0; text-transform: none; color: var(--ink-dim); }
+  .mini { flex: none; height: 28px; min-width: 52px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border-strong); display: grid; place-items: center; font-size: 12.5px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--ink); }
+  .drop-x { flex: none; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--ink-dim); }
+  .row .ends { display: flex; align-items: center; gap: 8px; }
+  .steps { display: flex; flex-direction: column; }
+  .step { display: flex; align-items: flex-start; gap: 10px; padding: 7px 8px; font-size: 14px; line-height: 20px; color: var(--text-secondary); }
+  .step > span:first-child { width: 20px; height: 20px; flex: none; display: grid; place-items: center; color: var(--ink-dim); }
+  .step.done { color: var(--text-tertiary); }
+  .step.now { color: var(--ink); }
+  .docked-head .pager { flex: none; display: flex; align-items: center; gap: 2px; margin-top: -2px; font-size: 12px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+  .docked-head .pager .pg { width: 26px; height: 26px; margin: 0; display: grid; place-items: center; color: var(--text-secondary); }
+  .pager .pg.prev .ico { transform: rotate(180deg); } .pager .pg.off { opacity: .3; }
+  .term-box { margin: 2px 0 6px 18px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-sunken); font-family: var(--mono); overflow: hidden; }
+  .term-box .cmdline { display: flex; align-items: flex-start; gap: 7px; padding: 7px 4px 7px 9px; font-size: 11.5px; line-height: 17px; color: var(--ink); }
+  .term-box .cmdline > b { font-weight: 400; color: color-mix(in oklab, var(--cmd) 70%, var(--ink-dim)); }
+  .term-box .cmdline > span:nth-child(2) { flex: 1; min-width: 0; }
+  .term-box .cp { flex: none; width: 26px; height: 26px; margin-top: -4px; display: grid; place-items: center; color: var(--ink-faint); }
+  .term-box .out { position: relative; padding: 7px 30px 7px 9px; border-top: 1px solid var(--border); font-size: 11px; line-height: 16px; color: var(--ink-dim); white-space: pre; overflow: hidden; }
+  .term-box .out .cp { position: absolute; top: 3px; right: 3px; margin: 0; }
+  .term-box .more { padding: 7px 9px; border-top: 1px solid var(--border); font-size: 10.5px; color: var(--ink-faint); }
+  .term-box .exit { padding: 0 9px 7px; font-size: 10.5px; color: var(--danger); }
+  .tools-sum .said { color: var(--text-secondary); }
+  .tool .arg { color: var(--ink-dim); }
+  .k-mcp { color: color-mix(in oklab, var(--live) 66%, var(--ink-dim)); }
+  .sub { margin: 6px 0; }
+  .sub-head { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 11px 0 10px; border-radius: 10px; border: 1px solid var(--border); background: color-mix(in oklab, var(--surface-raised) 60%, transparent); }
+  .sub-head > .chev .ico { color: var(--ink-dim); opacity: .7; }
+  .sub-head.open > .chev .ico { transform: rotate(90deg); }
+  .sub-head .nm { flex: none; max-width: 45%; font-family: var(--mono); font-size: 11.5px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sub-head .tk { flex: 1; min-width: 0; font-size: 12px; color: var(--ink-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sub-head .calls { font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); }
+  .sub-head .st { width: 14px; display: grid; place-items: center; }
+  .sub-body { padding: 4px 0 0 14px; }
+  .notice { align-self: flex-start; max-width: 100%; margin: 5px 0; padding: 6px 10px; border-radius: 9px; border: 1px solid var(--border); }
+  .notice .h { display: flex; align-items: center; gap: 7px; color: var(--ink-faint); }
+  .notice .nm { font-family: var(--mono); font-size: 11.5px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .notice .w { font-size: 12px; }
+  .notice .sm { margin-top: 3px; font-size: 12px; line-height: 17px; color: var(--ink-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .msg-strip { display: flex; align-items: center; gap: 8px; height: 24px; margin-top: 6px; color: var(--ink-dim); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .msg-strip .cp { width: 24px; height: 24px; display: grid; place-items: center; }
+  .msg-strip .rate { margin-left: auto; font-family: var(--mono); font-style: italic; }
+  .sources > span.danger { color: var(--danger); }
+  .recent-row { display: flex; align-items: flex-start; gap: 12px; padding: 11px 8px; font-size: 14.5px; line-height: 20px; color: var(--text-secondary); }
+  .recent-row .ico { margin-top: 2px; color: var(--ink-faint); }
+  .code-box { position: relative; margin: 6px 0 8px; padding: 10px 34px 10px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-sunken); font-family: var(--mono); font-size: 11.5px; line-height: 17px; color: var(--ink); white-space: pre; overflow: hidden; }
+  .code-box .cp { position: absolute; top: 3px; right: 3px; width: 26px; height: 26px; display: grid; place-items: center; color: var(--ink-faint); }
 </style>
 </head>
 <body>
@@ -632,13 +736,14 @@
           <p>Watch them work, answer what they ask, and start new chats from anywhere.</p>
         </div>
         <div class="footer welcome-foot">
+          <div class="btn provider"><svg class="brand" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>Continue with Apple</div>
           <div class="btn provider"><svg class="brand" width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 01-1.8 2.72v2.26h2.91c1.7-1.57 2.69-3.88 2.69-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.81 5.96-2.18l-2.91-2.26c-.81.54-1.84.86-3.05.86-2.34 0-4.33-1.58-5.04-3.71H.96v2.33A9 9 0 009 18z"/><path fill="#FBBC05" d="M3.96 10.71A5.41 5.41 0 013.68 9c0-.59.1-1.17.28-1.71V4.96H.96A9 9 0 000 9c0 1.45.35 2.83.96 4.04l3-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58A8.98 8.98 0 009 0 9 9 0 00.96 4.96l3 2.33C4.67 5.16 6.66 3.58 9 3.58z"/></svg>Continue with Google</div>
           <div class="btn provider"><svg class="brand" width="18" height="18" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>Continue with GitHub</div>
           <div class="text-link">Continue with email</div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Welcome</b><div class="note">The hero is the Mac's own agent rail drifting past and fading into the dark: the first thing the app shows is what it is for. The app needs an account, so the first choice is how to sign in, and all of it stays in the app: Google with the phone's own account picker, GitHub in a sheet over the app (it has no native sign-in), and email on the next screens, the quiet third.</div></figcaption>
+      <figcaption><b>Welcome</b><div class="note">The hero is the Mac's own agent rail drifting past and fading into the dark: the first thing the app shows is what it is for. The app needs an account, so the first choice is how to sign in, and all of it stays in the app: Apple with the iPhone's own sheet, Google with the phone's own account picker, GitHub in a sheet over the app (it has no native sign-in), and email on the next screens, the quiet last. Apple is offered only on iPhones.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -690,7 +795,7 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Email code</b><div class="note">Six tiles, three and three. It comes for a new account, and when an account signs in on a phone it has not used before. The sixth digit sends it.</div></figcaption>
+      <figcaption><b>Email code</b><div class="note">Six tiles, three and three. It comes for a new account, and when an account signs in on a phone it has not used before. The sixth digit sends it. A wrong code edges the tiles red and leaves the keyboard up for the next try. Screen readers hear the tiles as one Code field with the digits typed so far.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -708,7 +813,7 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Connect, for a host on your account</b><div class="note">Tapping Connect on a host from the account comes straight here, since the account vouches for this phone. Sikemux hands the phone a ten-minute invitation naming both keys, and the phone shows it to the host, which checks it without asking Sikemux. Someone at the host still decides, and picks the access. Until the invitation reaches the host the row reads "Reaching Work MacBook"; then the rail's squares and two minutes for an answer. On Allow the host opens.</div></figcaption>
+      <figcaption><b>Connect, for a host on your account</b><div class="note">Tapping Connect on a host from the account comes straight here, since the account vouches for this phone. Sikemux hands the phone a ten-minute invitation naming both keys, and the phone shows it to the host, which checks it without asking Sikemux. Someone at the host still decides, and picks the access. Until the invitation reaches the host the row reads "Reaching Work MacBook"; then the rail's squares and two minutes for an answer, counted on the clock, so time spent in another app counts. On Allow the host opens.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -759,7 +864,7 @@
         <div class="choices across"><div class="btn">Not now</div><div class="btn primary">Turn on</div></div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Notifications, after connecting</b><div class="note">Asked once, on the host that just let the phone in, because that is when a notification first means something; never at first launch. Turn on brings the system's own prompt next. Not now leaves them off, and the account sheet can turn them on later. Only a signed-in phone is asked: notifications travel through the account. Android only for now; iPhones wait for Apple's push service.</div></figcaption>
+      <figcaption><b>Notifications, after connecting</b><div class="note">Asked once, on the host that just let the phone in, because that is when a notification first means something; never at first launch. Turn on brings the system's own prompt next. Not now leaves them off, and the account sheet can turn them on later. Closing the sheet any other way decides nothing, so it is asked again when the next host lets the phone in. Only a signed-in phone is asked: notifications travel through the account.</div></figcaption>
     </figure>
 
   </div>
@@ -774,8 +879,7 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
-        <div class="title-block"><h1>Devices</h1></div>
+        <div class="nav titled"><h1>Devices</h1><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
         <div class="pad grow devices">
 
           <div class="device">
@@ -790,7 +894,7 @@
               <span class="dot warn"></span>
             </div>
             <div class="dev-work">
-              <span class="faces"><span class="claude">{{IconClaude:16}}</span><span class="codex">{{IconCodex:16}}</span><span class="hermes">{{IconHermes:16}}</span></span>
+              <span class="faces"><span class="claude">{{IconClaude:18}}</span><span class="codex">{{IconCodex:18}}</span><span class="hermes">{{IconHermes:18}}</span></span>
               <span>3 working</span>
               <span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
             </div>
@@ -823,14 +927,13 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Devices</b><div class="note">Each card is a device with its own glyph and a presence dot. The busy one says the one thing that needs you, then who is working, with the rail's logos and squares. A device that is asleep keeps its place but drops to an outline. A host signed in to the same account but not paired with this phone comes last, outlined, with Connect in place of the chevron: it asks that host to let this phone in, with no code. The account's picture sits at the top right and opens the account sheet. Beside it, + adds the waiting slot and the steps from "Waiting for a host" under the list, for one more host; the host that fills it takes its place.</div></figcaption>
+      <figcaption><b>Devices</b><div class="note">Each card is a device with its own glyph and a presence dot. The busy one says the one thing that needs you, then who is working, with the rail's logos and squares. A device that is asleep keeps its place but drops to an outline. A host signed in to the same account but not paired with this phone comes last, outlined, with Connect in place of the chevron: it asks that host to let this phone in, with no code. The account's picture sits at the top right and opens the account sheet. Beside it, + adds the waiting slot and the steps from "Waiting for a host" under the list, for one more host; the host that fills it takes its place, and the slot's × puts it away. A card stays lit while its host is being reached again and drops to an outline only once a try fails, so it doesn't flicker. Pulling the list down reads the saved hosts again and reaches every host at once.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar" style="--size:28px">C</span></span></div>
-        <div class="title-block"><h1>Devices</h1></div>
+        <div class="nav titled"><h1>Devices</h1><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar" style="--size:28px">C</span></span></div>
         <div class="slot"><span class="slot-tile">{{IconLaptop:22}}</span><div><div class="t">Your computer goes here</div><div class="s"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>Watching the account</div></div></div>
         <div class="how">
           <div class="t">Bring it in</div>
@@ -843,14 +946,13 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Waiting for a host</b><div class="note">Signed in, with no host connected and none on the account: the ordinary Devices screen, with a dashed slot where the computer will land. The phone watches the account the whole time, and nothing changes screen when a host signs in: the slot turns into its row, and the phone asks to join it by itself ("A host just signed in"). The steps name the provider and email this phone signed in with, since the host must use the same account. Send me the link opens the share sheet with sikemux.com/phone, to open on the computer; Copy link copies it and reads "Copied" for a moment. This account has no picture, so its initials stand in, from the name or else the email, on the same neutral circle; while a picture loads the circle stays empty.</div></figcaption>
+      <figcaption><b>Waiting for a host</b><div class="note">Signed in, with no host connected and none on the account: the ordinary Devices screen, with a dashed slot where the computer will land. The phone watches the account the whole time, and nothing changes screen when a host signs in: the slot turns into its row, and the phone asks to join it by itself ("A host just signed in"). The steps name the provider and email this phone signed in with, since the host must use the same account. Send me the link opens the share sheet with sikemux.com/phone, to open on the computer; Copy link copies it and reads "Copied" for a moment. Until the account has answered, a phone with nothing paired shows only the rail's squares and "Looking for hosts on your account", never these steps; if the account can't be read it says so in one line with Try again, and pulling the list down reads it again too. This account has no picture, so its initials stand in, from the name or else the email, on the same neutral circle; while a picture loads the circle stays empty.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen" style="opacity:.35">
-        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
-        <div class="title-block"><h1>Devices</h1></div>
+        <div class="nav titled"><h1>Devices</h1><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
       </div>
       <div class="sheet">
         <div class="grabber"></div>
@@ -872,8 +974,7 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen" style="opacity:.35">
-        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
-        <div class="title-block"><h1>Devices</h1></div>
+        <div class="nav titled"><h1>Devices</h1><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
       </div>
       <div class="sheet">
         <div class="grabber"></div>
@@ -889,14 +990,13 @@
         <div class="sheet-version">Sikemux 0.1.0-nightly.5 · update 1b46d28 (6 Oct)</div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Notifications, not allowed</b><div class="note">The switch says whether notifications reach this phone. On, it hands the phone's address for them to Sikemux and a key to each paired host; off, it takes both back. When Android has notifications turned off for the app, the switch reads off and the line under it opens the app's Android settings. Signing out takes the address back before anything else.</div></figcaption>
+      <figcaption><b>Notifications, not allowed</b><div class="note">The switch says whether notifications reach this phone. On, it hands the phone's address for them to Sikemux and a key to each paired host; off, it takes both back. When the system has notifications turned off for the app, the switch reads off and the line under it opens the app's settings: "Allow them in Android settings" on Android, "Allow them in Settings" on an iPhone. Signing out takes the address back before anything else.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen" style="opacity:.35">
-        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
-        <div class="title-block"><h1>Devices</h1></div>
+        <div class="nav titled"><h1>Devices</h1><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
       </div>
       <div class="sheet">
         <div class="grabber"></div>
@@ -912,7 +1012,52 @@
         <div class="sheet-version">Sikemux 0.1.0-nightly.5 · update 1b46d28 (6 Oct)</div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Signing out, offline</b><div class="note">Signing out first takes this phone off the account, so every host hears of it, even one that is asleep. When the accounts server can't be reached, the sheet says what signing out now would leave behind and lets the person choose. A server that answers with a problem shows it in red above Sign out instead.</div></figcaption>
+      <figcaption><b>Signing out, offline</b><div class="note">Signing out first takes this phone off the account, so every host hears of it, even one that is asleep. When that fails, the sheet says what signing out now would leave behind and lets the person choose: the title is "Can't reach Sikemux" when the server is out of reach, or what the server answered when it refused. Signing out anyway also makes this phone a new device and drops its notification address, so the account it leaves can't reach it and the next sign-in starts clean.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen" style="opacity:.35">
+        <div class="nav titled"><h1>Devices</h1><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
+      </div>
+      <div class="sheet">
+        <div class="grabber"></div>
+        <div class="account-head">
+          <span class="avatar photo" style="--size:44px"></span>
+          <div style="min-width:0"><div class="t">Kishore Gunalan</div><div class="s">contact@nodelike.com</div><div class="s">Signed in with Google</div></div>
+        </div>
+        <div class="row boxed"><span class="mark">{{IconPhone:18}}</span><div class="body"><div class="t" style="font-size:15px">Kishore's Pixel</div><div class="s">This phone · <span class="m">3308a907</span></div><div class="s" style="color:var(--danger)">Not on your account yet: Can't reach Sikemux. Check the phone is online.</div></div><span style="font-size:15px;font-weight:500;color:var(--acc)">Try again</span></div>
+        <div class="row boxed" style="margin-top:8px"><span class="mark">{{IconInbox:18}}</span><div class="body"><div class="t" style="font-size:15px">Notifications</div><div class="s">When agents need you or finish</div></div><span class="toggle"></span></div>
+        <div class="sheet-note">Signing out takes this phone off your account and forgets every host paired with it.</div>
+        <div class="btn danger">Sign out</div>
+        <div class="text-link" style="height:44px;line-height:44px;margin-top:4px">Delete account…</div>
+        <div class="sheet-version">Sikemux 0.1.0-nightly.5 · update 1b46d28 (6 Oct)</div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Not on the account yet</b><div class="note">After signing in, the phone adds itself to the account first, and only then sends its notification address and opens its live connection, which the server takes only from a phone on the account. When adding it fails, the phone row says why in red. It tries again by itself while the server is out of reach, at once when the phone comes back online or to the front, and Try again asks now.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen" style="opacity:.35">
+        <div class="nav titled"><h1>Devices</h1><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
+      </div>
+      <div class="sheet">
+        <div class="grabber"></div>
+        <div class="account-head">
+          <span class="avatar photo" style="--size:44px"></span>
+          <div style="min-width:0"><div class="t">Kishore Gunalan</div><div class="s">contact@nodelike.com</div><div class="s">Signed in with Google</div></div>
+        </div>
+        <div class="row boxed"><span class="mark">{{IconPhone:18}}</span><div class="body"><div class="t" style="font-size:15px">Kishore's Pixel</div><div class="s">This phone · <span class="m">3308a907</span></div></div></div>
+        <div class="row boxed" style="margin-top:8px"><span class="mark">{{IconInbox:18}}</span><div class="body"><div class="t" style="font-size:15px">Notifications</div><div class="s">When agents need you or finish</div></div><span class="toggle"></span></div>
+        <div class="sheet-note">Signing out takes this phone off your account and forgets every host paired with it.</div>
+        <div class="btn danger">Sign out</div>
+        <div class="text-link" style="height:44px;line-height:44px;margin-top:4px">Delete account…</div>
+        <div class="text-link" style="height:44px;line-height:44px;color:var(--acc)">Restart to update</div>
+        <div class="sheet-version">Sikemux 0.1.0-nightly.5 · update 1b46d28 (6 Oct)</div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Update waiting</b><div class="note">The app looks for an over-the-air update each time it comes to the front, at most every half hour, and downloads it quietly. The next time the person comes back after more than a minute away, the app restarts into it; a quick glance away keeps what is on screen. Until then, Restart to update sits above the version line.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1010,6 +1155,33 @@
       <figcaption><b>List unreadable</b><div class="note">If the saved list of hosts cannot be read, the app says so in one line instead of showing an empty list.</div></figcaption>
     </figure>
 
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="stack" style="padding-bottom:120px">
+          <h2 style="font-size:22px">Can't reach Sikemux</h2>
+          <p>This phone needs the internet once to load your account. Check the connection, then try again.</p>
+        </div>
+        <div class="footer"><div class="btn primary">Try again</div></div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Account out of reach</b><div class="note">The splash stays up until the account and the saved hosts are read, so the app never opens on a blank screen. The account is kept on the phone, so later launches open offline on what it last knew. Only a phone that has never loaded it, and can't reach Sikemux for ten seconds, shows this. Try again starts the app over.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="stack" style="padding-bottom:120px">
+          <h2 style="font-size:22px">Something went wrong</h2>
+          <p>Cannot read properties of undefined (reading 'chats')</p>
+        </div>
+        <div class="footer"><div class="btn primary">Try again</div><div class="text-link" style="height:44px;line-height:44px;margin-top:4px">Go to Devices</div></div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>A screen failed</b><div class="note">When drawing a screen fails, that screen says so in its place, with what went wrong in one selectable line, instead of closing the app. Try again draws it once more; Go to Devices leaves it.</div></figcaption>
+    </figure>
+
+
   </div>
 </section>
 
@@ -1028,20 +1200,21 @@
           <div class="rows"><div class="row ask"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Remote pairing screen</div><div class="s">Needs input · wants to run <code>pnpm test</code></div></div><span class="status-slot"><span class="dot warn"></span></span></div></div>
           <div class="glabel">Open</div>
           <div class="rows">
-            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t">Fix the flaky PTY replay test</div><div class="s">sikemux · Running a command…</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t">Fix the flaky PTY replay test</div><div class="s">sikemux · Running a command…</div></div><span class="subagents">{{IconAgent:11}}3</span><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
             <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Tighten the rail spacing</div><div class="s">sikemux · Editing…</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
             <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Download size on the hero</div><div class="s">sikemux-front · Done</div></div><span class="status-slot"><span class="dot acc"></span></span></div>
           </div>
           <div class="glabel">Recent</div>
           <div class="rows">
-            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Split the Rundeck matrix into jobs</div></div><span class="ago">3h</span></div>
-            <div class="row"><span class="mark hermes">{{IconHermes:20}}</span><div class="body"><div class="t">Why does the shader dim the rail</div></div><span class="ago">1d</span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Split the Rundeck matrix into jobs</div><div class="s">sikemux</div></div><span class="ago">3h</span></div>
+            <div class="row"><span class="mark hermes">{{IconHermes:20}}</span><div class="body"><div class="t">Why does the shader dim the rail</div><div class="s">sikemux-front</div></div><span class="ago">1d</span></div>
+            <div class="row more"><div class="body"><div class="t">Show 12 more</div></div></div>
           </div>
         </div>
         <div class="fab">{{IconPlus:18}}New chat</div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Agents</b><div class="note">The agent waiting on you is simply the first row, with a white pulsing dot. The rest sit under small-caps labels with a hairline running right, as on the Mac's rail, with no boxes or dividers: open chats with their state at the end, recent ones with their age.</div></figcaption>
+      <figcaption><b>Agents</b><div class="note">The agent waiting on you is simply the first row, with a white pulsing dot. The rest sit under small-caps labels with a hairline running right, as on the Mac's rail, with no boxes or dividers: open chats with their state at the end, then the saved chats the host's rail lists as recent, newest first, with their project while all projects are shown and their age at the end. The first ten show, and Show more brings the rest. Tapping a recent chat resumes it on the host and opens it, the squares standing in for its age while it starts; a phone that can only watch is told so under the list instead, as is why a resume failed. The project picker and the agent filter narrow both lists. The header scrolls with the list: once the name passes under the top bar, the bar takes it as its title and the Agents / Terminals row stays pinned beneath it, floating on the backdrop with no band of its own, and rows fade out as they slide under it.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1095,6 +1268,40 @@
       <figcaption><b>Connecting</b><div class="note">Until the host answers, the line over the name says Connecting… with a hollow dot, and the screen holds only the rail's squares. The tabs and the project picker arrive with the first list of agents and terminals.</div></figcaption>
     </figure>
 
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}Devices</span><span style="flex:1"></span><span class="icon-btn">{{IconMore:18}}</span></div>
+        <div class="host-head"><div class="where"><i class="off"></i>Reconnecting…</div><h1>MacBook Pro</h1></div>
+        <div class="host-bar"><div class="host-tabs"><span class="on">Agents <i class="count">1</i></span><span>Terminals</span></div><span class="host-project"><span class="folder">{{IconFolder:14}}</span>All projects<span class="ch">{{IconChevron:12}}</span></span></div>
+        <div class="pad grow" style="opacity:.5">
+          <div class="rows"><div class="row ask"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Remote pairing screen</div><div class="s">Needs input · wants to run <code>pnpm test</code></div></div><span class="status-slot"><span class="dot warn"></span></span></div></div>
+          <div class="glabel">Open</div>
+          <div class="rows">
+            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t">Fix the flaky PTY replay test</div><div class="s">sikemux · Running a command…</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Reconnecting</b><div class="note">Only a host that answers now is Online with the green dot. While the phone reaches it again, the line reads Reconnecting… with the dot hollow, and the last list it sent stays, dimmed, since it may be out of date. New chat waits for the host. If the try fails the line turns to Asleep or offline and the list stays dimmed.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}Devices</span><span style="flex:1"></span><span class="icon-btn">{{IconMore:18}}</span></div>
+        <div class="host-head"><div class="where"><i class="off"></i>No longer knows this phone</div><h1>MacBook Pro</h1></div>
+        <div class="stack" style="padding-bottom:120px">
+          <h2 style="font-size:20px">This host no longer knows this phone</h2>
+          <p>It was removed on the host. Forget it here, then connect to it again from Devices.</p>
+          <div class="btn danger" style="align-self:stretch;margin-top:12px">Forget this host</div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Removed on the host</b><div class="note">When the host has unpaired this phone, trying again can't help, so the phone stops trying and says so. Forget this host forgets it here and goes back to Devices, where a host on the account offers Connect again.</div></figcaption>
+    </figure>
+
+
   </div>
 </section>
 
@@ -1139,14 +1346,14 @@
           <div class="search">{{IconSearch:16}}<span>Search projects…</span></div>
           <div class="group">
             <div class="row on"><span class="mark all">{{IconFolders:16}}</span><div class="body"><div class="t">All projects</div><div class="s">4 agents · 3 terminals</div></div><span class="check">{{IconCheck:16}}</span></div>
-            <div class="row"><span class="mark folder">{{IconFolder:16}}</span><div class="body"><div class="t">sikemux</div><div class="s"><span class="m path">&lrm;~/proj/pers/sikemux&lrm;</span></div></div><span class="tail"><span class="dot warn"></span><span class="faces"><span class="claude">{{IconClaude:14}}</span><span class="codex">{{IconCodex:14}}</span></span></span></div>
-            <div class="row"><span class="mark folder">{{IconFolder:16}}</span><div class="body"><div class="t">sikemux-front</div><div class="s"><span class="m path">&lrm;~/projects/personal/sikemux-front&lrm;</span></div></div><span class="tail"><span class="faces"><span class="claude">{{IconClaude:14}}</span><span class="claude">{{IconClaude:14}}</span></span></span></div>
+            <div class="row"><span class="mark folder">{{IconFolder:16}}</span><div class="body"><div class="t">sikemux</div><div class="s"><span class="m path">&lrm;~/proj/pers/sikemux&lrm;</span></div></div><span class="tail"><span class="dot warn"></span><span class="faces"><span class="claude">{{IconClaude:16}}</span><span class="codex">{{IconCodex:16}}</span></span></span></div>
+            <div class="row"><span class="mark folder">{{IconFolder:16}}</span><div class="body"><div class="t">sikemux-front</div><div class="s"><span class="m path">&lrm;~/projects/personal/sikemux-front&lrm;</span></div></div><span class="tail"><span class="faces"><span class="claude">{{IconClaude:16}}</span><span class="claude">{{IconClaude:16}}</span></span></span></div>
             <div class="row"><span class="mark folder">{{IconFolder:16}}</span><div class="body"><div class="t">api-docs</div><div class="s"><span class="m path">&lrm;~/proj/swishx/api-docs&lrm;</span></div></div><span class="tail"><span class="tcount">{{IconCommand:13}}1</span></span></div>
           </div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Picking a project</b><div class="note">A short sheet over the device. The provider filter heads it, as the provider tiles head the Mac's rail: All, then a tile for each provider with an agent in view, shown on the Agents tab when there is more than one. Picking a provider keeps the sheet open; picking a project closes it. Below, titled with the host, All projects heads the project list. Folders are the Mac rail's green; each project shows the logos of the agents in it, the white dot if one is waiting on you, and a terminal count when that is all it has.</div></figcaption>
+      <figcaption><b>Picking a project</b><div class="note">A short sheet over the device. The provider filter heads it, as the provider tiles head the Mac's rail: All, then a tile for each provider with an agent in view, shown on the Agents tab when there is more than one. Picking a provider keeps the sheet open; picking a project closes it, and so does dragging the sheet down or tapping the dimmed screen, as with every sheet. A sheet taller than the screen scrolls, and one with a search field rises above the keyboard. Below, titled with the host, All projects heads the project list. Folders are the Mac rail's green; each project shows the logos of the agents in it, the white dot if one is waiting on you, and a terminal count when that is all it has.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1204,7 +1411,7 @@
 <!-- ================================================================ -->
 <section class="flow on-host">
   <h2>An agent</h2>
-  <p>The Mac's chat pane, line for line: your messages in a bubble on the right, the agent's prose with no bubble, its thinking in faint italics, tool calls folded to "N tool calls" and opened as a tree with the coloured verbs, and the working line with the agent's logo breathing. The composer is the Mac's: attach, YOLO, model, effort, context ring, dictate, send or stop.</p>
+  <p>The Mac's chat pane, line for line: your messages in a bubble on the right, the agent's prose with no bubble, its thinking in faint italics, tool calls as a tree with the coloured verbs, open while the agent is still adding to them and folded to "N tool calls" once it moves on, and the working line with the agent's logo breathing. The composer is the Mac's: attach, YOLO, model, effort, context ring, send or stop. What the agent still has going sits in one line docked on the composer, and opens into a sheet.</p>
   <div class="phones">
 
     <figure><div class="phone"><div class="island"></div>
@@ -1236,15 +1443,15 @@
               <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
               <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">Medium<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="ring"><i class="ctx codex" style="--p:42"></i></span>
               <span class="spacer"></span>
-              <span class="ib">{{IconMic:17}}</span>
               <span class="send"><i></i></span>
             </div>
           </div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Chat, while it works</b><div class="note">Same placeholder as the Mac, "Send to queue behind the running turn", and the same white stop button. The context ring moves to the ⋮ menu: at phone width it is the one control that does not fit.</div></figcaption>
+      <figcaption><b>Chat, while it works</b><div class="note">Same placeholder as the Mac, "Send to queue behind the running turn", and the same white stop button. While a command runs, the group's header says what the agent said it is for, and its seconds count up. The context ring sits beside send, in the agent's colour, then warm past 70% and red past 90%; a tap opens the model sheet. YOLO is a switch where the host can change it mid-chat (Claude, Codex, Hermes), dimmed while a turn runs, since the host refuses a switch then.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1264,7 +1471,7 @@
         <div class="composer-wrap">
           <div class="docked">
             <div class="docked-head">{{IconShieldBolt:16}}<div><b>Run a command?</b><span>Claude Code needs permission to continue</span></div></div>
-            <div class="dock-cmd"><b>$</b> pnpm test src/settings</div>
+            <div class="dock-cmd long"><b>$</b>pnpm test src/settings &amp;&amp; git add src/settings &amp;&amp; git commit -m "test(settings): cover the pairing QR" &amp;&amp; rm -rf build/.cache</div>
             <div class="docked-acts"><span>Reject</span><span>Always allow</span><span class="go">Allow</span></div>
           </div>
           <div class="composer">
@@ -1274,15 +1481,15 @@
               <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
               <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="ring"><i class="ctx claude" style="--p:42"></i></span>
               <span class="spacer"></span>
-              <span class="ib">{{IconMic:17}}</span>
               <span class="send"><i></i></span>
             </div>
           </div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Asking permission</b><div class="note">A card of its own just above the composer, inside the chat, and it stays until it is answered: no drawer, no scrim, nothing to fold away. It keeps its own border and corners, with a gap, so the composer never looks to cover it. Allow is the one white button.</div></figcaption>
+      <figcaption><b>Asking permission</b><div class="note">A card of its own just above the composer, inside the chat, and it stays until it is answered: no drawer, no scrim, nothing to fold away. It keeps its own border and corners, with a gap, so the composer never looks to cover it. Allow is the one white button. The command is all there, as typed, in the code face; a long one scrolls inside the card, so nothing at its end hides behind Allow. An edit adds its +/− count. Once a button is tapped they all dim and take no second tap until the host has the answer, and when the agent offers no way to say no, Cancel comes first. While it waits, it takes the place of the live line.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1302,8 +1509,8 @@
               <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
               <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="ring"><i class="ctx claude" style="--p:42"></i></span>
               <span class="spacer"></span>
-              <span class="ib">{{IconMic:17}}</span>
               <span class="send">{{IconArrowUp:16}}</span>
             </div>
           </div>
@@ -1317,6 +1524,108 @@
       </div>
       <div class="home-bar"></div></div>
       <figcaption><b>Writing</b><div class="note">Focus edges the composer in the selection colour, and the stop square becomes the Mac's up arrow. Return makes a new line; the arrow sends.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Download size on the hero</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="msg-user">Show the download size next to the button.</div>
+          <div class="tools"><span class="tools-sum">2 tool calls <span class="time">3s</span>{{IconChevron:11}}</span></div>
+          <div class="prose">Done. The size comes from the latest release's DMG at build time, then from the visitor's browser.</div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer">
+            <div class="ta ph">Ask about this project</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="ring"><i class="ctx claude" style="--p:42"></i></span>
+              <span class="spacer"></span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="grabber"></div>
+          <div class="sources">
+            <span>{{IconImage:19}}Photos</span>
+            <span>{{IconFile:19}}Files</span>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Adding photos and files</b><div class="note">The + at the left of the composer, where the Mac's is, opens a short sheet with Photos and Files. Photos opens the system's photo picker, which needs no access to the library; Files opens the Files app. A phone that can only watch has no +.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Download size on the hero</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="msg-user">Show the download size next to the button.</div>
+          <div class="tools"><span class="tools-sum">2 tool calls <span class="time">3s</span>{{IconChevron:11}}</span></div>
+          <div class="prose">Done. The size comes from the latest release's DMG at build time, then from the visitor's browser.</div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer focus">
+            <div class="attachments">
+              <span class="thumb photo"><span class="x">{{IconClose:10}}</span></span>
+              <span class="file">{{IconFile:20}}<span class="file-words"><b>hero-copy.md</b><span>4 KB</span></span><span class="x">{{IconClose:10}}</span></span>
+            </div>
+            <div class="ta">Match this screenshot, using the copy in the file<span class="caret"></span></div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="ring"><i class="ctx claude" style="--p:42"></i></span>
+              <span class="spacer"></span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Attachments, before sending</b><div class="note">What was picked sits in a row above the text, as on the Mac: a photo as a small rounded thumbnail, a file as its icon, name and size, each with an × to take it off. Photos go as JPEG, at most 2048 pixels on their longest side, so HEIC from the camera reads everywhere. A file over 10 MB is left out with a line saying so. Send puts each file on the host first, with a spinner on it, and sends the message only once all are there; one that did not get there turns red, and a tap tries again. Sent behind a running turn, the files wait with the message.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Download size on the hero</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="msg-user">Show the download size next to the button.</div>
+          <div class="tools"><span class="tools-sum">2 tool calls <span class="time">3s</span>{{IconChevron:11}}</span></div>
+          <div class="prose">Done. The size comes from the latest release's DMG at build time, then from the visitor's browser.</div>
+          <div class="sent-files">
+            <span class="thumb photo"></span>
+            <span class="file">{{IconFile:16}}<span class="file-words"><b>hero-copy.md</b><span>4 KB</span></span></span>
+          </div>
+          <div class="msg-user">Match this screenshot, using the copy in the file</div>
+          <div class="activity"><span class="glyph claude">{{IconClaude:20}}</span><span class="lbl">Reading…</span><span class="el">2s</span></div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer">
+            <div class="ta ph">Send to queue behind the running turn</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="ring"><i class="ctx claude" style="--p:42"></i></span>
+              <span class="spacer"></span>
+              <span class="send"><i></i></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Sent with attachments</b><div class="note">The message carries its files above the bubble, at its right edge, as the Mac's chat shows them. A photo sent from this phone shows from the phone's own copy; a file, or anything sent from the computer, shows as a chip with its name. The agent gets the path of each, which the host keeps beside the pictures pasted into its own chats.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1339,15 +1648,15 @@
               <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
               <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">Medium<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="ring"><i class="ctx codex" style="--p:42"></i></span>
               <span class="spacer"></span>
-              <span class="ib">{{IconMic:17}}</span>
               <span class="send"><i></i></span>
             </div>
           </div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Reading back</b><div class="note">Scrolled up, the transcript holds still while the agent keeps writing below. A round arrow sits just above the composer, as on the Mac, and takes you back to the latest message. Near the end, new lines follow on their own. Text can be selected, and links open in the browser.</div></figcaption>
+      <figcaption><b>Reading back</b><div class="note">Scrolled up, the transcript holds still while the agent keeps writing below. A round arrow sits just above the composer, as on the Mac, and takes you back to the latest message. Near the end, new lines follow on their own. Links open in the browser; holding a message opens its actions, where its text can be copied or selected.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1370,8 +1679,8 @@
               <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
               <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
               <span class="picker">Medium<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="ring"><i class="ctx codex" style="--p:42"></i></span>
               <span class="spacer"></span>
-              <span class="ib">{{IconMic:17}}</span>
               <span class="send"><i></i></span>
             </div>
           </div>
@@ -1379,6 +1688,109 @@
       </div>
       <div class="home-bar"></div></div>
       <figcaption><b>Scrolling back</b><div class="note">A phone opens a long chat at its last turns. Scrolling near the top fetches the turns before them from the host, a page at a time, with the rail's squares and "Loading earlier messages…" above the first message until they arrive. They slot in above without moving what is on screen. At the chat's first message the row goes and nothing takes its place.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Download size on the hero</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="msg-user">Show the download size next to the button.</div>
+          <div class="tools"><span class="tools-sum">2 tool calls <span class="time">3s</span>{{IconChevron:11}}</span></div>
+          <div class="prose">Done. The size comes from the latest release's DMG at build time, then from the visitor's browser.</div>
+          <div class="msg-user failed">Make it say "MB" with one decimal</div>
+          <div class="unsent"><span class="no">{{IconWarning:12}}</span><span class="no">Not sent</span>·<b>Retry</b></div>
+        </div>
+        <div class="composer-wrap">
+          <div class="reconnect"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span>Reconnecting to MacBook Pro…</span><b>Try now</b></div>
+          <div class="composer">
+            <div class="ta ph">Reconnect to continue this conversation</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="ring"><i class="ctx claude" style="--p:42"></i></span>
+              <span class="spacer"></span>
+              <span class="send off">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Out of reach</b><div class="note">When the host drops away the chat stays on screen and a bar over the composer says the phone is reconnecting, with Try now; once retries stop it says it can't reach the host and why. A message the host never took keeps its place with a red edge and "Not sent · Retry" under it. Going back and opening the chat again finds it as it was left, draft and queued message included.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span>Fix the flaky PTY replay test</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="tools">
+            <span class="tools-sum open">2 tool calls <span class="time">7s</span>{{IconChevron:11}}</span>
+            <div class="tools-body">
+              <div class="tool"><span class="tick"></span><span class="k-edit">{{IconPencil:12}}</span><span class="kind k-edit">edit</span><span class="target">ptyController.ts</span><span class="end"><span class="add">+2</span><span class="del">−1</span></span></div>
+              <div class="tool-detail"><span class="gap">⋯ 41 unchanged lines</span>
+  if (this.snapshotPending) {
+<span class="d">-   this.write(bytes);</span>
+<span class="a">+   this.held.push(bytes);</span>
+<span class="a">+   return;</span>
+  }</div>
+              <div class="tool"><span class="tick"></span><span style="color:var(--danger)">{{IconWarning:12}}</span><span class="kind" style="color:var(--danger)">run</span><span class="target">pnpm vitest run src/terminal</span><span class="end">6s</span></div>
+              <div class="tool-detail failure">FAIL usePty.test.tsx &gt; replays the snapshot once
+expected 1 write, got 2</div>
+            </div>
+          </div>
+        </div>
+        <div class="composer-wrap">
+          <div class="reconnect"><span class="no">{{IconWarning:13}}</span><span>Could not stop the turn: the host is not connected.</span><span>{{IconClose:13}}</span></div>
+          <div class="composer">
+            <div class="ta">Run only the attach tests first</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">Medium<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="ring"><i class="ctx codex" style="--p:42"></i></span>
+              <span class="spacer"></span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Opening a tool call</b><div class="note">A row that changed a file, printed something or failed opens on a tap: the change with a few lines around it, what it printed, or why it failed, scrolling inside its own box. A command opens as a terminal: <code>$</code> and the command, then what it printed folded to 12 lines with "Show all", the exit code when it failed, and a copy button on each. Groups and rows stay as they were left while the list scrolls. Something the phone asked for that did not happen, like a stop or a setting, shows over the composer until it is dismissed. Stop also hands a queued message back to the composer instead of sending it.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Remote pairing screen</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="prose">The pairing screen builds and the Devices page shows the waiting phone.</div>
+        </div>
+        <div class="composer-wrap">
+          <div class="commands">
+            <span><code>/compact</code>Clear the history but keep a summary</span>
+            <span><code>/context</code>Show what fills the context</span>
+            <span><code>/cost</code>Show what this session cost</span>
+          </div>
+          <div class="composer focus">
+            <div class="ta">/c<span class="caret"></span></div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="ring"><i class="ctx claude" style="--p:42"></i></span>
+              <span class="spacer"></span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Slash commands</b><div class="note">The placeholder offers "/ for commands" only when the agent has some. Typing a slash lists the ones with what is typed anywhere in their name, eight at most as on the Mac, each in its own box, and a tap puts it in the composer.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1409,7 +1821,7 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Model and effort</b><div class="note">Tapping the model or effort opens one sheet: the agent and its plan, the models with the agent's icon and a check on the chosen one, effort as a three-way switch, and how much of the context is used, in the provider’s colour.</div></figcaption>
+      <figcaption><b>Model and effort</b><div class="note">Tapping the model or effort opens one sheet: the agent and its plan, the models with the agent's icon and a check on the chosen one, effort as a three-way switch, and how much of the context is used, in the provider’s colour, with what the session has cost when the agent says.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1450,13 +1862,18 @@
           <div class="prose">Done. The size comes from the latest release's DMG at build time, then from the visitor's browser, so it stays right between deploys.</div>
         </div>
         <div class="composer-wrap">
+          <div class="docked">
+            <div class="docked-head">{{IconShieldBolt:16}}<div><b>Change a file?</b><span>Claude Code needs permission to continue</span></div></div>
+            <div class="dock-cmd">src/settings/PairingQr.tsx<span class="diff"><span class="add">+18</span> <span class="del">−4</span></span></div>
+            <div class="docked-acts"><span>Reject</span><span class="go">Allow</span></div>
+          </div>
           <div class="composer" style="display:flex;align-items:center;gap:10px;padding:14px;color:var(--ink-dim);font-size:13.5px;line-height:1.45">
             {{IconEye:17}}<span>Watching. This phone can answer permission requests on MacBook Pro; the host can give it full access.</span>
           </div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Watch only</b><div class="note">Where the composer would be, one line saying what this phone may do and where that is decided.</div></figcaption>
+      <figcaption><b>Watch only</b><div class="note">Where the composer would be, one line saying what this phone may do and where that is decided. A permission request still docks above it, since a watching phone may answer one.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1470,6 +1887,332 @@
       </div>
       <div class="home-bar"></div></div>
       <figcaption><b>Could not open</b><div class="note">A chat the host cannot wake or attach says why in one line, with Try again under it in place of the composer. While the phone is still reaching the host the squares read "Reaching MacBook Pro…" instead of "Opening the chat…"; if it cannot reach it, the line says so and Try again reconnects before opening the chat.</div></figcaption>
+    </figure>
+
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>E2E suite on CI</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="msg-user">Get the e2e suite green on CI, and keep an eye on the preview deploy while you work.</div>
+          <div class="sub"><div class="sub-head"><span class="chev">{{IconChevron:10}}</span><span class="claude">{{IconClaude:15}}</span><span class="nm">Explore</span><span class="tk">Find where the flaky checkout selector lives</span><span class="calls">6 calls</span><span class="st"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div></div>
+          <div class="sub"><div class="sub-head"><span class="chev">{{IconChevron:10}}</span><span class="claude">{{IconClaude:15}}</span><span class="nm">Review</span><span class="tk">Read the last three CI runs for the same failure</span><span class="calls">3 calls</span><span class="st"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div></div>
+          <div class="tools">
+            <span class="tools-sum open"><span class="said">Run the e2e suite against the preview</span><span class="time">2 calls</span><span class="time">14s</span>{{IconChevron:11}}</span>
+            <div class="tools-body">
+              <div class="tool"><span class="tick"></span><span class="k-read">{{IconFile:12}}</span><span class="kind k-read">read</span><span class="target">playwright.config.ts</span><span class="end">9ms</span></div>
+              <div class="tool running"><span class="tick"></span><span class="k-run">{{IconCommand:12}}</span><span class="kind k-run">run</span><span class="target">pnpm e2e --project=chromium</span><span class="end">14s</span></div>
+            </div>
+          </div>
+          <div class="activity"><span class="glyph claude">{{IconClaude:20}}</span><span class="lbl">Running a command…</span><span class="el">31s</span></div>
+        </div>
+        <div class="composer-wrap">
+          <div class="live-strip"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="live-line">Explore · read src/server/chat/feed.rs</span><span class="pcs after"><span class="pc"><span class="claude">{{IconClaude:12}}</span><b>2</b></span><span class="pc">{{IconCommand:12}}<b>1</b></span><span class="pc">{{IconTimer:12}}<b>1</b></span></span><span class="up">{{IconChevron:10}}</span></div>
+          <div class="composer">
+            <div class="ta ph">Send to queue behind the running turn</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="ring"><i class="ctx claude" style="--p:58"></i></span>
+              <span class="spacer"></span>
+              <span class="send"><i></i></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>What is still going</b><div class="note">While something runs, the line leads with what it is doing now, shimmering, and turns to the next running subagent or task every few seconds; the counts shrink to icons and numbers at the end. A turn ends long before the work it started does, so what the Mac stacks over its composer sits here as one line docked on the composer's top edge: running subagents with the agent's mark, background tasks counted by the kind the agent names them (shells, monitors), messages waiting behind the turn, and the plan's progress while a step is left. The rail's squares lead while anything runs. With more than three kinds the words drop and the counts stay. It shows only while something is live, and a permission request or the slash-command list takes its place. A tap opens the sheet beside.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>E2E suite on CI</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="msg-user">Get the e2e suite green on CI, and keep an eye on the preview deploy while you work.</div>
+          <div class="sub"><div class="sub-head"><span class="chev">{{IconChevron:10}}</span><span class="claude">{{IconClaude:15}}</span><span class="nm">Explore</span><span class="tk">Find where the flaky checkout selector lives</span><span class="calls">6 calls</span><span class="st"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div></div>
+          <div class="sub"><div class="sub-head"><span class="chev">{{IconChevron:10}}</span><span class="claude">{{IconClaude:15}}</span><span class="nm">Review</span><span class="tk">Read the last three CI runs for the same failure</span><span class="calls">3 calls</span><span class="st"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div></div>
+          <div class="tools">
+            <span class="tools-sum open"><span class="said">Run the e2e suite against the preview</span><span class="time">2 calls</span><span class="time">14s</span>{{IconChevron:11}}</span>
+            <div class="tools-body">
+              <div class="tool"><span class="tick"></span><span class="k-read">{{IconFile:12}}</span><span class="kind k-read">read</span><span class="target">playwright.config.ts</span><span class="end">9ms</span></div>
+              <div class="tool running"><span class="tick"></span><span class="k-run">{{IconCommand:12}}</span><span class="kind k-run">run</span><span class="target">pnpm e2e --project=chromium</span><span class="end">14s</span></div>
+            </div>
+          </div>
+          <div class="activity"><span class="glyph claude">{{IconClaude:20}}</span><span class="lbl">Running a command…</span><span class="el">31s</span></div>
+        </div>
+        <div class="composer-wrap">
+          <div class="live-strip"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="live-line">Explore · read src/server/chat/feed.rs</span><span class="pcs after"><span class="pc"><span class="claude">{{IconClaude:12}}</span><b>2</b></span><span class="pc">{{IconCommand:12}}<b>1</b></span><span class="pc">{{IconTimer:12}}<b>1</b></span></span><span class="up">{{IconChevron:10}}</span></div>
+          <div class="composer">
+            <div class="ta ph">Send to queue behind the running turn</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="ring"><i class="ctx claude" style="--p:58"></i></span>
+              <span class="spacer"></span>
+              <span class="send"><i></i></span>
+            </div>
+          </div>
+        </div>
+        <div class="scrim"></div>
+        <div class="sheet" style="padding:8px 16px 34px">
+          <div class="grabber"></div>
+          <div class="glabel" style="padding-top:4px">Subagents <span class="n">2</span></div>
+          <div class="rows">
+            <div class="row"><span class="mark claude">{{IconClaude:16}}</span><div class="body"><div class="t">Explore</div><div class="s">search data-test=checkout</div></div><span class="ends"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:16}}</span><div class="body"><div class="t">Review</div><div class="s">read run-18234.log</div></div><span class="ends"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+          </div>
+          <div class="glabel">Shell <span class="n">1</span></div>
+          <div class="rows">
+            <div class="row"><span class="mark">{{IconCommand:15}}</span><div class="body"><div class="t">pnpm dev --port 5174</div><div class="s">Local:   http://localhost:5174/</div></div><span class="ends"><span class="mini">Stop</span></span></div>
+          </div>
+          <div class="glabel">Monitor <span class="n">1</span></div>
+          <div class="rows">
+            <div class="row"><span class="mark">{{IconTimer:15}}</span><div class="body"><div class="t">Preview deploy</div><div class="s">Waiting for the build to finish</div></div><span class="ends"><span class="mini">Stop</span></span></div>
+          </div>
+          <div class="glabel acts">Queued <span class="n">2</span><span class="act mini">Steer all</span></div>
+          <div class="rows">
+            <div class="row"><span class="mark">{{IconClock:15}}</span><div class="body"><div class="t">Skip the visual snapshots for now</div></div><span class="ends"><span class="mini">Steer</span><span class="drop-x">{{IconClose:11}}</span></span></div>
+            <div class="row"><span class="mark">{{IconClock:15}}</span><div class="body"><div class="t">Then open a PR against main</div></div><span class="ends"><span class="mini">Steer</span><span class="drop-x">{{IconClose:11}}</span></span></div>
+          </div>
+          <div class="glabel acts">Plan<span class="prog">2 of 4</span></div>
+          <div class="steps">
+            <div class="step done"><span>{{IconCheck:14}}</span>Reproduce the failure locally</div>
+            <div class="step done"><span>{{IconCheck:14}}</span>Find the selector the checkout test waits on</div>
+            <div class="step now"><span><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span>Wait on the element, not the network</div>
+            <div class="step"><span><i class="dot off"></i></span>Run the suite three times on CI</div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>All of it, in a sheet</b><div class="note">The strip opens the Mac's live stack, section by section under the rail's small-caps labels: subagents with what each is doing now, background tasks grouped by kind with what they last said and a Stop each where the agent allows it, the queue with Steer on each and Steer all, and the plan as a checklist: done steps checked and quiet, the one in hand with the squares, the rest as hollow dots. Steer appears only when the agent takes a message mid-turn and a turn is running; it puts the message into the turn now, and if the turn ended first it goes as the next prompt. × takes a message off the queue. Buttons are gapped chips, each with its own border.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Remote pairing screen</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="prose">The pairing screen builds. Three cleanups next, then the tests.</div>
+          <div class="tools"><span class="tools-sum">4 tool calls <span class="time">2s</span>{{IconChevron:11}}</span></div>
+        </div>
+        <div class="composer-wrap">
+          <div class="docked">
+            <div class="docked-head">{{IconShieldBolt:16}}<div><b>Run a command?</b><span>Claude Code needs permission to continue</span></div><span class="pager"><span class="pg prev off">{{IconChevron:12}}</span>1 of 3<span class="pg">{{IconChevron:12}}</span></span></div>
+            <div class="dock-cmd"><b>$</b>rm -rf src/settings/legacy</div>
+            <div class="docked-acts"><span>Reject</span><span>Always allow</span><span class="go">Allow</span></div>
+          </div>
+          <div class="composer">
+            <div class="ta ph">Send to queue behind the running turn</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="ring"><i class="ctx claude" style="--p:58"></i></span>
+              <span class="spacer"></span>
+              <span class="send"><i></i></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Several requests at once</b><div class="note">Subagents can each stop for permission at the same moment. The card shows one at a time with "1 of 3" and arrows in its corner to page through them; answering one brings the next. A single request has no pager.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span>Fix the flaky PTY replay test</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="tools">
+            <span class="tools-sum open">3 tool calls <span class="time">8s</span>{{IconChevron:11}}</span>
+            <div class="tools-body">
+              <div class="tool"><span class="tick"></span><span class="k-mcp">{{IconPlug:12}}</span><span class="kind k-mcp">linear</span><span class="target">get issue <span class="arg">SKX-142</span></span><span class="end">412ms</span></div>
+              <div class="tool"><span class="tick"></span><span style="color:var(--danger)">{{IconWarning:12}}</span><span class="kind" style="color:var(--danger)">run</span><span class="target">pnpm vitest run src/terminal</span><span class="end">6s</span></div>
+            </div>
+            <div class="term-box">
+              <div class="cmdline"><b>$</b><span>pnpm vitest run src/terminal</span><span class="cp">{{IconCopy:12}}</span></div>
+              <div class="out"> ✓ src/terminal/keys.test.ts (41)
+ ✓ src/terminal/links.test.ts (18)
+ ❯ src/terminal/usePty.test.tsx (12)
+   × replays the snapshot once
+     → expected 1 write, got 2
+ Test Files  1 failed | 11 passed (12)
+      Tests  1 failed | 213 passed (214)<span class="cp">{{IconCopy:12}}</span></div>
+              <div class="more">Show all 38 lines</div>
+              <div class="exit">exit 1</div>
+            </div>
+            <div class="tools-body" style="padding-top:0"><div class="tool"><span class="tick"></span><span class="k-edit">{{IconPencil:12}}</span><span class="kind k-edit">edit</span><span class="target">ptyController.ts</span><span class="end"><span class="add">+2</span><span class="del">−1</span></span></div></div>
+          </div>
+          <div class="notice"><div class="h">{{IconTimer:12}}<span class="nm">pnpm dev --port 5174</span><span class="w">stopped</span></div><div class="sm">Served the preview for 14 minutes; last request GET /checkout 200</div></div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer">
+            <div class="ta ph">Ask about this project</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">Medium<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="ring"><i class="ctx codex" style="--p:74"></i></span>
+              <span class="spacer"></span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Commands, servers and tasks</b><div class="note">A call to another MCP server is named for the server, in the Mac's green, with its first short argument after the target. A command opens as the Mac's terminal: <code>$</code> and the whole command with a copy button, what it printed folded to 12 lines with "Show all N lines", and the exit code when it failed. A background task that ends leaves a line saying how, with its summary; a tap opens the summary in full.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>E2E suite on CI</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="sub"><div class="sub-head open"><span class="chev">{{IconChevron:10}}</span><span class="claude">{{IconClaude:15}}</span><span class="nm">Explore</span><span class="tk">Find where the flaky checkout selector lives</span><span class="calls">3 calls</span><span class="st" style="color:var(--live)">{{IconCheck:13}}</span></div>
+            <div class="sub-body">
+              <div class="tools">
+                <span class="tools-sum open">3 tool calls <span class="time">2s</span>{{IconChevron:11}}</span>
+                <div class="tools-body">
+                  <div class="tool"><span class="tick"></span><span class="k-read">{{IconSearch:12}}</span><span class="kind k-read">search</span><span class="target">data-test="checkout"</span><span class="end">88ms</span></div>
+                  <div class="tool"><span class="tick"></span><span class="k-read">{{IconFile:12}}</span><span class="kind k-read">read</span><span class="target">CheckoutButton.tsx</span><span class="end">7ms</span></div>
+                  <div class="tool"><span class="tick"></span><span class="k-read">{{IconFile:12}}</span><span class="kind k-read">read</span><span class="target">checkout.spec.ts</span><span class="end">6ms</span></div>
+                </div>
+              </div>
+              <div class="prose" style="font-size:13.5px">The test waits on <code class="chip">networkidle</code>, but the button mounts after a second fetch.</div>
+            </div>
+          </div>
+          <div class="sub"><div class="sub-head"><span class="chev">{{IconChevron:10}}</span><span class="claude">{{IconClaude:15}}</span><span class="nm">Review</span><span class="tk">Read the last three CI runs for the same failure</span><span class="calls">5 calls</span><span class="st"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div></div>
+          <div class="activity"><span class="glyph claude">{{IconClaude:20}}</span><span class="lbl">Thinking…</span><span class="el">48s</span></div>
+        </div>
+        <div class="composer-wrap">
+          <div class="live-strip"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="live-line">Plan · read src/chat/Live.tsx</span><span class="pcs after"><span class="pc"><span class="claude">{{IconClaude:12}}</span><b>1</b></span></span><span class="up">{{IconChevron:10}}</span></div>
+          <div class="composer">
+            <div class="ta ph">Send to queue behind the running turn</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="ring"><i class="ctx claude" style="--p:58"></i></span>
+              <span class="spacer"></span>
+              <span class="send"><i></i></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>A subagent's own thread</b><div class="note">Each subagent is one bordered line in the transcript: the agent's mark, its name, the first line of its task, how many calls it made and how it stands: the squares while it works, a green check when done, red when it failed or was lost, a quiet × when stopped. A tap opens what it did, drawn the way the chat draws everything else, indented under it with no tray. What it is doing now lives in the strip instead.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Download size on the hero</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="msg-user">Show the download size next to the button.</div>
+          <div class="tools"><span class="tools-sum">2 tool calls <span class="time">3s</span>{{IconChevron:11}}</span></div>
+          <div class="prose" style="margin-top:0">Done. The size is read from the latest release at build time:</div>
+          <div class="code-box">const dmg = assets.find((a) =&gt;
+  a.name.endsWith("_aarch64.dmg"));<span class="cp">{{IconCopy:12}}</span></div>
+          <div class="msg-strip"><span class="cp">{{IconCopy:15}}</span><span class="when">Today, 21:07 · took 2m 04s</span><span class="rate">~48 tok/s</span></div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer">
+            <div class="ta ph">Ask about this project</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="ring"><i class="ctx claude" style="--p:58"></i></span>
+              <span class="spacer"></span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Tapping a message</b><div class="note">A tap on a message, yours or the agent's answer, shows the strip the Mac shows under it on hover: Copy, when it was sent or finished and how long the turn took, and roughly how fast it wrote. Another tap, or a tap on another message, hides it. An answer is all of its prose across the tool calls in between, so its strip sits under its last part. The text itself is selectable where it stands: a long press selects it. Code blocks keep their own copy button in the corner.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span>Fix the flaky PTY replay test</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="msg-user">Good. Run the whole terminal suite, then commit it.</div>
+          <div class="tools"><span class="tools-sum">3 tool calls <span class="time">7s</span>{{IconChevron:11}}</span></div>
+          <div class="prose">All 214 terminal tests pass, and the fix is committed.</div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer">
+            <div class="ta ph">Ask about this project</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">Medium<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="ring"><i class="ctx codex" style="--p:74"></i></span>
+              <span class="spacer"></span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="grabber"></div>
+          <div class="sources">
+            <span>{{IconClock:19}}Recent prompts</span>
+            <span>{{IconCopy:19}}Copy link</span>
+            <span class="danger">{{IconStop:19}}Stop chat</span>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>The chat's menu</b><div class="note">The ⋮ in the header: Recent prompts, Copy link, which opens this chat on any phone paired with the host, and Stop chat, which asks once more and then ends the agent on the host, with anything it still has running, and goes back. A phone that can only watch has no Stop.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span>Fix the flaky PTY replay test</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="border-top:1px solid var(--border)">
+          <div class="prose">All 214 terminal tests pass, and the fix is committed.</div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer focus">
+            <div class="ta ph">Ask about this project</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">Medium<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="ring"><i class="ctx codex" style="--p:74"></i></span>
+              <span class="spacer"></span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="grabber"></div>
+          <div class="ps-label" style="padding-top:0">Sent in this chat</div>
+          <div class="recent-row">{{IconClock:15}}<span>Good. Run the whole terminal suite, then commit it.</span></div>
+          <div class="recent-row">{{IconClock:15}}<span>Run only the attach tests first</span></div>
+          <div class="recent-row">{{IconClock:15}}<span>`usePty.test.tsx &gt; replays the snapshot once` fails about one run in ten on CI. Find out why and fix it without adding sleeps.</span></div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Recent prompts</b><div class="note">The Mac's up arrow, for a thumb: pulling an empty composer up, or Recent prompts in the menu, lists what was sent in this chat, newest first, two lines each. A tap puts it back in the composer to edit or send again.</div></figcaption>
     </figure>
 
   </div>
@@ -1566,6 +2309,34 @@
       <figcaption><b>Project, searching</b><div class="note">Typing filters both groups at once with the Mac's fuzzy match; the matched letters brighten. Go picks the first result, and the strip shows the new project.</div></figcaption>
     </figure>
 
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}Cancel</span><span class="mid"><span>New chat</span></span><span class="end"></span></div>
+        <div class="welcome-chat">
+          <div class="wc-head"><span class="claude">{{IconClaude:36}}</span><b>sikemux</b></div>
+          <div class="wc-caption">Reconnecting to the host… The chat starts once it answers.</div>
+        </div>
+        <div class="composer-wrap">
+          <div class="project-strip">
+            <span class="ps-project"><span class="folder">{{IconFolder:13}}</span><b>sikemux</b><span class="ch">{{IconChevron:10}}</span></span>
+          </div>
+          <div class="composer">
+            <div class="ta">Run the tests and fix what fails</div>
+            <div class="bar">
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Claude Code<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="send off">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>New chat, host away</b><div class="note">When Send can't start a chat, the welcome says why in place of the calendar: the host is reconnecting or not connected yet, or it has no project open to start one in. Send wakes as soon as the reason goes. A second tap while a chat is starting does nothing, so one tap starts one chat.</div></figcaption>
+    </figure>
+
+
   </div>
 </section>
 
@@ -1646,7 +2417,7 @@
         </div>
       </div>
       <div class="home-bar" style="background:#fff"></div></div>
-      <figcaption><b>Notification</b><div class="note">Allow or Reject straight from the lock screen; Allow asks for the phone's lock first. "Always allow" is left to the chat, where you can see what you would be allowing. Tapping the card opens the chat. A request answered on the computer or another phone takes its card away.</div></figcaption>
+      <figcaption><b>Notification</b><div class="note">Allow or Reject straight from the lock screen; Allow asks for the phone's lock first. On an iPhone both open the app on the chat and answer from there, since iOS gives an app in the background too little time to reach the computer. "Always allow" is left to the chat, where you can see what you would be allowing. Tapping the card opens the chat. A request answered on the computer or another phone takes its card away.</div></figcaption>
     </figure>
 
     <figure><div class="phone" style="background:#000"><div class="island"></div>
@@ -1669,7 +2440,7 @@
         </div>
       </div>
       <div class="home-bar" style="background:#fff"></div></div>
-      <figcaption><b>Answering</b><div class="note">The card says the answer is on its way while the phone reaches the host itself, then how it went; "Allowed" fades after a few seconds. When the host can't be reached the card stays, and opens the chat to answer there. A request already answered elsewhere just goes.</div></figcaption>
+      <figcaption><b>Answering</b><div class="note">On Android the card says the answer is on its way while the phone reaches the host itself, then how it went; "Allowed" fades after a few seconds. When the host can't be reached the card stays, and opens the chat to answer there. A request already answered elsewhere just goes. On an iPhone the chat itself shows the answer, and the card goes once it is in.</div></figcaption>
     </figure>
 
     <figure><div class="phone" style="background:#000"><div class="island"></div>

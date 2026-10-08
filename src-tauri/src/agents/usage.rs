@@ -71,6 +71,15 @@ fn cached_agent_usage(key: &str) -> Option<AgentUsage> {
     None
 }
 
+/// Drops the usage remembered for one account, whose sign-in just changed.
+pub(super) fn forget_agent_usage(agent: AgentKind, config_path: Option<&str>) {
+    let prefix = format!("{}\0", agent.as_str());
+    let suffix = format!("\0{}", config_path.unwrap_or(""));
+    if let Ok(mut cache) = agent_usage_cache().lock() {
+        cache.retain(|key, _| !(key.starts_with(&prefix) && key.ends_with(&suffix)));
+    }
+}
+
 fn remember_agent_usage(key: String, usage: AgentUsage) {
     if let Ok(mut cache) = agent_usage_cache().lock() {
         cache.insert(key, (Instant::now(), usage));
@@ -143,13 +152,18 @@ async fn claude_usage(executable: &Path, config_path: Option<&str>) -> Result<Ag
 }
 
 async fn codex_usage(executable: &Path, config_path: Option<&str>) -> Result<AgentUsage, String> {
-    run_codex_usage_executable(executable, config_path).await
+    codex_app_server(executable, config_path, "account/rateLimits/read", "usage")
+        .await
+        .map(|result| parse_codex_usage_result(&result))
 }
 
-async fn run_codex_usage_executable(
+/// Asks a short-lived `codex app-server` one question and returns its answer.
+pub(super) async fn codex_app_server(
     executable: &Path,
     config_path: Option<&str>,
-) -> Result<AgentUsage, String> {
+    method: &str,
+    topic: &str,
+) -> Result<Value, String> {
     let mut command = Command::from(sikemux_process::user_environment::command(executable));
     apply_login_environment(&mut command);
     command
@@ -161,15 +175,15 @@ async fn run_codex_usage_executable(
     apply_process_config(&mut command, "codex", config_path);
     let mut child = command
         .spawn()
-        .map_err(|_| "Could not start Codex usage lookup".to_string())?;
+        .map_err(|_| format!("Could not start Codex {topic} lookup").to_string())?;
     let mut stdin = child
         .stdin
         .take()
-        .ok_or_else(|| "Could not open Codex usage lookup input".to_string())?;
+        .ok_or_else(|| format!("Could not open Codex {topic} lookup input"))?;
     let stdout = child
         .stdout
         .take()
-        .ok_or_else(|| "Could not read Codex usage lookup output".to_string())?;
+        .ok_or_else(|| format!("Could not read Codex {topic} lookup output"))?;
     let mut lines = AsyncBufReader::new(stdout).lines();
 
     let lookup = tokio::time::timeout(USAGE_LOOKUP_TIMEOUT, async {
@@ -187,22 +201,22 @@ async fn run_codex_usage_executable(
         stdin
             .write_all(format!("{initialize}\n").as_bytes())
             .await
-            .map_err(|_| "Could not initialize Codex usage lookup".to_string())?;
+            .map_err(|_| format!("Could not initialize Codex {topic} lookup"))?;
         stdin
             .flush()
             .await
-            .map_err(|_| "Could not initialize Codex usage lookup".to_string())?;
+            .map_err(|_| format!("Could not initialize Codex {topic} lookup"))?;
 
         let mut output_bytes = 0usize;
         let mut initialized = false;
         while let Some(line) = lines
             .next_line()
             .await
-            .map_err(|_| "Could not read Codex usage lookup output".to_string())?
+            .map_err(|_| format!("Could not read Codex {topic} lookup output"))?
         {
             output_bytes = output_bytes.saturating_add(line.len());
             if output_bytes > USAGE_LOOKUP_OUTPUT_LIMIT {
-                return Err("Codex usage lookup output was too large".to_string());
+                return Err(format!("Codex {topic} lookup output was too large"));
             }
             let Ok(value) = serde_json::from_str::<Value>(&line) else {
                 continue;
@@ -210,19 +224,20 @@ async fn run_codex_usage_executable(
             let response_id = value.get("id").and_then(Value::as_u64);
             if response_id == Some(CODEX_USAGE_INITIALIZE_ID) && !initialized {
                 if value.get("error").is_some() {
-                    return Err("Codex rejected usage lookup initialization".to_string());
+                    return Err(format!("Codex rejected {topic} lookup initialization"));
                 }
                 let requests = format!(
-                    "{{\"method\":\"initialized\"}}\n{{\"id\":{CODEX_USAGE_REQUEST_ID},\"method\":\"account/rateLimits/read\",\"params\":null}}\n"
+                    "{{\"method\":\"initialized\"}}\n{}\n",
+                    serde_json::json!({ "id": CODEX_USAGE_REQUEST_ID, "method": method, "params": null })
                 );
                 stdin
                     .write_all(requests.as_bytes())
                     .await
-                    .map_err(|_| "Could not request Codex usage".to_string())?;
+                    .map_err(|_| format!("Could not request Codex {topic}"))?;
                 stdin
                     .flush()
                     .await
-                    .map_err(|_| "Could not request Codex usage".to_string())?;
+                    .map_err(|_| format!("Could not request Codex {topic}"))?;
                 initialized = true;
                 continue;
             }
@@ -230,14 +245,14 @@ async fn run_codex_usage_executable(
                 continue;
             }
             if value.get("error").is_some() {
-                return Err("Codex rejected the usage lookup".to_string());
+                return Err(format!("Codex rejected the {topic} lookup"));
             }
-            let result = value
+            return value
                 .get("result")
-                .ok_or_else(|| "Codex returned an empty usage snapshot".to_string())?;
-            return Ok(parse_codex_usage_result(result));
+                .cloned()
+                .ok_or_else(|| format!("Codex returned an empty {topic} answer"));
         }
-        Err("Codex usage lookup closed before responding".to_string())
+        Err(format!("Codex {topic} lookup closed before responding"))
     })
     .await;
 
@@ -245,7 +260,7 @@ async fn run_codex_usage_executable(
     let _ = child.kill().await;
     let _ = child.wait().await;
 
-    lookup.map_err(|_| "Codex usage lookup timed out".to_string())?
+    lookup.map_err(|_| format!("Codex {topic} lookup timed out"))?
 }
 
 fn usage_reset_at(value: &Value) -> Option<AgentUsageResetAt> {

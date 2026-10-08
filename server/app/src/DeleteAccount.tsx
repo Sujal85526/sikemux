@@ -49,11 +49,7 @@ export function DeleteAccount({
     try {
       return await api.deleteAccount(token);
     } catch (error) {
-      if (
-        error instanceof ApiProblem &&
-        error.status === 403 &&
-        error.message === "reverify"
-      )
+      if (error instanceof ApiProblem && error.code === "reverify_required")
         return NEEDS_REVERIFICATION;
       throw error;
     }

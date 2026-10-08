@@ -522,8 +522,9 @@ export function mountShaderField(host: HTMLElement, preset: ShaderFieldPreset, i
 function trackHostSize(host: HTMLElement, mount: InstanceType<Shaders["ShaderMount"]>): ResizeObserver | null {
     if (typeof ResizeObserver === "undefined") return null;
     let cap = hostPixelCap(host);
-    const observer = new ResizeObserver(() => {
-        const next = hostPixelCap(host);
+    const observer = new ResizeObserver(([entry]) => {
+        const box = entry?.borderBoxSize?.[0];
+        const next = box ? shaderFieldPixelCap(box.inlineSize, box.blockSize) : hostPixelCap(host);
         if (next === cap) return;
         cap = next;
         mount.setMaxPixelCount(next);

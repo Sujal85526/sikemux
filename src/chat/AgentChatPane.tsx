@@ -19,6 +19,7 @@ import { activityText, backendState, composerPlaceholder as placeholderFor, conn
 import { ChatAgentContext } from "./chatAgent";
 import { ChatMessageRow } from "./ChatMessageRow";
 import { ChatActivity } from "./ChatActivity";
+import { ChatFailureActions } from "./ChatFailureActions";
 import { PermissionRequest } from "./PermissionRequest";
 import { BackgroundTasks, QueuedMessages, RunningSubagents } from "./LiveStack";
 import { ChatComposer } from "./ChatComposer";
@@ -357,6 +358,9 @@ export function AgentChatPane({
                                 <div className="chat-error" role="alert">
                                     <IconWarning size={14} />
                                     <span>{displayState.error}</span>
+                                    {displayState.failure && profile && (
+                                        <ChatFailureActions agent={agent} profile={profile} failure={displayState.failure} />
+                                    )}
                                 </div>
                             )}
                             {displayState.messages.length > 0 && (resuming || disconnected) && (

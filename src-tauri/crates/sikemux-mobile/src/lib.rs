@@ -8,6 +8,7 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
@@ -19,7 +20,8 @@ use sikemux_core::accounts::protocol::{JoinTicket, Relay};
 use sikemux_core::client::{ClientError, CoreClient, EventSink, Reply};
 use sikemux_core::join::{JoinHello, JoinReply};
 use sikemux_core::protocol::{
-    CallId, Event, NotifyPrefs, Request, Response, SessionId, WindowCall, PROTOCOL_VERSION,
+    CallId, Event, NotifyPrefs, Request, Response, SessionId, WindowCall, MAX_ATTACHMENT_BYTES,
+    OLDEST_PROTOCOL_VERSION, WAKE_WAIT,
 };
 use sikemux_core::remote;
 use tokio::sync::mpsc;
@@ -40,6 +42,10 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 /// answered by then has most likely gone, though the connection has not
 /// noticed yet.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+/// Room for the largest file over a slow relay.
+const UPLOAD_TIMEOUT: Duration = Duration::from_secs(120);
+/// Past the host's own wait, so its reason for giving up reaches the app.
+const WAKE_TIMEOUT: Duration = Duration::from_secs(WAKE_WAIT.as_secs() + 15);
 
 /// iroh and the core's client both need a Tokio runtime, which the phone's
 /// JavaScript thread does not have. The phone talks to a few hosts at most, so
@@ -86,8 +92,8 @@ pub enum MobileError {
     Connection { message: String },
     #[error("{message}")]
     Invalid { message: String },
-    /// The host and this app speak different versions of the core's protocol.
-    #[error("this host and this app need the same Sikemux release")]
+    /// The host and this app have no version of the core's protocol in common.
+    #[error("{}", if *mac_is_older { "update Sikemux on this host to reach it from this app" } else { "update this app to reach this host" })]
     Outdated { mac_is_older: bool },
     /// The host forgot this phone, so it has to join again.
     #[error("this host no longer knows this phone; connect to it again")]
@@ -105,7 +111,7 @@ impl From<ClientError> for MobileError {
         match error {
             ClientError::Core(message) => MobileError::Refused { message },
             ClientError::VersionMismatch { version, .. } => MobileError::Outdated {
-                mac_is_older: version < PROTOCOL_VERSION,
+                mac_is_older: version < OLDEST_PROTOCOL_VERSION,
             },
             ClientError::NotPaired => MobileError::Unpaired,
             other => MobileError::Connection {
@@ -155,6 +161,8 @@ struct Online {
     endpoint: Endpoint,
     generation: u64,
     reached: HashSet<String>,
+    /// The app took the phone off the network; it comes back as a new device.
+    closed: bool,
 }
 
 /// This phone on the network, known by its key.
@@ -212,46 +220,36 @@ fn notify_prefs(json: &str) -> Result<NotifyPrefs, MobileError> {
     })
 }
 
+/// A host listens on one of the relays, so the phone offers iroh all of them.
 fn core_addr(core: &str, relays: &[Relay]) -> Result<EndpointAddr, MobileError> {
     let addr = EndpointAddr::new(core.parse().map_err(invalid)?);
-    Ok(
-        match relays
-            .iter()
-            .find_map(|relay| relay.url.parse::<RelayUrl>().ok())
-        {
-            Some(relay) => addr.with_relay_url(relay),
-            None => addr,
-        },
-    )
+    Ok(relays
+        .iter()
+        .filter_map(|relay| relay.url.parse::<RelayUrl>().ok())
+        .fold(addr, EndpointAddr::with_relay_url))
+}
+
+/// This phone's key, which proves who it is to the accounts server without
+/// the phone going on the network.
+#[derive(uniffi::Object)]
+pub struct DeviceIdentity {
+    key: SecretKey,
 }
 
 #[uniffi::export]
-impl Device {
-    /// Comes online with the key from [`new_device_key`], reaching hosts
-    /// through `relays`, best first.
+impl DeviceIdentity {
+    /// The key from [`new_device_key`].
     #[uniffi::constructor]
-    pub async fn create(key: Vec<u8>, relays: Vec<RelaySetting>) -> Result<Arc<Self>, MobileError> {
+    pub fn new(key: Vec<u8>) -> Result<Arc<Self>, MobileError> {
         let bytes: [u8; 32] = key
             .try_into()
             .map_err(|_| invalid("a device key is 32 bytes"))?;
-        #[cfg(target_os = "android")]
-        android::ensure_context().map_err(|message| MobileError::Connection { message })?;
-        let key = SecretKey::from_bytes(&bytes);
-        let relays = relays_from(relays);
-        let endpoint = bind(key.clone(), &relays).await?;
         Ok(Arc::new(Self {
-            key,
-            relays,
-            online: Mutex::new(Online {
-                endpoint,
-                generation: 0,
-                reached: HashSet::new(),
-            }),
-            renewing: tokio::sync::Mutex::new(()),
+            key: SecretKey::from_bytes(&bytes),
         }))
     }
 
-    /// The key hosts know this phone by.
+    /// The key hosts and the accounts server know this phone by.
     pub fn id(&self) -> String {
         self.key.public().to_string()
     }
@@ -274,6 +272,39 @@ impl Device {
     pub fn sign_push(&self, nonce: String, token_sha256: String) -> Result<String, MobileError> {
         sign_push(&self.key, &nonce, &token_sha256)
     }
+}
+
+#[uniffi::export]
+impl Device {
+    /// Comes online as `identity`, reaching hosts through `relays`, best
+    /// first.
+    #[uniffi::constructor]
+    pub async fn create(
+        identity: Arc<DeviceIdentity>,
+        relays: Vec<RelaySetting>,
+    ) -> Result<Arc<Self>, MobileError> {
+        #[cfg(target_os = "android")]
+        android::ensure_context().map_err(|message| MobileError::Connection { message })?;
+        let key = identity.key.clone();
+        let relays = relays_from(relays);
+        let endpoint = bind(key.clone(), &relays).await?;
+        Ok(Arc::new(Self {
+            key,
+            relays,
+            online: Mutex::new(Online {
+                endpoint,
+                generation: 0,
+                reached: HashSet::new(),
+                closed: false,
+            }),
+            renewing: tokio::sync::Mutex::new(()),
+        }))
+    }
+
+    /// The key hosts know this phone by.
+    pub fn id(&self) -> String {
+        self.key.public().to_string()
+    }
 
     /// Hands the host whose key is `core` the `ticket` the accounts server
     /// signed for it and this phone, as its JSON, and waits while the person
@@ -287,7 +318,7 @@ impl Device {
     ) -> Result<JoinAnswer, MobileError> {
         let ticket = read_ticket(&ticket, &self.id(), &core)?;
         let addr = core_addr(&core, &self.relays)?;
-        let (endpoint, _) = self.endpoint();
+        let (endpoint, _) = self.endpoint()?;
         let hello = JoinHello {
             ticket,
             name,
@@ -310,7 +341,11 @@ impl Device {
     /// Takes the phone off the network until the app makes a new device. Open
     /// connections end with it.
     pub async fn close(&self) {
-        let (endpoint, _) = self.endpoint();
+        let endpoint = {
+            let mut online = self.lock();
+            online.closed = true;
+            online.endpoint.clone()
+        };
         let _ = on_runtime(async move { endpoint.close().await }).await;
     }
 }
@@ -377,16 +412,17 @@ impl Device {
         addr: EndpointAddr,
         listener: Arc<dyn CoreListener>,
     ) -> Result<Arc<Connection>, MobileError> {
-        let (endpoint, generation) = self.endpoint();
+        let (endpoint, generation) = self.endpoint()?;
+        let open = Arc::new(AtomicBool::new(true));
         let (deliveries, queue) = mpsc::unbounded_channel();
-        deliver(listener, queue);
+        deliver(listener, queue, open.clone());
         let sink = Arc::new(ListenerSink(deliveries));
         let attempt = on_runtime(async move {
-            tokio::time::timeout(CONNECT_TIMEOUT, remote::connect_with(&endpoint, addr, sink)).await
+            tokio::time::timeout(CONNECT_TIMEOUT, remote::open_with(&endpoint, addr, sink)).await
         })
         .await?;
-        let client = match attempt {
-            Ok(Ok(client)) => client,
+        let (client, link) = match attempt {
+            Ok(Ok(opened)) => opened,
             Ok(Err(
                 error @ (ClientError::Core(_)
                 | ClientError::VersionMismatch { .. }
@@ -406,6 +442,8 @@ impl Device {
         self.lock().reached.insert(core);
         Ok(Arc::new(Connection {
             client: Mutex::new(Some(Arc::new(client))),
+            link,
+            open,
         }))
     }
 
@@ -415,29 +453,47 @@ impl Device {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    fn endpoint(&self) -> (Endpoint, u64) {
+    fn endpoint(&self) -> Result<(Endpoint, u64), MobileError> {
         let online = self.lock();
-        (online.endpoint.clone(), online.generation)
+        if online.closed {
+            return Err(MobileError::Connection {
+                message: "this phone went off the network".into(),
+            });
+        }
+        Ok((online.endpoint.clone(), online.generation))
     }
 
     /// Once a connection to a host closes, iroh 1.3 can leave the endpoint
     /// unable to reach that host again, while a new endpoint with the same key
     /// reaches it at once. A host this endpoint never reached is most likely
-    /// just away, so it keeps the endpoint. Connections still open on the old
-    /// endpoint keep it alive until they end.
+    /// just away, so it keeps the endpoint.
+    ///
+    /// The relay sends this key's traffic to its newest endpoint only, so the
+    /// old one closes along with every connection on it, and the app connects
+    /// to those hosts again.
     async fn renew_after_failing(&self, core: &str, generation: u64) {
         let _renewing = self.renewing.lock().await;
         {
             let online = self.lock();
-            if online.generation != generation || !online.reached.contains(core) {
+            if online.closed || online.generation != generation || !online.reached.contains(core) {
                 return;
             }
         }
-        if let Ok(fresh) = bind(self.key.clone(), &self.relays).await {
+        let Ok(fresh) = bind(self.key.clone(), &self.relays).await else {
+            return;
+        };
+        let retired = {
             let mut online = self.lock();
-            online.endpoint = fresh;
-            online.generation += 1;
-            online.reached.clear();
+            if online.closed {
+                fresh
+            } else {
+                online.generation += 1;
+                online.reached.clear();
+                std::mem::replace(&mut online.endpoint, fresh)
+            }
+        };
+        if let Ok(runtime) = RUNTIME.as_ref() {
+            runtime.spawn(async move { retired.close().await });
         }
     }
 }
@@ -499,7 +555,12 @@ impl EventSink for ListenerSink {
 
 /// Calls into the app wait for its JavaScript thread, so they run on a thread
 /// of their own. Events that queued up meanwhile go over in one call.
-fn deliver(listener: Arc<dyn CoreListener>, mut queue: mpsc::UnboundedReceiver<Delivery>) {
+/// Nothing reaches the app once it closed the connection itself.
+fn deliver(
+    listener: Arc<dyn CoreListener>,
+    mut queue: mpsc::UnboundedReceiver<Delivery>,
+    open: Arc<AtomicBool>,
+) {
     let spawned = std::thread::Builder::new()
         .name("sikemux-listener".into())
         .spawn(move || {
@@ -507,6 +568,9 @@ fn deliver(listener: Arc<dyn CoreListener>, mut queue: mpsc::UnboundedReceiver<D
             while let Some(first) = queue.blocking_recv() {
                 let mut next = Some(first);
                 while let Some(delivery) = next.take() {
+                    if !open.load(Ordering::Acquire) {
+                        return;
+                    }
                     match delivery {
                         Delivery::Event(event) => events.push(event),
                         Delivery::Output(session, bytes) => {
@@ -520,6 +584,9 @@ fn deliver(listener: Arc<dyn CoreListener>, mut queue: mpsc::UnboundedReceiver<D
                         }
                     }
                     next = queue.try_recv().ok();
+                }
+                if !open.load(Ordering::Acquire) {
+                    return;
                 }
                 flush(listener.as_ref(), &mut events);
             }
@@ -547,6 +614,8 @@ pub struct AttachedScreen {
 #[derive(uniffi::Object)]
 pub struct Connection {
     client: Mutex<Option<Arc<CoreClient>>>,
+    link: iroh::endpoint::Connection,
+    open: Arc<AtomicBool>,
 }
 
 fn not_answered() -> MobileError {
@@ -571,10 +640,14 @@ impl Connection {
     }
 
     async fn reply(&self, request: Request) -> Result<Reply, MobileError> {
+        self.reply_within(request, REQUEST_TIMEOUT).await
+    }
+
+    async fn reply_within(&self, request: Request, wait: Duration) -> Result<Reply, MobileError> {
         let client = self.client()?;
         on_runtime(async move {
             let answer = client.submit(request, |reply| reply)?;
-            match tokio::time::timeout(REQUEST_TIMEOUT, answer).await {
+            match tokio::time::timeout(wait, answer).await {
                 Ok(reply) => Ok(reply??),
                 Err(_) => Err(not_answered()),
             }
@@ -634,9 +707,16 @@ impl Connection {
         Ok(Some(path.display().to_string()))
     }
 
-    /// Starts a chat the host's app put to sleep. Answers once it runs.
+    /// Starts a chat the host's app put to sleep. Answers once it is ready to
+    /// take up.
     pub async fn wake_chat(&self, agent_id: String) -> Result<(), MobileError> {
-        self.done(Request::AcpWake { agent_id }).await
+        match self
+            .reply_within(Request::AcpWake { agent_id }, WAKE_TIMEOUT)
+            .await?
+        {
+            Reply::Response(Response::Done) => Ok(()),
+            _ => Err(unexpected()),
+        }
     }
 
     /// Takes up a chat. Its events follow on the listener; drop those
@@ -688,18 +768,91 @@ impl Connection {
         self.done(Request::AcpDetach { agent_id }).await
     }
 
-    pub async fn prompt(&self, agent_id: String, text: String) -> Result<(), MobileError> {
+    /// `paths` are files on the host, such as those [`Self::attach_file`]
+    /// answers with.
+    pub async fn prompt(
+        &self,
+        agent_id: String,
+        text: String,
+        paths: Vec<String>,
+    ) -> Result<(), MobileError> {
         self.done(Request::AcpPrompt {
             agent_id,
             text,
-            paths: Vec::new(),
+            paths,
             context: Vec::new(),
         })
         .await
     }
 
+    /// Sends a file for the chat's next message and answers with where the
+    /// host keeps it. A host too old to know the request refuses it.
+    pub async fn attach_file(
+        &self,
+        agent_id: String,
+        name: String,
+        mime: String,
+        bytes: Vec<u8>,
+    ) -> Result<String, MobileError> {
+        if bytes.len() > MAX_ATTACHMENT_BYTES {
+            return Err(invalid("a file sent to a chat can be at most 10 MB"));
+        }
+        let request = Request::AttachFile {
+            agent_id,
+            name,
+            mime,
+            data: base64::engine::general_purpose::STANDARD.encode(bytes),
+        };
+        match self.reply_within(request, UPLOAD_TIMEOUT).await? {
+            Reply::Response(Response::Attached { path }) => Ok(path.display().to_string()),
+            _ => Err(unexpected()),
+        }
+    }
+
     pub async fn cancel(&self, agent_id: String) -> Result<(), MobileError> {
         self.done(Request::AcpCancel { agent_id }).await
+    }
+
+    /// Puts a message into the running turn. Answers whether the agent took
+    /// it; when the turn ended first, send it with [`Self::prompt`] instead.
+    pub async fn steer(
+        &self,
+        agent_id: String,
+        text: String,
+        paths: Vec<String>,
+    ) -> Result<bool, MobileError> {
+        let request = Request::AcpSteer {
+            agent_id,
+            text,
+            paths,
+            context: Vec::new(),
+        };
+        match self.ask(request).await? {
+            Response::Steered { outcome } => Ok(outcome != "promptRequired"),
+            _ => Err(unexpected()),
+        }
+    }
+
+    /// Stops one of the chat's background tasks, such as a shell it left
+    /// running.
+    pub async fn stop_task(&self, agent_id: String, task_id: String) -> Result<(), MobileError> {
+        self.done(Request::AcpStopTask { agent_id, task_id }).await
+    }
+
+    /// `mode` is `bypass` to run without asking or `workspace-write` to ask
+    /// first. The host refuses while a turn runs.
+    pub async fn set_permission_mode(
+        &self,
+        agent_id: String,
+        mode: String,
+    ) -> Result<(), MobileError> {
+        self.done(Request::AcpSetPermissionMode { agent_id, mode })
+            .await
+    }
+
+    /// Ends the chat's agent on the host.
+    pub async fn stop_chat(&self, agent_id: String) -> Result<(), MobileError> {
+        self.done(Request::AcpStop { agent_id }).await
     }
 
     /// `option_id` absent turns the request down.
@@ -745,6 +898,22 @@ impl Connection {
         let request = Request::StartChat {
             launcher,
             project,
+            permission_mode: None,
+            model: None,
+            effort: None,
+        };
+        match self.ask(request).await? {
+            Response::ChatBegun { agent_id, .. } => Ok(agent_id),
+            _ => Err(unexpected()),
+        }
+    }
+
+    /// Takes up again one of the host's recent chats, by its id in the view,
+    /// and answers with the chat's agent id. A host too old to know the
+    /// request refuses it.
+    pub async fn resume_chat(&self, recent: String) -> Result<String, MobileError> {
+        let request = Request::ResumeChat {
+            recent,
             permission_mode: None,
             model: None,
             effort: None,
@@ -828,11 +997,14 @@ impl Connection {
         self.client().is_ok_and(|client| client.is_connected())
     }
 
-    /// What the phone already sent still reaches the host.
+    /// Ends the session now: requests still waiting fail, and the listener
+    /// hears nothing more, not even that it closed.
     pub fn close(&self) {
+        self.open.store(false, Ordering::Release);
         if let Ok(mut client) = self.client.lock() {
             client.take();
         }
+        self.link.close(0u32.into(), b"closed by the phone");
     }
 }
 
@@ -956,7 +1128,7 @@ mod tests {
     }
 
     #[test]
-    fn hosts_are_dialled_through_the_first_usable_relay_and_never_none() {
+    fn hosts_are_dialled_through_every_usable_relay_and_never_none() {
         let setting = |url: &str, quic_port| RelaySetting {
             url: url.into(),
             quic_port,
@@ -964,16 +1136,17 @@ mod tests {
         let relays = relays_from(vec![
             setting("not a relay", None),
             setting("https://relay.example/", Some(7842)),
+            setting("https://second.relay.example/", None),
         ]);
-        assert_eq!(relays.len(), 1);
+        assert_eq!(relays.len(), 2);
         assert_eq!(relays[0].quic_port, Some(7842));
         let core = SecretKey::generate().public().to_string();
         let addr = core_addr(&core, &relays).expect("an address");
+        let mut dialled: Vec<String> = addr.relay_urls().map(ToString::to_string).collect();
+        dialled.sort();
         assert_eq!(
-            addr.relay_urls()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>(),
-            vec!["https://relay.example/"]
+            dialled,
+            ["https://relay.example/", "https://second.relay.example/"]
         );
 
         let fallback = relays_from(Vec::new());
@@ -1019,6 +1192,22 @@ mod tests {
     }
 
     #[test]
+    fn an_identity_is_the_key_s_and_signs_without_going_online() {
+        let key = SecretKey::generate();
+        let identity = DeviceIdentity::new(key.to_bytes().to_vec()).expect("an identity");
+        assert_eq!(identity.id(), key.public().to_string());
+        let nonce = "ab".repeat(32);
+        assert_eq!(
+            identity.sign_live(nonce.clone()).expect("signs"),
+            sign_live(&key, &nonce).expect("signs")
+        );
+        assert!(matches!(
+            DeviceIdentity::new(vec![1; 31]),
+            Err(MobileError::Invalid { .. })
+        ));
+    }
+
+    #[test]
     fn a_backdrop_is_decoded_and_named_inside_its_folder() {
         let (extension, bytes) = decode_data_url("data:image/png;base64,aGk=").unwrap();
         assert_eq!((extension, bytes.as_slice()), ("png", &b"hi"[..]));
@@ -1039,6 +1228,27 @@ mod tests {
         assert!(matches!(
             MobileError::from(ClientError::Disconnected),
             MobileError::Connection { .. }
+        ));
+    }
+
+    #[test]
+    fn a_host_that_turns_this_phone_away_is_named_the_older_by_the_newest_it_speaks() {
+        let mismatch = |version| {
+            MobileError::from(ClientError::VersionMismatch {
+                version,
+                pid: 1,
+                message: String::new(),
+            })
+        };
+        assert!(matches!(
+            mismatch(OLDEST_PROTOCOL_VERSION - 1),
+            MobileError::Outdated { mac_is_older: true }
+        ));
+        assert!(matches!(
+            mismatch(OLDEST_PROTOCOL_VERSION),
+            MobileError::Outdated {
+                mac_is_older: false
+            }
         ));
     }
 
@@ -1112,7 +1322,7 @@ mod tests {
         sink.output(7, b"ab");
         sink.event(chat_event(3));
         sink.closed();
-        deliver(recorder.clone(), queue);
+        deliver(recorder.clone(), queue, Arc::new(AtomicBool::new(true)));
         assert_eq!(
             delivered(&recorder),
             ["events 2", "output 7 2", "events 1", "closed"]
@@ -1131,7 +1341,7 @@ mod tests {
         sink.output(1, b"x");
         sink.event(chat_event(2));
         sink.closed();
-        deliver(recorder.clone(), queue);
+        deliver(recorder.clone(), queue, Arc::new(AtomicBool::new(true)));
         assert_eq!(
             delivered(&recorder),
             ["events 1", "output 1 1", "events 1", "closed"]

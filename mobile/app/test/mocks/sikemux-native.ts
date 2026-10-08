@@ -33,6 +33,12 @@ export class Device {
   }
 }
 
+export class DeviceIdentity {
+  constructor() {
+    notMocked('DeviceIdentity');
+  }
+}
+
 export enum ChatState {
   Starting,
   Ready,

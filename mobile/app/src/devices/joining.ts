@@ -2,10 +2,11 @@ import { useEffect } from 'react';
 import { Platform } from 'react-native';
 import { JoinAnswer, MobileError } from '@sikemux/native';
 
+import { inBackgroundTime } from '../../modules/background-time';
 import { AccountProblem, joinTicket, type TokenSource } from '@/account/api';
 import { whileJoining } from '@/device/identity';
 import { phoneName } from '@/device/name';
-import { reloadDevices } from './hub';
+import { rejoined, reloadDevices } from './hub';
 import { rememberDevice, type Access } from './paired';
 
 let screens = 0;
@@ -91,8 +92,8 @@ export async function joinHost(
   });
   if (signal?.aborted) throw new Error('Connecting was cancelled.');
   onStep('waiting');
-  const answer = await whileJoining((device) =>
-    device.join(host.core, JSON.stringify(ticket), phoneName(), Platform.OS, signal ? { signal } : undefined),
+  const answer = await inBackgroundTime('Joining a host', () =>
+    whileJoining((device) => device.join(host.core, JSON.stringify(ticket), phoneName(), Platform.OS, signal ? { signal } : undefined)),
   ).catch((error: unknown) => {
     throw new JoinFailed(dialFailure(host.name, error));
   });
@@ -103,6 +104,7 @@ export async function joinHost(
   if (JoinAnswer.Refused.instanceOf(answer)) throw new JoinFailed(refusal(host.name, answer.inner.reason));
   const access = answer.inner.access as Access;
   await rememberDevice({ core: host.core, access, pairedAt: Date.now(), name: host.name });
+  rejoined(host.core);
   await reloadDevices();
   return access;
 }

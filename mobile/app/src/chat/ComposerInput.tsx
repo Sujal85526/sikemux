@@ -1,7 +1,7 @@
 import { useState, type Ref } from 'react';
 import { Platform, StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
 
-import { fonts, type Palette, useColors, useStyles } from '@/ui/theme';
+import { fonts, isLight, type Palette, useColors, useStyles } from '@/ui/theme';
 
 type Props = Omit<TextInputProps, 'style' | 'placeholder'> & { placeholder: string; ref?: Ref<TextInput> };
 
@@ -32,7 +32,7 @@ export function ComposerInput({ placeholder, value, ref, ...props }: Props) {
         placeholderTextColor={colors.inkFaint}
         multiline
         selectionColor={colors.accent}
-        keyboardAppearance="dark"
+        keyboardAppearance={isLight(colors) ? 'light' : 'dark'}
         style={[styles.input, empty && { minHeight: Math.max(MIN_HEIGHT, placeholderHeight) }]}
         {...props}
       />

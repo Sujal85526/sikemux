@@ -6,6 +6,7 @@
 //!   remote mac <socket> spawn
 //!   remote mac <socket> publish            offers the fake agent to devices
 //!   remote mac <socket> chat [prompt]      starts a chat with it
+//!   remote mac <socket> recent <title>…    lists saved chats of the fake agent as recent
 //!   remote mac <socket> say <agent> <text>
 //!   remote mac <socket> backdrop on|off [image.jpg]  publishes the pane backdrop
 //!   remote mac <socket> palette <name=colour>…  publishes theme colours
@@ -23,7 +24,7 @@ use sikemux_core::accounts::network;
 use sikemux_core::client::{ClientEvent, CoreClient};
 use sikemux_core::protocol::{
     BackdropImage, ChatLaunch, ChatLauncher, DeviceAccess, Event, LaunchIdentity, ProjectInfo,
-    PublishedChat, SpawnTarget, TerminalSpawn,
+    PublishedChat, PublishedRecent, SpawnTarget, TerminalSpawn,
 };
 use sikemux_core::remote::{self, SecretKey};
 
@@ -38,6 +39,7 @@ async fn main() -> Result<(), Failure> {
         ["mac", socket, "publish"] => publish(Path::new(socket)).await,
         ["mac", socket, "chat", prompt @ ..] => chat(Path::new(socket), &prompt.join(" ")).await,
         ["mac", socket, "say", agent, text @ ..] => say(Path::new(socket), agent, &text.join(" ")).await,
+        ["mac", socket, "recent", titles @ ..] => recent(Path::new(socket), titles).await,
         ["mac", socket, "sleepy"] => sleepy(Path::new(socket)).await,
         ["mac", socket, "chats"] => chats(Path::new(socket)).await,
         ["mac", socket, "palette", colours @ ..] => palette(Path::new(socket), colours).await,
@@ -103,6 +105,9 @@ async fn publish(socket: &Path) -> Result<(), Failure> {
         args: vec!["acp".into()],
         env: Default::default(),
         permission_mode: "workspace-write".into(),
+        account: None,
+        fallbacks: Vec::new(),
+        status: None,
     };
     let project = ProjectInfo {
         id: "tmp".into(),
@@ -127,6 +132,29 @@ async fn chat(socket: &Path, prompt: &str) -> Result<(), Failure> {
             .acp_prompt(agent, prompt.into(), Vec::new(), Vec::new())
             .await?;
     }
+    Ok(())
+}
+
+/// Each title becomes a saved chat an hour older than the one before.
+async fn recent(socket: &Path, titles: &[&str]) -> Result<(), Failure> {
+    let (client, _events) = CoreClient::connect(socket).await?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_millis() as u64;
+    let chats = titles
+        .iter()
+        .enumerate()
+        .map(|(index, title)| PublishedRecent {
+            launcher: "opencode".into(),
+            provider: "opencode".into(),
+            session_id: format!("saved-{index}"),
+            title: (*title).into(),
+            cwd: std::env::temp_dir(),
+            active_at: now - index as u64 * 3_600_000,
+        })
+        .collect();
+    client.publish_recent(chats).await?;
+    println!("published {} recent chats", titles.len());
     Ok(())
 }
 
@@ -219,6 +247,8 @@ async fn sleepy(socket: &Path) -> Result<(), Failure> {
             permission_mode: "workspace-write".into(),
             model: None,
             effort: None,
+            account: None,
+            fallbacks: Vec::new(),
         };
         client.acp_start(launch).await?;
         println!("woke {woken}");

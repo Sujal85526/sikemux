@@ -16,6 +16,20 @@ struct StateMark: View {
     }
 }
 
+struct SubagentCount: View {
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 3) {
+            IconView(icon: Icons.agent, size: 10).foregroundStyle(Theme.live.opacity(0.75))
+            Text("\(count)").font(Theme.ui(11, .medium)).monospacedDigit().foregroundStyle(Theme.inkFaint)
+        }
+        .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(count) \(count == 1 ? "subagent" : "subagents") running")
+    }
+}
+
 private struct Dot: View {
     let colour: Color
 

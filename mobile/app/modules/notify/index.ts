@@ -1,4 +1,5 @@
 import { requireOptionalNativeModule } from 'expo';
+import type { ApnsEnvironment } from '@protocol';
 
 export type ShownCard = { tag: string; host: string; agent?: string; kind?: string; request?: string };
 
@@ -11,10 +12,12 @@ type NotifyModule = {
   setKey(host: string, keyId: number, key: string): void;
   removeKey(host: string): void;
   removeAll(): void;
-  shown(): ShownCard[];
+  shown(): Promise<ShownCard[]>;
   dismiss(tag: string): void;
   settle(tag: string, outcome: AnswerOutcome): void;
+  /** iOS only: which of Apple's push servers issued this build's token. */
+  apnsEnvironment?(): ApnsEnvironment;
 };
 
-/** The Android half of notifications: the keys hosts seal cards with, and the cards showing. Absent on iOS for now. */
+/** The phone's half of notifications: the keys hosts seal cards with, and the cards showing. */
 export const notifier = requireOptionalNativeModule<NotifyModule>('SikemuxNotify');

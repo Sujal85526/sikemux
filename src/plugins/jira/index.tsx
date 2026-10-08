@@ -28,5 +28,7 @@ registerFrontendPlugin({
     ],
     open: openJira,
     openTitle: "Open Jira",
+    mark: (size) => <JiraMark size={size} />,
+    linkHosts: [".atlassian.net"],
     TopBarItem: JiraTopBar,
 });

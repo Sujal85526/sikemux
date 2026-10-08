@@ -133,18 +133,36 @@ pub(crate) async fn run(core: Arc<Core>) {
     loop {
         tokio::select! {
             signal = received.recv() => match signal {
-                Some(signal) => handle(&core, signal, unix_ms()),
+                Some(signal) => {
+                    noted(&core, away_now(&core).await, unix_ms());
+                    apply(&core, signal, unix_ms());
+                }
                 None => return,
             },
-            _ = ticker.tick() => look_around(&core, unix_ms()),
+            _ = ticker.tick() => noted(&core, away_now(&core).await, unix_ms()),
         }
     }
 }
 
+/// Asking macOS whether the screen is locked can take seconds the first time,
+/// so it runs off the threads that serve connections.
+async fn away_now(core: &Core) -> bool {
+    let presence = core.notify.presence();
+    tokio::task::spawn_blocking(move || presence.away())
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(true)
+}
+
+#[cfg(test)]
+pub(crate) fn look_around(core: &Core, now: u64) {
+    noted(core, core.notify.presence().away().unwrap_or(true), now);
+}
+
 /// Notes whether the person is here, and once they leave, sends what waited
 /// for that: permission requests and agents still waiting for input.
-pub(crate) fn look_around(core: &Core, now: u64) {
-    let away = core.notify.presence().away().unwrap_or(true);
+fn noted(core: &Core, away: bool, now: u64) {
     let left = {
         let mut state = core.notify.lock();
         let left = away && !state.away;
@@ -174,8 +192,13 @@ pub(crate) fn look_around(core: &Core, now: u64) {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn handle(core: &Core, signal: Signal, now: u64) {
     look_around(core, now);
+    apply(core, signal, now);
+}
+
+fn apply(core: &Core, signal: Signal, now: u64) {
     match signal {
         Signal::Attention(attention) => {
             core.notify.lock().pending.insert(

@@ -202,6 +202,25 @@ describe("AgentPalette", () => {
         expect(getState().agentPaletteOpen).toBe(true);
     });
 
+    it("says a signed-out agent will ask to sign in, and still starts it", async () => {
+        mocks.available.mockResolvedValue([
+            {
+                type: "codex",
+                label: "Codex",
+                command: "/opt/homebrew/bin/codex",
+                available: true,
+                status: { state: "signedOut" },
+                defaultModel: null,
+                defaultEffort: null,
+            },
+        ]);
+        invalidate((kind) => kind === "agents.catalog" || kind === "agents.sessions");
+        render(<AgentPalette />);
+
+        expect(await screen.findByText("signed out · start to sign in")).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "+ new Codex in Normal mode" })).toBeEnabled();
+    });
+
     it("resumes a historical session with the selected mode", async () => {
         const user = userEvent.setup();
         render(<AgentPalette />);

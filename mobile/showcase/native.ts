@@ -4,7 +4,7 @@
  * of the network.
  */
 import { BuildChannel, ChatAttachment, ChatState, CoreEvent, MobileError, SessionKind } from '../app/test/mocks/sikemux-native';
-import { CHATS, CORE, HOST, LAUNCHERS, PANE_PICTURE, PROJECTS, SESSIONS, chatEvents, permissionPayload, setupOf } from './world';
+import { CHATS, CORE, HOST, LAUNCHERS, PANE_PICTURE, PROJECTS, RECENT, SESSIONS, chatEvents, permissionPayload, setupOf } from './world';
 
 export { BuildChannel, ChatAttachment, ChatState, CoreEvent, MobileError, SessionKind };
 
@@ -78,6 +78,14 @@ function view() {
           ]
         : [];
     }),
+    recent: RECENT.map((chat) => ({
+      id: chat.id,
+      provider: chat.provider,
+      title: chat.title,
+      project: chat.project,
+      cwd: projectPath(chat.project),
+      activeAt: BigInt(Date.now() - chat.hours * 3_600_000),
+    })),
   };
 }
 
@@ -120,12 +128,18 @@ class Connection {
 
   async detachChat() {}
   async prompt() {}
+  async attachFile(_agentId: string, name: string) {
+    return `/Users/demo/Library/Caches/com.nodelike.sikemux/pasted/${name}`;
+  }
   async cancel() {}
   async answerPermission() {}
   async setChatConfig(_agentId: string, _configId: string, value: string) {
     return value;
   }
   async startChat() {
+    return CHATS[0].agentId;
+  }
+  async resumeChat() {
     return CHATS[0].agentId;
   }
   async attach() {
@@ -140,13 +154,33 @@ class Connection {
   }
 }
 
+const PHONE_ID = 'a3f9c27e51d04b8e9c6f2a7d18e3b5c40f9e7a2d6b1c8e5f3a0d9c7b6e4f2a1d';
+
+export class DeviceIdentity {
+  id() {
+    return PHONE_ID;
+  }
+
+  signLive() {
+    return '';
+  }
+
+  signRegistration() {
+    return '';
+  }
+
+  signPush() {
+    return '';
+  }
+}
+
 export class Device {
   static async create() {
     return new Device();
   }
 
   id() {
-    return 'a3f9c27e51d04b8e9c6f2a7d18e3b5c40f9e7a2d6b1c8e5f3a0d9c7b6e4f2a1d';
+    return PHONE_ID;
   }
 
   async connect(_core: string, listener: Listener) {
@@ -157,4 +191,3 @@ export class Device {
 }
 
 export const newDeviceKey = (): ArrayBuffer => new Uint8Array(32).buffer;
-

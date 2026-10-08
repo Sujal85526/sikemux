@@ -14,7 +14,7 @@ import {
 import { errorCode, explain } from './clerkErrors';
 
 const identity = vi.hoisted(() => ({
-  thisDevice: vi.fn(async () => ({
+  deviceIdentity: vi.fn(async () => ({
     id: () => 'ab'.repeat(32),
     signRegistration: vi.fn((nonce: string, userId: string) => `signed:${nonce}:${userId}`),
     signPush: vi.fn((nonce: string, tokenSha256: string) => `pushed:${nonce}:${tokenSha256}`),
@@ -116,6 +116,21 @@ describe('removePhone', () => {
     const failure = await removePhone(token).catch((error: unknown) => error);
     expect((failure as AccountProblem).unreachable).toBe(true);
   });
+
+  it('does not count a refused sign-in as the phone being off the account', async () => {
+    answers.push({ status: 401, body: { error: { code: 'unauthorized', message: 'Sign in again.', requestId: 'r' } } });
+    const failure = await removePhone(token).catch((error: unknown) => error);
+    expect((failure as AccountProblem).status).toBe(401);
+  });
+
+  it('reports Clerk failing to hand over a token as out of reach', async () => {
+    const failure = await removePhone(async () => {
+      throw new Error('network');
+    }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(AccountProblem);
+    expect((failure as AccountProblem).unreachable).toBe(true);
+    expect(calls).toEqual([]);
+  });
 });
 
 describe('setPushToken', () => {
@@ -160,10 +175,17 @@ describe('deleteAccount', () => {
     answers.push({ status: 202, body: { status: 'deleted', requestedAt: '2026-10-03T10:00:00.000Z' } });
     await expect(deleteAccount(token)).resolves.toEqual({ status: 'deleted', requestedAt: '2026-10-03T10:00:00.000Z' });
     expect(calls[0]).toMatchObject({ url: 'https://api.test/v1/account', method: 'DELETE', authorization: 'Bearer session-token' });
+    expect(calls[0]?.body).toBeUndefined();
   });
 
-  it('asks for a fresh sign-in when the server says reverify', async () => {
-    answers.push({ status: 403, body: { error: { code: 'forbidden', message: 'reverify', requestId: 'r' } } });
+  it("sends Apple's code for the server to revoke", async () => {
+    answers.push({ status: 202, body: { status: 'deleted', requestedAt: '2026-10-03T10:00:00.000Z' } });
+    await deleteAccount(token, 'apple-code');
+    expect(calls[0]).toMatchObject({ method: 'DELETE', body: { appleAuthorizationCode: 'apple-code' } });
+  });
+
+  it('asks the person to prove it is them again when the server says reverify', async () => {
+    answers.push({ status: 403, body: { error: { code: 'reverify_required', message: 'reverify', requestId: 'r' } } });
     await expect(deleteAccount(token)).rejects.toBeInstanceOf(ReverifyNeeded);
   });
 

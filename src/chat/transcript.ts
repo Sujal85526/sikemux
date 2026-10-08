@@ -35,11 +35,13 @@ export function decodedFenceName(info: string): string {
 
 export type PartGroup = { id: string; tools: Extract<ChatPart, { kind: "tool" }>[] } | { id: string; part: ChatPart };
 
+/* Consecutive calls share one group, except a page an agent showed, which is
+   part of its reply rather than a step towards it. */
 export function groupParts(parts: ChatPart[]): PartGroup[] {
     const groups: PartGroup[] = [];
     for (const part of parts) {
         const last = groups.at(-1);
-        if (part.kind !== "tool") groups.push({ id: part.id, part });
+        if (part.kind !== "tool" || part.page) groups.push({ id: part.id, part });
         else if (last && "tools" in last) last.tools.push(part);
         else groups.push({ id: part.id, tools: [part] });
     }

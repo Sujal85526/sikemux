@@ -1,4 +1,5 @@
 import { memo, useContext, useRef, useState, type ComponentType } from "react";
+import { frontendPlugin } from "../plugins/registry";
 import { CopyButton } from "../ui/CopyButton";
 import { hasPrimaryModifier } from "../lib/platform";
 import {
@@ -64,6 +65,8 @@ function ToolKindIcon({ tool, kind }: { tool: AcpToolCall; kind?: string }) {
     if (tool.status === "failed") return <IconWarning size={11} />;
     const row = sikemuxToolRow(tool);
     if (row) {
+        const mark = row.plugin ? frontendPlugin(row.plugin)?.mark : undefined;
+        if (mark) return mark(11);
         const RowIcon = ROW_ICONS[row.icon];
         return <RowIcon size={11} />;
     }

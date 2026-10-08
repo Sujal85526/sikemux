@@ -1,0 +1,114 @@
+name: Mobile CI
+
+# Checks the phone app before its code ships: ci.yml leaves mobile/ out, and the update and release
+# workflows only run after the fact. Also runs the notifications module's Kotlin tests, which nothing
+# else does.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mobile/**"
+      - "src-tauri/crates/sikemux-mobile/**"
+      - "src-tauri/crates/sikemux-core/**"
+      - "src-tauri/Cargo.lock"
+      - "server/protocol/**"
+      - "src/agents/**"
+      - "src/chat/**"
+      - "src/lib/**"
+      - "src/terminal/interactions.ts"
+      - "src/ui/Icons.tsx"
+      - "src/assets/agent-logos/**"
+      - .github/workflows/mobile-ci.yml
+      - .github/workflows/mobile-update.yml
+  pull_request:
+    paths:
+      - "mobile/**"
+      - "src-tauri/crates/sikemux-mobile/**"
+      - "src-tauri/crates/sikemux-core/**"
+      - "src-tauri/Cargo.lock"
+      - "server/protocol/**"
+      - "src/agents/**"
+      - "src/chat/**"
+      - "src/lib/**"
+      - "src/terminal/interactions.ts"
+      - "src/ui/Icons.tsx"
+      - "src/assets/agent-logos/**"
+      - .github/workflows/mobile-ci.yml
+      - .github/workflows/mobile-update.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Check the phone app and its Kotlin
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          package_json_file: mobile/package.json
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            mobile/pnpm-lock.yaml
+
+      - name: Use the runner's Java 17 and Android NDK
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >>"$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >>"$GITHUB_ENV"
+
+      - name: Setup Rust
+        run: |
+          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)"
+          rustup toolchain install "$channel" --profile minimal --no-self-update \
+            --target aarch64-linux-android --target x86_64-linux-android
+          cargo install cargo-ndk --locked
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri
+          shared-key: mobile-android
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # The phone shares chat and UI code with the desktop app, which needs its packages to typecheck.
+      - name: Install the desktop app's dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install phone dependencies
+        working-directory: mobile
+        run: pnpm install --frozen-lockfile
+
+      # The app's JavaScript imports the bindings generated alongside the Rust client, and the
+      # Android project links it.
+      - name: Build the Rust client
+        working-directory: mobile
+        run: pnpm native:android:release
+
+      - name: Check the phone app
+        working-directory: mobile
+        run: pnpm check
+
+      - name: Generate the Android project
+        working-directory: mobile/app
+        run: node scripts/run.mjs prebuild android development
+
+      - name: Test the notifications module
+        working-directory: mobile/app/android
+        run: ./gradlew :notify:testDebugUnitTest --no-daemon

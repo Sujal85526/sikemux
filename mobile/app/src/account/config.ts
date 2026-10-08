@@ -1,19 +1,16 @@
 import Constants from 'expo-constants';
 
-/**
- * Clerk's publishable key is public: it names the instance accounts live in. Development builds use
- * Clerk's development instance, which the accounts server on the Mac trusts.
- */
-export const CLERK_PUBLISHABLE_KEY = __DEV__
-  ? 'pk_test_aW1tZW5zZS1sbGFtYS02NjY4LmNsZXJrLmFjY291bnRzLmRldiQ'
-  : 'pk_live_Y2xlcmsuc2lrZW11eC5jb20k';
+const extra = Constants.expoConfig?.extra ?? {};
 
 /**
- * Release builds use api.sikemux.com. A development build uses the accounts server on the Mac
- * running Metro, or EXPO_PUBLIC_API_URL when it is set.
+ * The build's variant picks the accounts, not whether it runs from Metro: a production build signs in to
+ * the real accounts even while it hot-reloads. Clerk's publishable key is public.
  */
+export const CLERK_PUBLISHABLE_KEY: string = extra.clerkPublishableKey;
+
+/** A development build uses the accounts server on the Mac running Metro, or EXPO_PUBLIC_API_URL when it is set. */
 export function apiUrl(): string {
-  if (!__DEV__) return 'https://api.sikemux.com';
+  if (typeof extra.apiUrl === 'string') return extra.apiUrl;
   const configured = process.env.EXPO_PUBLIC_API_URL;
   if (configured) return configured.replace(/\/$/, '');
   const metro = Constants.expoConfig?.hostUri?.split(':')[0];

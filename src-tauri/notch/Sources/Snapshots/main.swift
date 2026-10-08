@@ -34,17 +34,17 @@ let fixture = #"""
   "sessions": [],
   "chats": [
     {"agentId": "a1", "provider": "claude", "title": "Fix the login flake", "cwd": "/Users/me/sikemux", "sessionId": "s1", "state": "ready",
-     "running": true, "pendingPermissions": ["p1"], "permissionMode": "default", "asleep": false, "unread": true},
+     "running": true, "pendingPermissions": ["p1"], "subagents": 0, "permissionMode": "default", "asleep": false, "unread": true},
     {"agentId": "a2", "provider": "codex", "title": "Refactor the auth middleware", "cwd": "/Users/me/server", "sessionId": "s2", "state": "ready",
-     "running": true, "pendingPermissions": [], "permissionMode": "bypass", "asleep": false, "unread": false},
+     "running": true, "pendingPermissions": [], "subagents": 3, "permissionMode": "bypass", "asleep": false, "unread": false},
     {"agentId": "a3", "provider": "opencode", "title": "Draft the notch spec", "cwd": "/Users/me/sikemux", "sessionId": "s3", "state": "ready",
-     "running": true, "pendingPermissions": [], "permissionMode": "bypass", "asleep": false, "unread": false},
+     "running": true, "pendingPermissions": [], "subagents": 0, "permissionMode": "bypass", "asleep": false, "unread": false},
     {"agentId": "a5", "provider": "codex", "title": "Read the release notes", "cwd": "/Users/me/sikemux", "sessionId": "s5", "state": "ready",
-     "running": false, "pendingPermissions": [], "permissionMode": "bypass", "asleep": false, "unread": false},
+     "running": false, "pendingPermissions": [], "subagents": 0, "permissionMode": "bypass", "asleep": false, "unread": false},
     {"agentId": "a6", "provider": "claude", "title": "Sikemux bug", "cwd": "/Users/me/sikemux", "sessionId": null, "state": "stopped",
-     "running": false, "pendingPermissions": [], "permissionMode": "bypass", "asleep": true, "unread": false},
+     "running": false, "pendingPermissions": [], "subagents": 0, "permissionMode": "bypass", "asleep": true, "unread": false},
     {"agentId": "a4", "provider": "grok", "title": "Bump Astro to 6", "cwd": "/Users/me/sikemux-front", "sessionId": "s4", "state": "ready",
-     "running": false, "pendingPermissions": [], "permissionMode": "bypass", "asleep": false, "unread": true}
+     "running": false, "pendingPermissions": [], "subagents": 0, "permissionMode": "bypass", "asleep": false, "unread": true}
   ],
   "attentions": [
     {"id": "p1", "kind": "permission", "agentId": "a1", "provider": "claude", "cwd": "/Users/me/sikemux", "at": NOW,
@@ -168,6 +168,7 @@ render("O5-with-idle", agents: ["a2", "a5"], height: 300) { $0.mode = .open }
 render("C2-working", agents: ["a2", "a3"])
 render("C3-needs-you")
 render("C4-done", agents: ["a4"])
+render("C4b-working-and-done", agents: ["a2", "a3", "a4"])
 render("C6-hover", agents: ["a2", "a3"]) { $0.hovering = true }
 render("P1-permission", height: 260) { $0.mode = .peekAsk("a1") }
 render("P2-finished", agents: ["a2", "a4"]) { $0.mode = .peekDone("a4") }

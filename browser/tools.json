@@ -864,6 +864,54 @@
       ]
     },
     {
+      "name": "page_preview",
+      "row": {"verb": "preview", "kind": "read", "icon": "eye", "target": ["{path}"]},
+      "method": "browser.page",
+      "description": "Check a page as the chat shows it.",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 240,
+          "maximum": 1600
+        }
+      },
+      "required": [
+        "path"
+      ]
+    },
+    {
+      "name": "page_show",
+      "row": {"verb": "show", "kind": "read", "icon": "window", "target": ["{title}"]},
+      "method": "page.show",
+      "description": "Show a page in your reply.",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4000
+        }
+      },
+      "required": [
+        "path",
+        "title"
+      ]
+    },
+    {
       "name": "events_wait",
       "row": {"verb": "wait", "kind": "think", "icon": "clock", "target": ["for {executionId}", "for events"]},
       "method": "events.wait",

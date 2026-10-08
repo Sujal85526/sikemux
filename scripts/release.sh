@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build, verify, and optionally publish a signed macOS release.
+# Build and verify a signed macOS release. --publish builds one the Release
+# workflow then publishes with scripts/publish-release.sh.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -369,40 +370,14 @@ python3 -m json.tool "$MANIFEST" >/dev/null
 snapshot_expected
 
 [[ "$(git rev-parse HEAD)" == "$HEAD_SHA" ]] || fail "HEAD moved during the release; rebuild from a settled tree"
-STABLE_GH_CMD=(gh release create "v$VERSION" --target "$HEAD_SHA" --title "v$VERSION" --notes "$NOTES" "$DMG" "$TAR" "$SIG" "$VOICE" "$MANIFEST")
-NIGHTLY_GH_CMD=(gh release create "v$VERSION" --target "$HEAD_SHA" --title "v$VERSION" --notes "$NOTES" --prerelease "$DMG" "$TAR" "$SIG" "$VOICE")
-POINTER_NOTES="Update feed for the nightly channel.
-
-The installable build for this feed is [v$VERSION](https://github.com/nodelike/sikemux/releases/tag/v$VERSION).
-
-This release carries only \`latest.json\`. Its \`nightly\` tag is a fixed URL anchor that shipped clients resolve against, not a source revision — do not attach builds here."
-if [[ "$PUBLISH" == "1" && "$CHANNEL" == "stable" ]]; then
-  echo "→ Publishing stable v$VERSION"
-  "${STABLE_GH_CMD[@]}"
-  echo "✓ Released stable v$VERSION"
-elif [[ "$PUBLISH" == "1" ]]; then
-  echo "→ Publishing nightly v$VERSION"
-  "${NIGHTLY_GH_CMD[@]}"
-  if gh release view nightly >/dev/null 2>&1; then
-    gh release upload nightly "$MANIFEST" --clobber
-    gh release edit nightly --title "Nightly feed (v$VERSION)" --notes "$POINTER_NOTES" --prerelease
-  else
-    gh release create nightly --target "$HEAD_SHA" --title "Nightly feed (v$VERSION)" --notes "$POINTER_NOTES" --prerelease "$MANIFEST"
-  fi
-  echo "✓ Released nightly v$VERSION; nightly feed now points at v$VERSION"
-else
-  echo "✓ Verified $CHANNEL release v$VERSION ($ARCHS)"
-  echo "  $DMG"
-  echo "  $TAR"
-  echo "  $SIG"
-  echo "  $VOICE"
-  echo "  $MANIFEST"
-  echo "To publish:"
-  if [[ "$CHANNEL" == "stable" ]]; then
-    printf '  '; printf '%q ' "${STABLE_GH_CMD[@]}"; echo
-  else
-    echo "  rerun with --nightly --publish (creates v$VERSION, then repoints the nightly feed)"
-  fi
+echo "✓ Verified $CHANNEL release v$VERSION ($ARCHS)"
+echo "  $DMG"
+echo "  $TAR"
+echo "  $SIG"
+echo "  $VOICE"
+echo "  $MANIFEST"
+if [[ "$PUBLISH" == "1" ]]; then
+  echo "  The Release workflow publishes these with scripts/publish-release.sh once the checks pass."
 fi
 
 SUCCESS=1

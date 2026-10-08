@@ -73,6 +73,10 @@ export interface FrontendPlugin {
     readonly surfaces: readonly PluginSurface[];
     readonly open: () => void;
     readonly openTitle: string;
+    /** Its logo in its own colours: in Settings, and on each call an agent makes to its tools. */
+    readonly mark?: (size: number) => ReactNode;
+    /** Hosts whose links in the chat carry its mark. A leading dot takes every subdomain. */
+    readonly linkHosts?: readonly string[];
     /** A default shortcut for `open`, like "Alt+KeyA"; people can change it in Settings. */
     readonly openShortcut?: string;
     readonly shortcuts?: readonly PluginShortcut[];
@@ -103,6 +107,18 @@ export function frontendPlugin(id: string): FrontendPlugin | undefined {
 
 export function frontendPlugins(): readonly FrontendPlugin[] {
     return [...plugins.values()];
+}
+
+const HOST = /^https?:\/\/(?:[^@/?#]*@)?([^/?#:]+)/i;
+
+/** The plugin whose service a link points at, so the link can wear its mark. */
+export function linkPlugin(href: string): FrontendPlugin | undefined {
+    const host = HOST.exec(href)?.[1]?.toLowerCase();
+    if (!host) return undefined;
+    for (const plugin of plugins.values()) {
+        if (plugin.linkHosts?.some((owned) => (owned.startsWith(".") ? host.endsWith(owned) : host === owned))) return plugin;
+    }
+    return undefined;
 }
 
 export function pluginSurface(kind: string): PluginSurface | undefined {

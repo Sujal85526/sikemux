@@ -357,6 +357,101 @@ export const IconFolderPlus = makeSvgIcon(
         <path d="M8 8.4v3.4M6.3 10.1h3.4" />
     </>,
 );
+export const IconStack = makeSvgIcon(
+    <>
+        <path d="M8 2.6 13.4 5.4 8 8.2 2.6 5.4Z" />
+        <path d="M2.6 8.2 8 11 13.4 8.2" />
+        <path d="M2.6 10.8 8 13.6 13.4 10.8" />
+    </>,
+);
+export const IconBuilding = makeSvgIcon(
+    <>
+        <path d="M3.4 13.6V3h6v10.6" />
+        <path d="M9.4 6.4h3.2v7.2" />
+        <path d="M2.4 13.6h11.2" />
+        <path d="M5.4 5.4h2M5.4 8h2M5.4 10.6h2" />
+    </>,
+);
+export const IconHome = makeSvgIcon(
+    <>
+        <path d="M2.6 7.4 8 2.8l5.4 4.6" />
+        <path d="M4 6.4v7.2h8V6.4" />
+        <path d="M6.6 13.6v-3.4h2.8v3.4" />
+    </>,
+);
+export const IconBriefcase = makeSvgIcon(
+    <>
+        <rect x="2.4" y="5" width="11.2" height="8" rx="1.2" />
+        <path d="M6 5V3.4h4V5" />
+        <path d="M2.4 8.6h11.2" />
+    </>,
+);
+export const IconCode = makeSvgIcon(
+    <>
+        <path d="M5.6 4.6 2.4 8l3.2 3.4" />
+        <path d="M10.4 4.6 13.6 8l-3.2 3.4" />
+        <path d="M9 3.4 7 12.6" />
+    </>,
+);
+export const IconFlask = makeSvgIcon(
+    <>
+        <path d="M6.4 2.6h3.2" />
+        <path d="M6.8 2.6v3.8L3.2 12.4a.8.8 0 0 0 .7 1.2h8.2a.8.8 0 0 0 .7-1.2L9.2 6.4V2.6" />
+        <path d="M4.8 9.8h6.4" />
+    </>,
+);
+export const IconRocket = makeSvgIcon(
+    <>
+        <path d="M9.8 2.6c2.2.2 3.4 1.4 3.6 3.6L9 10.6 5.4 7Z" />
+        <path d="M5.4 7 3.2 7.4 2.6 9l2.2.4" />
+        <path d="M9 10.6 8.6 12.8 7 13.4l-.4-2.2" />
+        <path d="M4.4 11.6 3 13" />
+    </>,
+);
+export const IconStar = makeSvgIcon(<path d="M8 2.6l1.6 3.4 3.7.5-2.7 2.6.7 3.7L8 11l-3.3 1.8.7-3.7-2.7-2.6 3.7-.5Z" />);
+export const IconHeart = makeSvgIcon(<path d="M8 13.2S2.6 10 2.6 6.4A2.8 2.8 0 0 1 8 5a2.8 2.8 0 0 1 5.4 1.4C13.4 10 8 13.2 8 13.2Z" />);
+export const IconBook = makeSvgIcon(
+    <>
+        <path d="M8 4.2C6.6 3.2 4.6 3 2.6 3.2v9.2c2-.2 4 0 5.4 1 1.4-1 3.4-1.2 5.4-1V3.2c-2-.2-4 0-5.4 1Z" />
+        <path d="M8 4.2v9.2" />
+    </>,
+);
+export const IconBolt = makeSvgIcon(<path d="M8.8 2.4 3.8 9h3.6l-.6 4.6L12.2 7H8.6Z" />);
+export const IconLeaf = makeSvgIcon(
+    <>
+        <path d="M3 13c0-5.6 3.4-9.4 10-10-.2 6.6-4 10-9 10" />
+        <path d="M3 13l5-5" />
+    </>,
+);
+export const IconCube = makeSvgIcon(
+    <>
+        <path d="M8 2.4 13.2 5.2v5.6L8 13.6 2.8 10.8V5.2Z" />
+        <path d="M2.8 5.2 8 8l5.2-2.8M8 8v5.6" />
+    </>,
+);
+export const IconTerminal = makeSvgIcon(
+    <>
+        <rect x="2.2" y="3" width="11.6" height="10" rx="1.4" />
+        <path d="M4.8 6.4 6.8 8l-2 1.6M8.4 10h2.8" />
+    </>,
+);
+export const IconMusic = makeSvgIcon(
+    <>
+        <path d="M6 11.6V3.6l6.4-1.2v8" />
+        <circle cx="4.6" cy="11.6" r="1.4" />
+        <circle cx="11" cy="10.4" r="1.4" />
+    </>,
+);
+export const IconGrip = makeSvgIcon(
+    <>
+        <circle cx="6" cy="4" r=".9" fill="currentColor" stroke="none" />
+        <circle cx="10" cy="4" r=".9" fill="currentColor" stroke="none" />
+        <circle cx="6" cy="8" r=".9" fill="currentColor" stroke="none" />
+        <circle cx="10" cy="8" r=".9" fill="currentColor" stroke="none" />
+        <circle cx="6" cy="12" r=".9" fill="currentColor" stroke="none" />
+        <circle cx="10" cy="12" r=".9" fill="currentColor" stroke="none" />
+    </>,
+);
 
 export function IconClaude({ size, className }: IconProps) {
     return (

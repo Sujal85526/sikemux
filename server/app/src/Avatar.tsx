@@ -19,7 +19,7 @@ export function Avatar({ size = 26 }: { size?: number }) {
     >
       {picture && picture !== failed ? (
         <img
-          src={`${picture}${picture.includes("?") ? "&" : "?"}width=${size * 2}&height=${size * 2}&fit=crop&quality=100`}
+          src={`${picture}${picture.includes("?") ? "&" : "?"}width=${size * 2}&height=${size * 2}&fit=scale-down&quality=100`}
           alt=""
           width={size}
           height={size}

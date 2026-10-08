@@ -103,7 +103,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 .wings { display: flex; align-items: center; }
 .wing { display: flex; align-items: center; height: 100%; }
 .wing.l { justify-content: flex-start; padding-left: 14px; }
-.wing.r { justify-content: flex-end; padding-right: 14px; gap: 6px; }
+.wing.r { justify-content: flex-end; padding-right: 14px; gap: 10px; }
+.wing.r .group { display: inline-flex; align-items: center; gap: 6px; }
 .gap { height: 100%; flex: 0 0 auto; }
 .stack { display: flex; }
 .tile { width: 20px; height: 20px; display: grid; place-items: center; }
@@ -158,6 +159,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 .row .title, .ask-head .title { flex: 1 1 auto; min-width: 0; }
 .proj { display: inline-flex; align-items: center; gap: 4px; flex: 0 1 auto; min-width: 0; max-width: 150px; font-size: 11.5px; color: var(--ink-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .proj svg { flex: 0 0 auto; color: var(--ink-faint); }
+.subagents { display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto; font-size: 11px; font-weight: 500; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+.subagents svg { fill: currentColor; stroke: none; color: color-mix(in srgb, var(--live) 75%, transparent); }
 .time { min-width: 44px; text-align: right; }
 .row:hover { background: rgba(255, 255, 255, 0.07); }
 .mark { width: 20px; height: 20px; flex: 0 0 auto; }
@@ -415,8 +418,8 @@ code { font-family: var(--mono); font-size: 11px; color: var(--ink); }
         <tr><td>Shape</td><td>Top corners curve outward into the menu bar, bottom corners inward. Radii (top / bottom): closed 6 / 14, peek 14 / 22, open 19 / 24.
             Both radii animate with the size.</td></tr>
         <tr><td>Closed wings</td><td>Each wing is as wide as what it holds: the right one holds only the count while every agent is idle, and grows
-            to fit the state mark when one works or needs you. The island moves aside by half the difference so the camera stays between them. Bare agent marks at 20 pt, as the project tree draws them, 3 pt apart from overlapping.</td></tr>
-        <tr><td>Open</td><td>680 wide, height follows content up to 400, then the list scrolls. Padding: top-radius horizontally, then 12. Rows are one line, 36 tall, radius 12: mark at 20 pt as the rail draws it, task, project, time, state.</td></tr>
+            to fit a mark for each state some agent is in: needs you, then working, then done, each with its count above one, 10 pt apart. The island moves aside by half the difference so the camera stays between them. Bare agent marks at 20 pt, as the project tree draws them, 3 pt apart from overlapping.</td></tr>
+        <tr><td>Open</td><td>680 wide, 560 on a display without a notch, where the header is 38 tall so its controls clear the screen edge; height follows content up to 400, then the list scrolls. Padding: top-radius horizontally, then 12. Rows are one line, 36 tall, radius 12: mark at 20 pt as the rail draws it, task, project, time, state.</td></tr>
         <tr><td>Springs</td><td>Open <code>spring(response: 0.42, dampingFraction: 0.8)</code>. Close <code>spring(response: 0.45, dampingFraction: 1.0)</code>.
             Hover (shadow) <code>interactiveSpring(response: 0.38, dampingFraction: 0.8)</code>.</td></tr>
         <tr><td>Content</td><td>One shape: the band beside the camera swaps the wings for a header in place, out of and into a 20 pt blur; the body
@@ -501,6 +504,7 @@ async function loadIcons() {
         arrowUp: icon("IconArrowUp", 15),
         check: icon("IconCheck", 14),
         chevron: icon("IconChevron", 10),
+        agent: icon("IconAgent", 10),
     };
 }
 const MARK = `<img src="../../../brand/mark/mark-white.svg" alt="">`;
@@ -516,7 +520,7 @@ function freshAgents() {
     return [
         { id: "a1", type: "claude", title: "Fix the login flake", project: "sikemux", state: "blocked", time: "2:14",
           ask: { tool: "Bash", cmd: "pnpm test --filter core -- --runInBand" } },
-        { id: "a2", type: "codex", title: "Refactor the auth middleware", project: "server", state: "working", time: "4:12" },
+        { id: "a2", type: "codex", title: "Refactor the auth middleware", project: "server", state: "working", time: "4:12", subagents: 3 },
         { id: "a3", type: "opencode", title: "Draft the notch spec", project: "sikemux", state: "working", time: "0:48" },
         { id: "a4", type: "grok", title: "Bump Astro to 6", project: "sikemux-front", state: "done", unread: true, time: "1m ago" },
     ];
@@ -540,12 +544,11 @@ function stateMark(state, fresh) {
     return "";
 }
 
-function rollup(agents) {
-    for (const s of ["blocked", "working", "done"]) {
-        const hits = agents.filter((a) => a.state === s && (s !== "done" || a.unread));
-        if (hits.length) return { state: s, count: hits.length };
-    }
-    return null;
+/** How many agents need you, work and are done, most pressing first, leaving out the states no agent is in. */
+function rollups(agents) {
+    return ["blocked", "working", "done"]
+        .map((s) => ({ state: s, count: agents.filter((a) => a.state === s && (s !== "done" || a.unread)).length }))
+        .filter((group) => group.count > 0);
 }
 
 function notchPath(w, h, t, b) {
@@ -635,9 +638,11 @@ class Island {
         if (!open) return { left: 0, right: 0 };
         let left = 14 + 20 + (Math.min(open, 3) - 1) * 17 + 10;
         if (open > 3) left += 9 + 6.5 * (String(open - 3).length + 1);
-        const top = rollup(this.agents);
+        const groups = rollups(this.agents);
         const digits = (n) => String(n).length * 7.5;
-        const held = top ? (top.count > 1 ? digits(top.count) + 6 : 0) + 16 : digits(open);
+        const held = groups.length
+            ? groups.reduce((sum, g) => sum + (g.count > 1 ? digits(g.count) + 6 : 0) + 16, 0) + (groups.length - 1) * 10
+            : digits(open);
         return { left, right: 10 + held + 14 };
     }
 
@@ -647,7 +652,7 @@ class Island {
         const running = this.agents.filter((a) => a.state !== "idle");
         if (this.mode === "open" || this.mode === "drop") {
             const h = Math.min(400, this.layers.open.offsetHeight);
-            return { w: 680, h, r: RADII.open };
+            return { w: plain ? 560 : 680, h, r: RADII.open };
         }
         if (this.mode === "peek-ask") return { w: 460, h: this.layers.peek.offsetHeight, r: RADII.peek };
         if (this.mode === "peek-connect") return { w: 560, h: this.layers.peek.offsetHeight, r: RADII.open };
@@ -669,7 +674,7 @@ class Island {
         const plain = d.notchW === 0;
         const t = this.mode === "open" || this.mode === "drop" || this.mode === "peek-connect" ? RADII.open[0] : RADII.peek[0];
         const running = this.agents.filter((a) => a.state !== "idle");
-        const top = rollup(this.agents);
+        const groups = rollups(this.agents);
         const wings = this.wings();
 
         if (this.mode === "peek-done") {
@@ -690,12 +695,14 @@ class Island {
                         extra > 0 ? `<span class="tile count" style="font-size:10px">+${extra}</span>` : ""}</span></div>
                 ${plain ? "" : `<div class="gap" style="width:${d.notchW}px"></div>`}
                 <div class="wing r" style="width:${wings.right + (plain ? 4 : 0)}px;height:${d.notchH}px">
-                    ${top ? `${top.count > 1 ? `<span class="count">${top.count}</span>` : ""}${stateMark(top.state, this.freshPing)}` : `<span class="count">${running.length}</span>`}</div>`;
+                    ${groups.length
+                        ? groups.map((g) => `<span class="group">${g.count > 1 ? `<span class="count">${g.count}</span>` : ""}${stateMark(g.state, this.freshPing)}</span>`).join("")
+                        : `<span class="count">${running.length}</span>`}</div>`;
             if (plain) this.layers.wings.firstElementChild.nextElementSibling.style.paddingRight = "10px";
         }
 
         const head = (left, right, width) => `
-            <div class="head" style="height:${d.notchH}px;width:${width}px">
+            <div class="head" style="height:${plain ? Math.max(d.notchH, 38) : d.notchH}px;width:${width}px">
                 <div class="side">${left}</div>
                 ${plain ? "" : `<div class="gap" style="width:${d.notchW + 8}px"></div>`}
                 <div class="side r">${right}</div>
@@ -740,7 +747,7 @@ class Island {
                 </div>`;
         }
 
-        const inner = 680 - 2 * RADII.open[0] - 24;
+        const inner = (plain ? 560 : 680) - 2 * RADII.open[0] - 24;
         this.layers.open.style.width = `${inner}px`;
         const count = running.length;
         const tabs = `
@@ -786,7 +793,7 @@ class Island {
                         </div>` : `
                         <div class="row">
                             <span class="mark">${ICON[a.type]}</span>
-                            <span class="title">${a.title}</span><span class="proj">${GLYPH.folderSmall}${a.project}</span>
+                            <span class="title">${a.title}</span>${a.subagents ? `<span class="subagents">${GLYPH.agent}${a.subagents}</span>` : ""}<span class="proj">${GLYPH.folderSmall}${a.project}</span>
                             <span class="time">${a.time}</span>${stateMark(a.state)}
                         </div>`).join("")}`).join("");
             }
@@ -1023,10 +1030,12 @@ const SECTIONS = [
               shows: "Left: the marks of the open agents, the busiest first. Right: how many are working, and the green twinkle grid. With every agent idle, the right wing shows how many are open.",
               opts: { agents: () => only(["a2", "a3"]) } },
             { id: "C3", name: "Needs you", when: "Any agent is waiting for a permission or an answer.",
-              shows: "An amber dot replaces the grid. It sends out two rings when it arrives, then goes still. Beats working and done.",
+              shows: "An amber dot, first in the right wing, ahead of working and done. It sends out two rings when it arrives, then goes still.",
               opts: { agents: () => freshAgents(), fresh: true } },
             { id: "C4", name: "Done, unseen", when: "An agent finished and you have not looked at it yet.",
               shows: "A purple dot, until you open the island or the agent.", opts: { agents: () => only(["a4"]) } },
+            { id: "C4b", name: "Working and done", when: "Some agents work while others finished unseen.",
+              shows: "The working grid stays, with the done dot to its right: each state keeps its own mark and count.", opts: { agents: () => only(["a2", "a3", "a4"]) } },
             { id: "C5", name: "More than three", when: "Four or more agents are running.",
               shows: "Three marks, then +N.", opts: { agents: () => [...allWorking(), { id: "a5", type: "pi", title: "x", project: "x", state: "working" }] } },
             { id: "C6", name: "Pointer resting", when: "The pointer is on the island, for the 0.3 s before it opens.",

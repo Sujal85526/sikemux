@@ -289,7 +289,9 @@ export function AgentPalette() {
                                             : !supported
                                               ? "Normal mode only"
                                               : item.kind === "new"
-                                                ? "start agent"
+                                                ? provider?.status?.state === "signedOut"
+                                                    ? "signed out · start to sign in"
+                                                    : "start agent"
                                                 : `${labelForType(type, agents)} · ${ago(item.row.mtime)}`}
                                     </span>
                                 </button>

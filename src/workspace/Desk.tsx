@@ -1,11 +1,15 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode, type RefObject } from "react";
 import { animate } from "../lib/motion";
 import { deskAppearing, onDeskMotion } from "../state/deskMotion";
 import { browserApi, BLANK_URL, type BrowserBounds, type BrowserHole, type BrowserSnapshot } from "../api/browser";
 import { onStageFrame, stageMoving, useNativeViewHoles, useNativeViewsOccluded, useStageMoving, type NativeViewHole } from "../state/nativeViews";
 import type { AgentType, PtyContext, Session, Window as WindowT } from "../state/types";
-import { reportError } from "../state/toast";
-import { AgentIcon, IconChevron, IconPlus, IconRefresh, WindowIcon } from "../ui/Icons";
+import { notify, reportError } from "../state/toast";
+import { copyText } from "../lib/clipboard";
+import { fsapi } from "../api/fs";
+import { deskTabMenu } from "./deskTabMenu";
+import { AgentIcon, IconChevron, IconCommand, IconEditor, IconGlobe, IconPlus, IconRefresh, WindowIcon } from "../ui/Icons";
+import { Tooltip } from "../ui/Tooltip";
 import { FileIcon } from "../ui/FileIcon";
 import { SiteIcon } from "../ui/SiteIcon";
 import { AddressBar } from "./AddressBar";
@@ -22,9 +26,13 @@ import {
     EMPTY_DESK,
     EMPTY_STRIP,
     isShown,
+    itemOfKind,
     shownDeskItem,
+    shownKind,
     takeDeskRestore,
     terminalKey,
+    type DeskItem,
+    type DeskKind,
 } from "../state/desks";
 import { TerminalPane } from "../terminal/TerminalPane";
 import { basename } from "../lib/paths";
@@ -108,8 +116,8 @@ function measurePage(host: HTMLElement): Placement {
 
 /**
  * An agent's desk, as an ordinary leaf in the window layout: its browser
- * pages, the files it opened and the task terminals it started, under one
- * strip.
+ * pages, the files it opened and the task terminals it started, one kind
+ * at a time.
  *
  * It is a sibling of the agent it belongs to rather than something drawn
  * inside it, so it is split, resized, focused and closed by the same layout
@@ -222,6 +230,18 @@ function DeskSession({
     const restoring = useStore((state) => !!state.deskRestores[paneId]);
     const items = useMemo(() => deskItems(desk, snapshot, files), [desk, snapshot, files]);
     const shown = shownDeskItem(desk, items);
+    const kind = shownKind(shown);
+    const kindItems = useMemo(() => items.filter((item) => item.kind === kind), [items, kind]);
+
+    const lastShown = useRef(new Map<DeskKind, string>());
+    useEffect(() => {
+        if (kind && shown) lastShown.current.set(kind, shown);
+    }, [kind, shown]);
+    const showKind = (next: DeskKind) => {
+        const item = itemOfKind(items, next, snapshot, lastShown.current.get(next));
+        if (item) cmd.selectDeskItem(agentId, item);
+        else if (next === "browser") cmd.newBrowserTab(agentId);
+    };
 
     const refresh = useCallback(async () => {
         await refreshBrowserStrip(agentId);
@@ -270,7 +290,7 @@ function DeskSession({
         onEmpty();
     }, [desk.reveal, items.length, onEmpty, restoring, visible]);
 
-    const tabs = items.map((item): TabDescriptor => {
+    const tabs = kindItems.map((item): TabDescriptor => {
         const tabActive = isShown(item, shown, snapshot);
         if (item.kind === "browser") {
             const { tab } = item;
@@ -333,23 +353,36 @@ function DeskSession({
 
     return (
         <section ref={sectionRef} className={`desk ${agentType}`} data-desk data-agent-id={agentId} aria-label={`${agentType} desk`}>
-            <TabBar
-                variant="desk"
-                ariaLabel="Desk tabs"
-                tabs={tabs}
-                onSelect={(key) => {
-                    const item = itemFor(key);
-                    if (item) cmd.selectDeskItem(agentId, item);
-                }}
-                onClose={(key) => {
-                    const item = itemFor(key);
-                    if (item) cmd.closeDeskItem(agentId, item);
-                }}
-                onAdd={() => cmd.newBrowserTab(agentId)}
-                addIcon={<IconPlus size={13} />}
-                addTitle={withShortcut("New browser tab", newTabShortcut)}
-                addLabel="New browser tab"
-            />
+            <DeskOutline />
+            <div className="desk-head">
+                <DeskKinds items={items} shown={kind} agentType={agentType} onShow={showKind} />
+                <TabBar
+                    variant="desk"
+                    ariaLabel="Desk tabs"
+                    tabs={tabs}
+                    onSelect={(key) => {
+                        const item = itemFor(key);
+                        if (item) cmd.selectDeskItem(agentId, item);
+                    }}
+                    onClose={(key) => {
+                        const item = itemFor(key);
+                        if (item) cmd.closeDeskItem(agentId, item);
+                    }}
+                    buildMenu={(key) => {
+                        const item = itemFor(key);
+                        if (!item) return [];
+                        return deskTabMenu(item, session.kind === "project" && session.cwd ? session.cwd : null, {
+                            copy: (text, label) => void copyText(text).then(() => notify("success", `copied ${label}`), reportError("copy")),
+                            reveal: (path) => void fsapi.revealInFinder(path).catch(reportError("reveal")),
+                            close: () => cmd.closeDeskItem(agentId, item),
+                        });
+                    }}
+                    onAdd={kind === "browser" || kind === null ? () => cmd.newBrowserTab(agentId) : undefined}
+                    addIcon={<IconPlus size={13} />}
+                    addTitle={withShortcut("New browser tab", newTabShortcut)}
+                    addLabel="New browser tab"
+                />
+            </div>
             <div className="desk-body">
                 <BrowserPage
                     paneId={paneId}
@@ -391,6 +424,134 @@ function DeskSession({
                 })}
             </div>
         </section>
+    );
+}
+
+/**
+ * The desk's edge with its top-left corner cut away: up the left side, round
+ * under the switcher, up beside it and along the top. `cut` is the size of the
+ * corner taken out, and `inner` the radius of the curve that hugs the switcher.
+ */
+function cutCornerOutline(width: number, height: number, cut: { width: number; height: number }, radius: number, inner: number): string {
+    const left = 0.5;
+    const top = 0.5;
+    const right = width - 0.5;
+    const bottom = height - 0.5;
+    const stepX = cut.width + 0.5;
+    const stepY = cut.height + 0.5;
+    return [
+        `M ${left} ${stepY + radius}`,
+        `A ${radius} ${radius} 0 0 1 ${left + radius} ${stepY}`,
+        `H ${stepX - inner}`,
+        `A ${inner} ${inner} 0 0 0 ${stepX} ${stepY - inner}`,
+        `V ${top + radius}`,
+        `A ${radius} ${radius} 0 0 1 ${stepX + radius} ${top}`,
+        `H ${right - radius}`,
+        `A ${radius} ${radius} 0 0 1 ${right} ${top + radius}`,
+        `V ${bottom - radius}`,
+        `A ${radius} ${radius} 0 0 1 ${right - radius} ${bottom}`,
+        `H ${left + radius}`,
+        `A ${radius} ${radius} 0 0 1 ${left} ${bottom - radius}`,
+        "Z",
+    ].join(" ");
+}
+
+/* The pane would draw a plain rounded edge, so the desk draws its own: one that
+   steps round the switcher, a pane's gap away from it on both sides. It is
+   redrawn straight from the pane's size, which changes every frame while the
+   desk slides open. */
+function DeskOutline() {
+    const svgRef = useRef<SVGSVGElement>(null);
+    const pathRef = useRef<SVGPathElement>(null);
+    useLayoutEffect(() => {
+        const svg = svgRef.current;
+        const path = pathRef.current;
+        const pane = svg?.closest<HTMLElement>(".pane");
+        const kinds = svg?.parentElement?.querySelector<HTMLElement>(".desk-kinds");
+        if (!pane || !kinds || !svg || !path) return;
+        /* The pane resizes every frame while the desk slides; its corner and the
+           switcher do not, so those are read again only when the switcher changes. */
+        let corner = { radius: 0, gap: 0, cut: { width: 0, height: 0 } };
+        let size = { width: pane.offsetWidth, height: pane.offsetHeight };
+        const measureCorner = () => {
+            const style = getComputedStyle(pane);
+            const radius = parseFloat(style.borderTopLeftRadius) || 0;
+            const gap = parseFloat(style.getPropertyValue("--pane-gutter")) || 0;
+            corner = { radius, gap, cut: { width: kinds.offsetWidth + gap, height: kinds.offsetHeight + gap } };
+        };
+        const draw = () => {
+            const { radius, gap, cut } = corner;
+            svg.setAttribute("width", String(size.width));
+            svg.setAttribute("height", String(size.height));
+            path.setAttribute("d", cutCornerOutline(size.width, size.height, cut, radius, radius + gap));
+        };
+        const resize = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                if (entry.target === kinds) measureCorner();
+                else {
+                    const box = entry.borderBoxSize?.[0];
+                    /* Unrounded: on a pane a fraction of a pixel wide, a rounded-up size
+                       puts the right and bottom edges outside the pane, which clips them. */
+                    size = box ? { width: box.inlineSize, height: box.blockSize } : { width: pane.offsetWidth, height: pane.offsetHeight };
+                }
+            }
+            draw();
+        });
+        resize.observe(pane, { box: "border-box" });
+        resize.observe(kinds);
+        measureCorner();
+        draw();
+        return () => resize.disconnect();
+    }, []);
+    return (
+        <svg ref={svgRef} className="desk-outline" aria-hidden="true">
+            <path ref={pathRef} />
+        </svg>
+    );
+}
+
+const KINDS: { kind: DeskKind; label: string; icon: ReactNode }[] = [
+    { kind: "browser", label: "Browser", icon: <IconGlobe size={14} /> },
+    { kind: "file", label: "Files", icon: <IconEditor size={14} /> },
+    { kind: "terminal", label: "Terminals", icon: <IconCommand size={14} /> },
+];
+
+/* Which kind of tab the strip beside it lists. A kind with nothing in it has
+   nothing to switch to, except the browser, which opens a page. */
+function DeskKinds({
+    items,
+    shown,
+    agentType,
+    onShow,
+}: {
+    items: readonly DeskItem[];
+    shown: DeskKind | null;
+    agentType: AgentType;
+    onShow: (kind: DeskKind) => void;
+}) {
+    return (
+        <div className="desk-kinds" role="tablist" aria-label="Desk views">
+            {KINDS.map(({ kind, label, icon }) => {
+                const ofKind = items.filter((item) => item.kind === kind);
+                const busy = kind !== shown && ofKind.some((item) => item.kind === "browser" && item.tab.acting);
+                const empty = ofKind.length === 0 && kind !== "browser";
+                const name = busy ? `${label}, ${agentType} is working here` : label;
+                return (
+                    <Tooltip key={kind} label={ofKind.length ? `${label} · ${ofKind.length}` : label}>
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={kind === shown}
+                            aria-label={name}
+                            disabled={empty}
+                            className={`desk-kind${kind === shown ? " on" : ""}${busy ? " busy" : ""}`}
+                            onClick={() => onShow(kind)}>
+                            {icon}
+                        </button>
+                    </Tooltip>
+                );
+            })}
+        </div>
     );
 }
 
@@ -570,7 +731,14 @@ function BrowserPage({
                 {blank && addressFloating && <div className="browser-dim" style={{ opacity: UNDER_ADDRESS_DIM }} />}
             </div>
             {addressFloating && (
-                <FloatingAddress over={viewportRef} tabId={activeTab?.id} pageAddress={pageAddress} onGo={go} onClose={cmd.closeDeskAddress} />
+                <FloatingAddress
+                    over={viewportRef}
+                    paneId={paneId}
+                    tabId={activeTab?.id}
+                    pageAddress={pageAddress}
+                    onGo={go}
+                    onClose={cmd.closeDeskAddress}
+                />
             )}
         </div>
     );

@@ -1,6 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { browserApi } from "../api/browser";
-import { closeDeskItem, openDesk, openDeskTerminal, openFileOnDesk, removeDeskPane, revealDesk, selectDeskItem, toggleDesk } from "./commands";
+import {
+    closeDeskItem,
+    cycleDeskTab,
+    openDesk,
+    openDeskTerminal,
+    openFileOnDesk,
+    removeDeskPane,
+    revealDesk,
+    selectDeskItem,
+    toggleDesk,
+} from "./commands";
 import { deskEditorId, deskItemsOf, shownDeskItem } from "./desks";
 import { taskPtyBindings } from "../tasks/nativeRuntime";
 import { collectPanes } from "./layout";
@@ -144,6 +154,17 @@ describe("the desk", () => {
         expect(browserApi.closeAgent).not.toHaveBeenCalled();
     });
 
+    it("opens the address over the new page when the desk had none, and shuts it with the desk", async () => {
+        toggleDesk("agent-1");
+        await vi.waitFor(() => expect(browserApi.newTab).toHaveBeenCalledWith("agent-1"));
+
+        expect(getState().deskAddressOpen).toBe("agent-1");
+
+        toggleDesk("agent-1");
+
+        expect(getState().deskAddressOpen).toBeNull();
+    });
+
     it("shows the tabs it already has instead of opening another", async () => {
         const tab = {
             id: "tab-1",
@@ -163,6 +184,7 @@ describe("the desk", () => {
 
         expect(collectPanes(getState().windows.window.root).map((pane) => pane.kind)).toEqual(["agent", "desk"]);
         expect(browserApi.newTab).not.toHaveBeenCalled();
+        expect(getState().deskAddressOpen).toBeNull();
     });
 
     it("comes on screen for an agent that puts something on it, without taking focus from the agent", () => {
@@ -227,6 +249,30 @@ describe("the desk", () => {
         expect(shownDeskItem(getState().desks["agent-1"], items)).toBe("file:/code/a.ts");
     });
 
+    it("shows the next terminal when a terminal closes, even with a file between them", () => {
+        const first = openDeskTerminal("agent-1", { terminalKey: "task-web", label: "Web", cwd: "/code" });
+        openFileOnDesk("agent-1", "/code/a.ts");
+        setState({ editorViews: { [deskEditorId("agent-1")]: { openTabs: ["/code/a.ts"], activePath: "/code/a.ts" } } } as never);
+        openDeskTerminal("agent-1", { terminalKey: "task-api", label: "API", cwd: "/code" });
+        const api = deskItemsOf(getState(), "agent-1").find((item) => item.kind === "terminal" && item.terminal.label === "API")!;
+
+        closeDeskItem("agent-1", api);
+
+        expect(getState().desks["agent-1"].active).toBe(`terminal:${first}`);
+    });
+
+    it("steps through the tabs of the kind on show and skips the others", () => {
+        const web = openDeskTerminal("agent-1", { terminalKey: "task-web", label: "Web", cwd: "/code" });
+        openFileOnDesk("agent-1", "/code/a.ts");
+        setState({ editorViews: { [deskEditorId("agent-1")]: { openTabs: ["/code/a.ts"], activePath: "/code/a.ts" } } } as never);
+        const api = openDeskTerminal("agent-1", { terminalKey: "task-api", label: "API", cwd: "/code" });
+
+        cycleDeskTab("agent-1", 1);
+        expect(getState().desks["agent-1"].active).toBe(`terminal:${web}`);
+        cycleDeskTab("agent-1", 1);
+        expect(getState().desks["agent-1"].active).toBe(`terminal:${api}`);
+    });
+
     it("shows a file that is picked from the strip in the desk's editor", () => {
         openDeskTerminal("agent-1", { terminalKey: "task-web", label: "Web", cwd: "/code" });
         setState({ editorViews: { [deskEditorId("agent-1")]: { openTabs: ["/code/a.ts", "/code/b.ts"], activePath: "/code/a.ts" } } } as never);
@@ -235,5 +281,46 @@ describe("the desk", () => {
 
         expect(getState().desks["agent-1"].active).toBe("file:/code/b.ts");
         expect(getState().editorViews[deskEditorId("agent-1")].activePath).toBe("/code/b.ts");
+    });
+});
+
+describe("the desk sliding", () => {
+    it("moves its panes on the page every frame and tells the store only where it lands", () => {
+        const frames: FrameRequestCallback[] = [];
+        vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+        vi.stubGlobal("cancelAnimationFrame", () => {});
+        document.body.animate = vi.fn();
+        const layer = document.createElement("div");
+        layer.className = "window-layer";
+        layer.dataset.windowId = "window";
+        document.body.append(layer);
+        try {
+            openDesk("agent-1");
+            const deskId = collectPanes(getState().windows.window.root)[1].id;
+            for (const id of ["agent-1", deskId]) {
+                const cell = document.createElement("div");
+                cell.dataset.paneCell = id;
+                layer.append(cell);
+            }
+            const deskCell = layer.querySelector<HTMLElement>(`[data-pane-cell="${deskId}"]`)!;
+            const sizes = () => (getState().windows.window.root as { sizes: number[] }).sizes;
+            const folded = sizes();
+            expect(folded[1]).toBeLessThan(0.05);
+
+            const step = (at: number) => frames.splice(0).forEach((frame) => frame(at));
+            step(performance.now() + 100);
+            expect(sizes()).toEqual(folded);
+            const midway = parseFloat(deskCell.style.width);
+            expect(midway).toBeGreaterThan(5);
+            expect(midway).toBeLessThan(50);
+
+            step(performance.now() + 1000);
+            expect(sizes()).toEqual([0.5, 0.5]);
+            expect(deskCell.style.width).toBe("50%");
+        } finally {
+            layer.remove();
+            delete (document.body as Partial<HTMLElement>).animate;
+            vi.unstubAllGlobals();
+        }
     });
 });

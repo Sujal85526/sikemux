@@ -12,7 +12,8 @@ use sikemux_core::client::{probe, ClientError, ClientEvent, CoreClient};
 use sikemux_core::protocol::{
     Attention, AttentionKind, BackdropImage, BuildIdentity, ChatAttachment, ChatEventKind,
     ChatLaunch, ChatLauncher, ChatState, DeviceAccess, DeviceView, Event, LaunchIdentity,
-    ProjectInfo, PublishedChat, RemoteStatus, SessionId, SpawnTarget, TerminalSpawn,
+    ProjectInfo, PublishedChat, PublishedRecent, RemoteStatus, SessionId, SpawnTarget,
+    TerminalSpawn, MAX_ATTACHMENT_BYTES,
 };
 use sikemux_core::remote::{self, SecretKey};
 use sikemux_core::server::{self, ServerConfig, ServerError};
@@ -123,6 +124,7 @@ fn start_core_with(core_key: &SecretKey, devices: &[&Device], keeps_data: bool) 
         },
         remote_direct_only: true,
         data_dir: keeps_data.then(|| dir.path().join("data")),
+        attachment_dir: Some(dir.path().join("pasted")),
         ..ServerConfig::new(socket.clone())
     };
     let thread = std::thread::spawn(move || server::run(config));
@@ -390,6 +392,9 @@ async fn publish_fake_agent_asking(app: &CoreClient, permission_mode: &str) {
         args: vec!["acp".into()],
         env: [("SECRET_TOKEN".to_owned(), "do-not-share".to_owned())].into(),
         permission_mode: permission_mode.into(),
+        account: None,
+        fallbacks: Vec::new(),
+        status: None,
     };
     let project = ProjectInfo {
         id: "sess-tmp".into(),
@@ -637,6 +642,15 @@ async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
         .find(|chat| chat.agent_id == "agent-sleepy")
         .expect("listed");
     assert!(!sleepy.asleep);
+    assert_eq!(
+        sleepy.state,
+        ChatState::Ready,
+        "a wake is answered once the chat is ready"
+    );
+    assert!(matches!(
+        client.acp_attach("agent-sleepy".into()).await,
+        Ok(ChatAttachment::Live { .. })
+    ));
 
     app.publish_palette([("ground".to_owned(), "#0f0f13".to_owned())].into())
         .await
@@ -694,6 +708,8 @@ fn fake_launch(agent_id: &str) -> ChatLaunch {
         permission_mode: "bypass".into(),
         model: None,
         effort: None,
+        account: None,
+        fallbacks: Vec::new(),
     }
 }
 
@@ -798,6 +814,171 @@ async fn a_watching_device_cannot_start_a_chat() {
         refusal(client.publish_workspace(Vec::new(), Vec::new()).await)
             .contains("only Sikemux on this host")
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_device_sends_a_file_for_a_chat_and_the_agent_is_given_its_path() {
+    let core_key = SecretKey::generate();
+    let phone = Device::new("Phone", DeviceAccess::Full);
+    let watcher = Device::new("Watcher", DeviceAccess::Watch);
+    let core = start_core(&core_key, &[&phone, &watcher]);
+    let (app, mut app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    publish_fake_agent(&app).await;
+    let status = listening(&app).await;
+    let endpoint = phone.endpoint().await;
+    let (client, mut events) = remote::connect(&endpoint, core_addr(&status))
+        .await
+        .expect("the phone connects");
+    let (agent_id, _) = client
+        .start_chat("opencode".into(), "sess-tmp".into(), None)
+        .await
+        .expect("the phone starts a chat");
+    app.acp_attach(agent_id.clone())
+        .await
+        .expect("the app watches");
+
+    let picture = vec![0xffu8, 0xd8, 0xff, 0xe0, 1, 2, 3];
+    let path = client
+        .attach_file(
+            agent_id.clone(),
+            "../../IMG_0042".into(),
+            "image/jpeg".into(),
+            &picture,
+        )
+        .await
+        .expect("the phone sends a picture");
+    assert!(path.ends_with("pasted/IMG_0042.jpg"), "{}", path.display());
+    assert_eq!(std::fs::read(&path).expect("the host keeps it"), picture);
+    let again = client
+        .attach_file(
+            agent_id.clone(),
+            "IMG_0042.jpg".into(),
+            "image/jpeg".into(),
+            b"x",
+        )
+        .await
+        .expect("the same name again");
+    assert!(
+        again.ends_with("pasted/IMG_0042 (1).jpg"),
+        "{}",
+        again.display()
+    );
+    let largest = vec![7u8; MAX_ATTACHMENT_BYTES];
+    let kept = client
+        .attach_file(agent_id.clone(), "big.bin".into(), String::new(), &largest)
+        .await
+        .expect("a file at the limit");
+    assert_eq!(
+        std::fs::metadata(kept).expect("kept").len(),
+        largest.len() as u64
+    );
+    assert!(refusal(
+        client
+            .attach_file(
+                agent_id.clone(),
+                "bigger.bin".into(),
+                String::new(),
+                &[largest, vec![7]].concat()
+            )
+            .await
+    )
+    .contains("10 MB"));
+
+    assert!(refusal(
+        client
+            .attach_file(
+                "no-such-chat".into(),
+                "a.txt".into(),
+                "text/plain".into(),
+                b"a"
+            )
+            .await
+    )
+    .contains("not running"));
+    let watch_endpoint = watcher.endpoint().await;
+    let (watching, _watch_events) = remote::connect(&watch_endpoint, core_addr(&status))
+        .await
+        .expect("the watcher connects");
+    assert!(refusal(
+        watching
+            .attach_file(agent_id.clone(), "a.txt".into(), "text/plain".into(), b"a")
+            .await
+    )
+    .contains("watch"));
+
+    let sent = path.to_string_lossy().into_owned();
+    client
+        .acp_prompt(
+            agent_id.clone(),
+            "look at this".into(),
+            vec![sent.clone()],
+            Vec::new(),
+        )
+        .await
+        .expect("prompt");
+    let prompt = loop {
+        let event = tokio::time::timeout(WAIT, app_events.recv())
+            .await
+            .expect("the app never heard the prompt")
+            .expect("the app's connection closed");
+        if let ClientEvent::Event(Event::Chat { event, .. }) = event {
+            if event.kind == ChatEventKind::Prompt {
+                break event;
+            }
+        }
+    };
+    assert_eq!(prompt.payload["paths"], json!([sent]));
+    until_said(&mut events, &agent_id, "look at this").await;
+}
+
+fn recent_chat(session_id: &str) -> PublishedRecent {
+    PublishedRecent {
+        launcher: "opencode".into(),
+        provider: "opencode".into(),
+        session_id: session_id.into(),
+        title: "Fix the login flake".into(),
+        cwd: std::env::temp_dir(),
+        active_at: 1_700_000_000_000,
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_device_resumes_a_recent_chat_the_app_published() {
+    let core_key = SecretKey::generate();
+    let phone = Device::new("Phone", DeviceAccess::Full);
+    let watcher = Device::new("Watcher", DeviceAccess::Watch);
+    let core = start_core(&core_key, &[&phone, &watcher]);
+    let (app, _app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    publish_fake_agent(&app).await;
+    app.publish_recent(vec![recent_chat("saved-1")])
+        .await
+        .expect("publish recent");
+    let status = listening(&app).await;
+
+    let endpoint = phone.endpoint().await;
+    let (client, mut events) = remote::connect(&endpoint, core_addr(&status))
+        .await
+        .expect("the phone connects");
+    let view = until_view(&mut events, |view| !view.recent.is_empty()).await;
+    let recent = &view.recent[0];
+    assert_eq!(recent.title, "Fix the login flake");
+    assert_eq!(recent.project, "sess-tmp");
+
+    let watch_endpoint = watcher.endpoint().await;
+    let (watching, _watch_events) = remote::connect(&watch_endpoint, core_addr(&status))
+        .await
+        .expect("the watcher connects");
+    assert!(refusal(watching.resume_chat(recent.id.clone()).await).contains("watch"));
+    assert!(refusal(client.resume_chat("opencode:unknown".into()).await).contains("recent"));
+
+    let (agent_id, start) = client
+        .resume_chat(recent.id.clone())
+        .await
+        .expect("the phone resumes the chat");
+    assert_eq!(start.session_id, "saved-1");
+    let view = until_view(&mut events, |view| view.recent.is_empty()).await;
+    assert!(view.chats.iter().any(|chat| chat.agent_id == agent_id));
+    assert!(refusal(client.resume_chat(recent.id.clone()).await).contains("already open"));
 }
 
 /// The next view the core sends that `wanted` accepts.
@@ -1034,4 +1215,58 @@ async fn a_device_that_reconnects_hears_only_what_it_missed_and_detaching_stops_
             "a detached device hears nothing of the chat"
         );
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_device_holding_a_mark_from_before_the_chat_restarted_is_sent_the_new_run_whole() {
+    let core_key = SecretKey::generate();
+    let phone = Device::new("Phone", DeviceAccess::Full);
+    let core = start_core(&core_key, &[&phone]);
+    let (app, _app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    publish_fake_agent(&app).await;
+    let status = listening(&app).await;
+    let endpoint = phone.endpoint().await;
+    let (client, mut events) = remote::connect(&endpoint, core_addr(&status))
+        .await
+        .expect("the phone connects");
+    app.acp_start(fake_launch("agent-again"))
+        .await
+        .expect("the app starts a chat");
+    let ChatAttachment::Live { mark: before, .. } = client
+        .acp_attach("agent-again".into())
+        .await
+        .expect("attach")
+    else {
+        panic!("the chat is running");
+    };
+    client
+        .acp_prompt(
+            "agent-again".into(),
+            "first run".into(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .expect("prompt");
+    let heard = numbered_until(&mut events, "first run").await;
+    let seen = sikemux_core::protocol::ChatMark {
+        feed: before.feed.clone(),
+        seq: heard.last().map_or(before.seq, |(seq, _)| *seq),
+    };
+
+    app.acp_stop("agent-again".into()).await.expect("stop");
+    app.acp_start(fake_launch("agent-again"))
+        .await
+        .expect("the app starts it again");
+    let ChatAttachment::Live { mark, replay, .. } = client
+        .acp_attach_since("agent-again".into(), Some(seen))
+        .await
+        .expect("attach")
+    else {
+        panic!("a mark from the run before is answered with the whole new run");
+    };
+    assert_ne!(mark.feed, before.feed);
+    assert!(!replay
+        .iter()
+        .any(|event| event.payload.to_string().contains("first run")));
 }

@@ -91,6 +91,11 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<CoreArgs, String
 /// `--cli-endpoint`, by default where the CLI looks for it. `args` are the
 /// ones after `core`. Returns the exit code.
 pub fn main(args: impl Iterator<Item = String>, build: BuildIdentity) -> i32 {
+    #[cfg(unix)]
+    if let Some(path) = with_system_path(&std::env::var("PATH").unwrap_or_default()) {
+        // Nothing else runs yet, so the process environment is safe to change.
+        std::env::set_var("PATH", path);
+    }
     let args = match parse_args(args) {
         Ok(args) => args,
         Err(message) => {
@@ -144,11 +149,49 @@ pub fn main(args: impl Iterator<Item = String>, build: BuildIdentity) -> i32 {
         cli_endpoint: args
             .cli_endpoint
             .or_else(crate::cli::endpoint::default_endpoint_path),
+        attachment_dir: args
+            .data_dir
+            .as_deref()
+            .and_then(super::attachments::pasted_dir),
         data_dir: args.data_dir,
         build,
         remote_direct_only: false,
         accounts_api: Some(crate::accounts::api_base()),
     }))
+}
+
+/// `path` with the system folders added when it lacks them. A core keeps
+/// the environment it was first started with through every update, and one
+/// started without these could never run `security`, `ssh` or `sleep`, so
+/// every agent it started read as signed out.
+#[cfg(unix)]
+fn with_system_path(path: &str) -> Option<String> {
+    let mut parts: Vec<&str> = path.split(':').filter(|part| !part.is_empty()).collect();
+    let before = parts.len();
+    for system in ["/usr/bin", "/bin", "/usr/sbin", "/sbin"] {
+        if !parts.contains(&system) {
+            parts.push(system);
+        }
+    }
+    (parts.len() != before).then(|| parts.join(":"))
+}
+
+#[cfg(all(test, unix))]
+mod path_tests {
+    use super::with_system_path;
+
+    #[test]
+    fn a_path_without_the_system_folders_gets_them_after_its_own() {
+        assert_eq!(
+            with_system_path("/Users/me/.local/bin:/opt/homebrew/bin").as_deref(),
+            Some("/Users/me/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin")
+        );
+        assert_eq!(with_system_path("/usr/bin:/bin:/usr/sbin:/sbin"), None);
+        assert_eq!(
+            with_system_path("").as_deref(),
+            Some("/usr/bin:/bin:/usr/sbin:/sbin")
+        );
+    }
 }
 
 fn run_runtime(

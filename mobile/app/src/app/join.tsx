@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
+import { Animated, AppState, Easing, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@clerk/expo';
-import * as Haptics from 'expo-haptics';
 
 import { APPROVAL_SECONDS, expired, JoinFailed, joinHost, useJoinScreen, type JoinFailure, type JoinStep } from '@/devices/joining';
-import { useStill } from '@/ui/Backdrop';
+import { useStill } from '@/ui/motion';
 import { DeviceIcon, Icon } from '@/ui/Icon';
-import { Button, Nav, Screen, useBottomGap, Working } from '@/ui/parts';
+import { haptics } from '@/ui/haptics';
+import { goBack } from '@/ui/navigate';
+import { Button } from '@/ui/controls';
+import { Nav, Screen, useBottomGap } from '@/ui/screen';
+import { Working } from '@/ui/status';
 import { offerNotifications } from '@/notify/setting';
-import { fonts, type Palette, radius, typeFor, useColors, useStyles, useType } from '@/ui/theme';
+import { fonts, type Palette, radius, translucent, typeFor, useColors, useStyles, useType } from '@/ui/theme';
 
 function clock(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
@@ -60,6 +63,8 @@ function stopped(error: unknown): JoinFailure {
 }
 
 /** Connects to a host on the account; someone at the host still allows it. `arrived` marks a host that just signed in. */
+export { Crashed as ErrorBoundary } from '@/screens/Crashed';
+
 export default function Join() {
   const styles = useStyles(makeStyles);
   const colors = useColors();
@@ -70,7 +75,9 @@ export default function Join() {
   const [attempt, setAttempt] = useState(0);
   const [step, setStep] = useState<JoinStep>('asking');
   const [failed, setFailed] = useState<JoinFailure>();
-  const [left, setLeft] = useState(APPROVAL_SECONDS);
+  const [deadline, setDeadline] = useState<number>();
+  const [now, setNow] = useState(() => Date.now());
+  const left = deadline === undefined ? APPROVAL_SECONDS : Math.max(0, Math.ceil((deadline - now) / 1000));
   const joining = useRef<AbortController>(undefined);
   const tokenRef = useRef(getToken);
   useEffect(() => {
@@ -82,24 +89,40 @@ export default function Join() {
     if (!core) return;
     const controller = new AbortController();
     joining.current = controller;
-    joinHost({ core, name }, () => tokenRef.current(), setStep, controller.signal)
+    const stepTo = (next: JoinStep) => {
+      setStep(next);
+      if (next !== 'waiting') return;
+      const at = Date.now();
+      setNow(at);
+      setDeadline(at + APPROVAL_SECONDS * 1000);
+    };
+    joinHost({ core, name }, () => tokenRef.current(), stepTo, controller.signal)
       .then(() => {
         if (controller.signal.aborted) return;
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        haptics.success();
         router.replace(`/device/${core}`);
         offerNotifications().catch(() => {});
       })
       .catch((error: unknown) => {
-        if (!controller.signal.aborted) setFailed(stopped(error));
+        if (controller.signal.aborted) return;
+        haptics.failure();
+        setFailed(stopped(error));
       });
     return () => controller.abort();
   }, [core, name, attempt]);
 
   const waiting = step === 'waiting' && !problem;
+  // Counted from the deadline, so time spent in another app still counts.
   useEffect(() => {
     if (!waiting) return;
-    const tick = setInterval(() => setLeft((seconds) => Math.max(0, seconds - 1)), 1000);
-    return () => clearInterval(tick);
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    const back = AppState.addEventListener('change', (state) => {
+      if (state === 'active') setNow(Date.now());
+    });
+    return () => {
+      clearInterval(tick);
+      back.remove();
+    };
   }, [waiting]);
 
   useEffect(() => {
@@ -108,15 +131,14 @@ export default function Join() {
 
   const retry = () => {
     setFailed(undefined);
-    setLeft(APPROVAL_SECONDS);
+    setDeadline(undefined);
     setStep('asking');
     setAttempt((count) => count + 1);
   };
 
   const leave = () => {
     joining.current?.abort();
-    if (router.canGoBack()) router.back();
-    else router.replace('/');
+    goBack();
   };
 
   const bottom = useBottomGap();
@@ -138,7 +160,7 @@ export default function Join() {
             {problem ? problem.detail : `On ${name}, choose whether to let this phone in, and with what access.`}
           </Text>
           <View style={[styles.glyph, problem && styles.glyphFailed]}>
-            <DeviceIcon kind="laptop" size={34} color={problem ? '#f3a7ab' : colors.ink} />
+            <DeviceIcon kind="laptop" size={34} color={problem ? colors.danger : colors.ink} />
           </View>
         </View>
       )}
@@ -206,7 +228,7 @@ const makeStyles = (colors: Palette) => {
       shadowRadius: 5,
       shadowOffset: { width: 0, height: 0 },
     },
-    glyphFailed: { borderColor: 'rgba(255, 103, 103, 0.55)', backgroundColor: '#140b0d' },
+    glyphFailed: { borderColor: translucent(colors.danger, 0.55), backgroundColor: translucent(colors.danger, 0.08) },
     footer: { paddingHorizontal: 16, paddingTop: 12, gap: 8 },
     waiting: {
       minHeight: 52,

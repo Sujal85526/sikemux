@@ -105,10 +105,24 @@ pub fn login_shell_path() -> Option<&'static str> {
     login_shell_capture().path.as_deref()
 }
 
+/// A capture that arrived after startup stopped waiting for it. A slow
+/// profile then costs the first few seconds rather than the whole run.
+#[cfg(unix)]
+static LATE_CAPTURE: OnceLock<LoginShellCapture> = OnceLock::new();
+
+/// Moves on when a late capture lands, so anything built from the first one
+/// knows to build again.
+static CAPTURE_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+pub fn login_shell_generation() -> u64 {
+    CAPTURE_GENERATION.load(std::sync::atomic::Ordering::Acquire)
+}
+
 #[cfg(unix)]
 fn login_shell_capture() -> &'static LoginShellCapture {
     static CACHE: OnceLock<LoginShellCapture> = OnceLock::new();
-    CACHE.get_or_init(capture_login_shell)
+    let first = CACHE.get_or_init(capture_login_shell);
+    LATE_CAPTURE.get().unwrap_or(first)
 }
 
 /// Populate the `login_shell_environment` cache from the startup thread.
@@ -130,6 +144,7 @@ fn capture_login_shell() -> LoginShellCapture {
     let script =
         format!("printf %s '{LOGIN_ENV_SENTINEL}'; env -0; printf %s '{LOGIN_ENV_SENTINEL_END}'");
     let (sender, receiver) = std::sync::mpsc::channel();
+    let started = std::time::Instant::now();
     std::thread::spawn(move || {
         // The user's environment is read from this shell, so it cannot wait for it.
         #[allow(clippy::disallowed_methods)]
@@ -142,20 +157,67 @@ fn capture_login_shell() -> LoginShellCapture {
         for key in crate::launch::OPTIONAL_PTY_ENV {
             command.env_remove(key);
         }
-        let _ = sender.send(command.output().ok());
+        let output = command.output();
+        let Err(std::sync::mpsc::SendError(output)) = sender.send(output) else {
+            return;
+        };
+        // Startup gave up waiting; what the shell says now still counts.
+        match output.ok().and_then(|output| captured(&output)) {
+            Some(capture) => {
+                eprintln!(
+                    "sikemux: the login shell answered after {:.1}s; using its environment from now on",
+                    started.elapsed().as_secs_f32()
+                );
+                if LATE_CAPTURE.set(capture).is_ok() {
+                    CAPTURE_GENERATION.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+                }
+            }
+            None => eprintln!("sikemux: the login shell never printed its environment"),
+        }
     });
     // On timeout the capture thread stays parked in `output()` until the shell
-    // it is waiting on exits, so a profile that blocks forever leaks one thread
-    // and one process for the life of the app. That is bounded — this runs
-    // exactly once — and the alternative is process-group teardown for a case
-    // that ends the moment the user fixes their profile.
-    let mut capture = match receiver.recv_timeout(LOGIN_ENV_TIMEOUT) {
-        Ok(Some(output)) if output.status.success() => LoginShellCapture {
-            path: parse_login_shell_path(&output.stdout),
-            environment: parse_login_shell_environment(&output.stdout),
-        },
-        _ => LoginShellCapture::default(),
+    // it is waiting on exits, then keeps what it printed. A profile that blocks
+    // forever leaks one thread and one process for the life of the app, which
+    // is bounded: this runs once.
+    match receiver.recv_timeout(LOGIN_ENV_TIMEOUT) {
+        Ok(Ok(output)) => captured(&output).unwrap_or_else(|| {
+            eprintln!(
+                "sikemux: the login shell exited ({}) without printing its environment",
+                output.status
+            );
+            fallback_capture()
+        }),
+        Ok(Err(error)) => {
+            eprintln!("sikemux: could not start the login shell to read its environment: {error}");
+            fallback_capture()
+        }
+        Err(_) => {
+            eprintln!(
+                "sikemux: the login shell took over {}s to start; carrying on without its environment until it answers",
+                LOGIN_ENV_TIMEOUT.as_secs()
+            );
+            fallback_capture()
+        }
+    }
+}
+
+/// What a finished shell printed, whatever it exited with: a profile that ends
+/// in `exec tmux` or a failing command still printed both fences, and they are
+/// what say the payload is whole.
+#[cfg(unix)]
+fn captured(output: &std::process::Output) -> Option<LoginShellCapture> {
+    login_shell_payload(&output.stdout)?;
+    let mut capture = LoginShellCapture {
+        path: parse_login_shell_path(&output.stdout),
+        environment: parse_login_shell_environment(&output.stdout),
     };
+    ensure_utf8_locale(&mut capture.environment);
+    Some(capture)
+}
+
+#[cfg(unix)]
+fn fallback_capture() -> LoginShellCapture {
+    let mut capture = LoginShellCapture::default();
     ensure_utf8_locale(&mut capture.environment);
     capture
 }
@@ -169,7 +231,13 @@ fn ensure_utf8_locale(environment: &mut HashMap<String, String>) {
         .iter()
         .any(|key| environment.get(*key).is_some_and(|value| !value.is_empty()));
     if !has_locale {
-        environment.insert("LANG".to_string(), "C.UTF-8".to_string());
+        // Older macOS releases ship no C.UTF-8 locale.
+        let lang = if std::path::Path::new("/usr/share/locale/C.UTF-8").exists() {
+            "C.UTF-8"
+        } else {
+            "en_US.UTF-8"
+        };
+        environment.insert("LANG".to_string(), lang.to_string());
     }
 }
 
@@ -269,6 +337,34 @@ mod tests {
     /// only what the fenced payload holds counts — an rc banner that mentions
     /// a PATH before the sentinel is chatter, not the shell's answer.
     #[cfg(unix)]
+    #[test]
+    fn a_shell_that_fails_after_printing_its_environment_still_counts() {
+        use std::os::unix::process::ExitStatusExt;
+        let stdout = format!(
+            "{}HOME=/Users/x\0PATH=/Users/x/.nvm/bin:/usr/bin\0API_TOKEN=abc\0{}",
+            super::LOGIN_ENV_SENTINEL,
+            super::LOGIN_ENV_SENTINEL_END
+        );
+        let output = std::process::Output {
+            status: std::process::ExitStatus::from_raw(256),
+            stdout: stdout.into_bytes(),
+            stderr: Vec::new(),
+        };
+        let capture = super::captured(&output).expect("a fenced payload is whole");
+        assert_eq!(capture.path.as_deref(), Some("/Users/x/.nvm/bin:/usr/bin"));
+        assert_eq!(
+            capture.environment.get("API_TOKEN").map(String::as_str),
+            Some("abc")
+        );
+
+        let unfenced = std::process::Output {
+            status: std::process::ExitStatus::from_raw(0),
+            stdout: b"PATH=/decoy".to_vec(),
+            stderr: Vec::new(),
+        };
+        assert!(super::captured(&unfenced).is_none());
+    }
+
     #[test]
     fn login_shell_path_comes_from_the_fenced_payload() {
         let stdout = format!(

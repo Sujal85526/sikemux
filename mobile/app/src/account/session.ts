@@ -3,36 +3,22 @@ import { AppState, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth } from '@clerk/expo';
 import { nativeApplicationVersion } from 'expo-application';
+import * as Notifications from 'expo-notifications';
 import type { Device } from '@protocol';
 
-import { thisDevice } from '@/device/identity';
+import { notifier } from '../../modules/notify';
+import { deviceIdentity } from '@/device/identity';
 import { hostsArrived } from '@/devices/arrivals';
 import { joinShowing } from '@/devices/joining';
 import { pairedDevices } from '@/devices/paired';
+import { onNetworkChange } from '@/network/connectivity';
 import { syncPushToken } from '@/notify/token';
 import { accountHosts, registerPhone } from './api';
 import { apiUrl } from './config';
 import { farewellFor } from './farewell';
 import { signOutHere } from './leave';
 import { LiveAccount, liveUrl, runLive, savedCursor } from './live';
-
-/**
- * Registers this phone with the account once per sign-in, then its notification token, which the server
- * takes only from a phone on the account. A failure tries again on the next launch.
- */
-export function useRegisterPhone() {
-  const { isSignedIn, userId, getToken } = useAuth();
-  const register = useEffectEvent((user: string) => {
-    registerPhone(() => getToken(), user)
-      .then(() => syncPushToken(() => getToken()))
-      .catch((error: unknown) => {
-        console.warn('sikemux: could not add this phone to the account', error);
-      });
-  });
-  useEffect(() => {
-    if (isSignedIn && userId) register(userId);
-  }, [isSignedIn, userId]);
-}
+import { AccountSequence, type AccountStatus } from './sequence';
 
 let hostsVersion = 0;
 const hostsListeners = new Set<() => void>();
@@ -47,8 +33,8 @@ function subscribeHosts(listener: () => void) {
   return () => hostsListeners.delete(listener);
 }
 
-/** The hosts on the account; `loaded` once the server has answered since signing in. */
-export type AccountHosts = { hosts: Device[]; loaded: boolean };
+/** The hosts on the account; `loaded` once the server has answered since signing in, `problem` while the last read failed. */
+export type AccountHosts = { hosts: Device[]; loaded: boolean; problem?: string };
 
 const NO_HOSTS: AccountHosts = { hosts: [], loaded: false };
 let accountHostsNow = NO_HOSTS;
@@ -74,11 +60,19 @@ export function useAccountHostsFeed() {
     let current = true;
     accountHosts(() => latestGetToken.current())
       .then((hosts) => current && publishHosts({ hosts, loaded: true }))
-      .catch((error: unknown) => console.warn('sikemux: could not list the hosts on the account', error));
+      .catch((error: unknown) => {
+        console.warn('sikemux: could not list the hosts on the account', error);
+        if (current) publishHosts({ ...accountHostsNow, problem: error instanceof Error ? error.message : String(error) });
+      });
     return () => {
       current = false;
     };
   }, [isSignedIn, version]);
+}
+
+/** Reads the hosts again, unless the last read worked; the live connection keeps a good list current. */
+export function retryHosts() {
+  if (!accountHostsNow.loaded || accountHostsNow.problem) hostsChanged();
 }
 
 export function useAccountHosts(): AccountHosts {
@@ -103,13 +97,41 @@ export function useConnectArrivals() {
   }, [userId, loaded, hosts]);
 }
 
-/** Keeps this phone connected to its account while the app is in front and signed in. */
-export function useAccountLive() {
-  const { isSignedIn, getToken, signOut } = useAuth();
+let statusNow: AccountStatus | undefined;
+const statusListeners = new Set<() => void>();
+let running: AccountSequence | undefined;
+
+function publishStatus(next: AccountStatus | undefined) {
+  statusNow = next;
+  statusListeners.forEach((listener) => listener());
+}
+
+/** How far adding this phone to the account has got; undefined while signed out. */
+export function useAccountStatus(): AccountStatus | undefined {
+  return useSyncExternalStore(
+    (listener) => {
+      statusListeners.add(listener);
+      return () => statusListeners.delete(listener);
+    },
+    () => statusNow,
+  );
+}
+
+/** Tries adding this phone to the account again now, as the person asked. */
+export function retryRegistration() {
+  running?.retryNow();
+}
+
+/**
+ * Puts this phone on the account while signed in, and keeps it connected while the app is in front:
+ * registration, then the notification token, then the live connection, as AccountSequence orders them.
+ */
+export function useAccountSequence() {
+  const { isSignedIn, userId, getToken, signOut } = useAuth();
   const token = useEffectEvent(() => getToken());
-  const leave = useEffectEvent((farewell: ReturnType<typeof farewellFor>) => signOutHere(() => signOut(), farewell));
+  const leave = useEffectEvent((farewell: ReturnType<typeof farewellFor>) => signOutHere(() => signOut(), { farewell, confirmed: true }));
   useEffect(() => {
-    if (!isSignedIn) return;
+    if (!isSignedIn || !userId) return;
     const live = new LiveAccount({
       url: liveUrl(apiUrl()),
       connect: (url, on) => {
@@ -118,23 +140,40 @@ export function useAccountLive() {
         socket.onclose = (event) => on.closed(event.code);
         return socket;
       },
-      key: async () => (await thisDevice()).id(),
-      sign: async (nonce) => (await thisDevice()).signLive(nonce),
+      key: async () => (await deviceIdentity()).id(),
+      sign: async (nonce) => (await deviceIdentity()).signLive(nonce),
       token: () => token(),
       app: { platform: Platform.OS === 'ios' ? 'ios' : 'android', version: nativeApplicationVersion ?? 'unknown' },
       cursor: savedCursor,
       hostsChanged,
+      ready: retryHosts,
       gone: (reason) => void leave(farewellFor(reason)),
     });
     runLive(live);
-    if (AppState.currentState === 'active') live.start();
-    const following = AppState.addEventListener('change', (state) => {
-      if (state === 'active') live.start();
-      else if (state === 'background') live.stop();
+    const sequence = new AccountSequence({
+      register: async () => {
+        await registerPhone(() => token(), userId);
+      },
+      syncPush: () => syncPushToken(() => token()),
+      live,
+      hostsStale: retryHosts,
+      status: publishStatus,
     });
+    running = sequence;
+    sequence.start(AppState.currentState === 'active');
+    const following = AppState.addEventListener('change', (state) => {
+      if (state === 'active') sequence.foreground();
+      else if (state === 'background') sequence.background();
+    });
+    const network = onNetworkChange(() => sequence.online());
+    const renewed = notifier ? Notifications.addPushTokenListener(() => sequence.pushChanged()) : undefined;
     return () => {
       following.remove();
-      live.stop();
+      network();
+      renewed?.remove();
+      sequence.stop();
+      if (running === sequence) running = undefined;
+      publishStatus(undefined);
     };
-  }, [isSignedIn]);
+  }, [isSignedIn, userId]);
 }

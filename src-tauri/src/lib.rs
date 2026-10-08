@@ -29,6 +29,7 @@ mod markdown;
 mod model_providers;
 mod notch;
 pub mod observability;
+mod pages;
 mod plugins;
 mod ports;
 mod preview;
@@ -77,9 +78,10 @@ pub(crate) fn install_tls_crypto() {
 
 /// The app window only ever shows the app. A link that would load another
 /// page in it would replace the whole workspace and end every running shell.
+/// WebKit asks the same of every frame, so the chat's page frames pass too.
 fn main_window_may_load(url: &tauri::Url) -> bool {
     match url.scheme() {
-        "tauri" => url.host_str() == Some("localhost"),
+        "tauri" | "page" => url.host_str() == Some("localhost"),
         "http" if cfg!(debug_assertions) => {
             url.host_str() == Some("localhost") && url.port() == Some(1420)
         }
@@ -113,7 +115,10 @@ pub fn run() {
     // resolve the way they do in `make dev`. Reading the login shell takes as
     // long as the user's rc files, so it runs while the window is created.
     cli_paths::link_cli_for_children();
-    sikemux_process::user_environment::provide(system::user_environment);
+    sikemux_process::user_environment::provide(
+        system::user_environment,
+        sikemux_pty::user_shell::login_shell_generation,
+    );
     std::thread::spawn(sikemux_process::user_environment::warm);
 
     frame_rate::render_at_display_rate();
@@ -247,6 +252,7 @@ pub fn run() {
         .manage(AcpManager::default())
         .manage(remote::PublishedWorkspace::default())
         .manage(remote::PublishedAgents::default())
+        .manage(remote::PublishedRecentChats::default())
         .manage(remote::PublishedOnScreen::default())
         .manage(remote::PublishedPalette::default())
         .manage(remote::PublishedBackdrop::default())
@@ -254,6 +260,8 @@ pub fn run() {
         .manage(VoiceManager::default())
         .manage(preview::Previews::default())
         .register_asynchronous_uri_scheme_protocol(preview::SCHEME, preview::handle)
+        .manage(pages::Pages::default())
+        .register_asynchronous_uri_scheme_protocol(pages::SCHEME, pages::handle)
         .invoke_handler(tauri::generate_handler![
             acp::acp_start,
             acp::acp_attach,
@@ -266,6 +274,7 @@ pub fn run() {
             acp::acp_stop_task,
             acp::acp_permission_reply,
             acp::acp_stop,
+            acp::acp_switch_account,
             pty::commands::pty_spawn,
             pty::commands::task_spawn,
             pty::commands::pty_subscribe,
@@ -290,6 +299,7 @@ pub fn run() {
             remote::remote_answer_pairing,
             remote::remote_publish_workspace,
             remote::remote_publish_agents,
+            remote::remote_publish_recent,
             remote::remote_publish_on_screen,
             notch::notch_configure,
             remote::remote_publish_palette,
@@ -329,8 +339,16 @@ pub fn run() {
             state::state_load,
             state::state_save,
             agents::executable::available_agents,
+            agents::status::refresh_agent_statuses,
+            agents::status::mark_agent_signed_out,
             agents::models::agent_models,
             agents::usage::agent_usage,
+            agents::accounts::agent_account_add,
+            agents::accounts::agent_account_status,
+            agents::accounts::agent_account_sign_in,
+            agents::accounts::agent_account_sign_in_code,
+            agents::accounts::agent_account_sign_in_cancel,
+            agents::accounts::agent_account_sign_out,
             agents::sessions::agent_sessions,
             agents::sessions::recent::agent_recent_sessions,
             agents::sessions::context::agent_session_context,
@@ -349,6 +367,9 @@ pub fn run() {
             fs::read_text_file_limited,
             fs::open_in_default_app,
             preview::preview_file,
+            pages::page_theme,
+            pages::page_publish,
+            pages::page_open,
             document_preview::document_preview_show,
             document_preview::document_preview_hide,
             fs::write_file,
@@ -528,6 +549,8 @@ mod main_window_navigation_tests {
         assert!(allows("tauri://localhost/"));
         assert!(allows("tauri://localhost/index.html#settings"));
         assert!(allows("http://localhost:1420/"));
+        assert!(allows("page://localhost/0123456789abcdef0123456789abcdef"));
+        assert!(!allows("page://evil.example/"));
         assert!(!allows("https://example.com/"));
         assert!(!allows("http://localhost:3000/"));
         assert!(!allows("tauri://evil.example/"));

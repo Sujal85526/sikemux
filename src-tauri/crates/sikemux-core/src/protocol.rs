@@ -19,9 +19,20 @@ use sikemux_pty::task::{TaskSource, TaskSpawnRequest};
 use crate::cli::protocol::{CliOpenRequest, HarnessRequest};
 
 pub const PROTOCOL: &str = "sikemux-core";
-pub const PROTOCOL_VERSION: u32 = 9;
+pub const PROTOCOL_VERSION: u32 = 10;
+/// The oldest version a device may speak and still be served. A change a
+/// device from an older release can still read bumps only `PROTOCOL_VERSION`,
+/// so phones waiting on an app store review keep working.
+pub const OLDEST_PROTOCOL_VERSION: u32 = 9;
+/// How long a core waits for a sleeping chat it was asked to wake to come
+/// back up, its agent's adapter and CLI with it. A device waits longer, so the
+/// core's reason for giving up reaches it.
+pub const WAKE_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
 /// Room for the largest attach snapshot plus its header.
 pub const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
+/// The largest file a device may send for a chat. Sent as base64, it still
+/// fits in one frame.
+pub const MAX_ATTACHMENT_BYTES: usize = 10 * 1024 * 1024;
 
 pub type SessionId = u64;
 pub type RequestId = u64;
@@ -176,9 +187,13 @@ pub struct Frame {
     rename_all_fields = "camelCase"
 )]
 pub enum ClientMessage {
+    /// A client speaks every version from `version` to `newest`. A core from
+    /// before versions were agreed reads only `version`, so it is the oldest.
     Hello {
         protocol: String,
         version: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        newest: Option<u32>,
     },
     Request {
         request_id: RequestId,
@@ -186,19 +201,14 @@ pub enum ClientMessage {
     },
     /// The client has finished with this many output bytes of a session it is
     /// attached to. Never answered.
-    Ack {
-        id: SessionId,
-        bytes: usize,
-    },
+    Ack { id: SessionId, bytes: usize },
     /// The window's answer to a [`ServerMessage::WindowCall`].
     WindowReply {
         call_id: CallId,
         answer: WindowAnswer,
     },
     /// Every editor tab a waiting `open` call opened has closed.
-    WindowOpenClosed {
-        call_id: CallId,
-    },
+    WindowOpenClosed { call_id: CallId },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -306,6 +316,15 @@ pub enum Request {
         paths: Vec<String>,
         context: Vec<ChatContext>,
     },
+    /// A file from a device for a chat's next message, `data` in base64. Kept
+    /// on the host beside the pictures pasted into the app's chats, and
+    /// answered with its path there for the prompt's `paths`.
+    AttachFile {
+        agent_id: String,
+        name: String,
+        mime: String,
+        data: String,
+    },
     AcpCancel {
         agent_id: String,
     },
@@ -329,6 +348,12 @@ pub enum Request {
         agent_id: String,
         config_id: String,
         value: String,
+    },
+    /// Starts the chat's agent again on `account`, on the same session. A turn
+    /// that just failed because of the old account is sent again.
+    AcpSwitchAccount {
+        agent_id: String,
+        account: ChatAccount,
     },
     RemoteStatus,
     /// Lets paired devices reach the core from other machines, or stops it
@@ -411,6 +436,11 @@ pub enum Request {
         chats: Vec<PublishedChat>,
         titles: BTreeMap<String, String>,
     },
+    /// The saved chats the app lists as recent, newest first and none it has
+    /// open, so devices can take one up again. Replaces the last list.
+    PublishRecent {
+        chats: Vec<PublishedRecent>,
+    },
     /// The agents the person is looking at in the app now, replacing the
     /// last list. An agent on screen is never left unread.
     PublishOnScreen {
@@ -437,6 +467,14 @@ pub enum Request {
         model: Option<String>,
         effort: Option<String>,
     },
+    /// Takes up again one of the saved chats the app published as recent,
+    /// named by its [`RecentInfo::id`], and answers like `StartChat`.
+    ResumeChat {
+        recent: String,
+        permission_mode: Option<String>,
+        model: Option<String>,
+        effort: Option<String>,
+    },
 }
 
 /// Everything the core needs to start a chat agent, resolved by the app: the
@@ -456,6 +494,23 @@ pub struct ChatLaunch {
     pub permission_mode: String,
     pub model: Option<String>,
     pub effort: Option<String>,
+    /// The account the agent signs in as, when the app names one.
+    #[serde(default)]
+    pub account: Option<ChatAccount>,
+    /// Accounts the chat moves to, in order, when its own runs out of usage.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fallbacks: Vec<ChatAccount>,
+}
+
+/// One of the person's accounts with a provider, as the variables that point
+/// the agent at it. They replace the provider's account variables in the
+/// launch's environment.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatAccount {
+    pub id: String,
+    pub label: String,
+    pub env: BTreeMap<String, String>,
 }
 
 /// A chat as the app lists it.
@@ -468,6 +523,36 @@ pub struct PublishedChat {
     pub title: Option<String>,
     pub cwd: PathBuf,
     pub asleep: bool,
+}
+
+/// A saved chat as the app lists it among its recent ones.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublishedRecent {
+    /// The app's launcher that takes it up again.
+    pub launcher: String,
+    pub provider: String,
+    /// The provider's own id for the session, which it loads to resume it.
+    pub session_id: String,
+    pub title: String,
+    pub cwd: PathBuf,
+    /// When it was last written to, in Unix milliseconds.
+    pub active_at: u64,
+}
+
+/// What a device learns of a recent chat: never the launcher behind it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentInfo {
+    /// Names it in `ResumeChat`.
+    pub id: String,
+    pub provider: String,
+    pub title: String,
+    /// The app's project it ran in.
+    pub project: String,
+    pub cwd: PathBuf,
+    /// Unix milliseconds.
+    pub active_at: u64,
 }
 
 /// Something read elsewhere and handed to the agent whole, such as an issue.
@@ -573,6 +658,9 @@ pub struct ChatInfo {
     pub state: ChatState,
     pub running: bool,
     pub pending_permissions: Vec<String>,
+    /// Subagents still running for it.
+    #[serde(default)]
+    pub subagents: u32,
     /// The paired device that started it. The app started the rest.
     pub started_by: Option<String>,
     /// The app's launcher a device started it with.
@@ -699,14 +787,16 @@ pub struct Continuation {
     rename_all_fields = "camelCase"
 )]
 pub enum ServerMessage {
+    /// `version` is the one both sides speak from here on.
     HelloAck {
         protocol: String,
         version: u32,
         pid: u32,
         build: BuildIdentity,
     },
-    /// Sent instead of `HelloAck` when the client speaks another version; the
-    /// core then closes the connection.
+    /// Sent instead of `HelloAck` when the client speaks no version the core
+    /// does; `version` is the newest the core speaks. The core then closes
+    /// the connection.
     HelloRejected {
         protocol: String,
         version: u32,
@@ -798,6 +888,9 @@ pub enum Response {
     Registration {
         registration: HostRegistration,
     },
+    Attached {
+        path: PathBuf,
+    },
 }
 
 /// What the app sends the accounts server to register this core as a host.
@@ -832,6 +925,13 @@ pub struct ChatLauncher {
     pub args: Vec<String>,
     pub env: BTreeMap<String, String>,
     pub permission_mode: String,
+    #[serde(default)]
+    pub account: Option<ChatAccount>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fallbacks: Vec<ChatAccount>,
+    /// Whether the agent is ready, signed out, missing or broken, as the app last saw it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 }
 
 /// What a device learns about a launcher: never its program or environment.
@@ -845,6 +945,9 @@ pub struct LauncherInfo {
     /// The `configOptions` the provider's last session offered, such as its
     /// models and effort levels, or null before one has started.
     pub config_options: Value,
+    /// Whether the agent is ready, signed out, missing or broken; absent when the app has not said.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -1191,6 +1294,11 @@ pub enum Event {
         id: SessionId,
     },
     AgentState(AgentStateEvent),
+    /// Sent only to local clients: a phone showed these agents, so what they
+    /// last did has been seen.
+    AgentsSeen {
+        agent_ids: Vec<String>,
+    },
     /// Sent only to the clients that started or attached to the chat.
     /// `seq` counts the chat's events, so a client can tell which ones the
     /// attach answer already held.
@@ -1241,6 +1349,9 @@ pub struct DeviceView {
     pub sessions: Vec<SessionInfo>,
     pub chats: Vec<ChatInfo>,
     pub attentions: Vec<Attention>,
+    /// Saved chats the app lists as recent, newest first, none of them open.
+    #[serde(default)]
+    pub recent: Vec<RecentInfo>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1436,6 +1547,26 @@ pub async fn read_frame_within<R: tokio::io::AsyncRead + Unpin>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_device_reads_the_view_of_a_core_from_before_recent_chats() {
+        let mut view = serde_json::to_value(DeviceView {
+            workspace: Workspace {
+                projects: Vec::new(),
+                launchers: Vec::new(),
+                palette: BTreeMap::new(),
+                backdrop: Backdrop::default(),
+            },
+            sessions: Vec::new(),
+            chats: Vec::new(),
+            attentions: Vec::new(),
+            recent: Vec::new(),
+        })
+        .unwrap();
+        view.as_object_mut().unwrap().remove("recent");
+        let read: DeviceView = serde_json::from_value(view).unwrap();
+        assert!(read.recent.is_empty());
+    }
 
     #[test]
     fn frames_carry_a_big_endian_length_that_counts_the_kind_byte() {

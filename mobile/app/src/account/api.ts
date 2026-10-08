@@ -1,7 +1,9 @@
 import { Platform } from 'react-native';
 import type {
   AccountDeletion,
+  AccountDeletionRequest,
   ApiError,
+  ApnsEnvironment,
   Challenge,
   Device,
   DeviceList,
@@ -13,7 +15,7 @@ import type {
   PushTokenState,
 } from '@protocol';
 
-import { thisDevice } from '@/device/identity';
+import { deviceIdentity } from '@/device/identity';
 import { phoneName } from '@/device/name';
 import { apiUrl } from './config';
 
@@ -38,7 +40,12 @@ export class AccountProblem extends Error {
 export class ReverifyNeeded extends Error {}
 
 async function call<T>(token: TokenSource, path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
-  const bearer = await token();
+  let bearer: string | null;
+  try {
+    bearer = await token();
+  } catch {
+    throw new AccountProblem("Can't reach Sikemux. Check the phone is online.");
+  }
   if (!bearer) throw new AccountProblem('Sign in again.', 401);
   let response: Response;
   try {
@@ -56,7 +63,7 @@ async function call<T>(token: TokenSource, path: string, init: { method?: string
   if (response.status === 204) return null as T;
   if (!response.ok) {
     const failure = (await response.json().catch(() => null)) as ApiError | null;
-    if (response.status === 403 && failure?.error?.message === 'reverify') throw new ReverifyNeeded('reverify');
+    if (failure?.error?.code === 'reverify_required') throw new ReverifyNeeded('reverify');
     throw new AccountProblem(failure?.error?.message ?? `The accounts server answered ${response.status}.`, response.status);
   }
   return (await response.json()) as T;
@@ -65,7 +72,7 @@ async function call<T>(token: TokenSource, path: string, init: { method?: string
 /** Adds this phone to the account, proving it holds its key. Doing it again only updates its name. */
 export async function registerPhone(token: TokenSource, userId: string): Promise<Device> {
   const challenge = await call<Challenge>(token, '/v1/devices/challenge', { method: 'POST' });
-  const device = await thisDevice();
+  const device = await deviceIdentity();
   const registration: DeviceRegistration = {
     key: device.id(),
     role: 'client',
@@ -79,24 +86,24 @@ export async function registerPhone(token: TokenSource, userId: string): Promise
 
 /** Takes this phone off the account, as signing out does. A phone the account no longer has is already off it. */
 export async function removePhone(token: TokenSource): Promise<void> {
-  const device = await thisDevice();
+  const device = await deviceIdentity();
   try {
     await call<null>(token, `/v1/devices/${device.id()}`, { method: 'DELETE' });
   } catch (error) {
-    if (error instanceof AccountProblem && (error.status === 404 || error.status === 401)) return;
+    if (error instanceof AccountProblem && error.status === 404) return;
     throw error;
   }
 }
 
-/** Sends this phone's notifications to an FCM token, proving the phone holds its key. */
+/** Sends this phone's notifications to its FCM or APNs token, proving the phone holds its key. */
 export async function setPushToken(
   token: TokenSource,
-  push: { token: string; tokenSha256: string; app: PushApp },
+  push: { token: string; tokenSha256: string; app: PushApp; apnsEnvironment?: ApnsEnvironment },
 ): Promise<PushTokenState> {
   const challenge = await call<Challenge>(token, '/v1/devices/challenge', { method: 'POST' });
-  const device = await thisDevice();
+  const device = await deviceIdentity();
   const registration: PushTokenRegistration = {
-    platform: 'fcm',
+    ...(push.apnsEnvironment ? { platform: 'apns', apnsEnvironment: push.apnsEnvironment } : { platform: 'fcm' }),
     token: push.token,
     app: push.app,
     nonce: challenge.nonce,
@@ -107,11 +114,11 @@ export async function setPushToken(
 
 /** Stops the server sending this phone notifications. A phone the account no longer has gets none anyway. */
 export async function clearPushToken(token: TokenSource): Promise<void> {
-  const device = await thisDevice();
+  const device = await deviceIdentity();
   try {
     await call<null>(token, `/v1/devices/${device.id()}/push`, { method: 'DELETE' });
   } catch (error) {
-    if (error instanceof AccountProblem && (error.status === 404 || error.status === 401)) return;
+    if (error instanceof AccountProblem && error.status === 404) return;
     throw error;
   }
 }
@@ -123,12 +130,13 @@ export async function accountHosts(token: TokenSource): Promise<Device[]> {
 
 /** The server's signed word that this phone and `host` are on the same account, for the host to check before it asks its owner. */
 export async function joinTicket(token: TokenSource, host: string): Promise<JoinTicket> {
-  const device = await thisDevice();
+  const device = await deviceIdentity();
   const request: JoinRequest = { host };
   return call<JoinTicket>(token, `/v1/devices/${device.id()}/join`, { method: 'POST', body: request });
 }
 
-/** Deletes the account and every device on it. */
-export async function deleteAccount(token: TokenSource): Promise<AccountDeletion> {
-  return call<AccountDeletion>(token, '/v1/account', { method: 'DELETE' });
+/** Deletes the account and every device on it, with Apple's code for the server to revoke when it signs in with Apple. */
+export async function deleteAccount(token: TokenSource, appleAuthorizationCode?: string): Promise<AccountDeletion> {
+  const request: AccountDeletionRequest | undefined = appleAuthorizationCode ? { appleAuthorizationCode } : undefined;
+  return call<AccountDeletion>(token, '/v1/account', { method: 'DELETE', body: request });
 }

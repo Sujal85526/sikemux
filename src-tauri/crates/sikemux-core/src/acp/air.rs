@@ -4,15 +4,20 @@
 //! `_meta` so peers that do not know it skip it. It stays silent until a client
 //! names the parts it understands in `initialize`.
 
-use agent_client_protocol::schema::v1::{ClientCapabilities, ContentBlock, Meta};
+use agent_client_protocol::schema::v1::{
+    ClientCapabilities, ClientSessionCapabilities, ContentBlock, Meta, NoticeCapabilities,
+};
 use agent_client_protocol::{JsonRpcNotification, JsonRpcRequest, JsonRpcResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 const EXTENSION_VERSION: u8 = 1;
-const EXTENSION_CAPABILITIES: [&str; 2] = ["asyncTasks", "nativeSubagentSessions"];
+const EXTENSION_CAPABILITIES: [&str; 3] =
+    ["asyncTasks", "nativeSubagentSessions", "sessionFailure"];
 
-/// Asks the agent for async task and subagent session updates.
+/// Asks the agent for async task and subagent session updates, and for a
+/// failed turn's cause and its asides as data rather than as text in the
+/// transcript. An aside sent as text reads as the agent starting a turn.
 pub fn client_capabilities() -> ClientCapabilities {
     let mut meta = Meta::new();
     meta.insert(
@@ -24,7 +29,9 @@ pub fn client_capabilities() -> ClientCapabilities {
             }
         }),
     );
-    ClientCapabilities::new().meta(meta)
+    ClientCapabilities::new()
+        .session(ClientSessionCapabilities::new().notices(NoticeCapabilities::new()))
+        .meta(meta)
 }
 
 /// A `session/update` kept as raw JSON.
@@ -106,10 +113,12 @@ mod tests {
         let capabilities = serde_json::to_value(client_capabilities()).unwrap();
         assert_eq!(
             capabilities.pointer("/_meta/jetbrains/air"),
-            Some(
-                &json!({ "version": 1, "capabilities": ["asyncTasks", "nativeSubagentSessions"] })
-            )
+            Some(&json!({
+                "version": 1,
+                "capabilities": ["asyncTasks", "nativeSubagentSessions", "sessionFailure"],
+            }))
         );
+        assert_eq!(capabilities.pointer("/session/notices"), Some(&json!({})));
     }
 
     #[test]

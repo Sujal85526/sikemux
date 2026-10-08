@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import * as SecureStore from 'expo-secure-store';
-import { Device, newDeviceKey, type DeviceLike } from '@sikemux/native';
+import { Device, DeviceIdentity, newDeviceKey, type DeviceLike } from '@sikemux/native';
 
 import { currentRelays, relaySettings, updateRequired } from '@/network/network';
 
@@ -30,15 +30,28 @@ async function deviceKey(): Promise<ArrayBuffer> {
   return key;
 }
 
+let identity: Promise<DeviceIdentity> | undefined;
 let online: Promise<DeviceLike> | undefined;
 let joining = 0;
+
+/** This phone's key, for proving who it is to the accounts server; it never goes on the network. A failure is not kept. */
+export async function deviceIdentity(): Promise<DeviceIdentity> {
+  if (!identity) {
+    const coming = deviceKey().then((key) => new DeviceIdentity(key));
+    identity = coming;
+    coming.catch(() => {
+      if (identity === coming) identity = undefined;
+    });
+  }
+  return identity;
+}
 
 /** This phone on the network, unless the app is too old to use it. A failure is not kept, so the next call tries again. */
 export function thisDevice(): Promise<DeviceLike> {
   if (!online) {
-    const coming = Promise.all([deviceKey(), currentRelays()]).then(([key, relays]) => {
+    const coming = Promise.all([deviceIdentity(), currentRelays()]).then(([me, relays]) => {
       if (updateRequired()) throw new Error('Update Sikemux to reach your hosts.');
-      return Device.create(key, relaySettings(relays));
+      return Device.create(me, relaySettings(relays));
     });
     online = coming;
     coming.catch(() => {
@@ -67,12 +80,22 @@ export async function goOffline() {
   await device?.close();
 }
 
-/** This phone's key, once it is online. */
+/**
+ * Makes this phone a new device: the account may still hold the old key, and anything it signed for
+ * that account must not follow the phone into another one.
+ */
+export async function rotateDeviceKey(): Promise<void> {
+  await SecureStore.deleteItemAsync(KEY_ITEM, KEY_OPTIONS);
+  identity = undefined;
+  await goOffline();
+}
+
+/** This phone's key. */
 export function useDeviceId(): string | undefined {
   const [id, setId] = useState<string>();
   useEffect(() => {
-    thisDevice()
-      .then((device) => setId(device.id()))
+    deviceIdentity()
+      .then((me) => setId(me.id()))
       .catch(() => {});
   }, []);
   return id;

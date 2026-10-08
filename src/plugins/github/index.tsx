@@ -44,5 +44,7 @@ registerFrontendPlugin({
     surfaces: [],
     open: () => void openGitArea("pulls"),
     openTitle: "Open GitHub",
+    mark: (size) => <GithubMark size={size} className="icon-github" />,
+    linkHosts: ["github.com"],
     TopBarItem: hostCiGlyph(GITHUB_PLUGIN_ID),
 });

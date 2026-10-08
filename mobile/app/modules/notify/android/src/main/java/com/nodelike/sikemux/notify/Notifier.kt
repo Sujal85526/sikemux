@@ -16,6 +16,7 @@ import android.text.style.TypefaceSpan
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import java.net.URLEncoder
 
 /** Posts and removes the cards hosts send, each tagged by its collapse id so a later push can replace or clear it. */
 class Notifier(private val context: Context) {
@@ -32,8 +33,10 @@ class Notifier(private val context: Context) {
     )
   }
 
+  /** A card past its life shows nothing: it would be gone by now, and its request can no longer be answered. */
   fun show(card: Card) {
-    val builder = base(card.channel ?: NEEDS_YOU)
+    val left = card.timeLeft(System.currentTimeMillis()) ?: return
+    val builder = base(channel(card.channel))
       .setContentTitle(card.title)
       .setContentText(card.detail ?: card.body)
       .setStyle(NotificationCompat.BigTextStyle().bigText(text(card)))
@@ -42,8 +45,7 @@ class Notifier(private val context: Context) {
       .setGroup(card.thread)
       .setContentIntent(open(card.collapseId, card.url))
       .setExtras(extras(card))
-    val left = card.expiresAt - System.currentTimeMillis()
-    if (left > 0) builder.setTimeoutAfter(left)
+      .setTimeoutAfter(left)
     if (card.answerable) {
       builder.addAction(answer(card, card.rejectOptionId!!, "Reject", authenticated = false))
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -74,7 +76,11 @@ class Notifier(private val context: Context) {
       .setOngoing(state == Answer.SENDING)
       .setContentIntent(open(tag, url))
     text?.let { builder.setContentText(it) }
-    if (state == Answer.DONE) builder.setTimeoutAfter(SETTLED_MS)
+    when (state) {
+      Answer.SENDING -> builder.setTimeoutAfter(SENDING_MS)
+      Answer.DONE -> builder.setTimeoutAfter(SETTLED_MS)
+      Answer.FAILED -> Unit
+    }
     post(tag, builder)
   }
 
@@ -174,6 +180,7 @@ class Notifier(private val context: Context) {
   private fun answer(card: Card, option: String, title: String, authenticated: Boolean): NotificationCompat.Action {
     val intent = Intent(context, AnswerReceiver::class.java).apply {
       action = AnswerReceiver.ACTION
+      data = Uri.parse(answerData(card.collapseId, option))
       putExtra(AnswerReceiver.TAG, card.collapseId)
       putExtra(AnswerReceiver.HOST, card.host)
       putExtra(AnswerReceiver.HOST_NAME, card.hostName)
@@ -185,7 +192,7 @@ class Notifier(private val context: Context) {
     }
     val pending = PendingIntent.getBroadcast(
       context,
-      (card.collapseId + option).hashCode(),
+      0,
       intent,
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
@@ -211,11 +218,22 @@ class Notifier(private val context: Context) {
     const val PROBLEMS = "problems"
     const val ID = 7
     const val SETTLED_MS = 4_000L
+
+    /** Longer than the answer's own time limit, so a card left saying it is sending goes when the app died sending it. */
+    const val SENDING_MS = AnswerService.TIMEOUT_MS + 5_000L
     const val SCHEME_META = "com.nodelike.sikemux.scheme"
     private const val HOST_SCHEME = "sikemux://"
     private const val EXTRA_HOST = "sikemux.host"
     private const val EXTRA_AGENT = "sikemux.agent"
     private const val EXTRA_KIND = "sikemux.kind"
     private const val EXTRA_REQUEST = "sikemux.request"
+    private val CHANNELS = setOf(NEEDS_YOU, FINISHED, PROBLEMS)
+
+    /** A channel this app does not make would drop the card, so it goes where the person is asked for. */
+    fun channel(name: String?): String = name?.takeIf { it in CHANNELS } ?: NEEDS_YOU
+
+    /** Android tells pending intents apart by their data, not their extras, so each card's answer gets its own. */
+    fun answerData(tag: String, option: String): String =
+      "sikemux-answer:${URLEncoder.encode(tag, "UTF-8")}/${URLEncoder.encode(option, "UTF-8")}"
   }
 }

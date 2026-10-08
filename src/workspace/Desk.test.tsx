@@ -564,7 +564,7 @@ describe("DeskHost", () => {
         await waitFor(() => expect(useToasts.getState().toasts.length).toBeGreaterThan(0));
     });
 
-    it("keeps pages, files and terminals in one strip, in the order they arrived", async () => {
+    it("lists one kind at a time and switches kinds from the icons beside the strip", async () => {
         taskPtyBindings.bind("term-web", { executionId: "run-1", terminalKey: "task-web", ptyId: 7 } as never);
         setState({
             desks: {
@@ -578,25 +578,64 @@ describe("DeskHost", () => {
             editorViews: { [deskEditorId("agent-one")]: { openTabs: ["/repo/src/a.ts"], activePath: "/repo/src/a.ts" } },
         } as never);
         renderPane();
+        const strip = () =>
+            within(screen.getByRole("tablist", { name: "Desk tabs" }))
+                .getAllByRole("tab")
+                .map((tab) => tab.textContent?.replace(/[^\x20-\x7e]/g, ""));
+        const kinds = within(screen.getByRole("tablist", { name: "Desk views" }));
 
-        await waitFor(() => expect(screen.getByRole("tab", { name: "Example" })).toBeInTheDocument());
-        expect(screen.getAllByRole("tab").map((tab) => tab.textContent?.replace(/[^\x20-\x7e]/g, ""))).toEqual(["a.ts", "Example", "Web"]);
-        expect(screen.getByRole("tab", { name: /a\.ts/ })).toHaveAttribute("aria-selected", "true");
+        expect(strip()).toEqual(["a.ts"]);
+        expect(kinds.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
         expect(await screen.findByTestId("desk-editor")).toHaveAttribute("data-visible", "true");
-        expect(screen.getByTestId("desk-terminal")).toHaveAttribute("data-pane", "term-web");
         expect(screen.getByTestId("desk-terminal")).toHaveAttribute("data-visible", "false");
         await waitFor(() => expect(browserApi.setBounds).toHaveBeenLastCalledWith("agent-one", null));
 
-        fireEvent.click(screen.getByRole("tab", { name: "Web" }));
+        fireEvent.click(kinds.getByRole("tab", { name: "Terminals" }));
 
         expect(getState().desks["agent-one"].active).toBe("terminal:term-web");
+        expect(strip()).toEqual(["Web"]);
         expect(screen.getByTestId("desk-terminal")).toHaveAttribute("data-visible", "true");
         expect(screen.getByTestId("desk-editor")).toHaveAttribute("data-visible", "false");
 
-        fireEvent.click(screen.getByRole("tab", { name: "Example" }));
+        fireEvent.click(kinds.getByRole("tab", { name: "Browser" }));
 
+        await waitFor(() => expect(strip()).toEqual(["Example"]));
         await waitFor(() => expect(browserApi.setBounds).toHaveBeenLastCalledWith("agent-one", placed));
+
+        fireEvent.click(kinds.getByRole("tab", { name: "Files" }));
+
+        expect(getState().desks["agent-one"].active).toBe("file:/repo/src/a.ts");
         taskPtyBindings.release("term-web");
+    });
+
+    it("cannot switch to a kind with nothing in it, but an empty browser opens a page", async () => {
+        vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [], activeTabId: null });
+        setState({
+            browserStrips: {},
+            desks: { "agent-one": { order: ["file:/repo/a.ts"], active: "file:/repo/a.ts", terminals: [], reveal: null } },
+            editorViews: { [deskEditorId("agent-one")]: { openTabs: ["/repo/a.ts"], activePath: "/repo/a.ts" } },
+        } as never);
+        renderPane();
+        const kinds = within(screen.getByRole("tablist", { name: "Desk views" }));
+
+        expect(kinds.getByRole("tab", { name: "Terminals" })).toBeDisabled();
+        fireEvent.click(kinds.getByRole("tab", { name: "Browser" }));
+
+        expect(browserApi.newTab).toHaveBeenCalledWith("agent-one");
+    });
+
+    it("offers a file tab's path, absolute and within the project, on right-click", async () => {
+        vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [], activeTabId: null });
+        setState({
+            browserStrips: {},
+            desks: { "agent-one": { order: ["file:/repo/a.ts"], active: "file:/repo/a.ts", terminals: [], reveal: null } },
+            editorViews: { [deskEditorId("agent-one")]: { openTabs: ["/repo/a.ts"], activePath: "/repo/a.ts" } },
+        } as never);
+        renderPane();
+
+        fireEvent.contextMenu(await screen.findByRole("tab", { name: "a.ts" }));
+        expect(screen.getByRole("menuitem", { name: "Copy Path" })).toBeInTheDocument();
+        expect(screen.getByRole("menuitem", { name: "Copy Relative Path" })).toBeInTheDocument();
     });
 
     it("stays open for a file that is still on its way to the editor", async () => {

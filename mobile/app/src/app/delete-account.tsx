@@ -4,11 +4,13 @@ import { router } from 'expo-router';
 import { useAuth, useReverification, useSession, useUser } from '@clerk/expo';
 
 import { AccountProblem, deleteAccount, ReverifyNeeded } from '@/account/api';
+import { appleConsent } from '@/account/apple';
 import { errorCode, explain } from '@/account/clerkErrors';
 import { chooseFactor, CONFIRM_WORD, confirmed, deletion, REVERIFY_HINT, START } from '@/account/deletion';
 import { signOutHere } from '@/account/leave';
 import { CodeEntry } from '@/ui/CodeEntry';
-import { Button, Field, Nav, PasswordField, Screen, useBottomGap } from '@/ui/parts';
+import { Button, Field, PasswordField } from '@/ui/controls';
+import { Nav, Screen, useBottomGap } from '@/ui/screen';
 import { type Palette, typeFor, useStyles } from '@/ui/theme';
 
 const GONE = [
@@ -31,6 +33,7 @@ export default function DeleteAccount() {
   const email = user?.primaryEmailAddress?.emailAddress;
   const [state, dispatch] = useReducer(deletion, START);
   const pending = useRef<{ complete: () => void; cancel: () => void }>(undefined);
+  const appleCode = useRef<string>(undefined);
 
   const askAgain = async (cancel: () => void) => {
     try {
@@ -52,7 +55,7 @@ export default function DeleteAccount() {
   const remove = useReverification(
     async () => {
       try {
-        return await deleteAccount(() => getToken({ skipCache: true }));
+        return await deleteAccount(() => getToken({ skipCache: true }), appleCode.current);
       } catch (error) {
         if (error instanceof ReverifyNeeded) return REVERIFY_HINT;
         throw error;
@@ -69,6 +72,12 @@ export default function DeleteAccount() {
   const start = async () => {
     if (!confirmed(state) || state.phase.name !== 'confirm') return;
     dispatch({ type: 'delete' });
+    const apple = await appleConsent(user?.externalAccounts);
+    if (apple.cancelled) {
+      dispatch({ type: 'cancelled' });
+      return;
+    }
+    appleCode.current = apple.code;
     try {
       await remove();
     } catch (error) {
@@ -77,7 +86,7 @@ export default function DeleteAccount() {
       return;
     }
     dispatch({ type: 'deleted' });
-    await signOutHere(() => signOut(), 'deleted-here');
+    await signOutHere(() => signOut(), { farewell: 'deleted-here', confirmed: true });
   };
 
   const check = async (entry: string) => {

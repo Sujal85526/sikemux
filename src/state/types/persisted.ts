@@ -91,6 +91,7 @@ export interface PersistedPrefs {
     keptRunningNoticeShown?: boolean;
     railDensity?: RailDensity;
     agentRailAllAgents?: boolean;
+    accountAutoSwitch?: Partial<Record<"claude" | "codex", boolean>>;
     agentRailScope?: AgentRailScope;
     onboardingComplete?: boolean;
     lastSeenVersion?: string;

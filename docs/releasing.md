@@ -9,7 +9,7 @@ git tag v0.4.1 && git push origin v0.4.1
 
 `make preflight` runs the two checks the pre-push hook does not: it launches the real app the way CI's desktop E2E job does, and builds the DMG against its size limit. Either failing would otherwise surface only in the Release run.
 
-A run is titled with its tag, so the approval names what it will publish, and it stops if the tag disagrees with `package.json`. The workflow reads the version from `package.json`, runs the full CI suite, then builds, verifies, and publishes with `scripts/release.sh`. A prerelease version goes to the nightly channel and any other version to stable. Only one release runs at a time, and each run keeps its built artifacts.
+A run is titled with its tag, so the approval names what it will publish, and it stops if the tag disagrees with `package.json`. The workflow reads the version from `package.json` and builds and verifies with `scripts/release.sh` while the full CI suite runs. Once both pass, `scripts/publish-release.sh` publishes the build. A prerelease version goes to the nightly channel and any other version to stable. Only one release runs at a time, and each run keeps its built artifacts.
 
 If a release fails before it publishes, fix it and move the tag onto the fix. Only the owner can move a release tag, and moving it starts a fresh run:
 
@@ -17,7 +17,7 @@ If a release fails before it publishes, fix it and move the tag onto the fix. On
 git tag -f v0.4.1 && git push -f origin v0.4.1
 ```
 
-The workflow takes its signing material from the `release` environment:
+Every release takes its signing material from the `release` environment:
 
 | Name                                                                                                                                       | Kind                    | Needed for         |
 | ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------- | ------------------ |
@@ -25,7 +25,7 @@ The workflow takes its signing material from the `release` environment:
 | `RELEASE_NOTARIZED`                                                                                                                        | variable, `1` to enable | notarized releases |
 | `APPLE_CERTIFICATE` (base64 `.p12`), `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | secrets                 | notarized releases |
 
-Limit the environment's deployment refs to `main`, `release/*`, and `v*` tags, and add yourself as a required reviewer so nothing publishes unapproved.
+The `release` environment holds the secrets and has no reviewer. A stable release first waits on its "Approve the stable release" job, which runs on the `approval` environment: that one holds nothing and has the owner as its required reviewer. A nightly skips the approval and publishes as soon as its checks pass. The approval can be given while the checks are still running.
 
 Run `scripts/release.sh` locally without `--publish` to preview a release: it builds, signs, and verifies everything without touching GitHub.
 
@@ -39,11 +39,9 @@ Both channels create a versioned GitHub release holding the build. A stable cut 
 
 Stable is cut from a `release/<major.minor>` branch and nightly from `main`. A nightly targets whichever version comes next, whether that is a patch, a minor or a major, and a stable release of that version overtakes its nightlies for nightly users too.
 
-A hotfix cut from a release branch claims a version as well. When it claims the one the nightlies are building toward, the Nightly channel moves onto the hotfix, because the updater takes the newest version across both feeds, and loses whatever `main` had that the hotfix did not until a later nightly passes it. Before cutting such a hotfix, publish a nightly at the version after it, so the hotfix lands below the nightlies instead of over them.
-
 ## Version numbers
 
-A nightly is a prerelease of the version after the latest stable one. Once a stable `0.x.y` ships, number `main`'s nightlies at the next minor, `0.(x+1).0-nightly.N`, rather than the next patch. Patch hotfixes on the release branch then always land below the nightlies and never take the Nightly channel over.
+A nightly is a prerelease of the next stable release. After a stable `0.x.y`, `main`'s nightlies are `0.x.(y+1)-nightly.N`, or `0.(x+1).0-nightly.N` when the next release is a bigger one. Stable releases come every few days, each a promoted nightly.
 
 ## Promoting a nightly to stable
 
@@ -57,7 +55,9 @@ None of this lands on `main`. Commits made to `main` meanwhile stay out of the r
 
 ## Hotfixes
 
-Fix the bug on `main` as usual, then cherry-pick only that commit onto `release/<major.minor>`, bump to the next patch, write short notes and tag it. If `main` has rewritten the code since, make the fix on the release branch instead and redo it on `main`. Never merge a release branch into `main`, or `main` into a release branch for a hotfix.
+A hotfix is the next release, shipped early. Fix the bug on `main`, ship a nightly, and promote that nightly to stable. It takes the version the nightlies were already building toward, so nothing collides, and it carries whatever else is on `main`.
+
+Cherry-pick onto `release/<major.minor>` only when `main` holds something too risky to ship, such as a half-finished refactor during a security fix. The cherry-picked hotfix then takes the version the nightlies are building toward, and the updater takes the newest version across both channels, so first bump `main` to the patch after it and publish that nightly. Then cherry-pick only the fix onto the release branch, bump to the claimed patch, write short notes and tag it. Never merge a release branch into `main`, or `main` into a release branch.
 
 ## Committing to a release branch from the shared checkout
 
@@ -107,7 +107,7 @@ If you have an Apple Developer membership, set `RELEASE_NOTARIZED=1` with the De
 
 ## Releasing the phone app
 
-The phone app releases on its own schedule from the **Mobile release** workflow, started by a `mobile-v*` tag. Only the owner can create, move or delete one, and like a Mac release it waits for the owner's approval on the `release` environment.
+The phone app releases on its own schedule from the **Mobile release** workflow, started by a `mobile-v*` tag. Only the owner can create, move or delete one. Like a Mac release, a stable one waits for the owner's approval on the `release` environment, and a nightly publishes once its checks pass.
 
 ```bash
 git tag mobile-v0.1.0-nightly.1 && git push origin mobile-v0.1.0-nightly.1
@@ -117,7 +117,7 @@ git tag mobile-v0.1.0-nightly.1 && git push origin mobile-v0.1.0-nightly.1
 
 Android needs a version code that grows with every upload. `app.config.js` derives it from the tag: `0.5.0-nightly.3` is `50003`, and `0.5.0` itself is `50099`, so a stable build always follows its own nightlies. Minor and patch numbers stay below 100, and nightlies below 99. The iOS build number is the same code, and the app reads its release back from it to compare with the oldest version `GET /v1/network` allows.
 
-The run checks the phone app, builds the Rust client with the small `mobile` profile, and builds the APK and the Play app bundle. It refuses either unless it is signed with the Play upload key. It attaches the APK to a GitHub release of the tag, marked a prerelease for a nightly, and never as the latest release: sikemux.com takes its Mac download from that one. Last, it puts the app bundle on Google Play: a nightly on the closed testing track, where testers get it, and a stable release on production. Google Play keeps production closed until the closed test has had 12 testers for 14 days, so a stable tag fails at that step until then.
+The run checks the phone app, builds the Rust client with the small `mobile` profile, and builds the APK and the Play app bundle. It refuses either unless it is signed with the Play upload key. It attaches the APK to a GitHub release of the tag, marked a prerelease for a nightly, and never as the latest release: sikemux.com takes its Mac download from that one. It also attaches `runtime-android.txt`, the runtime version the build was made for (see below). Last, it puts the app bundle on Google Play: a nightly on the closed testing track, where testers get it at once, and a stable release on production, where it starts with 10% of phones. Once it holds up, widen it with `node scripts/play-release.mjs rollout 0.5` in `mobile/app`, then `rollout 1` for every phone, with the service account's key in `PLAY_SERVICE_ACCOUNT`. Google Play keeps production closed until the closed test has had 12 testers for 14 days, so a stable tag fails at that step until then.
 
 Every phone release needs its notes in `mobile/RELEASE_NOTES.md`, committed before the tag: a `# <version>` heading, then what changed in plain text, at most 500 characters. Google Play shows them as "What's new" and the GitHub release opens with them. The run checks the file before it builds and stops if the heading is for another version, so `node scripts/play-release.mjs notes <version>` in `mobile/app` shows what Google Play will get.
 
@@ -127,17 +127,36 @@ Every phone release needs its notes in `mobile/RELEASE_NOTES.md`, committed befo
 | `ANDROID_UPLOAD_PASSWORD` | secret | its password, which is also the key's own password                                            |
 | `PLAY_SERVICE_ACCOUNT`    | secret | the `sikemux-play-release` service account's JSON key, allowed to release in the Play Console |
 
+The same run builds the iPhone app on a macOS runner and sends it to TestFlight, as build number the version code above. Xcode signs it with the App Store Connect API key: it makes or fetches the distribution certificate and the profiles for the app and its notification extension itself. Internal testers get each build once Apple has processed it; a stable build is then submitted for App Store review by hand.
+
+The app brings its own standard encryption (TLS and QUIC from rustls) and is not sold in France. For that answer, standard algorithms in addition to Apple's and no sale in France, App Store Connect records a build as using no non-exempt encryption, so the app says so itself with `ITSAppUsesNonExemptEncryption` set to false and builds skip the question. Selling in France needs a French encryption declaration first, and then the key changes to the code App Store Connect gives for it.
+
+| Name                          | Kind   | Holds                                                     |
+| ----------------------------- | ------ | --------------------------------------------------------- |
+| `APP_STORE_CONNECT_KEY`       | secret | the "Sikemux CI" App Store Connect API key (Admin), `.p8` |
+| `APP_STORE_CONNECT_KEY_ID`    | secret | its key id                                                |
+| `APP_STORE_CONNECT_ISSUER_ID` | secret | the team's issuer id                                      |
+
+Locally the key is at `~/.config/sikemux/release/app-store-connect-W6MR4F94W3.p8`.
+
 Locally, `pnpm android:release` in `mobile/` signs with the same key: the keystore from `~/.config/sikemux/release/upload.keystore` and its password from the Keychain entry "Sikemux Android upload key".
 
 ### Over-the-air updates
 
-A release build also asks `updates.sikemux.com` for newer JavaScript and assets each time it starts, on its own channel: a nightly build on `nightly`, a stable one on `stable`. The **Mobile release** run tells the build its channel through `SIKEMUX_MOBILE_CHANNEL`. Dev builds never update.
+A release build asks `updates.sikemux.com` for newer JavaScript and assets each time it starts, and again whenever it comes to the front, at most every half hour, on its own channel: a nightly build on `nightly`, a stable one on `stable`. It restarts into a downloaded update the next time the person comes back after more than a minute away, and the account sheet offers Restart to update until then. The **Mobile release** run tells the build its channel through `SIKEMUX_MOBILE_CHANNEL`. Dev builds never update.
 
-Every push to `main` that changes the phone's JavaScript or assets runs the **Mobile update** workflow. One job checks the phone app and exports it with `expo export`; a second, which sees only the exported files, signs the update and sends it to citadel on `nightly`. The signature is checked against `mobile/app/certs/updates-certificate.pem` before anything is sent, and phones refuse an update without it.
+Every push to `main` that changes the phone's JavaScript or assets runs the **Mobile update** workflow; `mobile/app/test/updatePaths.test.ts` fails when the bundle reads a file its path list misses. One job checks the phone app and exports it with `expo export`; a second, which sees only the exported files, signs the update and sends it to citadel on `nightly`. The signature is checked against `mobile/app/certs/updates-certificate.pem` before anything is sent, and phones refuse an update without it.
 
-An update carries a runtime version, a fingerprint of everything native in the app: the Expo config, native modules and the Rust client's sources. A phone only takes updates with its own build's runtime version, so a change that needs new native code is published but waits for the next build that has it. The run's summary shows the update id and runtime version.
+An update carries a runtime version, a fingerprint of everything native in the app: the Expo config, native modules, and the Rust the phone links, found by following `src-tauri/Cargo.lock` from `sikemux-mobile` (see `mobile/app/scripts/rust-sources.js`). A desktop release or a desktop-only dependency does not change it. A phone only takes updates with its own build's runtime version, so when no phone release lists the update's runtime in its `runtime-android.txt`, the run skips publishing with a warning: the update would reach no phone, and the next phone release ships that code itself. The run's summary shows the update id and runtime version.
 
-To promote a nightly update to stable, run **Mobile update** by hand with its id. It waits for the owner's approval on the `release` environment and then serves the same signed update on `stable`.
+To promote a nightly update to stable, run **Mobile update** by hand with its id and the action `promote`. It waits for the owner's approval on the `release` environment and then serves the same signed update on `stable`.
+
+A bad update is taken back the same way, with one of two actions. Each channel serves what was put on it last, by publish or promotion time.
+
+- `withdraw` stops offering the update on every channel, so phones that have not taken it never do; the channel goes back to what it offered before. Phones that already run it keep it.
+- `roll-back` also withdraws it, and sends phones that run it a signed order to go back to the code in their build. Only updates prepared after the roll-back reach those phones again, so fix forward with a new push to `main`.
+
+Both need `server/deploy/receive-release` on citadel to be the current one; it is installed by `setup-citadel.sh`, not by a server deploy.
 
 Locally, `node scripts/publish-update.mjs android nightly --dry-run` in `mobile/app` builds and signs an update without sending it, with the key from `UPDATES_SIGNING_KEY`. The key lives at `~/.config/sikemux/release/updates-signing-key.pem`.
 

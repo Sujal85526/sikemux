@@ -2,7 +2,14 @@ import { useSignIn, useSignUp } from "@clerk/react";
 import { useEffect, useRef, useState, type SubmitEvent } from "react";
 
 import { errorCode, explain } from "./clerkErrors.ts";
-import { BackIcon, EyeIcon, GitHubMark, GoogleMark, Logo } from "./icons.tsx";
+import {
+  AppleMark,
+  BackIcon,
+  EyeIcon,
+  GitHubMark,
+  GoogleMark,
+  Logo,
+} from "./icons.tsx";
 import { rememberReturn } from "./navigation.ts";
 
 /** Why an emailed code is asked for: a browser new to the account, a new account, or a new password. */
@@ -15,7 +22,15 @@ type Step =
   | { kind: "code"; purpose: CodePurpose }
   | { kind: "new-password" };
 
-type Action = "google" | "github" | "submit";
+type Provider = "oauth_apple" | "oauth_google" | "oauth_github";
+
+type Action = "apple" | "google" | "github" | "submit";
+
+const ACTIONS: Record<Provider, Action> = {
+  oauth_apple: "apple",
+  oauth_google: "google",
+  oauth_github: "github",
+};
 
 const CODE_DETAIL: Record<CodePurpose, string> = {
   trust: "to confirm this browser is yours",
@@ -85,8 +100,8 @@ export function SignIn({ ready }: { ready: boolean }) {
     );
   };
 
-  const withProvider = (strategy: "oauth_google" | "oauth_github") =>
-    attempt(strategy === "oauth_google" ? "google" : "github", async () => {
+  const withProvider = (strategy: Provider) =>
+    attempt(ACTIONS[strategy], async () => {
       rememberReturn();
       check(
         await signIn.sso({
@@ -189,6 +204,16 @@ export function SignIn({ ready }: { ready: boolean }) {
           and they find each other.
         </p>
         <div className="providers">
+          <button
+            type="button"
+            className="button"
+            onClick={() => withProvider("oauth_apple")}
+            disabled={busy !== undefined}
+            data-busy={busy === "apple" || undefined}
+          >
+            <AppleMark />
+            Continue with Apple
+          </button>
           <button
             type="button"
             className="button"

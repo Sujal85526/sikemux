@@ -30,7 +30,8 @@ describe("loadConfig", () => {
       clerkSecretKey: null,
       clerkWebhookSecret: null,
       network: readNetwork({}, []),
-      push: { app: "production", allowSandbox: false, fcm: null },
+      push: { app: "production", allowSandbox: false, fcm: null, apns: null },
+      appleSignIn: null,
       join: {
         keyId: "dev-1",
         privateKey: expect.anything(),

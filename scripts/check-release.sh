@@ -12,7 +12,7 @@ else
   PNPM=(corepack pnpm)
 fi
 
-bash -n scripts/build-mac.sh scripts/release.sh scripts/icons.sh scripts/check-release.sh
+bash -n scripts/build-mac.sh scripts/release.sh scripts/publish-release.sh scripts/icons.sh scripts/check-release.sh
 node --check scripts/verify-updater-signature.mjs
 node --check scripts/release-credits.mjs
 node --check scripts/build-cli-sidecar.mjs
@@ -45,7 +45,7 @@ const sidecarConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.sidecar.conf.j
 const notchConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.notch.conf.json", "utf8"));
 const macBuild = fs.readFileSync("scripts/build-mac.sh", "utf8");
 const sidecarBuild = fs.readFileSync("scripts/build-cli-sidecar.mjs", "utf8");
-const release = fs.readFileSync("scripts/release.sh", "utf8");
+const publish = fs.readFileSync("scripts/publish-release.sh", "utf8");
 const fail = (message) => { throw new Error(message); };
 
 if (pkg.version !== config.version) fail("package.json and tauri.conf.json versions differ");
@@ -65,7 +65,7 @@ if (!macBuild.includes("build-voice-helper.mjs")) fail("macOS build does not bui
 if (!macBuild.includes("build-notch-helper.mjs")) fail("macOS build does not build the notch helper");
 if (!macBuild.includes("tauri.notch.conf.json")) fail("macOS build does not bundle the notch helper");
 if (notchConfig.bundle?.macOS?.files?.["Helpers/Sikemux Notch.app"] !== "binaries/notch/Sikemux Notch.app") fail("the macOS bundle must carry the notch helper app");
-if (!release.includes('"$SIG" "$VOICE"')) fail("releases do not publish the voice helper the app downloads");
+if (!publish.includes('"$SIG" "$VOICE"')) fail("releases do not publish the voice helper the app downloads");
 if (sidecarConfig.bundle?.resources?.["resources/sikemux_pi_tools.ts"] !== "sikemux_pi_tools.ts") fail("Pi browser extension resource mapping is missing");
 if (!pkg.scripts?.["build:windows"]?.includes("build:sidecar")) fail("Windows build does not build sidecars");
 if (!pkg.scripts?.["build:windows"]?.includes("tauri.sidecar.conf.json")) fail("Windows build does not bundle the CLI sidecar");
@@ -89,17 +89,17 @@ grep -Fq 'releases/download/nightly/latest.json' src-tauri/src/updates.rs || {
   exit 1
 }
 # shellcheck disable=SC2016
-grep -Fq 'gh release upload nightly "$MANIFEST" --clobber' scripts/release.sh || {
+grep -Fq 'gh release upload nightly "$MANIFEST" --clobber' scripts/publish-release.sh || {
   echo "nightly feed no longer repoints its latest.json" >&2
   exit 1
 }
 # shellcheck disable=SC2016
-grep -Fq 'NIGHTLY_GH_CMD=(gh release create "v$VERSION"' scripts/release.sh || {
+grep -Fq 'NIGHTLY_GH_CMD=(gh release create "v$VERSION"' scripts/publish-release.sh || {
   echo "nightly channel does not publish an immutable versioned release" >&2
   exit 1
 }
 # shellcheck disable=SC2016
-if grep -E 'gh release (create|upload|edit) nightly' scripts/release.sh | grep -qE '\$(DMG|TAR|SIG)'; then
+if grep -E 'gh release (create|upload|edit) nightly' scripts/publish-release.sh | grep -qE '\$(DMG|TAR|SIG)'; then
   echo "nightly channel still attaches builds to the moving pointer release" >&2
   exit 1
 fi
@@ -127,7 +127,12 @@ grep -Fq '[[ "${GITHUB_ACTIONS:-}" == "true" ]] || fail "releases publish from t
 }
 # shellcheck disable=SC2016
 grep -Fq './scripts/release.sh "$VERSION" "$(cat RELEASE_NOTES.md)" "${flags[@]}"' .github/workflows/release.yml || {
-  echo "the Release workflow no longer publishes through scripts/release.sh" >&2
+  echo "the Release workflow no longer builds through scripts/release.sh" >&2
+  exit 1
+}
+# shellcheck disable=SC2016
+grep -Fq './scripts/publish-release.sh "$VERSION" "$(cat RELEASE_NOTES.md)"' .github/workflows/release.yml || {
+  echo "the Release workflow no longer publishes through scripts/publish-release.sh" >&2
   exit 1
 }
 grep -Fq 'group: release' .github/workflows/release.yml || {

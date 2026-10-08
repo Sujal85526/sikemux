@@ -311,6 +311,26 @@ describe('reconnecting', () => {
     live.start();
     expect(sockets).toHaveLength(2);
   });
+
+  it('tries again at once when nudged while waiting, and leaves a working connection alone', async () => {
+    const live = new LiveAccount(deps);
+    await connected(live);
+    live.nudge();
+    expect(sockets).toHaveLength(1);
+    latest().serverCloses(1006);
+    live.nudge();
+    expect(sockets).toHaveLength(2);
+    live.stop();
+    live.nudge();
+    expect(sockets).toHaveLength(2);
+  });
+
+  it('says when the server took the hello, each time it does', async () => {
+    const ready = vi.fn();
+    const live = new LiveAccount({ ...deps, ready });
+    await connected(live);
+    expect(ready).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('readEvents', () => {

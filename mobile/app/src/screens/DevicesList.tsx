@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useUser } from '@clerk/expo';
 import * as Clipboard from 'expo-clipboard';
@@ -8,44 +8,33 @@ import type { Device } from '@protocol';
 import { AccountSheet } from '@/account/AccountSheet';
 import { Avatar } from '@/account/Avatar';
 import { providerName } from '@/account/providers';
-import { useAccountHosts } from '@/account/session';
-import type { Snapshot } from '@/core/protocol';
-import { useLive } from '@/devices/hub';
+import { retryHosts, useAccountHosts } from '@/account/session';
+import { reloadDevices, retry, useHostStatus, useLive } from '@/devices/hub';
 import { channelLabel, deviceKind, deviceName, type PairedDevice } from '@/devices/paired';
-import { chatTitle, ago } from '@/devices/words';
+import { asking as askingOf } from '@/devices/asking';
+import { summary } from '@/devices/status';
+import { chatTitle } from '@/devices/words';
+import { haptics } from '@/ui/haptics';
 import { AgentIcon, DeviceIcon, Icon } from '@/ui/Icon';
-import { IconButton, NeedsYou, Screen, useBottomGap, Working } from '@/ui/parts';
+import { Wants } from './Wants';
+import { Button, IconButton } from '@/ui/controls';
+import { Screen, useBottomGap } from '@/ui/screen';
+import { NeedsYou, Working } from '@/ui/status';
 import { fonts, type Palette, radius, typeFor, useColors, useStyles } from '@/ui/theme';
-
-function summary(snapshot: Snapshot): string {
-  const agents = snapshot.chats.length;
-  const terminals = snapshot.sessions.filter((session) => session.running).length;
-  const parts = [];
-  if (agents) parts.push(`${agents} agent${agents === 1 ? '' : 's'}`);
-  if (terminals) parts.push(`${terminals} terminal${terminals === 1 ? '' : 's'}`);
-  return parts.length ? parts.join(' · ') : 'Nothing running';
-}
 
 function DeviceCard({ device }: { device: PairedDevice }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
   const live = useLive(device.core);
-  const away = live.status === 'closed';
-  const snapshot = live.snapshot;
-  const asking = !away && snapshot ? snapshot.attentions[0] : undefined;
+  const status = useHostStatus(device.core);
+  // A host being reached again keeps its card lit until a try fails, so cards don't flicker on every retry.
+  const away = !status.online && !(status.connecting && !status.problem);
+  const snapshot = status.online ? live.snapshot : undefined;
+  const asking = snapshot?.attentions[0];
   const askingChat = asking ? snapshot?.chats.find((chat) => chat.agentId === asking.agentId) : undefined;
-  const working = !away && snapshot ? snapshot.chats.filter((chat) => chat.running) : [];
+  const working = snapshot ? snapshot.chats.filter((chat) => chat.running) : [];
   const channel = channelLabel(device.channel);
-  const behind = live.status === 'closed' ? live.outdated : undefined;
-  const meta = behind
-    ? behind === 'host'
-      ? 'Needs a newer Sikemux'
-      : 'Update this app to connect'
-    : away
-      ? `Asleep or offline${device.lastSeen ? ` · seen ${ago(device.lastSeen)}` : ''}`
-      : snapshot
-        ? summary(snapshot)
-        : 'Connecting…';
+  const meta = snapshot ? summary(snapshot) : status.online ? 'Connecting…' : status.line;
 
   return (
     <Pressable
@@ -74,7 +63,9 @@ function DeviceCard({ device }: { device: PairedDevice }) {
             <Text style={styles.askTitle} numberOfLines={1}>
               {askingChat ? chatTitle(askingChat) : asking.provider}
             </Text>
-            <Text style={styles.askDetail}>Needs input</Text>
+            <Text style={styles.askDetail} numberOfLines={1}>
+              {askingOf(asking) ? <Wants attention={asking} /> : 'Needs input'}
+            </Text>
           </View>
           <NeedsYou />
         </View>
@@ -82,9 +73,9 @@ function DeviceCard({ device }: { device: PairedDevice }) {
       {working.length ? (
         <View style={styles.work}>
           <View style={styles.faces}>
-            {working.slice(0, 4).map((chat) => (
-              <View key={chat.agentId} style={styles.face}>
-                <AgentIcon provider={chat.provider} size={15} />
+            {working.slice(0, 4).map((chat, index) => (
+              <View key={chat.agentId} style={[styles.face, index > 0 && styles.faceAfter]}>
+                <AgentIcon provider={chat.provider} size={18} />
               </View>
             ))}
           </View>
@@ -103,7 +94,10 @@ function AccountHostCard({ host }: { host: Device }) {
   const channel = channelLabel(host.channel);
   return (
     <Pressable
-      onPress={() => router.push({ pathname: '/join', params: { core: host.key, name: host.name } })}
+      onPress={() => {
+        haptics.tap();
+        router.push({ pathname: '/join', params: { core: host.key, name: host.name } });
+      }}
       accessibilityRole="button"
       accessibilityLabel={`Connect to ${host.name}`}
       style={({ pressed }) => [styles.card, styles.away, pressed && { opacity: 0.85 }]}>
@@ -130,7 +124,7 @@ function AccountHostCard({ host }: { host: Device }) {
 const DOWNLOAD = 'https://sikemux.com/phone';
 
 /** Where the next host lands: it turns into that host's row once it signs in to the account. */
-function HostSlot() {
+function HostSlot({ onDismiss }: { onDismiss?: () => void }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
   return (
@@ -145,6 +139,19 @@ function HostSlot() {
           <Text style={styles.watchingText}>Watching the account</Text>
         </View>
       </View>
+      {onDismiss ? <IconButton name="IconClose" label="Stop adding a host" onPress={onDismiss} /> : null}
+    </View>
+  );
+}
+
+/** Where the list stands while the account's hosts are still being read, or could not be. */
+function AccountNote({ problem }: { problem?: string }) {
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={styles.note} accessibilityLiveRegion="polite">
+      {problem ? null : <Working />}
+      <Text style={styles.noteText}>{problem ? "Couldn't list the hosts on your account." : 'Looking for hosts on your account'}</Text>
+      {problem ? <Button title="Try again" onPress={retryHosts} /> : null}
     </View>
   );
 }
@@ -154,7 +161,9 @@ function Step({ number, children }: { number: number; children: ReactNode }) {
   return (
     <View style={styles.step}>
       <View style={styles.stepNumber}>
-        <Text style={styles.stepNumberText}>{number}</Text>
+        <Text style={styles.stepNumberText} maxFontSizeMultiplier={1.3}>
+          {number}
+        </Text>
       </View>
       <Text style={styles.stepText}>{children}</Text>
     </View>
@@ -166,6 +175,7 @@ function Chip({ title, primary, onPress }: { title: string; primary?: boolean; o
   return (
     <Pressable
       onPress={onPress}
+      hitSlop={4}
       accessibilityRole="button"
       style={({ pressed }) => [styles.chip, primary && styles.chipPrimary, pressed && { opacity: 0.85 }]}>
       <Text style={[styles.chipText, primary && styles.chipTextPrimary]}>{title}</Text>
@@ -221,32 +231,48 @@ export function DevicesList({ devices }: { devices: PairedDevice[] }) {
   const styles = useStyles(makeStyles);
   const bottom = useBottomGap();
   const [account, setAccount] = useState(false);
-  const { hosts } = useAccountHosts();
+  const { hosts, loaded, problem } = useAccountHosts();
   const unpaired = hosts.filter((host) => !devices.some((device) => device.core === host.key));
   const count = devices.length + unpaired.length;
   // The slot stays while the list is as long as when + was pressed, so the host that fills it takes its place.
   const [addingAt, setAddingAt] = useState<number>();
-  const waiting = count === 0 || addingAt === count;
+  const adding = addingAt === count;
+  // With nothing paired, the steps wait until the account has said it has no hosts either.
+  const empty = count === 0 && loaded;
   const list = useRef<ScrollView>(null);
   const reveal = useRef(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const add = () => {
+    haptics.tap();
     reveal.current = true;
     setAddingAt(count);
+  };
+
+  const refresh = () => {
+    setRefreshing(true);
+    devices.forEach((device) => retry(device.core));
+    retryHosts();
+    reloadDevices()
+      .catch(() => {})
+      .finally(() => setRefreshing(false));
   };
 
   return (
     <Screen>
       <View style={styles.nav}>
+        <Text style={styles.title} accessibilityRole="header">
+          Devices
+        </Text>
         <IconButton name="IconPlus" label="Add a host" onPress={add} />
         <Pressable onPress={() => setAccount(true)} accessibilityRole="button" accessibilityLabel="Account" style={styles.account}>
           <Avatar size={28} />
         </Pressable>
       </View>
-      <Text style={styles.title}>Devices</Text>
       <ScrollView
         ref={list}
         contentContainerStyle={[styles.list, { paddingBottom: bottom + 12 }]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
         onContentSizeChange={() => {
           if (!reveal.current) return;
           reveal.current = false;
@@ -258,12 +284,14 @@ export function DevicesList({ devices }: { devices: PairedDevice[] }) {
         {unpaired.map((host) => (
           <AccountHostCard key={host.key} host={host} />
         ))}
-        {waiting ? (
+        {count === 0 && !loaded ? <AccountNote problem={problem} /> : null}
+        {empty || adding ? (
           <>
-            <HostSlot />
+            <HostSlot onDismiss={adding && count > 0 ? () => setAddingAt(undefined) : undefined} />
             <BringItIn />
           </>
         ) : null}
+        {count > 0 && problem ? <AccountNote problem={problem} /> : null}
       </ScrollView>
       <AccountSheet visible={account} onClose={() => setAccount(false)} />
     </Screen>
@@ -273,9 +301,9 @@ export function DevicesList({ devices }: { devices: PairedDevice[] }) {
 const makeStyles = (colors: Palette) => {
   const type = typeFor(colors);
   return StyleSheet.create({
-    nav: { height: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8, paddingHorizontal: 8 },
-    account: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-    title: { ...type.title, fontSize: 26, paddingHorizontal: 16, paddingBottom: 14 },
+    nav: { height: 56, flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 16, paddingRight: 8, marginBottom: 6 },
+    account: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+    title: { ...type.title, flex: 1, fontSize: 26 },
     list: { paddingHorizontal: 16, gap: 10 },
     card: { borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.raised, overflow: 'hidden' },
     away: { backgroundColor: 'transparent' },
@@ -287,7 +315,7 @@ const makeStyles = (colors: Palette) => {
     name: { ...type.heading },
     meta: { ...type.meta, marginTop: 2 },
     connect: {
-      height: 32,
+      minHeight: 32,
       paddingHorizontal: 13,
       justifyContent: 'center',
       borderRadius: radius.control,
@@ -312,18 +340,9 @@ const makeStyles = (colors: Palette) => {
     askDetail: { ...type.meta, fontSize: 12.5, marginTop: 1 },
     work: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 14 },
     faces: { flexDirection: 'row' },
-    face: {
-      width: 26,
-      height: 26,
-      borderRadius: 13,
-      marginRight: -6,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: colors.overlay,
-      borderWidth: 2,
-      borderColor: colors.raised,
-    },
-    workText: { flex: 1, marginLeft: 6, fontFamily: fonts.ui, fontSize: 13, color: colors.secondary },
+    face: { width: 18, height: 18, alignItems: 'center', justifyContent: 'center' },
+    faceAfter: { marginLeft: -5 },
+    workText: { flex: 1, fontFamily: fonts.ui, fontSize: 13, color: colors.secondary },
     slot: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -342,6 +361,8 @@ const makeStyles = (colors: Palette) => {
       justifyContent: 'center',
       backgroundColor: colors.active,
     },
+    note: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 24, paddingHorizontal: 8 },
+    noteText: { ...type.meta, flexShrink: 1, textAlign: 'center' },
     slotTitle: { ...type.row, color: colors.secondary },
     watching: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 3 },
     watchingText: { ...type.meta, fontSize: 12.5 },
@@ -356,13 +377,20 @@ const makeStyles = (colors: Palette) => {
     howTitle: { fontFamily: fonts.uiSemibold, fontSize: 15, color: colors.ink },
     steps: { marginTop: 10, gap: 9 },
     step: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-    stepNumber: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.active },
+    stepNumber: {
+      minWidth: 20,
+      minHeight: 20,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.active,
+    },
     stepNumberText: { fontFamily: fonts.uiSemibold, fontSize: 11.5, color: colors.ink },
     stepText: { flex: 1, fontFamily: fonts.ui, fontSize: 14, lineHeight: 20, color: colors.secondary },
     strong: { fontFamily: fonts.uiSemibold, color: colors.ink },
     chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 },
     chip: {
-      height: 36,
+      minHeight: 36,
       paddingHorizontal: 14,
       justifyContent: 'center',
       borderRadius: radius.control,

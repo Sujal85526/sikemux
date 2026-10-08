@@ -66,6 +66,7 @@ import { frontendPlugin, pluginSurface } from "../plugins/registry";
 import { ActivityPage } from "../shell/ActivityPage";
 import { DevicesPage } from "./DevicesPage";
 import { ModelProvidersSection } from "./ModelProvidersSection";
+import { AccountsSections } from "./AccountsSection";
 import { SettingsPage, SettingsRow, SettingsRows, SettingsSection } from "./SettingsLayout";
 import { useVoice, type VoiceState } from "../voice/dictation";
 import "../styles/settings.css";
@@ -539,6 +540,8 @@ function AgentsPage() {
                     })}
                 </div>
             </SettingsSection>
+
+            <AccountsSections />
 
             <SettingsSection
                 title="Provider profiles"
@@ -1588,6 +1591,7 @@ function PluginsPage() {
                                 label={title}
                                 desc={`${plugin.id}${version ? ` · ${version}` : ""}`}
                                 asLabel
+                                icon={plugin.mark?.(20)}
                                 control={
                                     <Switch
                                         checked={!disabled.includes(plugin.id)}

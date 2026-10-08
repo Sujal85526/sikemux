@@ -102,14 +102,14 @@ pub async fn open_url(url: String, app: Option<String>, shortcut: Option<String>
         {
             if let Some(app_name) = app.as_deref() {
                 run_focus(app_name, shortcut.as_deref());
-                sikemux_process::user_environment::command("open")
+                sikemux_process::user_environment::command("/usr/bin/open")
                     .arg("-a")
                     .arg(app_name)
                     .arg(&url)
                     .status()?;
                 return Ok(());
             }
-            sikemux_process::user_environment::command("open")
+            sikemux_process::user_environment::command("/usr/bin/open")
                 .arg(&url)
                 .status()?;
         }
@@ -146,7 +146,7 @@ pub async fn macos_focus_app(app: String, shortcut: Option<String>) -> AppResult
 #[cfg(target_os = "macos")]
 fn run_focus(app_name: &str, shortcut: Option<&str>) {
     let script = build_activate_and_switch(app_name, shortcut);
-    let _ = sikemux_process::user_environment::command("osascript")
+    let _ = sikemux_process::user_environment::command("/usr/bin/osascript")
         .arg("-e")
         .arg(&script)
         .status();

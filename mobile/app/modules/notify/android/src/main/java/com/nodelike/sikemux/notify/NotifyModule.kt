@@ -37,7 +37,7 @@ class NotifyModule : Module() {
       Notifier(context).cancelAll()
     }
 
-    Function("shown") {
+    AsyncFunction("shown") {
       Notifier(context).shown()
     }
 

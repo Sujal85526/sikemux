@@ -7,6 +7,12 @@ export interface AccountDeletion {
   requestedAt: string;
 }
 
+/** What the phone may send when it deletes an account. The body can be left out. */
+export interface AccountDeletionRequest {
+  /** A code Sign in with Apple gave the phone moments ago. The server trades it for a token and revokes that, so Apple stops treating the person as signed in to Sikemux. */
+  appleAuthorizationCode?: string;
+}
+
 /** Deleted once Clerk confirms it deleted the sign-in too; deleting until then, while the server retries. */
 export type AccountDeletionStatus = "deleting" | "deleted";
 
@@ -92,7 +98,8 @@ export type ErrorCode =
   | "payload_too_large"
   | "rate_limited"
   | "internal"
-  | "unavailable";
+  | "unavailable"
+  | "reverify_required";
 
 export interface ErrorDetail {
   code: ErrorCode;
@@ -333,6 +340,7 @@ export type RevokeReason = "removed" | "signed_out" | "account_deleted";
 /** Every definition by name, so code can look a type up from the name it validates against. */
 export interface Definitions {
   AccountDeletion: AccountDeletion;
+  AccountDeletionRequest: AccountDeletionRequest;
   AccountDeletionStatus: AccountDeletionStatus;
   AccountEvent: AccountEvent;
   AccountEventType: AccountEventType;

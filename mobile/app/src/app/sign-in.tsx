@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { router } from 'expo-router';
 import { useSignIn, useSignUp } from '@clerk/expo';
 
 import { errorCode, explain } from '@/account/clerkErrors';
 import { CodeEntry } from '@/ui/CodeEntry';
-import { Button, Field, Nav, PasswordField, Screen } from '@/ui/parts';
+import { goBack, goHome } from '@/ui/navigate';
+import { Button, Field, PasswordField } from '@/ui/controls';
+import { Nav, Screen } from '@/ui/screen';
 import { fonts, type Palette, typeFor, useStyles } from '@/ui/theme';
 
 /** Why an emailed code is asked for: a phone new to the account, a new account, or a new password. */
@@ -21,6 +22,8 @@ const TITLES: Record<Step['kind'], string> = {
   code: 'Check your email',
   'new-password': 'Choose a new password',
 };
+
+export { Crashed as ErrorBoundary } from '@/screens/Crashed';
 
 export default function SignIn() {
   const styles = useStyles(makeStyles);
@@ -58,7 +61,7 @@ export default function SignIn() {
 
   const finishSignIn = async () => {
     check(await signIn.finalize());
-    router.replace('/');
+    goHome();
   };
 
   /** After a password, a phone new to the account confirms with an emailed code. */
@@ -117,7 +120,7 @@ export default function SignIn() {
       check(await signUp.verifications.verifyEmailCode({ code: typed }));
       if (signUp.status !== 'complete') throw new Error('The account needs more than this app asks for; finish signing up on the web.');
       check(await signUp.finalize());
-      router.replace('/');
+      goHome();
     }).finally(() => setCode(''));
 
   const typeCode = (typed: string) => {
@@ -126,7 +129,7 @@ export default function SignIn() {
   };
 
   const back = () => {
-    if (step.kind === 'email') return router.canGoBack() ? router.back() : router.replace('/');
+    if (step.kind === 'email') return goBack();
     void signIn.reset();
     go({ kind: 'email' });
   };
@@ -234,7 +237,7 @@ const makeStyles = (colors: Palette) => {
     centered: { textAlign: 'center' },
     tiles: { marginTop: 24 },
     problem: { ...type.meta, color: colors.danger, marginTop: 4 },
-    link: { height: 40, alignItems: 'center', justifyContent: 'center' },
+    link: { minHeight: 44, alignItems: 'center', justifyContent: 'center' },
     linkText: { fontFamily: fonts.uiMedium, fontSize: 15, color: colors.secondary },
   });
 };

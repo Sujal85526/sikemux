@@ -1,4 +1,4 @@
-import { createHash, verify, X509Certificate } from "node:crypto";
+import { createHash, sign, verify, X509Certificate } from "node:crypto";
 import {
   mkdtempSync,
   readdirSync,
@@ -18,6 +18,8 @@ import {
   assetFileName,
   promoteUpdate,
   publishUpdate,
+  rollBackUpdate,
+  withdrawUpdate,
 } from "../src/updates/publish.ts";
 import { body, freshDatabase, log, testApp } from "./support.ts";
 import {
@@ -45,7 +47,9 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await database.pool.query("truncate updates, update_channels, audit cascade");
+  await database.pool.query(
+    "truncate updates, update_channels, update_rollbacks, audit cascade",
+  );
   assetsDir = mkdtempSync(join(tmpdir(), "sikemux-update-assets-"));
 });
 
@@ -76,7 +80,8 @@ function askForUpdate(headers: Record<string, string> = {}) {
   });
 }
 
-async function servedManifest(response: Response) {
+async function servedPart(response: Response, name: string) {
+  expect(response.status).toBe(200);
   const parts = readMultipart(
     response.headers.get("content-type") ?? "",
     Buffer.from(await response.arrayBuffer()),
@@ -84,11 +89,42 @@ async function servedManifest(response: Response) {
   expect(parts).toHaveLength(1);
   const [part] = parts;
   if (!part) throw new Error("no part");
-  expect(part.headers["content-disposition"]).toBe(
-    'form-data; name="manifest"',
-  );
+  expect(part.headers["content-disposition"]).toBe(`form-data; name="${name}"`);
   expect(part.headers["content-type"]).toMatch(/^application\/json/);
   return part;
+}
+
+function servedManifest(response: Response) {
+  return servedPart(response, "manifest");
+}
+
+async function servedId(headers: Record<string, string> = {}) {
+  const part = await servedManifest(await askForUpdate(headers));
+  return JSON.parse(part.body.toString()).id;
+}
+
+function directiveFor(commitTime: string, signWith = key) {
+  const directive = Buffer.from(
+    JSON.stringify({ type: "rollBackToEmbedded", parameters: { commitTime } }),
+  );
+  return {
+    directive,
+    signature: sign("sha256", directive, signWith).toString("base64"),
+  };
+}
+
+function rollBack(
+  id: string,
+  directive = directiveFor(new Date().toISOString()),
+) {
+  return rollBackUpdate(database.db, { id, ...directive, certificate });
+}
+
+async function auditActions() {
+  const { rows } = await database.pool.query(
+    "select action from audit order by id",
+  );
+  return rows.map((row) => row.action);
 }
 
 describe("GET /updates/manifest", () => {
@@ -369,5 +405,232 @@ describe("promoteUpdate", () => {
     await expect(promoteUpdate(database.db, older.id)).rejects.toThrow(
       "phones would never take it",
     );
+  });
+});
+
+describe("withdrawUpdate", () => {
+  it("stops offering an update on every channel, falling back to the one before it", async () => {
+    const older = bundle({ createdAt: "2026-10-01T00:00:00.000Z" });
+    const newer = bundle({ createdAt: "2026-10-02T00:00:00.000Z" });
+    await publish(older.dir);
+    await publish(newer.dir);
+    await promoteUpdate(database.db, newer.id);
+    expect(await servedId({ "expo-channel-name": "stable" })).toBe(newer.id);
+
+    expect(await withdrawUpdate(database.db, newer.id)).toMatchObject({
+      id: newer.id,
+      channels: expect.arrayContaining(["nightly", "stable"]),
+    });
+    expect(await servedId()).toBe(older.id);
+    expect((await askForUpdate({ "expo-channel-name": "stable" })).status).toBe(
+      204,
+    );
+
+    expect(await withdrawUpdate(database.db, newer.id)).toMatchObject({
+      channels: [],
+    });
+    expect(await auditActions()).toEqual([
+      "update.published",
+      "update.published",
+      "update.promoted",
+      "update.withdrawn",
+    ]);
+  });
+
+  it("keeps a withdrawn update withdrawn when it is published or promoted again", async () => {
+    const published = bundle();
+    await publish(published.dir);
+    await withdrawUpdate(database.db, published.id);
+    await expect(publish(published.dir)).rejects.toThrow(
+      `${published.id} was withdrawn`,
+    );
+    await expect(promoteUpdate(database.db, published.id)).rejects.toThrow(
+      `${published.id} was withdrawn`,
+    );
+    expect((await askForUpdate()).status).toBe(204);
+  });
+
+  it("refuses an id no update has", async () => {
+    await expect(
+      withdrawUpdate(database.db, "4b0b9a5e-1c6f-4a8e-9d3a-2f6b7c8d9e0f"),
+    ).rejects.toThrow("No update has the id");
+    await expect(withdrawUpdate(database.db, "not-an-id")).rejects.toThrow(
+      "is not an update id",
+    );
+  });
+
+  it("lets stable offer an older update once the newer one is withdrawn, serving whatever was put there last", async () => {
+    const older = bundle({ createdAt: "2026-10-01T00:00:00.000Z" });
+    const newer = bundle({
+      createdAt: "2026-10-02T00:00:00.000Z",
+      channel: "stable",
+    });
+    await publish(older.dir);
+    await publish(newer.dir);
+    await expect(promoteUpdate(database.db, older.id)).rejects.toThrow(
+      `Withdraw ${newer.id} first`,
+    );
+
+    await withdrawUpdate(database.db, newer.id);
+    await promoteUpdate(database.db, older.id);
+    expect(await servedId({ "expo-channel-name": "stable" })).toBe(older.id);
+  });
+
+  it("refuses to publish an update older than one the channel still offers", async () => {
+    const newer = bundle({ createdAt: "2026-10-02T00:00:00.000Z" });
+    const older = bundle({ createdAt: "2026-10-01T00:00:00.000Z" });
+    await publish(newer.dir);
+    await expect(publish(older.dir)).rejects.toThrow(
+      "phones would never take it",
+    );
+    await withdrawUpdate(database.db, newer.id);
+    await publish(older.dir);
+    expect(await servedId()).toBe(older.id);
+  });
+});
+
+describe("rollBackUpdate", () => {
+  it("serves the signed directive on every channel the update was on", async () => {
+    const published = bundle({ createdAt: "2026-10-01T00:00:00.000Z" });
+    await publish(published.dir);
+    await promoteUpdate(database.db, published.id);
+    const commitTime = new Date().toISOString();
+    const signed = directiveFor(commitTime);
+
+    expect(await rollBack(published.id, signed)).toMatchObject({
+      id: published.id,
+      channels: expect.arrayContaining(["nightly", "stable"]),
+      commitTime,
+    });
+
+    for (const channel of ["nightly", "stable"]) {
+      const part = await servedPart(
+        await askForUpdate({ "expo-channel-name": channel }),
+        "directive",
+      );
+      expect(part.body.equals(signed.directive)).toBe(true);
+      expect(JSON.parse(part.body.toString())).toEqual({
+        type: "rollBackToEmbedded",
+        parameters: { commitTime },
+      });
+      expect(part.headers["expo-signature"]).toBe(
+        `sig="${signed.signature}", keyid="main", alg="rsa-v1_5-sha256"`,
+      );
+      expect(
+        verify(
+          "sha256",
+          part.body,
+          new X509Certificate(certificate).publicKey,
+          Buffer.from(signed.signature, "base64"),
+        ),
+      ).toBe(true);
+    }
+    expect((await askForUpdate({ "expo-platform": "ios" })).status).toBe(204);
+    expect(await auditActions()).toEqual([
+      "update.published",
+      "update.promoted",
+      "update.rolled_back",
+    ]);
+  });
+
+  it("offers a newer update again once one is published after the rollback", async () => {
+    const bad = bundle({ createdAt: "2026-10-01T00:00:00.000Z" });
+    await publish(bad.dir);
+    await rollBack(
+      bad.id,
+      directiveFor(new Date(Date.now() - 60_000).toISOString()),
+    );
+
+    const fixed = bundle();
+    await publish(fixed.dir);
+    expect(await servedId()).toBe(fixed.id);
+  });
+
+  it("refuses to offer an update made before the rollback, since rolled back phones would never take it", async () => {
+    const bad = bundle({ createdAt: "2026-10-01T00:00:00.000Z" });
+    await publish(bad.dir);
+    await rollBack(bad.id);
+    const stale = bundle({ createdAt: "2026-10-02T00:00:00.000Z" });
+    await expect(publish(stale.dir)).rejects.toThrow("rolled phones back at");
+    await servedPart(await askForUpdate(), "directive");
+  });
+
+  it("refuses a directive the update key did not sign", async () => {
+    const published = bundle({ createdAt: "2026-10-01T00:00:00.000Z" });
+    await publish(published.dir);
+    await expect(
+      rollBack(
+        published.id,
+        directiveFor(new Date().toISOString(), stranger.key),
+      ),
+    ).rejects.toThrow("is not a signature of the directive");
+    expect(await servedId()).toBe(published.id);
+  });
+
+  it.each([
+    [
+      "another type",
+      '{"type":"noUpdateAvailable","parameters":{"commitTime":"2026-10-05T00:00:00.000Z"}}',
+      "is not exactly",
+    ],
+    [
+      "extra fields",
+      '{"type":"rollBackToEmbedded","parameters":{"commitTime":"2026-10-05T00:00:00.000Z"},"extra":{}}',
+      "is not exactly",
+    ],
+    [
+      "spaces",
+      '{ "type":"rollBackToEmbedded","parameters":{"commitTime":"2026-10-05T00:00:00.000Z"}}',
+      "is not exactly",
+    ],
+    [
+      "a time without milliseconds",
+      '{"type":"rollBackToEmbedded","parameters":{"commitTime":"2026-10-05T00:00:00Z"}}',
+      "with milliseconds",
+    ],
+    ["no parameters", '{"type":"rollBackToEmbedded"}', "with milliseconds"],
+    ["not JSON", "roll back", "is not JSON"],
+  ])("refuses a directive with %s", async (_, text, message) => {
+    const published = bundle({ createdAt: "2026-10-01T00:00:00.000Z" });
+    await publish(published.dir);
+    const directive = Buffer.from(text);
+    await expect(
+      rollBack(published.id, {
+        directive,
+        signature: sign("sha256", directive, key).toString("base64"),
+      }),
+    ).rejects.toThrow(message);
+  });
+
+  it("refuses a commitTime that is not after the update, or is in the future", async () => {
+    const published = bundle({ createdAt: "2026-10-01T00:00:00.000Z" });
+    await publish(published.dir);
+    await expect(
+      rollBack(published.id, directiveFor("2026-10-01T00:00:00.000Z")),
+    ).rejects.toThrow("is not after");
+    await expect(
+      rollBack(
+        published.id,
+        directiveFor(new Date(Date.now() + 60 * 60_000).toISOString()),
+      ),
+    ).rejects.toThrow("is in the future");
+    expect(await servedId()).toBe(published.id);
+  });
+
+  it("refuses to roll back an update the channel has since moved past", async () => {
+    const older = bundle({ createdAt: "2026-10-01T00:00:00.000Z" });
+    const newer = bundle({ createdAt: "2026-10-02T00:00:00.000Z" });
+    await publish(older.dir);
+    await publish(newer.dir);
+    await expect(rollBack(older.id)).rejects.toThrow(
+      `nightly has offered ${newer.id} since ${older.id}`,
+    );
+    expect(await servedId()).toBe(newer.id);
+  });
+
+  it("refuses an id no update has", async () => {
+    await expect(
+      rollBack("4b0b9a5e-1c6f-4a8e-9d3a-2f6b7c8d9e0f"),
+    ).rejects.toThrow("No update has the id");
   });
 });

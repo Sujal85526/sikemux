@@ -2,7 +2,8 @@ import { Linking, StyleSheet, Text, View } from 'react-native';
 
 import type { UpdateRequired as Required } from '@/network/network';
 import { updateLink } from '@/network/installed';
-import { Button, Screen, useBottomGap } from '@/ui/parts';
+import { Button } from '@/ui/controls';
+import { Screen, useBottomGap } from '@/ui/screen';
 import { type Palette, typeFor, useStyles } from '@/ui/theme';
 
 /** The only screen while the installed app is older than the accounts server works with. */

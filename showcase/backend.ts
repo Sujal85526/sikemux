@@ -86,6 +86,11 @@ function recentPage(request: RecentRequest) {
   };
 }
 
+const OTHER_ACCOUNTS: Record<string, { email: string; used: number }> = {
+  ".claude-personal": { email: "edon@hey.com", used: 82 },
+  ".claude-client": { email: "edon@northwind.io", used: 9 },
+};
+
 export class ShowcaseBackend implements IpcTransport {
   readonly unhandled = new Map<string, number>();
   private readonly listeners = new Map<
@@ -203,6 +208,8 @@ export class ShowcaseBackend implements IpcTransport {
         },
         { alias: "gpu-box", hostname: "gpu.lan", user: "edon", port: 22 },
         { alias: "pi-hole", hostname: "192.168.1.2", user: "pi", port: 22 },
+        { alias: "build-runner", hostname: "10.20.0.12", user: "ci", port: 22 },
+        { alias: "db-replica", hostname: "10.20.0.31", user: "edon", port: 22 },
       ]),
     );
     this.on(
@@ -343,10 +350,30 @@ export class ShowcaseBackend implements IpcTransport {
     this.on("agent_recent_sessions", ({ request }) =>
       recentPage(request as RecentRequest),
     );
-    this.on(
-      "agent_usage",
-      ({ agent }) => AGENT_USAGE[agent as keyof typeof AGENT_USAGE] ?? null,
-    );
+    this.on("agent_usage", ({ agent, configPath }) => {
+      const usage = AGENT_USAGE[agent as keyof typeof AGENT_USAGE] ?? null;
+      const peak =
+        OTHER_ACCOUNTS[String(configPath).split("/").pop() ?? ""]?.used;
+      if (!usage || peak === undefined) return usage;
+      return {
+        ...usage,
+        windows: usage.windows.map((window, index) => ({
+          ...window,
+          usedPercent: index === 0 ? peak : Math.round(peak / 2),
+        })),
+      };
+    });
+    this.on("model_providers", () => []);
+    this.on("agent_account_status", ({ agent, configPath }) => ({
+      signedIn: true,
+      email:
+        OTHER_ACCOUNTS[String(configPath).split("/").pop() ?? ""]?.email ??
+        "edon@acme.dev",
+      plan: null,
+      organization: null,
+      method: "subscription",
+      sessions: `/demo/${String(agent)}/sessions`,
+    }));
     this.on("acp_attach", () => ({ status: "missing" }));
     this.on("acp_list", () => []);
     this.on("pty_sessions", () => []);

@@ -9,9 +9,11 @@
     "userInterfaceStyle": "dark",
     "ios": {
       "bundleIdentifier": "com.nodelike.sikemux.mobile",
-      "supportsTablet": true,
+      "appleTeamId": "D577WD6Z5U",
+      "supportsTablet": false,
       "infoPlist": {
-        "NSLocalNetworkUsageDescription": "Sikemux reaches your hosts directly when they are on the same network."
+        "NSLocalNetworkUsageDescription": "Sikemux reaches your hosts directly when they are on the same network.",
+        "ITSAppUsesNonExemptEncryption": false
       },
       "icon": "../../src-tauri/icons/sikemux.icon"
     },
@@ -22,19 +24,38 @@
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
-      }
+      },
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED"
+      ]
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store",
+      ["expo-secure-store", { "configureAndroidBackup": false }],
       "expo-web-browser",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Sikemux attaches the photos you pick to a chat on your computer.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ],
       "@clerk/expo",
       "@clerk/expo-google-signin",
+      "expo-apple-authentication",
       "./plugins/link-system-configuration",
       "./plugins/rustls-platform-verifier",
       "./plugins/small-apk",
       "./plugins/release-signing",
       "./plugins/notifications",
+      "./plugins/backup-rules",
+      "./plugins/scene-lifecycle",
+      "./plugins/spm-ids",
       [
         "expo-splash-screen",
         {

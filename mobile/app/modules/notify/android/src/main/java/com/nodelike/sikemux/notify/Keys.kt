@@ -27,7 +27,7 @@ class Keys(context: Context) {
 
   fun put(host: String, keyId: Long, key: ByteArray) {
     prefs.edit()
-      .putString(HOST + host, "$keyId:${wrap(key)}")
+      .putString(HOST + host, entry(keyId, wrap(key)))
       .remove(UNREADABLE + host)
       .commit()
   }
@@ -56,9 +56,9 @@ class Keys(context: Context) {
   }
 
   private fun read(host: String, stored: String): HostKey? {
-    val (keyId, wrapped) = stored.split(':', limit = 2).takeIf { it.size == 2 } ?: return null
+    val (keyId, wrapped) = parseEntry(stored) ?: return null
     return try {
-      HostKey(host, keyId.toLong(), unwrap(wrapped))
+      HostKey(host, keyId, unwrap(wrapped))
     } catch (_: Exception) {
       null
     }
@@ -91,12 +91,20 @@ class Keys(context: Context) {
     return cipher.doFinal(bytes, 12, bytes.size - 12)
   }
 
-  private companion object {
-    const val FILE = "sikemux-notify"
-    const val KEYSTORE = "AndroidKeyStore"
-    const val ALIAS = "sikemux-notify"
-    const val PHONE = "phone"
-    const val HOST = "host:"
-    const val UNREADABLE = "unreadable:"
+  companion object {
+    private const val FILE = "sikemux-notify"
+    private const val KEYSTORE = "AndroidKeyStore"
+    private const val ALIAS = "sikemux-notify"
+    private const val PHONE = "phone"
+    private const val HOST = "host:"
+    private const val UNREADABLE = "unreadable:"
+
+    fun entry(keyId: Long, wrapped: String): String = "$keyId:$wrapped"
+
+    /** The key id and the wrapped key stored for a host, or null for anything [entry] did not write. */
+    fun parseEntry(stored: String): Pair<Long, String>? {
+      val (keyId, wrapped) = stored.split(':', limit = 2).takeIf { it.size == 2 } ?: return null
+      return Pair(keyId.toLongOrNull() ?: return null, wrapped.takeIf { it.isNotEmpty() } ?: return null)
+    }
   }
 }

@@ -661,6 +661,8 @@ fn chat_launch(core: &CoreProcess, agent_id: &str) -> ChatLaunch {
         permission_mode: "workspace-write".into(),
         model: None,
         effort: None,
+        account: None,
+        fallbacks: Vec::new(),
     }
 }
 

@@ -1,7 +1,7 @@
 import { memo, useContext, useMemo, useState } from "react";
 import { CopyButton } from "../ui/CopyButton";
 import { basename } from "../lib/paths";
-import { AgentIcon, IconCheck, IconChevron, IconClose, IconFile, IconPlug, IconTimer, IconWarning } from "../ui/Icons";
+import { AgentIcon, IconCheck, IconChevron, IconClose, IconFile, IconInfo, IconPlug, IconTimer, IconUser, IconWarning } from "../ui/Icons";
 import { rateLabel, sentLabel, sentTitle } from "./messageMeta";
 import { durationLabel } from "./durationLabel";
 import { localImagePath, useImagePreview } from "./imagePreview";
@@ -9,10 +9,11 @@ import { ChatFileRef, useFileRef } from "./FileRef";
 import { ChatAgentContext } from "./chatAgent";
 import { ChatImage } from "./ChatImage";
 import { FoldedMarkdown } from "./ChatMarkdown";
+import { ChatPage } from "./ChatPage";
 import { ToolGroup } from "./ToolGroup";
 import { ToolRow } from "./ToolRow";
 import { attachmentName, formatDetail, groupParts, subagentTask } from "./transcript";
-import type { AcpSubagent, AcpTaskNotice, ChatMessage, ChatPart } from "./types";
+import type { AccountMove, AcpSubagent, AcpTaskNotice, AgentNotice, ChatMessage, ChatPart } from "./types";
 import { ContextChipLabel } from "./ContextChip";
 import { Shimmer } from "./Shimmer";
 import { splitSentContext, type SentContext } from "./promptContext";
@@ -100,9 +101,11 @@ const MessagePart = memo(function MessagePart({ part, live, typed }: { part: Cha
             </div>
         );
     }
-    if (part.kind === "tool") return <ToolRow part={part} />;
+    if (part.kind === "tool") return part.page ? <ChatPage page={part.page} /> : <ToolRow part={part} />;
     if (part.kind === "subagent") return <SubagentPart subagent={part.subagent} />;
     if (part.kind === "notice") return <NoticePart notice={part.notice} />;
+    if (part.kind === "agent_notice") return <AgentNoticePart notice={part.notice} />;
+    if (part.kind === "account") return <AccountPart move={part.move} />;
     return <ContentPart part={part} />;
 });
 
@@ -139,6 +142,34 @@ function NoticePart({ notice }: { notice: AcpTaskNotice }) {
             </span>
             <span className="chat-notice-state">{notice.state}</span>
             {notice.summary && <span className="chat-notice-summary">{notice.summary}</span>}
+        </div>
+    );
+}
+
+function AgentNoticePart({ notice }: { notice: AgentNotice }) {
+    return (
+        <div className={`chat-notice agent severity-${notice.severity}`} role="status">
+            {notice.severity === "info" ? <IconInfo size={12} /> : <IconWarning size={12} />}
+            <span className="chat-notice-state">{notice.title}</span>
+            {notice.description && (
+                <span className="chat-notice-summary" title={notice.description}>
+                    {notice.description}
+                </span>
+            )}
+        </div>
+    );
+}
+
+function AccountPart({ move }: { move: AccountMove }) {
+    const why = move.reason === "limit" && move.from ? `${move.from} reached its usage limit` : null;
+    return (
+        <div className="chat-notice account" role="status">
+            <IconUser size={12} />
+            <span className="chat-notice-state">Moved to</span>
+            <span className="chat-notice-name" title={move.label}>
+                {move.label}
+            </span>
+            {why && <span className="chat-notice-summary">{why}</span>}
         </div>
     );
 }

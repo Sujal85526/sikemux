@@ -39,6 +39,7 @@ export const defaultPalette = {
   toolEdit: '#cdaf86',
   toolDelete: '#c25e4b',
   toolRun: '#d966ae',
+  toolMcp: '#6fd6b9',
   /** The pane grain's dots: the raised surface on a dark theme. */
   shaderDot: '#19191e',
 };
@@ -70,6 +71,11 @@ export function isLight(palette: Palette): boolean {
   if (!match) return false;
   const [red, green, blue] = match.slice(1).map((part) => parseInt(part, 16) / 255);
   return 0.2126 * red + 0.7152 * green + 0.0722 * blue > 0.5;
+}
+
+/** The system keyboard drawn to match the palette. */
+export function keyboardFor(palette: Palette): 'light' | 'dark' {
+  return isLight(palette) ? 'light' : 'dark';
 }
 
 const PaletteContext = createContext<Palette>(defaultPalette);

@@ -28,7 +28,11 @@ const LINE_ICONS = {
   check: "IconCheck",
   arrowUp: "IconArrowUp",
   external: "IconExternal",
+  agent: "IconAgent",
 };
+
+// Line icons the app fills from its stylesheet rather than from the icon itself.
+const FILLED_ICONS = new Set(["agent"]);
 
 const MARK_FUNCTIONS = {
   claude: "IconClaude",
@@ -246,7 +250,10 @@ for (const [key, name] of Object.entries(LINE_ICONS)) {
   if (!match) throw new Error(`src/ui/Icons.tsx has no ${name}`);
   const options = match[2] ?? "";
   const box = options.match(/viewBox:\s*"([^"]+)"/)?.[1];
-  const style = options.includes('fill: "currentColor"') ? "fill" : "stroke";
+  const style =
+    FILLED_ICONS.has(key) || options.includes('fill: "currentColor"')
+      ? "fill"
+      : "stroke";
   const body = shapes(match[1]).map(
     (shape) => `        ${shapeLiteral(shape, style, null, {})},`,
   );

@@ -9,6 +9,7 @@ export type {
   ChatMark,
   LauncherInfo,
   ProjectInfo,
+  RecentInfo,
   SessionInfo,
   Workspace,
 } from '@sikemux/native';

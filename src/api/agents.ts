@@ -1,6 +1,15 @@
 import { invokeCommand as invoke } from "./invoke";
+import { getIpcTransport, type IpcUnsubscribe } from "./transport";
 import type { AgentRuntimeProfile } from "../agents/agentProfiles";
 import type { AgentEffort, AgentType } from "../state/types";
+
+/** Whether an agent can be used right now; `unknown` when its CLI has no way to say if it is signed in. */
+export type AgentStatus =
+    | { state: "missing" }
+    | { state: "broken"; reason: string }
+    | { state: "signedOut" }
+    | { state: "ready"; account: string | null }
+    | { state: "unknown" };
 
 export interface AgentInfo {
     type: AgentType;
@@ -15,6 +24,7 @@ export interface AgentInfo {
     defaultModel: string | null;
     /** Effective reasoning effort inherited from the CLI's own user configuration. */
     defaultEffort: AgentEffort | null;
+    status?: AgentStatus;
 }
 
 export interface AgentModelInfo {
@@ -124,6 +134,25 @@ export interface LiveAgentSession {
     status: string;
 }
 
+/** Who one account is signed in as, in the agent's own words. */
+export interface AgentAccountStatus {
+    signedIn: boolean;
+    email: string | null;
+    plan: string | null;
+    organization: string | null;
+    /** `subscription`, `apiKey`, or whatever else the CLI signs in with. */
+    method: string | null;
+    /** Where the account keeps its chats: accounts that share it can take over each other's chats. */
+    sessions: string | null;
+}
+
+/** The page a running sign-in opened, for when the browser did not. */
+export interface AgentSignInPage {
+    agent: AgentType;
+    configPath: string | null;
+    url: string;
+}
+
 /** How full a saved session's context window was. Claude does not record the window's size. */
 export interface SavedSessionContext {
     used: number;
@@ -132,10 +161,25 @@ export interface SavedSessionContext {
 
 export const agentApi = {
     available: fetchAvailable,
+    /** Forgets every agent's status, so the next look asks each one again. */
+    refreshStatuses: (): Promise<void> => invoke<void>("refresh_agent_statuses"),
+    markSignedOut: (agent: AgentType, configPath?: string): Promise<void> => invoke<void>("mark_agent_signed_out", { agent, configPath }),
     models: (agent: AgentType, executablePath?: string, configPath?: string): Promise<AgentModelInfo[]> =>
         invoke<AgentModelInfo[]>("agent_models", { agent, executablePath, configPath }),
     usage: (agent: AgentType, executablePath?: string, configPath?: string): Promise<AgentUsage> =>
         invoke<AgentUsage>("agent_usage", { agent, executablePath, configPath }),
+    account: (agent: AgentType, executablePath?: string, configPath?: string): Promise<AgentAccountStatus> =>
+        invoke<AgentAccountStatus>("agent_account_status", { agent, executablePath, configPath }),
+    addAccount: (agent: AgentType, name: string): Promise<string> => invoke<string>("agent_account_add", { agent, name }),
+    signIn: (agent: AgentType, executablePath?: string, configPath?: string): Promise<void> =>
+        invoke<void>("agent_account_sign_in", { agent, executablePath, configPath }),
+    signInCode: (agent: AgentType, configPath: string | undefined, code: string): Promise<void> =>
+        invoke<void>("agent_account_sign_in_code", { agent, configPath, code }),
+    cancelSignIn: (agent: AgentType, configPath?: string): Promise<void> => invoke<void>("agent_account_sign_in_cancel", { agent, configPath }),
+    signOut: (agent: AgentType, executablePath?: string, configPath?: string): Promise<void> =>
+        invoke<void>("agent_account_sign_out", { agent, executablePath, configPath }),
+    onSignInPage: (listener: (page: AgentSignInPage) => void, signal?: AbortSignal): Promise<IpcUnsubscribe> =>
+        getIpcTransport().subscribe<AgentSignInPage>("agent_account_sign_in", (event) => listener(event.payload), { signal }),
     sessions: fetchSessions,
     recent: (request: RecentChatsRequest): Promise<RecentChatsPage> => invoke<RecentChatsPage>("agent_recent_sessions", { request }),
     sessionContext: (agent: AgentType, cwd: string, sessionId: string, configPath?: string): Promise<SavedSessionContext | null> =>

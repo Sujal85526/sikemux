@@ -20,5 +20,6 @@ registerFrontendPlugin({
     ],
     open: openSignoz,
     openTitle: "Open SigNoz",
+    mark: (size) => <SignozIcon size={size} />,
     Overlay: SignozOverlay,
 });

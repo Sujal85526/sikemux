@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { clear as clearDisk } from '../../test/mocks/expo-file-system';
+import { File, clear as clearDisk } from '../../test/mocks/expo-file-system';
 
 type Paired = typeof import('./paired');
 let paired: Paired;
@@ -36,5 +36,36 @@ describe('the paired hosts', () => {
     vi.resetModules();
     const relaunched: Paired = await import('./paired');
     expect(await relaunched.pairedDevices()).toEqual([{ core: 'a', access: 'full', pairedAt: 1 }]);
+  });
+
+  it('starts with no hosts, and says so, when the saved list is damaged', async () => {
+    new File('file:///document/paired-devices.json').write('[{"core": "a", "acc');
+    expect(await paired.pairedDevices()).toEqual([]);
+    expect(paired.pairedListDamaged()).toBe(true);
+    await paired.rememberDevice({ core: 'b', access: 'full', pairedAt: 2 });
+    vi.resetModules();
+    const relaunched: Paired = await import('./paired');
+    expect(await relaunched.pairedDevices()).toEqual([{ core: 'b', access: 'full', pairedAt: 2 }]);
+    expect(relaunched.pairedListDamaged()).toBe(false);
+  });
+
+  it('reads the new copy when a write stopped before it was moved into place', async () => {
+    new File('file:///document/paired-devices.json.next').write('[{"core":"a","access":"full","pairedAt":1}]');
+    expect(await paired.pairedDevices()).toEqual([{ core: 'a', access: 'full', pairedAt: 1 }]);
+  });
+
+  it('can start over', async () => {
+    await paired.rememberDevice({ core: 'a', access: 'full', pairedAt: 1 });
+    await paired.startOver();
+    expect(await paired.pairedDevices()).toEqual([]);
+    expect(new File('file:///document/paired-devices.json').exists).toBe(false);
+  });
+
+  it('leaves the file alone when a change changes nothing', async () => {
+    await paired.rememberDevice({ core: 'a', access: 'full', pairedAt: 1, name: 'Studio' });
+    const file = new File('file:///document/paired-devices.json');
+    file.write('[{"core":"a","access":"full","pairedAt":1,"name":"Studio"}]');
+    await paired.updateDevice('a', { name: 'Studio' });
+    expect(await file.text()).toBe('[{"core":"a","access":"full","pairedAt":1,"name":"Studio"}]');
   });
 });

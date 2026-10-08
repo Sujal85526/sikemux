@@ -1,21 +1,33 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import MaskedView from '@react-native-masked-view/masked-view';
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
-import type { ChatInfo, ProjectInfo, SessionInfo, Snapshot } from '@/core/protocol';
-import { reloadDevices, retry, useDevices, useLive } from '@/devices/hub';
-import { channelLabel, deviceName, updateDevice } from '@/devices/paired';
-import { ForgetSheet } from '@/devices/ForgetSheet';
+import type { ChatInfo, ProjectInfo, RecentInfo, SessionInfo, Snapshot } from '@/core/protocol';
+import { problem as problemOf, reloadDevices, retry, useDevices, useHostStatus, useLive } from '@/devices/hub';
+import { deviceName, type PairedDevice, updateDevice } from '@/devices/paired';
+import { ForgetSheet, useForget } from '@/devices/ForgetSheet';
 import { ProjectSheet } from '@/devices/ProjectSheet';
-import { ago, chatState, chatTitle, folder } from '@/devices/words';
+import { asking as askingOf } from '@/devices/asking';
+import { summary } from '@/devices/status';
+import { age, chatState, chatTitle, folder } from '@/devices/words';
+import { Wants } from '@/screens/Wants';
+import { haptics } from '@/ui/haptics';
+import { useScrollPause } from '@/ui/motion';
 import { AgentIcon, Icon } from '@/ui/Icon';
-import { Button, IconButton, Nav, NeedsYou, Row, Rows, Screen, SectionLabel, useBottomGap, Working } from '@/ui/parts';
-import { fonts, type Palette, typeFor, useColors, useStyles, useType, translucent } from '@/ui/theme';
+import { Button, IconButton } from '@/ui/controls';
+import { Row, Rows, SectionLabel } from '@/ui/list';
+import { Nav, Screen, useBottomGap } from '@/ui/screen';
+import { NeedsYou, SubagentCount, Working } from '@/ui/status';
+import { fonts, isLight, type Palette, typeFor, useColors, useStyles, useType, translucent } from '@/ui/theme';
 
 type Tab = 'agents' | 'terminals';
 
 /** The New chat pill's height, which the list leaves room for below its last row. */
 const NEW_CHAT_HEIGHT = 52;
+/** Recent chats shown before Show more. */
+const RECENT_SHOWN = 10;
 
 function projectName(snapshot: Snapshot, cwd: string): string {
   return snapshot.workspace.projects.find((project) => project.path === cwd)?.name ?? folder(cwd);
@@ -40,8 +52,8 @@ function ProjectTail({ snapshot, project }: { snapshot: Snapshot; project: Proje
       {chats.length ? (
         <View style={styles.faces}>
           {chats.slice(0, 3).map((chat, index) => (
-            <View key={chat.agentId} style={[styles.face, index > 0 && { marginLeft: -7 }]}>
-              <AgentIcon provider={chat.provider} size={14} />
+            <View key={chat.agentId} style={[styles.face, index > 0 && { marginLeft: -4 }]}>
+              <AgentIcon provider={chat.provider} size={16} />
             </View>
           ))}
         </View>
@@ -55,19 +67,132 @@ function ProjectTail({ snapshot, project }: { snapshot: Snapshot; project: Proje
   );
 }
 
-function ChatEnd({ chat }: { chat: ChatInfo }) {
+function ChatStatus({ chat }: { chat: ChatInfo }) {
   if (chat.pendingPermissions.length) return <NeedsYou />;
   if (chat.running) return <Working />;
   return null;
 }
 
-function Agents({ core, snapshot, scope, provider }: { core: string; snapshot: Snapshot; scope?: ProjectInfo; provider: string }) {
+function ChatEnd({ chat }: { chat: ChatInfo }) {
+  if (!chat.subagents) return <ChatStatus chat={chat} />;
+  return (
+    <>
+      <SubagentCount count={chat.subagents} />
+      <ChatStatus chat={chat} />
+    </>
+  );
+}
+
+/** Saved chats the host's rail lists as recent; a phone with full access takes one up again. */
+function Recent({
+  core,
+  snapshot,
+  scope,
+  provider,
+  full,
+  hostName,
+}: {
+  core: string;
+  snapshot: Snapshot;
+  scope?: ProjectInfo;
+  provider: string;
+  full: boolean;
+  hostName: string;
+}) {
+  const styles = useStyles(makeStyles);
+  const type = useType();
+  const live = useLive(core);
+  const [all, setAll] = useState(false);
+  const [resuming, setResuming] = useState<string>();
+  const [note, setNote] = useState<{ text: string; failed: boolean }>();
+  const chats = snapshot.recent.filter(
+    (chat) => (!scope || chat.project === scope.id) && (provider === 'all' || chat.provider === provider),
+  );
+  if (!chats.length) return null;
+  const shown = all ? chats : chats.slice(0, RECENT_SHOWN);
+  const projectOf = (chat: RecentInfo) =>
+    snapshot.workspace.projects.find((project) => project.id === chat.project)?.name ?? folder(chat.cwd);
+
+  const resume = async (chat: RecentInfo) => {
+    if (resuming) return;
+    if (!full) {
+      haptics.warning();
+      setNote({ text: `This phone can watch ${hostName}, not resume its chats. The host can give it full access.`, failed: false });
+      return;
+    }
+    if (live.status !== 'open') {
+      haptics.failure();
+      setNote({ text: 'Not connected to the host.', failed: true });
+      return;
+    }
+    haptics.tap();
+    setNote(undefined);
+    setResuming(chat.id);
+    try {
+      const agentId = await live.connection.resumeChat(chat.id);
+      router.push(`/device/${core}/chat/${agentId}`);
+    } catch (error) {
+      haptics.failure();
+      setNote({ text: problemOf(error), failed: true });
+    } finally {
+      setResuming(undefined);
+    }
+  };
+
+  return (
+    <>
+      <SectionLabel>Recent</SectionLabel>
+      <Rows>
+        {shown.map((chat) => (
+          <Row
+            key={chat.id}
+            mark={<AgentIcon provider={chat.provider} size={20} />}
+            title={chat.title}
+            detail={scope ? undefined : projectOf(chat)}
+            end={resuming === chat.id ? <Working /> : <Text style={[type.meta, styles.age]}>{age(Number(chat.activeAt))}</Text>}
+            onPress={() => void resume(chat)}
+          />
+        ))}
+        {shown.length < chats.length ? (
+          <Pressable
+            onPress={() => setAll(true)}
+            style={({ pressed }) => [styles.more, pressed && styles.morePressed]}
+            accessibilityRole="button">
+            <Text style={styles.moreText}>Show {chats.length - shown.length} more</Text>
+          </Pressable>
+        ) : null}
+      </Rows>
+      {note ? (
+        <Text style={[styles.note, note.failed && styles.noteFailed]} accessibilityLiveRegion="polite">
+          {note.text}
+        </Text>
+      ) : null}
+    </>
+  );
+}
+
+function Agents({
+  core,
+  snapshot,
+  scope,
+  provider,
+  full,
+  hostName,
+}: {
+  core: string;
+  snapshot: Snapshot;
+  scope?: ProjectInfo;
+  provider: string;
+  full: boolean;
+  hostName: string;
+}) {
   const styles = useStyles(makeStyles);
   const open = (agentId: string) => router.push(`/device/${core}/chat/${agentId}`);
   const scoped = snapshot.chats.filter((chat) => !scope || inProject(scope, chat.cwd));
   const chats = scoped.filter((chat) => provider === 'all' || chat.provider === provider);
   const where = (chat: ChatInfo, state: string) => (scope ? state : `${projectName(snapshot, chat.cwd)} · ${state}`);
   const asking = chats.filter((chat) => chat.pendingPermissions.length);
+  const attentionOf = (chat: ChatInfo) => snapshot.attentions.find((known) => known.agentId === chat.agentId && askingOf(known));
   const idle = chats.filter((chat) => !chat.pendingPermissions.length);
 
   return (
@@ -80,8 +205,16 @@ function Agents({ core, snapshot, scope, provider }: { core: string; snapshot: S
               bright
               mark={<AgentIcon provider={chat.provider} size={20} />}
               title={chatTitle(chat)}
-              detail={where(chat, 'Needs input')}
-              end={<NeedsYou />}
+              detail={
+                attentionOf(chat) ? (
+                  <>
+                    Needs input · <Wants attention={attentionOf(chat)} />
+                  </>
+                ) : (
+                  where(chat, 'Needs input')
+                )
+              }
+              end={<ChatEnd chat={chat} />}
               onPress={() => open(chat.agentId)}
             />
           ))}
@@ -104,7 +237,10 @@ function Agents({ core, snapshot, scope, provider }: { core: string; snapshot: S
           </Rows>
         </>
       ) : null}
-      {!scoped.length ? <Text style={styles.empty}>{scope ? `No agents in ${scope.name}.` : 'No agents running.'}</Text> : null}
+      <Recent core={core} snapshot={snapshot} scope={scope} provider={provider} full={full} hostName={hostName} />
+      {!scoped.length && !snapshot.recent.some((chat) => !scope || chat.project === scope.id) ? (
+        <Text style={styles.empty}>{scope ? `No agents in ${scope.name}.` : 'No agents running.'}</Text>
+      ) : null}
     </>
   );
 }
@@ -172,9 +308,37 @@ function HostHead({ name, line, online }: { name: string; line: string; online: 
           {line}
         </Text>
       </View>
-      <Text style={styles.name} numberOfLines={1}>
+      <Text style={styles.name} numberOfLines={1} maxFontSizeMultiplier={1.4} accessibilityRole="header">
         {name}
       </Text>
+    </View>
+  );
+}
+
+/** How far rows take to fade out as they reach the tabs pinned at the top. */
+const FADE = 22;
+
+/**
+ * The list's mask: once the tabs are pinned, nothing shows under them and rows fade in just below.
+ * Until then `open` keeps the whole list shown, so the header is never cut.
+ */
+function UnderBar({ height, open }: { height: number; open: Animated.AnimatedInterpolation<number> }) {
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={{ height }} />
+      <Svg width="100%" height={FADE}>
+        <Defs>
+          <LinearGradient id="under-bar" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor="#000" stopOpacity={0} />
+            <Stop offset="1" stopColor="#000" stopOpacity={1} />
+          </LinearGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100%" height="100%" fill="url(#under-bar)" />
+      </Svg>
+      <View style={{ flex: 1, backgroundColor: '#000' }} />
+      <Animated.View
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: height + FADE, backgroundColor: '#000', opacity: open }}
+      />
     </View>
   );
 }
@@ -187,17 +351,41 @@ function HostTab({ label, count, on, onPress }: { label: string; count?: number;
       <Text style={[styles.tabText, on && { color: colors.ink }]}>{label}</Text>
       {count ? (
         <View style={styles.count}>
-          <Text style={styles.countText}>{count}</Text>
+          <Text style={styles.countText} maxFontSizeMultiplier={1.3}>
+            {count}
+          </Text>
         </View>
       ) : null}
     </Pressable>
   );
 }
 
-function summary(snapshot: Snapshot): string {
-  const terminals = snapshot.sessions.filter((session) => session.running).length;
-  return `${snapshot.chats.length} agent${snapshot.chats.length === 1 ? '' : 's'} · ${terminals} terminal${terminals === 1 ? '' : 's'}`;
+/** The host turned this phone away: only forgetting it here and connecting again helps. */
+function Unpaired({ device }: { device?: PairedDevice }) {
+  const styles = useStyles(makeStyles);
+  const type = useType();
+  const { forgetting, problem, leave } = useForget(device);
+  return (
+    <View style={styles.away}>
+      <Text style={[type.title, { fontSize: 20, textAlign: 'center' }]} accessibilityRole="header">
+        This host no longer knows this phone
+      </Text>
+      <Text style={[type.body, { textAlign: 'center', marginTop: 8 }]}>
+        It was removed on the host. Forget it here, then connect to it again from Devices.
+      </Text>
+      {problem ? <Text style={styles.problem}>{problem}</Text> : null}
+      <Button
+        kind="danger"
+        title={forgetting ? 'Forgetting…' : 'Forget this host'}
+        onPress={() => void leave()}
+        disabled={forgetting || !device}
+        style={styles.retry}
+      />
+    </View>
+  );
 }
+
+export { Crashed as ErrorBoundary } from '@/screens/Crashed';
 
 export default function Device() {
   const colors = useColors();
@@ -207,15 +395,16 @@ export default function Device() {
   const { devices } = useDevices();
   const device = devices.find((known) => known.core === core);
   const live = useLive(core);
+  const status = useHostStatus(core);
+  const scrollPause = useScrollPause();
   const [tab, setTab] = useState<Tab>(linkedTab === 'terminals' ? 'terminals' : 'agents');
   const [followedLink, setFollowedLink] = useState(linkedTab);
   if (linkedTab !== followedLink) {
     setFollowedLink(linkedTab);
     if (linkedTab === 'agents' || linkedTab === 'terminals') setTab(linkedTab);
   }
-  const away = live.status === 'closed';
-  const channel = channelLabel(device?.channel);
-  const behind = live.status === 'closed' ? live.outdated : undefined;
+  const behind = status.outdated;
+  const away = live.status === 'closed' || !!status.problem;
   const unreachable =
     behind === 'host'
       ? { title: 'This host needs a newer Sikemux', body: 'Update Sikemux on the host, then come back here.' }
@@ -225,34 +414,65 @@ export default function Device() {
   const snapshot = live.snapshot;
   const [picking, setPicking] = useState(false);
   const [options, setOptions] = useState(false);
-  const starts = device?.access === 'full' && !away && tab === 'agents';
+  const starts = device?.access === 'full' && status.online && tab === 'agents';
   const bottom = useBottomGap();
   const scope = snapshot?.workspace.projects.find((project) => project.id === device?.project);
   const asking = snapshot?.chats.filter((chat) => chat.pendingPermissions.length && (!scope || inProject(scope, chat.cwd))).length ?? 0;
   const [filter, setFilter] = useState('all');
-  const providers = [...new Set(snapshot?.chats.filter((chat) => !scope || inProject(scope, chat.cwd)).map((chat) => chat.provider) ?? [])];
+  const providers = [
+    ...new Set([
+      ...(snapshot?.chats.filter((chat) => !scope || inProject(scope, chat.cwd)).map((chat) => chat.provider) ?? []),
+      ...(snapshot?.recent.filter((chat) => !scope || chat.project === scope.id).map((chat) => chat.provider) ?? []),
+    ]),
+  ];
   const provider = providers.includes(filter) ? filter : 'all';
   const filtering = tab === 'agents' && providers.length > 1;
-  const line = behind
-    ? behind === 'host'
-      ? 'Needs a newer Sikemux'
-      : 'Update this app to connect'
-    : away
-      ? `Asleep or offline${device?.lastSeen ? ` · seen ${ago(device.lastSeen)}` : ''}`
-      : snapshot
-        ? ['Online', channel, summary(snapshot)].filter(Boolean).join(' · ')
-        : 'Connecting…';
   const scopeTo = (project: string | null) => {
     setPicking(false);
-    updateDevice(core, { project: project ?? undefined }).then(reloadDevices);
+    updateDevice(core, { project: project ?? undefined })
+      .then(reloadDevices)
+      .catch(() => {});
+  };
+  const [scrolled] = useState(() => new Animated.Value(0));
+  const [headHeight, setHeadHeight] = useState(0);
+  // The large name hands over to the bar's own title as it scrolls under it, and the tabs then stay put.
+  const titleShown = scrolled.interpolate({ inputRange: [headHeight - 48, headHeight - 12], outputRange: [0, 1], extrapolate: 'clamp' });
+  const [barHeight, setBarHeight] = useState(34);
+  // The tabs ride under the header, then stop at the top bar while the list keeps going under them.
+  const unpinned = scrolled.interpolate({
+    inputRange: [headHeight - barHeight - FADE, headHeight],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
+  const barTop = scrolled.interpolate({
+    inputRange: [-1000, 0, headHeight],
+    outputRange: [headHeight + 1000, headHeight, 0],
+    extrapolateRight: 'clamp',
+  });
+  const hostName = device ? deviceName(device) : 'Host';
+  const switchTo = (next: Tab) => {
+    if (next !== tab) haptics.select();
+    setTab(next);
   };
 
   return (
     <Screen>
-      <Nav back="Devices" end={device ? <IconButton name="IconMore" label="Options" onPress={() => setOptions(true)} /> : null} />
+      <Nav
+        back="Devices"
+        title={
+          snapshot ? (
+            <Animated.Text style={[styles.navName, { opacity: titleShown }]} numberOfLines={1}>
+              {hostName}
+            </Animated.Text>
+          ) : undefined
+        }
+        end={device ? <IconButton name="IconMore" label="Options" onPress={() => setOptions(true)} /> : null}
+      />
       {device ? <ForgetSheet device={device} visible={options} onClose={() => setOptions(false)} /> : null}
-      <HostHead name={device ? deviceName(device) : 'Host'} line={line} online={!away && !!snapshot} />
-      {away && !snapshot ? (
+      {snapshot && !status.unpaired ? null : <HostHead name={hostName} line={status.line} online={status.online} />}
+      {status.unpaired ? (
+        <Unpaired device={device} />
+      ) : away && !snapshot ? (
         <View style={styles.away}>
           <Text style={[type.title, { fontSize: 20, textAlign: 'center' }]}>{unreachable.title}</Text>
           <Text style={[type.body, { textAlign: 'center', marginTop: 8 }]}>{unreachable.body}</Text>
@@ -262,7 +482,14 @@ export default function Device() {
                 <Working />
                 <Text style={type.meta}>Trying again</Text>
               </View>
-              <Button title="Try now" onPress={() => retry(core)} style={styles.retry} />
+              <Button
+                title="Try now"
+                onPress={() => {
+                  haptics.tap();
+                  retry(core);
+                }}
+                style={styles.retry}
+              />
             </>
           )}
         </View>
@@ -274,38 +501,65 @@ export default function Device() {
         </View>
       ) : (
         <>
-          <View style={styles.bar}>
-            <View style={styles.tabs}>
-              <HostTab label="Agents" count={asking} on={tab === 'agents'} onPress={() => setTab('agents')} />
-              <HostTab label="Terminals" on={tab === 'terminals'} onPress={() => setTab('terminals')} />
-            </View>
-            {snapshot.workspace.projects.length || filtering ? (
-              <Pressable
-                onPress={() => setPicking(true)}
-                hitSlop={12}
-                style={styles.picker}
-                accessibilityRole="button"
-                accessibilityLabel="Project">
-                <Icon name="IconFolder" size={14} color={colors.live} />
-                <Text style={styles.pickerText} numberOfLines={1}>
-                  {scope?.name ?? 'All projects'}
-                </Text>
-                {filtering && provider !== 'all' ? <AgentIcon provider={provider} size={14} /> : null}
-                <View style={{ transform: [{ rotate: '90deg' }] }}>
-                  <Icon name="IconChevron" size={12} color={colors.inkFaint} />
+          <View style={styles.list}>
+            <MaskedView style={styles.list} maskElement={<UnderBar height={barHeight} open={unpinned} />}>
+              <Animated.ScrollView
+                {...scrollPause}
+                onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrolled } } }], { useNativeDriver: true })}
+                scrollEventThrottle={16}
+                style={status.online ? undefined : styles.stale}
+                accessibilityHint={status.online ? undefined : 'Out of date until the host answers again'}
+                contentContainerStyle={{ paddingBottom: bottom + (starts ? NEW_CHAT_HEIGHT + 24 : 24) }}>
+                <View onLayout={(event) => setHeadHeight(event.nativeEvent.layout.height)}>
+                  <HostHead name={hostName} line={status.line} online={status.online} />
                 </View>
-              </Pressable>
-            ) : null}
+                <View style={{ height: barHeight }} />
+                <View style={styles.body}>
+                  {snapshot ? (
+                    tab === 'agents' ? (
+                      <Agents
+                        core={core}
+                        snapshot={snapshot}
+                        scope={scope}
+                        provider={provider}
+                        full={device?.access === 'full'}
+                        hostName={hostName}
+                      />
+                    ) : (
+                      <Terminals snapshot={snapshot} scope={scope} />
+                    )
+                  ) : null}
+                </View>
+              </Animated.ScrollView>
+            </MaskedView>
+            <Animated.View
+              onLayout={(event) => setBarHeight(event.nativeEvent.layout.height)}
+              style={[styles.barFloat, { transform: [{ translateY: barTop }] }]}>
+              <View style={styles.bar}>
+                <View style={styles.tabs} accessibilityRole="tablist">
+                  <HostTab label="Agents" count={asking} on={tab === 'agents'} onPress={() => switchTo('agents')} />
+                  <HostTab label="Terminals" on={tab === 'terminals'} onPress={() => switchTo('terminals')} />
+                </View>
+                {snapshot.workspace.projects.length || filtering ? (
+                  <Pressable
+                    onPress={() => setPicking(true)}
+                    hitSlop={12}
+                    style={styles.picker}
+                    accessibilityRole="button"
+                    accessibilityLabel="Project">
+                    <Icon name="IconFolder" size={14} color={colors.live} />
+                    <Text style={styles.pickerText} numberOfLines={1}>
+                      {scope?.name ?? 'All projects'}
+                    </Text>
+                    {filtering && provider !== 'all' ? <AgentIcon provider={provider} size={14} /> : null}
+                    <View style={{ transform: [{ rotate: '90deg' }] }}>
+                      <Icon name="IconChevron" size={12} color={colors.inkFaint} />
+                    </View>
+                  </Pressable>
+                ) : null}
+              </View>
+            </Animated.View>
           </View>
-          <ScrollView contentContainerStyle={[styles.body, { paddingBottom: bottom + (starts ? NEW_CHAT_HEIGHT + 24 : 24) }]}>
-            {snapshot ? (
-              tab === 'agents' ? (
-                <Agents core={core} snapshot={snapshot} scope={scope} provider={provider} />
-              ) : (
-                <Terminals snapshot={snapshot} scope={scope} />
-              )
-            ) : null}
-          </ScrollView>
           {starts ? (
             <Pressable
               onPress={() => router.push(scope ? `/device/${core}/new?project=${encodeURIComponent(scope.id)}` : `/device/${core}/new`)}
@@ -338,7 +592,7 @@ export default function Device() {
 const makeStyles = (colors: Palette) => {
   const type = typeFor(colors);
   return StyleSheet.create({
-    head: { height: 168, justifyContent: 'flex-end', paddingHorizontal: 18, paddingBottom: 16 },
+    head: { paddingHorizontal: 18, paddingTop: 10, paddingBottom: 16 },
     where: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     whereText: { flexShrink: 1, fontFamily: fonts.ui, fontSize: 13, color: translucent(colors.ink, 0.72) },
     online: {
@@ -358,17 +612,28 @@ const makeStyles = (colors: Palette) => {
       fontSize: 32,
       letterSpacing: -1.12,
       color: colors.ink,
-      textShadowColor: 'rgba(0, 0, 0, 0.65)',
+      textShadowColor: isLight(colors) ? 'transparent' : 'rgba(0, 0, 0, 0.65)',
       textShadowOffset: { width: 0, height: 2 },
       textShadowRadius: 18,
     },
-    bar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingHorizontal: 18, paddingTop: 4 },
+    bar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+      paddingHorizontal: 18,
+      paddingTop: 6,
+      paddingBottom: 8,
+    },
+    list: { flex: 1 },
+    barFloat: { position: 'absolute', top: 0, left: 0, right: 0 },
+    navName: { fontFamily: fonts.uiSemibold, fontSize: 16, letterSpacing: -0.25, color: colors.ink },
     tabs: { flexDirection: 'row', alignItems: 'center', gap: 20 },
     tab: { flexDirection: 'row', alignItems: 'center', gap: 7 },
     tabText: { fontFamily: fonts.uiSemibold, fontSize: 15, letterSpacing: -0.15, color: colors.tertiary },
     count: {
       minWidth: 16,
-      height: 16,
+      minHeight: 16,
       borderRadius: 8,
       paddingHorizontal: 6,
       backgroundColor: colors.ink,
@@ -399,22 +664,21 @@ const makeStyles = (colors: Palette) => {
     newChatText: { fontFamily: fonts.uiSemibold, fontSize: 15, color: colors.ground },
     tail: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     faces: { flexDirection: 'row' },
-    face: {
-      width: 26,
-      height: 26,
-      borderRadius: 13,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.overlay,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
+    face: { width: 16, height: 16, alignItems: 'center', justifyContent: 'center' },
     termCount: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     asking: { marginTop: 8 },
     empty: { ...type.meta, textAlign: 'center', paddingTop: 40 },
+    age: { fontSize: 12, fontVariant: ['tabular-nums'] },
+    more: { minHeight: 40, justifyContent: 'center', paddingLeft: 38, paddingRight: 8, borderRadius: 9 },
+    morePressed: { backgroundColor: colors.active },
+    moreText: { ...type.meta, fontSize: 13 },
+    note: { ...type.meta, fontSize: 12.5, paddingHorizontal: 8, paddingTop: 8 },
+    noteFailed: { color: colors.danger },
     liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.live },
     away: { flex: 1, justifyContent: 'center', paddingHorizontal: 32, paddingBottom: 120 },
     trying: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 16 },
     retry: { marginTop: 24 },
+    stale: { opacity: 0.5 },
+    problem: { ...type.meta, color: colors.danger, textAlign: 'center', marginTop: 12 },
   });
 };

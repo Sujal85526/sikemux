@@ -42,13 +42,16 @@ fn output(program: &str, args: &[&str]) -> Option<String> {
 }
 
 fn computer_name() -> Option<String> {
-    let name = output("scutil", &["--get", "ComputerName"])?;
+    let name = output("/usr/sbin/scutil", &["--get", "ComputerName"])?;
     let name = name.trim();
     (!name.is_empty()).then(|| name.to_owned())
 }
 
 fn model_name() -> Option<String> {
-    model_from_profile(&output("system_profiler", &["SPHardwareDataType"])?)
+    model_from_profile(&output(
+        "/usr/sbin/system_profiler",
+        &["SPHardwareDataType"],
+    )?)
 }
 
 /// `system_profiler` names the model ("MacBook Pro"); `hw.model` only gives an

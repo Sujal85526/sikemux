@@ -91,6 +91,7 @@ struct ChatInfo: Decodable, Equatable {
     let state: String
     let running: Bool
     let pendingPermissions: [String]
+    let subagents: Int
     let permissionMode: String
     let asleep: Bool
     let unread: Bool
@@ -133,6 +134,7 @@ struct AgentItem: Identifiable, Equatable {
     let title: String
     let project: String
     let state: AgentState
+    let subagents: Int
     /// A chat agent can be answered from the notch; a terminal agent only in Sikemux.
     let isChat: Bool
     let ask: Ask?
@@ -176,6 +178,7 @@ extension DeviceView {
                 title: chat.title ?? "New \(agentName(chat.provider)) chat",
                 project: projectName(chat.cwd),
                 state: state,
+                subagents: chat.subagents,
                 isChat: true,
                 ask: ask
             ), chat.activeAt ?? 0))
@@ -196,6 +199,7 @@ extension DeviceView {
                 title: session.title ?? agentName(provider),
                 project: projectName(session.project),
                 state: state,
+                subagents: 0,
                 isChat: false,
                 ask: nil
             ), session.activeAt ?? 0))

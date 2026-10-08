@@ -728,7 +728,7 @@ fn reveal_in_finder_sync(path: String) -> AppResult<()> {
     }
     #[cfg(target_os = "macos")]
     {
-        sikemux_process::user_environment::command("open")
+        sikemux_process::user_environment::command("/usr/bin/open")
             .arg("-R")
             .arg(&p)
             .status()?;

@@ -657,6 +657,9 @@ pub(crate) async fn resume(recovery: Recovery, build: BuildIdentity) -> Result<(
         .map(|state| state.socket.clone())
         .or_else(|| recovery.socket.clone())
         .ok_or_else(|| std::io::Error::other("the update named no socket"))?;
+    let data_dir = state
+        .as_ref()
+        .map_or_else(|| recovery.data_dir.clone(), |state| state.data_dir.clone());
     let config = ServerConfig {
         socket,
         idle_exit: state.as_ref().map_or(recovery.idle_exit, |state| {
@@ -667,9 +670,8 @@ pub(crate) async fn resume(recovery: Recovery, build: BuildIdentity) -> Result<(
             || recovery.cli_endpoint.clone(),
             |state| state.cli_endpoint.clone(),
         ),
-        data_dir: state
-            .as_ref()
-            .map_or_else(|| recovery.data_dir.clone(), |state| state.data_dir.clone()),
+        attachment_dir: data_dir.as_deref().and_then(super::attachments::pasted_dir),
+        data_dir,
         remote_direct_only: false,
         accounts_api: Some(crate::accounts::api_base()),
     };

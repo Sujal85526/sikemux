@@ -1,6 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+    holdStageMotion,
     nativeViewsOccluded,
     occludeNativeViews,
     onStageFrame,
@@ -168,5 +169,24 @@ describe("stage motion", () => {
         rerender({ active: false });
         expect(late).not.toHaveBeenCalled();
         unmount();
+    });
+});
+
+describe("holdStageMotion", () => {
+    it("keeps hidden screens at the stage's width until the last hold lets go", () => {
+        const area = document.createElement("div");
+        area.className = "window-area";
+        area.getBoundingClientRect = () => ({ width: 812.5 }) as DOMRect;
+        document.body.append(area);
+        const first = holdStageMotion();
+        const second = holdStageMotion();
+        expect(area.classList.contains("holding-screens")).toBe(true);
+        expect(area.style.getPropertyValue("--held-screen-width")).toBe("812.5px");
+        first();
+        expect(area.classList.contains("holding-screens")).toBe(true);
+        second();
+        expect(area.classList.contains("holding-screens")).toBe(false);
+        expect(area.style.getPropertyValue("--held-screen-width")).toBe("");
+        area.remove();
     });
 });

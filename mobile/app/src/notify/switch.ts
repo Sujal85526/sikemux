@@ -1,6 +1,5 @@
-import { useEffect, useEffectEvent, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AppState } from 'react-native';
-import { useAuth } from '@clerk/expo';
 import * as Notifications from 'expo-notifications';
 
 import { notifier } from '../../modules/notify';
@@ -10,7 +9,7 @@ import { withdrawKey } from './keys';
 import { choose } from './setting';
 import { notificationsAllowed, stopPush, syncPushToken } from './token';
 
-/** Whether this phone can have notifications at all: Android only until iOS has Apple's push service. */
+/** Whether this build carries the native half of notifications, which opens and shows what hosts send. */
 export const notificationsSupported = notifier !== null;
 
 /** Turns notifications on, asking the system first; answers whether the system allows them. */
@@ -47,23 +46,4 @@ export function useNotificationsAllowed(): boolean | undefined {
     return () => following.remove();
   }, []);
   return allowed;
-}
-
-/** Keeps the server's copy of the token current while signed in: on return to the app, and when the system issues a new one. */
-export function usePushToken() {
-  const { isSignedIn, getToken } = useAuth();
-  const sync = useEffectEvent(() => {
-    syncPushToken(() => getToken()).catch((error: unknown) => console.warn('sikemux: could not register for notifications', error));
-  });
-  useEffect(() => {
-    if (!isSignedIn || !notificationsSupported) return;
-    const following = AppState.addEventListener('change', (state) => {
-      if (state === 'active') sync();
-    });
-    const renewed = Notifications.addPushTokenListener(() => sync());
-    return () => {
-      following.remove();
-      renewed.remove();
-    };
-  }, [isSignedIn]);
 }

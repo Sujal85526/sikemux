@@ -34,10 +34,21 @@ describe("WorkbenchRuntime", () => {
         setState({ diagnosticsOpen: true });
         expect(runtime.getSnapshot().reconciliations).toBe(1);
 
+        setState({ windows: { [window.id]: { ...window } } });
+        expect(runtime.getSnapshot().reconciliations).toBe(1);
+
+        const second = { ...pane, id: "pane-runtime-2" };
+        setState({
+            windows: {
+                [window.id]: { ...window, root: { type: "split", id: "split-runtime", dir: "row", sizes: [0.5, 0.5], children: [pane, second] } },
+            },
+        });
+        expect(runtime.getSnapshot()).toMatchObject({ items: 2, reconciliations: 2 });
+
         setState({ sessions: {}, sessionOrder: [], windows: {}, windowsBySession: {} });
-        expect(runtime.getSnapshot()).toEqual({ sessions: 0, items: 0, reconciliations: 2, started: true });
+        expect(runtime.getSnapshot()).toEqual({ sessions: 0, items: 0, reconciliations: 3, started: true });
         runtime.stop();
-        expect(runtime.getSnapshot()).toEqual({ sessions: 0, items: 0, reconciliations: 2, started: false });
+        expect(runtime.getSnapshot()).toEqual({ sessions: 0, items: 0, reconciliations: 3, started: false });
     });
 
     it("starts with a plugin's pane open, whether or not the plugin is in this build", () => {

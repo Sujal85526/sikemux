@@ -78,6 +78,7 @@ impl TestCore {
             let hello = ClientMessage::Hello {
                 protocol: PROTOCOL.into(),
                 version: PROTOCOL_VERSION,
+                newest: None,
             };
             let shutdown = ClientMessage::Request {
                 request_id: 1,

@@ -1,4 +1,9 @@
-import type { LivePush, PushPlatform, PushResult } from "@sikemux/protocol";
+import type {
+  ApnsEnvironment,
+  LivePush,
+  PushPlatform,
+  PushResult,
+} from "@sikemux/protocol";
 import { sql, type Kysely } from "kysely";
 
 import type { Tables } from "../db.ts";
@@ -117,6 +122,9 @@ export class Pusher {
         collapseId: push.collapseId,
         blob: push.blob,
         ttlSeconds: (expiresAt - this.now()) / 1000,
+        ...(target.apns_environment
+          ? { apnsEnvironment: target.apns_environment as ApnsEnvironment }
+          : {}),
       });
       if (delivery.outcome !== "retry") break;
       const wait =
@@ -164,7 +172,11 @@ export class Pusher {
     const row = await this.db
       .selectFrom("devices as phone")
       .leftJoin("push_tokens", "push_tokens.device_key", "phone.key")
-      .select(["push_tokens.platform", "push_tokens.token"])
+      .select([
+        "push_tokens.platform",
+        "push_tokens.token",
+        "push_tokens.apns_environment",
+      ])
       .where("phone.key", "=", phone)
       .where("phone.role", "=", "client")
       .where("phone.user_id", "=", sender.userId)

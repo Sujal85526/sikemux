@@ -25,6 +25,9 @@ class Card(
   val answerable: Boolean
     get() = kind == "permission" && requestId != null && allowOptionId != null && rejectOptionId != null
 
+  /** How long the card has left to show at `now`, or null once its life is over. */
+  fun timeLeft(now: Long): Long? = (expiresAt - now).takeIf { it > 0 }
+
   companion object {
     const val VERSION = 1
 

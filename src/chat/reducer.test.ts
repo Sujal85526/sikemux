@@ -261,6 +261,19 @@ describe("chat reducer", () => {
         expect(part.tool).not.toHaveProperty("rawInput");
     });
 
+    it("keeps the page a finished page_show showed in place of what it printed", () => {
+        const page = { id: "0123456789abcdef0123456789abcdef", title: "Revenue", height: 300 };
+        const shown = replay(initialChatState, [
+            { sessionUpdate: "tool_call", toolCallId: "page-1", title: "mcp__sikemux-tools__page_show", status: "in_progress" },
+            { sessionUpdate: "tool_call_update", toolCallId: "page-1", status: "completed", rawOutput: JSON.stringify({ page, note: "shown" }) },
+        ]);
+        const part = toolPart(shown);
+
+        expect(part.page).toEqual(page);
+        expect(part.output).toBeUndefined();
+        expect(part.tool).not.toHaveProperty("rawOutput");
+    });
+
     it("keeps a picture too big to hold by name rather than by its bytes", () => {
         const streamed = update(initialChatState, {
             sessionUpdate: "agent_message_chunk",
@@ -749,6 +762,21 @@ describe("chat reducer", () => {
         expect(stopped.messages[0].parts[0]).toEqual({ id: "notice-task-1", kind: "notice", notice: { name: "Build", state: "stopped" } });
     });
 
+    it("shows the agent's notices in the transcript, apart from its own word on a stopped task", () => {
+        const warned = update(initialChatState, {
+            sessionUpdate: "notice",
+            severity: "warning",
+            title: "Fast mode turned off",
+            description: "Usage limit.",
+        });
+        expect(warned.messages[0].parts[0]).toMatchObject({
+            kind: "agent_notice",
+            notice: { severity: "warning", title: "Fast mode turned off", description: "Usage limit." },
+        });
+
+        expect(update(warned, { sessionUpdate: "notice", severity: "info", title: "Task stopped by user", description: "Build." })).toBe(warned);
+    });
+
     it("keeps the plan, title and config the session reports", () => {
         const plan = { sessionUpdate: "plan", entries: [{ content: "Write tests", status: "pending" }] };
         const state = replay(initialChatState, [
@@ -869,5 +897,28 @@ describe("chat reducer", () => {
         const orphan = update(spawned, { sessionUpdate: "tool_call_update", toolCallId: "tool-9", status: "completed" }, "sub-1");
 
         expect(orphan.messages[0].parts).toEqual(spawned.messages[0].parts);
+    });
+
+    it("says in the transcript which account the chat moved to and why", () => {
+        const moved = update(initialChatState, {
+            sessionUpdate: "account_switched",
+            account: "work",
+            label: "Work",
+            from: "Personal",
+            reason: "limit",
+        });
+
+        expect(moved.messages).toHaveLength(1);
+        expect(moved.messages[0].parts[0]).toMatchObject({ kind: "account", move: { label: "Work", from: "Personal", reason: "limit" } });
+    });
+
+    it("keeps why a turn failed until the chat runs again", () => {
+        const ready = chatReducer(initialChatState, { type: "ready", capabilities: {}, setup: {} });
+        const failed = chatReducer(ready, { type: "error", message: "You've hit your limit", failure: { kind: "limit", account: "personal" } });
+        expect(failed.failure).toEqual({ kind: "limit", account: "personal" });
+
+        const restarting = chatReducer(failed, { type: "status", state: "starting" });
+        expect(restarting.failure).toBeNull();
+        expect(restarting.error).toBeNull();
     });
 });

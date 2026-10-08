@@ -24,12 +24,15 @@
 
 - Follow `docs/releasing.md`. Releases publish only from the Release workflow, started by
   pushing a `v*` tag; never run `scripts/release.sh --publish` yourself, and never approve
-  the `release` environment for the owner.
+  a stable release on the `approval` environment for the owner.
 - Nightlies are tagged on `main`. Stable releases and hotfixes are tagged on
   `release/<major.minor>`, and their version bump and notes go only there.
 - Never check out `release/*` in this shared checkout. Commit to it from objects with a
   temporary index, as `docs/releasing.md` shows.
-- After a stable `0.x.y`, number `main`'s nightlies `0.(x+1).0-nightly.N`.
+- After a stable `0.x.y`, `main`'s nightlies build toward the next release:
+  `0.x.(y+1)-nightly.N`, or `0.(x+1).0-nightly.N` for a bigger one. A hotfix is that next
+  release shipped early: fix on `main`, ship a nightly, promote it. Cherry-pick onto
+  `release/*` only in an emergency, as `docs/releasing.md` describes.
 
 ## Mobile app
 
@@ -101,8 +104,9 @@
   release breaks every Download button. Nightlies are pre-releases and never show up.
 - The README rounds the download to "about 13 MB" and the site says it is smaller than
   Ghostty (33.8 MB). Update both if a release moves the DMG past either.
-- Its screenshots come from this repo:
-  `pnpm showcase --site ~/projects/personal/sikemux-front/src/assets/shots`.
+- Its screenshots come from this repo. `pnpm shots` in the site runs the Mac showcase
+  (`showcase/`) and the phone showcase (`mobile/showcase/`), then cuts the feature cards;
+  a showcase scene that stops matching the app shows up there.
 - Its copy must stay true of the shipped app and its look follows `DESIGN.md`. When a
   change adds, removes or renames something the site describes, say so, so the site
   can be updated.

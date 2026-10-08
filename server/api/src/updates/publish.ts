@@ -9,7 +9,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
-import type { Kysely } from "kysely";
+import type { Kysely, Transaction } from "kysely";
 
 import type { Tables } from "../db.ts";
 import {
@@ -22,7 +22,7 @@ import {
   type UpdatePlatform,
 } from "./update.ts";
 
-/** Refused publish or promote, with a reason meant for whoever ran it. */
+/** Refused publish, promote, withdrawal or rollback, with a reason meant for whoever ran it. */
 export class UpdateRefused extends Error {}
 
 function refuse(message: string): never {
@@ -50,6 +50,8 @@ const CONTENT_TYPE = /^[a-z]+\/[a-z0-9][a-z0-9.+-]{0,126}$/;
 const ASSET_KEY = /^[A-Za-z0-9_-]{1,128}$/;
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
+const COMMIT_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+const CLOCK_SKEW_MS = 5 * 60 * 1000;
 const BUNDLE_FILES = ["assets", "manifest.json", "manifest.sig", "update.json"];
 
 const sha256 = (bytes: Buffer) => createHash("sha256").update(bytes);
@@ -186,18 +188,17 @@ async function readAssets(dir: string, assets: Asset[]) {
 }
 
 function checkSignature(
-  manifest: Buffer,
+  bytes: Buffer,
   signature: string,
   certificate: string,
+  [name, signatureName]: [string, string],
 ) {
-  if (!BASE64.test(signature)) refuse("manifest.sig is not base64.");
+  if (!BASE64.test(signature)) refuse(`${signatureName} is not base64.`);
   const { publicKey } = new X509Certificate(certificate);
   if (publicKey.asymmetricKeyType !== "rsa")
     refuse("The update certificate does not hold an RSA key.");
-  if (!verify("sha256", manifest, publicKey, Buffer.from(signature, "base64")))
-    refuse(
-      "manifest.sig is not a signature of manifest.json by the update key.",
-    );
+  if (!verify("sha256", bytes, publicKey, Buffer.from(signature, "base64")))
+    refuse(`${signatureName} is not a signature of ${name} by the update key.`);
 }
 
 /**
@@ -264,7 +265,10 @@ export async function publishUpdate(
     .trim();
   const assets = readManifest(manifest, update);
   await checkLayout(dir, assets);
-  checkSignature(manifest, signature, certificate);
+  checkSignature(manifest, signature, certificate, [
+    "manifest.json",
+    "manifest.sig",
+  ]);
   const files = await readAssets(dir, assets);
 
   const existing = await db
@@ -303,12 +307,28 @@ export async function publishUpdate(
       .onConflict((oc) => oc.column("id").doNothing())
       .execute();
     const assigned = await trx
+      .selectFrom("update_channels")
+      .select("withdrawn_at")
+      .where("update_id", "=", update.id)
+      .where("channel", "=", update.channel)
+      .executeTakeFirst();
+    if (assigned?.withdrawn_at)
+      refuse(`${update.id} was withdrawn; publish a new update instead.`);
+    if (assigned) return false;
+    await checkChannelTakes(
+      trx,
+      {
+        id: update.id,
+        platform: update.platform,
+        runtime_version: update.runtimeVersion,
+        created_at: new Date(update.createdAt),
+      },
+      update.channel,
+    );
+    await trx
       .insertInto("update_channels")
       .values({ update_id: update.id, channel: update.channel })
-      .onConflict((oc) => oc.columns(["channel", "update_id"]).doNothing())
-      .returning("update_id")
-      .executeTakeFirst();
-    if (!assigned) return false;
+      .execute();
     await trx
       .insertInto("audit")
       .values({
@@ -344,23 +364,60 @@ export interface Promoted {
   added: boolean;
 }
 
+interface StoredUpdate {
+  id: string;
+  platform: string;
+  runtime_version: string;
+  created_at: Date;
+}
+
 /**
- * Offers an already published update on stable too, with the same signed manifest. Refuses one
- * older than what stable already offers those phones, since they would never take it.
+ * Refuses an update phones on the channel would never take: one older than an update the channel
+ * still offers, or made before the channel last rolled phones back to the code in their build.
+ */
+async function checkChannelTakes(
+  trx: Transaction<Tables>,
+  update: StoredUpdate,
+  channel: string,
+) {
+  const newer = await trx
+    .selectFrom("updates")
+    .innerJoin("update_channels", "update_channels.update_id", "updates.id")
+    .select("updates.id")
+    .where("update_channels.channel", "=", channel)
+    .where("update_channels.withdrawn_at", "is", null)
+    .where("updates.platform", "=", update.platform)
+    .where("updates.runtime_version", "=", update.runtime_version)
+    .where("updates.created_at", ">", update.created_at)
+    .executeTakeFirst();
+  if (newer)
+    refuse(
+      `${channel} already offers ${newer.id}, which is newer than ${update.id}; phones would never take it. Withdraw ${newer.id} first.`,
+    );
+  const rollback = await trx
+    .selectFrom("update_rollbacks")
+    .select("commit_time")
+    .where("channel", "=", channel)
+    .where("platform", "=", update.platform)
+    .where("runtime_version", "=", update.runtime_version)
+    .where("commit_time", ">=", update.created_at)
+    .executeTakeFirst();
+  if (rollback)
+    refuse(
+      `${channel} rolled phones back at ${rollback.commit_time.toISOString()}, after ${update.id} was made; phones would never take it. Publish a new update instead.`,
+    );
+}
+
+/**
+ * Offers an already published update on stable too, with the same signed manifest. Refuses a
+ * withdrawn one, and one stable's phones would never take.
  */
 export async function promoteUpdate(
   db: Kysely<Tables>,
   id: string,
 ): Promise<Promoted> {
-  if (!UPDATE_ID.test(id)) refuse(`${id} is not an update id.`);
   return db.transaction().execute(async (trx) => {
-    const update = await trx
-      .selectFrom("updates")
-      .select(["id", "platform", "runtime_version", "created_at"])
-      .where("id", "=", id)
-      .forUpdate()
-      .executeTakeFirst();
-    if (!update) return refuse(`No update has the id ${id}.`);
+    const update = await lockUpdate(trx, id);
     const result = {
       id,
       platform: update.platform,
@@ -369,25 +426,15 @@ export async function promoteUpdate(
 
     const channels = await trx
       .selectFrom("update_channels")
-      .select("channel")
+      .select(["channel", "withdrawn_at"])
       .where("update_id", "=", id)
       .execute();
+    if (channels.some((row) => row.withdrawn_at))
+      refuse(`${id} was withdrawn, so it is not offered again.`);
     if (channels.some((row) => row.channel === "stable"))
       return { ...result, added: false };
 
-    const newer = await trx
-      .selectFrom("updates")
-      .innerJoin("update_channels", "update_channels.update_id", "updates.id")
-      .select("updates.id")
-      .where("update_channels.channel", "=", "stable")
-      .where("updates.platform", "=", update.platform)
-      .where("updates.runtime_version", "=", update.runtime_version)
-      .where("updates.created_at", ">", update.created_at)
-      .executeTakeFirst();
-    if (newer)
-      refuse(
-        `Stable already offers ${newer.id}, which is newer than ${id}; phones would never take it.`,
-      );
+    await checkChannelTakes(trx, update, "stable");
 
     await trx
       .insertInto("update_channels")
@@ -409,5 +456,207 @@ export async function promoteUpdate(
       })
       .execute();
     return { ...result, added: true };
+  });
+}
+
+async function lockUpdate(
+  trx: Transaction<Tables>,
+  id: string,
+): Promise<StoredUpdate> {
+  if (!UPDATE_ID.test(id)) refuse(`${id} is not an update id.`);
+  const update = await trx
+    .selectFrom("updates")
+    .select(["id", "platform", "runtime_version", "created_at"])
+    .where("id", "=", id)
+    .forUpdate()
+    .executeTakeFirst();
+  return update ?? refuse(`No update has the id ${id}.`);
+}
+
+async function withdrawFromChannels(trx: Transaction<Tables>, id: string) {
+  const rows = await trx
+    .updateTable("update_channels")
+    .set({ withdrawn_at: new Date() })
+    .where("update_id", "=", id)
+    .where("withdrawn_at", "is", null)
+    .returning("channel")
+    .execute();
+  return rows.map((row) => row.channel);
+}
+
+export interface Withdrawn {
+  id: string;
+  platform: string;
+  runtimeVersion: string;
+  channels: string[];
+}
+
+/**
+ * Stops offering an update on every channel it is on, so phones that have not taken it never do.
+ * Phones already running it keep it; rolling back is what moves them.
+ */
+export async function withdrawUpdate(
+  db: Kysely<Tables>,
+  id: string,
+): Promise<Withdrawn> {
+  return db.transaction().execute(async (trx) => {
+    const update = await lockUpdate(trx, id);
+    const channels = await withdrawFromChannels(trx, id);
+    const result = {
+      id,
+      platform: update.platform,
+      runtimeVersion: update.runtime_version,
+      channels,
+    };
+    if (channels.length === 0) return result;
+    await trx
+      .insertInto("audit")
+      .values({
+        user_id: null,
+        actor: "deploy",
+        action: "update.withdrawn",
+        subject: id,
+        detail: JSON.stringify({
+          platform: update.platform,
+          runtimeVersion: update.runtime_version,
+          channels,
+        }),
+      })
+      .execute();
+    return result;
+  });
+}
+
+/** Reads a rollBackToEmbedded directive, refusing anything but exactly the shape phones read. */
+function readDirective(directive: Buffer): Date {
+  const { parameters } = readJson(directive, "The directive");
+  const commitTime = isObject(parameters) ? parameters.commitTime : undefined;
+  if (
+    typeof commitTime !== "string" ||
+    !COMMIT_TIME.test(commitTime) ||
+    Number.isNaN(Date.parse(commitTime))
+  )
+    refuse(
+      "The directive's commitTime is not an ISO 8601 UTC time with milliseconds.",
+    );
+  const expected = JSON.stringify({
+    type: "rollBackToEmbedded",
+    parameters: { commitTime },
+  });
+  if (directive.toString("utf8") !== expected)
+    refuse(`The directive is not exactly ${expected}.`);
+  return new Date(commitTime);
+}
+
+export interface RolledBack {
+  id: string;
+  platform: string;
+  runtimeVersion: string;
+  channels: string[];
+  commitTime: string;
+}
+
+/**
+ * Withdraws an update and tells every phone on its channels to go back to the code in its build.
+ * Phones only obey a directive signed by the update key and made after the update they run.
+ */
+export async function rollBackUpdate(
+  db: Kysely<Tables>,
+  {
+    id,
+    directive,
+    signature,
+    certificate,
+    now = new Date(),
+  }: {
+    id: string;
+    directive: Buffer;
+    signature: string;
+    certificate: string;
+    now?: Date;
+  },
+): Promise<RolledBack> {
+  checkSignature(directive, signature, certificate, [
+    "the directive",
+    "The directive's signature",
+  ]);
+  const commitTime = readDirective(directive);
+  if (commitTime.getTime() > now.getTime() + CLOCK_SKEW_MS)
+    refuse(
+      `The directive's commitTime ${commitTime.toISOString()} is in the future.`,
+    );
+
+  return db.transaction().execute(async (trx) => {
+    const update = await lockUpdate(trx, id);
+    if (commitTime <= update.created_at)
+      refuse(
+        `The directive's commitTime ${commitTime.toISOString()} is not after ${id} was made, so phones running it would ignore it.`,
+      );
+    const assigned = await trx
+      .selectFrom("update_channels")
+      .select("channel")
+      .where("update_id", "=", id)
+      .execute();
+    for (const { channel } of assigned) {
+      const later = await trx
+        .selectFrom("updates")
+        .innerJoin("update_channels", "update_channels.update_id", "updates.id")
+        .select("updates.id")
+        .where("update_channels.channel", "=", channel)
+        .where("update_channels.withdrawn_at", "is", null)
+        .where("update_channels.assigned_at", ">", (eb) =>
+          eb
+            .selectFrom("update_channels as rolled_back")
+            .select("rolled_back.assigned_at")
+            .where("rolled_back.update_id", "=", id)
+            .where("rolled_back.channel", "=", channel),
+        )
+        .where("updates.platform", "=", update.platform)
+        .where("updates.runtime_version", "=", update.runtime_version)
+        .executeTakeFirst();
+      if (later)
+        refuse(
+          `${channel} has offered ${later.id} since ${id}; rolling back would take phones off it too. Withdraw or roll back ${later.id} instead.`,
+        );
+    }
+
+    await withdrawFromChannels(trx, id);
+    const channels = assigned.map((row) => row.channel);
+    await trx
+      .insertInto("update_rollbacks")
+      .values(
+        channels.map((channel) => ({
+          update_id: id,
+          platform: update.platform,
+          runtime_version: update.runtime_version,
+          channel,
+          directive,
+          signature,
+          commit_time: commitTime,
+        })),
+      )
+      .execute();
+    await trx
+      .insertInto("audit")
+      .values({
+        user_id: null,
+        actor: "deploy",
+        action: "update.rolled_back",
+        subject: id,
+        detail: JSON.stringify({
+          platform: update.platform,
+          runtimeVersion: update.runtime_version,
+          channels,
+          commitTime: commitTime.toISOString(),
+        }),
+      })
+      .execute();
+    return {
+      id,
+      platform: update.platform,
+      runtimeVersion: update.runtime_version,
+      channels,
+      commitTime: commitTime.toISOString(),
+    };
   });
 }

@@ -32,6 +32,9 @@ const MAX_UPLOAD_FILES: usize = 20;
 const DRAG_STEPS: u32 = 12;
 const DRAG_STEP_DELAY: Duration = Duration::from_millis(16);
 const NARROW_VIEWPORT: u64 = 700;
+/// The width of a chat's reply column, where `page_show` puts a page.
+const PAGE_WIDTH: u64 = 756;
+const PAGE_VIEWPORT_HEIGHT: u64 = 600;
 /// How long a page may take to answer before WebKit is asked whether it hangs.
 const SLOW_ANSWER: Duration = Duration::from_secs(1);
 
@@ -53,7 +56,10 @@ pub fn execute(app: &AppHandle, request: &HarnessRequest) -> Result<Value, Strin
     let acts_on_a_tab = request.method != "browser.tab.close";
     let mut marks = Vec::new();
     if acts_on_a_tab {
-        manager.announce_acting(app, agent_id);
+        /* A draft page is checked for the agent alone; the person sees it once it is shown. */
+        if request.method != "browser.page" {
+            manager.announce_acting(app, agent_id);
+        }
         let reloading = manager.reloading(agent_id);
         marks.extend(manager.mark_acting(app, agent_id));
         if reloading {
@@ -703,6 +709,52 @@ async fn run(
                 manager.settle_viewport(agent_id, &tab_id).await?;
             }
             state(&manager, agent_id).await
+        }
+        "browser.page" => {
+            let source = std::path::PathBuf::from(text("path").ok_or("path is required")?);
+            if !source.is_absolute() {
+                return Err(format!("{} is not an absolute path", source.display()));
+            }
+            let width = params
+                .get("width")
+                .and_then(Value::as_u64)
+                .unwrap_or(PAGE_WIDTH);
+            let html = tauri::async_runtime::spawn_blocking(move || crate::pages::build(&source))
+                .await
+                .map_err(|error| error.to_string())??;
+            let url = crate::pages::preview_url(app, agent_id, &html)?;
+            let showing = tab_ids(&manager, agent_id).into_iter().find(|tab_id| {
+                manager
+                    .page(agent_id, tab_id)
+                    .is_some_and(|page| page.url == url)
+            });
+            if let Some(tab_id) = &showing {
+                manager
+                    .switch_tab(app, agent_id, tab_id)
+                    .map_err(|error| error.to_string())?;
+            }
+            let navigate = json!({ "url": url, "newTab": showing.is_none(), "report": "outcome" });
+            Box::pin(run(app, agent_id, "browser.navigate", &navigate)).await?;
+            let viewport = json!({ "width": width, "height": PAGE_VIEWPORT_HEIGHT });
+            Box::pin(run(app, agent_id, "browser.viewport", &viewport)).await?;
+            let (tab_id, view) = active(&manager, agent_id)?;
+            let content_height = call(&view, "contentHeight", &[]).await?;
+            let console = read_records(&view, "console", &[Value::Null, json!(false)]).await?;
+            let shot = Box::pin(run(
+                app,
+                agent_id,
+                "browser.screenshot",
+                &json!({ "fullPage": true }),
+            ))
+            .await?;
+            Ok(json!({
+                "tabId": tab_id,
+                "width": width,
+                "contentHeight": content_height,
+                "console": console,
+                "mimeType": shot["mimeType"],
+                "data": shot["data"],
+            }))
         }
         _ => Err("unknown browser method".into()),
     }

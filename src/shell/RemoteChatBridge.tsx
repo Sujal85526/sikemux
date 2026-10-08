@@ -8,12 +8,16 @@ import { swallow } from "../state/toast";
 export const REMOTE_CHAT_BEGUN_EVENT = "remote_chat_begun";
 export const REMOTE_CHAT_WAKE_EVENT = "remote_chat_wake";
 export const FOCUS_AGENT_EVENT = "focus_agent";
+export const AGENTS_SEEN_EVENT = "agents_seen";
 
 function wake(agentId: string) {
     if (getState().agents[agentId]?.launchState === "dormant") cmd.resumeAgent(agentId);
 }
 
-/** Shows a chat a paired phone starts among its project's agents, wakes a sleeping one a phone opens, and shows the agent the notch asks for. */
+/**
+ * Shows a chat a paired phone starts among its project's agents, wakes a sleeping one a phone opens, shows the agent the
+ * notch asks for, and clears the unread mark of an agent a phone has open.
+ */
 export function RemoteChatBridge() {
     useEffect(() => {
         const controller = new AbortController();
@@ -22,6 +26,9 @@ export function RemoteChatBridge() {
             transport.subscribe<AcpChat>(REMOTE_CHAT_BEGUN_EVENT, (event) => void cmd.adoptChat(event.payload), { signal: controller.signal }),
             transport.subscribe<string>(REMOTE_CHAT_WAKE_EVENT, (event) => wake(event.payload), { signal: controller.signal }),
             transport.subscribe<string>(FOCUS_AGENT_EVENT, (event) => cmd.revealAgent(event.payload), { signal: controller.signal }),
+            transport.subscribe<string[]>(AGENTS_SEEN_EVENT, (event) => event.payload.forEach(cmd.clearAgentUnread), {
+                signal: controller.signal,
+            }),
         ]).catch((error: unknown) => {
             if (!controller.signal.aborted) swallow("remote chat listener")(error);
         });

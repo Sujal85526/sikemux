@@ -55,7 +55,7 @@ struct IslandView: View {
         case .peekDone: return geometry.notchWidth + 2 * FinishedWings.wing
         case .peekAsk: return 460
         case .connect: return 560
-        case .open, .drop: return 680
+        case .open, .drop: return geometry.hasNotch ? 680 : 560
         }
     }
 
@@ -127,7 +127,13 @@ struct IslandView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: geometry.height)
+        .frame(height: bandHeight)
+    }
+
+    /// Without a notch the menu bar is shorter than the header's controls, so an
+    /// expanded island takes a notch's height to keep them off the screen edge.
+    private var bandHeight: CGFloat {
+        expanded && !geometry.hasNotch ? max(geometry.height, 38) : geometry.height
     }
 
     @ViewBuilder
@@ -174,6 +180,8 @@ struct ClosedWings: View {
 
     private var running: [AgentItem] { store.agents }
 
+    static let groupGap: CGFloat = 10
+
     /// Each wing as wide as what it holds, so a quiet right wing stays small
     /// and grows when a state mark arrives.
     static func widths(_ store: NotchStore) -> (left: CGFloat, right: CGFloat) {
@@ -183,11 +191,13 @@ struct ClosedWings: View {
         func digits(_ number: Int) -> CGFloat { CGFloat(String(number).count) * digit }
         var left = 14 + 20 + CGFloat(min(count, 3) - 1) * 17 + 10
         if count > 3 { left += 9 + 6.5 * CGFloat(String(count - 3).count + 1) }
+        let rollups = store.rollups
         let held: CGFloat
-        if let top = store.rollup {
-            held = (top.count > 1 ? digits(top.count) + 6 : 0) + 16
-        } else {
+        if rollups.isEmpty {
             held = digits(count)
+        } else {
+            let groups = rollups.map { ($0.count > 1 ? digits($0.count) + 6 : 0) + 16 }
+            held = groups.reduce(0, +) + CGFloat(rollups.count - 1) * ClosedWings.groupGap
         }
         return (left, 10 + held + 14)
     }
@@ -225,14 +235,18 @@ struct ClosedWings: View {
             }
             Color.clear.frame(width: geometry.notchWidth)
             if wings.right > 0 {
-                HStack(spacing: 6) {
-                    if let top = store.rollup {
-                        if top.count > 1 {
-                            Text("\(top.count)").font(Theme.ui(12, .semibold)).monospacedDigit().foregroundStyle(Theme.ink)
-                        }
-                        StateMark(state: top.state).id(top.state)
-                    } else {
+                HStack(spacing: Self.groupGap) {
+                    let rollups = store.rollups
+                    if rollups.isEmpty {
                         Text("\(running.count)").font(Theme.ui(12, .semibold)).monospacedDigit().foregroundStyle(Theme.ink)
+                    }
+                    ForEach(rollups, id: \.state) { group in
+                        HStack(spacing: 6) {
+                            if group.count > 1 {
+                                Text("\(group.count)").font(Theme.ui(12, .semibold)).monospacedDigit().foregroundStyle(Theme.ink)
+                            }
+                            StateMark(state: group.state)
+                        }
                     }
                 }
                 .padding(.trailing, 14)

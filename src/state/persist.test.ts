@@ -105,7 +105,7 @@ describe("frontend persistence", () => {
         expect(
             applyHydrate(
                 JSON.stringify({
-                    version: 19,
+                    version: 20,
                     sessions: [],
                     itemStates: {},
                 }),
@@ -220,8 +220,8 @@ describe("frontend persistence", () => {
     });
 
     it("remembers the spaces, each project's space and which space is shown", async () => {
-        const work = cmd.createSpace("Work", "💼")!;
-        const side = cmd.createSpace("Side projects")!;
+        const work = cmd.createSpace("Work", "briefcase")!;
+        const side = cmd.createSpace("Side projects", "")!;
         cmd.setProjectSpace("/office", work);
         cmd.setProjectSpace("/side", side);
         cmd.showSpace(work);
@@ -230,16 +230,20 @@ describe("frontend persistence", () => {
         await expect(flushPersist()).resolves.toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
         expect(saved.prefs.spaces).toEqual([
-            { id: work, name: "Work", icon: "💼" },
+            { id: work, name: "Work", icon: "briefcase" },
             { id: side, name: "Side projects", icon: "" },
         ]);
 
         setState({ spaces: [], projectSpaces: {}, activeSpaceId: null });
         saved.prefs.projectSpaces["/gone"] = "space-that-was-deleted";
         saved.prefs.spaces.push({ id: "blank", name: "   ", icon: "" });
+        saved.prefs.spaces[1].icon = "not-an-icon";
         applyHydrate(JSON.stringify(saved));
 
-        expect(getState().spaces.map((space) => space.name)).toEqual(["Work", "Side projects"]);
+        expect(getState().spaces.map((space) => [space.name, space.icon])).toEqual([
+            ["Work", "briefcase"],
+            ["Side projects", ""],
+        ]);
         expect(getState().projectSpaces).toEqual({ "/office": work, "/side": side });
         expect(getState().activeSpaceId).toBe(work);
     });
@@ -722,7 +726,7 @@ describe("frontend persistence", () => {
 
         await expect(flushPersist()).resolves.toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.version).toBe(18);
+        expect(saved.version).toBe(19);
         expect(saved.editorViews).toBeUndefined();
         expect(saved.itemStates).toEqual({
             [editorPane.id]: {
@@ -862,7 +866,7 @@ describe("frontend persistence", () => {
         const migrated = invoke.mock.calls[0][1].data as string;
         expect(migrated).not.toContain("legacy-secret");
         expect(migrated).not.toContain("agentBookmarks");
-        expect(JSON.parse(migrated).version).toBe(18);
+        expect(JSON.parse(migrated).version).toBe(19);
     });
 
     /*
@@ -895,7 +899,7 @@ describe("frontend persistence", () => {
         invoke.mockResolvedValue(undefined);
         expect(await flushPersist()).toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.version).toBe(18);
+        expect(saved.version).toBe(19);
         expect(saved.agents.map((agent: { id: string }) => agent.id)).toEqual(["a1", "a2"]);
         expect(saved).not.toHaveProperty("agentsBySession");
         expect(saved.sessions[0]).not.toHaveProperty("view");
@@ -955,6 +959,22 @@ describe("frontend persistence", () => {
             treeHidden: false,
         });
         expect(getState().sessions[project.id]).not.toHaveProperty("deploy");
+    });
+
+    it("turns a v18 space's emoji into the matching icon, or a folder when none matches", async () => {
+        cmd.createSpace("Work");
+        invoke.mockResolvedValue(undefined);
+        await expect(flushPersist()).resolves.toBe(true);
+        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
+        saved.version = 18;
+        saved.prefs.spaces = [
+            { id: "a", name: "Office", icon: "🏢" },
+            { id: "b", name: "Odd", icon: "🦄" },
+            { id: "c", name: "Plain", icon: "" },
+        ];
+        applyHydrate(JSON.stringify(saved));
+
+        expect(getState().spaces.map((space) => space.icon)).toEqual(["building", "folder", ""]);
     });
 
     it("folds v11 Bruno sessions, one per workspace, into the one Bruno session and keeps every folder", () => {

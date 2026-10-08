@@ -11,7 +11,7 @@ function join(parts: unknown[]): string {
 }
 
 export class File {
-  readonly uri: string;
+  uri: string;
 
   constructor(...parts: unknown[]) {
     this.uri = join(parts);
@@ -33,6 +33,15 @@ export class File {
 
   delete() {
     files.delete(this.uri);
+  }
+
+  move(destination: File, options: { overwrite?: boolean } = {}) {
+    const text = files.get(this.uri);
+    if (text === undefined) throw new Error(`no file at ${this.uri}`);
+    if (files.has(destination.uri) && !options.overwrite) throw new Error(`a file is already at ${destination.uri}`);
+    files.delete(this.uri);
+    files.set(destination.uri, text);
+    this.uri = destination.uri;
   }
 }
 

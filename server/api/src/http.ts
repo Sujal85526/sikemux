@@ -63,14 +63,13 @@ export function requestContext(log: Logger): MiddlewareHandler<Env> {
 
 const protocol = validator();
 
-/** Reads a JSON body and checks it against the named protocol definition before any handler sees it. */
-export async function readBody<Name extends keyof Definitions & string>(
-  c: Context,
+function checked<Name extends keyof Definitions & string>(
   name: Name,
-): Promise<Definitions[Name]> {
+  text: string,
+): Definitions[Name] {
   let value: unknown;
   try {
-    value = await c.req.json();
+    value = JSON.parse(text);
   } catch {
     throw new ApiFailure(400, "bad_request", "The body is not JSON.");
   }
@@ -82,4 +81,21 @@ export async function readBody<Name extends keyof Definitions & string>(
       `The body is not a valid ${name}: ${result.problems.join("; ")}.`,
     );
   return result.value;
+}
+
+/** Reads a JSON body and checks it against the named protocol definition before any handler sees it. */
+export async function readBody<Name extends keyof Definitions & string>(
+  c: Context,
+  name: Name,
+): Promise<Definitions[Name]> {
+  return checked(name, await c.req.text());
+}
+
+/** Like readBody, for routes whose body may be left out; undefined when it was. */
+export async function readOptionalBody<Name extends keyof Definitions & string>(
+  c: Context,
+  name: Name,
+): Promise<Definitions[Name] | undefined> {
+  const text = await c.req.text();
+  return text.trim() ? checked(name, text) : undefined;
 }

@@ -17,6 +17,8 @@ with `browser_navigate`, not in their own browser. Desk tabs run WebKit, the
 same engine as Sikemux itself and Safari, so check a web page there rather
 than in a headless Chromium you install.
 
+To show a chart, table, diagram or mockup in your reply, read the `pages` topic.
+
 This page is what to know before your first call. Call `guide` again with a
 `topic` from the list at the end when you need the details of one area.
 
@@ -60,6 +62,7 @@ Pass one of these as `topic`:
 - `tasks` — launching, trust prompts, `readyWhen`, restarting, stopping, and what survives a reload
 - `output` — `task_read` paging, `plain`, `tail`, `search`, and `events_wait`
 - `ui` — `ui_open` for files, diffs, terminals and the preview
+- `pages` — charts, tables, diagrams and mockups in your reply
 - `browser-reading` — page state, report modes, element numbers and lines, `browser_find`, frames
 - `browser-input` — clicking, typing, `browser_act`, keys, drag, upload, scrolling, dialogs
 - `browser-pages` — navigating, reloading, waiting, local files, viewport sizes, tabs
@@ -242,6 +245,51 @@ Paths must resolve inside the project; a path that escapes it is refused.
 Preview needs an agent session and opens as a page on your desk. The `previewUrl`
 you get back is configuration, not proof that anything is listening. If you
 need to know the server is up, read the task output or navigate to it.
+
+## pages: Showing a page in your reply
+
+A page is one self-contained HTML file you write, with inline `<style>` and
+`<script>`. Pictures and fonts named by local path (relative to the file,
+absolute, or `~/`) in `src`, CSS `url()` or a script string are inlined when
+it is shown, so a mockup can use the app's own fonts and icons and keeps
+working after the files move. Remote `https` scripts, such as a
+chart library from a CDN, load as they are. Pass absolute paths to the tools.
+
+1. Write the file anywhere, such as the system temp folder.
+2. `page_preview` opens it in a tab on your desk at the reply's width (756
+   px; pass `width: 390` to check a phone) and returns a screenshot, the
+   `contentHeight` it needs and its console, errors included. Fix and preview
+   again until it is right. Editing the file and previewing again is cheaper
+   than writing it anew.
+3. `page_show` with the path, a short `title` and `height` set to the last
+   `contentHeight`. In a chat the page appears in your reply, above the text
+   you write next; that text should add only what the page does not say. An
+   agent running in a terminal gets the page on its desk instead.
+
+Layout:
+
+- The page sits on the chat with no frame around it, as wide as the reply
+  column, and its left edge lines up with your text. Use a fluid width, no
+  outer padding, card, border or title banner: it is part of your reply.
+- Let content set the height. Never use `100vh` or `height: 100%` on `html`
+  or `body`; the frame grows to fit the page.
+- Give charts fixed pixel heights rather than ones that scale with width.
+- Links the person clicks open on your desk, not in the page.
+
+Theme. Sikemux sets these on `:root` and changes them live with the person's
+theme, so style with them rather than fixed colours:
+
+- `--background` (the chat's ground; the page itself is transparent over it),
+  `--foreground`, `--muted-foreground`, `--faint-foreground`
+- `--card` (a raised surface), `--border`
+- `--accent`, `--accent-foreground` (text on `--accent`), `--accent-surface`
+- `--destructive`, `--success`, `--warning`, `--info`
+- `--code-background`, `--code-foreground`
+- `--chart-1` to `--chart-6`, distinct series colours for charts
+- `--radius`, `--font-sans`, `--font-mono`
+
+The base styles set the page's colour and font from these, a 14px body and no
+body margin; your own CSS overrides them.
 
 ## browser-reading: Reading a page
 

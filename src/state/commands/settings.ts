@@ -18,6 +18,8 @@ export const setUiTextScale = (value: number): void => setState({ uiTextScale: [
 
 export const setRailDensity = (value: import("../types").RailDensity): void => setState({ railDensity: value });
 export const setAgentRailAllAgents = (value: boolean): void => setState({ agentRailAllAgents: value });
+export const setAccountAutoSwitch = (provider: "claude" | "codex", on: boolean): void =>
+    setState((s) => ({ accountAutoSwitch: { ...s.accountAutoSwitch, [provider]: on } }));
 export const setAgentRailScope = (value: import("../types").AgentRailScope): void => setState({ agentRailScope: value });
 export const setDefaultAgentPermissionMode = (value: import("../types").AgentPermissionMode): void =>
     setState({ defaultAgentPermissionMode: value === "bypass" ? "bypass" : "workspace-write" });

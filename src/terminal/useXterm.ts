@@ -23,6 +23,7 @@ import { terminalWebglRequested, type TerminalRenderer } from "./renderer";
 import { cellWidthCorrection, lineHeightCorrection, measureChar } from "./cellMetrics";
 import { isTerminalFindShortcut, safeWebUrl, sanitizeTerminalTitle, terminalBufferText, type TerminalSearchOptions } from "./interactions";
 import { scheduleNextFrame } from "../lib/instrumentation";
+import { stageMoving, whenStageStill } from "../state/nativeViews";
 import { performanceTelemetry } from "../lib/performance";
 import type { PtyAttachment, PtyOutputChunk, PtyShellMetadataSnapshot } from "./ptyController";
 import { RendererRestartBackoff } from "./restartBackoff";
@@ -643,6 +644,14 @@ export function useXterm(opts: {
                 let resizeFrame: number | null = null;
                 let lastCols = term.cols;
                 let lastRows = term.rows;
+                let stopWaitingForStill: (() => void) | null = null;
+                const sendSize = () => {
+                    stopWaitingForStill = null;
+                    if (term.cols === lastCols && term.rows === lastRows) return;
+                    lastCols = term.cols;
+                    lastRows = term.rows;
+                    settlePtyOperation(pty.resize(term.cols, term.rows));
+                };
                 const resizeNow = () => {
                     resizeFrame = null;
                     if (host.clientWidth === 0 || host.clientHeight === 0) return;
@@ -650,10 +659,10 @@ export function useXterm(opts: {
                     applyCellCorrection();
                     fit.fit();
                     if (stickToBottom) term.scrollToBottom();
-                    if (term.cols === lastCols && term.rows === lastRows) return;
-                    lastCols = term.cols;
-                    lastRows = term.rows;
-                    settlePtyOperation(pty.resize(term.cols, term.rows));
+                    /* A program redraws its whole screen on every resize, so a rail or desk
+                       sliding past tells it the size once, where the slide lands. */
+                    if (stageMoving()) stopWaitingForStill ??= whenStageStill(sendSize);
+                    else sendSize();
                 };
                 const resize = () => {
                     if (resizeFrame != null) return;
@@ -689,6 +698,7 @@ export function useXterm(opts: {
                     if (outputFrame != null) window.cancelAnimationFrame(outputFrame);
                     outputFrame = null;
                     if (resizeFrame != null) window.cancelAnimationFrame(resizeFrame);
+                    stopWaitingForStill?.();
                     outputPendingBytes = 0;
                     pendingChannelBytes = 0;
                     outputQueuedAt = null;

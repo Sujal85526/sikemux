@@ -1,7 +1,9 @@
+pub(crate) mod accounts;
 mod config;
 pub(crate) mod executable;
 pub(crate) mod models;
 pub(crate) mod sessions;
+pub(crate) mod status;
 pub(crate) mod usage;
 pub(crate) mod watch;
 
@@ -36,6 +38,7 @@ pub struct AgentInfo {
     default_model: Option<String>,
     #[serde(rename = "defaultEffort")]
     default_effort: Option<String>,
+    status: status::AgentStatus,
 }
 
 #[derive(Clone, Deserialize)]
@@ -146,6 +149,20 @@ impl AgentKind {
             AgentKind::Omp => "omp",
             AgentKind::Grok => "grok",
         }
+    }
+
+    pub(crate) fn from_name(name: &str) -> Option<Self> {
+        [
+            AgentKind::Claude,
+            AgentKind::Codex,
+            AgentKind::Hermes,
+            AgentKind::Pi,
+            AgentKind::Opencode,
+            AgentKind::Omp,
+            AgentKind::Grok,
+        ]
+        .into_iter()
+        .find(|kind| kind.as_str() == name)
     }
 }
 

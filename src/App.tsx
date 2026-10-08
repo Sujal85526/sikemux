@@ -12,6 +12,7 @@ import { RailPeek } from "./rail/RailPeek";
 import { RailResizer, useRailWidthVars } from "./rail/RailResizer";
 import { AgentSessionSync } from "./agents/AgentSessionSync";
 import { watchTerminalAgentExits } from "./agents/tuiResume";
+import { watchFocusForAgentStatus } from "./agents/statusRefresh";
 import { AgentLifecycleManager } from "./agents/AgentLifecycleManager";
 import { AgentPalettePortal as AgentPalette } from "./agents/AgentPalettePortal";
 import { FilePalette } from "./palettes/FilePalette";
@@ -65,6 +66,7 @@ import { confirmDialog } from "./state/dialog";
 import { invalidate } from "./state/resources";
 import { getState, useStore } from "./state/store";
 import { applyTheme, applyWindowOpacity, registerCustomThemes } from "./themes/bus";
+import { startPageTheme } from "./chat/pageTheme";
 import { applyTerminalFontSize } from "./terminal/fontSize";
 import { applyChatTextScale } from "./chat/textScale";
 import { applyEditorTextScale } from "./editor/textScale";
@@ -101,7 +103,7 @@ import { pluginsApi } from "./api/plugins";
 import "./plugins/builtin";
 import { recordAgentTurns } from "./state/activityRecorder";
 import { useInstalledPlugins } from "./plugins/installed";
-import { useRailEntrance } from "./rail/railMotion";
+import { useRailDock } from "./rail/railMotion";
 
 const SettingsPanel = lazy(() => import("./settings/SettingsPanel").then((module) => ({ default: module.SettingsPanel })));
 
@@ -701,8 +703,8 @@ export default function App() {
     const sideRailVisible = useStore((s) => s.sideRailOpen);
     const agentRailVisible = useStore((s) => s.agentRailOpen);
     const activeSessionIsProject = useStore((s) => s.sessions[s.activeSessionId]?.kind === "project");
-    useRailEntrance(sideRailVisible, ".side-rail");
-    useRailEntrance(agentRailVisible && activeSessionIsProject, ".agent-rail");
+    useRailDock(sideRailVisible, true, ".side-rail");
+    useRailDock(agentRailVisible, activeSessionIsProject, ".agent-rail");
     const pickerOpen = useStore((s) => s.pickerOpen);
     const agentPaletteOpen = useStore((s) => s.agentPaletteOpen);
     const filePaletteOpen = useStore((s) => s.filePaletteOpen);
@@ -758,6 +760,7 @@ export default function App() {
                     const st = getState();
                     registerCustomThemes(st.customThemes);
                     applyTheme(st.themeId);
+                    startPageTheme();
                     applyWindowOpacity(st.windowOpacity);
                     applyTerminalFontSize(st.terminalFontSize);
                     applyChatTextScale(st.chatTextScale);
@@ -825,6 +828,7 @@ export default function App() {
     useEffect(() => recordAgentTurns(), []);
 
     useEffect(() => watchTerminalAgentExits(), []);
+    useEffect(() => watchFocusForAgentStatus(), []);
 
     useEffect(() => {
         let disposed = false;
@@ -975,7 +979,7 @@ export default function App() {
             <AgentLifecycleManager />
             <TopBar />
             <div className="body">
-                {sideRailVisible && <SideRail />}
+                <SideRail />
                 {sideRailVisible && <RailResizer edge="start" />}
                 {!sideRailVisible && (
                     <RailPeek edge="start">
@@ -990,7 +994,7 @@ export default function App() {
                         </Suspense>
                     )}
                 </main>
-                {agentRailVisible && activeSessionIsProject && <AgentRail />}
+                {activeSessionIsProject && <AgentRail />}
                 {agentRailVisible && activeSessionIsProject && <RailResizer edge="end" />}
                 {!agentRailVisible && activeSessionIsProject && (
                     <RailPeek edge="end">

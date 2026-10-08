@@ -1,27 +1,27 @@
 import { navigateTabs } from "../lib/tabNavigation";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { AgentInfo, AgentUsage, AgentUsageWindow } from "../api/agents";
+import type { AgentInfo } from "../api/agents";
 import { usePageVisible } from "../hooks/usePageVisible";
 import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "../agents/agentProfiles";
 import * as cmd from "../state/commands";
 import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
-import { type ResourceHandle, useResource, useResourceEnabled } from "../state/resources";
+import { useResource, useResourceEnabled } from "../state/resources";
 import { agentCatalogR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { activeAgentId, agentIdsOf, agentsAwaitingInput } from "../state/selectors";
-import { type Agent, type AgentType, type ProviderProfile, type ProviderProfileSelection } from "../state/types";
-import { AgentIcon, IconClose, IconInbox, IconPlus, IconRefresh, IconSearch } from "../ui/Icons";
-import { AgentStateIndicator } from "../agents/AgentStateIndicator";
+import { type Agent, type AgentType } from "../state/types";
+import { AgentIcon, IconClose, IconInbox, IconPlus, IconSearch } from "../ui/Icons";
+import { AgentStateIndicator, SubagentCount } from "../agents/AgentStateIndicator";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
 import { AgentContextMenu } from "../workspace/AgentContextMenu";
 import { sortByAttention } from "../state/agentStatus";
 import { Tooltip } from "../ui/Tooltip";
-import { Dropdown } from "../ui/Dropdown";
 import { Panel, PanelHeader } from "../ui/Panel";
 import { animate, type Box, contentBox, EASE_LEAVE, glideSelection, leavingRef } from "../lib/motion";
-import { CountUp } from "../ui/RollingText";
 import { leavingRail } from "./railMotion";
 import { RailToggle } from "./RailToggle";
+import { AgentAccountsPanel } from "./AgentAccounts";
+import { planLabel, usagePeak } from "./usageFormat";
 import { AllProjectsAgents } from "./AllProjectsAgents";
 import { RecentChatList } from "./RecentChatList";
 import { ScopeTrack } from "./ScopeTrack";
@@ -92,6 +92,7 @@ export function AgentRailBody() {
     const session = useStore((s) => s.sessions[s.activeSessionId]);
     const activityById = useStore((s) => s.agentActivity);
     const backgroundById = useStore((s) => s.agentBackgroundWork);
+    const subagentsById = useStore((s) => s.agentSubagents);
     const windowsBySession = useStore((s) => s.windowsBySession);
     const windowsById = useStore((s) => s.windows);
     const agentsById = useStore((s) => s.agents);
@@ -315,12 +316,11 @@ export function AgentRailBody() {
                 />
                 <div className="agent-empty">agents are project-scoped</div>
                 {!allAgents && isUsageAgent(selectedType) && selectedUsage && (
-                    <AgentUsagePanel
+                    <AgentAccountsPanel
                         provider={selectedType}
                         usage={selectedUsage}
-                        label={availableAgents.find((a) => a.type === selectedType)?.label}
-                        profiles={profiles}
-                        selections={profileSelections}
+                        label={selectedProvider?.label}
+                        command={selectedProvider?.command}
                     />
                 )}
             </>
@@ -425,6 +425,7 @@ export function AgentRailBody() {
                                             }}>
                                             {glyph}
                                             <span className="agent-title">{a.title}</span>
+                                            {(subagentsById[a.id] ?? 0) > 0 && <SubagentCount count={subagentsById[a.id]} />}
                                         </button>
                                     )}
                                     <AgentStateMark state={activityById[a.id]?.state} background={(backgroundById[a.id] ?? 0) > 0} />
@@ -457,12 +458,11 @@ export function AgentRailBody() {
             {/* The rail's footer: plan limits sit under the agents they apply
                 to, out of the way of the list you came here to use. */}
             {!allAgents && isUsageAgent(selectedType) && selectedUsage && (
-                <AgentUsagePanel
+                <AgentAccountsPanel
                     provider={selectedType}
                     usage={selectedUsage}
-                    label={availableAgents.find((a) => a.type === selectedType)?.label}
-                    profiles={profiles}
-                    selections={profileSelections}
+                    label={selectedProvider?.label}
+                    command={selectedProvider?.command}
                 />
             )}
         </>
@@ -514,179 +514,6 @@ function AgentStateMark({ state, background }: { state?: import("../state/types"
         <span className="row-status">
             <AgentStateIndicator state={state ?? "idle"} background={background} />
         </span>
-    );
-}
-
-function usagePeak(usage: AgentUsage | undefined): number | undefined {
-    if (!usage?.windows.length) return undefined;
-    return Math.max(...usage.windows.map((window) => Math.max(0, Math.min(100, window.usedPercent))));
-}
-
-function usageTone(percent: number): "steady" | "warm" | "hot" {
-    if (percent >= 90) return "hot";
-    if (percent >= 70) return "warm";
-    return "steady";
-}
-
-function resetAtMs(value: AgentUsageWindow["resetsAt"]): number | null {
-    if (typeof value === "number") return Number.isFinite(value) ? value * 1000 : null;
-    if (typeof value !== "string" || !value) return null;
-    if (/^\d+$/.test(value)) return Number(value) * 1000;
-    const parsed = Date.parse(value);
-    return Number.isNaN(parsed) ? null : parsed;
-}
-
-function resetCountdown(value: AgentUsageWindow["resetsAt"], now: number): string {
-    const reset = resetAtMs(value);
-    if (reset == null) return "reset unknown";
-    const minutes = Math.max(0, Math.ceil((reset - now) / 60_000));
-    if (minutes === 0) return "resetting now";
-    if (minutes < 60) return `reset ${minutes}m`;
-    const hours = Math.floor(minutes / 60);
-    const remainingMinutes = minutes % 60;
-    if (hours < 24) return `reset ${hours}h${remainingMinutes ? ` ${remainingMinutes}m` : ""}`;
-    const days = Math.floor(hours / 24);
-    const remainingHours = hours % 24;
-    if (days < 7) return `reset ${days}d${remainingHours ? ` ${remainingHours}h` : ""}`;
-    return `reset ${new Date(reset).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
-}
-
-function resetTitle(value: AgentUsageWindow["resetsAt"]): string {
-    const reset = resetAtMs(value);
-    return reset == null ? "Reset time unavailable" : `Resets ${new Date(reset).toLocaleString()}`;
-}
-
-function planLabel(plan: string): string {
-    return plan
-        .split(/[_-]/g)
-        .filter(Boolean)
-        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-        .join(" ");
-}
-
-const MANAGE_ACCOUNTS = "manage-accounts";
-
-function AccountPicker({
-    provider,
-    providerLabel,
-    profiles,
-    selections,
-}: {
-    provider: UsageAgentType;
-    providerLabel: string;
-    profiles: readonly ProviderProfile[];
-    selections: ProviderProfileSelection;
-}) {
-    const accounts = useMemo(() => profiles.filter((profile) => profile.provider === provider), [profiles, provider]);
-    if (accounts.length < 2) return null;
-    const current = selectedProviderProfile(provider, profiles, selections) ?? accounts[0];
-    return (
-        <div className="agent-usage-account">
-            <Dropdown
-                label={`${providerLabel} account`}
-                title={`New ${providerLabel} agents use this account`}
-                value={current.id}
-                align="right"
-                menuWidth={180}
-                options={[
-                    ...accounts.map((profile) => ({ value: profile.id, label: profile.name, detail: profile.configPath })),
-                    { value: MANAGE_ACCOUNTS, label: "Manage accounts…", className: "agent-usage-manage" },
-                ]}
-                onChange={(value) => {
-                    if (value === MANAGE_ACCOUNTS) cmd.openSettings("agents");
-                    else cmd.selectProviderProfile(provider, value);
-                }}
-            />
-        </div>
-    );
-}
-
-function AgentUsagePanel({
-    provider,
-    usage,
-    label,
-    profiles,
-    selections,
-}: {
-    provider: UsageAgentType;
-    usage: ResourceHandle<AgentUsage>;
-    label?: string;
-    profiles: readonly ProviderProfile[];
-    selections: ProviderProfileSelection;
-}) {
-    const [now, setNow] = useState(() => Date.now());
-    useEffect(() => {
-        const timer = window.setInterval(() => setNow(Date.now()), 60_000);
-        return () => window.clearInterval(timer);
-    }, []);
-
-    const providerLabel = label ?? (provider === "claude" ? "Claude" : "Codex");
-    const windows = usage.data?.windows ?? [];
-    const emptyCopy =
-        usage.status === "loading"
-            ? "reading plan limits…"
-            : usage.status === "error"
-              ? "Could not read plan limits. Refresh to try again."
-              : (usage.data?.unavailableReason ?? "This account did not report plan limits.");
-
-    return (
-        <section className={`agent-usage ${provider}`} aria-label={`${providerLabel} plan limits`}>
-            <div className="panel-head agent-usage-head">
-                <span className="panel-label">Limits</span>
-                <span className="panel-rule" />
-                <AccountPicker provider={provider} providerLabel={providerLabel} profiles={profiles} selections={selections} />
-                {usage.data?.plan && <span className="agent-usage-plan">{planLabel(usage.data.plan)}</span>}
-                <Tooltip label={`Refresh ${providerLabel} plan limits`}>
-                    <button
-                        type="button"
-                        className="rail-group-add"
-                        aria-label={`Refresh ${providerLabel} plan limits`}
-                        disabled={usage.status === "loading"}
-                        onClick={() => void usage.refresh()}>
-                        <IconRefresh size={11} />
-                    </button>
-                </Tooltip>
-            </div>
-
-            {windows.length > 0 ? (
-                windows.map((window, index) => {
-                    const percent = Math.max(0, Math.min(100, window.usedPercent));
-                    const rounded = Math.round(percent);
-                    return (
-                        <Tooltip
-                            key={`${window.label}:${String(window.resetsAt)}:${index}`}
-                            side="left"
-                            label={`${window.label}: ${rounded}% used. ${resetTitle(window.resetsAt)}`}>
-                            <div className="agent-usage-row" data-tone={usageTone(percent)}>
-                                <div className="agent-usage-line">
-                                    <span className="agent-usage-name">{window.label}</span>
-                                    <span className="agent-usage-reset">{resetCountdown(window.resetsAt, now)}</span>
-                                </div>
-                                <div className="agent-usage-gauge">
-                                    <span className="agent-usage-pct">
-                                        <CountUp value={rounded} />
-                                        <i>%</i>
-                                    </span>
-                                    <span
-                                        className="agent-usage-track"
-                                        role="meter"
-                                        aria-label={`${window.label} usage`}
-                                        aria-valuemin={0}
-                                        aria-valuemax={100}
-                                        aria-valuenow={rounded}>
-                                        <span className="agent-usage-fill" style={{ width: `${percent}%` }} />
-                                    </span>
-                                </div>
-                            </div>
-                        </Tooltip>
-                    );
-                })
-            ) : (
-                <div className="agent-usage-empty" data-loading={usage.status === "loading" ? "true" : "false"}>
-                    {emptyCopy}
-                </div>
-            )}
-        </section>
     );
 }
 

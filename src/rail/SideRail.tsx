@@ -33,9 +33,9 @@ import { isPluginKind, pluginIdOf } from "../plugins/kinds";
 import { leavingRail } from "./railMotion";
 import { LEAVES_SETTINGS } from "../settings/leaveSettings";
 import { TreeContextMenu, type CtxItem } from "./FileTree";
-import { shownProjects, spaceBadge } from "../state/projectSpaces";
+import { newSpace, SpaceGlyph, SpaceSwitch } from "./SpaceSwitch";
+import { shownProjects } from "../state/projectSpaces";
 import type { ProjectSpace } from "../state/types";
-import { confirmDialog, promptDialog } from "../state/dialog";
 
 function kindIcon(kind: SessionKind): ReactNode {
     if (kind === "project") return <IconFolder size={13} />;
@@ -419,94 +419,12 @@ function PluginLauncherRow({ plugin, name }: { plugin: FrontendPlugin; name: str
 
 type OpenMenu = (event: ReactMouseEvent, items: CtxItem[]) => void;
 
-async function askSpaceName(title: string, confirmLabel: string, initial = ""): Promise<string | null> {
-    const name = await promptDialog({ title, label: "Name", initial, placeholder: "Work, Side projects, Client A…", confirmLabel });
-    return name?.trim() ? name : null;
-}
-
-async function newSpace(then?: (id: string) => void): Promise<void> {
-    const name = await askSpaceName("Create space", "Create");
-    const id = name ? cmd.createSpace(name) : null;
-    if (id) (then ?? cmd.showSpace)(id);
-}
-
-function spaceItems(space: ProjectSpace): CtxItem[] {
-    return [
-        {
-            label: "Rename…",
-            run: () => void askSpaceName("Rename space", "Rename", space.name).then((name) => name && cmd.renameSpace(space.id, name)),
-        },
-        {
-            label: "Change Icon…",
-            run: () =>
-                void promptDialog({
-                    title: "Space icon",
-                    label: "An emoji",
-                    initial: space.icon,
-                    placeholder: "💼",
-                    confirmLabel: "Save",
-                }).then((icon) => icon !== null && cmd.setSpaceIcon(space.id, icon)),
-        },
-        ...(space.icon ? [{ label: "Use First Letter as Icon", run: () => cmd.setSpaceIcon(space.id, "") }] : []),
-        { sep: true },
-        {
-            label: "Delete Space…",
-            danger: true,
-            run: () =>
-                void confirmDialog({
-                    title: `Delete “${space.name}”?`,
-                    body: "Its projects stay open and show under All.",
-                    confirmLabel: "Delete",
-                }).then((yes) => yes && cmd.deleteSpace(space.id)),
-        },
-    ];
-}
-
-function SpaceSwitch({ spaces, activeSpaceId, onMenu }: { spaces: readonly ProjectSpace[]; activeSpaceId: string | null; onMenu: OpenMenu }) {
-    const add = (
-        <Tooltip label="Create space">
-            <button type="button" className="space-add" aria-label="Create space" onClick={() => void newSpace()}>
-                <IconPlus size={11} />
-                {spaces.length === 0 && <span>New space</span>}
-            </button>
-        </Tooltip>
-    );
-    if (spaces.length === 0) return <div className="space-switch empty">{add}</div>;
-    const option = (id: string | null, label: string, badge?: string, space?: ProjectSpace) => (
-        <button
-            key={id ?? "all"}
-            type="button"
-            role="radio"
-            aria-checked={activeSpaceId === id}
-            aria-label={label}
-            className={activeSpaceId === id ? "active" : ""}
-            onClick={() => cmd.showSpace(id)}
-            onContextMenu={space ? (event) => onMenu(event, spaceItems(space)) : undefined}
-            onDoubleClick={
-                space
-                    ? () => void askSpaceName("Rename space", "Rename", space.name).then((name) => name && cmd.renameSpace(space.id, name))
-                    : undefined
-            }>
-            {badge && <span className="space-badge">{badge}</span>}
-            <span className="space-name">{label}</span>
-        </button>
-    );
-    return (
-        <div className="space-switch">
-            <div className="space-options" role="radiogroup" aria-label="Projects shown">
-                {option(null, "All")}
-                {spaces.map((space) => option(space.id, space.name, spaceBadge(space), space))}
-            </div>
-            {add}
-        </div>
-    );
-}
-
 function projectSpaceItems(session: Session, spaces: readonly ProjectSpace[], current: string | undefined): CtxItem[] {
     const mark = (selected: boolean) => (selected ? "✓" : undefined);
     return [
         ...spaces.map((space) => ({
-            label: `${spaceBadge(space)}  ${space.name}`,
+            label: space.name,
+            icon: <SpaceGlyph icon={space.icon} />,
             hint: mark(current === space.id),
             run: () => cmd.setProjectSpace(session.cwd, space.id),
         })),
@@ -848,7 +766,7 @@ export const SideRail = memo(function SideRail() {
                         addTitle={`Open project — ${kb("project.open")}`}
                         addKbd={kb("project.open")}
                         emptyText={activeSpace ? `no projects in ${activeSpace.name}` : "no projects"}
-                        toolbar={allProjects.length > 0 && <SpaceSwitch spaces={spaces} activeSpaceId={activeSpaceId} onMenu={openMenu} />}
+                        toolbar={allProjects.length > 0 && <SpaceSwitch spaces={spaces} activeSpaceId={activeSpaceId} />}
                     />
                     <Group
                         label="SSH"

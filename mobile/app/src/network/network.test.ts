@@ -64,15 +64,26 @@ describe('the relays', () => {
     expect(await empty.currentRelays()).toEqual(DEFAULT_RELAYS);
   });
 
-  it('are asked for again after a failure, but not after a fresh answer', async () => {
-    const { currentRelays } = await load();
-    await currentRelays();
-    await currentRelays();
-    expect(asked).toHaveLength(2);
-    serve(network());
-    await currentRelays();
-    await currentRelays();
-    expect(asked).toHaveLength(3);
+  it('are asked for again a while after a failure, or once the network is back, but not after a fresh answer', async () => {
+    vi.useFakeTimers();
+    try {
+      const { currentRelays, askForRelaysAgain } = await load();
+      await currentRelays();
+      await currentRelays();
+      expect(asked).toHaveLength(1);
+      vi.advanceTimersByTime(31_000);
+      await currentRelays();
+      expect(asked).toHaveLength(2);
+      askForRelaysAgain();
+      serve(network());
+      await currentRelays();
+      await currentRelays();
+      askForRelaysAgain();
+      await currentRelays();
+      expect(asked).toHaveLength(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('cross to the native client with their QUIC port', async () => {

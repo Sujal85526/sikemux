@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 import type { Server } from "node:http";
 
+import { appleSignIn } from "./account/apple.ts";
 import { clerkBackend } from "./account/clerk.ts";
 import { sweepClerk } from "./account/clerk-sweeper.ts";
 import { createApp } from "./app.ts";
@@ -10,6 +11,7 @@ import { openDatabase } from "./db.ts";
 import { RateLimiter } from "./limits.ts";
 import { attachLive } from "./live/server.ts";
 import type { Logger } from "./log.ts";
+import { ApnsProvider } from "./push/apns.ts";
 import { FcmProvider } from "./push/fcm.ts";
 import { Pusher } from "./push/send.ts";
 
@@ -32,6 +34,16 @@ export function startServer(config: Config, log: Logger) {
     log.warn(
       "CLERK_SECRET_KEY is not set: deleted accounts and removed phones' sessions wait to be deleted in Clerk",
     );
+  const apple = config.appleSignIn ? appleSignIn(config.appleSignIn) : null;
+  if (apple)
+    log.info(
+      { keyId: config.appleSignIn?.keyId },
+      "revoking Sign in with Apple when accounts are deleted",
+    );
+  else
+    log.warn(
+      "APPLE_SIGNIN_KEY_FILE is not set: deleting an account cannot revoke Sign in with Apple",
+    );
   if (!config.clerkWebhookSecret)
     log.warn("CLERK_WEBHOOK_SECRET is not set: Clerk's webhooks are refused");
   const fcm = config.push.fcm ? new FcmProvider(config.push.fcm) : null;
@@ -44,6 +56,16 @@ export function startServer(config: Config, log: Logger) {
     log.warn(
       "FCM_SERVICE_ACCOUNT_FILE is not set: pushes to Android phones answer not_set_up",
     );
+  const apns = config.push.apns
+    ? new ApnsProvider(config.push.apns, { topic: config.push.apns.topic })
+    : null;
+  if (apns)
+    log.info(
+      { keyId: config.push.apns?.keyId, topic: config.push.apns?.topic },
+      "pushing to iOS through APNs",
+    );
+  else
+    log.warn("APNS_KEY_FILE is not set: pushes to iPhones answer not_set_up");
   log.info(
     {
       keyId: config.join.keyId,
@@ -57,7 +79,10 @@ export function startServer(config: Config, log: Logger) {
     db: database.db,
     log,
     limiter,
-    providers: fcm ? { fcm } : {},
+    providers: {
+      ...(fcm ? { fcm } : {}),
+      ...(apns ? { apns } : {}),
+    },
   });
   const app = createApp({
     database,
@@ -66,6 +91,7 @@ export function startServer(config: Config, log: Logger) {
     verifier,
     limiter,
     clerk,
+    appleSignIn: apple,
     webhookSecret: config.clerkWebhookSecret,
     network: config.network,
     push: config.push,

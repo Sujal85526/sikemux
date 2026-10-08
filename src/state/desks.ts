@@ -20,6 +20,22 @@ export type DeskItem =
     | { key: string; kind: "file"; path: string }
     | { key: string; kind: "terminal"; terminal: DeskTerminal };
 
+export type DeskKind = DeskItem["kind"];
+
+/** The kind of item `shownDeskItem` picked; the desk shows the tabs of one kind at a time. */
+export function shownKind(shown: string | null): DeskKind | null {
+    if (shown === null) return null;
+    if (shown === BROWSER_ACTIVE) return "browser";
+    return shown.startsWith("file:") ? "file" : "terminal";
+}
+
+/** The item to bring back when the person switches to a kind: the one it last showed, or its first. */
+export function itemOfKind(items: readonly DeskItem[], kind: DeskKind, strip: BrowserSnapshot, last?: string): DeskItem | undefined {
+    const ofKind = items.filter((item) => item.kind === kind);
+    if (kind === "browser") return ofKind.find((item) => item.kind === "browser" && item.tab.id === strip.activeTabId) ?? ofKind[0];
+    return ofKind.find((item) => item.key === last) ?? ofKind[0];
+}
+
 /** Everything on a desk, in the order it arrived. */
 export function deskItems(desk: Desk, strip: BrowserSnapshot, files: readonly string[]): DeskItem[] {
     const items = new Map<string, DeskItem>();

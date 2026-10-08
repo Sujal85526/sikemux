@@ -21,6 +21,7 @@ pub const BROWSER_METHODS: &[&str] = &[
     "browser.wait",
     "browser.tab.switch",
     "browser.tab.close",
+    "browser.page",
 ];
 
 pub const HARNESS_METHODS: &[&str] = &[
@@ -30,6 +31,7 @@ pub const HARNESS_METHODS: &[&str] = &[
     "task.read",
     "task.stop",
     "ui.open",
+    "page.show",
     "events.wait",
     "app.console",
 ];

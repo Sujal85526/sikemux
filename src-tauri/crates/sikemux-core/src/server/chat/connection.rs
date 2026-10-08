@@ -12,25 +12,102 @@ use agent_client_protocol::schema::v1::{
     SetSessionModeRequest,
 };
 use agent_client_protocol::schema::ProtocolVersion;
-use agent_client_protocol::{AcpAgent, AcpAgentConfig, Agent, ConnectionTo};
+use agent_client_protocol::{AcpAgent, AcpAgentConfig, Agent, ConnectionTo, ErrorCode};
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
+use crate::acp::account::{self, Failure, FailureKind, SignIn};
 use crate::acp::{
     adapter_effort_id, air, native, permission_mode_id, prompt_blocks, turn_signal, SessionEnd,
     TurnSignal,
 };
-use crate::protocol::{ChatEventKind, ChatStart};
+use crate::protocol::{ChatAccount, ChatContext, ChatEventKind, ChatLaunch, ChatStart};
 
+use super::super::connection::ClientId;
 use super::{Chat, ChatCommand};
 
 /// How long a stopped turn may keep running before the agent is killed. The
 /// agent only reads a cancel between steps, and a wedged tool never gets there.
 const CANCEL_GRACE: Duration = Duration::from_secs(10);
 
-fn servers(chat: &Chat) -> Vec<McpServer> {
-    chat.launch
+/// How a connection ended: the chat's session is over, or its agent is to be
+/// started again under it.
+pub(super) enum Outcome {
+    Ended(SessionEnd),
+    Rebind(Box<Rebind>),
+}
+
+/// A prompt to send again once the agent is back.
+#[derive(Clone)]
+struct Replay {
+    /// Who sent it, while nobody else has been told it was sent.
+    announce: Option<ClientId>,
+    text: String,
+    paths: Vec<String>,
+    context: Vec<ChatContext>,
+}
+
+/// Starts the chat's agent again on the same session.
+pub(super) struct Rebind {
+    pub launch: ChatLaunch,
+    replay: Option<Replay>,
+    /// Accounts that ran out of usage on the prompt being sent again.
+    exhausted: Vec<String>,
+    /// Set after a sign-in failure, so a second one is shown rather than retried.
+    signed_in_again: bool,
+    /// Said in the transcript once the agent is back.
+    notice: Option<Value>,
+}
+
+/// A turn that failed in a way a new agent process or another account may fix.
+struct Failed {
+    turn: u64,
+    failure: Failure,
+    response: Option<Value>,
+}
+
+/// `launch` with `account` in place of the account it names.
+fn on_account(provider: &str, launch: &ChatLaunch, account: &ChatAccount) -> ChatLaunch {
+    let mut moved = launch.clone();
+    if let Some(variable) = account::directory_variable(provider) {
+        moved.env.remove(variable);
+    }
+    moved.env.extend(account.env.clone());
+    moved.fallbacks.retain(|fallback| fallback.id != account.id);
+    if let Some(previous) = moved.account.replace(account.clone()) {
+        if previous.id != account.id {
+            moved.fallbacks.push(previous);
+        }
+    }
+    moved
+}
+
+/// The first account to move to that has usage left to try and is signed in.
+fn next_account<'a>(
+    provider: &str,
+    launch: &'a ChatLaunch,
+    exhausted: &[String],
+) -> Option<&'a ChatAccount> {
+    launch.fallbacks.iter().find(|fallback| {
+        !exhausted.contains(&fallback.id)
+            && account::signed_in(provider, &on_account(provider, launch, fallback).env)
+                != Some(SignIn::SignedOut)
+    })
+}
+
+fn switch_notice(launch: &ChatLaunch, to: &ChatAccount, reason: &str) -> Value {
+    json!({
+        "sessionUpdate": "account_switched",
+        "account": to.id,
+        "label": to.label,
+        "from": launch.account.as_ref().map(|account| account.label.clone()),
+        "reason": reason,
+    })
+}
+
+fn servers(chat: &Chat, launch: &ChatLaunch) -> Vec<McpServer> {
+    launch
         .mcp_servers
         .iter()
         .filter_map(|server| match serde_json::from_value(server.clone()) {
@@ -117,12 +194,112 @@ fn error_message(message: impl std::fmt::Display) -> Value {
     json!({ "message": message.to_string() })
 }
 
+/// What sending a prompt needs from the loop that owns the session.
+struct Turns {
+    session_id: String,
+    cancelled: Arc<AtomicU64>,
+    broken: mpsc::UnboundedSender<()>,
+    failed: mpsc::UnboundedSender<Failed>,
+    account: Option<String>,
+}
+
+impl Turns {
+    /// Sends one prompt as turn `turn`. Its answer arrives off the loop: a
+    /// failure that another process or account may fix goes back to the loop
+    /// to decide on, with the turn still running.
+    fn prompt(
+        &self,
+        connection: &ConnectionTo<Agent>,
+        chat: &Arc<Chat>,
+        turn: u64,
+        blocks: Vec<agent_client_protocol::schema::v1::ContentBlock>,
+    ) {
+        chat.unprompted.store(false, Ordering::Release);
+        chat.emit(ChatEventKind::TurnStarted, json!({}));
+        let answering = chat.clone();
+        let cancelled = self.cancelled.clone();
+        let broken = self.broken.clone();
+        let failed = self.failed.clone();
+        let account = self.account.clone();
+        let sent = connection
+            .send_request(PromptRequest::new(self.session_id.clone(), blocks))
+            .on_receiving_result(async move |result| {
+                answering.unprompted.store(false, Ordering::Release);
+                answering.cancel_permissions();
+                let settle = || answering.running.store(false, Ordering::Release);
+                match result {
+                    Ok(response) => {
+                        let payload = serde_json::to_value(response).unwrap_or_else(|_| json!({}));
+                        match payload.get("_meta").and_then(account::failure) {
+                            Some(failure) if failure.kind != FailureKind::Other => {
+                                let _ = failed.send(Failed {
+                                    turn,
+                                    failure,
+                                    response: Some(payload),
+                                });
+                            }
+                            Some(failure) => {
+                                settle();
+                                answering.emit(ChatEventKind::TurnCompleted, payload);
+                                answering.emit(
+                                    ChatEventKind::Error,
+                                    failure.payload(account.as_deref()),
+                                );
+                            }
+                            None => {
+                                settle();
+                                answering.answered.store(true, Ordering::Release);
+                                answering.emit(ChatEventKind::TurnCompleted, payload);
+                            }
+                        }
+                    }
+                    // Hermes can crash out of a stopped turn and leave its
+                    // session refusing every prompt after.
+                    Err(_) if cancelled.load(Ordering::Acquire) == turn => {
+                        settle();
+                        let _ = broken.send(());
+                    }
+                    Err(error) if error.code == ErrorCode::AuthRequired => {
+                        let _ = failed.send(Failed {
+                            turn,
+                            failure: Failure::sign_in(error.message.clone()),
+                            response: None,
+                        });
+                    }
+                    Err(error) => {
+                        settle();
+                        answering.emit(ChatEventKind::Error, error_message(error));
+                    }
+                }
+                Ok(())
+            });
+        if let Err(error) = sent {
+            chat.running.store(false, Ordering::Release);
+            chat.emit(ChatEventKind::Error, error_message(error));
+        }
+    }
+}
+
 pub(super) async fn run(
     chat: Arc<Chat>,
-    mut commands: mpsc::UnboundedReceiver<ChatCommand>,
-) -> Result<SessionEnd, String> {
+    launch: ChatLaunch,
+    commands: &mut mpsc::UnboundedReceiver<ChatCommand>,
+    rebind: Option<Box<Rebind>>,
+) -> Result<Outcome, String> {
     chat.emit(ChatEventKind::Status, json!({ "state": "starting" }));
-    let launch = chat.launch.clone();
+    let signed_in_at_start = account::signed_in(&launch.provider, &launch.env);
+    // A session loaded again under a running chat replays history the chat
+    // already shows.
+    let quiet_load = rebind.is_some();
+    let (replay, mut exhausted, mut signed_in_again, notice) = match rebind {
+        Some(rebind) => (
+            rebind.replay,
+            rebind.exhausted,
+            rebind.signed_in_again,
+            rebind.notice,
+        ),
+        None => (None, Vec::new(), false, None),
+    };
     let config = AcpAgentConfig::new(&launch.program)
         .args(launch.args.iter().cloned())
         .envs(sikemux_pty::user_shell::login_shell_locale())
@@ -142,6 +319,9 @@ pub(super) async fn run(
         .on_receive_notification(
             async move |notification: air::SessionUpdate, _connection| {
                 let chat = &event_chat;
+                if quiet_load && event_session.get().is_none() {
+                    return Ok(());
+                }
                 let own_session = notification
                     .0
                     .get("sessionId")
@@ -228,21 +408,9 @@ pub(super) async fn run(
                     .embedded_context;
                 capabilities["steering"] = json!(steering);
 
-                let tool_servers = servers(&chat);
-                let (session_id, mut setup) = if let Some(existing) = launch.resume_id.clone() {
-                    if !initialize.agent_capabilities.load_session {
-                        return Err(agent_client_protocol::Error::invalid_params()
-                            .data("This agent cannot load existing sessions"));
-                    }
-                    let response = connection
-                        .send_request(native::LoadSession(
-                            LoadSessionRequest::new(existing.clone(), &launch.cwd)
-                                .mcp_servers(tool_servers),
-                        ))
-                        .block_task()
-                        .await?;
-                    (existing, response.0)
-                } else {
+                let tool_servers = servers(&chat, &launch);
+                let can_load = initialize.agent_capabilities.load_session;
+                let open_new = async |tool_servers: Vec<McpServer>| {
                     let response = connection
                         .send_request(native::NewSession(
                             NewSessionRequest::new(&launch.cwd).mcp_servers(tool_servers),
@@ -258,7 +426,31 @@ pub(super) async fn run(
                                 .data("The agent opened a session without an id")
                         })?
                         .to_owned();
-                    (session_id, response.0)
+                    Ok::<_, agent_client_protocol::Error>((session_id, response.0))
+                };
+                let (session_id, mut setup) = if let Some(existing) = launch.resume_id.clone() {
+                    if !initialize.agent_capabilities.load_session {
+                        return Err(agent_client_protocol::Error::invalid_params()
+                            .data("This agent cannot load existing sessions"));
+                    }
+                    let loaded = connection
+                        .send_request(native::LoadSession(
+                            LoadSessionRequest::new(existing.clone(), &launch.cwd)
+                                .mcp_servers(tool_servers.clone()),
+                        ))
+                        .block_task()
+                        .await;
+                    match loaded {
+                        Ok(response) => (existing, response.0),
+                        // A chat whose turns all failed may have nothing saved
+                        // to load, and starting again is all there is to do.
+                        Err(_) if quiet_load && !chat.has_answered() => {
+                            open_new(tool_servers).await?
+                        }
+                        Err(error) => return Err(error),
+                    }
+                } else {
+                    open_new(tool_servers).await?
                 };
                 let _ = loaded_session.set(session_id.clone());
 
@@ -322,19 +514,107 @@ pub(super) async fn run(
                 let (stalled_tx, mut stalled_rx) = mpsc::unbounded_channel::<u64>();
                 let cancelled_turn = Arc::new(AtomicU64::new(0));
                 let (broken_tx, mut broken_rx) = mpsc::unbounded_channel::<()>();
+                let (failed_tx, mut failed_rx) = mpsc::unbounded_channel::<Failed>();
+                let turns = Turns {
+                    session_id: session_id.clone(),
+                    cancelled: cancelled_turn.clone(),
+                    broken: broken_tx.clone(),
+                    failed: failed_tx,
+                    account: launch.account.as_ref().map(|account| account.id.clone()),
+                };
+                // The prompt the running turn answers, and the one whose turn
+                // failed for want of an account, which a switch sends again.
+                let mut last_prompt: Option<Replay> = None;
+                let mut failed_prompt: Option<Replay> = None;
+
+                if let Some(update) = notice {
+                    chat.emit(
+                        ChatEventKind::SessionUpdate,
+                        json!({ "sessionId": session_id, "update": update }),
+                    );
+                }
+                if let Some(replay) = replay {
+                    match prompt_blocks(
+                        replay.text.clone(),
+                        replay.paths.clone(),
+                        replay.context.clone(),
+                        embedded_context,
+                    ) {
+                        Ok(blocks) => {
+                            if let Some(from) = replay.announce {
+                                chat.feed.prompted(from, &replay.text, &replay.paths);
+                            }
+                            chat.running.store(true, Ordering::Release);
+                            turn += 1;
+                            turns.prompt(&connection, &chat, turn, blocks);
+                            last_prompt = Some(Replay {
+                                announce: None,
+                                ..replay
+                            });
+                        }
+                        Err(error) => {
+                            chat.running.store(false, Ordering::Release);
+                            chat.emit(ChatEventKind::Error, error_message(error));
+                        }
+                    }
+                }
+
                 let end = loop {
                     let command = tokio::select! {
                         command = commands.recv() => match command {
                             Some(command) => command,
-                            None => break SessionEnd::Requested,
+                            None => break Outcome::Ended(SessionEnd::Requested),
                         },
-                        () = connection.incoming_closed() => break SessionEnd::Exited,
+                        () = connection.incoming_closed() => break Outcome::Ended(SessionEnd::Exited),
                         Some(()) = broken_rx.recv() => {
                             chat.emit(
                                 ChatEventKind::Error,
                                 error_message("The agent failed while stopping, so its session was restarted"),
                             );
-                            break SessionEnd::Exited;
+                            break Outcome::Ended(SessionEnd::Exited);
+                        }
+                        Some(failed) = failed_rx.recv() => {
+                            if failed.turn != turn {
+                                continue;
+                            }
+                            let current = launch.account.as_ref().map(|account| account.id.clone());
+                            let retry = match failed.failure.kind {
+                                FailureKind::SignIn if can_load && !signed_in_again => chat
+                                    .relaunch(&launch)
+                                    .map(|launch| Rebind {
+                                        launch,
+                                        replay: last_prompt.clone(),
+                                        exhausted: exhausted.clone(),
+                                        signed_in_again: true,
+                                        notice: None,
+                                    }),
+                                FailureKind::Limit if can_load => {
+                                    let mut tried = exhausted.clone();
+                                    tried.extend(current.clone());
+                                    next_account(&provider, &launch, &tried).and_then(|next| {
+                                        let notice = switch_notice(&launch, next, "limit");
+                                        let moved = on_account(&provider, &launch, next);
+                                        chat.relaunch(&moved).map(|launch| Rebind {
+                                            launch,
+                                            replay: last_prompt.clone(),
+                                            exhausted: tried,
+                                            signed_in_again: false,
+                                            notice: Some(notice),
+                                        })
+                                    })
+                                }
+                                _ => None,
+                            };
+                            if let Some(rebind) = retry {
+                                break Outcome::Rebind(Box::new(rebind));
+                            }
+                            chat.running.store(false, Ordering::Release);
+                            if let Some(response) = failed.response {
+                                chat.emit(ChatEventKind::TurnCompleted, response);
+                            }
+                            chat.emit(ChatEventKind::Error, failed.failure.payload(current.as_deref()));
+                            failed_prompt = last_prompt.take();
+                            continue;
                         }
                         Some(stalled) = stalled_rx.recv() => {
                             if chat.running.load(Ordering::Acquire) && turn == stalled {
@@ -342,7 +622,7 @@ pub(super) async fn run(
                                     ChatEventKind::Error,
                                     error_message("The agent did not stop, so its session was restarted"),
                                 );
-                                break SessionEnd::Exited;
+                                break Outcome::Ended(SessionEnd::Exited);
                             }
                             continue;
                         }
@@ -361,11 +641,41 @@ pub(super) async fn run(
                                 );
                                 continue;
                             }
-                            let said = (text.clone(), paths.clone());
-                            let blocks = match prompt_blocks(text, paths, context, embedded_context)
+                            exhausted.clear();
+                            signed_in_again = false;
+                            failed_prompt = None;
+                            let replay = Replay {
+                                announce: Some(from),
+                                text,
+                                paths,
+                                context,
+                            };
+                            // A sign-in made elsewhere since the agent started
+                            // is only read by a new agent process.
+                            let changed = account::signed_in(&provider, &launch.env);
+                            if can_load
+                                && changed.is_some()
+                                && signed_in_at_start.is_some()
+                                && changed != signed_in_at_start
                             {
+                                if let Some(launch) = chat.relaunch(&launch) {
+                                    break Outcome::Rebind(Box::new(Rebind {
+                                        launch,
+                                        replay: Some(replay),
+                                        exhausted: Vec::new(),
+                                        signed_in_again: false,
+                                        notice: None,
+                                    }));
+                                }
+                            }
+                            let blocks = match prompt_blocks(
+                                replay.text.clone(),
+                                replay.paths.clone(),
+                                replay.context.clone(),
+                                embedded_context,
+                            ) {
                                 Ok(blocks) => {
-                                    chat.feed.prompted(from, &said.0, &said.1);
+                                    chat.feed.prompted(from, &replay.text, &replay.paths);
                                     blocks
                                 }
                                 Err(error) => {
@@ -375,40 +685,45 @@ pub(super) async fn run(
                                 }
                             };
                             turn += 1;
-                            chat.unprompted.store(false, Ordering::Release);
-                            chat.emit(ChatEventKind::TurnStarted, json!({}));
-                            let answering = chat.clone();
-                            let response_turn = turn;
-                            let response_cancelled = cancelled_turn.clone();
-                            let response_broken = broken_tx.clone();
-                            let sent = connection
-                                .send_request(PromptRequest::new(session_id.clone(), blocks))
-                                .on_receiving_result(async move |result| {
-                                    answering.running.store(false, Ordering::Release);
-                                    answering.unprompted.store(false, Ordering::Release);
-                                    answering.cancel_permissions();
-                                    match result {
-                                        Ok(response) => answering.emit(
-                                            ChatEventKind::TurnCompleted,
-                                            serde_json::to_value(response)
-                                                .unwrap_or_else(|_| json!({})),
-                                        ),
-                                        // Hermes can crash out of a stopped turn and
-                                        // leave its session refusing every prompt after.
-                                        Err(_)
-                                            if response_cancelled.load(Ordering::Acquire)
-                                                == response_turn =>
-                                        {
-                                            let _ = response_broken.send(());
-                                        }
-                                        Err(error) => answering
-                                            .emit(ChatEventKind::Error, error_message(error)),
-                                    }
-                                    Ok(())
-                                });
-                            if let Err(error) = sent {
-                                chat.running.store(false, Ordering::Release);
-                                chat.emit(ChatEventKind::Error, error_message(error));
+                            turns.prompt(&connection, &chat, turn, blocks);
+                            last_prompt = Some(Replay {
+                                announce: None,
+                                ..replay
+                            });
+                        }
+                        ChatCommand::SwitchAccount { account } => {
+                            if chat.running.load(Ordering::Acquire) {
+                                chat.emit(
+                                    ChatEventKind::Error,
+                                    error_message("Stop the current turn before switching accounts"),
+                                );
+                                continue;
+                            }
+                            if !can_load {
+                                chat.emit(
+                                    ChatEventKind::Error,
+                                    error_message("This agent cannot carry a chat to another account"),
+                                );
+                                continue;
+                            }
+                            let moves = launch
+                                .account
+                                .as_ref()
+                                .is_none_or(|current| current.id != account.id);
+                            let notice = moves.then(|| switch_notice(&launch, &account, "chosen"));
+                            let moved = on_account(&provider, &launch, &account);
+                            if let Some(launch) = chat.relaunch(&moved) {
+                                let replay = failed_prompt.take();
+                                if replay.is_some() {
+                                    chat.running.store(true, Ordering::Release);
+                                }
+                                break Outcome::Rebind(Box::new(Rebind {
+                                    launch,
+                                    replay,
+                                    exhausted: Vec::new(),
+                                    signed_in_again: false,
+                                    notice,
+                                }));
                             }
                         }
                         ChatCommand::SetPermissionMode { mode, reply } => {
