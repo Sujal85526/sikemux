@@ -1,35 +1,68 @@
+import { useState } from "react";
+import { copyText, notify, reportError } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
-import { EmptyState, IconPlus, SkeletonRows } from "../../../plugin-api/ui";
-import { refreshDatabase, type Connected, type DatabaseProfile } from "../api";
-import { addressOf, blankDraft, draftOf, engineLabel } from "../profileForm";
+import { EmptyState, IconMinus, IconPlus, IconRefresh, SkeletonRows } from "../../../plugin-api/ui";
+import { databaseApi, refreshDatabase, type DatabaseProfile } from "../api";
+import { blankDraft, draftOf } from "../profileForm";
+import { loadQuery, runQuery } from "../queryState";
 import { databaseConnectedR, databaseProfilesR } from "../resources";
-import { updateDatabaseView, useDatabaseView } from "../state";
-import { forgetQuery } from "../queryState";
-import { ConnectedDatabase } from "./ConnectedDatabase";
+import { previewSql } from "../sql";
+import {
+    closeConnectionTabs,
+    closeDatabaseTab,
+    closeOtherDatabaseTabs,
+    collapseAll,
+    expandNodes,
+    readDatabaseView,
+    showTab,
+    toggleNode,
+    updateDatabaseView,
+    useDatabaseView,
+} from "../state";
+import { connectionTab, consoleFor, historyTab, newConsole, tableTab } from "../tabs";
 import { DatabaseMark } from "./DatabaseMark";
-import { ProfileDetail } from "./ProfileDetail";
+import { Explorer, tableKey, type ExplorerActions } from "./Explorer";
 import { ProfileForm } from "./ProfileForm";
-import { SchemaTree } from "./SchemaTree";
+import { TabBody } from "./TabBody";
+import { TabStrip } from "./TabStrip";
 import "../database.css";
 
 export function DatabasePane({ paneId, active }: { paneId: string; active: boolean }) {
     const profiles = useResourceEnabled(active, databaseProfilesR);
     const connected = useResourceEnabled(active, databaseConnectedR);
     const view = useDatabaseView(paneId);
+    const [filter, setFilter] = useState("");
 
     if (profiles.status === "error") return <EmptyState message={profiles.error ?? "Sikemux could not read the saved connections."} tone="error" />;
     if (!profiles.data) return <SkeletonRows rows={4} label="Loading connections" />;
 
     const list = profiles.data;
-    const selected = list.find((profile) => profile.id === view.selected) ?? null;
-    const connectionOf = (id: string) => connected.data?.find((entry) => entry.id === id) ?? null;
-    const selectedConnection = selected ? connectionOf(selected.id) : null;
     const open = (change: Parameters<typeof updateDatabaseView>[1]) => updateDatabaseView(paneId, change);
-    const pick = (id: string) =>
-        open(id === view.selected ? { editing: null } : { selected: id, editing: null, showing: "query", schema: null, table: null });
-    const afterSave = (profile: DatabaseProfile) => {
-        refreshDatabase();
-        open({ selected: profile.id, editing: null });
+    const connections = connected.data ?? [];
+    const connectionOf = (id: string) => connections.find((entry) => entry.id === id) ?? null;
+
+    const putInConsole = (profile: DatabaseProfile, sql: string, run: boolean) => {
+        const tab = consoleFor(readDatabaseView(paneId), profile.id);
+        showTab(paneId, tab);
+        loadQuery(tab.id, sql);
+        if (run) void runQuery(tab.id, profile.id, sql);
+    };
+    const actions: ExplorerActions = {
+        connect: async (profile) => {
+            await databaseApi.connect(profile.id);
+            refreshDatabase();
+            if (readDatabaseView(paneId).tabs.length === 0) showTab(paneId, consoleFor(readDatabaseView(paneId), profile.id));
+        },
+        disconnect: (profile) => databaseApi.disconnect(profile.id).then(refreshDatabase, reportError("disconnect")),
+        refresh: () => refreshDatabase(),
+        newConsole: (profile) => showTab(paneId, newConsole(readDatabaseView(paneId), profile.id)),
+        history: (profile) => showTab(paneId, historyTab(profile.id)),
+        properties: (profile) => showTab(paneId, connectionTab(profile.id)),
+        edit: (profile) => open({ editing: profile.id }),
+        openTable: (profile, schema, table) => showTab(paneId, tableTab(profile.id, schema, table)),
+        queryTable: (profile, schema, table, run) =>
+            putInConsole(profile, previewSql(profile.engine, profile.engine === "sqlite" && schema === "main" ? "" : schema, table), run),
+        copy: (text, what) => void copyText(text).then(() => notify("success", `copied the ${what}`), reportError("copy")),
     };
 
     if (list.length === 0 && view.editing !== "new") {
@@ -51,11 +84,28 @@ export function DatabasePane({ paneId, active }: { paneId: string; active: boole
         );
     }
 
+    const editing = view.editing === "new" ? null : (list.find((profile) => profile.id === view.editing) ?? null);
+    const tab = view.tabs.find((each) => each.id === view.active) ?? null;
+    const tabProfile = tab ? (list.find((profile) => profile.id === tab.profile) ?? null) : null;
+    const consoleProfile = [tabProfile, ...list].find((profile) => profile && connectionOf(profile.id)) ?? null;
+
     return (
         <div className="db-pane">
-            <nav className="db-sidebar" aria-label="Saved connections">
+            <nav className="db-sidebar" aria-label="Database explorer">
                 <div className="db-sidebar-head">
-                    <span className="db-heading">Connections</span>
+                    <span className="db-heading">Explorer</span>
+                    <span className="db-grow" />
+                    <button type="button" className="db-icon-button" title="Refresh" aria-label="Refresh" onClick={() => refreshDatabase()}>
+                        <IconRefresh size={13} />
+                    </button>
+                    <button
+                        type="button"
+                        className="db-icon-button"
+                        title="Collapse all"
+                        aria-label="Collapse all"
+                        onClick={() => collapseAll(paneId)}>
+                        <IconMinus size={13} />
+                    </button>
                     <button
                         type="button"
                         className="db-icon-button"
@@ -65,27 +115,25 @@ export function DatabasePane({ paneId, active }: { paneId: string; active: boole
                         <IconPlus size={13} />
                     </button>
                 </div>
-                <div className="db-list" role="list">
-                    {list.map((profile) => (
-                        <ProfileRow
-                            key={profile.id}
-                            profile={profile}
-                            connected={connectionOf(profile.id)}
-                            selected={profile.id === view.selected && view.editing !== "new"}
-                            onSelect={() => pick(profile.id)}
-                        />
-                    ))}
-                </div>
-                {selected && selectedConnection && view.editing === null && (
-                    <SchemaTree
-                        profile={selected}
-                        active={active}
-                        schema={view.schema}
-                        table={view.showing === "table" ? view.table : null}
-                        onSchema={(schema) => open({ schema })}
-                        onOpen={(table) => open({ showing: "table", table })}
-                    />
-                )}
+                <input
+                    className="db-filter"
+                    value={filter}
+                    onChange={(event) => setFilter(event.target.value)}
+                    placeholder="Filter tables"
+                    aria-label="Filter tables"
+                    spellCheck={false}
+                />
+                <Explorer
+                    profiles={list}
+                    connected={connections}
+                    active={active}
+                    expanded={view.expanded}
+                    filter={filter}
+                    current={tab?.kind === "table" ? tableKey(tab.profile, tab.schema, tab.name) : null}
+                    onToggle={(key) => toggleNode(paneId, key)}
+                    onExpand={(keys) => expandNodes(paneId, keys)}
+                    actions={actions}
+                />
             </nav>
             <section className="db-main">
                 {view.editing === "new" ? (
@@ -93,63 +141,60 @@ export function DatabasePane({ paneId, active }: { paneId: string; active: boole
                         key="new"
                         initial={blankDraft()}
                         saved={null}
-                        onSaved={afterSave}
+                        onSaved={() => {
+                            refreshDatabase();
+                            open({ editing: null });
+                        }}
                         onRemoved={() => open({ editing: null })}
                         onCancel={() => open({ editing: null })}
                     />
-                ) : selected && view.editing === "selected" ? (
+                ) : editing ? (
                     <ProfileForm
-                        key={selected.id}
-                        initial={draftOf(selected)}
-                        saved={selected}
-                        onSaved={afterSave}
-                        onRemoved={() => {
-                            forgetQuery(selected.id);
+                        key={editing.id}
+                        initial={draftOf(editing)}
+                        saved={editing}
+                        onSaved={() => {
                             refreshDatabase();
-                            open({ selected: null, editing: null, table: null });
+                            open({ editing: null });
+                        }}
+                        onRemoved={() => {
+                            closeConnectionTabs(paneId, editing.id);
+                            refreshDatabase();
                         }}
                         onCancel={() => open({ editing: null })}
                     />
-                ) : selected && selectedConnection ? (
-                    <ConnectedDatabase
-                        key={selected.id}
-                        profile={selected}
-                        connected={selectedConnection}
-                        active={active}
-                        view={view}
-                        onView={open}
-                        onEdit={() => open({ editing: "selected" })}
-                    />
-                ) : selected ? (
-                    <ProfileDetail key={selected.id} profile={selected} connected={null} onEdit={() => open({ editing: "selected" })} />
                 ) : (
-                    <EmptyState message="Pick a connection to see it, or add a new one." />
+                    <>
+                        {view.tabs.length > 0 && (
+                            <TabStrip
+                                tabs={view.tabs}
+                                active={view.active}
+                                profiles={list}
+                                onSelect={(id) => open({ active: id })}
+                                onClose={(id) => closeDatabaseTab(paneId, id)}
+                                onCloseOthers={(id) => closeOtherDatabaseTabs(paneId, id)}
+                                onNewConsole={consoleProfile ? () => actions.newConsole(consoleProfile) : undefined}
+                            />
+                        )}
+                        <div className="db-main-body">
+                            {tab && tabProfile ? (
+                                <TabBody
+                                    key={tab.id}
+                                    tab={tab}
+                                    profile={tabProfile}
+                                    connected={connectionOf(tabProfile.id)}
+                                    active={active}
+                                    onQuery={(sql, run) => putInConsole(tabProfile, sql, run)}
+                                    onOpenTable={(schema, table) => actions.openTable(tabProfile, schema, table)}
+                                    onEdit={() => actions.edit(tabProfile)}
+                                />
+                            ) : (
+                                <EmptyState message="Open a connection in the explorer to browse its tables, or double-click it for a console." />
+                            )}
+                        </div>
+                    </>
                 )}
             </section>
         </div>
-    );
-}
-
-function ProfileRow({
-    profile,
-    connected,
-    selected,
-    onSelect,
-}: {
-    profile: DatabaseProfile;
-    connected: Connected | null;
-    selected: boolean;
-    onSelect: () => void;
-}) {
-    return (
-        <button type="button" role="listitem" className={`db-row${selected ? " active" : ""}`} onClick={onSelect}>
-            <span className="db-row-top">
-                <span className="db-row-name">{profile.name}</span>
-                {connected && <span className="db-dot" title={`Connected to ${connected.version}`} aria-label="Connected" />}
-            </span>
-            <span className="db-meta">
-                {engineLabel(profile.engine)} · {addressOf(profile)}
-            </span>
-        </button>
     );
 }
