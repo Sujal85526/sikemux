@@ -83,7 +83,7 @@
 }
 
 .sim-fps {
-    align-self: start;
+    align-self: end;
     justify-self: end;
     padding: 2px 6px;
     border-radius: var(--radius-1);
@@ -91,7 +91,13 @@
     font-family: var(--mono);
     font-size: var(--text-2xs);
     color: var(--text-tertiary);
+    opacity: 0;
     pointer-events: none;
+    transition: opacity var(--dur-1) linear;
+}
+
+.sim-stage:hover .sim-fps {
+    opacity: 1;
 }
 
 .sim-problem {
