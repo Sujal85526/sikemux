@@ -14,40 +14,84 @@
 
 .sim-bar {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
     gap: 6px;
-    padding: 6px 8px;
+    min-width: 0;
+    padding: 8px 10px;
     border-bottom: 1px solid var(--border);
 }
 
-.sim-chips {
-    display: flex;
-    gap: 4px;
+.sim-device {
+    min-width: 0;
+    max-width: 240px;
+}
+
+.sim-bar .dd {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+.sim-live {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--live);
 }
 
 .sim-chip {
-    padding: 3px 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 10px;
     border: 1px solid var(--border);
     border-radius: var(--radius-2);
-    font-size: var(--text-xs);
+    background: transparent;
+    font-size: var(--text-sm);
     color: var(--text-secondary);
+    white-space: nowrap;
+    transition:
+        border-color 0.12s,
+        background 0.12s,
+        color 0.12s;
 }
 
 .sim-chip:hover:not(:disabled) {
-    color: var(--text-primary);
+    border-color: var(--border-strong);
     background: var(--surface-hover);
+    color: var(--text-primary);
 }
 
 .sim-chip:disabled {
-    opacity: 0.5;
+    opacity: 0.45;
+}
+
+.sim-power svg {
+    color: var(--ink-faint);
+}
+
+.sim-tools {
+    display: flex;
+    gap: 4px;
+    margin-left: auto;
+}
+
+.sim-tool {
+    justify-content: center;
+    width: 30px;
+    padding: 0;
 }
 
 .sim-fps {
-    margin-left: auto;
+    align-self: start;
+    justify-self: end;
+    padding: 2px 6px;
+    border-radius: var(--radius-1);
+    background: color-mix(in oklab, var(--surface-sunken) 80%, transparent);
     font-family: var(--mono);
     font-size: var(--text-2xs);
     color: var(--text-tertiary);
+    pointer-events: none;
 }
 
 .sim-problem {

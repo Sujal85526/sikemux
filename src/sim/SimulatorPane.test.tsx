@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { simApi, type SimScreen } from "../api/sim";
 import { noteSimulatorActing, noteSimulatorAttached, noteSimulatorDetached } from "../state/simulatorAgents";
 import { playScreen } from "./screenStream";
-import { devicePoint, keyForDevice, screenshotPath, scrollSwipe, SimulatorPane } from "./SimulatorPane";
+import { deviceOptions, devicePoint, keyForDevice, screenshotPath, scrollSwipe, SimulatorPane } from "./SimulatorPane";
 
 vi.mock("../api/sim", () => ({
     simApi: {
@@ -202,5 +202,22 @@ describe("the simulator pane", () => {
 
         act(() => noteSimulatorDetached("agent-1"));
         expect(screen.queryByText(/is on iPad Air/)).not.toBeInTheDocument();
+    });
+});
+
+describe("deviceOptions", () => {
+    it("lists running devices first, then iPhones, then iPads, and says who holds one", () => {
+        const device = (udid: string, name: string, state: "booted" | "shutdown") => ({ udid, name, state, runtime: "iOS 27.0", model: name });
+        const options = deviceOptions(
+            [device("pad", "iPad (A16)", "shutdown"), device("air", "iPhone Air", "shutdown"), device("pro", "iPhone 18 Pro", "booted")],
+            (udid) => (udid === "air" ? "/code/shop" : undefined),
+        );
+
+        expect(options.map((option) => [option.label, option.group])).toEqual([
+            ["iPhone 18 Pro", "Running"],
+            ["iPhone Air", "iPhone"],
+            ["iPad (A16)", "iPad"],
+        ]);
+        expect(options[1]).toMatchObject({ meta: "iOS 27.0", detail: "In use by shop" });
     });
 });

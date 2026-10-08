@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type WheelEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type WheelEvent } from "react";
 import { simApi, type SimDevice, type SimOrientation, type SimScreen, type SimStreamFormat } from "../api/sim";
 import { AGENT_NAMES } from "../agents/agentLaunch";
 import { readClipboardText } from "../lib/clipboard";
@@ -10,7 +10,9 @@ import { getState, useStore } from "../state/store";
 import type { DeskSimulator } from "../state/types";
 import { notify, reportError } from "../state/toast";
 import { Dropdown } from "../ui/Dropdown";
+import { IconCamera, IconHome, IconLock, IconPhone, IconPower, IconRotate, IconTablet } from "../ui/Icons";
 import { EmptyState } from "../ui/Panel";
+import { Tooltip } from "../ui/Tooltip";
 import { useDocumentVisible } from "./documentVisible";
 import { playScreen, type ScreenPlayer } from "./screenStream";
 import { loadSimStatus, prepareSim, simUsable, useSimStatus } from "./simStatus";
@@ -94,10 +96,31 @@ export function keyForDevice(event: { key: string; metaKey: boolean; ctrlKey: bo
     return [...event.key].length === 1 ? { text: event.key } : null;
 }
 
-function deviceDetail(device: SimDevice, heldByProject: string | undefined): string {
-    const running = device.state === "booted" ? " · running" : "";
-    const held = heldByProject ? ` · In use by ${basename(heldByProject)}` : "";
-    return `${device.runtime}${running}${held}`;
+const GROUPS = ["Running", "iPhone", "iPad"] as const;
+
+function deviceGroup(device: SimDevice): (typeof GROUPS)[number] {
+    if (device.state === "booted") return "Running";
+    return device.name.startsWith("iPad") ? "iPad" : "iPhone";
+}
+
+export function deviceOptions(devices: readonly SimDevice[], heldByProject: (udid: string) => string | undefined) {
+    return [...devices]
+        .sort((a, b) => GROUPS.indexOf(deviceGroup(a)) - GROUPS.indexOf(deviceGroup(b)))
+        .map((device) => {
+            const held = heldByProject(device.udid);
+            return {
+                value: device.udid,
+                label: device.name,
+                group: deviceGroup(device),
+                icon: deviceIcon(device.name),
+                meta: device.runtime,
+                detail: held ? `In use by ${basename(held)}` : undefined,
+            };
+        });
+}
+
+function deviceIcon(name: string | undefined): ReactNode {
+    return name?.startsWith("iPad") ? <IconTablet size={14} /> : <IconPhone size={14} />;
 }
 
 export function screenshotPath(deviceName: string, at: Date): string {
@@ -434,12 +457,12 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
             <div className="sim-bar">
                 <Dropdown
                     label="Device"
+                    className="sim-device"
+                    icon={deviceIcon(device?.name ?? simulator.deviceName ?? undefined)}
+                    trailing={booted && <span className="sim-live" aria-label="Running" />}
+                    menuWidth={280}
                     value={udid ?? ""}
-                    options={(devices ?? []).map((candidate) => ({
-                        value: candidate.udid,
-                        label: candidate.name,
-                        detail: deviceDetail(candidate, heldBy(candidate.udid)?.project),
-                    }))}
+                    options={deviceOptions(devices ?? [], (candidate) => heldBy(candidate)?.project)}
                     onChange={(next) => {
                         const picked = devices?.find((candidate) => candidate.udid === next);
                         if (!picked) return;
@@ -448,29 +471,24 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
                     }}
                     disabled={!devices}
                 />
-                <button type="button" className="sim-chip" onClick={() => void togglePower()} disabled={!udid || !!power || starting}>
+                <button type="button" className="sim-chip sim-power" onClick={() => void togglePower()} disabled={!udid || !!power || starting}>
+                    <IconPower size={13} />
                     {starting ? "Booting…" : power === "shuttingDown" ? "Shutting down…" : booted ? "Shut down" : "Boot"}
                 </button>
-                <span className="sim-chips">
-                    <button type="button" className="sim-chip" disabled={!booted} onClick={() => udid && action(() => simApi.button(udid, "home"))}>
-                        Home
-                    </button>
-                    <button type="button" className="sim-chip" disabled={!booted} onClick={() => udid && action(() => simApi.button(udid, "lock"))}>
-                        Lock
-                    </button>
-                    <button type="button" className="sim-chip" disabled={!booted} onClick={rotate}>
-                        Rotate
-                    </button>
-                    <button type="button" className="sim-chip" disabled={!booted} onClick={screenshot}>
-                        Screenshot
-                    </button>
+                <span className="sim-tools">
+                    <SimTool label="Home" disabled={!booted} onClick={() => udid && action(() => simApi.button(udid, "home"))}>
+                        <IconHome size={14} />
+                    </SimTool>
+                    <SimTool label="Lock" disabled={!booted} onClick={() => udid && action(() => simApi.button(udid, "lock"))}>
+                        <IconLock size={14} />
+                    </SimTool>
+                    <SimTool label="Rotate" disabled={!booted} onClick={rotate}>
+                        <IconRotate size={14} />
+                    </SimTool>
+                    <SimTool label="Screenshot to the Desktop" disabled={!booted} onClick={screenshot}>
+                        <IconCamera size={14} />
+                    </SimTool>
                 </span>
-                {import.meta.env.DEV && booted && shown && (
-                    <span className="sim-fps" title="Frames drawn in the last second, the format, and the last tap → frame time (dev builds only)">
-                        {fps} fps · {format === "h264" ? "H.264" : "MJPEG"}
-                        {latency !== null && ` · tap→frame ${Math.round(latency)} ms`}
-                    </span>
-                )}
             </div>
             {ownDevice && ownDevice.udid !== simulator.udid && (
                 <div className="sim-note">
@@ -503,6 +521,14 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
                             onWheel={wheel}
                             onKeyDown={keyDown}
                         />
+                        {import.meta.env.DEV && shown && (
+                            <span
+                                className="sim-fps"
+                                title="Frames drawn in the last second, the format, and the last tap → frame time (dev builds only)">
+                                {fps} fps · {format === "h264" ? "H.264" : "MJPEG"}
+                                {latency !== null && ` · ${Math.round(latency)} ms`}
+                            </span>
+                        )}
                         {streamEnded ? (
                             <div className="sim-overlay">
                                 <span>The screen stopped.</span>
@@ -528,5 +554,15 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
                 )}
             </div>
         </div>
+    );
+}
+
+function SimTool({ label, disabled, onClick, children }: { label: string; disabled: boolean; onClick: () => void; children: ReactNode }) {
+    return (
+        <Tooltip label={label}>
+            <button type="button" className="sim-chip sim-tool" aria-label={label} disabled={disabled} onClick={onClick}>
+                {children}
+            </button>
+        </Tooltip>
     );
 }
