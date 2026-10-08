@@ -49,3 +49,28 @@ it("keeps a directory that failed to read instead of blanking it", async () => {
 
     expect(queryByText("one")).not.toBeNull();
 });
+
+it("dims what git ignores and rereads every folder under a .gitignore that changed", async () => {
+    readDirs.mockImplementation(async (paths: string[]) =>
+        paths.map((path) => ({
+            path,
+            entries:
+                path === "/repo"
+                    ? [
+                          { name: "dist", path: "/repo/dist", is_dir: true, ignored: true },
+                          { name: "src", path: "/repo/src", is_dir: true },
+                      ]
+                    : [{ name: `${path.slice(6)}.ts`, path: `${path}/${path.slice(6)}.ts`, is_dir: false }],
+            error: null,
+        })),
+    );
+    const { findByText } = render(<FileTree cwd="/repo" active activePath={null} onOpenFile={vi.fn()} onKeepFile={vi.fn()} />);
+    expect((await findByText("dist")).closest(".tree-row")?.classList.contains("ignored")).toBe(true);
+    fireEvent.click(await findByText("src"));
+    expect((await findByText("src.ts")).closest(".tree-row")?.classList.contains("ignored")).toBe(false);
+    expect((await findByText("src")).closest(".tree-row")?.classList.contains("ignored")).toBe(false);
+    readDirs.mockClear();
+
+    act(() => emit({ type: "fs-changed", repo: "/repo", paths: [".gitignore"] }));
+    await waitFor(() => expect(requestedPaths()).toEqual([["/repo", "/repo/src"]]));
+});
