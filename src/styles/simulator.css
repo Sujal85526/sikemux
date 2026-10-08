@@ -12,25 +12,6 @@
     min-height: 0;
 }
 
-.sim-bar {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-    padding: 8px 10px;
-    border-bottom: 1px solid var(--border);
-}
-
-.sim-device {
-    min-width: 0;
-    max-width: 240px;
-}
-
-.sim-bar .dd {
-    flex: 0 1 auto;
-    min-width: 0;
-}
-
 .sim-live {
     width: 6px;
     height: 6px;
@@ -66,20 +47,31 @@
     opacity: 0.45;
 }
 
-.sim-power svg {
-    color: var(--ink-faint);
-}
-
-.sim-tools {
-    display: flex;
-    gap: 4px;
-    margin-left: auto;
-}
-
 .sim-tool {
-    justify-content: center;
-    width: 30px;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
     padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    transition:
+        background 0.12s,
+        color 0.12s;
+}
+
+.sim-tool:hover:not(:disabled) {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+}
+
+.sim-tool:disabled {
+    opacity: 0.45;
+}
+
+.sim-tools-gap {
+    width: 8px;
 }
 
 .sim-fps {

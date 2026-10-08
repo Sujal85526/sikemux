@@ -102,6 +102,31 @@
    modern-shell.css. What is left here is the two things a desk tab does not
    share with a workspace tab: it sits over a pane of its own, and a page title
    is long enough to need a cap on how much room it may take. */
+/* The simulator's controls, at the strip's right end while its tab is shown. */
+.desk-head-tools {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 2px;
+    padding-right: 6px;
+}
+
+.sim-tab-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 2px;
+}
+
+.sim-tab-dot:empty {
+    display: none;
+}
+
+.sim-tab-chev {
+    color: var(--ink-faint);
+    transform: rotate(90deg);
+}
+
 .desk-head .tabbar.v-desk {
     flex: 1 1 auto;
     min-width: 0;

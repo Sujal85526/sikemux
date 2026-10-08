@@ -1,4 +1,16 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, type CSSProperties, type ReactNode, type RefObject } from "react";
+import {
+    lazy,
+    Suspense,
+    useCallback,
+    useEffect,
+    useLayoutEffect,
+    useMemo,
+    useRef,
+    useState,
+    type CSSProperties,
+    type ReactNode,
+    type RefObject,
+} from "react";
 import { animate } from "../lib/motion";
 import { deskAppearing, onDeskMotion } from "../state/deskMotion";
 import { browserApi, BLANK_URL, type BrowserBounds, type BrowserHole, type BrowserSnapshot } from "../api/browser";
@@ -233,6 +245,9 @@ function DeskSession({
     const dirty = useStore((state) => state.dirtyEditorPaths[editorId]) ?? NO_DIRTY;
     const restoring = useStore((state) => !!state.deskRestores[paneId]);
     const simulatorActing = useSimulatorActing(agentId);
+    const [simulatorTools, setSimulatorTools] = useState<HTMLElement | null>(null);
+    const [simulatorDot, setSimulatorDot] = useState<HTMLElement | null>(null);
+    const [deviceMenu, setDeviceMenu] = useState<HTMLElement | null>(null);
     const items = useMemo(() => deskItems(desk, snapshot, files), [desk, snapshot, files]);
     const shown = shownDeskItem(desk, items);
     const kind = shownKind(shown);
@@ -347,6 +362,12 @@ function DeskSession({
                         <IconPhone size={13} />
                     </span>
                 ),
+                badge: (
+                    <span className="sim-tab-badge">
+                        <span ref={setSimulatorDot} className="sim-tab-dot" />
+                        <IconChevron size={9} className="sim-tab-chev" />
+                    </span>
+                ),
             };
         }
         return {
@@ -388,7 +409,13 @@ function DeskSession({
                     tabs={tabs}
                     onSelect={(key) => {
                         const item = itemFor(key);
-                        if (item) cmd.selectDeskItem(agentId, item);
+                        if (!item) return;
+                        if (item.kind === "simulator" && shown === item.key) {
+                            const tab = sectionRef.current?.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(item.key)}"] .tab`) ?? null;
+                            setDeviceMenu((open) => (open ? null : tab));
+                            return;
+                        }
+                        cmd.selectDeskItem(agentId, item);
                     }}
                     onClose={(key) => {
                         const item = itemFor(key);
@@ -408,6 +435,7 @@ function DeskSession({
                     addTitle={withShortcut("New browser tab", newTabShortcut)}
                     addLabel="New browser tab"
                 />
+                {kind === "simulator" && <div ref={setSimulatorTools} className="desk-head-tools" />}
             </div>
             <div className="desk-body">
                 <BrowserPage
@@ -453,7 +481,17 @@ function DeskSession({
                     return (
                         <div key={simulator.id} className="desk-simulator" hidden={!showing}>
                             <Suspense fallback={null}>
-                                <SimulatorPane agentId={agentId} simulator={simulator} visible={visible && showing} />
+                                <SimulatorPane
+                                    agentId={agentId}
+                                    simulator={simulator}
+                                    visible={visible && showing}
+                                    chrome={{
+                                        tools: showing ? simulatorTools : null,
+                                        dot: simulatorDot,
+                                        menu: deviceMenu,
+                                        closeMenu: () => setDeviceMenu(null),
+                                    }}
+                                />
                             </Suspense>
                         </div>
                     );

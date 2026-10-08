@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type WheelEvent } from "react";
+import { createPortal } from "react-dom";
 import { simApi, type SimDevice, type SimOrientation, type SimScreen, type SimStreamFormat } from "../api/sim";
 import { AGENT_NAMES } from "../agents/agentLaunch";
 import { readClipboardText } from "../lib/clipboard";
@@ -125,7 +126,25 @@ interface Scroll {
 
 const canvasBox = (canvas: HTMLCanvasElement, rect: DOMRect): CanvasBox => ({ width: canvas.width, height: canvas.height, rect });
 
-export function SimulatorPane({ agentId, simulator, visible }: { agentId: string; simulator: DeskSimulator; visible: boolean }) {
+/** Where the pane puts its controls in the desk's own strip, and the tab that opens its device menu. */
+export interface SimulatorChrome {
+    tools: HTMLElement | null;
+    dot: HTMLElement | null;
+    menu: HTMLElement | null;
+    closeMenu: () => void;
+}
+
+export function SimulatorPane({
+    agentId,
+    simulator,
+    visible,
+    chrome,
+}: {
+    agentId: string;
+    simulator: DeskSimulator;
+    visible: boolean;
+    chrome: SimulatorChrome;
+}) {
     const status = useSimStatus();
     const [statusProblem, setStatusProblem] = useState<string | null>(null);
     const [prepare, setPrepare] = useState<{ fraction: number } | { error: string } | null>(null);
@@ -439,6 +458,55 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
         action(() => simApi.screenshot(udid, path).then(() => notify("success", "Screenshot saved to the Desktop")));
     };
 
+    const busy = !!power || starting;
+    const chromeParts = (
+        <>
+            {chrome.dot && booted && createPortal(<span className="sim-live" aria-label="Running" />, chrome.dot)}
+            {chrome.tools &&
+                createPortal(
+                    <>
+                        <SimTool label="Home" disabled={!booted} onClick={() => udid && action(() => simApi.button(udid, "home"))}>
+                            <IconHome size={14} />
+                        </SimTool>
+                        <SimTool label="Lock" disabled={!booted} onClick={() => udid && action(() => simApi.button(udid, "lock"))}>
+                            <IconLock size={14} />
+                        </SimTool>
+                        <SimTool label="Rotate" disabled={!booted} onClick={rotate}>
+                            <IconRotate size={14} />
+                        </SimTool>
+                        <SimTool label="Screenshot to the Desktop" disabled={!booted} onClick={screenshot}>
+                            <IconCamera size={14} />
+                        </SimTool>
+                        <span className="sim-tools-gap" />
+                        <SimTool
+                            label={starting ? "Booting…" : power === "shuttingDown" ? "Shutting down…" : booted ? "Shut down" : "Boot"}
+                            disabled={!udid || busy}
+                            onClick={() => void togglePower()}>
+                            <IconPower size={14} />
+                        </SimTool>
+                    </>,
+                    chrome.tools,
+                )}
+            <Dropdown
+                label="Device"
+                anchor={chrome.menu}
+                open={!!chrome.menu}
+                onOpenChange={(open) => {
+                    if (!open) chrome.closeMenu();
+                }}
+                menuWidth={280}
+                value={udid ?? ""}
+                options={deviceOptions(devices ?? [], (candidate) => heldBy(candidate)?.project)}
+                onChange={(next) => {
+                    const picked = devices?.find((candidate) => candidate.udid === next);
+                    if (!picked) return;
+                    cmd.setDeskSimulatorDevice(agentId, simulator.id, { udid: picked.udid, name: picked.name });
+                    void simApi.setDeskDevice(agentId, picked.udid).catch(reportError("move the agent to that device"));
+                }}
+            />
+        </>
+    );
+
     if (statusProblem)
         return (
             <EmptyState
@@ -469,42 +537,7 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
     const problem = actionProblem ?? streamProblem;
     return (
         <div className="sim-pane">
-            <div className="sim-bar">
-                <Dropdown
-                    label="Device"
-                    className="sim-device"
-                    icon={deviceIcon(device?.name ?? simulator.deviceName ?? undefined)}
-                    trailing={booted && <span className="sim-live" aria-label="Running" />}
-                    menuWidth={280}
-                    value={udid ?? ""}
-                    options={deviceOptions(devices ?? [], (candidate) => heldBy(candidate)?.project)}
-                    onChange={(next) => {
-                        const picked = devices?.find((candidate) => candidate.udid === next);
-                        if (!picked) return;
-                        cmd.setDeskSimulatorDevice(agentId, simulator.id, { udid: picked.udid, name: picked.name });
-                        void simApi.setDeskDevice(agentId, picked.udid).catch(reportError("move the agent to that device"));
-                    }}
-                    disabled={!devices}
-                />
-                <button type="button" className="sim-chip sim-power" onClick={() => void togglePower()} disabled={!udid || !!power || starting}>
-                    <IconPower size={13} />
-                    {starting ? "Booting…" : power === "shuttingDown" ? "Shutting down…" : booted ? "Shut down" : "Boot"}
-                </button>
-                <span className="sim-tools">
-                    <SimTool label="Home" disabled={!booted} onClick={() => udid && action(() => simApi.button(udid, "home"))}>
-                        <IconHome size={14} />
-                    </SimTool>
-                    <SimTool label="Lock" disabled={!booted} onClick={() => udid && action(() => simApi.button(udid, "lock"))}>
-                        <IconLock size={14} />
-                    </SimTool>
-                    <SimTool label="Rotate" disabled={!booted} onClick={rotate}>
-                        <IconRotate size={14} />
-                    </SimTool>
-                    <SimTool label="Screenshot to the Desktop" disabled={!booted} onClick={screenshot}>
-                        <IconCamera size={14} />
-                    </SimTool>
-                </span>
-            </div>
+            {chromeParts}
             {ownDevice && ownDevice.udid !== simulator.udid && (
                 <div className="sim-note">
                     <span>
@@ -575,7 +608,7 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
 function SimTool({ label, disabled, onClick, children }: { label: string; disabled: boolean; onClick: () => void; children: ReactNode }) {
     return (
         <Tooltip label={label}>
-            <button type="button" className="sim-chip sim-tool" aria-label={label} disabled={disabled} onClick={onClick}>
+            <button type="button" className="sim-tool" aria-label={label} disabled={disabled} onClick={onClick}>
                 {children}
             </button>
         </Tooltip>

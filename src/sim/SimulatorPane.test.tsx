@@ -104,12 +104,19 @@ describe("the simulator pane", () => {
 
     afterEach(() => {
         cleanup();
+        document.body.replaceChildren();
         noteSimulatorDetached("agent-1");
         vi.clearAllMocks();
     });
 
-    async function showScreen() {
-        render(<SimulatorPane agentId="agent-1" simulator={simulator} visible />);
+    function chrome() {
+        const tools = document.body.appendChild(document.createElement("div"));
+        const dot = document.body.appendChild(document.createElement("span"));
+        return { tools, dot, menu: null, closeMenu: vi.fn() };
+    }
+
+    async function showScreen(slots = chrome()) {
+        render(<SimulatorPane agentId="agent-1" simulator={simulator} visible chrome={slots} />);
         const surface = await screen.findByLabelText("iPhone 17 screen");
         await waitFor(() => expect(playScreen).toHaveBeenCalled());
         await waitFor(() => expect(simApi.screen).toHaveBeenCalled());
@@ -124,6 +131,15 @@ describe("the simulator pane", () => {
         clientX: x,
         clientY: y,
         ...extra,
+    });
+
+    it("puts its controls and running mark in the desk's strip", async () => {
+        const slots = chrome();
+        await showScreen(slots);
+
+        expect(slots.tools.querySelector('[aria-label="Shut down"]')).not.toBeNull();
+        expect(slots.tools.querySelector('[aria-label="Home"]')).not.toBeNull();
+        expect(slots.dot.querySelector(".sim-live")).not.toBeNull();
     });
 
     it("marks its screen as somewhere keys go, so the app's own single-key shortcuts stay out", async () => {
