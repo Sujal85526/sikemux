@@ -9,7 +9,12 @@ export interface TabStrip {
     active: string | null;
 }
 
-export const consoleTab = (profile: string, number: number): DatabaseTab => ({ id: `console:${profile}:${number}`, kind: "console", profile, number });
+export const consoleTab = (profile: string, number: number): DatabaseTab => ({
+    id: `console:${profile}:${number}`,
+    kind: "console",
+    profile,
+    number,
+});
 
 export const tableTab = (profile: string, schema: string, name: string): DatabaseTab => ({
     id: `table:${profile}:${schema}.${name}`,
