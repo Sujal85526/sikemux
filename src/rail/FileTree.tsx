@@ -69,6 +69,10 @@ function validEntryName(raw: string): string | null {
     return name;
 }
 
+function reshapesIgnores(changed: string, dir: string): boolean {
+    return basename(changed) === ".gitignore" && isPathWithin(dir, dirname(changed));
+}
+
 export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, onKeepFile, width, onResize, active, revealPath }: FileTreeProps) {
     const resizable = width !== undefined && onResize !== undefined;
     const [dirs, setDirs] = useState<Record<string, DirEntry[]>>({});
@@ -168,7 +172,7 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
             if (e.repo && e.repo !== cwd) return;
             const changed = e.paths?.map((path) => joinPath(cwd, path));
             const stale = [cwd, ...expandedRef.current].filter(
-                (path) => !changed || changed.some((entry) => dirname(entry) === path || isPathWithin(path, entry)),
+                (path) => !changed || changed.some((entry) => dirname(entry) === path || isPathWithin(path, entry) || reshapesIgnores(entry, path)),
             );
             void loadDirs(stale);
         });
@@ -626,7 +630,7 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
                         attachFolderDrop(el, e.path);
                         attachRowButton(e.path, el);
                     }}
-                    className={`tree-row is-folder${selectedDir === e.path ? " selected" : ""}${dragOver === e.path ? " drag-over" : ""}${draggingPath === e.path ? " dragging" : ""}`}
+                    className={`tree-row is-folder${e.ignored ? " ignored" : ""}${selectedDir === e.path ? " selected" : ""}${dragOver === e.path ? " drag-over" : ""}${draggingPath === e.path ? " dragging" : ""}`}
                     style={{ paddingLeft: pad }}
                     onPointerDown={(ev) => onRowPointerDown(ev, e.path)}
                     onDragStart={(ev) => ev.preventDefault()}
@@ -661,7 +665,7 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
         return (
             <button
                 ref={(el) => attachRowButton(e.path, el)}
-                className={`tree-row file${activePath === e.path ? " active" : ""}${gd ? ` git-${gd.cls}` : ""}${dragOver === e.path ? " drag-over" : ""}${draggingPath === e.path ? " dragging" : ""}`}
+                className={`tree-row file${e.ignored ? " ignored" : ""}${activePath === e.path ? " active" : ""}${gd ? ` git-${gd.cls}` : ""}${dragOver === e.path ? " drag-over" : ""}${draggingPath === e.path ? " dragging" : ""}`}
                 style={{ paddingLeft: pad + 13 }}
                 onPointerDown={(ev) => onRowPointerDown(ev, e.path)}
                 onDragStart={(ev) => ev.preventDefault()}

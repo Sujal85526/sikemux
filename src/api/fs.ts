@@ -4,6 +4,7 @@ export interface DirEntry {
     name: string;
     path: string;
     is_dir: boolean;
+    ignored?: boolean;
 }
 
 export interface FilePreview {
