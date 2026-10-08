@@ -16,7 +16,6 @@ import { IconChevron, IconCollapseAll, IconFilePlus, IconFolder, IconFolderPlus,
 import { FileIcon } from "../ui/FileIcon";
 import { Tooltip } from "../ui/Tooltip";
 import { gitFileDecoration } from "../git/gitFileStatus";
-import { FileStatus } from "../git/FileStatus";
 import { openFilePalette } from "../state/commands/ui";
 import { basename, dirname, isPathWithin, joinPath, normalizePath, relativePath as pathRelative } from "../lib/paths";
 import { FILE_MANAGER_NAME } from "../lib/platform";
@@ -106,8 +105,6 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
     const overview = useResourceEnabled(active && !!cwd, gitOverviewR, cwd || "");
     const gitStatus = overview.data?.status;
     const statusFiles = gitStatus?.files;
-    const changes = statusFiles ?? [];
-    const [changesOpen, setChangesOpen] = useState(true);
     const gitMap = useMemo(() => {
         const m = new Map<string, GitFile>();
         if (cwd && statusFiles) {
@@ -806,57 +803,19 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
                         </span>
                     </div>
                     {gitStatus && (
-                        <button
-                            type="button"
-                            className="ed-tree-strip"
-                            aria-expanded={changes.length > 0 ? changesOpen : undefined}
-                            disabled={changes.length === 0}
-                            onClick={() => setChangesOpen((open) => !open)}>
+                        <div className="ed-tree-strip">
                             <span className="ed-tree-branch">
                                 <IconGit size={12} />
                                 <span className="ed-tree-branch-name">{gitStatus.branch || "detached"}</span>
                             </span>
                             {gitStatus.ahead > 0 && <span className="ed-tree-sync">↑{gitStatus.ahead}</span>}
                             {gitStatus.behind > 0 && <span className="ed-tree-sync">↓{gitStatus.behind}</span>}
-                            <span className={`ed-tree-changed${changes.length ? "" : " clean"}`}>
-                                {changes.length ? `${changes.length} changed` : "clean"}
+                            <span className={`ed-tree-changed${statusFiles?.length ? "" : " clean"}`}>
+                                {statusFiles?.length ? `${statusFiles.length} changed` : "clean"}
                             </span>
-                        </button>
+                        </div>
                     )}
                 </div>
-                {changesOpen && changes.length > 0 && (
-                    <div className="ed-tree-changes" role="list" aria-label="Changed files">
-                        {changes.map((file) => {
-                            const path = joinPath(cwd, file.path);
-                            const name = basename(file.path);
-                            const dir = dirname(file.path);
-                            const code = file.worktree.trim() || file.index.trim();
-                            const entry: DirEntry = { name, path, is_dir: false };
-                            const gone = code === "D";
-                            return (
-                                <div
-                                    key={file.path}
-                                    role="listitem"
-                                    tabIndex={0}
-                                    title={file.path}
-                                    className={`git-row git-file-row${activePath === path ? " sel" : ""}`}
-                                    onClick={() => !gone && onOpenFile(entry)}
-                                    onDoubleClick={() => !gone && onKeepFile(entry)}
-                                    onKeyDown={(event) => {
-                                        if (event.key === "Enter" && !gone) onKeepFile(entry);
-                                    }}
-                                    onContextMenu={(event) => !gone && openMenu(event, entry)}>
-                                    <FileIcon name={name} size={14} />
-                                    <span className="git-row-name">
-                                        {name}
-                                        {dir && <span className="git-row-dir">{dir}</span>}
-                                    </span>
-                                    <FileStatus code={code} />
-                                </div>
-                            );
-                        })}
-                    </div>
-                )}
                 <div
                     ref={rootScrollRef}
                     className={`ed-tree-scroll${rootDragOver ? " drag-over-root" : ""}`}
