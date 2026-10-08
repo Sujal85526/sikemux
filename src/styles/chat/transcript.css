@@ -32,6 +32,11 @@
     padding: 25px 0 32px;
 }
 
+/* Still laid out and measured, so the rows can land before they are seen. */
+.chat-scroll.is-settling {
+    visibility: hidden;
+}
+
 .chat-virtual-space {
     position: relative;
     width: 100%;

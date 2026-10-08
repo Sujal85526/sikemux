@@ -2,12 +2,16 @@ import { useCallback, useLayoutEffect, useRef, useState, type RefObject, type UI
 
 // How far above the last line still counts as reading the latest message.
 export const BOTTOM_SLACK = 72;
+const SETTLE_FRAMES = 24;
+const SETTLE_MS = 400;
 
 export function useStickToBottom({
     scrollRef,
     contentRef,
     rowsRef,
     visible,
+    settling,
+    onSettled,
     messageCount,
     revision,
 }: {
@@ -15,6 +19,8 @@ export function useStickToBottom({
     contentRef: RefObject<HTMLDivElement | null>;
     rowsRef: RefObject<HTMLDivElement | null>;
     visible: boolean;
+    settling: boolean;
+    onSettled: () => void;
     messageCount: number;
     revision: number;
 }) {
@@ -76,6 +82,40 @@ export function useStickToBottom({
             resized.disconnect();
         };
     }, [contentRef, rowsRef, pinToBottom]);
+
+    /* Held out of sight, the transcript is pinned every frame until its height
+       has held still for two, which is when its last rows have measured. */
+    useLayoutEffect(() => {
+        if (!settling) return;
+        stickToBottomRef.current = true;
+        setAtBottom(true);
+        pinToBottom();
+        let frame = 0;
+        let frames = 0;
+        let still = 0;
+        let height = -1;
+        const finish = () => {
+            window.cancelAnimationFrame(frame);
+            window.clearTimeout(timer);
+            onSettled();
+        };
+        const step = () => {
+            pinToBottom();
+            const next = scrollRef.current?.scrollHeight ?? 0;
+            still = next === height ? still + 1 : 0;
+            height = next;
+            frames += 1;
+            if (still >= 2 || frames >= SETTLE_FRAMES) finish();
+            else frame = window.requestAnimationFrame(step);
+        };
+        frame = window.requestAnimationFrame(step);
+        // WebKit stops animation frames in a window behind another app.
+        const timer = window.setTimeout(finish, SETTLE_MS);
+        return () => {
+            window.cancelAnimationFrame(frame);
+            window.clearTimeout(timer);
+        };
+    }, [settling, onSettled, pinToBottom, scrollRef]);
 
     useLayoutEffect(() => {
         if (!visible || !stickToBottomRef.current || messageCount === 0) return;

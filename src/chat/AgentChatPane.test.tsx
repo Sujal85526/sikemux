@@ -1410,6 +1410,30 @@ describe("AgentChatPane", () => {
         expect(await screen.findByRole("button", { name: "Jump to latest message" })).toBeInTheDocument();
     });
 
+    it("shows a resumed chat's history once it is all in, out of sight until it lands on the bottom", async () => {
+        let answer: (response: { sessionId: string; capabilities: object; setup: object }) => void = () => {};
+        mocks.start.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)));
+        render(<AgentChatPane agent={{ ...agent, resumeId: "old-session" }} cwd="/repo" active visible onBusyChange={() => {}} />);
+        await waitFor(() => expect(mocks.start).toHaveBeenCalled());
+        const scroller = document.querySelector(".chat-scroll") as HTMLElement;
+        fakeScroller(scroller, 400);
+        Object.defineProperty(scroller, "offsetWidth", { configurable: true, get: () => 600 });
+        Object.defineProperty(scroller, "offsetHeight", { configurable: true, get: () => 400 });
+        reportResize(scroller);
+
+        emit("session_update", {
+            sessionId: "session-1",
+            update: { sessionUpdate: "user_message_chunk", content: { type: "text", text: "Earlier question" } },
+        });
+        await nextFrame();
+        expect(screen.queryByText("Earlier question")).not.toBeInTheDocument();
+
+        await act(async () => answer({ sessionId: "session-1", capabilities: {}, setup: {} }));
+        expect(screen.getByText("Earlier question")).toBeInTheDocument();
+        expect(scroller).toHaveClass("is-settling");
+        await waitFor(() => expect(scroller).not.toHaveClass("is-settling"));
+    });
+
     it("focuses the composer once a chat connects, and again when a hidden one is reopened", async () => {
         const props = { agent, cwd: "/repo", active: true, onBusyChange: () => {} };
         const { rerender } = render(<AgentChatPane {...props} visible />);

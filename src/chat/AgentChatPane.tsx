@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { measureElement, useVirtualizer, type VirtualItem, type Virtualizer } from "@tanstack/react-virtual";
 import { acpApi } from "../api/acp";
 import { effortConfig, sessionConfigs, type SessionConfig } from "./sessionConfig";
@@ -9,6 +9,7 @@ import { useStore } from "../state/store";
 import { hasPrimaryModifier } from "../lib/platform";
 import { IconArrowDown, IconFile, IconPlug, IconWarning } from "../ui/Icons";
 import { chatReducer, initialChatState } from "./reducer";
+import type { ChatState } from "./types";
 import { PathRootsProvider } from "./FileRef";
 import { ChatWelcome } from "./ChatWelcome";
 import { FoldMemoryContext, newFoldMemory } from "./longText";
@@ -44,6 +45,26 @@ function holdsReadingPlace(item: VirtualItem, _delta: number, list: Virtualizer<
     return item.end <= top || (item.start < top && !list.itemSizeCache.has(item.key));
 }
 
+function heldTranscript(shown: ChatState, next: ChatState): ChatState {
+    return { ...next, messages: shown.messages, revision: shown.revision };
+}
+
+/* A chat opened onto a resumed session had nothing to show while its history
+   came in. It is revealed only once its last rows have measured and the list
+   has landed on the bottom, so the reader never sees it settle. */
+function useRevealAtBottom(replaying: boolean, visible: boolean, shown: number) {
+    const [settling, setSettling] = useState(false);
+    const openedEmptyRef = useRef(false);
+    if (replaying) openedEmptyRef.current = shown === 0;
+    useLayoutEffect(() => {
+        if (replaying || !openedEmptyRef.current) return;
+        openedEmptyRef.current = false;
+        if (visible && shown > 0) setSettling(true);
+    }, [replaying, visible, shown]);
+    const settled = useCallback(() => setSettling(false), []);
+    return { settling, settled };
+}
+
 const ChatFind = lazy(() => import("./ChatFind"));
 const WorktreeNote = lazy(() => import("./ChatWorktree").then(({ WorktreeNote }) => ({ default: WorktreeNote })));
 const ProjectStrip = lazy(() => import("./ProjectStrip").then(({ ProjectStrip }) => ({ default: ProjectStrip })));
@@ -66,10 +87,24 @@ export function AgentChatPane({
     const home = useStore((s) => s.home);
     const [state, dispatch] = useReducer(chatReducer, initialChatState);
     const [foldMemory] = useState(newFoldMemory);
-    const displayStateRef = useRef(state);
-    if (visible) displayStateRef.current = state;
-    const displayState = displayStateRef.current;
     const [composerError, setComposerError] = useState<string | null>(null);
+    const { agentRef, sessionIdRef, recovery, retry, replaying, changingPermissions, appliedPermissionMode, permissionMode } = useAcpSession({
+        active,
+        agent,
+        profile,
+        cwd,
+        connection: state.connection,
+        foldMemory,
+        dispatch,
+        onError: setComposerError,
+    });
+
+    /* A resumed session sends its history back over many frames. The pane keeps
+       showing what it had until the history is all in, then shows it at once. */
+    const displayStateRef = useRef(state);
+    if (visible) displayStateRef.current = replaying ? heldTranscript(displayStateRef.current, state) : state;
+    const displayState = displayStateRef.current;
+    const { settling, settled } = useRevealAtBottom(replaying, visible, displayState.messages.length);
     const [replyingPermission, setReplyingPermission] = useState<string | null>(null);
     const [stoppingTasks, setStoppingTasks] = useState<string[]>([]);
     const paneRef = useRef<HTMLDivElement>(null);
@@ -89,6 +124,8 @@ export function AgentChatPane({
         contentRef: scrollContentRef,
         rowsRef,
         visible,
+        settling,
+        onSettled: settled,
         messageCount: displayState.messages.length,
         revision: displayState.revision,
     });
@@ -143,17 +180,6 @@ export function AgentChatPane({
     useEffect(() => () => cmd.noteAgentBackgroundWork(agent.id, 0, 0), [agent.id]);
 
     useEffect(() => onBusyChange(state.running), [onBusyChange, state.running]);
-
-    const { agentRef, sessionIdRef, recovery, retry, changingPermissions, appliedPermissionMode, permissionMode } = useAcpSession({
-        active,
-        agent,
-        profile,
-        cwd,
-        connection: state.connection,
-        foldMemory,
-        dispatch,
-        onError: setComposerError,
-    });
 
     useSavedUsage({
         agentRef,
@@ -327,7 +353,7 @@ export function AgentChatPane({
                             </Suspense>
                         )}
                         <div
-                            className="chat-scroll"
+                            className={`chat-scroll${settling ? " is-settling" : ""}`}
                             ref={scrollRef}
                             onWheel={noteGesture}
                             onTouchMove={noteGesture}

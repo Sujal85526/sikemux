@@ -52,6 +52,9 @@ export function useAcpSession({
     const reattachingRef = useRef(false);
     const [changingPermissions, setChangingPermissions] = useState(false);
     const [appliedPermissionMode, setAppliedPermissionMode] = useState<string | null>(null);
+    /* True while a resumed or reattached session is sending its history back,
+       which ends when starting or attaching it answers. */
+    const [replaying, setReplaying] = useState(false);
     const environmentKeys = JSON.stringify(profile?.environmentKeys ?? []);
     const permissionMode = permissionModeOf(agent);
 
@@ -78,6 +81,7 @@ export function useAcpSession({
         reattachingRef.current = false;
         const hold = Boolean(agentRef.current.resumeId) || reattaching;
         dispatch({ type: "reset", hold });
+        setReplaying(hold);
         if (!hold) {
             foldMemory.streamed.clear();
             foldMemory.expanded.clear();
@@ -235,10 +239,13 @@ export function useAcpSession({
                 sessionIdRef.current = response.sessionId;
                 flushUpdates();
                 dispatch({ type: "ready", capabilities: response.capabilities, setup: response.setup });
+                setReplaying(false);
                 setAppliedPermissionMode(appliedMode);
             })
             .catch((error: unknown) => {
                 if (!controller.signal.aborted && mounted) {
+                    flushUpdates();
+                    setReplaying(false);
                     const message = error instanceof Error ? error.message : String(error);
                     dispatch({ type: "error", message });
                     if (recoveryRef.current?.phase === "resuming") updateRecovery({ phase: "failed", detail: message });
@@ -248,6 +255,7 @@ export function useAcpSession({
         lifecycleRef.current = lifecycle;
         return () => {
             mounted = false;
+            setReplaying(false);
             sessionIdRef.current = null;
             if (updateFrameRef.current !== null) window.cancelAnimationFrame(updateFrameRef.current);
             updateFrameRef.current = null;
@@ -300,5 +308,5 @@ export function useAcpSession({
             });
     }, [agent.id, connection, permissionMode, appliedPermissionMode, changingPermissions, onError]);
 
-    return { agentRef, sessionIdRef, recovery, retry, changingPermissions, appliedPermissionMode, permissionMode };
+    return { agentRef, sessionIdRef, recovery, retry, replaying, changingPermissions, appliedPermissionMode, permissionMode };
 }
