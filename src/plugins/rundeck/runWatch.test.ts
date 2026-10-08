@@ -83,10 +83,35 @@ describe("watchRun", () => {
         expect(api.watchStart).toHaveBeenCalledTimes(1);
     });
 
-    it("stays quiet when the person turned the notice off", async () => {
-        updateRundeckSettings({ notifyWhenDone: false });
+    it("says how the run ended from its steps when Rundeck stopped returning the run itself", async () => {
+        const id = ++nextId;
+        await watchRun(job, id, () => true);
+        send({ execution: null, state: { executionState: "FAILED", steps: [], stepCount: 2, completed: true }, error: "502", terminal: true });
+        expect(host.notify).toHaveBeenCalledWith("error", "staging/backend/api on staging failed", expect.anything());
+    });
+
+    it("says it lost track of a run when Rundeck stopped answering altogether", async () => {
         const id = ++nextId;
         await watchRun(job, id, () => false);
+        send({ execution: null, state: null, error: "connection refused", terminal: true });
+        expect(host.notify).toHaveBeenCalledWith("error", "Lost track of staging/backend/api", expect.anything());
+        expect(host.notifyDesktop).toHaveBeenCalledWith(
+            "Lost track of staging/backend/api",
+            `Rundeck stopped answering before run #${id} ended. Check it in Rundeck.`,
+        );
+        expect(api.watchStop).toHaveBeenCalledWith(7);
+    });
+
+    it("does not watch at all when the person turned the notice off", async () => {
+        updateRundeckSettings({ notifyWhenDone: false });
+        await watchRun(job, ++nextId, () => false);
+        expect(api.watchStart).not.toHaveBeenCalled();
+    });
+
+    it("stays quiet when the notice is turned off while a run goes", async () => {
+        const id = ++nextId;
+        await watchRun(job, id, () => false);
+        updateRundeckSettings({ notifyWhenDone: false });
         send(update(id, "failed", true));
         expect(host.notify).not.toHaveBeenCalled();
         expect(host.notifyDesktop).not.toHaveBeenCalled();
