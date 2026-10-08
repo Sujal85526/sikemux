@@ -76,7 +76,7 @@ export function ThemeIcon({ icon, size = 15 }: { icon: string | null; size?: num
     return <img className="theme-icon" src={`/file-icons/${shown}.svg`} width={size} height={size} alt="" draggable={false} />;
 }
 
-export function FileIcon({ name, size = 15 }: { name: string; size?: number }) {
+export function FileIcon({ name, size = 14 }: { name: string; size?: number }) {
     const loaded = useSyncExternalStore(subscribeTables, loadedTables);
     return (
         <span className="file-glyph" aria-hidden="true">

@@ -693,7 +693,7 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
                 data-file-path={e.path}
                 data-drop-dir={dirname(e.path)}>
                 <span className="tree-file">
-                    <FileIcon name={e.name} size={20} />
+                    <FileIcon name={e.name} size={16} />
                 </span>
                 <span className="tree-name">{e.name}</span>
                 {gd && <span className="tree-git">{gd.letter}</span>}
@@ -1033,7 +1033,7 @@ function NewEntryRow({
     const pad = 4 + depth * 13;
     return (
         <div className="tree-row tree-new" style={{ paddingLeft: pad + 13 }}>
-            <span className="tree-file">{kind === "folder" ? <IconFolder size={17} /> : <FileIcon name="" size={20} />}</span>
+            <span className="tree-file">{kind === "folder" ? <IconFolder size={17} /> : <FileIcon name="" size={16} />}</span>
             <input
                 ref={inputRef}
                 className="tree-new-input"
@@ -1085,7 +1085,7 @@ function RenameRow({
                 </>
             ) : (
                 <span className="tree-file">
-                    <FileIcon name={value} size={20} />
+                    <FileIcon name={value} size={16} />
                 </span>
             )}
             <input

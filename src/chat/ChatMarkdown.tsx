@@ -116,7 +116,7 @@ function CodeTitle({ info, text }: { info?: string; text: string }) {
             ) : (
                 name && (
                     <span className="chat-code-name">
-                        <FileIcon name={name} size={16} />
+                        <FileIcon name={name} size={14} />
                         {name}
                     </span>
                 )
