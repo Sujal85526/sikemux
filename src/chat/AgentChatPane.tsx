@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { useVirtualizer, type VirtualItem, type Virtualizer } from "@tanstack/react-virtual";
 import { acpApi } from "../api/acp";
 import { effortConfig, sessionConfigs, type SessionConfig } from "./sessionConfig";
 import { rowMeta } from "./messageMeta";
@@ -29,6 +29,19 @@ import { useSavedUsage } from "./useSavedUsage";
 import { usePromptQueue } from "./usePromptQueue";
 import { useChatWorktree } from "./useChatWorktree";
 import { BOTTOM_SLACK, useStickToBottom } from "./useStickToBottom";
+
+/*
+ * Whether a row that changed size should move the scroll position with it, so
+ * the text being read stays still. The library's own rule skips rows that come
+ * back at a new height while the reader scrolls up, and everything below them
+ * jumps. A row wholly above the view always counts; one the view cuts through
+ * counts only on its first measure, so a reply growing at its bottom does not
+ * drag the view down with it.
+ */
+function holdsReadingPlace(item: VirtualItem, _delta: number, list: Virtualizer<HTMLDivElement, Element>) {
+    const top = (list.scrollOffset ?? 0) + list.scrollAdjustments;
+    return item.end <= top || (item.start < top && !list.itemSizeCache.has(item.key));
+}
 
 const ChatFind = lazy(() => import("./ChatFind"));
 const WorktreeNote = lazy(() => import("./ChatWorktree").then(({ WorktreeNote }) => ({ default: WorktreeNote })));
@@ -85,6 +98,7 @@ export function AgentChatPane({
            overlapping them for a frame and catching up. */
         directDomUpdates: true,
     });
+    virtualizer.shouldAdjustScrollPositionOnItemSizeChange = holdsReadingPlace;
 
     useEffect(() => {
         if (!active) return;
