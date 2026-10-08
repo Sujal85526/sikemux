@@ -648,7 +648,7 @@ describe("DeskHost", () => {
         expect(screen.getByRole("menuitem", { name: "Copy Relative Path" })).toBeInTheDocument();
     });
 
-    it("names the simulator's tab after its device and shows its pane only while the tab is chosen", async () => {
+    it("shows the simulator's device instead of tabs, and its pane only while the simulator is chosen", async () => {
         setState({
             desks: {
                 "agent-one": {
@@ -663,7 +663,8 @@ describe("DeskHost", () => {
         } as never);
         renderPane();
 
-        expect(await screen.findByRole("tab", { name: /iPhone 17/ })).toBeInTheDocument();
+        expect(await screen.findByRole("button", { name: "Device" })).toHaveTextContent("iPhone 17");
+        expect(screen.queryByRole("tablist", { name: "Desk tabs" })).not.toBeInTheDocument();
         expect(await screen.findByTestId("desk-simulator")).toHaveAttribute("data-visible", "true");
 
         fireEvent.click(within(screen.getByRole("tablist", { name: "Desk views" })).getByRole("tab", { name: "Files" }));
@@ -672,7 +673,7 @@ describe("DeskHost", () => {
         expect(screen.getByTestId("desk-simulator")).toHaveAttribute("data-visible", "false");
     });
 
-    it("marks the simulator's tab and its kind while the agent drives the device", async () => {
+    it("marks the simulator's device and its kind while the agent drives it", async () => {
         setState({
             desks: {
                 "agent-one": {
@@ -694,7 +695,7 @@ describe("DeskHost", () => {
 
         fireEvent.click(within(kinds).getByRole("tab", { name: /iOS Simulator/ }));
         const working = await screen.findByRole("img", { name: "codex is working on this device" });
-        expect(working.closest(".tab-wrap")).toHaveClass("acting");
+        expect(working.closest(".desk-device")).not.toBeNull();
 
         act(() => noteSimulatorActing("agent-one", false));
         expect(screen.queryByRole("img", { name: "codex is working on this device" })).not.toBeInTheDocument();

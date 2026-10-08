@@ -311,7 +311,7 @@ function DeskSession({
         onEmpty();
     }, [desk.reveal, items.length, onEmpty, restoring, visible]);
 
-    const tabs = kindItems.map((item): TabDescriptor => {
+    const tabs = kindItems.filter(isTabItem).map((item): TabDescriptor => {
         const tabActive = isShown(item, shown, snapshot);
         if (item.kind === "browser") {
             const { tab } = item;
@@ -342,32 +342,6 @@ function DeskSession({
                 active: tabActive,
                 icon: <FileIcon name={name} size={18} />,
                 dirty: dirty.includes(item.path),
-            };
-        }
-        if (item.kind === "simulator") {
-            const label = item.simulator.deviceName ?? "Simulator";
-            return {
-                id: item.key,
-                label,
-                title: `iOS Simulator · ${label}`,
-                active: tabActive,
-                className: simulatorActing ? "acting" : undefined,
-                accessory: simulatorActing ? (
-                    <span className={`agent-glyph ${agentType}`} role="img" aria-label={`${agentType} is working on this device`}>
-                        <AgentIcon type={agentType} size={16} />
-                    </span>
-                ) : undefined,
-                icon: (
-                    <span className="agent-glyph sim">
-                        <IconPhone size={13} />
-                    </span>
-                ),
-                badge: (
-                    <span className="sim-tab-badge">
-                        <span ref={setSimulatorDot} className="sim-tab-dot" />
-                        <IconChevron size={9} className="sim-tab-chev" />
-                    </span>
-                ),
             };
         }
         return {
@@ -403,38 +377,55 @@ function DeskSession({
             <DeskOutline />
             <div className="desk-head" style={{ "--desk-kinds": KINDS.length } as CSSProperties}>
                 <DeskKinds items={items} shown={kind} agentType={agentType} simulatorActing={simulatorActing} onShow={showKind} />
-                <TabBar
-                    variant="desk"
-                    ariaLabel="Desk tabs"
-                    tabs={tabs}
-                    onSelect={(key) => {
-                        const item = itemFor(key);
-                        if (!item) return;
-                        if (item.kind === "simulator" && shown === item.key) {
-                            const tab = sectionRef.current?.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(item.key)}"] .tab`) ?? null;
-                            setDeviceMenu((open) => (open ? null : tab));
-                            return;
-                        }
-                        cmd.selectDeskItem(agentId, item);
-                    }}
-                    onClose={(key) => {
-                        const item = itemFor(key);
-                        if (item) cmd.closeDeskItem(agentId, item);
-                    }}
-                    buildMenu={(key) => {
-                        const item = itemFor(key);
-                        if (!item) return [];
-                        return deskTabMenu(item, session.kind === "project" && session.cwd ? session.cwd : null, {
-                            copy: (text, label) => void copyText(text).then(() => notify("success", `copied ${label}`), reportError("copy")),
-                            reveal: (path) => void fsapi.revealInFinder(path).catch(reportError("reveal")),
-                            close: () => cmd.closeDeskItem(agentId, item),
-                        });
-                    }}
-                    onAdd={kind === "browser" || kind === null ? () => cmd.newBrowserTab(agentId) : undefined}
-                    addIcon={<IconPlus size={13} />}
-                    addTitle={withShortcut("New browser tab", newTabShortcut)}
-                    addLabel="New browser tab"
-                />
+                {kind === "simulator" ? (
+                    <button
+                        type="button"
+                        className="desk-device"
+                        aria-label="Device"
+                        aria-haspopup="listbox"
+                        aria-expanded={!!deviceMenu}
+                        onClick={(event) => {
+                            const button = event.currentTarget;
+                            setDeviceMenu((open) => (open ? null : button));
+                        }}>
+                        <IconPhone size={14} />
+                        <span className="desk-device-name">{desk.simulators[0]?.deviceName ?? "iOS Simulator"}</span>
+                        <span ref={setSimulatorDot} className="desk-device-dot" />
+                        <IconChevron size={9} className="desk-device-chev" />
+                        {simulatorActing && (
+                            <span className={`agent-glyph ${agentType}`} role="img" aria-label={`${agentType} is working on this device`}>
+                                <AgentIcon type={agentType} size={16} />
+                            </span>
+                        )}
+                    </button>
+                ) : (
+                    <TabBar
+                        variant="desk"
+                        ariaLabel="Desk tabs"
+                        tabs={tabs}
+                        onSelect={(key) => {
+                            const item = itemFor(key);
+                            if (item) cmd.selectDeskItem(agentId, item);
+                        }}
+                        onClose={(key) => {
+                            const item = itemFor(key);
+                            if (item) cmd.closeDeskItem(agentId, item);
+                        }}
+                        buildMenu={(key) => {
+                            const item = itemFor(key);
+                            if (!item) return [];
+                            return deskTabMenu(item, session.kind === "project" && session.cwd ? session.cwd : null, {
+                                copy: (text, label) => void copyText(text).then(() => notify("success", `copied ${label}`), reportError("copy")),
+                                reveal: (path) => void fsapi.revealInFinder(path).catch(reportError("reveal")),
+                                close: () => cmd.closeDeskItem(agentId, item),
+                            });
+                        }}
+                        onAdd={kind === "browser" || kind === null ? () => cmd.newBrowserTab(agentId) : undefined}
+                        addIcon={<IconPlus size={13} />}
+                        addTitle={withShortcut("New browser tab", newTabShortcut)}
+                        addLabel="New browser tab"
+                    />
+                )}
                 {kind === "simulator" && <div ref={setSimulatorTools} className="desk-head-tools" />}
             </div>
             <div className="desk-body">
@@ -583,6 +574,9 @@ function DeskOutline() {
         </svg>
     );
 }
+
+/** Everything the strip lists as tabs; the simulator shows its device instead. */
+const isTabItem = (item: DeskItem): item is Exclude<DeskItem, { kind: "simulator" }> => item.kind !== "simulator";
 
 const KINDS: { kind: DeskKind; label: string; icon: ReactNode }[] = [
     { kind: "browser", label: "Browser", icon: <IconGlobe size={14} /> },

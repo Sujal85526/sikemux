@@ -106,23 +106,51 @@
 .desk-head-tools {
     display: flex;
     flex: 0 0 auto;
+    margin-left: auto;
     align-items: center;
     gap: 2px;
     padding-right: 6px;
 }
 
-.sim-tab-badge {
+/* With the simulator shown the strip holds no tabs, only the device, which opens its menu. */
+.desk-device {
     display: inline-flex;
+    flex: 0 1 auto;
     align-items: center;
-    gap: 6px;
-    margin-left: 2px;
+    gap: 8px;
+    min-width: 0;
+    height: 28px;
+    margin-left: 6px;
+    padding: 0 8px;
+    border: 0;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    font-weight: 600;
 }
 
-.sim-tab-dot:empty {
+.desk-device:hover,
+.desk-device[aria-expanded="true"] {
+    background: var(--surface-hover);
+}
+
+.desk-device > svg:first-child {
+    flex: none;
+    color: var(--text-secondary);
+}
+
+.desk-device-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.desk-device-dot:empty {
     display: none;
 }
 
-.sim-tab-chev {
+.desk-device-chev {
+    flex: none;
     color: var(--ink-faint);
     transform: rotate(90deg);
 }
