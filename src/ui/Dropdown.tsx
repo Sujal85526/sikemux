@@ -59,9 +59,10 @@ export function Dropdown({
         [search, query, options],
     );
     useOccludeNativeViews(open);
-    const close = () => {
+    const close = (byPointer = false) => {
         setOpen(false);
-        buttonRef.current?.focus();
+        if (byPointer) (document.activeElement as HTMLElement | null)?.blur();
+        else buttonRef.current?.focus();
     };
     const show = () => {
         setOwner(buttonRef.current?.closest<HTMLElement>("[data-modal-scope]")?.dataset.modalScope);
@@ -74,10 +75,10 @@ export function Dropdown({
         );
         setOpen(true);
     };
-    const choose = (next: number) => {
+    const choose = (next: number, byPointer = false) => {
         if (!shown[next]) return;
         onChange(shown[next].value);
-        close();
+        close(byPointer);
     };
 
     useLayoutEffect(() => {
@@ -221,7 +222,7 @@ export function Dropdown({
                                     aria-selected={option.value === value}
                                     className={`dd-item${itemIndex === index ? " active" : ""}`}
                                     onPointerMove={() => setIndex(itemIndex)}
-                                    onClick={() => choose(itemIndex)}>
+                                    onClick={() => choose(itemIndex, true)}>
                                     <span className="dd-check">{option.value === value && <IconCheck size={11} />}</span>
                                     <span className={`dd-item-label${option.className ? ` ${option.className}` : ""}`}>
                                         {option.label}
