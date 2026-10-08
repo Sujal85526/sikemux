@@ -3,6 +3,7 @@ import CoreSimulator
 import FBControlCore
 import FBSimulatorControl
 import Foundation
+import ImageIO
 
 /// The device work. One per helper process, so CoreSimulator is loaded once and HID connections are reused.
 actor Simulators {
@@ -46,6 +47,33 @@ actor Simulators {
         let orientation = try await orientation(udid)
         let size = Self.turnedSize(CGSize(width: Double(info.widthPixels) / scale, height: Double(info.heightPixels) / scale), orientation)
         return ["width": size.width, "height": size.height, "scale": scale, "orientation": orientation]
+    }
+
+    /// The device's screen outline at full resolution, upright, as a PNG data URL: what Simulator clips
+    /// its picture to, rounded corners and all. Nil for a device type that has none.
+    func mask(_ udid: String?) async throws -> String? {
+        let simulator = try await booted(udid)
+        guard let bundle = simulator.device.deviceType?.bundle,
+            let profile = bundle.url(forResource: "profile", withExtension: "plist").flatMap({ NSDictionary(contentsOf: $0) }),
+            let name = profile["framebufferMask"] as? String,
+            let url = bundle.url(forResource: name, withExtension: "pdf"),
+            let page = CGPDFDocument(url as CFURL)?.page(at: 1)
+        else { return nil }
+        let box = page.getBoxRect(.mediaBox)
+        let width = Int(box.width.rounded())
+        let height = Int(box.height.rounded())
+        guard width > 0, height > 0,
+            let context = CGContext(
+                data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return nil }
+        context.drawPDFPage(page)
+        guard let image = context.makeImage() else { return nil }
+        let png = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(png, "public.png" as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return "data:image/png;base64," + (png as Data).base64EncodedString()
     }
 
     static func turnedSize(_ upright: CGSize, _ orientation: String) -> CGSize {

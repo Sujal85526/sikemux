@@ -91,6 +91,8 @@ struct SikemuxSim {
             try await simulators.send(.composite([.keyboard(direction: .down, keyCode: code), .keyboard(direction: .up, keyCode: code)]), to: udid)
         case "screen":
             return try await simulators.screen(udid)
+        case "mask":
+            return ["mask": try await simulators.mask(udid) ?? NSNull()]
         case "orientation":
             if let name = request.orientation {
                 try await simulators.orient(udid, to: name)
