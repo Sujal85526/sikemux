@@ -2,7 +2,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { useContext, useEffect, useRef, useState } from "react";
 import type { PageRef } from "../api/pages";
 import { currentTheme, subscribeTheme } from "../themes/bus";
-import { ChatAgentContext, openLink } from "./chatAgent";
+import { ChatAgentContext, openLink, ReaderScrollContext } from "./chatAgent";
 import { pageThemeMessage } from "./pageTheme";
 import { clampPageHeight, PAGE_DEFAULT_HEIGHT, readPageMessage } from "./pages";
 
@@ -13,6 +13,7 @@ const reportedHeights = new Map<string, number>();
 /** A page an agent showed, drawn as part of its reply in a sandboxed frame. */
 export function ChatPage({ page }: { page: PageRef }) {
     const agent = useContext(ChatAgentContext);
+    const scrollByReader = useContext(ReaderScrollContext);
     const frame = useRef<HTMLIFrameElement>(null);
     const [height, setHeight] = useState(() => clampPageHeight(reportedHeights.get(page.id) ?? page.height ?? PAGE_DEFAULT_HEIGHT));
     const [dark, setDark] = useState(() => currentTheme().dark);
@@ -25,6 +26,7 @@ export function ChatPage({ page }: { page: PageRef }) {
                 reportedHeights.set(page.id, message.height);
                 setHeight(clampPageHeight(message.height));
             } else if (message?.kind === "link") openLink(message.url, agent.id, false);
+            else if (message?.kind === "wheel") scrollByReader(message.deltaY);
         };
         window.addEventListener("message", receive);
         const unsubscribe = subscribeTheme((theme) => {
@@ -35,7 +37,7 @@ export function ChatPage({ page }: { page: PageRef }) {
             window.removeEventListener("message", receive);
             unsubscribe();
         };
-    }, [agent.id, page.id]);
+    }, [agent.id, page.id, scrollByReader]);
 
     return (
         <div className="chat-page" style={{ height }}>

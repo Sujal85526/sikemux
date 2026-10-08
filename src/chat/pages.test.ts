@@ -49,6 +49,11 @@ describe("readPageMessage", () => {
         });
     });
 
+    it("takes a wheel the page could not use", () => {
+        expect(readPageMessage({ jsonrpc: "2.0", method: "sikemux/wheel", params: { deltaY: -48 } })).toEqual({ kind: "wheel", deltaY: -48 });
+        expect(readPageMessage({ jsonrpc: "2.0", method: "sikemux/wheel", params: { deltaY: "far" } })).toBeNull();
+    });
+
     it("refuses links that are not to the web and anything malformed", () => {
         expect(readPageMessage({ jsonrpc: "2.0", method: "ui/open-link", params: { url: "file:///etc/passwd" } })).toBeNull();
         expect(readPageMessage({ jsonrpc: "2.0", method: "ui/notifications/size-changed", params: { height: -1 } })).toBeNull();

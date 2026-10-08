@@ -28,16 +28,17 @@ export function toolPage(tool: AcpToolCall): PageRef | null {
     return { id, title, ...(typeof height === "number" && Number.isFinite(height) ? { height } : {}) };
 }
 
-export type PageMessage = { kind: "height"; height: number } | { kind: "link"; url: string };
+export type PageMessage = { kind: "height"; height: number } | { kind: "link"; url: string } | { kind: "wheel"; deltaY: number };
 
-/** What a framed page asks of the chat: room for its height, or a link opened. */
+/** What a framed page asks of the chat: room for its height, a link opened, or the transcript scrolled. */
 export function readPageMessage(data: unknown): PageMessage | null {
     if (typeof data !== "object" || data === null) return null;
     const { jsonrpc, method, params } = data as Record<string, unknown>;
     if (jsonrpc !== "2.0" || typeof params !== "object" || params === null) return null;
-    const { height, url } = params as Record<string, unknown>;
+    const { height, url, deltaY } = params as Record<string, unknown>;
     if (method === "ui/notifications/size-changed" && typeof height === "number" && Number.isFinite(height) && height > 0)
         return { kind: "height", height };
     if (method === "ui/open-link" && typeof url === "string" && /^https?:\/\//i.test(url)) return { kind: "link", url };
+    if (method === "sikemux/wheel" && typeof deltaY === "number" && Number.isFinite(deltaY)) return { kind: "wheel", deltaY };
     return null;
 }
