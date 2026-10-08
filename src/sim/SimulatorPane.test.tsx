@@ -247,12 +247,12 @@ describe("frameLayout", () => {
     };
     const upright = { width: 402, height: 874, scale: 3, orientation: "portrait" as const };
 
-    it("fits the frame in the room, never past a point a pixel, with the screen in its opening", () => {
+    it("fits the frame to the room, with the screen in its opening", () => {
         const layout = frameLayout(art, upright, { width: 1000, height: 454 })!;
         expect(layout.scale).toBeCloseTo(0.5);
         expect(layout.width).toBeCloseTo(227);
         expect(layout.screen).toEqual({ left: (9 + 17) * 0.5, top: 17 * 0.5, width: 201, height: 437 });
-        expect(frameLayout(art, upright, { width: 5000, height: 5000 })!.scale).toBe(1);
+        expect(frameLayout(art, upright, { width: 5000, height: 1816 })!.scale).toBeCloseTo(2);
     });
 
     it("turns the frame with the device and keeps the screen in its opening", () => {

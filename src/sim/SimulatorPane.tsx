@@ -132,15 +132,15 @@ export interface FrameLayout {
     screen: { left: number; top: number; width: number; height: number };
 }
 
-/** Where the device's frame and its screen go in `room` CSS pixels: as large as fits, never past a point a pixel,
-    turned with the device. The frame turns about its centre, and the screen with it. */
+/** Where the device's frame and its screen go in `room` CSS pixels: as large as fits, turned with the device.
+    The frame turns about its centre, and the screen with it. */
 export function frameLayout(art: SimChrome, screen: SimScreen, room: { width: number; height: number }): FrameLayout | null {
     const width = art.width + art.padding.left + art.padding.right;
     const height = art.height + art.padding.top + art.padding.bottom;
     const sideways = screen.orientation.startsWith("landscape");
     const turnedWidth = sideways ? height : width;
     const turnedHeight = sideways ? width : height;
-    const scale = Math.min(1, room.width / turnedWidth, room.height / turnedHeight);
+    const scale = Math.min(room.width / turnedWidth, room.height / turnedHeight);
     if (!(scale > 0)) return null;
     const degrees = TURN_DEGREES[screen.orientation] ?? 0;
     const radians = (degrees * Math.PI) / 180;
