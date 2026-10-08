@@ -90,16 +90,34 @@ export function playScreen(udid: string, canvas: HTMLCanvasElement, events: Scre
           }, 1000)
         : null;
 
+    let shown = { width: 0, height: 0 };
+    const sizes =
+        typeof ResizeObserver === "undefined"
+            ? null
+            : new ResizeObserver(([entry]) => {
+                  const box = entry.contentRect;
+                  shown = { width: box.width * window.devicePixelRatio, height: box.height * window.devicePixelRatio };
+                  paint();
+              });
+    sizes?.observe(canvas);
+
     const paint = () => {
         if (!context || !upright.width) return;
         const sideways = orientation.startsWith("landscape");
         const width = sideways ? upright.height : upright.width;
         const height = sideways ? upright.width : upright.height;
-        if (canvas.width !== width || canvas.height !== height) {
-            canvas.width = width;
-            canvas.height = height;
+        const fit = shown.width && shown.height ? Math.min(1, shown.width / width, shown.height / height) : 1;
+        const pixelsWide = Math.round(width * fit);
+        const pixelsHigh = Math.round(height * fit);
+        if (canvas.width !== pixelsWide || canvas.height !== pixelsHigh) {
+            canvas.width = pixelsWide;
+            canvas.height = pixelsHigh;
         }
-        context.setTransform(...turnTransform(orientation, upright.width, upright.height));
+        const scale = pixelsWide / width;
+        const [a, b, c, d, e, f] = turnTransform(orientation, upright.width, upright.height);
+        context.setTransform(a * scale, b * scale, c * scale, d * scale, e * scale, f * scale);
+        context.imageSmoothingEnabled = true;
+        context.imageSmoothingQuality = "high";
         context.drawImage(upright, 0, 0);
         if (mask) {
             context.globalCompositeOperation = "destination-in";
@@ -229,6 +247,7 @@ export function playScreen(udid: string, canvas: HTMLCanvasElement, events: Scre
     return {
         stop: () => {
             stopped = true;
+            sizes?.disconnect();
             if (fpsTimer !== null) window.clearInterval(fpsTimer);
             close();
             closeDecoder();
