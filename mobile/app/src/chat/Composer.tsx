@@ -359,10 +359,10 @@ function ConfigSheet({
   );
 }
 
-type Source = 'photos' | 'files';
+export type Source = 'photos' | 'files';
 
 /** Where a message's photos and files come from. */
-function AttachSheet({
+export function AttachSheet({
   visible,
   onClose,
   onPick,
