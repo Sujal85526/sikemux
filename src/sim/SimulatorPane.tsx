@@ -21,8 +21,7 @@ import "../styles/simulator.css";
 const NAMED_KEYS = new Set(["Enter", "Escape", "Backspace", "Delete", "ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"]);
 const TURNS: SimOrientation[] = ["portrait", "landscapeLeft", "portraitUpsideDown", "landscapeRight"];
 const REFRESH_MS = 5000;
-const WHEEL_SETTLE_MS = 80;
-const SWIPE_STEPS = 6;
+const WHEEL_LIFT_MS = 90;
 
 export interface Point {
     x: number;
@@ -41,53 +40,30 @@ export const isIosDevice = (device: SimDevice): boolean => /^(iOS|iPadOS)\b/.tes
 
 const clamp = (value: number, max: number) => Math.min(Math.max(value, 0), max);
 
-/** The screen's size in points as the frames show it, which is always upright. */
-function uprightSize(screen: SimScreen): { width: number; height: number } {
-    return screen.orientation.startsWith("landscape") ? { width: screen.height, height: screen.width } : screen;
-}
-
-/** Where a pointer is on the upright frame, in points, and how many points one CSS pixel covers. */
-function uprightPoint(canvas: CanvasBox, screen: SimScreen, clientX: number, clientY: number): Point & { scale: number } {
-    const upright = uprightSize(screen);
+/** Where a pointer is on the device in points, and how many points one CSS pixel covers. The canvas
+    shows the screen turned the way the device is, so a point on it is the device's own point. */
+function screenPoint(canvas: CanvasBox, screen: SimScreen, clientX: number, clientY: number): Point & { scale: number } {
     const fit = Math.min(canvas.rect.width / canvas.width, canvas.rect.height / canvas.height);
     const left = canvas.rect.left + (canvas.rect.width - canvas.width * fit) / 2;
     const top = canvas.rect.top + (canvas.rect.height - canvas.height * fit) / 2;
-    const scale = upright.width / (canvas.width * fit);
+    const scale = screen.width / (canvas.width * fit);
     return { x: (clientX - left) * scale, y: (clientY - top) * scale, scale };
-}
-
-/** The frames stay upright while the device turns, so a point on them is turned to the device's own points. */
-export function turnPoint(point: Point, screen: SimScreen): Point {
-    const { width, height } = uprightSize(screen);
-    switch (screen.orientation) {
-        case "landscapeLeft":
-            return { x: point.y, y: width - point.x };
-        case "landscapeRight":
-            return { x: height - point.y, y: point.x };
-        case "portraitUpsideDown":
-            return { x: width - point.x, y: height - point.y };
-        default:
-            return point;
-    }
 }
 
 /** Where a pointer is on the device, in points. Off the screen it is null, or the nearest edge when clamped. */
 export function devicePoint(canvas: CanvasBox, screen: SimScreen, clientX: number, clientY: number, opts: { clamp?: boolean } = {}): Point | null {
     if (!canvas.width || !canvas.height) return null;
-    const { width, height } = uprightSize(screen);
-    const { x, y } = uprightPoint(canvas, screen, clientX, clientY);
-    if (opts.clamp) return turnPoint({ x: clamp(x, width), y: clamp(y, height) }, screen);
-    return x < 0 || y < 0 || x > width || y > height ? null : turnPoint({ x, y }, screen);
+    const { x, y } = screenPoint(canvas, screen, clientX, clientY);
+    if (opts.clamp) return { x: clamp(x, screen.width), y: clamp(y, screen.height) };
+    return x < 0 || y < 0 || x > screen.width || y > screen.height ? null : { x, y };
 }
 
-/** A finger drawn from under the pointer the way a scroll of `dx`, `dy` pixels moves the page, kept on the screen. */
-export function scrollSwipe(canvas: CanvasBox, screen: SimScreen, clientX: number, clientY: number, dx: number, dy: number): Point[] {
-    const { width, height } = uprightSize(screen);
-    const start = uprightPoint(canvas, screen, clientX, clientY);
-    const end = { x: clamp(start.x - dx * start.scale, width), y: clamp(start.y - dy * start.scale, height) };
-    return Array.from({ length: SWIPE_STEPS + 1 }, (_, step) =>
-        turnPoint({ x: start.x + ((end.x - start.x) * step) / SWIPE_STEPS, y: start.y + ((end.y - start.y) * step) / SWIPE_STEPS }, screen),
-    );
+/** Where a finger scrolling by `dx`, `dy` CSS pixels goes next, and whether it ran into the screen's edge. */
+export function scrollStep(at: Point, screen: SimScreen, scale: number, dx: number, dy: number): { next: Point; stuck: boolean } {
+    const x = at.x - dx * scale;
+    const y = at.y - dy * scale;
+    const next = { x: clamp(x, screen.width), y: clamp(y, screen.height) };
+    return { next, stuck: next.x !== x || next.y !== y };
 }
 
 export function keyForDevice(event: { key: string; metaKey: boolean; ctrlKey: boolean }): { key: string } | { text: string } | null {
@@ -140,11 +116,8 @@ interface Gesture {
 }
 
 interface Scroll {
-    clientX: number;
-    clientY: number;
-    canvas: CanvasBox;
-    dx: number;
-    dy: number;
+    at: Point;
+    scale: number;
     timer: number;
 }
 
@@ -242,7 +215,10 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
     useEffect(() => {
         if (!ready || !shown) return;
         void refresh();
-        const timer = window.setInterval(() => void refresh(), REFRESH_MS);
+        const timer = window.setInterval(() => {
+            void refresh();
+            setScreenAsked((asked) => asked + 1);
+        }, REFRESH_MS);
         return () => window.clearInterval(timer);
     }, [ready, shown, refresh]);
 
@@ -281,6 +257,7 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
             ...(import.meta.env.DEV ? { onFps: setFps, onFormat: setFormat, onLatency: setLatency } : {}),
         });
         player.current = playing;
+        if (latestScreen.current) playing.turn(latestScreen.current.orientation);
         return () => {
             playing.stop();
             player.current = null;
@@ -288,6 +265,12 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
     }, [udid, booted, shown, streamAttempt, refresh]);
 
     useEffect(() => setFramed(false), [udid, booted]);
+
+    const latestScreen = useRef<SimScreen | null>(null);
+    useEffect(() => {
+        latestScreen.current = screen;
+        if (screen) player.current?.turn(screen.orientation);
+    }, [screen]);
 
     useEffect(() => {
         const current = gesture.current;
@@ -316,7 +299,7 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
     };
 
     const pointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
-        if (!udid || !screen || !framed || acting || gesture.current || !event.isPrimary || event.button !== 0) return;
+        if (!udid || !screen || !framed || acting || gesture.current || scroll.current || !event.isPrimary || event.button !== 0) return;
         const canvas = event.currentTarget;
         const rect = canvas.getBoundingClientRect();
         const point = devicePoint(canvasBox(canvas, rect), screen, event.clientX, event.clientY);
@@ -347,28 +330,32 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
         send(() => simApi.touch(udid, "up", point.x, point.y));
     };
 
+    const liftScroll = (target: string) => {
+        const current = scroll.current;
+        if (!current) return;
+        scroll.current = null;
+        window.clearTimeout(current.timer);
+        send(() => simApi.touch(target, "up", current.at.x, current.at.y));
+    };
     const wheel = (event: WheelEvent<HTMLCanvasElement>) => {
         if (!udid || !screen || !framed || acting || gesture.current) return;
         let current = scroll.current;
         if (!current) {
             const canvas = canvasBox(event.currentTarget, event.currentTarget.getBoundingClientRect());
-            if (!devicePoint(canvas, screen, event.clientX, event.clientY)) return;
-            current = scroll.current = { clientX: event.clientX, clientY: event.clientY, canvas, dx: 0, dy: 0, timer: 0 };
+            const start = devicePoint(canvas, screen, event.clientX, event.clientY);
+            if (!start) return;
+            const scale = screen.width / canvas.rect.width;
+            current = scroll.current = { at: start, scale: Math.max(scale, screen.height / canvas.rect.height), timer: 0 };
+            player.current?.markInput();
+            send(() => simApi.touch(udid, "down", start.x, start.y));
         }
         const lines = event.deltaMode === 1 ? 16 : 1;
-        current.dx += event.deltaX * lines;
-        current.dy += event.deltaY * lines;
+        const { next, stuck } = scrollStep(current.at, screen, current.scale, event.deltaX * lines, event.deltaY * lines);
+        current.at = next;
+        queueMove(udid, next);
         window.clearTimeout(current.timer);
-        const settled = current;
-        current.timer = window.setTimeout(() => {
-            scroll.current = null;
-            const path = scrollSwipe(settled.canvas, screen, settled.clientX, settled.clientY, settled.dx, settled.dy);
-            player.current?.markInput();
-            send(() => simApi.touch(udid, "down", path[0].x, path[0].y));
-            for (const point of path.slice(1, -1)) send(() => simApi.touch(udid, "move", point.x, point.y));
-            const end = path[path.length - 1];
-            send(() => simApi.touch(udid, "up", end.x, end.y));
-        }, WHEEL_SETTLE_MS);
+        if (stuck) return liftScroll(udid);
+        current.timer = window.setTimeout(() => liftScroll(udid), WHEEL_LIFT_MS);
     };
     useEffect(() => () => window.clearTimeout(scroll.current?.timer), []);
 
@@ -525,7 +512,7 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
                             <span
                                 className="sim-fps"
                                 title="Frames drawn in the last second, the format, and the last tap → frame time (dev builds only)">
-                                {fps} fps · {format === "h264" ? "H.264" : "MJPEG"}
+                                {fps ? `${fps} fps` : "still"} · {format === "h264" ? "H.264" : "MJPEG"}
                                 {latency !== null && ` · ${Math.round(latency)} ms`}
                             </span>
                         )}

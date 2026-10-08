@@ -1,4 +1,4 @@
-import { simApi, type SimStreamFormat } from "../api/sim";
+import { simApi, type SimScreen, type SimStreamFormat } from "../api/sim";
 import { avcDescription, codecName, isKeyFrame, lengthPrefixed, PPS, SPS, splitUnits, unitType } from "./h264";
 
 export type DecoderChoice = { kind: "annexb"; config: VideoDecoderConfig } | { kind: "avcc"; config: VideoDecoderConfig } | { kind: "mjpeg" };
@@ -20,9 +20,6 @@ export async function chooseDecoder(
 const webCodecsSupports = async (config: VideoDecoderConfig) =>
     typeof VideoDecoder !== "undefined" && (await VideoDecoder.isConfigSupported(config).catch(() => ({ supported: false }))).supported === true;
 
-/** Frames waiting in the decoder past which the stream skips ahead to the next key frame rather than fall further behind. */
-const DECODE_BACKLOG = 3;
-
 const unavailable = (error: unknown) => (error instanceof Error ? error.message : (JSON.stringify(error) ?? "")).includes("streamUnavailable");
 
 export interface ScreenStreamEvents {
@@ -40,6 +37,26 @@ export interface ScreenStreamEvents {
 export interface ScreenPlayer {
     stop: () => void;
     markInput: () => void;
+    /** Shows the screen turned the way the device is; the frames themselves always come upright. */
+    turn: (orientation: SimScreen["orientation"]) => void;
+}
+
+/** The transform that draws an upright frame `width` × `height` turned the way the device is. */
+export function turnTransform(
+    orientation: SimScreen["orientation"],
+    width: number,
+    height: number,
+): [number, number, number, number, number, number] {
+    switch (orientation) {
+        case "landscapeLeft":
+            return [0, -1, 1, 0, 0, width];
+        case "landscapeRight":
+            return [0, 1, -1, 0, height, 0];
+        case "portraitUpsideDown":
+            return [-1, 0, 0, -1, width, height];
+        default:
+            return [1, 0, 0, 1, 0, 0];
+    }
 }
 
 /**
@@ -49,13 +66,15 @@ export interface ScreenPlayer {
  */
 export function playScreen(udid: string, canvas: HTMLCanvasElement, events: ScreenStreamEvents): ScreenPlayer {
     const context = canvas.getContext("2d");
+    const upright = document.createElement("canvas");
+    const uprightContext = upright.getContext("2d");
+    let orientation: SimScreen["orientation"] = "portrait";
     let stopped = false;
     let watch: Promise<number> | null = null;
     let inputAt: number | null = null;
     let decoder: VideoDecoder | null = null;
     let choice: DecoderChoice | null = null;
     let configuring = false;
-    let waitingForKey = false;
     let decodingImage = false;
     let format: SimStreamFormat = "h264";
     let drawn = 0;
@@ -68,13 +87,28 @@ export function playScreen(udid: string, canvas: HTMLCanvasElement, events: Scre
           }, 1000)
         : null;
 
-    const draw = (image: CanvasImageSource, width: number, height: number) => {
-        if (!context || stopped) return;
+    const paint = () => {
+        if (!context || !upright.width) return;
+        const sideways = orientation.startsWith("landscape");
+        const width = sideways ? upright.height : upright.width;
+        const height = sideways ? upright.width : upright.height;
         if (canvas.width !== width || canvas.height !== height) {
             canvas.width = width;
             canvas.height = height;
         }
-        context.drawImage(image, 0, 0, width, height);
+        context.setTransform(...turnTransform(orientation, upright.width, upright.height));
+        context.drawImage(upright, 0, 0);
+        context.setTransform(1, 0, 0, 1, 0, 0);
+    };
+
+    const draw = (image: CanvasImageSource, width: number, height: number) => {
+        if (!uprightContext || stopped) return;
+        if (upright.width !== width || upright.height !== height) {
+            upright.width = width;
+            upright.height = height;
+        }
+        uprightContext.drawImage(image, 0, 0, width, height);
+        paint();
         if (!framed) {
             framed = true;
             events.onFirstFrame?.();
@@ -166,11 +200,6 @@ export function playScreen(udid: string, canvas: HTMLCanvasElement, events: Scre
             if (!(await startDecoder(sps, pps))) return;
         }
         if (!decoder || decoder.state !== "configured") return;
-        if (!key && (waitingForKey || decoder.decodeQueueSize >= DECODE_BACKLOG)) {
-            waitingForKey = true;
-            return;
-        }
-        waitingForKey = false;
         try {
             decoder.decode(
                 new EncodedVideoChunk({
@@ -198,6 +227,11 @@ export function playScreen(udid: string, canvas: HTMLCanvasElement, events: Scre
         },
         markInput: () => {
             inputAt = performance.now();
+        },
+        turn: (next) => {
+            if (next === orientation) return;
+            orientation = next;
+            paint();
         },
     };
 }

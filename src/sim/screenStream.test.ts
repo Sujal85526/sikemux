@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { simApi } from "../api/sim";
-import { playScreen } from "./screenStream";
+import { playScreen, turnTransform } from "./screenStream";
 
 vi.mock("../api/sim", () => ({
     simApi: { watch: vi.fn(), unwatch: vi.fn(), stopStream: vi.fn() },
@@ -104,7 +104,7 @@ describe("playing a device's screen", () => {
         expect(FakeDecoder.made).toEqual([]);
     });
 
-    it("skips ahead to the next key frame while the decoder is behind", async () => {
+    it("decodes every frame even while the decoder is behind, since a skipped one would hold the picture until the next key frame", async () => {
         playScreen("UDID", canvas, { onError: vi.fn() });
         await settle();
         sendFrame(keyFrame);
@@ -112,11 +112,23 @@ describe("playing a device's screen", () => {
         const decoder = FakeDecoder.made[0];
         decoder.decodeQueueSize = 5;
         sendFrame(deltaFrame);
-        decoder.decodeQueueSize = 0;
-        sendFrame(deltaFrame);
-        sendFrame(keyFrame);
         sendFrame(deltaFrame);
         await settle();
-        expect(decoder.decoded).toEqual(["key", "key", "delta"]);
+        expect(decoder.decoded).toEqual(["key", "delta", "delta"]);
+    });
+});
+
+describe("turning the picture with the device", () => {
+    const place = (orientation: Parameters<typeof turnTransform>[0], x: number, y: number) => {
+        const [a, b, c, d, e, f] = turnTransform(orientation, 1206, 2622);
+        return [a * x + c * y + e, b * x + d * y + f];
+    };
+
+    it("puts the upright frame's corners where a turned device shows them", () => {
+        expect(place("portrait", 1206, 0)).toEqual([1206, 0]);
+        expect(place("landscapeLeft", 1206, 0)).toEqual([0, 0]);
+        expect(place("landscapeLeft", 0, 0)).toEqual([0, 1206]);
+        expect(place("landscapeRight", 0, 2622)).toEqual([0, 0]);
+        expect(place("portraitUpsideDown", 1206, 2622)).toEqual([0, 0]);
     });
 });

@@ -1,9 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { simApi, type SimScreen } from "../api/sim";
+import { simApi } from "../api/sim";
 import { noteSimulatorActing, noteSimulatorAttached, noteSimulatorDetached } from "../state/simulatorAgents";
 import { playScreen } from "./screenStream";
-import { deviceOptions, devicePoint, keyForDevice, screenshotPath, scrollSwipe, SimulatorPane } from "./SimulatorPane";
+import { deviceOptions, devicePoint, keyForDevice, screenshotPath, scrollStep, SimulatorPane } from "./SimulatorPane";
 
 vi.mock("../api/sim", () => ({
     simApi: {
@@ -46,32 +46,19 @@ describe("pointing at the simulator's screen", () => {
         expect(devicePoint(canvas, deviceScreen, 105, 700, { clamp: true })).toEqual({ x: 0, y: 874 });
     });
 
-    it("turns a point on the upright picture into the points of a turned device", () => {
-        const landscape = { width: 874, height: 402, scale: 3 };
-        const corner = (orientation: SimScreen["orientation"], screenSize = landscape) =>
-            devicePoint(canvas, { ...screenSize, orientation }, drawnLeft, 50);
-        expect(corner("landscapeLeft")).toEqual({ x: 0, y: 402 });
-        expect(corner("landscapeRight")).toEqual({ x: 874, y: 0 });
-        expect(corner("portraitUpsideDown", { width: 402, height: 874, scale: 3 })).toEqual({ x: 402, y: 874 });
-
-        const centre = devicePoint(canvas, { ...landscape, orientation: "landscapeLeft" }, 400, 350)!;
+    it("reads a turned device's points straight off its canvas, which is drawn turned", () => {
+        const landscape = { width: 874, height: 402, scale: 3, orientation: "landscapeLeft" as const };
+        const turned = { width: 2622, height: 1206, rect: canvas.rect };
+        const drawnTop = 50 + (600 - 1206 * (600 / 2622)) / 2;
+        expect(devicePoint(turned, landscape, 100, drawnTop)).toEqual({ x: 0, y: 0 });
+        const centre = devicePoint(turned, landscape, 400, 350)!;
         expect(centre.x).toBeCloseTo(437);
         expect(centre.y).toBeCloseTo(201);
-        expect(devicePoint(canvas, { ...landscape, orientation: "landscapeRight" }, 105, 700, { clamp: true })).toEqual({ x: 0, y: 0 });
     });
 
-    it("scrolls by drawing a finger the other way, kept on the screen", () => {
-        const path = scrollSwipe(canvas, deviceScreen, 400, 350, 0, 10_000);
-        expect(path[0].x).toBeCloseTo(201);
-        expect(path[0].y).toBeCloseTo(437);
-        expect(path.at(-1)!.x).toBeCloseTo(201);
-        expect(path.at(-1)!.y).toBe(0);
-    });
-
-    it("scrolls a turned device along the picture's own up and down", () => {
-        const path = scrollSwipe(canvas, { width: 874, height: 402, scale: 3, orientation: "landscapeLeft" }, 400, 350, 0, 10_000);
-        expect(path.at(-1)!.x).toBe(0);
-        expect(path.at(-1)!.y).toBeCloseTo(201);
+    it("scrolls by moving a finger the other way, and says when it reaches the screen's edge", () => {
+        expect(scrollStep({ x: 201, y: 437 }, deviceScreen, 1, 0, 100)).toEqual({ next: { x: 201, y: 337 }, stuck: false });
+        expect(scrollStep({ x: 201, y: 437 }, deviceScreen, 1, 0, 10_000)).toEqual({ next: { x: 201, y: 0 }, stuck: true });
     });
 });
 
@@ -108,7 +95,7 @@ describe("the simulator pane", () => {
             target.width = 1206;
             target.height = 2622;
             firstFrame = () => events.onFirstFrame?.();
-            return { stop: vi.fn(), markInput: vi.fn() };
+            return { stop: vi.fn(), markInput: vi.fn(), turn: vi.fn() };
         });
         HTMLCanvasElement.prototype.setPointerCapture = vi.fn();
         HTMLCanvasElement.prototype.getBoundingClientRect = () => ({ ...canvas.rect, right: 700, bottom: 650, x: 100, y: 50, toJSON: () => ({}) });
