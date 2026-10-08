@@ -8,8 +8,8 @@ use std::sync::{Arc, Mutex};
 use serde::Deserialize;
 use sikemux_core::client::CoreClient;
 use sikemux_core::protocol::{
-    BackdropImage, ChatLauncher, DeviceAccess, ProjectInfo, PublishedChat, PublishedRecent,
-    RemoteStatus,
+    AllowedDevice, BackdropImage, ChatLauncher, DeviceAccess, ProjectInfo, PublishedChat,
+    PublishedRecent, RemoteStatus,
 };
 use tauri::{AppHandle, Manager, State};
 
@@ -293,4 +293,13 @@ pub async fn remote_answer_pairing(
         .answer_pairing(id, allow, access)
         .await
         .map_err(core_error)
+}
+
+#[tauri::command]
+pub async fn remote_allow_devices(
+    manager: State<'_, PtyManager>,
+    devices: Vec<AllowedDevice>,
+) -> AppResult<RemoteStatus> {
+    let client = manager.client().await?;
+    client.allow_devices(devices).await.map_err(core_error)
 }
