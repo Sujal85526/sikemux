@@ -140,10 +140,11 @@ const budgets = [
     // so do Sikemux's own tool calls, drawn as a verb and what they acted on.
     // A turn that needs a sign-in or hit a usage limit offers the account to
     // move to on its error, and the move shows in the transcript. A page an
-    // agent built and shows sits in its reply too.
+    // agent built and shows sits in its reply too. The transcript lays itself
+    // out from the bottom, and tool rows draw an icon for what each call does.
     label: "ACP chat lazy chunk",
     pattern: /^AgentSurface-.*\.js$/,
-    raw: 130_000,
+    raw: 134_000,
     gzip: 41_000,
   },
   {
@@ -210,10 +211,11 @@ const budgets = [
     // weight/style plus an icons face, each carrying an explicit
     // unicode-range so the ~930 KB icons file only downloads once a PUA
     // glyph is actually rendered. Plugin panes bring their own sheets.
-    // The rail's account cards and the desk's stepped edge and tab kinds add to it.
+    // The rail's account cards and the desk's stepped edge and tab kinds add to it,
+    // as do the simulator's device and controls in the desk's strip and the tree's ignored files.
     label: "application CSS",
     pattern: /^index-.*\.css$/,
-    raw: 230_000,
+    raw: 234_000,
     gzip: 40_500,
   },
   {
