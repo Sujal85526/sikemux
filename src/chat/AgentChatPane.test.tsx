@@ -1395,22 +1395,26 @@ describe("AgentChatPane", () => {
         expect(screen.queryByRole("button", { name: "Jump to latest message" })).not.toBeInTheDocument();
     });
 
-    it("keeps the reader's place when something grows below them", async () => {
+    it("keeps the reader's place when something grows below them, and not when the row they are on draws", async () => {
         await openTranscript();
         const scroller = document.querySelector(".chat-scroll") as HTMLElement;
         const content = document.querySelector(".chat-scroll-content") as HTMLElement;
         const row = document.querySelector(".chat-row") as HTMLElement;
-        let rowTop = 30;
+        let box = { top: -40, bottom: 120 };
         scroller.getBoundingClientRect = () => ({ top: 0, left: 0, width: 600, height: 400, bottom: 400, right: 600 }) as DOMRect;
-        row.getBoundingClientRect = () => ({ top: rowTop }) as DOMRect;
+        row.getBoundingClientRect = () => box as DOMRect;
         Object.defineProperty(document, "elementFromPoint", { configurable: true, value: () => row });
 
         scroller.scrollTop = -900;
         fireEvent.scroll(scroller);
-        // A reply streaming in below pushes the row the reader is on up the screen.
-        rowTop = -170;
+        // The row at the top of the view is drawn at its real height, which it grows into upwards.
+        box = { top: -400, bottom: 120 };
         reportResize(content);
+        expect(scroller.scrollTop).toBe(-900);
 
+        // A reply streaming in below pushes the row the reader is on up the screen.
+        box = { top: -600, bottom: -80 };
+        reportResize(content);
         expect(scroller.scrollTop).toBe(-1100);
         Reflect.deleteProperty(document, "elementFromPoint");
     });

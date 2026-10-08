@@ -9,14 +9,16 @@ const distanceFromBottom = (scroller: HTMLElement) => Math.max(0, -scroller.scro
 
 /*
  * The transcript is laid out from the bottom up, so the browser itself holds
- * the bottom still as a reply grows, and holds the reader's place as rows
- * above them draw at their real height. Nothing here moves the scroll position
- * while the reader is scrolling.
+ * the bottom still as a reply grows, and holds the reader's place as anything
+ * above them changes height. Nothing here moves the scroll position while the
+ * reader is scrolling.
  *
  * The one change the browser cannot absorb is something growing below the
  * reader, such as a reply streaming in while they read further up. That would
  * push what they are reading up the screen, so the row at the top of the view
- * is noted on every scroll and put back where it was.
+ * is noted on every scroll and put back where it was. It is held by its bottom
+ * edge: laid out from the bottom, a row that grows grows upwards, and only
+ * growth below it moves that edge.
  */
 export function useStickToBottom({
     scrollRef,
@@ -29,7 +31,7 @@ export function useStickToBottom({
 }) {
     const [atBottom, setAtBottom] = useState(true);
     const atBottomRef = useRef(true);
-    const anchorRef = useRef<{ row: Element; top: number } | null>(null);
+    const anchorRef = useRef<{ row: Element; bottom: number } | null>(null);
 
     const noteAnchor = useCallback(() => {
         const scroller = scrollRef.current;
@@ -39,7 +41,7 @@ export function useStickToBottom({
         for (const offset of [1, 24, 64]) {
             const row = document.elementFromPoint?.(view.left + view.width / 2, view.top + offset)?.closest(".chat-row");
             if (row && scroller.contains(row)) {
-                anchorRef.current = { row, top: row.getBoundingClientRect().top - view.top };
+                anchorRef.current = { row, bottom: row.getBoundingClientRect().bottom - view.top };
                 return;
             }
         }
@@ -52,7 +54,7 @@ export function useStickToBottom({
         const resized = new ResizeObserver(() => {
             const anchor = anchorRef.current;
             if (atBottomRef.current || !anchor?.row.isConnected) return;
-            const moved = anchor.row.getBoundingClientRect().top - scroller.getBoundingClientRect().top - anchor.top;
+            const moved = anchor.row.getBoundingClientRect().bottom - scroller.getBoundingClientRect().top - anchor.bottom;
             if (Math.abs(moved) >= 1) scroller.scrollTop += moved;
         });
         resized.observe(content);

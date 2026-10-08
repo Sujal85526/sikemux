@@ -21,8 +21,10 @@
 }
 
 /* Laid out from the bottom up: the browser holds the bottom still as a reply
-   grows, and holds the reader's place as rows above them draw at their real
-   height, without the transcript ever moving its own scroll position. */
+   grows, and holds the reader's place as rows above them change height,
+   without the transcript ever moving its own scroll position. Rows out of view
+   are still laid out: skipped with content-visibility, each one changes height
+   as it scrolls in, and WebKit draws a frame out of place at every change. */
 .chat-scroll {
     display: flex;
     flex-direction: column-reverse;
@@ -38,12 +40,6 @@
     flex: none;
     margin-bottom: auto;
     padding: 25px 0 32px;
-}
-
-/* A row out of view is not drawn; until it first is, it holds its guessed
-   height, and after that the height it was drawn at. */
-.chat-row {
-    content-visibility: auto;
 }
 
 .chat-message {

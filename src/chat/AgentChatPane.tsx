@@ -24,7 +24,6 @@ import { PermissionRequest } from "./PermissionRequest";
 import { BackgroundTasks, QueuedMessages, RunningSubagents } from "./LiveStack";
 import { ChatComposer } from "./ChatComposer";
 import { useMessageArrival } from "./useMessageArrival";
-import { designedRowHeight } from "./rowEstimate";
 import { useAcpSession } from "./useAcpSession";
 import { useSavedUsage } from "./useSavedUsage";
 import { usePromptQueue } from "./usePromptQueue";
@@ -356,11 +355,7 @@ export function AgentChatPane({
                                         const index = firstRow + offset;
                                         const meta = rowMeta(displayState.messages, index);
                                         return (
-                                            <div
-                                                key={message.id}
-                                                data-index={index}
-                                                className="chat-row"
-                                                style={{ containIntrinsicSize: `auto ${designedRowHeight(message)}px` }}>
+                                            <div key={message.id} data-index={index} className="chat-row">
                                                 <ChatMessageRow
                                                     message={message}
                                                     live={displayState.running && index === displayState.messages.length - 1}
