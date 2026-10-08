@@ -114,7 +114,15 @@ struct SikemuxSim {
             }
             try await simulators.send(.composite(events), to: udid)
         case "button":
-            try await simulators.send(.shortButtonPress(try button(try require(request.button, "button"))), to: udid)
+            let pressed = try button(try require(request.button, "button"))
+            switch request.phase {
+            case nil: try await simulators.send(.shortButtonPress(pressed), to: udid)
+            case "down": try await simulators.send(.button(direction: .down, button: pressed), to: udid)
+            case "up": try await simulators.send(.button(direction: .up, button: pressed), to: udid)
+            default: throw Failure(reason: "badRequest", message: "A button's phase is down or up, or none for a press")
+            }
+        case "chrome":
+            return ["chrome": try await simulators.chrome(udid) ?? NSNull()]
         case "logs":
             return try await simulators.logs(
                 on: udid, process: request.process, after: request.after ?? 0, generation: request.generation, limit: min(max(request.limit ?? 200, 1), LogTail.capacity))
@@ -203,6 +211,7 @@ struct SikemuxSim {
     private static func button(_ name: String) throws -> SimulatorHIDButton {
         let buttons: [String: SimulatorHIDButton] = [
             "home": .homeButton, "lock": .lock, "side": .sideButton, "siri": .siri, "volumeUp": .volumeUp, "volumeDown": .volumeDown,
+            "action": .action,
         ]
         guard let button = buttons[name] else {
             throw Failure(reason: "badRequest", message: "Unknown button \(name). Use one of: \(buttons.keys.sorted().joined(separator: ", "))")

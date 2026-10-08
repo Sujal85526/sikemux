@@ -18,6 +18,7 @@ actor Simulators {
     /// costs a send rather than a whole tap's settling.
     private var fingers: [String: Finger] = [:]
     private var known: [String: Simulator] = [:]
+    private var chromes: [String: [String: Any]] = [:]
     /// The orientation each device was last turned to here, for runtimes that cannot report it.
     private var turned: [String: String] = [:]
     /// Devices whose runtime cannot report its orientation, and so turns by the older event that
@@ -56,24 +57,83 @@ actor Simulators {
         guard let bundle = simulator.device.deviceType?.bundle,
             let profile = bundle.url(forResource: "profile", withExtension: "plist").flatMap({ NSDictionary(contentsOf: $0) }),
             let name = profile["framebufferMask"] as? String,
-            let url = bundle.url(forResource: name, withExtension: "pdf"),
-            let page = CGPDFDocument(url as CFURL)?.page(at: 1)
+            let url = bundle.url(forResource: name, withExtension: "pdf")
         else { return nil }
+        return Self.png(url, scale: 1)?.url
+    }
+
+    /// The device's frame as Simulator draws it from Xcode's DeviceKit chrome: the bezel with its screen
+    /// opening, and each side button with where it sits, how far it slides out under the pointer and the
+    /// image it shows pressed. Sizes are in points; images are PNG data URLs at the screen's scale.
+    func chrome(_ udid: String?) async throws -> [String: Any]? {
+        let simulator = try await booted(udid)
+        guard let bundle = simulator.device.deviceType?.bundle,
+            let profile = bundle.url(forResource: "profile", withExtension: "plist").flatMap({ NSDictionary(contentsOf: $0) }),
+            let identifier = profile["chromeIdentifier"] as? String,
+            let info = simulator.screenInfo, info.scale > 0
+        else { return nil }
+        let scale = Double(info.scale)
+        let key = "\(identifier) \(scale)"
+        if let known = chromes[key] { return known }
+        let name = identifier.split(separator: ".").last.map(String.init) ?? identifier
+        let resources = URL(fileURLWithPath: "/Library/Developer/DeviceKit/Chrome/\(name).devicechrome/Contents/Resources")
+        guard let data = try? Data(contentsOf: resources.appendingPathComponent("chrome.json")),
+            let layout = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let images = layout["images"] as? [String: Any],
+            let compositeName = images["composite"] as? String,
+            let composite = Self.png(resources.appendingPathComponent("\(compositeName).pdf"), scale: scale)
+        else { return nil }
+        let padding = images["devicePadding"] as? [String: Double] ?? [:]
+        let buttons: [[String: Any]] = (layout["inputs"] as? [[String: Any]] ?? []).compactMap { input in
+            guard input["type"] as? String == "button",
+                let image = (input["image"] as? String).flatMap({ Self.png(resources.appendingPathComponent("\($0).pdf"), scale: scale) }),
+                let offsets = input["offsets"] as? [String: [String: Double]],
+                let normal = offsets["normal"]
+            else { return nil }
+            let down = (input["imageDown"] as? String).flatMap { Self.png(resources.appendingPathComponent("\($0).pdf"), scale: scale) }
+            return [
+                "name": input["name"] as? String ?? "",
+                "title": input["accessibilityTitle"] as? String ?? "",
+                "anchor": input["anchor"] as? String ?? "left",
+                "x": normal["x"] ?? 0,
+                "y": normal["y"] ?? 0,
+                "hoverX": offsets["rollover"]?["x"] ?? normal["x"] ?? 0,
+                "width": image.width / scale,
+                "height": image.height / scale,
+                "image": image.url,
+                "imageDown": down?.url ?? NSNull(),
+            ]
+        }
+        let answer: [String: Any] = [
+            "image": composite.url,
+            "width": composite.width / scale,
+            "height": composite.height / scale,
+            "padding": ["top": padding["top"] ?? 0, "left": padding["left"] ?? 0, "bottom": padding["bottom"] ?? 0, "right": padding["right"] ?? 0],
+            "buttons": buttons,
+        ]
+        chromes[key] = answer
+        return answer
+    }
+
+    /// The first page of a PDF drawn `scale` pixels to its point, as a PNG data URL, with its size in pixels.
+    static func png(_ url: URL, scale: Double) -> (url: String, width: Double, height: Double)? {
+        guard let page = CGPDFDocument(url as CFURL)?.page(at: 1) else { return nil }
         let box = page.getBoxRect(.mediaBox)
-        let width = Int(box.width.rounded())
-        let height = Int(box.height.rounded())
+        let width = Int((box.width * scale).rounded())
+        let height = Int((box.height * scale).rounded())
         guard width > 0, height > 0,
             let context = CGContext(
                 data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
                 space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
         else { return nil }
+        context.scaleBy(x: scale, y: scale)
         context.drawPDFPage(page)
         guard let image = context.makeImage() else { return nil }
         let png = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(png, "public.png" as CFString, 1, nil) else { return nil }
         CGImageDestinationAddImage(destination, image, nil)
         guard CGImageDestinationFinalize(destination) else { return nil }
-        return "data:image/png;base64," + (png as Data).base64EncodedString()
+        return ("data:image/png;base64," + (png as Data).base64EncodedString(), Double(width), Double(height))
     }
 
     static func turnedSize(_ upright: CGSize, _ orientation: String) -> CGSize {
