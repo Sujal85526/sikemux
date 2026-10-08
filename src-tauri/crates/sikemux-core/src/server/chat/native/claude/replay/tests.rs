@@ -260,3 +260,77 @@ fn replay_routes_subagent_records_to_child_sessions() {
         ]
     );
 }
+
+#[test]
+fn a_subagents_own_transcript_replays_inside_its_child_session() {
+    let dir = tempfile::tempdir().expect("dir");
+    let path = write_transcript(
+        dir.path(),
+        &[
+            user(
+                "u1",
+                None,
+                json!([{ "type": "text", "text": "look around" }]),
+            ),
+            assistant(
+                "a1",
+                Some("u1"),
+                "msg_1",
+                "claude-opus-5-5",
+                json!([{ "type": "tool_use", "id": "toolu_agent", "name": "Agent",
+                         "input": { "description": "Explore the repo", "prompt": "Find the tests" } }]),
+            ),
+            user(
+                "r1",
+                Some("a1"),
+                json!([{ "type": "tool_result", "tool_use_id": "toolu_agent", "content": "Found them" }]),
+            ),
+            assistant(
+                "a2",
+                Some("r1"),
+                "msg_2",
+                "claude-opus-5-5",
+                json!([{ "type": "text", "text": "Done" }]),
+            ),
+        ],
+    );
+    let agents = path.with_extension("").join("subagents");
+    std::fs::create_dir_all(&agents).expect("agents dir");
+    std::fs::write(
+        agents.join("agent-x.meta.json"),
+        json!({ "agentType": "Explore", "toolUseId": "toolu_agent" }).to_string(),
+    )
+    .expect("meta");
+    let mut side = user("s1", None, json!("Find the tests"));
+    side["isSidechain"] = json!(true);
+    let mut read = assistant(
+        "s2",
+        Some("s1"),
+        "msg_s",
+        "claude-haiku-4-5",
+        json!([{ "type": "tool_use", "id": "toolu_read", "name": "Read", "input": { "file_path": "/repo/app/a.rs" } }]),
+    );
+    read["isSidechain"] = json!(true);
+    std::fs::write(agents.join("agent-x.jsonl"), format!("{side}\n{read}\n")).expect("agent");
+
+    let records = with_subagents(&path, read_chain(&path).expect("chain"));
+    let updates = replay(&records, SESSION, Path::new("/repo/app"));
+    let child = format!("{SESSION}:replay-subagent:toolu_agent");
+    let spawned = updates
+        .iter()
+        .position(|(_, update)| update["sessionUpdate"] == "subagent_spawned")
+        .expect("the subagent is announced");
+    assert_eq!(updates[spawned].1["subagentSessionId"], child.as_str());
+    assert_eq!(updates[spawned].1["name"], "Explore the repo");
+    let inside: Vec<&Value> = updates
+        .iter()
+        .filter(|(session, _)| *session == child)
+        .map(|(_, update)| update)
+        .collect();
+    assert_eq!(inside.len(), 1, "{inside:?}");
+    assert_eq!(inside[0]["title"], "Read a.rs");
+    assert!(updates.iter().any(|(session, update)| *session == SESSION
+        && update["sessionUpdate"] == "subagent_state_update"
+        && update["state"] == "completed"));
+    assert_eq!(resumed_model(&records).as_deref(), Some("claude-opus-5-5"));
+}

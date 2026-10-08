@@ -335,7 +335,7 @@ impl Backend for Claude {
         let mut resumed_model = None;
         if launch.resume_id.is_some() {
             if let Some(path) = replay::transcript_path(&config_dir(launch), &session_id) {
-                let records = replay::read_chain(&path)?;
+                let records = replay::with_subagents(&path, replay::read_chain(&path)?);
                 resumed_model = replay::resumed_model(&records);
                 for (session, update) in replay::replay(&records, &session_id, &launch.cwd) {
                     sink.update(&session, update);

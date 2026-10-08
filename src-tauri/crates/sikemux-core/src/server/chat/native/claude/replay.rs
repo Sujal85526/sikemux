@@ -48,6 +48,83 @@ pub fn read_chain(path: &Path) -> Result<Vec<Value>, String> {
     Ok(finish_messages(chain))
 }
 
+/// `records` with each subagent's own transcript put in after the call that
+/// spawned it, so a loaded chat shows what its subagents did. Claude Code
+/// keeps those beside the chat's, in `<session>/subagents/agent-<id>.jsonl`,
+/// each with a `.meta.json` naming the spawning call.
+pub fn with_subagents(path: &Path, mut records: Vec<Value>) -> Vec<Value> {
+    let dir = path.with_extension("").join("subagents");
+    let Ok(listing) = std::fs::read_dir(&dir) else {
+        return records;
+    };
+    let mut agents: Vec<(String, String, Vec<Value>)> = listing
+        .flatten()
+        .filter_map(|entry| {
+            let meta_path = entry.path();
+            let stem = meta_path
+                .file_name()?
+                .to_str()?
+                .strip_suffix(".meta.json")?;
+            let meta: Value = serde_json::from_slice(&std::fs::read(&meta_path).ok()?).ok()?;
+            let spawner = str_field(&meta, "toolUseId")?.to_owned();
+            let bytes = std::fs::read(dir.join(format!("{stem}.jsonl"))).ok()?;
+            let mut entries = parse_entries(&bytes);
+            for entry in &mut entries {
+                entry["isSidechain"] = Value::Bool(false);
+            }
+            let mut chain = finish_messages(active_branch(entries));
+            // The task it was handed opens its transcript, and the subagent's
+            // own row already says it.
+            if chain.first().and_then(|record| str_field(record, "type")) == Some("user") {
+                chain.remove(0);
+            }
+            for record in &mut chain {
+                record["parent_tool_use_id"] = Value::String(spawner.clone());
+            }
+            let started = chain
+                .first()
+                .and_then(|record| str_field(record, "timestamp"))
+                .unwrap_or_default()
+                .to_owned();
+            Some((spawner, started, chain))
+        })
+        .collect();
+    // Inserted latest first, so agents spawned by one message keep their order.
+    agents.sort_by(|a, b| b.1.cmp(&a.1));
+    loop {
+        let before = agents.len();
+        let mut index = 0;
+        while index < agents.len() {
+            let spawned_at = records
+                .iter()
+                .position(|record| spawns(record, &agents[index].0));
+            match spawned_at {
+                Some(position) => {
+                    let (_, _, chain) = agents.remove(index);
+                    records.splice(position + 1..position + 1, chain);
+                }
+                None => index += 1,
+            }
+        }
+        if agents.is_empty() || agents.len() == before {
+            return records;
+        }
+    }
+}
+
+/// Whether `record` holds the tool call `tool_use_id`.
+fn spawns(record: &Value, tool_use_id: &str) -> bool {
+    record
+        .pointer("/message/content")
+        .and_then(Value::as_array)
+        .is_some_and(|blocks| {
+            blocks.iter().any(|block| {
+                str_field(block, "type") == Some("tool_use")
+                    && str_field(block, "id") == Some(tool_use_id)
+            })
+        })
+}
+
 fn parse_entries(bytes: &[u8]) -> Vec<Value> {
     bytes
         .split(|byte| *byte == b'\n')
