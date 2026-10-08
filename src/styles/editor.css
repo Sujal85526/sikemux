@@ -167,6 +167,13 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+.tree-row.ignored {
+    color: var(--text-disabled);
+}
+.tree-row.ignored > .tree-folder,
+.tree-row.ignored > .tree-file {
+    opacity: 0.5;
+}
 
 /* file-tree right-click context menu */
 .tree-ctx-scrim {
