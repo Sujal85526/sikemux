@@ -58,10 +58,10 @@ describe("watchRun", () => {
         send(update(id, "succeeded", true));
         expect(host.notify).toHaveBeenCalledWith(
             "success",
-            "Deployed feature/cart to staging",
+            "Deployed feature/cart to staging/backend",
             expect.objectContaining({ action: expect.anything() }),
         );
-        expect(host.notifyDesktop).toHaveBeenCalledWith("Deployed feature/cart to staging", "staging/backend/api · took 1m 30s");
+        expect(host.notifyDesktop).toHaveBeenCalledWith("Deployed feature/cart to staging/backend", "api · took 1m 30s");
         expect(api.watchStop).toHaveBeenCalledWith(7);
 
         send(update(id, "succeeded", true));
@@ -72,7 +72,7 @@ describe("watchRun", () => {
         const id = ++nextId;
         await watchRun(job, id, () => true);
         send(update(id, "failed", true));
-        expect(host.notify).toHaveBeenCalledWith("error", "Deploy of feature/cart to staging failed", expect.anything());
+        expect(host.notify).toHaveBeenCalledWith("error", "Deploy of feature/cart to staging/backend failed", expect.anything());
         expect(host.notifyDesktop).not.toHaveBeenCalled();
     });
 
@@ -87,7 +87,7 @@ describe("watchRun", () => {
         const id = ++nextId;
         await watchRun(job, id, () => true);
         send({ execution: null, state: { executionState: "FAILED", steps: [], stepCount: 2, completed: true }, error: "502", terminal: true });
-        expect(host.notify).toHaveBeenCalledWith("error", "staging/backend/api on staging failed", expect.anything());
+        expect(host.notify).toHaveBeenCalledWith("error", "api on staging/backend failed", expect.anything());
     });
 
     it("says it lost track of a run when Rundeck stopped answering altogether", async () => {

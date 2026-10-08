@@ -1,5 +1,5 @@
 import type { RundeckExecution } from "./api";
-import { branchOf, displayStatus, duration, envOf, qualifiedName } from "./shape";
+import { branchOf, displayStatus, duration, qualifiedName } from "./shape";
 
 export interface RunNotice {
     ok: boolean;
@@ -17,8 +17,8 @@ const ENDINGS: Record<string, string> = {
 /** What to tell the person when a run they started ends: a deploy names its branch and where it went. */
 export function runNotice(execution: RundeckExecution, branchOptions: string[]): RunNotice {
     const job = execution.job;
-    const name = job?.name ? qualifiedName(job.name, job.group) : `Execution #${execution.id}`;
-    const place = envOf(job?.project ?? execution.project ?? "", job?.group);
+    const name = job?.name ?? `Execution #${execution.id}`;
+    const place = job?.group || job?.project || execution.project || "";
     const branch = branchOf(job?.options, branchOptions);
     const took = duration(execution["date-started"]?.date ?? null, execution["date-ended"]?.date ?? null);
     const status = (execution.status ?? "").toLowerCase();

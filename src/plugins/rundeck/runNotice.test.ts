@@ -24,21 +24,21 @@ describe("runNotice", () => {
     it("says which branch went where, and how long it took", () => {
         expect(runNotice(execution("succeeded"), BRANCH_OPTIONS)).toEqual({
             ok: true,
-            title: "Deployed feature/cart to staging",
-            body: "staging/backend/api · took 4m 12s",
+            title: "Deployed feature/cart to staging/backend",
+            body: "api · took 4m 12s",
         });
     });
 
     it("says a deploy failed, was aborted or timed out", () => {
         expect(runNotice(execution("failed"), BRANCH_OPTIONS)).toEqual({
             ok: false,
-            title: "Deploy of feature/cart to staging failed",
-            body: "staging/backend/api · after 4m 12s",
+            title: "Deploy of feature/cart to staging/backend failed",
+            body: "api · after 4m 12s",
         });
-        expect(runNotice(execution("aborted"), BRANCH_OPTIONS).title).toBe("Deploy of feature/cart to staging was aborted");
-        expect(runNotice(execution("timedout"), BRANCH_OPTIONS).title).toBe("Deploy of feature/cart to staging timed out");
+        expect(runNotice(execution("aborted"), BRANCH_OPTIONS).title).toBe("Deploy of feature/cart to staging/backend was aborted");
+        expect(runNotice(execution("timedout"), BRANCH_OPTIONS).title).toBe("Deploy of feature/cart to staging/backend timed out");
         expect(runNotice(execution("other", { customStatus: "rolled back" }), BRANCH_OPTIONS).title).toBe(
-            "Deploy of feature/cart to staging ended: rolled back",
+            "Deploy of feature/cart to staging/backend ended: rolled back",
         );
     });
 
