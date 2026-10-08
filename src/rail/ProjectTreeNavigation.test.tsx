@@ -39,9 +39,7 @@ it("opens and reuses Git and Search from the expanded project tree", () => {
     }
 });
 
-it("returns to the existing terminal from a project tool", () => {
+it("lists no terminal row under a project", () => {
     render(<SideRail />);
-    fireEvent.click(screen.getByRole("button", { name: "Git" }));
-    fireEvent.click(screen.getByRole("button", { name: "Term" }));
-    expect(activeRole()).toBe("term");
+    expect(screen.queryByRole("button", { name: "Term" })).toBeNull();
 });

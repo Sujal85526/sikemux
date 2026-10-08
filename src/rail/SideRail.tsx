@@ -225,7 +225,6 @@ function ProjectBlock({ s }: { s: Session }) {
         .filter(Boolean);
     const rollup = rollupAgentStates(agents.map((agent) => activityById[agent.id]));
     const rollupBackground = agents.some((agent) => (backgroundById[agent.id] ?? 0) > 0);
-    const tabCount = sessionWindows.filter((w) => w.role === "term").length;
 
     const visibleAgents = agents.slice(0, MAX_BADGE_ICONS);
     const agentOverflow = agents.length - visibleAgents.length;
@@ -273,7 +272,6 @@ function ProjectBlock({ s }: { s: Session }) {
         );
     }
 
-    const winByRole = (role: WindowRole): Window | undefined => sessionWindows.find((w) => w.role === role);
     const activeRole = sessionWindows.find((w) => w.id === s.activeWindowId)?.role;
     const isSubActive = (role: WindowRole): boolean => (role === "files" ? fileTreeOpen : activeRole === role);
 
@@ -286,38 +284,13 @@ function ProjectBlock({ s }: { s: Session }) {
             cmd.openGitWorkbench();
             return;
         }
-        if (role === "search") {
-            cmd.focusGlobalSearch();
-            return;
-        }
-        const w = winByRole(role);
-        if (w) {
-            rail.jumpToWindow(s.id, w.id);
-        } else if (role === "term") {
-            if (s.id !== activeSessionId) cmd.selectSession(s.id);
-            cmd.newWindow();
-        }
+        if (role === "search") cmd.focusGlobalSearch();
     };
 
-    const termIcons: ReactNode[] =
-        tabCount > 1
-            ? Array.from({ length: tabCount }, (_, i) => (
-                  <span key={i} className="proj-pip proj-pip-term">
-                      <IconCommand size={14} />
-                  </span>
-              ))
-            : [];
     const children: SubRow[] = [
-        { role: "files", label: "Files", kbd: kb("window.files"), title: `Files — ${kb("window.files")}`, icons: [] },
-        {
-            role: "term",
-            label: "Term",
-            kbd: kb("window.terminal"),
-            title: `Term${tabCount > 1 ? ` · ${tabCount} tabs` : ""} — ${kb("window.terminal")}`,
-            icons: termIcons,
-        },
-        { role: "git", label: "Git", kbd: kb("window.git"), title: `Git — ${kb("window.git")}`, icons: [] },
-        { role: "search", label: "Search", kbd: kb("window.search"), title: `Search — ${kb("window.search")}`, icons: [] },
+        { role: "files", label: "Files", kbd: kb("window.files"), title: `Files — ${kb("window.files")}` },
+        { role: "git", label: "Git", kbd: kb("window.git"), title: `Git — ${kb("window.git")}` },
+        { role: "search", label: "Search", kbd: kb("window.search"), title: `Search — ${kb("window.search")}` },
     ];
     return (
         <div ref={treeRef} className={`proj-tree active${rail.projectDragClass(s.id)}`} data-project-id={s.id}>
@@ -341,8 +314,6 @@ function ProjectBlock({ s }: { s: Session }) {
             <div className="proj-children" ref={foldChildren}>
                 {children.map((c) => {
                     const subActive = isSubActive(c.role);
-                    const visibleIcons = c.icons.slice(0, MAX_BADGE_ICONS);
-                    const overflow = c.icons.length - visibleIcons.length;
                     return (
                         <Tooltip key={c.role} label={c.title} side="right">
                             <button
@@ -359,12 +330,6 @@ function ProjectBlock({ s }: { s: Session }) {
                                     <WindowIcon role={c.role} size={13} />
                                 </span>
                                 <span className="proj-child-label">{c.label}</span>
-                                {visibleIcons.length > 0 && (
-                                    <span className="proj-child-icons">
-                                        {visibleIcons}
-                                        {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
-                                    </span>
-                                )}
                                 {c.kbd && <span className="proj-child-kbd">{c.kbd}</span>}
                             </button>
                         </Tooltip>
@@ -380,7 +345,6 @@ interface SubRow {
     label: string;
     kbd?: string;
     title: string;
-    icons: ReactNode[];
 }
 
 function renderSession(s: Session) {
