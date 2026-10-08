@@ -146,6 +146,27 @@
     font-weight: 600;
 }
 
+.jira-detail-key {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.jira-icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: var(--radius-1);
+    color: var(--text-tertiary);
+}
+
+.jira-icon-button:hover {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+}
+
 .jira-key.link {
     color: var(--text-tertiary);
 }
