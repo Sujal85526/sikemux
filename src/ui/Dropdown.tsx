@@ -32,6 +32,9 @@ export function Dropdown({
     align = "left",
     menuWidth,
     search,
+    anchor,
+    open: openWhen,
+    onOpenChange,
 }: {
     value: string;
     options: readonly DropdownOption[];
@@ -46,8 +49,15 @@ export function Dropdown({
     menuWidth?: number;
     /** Puts a filter box at the top of the menu, with this placeholder. */
     search?: string;
+    /** Opens the menu under this element instead of a button of its own; `open` then says when. */
+    anchor?: HTMLElement | null;
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
 }) {
-    const [open, setOpen] = useState(false);
+    const [ownOpen, setOwnOpen] = useState(false);
+    const anchored = anchor !== undefined;
+    const open = anchored ? !!openWhen && !!anchor : ownOpen;
+    const setOpen = (next: boolean) => (anchored ? onOpenChange?.(next) : setOwnOpen(next));
     const [index, setIndex] = useState(0);
     const [position, setPosition] = useState({ left: 0, top: 0, width: 0, maxHeight: 280 });
     const buttonRef = useRef<HTMLButtonElement>(null);
@@ -64,22 +74,26 @@ export function Dropdown({
         [search, query, options],
     );
     useOccludeNativeViews(open);
+    const latest = useRef({ anchor, setOpen, options, value });
+    latest.current = { anchor, setOpen, options, value };
+    const target = () => latest.current.anchor ?? buttonRef.current;
     const close = (byPointer = false) => {
         setOpen(false);
         if (byPointer) (document.activeElement as HTMLElement | null)?.blur();
-        else buttonRef.current?.focus();
+        else target()?.focus();
     };
-    const show = () => {
-        setOwner(buttonRef.current?.closest<HTMLElement>("[data-modal-scope]")?.dataset.modalScope);
+    useLayoutEffect(() => {
+        if (!open) return;
+        setOwner(target()?.closest<HTMLElement>("[data-modal-scope]")?.dataset.modalScope);
         setQuery("");
+        const { options: now, value: chosen } = latest.current;
         setIndex(
             Math.max(
                 0,
-                options.findIndex((option) => option.value === value),
+                now.findIndex((option) => option.value === chosen),
             ),
         );
-        setOpen(true);
-    };
+    }, [open]);
     const choose = (next: number, byPointer = false) => {
         if (!shown[next]) return;
         onChange(shown[next].value);
@@ -89,7 +103,7 @@ export function Dropdown({
     useLayoutEffect(() => {
         if (!open) return;
         const place = () => {
-            const rect = buttonRef.current?.getBoundingClientRect();
+            const rect = target()?.getBoundingClientRect();
             const menu = menuRef.current;
             if (!rect || !menu) return;
             const width = Math.min(window.innerWidth - 16, Math.max(menuWidth ?? 0, rect.width, 160));
@@ -120,12 +134,106 @@ export function Dropdown({
     useEffect(() => {
         if (!open) return;
         const outside = (event: PointerEvent) => {
-            if (!menuRef.current?.contains(event.target as Node) && !buttonRef.current?.contains(event.target as Node)) setOpen(false);
+            if (!menuRef.current?.contains(event.target as Node) && !target()?.contains(event.target as Node)) latest.current.setOpen(false);
         };
         document.addEventListener("pointerdown", outside, true);
         return () => document.removeEventListener("pointerdown", outside, true);
     }, [open]);
 
+    const menu =
+        open &&
+        createPortal(
+            <div
+                ref={menuElement}
+                id={id}
+                data-modal-owner={owner}
+                className={`dd-menu${search ? " searchable" : ""}`}
+                role="listbox"
+                tabIndex={-1}
+                aria-label={label ?? title}
+                aria-activedescendant={shown[index] ? `${id}-${index}` : undefined}
+                style={{ position: "fixed", ...position }}
+                onKeyDown={(event) => {
+                    event.stopPropagation();
+                    if (event.key === "Escape") {
+                        event.preventDefault();
+                        close();
+                    } else if (event.key === "Tab") {
+                        close();
+                    } else if (event.key === "Enter" || (event.key === " " && !search)) {
+                        event.preventDefault();
+                        choose(index);
+                    } else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+                        event.preventDefault();
+                        setIndex(
+                            event.key === "Home"
+                                ? 0
+                                : event.key === "End"
+                                  ? shown.length - 1
+                                  : (index + (event.key === "ArrowDown" ? 1 : -1) + shown.length) % Math.max(1, shown.length),
+                        );
+                    } else if (!search && event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) {
+                        event.preventDefault();
+                        const now = Date.now();
+                        prefix.current = {
+                            text: (now - prefix.current.at < 700 ? prefix.current.text : "") + event.key.toLowerCase(),
+                            at: now,
+                        };
+                        const found = options.findIndex((option) => option.label.toLowerCase().startsWith(prefix.current.text));
+                        if (found >= 0) setIndex(found);
+                    }
+                }}>
+                {search && (
+                    <input
+                        ref={searchRef}
+                        className="dd-search"
+                        value={query}
+                        placeholder={search}
+                        aria-label={search}
+                        spellCheck={false}
+                        autoComplete="off"
+                        onChange={(event) => {
+                            setQuery(event.target.value);
+                            setIndex(0);
+                        }}
+                    />
+                )}
+                {search && shown.length === 0 && <div className="dd-none">No matches</div>}
+                <div className="dd-list">
+                    {shown.map((option, itemIndex) => (
+                        <Fragment key={option.value}>
+                            {option.group && option.group !== shown[itemIndex - 1]?.group && (
+                                <div className="dd-group" role="presentation">
+                                    {option.group}
+                                </div>
+                            )}
+                            <div
+                                id={`${id}-${itemIndex}`}
+                                data-index={itemIndex}
+                                role="option"
+                                aria-selected={option.value === value}
+                                className={`dd-item${itemIndex === index ? " active" : ""}`}
+                                onPointerMove={() => setIndex(itemIndex)}
+                                onClick={() => choose(itemIndex, true)}>
+                                <span className="dd-check">{option.value === value && <IconCheck size={11} />}</span>
+                                {option.icon && (
+                                    <span className="dd-item-icon" aria-hidden="true">
+                                        {option.icon}
+                                    </span>
+                                )}
+                                <span className={`dd-item-label${option.className ? ` ${option.className}` : ""}`}>
+                                    {option.label}
+                                    {option.detail && <small>{option.detail}</small>}
+                                </span>
+                                {option.meta && <span className="dd-item-meta">{option.meta}</span>}
+                            </div>
+                        </Fragment>
+                    ))}
+                </div>
+            </div>,
+            document.body,
+        );
+    if (anchored) return menu;
     return (
         <div className="dd">
             <Tooltip label={title}>
@@ -141,12 +249,12 @@ export function Dropdown({
                     onClick={(event) => {
                         event.stopPropagation();
                         if (open) close();
-                        else show();
+                        else setOpen(true);
                     }}
                     onKeyDown={(event) => {
                         if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                             event.preventDefault();
-                            show();
+                            setOpen(true);
                         }
                     }}>
                     {icon && (
@@ -159,98 +267,7 @@ export function Dropdown({
                     <IconChevron size={9} className="dd-chev" />
                 </button>
             </Tooltip>
-            {open &&
-                createPortal(
-                    <div
-                        ref={menuElement}
-                        id={id}
-                        data-modal-owner={owner}
-                        className={`dd-menu${search ? " searchable" : ""}`}
-                        role="listbox"
-                        tabIndex={-1}
-                        aria-label={label ?? title}
-                        aria-activedescendant={shown[index] ? `${id}-${index}` : undefined}
-                        style={{ position: "fixed", ...position }}
-                        onKeyDown={(event) => {
-                            event.stopPropagation();
-                            if (event.key === "Escape") {
-                                event.preventDefault();
-                                close();
-                            } else if (event.key === "Tab") {
-                                close();
-                            } else if (event.key === "Enter" || (event.key === " " && !search)) {
-                                event.preventDefault();
-                                choose(index);
-                            } else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-                                event.preventDefault();
-                                setIndex(
-                                    event.key === "Home"
-                                        ? 0
-                                        : event.key === "End"
-                                          ? shown.length - 1
-                                          : (index + (event.key === "ArrowDown" ? 1 : -1) + shown.length) % Math.max(1, shown.length),
-                                );
-                            } else if (!search && event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) {
-                                event.preventDefault();
-                                const now = Date.now();
-                                prefix.current = {
-                                    text: (now - prefix.current.at < 700 ? prefix.current.text : "") + event.key.toLowerCase(),
-                                    at: now,
-                                };
-                                const found = options.findIndex((option) => option.label.toLowerCase().startsWith(prefix.current.text));
-                                if (found >= 0) setIndex(found);
-                            }
-                        }}>
-                        {search && (
-                            <input
-                                ref={searchRef}
-                                className="dd-search"
-                                value={query}
-                                placeholder={search}
-                                aria-label={search}
-                                spellCheck={false}
-                                autoComplete="off"
-                                onChange={(event) => {
-                                    setQuery(event.target.value);
-                                    setIndex(0);
-                                }}
-                            />
-                        )}
-                        {search && shown.length === 0 && <div className="dd-none">No matches</div>}
-                        <div className="dd-list">
-                            {shown.map((option, itemIndex) => (
-                                <Fragment key={option.value}>
-                                    {option.group && option.group !== shown[itemIndex - 1]?.group && (
-                                        <div className="dd-group" role="presentation">
-                                            {option.group}
-                                        </div>
-                                    )}
-                                    <div
-                                        id={`${id}-${itemIndex}`}
-                                        data-index={itemIndex}
-                                        role="option"
-                                        aria-selected={option.value === value}
-                                        className={`dd-item${itemIndex === index ? " active" : ""}`}
-                                        onPointerMove={() => setIndex(itemIndex)}
-                                        onClick={() => choose(itemIndex, true)}>
-                                        <span className="dd-check">{option.value === value && <IconCheck size={11} />}</span>
-                                        {option.icon && (
-                                            <span className="dd-item-icon" aria-hidden="true">
-                                                {option.icon}
-                                            </span>
-                                        )}
-                                        <span className={`dd-item-label${option.className ? ` ${option.className}` : ""}`}>
-                                            {option.label}
-                                            {option.detail && <small>{option.detail}</small>}
-                                        </span>
-                                        {option.meta && <span className="dd-item-meta">{option.meta}</span>}
-                                    </div>
-                                </Fragment>
-                            ))}
-                        </div>
-                    </div>,
-                    document.body,
-                )}
+            {menu}
         </div>
     );
 }
