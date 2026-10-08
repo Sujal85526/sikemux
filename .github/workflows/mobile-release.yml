@@ -34,6 +34,7 @@ jobs:
     if: ${{ !cancelled() && (needs.approve.result == 'success' || needs.approve.result == 'skipped') }}
     permissions:
       contents: write
+      actions: write
     env:
       APP_VARIANT: production
       # The Play upload key's certificate; a release signed with anything else is refused.
@@ -191,6 +192,20 @@ jobs:
           Built from $(git rev-parse --short HEAD). Install the APK on your Android phone. A copy installed from Google Play cannot update this one, or the other way round: to switch, uninstall first."
           gh release create "$GITHUB_REF_NAME" "dist/Sikemux_${VERSION}_android.apk" dist/runtime-android.txt \
             --title "Sikemux for Android $VERSION" --notes "$notes" "${flags[@]}"
+
+      # Updates pushed to main while this release was building were skipped, as no release had
+      # their runtime yet. Publishing main again now lets this build take them.
+      - name: Publish main's update for this build
+        if: steps.plan.outputs.channel == 'nightly'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          main="$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)"
+          if [[ "$main" == "$GITHUB_SHA" ]]; then
+            echo "main is this release's own commit, so there is no update to publish" >>"$GITHUB_STEP_SUMMARY"
+          else
+            gh workflow run mobile-update.yml --ref main
+          fi
 
       # Last, because Google Play never takes the same version code twice: everything that can be
       # run again has already succeeded.
