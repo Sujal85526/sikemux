@@ -20,35 +20,30 @@
     font-family: var(--ui);
 }
 
+/* Laid out from the bottom up: the browser holds the bottom still as a reply
+   grows, and holds the reader's place as rows above them draw at their real
+   height, without the transcript ever moving its own scroll position. */
 .chat-scroll {
+    display: flex;
+    flex-direction: column-reverse;
     min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
-    /* The transcript holds its own scroll position; the browser guessing at one
-       as rows resize only fights it. */
-    overflow-anchor: none;
     scrollbar-gutter: stable;
     overscroll-behavior: contain;
+}
+
+/* A transcript shorter than the pane still starts at the top. */
+.chat-scroll-content {
+    flex: none;
+    margin-bottom: auto;
     padding: 25px 0 32px;
 }
 
-/* Still laid out and measured, so the rows can land before they are seen. */
-.chat-scroll.is-settling {
-    visibility: hidden;
-}
-
-.chat-virtual-space {
-    position: relative;
-    width: 100%;
-}
-
-/* Size stays uncontained: the virtualizer measures each row's real height. */
-.chat-virtual-row {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    contain: layout style;
+/* A row out of view is not drawn; until it first is, it holds its guessed
+   height, and after that the height it was drawn at. */
+.chat-row {
+    content-visibility: auto;
 }
 
 .chat-message {
@@ -58,8 +53,8 @@
     padding: 5px 22px;
 }
 
-/* The virtualizer absolutely positions each row, so sibling selectors never
- * match — the gap before a user turn lives on the user row's own padding. */
+/* Each message sits in a row of its own, so sibling selectors never match:
+ * the gap before a user turn lives on the user row's own padding. */
 .chat-message.user {
     padding-top: 17px;
     padding-bottom: 10px;
@@ -87,9 +82,9 @@
     user-select: text;
 }
 
-/* The virtualizer measures every row it draws, so a strip that appeared on
-   hover would resize the row under the pointer. The strip always holds its
-   height and only fades, and the whole turn is the thing you point at. */
+/* A strip that appeared on hover would resize the row under the pointer, so
+   it always holds its height and only fades, and the whole turn is the thing
+   you point at. */
 .chat-message-meta {
     display: flex;
     align-items: center;

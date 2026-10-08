@@ -1307,7 +1307,7 @@ describe("AgentChatPane", () => {
             sessionId: "session-1",
             update: { sessionUpdate: "async_task_state_update", asyncTaskId: "task-1", state: "stopped" },
         });
-        await waitFor(() => expect(screen.queryByText("pnpm test")).not.toBeInTheDocument());
+        await waitFor(() => expect(screen.queryByRole("button", { name: "Stop pnpm test" })).not.toBeInTheDocument());
     });
 
     it("says the agent is still in use while a background task outlives the turn", async () => {
@@ -1376,50 +1376,50 @@ describe("AgentChatPane", () => {
         expect(screen.queryByRole("option", { name: /compact/i })).not.toBeInTheDocument();
     });
 
-    it("stays pinned while a restored transcript settles, and lets go when the reader scrolls up", async () => {
-        render(<AgentChatPane agent={{ ...agent, resumeId: "old-session" }} cwd="/repo" active visible onBusyChange={() => {}} />);
-        await waitFor(() => expect(mocks.eventListener).not.toBeNull());
-        emit("session_update", {
-            sessionId: "session-1",
-            update: { sessionUpdate: "user_message_chunk", content: { type: "text", text: "Earlier question" } },
-        });
-        emit("ready", { capabilities: {}, setup: {} });
-
+    /* The transcript is laid out from the bottom, so its scroll position is 0
+       at the bottom and negative above it, and the browser holds the bottom
+       still by itself. */
+    it("rests on the bottom, and lets go when the reader scrolls up", async () => {
+        await openTranscript();
         const scroller = document.querySelector(".chat-scroll") as HTMLElement;
-        const view = fakeScroller(scroller, 400);
-        Object.defineProperty(scroller, "offsetWidth", { configurable: true, get: () => 600 });
-        Object.defineProperty(scroller, "offsetHeight", { configurable: true, get: () => 400 });
-        reportResize(scroller);
-        view.scrollTo(600);
         expect(screen.queryByRole("button", { name: "Jump to latest message" })).not.toBeInTheDocument();
 
-        // Rows measuring taller than their estimate push the bottom away. The
-        // reader has not moved, so the transcript must not come unstuck.
-        view.grow(3000);
+        scroller.scrollTop = -40;
+        fireEvent.scroll(scroller);
         expect(screen.queryByRole("button", { name: "Jump to latest message" })).not.toBeInTheDocument();
-        expect(scroller.scrollTop).toBe(2600);
 
-        // Settling also moves the scroller itself, which must not read as the
-        // reader leaving — that left old sessions stranded mid-transcript.
-        view.driftTo(2200);
+        scroller.scrollTop = -600;
+        fireEvent.scroll(scroller);
+        fireEvent.click(await screen.findByRole("button", { name: "Jump to latest message" }));
+        expect(scroller.scrollTop).toBe(0);
         expect(screen.queryByRole("button", { name: "Jump to latest message" })).not.toBeInTheDocument();
-        view.grow(3600);
-        expect(scroller.scrollTop).toBe(3200);
-
-        view.scrollTo(200);
-        expect(await screen.findByRole("button", { name: "Jump to latest message" })).toBeInTheDocument();
     });
 
-    it("shows a resumed chat's history once it is all in, out of sight until it lands on the bottom", async () => {
+    it("keeps the reader's place when something grows below them", async () => {
+        await openTranscript();
+        const scroller = document.querySelector(".chat-scroll") as HTMLElement;
+        const content = document.querySelector(".chat-scroll-content") as HTMLElement;
+        const row = document.querySelector(".chat-row") as HTMLElement;
+        let rowTop = 30;
+        scroller.getBoundingClientRect = () => ({ top: 0, left: 0, width: 600, height: 400, bottom: 400, right: 600 }) as DOMRect;
+        row.getBoundingClientRect = () => ({ top: rowTop }) as DOMRect;
+        Object.defineProperty(document, "elementFromPoint", { configurable: true, value: () => row });
+
+        scroller.scrollTop = -900;
+        fireEvent.scroll(scroller);
+        // A reply streaming in below pushes the row the reader is on up the screen.
+        rowTop = -170;
+        reportResize(content);
+
+        expect(scroller.scrollTop).toBe(-1100);
+        Reflect.deleteProperty(document, "elementFromPoint");
+    });
+
+    it("shows a resumed chat's history once it is all in", async () => {
         let answer: (response: { sessionId: string; capabilities: object; setup: object }) => void = () => {};
         mocks.start.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)));
         render(<AgentChatPane agent={{ ...agent, resumeId: "old-session" }} cwd="/repo" active visible onBusyChange={() => {}} />);
         await waitFor(() => expect(mocks.start).toHaveBeenCalled());
-        const scroller = document.querySelector(".chat-scroll") as HTMLElement;
-        fakeScroller(scroller, 400);
-        Object.defineProperty(scroller, "offsetWidth", { configurable: true, get: () => 600 });
-        Object.defineProperty(scroller, "offsetHeight", { configurable: true, get: () => 400 });
-        reportResize(scroller);
 
         emit("session_update", {
             sessionId: "session-1",
@@ -1429,9 +1429,7 @@ describe("AgentChatPane", () => {
         expect(screen.queryByText("Earlier question")).not.toBeInTheDocument();
 
         await act(async () => answer({ sessionId: "session-1", capabilities: {}, setup: {} }));
-        expect(screen.getByText("Earlier question")).toBeInTheDocument();
-        expect(scroller).toHaveClass("is-settling");
-        await waitFor(() => expect(scroller).not.toHaveClass("is-settling"));
+        expect(await screen.findByText("Earlier question")).toBeInTheDocument();
     });
 
     it("focuses the composer once a chat connects, and again when a hidden one is reopened", async () => {

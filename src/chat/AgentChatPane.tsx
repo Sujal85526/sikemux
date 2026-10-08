@@ -1,5 +1,4 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
-import { measureElement, useVirtualizer, type VirtualItem, type Virtualizer } from "@tanstack/react-virtual";
 import { acpApi } from "../api/acp";
 import { effortConfig, sessionConfigs, type SessionConfig } from "./sessionConfig";
 import { rowMeta } from "./messageMeta";
@@ -9,7 +8,7 @@ import { useStore } from "../state/store";
 import { hasPrimaryModifier } from "../lib/platform";
 import { IconArrowDown, IconFile, IconPlug, IconWarning } from "../ui/Icons";
 import { chatReducer, initialChatState } from "./reducer";
-import type { ChatState } from "./types";
+import type { ChatMessage, ChatState } from "./types";
 import { PathRootsProvider } from "./FileRef";
 import { ChatWelcome } from "./ChatWelcome";
 import { FoldMemoryContext, newFoldMemory } from "./longText";
@@ -18,51 +17,74 @@ import { activeToolLabel } from "./toolLabels";
 import { formatDetail, runningSubagents } from "./transcript";
 import { activityText, backendState, composerPlaceholder as placeholderFor, connectingLabel, knownEffort } from "./chatStatus";
 import { ChatAgentContext, ReaderScrollContext } from "./chatAgent";
-import { ChatMessageRow } from "./ChatMessageRow";
+import { ChatMessageRow, warmTranscript } from "./ChatMessageRow";
 import { ChatActivity } from "./ChatActivity";
 import { ChatFailureActions } from "./ChatFailureActions";
 import { PermissionRequest } from "./PermissionRequest";
 import { BackgroundTasks, QueuedMessages, RunningSubagents } from "./LiveStack";
 import { ChatComposer } from "./ChatComposer";
 import { useMessageArrival } from "./useMessageArrival";
-import { rowEstimator } from "./rowEstimate";
+import { designedRowHeight } from "./rowEstimate";
 import { useAcpSession } from "./useAcpSession";
 import { useSavedUsage } from "./useSavedUsage";
 import { usePromptQueue } from "./usePromptQueue";
 import { useChatWorktree } from "./useChatWorktree";
-import { BOTTOM_SLACK, useStickToBottom } from "./useStickToBottom";
+import { useStickToBottom } from "./useStickToBottom";
 
-/*
- * Whether a row that changed size should move the scroll position with it, so
- * the text being read stays still. The library's own rule skips rows that come
- * back at a new height while the reader scrolls up, and everything below them
- * jumps. A row wholly above the view always counts; one the view cuts through
- * counts only on its first measure, so a reply growing at its bottom does not
- * drag the view down with it.
- */
-function holdsReadingPlace(item: VirtualItem, _delta: number, list: Virtualizer<HTMLDivElement, Element>) {
-    const top = (list.scrollOffset ?? 0) + list.scrollAdjustments;
-    return item.end <= top || (item.start < top && !list.itemSizeCache.has(item.key));
+/* Reading a whole transcript is one round trip to the parser, so this waits
+   at most this long before showing it anyway. */
+const READ_WAIT_MS = 1000;
+
+function useReadAfterReplay(replaying: boolean, messages: readonly ChatMessage[]): boolean {
+    const [reading, setReading] = useState(false);
+    const wasReplayingRef = useRef(replaying);
+    const messagesRef = useRef(messages);
+    messagesRef.current = messages;
+    useLayoutEffect(() => {
+        const ended = wasReplayingRef.current && !replaying;
+        wasReplayingRef.current = replaying;
+        if (!ended) return;
+        setReading(true);
+        let live = true;
+        const done = () => {
+            if (live) setReading(false);
+        };
+        void warmTranscript(messagesRef.current).then(done, done);
+        const timer = window.setTimeout(done, READ_WAIT_MS);
+        return () => {
+            live = false;
+            window.clearTimeout(timer);
+        };
+    }, [replaying]);
+    return reading;
 }
 
 function heldTranscript(shown: ChatState, next: ChatState): ChatState {
     return { ...next, messages: shown.messages, revision: shown.revision };
 }
 
-/* A chat opened onto a resumed session had nothing to show while its history
-   came in. It is revealed only once its last rows have measured and the list
-   has landed on the bottom, so the reader never sees it settle. */
-function useRevealAtBottom(replaying: boolean, visible: boolean, shown: number) {
-    const [settling, setSettling] = useState(false);
-    const openedEmptyRef = useRef(false);
-    if (replaying) openedEmptyRef.current = shown === 0;
-    useLayoutEffect(() => {
-        if (replaying || !openedEmptyRef.current) return;
-        openedEmptyRef.current = false;
-        if (visible && shown > 0) setSettling(true);
-    }, [replaying, visible, shown]);
-    const settled = useCallback(() => setSettling(false), []);
-    return { settling, settled };
+/* A long transcript mounts its newest rows first and the older ones above
+   them a slice at a time. Laid out from the bottom, rows added above the view
+   never move it. */
+const FIRST_ROWS = 40;
+const ROWS_PER_SLICE = 60;
+
+function useOlderRows(count: number): number {
+    const [start, setStart] = useState(0);
+    const [opened, setOpened] = useState(false);
+    if (!opened && count > 0) {
+        setOpened(true);
+        setStart(Math.max(0, count - FIRST_ROWS));
+    } else if (opened && count === 0) {
+        setOpened(false);
+        setStart(0);
+    }
+    useEffect(() => {
+        if (start === 0) return;
+        const timer = window.setTimeout(() => setStart((current) => Math.max(0, current - ROWS_PER_SLICE)), 16);
+        return () => window.clearTimeout(timer);
+    }, [start]);
+    return Math.min(start, count);
 }
 
 const ChatFind = lazy(() => import("./ChatFind"));
@@ -100,68 +122,28 @@ export function AgentChatPane({
     });
 
     /* A resumed session sends its history back over many frames. The pane keeps
-       showing what it had until the history is all in, then shows it at once. */
+       showing what it had until the history is all in and its text has been
+       read, then shows it at once, each row drawn whole in the frame it mounts. */
+    const reading = useReadAfterReplay(replaying, state.messages);
+    const holding = replaying || reading;
     const displayStateRef = useRef(state);
-    if (visible) displayStateRef.current = replaying ? heldTranscript(displayStateRef.current, state) : state;
+    if (visible) displayStateRef.current = holding ? heldTranscript(displayStateRef.current, state) : state;
     const displayState = displayStateRef.current;
-    const { settling, settled } = useRevealAtBottom(replaying, visible, displayState.messages.length);
     const [replyingPermission, setReplyingPermission] = useState<string | null>(null);
     const [stoppingTasks, setStoppingTasks] = useState<string[]>([]);
     const paneRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const scrollContentRef = useRef<HTMLDivElement>(null);
-    const rowsRef = useRef<HTMLDivElement>(null);
     const agentLockedRef = useRef(false);
     if (state.messages.length > 0) agentLockedRef.current = true;
     const [changingConfig, setChangingConfig] = useState(false);
     const configPending = useRef(false);
 
     useMessageArrival(scrollRef, displayState.messages);
-    const [rowSizes] = useState(rowEstimator);
+    useEffect(() => void warmTranscript(state.messages), [state.messages]);
 
-    const { atBottom, noteGesture, onScroll, jumpToBottom, leaveBottom, followRows } = useStickToBottom({
-        scrollRef,
-        contentRef: scrollContentRef,
-        rowsRef,
-        visible,
-        settling,
-        onSettled: settled,
-        messageCount: displayState.messages.length,
-        revision: displayState.revision,
-    });
-
-    /* A restored transcript opens on estimated row heights, and every row that
-       measures taller or shorter than the estimate moves the bottom. Anchoring
-       to the end makes the list hold the bottom still while that settles. */
-    const virtualizer = useVirtualizer({
-        count: displayState.messages.length,
-        getScrollElement: () => scrollRef.current,
-        estimateSize: (index) => rowSizes.estimate(displayState.messages[index]),
-        measureElement: (element, entry, list) => {
-            const size = measureElement(element, entry, list);
-            rowSizes.learn(displayState.messages[list.indexFromElement(element)], size);
-            return size;
-        },
-        overscan: 8,
-        anchorTo: "end",
-        scrollEndThreshold: BOTTOM_SLACK,
-        getItemKey: (index) => displayState.messages[index]?.id ?? index,
-        /* Rows are placed from the resize observer itself, in the frame a row
-           changes size, rather than on the render after. A row that grows or
-           folds by animation then pushes the rest along with it instead of
-           overlapping them for a frame and catching up. */
-        directDomUpdates: true,
-        onChange: followRows,
-    });
-    virtualizer.shouldAdjustScrollPositionOnItemSizeChange = holdsReadingPlace;
-    const { containerRef } = virtualizer;
-    const placeRows = useCallback(
-        (node: HTMLDivElement | null) => {
-            rowsRef.current = node;
-            containerRef(node);
-        },
-        [containerRef],
-    );
+    const { atBottom, onScroll, jumpToBottom } = useStickToBottom({ scrollRef, contentRef: scrollContentRef, visible });
+    const firstRow = useOlderRows(displayState.messages.length);
 
     useEffect(() => {
         if (!active) return;
@@ -230,13 +212,7 @@ export function AgentChatPane({
         [state.messages, queued],
     );
 
-    const scrollByReader = useCallback(
-        (deltaY: number) => {
-            noteGesture();
-            scrollRef.current?.scrollBy({ top: deltaY });
-        },
-        [noteGesture],
-    );
+    const scrollByReader = useCallback((deltaY: number) => scrollRef.current?.scrollBy({ top: deltaY }), []);
 
     // Find opens on its shortcut while this chat is the pane in use; it counts up so asking again refocuses it.
     const [findRequest, setFindRequest] = useState(0);
@@ -343,8 +319,6 @@ export function AgentChatPane({
                                     visible={visible}
                                     messages={displayState.messages}
                                     scrollRef={scrollRef}
-                                    virtualizer={virtualizer}
-                                    onLeaveBottom={leaveBottom}
                                     onClose={() => {
                                         setFindRequest(0);
                                         paneRef.current?.querySelector<HTMLTextAreaElement>(".chat-composer textarea")?.focus();
@@ -352,14 +326,7 @@ export function AgentChatPane({
                                 />
                             </Suspense>
                         )}
-                        <div
-                            className={`chat-scroll${settling ? " is-settling" : ""}`}
-                            ref={scrollRef}
-                            onWheel={noteGesture}
-                            onTouchMove={noteGesture}
-                            onMouseDown={noteGesture}
-                            onKeyDown={noteGesture}
-                            onScroll={onScroll}>
+                        <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
                             <div className="chat-scroll-content" ref={scrollContentRef}>
                                 {(worktree.step !== null || agent.worktree) && (
                                     <Suspense fallback={null}>
@@ -385,28 +352,26 @@ export function AgentChatPane({
                                     </div>
                                 )}
                                 <FoldMemoryContext value={foldMemory}>
-                                    <div className="chat-virtual-space" ref={placeRows}>
-                                        {virtualizer.getVirtualItems().map((item) => {
-                                            const message = displayState.messages[item.index];
-                                            const meta = rowMeta(displayState.messages, item.index);
-                                            return (
-                                                <div
-                                                    key={message.id}
-                                                    data-index={item.index}
-                                                    ref={virtualizer.measureElement}
-                                                    className="chat-virtual-row">
-                                                    <ChatMessageRow
-                                                        message={message}
-                                                        live={displayState.running && item.index === displayState.messages.length - 1}
-                                                        copyable={meta.text}
-                                                        rate={meta.rate}
-                                                        at={meta.at}
-                                                        took={meta.took}
-                                                    />
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
+                                    {displayState.messages.slice(firstRow).map((message, offset) => {
+                                        const index = firstRow + offset;
+                                        const meta = rowMeta(displayState.messages, index);
+                                        return (
+                                            <div
+                                                key={message.id}
+                                                data-index={index}
+                                                className="chat-row"
+                                                style={{ containIntrinsicSize: `auto ${designedRowHeight(message)}px` }}>
+                                                <ChatMessageRow
+                                                    message={message}
+                                                    live={displayState.running && index === displayState.messages.length - 1}
+                                                    copyable={meta.text}
+                                                    rate={meta.rate}
+                                                    at={meta.at}
+                                                    took={meta.took}
+                                                />
+                                            </div>
+                                        );
+                                    })}
                                 </FoldMemoryContext>
                                 {activity && <ChatActivity key={displayState.running ? "turn" : "connect"} label={activity} agentType={agent.type} />}
                                 {plan !== null && (

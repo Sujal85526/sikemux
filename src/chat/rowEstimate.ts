@@ -1,10 +1,8 @@
 import { clampPageHeight, PAGE_DEFAULT_HEIGHT } from "./pages";
 import type { ChatMessage, ChatPart } from "./types";
 
-/* What a row is guessed at before it has been drawn, so the rows above the
-   reader land near where they will be and the scroll moves little when they
-   are measured. Guessed at the designed sizes, then scaled by how the rows
-   drawn so far compared, which takes in the column's width and the text size. */
+/* What a row is guessed at before it is first drawn, guessed at the designed
+   sizes. The closer it is, the truer the scrollbar on a long transcript. */
 
 const LINE = 23;
 const CHARS_PER_LINE = 90;
@@ -47,25 +45,4 @@ export function designedRowHeight(message: ChatMessage): number {
     message.parts.forEach((part, index) => (height += partHeight(part, message.parts[index - 1])));
     designed.set(message, height);
     return height;
-}
-
-export function rowEstimator() {
-    const learned = new Map<string, { designed: number; measured: number }>();
-    let designedTotal = 0;
-    let measuredTotal = 0;
-    return {
-        learn(message: ChatMessage | undefined, measured: number) {
-            if (!message || measured <= 0) return;
-            const before = learned.get(message.id);
-            const row = { designed: designedRowHeight(message), measured };
-            designedTotal += row.designed - (before?.designed ?? 0);
-            measuredTotal += row.measured - (before?.measured ?? 0);
-            learned.set(message.id, row);
-        },
-        estimate(message: ChatMessage | undefined): number {
-            if (!message) return REPLY_ROW;
-            const scale = designedTotal > 0 ? Math.min(3, Math.max(0.5, measuredTotal / designedTotal)) : 1;
-            return Math.round(designedRowHeight(message) * scale);
-        },
-    };
 }

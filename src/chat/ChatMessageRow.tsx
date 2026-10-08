@@ -8,7 +8,7 @@ import { localImagePath, useImagePreview } from "./imagePreview";
 import { ChatFileRef, useFileRef } from "./FileRef";
 import { ChatAgentContext } from "./chatAgent";
 import { ChatImage } from "./ChatImage";
-import { FoldedMarkdown } from "./ChatMarkdown";
+import { FoldedMarkdown, warmChatMarkdown } from "./ChatMarkdown";
 import { ChatPage } from "./ChatPage";
 import { ToolGroup } from "./ToolGroup";
 import { ToolRow } from "./ToolRow";
@@ -82,6 +82,29 @@ function ContentPart({ part }: { part: Extract<ChatPart, { kind: "content" }> })
         );
     }
     return <pre className="chat-unknown-part">{formatDetail(content)}</pre>;
+}
+
+const warmed = new WeakSet<ChatMessage>();
+let warming: Promise<void> = Promise.resolve();
+
+/* A row draws its text in the frame it mounts only if that text was read
+   already; otherwise it mounts empty and grows a frame later, under the reader.
+   Messages are read newest first, since reading starts at the bottom; the last
+   one may still be growing, and the row showing it reads it anyway. */
+export function warmTranscript(messages: readonly ChatMessage[]): Promise<void> {
+    const texts: { text: string; typed: boolean }[] = [];
+    for (let index = messages.length - 2; index >= 0; index -= 1) {
+        const message = messages[index];
+        if (warmed.has(message)) continue;
+        warmed.add(message);
+        for (const part of sentParts(message).parts) {
+            if (part.kind === "text") texts.push({ text: part.text, typed: message.role === "user" });
+            else if (part.kind === "thought") texts.push({ text: part.text, typed: false });
+        }
+    }
+    /* Settles once everything asked for so far has been read, by this call or an earlier one. */
+    if (texts.length > 0) warming = Promise.all([warming, warmChatMarkdown(texts)]).then(() => undefined);
+    return warming;
 }
 
 const MessagePart = memo(function MessagePart({ part, live, typed }: { part: ChatPart; live: boolean; typed: boolean }) {

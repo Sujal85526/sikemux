@@ -6,7 +6,7 @@ import { ChatAgentContext, openLink, ReaderScrollContext } from "./chatAgent";
 import { pageThemeMessage } from "./pageTheme";
 import { clampPageHeight, PAGE_DEFAULT_HEIGHT, readPageMessage } from "./pages";
 
-/* The transcript unmounts rows scrolled far away; a page coming back takes the
+/* A chat opened again mounts its pages afresh; a page coming back takes the
    height it last reported, so the rows around it do not move. */
 const reportedHeights = new Map<string, number>();
 

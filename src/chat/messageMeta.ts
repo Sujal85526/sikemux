@@ -63,11 +63,22 @@ function answerMeta(messages: ChatMessage[], endIndex: number): RowMeta {
 
 /* A prompt carries its own copy. An answer carries one only where it ends, so
    a turn gets a single row rather than one after every tool call. */
+const NO_META: RowMeta = { text: "", rate: null, at: null, took: null };
+
+/* Every row asks on every update, and a finished message never changes, so
+   each one is worked out once. An answer's run ends at the message asked about,
+   and the messages before it in the run are finished too. */
+const known = new WeakMap<ChatMessage, RowMeta>();
+
 export function rowMeta(messages: ChatMessage[], index: number): RowMeta {
     const message = messages[index];
-    if (message.role === "user") return { text: messageText(message), rate: null, at: message.sentAt ?? null, took: null };
-    if (messages[index + 1]?.role === "assistant") return { text: "", rate: null, at: null, took: null };
-    return answerMeta(messages, index);
+    if (message.role === "assistant" && messages[index + 1]?.role === "assistant") return NO_META;
+    const held = known.get(message);
+    if (held) return held;
+    const meta =
+        message.role === "user" ? { text: messageText(message), rate: null, at: message.sentAt ?? null, took: null } : answerMeta(messages, index);
+    known.set(message, meta);
+    return meta;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
