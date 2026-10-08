@@ -46,10 +46,10 @@ This page is what to know before your first call. Call `guide` again with a
   numbering restarts on every new page. Never carry a number across a
   navigation; read or `browser_find` again.
 - Wait with `browser_wait` conditions, or `waitFor` on `browser_navigate`,
-  rather than sleeps or screenshots taken to see whether something finished.
+  rather than sleeps or screenshots.
 - Every state says whether the tab is `visible` to the person; do not tell
   them a page is on their screen when it is not.
-- Plugin tools (`github_*`, `bitbucket_*`, `db_*`, `jira_*`, `signoz_*`) are listed
+- Plugin tools (`github_*`, `bitbucket_*`, `jira_*`, `signoz_*`) are listed
   only when they can work here: signed in, and for GitHub or Bitbucket a remote of this
   project on that host. If one you need is missing, ask the person to sign in
   from its pane in Sikemux and restart you.
@@ -68,7 +68,7 @@ Pass one of these as `topic`:
 - `browser-pages` — navigating, reloading, waiting, local files, viewport sizes, tabs
 - `browser-evidence` — `browser_screenshot`, `browser_annotate`, `browser_record`
 - `browser-debugging` — `browser_network`, loads, `browser_console`, `app_console`, `browser_evaluate`
-- `databases` — the `db_*` tools: saved databases, tables, and SQL that is read-only unless allowed
+- `databases` — the `db_*` tools and SQL
 - `shell` — the `sikemux tool` CLI for scripts and tasks
 
 ## config: Writing sikemux.json
