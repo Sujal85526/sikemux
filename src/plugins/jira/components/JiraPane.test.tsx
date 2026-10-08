@@ -13,6 +13,8 @@ const api = vi.hoisted(() => ({
     signIn: vi.fn(),
 }));
 vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>()), jiraApi: api }));
+const host = vi.hoisted(() => ({ copyText: vi.fn(), openUrl: vi.fn() }));
+vi.mock("../../../plugin-api/host", async (importOriginal) => ({ ...(await importOriginal<object>()), ...host }));
 
 import { JiraPane } from "./JiraPane";
 import { invalidate } from "../../../plugin-api/resources";
@@ -86,6 +88,26 @@ describe("JiraPane", () => {
         expect(await screen.findByRole("heading", { name: "Fix the login race" })).toBeInTheDocument();
         expect(await screen.findByText(/Steps:/)).toBeInTheDocument();
         expect(await screen.findByText("Seen on staging")).toBeInTheDocument();
+    });
+
+    it("opens an issue in the browser or copies its link from the header", async () => {
+        host.copyText.mockResolvedValue(undefined);
+        host.openUrl.mockResolvedValue(undefined);
+        render(<JiraPane paneId="jira-links" active />);
+        fireEvent.click(await screen.findByRole("listitem"));
+        fireEvent.click(await screen.findByRole("button", { name: "Copy link" }));
+        expect(host.copyText).toHaveBeenCalledWith("https://acme.atlassian.net/browse/ABC-12");
+        fireEvent.click(screen.getByRole("button", { name: "Open in browser" }));
+        expect(host.openUrl).toHaveBeenCalledWith("https://acme.atlassian.net/browse/ABC-12");
+    });
+
+    it("offers the same on a right-click of a listed issue, without opening it", async () => {
+        host.copyText.mockResolvedValue(undefined);
+        render(<JiraPane paneId="jira-row-menu" active />);
+        fireEvent.contextMenu(await screen.findByRole("listitem"));
+        fireEvent.click(screen.getByText("Copy key and title"));
+        expect(host.copyText).toHaveBeenCalledWith("ABC-12 Fix the login race");
+        expect(api.issue).not.toHaveBeenCalled();
     });
 
     it("comments in markdown and shows the sprint list on request", async () => {
