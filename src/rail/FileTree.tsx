@@ -12,10 +12,12 @@ import { notify, reportError, swallow } from "../state/toast";
 import { copyText } from "../lib/clipboard";
 import { confirmDialog } from "../state/dialog";
 import { dispatchPaths, pathDropTargetAt, registerFolderDrop, resolvePathDropTarget, showPathDropHover } from "../state/dropRegistry";
-import { IconChevron, IconFolder, IconPlus } from "../ui/Icons";
+import { IconChevron, IconCollapseAll, IconFilePlus, IconFolder, IconFolderPlus, IconGit, IconSearch } from "../ui/Icons";
 import { FileIcon } from "../ui/FileIcon";
 import { Tooltip } from "../ui/Tooltip";
 import { gitFileDecoration } from "../git/gitFileStatus";
+import { FileStatus } from "../git/FileStatus";
+import { openFilePalette } from "../state/commands/ui";
 import { basename, dirname, isPathWithin, joinPath, normalizePath, relativePath as pathRelative } from "../lib/paths";
 import { FILE_MANAGER_NAME } from "../lib/platform";
 import { leavingMenu } from "../lib/motion";
@@ -102,7 +104,10 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
     // The overview already carries the status walk; asking for git_status too
     // would make the backend walk the working tree twice per change.
     const overview = useResourceEnabled(active && !!cwd, gitOverviewR, cwd || "");
-    const statusFiles = overview.data?.status.files;
+    const gitStatus = overview.data?.status;
+    const statusFiles = gitStatus?.files;
+    const changes = statusFiles ?? [];
+    const [changesOpen, setChangesOpen] = useState(true);
     const gitMap = useMemo(() => {
         const m = new Map<string, GitFile>();
         if (cwd && statusFiles) {
@@ -775,22 +780,83 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
         <>
             <div className={`ed-tree${resizable ? "" : " fill"}`} style={resizable ? { width } : undefined}>
                 <div className="ed-tree-head">
-                    <span className="ed-tree-name">{basename(cwd) || "files"}</span>
-                    <span className="ed-tree-actions">
-                        <Tooltip label="New file">
-                            <button type="button" className="ed-tree-act" aria-label="New file" onClick={() => startNew("file")}>
-                                <FileIcon name="" size={13} />
-                                <IconPlus size={9} />
-                            </button>
-                        </Tooltip>
-                        <Tooltip label="New folder">
-                            <button type="button" className="ed-tree-act" aria-label="New folder" onClick={() => startNew("folder")}>
-                                <IconFolder size={13} />
-                                <IconPlus size={9} />
-                            </button>
-                        </Tooltip>
-                    </span>
+                    <div className="ed-tree-title">
+                        <span className="ed-tree-name">{basename(cwd) || "files"}</span>
+                        <span className="ed-tree-actions">
+                            <Tooltip label="Find a file">
+                                <button type="button" className="ed-tree-act" aria-label="Find a file" onClick={() => openFilePalette()}>
+                                    <IconSearch size={13} />
+                                </button>
+                            </Tooltip>
+                            <Tooltip label="New file">
+                                <button type="button" className="ed-tree-act" aria-label="New file" onClick={() => startNew("file")}>
+                                    <IconFilePlus size={13} />
+                                </button>
+                            </Tooltip>
+                            <Tooltip label="New folder">
+                                <button type="button" className="ed-tree-act" aria-label="New folder" onClick={() => startNew("folder")}>
+                                    <IconFolderPlus size={13} />
+                                </button>
+                            </Tooltip>
+                            <Tooltip label="Collapse folders">
+                                <button type="button" className="ed-tree-act" aria-label="Collapse folders" onClick={() => setExpanded(new Set())}>
+                                    <IconCollapseAll size={13} />
+                                </button>
+                            </Tooltip>
+                        </span>
+                    </div>
+                    {gitStatus && (
+                        <button
+                            type="button"
+                            className="ed-tree-strip"
+                            aria-expanded={changes.length > 0 ? changesOpen : undefined}
+                            disabled={changes.length === 0}
+                            onClick={() => setChangesOpen((open) => !open)}>
+                            <span className="ed-tree-branch">
+                                <IconGit size={12} />
+                                <span className="ed-tree-branch-name">{gitStatus.branch || "detached"}</span>
+                            </span>
+                            {gitStatus.ahead > 0 && <span className="ed-tree-sync">↑{gitStatus.ahead}</span>}
+                            {gitStatus.behind > 0 && <span className="ed-tree-sync">↓{gitStatus.behind}</span>}
+                            <span className={`ed-tree-changed${changes.length ? "" : " clean"}`}>
+                                {changes.length ? `${changes.length} changed` : "clean"}
+                            </span>
+                        </button>
+                    )}
                 </div>
+                {changesOpen && changes.length > 0 && (
+                    <div className="ed-tree-changes" role="list" aria-label="Changed files">
+                        {changes.map((file) => {
+                            const path = joinPath(cwd, file.path);
+                            const name = basename(file.path);
+                            const dir = dirname(file.path);
+                            const code = file.worktree.trim() || file.index.trim();
+                            const entry: DirEntry = { name, path, is_dir: false };
+                            const gone = code === "D";
+                            return (
+                                <div
+                                    key={file.path}
+                                    role="listitem"
+                                    tabIndex={0}
+                                    title={file.path}
+                                    className={`git-row git-file-row${activePath === path ? " sel" : ""}`}
+                                    onClick={() => !gone && onOpenFile(entry)}
+                                    onDoubleClick={() => !gone && onKeepFile(entry)}
+                                    onKeyDown={(event) => {
+                                        if (event.key === "Enter" && !gone) onKeepFile(entry);
+                                    }}
+                                    onContextMenu={(event) => !gone && openMenu(event, entry)}>
+                                    <FileIcon name={name} size={14} />
+                                    <span className="git-row-name">
+                                        {name}
+                                        {dir && <span className="git-row-dir">{dir}</span>}
+                                    </span>
+                                    <FileStatus code={code} />
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
                 <div
                     ref={rootScrollRef}
                     className={`ed-tree-scroll${rootDragOver ? " drag-over-root" : ""}`}
