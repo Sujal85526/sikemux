@@ -33,7 +33,8 @@ struct SikemuxSim {
     }
 
     /// What a finger or a key does on a device, kept in the order it arrived, one at a time per device.
-    static let input: Set<String> = ["tap", "swipe", "touch", "touchPath", "touch2Path", "key", "text", "button"]
+    /// A live `touch` stays out: it joins a gesture that is already holding the device's input.
+    static let input: Set<String> = ["tap", "swipe", "touchPath", "touch2Path", "key", "text", "button"]
     static let lanes = InputLanes()
 
     static func respond(to request: Request, with simulators: Simulators) async {
@@ -84,14 +85,7 @@ struct SikemuxSim {
             try await simulators.send(
                 .swipe(start.x, yStart: start.y, xEnd: end.x, yEnd: end.y, delta: 0, duration: request.duration ?? 0.3, edge: edge), to: udid)
         case "touch":
-            let point = try await simulators.touchPoint(try require(request.x, request.y), on: udid)
-            let direction: SimulatorHIDDirection
-            switch try require(request.phase, "phase") {
-            case "down", "move": direction = .down
-            case "up": direction = .up
-            default: throw Failure(reason: "badRequest", message: "A touch's phase is down, move or up")
-            }
-            try await simulators.send(.touch(direction: direction, x: point.x, y: point.y), to: udid)
+            try await simulators.touch(try require(request.phase, "phase"), at: try require(request.x, request.y), on: udid)
         case "key":
             let code = try Keyboard.named(try require(request.key, "key"))
             try await simulators.send(.composite([.keyboard(direction: .down, keyCode: code), .keyboard(direction: .up, keyCode: code)]), to: udid)

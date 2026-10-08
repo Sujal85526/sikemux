@@ -13,6 +13,10 @@ actor Simulators {
     private var tails: [String: Task<LogTail, Error>] = [:]
     private var boots: [String: Task<Void, Error>] = [:]
     private var streams: [String: Task<FrameStream, Error>] = [:]
+    /// A finger the person is holding on the screen, fed move by move into one gesture so each move
+    /// costs a send rather than a whole tap's settling.
+    private var fingers: [String: Finger] = [:]
+    private var known: [String: Simulator] = [:]
     /// The orientation each device was last turned to here, for runtimes that cannot report it.
     private var turned: [String: String] = [:]
     /// Devices whose runtime cannot report its orientation, and so turns by the older event that
@@ -163,6 +167,8 @@ actor Simulators {
     /// Drops what is held for a device that is not running, whoever shut it down, so its next use starts afresh.
     private func forget(_ udid: String) {
         touch[udid] = nil
+        known[udid] = nil
+        fingers.removeValue(forKey: udid)?.events.finish()
         turned[udid] = nil
         portraitTouches.remove(udid)
         for key in tails.keys where key.hasPrefix(udid + " ") {
@@ -226,6 +232,41 @@ actor Simulators {
         return connecting
     }
 
+    /// A live touch from the person: `down` starts a gesture, `move`s join it as they come, and `up`
+    /// ends it and waits until the device has taken it all in.
+    func touch(_ phase: String, at turnedPoint: CGPoint, on udid: String?) async throws {
+        let simulator = try await booted(udid)
+        let point = try await touchPoint(turnedPoint, on: simulator.udid)
+        switch phase {
+        case "down":
+            await lift(simulator.udid, at: nil)
+            let finger = try await press(simulator, edge: try await edge(at: turnedPoint, on: simulator.udid))
+            fingers[simulator.udid] = finger
+            finger.put(.down, point)
+        case "move":
+            guard let finger = fingers[simulator.udid] else { return try await touch("down", at: turnedPoint, on: udid) }
+            finger.put(.down, point)
+        case "up":
+            await lift(simulator.udid, at: point)
+        default:
+            throw Failure(reason: "badRequest", message: "A touch's phase is down, move or up")
+        }
+    }
+
+    private func press(_ simulator: Simulator, edge: SimulatorHIDEdge) async throws -> Finger {
+        let hid = try await connection(to: simulator).value
+        let (events, feed) = AsyncStream<SimulatorHIDEvent>.makeStream()
+        let gesture = Task { try await hid.send(events: events, logger: simulator.logger) }
+        return Finger(events: feed, gesture: gesture, edge: edge)
+    }
+
+    private func lift(_ udid: String, at point: CGPoint?) async {
+        guard let finger = fingers.removeValue(forKey: udid) else { return }
+        if let point { finger.put(.up, point) }
+        finger.events.finish()
+        if (try? await finger.gesture.value) == nil, touch[udid] != nil { touch[udid] = nil }
+    }
+
     /// Starts following a device's log the first time it is asked for, filtered to one process if one is named.
     /// Once the whole device is followed, a process's lines come from there, kept since it started.
     func logs(on udid: String?, process: String?, after cursor: Int, generation: Int?, limit: Int) async throws -> [String: Any] {
@@ -271,6 +312,7 @@ actor Simulators {
     /// sends another every four seconds.
     func stream(on udid: String?, format: String, scale: Double?) async throws -> [String: Any] {
         let simulator = try await booted(udid)
+        _ = connection(to: simulator)
         let videoFormat: VideoStreamFormat
         switch format {
         case "h264": videoFormat = .compressedVideo(withCodec: .h264, transport: .annexB)
@@ -400,11 +442,23 @@ actor Simulators {
     }
 
     private func booted(_ udid: String?) async throws -> Simulator {
+        if let udid, let simulator = known[udid], simulator.state == .booted { return simulator }
         let simulator = try find(udid)
         guard simulator.state == .booted else {
             forget(simulator.udid)
             throw Failure(reason: "notBooted", message: "\(simulator.name) is not running. Boot it first.")
         }
+        known[simulator.udid] = simulator
         return simulator
+    }
+}
+
+private struct Finger {
+    let events: AsyncStream<SimulatorHIDEvent>.Continuation
+    let gesture: Task<Void, Error>
+    let edge: SimulatorHIDEdge
+
+    func put(_ direction: SimulatorHIDDirection, _ point: CGPoint) {
+        events.yield(.touch(direction: direction, x: point.x, y: point.y, edge: edge))
     }
 }
