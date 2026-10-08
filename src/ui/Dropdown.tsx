@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { IconCheck, IconChevron } from "./Icons";
 import { useOccludeNativeViews } from "../state/nativeViews";
@@ -11,6 +11,11 @@ export interface DropdownOption {
     value: string;
     label: string;
     detail?: string;
+    /** Right-aligned beside the label, for a short fact such as a version. */
+    meta?: string;
+    icon?: ReactNode;
+    /** Options that share a group sit under its heading; keep them adjacent. */
+    group?: string;
     className?: string;
 }
 
@@ -214,21 +219,33 @@ export function Dropdown({
                         {search && shown.length === 0 && <div className="dd-none">No matches</div>}
                         <div className="dd-list">
                             {shown.map((option, itemIndex) => (
-                                <div
-                                    key={option.value}
-                                    id={`${id}-${itemIndex}`}
-                                    data-index={itemIndex}
-                                    role="option"
-                                    aria-selected={option.value === value}
-                                    className={`dd-item${itemIndex === index ? " active" : ""}`}
-                                    onPointerMove={() => setIndex(itemIndex)}
-                                    onClick={() => choose(itemIndex, true)}>
-                                    <span className="dd-check">{option.value === value && <IconCheck size={11} />}</span>
-                                    <span className={`dd-item-label${option.className ? ` ${option.className}` : ""}`}>
-                                        {option.label}
-                                        {option.detail && <small>{option.detail}</small>}
-                                    </span>
-                                </div>
+                                <Fragment key={option.value}>
+                                    {option.group && option.group !== shown[itemIndex - 1]?.group && (
+                                        <div className="dd-group" role="presentation">
+                                            {option.group}
+                                        </div>
+                                    )}
+                                    <div
+                                        id={`${id}-${itemIndex}`}
+                                        data-index={itemIndex}
+                                        role="option"
+                                        aria-selected={option.value === value}
+                                        className={`dd-item${itemIndex === index ? " active" : ""}`}
+                                        onPointerMove={() => setIndex(itemIndex)}
+                                        onClick={() => choose(itemIndex, true)}>
+                                        <span className="dd-check">{option.value === value && <IconCheck size={11} />}</span>
+                                        {option.icon && (
+                                            <span className="dd-item-icon" aria-hidden="true">
+                                                {option.icon}
+                                            </span>
+                                        )}
+                                        <span className={`dd-item-label${option.className ? ` ${option.className}` : ""}`}>
+                                            {option.label}
+                                            {option.detail && <small>{option.detail}</small>}
+                                        </span>
+                                        {option.meta && <span className="dd-item-meta">{option.meta}</span>}
+                                    </div>
+                                </Fragment>
                             ))}
                         </div>
                     </div>,
