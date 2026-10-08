@@ -27,7 +27,7 @@ export function ConnectedDatabase({
     const putInEditor = (sql: string, run: boolean) => {
         loadQuery(profile.id, sql);
         onView({ showing: "query" });
-        if (run) void runQuery(profile.id, sql);
+        if (run) void runQuery(profile.id, profile.id, sql);
     };
     const openTable = (table: OpenTable) => onView({ showing: "table", table });
     const tabs: { id: DatabaseView["showing"]; label: string; hidden?: boolean }[] = [
@@ -75,7 +75,11 @@ export function ConnectedDatabase({
                 ) : view.showing === "history" ? (
                     <HistoryPanel profile={profile} active={active} onOpen={putInEditor} />
                 ) : (
-                    <QueryWorkspace profile={profile} resultActions={(result) => <SendResults profile={profile} sql={ran ?? ""} result={result} />} />
+                    <QueryWorkspace
+                        consoleId={profile.id}
+                        profile={profile}
+                        resultActions={(result) => <SendResults profile={profile} sql={ran ?? ""} result={result} />}
+                    />
                 )}
             </div>
         </div>

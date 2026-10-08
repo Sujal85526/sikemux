@@ -29,7 +29,7 @@ const rows = {
 
 afterEach(() => {
     cleanup();
-    forgetQuery("p1");
+    forgetQuery("c1");
 });
 beforeEach(() => {
     api.query.mockReset();
@@ -38,7 +38,7 @@ beforeEach(() => {
 
 describe("QueryWorkspace", () => {
     it("asks for SQL before anything has run, and keeps Run off while the editor is empty", () => {
-        render(<QueryWorkspace profile={shop} />);
+        render(<QueryWorkspace consoleId="c1" profile={shop} />);
         expect(screen.getByText(/press ⌘↵ to run the statement under the cursor/)).toBeInTheDocument();
         expect(screen.getByRole("button", { name: "Run" })).toBeDisabled();
         expect(screen.getByText("Read only")).toBeInTheDocument();
@@ -46,8 +46,8 @@ describe("QueryWorkspace", () => {
 
     it("runs everything in the editor and shows the results", async () => {
         api.query.mockResolvedValue(rows);
-        updateQuery("p1", { sql: "select count(*) as n from orders" });
-        render(<QueryWorkspace profile={shop} />);
+        updateQuery("c1", { sql: "select count(*) as n from orders" });
+        render(<QueryWorkspace consoleId="c1" profile={shop} />);
         await act(async () => fireEvent.click(screen.getByRole("button", { name: "Run" })));
         expect(api.query).toHaveBeenCalledWith("p1", "select count(*) as n from orders", 500);
         expect(screen.getByRole("status")).toHaveTextContent("1 row · 7 ms");
@@ -55,8 +55,8 @@ describe("QueryWorkspace", () => {
 
     it("shows the database's error in place of results", async () => {
         api.query.mockRejectedValue({ category: "query", message: 'syntax error at or near "selec"' });
-        updateQuery("p1", { sql: "selec 1" });
-        render(<QueryWorkspace profile={shop} />);
+        updateQuery("c1", { sql: "selec 1" });
+        render(<QueryWorkspace consoleId="c1" profile={shop} />);
         await act(async () => fireEvent.click(screen.getByRole("button", { name: "Run" })));
         expect(screen.getByRole("alert")).toHaveTextContent('syntax error at or near "selec"');
     });
@@ -64,18 +64,18 @@ describe("QueryWorkspace", () => {
     it("offers Stop while a query runs", async () => {
         api.query.mockReturnValue(new Promise(() => {}));
         api.cancel.mockResolvedValue(undefined);
-        updateQuery("p1", { sql: "select pg_sleep(60)" });
-        render(<QueryWorkspace profile={shop} />);
+        updateQuery("c1", { sql: "select pg_sleep(60)" });
+        render(<QueryWorkspace consoleId="c1" profile={shop} />);
         await act(async () => fireEvent.click(screen.getByRole("button", { name: "Run" })));
         expect(screen.getByRole("button", { name: "Running…" })).toBeDisabled();
         await act(async () => fireEvent.click(screen.getByRole("button", { name: "Stop" })));
         expect(api.cancel).toHaveBeenCalledWith("p1");
-        updateQuery("p1", { running: false });
+        updateQuery("c1", { running: false });
     });
 
     it("remembers the row limit picked", () => {
-        render(<QueryWorkspace profile={shop} />);
-        updateQuery("p1", { limit: 1000 });
-        expect(readQuery("p1").limit).toBe(1000);
+        render(<QueryWorkspace consoleId="c1" profile={shop} />);
+        updateQuery("c1", { limit: 1000 });
+        expect(readQuery("c1").limit).toBe(1000);
     });
 });

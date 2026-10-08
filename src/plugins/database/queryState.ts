@@ -5,7 +5,7 @@ import { databaseApi, failureMessage, type QueryOutcome } from "./api";
 export const ROW_LIMITS = [100, 500, 1000, 5000] as const;
 export const DEFAULT_ROW_LIMIT = 500;
 
-/** One saved database's query: the SQL being written, and what the last run gave. */
+/** One console's query: the SQL being written, and what the last run gave. */
 export interface QueryState {
     sql: string;
     limit: number;
@@ -28,13 +28,13 @@ export function updateQuery(id: string, change: Partial<QueryState>): void {
     useQueries.setState((state) => ({ queries: { ...state.queries, [id]: { ...(state.queries[id] ?? EMPTY), ...change } } }));
 }
 
-/** Runs the SQL on the saved database. A run already going is left alone rather than queued. */
-export async function runQuery(id: string, sql: string): Promise<void> {
+/** Runs the console's SQL on a saved database. A run already going is left alone rather than queued. */
+export async function runQuery(id: string, profile: string, sql: string): Promise<void> {
     const text = sql.trim();
     if (!text || readQuery(id).running) return;
     updateQuery(id, { running: true, error: null, ran: text });
     try {
-        const outcome = await databaseApi.query(id, text, readQuery(id).limit);
+        const outcome = await databaseApi.query(profile, text, readQuery(id).limit);
         updateQuery(id, { outcome, error: null });
     } catch (failure) {
         updateQuery(id, { outcome: null, error: failureMessage(failure) });
@@ -44,8 +44,8 @@ export async function runQuery(id: string, sql: string): Promise<void> {
     }
 }
 
-export async function stopQuery(id: string): Promise<void> {
-    await databaseApi.cancel(id);
+export async function stopQuery(profile: string): Promise<void> {
+    await databaseApi.cancel(profile);
 }
 
 /** Puts SQL in the editor without running it, as when a table or a past query is picked. */
@@ -53,7 +53,7 @@ export function loadQuery(id: string, sql: string): void {
     updateQuery(id, { sql });
 }
 
-/** Forgets a database's query, as when the connection is removed. */
+/** Forgets a console's query, as when its tab closes. */
 export function forgetQuery(id: string): void {
     useQueries.setState((state) => {
         const queries = { ...state.queries };

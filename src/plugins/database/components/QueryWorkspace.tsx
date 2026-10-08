@@ -6,9 +6,18 @@ import { ROW_LIMITS, runQuery, stopQuery, updateQuery, useQuery } from "../query
 import { ResultsView } from "./ResultsView";
 import { SqlEditor } from "./SqlEditor";
 
-export function QueryWorkspace({ profile, resultActions }: { profile: DatabaseProfile; resultActions?: (result: ResultSet) => ReactNode }) {
-    const query = useQuery(profile.id);
-    const run = (sql: string) => void runQuery(profile.id, sql);
+export function QueryWorkspace({
+    consoleId: id,
+    profile,
+    resultActions,
+}: {
+    /** Which console's SQL and results to show; a connection can have several. */
+    consoleId: string;
+    profile: DatabaseProfile;
+    resultActions?: (result: ResultSet) => ReactNode;
+}) {
+    const query = useQuery(id);
+    const run = (sql: string) => void runQuery(id, profile.id, sql);
 
     return (
         <section className="db-workspace" aria-label={`Query ${profile.name}`}>
@@ -32,11 +41,11 @@ export function QueryWorkspace({ profile, resultActions }: { profile: DatabasePr
                     value={String(query.limit)}
                     title="The most rows kept from each statement"
                     options={ROW_LIMITS.map((limit) => ({ value: String(limit), label: limit.toLocaleString("en-US") }))}
-                    onChange={(limit) => updateQuery(profile.id, { limit: Number(limit) })}
+                    onChange={(limit) => updateQuery(id, { limit: Number(limit) })}
                 />
                 {profile.readOnly && <span className="db-badge">Read only</span>}
             </div>
-            <SqlEditor value={query.sql} dialect={profile.engine} onChange={(sql) => updateQuery(profile.id, { sql })} onRun={run} />
+            <SqlEditor value={query.sql} dialect={profile.engine} onChange={(sql) => updateQuery(id, { sql })} onRun={run} />
             {query.error ? (
                 <div className="db-query-error" role="alert">
                     <div className="db-callout" data-tone="danger">
