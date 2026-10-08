@@ -30,3 +30,12 @@ export function runNotice(execution: RundeckExecution, branchOptions: string[]):
     const body = [branch ? name : null, took && (ok ? `took ${took}` : `after ${took}`)].filter(Boolean).join(" · ");
     return { ok, title, body: body || `#${execution.id}` };
 }
+
+/** When Rundeck stopped answering before the run ended, so how it went is unknown. */
+export function lostRunNotice(name: string, group: string | null, executionId: number): RunNotice {
+    return {
+        ok: false,
+        title: `Lost track of ${qualifiedName(name, group)}`,
+        body: `Rundeck stopped answering before run #${executionId} ended. Check it in Rundeck.`,
+    };
+}
