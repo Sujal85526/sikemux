@@ -1,7 +1,21 @@
 import { memo, useContext, useMemo, useState } from "react";
 import { CopyButton } from "../ui/CopyButton";
 import { basename } from "../lib/paths";
-import { AgentIcon, IconCheck, IconChevron, IconClose, IconFile, IconInfo, IconPlug, IconTimer, IconUser, IconWarning } from "../ui/Icons";
+import {
+    AgentIcon,
+    IconCheck,
+    IconChevron,
+    IconClose,
+    IconFile,
+    IconInfo,
+    IconPencil,
+    IconPlug,
+    IconTimer,
+    IconUser,
+    IconWarning,
+} from "../ui/Icons";
+import { Tooltip } from "../ui/Tooltip";
+import { MessageEditor } from "./MessageEditor";
 import { rateLabel, sentLabel, sentTitle } from "./messageMeta";
 import { durationLabel } from "./durationLabel";
 import { localImagePath, useImagePreview } from "./imagePreview";
@@ -275,6 +289,8 @@ export const ChatMessageRow = memo(function ChatMessageRow({
     rate,
     at,
     took,
+    onEdit,
+    canRestoreFiles = false,
 }: {
     message: ChatMessage;
     live: boolean;
@@ -282,9 +298,31 @@ export const ChatMessageRow = memo(function ChatMessageRow({
     rate: number | null;
     at: number | null;
     took: number | null;
+    /** Given when the person may write this message again. */
+    onEdit?: (message: ChatMessage, text: string, restoreFiles: boolean) => void;
+    canRestoreFiles?: boolean;
 }) {
     const { parts, context } = useMemo(() => sentParts(message), [message]);
+    const [editing, setEditing] = useState(false);
     const attachments = message.attachments ?? [];
+    if (editing && onEdit) {
+        const written = parts.flatMap((part) => (part.kind === "text" ? [part.text] : [])).join("\n\n");
+        return (
+            <article className={`chat-message ${message.role}`}>
+                <div className="chat-message-content">
+                    <MessageEditor
+                        initial={written}
+                        canRestoreFiles={canRestoreFiles}
+                        onCancel={() => setEditing(false)}
+                        onSend={(text, restoreFiles) => {
+                            setEditing(false);
+                            onEdit(message, text, restoreFiles);
+                        }}
+                    />
+                </div>
+            </article>
+        );
+    }
     return (
         <article className={`chat-message ${message.role}`}>
             <div className="chat-message-content">
@@ -303,6 +341,13 @@ export const ChatMessageRow = memo(function ChatMessageRow({
                 <PartGroups parts={parts} live={live} typed={message.role === "user"} />
                 {copyable && (
                     <div className="chat-message-meta">
+                        {onEdit && context.length === 0 && (
+                            <Tooltip label="Edit message">
+                                <button type="button" className="copy-btn" aria-label="Edit message" onClick={() => setEditing(true)}>
+                                    <IconPencil size={15} />
+                                </button>
+                            </Tooltip>
+                        )}
                         <CopyButton value={copyable} label={message.role === "user" ? "message" : "reply"} size={15} />
                         {at !== null && (
                             <time className="chat-message-time" dateTime={new Date(at).toISOString()} title={sentTitle(at)}>

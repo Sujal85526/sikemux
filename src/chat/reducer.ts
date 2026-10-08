@@ -145,7 +145,13 @@ function appendChunk(
             contentText !== undefined
                 ? { id: `${messageId}-${partKind}-0`, kind: partKind, text: contentText }
                 : { id: `${messageId}-content-0`, kind: "content", content: boundContent(chunk.content) };
-        const opened: ChatMessage = { id: messageId, role, parts: [part], ...(timed ? { sentAt: Date.now() } : {}) };
+        const opened: ChatMessage = {
+            id: messageId,
+            role,
+            parts: [part],
+            ...(role === "user" && chunk.messageId ? { promptId: chunk.messageId } : {}),
+            ...(timed ? { sentAt: Date.now() } : {}),
+        };
         messages.push(stream ? { ...opened, ...timedStream(opened, contentText.length) } : opened);
         nextId += 1;
     } else {
@@ -440,6 +446,14 @@ function agentNotice(state: ChatState, update: Record<string, unknown>): ChatSta
     };
 }
 
+/* The person took the chat back to before one of their messages: it goes, and
+   everything after it with it. */
+function rewind(state: ChatState, messageId: string): ChatState {
+    const index = state.messages.findIndex((message) => message.role === "user" && (message.promptId ?? message.id) === messageId);
+    if (index < 0) return state;
+    return { ...state, messages: state.messages.slice(0, index), plan: null, stopReason: null, revision: state.revision + 1 };
+}
+
 function contextUsage(update: Record<string, unknown>): ContextUsage | null {
     const { used, size } = update;
     if (typeof used !== "number" || typeof size !== "number" || !Number.isFinite(used) || !Number.isFinite(size) || size <= 0) return null;
@@ -533,6 +547,10 @@ function sessionUpdate(state: ChatState, sessionId: string, update: Record<strin
         }
         case "session_info_update":
             return { ...state, title: typeof update.title === "string" ? update.title : state.title, revision: state.revision + 1 };
+        case "message_rewound": {
+            const messageId = textOf(update.messageId);
+            return messageId ? rewind(state, messageId) : state;
+        }
         default:
             return state;
     }
@@ -578,6 +596,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
                     {
                         id,
                         role: "user",
+                        ...(action.messageId ? { promptId: action.messageId } : {}),
                         sentAt: Date.now(),
                         parts: action.text.trim() ? [{ id: `${id}-text`, kind: "text", text: action.text }] : [],
                         ...(action.paths.length ? { attachments: action.paths } : {}),
@@ -592,6 +611,8 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
                 revision: state.revision + 1,
             };
         }
+        case "rewind":
+            return rewind(state, action.messageId);
         case "session_update":
             return sessionUpdate(
                 state.awaitingReplay ? { ...state, messages: [], nextId: 1, plan: null, awaitingReplay: false } : state,

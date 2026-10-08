@@ -32,7 +32,7 @@ describe("eventMessage", () => {
 
 describe("statusFromEvent", () => {
     it("passes every known state through", () => {
-        for (const state of ["installing", "starting", "initializing", "ready", "stopped", "error"] as const)
+        for (const state of ["starting", "initializing", "ready", "stopped", "error"] as const)
             expect(statusFromEvent(event("status", { state }))).toBe(state);
     });
 

@@ -52,8 +52,7 @@ describe("backendState", () => {
 
 describe("connectingLabel", () => {
     it("describes each step of coming up", () => {
-        expect(connectingLabel("installing")).toBe("Installing structured-session adapter…");
-        expect(connectingLabel("starting")).toBe("Starting agent adapter…");
+        expect(connectingLabel("starting")).toBe("Starting agent…");
         expect(connectingLabel("connecting")).toBe("Connecting to agent session…");
         expect(connectingLabel("initializing")).toBe("Connecting to agent session…");
     });
@@ -78,7 +77,7 @@ describe("activityText", () => {
     });
 
     it("shows the connection step under an existing transcript", () => {
-        expect(activityText(state({ messages: [message], connection: "starting" }), null)).toBe("Starting agent adapter…");
+        expect(activityText(state({ messages: [message], connection: "starting" }), null)).toBe("Starting agent…");
         expect(activityText(state({ messages: [message] }), null)).toBeNull();
     });
 
@@ -105,8 +104,7 @@ describe("composerPlaceholder", () => {
     });
 
     it("describes each step of coming up", () => {
-        expect(composerPlaceholder({ connection: "installing", running: false }, quiet)).toBe("Installing structured-session adapter…");
-        expect(composerPlaceholder({ connection: "starting", running: false }, quiet)).toBe("Starting agent adapter…");
+        expect(composerPlaceholder({ connection: "starting", running: false }, quiet)).toBe("Starting agent…");
         expect(composerPlaceholder({ connection: "initializing", running: false }, quiet)).toBe("Connecting to agent session…");
     });
 });

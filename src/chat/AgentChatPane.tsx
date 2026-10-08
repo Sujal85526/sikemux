@@ -226,6 +226,22 @@ export function AgentChatPane({
         return () => window.removeEventListener("keydown", onKey);
     }, [active]);
 
+    const editable = state.capabilities.editing === true && state.connection === "ready" && !state.running;
+    const editMessage = useCallback(
+        (message: ChatMessage, text: string, restoreFiles: boolean) => {
+            const messageId = message.promptId;
+            if (!messageId) return;
+            const paths = message.attachments ?? [];
+            setComposerError(null);
+            dispatch({ type: "rewind", messageId });
+            dispatch({ type: "local_prompt", text, paths, messageId });
+            acpApi.edit(agentRef.current.id, messageId, text, paths, [], restoreFiles).catch((error: unknown) => {
+                dispatch({ type: "error", message: error instanceof Error ? error.message : String(error) });
+            });
+        },
+        [agentRef, dispatch],
+    );
+
     const stop = () => {
         void acpApi.cancel(agent.id).catch((failure: unknown) => setComposerError(failure instanceof Error ? failure.message : String(failure)));
     };
@@ -363,6 +379,8 @@ export function AgentChatPane({
                                                     rate={meta.rate}
                                                     at={meta.at}
                                                     took={meta.took}
+                                                    onEdit={editable && message.role === "user" && message.promptId ? editMessage : undefined}
+                                                    canRestoreFiles={state.capabilities.restoreFiles === true}
                                                 />
                                             </div>
                                         );

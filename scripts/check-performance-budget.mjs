@@ -142,10 +142,11 @@ const budgets = [
     // move to on its error, and the move shows in the transcript. A page an
     // agent built and shows sits in its reply too. The transcript lays itself
     // out from the bottom, and tool rows draw an icon for what each call does.
+    // A sent message can be opened again, edited and sent in its place.
     label: "ACP chat lazy chunk",
     pattern: /^AgentSurface-.*\.js$/,
     raw: 134_000,
-    gzip: 41_000,
+    gzip: 42_000,
   },
   {
     // Shiki, its JavaScript regex engine and vscode-textmate, with no
@@ -197,14 +198,15 @@ const budgets = [
     // transcripts, background tasks, queued messages, the reconnect states,
     // code block copy buttons, the composer microphone, a tool call's output,
     // context chips, the resuming states, a terminal agent's among them,
-    // attached files drawn as cards, and the agent header floated as pills. It
+    // attached files drawn as cards, the agent header floated as pills, and
+    // the editor a sent message opens in to be written again. It
     // is one lazily loaded sheet behind an agent pane, so this buys those rows
     // room without touching what the app loads at startup.
     // Lightning CSS, Vite's minifier, keeps the spaces inside color-mix().
     label: "ACP chat CSS",
     pattern: /^AgentSurface-.*\.css$/,
-    raw: 49_000,
-    gzip: 9_100,
+    raw: 50_500,
+    gzip: 9_300,
   },
   {
     // Includes the JetBrainsMono Nerd Font @font-face rules: a base face per
