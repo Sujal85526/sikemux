@@ -215,6 +215,7 @@ function ProjectBlock({ s }: { s: Session }) {
     const rail = useRail();
     const { activeSessionId, agentsById, activityById, backgroundById, windowsById, windowsBySession, draggingProjectId, kb } = rail;
     const active = s.id === activeSessionId;
+    const fileTreeOpen = useStore((st) => st.fileTreeOpen);
     // Active or not, a project is one tree root holding its row, so the row survives the switch and its tint cross-fades.
     const treeRef = useRef<HTMLDivElement>(null);
     useProjectUnfold(treeRef, active);
@@ -271,7 +272,8 @@ function ProjectBlock({ s }: { s: Session }) {
 
     const winByRole = (role: WindowRole): Window | undefined => sessionWindows.find((w) => w.role === role);
     const activeRole = sessionWindows.find((w) => w.id === s.activeWindowId)?.role;
-    const isSubActive = (role: WindowRole | "agents"): boolean => activeRole === (role === "agents" ? "agent" : role);
+    const isSubActive = (role: WindowRole | "agents"): boolean =>
+        role === "files" ? fileTreeOpen : activeRole === (role === "agents" ? "agent" : role);
 
     const onSubClick = (role: WindowRole | "agents") => {
         if (role === "agents") {
@@ -279,7 +281,7 @@ function ProjectBlock({ s }: { s: Session }) {
             return;
         }
         if (role === "files") {
-            cmd.openEditorPane();
+            cmd.toggleFileTree();
             return;
         }
         if (role === "git") {

@@ -319,8 +319,8 @@ const coreKeybindingActions = [
     },
     {
         id: "window.files",
-        label: "Focus files",
-        detail: "Jump to the files window",
+        label: "Toggle file tree",
+        detail: "Show or hide the project's files beside the stage",
         category: "Navigation",
         defaultBinding: on("Meta+Alt+Digit1", "Ctrl+Alt+Digit1"),
     },
