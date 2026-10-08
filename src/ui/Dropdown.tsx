@@ -66,7 +66,6 @@ export function Dropdown({
     const prefix = useRef({ text: "", at: 0 });
     const id = useId();
     const active = options.find((option) => option.value === value);
-    const [owner, setOwner] = useState<string>();
     const [query, setQuery] = useState("");
     const searchRef = useRef<HTMLInputElement>(null);
     const shown = useMemo(
@@ -84,7 +83,10 @@ export function Dropdown({
     };
     useLayoutEffect(() => {
         if (!open) return;
-        setOwner(target()?.closest<HTMLElement>("[data-modal-scope]")?.dataset.modalScope);
+        /* Marked before the menu takes focus, so a modal around the dropdown
+           sees the focus stay inside it rather than pulling it back. */
+        const scope = target()?.closest<HTMLElement>("[data-modal-scope]")?.dataset.modalScope;
+        if (menuRef.current && scope) menuRef.current.dataset.modalOwner = scope;
         setQuery("");
         const { options: now, value: chosen } = latest.current;
         setIndex(
@@ -146,7 +148,6 @@ export function Dropdown({
             <div
                 ref={menuElement}
                 id={id}
-                data-modal-owner={owner}
                 className={`dd-menu${search ? " searchable" : ""}`}
                 role="listbox"
                 tabIndex={-1}
