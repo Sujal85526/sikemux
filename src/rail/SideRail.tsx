@@ -19,7 +19,7 @@ import * as cmd from "../state/commands";
 import { animate, EASE_IN, EASE_SWAP, foldedFrames, leavingRef, prefersReducedMotion } from "../lib/motion";
 import { rollupAgentStates } from "../state/agentStatus";
 import { getState, useStore } from "../state/store";
-import { AgentIcon, IconAgent, IconClose, IconCommand, IconFolder, IconPencil, IconPlus, WindowIcon } from "../ui/Icons";
+import { AgentIcon, IconClose, IconCommand, IconFolder, IconPencil, IconPlus, WindowIcon } from "../ui/Icons";
 import { Tooltip } from "../ui/Tooltip";
 import { EmptyState, Panel, PanelHeader } from "../ui/Panel";
 import { RailMasthead } from "./RailMasthead";
@@ -121,7 +121,6 @@ interface RailContextValue {
     selectProject: (id: string) => void;
     openSpaceMenu: (event: ReactMouseEvent, session: Session) => void;
     jumpToWindow: (sessionId: string, winId: string) => void;
-    jumpToAgents: (sessionId: string) => void;
     kb: (id: KeybindingActionId) => string;
 }
 
@@ -228,9 +227,29 @@ function ProjectBlock({ s }: { s: Session }) {
     const rollupBackground = agents.some((agent) => (backgroundById[agent.id] ?? 0) > 0);
     const tabCount = sessionWindows.filter((w) => w.role === "term").length;
 
+    const visibleAgents = agents.slice(0, MAX_BADGE_ICONS);
+    const agentOverflow = agents.length - visibleAgents.length;
+    const agentBadge = (
+        <>
+            {visibleAgents.length > 0 && (
+                <span className="proj-child-icons">
+                    {visibleAgents.map((a) => (
+                        <span key={a.id} className={`proj-pip proj-pip-${a.type}${activityById[a.id] ? ` state-${activityById[a.id].state}` : ""}`}>
+                            <AgentIcon type={a.type} size={20} />
+                        </span>
+                    ))}
+                    {agentOverflow > 0 && <span className="proj-child-icons-more">+{agentOverflow}</span>}
+                </span>
+            )}
+            {showsAgentState(rollup ?? "idle", rollupBackground) && (
+                <span className="proj-row-status">
+                    <AgentStateIndicator state={rollup ?? "idle"} background={rollupBackground} />
+                </span>
+            )}
+        </>
+    );
+
     if (!active) {
-        const visible = agents.slice(0, MAX_BADGE_ICONS);
-        const overflow = agents.length - visible.length;
         return (
             <div ref={treeRef} className={`proj-tree${rail.projectDragClass(s.id)}`} data-project-id={s.id}>
                 <div className="session-row-shell project-row-shell" onContextMenu={(event) => rail.openSpaceMenu(event, s)}>
@@ -245,23 +264,7 @@ function ProjectBlock({ s }: { s: Session }) {
                                 <IconFolder size={12} />
                             </span>
                             <span className="proj-name">{s.name}</span>
-                            {visible.length > 0 && (
-                                <span className="proj-child-icons">
-                                    {visible.map((a) => (
-                                        <span
-                                            key={a.id}
-                                            className={`proj-pip proj-pip-${a.type}${activityById[a.id] ? ` state-${activityById[a.id].state}` : ""}`}>
-                                            <AgentIcon type={a.type} size={20} />
-                                        </span>
-                                    ))}
-                                    {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
-                                </span>
-                            )}
-                            {showsAgentState(rollup ?? "idle", rollupBackground) && (
-                                <span className="proj-row-status">
-                                    <AgentStateIndicator state={rollup ?? "idle"} background={rollupBackground} />
-                                </span>
-                            )}
+                            {agentBadge}
                         </button>
                     </Tooltip>
                     <SessionCloseButton session={s} />
@@ -272,14 +275,9 @@ function ProjectBlock({ s }: { s: Session }) {
 
     const winByRole = (role: WindowRole): Window | undefined => sessionWindows.find((w) => w.role === role);
     const activeRole = sessionWindows.find((w) => w.id === s.activeWindowId)?.role;
-    const isSubActive = (role: WindowRole | "agents"): boolean =>
-        role === "files" ? fileTreeOpen : activeRole === (role === "agents" ? "agent" : role);
+    const isSubActive = (role: WindowRole): boolean => (role === "files" ? fileTreeOpen : activeRole === role);
 
-    const onSubClick = (role: WindowRole | "agents") => {
-        if (role === "agents") {
-            rail.jumpToAgents(s.id);
-            return;
-        }
+    const onSubClick = (role: WindowRole) => {
         if (role === "files") {
             cmd.toggleFileTree();
             return;
@@ -309,12 +307,6 @@ function ProjectBlock({ s }: { s: Session }) {
                   </span>
               ))
             : [];
-    const agentIcons: ReactNode[] = agents.map((a) => (
-        <span key={a.id} className={`proj-pip proj-pip-${a.type}${activityById[a.id] ? ` state-${activityById[a.id].state}` : ""}`}>
-            <AgentIcon type={a.type} size={20} />
-        </span>
-    ));
-
     const children: SubRow[] = [
         { role: "files", label: "Files", kbd: kb("window.files"), title: `Files — ${kb("window.files")}`, icons: [] },
         {
@@ -325,13 +317,6 @@ function ProjectBlock({ s }: { s: Session }) {
             icons: termIcons,
         },
         { role: "git", label: "Git", kbd: kb("window.git"), title: `Git — ${kb("window.git")}`, icons: [] },
-        {
-            role: "agents",
-            label: "Agents",
-            kbd: kb("window.agents"),
-            title: `Agents${agents.length ? ` · ${agents.length}` : ""} — ${kb("window.agents")}`,
-            icons: agentIcons,
-        },
         { role: "search", label: "Search", kbd: kb("window.search"), title: `Search — ${kb("window.search")}`, icons: [] },
     ];
     return (
@@ -348,6 +333,7 @@ function ProjectBlock({ s }: { s: Session }) {
                             <IconFolder size={12} />
                         </span>
                         <span className="proj-name">{s.name}</span>
+                        {agentBadge}
                     </button>
                 </Tooltip>
                 <SessionCloseButton session={s} />
@@ -355,7 +341,6 @@ function ProjectBlock({ s }: { s: Session }) {
             <div className="proj-children" ref={foldChildren}>
                 {children.map((c) => {
                     const subActive = isSubActive(c.role);
-                    const node = c.role === "agents" ? <IconAgent size={13} /> : <WindowIcon role={c.role} size={13} />;
                     const visibleIcons = c.icons.slice(0, MAX_BADGE_ICONS);
                     const overflow = c.icons.length - visibleIcons.length;
                     return (
@@ -370,16 +355,15 @@ function ProjectBlock({ s }: { s: Session }) {
                                     onSubClick(c.role);
                                 }}>
                                 <span className="proj-child-tick" />
-                                <span className="proj-child-ic">{node}</span>
+                                <span className="proj-child-ic">
+                                    <WindowIcon role={c.role} size={13} />
+                                </span>
                                 <span className="proj-child-label">{c.label}</span>
                                 {visibleIcons.length > 0 && (
                                     <span className="proj-child-icons">
                                         {visibleIcons}
                                         {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
                                     </span>
-                                )}
-                                {c.role === "agents" && (rollup || rollupBackground) && (
-                                    <AgentStateIndicator state={rollup ?? "idle"} background={rollupBackground} />
                                 )}
                                 {c.kbd && <span className="proj-child-kbd">{c.kbd}</span>}
                             </button>
@@ -392,7 +376,7 @@ function ProjectBlock({ s }: { s: Session }) {
 }
 
 interface SubRow {
-    role: WindowRole | "agents";
+    role: WindowRole;
     label: string;
     kbd?: string;
     title: string;
@@ -728,10 +712,6 @@ export const SideRail = memo(function SideRail() {
         if (sessionId !== activeSessionId) cmd.selectSession(sessionId);
         cmd.selectWindowId(winId);
     };
-    const jumpToAgents = (sessionId: string) => {
-        if (sessionId !== activeSessionId) cmd.selectSession(sessionId);
-        cmd.focusAgents();
-    };
 
     const ghostPoint = projectGhostPointRef.current;
     const ghostTransform =
@@ -752,7 +732,6 @@ export const SideRail = memo(function SideRail() {
         selectProject,
         openSpaceMenu: (event, session) => openMenu(event, projectSpaceItems(session, spaces, projectSpaces[session.cwd])),
         jumpToWindow,
-        jumpToAgents,
         kb,
     };
 
