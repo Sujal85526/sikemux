@@ -957,6 +957,7 @@ describe("frontend persistence", () => {
             branchOptions: ["BRANCH", "GIT_BRANCH", "GIT_REF", "REF"],
             deployTargets: {},
             treeHidden: false,
+            notifyWhenDone: true,
         });
         expect(getState().sessions[project.id]).not.toHaveProperty("deploy");
     });
