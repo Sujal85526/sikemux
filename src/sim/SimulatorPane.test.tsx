@@ -12,6 +12,7 @@ vi.mock("../api/sim", () => ({
         subscribe: vi.fn(),
         devices: vi.fn(),
         screen: vi.fn(),
+        mask: vi.fn(() => Promise.resolve(null)),
         touch: vi.fn(),
         text: vi.fn(),
         key: vi.fn(),
@@ -95,7 +96,7 @@ describe("the simulator pane", () => {
             target.width = 1206;
             target.height = 2622;
             firstFrame = () => events.onFirstFrame?.();
-            return { stop: vi.fn(), markInput: vi.fn(), turn: vi.fn() };
+            return { stop: vi.fn(), markInput: vi.fn(), turn: vi.fn(), clip: vi.fn() };
         });
         HTMLCanvasElement.prototype.setPointerCapture = vi.fn();
         HTMLCanvasElement.prototype.getBoundingClientRect = () => ({ ...canvas.rect, right: 700, bottom: 650, x: 100, y: 50, toJSON: () => ({}) });

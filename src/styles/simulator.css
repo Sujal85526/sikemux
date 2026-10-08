@@ -151,7 +151,6 @@
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
-    border-radius: 18px;
     touch-action: none;
     cursor: default;
     opacity: 0;
@@ -161,9 +160,10 @@
     cursor: not-allowed;
 }
 
+/* A drop shadow rather than a border, so the hairline follows the device's own corners. */
 .sim-screen.framed {
     opacity: 1;
-    box-shadow: 0 0 0 1px var(--border);
+    filter: drop-shadow(0 0 0.5px var(--border-strong));
 }
 
 .sim-screen:focus {
@@ -171,5 +171,5 @@
 }
 
 .sim-screen.framed:focus {
-    box-shadow: var(--focus-ring);
+    filter: drop-shadow(0 0 1px var(--border-selected));
 }

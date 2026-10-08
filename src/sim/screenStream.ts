@@ -39,6 +39,8 @@ export interface ScreenPlayer {
     markInput: () => void;
     /** Shows the screen turned the way the device is; the frames themselves always come upright. */
     turn: (orientation: SimScreen["orientation"]) => void;
+    /** Clips the screen to the device's own outline, given upright like the frames. */
+    clip: (mask: CanvasImageSource | null) => void;
 }
 
 /** The transform that draws an upright frame `width` × `height` turned the way the device is. */
@@ -69,6 +71,7 @@ export function playScreen(udid: string, canvas: HTMLCanvasElement, events: Scre
     const upright = document.createElement("canvas");
     const uprightContext = upright.getContext("2d");
     let orientation: SimScreen["orientation"] = "portrait";
+    let mask: CanvasImageSource | null = null;
     let stopped = false;
     let watch: Promise<number> | null = null;
     let inputAt: number | null = null;
@@ -98,6 +101,11 @@ export function playScreen(udid: string, canvas: HTMLCanvasElement, events: Scre
         }
         context.setTransform(...turnTransform(orientation, upright.width, upright.height));
         context.drawImage(upright, 0, 0);
+        if (mask) {
+            context.globalCompositeOperation = "destination-in";
+            context.drawImage(mask, 0, 0, upright.width, upright.height);
+            context.globalCompositeOperation = "source-over";
+        }
         context.setTransform(1, 0, 0, 1, 0, 0);
     };
 
@@ -231,6 +239,10 @@ export function playScreen(udid: string, canvas: HTMLCanvasElement, events: Scre
         turn: (next) => {
             if (next === orientation) return;
             orientation = next;
+            paint();
+        },
+        clip: (next) => {
+            mask = next;
             paint();
         },
     };

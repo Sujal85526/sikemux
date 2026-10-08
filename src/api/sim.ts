@@ -83,6 +83,8 @@ export const simApi = {
     boot: (udid: string) => call<void>({ type: "boot", udid }),
     shutdown: (udid: string) => call<void>({ type: "shutdown", udid }),
     screen: (udid: string) => call<SimScreen>({ type: "screen", udid }),
+    /** The screen's outline, upright and at full resolution, as a PNG data URL; null for a square screen. */
+    mask: (udid: string) => call<{ mask: string | null }>({ type: "mask", udid }).then((answer) => answer.mask),
     stopStream: (udid: string, format?: SimStreamFormat) => call<void>({ type: "stopStream", udid, format }),
     touch: (udid: string, phase: SimTouchPhase, x: number, y: number) => call<void>({ type: "touch", udid, phase, x, y }),
     text: (udid: string, text: string) => call<void>({ type: "text", udid, text }),

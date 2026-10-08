@@ -262,6 +262,7 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
         });
         player.current = playing;
         if (latestScreen.current) playing.turn(latestScreen.current.orientation);
+        playing.clip(latestMask.current);
         return () => {
             playing.stop();
             player.current = null;
@@ -269,6 +270,29 @@ export function SimulatorPane({ agentId, simulator, visible }: { agentId: string
     }, [udid, booted, shown, streamAttempt, refresh]);
 
     useEffect(() => setFramed(false), [udid, booted]);
+
+    const latestMask = useRef<HTMLImageElement | null>(null);
+    useEffect(() => {
+        latestMask.current = null;
+        player.current?.clip(null);
+        if (!udid || !booted) return;
+        let alive = true;
+        void simApi
+            .mask(udid)
+            .then(async (url) => {
+                if (!url) return;
+                const image = new Image();
+                image.src = url;
+                await image.decode();
+                if (!alive) return;
+                latestMask.current = image;
+                player.current?.clip(image);
+            })
+            .catch((error) => console.warn("simulator screen outline", error));
+        return () => {
+            alive = false;
+        };
+    }, [udid, booted]);
 
     const latestScreen = useRef<SimScreen | null>(null);
     useEffect(() => {
