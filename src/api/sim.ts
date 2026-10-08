@@ -26,7 +26,31 @@ export interface SimScreen {
 
 export type SimStreamFormat = "h264" | "mjpeg";
 
-export type SimButton = "home" | "lock" | "side" | "siri" | "volumeUp" | "volumeDown";
+export type SimButton = "home" | "lock" | "side" | "siri" | "volumeUp" | "volumeDown" | "action";
+
+/** A side button on the device's frame, in points from the frame's top left. */
+export interface SimChromeButton {
+    name: string;
+    title: string;
+    anchor: "left" | "right";
+    /** Its left edge from the frame's side, or its right edge when anchored right; `hoverX` is where it slides to. */
+    x: number;
+    y: number;
+    hoverX: number;
+    width: number;
+    height: number;
+    image: string;
+    imageDown: string | null;
+}
+
+/** The device's frame from Xcode's DeviceKit chrome: the bezel image, the room its side buttons need, and the buttons. */
+export interface SimChrome {
+    image: string;
+    width: number;
+    height: number;
+    padding: { top: number; left: number; bottom: number; right: number };
+    buttons: SimChromeButton[];
+}
 export type SimOrientation = "portrait" | "portraitUpsideDown" | "landscapeLeft" | "landscapeRight";
 export type SimTouchPhase = "down" | "move" | "up";
 
@@ -85,11 +109,12 @@ export const simApi = {
     screen: (udid: string) => call<SimScreen>({ type: "screen", udid }),
     /** The screen's outline, upright and at full resolution, as a PNG data URL; null for a square screen. */
     mask: (udid: string) => call<{ mask: string | null }>({ type: "mask", udid }).then((answer) => answer.mask),
+    chrome: (udid: string) => call<{ chrome: SimChrome | null }>({ type: "chrome", udid }).then((answer) => answer.chrome),
     stopStream: (udid: string, format?: SimStreamFormat) => call<void>({ type: "stopStream", udid, format }),
     touch: (udid: string, phase: SimTouchPhase, x: number, y: number) => call<void>({ type: "touch", udid, phase, x, y }),
     text: (udid: string, text: string) => call<void>({ type: "text", udid, text }),
     key: (udid: string, key: string) => call<void>({ type: "key", udid, key }),
-    button: (udid: string, button: SimButton) => call<void>({ type: "button", udid, button }),
+    button: (udid: string, button: SimButton, phase?: "down" | "up") => call<void>({ type: "button", udid, button, phase }),
     /** Turns the device, or without an orientation reads which way it is turned; resolves to the orientation. */
     orientation: (udid: string, orientation?: SimOrientation) => invoke<SimOrientation>("simulator_orientation", { udid, orientation }),
     /** Drags a finger from one point to another, in device points. */

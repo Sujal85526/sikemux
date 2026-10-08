@@ -88,6 +88,7 @@ export interface PersistedPrefs {
     notch?: unknown;
     voiceDictation?: boolean;
     iosSimulator?: boolean;
+    simulatorFrame?: boolean;
     notificationsIntroduced?: boolean;
     keptRunningNoticeShown?: boolean;
     railDensity?: RailDensity;

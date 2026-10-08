@@ -122,7 +122,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
               row("agents", "Notch", "Step aside for Sikemux Dev", "dev build development"),
               row("agents", "Voice", "Dictate with right Option", "dictation microphone speech push to talk hold"),
               row("agents", "Voice", "Speech model", "parakeet download neural engine"),
-              section("agents", "iOS Simulator", "iphone ipad xcode devicehub simulator phone mobile"),
+              section("agents", "iOS Simulator", "iphone ipad xcode devicehub simulator phone mobile bezel frame buttons"),
               row("agents", "iOS Simulator", "Let agents drive the iOS Simulator", "iphone tap swipe app test mobile"),
               row("agents", "iOS Simulator", "Xcode", "xcode-select developer tools"),
               row("agents", "iOS Simulator", "iOS runtimes", "ios version runtime"),

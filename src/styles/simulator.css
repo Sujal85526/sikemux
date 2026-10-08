@@ -139,6 +139,56 @@
     pointer-events: none;
 }
 
+.sim-device {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+}
+
+.sim-device.framed .sim-screen {
+    position: absolute;
+}
+
+/* The bezel and side buttons are still images, turned with the device; only the screen inside them redraws. */
+.sim-frame {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    pointer-events: none;
+}
+
+.sim-bezel {
+    position: absolute;
+    user-select: none;
+}
+
+.sim-side {
+    position: absolute;
+    overflow: hidden;
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+.sim-side[aria-disabled="true"] {
+    cursor: default;
+}
+
+.sim-side img {
+    position: absolute;
+    top: 0;
+    left: var(--rest);
+    pointer-events: none;
+    user-select: none;
+    transition: left var(--dur-1) ease-out;
+}
+
+.sim-side:not([aria-disabled="true"]):hover img,
+.sim-side.held img {
+    left: var(--out);
+}
+
 /* The canvas fills the stage and holds exactly the pixels it shows, so the phone is scaled once,
    with care, rather than again by the compositor. */
 .sim-screen {

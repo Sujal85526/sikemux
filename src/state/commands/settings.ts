@@ -13,6 +13,7 @@ export const setVoiceDictation = (value: boolean): void => setState({ voiceDicta
 export const setNotch = (patch: Partial<import("../../notch/notchSettings").NotchSettings>): void =>
     setState({ notch: { ...getState().notch, ...patch } });
 export const setIosSimulator = (value: boolean): void => setState({ iosSimulator: value });
+export const setSimulatorFrame = (value: boolean): void => setState({ simulatorFrame: value });
 export const setPaneShader = (value: boolean): void => setState({ paneShader: value });
 export const setPaneImage = (path: string | null): void => setState({ paneImage: path });
 export const setUiTextScale = (value: number): void => setState({ uiTextScale: [1, 1.1, 1.25].includes(value) ? value : 1 });

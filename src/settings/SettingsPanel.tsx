@@ -1819,6 +1819,7 @@ function xcodeDescription(path: string | null): string {
 
 function SimulatorSection() {
     const enabled = useStore((s) => s.iosSimulator);
+    const frame = useStore((s) => s.simulatorFrame);
     const status = useSimStatus();
     const [setup, setSetup] = useState<SimSetup | "unread" | null>(null);
     const usable = simUsable(status);
@@ -1847,6 +1848,12 @@ function SimulatorSection() {
                     desc="Agents tap, type and read simulators without asking, as they do browser tabs, and their screenshots go to the agent's provider. Applies to agents started after a change."
                     asLabel
                     control={<Switch checked={enabled} onChange={cmd.setIosSimulator} label="Let agents drive the iOS Simulator" />}
+                />
+                <SettingsRow
+                    label="Show the device's frame"
+                    desc="Draws the phone's bezel and side buttons around its screen, as Simulator does. Without it the screen gets a little more room."
+                    asLabel
+                    control={<Switch checked={frame} onChange={cmd.setSimulatorFrame} label="Show the device's frame" />}
                 />
                 <SettingsRow label="Xcode" desc={xcode} />
                 {!unavailable && <SettingsRow label="iOS runtimes" desc={runtimes} />}

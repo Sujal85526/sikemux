@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { simApi } from "../api/sim";
 import { noteSimulatorActing, noteSimulatorAttached, noteSimulatorDetached } from "../state/simulatorAgents";
 import { playScreen } from "./screenStream";
-import { deviceOptions, devicePoint, keyForDevice, screenshotPath, scrollStep, SimulatorPane } from "./SimulatorPane";
+import { deviceOptions, devicePoint, frameLayout, keyForDevice, screenshotPath, scrollStep, SimulatorPane } from "./SimulatorPane";
 
 vi.mock("../api/sim", () => ({
     simApi: {
@@ -13,6 +13,7 @@ vi.mock("../api/sim", () => ({
         devices: vi.fn(),
         screen: vi.fn(),
         mask: vi.fn(() => Promise.resolve(null)),
+        chrome: vi.fn(() => Promise.resolve(null)),
         orientation: vi.fn(() => Promise.resolve("landscapeRight")),
         touch: vi.fn(),
         text: vi.fn(),
@@ -233,5 +234,34 @@ describe("deviceOptions", () => {
             ["iPad (A16)", "iPad"],
         ]);
         expect(options[1]).toMatchObject({ meta: "iOS 27.0", detail: "In use by shop" });
+    });
+});
+
+describe("frameLayout", () => {
+    const art = {
+        image: "",
+        width: 436,
+        height: 908,
+        padding: { top: 0, left: 9, bottom: 0, right: 9 },
+        buttons: [],
+    };
+    const upright = { width: 402, height: 874, scale: 3, orientation: "portrait" as const };
+
+    it("fits the frame in the room, never past a point a pixel, with the screen in its opening", () => {
+        const layout = frameLayout(art, upright, { width: 1000, height: 454 })!;
+        expect(layout.scale).toBeCloseTo(0.5);
+        expect(layout.width).toBeCloseTo(227);
+        expect(layout.screen).toEqual({ left: (9 + 17) * 0.5, top: 17 * 0.5, width: 201, height: 437 });
+        expect(frameLayout(art, upright, { width: 5000, height: 5000 })!.scale).toBe(1);
+    });
+
+    it("turns the frame with the device and keeps the screen in its opening", () => {
+        const layout = frameLayout(art, { width: 874, height: 402, scale: 3, orientation: "landscapeRight" }, { width: 908, height: 454 })!;
+        expect(layout.scale).toBe(1);
+        expect(layout.frame.degrees).toBe(90);
+        expect([layout.width, layout.height]).toEqual([908, 454]);
+        expect(layout.screen.left).toBeCloseTo(17);
+        expect(layout.screen.top).toBeCloseTo(9 + 17);
+        expect([layout.screen.width, layout.screen.height]).toEqual([874, 402]);
     });
 });

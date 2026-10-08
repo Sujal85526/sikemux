@@ -1,6 +1,25 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type WheelEvent } from "react";
+import {
+    useCallback,
+    useEffect,
+    useRef,
+    useState,
+    type CSSProperties,
+    type KeyboardEvent,
+    type PointerEvent,
+    type ReactNode,
+    type WheelEvent,
+} from "react";
 import { createPortal } from "react-dom";
-import { simApi, type SimDevice, type SimOrientation, type SimScreen, type SimStreamFormat } from "../api/sim";
+import {
+    simApi,
+    type SimButton,
+    type SimChrome,
+    type SimChromeButton,
+    type SimDevice,
+    type SimOrientation,
+    type SimScreen,
+    type SimStreamFormat,
+} from "../api/sim";
 import { AGENT_NAMES } from "../agents/agentLaunch";
 import { readClipboardText } from "../lib/clipboard";
 import { basename } from "../lib/paths";
@@ -102,6 +121,47 @@ function deviceIcon(name: string | undefined): ReactNode {
     return name?.startsWith("iPad") ? <IconTablet size={14} /> : <IconPhone size={14} />;
 }
 
+const TURN_DEGREES: Partial<Record<SimScreen["orientation"], number>> = { landscapeLeft: -90, landscapeRight: 90, portraitUpsideDown: 180 };
+
+export interface FrameLayout {
+    /** CSS pixels per point. */
+    scale: number;
+    width: number;
+    height: number;
+    frame: { width: number; height: number; degrees: number };
+    screen: { left: number; top: number; width: number; height: number };
+}
+
+/** Where the device's frame and its screen go in `room` CSS pixels: as large as fits, never past a point a pixel,
+    turned with the device. The frame turns about its centre, and the screen with it. */
+export function frameLayout(art: SimChrome, screen: SimScreen, room: { width: number; height: number }): FrameLayout | null {
+    const width = art.width + art.padding.left + art.padding.right;
+    const height = art.height + art.padding.top + art.padding.bottom;
+    const sideways = screen.orientation.startsWith("landscape");
+    const turnedWidth = sideways ? height : width;
+    const turnedHeight = sideways ? width : height;
+    const scale = Math.min(1, room.width / turnedWidth, room.height / turnedHeight);
+    if (!(scale > 0)) return null;
+    const degrees = TURN_DEGREES[screen.orientation] ?? 0;
+    const radians = (degrees * Math.PI) / 180;
+    const offsetX = art.padding.left + art.width / 2 - width / 2;
+    const offsetY = art.padding.top + art.height / 2 - height / 2;
+    const centreX = turnedWidth / 2 + offsetX * Math.cos(radians) - offsetY * Math.sin(radians);
+    const centreY = turnedHeight / 2 + offsetX * Math.sin(radians) + offsetY * Math.cos(radians);
+    return {
+        scale,
+        width: turnedWidth * scale,
+        height: turnedHeight * scale,
+        frame: { width: width * scale, height: height * scale, degrees },
+        screen: {
+            left: (centreX - screen.width / 2) * scale,
+            top: (centreY - screen.height / 2) * scale,
+            width: screen.width * scale,
+            height: screen.height * scale,
+        },
+    };
+}
+
 export function screenshotPath(deviceName: string, at: Date): string {
     const name =
         deviceName
@@ -164,6 +224,16 @@ export function SimulatorPane({
     const [streamAttempt, setStreamAttempt] = useState(0);
     const player = useRef<ScreenPlayer | null>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const showFrame = useStore((state) => state.simulatorFrame);
+    const [room, setRoom] = useState<{ width: number; height: number } | null>(null);
+    const stageRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        const stage = stageRef.current;
+        if (!stage || typeof ResizeObserver === "undefined") return;
+        const sizes = new ResizeObserver(([entry]) => setRoom({ width: entry.contentRect.width, height: entry.contentRect.height }));
+        sizes.observe(stage);
+        return () => sizes.disconnect();
+    }, []);
     // Input goes out in the order it happened; the helper answers requests in parallel.
     const input = useRef<Promise<unknown>>(Promise.resolve());
     const gesture = useRef<Gesture | null>(null);
@@ -291,11 +361,17 @@ export function SimulatorPane({
     useEffect(() => setFramed(false), [udid, booted]);
 
     const latestMask = useRef<HTMLImageElement | null>(null);
+    const [art, setArt] = useState<SimChrome | null>(null);
     useEffect(() => {
         latestMask.current = null;
         player.current?.clip(null);
+        setArt(null);
         if (!udid || !booted) return;
         let alive = true;
+        void simApi
+            .chrome(udid)
+            .then((found) => alive && setArt(found))
+            .catch((error) => console.warn("simulator frame", error));
         void simApi
             .mask(udid)
             .then(async (url) => {
@@ -535,6 +611,7 @@ export function SimulatorPane({
         return <EmptyState title="No iOS simulators" message="Add an iOS runtime in Xcode › Settings › Components, then reopen this tab." />;
 
     const problem = actionProblem ?? streamProblem;
+    const layout = showFrame && art && screen && room ? frameLayout(art, screen, room) : null;
     return (
         <div className="sim-pane">
             {chromeParts}
@@ -552,23 +629,63 @@ export function SimulatorPane({
                 </div>
             )}
             {problem && <div className="sim-problem">{problem}</div>}
-            <div className="sim-stage">
+            <div className="sim-stage" ref={stageRef}>
                 {booted ? (
                     <>
-                        <canvas
-                            ref={canvasRef}
-                            className={`sim-screen${framed ? " framed" : ""}${acting ? " locked" : ""}`}
-                            tabIndex={0}
-                            data-takes-keys
-                            aria-label={`${device?.name ?? "Simulator"} screen`}
-                            onPointerDown={pointerDown}
-                            onPointerMove={pointerMove}
-                            onPointerUp={pointerEnd}
-                            onPointerCancel={pointerEnd}
-                            onLostPointerCapture={pointerEnd}
-                            onWheel={wheel}
-                            onKeyDown={keyDown}
-                        />
+                        <div
+                            className={`sim-device${layout ? " framed" : ""}`}
+                            style={layout ? { width: layout.width, height: layout.height } : undefined}>
+                            {layout && art && (
+                                <div
+                                    className="sim-frame"
+                                    style={{
+                                        width: layout.frame.width,
+                                        height: layout.frame.height,
+                                        transform: `translate(-50%, -50%) rotate(${layout.frame.degrees}deg)`,
+                                    }}>
+                                    {art.buttons.map((button) => (
+                                        <SideButton
+                                            key={button.name}
+                                            button={button}
+                                            art={art}
+                                            scale={layout.scale}
+                                            disabled={acting || !udid}
+                                            onPress={(phase) => {
+                                                const name = SIDE_BUTTONS[button.name];
+                                                if (udid && name) send(() => simApi.button(udid, name, phase));
+                                            }}
+                                        />
+                                    ))}
+                                    <img
+                                        className="sim-bezel"
+                                        src={art.image}
+                                        alt=""
+                                        draggable={false}
+                                        style={{
+                                            left: art.padding.left * layout.scale,
+                                            top: art.padding.top * layout.scale,
+                                            width: art.width * layout.scale,
+                                            height: art.height * layout.scale,
+                                        }}
+                                    />
+                                </div>
+                            )}
+                            <canvas
+                                ref={canvasRef}
+                                style={layout?.screen}
+                                className={`sim-screen${framed ? " framed" : ""}${acting ? " locked" : ""}`}
+                                tabIndex={0}
+                                data-takes-keys
+                                aria-label={`${device?.name ?? "Simulator"} screen`}
+                                onPointerDown={pointerDown}
+                                onPointerMove={pointerMove}
+                                onPointerUp={pointerEnd}
+                                onPointerCancel={pointerEnd}
+                                onLostPointerCapture={pointerEnd}
+                                onWheel={wheel}
+                                onKeyDown={keyDown}
+                            />
+                        </div>
                         {import.meta.env.DEV && shown && (
                             <span
                                 className="sim-fps"
@@ -612,5 +729,73 @@ function SimTool({ label, disabled, onClick, children }: { label: string; disabl
                 {children}
             </button>
         </Tooltip>
+    );
+}
+
+const SIDE_BUTTONS: Record<string, SimButton | undefined> = {
+    action: "action",
+    "volume-up": "volumeUp",
+    "volume-down": "volumeDown",
+    power: "lock",
+};
+
+/** A button on the frame's side: mostly hidden behind the bezel, sliding out under the pointer, pressed while held. */
+function SideButton({
+    button,
+    art,
+    scale,
+    disabled,
+    onPress,
+}: {
+    button: SimChromeButton;
+    art: SimChrome;
+    scale: number;
+    disabled: boolean;
+    onPress: (phase: "down" | "up") => void;
+}) {
+    const [held, setHeld] = useState(false);
+    const width = art.width + art.padding.left + art.padding.right;
+    const left = button.anchor === "left";
+    const side = left ? art.padding.left : art.padding.right;
+    const from = left ? 0 : width - side;
+    const at = (x: number) => ((left ? x : width + x - button.width) - from) * scale;
+    const release = () => {
+        if (!held) return;
+        setHeld(false);
+        onPress("up");
+    };
+    return (
+        <span
+            role="button"
+            tabIndex={-1}
+            aria-label={button.title}
+            aria-disabled={disabled}
+            className={`sim-side${held ? " held" : ""}`}
+            style={
+                {
+                    left: from * scale,
+                    top: (art.padding.top + button.y) * scale,
+                    width: side * scale,
+                    height: button.height * scale,
+                    "--rest": `${at(button.x)}px`,
+                    "--out": `${at(button.hoverX)}px`,
+                } as CSSProperties
+            }
+            onPointerDown={(event) => {
+                if (disabled || event.button !== 0) return;
+                event.currentTarget.setPointerCapture(event.pointerId);
+                setHeld(true);
+                onPress("down");
+            }}
+            onPointerUp={release}
+            onPointerCancel={release}
+            onLostPointerCapture={release}>
+            <img
+                src={held && button.imageDown ? button.imageDown : button.image}
+                alt=""
+                draggable={false}
+                style={{ width: button.width * scale, height: button.height * scale }}
+            />
+        </span>
     );
 }

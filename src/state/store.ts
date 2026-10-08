@@ -89,6 +89,8 @@ export interface DomainState {
     voiceDictation: boolean;
     /** Agents get the iOS Simulator tools on a Mac that can run it. */
     iosSimulator: boolean;
+    /** The simulator tab draws the device's frame and side buttons around its screen. */
+    simulatorFrame: boolean;
     notificationsIntroduced: boolean;
     /** The person was told once that terminals keep running after Sikemux quits. */
     keptRunningNoticeShown: boolean;
@@ -263,6 +265,7 @@ export const useStore = create<StoreState>(() => {
         notch: DEFAULT_NOTCH_SETTINGS,
         voiceDictation: false,
         iosSimulator: true,
+        simulatorFrame: true,
         notificationsIntroduced: false,
         keptRunningNoticeShown: false,
         railDensity: "comfortable",
