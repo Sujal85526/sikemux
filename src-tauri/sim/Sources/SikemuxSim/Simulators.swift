@@ -214,7 +214,7 @@ actor Simulators {
     func runtimes() throws -> [[String: Any]] {
         _ = try set()
         return (control?.serviceContext.supportedRuntimes() ?? []).map { runtime in
-            ["identifier": runtime.identifier, "name": runtime.name, "version": runtime.versionString, "available": runtime.available]
+            ["identifier": runtime.identifier ?? "", "name": runtime.name ?? "", "version": runtime.versionString ?? "", "available": runtime.available]
         }
     }
 
@@ -408,11 +408,11 @@ actor Simulators {
         default: throw Failure(reason: "badRequest", message: "Unknown stream format \(format). Use h264 or mjpeg.")
         }
         let key = "\(simulator.udid) \(format)"
-        let starting = streams[key] ?? Task {
+        let starting = streams[key] ?? Task { [self] in
             let configuration = VideoStreamConfiguration(
                 format: videoFormat, framesPerSecond: nil, rateControl: nil, scaleFactor: scale, keyFrameRate: 4)
-            return try await Self.start(configuration, on: simulator, format: format) { [weak self] in
-                Task { await self?.stopWhenUnwatched(key) }
+            return try await Self.start(configuration, on: simulator, format: format) {
+                Task { await self.stopWhenUnwatched(key) }
             }
         }
         streams[key] = starting
