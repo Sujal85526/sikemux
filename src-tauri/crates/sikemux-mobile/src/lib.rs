@@ -778,6 +778,7 @@ impl Connection {
     ) -> Result<(), MobileError> {
         self.done(Request::AcpPrompt {
             agent_id,
+            message_id: None,
             text,
             paths,
             context: Vec::new(),

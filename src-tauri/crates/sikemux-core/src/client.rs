@@ -617,15 +617,38 @@ impl CoreClient {
     pub async fn acp_prompt(
         &self,
         agent_id: String,
+        message_id: Option<String>,
         text: String,
         paths: Vec<String>,
         context: Vec<ChatContext>,
     ) -> Result<(), ClientError> {
         self.request_done(Request::AcpPrompt {
             agent_id,
+            message_id,
             text,
             paths,
             context,
+        })
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn acp_edit(
+        &self,
+        agent_id: String,
+        message_id: String,
+        text: String,
+        paths: Vec<String>,
+        context: Vec<ChatContext>,
+        restore_files: bool,
+    ) -> Result<(), ClientError> {
+        self.request_done(Request::AcpEdit {
+            agent_id,
+            message_id,
+            text,
+            paths,
+            context,
+            restore_files,
         })
         .await
     }

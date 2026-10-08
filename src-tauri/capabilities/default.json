@@ -22,6 +22,7 @@
     "allow-acp-attach",
     "allow-acp-list",
     "allow-acp-prompt",
+    "allow-acp-edit",
     "allow-acp-set-permission-mode",
     "allow-acp-set-config",
     "allow-acp-cancel",

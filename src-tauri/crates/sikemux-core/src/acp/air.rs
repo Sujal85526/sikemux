@@ -1,8 +1,9 @@
 //! Background tasks and subagents, which core ACP has no updates for.
 //!
-//! The Claude adapter carries both as an extension it calls AIR, nested inside
-//! `_meta` so peers that do not know it skip it. It stays silent until a client
-//! names the parts it understands in `initialize`.
+//! An ACP agent carries both as an extension called AIR, nested inside `_meta`
+//! so peers that do not know it skip it. It stays silent until a client names
+//! the parts it understands in `initialize`. The Claude and Codex drivers tell
+//! the chat the same updates.
 
 use agent_client_protocol::schema::v1::{
     ClientCapabilities, ClientSessionCapabilities, ContentBlock, Meta, NoticeCapabilities,

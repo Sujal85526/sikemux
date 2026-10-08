@@ -129,7 +129,7 @@ async fn chat(socket: &Path, prompt: &str) -> Result<(), Failure> {
     println!("chat {agent}");
     if !prompt.is_empty() {
         client
-            .acp_prompt(agent, prompt.into(), Vec::new(), Vec::new())
+            .acp_prompt(agent, None, prompt.into(), Vec::new(), Vec::new())
             .await?;
     }
     Ok(())
@@ -259,7 +259,7 @@ async fn sleepy(socket: &Path) -> Result<(), Failure> {
 async fn say(socket: &Path, agent: &str, text: &str) -> Result<(), Failure> {
     let (client, _events) = CoreClient::connect(socket).await?;
     client
-        .acp_prompt(agent.into(), text.into(), Vec::new(), Vec::new())
+        .acp_prompt(agent.into(), None, text.into(), Vec::new(), Vec::new())
         .await?;
     Ok(())
 }

@@ -278,6 +278,7 @@ pub fn run() {
             acp::acp_attach,
             acp::acp_list,
             acp::acp_prompt,
+            acp::acp_edit,
             acp::acp_set_permission_mode,
             acp::acp_set_config,
             acp::acp_cancel,

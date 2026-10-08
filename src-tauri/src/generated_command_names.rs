@@ -4,6 +4,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "acp_attach",
     "acp_list",
     "acp_prompt",
+    "acp_edit",
     "acp_set_permission_mode",
     "acp_set_config",
     "acp_cancel",

@@ -304,9 +304,22 @@ pub enum Request {
     },
     AcpPrompt {
         agent_id: String,
+        /// Names the message, so it can be edited later.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        message_id: Option<String>,
         text: String,
         paths: Vec<String>,
         context: Vec<ChatContext>,
+    },
+    /// Takes the chat back to before the person's message `message_id`, and
+    /// sends `text` in its place. `restore_files` puts the files back too.
+    AcpEdit {
+        agent_id: String,
+        message_id: String,
+        text: String,
+        paths: Vec<String>,
+        context: Vec<ChatContext>,
+        restore_files: bool,
     },
     /// Puts a message into the running turn. Answered with `promptRequired`
     /// when the turn ended first and the message should be a prompt instead.

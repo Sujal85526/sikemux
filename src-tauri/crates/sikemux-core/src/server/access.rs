@@ -54,6 +54,7 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::ResetModes { .. }
         | Request::AcpStart { .. }
         | Request::AcpPrompt { .. }
+        | Request::AcpEdit { .. }
         | Request::AcpSteer { .. }
         | Request::AttachFile { .. }
         | Request::AcpCancel { .. }
