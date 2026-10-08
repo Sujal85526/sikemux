@@ -160,16 +160,10 @@
     cursor: not-allowed;
 }
 
-/* A drop shadow rather than a border, so the hairline follows the device's own corners. */
 .sim-screen.framed {
     opacity: 1;
-    filter: drop-shadow(0 0 0.5px var(--border-strong));
 }
 
 .sim-screen:focus {
     outline: none;
-}
-
-.sim-screen.framed:focus {
-    filter: drop-shadow(0 0 1px var(--border-selected));
 }
