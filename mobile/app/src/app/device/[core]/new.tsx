@@ -7,7 +7,7 @@ import type { ConnectionLike } from '@sikemux/native';
 
 import { composerPlaceholder } from '@mac/chat/chatStatus';
 import { ComposerAttachments } from '@/chat/Attachments';
-import { AttachSheet, type Source } from '@/chat/Composer';
+import { AttachSheet, YoloToggle, type Source } from '@/chat/Composer';
 import { ComposerInput } from '@/chat/ComposerInput';
 import { pickFiles, pickPhotos } from '@/chat/pick';
 import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, type Attachment } from '@/chat/session';
@@ -73,6 +73,7 @@ export default function NewChat() {
   const live = useLive(core);
   const workspace = live.snapshot?.workspace;
   const [launcherId, setLauncherId] = useState<string>();
+  const [chosenMode, setChosenMode] = useState<string>();
   const [projectId, setProjectId] = useState<string | undefined>(linkedProject);
   const [draft, setDraft] = useState('');
   const [sheet, setSheet] = useState<'agent' | 'project' | 'attach'>();
@@ -90,7 +91,7 @@ export default function NewChat() {
     () => workspace?.projects.find((known) => known.id === projectId) ?? workspace?.projects[0],
     [workspace, projectId],
   );
-  const yolo = launcher?.permissionMode === 'bypass' || launcher?.permissionMode === 'bypassPermissions';
+  const mode = chosenMode ?? launcher?.permissionMode ?? '';
   const room = MAX_ATTACHMENTS - attachments.length;
   const sendable = Boolean((draft.trim() || attachments.length) && launcher && project && live.status === 'open' && !starting);
   const blocked =
@@ -158,7 +159,7 @@ export default function NewChat() {
     try {
       let agentId = started;
       if (!agentId) {
-        agentId = await live.connection.startChat(launcher.id, project.id);
+        agentId = await live.connection.startChat(launcher.id, project.id, chosenMode);
         setStarted(agentId);
       }
       await live.connection.prompt(agentId, text, await upload(live.connection, agentId));
@@ -226,10 +227,9 @@ export default function NewChat() {
                 accessibilityState={{ disabled: starting || room <= 0 }}>
                 <Icon name="IconPlus" size={17} color={colors.inkDim} />
               </Pressable>
-              <View style={styles.yolo}>
-                <Icon name={yolo ? 'IconShieldBolt' : 'IconShield'} size={13} color={yolo ? colors.accent : colors.inkFaint} />
-                <Text style={[styles.yoloText, yolo && { color: colors.accent }]}>{yolo ? 'yolo' : 'safe'}</Text>
-              </View>
+              {launcher ? (
+                <YoloToggle mode={mode} provider={launcher.provider} locked={starting || Boolean(started)} onToggle={setChosenMode} />
+              ) : null}
               {launcher ? (
                 <Pressable
                   style={styles.picker}
@@ -269,6 +269,7 @@ export default function NewChat() {
         chosen={launcher}
         onChoose={(next) => {
           setLauncherId(next.id);
+          setChosenMode(undefined);
           setSheet(undefined);
         }}
       />
@@ -319,8 +320,6 @@ const makeStyles = (colors: Palette) => {
     composer: { padding: 6, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.composer },
     bar: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingTop: 6 },
     add: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
-    yolo: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 34, paddingHorizontal: 8 },
-    yoloText: { fontFamily: fonts.uiSemibold, fontSize: 11, letterSpacing: 0.9, textTransform: 'uppercase', color: colors.inkFaint },
     picker: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 34, paddingHorizontal: 7 },
     pickerText: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.accent },
     send: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
