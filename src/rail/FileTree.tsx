@@ -12,7 +12,7 @@ import { notify, reportError, swallow } from "../state/toast";
 import { copyText } from "../lib/clipboard";
 import { confirmDialog } from "../state/dialog";
 import { dispatchPaths, pathDropTargetAt, registerFolderDrop, resolvePathDropTarget, showPathDropHover } from "../state/dropRegistry";
-import { IconChevron, IconCollapseAll, IconFilePlus, IconFolder, IconFolderPlus, IconGit, IconSearch } from "../ui/Icons";
+import { IconChevron, IconCollapseAll, IconFilePlus, IconFolder, IconFolderPlus, IconSearch } from "../ui/Icons";
 import { FileIcon } from "../ui/FileIcon";
 import { Tooltip } from "../ui/Tooltip";
 import { gitFileDecoration } from "../git/gitFileStatus";
@@ -103,8 +103,7 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
     // The overview already carries the status walk; asking for git_status too
     // would make the backend walk the working tree twice per change.
     const overview = useResourceEnabled(active && !!cwd, gitOverviewR, cwd || "");
-    const gitStatus = overview.data?.status;
-    const statusFiles = gitStatus?.files;
+    const statusFiles = overview.data?.status.files;
     const gitMap = useMemo(() => {
         const m = new Map<string, GitFile>();
         if (cwd && statusFiles) {
@@ -802,19 +801,6 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
                             </Tooltip>
                         </span>
                     </div>
-                    {gitStatus && (
-                        <div className="ed-tree-strip">
-                            <span className="ed-tree-branch">
-                                <IconGit size={12} />
-                                <span className="ed-tree-branch-name">{gitStatus.branch || "detached"}</span>
-                            </span>
-                            {gitStatus.ahead > 0 && <span className="ed-tree-sync">↑{gitStatus.ahead}</span>}
-                            {gitStatus.behind > 0 && <span className="ed-tree-sync">↓{gitStatus.behind}</span>}
-                            <span className={`ed-tree-changed${statusFiles?.length ? "" : " clean"}`}>
-                                {statusFiles?.length ? `${statusFiles.length} changed` : "clean"}
-                            </span>
-                        </div>
-                    )}
                 </div>
                 <div
                     ref={rootScrollRef}
