@@ -4,6 +4,11 @@ export type DatabaseTab =
     | { id: string; kind: "history"; profile: string }
     | { id: string; kind: "connection"; profile: string };
 
+export interface OpenTable {
+    schema: string;
+    name: string;
+}
+
 export interface TabStrip {
     tabs: DatabaseTab[];
     active: string | null;

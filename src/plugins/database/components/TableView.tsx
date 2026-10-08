@@ -3,7 +3,7 @@ import { EmptyState, SkeletonRows } from "../../../plugin-api/ui";
 import type { DatabaseProfile } from "../api";
 import { databaseTableR } from "../resources";
 import { previewSql } from "../sql";
-import type { OpenTable } from "../state";
+import type { OpenTable } from "../tabs";
 
 export function TableView({
     profile,
