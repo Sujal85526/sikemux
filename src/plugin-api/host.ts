@@ -15,6 +15,7 @@ export { gitOverviewR } from "../state/resources.defs";
 export { usePluginOverlay } from "../plugins/overlays";
 export { useModalFocus } from "../hooks/useModalFocus";
 export { notify, reportError, swallow } from "../state/toast";
+export { postNotification as notifyDesktop } from "../agents/agentNotifications";
 
 export function openUrl(url: string): Promise<void> {
     return invokeCommand<void>("open_url", { url, app: null, shortcut: null });
