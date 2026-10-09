@@ -584,20 +584,22 @@ pub fn set_task(document: &mut Value, index: usize, text: &str, done: bool) -> b
     if !task_path(document, index, &mut 0, &mut path) {
         return false;
     }
-    let mut task = &mut *document;
-    for position in path {
-        task = &mut task["content"][position];
-    }
+    let Some(task) = path.into_iter().try_fold(document, |node, position| {
+        node.get_mut("content")?.as_array_mut()?.get_mut(position)
+    }) else {
+        return false;
+    };
     if words(&plain_text(task)) != words(text) {
         return false;
     }
-    let state = json!(if done { "DONE" } else { "TODO" });
-    match task.get_mut("attrs").and_then(Value::as_object_mut) {
-        Some(attrs) => {
-            attrs.insert("state".into(), state);
-        }
-        None => task["attrs"] = json!({ "state": state }),
-    }
+    let Some(task) = task.as_object_mut() else {
+        return false;
+    };
+    let attrs = task.entry("attrs").or_insert_with(|| json!({}));
+    let Some(attrs) = attrs.as_object_mut() else {
+        return false;
+    };
+    attrs.insert("state".into(), json!(if done { "DONE" } else { "TODO" }));
     true
 }
 
