@@ -8,7 +8,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use futures::future::join_all;
-use reqwest::Method;
+use reqwest::{Method, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
@@ -650,11 +650,31 @@ async fn file(data_dir: &Path, repo: &RepoRef) -> GitlabResult<String> {
     .await
 }
 
+/// Asks for the file's headers only, so a large one is not downloaded just to see it is there.
+async fn has_file(data_dir: &Path, repo: &RepoRef) -> GitlabResult<bool> {
+    let branch = repo::default_branch(data_dir, repo).await?;
+    let answer = client::send_limited(
+        data_dir,
+        Method::HEAD,
+        &repo.path(&format!("/repository/files/{}", encoded(PIPELINE_FILE)))?,
+        &[("ref", branch)],
+        None,
+        64 * 1024,
+        false,
+    )
+    .await?;
+    match answer.status {
+        status if status.is_success() => Ok(true),
+        StatusCode::NOT_FOUND => Ok(false),
+        status => Err(client::classify(status, &answer.bytes)),
+    }
+}
+
 /// The one pipeline a project defines, when it has a .gitlab-ci.yml.
 pub async fn workflows(data_dir: &Path, repo: RepoRef) -> GitlabResult<Vec<Workflow>> {
-    match file(data_dir, &repo).await {
-        Ok(_) => {}
-        Err(GitlabError::NotFound(_)) => return Ok(Vec::new()),
+    match has_file(data_dir, &repo).await {
+        Ok(true) => {}
+        Ok(false) | Err(GitlabError::NotFound(_)) => return Ok(Vec::new()),
         Err(error) => return Err(error),
     }
     Ok(vec![Workflow {
