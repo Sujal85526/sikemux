@@ -39,6 +39,7 @@ pub struct Session {
 pub fn describe(error: &mysql_async::Error) -> String {
     match error {
         mysql_async::Error::Server(server) => server.message.clone(),
+        mysql_async::Error::Other(other) => other.to_string(),
         other => other.to_string(),
     }
 }
@@ -74,16 +75,31 @@ fn options(server: &Server, password: Option<&str>, read_only: bool, tls: Option
         .into()
 }
 
-async fn connect(opts: Opts, server: &Server) -> DatabaseResult<Conn> {
+async fn connect(opts: Opts) -> Result<Conn, mysql_async::Error> {
+    let host = opts.ip_or_hostname().to_string();
+    let port = opts.tcp_port();
     match tokio::time::timeout(CONNECT_TIMEOUT, Conn::new(opts)).await {
-        Ok(connected) => connected.map_err(|error| DatabaseError::Connect(describe(&error))),
-        Err(_) => Err(DatabaseError::Connect(format!(
-            "{}:{} did not answer within {}s",
-            server.host,
-            server.port.unwrap_or(MYSQL_PORT),
-            CONNECT_TIMEOUT.as_secs()
-        ))),
+        Ok(connected) => connected,
+        Err(_) => Err(mysql_async::Error::Other(
+            format!(
+                "{host}:{port} did not answer within {}s",
+                CONNECT_TIMEOUT.as_secs()
+            )
+            .into(),
+        )),
     }
+}
+
+fn connect_error(error: &mysql_async::Error) -> DatabaseError {
+    DatabaseError::Connect(describe(error))
+}
+
+/// The server answered but cannot encrypt, which is when `prefer` goes on without it.
+fn lacks_tls(error: &mysql_async::Error) -> bool {
+    matches!(
+        error,
+        mysql_async::Error::Driver(mysql_async::DriverError::NoClientSslFlagFromServer)
+    )
 }
 
 fn is_numeric(ty: ColumnType) -> bool {
@@ -187,13 +203,16 @@ impl Session {
         read_only: bool,
     ) -> DatabaseResult<Self> {
         let encrypted = options(server, password, read_only, ssl_opts(server.tls));
-        let (connection, opts) = match connect(encrypted.clone(), server).await {
+        let (connection, opts) = match connect(encrypted.clone()).await {
             Ok(connection) => (connection, encrypted),
-            Err(_) if server.tls == Tls::Prefer => {
+            Err(error) if server.tls == Tls::Prefer && lacks_tls(&error) => {
                 let plain = options(server, password, read_only, None);
-                (connect(plain.clone(), server).await?, plain)
+                let connection = connect(plain.clone())
+                    .await
+                    .map_err(|error| connect_error(&error))?;
+                (connection, plain)
             }
-            Err(error) => return Err(error),
+            Err(error) => return Err(connect_error(&error)),
         };
         Ok(Self {
             connection_id: connection.id(),
@@ -321,9 +340,9 @@ impl Session {
 
     /// Asks the server, over a second connection, to stop the statement this one is running.
     pub async fn cancel(&self) -> DatabaseResult<()> {
-        let mut killer = Conn::new(self.opts.clone())
+        let mut killer = connect(self.opts.clone())
             .await
-            .map_err(|error| DatabaseError::Connect(describe(&error)))?;
+            .map_err(|error| connect_error(&error))?;
         let killed = killer
             .query_drop(format!("kill query {}", self.connection_id))
             .await
@@ -541,6 +560,15 @@ pub mod tests {
         assert_eq!(type_name(ColumnType::MYSQL_TYPE_NEWDECIMAL), "newdecimal");
         assert!(is_numeric(ColumnType::MYSQL_TYPE_NEWDECIMAL));
         assert!(!is_numeric(ColumnType::MYSQL_TYPE_VAR_STRING));
+    }
+
+    #[test]
+    fn only_a_server_that_cannot_encrypt_is_reached_without_it() {
+        assert!(lacks_tls(&mysql_async::Error::Driver(
+            mysql_async::DriverError::NoClientSslFlagFromServer
+        )));
+        let refused = std::io::Error::from(std::io::ErrorKind::ConnectionRefused);
+        assert!(!lacks_tls(&mysql_async::Error::Io(refused.into())));
     }
 
     #[tokio::test]
