@@ -131,6 +131,7 @@ pub async fn query(
         id,
         sql: request.sql,
         limit: Some(limit),
+        run: None,
     };
     let mut outcome = queries::run(pool, data_dir, request, Source::Agent).await?;
     let cut = values::fit(

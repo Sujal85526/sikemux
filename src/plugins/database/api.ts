@@ -146,8 +146,9 @@ export const databaseApi = {
     schemas: (id: string) => backend.call<string[]>("schemas", { id }),
     tables: (id: string, schema?: string) => backend.call<DatabaseTable[]>("tables", { id, schema }),
     describe: (id: string, table: string, schema?: string) => backend.call<TableInfo>("describe", { id, table, schema }),
-    query: (id: string, sql: string, limit?: number) => backend.call<QueryOutcome>("query", { id, sql, limit }),
-    cancel: (id: string) => backend.call<void>("cancel", { id }),
+    /** `run` names this run, so stopping it never stops another console's query on the same connection. */
+    query: (id: string, sql: string, limit?: number, run?: string) => backend.call<QueryOutcome>("query", { id, sql, limit, run }),
+    cancel: (id: string, run: string) => backend.call<void>("cancel", { id, run }),
     history: (id: string, search?: string) => backend.call<HistoryEntry[]>("history", { id, search }),
     clearHistory: (id: string) => backend.call<void>("clearHistory", { id }),
 };

@@ -18,8 +18,8 @@ describe("queryState", () => {
         api.query.mockResolvedValue(outcome);
         updateQuery("c1", { limit: 100 });
         await runQuery("c1", "p1", "  update t set a = 1  ");
-        expect(api.query).toHaveBeenCalledWith("p1", "update t set a = 1", 100);
-        expect(readQuery("c1")).toMatchObject({ outcome, error: null, running: false, ran: "update t set a = 1" });
+        expect(api.query).toHaveBeenCalledWith("p1", "update t set a = 1", 100, expect.any(String));
+        expect(readQuery("c1")).toMatchObject({ outcome, error: null, running: false, ran: "update t set a = 1", run: null });
     });
 
     it("keeps each console's SQL and results apart on one connection", async () => {
@@ -51,10 +51,19 @@ describe("queryState", () => {
         expect(readQuery("c1").running).toBe(false);
     });
 
-    it("stops a run and loads SQL without running it", async () => {
+    it("stops only its own run and loads SQL without running it", async () => {
+        let finish: (value: unknown) => void = () => {};
+        api.query.mockReturnValue(new Promise((resolve) => (finish = resolve)));
         api.cancel.mockResolvedValue(undefined);
-        await stopQuery("p1");
-        expect(api.cancel).toHaveBeenCalledWith("p1");
+        const running = runQuery("c1", "p1", "select pg_sleep(10)");
+        const run = api.query.mock.calls[0][3] as string;
+        await stopQuery("c2", "p1");
+        expect(api.cancel).not.toHaveBeenCalled();
+        await stopQuery("c1", "p1");
+        expect(api.cancel).toHaveBeenCalledWith("p1", run);
+        finish(outcome);
+        await running;
+        api.query.mockReset();
         loadQuery("c1", "select * from orders limit 100;");
         expect(readQuery("c1").sql).toBe("select * from orders limit 100;");
         expect(api.query).not.toHaveBeenCalled();

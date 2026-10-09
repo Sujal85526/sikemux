@@ -93,7 +93,7 @@ impl Plugin for Database {
                     let profiles::IdRequest { id } = params(input)?;
                     answer(async {
                         self.pool
-                            .session(&data_dir, &id, connections::Access::Person)
+                            .session(&data_dir, &id, connections::Access::Browse)
                             .await?
                             .schemas()
                             .await
@@ -104,7 +104,7 @@ impl Plugin for Database {
                     let schema::SchemaRequest { id, schema } = params(input)?;
                     answer(async {
                         self.pool
-                            .session(&data_dir, &id, connections::Access::Person)
+                            .session(&data_dir, &id, connections::Access::Browse)
                             .await?
                             .tables(schema)
                             .await
@@ -138,15 +138,12 @@ impl Plugin for Database {
                     let profiles::IdRequest { id } = params(input)?;
                     answer(profiles::blocking(move || history::clear(&data_dir, &id))).await
                 }
-                "cancel" => {
-                    let profiles::IdRequest { id } = params(input)?;
-                    answer(queries::cancel(&self.pool, &id)).await
-                }
+                "cancel" => answer(queries::cancel(&self.pool, params(input)?)).await,
                 "describe" => {
                     let schema::TableRequest { id, schema, table } = params(input)?;
                     answer(async {
                         self.pool
-                            .session(&data_dir, &id, connections::Access::Person)
+                            .session(&data_dir, &id, connections::Access::Browse)
                             .await?
                             .describe(schema, table)
                             .await
@@ -308,7 +305,7 @@ mod tests {
             Some("bad-params".to_string())
         );
         let cancelled = database
-            .call(&ctx, "cancel", json!({ "id": "not-open" }))
+            .call(&ctx, "cancel", json!({ "id": "not-open", "run": "r1" }))
             .await;
         assert!(cancelled.is_ok());
     }

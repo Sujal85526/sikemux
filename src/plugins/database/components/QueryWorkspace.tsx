@@ -31,7 +31,10 @@ export function QueryWorkspace({
                     {query.running ? "Running…" : "Run"}
                 </button>
                 {query.running && (
-                    <button type="button" className="db-button danger" onClick={() => void stopQuery(profile.id).catch(swallow("stop the query"))}>
+                    <button
+                        type="button"
+                        className="db-button danger"
+                        onClick={() => void stopQuery(id, profile.id).catch(swallow("stop the query"))}>
                         Stop
                     </button>
                 )}

@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::engines::Session;
 use crate::error::DatabaseResult;
 use crate::profiles::{self, Draft};
+use crate::queries::Lane;
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -58,9 +59,11 @@ struct Open {
 }
 
 /// Who a connection is for. Agents get one of their own, so it can be read-only while the person's is not.
+/// Browsing tables has its own read-only one, so a long query does not hold up the list of tables.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Access {
     Person,
+    Browse,
     Agent,
 }
 
@@ -71,6 +74,7 @@ pub struct Pool {
     open: tokio::sync::Mutex<HashMap<Key, Open>>,
     /// One lock per connection, so calls that arrive together sign in once rather than each on their own.
     opening: std::sync::Mutex<HashMap<Key, Arc<tokio::sync::Mutex<()>>>>,
+    lanes: std::sync::Mutex<HashMap<Key, Arc<Lane>>>,
 }
 
 impl Pool {
@@ -113,6 +117,7 @@ impl Pool {
         .await?;
         let read_only = match access {
             Access::Person => profile.read_only,
+            Access::Browse => true,
             Access::Agent => profile.read_only || !profile.agent_writes,
         };
         let session = Session::open(&profile.target, password.as_deref(), read_only).await?;
@@ -124,6 +129,17 @@ impl Pool {
         };
         self.open.lock().await.insert(key, opened.clone());
         Ok(opened)
+    }
+
+    /// Where the queries on one connection wait their turn.
+    pub fn lane(&self, id: &str, access: Access) -> Arc<Lane> {
+        Arc::clone(
+            self.lanes
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .entry((id.to_string(), access))
+                .or_default(),
+        )
     }
 
     /// The person's open connection, without signing in when there is none.
@@ -164,6 +180,10 @@ impl Pool {
     /// Closes the person's and the agents' connections, as after the profile is edited or removed.
     pub async fn forget(&self, id: &str) {
         self.open.lock().await.retain(|(kept, _), _| kept != id);
+        self.lanes
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .retain(|(kept, _), _| kept != id);
     }
 
     pub async fn connected(&self) -> Vec<Connected> {
@@ -172,13 +192,14 @@ impl Pool {
             .lock()
             .await
             .iter()
-            .filter(|((_, access), kept)| *access == Access::Person && kept.session.is_alive())
+            .filter(|((_, access), kept)| *access != Access::Agent && kept.session.is_alive())
             .map(|((id, _), kept)| Connected {
                 id: id.clone(),
                 version: kept.version.clone(),
             })
             .collect();
         connected.sort_by(|a, b| a.id.cmp(&b.id));
+        connected.dedup_by(|a, b| a.id == b.id);
         connected
     }
 }

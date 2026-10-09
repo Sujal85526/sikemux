@@ -130,7 +130,7 @@ describe("DatabasePane", () => {
         fireEvent.click(screen.getByRole("button", { name: /public/ }));
         fireEvent.click(await screen.findByRole("button", { name: /^tables/ }));
         await act(async () => fireEvent.doubleClick(await screen.findByRole("button", { name: /^orders/ })));
-        expect(api.query).toHaveBeenCalledWith("p1", 'select * from "public"."orders" limit 100;', 500);
+        expect(api.query).toHaveBeenCalledWith("p1", 'select * from "public"."orders" limit 100;', 500, expect.any(String));
         expect(screen.getByRole("tab", { name: "Shop console" })).toHaveAttribute("aria-selected", "true");
     });
 

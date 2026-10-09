@@ -14,9 +14,11 @@ export interface QueryState {
     error: string | null;
     /** The SQL of the last run, shown beside its outcome. */
     ran: string | null;
+    /** Names the run going now, so Stop reaches it and not another console's. */
+    run: string | null;
 }
 
-const EMPTY: QueryState = { sql: "", limit: DEFAULT_ROW_LIMIT, running: false, outcome: null, error: null, ran: null };
+const EMPTY: QueryState = { sql: "", limit: DEFAULT_ROW_LIMIT, running: false, outcome: null, error: null, ran: null, run: null };
 
 const useQueries = create<{ queries: Record<string, QueryState> }>(() => ({ queries: {} }));
 
@@ -32,20 +34,23 @@ export function updateQuery(id: string, change: Partial<QueryState>): void {
 export async function runQuery(id: string, profile: string, sql: string): Promise<void> {
     const text = sql.trim();
     if (!text || readQuery(id).running) return;
-    updateQuery(id, { running: true, error: null, ran: text });
+    const run = crypto.randomUUID();
+    updateQuery(id, { running: true, error: null, ran: text, run });
     try {
-        const outcome = await databaseApi.query(profile, text, readQuery(id).limit);
+        const outcome = await databaseApi.query(profile, text, readQuery(id).limit, run);
         updateQuery(id, { outcome, error: null });
     } catch (failure) {
         updateQuery(id, { outcome: null, error: failureMessage(failure) });
     } finally {
-        updateQuery(id, { running: false });
+        updateQuery(id, { running: false, run: null });
         invalidate((kind) => kind === "database.history" || kind === "database.connected");
     }
 }
 
-export async function stopQuery(profile: string): Promise<void> {
-    await databaseApi.cancel(profile);
+/** Stops the console's own run, leaving other consoles' queries on the same connection alone. */
+export async function stopQuery(id: string, profile: string): Promise<void> {
+    const { run } = readQuery(id);
+    if (run) await databaseApi.cancel(profile, run);
 }
 
 /** Puts SQL in the editor without running it, as when a table or a past query is picked. */

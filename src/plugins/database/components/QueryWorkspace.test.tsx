@@ -49,7 +49,7 @@ describe("QueryWorkspace", () => {
         updateQuery("c1", { sql: "select count(*) as n from orders" });
         render(<QueryWorkspace consoleId="c1" profile={shop} />);
         await act(async () => fireEvent.click(screen.getByRole("button", { name: "Run" })));
-        expect(api.query).toHaveBeenCalledWith("p1", "select count(*) as n from orders", 500);
+        expect(api.query).toHaveBeenCalledWith("p1", "select count(*) as n from orders", 500, expect.any(String));
         expect(screen.getByRole("status")).toHaveTextContent("1 row · 7 ms");
     });
 
@@ -69,7 +69,7 @@ describe("QueryWorkspace", () => {
         await act(async () => fireEvent.click(screen.getByRole("button", { name: "Run" })));
         expect(screen.getByRole("button", { name: "Running…" })).toBeDisabled();
         await act(async () => fireEvent.click(screen.getByRole("button", { name: "Stop" })));
-        expect(api.cancel).toHaveBeenCalledWith("p1");
+        expect(api.cancel).toHaveBeenCalledWith("p1", api.query.mock.calls[0][3]);
         updateQuery("c1", { running: false });
     });
 
