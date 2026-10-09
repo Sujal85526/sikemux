@@ -379,6 +379,10 @@
     color: var(--brand-bitbucket);
 }
 
+.icon-gitlab {
+    color: var(--brand-gitlab);
+}
+
 .sess-name {
     flex: 1;
     text-align: left;
