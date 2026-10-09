@@ -113,8 +113,8 @@ async function submit(version, build) {
   const { id: buildId, external } = await processedBuild(appId, base, build);
   await setWhatToTest(buildId, notes);
 
-  const groups = await call(`/v1/apps/${appId}/betaGroups?filter[name]=${encodeURIComponent(TESTERS_GROUP)}`);
-  const group = groups.data.find((item) => !item.attributes.isInternalGroup);
+  const groups = await call(`/v1/apps/${appId}/betaGroups?limit=200`);
+  const group = groups.data.find((item) => item.attributes.name === TESTERS_GROUP && !item.attributes.isInternalGroup);
   if (!group) throw new Error(`App Store Connect has no external TestFlight group named ${TESTERS_GROUP}`);
   await call(`/v1/betaGroups/${group.id}/relationships/builds`, {
     method: 'POST',
