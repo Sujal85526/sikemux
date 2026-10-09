@@ -194,14 +194,18 @@ pub fn timeline_of(rows: Vec<NoteRow>) -> Vec<TimelineItem> {
         .collect()
 }
 
+/// Oldest first. Read newest first, so a thread longer than the pages read
+/// loses its oldest notes rather than its newest.
 async fn notes(data_dir: &Path, thread: &Thread) -> GitlabResult<Vec<NoteRow>> {
-    client::get_all(
+    let mut rows: Vec<NoteRow> = client::get_all(
         data_dir,
         &thread.path("/notes")?,
-        &[("sort", "asc".into()), ("order_by", "created_at".into())],
+        &[("sort", "desc".into()), ("order_by", "created_at".into())],
         5,
     )
-    .await
+    .await?;
+    rows.reverse();
+    Ok(rows)
 }
 
 pub async fn timeline(data_dir: &Path, thread: Thread) -> GitlabResult<Vec<TimelineItem>> {
