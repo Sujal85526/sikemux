@@ -322,7 +322,7 @@ const coreKeybindingActions = [
         label: "Toggle file tree",
         detail: "Show or hide the project's files beside the stage",
         category: "Navigation",
-        defaultBinding: on("Meta+Alt+Digit1", "Ctrl+Alt+Digit1"),
+        defaultBinding: on("Meta+KeyE", "Ctrl+Alt+KeyE"),
     },
     {
         id: "window.terminal",
