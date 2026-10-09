@@ -296,6 +296,7 @@ jobs:
       # Xcode signs with the App Store Connect API key: it makes or fetches the certificate and the
       # profiles for the app and its notification extension, and sends the build to TestFlight.
       - name: Archive, sign and send to TestFlight
+        id: upload
         working-directory: mobile/app/ios
         env:
           APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
@@ -326,4 +327,16 @@ jobs:
           xcodebuild -exportArchive -archivePath "$archive" -exportOptionsPlist "$RUNNER_TEMP/export.plist" \
             -exportPath "$RUNNER_TEMP/export" "${auth[@]}"
           rm "$key"
-          echo "Sent build $(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleVersion' "$archive/Info.plist") to TestFlight" >>"$GITHUB_STEP_SUMMARY"
+          build="$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleVersion' "$archive/Info.plist")"
+          echo "build=$build" >>"$GITHUB_OUTPUT"
+          echo "Sent build $build to TestFlight" >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Send the build to the external testers through beta review
+        working-directory: mobile/app
+        env:
+          APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          VERSION: ${{ steps.plan.outputs.version }}
+          BUILD: ${{ steps.upload.outputs.build }}
+        run: node scripts/testflight-release.mjs submit "$VERSION" "$BUILD"
