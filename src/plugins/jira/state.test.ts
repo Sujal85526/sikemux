@@ -1,6 +1,6 @@
 import { renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { jqlOf, mentions, MINE_JQL, searchJql, SPRINT_JQL, updateJiraView, useJiraView } from "./state";
+import { jqlOf, mentions, MINE_JQL, RECENT_JQL, REPORTED_JQL, searchJql, SPRINT_JQL, updateJiraView, useJiraView, WATCHING_JQL } from "./state";
 
 describe("the Jira pane's lists", () => {
     it("asks Jira for the right issues for each list", () => {
@@ -8,6 +8,16 @@ describe("the Jira pane's lists", () => {
         expect(jqlOf({ kind: "sprint" })).toBe(SPRINT_JQL);
         expect(jqlOf({ kind: "filter", id: "1", name: "Bugs", jql: "type = Bug" })).toBe("type = Bug");
         expect(jqlOf({ kind: "jql", jql: "project = ABC" })).toBe("project = ABC");
+        expect(jqlOf({ kind: "reported" })).toBe(REPORTED_JQL);
+        expect(jqlOf({ kind: "watching" })).toBe(WATCHING_JQL);
+        expect(jqlOf({ kind: "recent" })).toBe(RECENT_JQL);
+    });
+
+    it("lists a project's open and unassigned issues, keeping only what a project key can hold", () => {
+        expect(jqlOf({ kind: "project", key: "CIQ", name: "ChannelIQ" })).toBe('project = "CIQ" AND statusCategory != Done ORDER BY updated DESC');
+        expect(jqlOf({ kind: "unassigned", key: 'CIQ" OR 1=1', name: "x" })).toBe(
+            'project = "CIQOR11" AND assignee is EMPTY AND statusCategory != Done ORDER BY created DESC',
+        );
     });
 
     it("remembers each pane's list and open issue on its own, starting on my issues", () => {
