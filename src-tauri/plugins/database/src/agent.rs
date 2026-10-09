@@ -73,16 +73,16 @@ fn describe_profile(profile: &Profile) -> AgentDatabase {
     }
 }
 
-pub fn databases(data_dir: &Path) -> Vec<AgentDatabase> {
-    profiles::load(data_dir)
+pub fn databases(data_dir: &Path) -> DatabaseResult<Vec<AgentDatabase>> {
+    Ok(profiles::load(data_dir)?
         .profiles
         .iter()
         .map(describe_profile)
-        .collect()
+        .collect())
 }
 
 fn id_of(data_dir: &Path, database: &str) -> DatabaseResult<String> {
-    Ok(profiles::load(data_dir).find(database)?.id.clone())
+    Ok(profiles::load(data_dir)?.find(database)?.id.clone())
 }
 
 pub async fn tables(

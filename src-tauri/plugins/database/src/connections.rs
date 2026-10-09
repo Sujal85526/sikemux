@@ -26,14 +26,14 @@ pub struct Tested {
     pub millis: u64,
 }
 
-/// Tries the profile as typed. Editing a saved one without retyping its password uses the saved password.
+/// Tries the profile as typed. Editing a saved one without retyping its password uses the saved password,
+/// unless the server or user changed.
 pub async fn test(data_dir: PathBuf, request: TestRequest) -> DatabaseResult<Tested> {
     let started = Instant::now();
     let TestRequest { profile, password } = request;
-    let id = profile.id.clone();
+    let draft = profile.clone();
     let password =
-        profiles::blocking(move || profiles::password_for(&data_dir, id.as_deref(), password))
-            .await?;
+        profiles::blocking(move || profiles::password_for(&data_dir, &draft, password)).await?;
     let session = Session::open(&profile.target, password.as_deref(), profile.read_only).await?;
     let version = session.version().await?;
     Ok(Tested {
@@ -92,8 +92,8 @@ impl Pool {
         let dir = data_dir.to_path_buf();
         let wanted = id.to_string();
         let (profile, password) = profiles::blocking(move || {
-            let profile = profiles::load(&dir).get(&wanted)?.clone();
-            let password = profiles::password_for(&dir, Some(&wanted), None)?;
+            let profile = profiles::load(&dir)?.get(&wanted)?.clone();
+            let password = profiles::saved_password(&profile)?;
             Ok((profile, password))
         })
         .await?;

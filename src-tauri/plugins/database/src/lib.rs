@@ -61,7 +61,7 @@ impl Plugin for Database {
         Box::pin(async move {
             let data_dir = ctx.data_dir().to_path_buf();
             match method {
-                "profiles" => reply(profiles::load(&data_dir).profiles),
+                "profiles" => reply(profiles::load(&data_dir)?.profiles),
                 "save" => {
                     let request: profiles::SaveRequest = params(input)?;
                     let saved =
@@ -121,7 +121,7 @@ impl Plugin for Database {
                     ))
                     .await
                 }
-                "agentDatabases" => reply(agent::databases(&data_dir)),
+                "agentDatabases" => reply(agent::databases(&data_dir)?),
                 "agentTables" => answer(agent::tables(&self.pool, &data_dir, params(input)?)).await,
                 "agentDescribe" => {
                     answer(agent::describe(&self.pool, &data_dir, params(input)?)).await
@@ -163,7 +163,7 @@ impl Plugin for Database {
         ctx: &'a PluginContext,
         _remotes: &'a [String],
     ) -> PluginFuture<'a, bool> {
-        Box::pin(async move { Ok(!profiles::load(ctx.data_dir()).profiles.is_empty()) })
+        Box::pin(async move { Ok(!profiles::load(ctx.data_dir())?.profiles.is_empty()) })
     }
 }
 
