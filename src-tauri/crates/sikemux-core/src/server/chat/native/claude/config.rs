@@ -58,6 +58,30 @@ pub(crate) fn row_for_resolved(models: &[Value], resolved: &str) -> Option<Strin
         .map(str::to_owned)
 }
 
+/// Makes room in the list for the model the person's settings name, such as
+/// `opus[1m]`, which Claude Code runs but does not list: a row like the one it
+/// extends, named for its larger context. Answers with the row's value.
+pub(crate) fn settings_model(models: &mut Vec<Value>, named: &str) -> Option<String> {
+    if find(models, named).is_some() {
+        return Some(named.to_owned());
+    }
+    if let Some(row) = row_for_resolved(models, named) {
+        return Some(row);
+    }
+    let base = named.strip_suffix("[1m]")?;
+    let mut row = find(models, base).cloned().or_else(|| {
+        row_for_resolved(models, base).and_then(|value| find(models, &value).cloned())
+    })?;
+    let name = text(&row, "displayName").unwrap_or(base).to_owned();
+    row["value"] = json!(named);
+    row["displayName"] = json!(format!("{name} (1M context)"));
+    if let Some(resolved) = text(&row, "resolvedModel").map(str::to_owned) {
+        row["resolvedModel"] = json!(format!("{resolved}[1m]"));
+    }
+    models.push(row);
+    Some(named.to_owned())
+}
+
 pub(crate) fn offers_model(models: &[Value], value: &str) -> bool {
     find(models, value).is_some()
 }
@@ -192,6 +216,29 @@ mod tests {
         assert_eq!(options[1]["category"], "thought_level");
         assert_eq!(options[1]["currentValue"], "high");
         assert_eq!(options[1]["options"][4]["name"], "Xhigh");
+    }
+
+    #[test]
+    fn a_settings_model_with_a_larger_context_gets_its_own_row() {
+        let mut models = models();
+        assert_eq!(
+            settings_model(&mut models, "opus[1m]").as_deref(),
+            Some("opus[1m]")
+        );
+        let options = options(&models, "opus[1m]", "high");
+        let row = &options[0]["options"][3];
+        assert_eq!(row["value"], "opus[1m]");
+        assert_eq!(row["name"], "Opus 5.5 (1M context)");
+        assert_eq!(options[1]["currentValue"], "high");
+        assert_eq!(
+            settings_model(&mut models, "haiku").as_deref(),
+            Some("haiku")
+        );
+        assert_eq!(
+            settings_model(&mut models, "claude-opus-5-5").as_deref(),
+            Some("default")
+        );
+        assert_eq!(settings_model(&mut models, "gpt-9"), None);
     }
 
     #[test]

@@ -374,23 +374,49 @@ impl Backend for Claude {
             Some(replaying) => replaying.await.map_err(|error| error.to_string())??,
             None => None,
         };
-        let models: Vec<Value> = initialized
+        let mut models: Vec<Value> = initialized
             .get("models")
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_default();
-        let model = wanted
-            .filter(|model| config::offers_model(&models, model))
-            .or_else(|| {
-                resumed_model
-                    .as_deref()
-                    .and_then(|resolved| config::row_for_resolved(&models, resolved))
-            })
+        // Without a choice of its own the chat runs what the person's Claude
+        // settings name, and the pickers say so.
+        let settings = running
+            .control
+            .request(json!({ "subtype": "get_settings" }))
+            .await
+            .ok()
+            .and_then(|settings| settings.get("effective").cloned())
+            .unwrap_or(Value::Null);
+        let from_settings = settings
+            .get("model")
+            .and_then(Value::as_str)
+            .and_then(|named| config::settings_model(&mut models, named));
+        let chosen = wanted.filter(|model| config::offers_model(&models, model));
+        let resumed = resumed_model
+            .as_deref()
+            .and_then(|resolved| config::row_for_resolved(&models, resolved));
+        let switch_to = (chosen.is_none() && from_settings.is_none())
+            .then(|| resumed.clone())
+            .flatten();
+        let model = chosen
+            .or(from_settings)
+            .or(resumed)
             .unwrap_or_else(|| config::DEFAULT.to_owned());
-        let effort = launch
+        let levels = config::effort_levels(&models, &model);
+        let chosen_effort = launch
             .effort
             .clone()
-            .filter(|effort| config::effort_levels(&models, &model).contains(effort))
+            .filter(|effort| levels.contains(effort));
+        let apply_effort = chosen_effort.is_some();
+        let effort = chosen_effort
+            .or_else(|| {
+                settings
+                    .get("effortLevel")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+                    .filter(|effort| levels.contains(effort))
+            })
             .unwrap_or_else(|| config::DEFAULT.to_owned());
         let claude = Self {
             launch: launch.clone(),
@@ -403,15 +429,14 @@ impl Backend for Claude {
             effort,
             aliases: HashMap::new(),
         };
-        if launch.model.as_deref() != Some(claude.model.as_str()) && claude.model != config::DEFAULT
-        {
+        if let Some(model) = switch_to {
             claude
                 .running
                 .control
-                .request(json!({ "subtype": "set_model", "model": claude.model }))
+                .request(json!({ "subtype": "set_model", "model": model }))
                 .await?;
         }
-        if claude.effort != config::DEFAULT {
+        if apply_effort {
             claude.apply_effort().await?;
         }
         if let Some(commands) = initialized.get("commands") {
