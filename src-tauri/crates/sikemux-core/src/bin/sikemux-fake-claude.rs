@@ -12,6 +12,9 @@
 //! - `count` says how many messages the person sent before this one;
 //! - `limit` fails the way Claude Code does when the account is out of usage;
 //! - anything else is echoed back.
+//!
+//! A model change is answered the way Claude Code does, with a message saying
+//! so. `FAKE_CLAUDE_SETTINGS_MODEL` names the model its settings choose.
 
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
@@ -243,6 +246,20 @@ impl Claude {
                 json!({ "still_queued": [] })
             }
             Some("rewind_files") => json!({ "canRewind": true, "filesChanged": [] }),
+            Some("set_model") => {
+                let model = request["model"].as_str().unwrap_or("default");
+                self.send(json!({
+                    "type": "user",
+                    "uuid": uuid::Uuid::new_v4().to_string(),
+                    "isReplay": true,
+                    "parent_tool_use_id": null,
+                    "message": { "role": "user", "content": format!("<local-command-stdout>Set model to {model}</local-command-stdout>") },
+                }));
+                json!({})
+            }
+            Some("get_settings") => json!({
+                "effective": { "model": std::env::var("FAKE_CLAUDE_SETTINGS_MODEL").ok() },
+            }),
             _ => json!({}),
         };
         self.send(json!({

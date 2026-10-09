@@ -667,10 +667,7 @@ impl Reader {
         let blocks = match content {
             Some(Value::String(said)) => {
                 if let Some(output) = local_output(said) {
-                    self.send(
-                        parent.as_deref(),
-                        json!({ "sessionUpdate": "agent_message_chunk", "content": { "type": "text", "text": output } }),
-                    );
+                    self.local_output(parent.as_deref(), output);
                 }
                 return;
             }
@@ -687,10 +684,7 @@ impl Reader {
         if results.is_empty() {
             if let [only] = blocks.as_slice() {
                 if let Some(output) = text(only, "text").and_then(local_output) {
-                    self.send(
-                        parent.as_deref(),
-                        json!({ "sessionUpdate": "agent_message_chunk", "content": { "type": "text", "text": output } }),
-                    );
+                    self.local_output(parent.as_deref(), output);
                 }
             }
             return;
@@ -741,6 +735,19 @@ impl Reader {
             self.sink.update(&session, update);
             self.background_shell(&id, &input, result);
         }
+    }
+
+    /// What a slash command the person ran printed. Claude Code also says so
+    /// when the chat changes its model or settings between turns, and that is
+    /// no reply to anything, nor the agent starting work of its own.
+    fn local_output(&mut self, parent: Option<&str>, output: String) {
+        if !self.turn_running() {
+            return;
+        }
+        self.send(
+            parent,
+            json!({ "sessionUpdate": "agent_message_chunk", "content": { "type": "text", "text": output } }),
+        );
     }
 
     /// A shell command sent to the background answers with where its output

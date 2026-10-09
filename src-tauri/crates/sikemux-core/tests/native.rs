@@ -527,6 +527,46 @@ async fn a_codex_account_out_of_usage_fails_the_turn_as_a_limit() {
     assert_eq!(error.payload["failure"]["kind"], "limit");
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn changing_the_claude_model_starts_no_turn() {
+    let config = tempfile::tempdir().expect("config");
+    let core = TestCore::start();
+    let (client, mut chat) = core.connect().await;
+    client
+        .acp_start(claude_launch("claude-model", config.path()))
+        .await
+        .expect("start");
+    chat.until_kind(ChatEventKind::Ready).await;
+    let options = client
+        .acp_set_config("claude-model".into(), "model".into(), "small".into())
+        .await
+        .expect("set model");
+    assert_eq!(options["configOptions"][0]["currentValue"], "small");
+    prompt(&client, "claude-model", &message_id(), "after").await;
+    chat.until_kind(ChatEventKind::TurnCompleted).await;
+    let turns = chat
+        .heard
+        .iter()
+        .filter(|event| event.kind == ChatEventKind::TurnStarted)
+        .count();
+    assert_eq!(turns, 1, "only the prompt started a turn");
+    assert!(!chat.text().contains("Set model"), "{}", chat.text());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_claude_chat_shows_the_model_its_settings_choose() {
+    let config = tempfile::tempdir().expect("config");
+    let core = TestCore::start();
+    let (client, _chat) = core.connect().await;
+    let mut launch = claude_launch("claude-settings", config.path());
+    launch.effort = None;
+    launch
+        .env
+        .insert("FAKE_CLAUDE_SETTINGS_MODEL".into(), "small".into());
+    let start = client.acp_start(launch).await.expect("start");
+    assert_eq!(start.setup["configOptions"][0]["currentValue"], "small");
+}
+
 /// Runs the real `claude` named by `SIKEMUX_LIVE_CLAUDE` on a few short Haiku
 /// turns: `cargo test -p sikemux-core --test native live_claude -- --ignored`.
 #[tokio::test(flavor = "multi_thread")]
