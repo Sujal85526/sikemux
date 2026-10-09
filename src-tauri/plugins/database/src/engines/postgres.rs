@@ -185,30 +185,26 @@ impl Collector {
                         .collect(),
                 );
             }
-            SimpleQueryMessage::CommandComplete(count) => {
-                if !self.close() {
-                    self.results.push(ResultSet {
-                        affected: Some(count),
-                        ..ResultSet::default()
-                    });
-                }
-            }
+            SimpleQueryMessage::CommandComplete(_) if self.open.is_some() => self.close(),
+            SimpleQueryMessage::CommandComplete(count) => self.results.push(ResultSet {
+                affected: Some(count),
+                ..ResultSet::default()
+            }),
             _ => {}
         }
         false
     }
 
     /// Ends the result being filled, if there is one.
-    fn close(&mut self) -> bool {
+    fn close(&mut self) {
         let Some(mut finished) = self.open.take() else {
-            return false;
+            return;
         };
         if self.types.is_none() {
             mark_numbers_by_text(&mut finished);
         }
         self.types = None;
         self.results.push(finished);
-        true
     }
 
     fn finish(mut self) -> Vec<ResultSet> {
