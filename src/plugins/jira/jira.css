@@ -249,3 +249,18 @@
     align-items: baseline;
     font-size: var(--text-sm);
 }
+
+.jira-description .contains-task-list {
+    padding-left: 0;
+    list-style: none;
+}
+
+.jira-description input.jira-task {
+    margin-right: 4px;
+    accent-color: var(--acc);
+    cursor: pointer;
+}
+
+.jira-description input.jira-task:disabled {
+    cursor: progress;
+}

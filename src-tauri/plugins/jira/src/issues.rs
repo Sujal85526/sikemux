@@ -521,6 +521,54 @@ pub async fn assign(data_dir: &Path, request: AssignRequest) -> JiraResult<()> {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskRequest {
+    pub key: String,
+    /// The task's place among the description's tasks, in reading order.
+    pub index: usize,
+    /// The task's words as the person saw them, checked before anything is written.
+    pub text: String,
+    pub done: bool,
+    #[serde(default)]
+    pub site: Option<String>,
+}
+
+/// Ticks or clears one task in an issue's description, writing back Jira's own document so
+/// nothing else in it changes.
+pub async fn set_task(data_dir: &Path, request: TaskRequest) -> JiraResult<()> {
+    let (_, credentials) = auth::credentials(data_dir, request.site.as_deref()).await?;
+    let path = issue_path(&request.key)?;
+    let issue = client::send(
+        &credentials,
+        Method::GET,
+        &path,
+        &[("fields", "description".into())],
+        None,
+    )
+    .await?;
+    let mut description = issue
+        .get("fields")
+        .and_then(|fields| fields.get("description"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    if !adf::set_task(&mut description, request.index, &request.text, request.done) {
+        return Err(JiraError::NotFound(format!(
+            "{} changed in Jira since it was opened; reload it and try again",
+            request.key.trim()
+        )));
+    }
+    client::send(
+        &credentials,
+        Method::PUT,
+        &path,
+        &[],
+        Some(&json!({ "fields": { "description": description } })),
+    )
+    .await?;
+    Ok(())
+}
+
+#[derive(Deserialize)]
 pub struct AssignableRequest {
     pub key: String,
     #[serde(default)]

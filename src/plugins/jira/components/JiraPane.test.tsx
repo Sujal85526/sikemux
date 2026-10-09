@@ -10,6 +10,7 @@ const api = vi.hoisted(() => ({
     comment: vi.fn(),
     transition: vi.fn(),
     assign: vi.fn(),
+    setTask: vi.fn(),
     signIn: vi.fn(),
 }));
 vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>()), jiraApi: api }));
@@ -108,6 +109,24 @@ describe("JiraPane", () => {
         fireEvent.click(screen.getByText("Copy key and title"));
         expect(host.copyText).toHaveBeenCalledWith("ABC-12 Fix the login race");
         expect(api.issue).not.toHaveBeenCalled();
+    });
+
+    it("ticks a task in the description in Jira, and says so when Jira refuses", async () => {
+        api.issue.mockResolvedValue({ ...detail, description: "Acceptance:\n\n- [ ] Sends when **long**\n- [x] Keeps the 400" });
+        api.setTask.mockResolvedValue(undefined);
+        render(<JiraPane paneId="jira-tasks" active />);
+        fireEvent.click(await screen.findByRole("listitem"));
+        const [first, second] = await screen.findAllByRole("checkbox");
+        expect(first).not.toBeChecked();
+        expect(second).toBeChecked();
+
+        await act(async () => fireEvent.click(first));
+        expect(api.setTask).toHaveBeenCalledWith("ABC-12", 0, "Sends when long", true, "acme.atlassian.net");
+
+        api.setTask.mockRejectedValue({ category: "not-found", message: "ABC-12 changed in Jira since it was opened" });
+        await act(async () => fireEvent.click(second));
+        expect(api.setTask).toHaveBeenLastCalledWith("ABC-12", 1, "Keeps the 400", false, "acme.atlassian.net");
+        expect(second).toBeChecked();
     });
 
     it("comments in markdown and shows the sprint list on request", async () => {

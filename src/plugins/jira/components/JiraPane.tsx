@@ -1,4 +1,4 @@
-import { useState, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useState, type MouseEvent, type ReactNode } from "react";
 import { gitOverviewR, notify, reportError, swallow, useActiveProjectCwd } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { ContextMenu, Dropdown, EmptyState, IconCopy, IconExternal, Markdown, SkeletonRows, type ContextMenuItem } from "../../../plugin-api/ui";
@@ -8,6 +8,7 @@ import { copyIssue, issueMenu, openIssue } from "../issueLinks";
 import { jqlOf, mentions, updateJiraView, useJiraView, type JiraList } from "../state";
 import { JiraSignIn } from "./JiraSignIn";
 import { StatusChip } from "./StatusChip";
+import { TaskBox, TaskToggleContext, type ToggleTask } from "./TaskBox";
 import "../jira.css";
 
 const sameList = (a: JiraList, b: JiraList) => a.kind === b.kind && (a.kind !== "filter" || (b.kind === "filter" && a.id === b.id));
@@ -220,6 +221,18 @@ function IssueBody({ issue, site, refresh }: { issue: JiraIssue; site: string; r
         refresh();
         refreshJira();
     };
+    const toggleTask = useCallback<ToggleTask>(
+        async (index, text, done) => {
+            try {
+                await jiraApi.setTask(issue.key, index, text, done, site || undefined);
+                refresh();
+            } catch (error) {
+                notify("error", `Update the task: ${failureMessage(error)}`);
+                throw error;
+            }
+        },
+        [issue.key, site, refresh],
+    );
     const run = async (label: string, work: () => Promise<unknown>) => {
         setBusy(true);
         try {
@@ -329,7 +342,13 @@ function IssueBody({ issue, site, refresh }: { issue: JiraIssue; site: string; r
                 </span>
             </div>
             <section className="jira-description">
-                {issue.description ? <Markdown>{issue.description}</Markdown> : <p className="jira-meta">No description.</p>}
+                {issue.description ? (
+                    <TaskToggleContext.Provider value={toggleTask}>
+                        <Markdown taskBox={TaskBox}>{issue.description}</Markdown>
+                    </TaskToggleContext.Provider>
+                ) : (
+                    <p className="jira-meta">No description.</p>
+                )}
             </section>
             <ProjectCommits issueKey={issue.key} />
             <section className="jira-comments" aria-label="Comments">
