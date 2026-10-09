@@ -675,9 +675,61 @@ pub async fn filters(data_dir: &Path, request: SiteRequest) -> JiraResult<Vec<Fi
         .unwrap_or_default())
 }
 
+#[derive(Serialize, Debug, PartialEq)]
+pub struct Project {
+    pub key: String,
+    pub name: String,
+}
+
+pub fn projects_of(body: &Value) -> Vec<Project> {
+    body.get("values")
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(|project| {
+                    Some(Project {
+                        key: text(project.get("key"))?,
+                        name: text(project.get("name"))?,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The projects the person can browse, most recently busy first.
+pub async fn projects(data_dir: &Path, request: SiteRequest) -> JiraResult<Vec<Project>> {
+    let (_, credentials) = auth::credentials(data_dir, request.site.as_deref()).await?;
+    let found = client::send(
+        &credentials,
+        Method::GET,
+        "/rest/api/3/project/search",
+        &[
+            ("maxResults", "100".into()),
+            ("orderBy", "-lastIssueUpdatedTime".into()),
+        ],
+        None,
+    )
+    .await?;
+    Ok(projects_of(&found))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_projects_by_key_and_name() {
+        let body = json!({ "values": [ { "key": "CIQ", "name": "ChannelIQ" }, { "key": "OPS" } ] });
+        assert_eq!(
+            projects_of(&body),
+            vec![Project {
+                key: "CIQ".into(),
+                name: "ChannelIQ".into()
+            }]
+        );
+    }
 
     fn sample() -> Value {
         json!({ "key": "ABC-12", "fields": {

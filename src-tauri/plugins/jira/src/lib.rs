@@ -76,6 +76,7 @@ impl Plugin for Jira {
                 "create" => answer(issues::create(data_dir, params(input)?)).await,
                 "worklog" => answer(issues::worklog(data_dir, params(input)?)).await,
                 "filters" => answer(issues::filters(data_dir, params(input)?)).await,
+                "projects" => answer(issues::projects(data_dir, params(input)?)).await,
                 "boards" => answer(boards::boards(data_dir, params(input)?)).await,
                 "board" => answer(boards::board(data_dir, params(input)?)).await,
                 "moveIssue" => answer(boards::move_issue(data_dir, params(input)?)).await,
