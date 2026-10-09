@@ -1,9 +1,10 @@
-import { useState } from "react";
-import { gitOverviewR, notify, openUrl, reportError, swallow, useActiveProjectCwd } from "../../../plugin-api/host";
+import { useState, type MouseEvent, type ReactNode } from "react";
+import { gitOverviewR, notify, reportError, swallow, useActiveProjectCwd } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
-import { Dropdown, EmptyState, Markdown, SkeletonRows } from "../../../plugin-api/ui";
+import { ContextMenu, Dropdown, EmptyState, IconCopy, IconExternal, Markdown, SkeletonRows, type ContextMenuItem } from "../../../plugin-api/ui";
 import { failureMessage, jiraApi, refreshJira, type JiraIssue, type JiraIssueSummary, type JiraPerson } from "../api";
 import { jiraFiltersR, jiraIssueR, jiraSearchR, jiraStatusR } from "../resources";
+import { copyIssue, issueMenu, openIssue } from "../issueLinks";
 import { jqlOf, mentions, updateJiraView, useJiraView, type JiraList } from "../state";
 import { JiraSignIn } from "./JiraSignIn";
 import { StatusChip } from "./StatusChip";
@@ -154,20 +155,42 @@ function IssueList({
 }
 
 function IssueRow({ issue, selected, onSelect }: { issue: JiraIssueSummary; selected: boolean; onSelect: () => void }) {
+    const [menu, setMenu] = useMenu();
     return (
-        <button type="button" role="listitem" className={`jira-row${selected ? " active" : ""}`} onClick={onSelect}>
-            <span className="jira-row-top">
-                <span className="jira-key">{issue.key}</span>
-                {issue.priority && <span className="jira-meta">{issue.priority}</span>}
-                <StatusChip status={issue.status} category={issue.statusCategory} />
-            </span>
-            <span className="jira-row-summary">{issue.summary}</span>
-            <span className="jira-meta">
-                {issue.assignee?.name ?? "Unassigned"}
-                {issue.sprint && ` · ${issue.sprint}`}
-            </span>
-        </button>
+        <>
+            <button
+                type="button"
+                role="listitem"
+                className={`jira-row${selected ? " active" : ""}`}
+                onClick={onSelect}
+                onContextMenu={(event) => setMenu(event, issueMenu(issue))}>
+                <span className="jira-row-top">
+                    <span className="jira-key">{issue.key}</span>
+                    {issue.priority && <span className="jira-meta">{issue.priority}</span>}
+                    <StatusChip status={issue.status} category={issue.statusCategory} />
+                </span>
+                <span className="jira-row-summary">{issue.summary}</span>
+                <span className="jira-meta">
+                    {issue.assignee?.name ?? "Unassigned"}
+                    {issue.sprint && ` · ${issue.sprint}`}
+                </span>
+            </button>
+            {menu}
+        </>
     );
+}
+
+/** A right-click menu: the element to render, and the handler that opens it at the pointer. */
+function useMenu(): [ReactNode, (event: MouseEvent, items: ContextMenuItem[]) => void] {
+    const [open, setOpen] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
+    const element = open && <ContextMenu x={open.x} y={open.y} items={open.items} onClose={() => setOpen(null)} />;
+    return [
+        element,
+        (event, items) => {
+            event.preventDefault();
+            setOpen({ x: event.clientX, y: event.clientY, items });
+        },
+    ];
 }
 
 function IssueDetail({ active, issueKey, site }: { active: boolean; issueKey: string; site: string }) {
@@ -188,6 +211,7 @@ function IssueDetail({ active, issueKey, site }: { active: boolean; issueKey: st
 }
 
 function IssueBody({ issue, site, refresh }: { issue: JiraIssue; site: string; refresh: () => void }) {
+    const [menu, setMenu] = useMenu();
     const [comment, setComment] = useState("");
     const [busy, setBusy] = useState(false);
     const [assigning, setAssigning] = useState(false);
@@ -210,15 +234,30 @@ function IssueBody({ issue, site, refresh }: { issue: JiraIssue; site: string; r
 
     return (
         <article className="jira-detail" aria-label={`${issue.key} ${issue.summary}`}>
-            <header className="jira-detail-head">
-                <button
-                    type="button"
-                    className="jira-key link"
-                    title="Open in Jira"
-                    onClick={() => void openUrl(issue.url).catch(swallow("open Jira"))}>
-                    {issue.key}
-                </button>
+            <header className="jira-detail-head" onContextMenu={(event) => setMenu(event, issueMenu(issue))}>
+                <span className="jira-detail-key">
+                    <button type="button" className="jira-key link" title="Open in browser" onClick={() => openIssue(issue)}>
+                        {issue.key}
+                    </button>
+                    <button
+                        type="button"
+                        className="jira-icon-button"
+                        title="Copy link"
+                        aria-label="Copy link"
+                        onClick={() => copyIssue(issue.url, "link")}>
+                        <IconCopy size={12} />
+                    </button>
+                    <button
+                        type="button"
+                        className="jira-icon-button"
+                        title="Open in browser"
+                        aria-label="Open in browser"
+                        onClick={() => openIssue(issue)}>
+                        <IconExternal size={12} />
+                    </button>
+                </span>
                 <h2>{issue.summary}</h2>
+                {menu}
             </header>
             <div className="jira-facts">
                 <Dropdown
