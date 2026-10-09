@@ -38,6 +38,11 @@ fn is_final(error: &GitlabError) -> bool {
     )
 }
 
+/// A pipeline held at a manual job waits on a person, so it is as settled as a finished one.
+fn settled(status: &str) -> bool {
+    matches!(status, "completed" | "waiting")
+}
+
 fn backoff(failures: u32) -> Duration {
     if failures == 0 {
         return POLL_INTERVAL;
@@ -72,8 +77,7 @@ pub async fn run(data_dir: &Path, input: RunRef, sink: StreamSink) -> PluginResu
         } else {
             0
         };
-        let run_over =
-            error.is_none() && last.0.as_ref().is_some_and(|run| run.status == "completed");
+        let run_over = error.is_none() && last.0.as_ref().is_some_and(|run| settled(&run.status));
         let finished = gave_up || run_over || failures >= ERROR_GIVEUP;
         sink.send(reply(Tick {
             run: last.0.clone(),
@@ -104,6 +108,14 @@ mod tests {
         assert!(is_final(&GitlabError::NotFound("gone".into())));
         assert!(!is_final(&GitlabError::Transport("offline".into())));
         assert!(!is_final(&GitlabError::RateLimited { resets_in_secs: 5 }));
+    }
+
+    #[test]
+    fn a_pipeline_waiting_on_a_manual_job_stops_the_watch() {
+        assert!(settled(&pipelines::status_of("manual", false).0));
+        assert!(settled(&pipelines::status_of("success", false).0));
+        assert!(!settled(&pipelines::status_of("running", false).0));
+        assert!(!settled(&pipelines::status_of("pending", false).0));
     }
 
     #[test]
