@@ -228,10 +228,19 @@ describe("the composer", () => {
         expect((send as HTMLButtonElement).disabled).toBe(true);
         await userEvent.type(box, "  hello  ");
         await userEvent.click(send);
-        expect(api.addComment).toHaveBeenCalledWith(repo, 12, "hello");
+        expect(api.addComment).toHaveBeenCalledWith(repo, 12, "hello", "pull");
         await waitFor(() => expect((box as HTMLTextAreaElement).value).toBe(""));
         expect(toasts()).toContain("success: Comment added");
         await waitFor(() => expect(api.timeline).toHaveBeenCalledTimes(2));
+    });
+
+    it("tells the host an issue's thread is an issue's, for hosts that number them apart", async () => {
+        api.addComment.mockResolvedValue(undefined);
+        thread({ of: "issue" });
+        await waitFor(() => expect(api.timeline).toHaveBeenCalledWith(repo, 12, "issue"));
+        await userEvent.type(screen.getByPlaceholderText("Leave a comment"), "seen");
+        await userEvent.click(screen.getByRole("button", { name: "Comment" }));
+        expect(api.addComment).toHaveBeenCalledWith(repo, 12, "seen", "issue");
     });
 
     it("keeps the comment and says why when it cannot be sent", async () => {
