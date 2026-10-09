@@ -178,10 +178,11 @@ fn dispatch<'a>(ctx: &'a PluginContext, method: &'a str, input: Value) -> Plugin
         "setDefaultAccount" => answer(input, move |q| auth::set_default(data_dir, q)),
         "accountFor" => answer(input, move |q| auth::account_for(data_dir, q)),
         "rateLimit" => Box::pin(async move {
-            let status = auth::status(data_dir).await;
-            reply(ratelimit::budget(
-                status.account.as_deref().unwrap_or_default(),
-            ))
+            let id = config::load(data_dir)
+                .account(client::chosen().as_deref())
+                .map(|account| account.id.clone())
+                .unwrap_or_default();
+            reply(ratelimit::budget(&id))
         }),
         "signInWithToken" => Box::pin(async move {
             signed_in(
