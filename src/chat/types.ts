@@ -129,6 +129,8 @@ export type ChatPart =
 export interface ChatMessage {
     id: string;
     role: "user" | "assistant";
+    /* What the agent knows a message the person sent by, for editing it. */
+    promptId?: string;
     parts: ChatPart[];
     attachments?: string[];
     context?: SentContext[];
@@ -146,7 +148,7 @@ export interface ChatMessage {
 }
 
 export interface ChatState {
-    connection: "connecting" | "installing" | "starting" | "initializing" | "ready" | "stopped" | "error";
+    connection: "connecting" | "starting" | "initializing" | "ready" | "stopped" | "error";
     messages: ChatMessage[];
     commands: AcpAvailableCommand[];
     permissions: AcpPermissionRequest[];
@@ -171,7 +173,8 @@ export type ChatAction =
     | { type: "config"; options: unknown }
     | { type: "status"; state: ChatState["connection"] }
     | { type: "ready"; capabilities: Record<string, unknown>; setup: Record<string, unknown> }
-    | { type: "local_prompt"; text: string; paths: string[]; context?: SentContext[] }
+    | { type: "local_prompt"; text: string; paths: string[]; context?: SentContext[]; messageId?: string }
+    | { type: "rewind"; messageId: string }
     | { type: "session_update"; sessionId: string; update: Record<string, unknown> }
     | { type: "saved_usage"; usage: ContextUsage }
     | { type: "turn_started" }

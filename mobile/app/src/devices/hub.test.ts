@@ -212,6 +212,49 @@ describe('the hub', () => {
     expect(connects()).toBe(4);
   });
 
+  it('reads as reconnecting while a dropped connection comes back, and as unreachable only after a few tries', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    const connection = await opened();
+    fake.calls[0].listener.events([CoreEvent.View.new({ view: VIEW })] as never);
+    await vi.advanceTimersByTimeAsync(30_000);
+    fake.calls[0].listener.closed();
+    expect(connection.closed).toBe(true);
+    expect(hub.liveOf('host')).toEqual({ status: 'connecting', snapshot: VIEW });
+
+    for (const wait of [1_000, 3_000]) {
+      await vi.advanceTimersByTimeAsync(wait);
+      await vi.waitFor(() => expect(fake.calls).toHaveLength(connects()));
+      fake.calls.at(-1)!.fail(MobileError.Connection.new({ message: 'this host did not answer in time' }));
+      await vi.waitFor(() => expect(hub.liveOf('host')).toEqual({ status: 'connecting', snapshot: VIEW }));
+    }
+    await vi.advanceTimersByTimeAsync(8_000);
+    await vi.waitFor(() => expect(fake.calls).toHaveLength(connects()));
+    fake.calls.at(-1)!.fail(MobileError.Connection.new({ message: 'this host did not answer in time' }));
+    await vi.waitFor(() => expect(hub.liveOf('host')).toMatchObject({ status: 'closed', problem: 'this host did not answer in time' }));
+  });
+
+  it('a dropped connection that comes back never shows the host as unreachable', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    await opened();
+    await vi.advanceTimersByTimeAsync(30_000);
+    fake.calls[0].listener.closed();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.waitFor(() => expect(connects()).toBe(2));
+    fake.calls[1].fail(MobileError.Connection.new({ message: 'no route' }));
+    await vi.advanceTimersByTimeAsync(3_000);
+    await vi.waitFor(() => expect(connects()).toBe(3));
+    expect(hub.liveOf('host').status).toBe('connecting');
+    fake.calls[2].settle(new FakeConnection());
+    await vi.waitFor(() => expect(hub.liveOf('host').status).toBe('open'));
+  });
+
+  it('shows a host it never reached as unreachable after the first failed try', async () => {
+    hub.watch('host');
+    await vi.waitFor(() => expect(fake.calls).toHaveLength(1));
+    fake.calls[0].fail(MobileError.Connection.new({ message: 'no route' }));
+    await vi.waitFor(() => expect(hub.liveOf('host')).toMatchObject({ status: 'closed', problem: 'no route' }));
+  });
+
   it('tries again at once when the phone gets its network back', async () => {
     NetInfo.emit('wifi', '10.0.0.2');
     hub.watch('host');

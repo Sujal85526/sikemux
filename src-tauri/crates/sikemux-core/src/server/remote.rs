@@ -26,8 +26,9 @@ use crate::accounts::protocol::{
 };
 use crate::join::{self, Expected, Refusal, TrustedKeys, JOIN_ALPN};
 use crate::protocol::{
-    AccountLink, AccountLinkState, DeviceAccess, DeviceInfo, Event, NotificationState, NotifyPrefs,
-    NotifyWhen, PendingDevice, PhoneNotifications, RemoteStatus, UpdateRequired,
+    AccountLink, AccountLinkState, AllowedDevice, DeviceAccess, DeviceInfo, Event,
+    NotificationState, NotifyPrefs, NotifyWhen, PendingDevice, PhoneNotifications, RemoteStatus,
+    UpdateRequired,
 };
 use crate::push::NotificationKey;
 use crate::remote::CORE_ALPN;
@@ -472,6 +473,39 @@ impl Remote {
             }
         }
         let _ = pending.answer.send(access);
+        Ok(())
+    }
+
+    /// Lets in phones the person chose when signing in. A phone already
+    /// waiting is answered; the rest are paired now and join without asking.
+    pub(super) fn allow(&self, devices: Vec<AllowedDevice>) -> CoreResult<()> {
+        for device in &devices {
+            device
+                .id
+                .parse::<iroh::PublicKey>()
+                .map_err(|_| CoreError::from("that is not a device key"))?;
+        }
+        for device in devices {
+            let waiting = {
+                let mut inner = self.lock();
+                let index = inner
+                    .pending
+                    .iter()
+                    .position(|pending| pending.device.device_id == device.id);
+                index.map(|index| inner.pending.remove(index))
+            };
+            self.add_device(DeviceInfo {
+                id: device.id,
+                name: device.name,
+                platform: device.platform,
+                access: device.access,
+                paired_at: unix_ms(),
+                last_seen: None,
+            })?;
+            if let Some(waiting) = waiting {
+                let _ = waiting.answer.send(Some(device.access));
+            }
+        }
         Ok(())
     }
 

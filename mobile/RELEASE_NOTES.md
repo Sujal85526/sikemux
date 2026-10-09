@@ -1,3 +1,6 @@
-# 0.1.0-nightly.8
+# 0.1.0-nightly.10
 
-• The same app as 0.1.0-nightly.7, built again alongside the first iPhone release.
+• YOLO switches on for a new chat and wears the Mac's rainbow.
+• A dropped connection reads as reconnecting, and a host comes back in seconds instead of after a full timeout.
+• A new chat can attach photos and files.
+• A host that signs in while the phone is away connects when you come back.

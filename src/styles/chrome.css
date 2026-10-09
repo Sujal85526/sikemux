@@ -541,9 +541,6 @@
     position: relative;
 }
 
-.proj-pip-term {
-    color: var(--live);
-}
 .proj-pip-claude {
     color: var(--brand-claude);
 }

@@ -12,10 +12,11 @@ import { notify, reportError, swallow } from "../state/toast";
 import { copyText } from "../lib/clipboard";
 import { confirmDialog } from "../state/dialog";
 import { dispatchPaths, pathDropTargetAt, registerFolderDrop, resolvePathDropTarget, showPathDropHover } from "../state/dropRegistry";
-import { IconChevron, IconFolder, IconPlus } from "../ui/Icons";
+import { IconChevron, IconCollapseAll, IconFilePlus, IconFolder, IconFolderPlus, IconSearch } from "../ui/Icons";
 import { FileIcon } from "../ui/FileIcon";
 import { Tooltip } from "../ui/Tooltip";
-import { gitFileDecoration } from "../git/gitFileStatus";
+import { gitFileDecoration, gitFolderDecorations, type GitStatusDecoration } from "../git/gitFileStatus";
+import { openFilePalette } from "../state/commands/ui";
 import { basename, dirname, isPathWithin, joinPath, normalizePath, relativePath as pathRelative } from "../lib/paths";
 import { FILE_MANAGER_NAME } from "../lib/platform";
 import { leavingMenu } from "../lib/motion";
@@ -108,6 +109,11 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
         if (cwd && statusFiles) {
             statusFiles.forEach((f) => m.set(joinPath(cwd, f.path), f));
         }
+        return m;
+    }, [cwd, statusFiles]);
+    const gitFolders = useMemo(() => {
+        const m = new Map<string, GitStatusDecoration>();
+        if (cwd && statusFiles) gitFolderDecorations(statusFiles).forEach((decoration, folder) => m.set(joinPath(cwd, folder), decoration));
         return m;
     }, [cwd, statusFiles]);
 
@@ -627,13 +633,14 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
         }
         if (e.is_dir) {
             const open = expanded.has(e.path);
+            const folderGit = gitFolders.get(normalizePath(e.path));
             return (
                 <button
                     ref={(el) => {
                         attachFolderDrop(el, e.path);
                         attachRowButton(e.path, el);
                     }}
-                    className={`tree-row is-folder${e.ignored ? " ignored" : ""}${selectedDir === e.path ? " selected" : ""}${dragOver === e.path ? " drag-over" : ""}${draggingPath === e.path ? " dragging" : ""}`}
+                    className={`tree-row is-folder${e.ignored ? " ignored" : ""}${folderGit ? ` git-${folderGit.cls}` : ""}${selectedDir === e.path ? " selected" : ""}${dragOver === e.path ? " drag-over" : ""}${draggingPath === e.path ? " dragging" : ""}`}
                     style={{ paddingLeft: pad }}
                     onPointerDown={(ev) => onRowPointerDown(ev, e.path)}
                     onDragStart={(ev) => ev.preventDefault()}
@@ -660,6 +667,11 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
                         <IconFolder size={17} />
                     </span>
                     <span className="tree-name">{e.name}</span>
+                    {folderGit && (
+                        <span className="tree-git tree-git-dot" title={`Holds ${folderGit.label} files`}>
+                            ●
+                        </span>
+                    )}
                 </button>
             );
         }
@@ -691,7 +703,7 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
                 data-file-path={e.path}
                 data-drop-dir={dirname(e.path)}>
                 <span className="tree-file">
-                    <FileIcon name={e.name} size={20} />
+                    <FileIcon name={e.name} size={16} />
                 </span>
                 <span className="tree-name">{e.name}</span>
                 {gd && <span className="tree-git">{gd.letter}</span>}
@@ -775,21 +787,31 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
         <>
             <div className={`ed-tree${resizable ? "" : " fill"}`} style={resizable ? { width } : undefined}>
                 <div className="ed-tree-head">
-                    <span className="ed-tree-name">{basename(cwd) || "files"}</span>
-                    <span className="ed-tree-actions">
-                        <Tooltip label="New file">
-                            <button type="button" className="ed-tree-act" aria-label="New file" onClick={() => startNew("file")}>
-                                <FileIcon name="" size={13} />
-                                <IconPlus size={9} />
-                            </button>
-                        </Tooltip>
-                        <Tooltip label="New folder">
-                            <button type="button" className="ed-tree-act" aria-label="New folder" onClick={() => startNew("folder")}>
-                                <IconFolder size={13} />
-                                <IconPlus size={9} />
-                            </button>
-                        </Tooltip>
-                    </span>
+                    <div className="ed-tree-title">
+                        <span className="ed-tree-name">{basename(cwd) || "files"}</span>
+                        <span className="ed-tree-actions">
+                            <Tooltip label="Find a file">
+                                <button type="button" className="ed-tree-act" aria-label="Find a file" onClick={() => openFilePalette()}>
+                                    <IconSearch size={13} />
+                                </button>
+                            </Tooltip>
+                            <Tooltip label="New file">
+                                <button type="button" className="ed-tree-act" aria-label="New file" onClick={() => startNew("file")}>
+                                    <IconFilePlus size={13} />
+                                </button>
+                            </Tooltip>
+                            <Tooltip label="New folder">
+                                <button type="button" className="ed-tree-act" aria-label="New folder" onClick={() => startNew("folder")}>
+                                    <IconFolderPlus size={13} />
+                                </button>
+                            </Tooltip>
+                            <Tooltip label="Collapse folders">
+                                <button type="button" className="ed-tree-act" aria-label="Collapse folders" onClick={() => setExpanded(new Set())}>
+                                    <IconCollapseAll size={13} />
+                                </button>
+                            </Tooltip>
+                        </span>
+                    </div>
                 </div>
                 <div
                     ref={rootScrollRef}
@@ -1008,7 +1030,7 @@ function NewEntryRow({
     const pad = 4 + depth * 13;
     return (
         <div className="tree-row tree-new" style={{ paddingLeft: pad + 13 }}>
-            <span className="tree-file">{kind === "folder" ? <IconFolder size={17} /> : <FileIcon name="" size={20} />}</span>
+            <span className="tree-file">{kind === "folder" ? <IconFolder size={17} /> : <FileIcon name="" size={16} />}</span>
             <input
                 ref={inputRef}
                 className="tree-new-input"
@@ -1060,7 +1082,7 @@ function RenameRow({
                 </>
             ) : (
                 <span className="tree-file">
-                    <FileIcon name={value} size={20} />
+                    <FileIcon name={value} size={16} />
                 </span>
             )}
             <input

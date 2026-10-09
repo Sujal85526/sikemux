@@ -146,19 +146,8 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: Build the helper
-        run: node scripts/build-sim-helper.mjs --dev
-
-      - name: Run the helper's tests
-        run: swift test --package-path src-tauri/sim
-
-      # idb is copied in from facebook/idb at 45e96c0, as Package.swift says.
-      - name: Note the Xcode it was checked against
-        run: echo "Checked with $(xcodebuild -version | head -1)" >>"$GITHUB_STEP_SUMMARY"
-
-      - name: Build the app the end-to-end test drives
-        run: node scripts/build-sim-fixture.mjs
-
+      # The cache is restored before the helper is built into target/debug: a
+      # restore that only partly matches empties target first.
       - name: Setup Rust
         run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)" --profile minimal --no-self-update
 
@@ -171,6 +160,19 @@ jobs:
           workspaces: src-tauri
           key: deps-opt-level-${{ env.DEPS_OPT_LEVEL }}
           cache-on-failure: true
+
+      - name: Build the helper
+        run: node scripts/build-sim-helper.mjs --dev
+
+      - name: Run the helper's tests
+        run: swift test --package-path src-tauri/sim
+
+      # idb is copied in from facebook/idb at 45e96c0, as Package.swift says.
+      - name: Note the Xcode it was checked against
+        run: echo "Checked with $(xcodebuild -version | head -1)" >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Build the app the end-to-end test drives
+        run: node scripts/build-sim-fixture.mjs
 
       - name: Prepare Tauri resource placeholder
         run: mkdir -p src-tauri/icons/build && touch src-tauri/icons/build/Assets.car

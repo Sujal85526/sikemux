@@ -304,9 +304,22 @@ pub enum Request {
     },
     AcpPrompt {
         agent_id: String,
+        /// Names the message, so it can be edited later.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        message_id: Option<String>,
         text: String,
         paths: Vec<String>,
         context: Vec<ChatContext>,
+    },
+    /// Takes the chat back to before the person's message `message_id`, and
+    /// sends `text` in its place. `restore_files` puts the files back too.
+    AcpEdit {
+        agent_id: String,
+        message_id: String,
+        text: String,
+        paths: Vec<String>,
+        context: Vec<ChatContext>,
+        restore_files: bool,
     },
     /// Puts a message into the running turn. Answered with `promptRequired`
     /// when the turn ended first and the message should be a prompt instead.
@@ -407,6 +420,12 @@ pub enum Request {
         id: String,
         allow: bool,
         access: DeviceAccess,
+    },
+    /// Phones on the account the person let in when signing this host in.
+    /// One already waiting to join gets in at once; the others get in
+    /// without asking when they first connect.
+    AllowDevices {
+        devices: Vec<AllowedDevice>,
     },
     /// The projects the app has open and how it starts each chat agent,
     /// replacing what it published before. Kept in memory only, since a
@@ -1024,6 +1043,16 @@ pub struct DeviceInfo {
     /// Milliseconds since the Unix epoch.
     pub paired_at: u64,
     pub last_seen: Option<u64>,
+}
+
+/// A phone the person lets in ahead of it asking, by its account key.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AllowedDevice {
+    pub id: String,
+    pub name: String,
+    pub platform: String,
+    pub access: DeviceAccess,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

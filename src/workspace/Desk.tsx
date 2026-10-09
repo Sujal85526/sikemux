@@ -340,7 +340,7 @@ function DeskSession({
                 label: name,
                 title: item.path,
                 active: tabActive,
-                icon: <FileIcon name={name} size={18} />,
+                icon: <FileIcon name={name} size={15} />,
                 dirty: dirty.includes(item.path),
             };
         }

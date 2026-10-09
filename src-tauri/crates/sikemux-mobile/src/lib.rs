@@ -38,6 +38,9 @@ uniffi::setup_scaffolding!();
 /// Long enough to find a host through a relay on a slow network; past it the
 /// app shows the host as unreachable and tries again.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+/// A host this endpoint reached before answers again within this, unless the
+/// endpoint has gone stale; past it the phone dials again from a fresh one.
+const REDIAL_TIMEOUT: Duration = Duration::from_secs(6);
 /// Long enough for a long chat's replay over a relay. A host that has not
 /// answered by then has most likely gone, though the connection has not
 /// noticed yet.
@@ -405,7 +408,24 @@ fn read_ticket(json: &str, phone: &str, host: &str) -> Result<JoinTicket, Mobile
     Ok(ticket)
 }
 
+/// Why a dial failed: `Stalled` means a fresh endpoint may reach the host.
+enum Dial {
+    Final(MobileError),
+    Stalled(MobileError),
+}
+
+impl Dial {
+    fn error(self) -> MobileError {
+        match self {
+            Dial::Final(error) | Dial::Stalled(error) => error,
+        }
+    }
+}
+
 impl Device {
+    /// A host this endpoint reached before is dialled with a short wait, and
+    /// again from a fresh endpoint if that one has gone stale, so a dropped
+    /// connection comes back in seconds rather than after a full timeout.
     async fn connect_to(
         &self,
         core: String,
@@ -413,33 +433,62 @@ impl Device {
         listener: Arc<dyn CoreListener>,
     ) -> Result<Arc<Connection>, MobileError> {
         let (endpoint, generation) = self.endpoint()?;
+        let redial = self.lock().reached.contains(&core);
+        let wait = if redial {
+            REDIAL_TIMEOUT
+        } else {
+            CONNECT_TIMEOUT
+        };
+        let first = self
+            .dial(&core, endpoint, addr.clone(), listener.clone(), wait)
+            .await;
+        let stalled = match first {
+            Ok(connection) => return Ok(connection),
+            Err(Dial::Final(error)) => return Err(error),
+            Err(Dial::Stalled(error)) => error,
+        };
+        self.renew_after_failing(&core, generation).await;
+        let (endpoint, now) = self.endpoint()?;
+        if !redial || now == generation {
+            return Err(stalled);
+        }
+        self.dial(&core, endpoint, addr, listener, CONNECT_TIMEOUT)
+            .await
+            .map_err(Dial::error)
+    }
+
+    async fn dial(
+        &self,
+        core: &str,
+        endpoint: Endpoint,
+        addr: EndpointAddr,
+        listener: Arc<dyn CoreListener>,
+        wait: Duration,
+    ) -> Result<Arc<Connection>, Dial> {
         let open = Arc::new(AtomicBool::new(true));
         let (deliveries, queue) = mpsc::unbounded_channel();
         deliver(listener, queue, open.clone());
         let sink = Arc::new(ListenerSink(deliveries));
         let attempt = on_runtime(async move {
-            tokio::time::timeout(CONNECT_TIMEOUT, remote::open_with(&endpoint, addr, sink)).await
+            tokio::time::timeout(wait, remote::open_with(&endpoint, addr, sink)).await
         })
-        .await?;
+        .await
+        .map_err(Dial::Final)?;
         let (client, link) = match attempt {
             Ok(Ok(opened)) => opened,
             Ok(Err(
                 error @ (ClientError::Core(_)
                 | ClientError::VersionMismatch { .. }
                 | ClientError::NotPaired),
-            )) => return Err(error.into()),
-            Ok(Err(error)) => {
-                self.renew_after_failing(&core, generation).await;
-                return Err(error.into());
-            }
+            )) => return Err(Dial::Final(error.into())),
+            Ok(Err(error)) => return Err(Dial::Stalled(error.into())),
             Err(_) => {
-                self.renew_after_failing(&core, generation).await;
-                return Err(MobileError::Connection {
+                return Err(Dial::Stalled(MobileError::Connection {
                     message: "this host did not answer in time".into(),
-                });
+                }))
             }
         };
-        self.lock().reached.insert(core);
+        self.lock().reached.insert(core.to_owned());
         Ok(Arc::new(Connection {
             client: Mutex::new(Some(Arc::new(client))),
             link,
@@ -778,6 +827,7 @@ impl Connection {
     ) -> Result<(), MobileError> {
         self.done(Request::AcpPrompt {
             agent_id,
+            message_id: None,
             text,
             paths,
             context: Vec::new(),
@@ -889,16 +939,18 @@ impl Connection {
     }
 
     /// Starts a chat the way the host's app would, in one of its projects, and
-    /// answers with the chat's agent id.
+    /// answers with the chat's agent id. `permission_mode` overrides the
+    /// launcher's, as in `set_permission_mode`.
     pub async fn start_chat(
         &self,
         launcher: String,
         project: String,
+        permission_mode: Option<String>,
     ) -> Result<String, MobileError> {
         let request = Request::StartChat {
             launcher,
             project,
-            permission_mode: None,
+            permission_mode,
             model: None,
             effort: None,
         };

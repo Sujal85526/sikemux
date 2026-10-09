@@ -16,10 +16,19 @@ function activeRole() {
     return state.windows[state.sessions[state.activeSessionId].activeWindowId].role;
 }
 
-it("opens and reuses Files, Git and Search from the expanded project tree", () => {
+it("toggles the file tree from Files without opening a window", () => {
+    setState({ fileTreeOpen: false });
+    render(<SideRail />);
+    fireEvent.click(screen.getByRole("button", { name: "Files" }));
+    expect(getState().fileTreeOpen).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Files" }));
+    expect(getState().fileTreeOpen).toBe(false);
+    expect(Object.values(getState().windows).some((window) => window.role === "files")).toBe(false);
+});
+
+it("opens and reuses Git and Search from the expanded project tree", () => {
     render(<SideRail />);
     for (const [label, role] of [
-        ["Files", "files"],
         ["Git", "git"],
         ["Search", "search"],
     ]) {
@@ -30,17 +39,7 @@ it("opens and reuses Files, Git and Search from the expanded project tree", () =
     }
 });
 
-it("reveals the agents rail when navigating to Agents", () => {
-    setState({ agentRailOpen: false });
+it("lists no terminal row under a project", () => {
     render(<SideRail />);
-    fireEvent.click(screen.getByRole("button", { name: "Agents" }));
-    expect(getState().agentRailOpen).toBe(true);
-    expect(getState().agentPaletteOpen).toBe(true);
-});
-
-it("returns to the existing terminal from a project tool", () => {
-    render(<SideRail />);
-    fireEvent.click(screen.getByRole("button", { name: "Git" }));
-    fireEvent.click(screen.getByRole("button", { name: "Term" }));
-    expect(activeRole()).toBe("term");
+    expect(screen.queryByRole("button", { name: "Term" })).toBeNull();
 });

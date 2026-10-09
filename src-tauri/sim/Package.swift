@@ -17,6 +17,9 @@ let simulatorFrameworks: SwiftSetting = .unsafeFlags(
         + privateModules.flatMap { ["-Xcc", "-fmodule-map-file=\(privateHeaders)/\($0)/module.modulemap"] }
 )
 
+/// idb's own code is kept as upstream wrote it, so its warnings are not ours to act on.
+let upstream: SwiftSetting = .unsafeFlags(["-suppress-warnings"])
+
 let package = Package(
     name: "sikemux-sim",
     platforms: [.macOS(.v15)],
@@ -25,15 +28,15 @@ let package = Package(
     ],
     targets: [
         .binaryTarget(name: "FBControlCore", path: "Frameworks/FBControlCore.xcframework"),
-        .target(name: "CompanionUtilities", path: "idb/CompanionUtilities"),
-        .target(name: "SimulatorIPC", path: "idb/SimulatorIPC"),
-        .target(name: "SimulatorFrameworkBridgeProtocol", path: "idb/SimulatorFrameworkBridgeProtocol"),
+        .target(name: "CompanionUtilities", path: "idb/CompanionUtilities", swiftSettings: [upstream]),
+        .target(name: "SimulatorIPC", path: "idb/SimulatorIPC", swiftSettings: [upstream]),
+        .target(name: "SimulatorFrameworkBridgeProtocol", path: "idb/SimulatorFrameworkBridgeProtocol", swiftSettings: [upstream]),
         .target(
             name: "FBSimulatorControl",
             dependencies: ["FBControlCore", "CompanionUtilities", "SimulatorIPC", "SimulatorFrameworkBridgeProtocol"],
             path: "idb/FBSimulatorControl",
             exclude: ["FBSimulatorControl-Info.plist", "FBSimulatorControl.xcconfig", "FBSimulatorControl.h", "README.md"],
-            swiftSettings: [simulatorFrameworks]
+            swiftSettings: [simulatorFrameworks, upstream]
         ),
         .executableTarget(
             name: "SikemuxSim",

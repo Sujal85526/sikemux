@@ -3,13 +3,16 @@ import { afterEach, expect, it, vi } from "vitest";
 import { FileTree } from "./FileTree";
 import { emit } from "../state/bus";
 
-const { readDirs } = vi.hoisted(() => ({ readDirs: vi.fn() }));
+const { readDirs, overview } = vi.hoisted(() => ({ readDirs: vi.fn(), overview: { data: undefined as unknown } }));
 vi.mock("../api/fs", () => ({ fsapi: { readDirs } }));
 vi.mock("../state/resources", async (importOriginal) => ({
     ...(await importOriginal<object>()),
-    useResourceEnabled: () => ({ data: undefined, status: "ok", refresh: vi.fn() }),
+    useResourceEnabled: () => ({ data: overview.data, status: "ok", refresh: vi.fn() }),
 }));
-afterEach(cleanup);
+afterEach(() => {
+    cleanup();
+    overview.data = undefined;
+});
 
 const entriesFor = (path: string) =>
     path === "/repo"
@@ -73,4 +76,31 @@ it("dims what git ignores and rereads every folder under a .gitignore that chang
 
     act(() => emit({ type: "fs-changed", repo: "/repo", paths: [".gitignore"] }));
     await waitFor(() => expect(requestedPaths()).toEqual([["/repo", "/repo/src"]]));
+});
+
+it("colours every folder above a changed file, with a dot, and leaves untouched ones plain", async () => {
+    overview.data = { status: { files: [{ path: "src/chat/longText.ts", index: " ", worktree: "M" }] } };
+    readDirs.mockImplementation(async (paths: string[]) =>
+        paths.map((path) => ({
+            path,
+            entries:
+                path === "/repo"
+                    ? [
+                          { name: "docs", path: "/repo/docs", is_dir: true },
+                          { name: "src", path: "/repo/src", is_dir: true },
+                      ]
+                    : path === "/repo/src"
+                      ? [{ name: "chat", path: "/repo/src/chat", is_dir: true }]
+                      : [{ name: "longText.ts", path: "/repo/src/chat/longText.ts", is_dir: false }],
+            error: null,
+        })),
+    );
+    const { findByText } = render(<FileTree cwd="/repo" active activePath={null} onOpenFile={vi.fn()} onKeepFile={vi.fn()} />);
+    const src = (await findByText("src")).closest(".tree-row")!;
+    expect(src.classList.contains("git-m")).toBe(true);
+    expect(src.querySelector(".tree-git-dot")).toHaveAttribute("title", "Holds modified files");
+    expect((await findByText("docs")).closest(".tree-row")!.className).not.toContain("git-");
+
+    fireEvent.click(src);
+    expect((await findByText("chat")).closest(".tree-row")!.classList.contains("git-m")).toBe(true);
 });

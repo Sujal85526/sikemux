@@ -78,6 +78,8 @@ export interface PersistedPrefs {
     agentRailOpen: boolean;
     sideRailWidth?: number;
     agentRailWidth?: number;
+    fileTreeOpen?: boolean;
+    fileTreeWidth?: number;
     pluginSettings?: Record<string, unknown>;
     disabledPlugins?: string[];
     restoreAgentTabs?: boolean;

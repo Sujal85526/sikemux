@@ -54,6 +54,7 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::ResetModes { .. }
         | Request::AcpStart { .. }
         | Request::AcpPrompt { .. }
+        | Request::AcpEdit { .. }
         | Request::AcpSteer { .. }
         | Request::AttachFile { .. }
         | Request::AcpCancel { .. }
@@ -77,6 +78,7 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::SetDeviceAccess { .. }
         | Request::RevokeDevice { .. }
         | Request::AnswerPairing { .. }
+        | Request::AllowDevices { .. }
         | Request::SignRegistration { .. }
         | Request::SetOwner { .. }
         | Request::PublishWorkspace { .. }
@@ -124,7 +126,7 @@ pub(crate) fn permit(peer: &Peer, access: Option<DeviceAccess>, needs: Needs) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::SessionId;
+    use crate::protocol::{AllowedDevice, SessionId};
 
     const SESSION: SessionId = 1;
 
@@ -162,6 +164,14 @@ mod tests {
                 id: "request".into(),
                 allow: true,
                 access: DeviceAccess::Full,
+            },
+            Request::AllowDevices {
+                devices: vec![AllowedDevice {
+                    id: "f".repeat(64),
+                    name: "Attacker".into(),
+                    platform: "ios".into(),
+                    access: DeviceAccess::Full,
+                }],
             },
             Request::SignRegistration {
                 nonce: "a".repeat(64),

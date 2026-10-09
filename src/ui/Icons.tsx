@@ -385,6 +385,8 @@ export const IconFolderPlus = makeSvgIcon(
         <path d="M8 8.4v3.4M6.3 10.1h3.4" />
     </>,
 );
+export const IconFilePlus = makeSvgIcon(<path d="M9 2H4v12h4.5M9 2l3 3v3M9 2v3h3M12 10.5v4M10 12.5h4" />);
+export const IconCollapseAll = makeSvgIcon(<path d="M5 2.5l3 3 3-3M5 13.5l3-3 3 3" />);
 export const IconStack = makeSvgIcon(
     <>
         <path d="M8 2.6 13.4 5.4 8 8.2 2.6 5.4Z" />

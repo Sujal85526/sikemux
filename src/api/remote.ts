@@ -26,6 +26,14 @@ export interface PendingDevice {
     readonly expiresAt: number;
 }
 
+/** A phone let in before it asks, by its key. */
+export interface AllowedDevice {
+    readonly id: string;
+    readonly name: string;
+    readonly platform: string;
+    readonly access: DeviceAccess;
+}
+
 /** Why the account let this host go: removed elsewhere, signed out, or the account was deleted. */
 export type AccountRevokeReason = "removed" | "signed_out" | "account_deleted";
 
@@ -121,6 +129,7 @@ export const remoteApi = {
     setDeviceAccess: (id: string, access: DeviceAccess) => invoke<RemoteStatus>("remote_set_device_access", { id, access }),
     revokeDevice: (id: string) => invoke<RemoteStatus>("remote_revoke_device", { id }),
     answerPairing: (id: string, allow: boolean, access: DeviceAccess) => invoke<RemoteStatus>("remote_answer_pairing", { id, allow, access }),
+    allowDevices: (devices: readonly AllowedDevice[]) => invoke<RemoteStatus>("remote_allow_devices", { devices }),
     publishWorkspace: (projects: readonly PublishedProject[], launchers: readonly LauncherRequest[]) =>
         invoke<void>("remote_publish_workspace", { projects, launchers }),
     publishAgents: (chats: readonly PublishedChat[], titles: Readonly<Record<string, string>>) =>

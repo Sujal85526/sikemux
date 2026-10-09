@@ -2,11 +2,11 @@ import { useEffect, useState, type ReactNode } from "react";
 import { accountApi, type AccountStatus } from "../api/account";
 import { portsApi } from "../api/ports";
 import { AccountAvatar } from "../account/AccountAvatar";
-import { loadAccount, setAccount, useAccount } from "../account/account";
+import { loadAccount, offerAccountPhones, setAccount, useAccount } from "../account/account";
 import { remoteApi, type AccountLink, type DeviceAccess, type NotificationState, type PairedDevice, type RemoteStatus } from "../api/remote";
 import { ACCESS_OPTIONS, platformName } from "../remote/access";
 import * as cmd from "../state/commands";
-import { reportError } from "../state/toast";
+import { reportError, swallow } from "../state/toast";
 import { Dropdown } from "../ui/Dropdown";
 import { Switch } from "../ui/Controls";
 import { IconGlobe, IconTrash } from "../ui/Icons";
@@ -236,6 +236,7 @@ function SignInCall({ removed }: { removed: string | null }) {
         try {
             setAccount(await accountApi.signIn());
             cmd.openSettings("devices");
+            offerAccountPhones().catch(swallow("phones on the account"));
         } catch (error) {
             if (!String(error).includes("cancelled")) reportError("Sign in")(error);
         } finally {

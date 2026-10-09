@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { gitFileBadges, gitFileDecoration, gitStatusDecoration } from "./gitFileStatus";
+import { gitFileBadges, gitFileDecoration, gitFolderDecorations, gitStatusDecoration } from "./gitFileStatus";
 
 describe("git file status decorations", () => {
     it.each([
@@ -43,5 +43,32 @@ describe("git file status decorations", () => {
         expect(gitFileDecoration({ path: "file.ts", index: "X", worktree: " " })).toMatchObject({ letter: "X", cls: "m", label: "X" });
         expect(gitFileDecoration({ path: "file.ts", index: " ", worktree: " " })).toEqual({ letter: "M", cls: "m", label: "modified" });
         expect(gitStatusDecoration("  ")).toBeNull();
+    });
+});
+
+describe("git folder decorations", () => {
+    const classes = (map: Map<string, { cls: string }>) => Object.fromEntries([...map].map(([folder, decoration]) => [folder, decoration.cls]));
+
+    it("marks every folder above a changed file, not just the file", () => {
+        const folders = gitFolderDecorations([{ path: "src/chat/longText.ts", index: " ", worktree: "M" }]);
+        expect(classes(folders)).toEqual({ src: "m", "src/chat": "m" });
+    });
+
+    it("gives a folder the most telling change inside it", () => {
+        const folders = gitFolderDecorations([
+            { path: "src/App.tsx", index: " ", worktree: "M" },
+            { path: "src/chat/new.ts", index: "?", worktree: "?" },
+            { path: "docs/old.md", index: "D", worktree: " " },
+            { path: "docs/guide.md", index: " ", worktree: "M" },
+        ]);
+        expect(classes(folders)).toEqual({ src: "u", "src/chat": "u", docs: "d" });
+    });
+
+    it("counts a folder git lists as wholly untracked, and leaves files at the root alone", () => {
+        const folders = gitFolderDecorations([
+            { path: "src/plugins/linear/", index: "?", worktree: "?" },
+            { path: "README.md", index: " ", worktree: "M" },
+        ]);
+        expect(classes(folders)).toEqual({ src: "u", "src/plugins": "u", "src/plugins/linear": "u" });
     });
 });

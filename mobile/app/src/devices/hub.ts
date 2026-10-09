@@ -29,6 +29,8 @@ const LINGER_MS = 30_000;
 const RETRY_MS = [1000, 3000, 8000, 15_000, 30_000];
 /** A connection that lasted this long dropped by chance; one that drops sooner counts as another failed try. */
 const STEADY_MS = 20_000;
+/** Tries a dropped connection gets before the host is shown as unreachable; until then it reads as reconnecting. */
+const PATIENT_TRIES = 3;
 /** A host that does not answer the unpair in this time is forgotten on the phone anyway. */
 const UNPAIR_WAIT_MS = 3000;
 /** Glancing at another app keeps the connections; staying away longer lets them go. */
@@ -49,6 +51,8 @@ type Entry = {
   openedAt?: number;
   /** Why the last try failed, until one succeeds or the connection is let go on purpose. */
   failure?: string;
+  /** A connection that was up dropped without the phone asking, and it is being made again. */
+  recovering?: boolean;
   opening?: Promise<void>;
   /** The connection being made or held; a listener of any other is ignored. */
   current?: object;
@@ -191,8 +195,17 @@ function drop(core: string, reason: string, error?: unknown) {
   const found = entry(core);
   release(found);
   const unpaired = MobileError.Unpaired.instanceOf(error);
+  const outdatedBy = outdated(error);
   found.failure = reason;
-  set(core, found, { status: 'closed', problem: reason, outdated: outdated(error), unpaired, snapshot: found.live.snapshot });
+  const holding = !!found.recovering && !unpaired && !outdatedBy && found.attempt < PATIENT_TRIES && found.watchers > 0 && !away;
+  if (!holding) found.recovering = false;
+  set(
+    core,
+    found,
+    holding
+      ? { status: 'connecting', snapshot: found.live.snapshot }
+      : { status: 'closed', problem: reason, outdated: outdatedBy, unpaired, snapshot: found.live.snapshot },
+  );
   if (!settled(found)) scheduleRetry(core, found);
 }
 
@@ -244,7 +257,9 @@ function listener(core: string, found: Entry, attempt: object): CoreListener {
       reconcileCards(core, view);
     },
     closed() {
-      if (current() && found.live.status === 'open') drop(core, 'The connection closed.');
+      if (!current() || found.live.status !== 'open') return;
+      found.recovering = true;
+      drop(core, 'The connection closed.');
     },
   };
 }
@@ -260,7 +275,7 @@ function open(core: string): Promise<void> {
 
 async function connect(core: string, found: Entry) {
   clearTimeout(found.retrying);
-  set(core, found, { status: 'connecting', problem: found.failure, snapshot: found.live.snapshot });
+  set(core, found, { status: 'connecting', problem: found.recovering ? undefined : found.failure, snapshot: found.live.snapshot });
   const attempt = {};
   found.current = attempt;
   let connection: ConnectionLike;
@@ -281,6 +296,7 @@ async function connect(core: string, found: Entry) {
   }
   found.openedAt = Date.now();
   found.failure = undefined;
+  found.recovering = false;
   set(core, found, { status: 'open', connection, snapshot: found.live.snapshot });
   if (AppState.currentState !== 'active') connection.setForeground(false).catch(() => {});
   shareKey(core, connection).then((shared) => noteNotifications(core, shared));
@@ -294,6 +310,7 @@ async function connect(core: string, found: Entry) {
 function close(core: string, found: Entry, reason: string) {
   release(found);
   found.failure = undefined;
+  found.recovering = false;
   set(core, found, { status: 'closed', problem: reason, snapshot: found.live.snapshot });
 }
 
@@ -301,6 +318,7 @@ function close(core: string, found: Entry, reason: string) {
 function reconnect(core: string, found: Entry, reason: string) {
   close(core, found, reason);
   found.attempt = 0;
+  found.recovering = true;
   open(core);
 }
 
@@ -366,7 +384,11 @@ AppState.addEventListener('change', (state) => {
     clearTimeout(leaving);
     leaving = setTimeout(() => {
       away = true;
-      entries.forEach((found, core) => close(core, found, 'Paused while the app is away.'));
+      entries.forEach((found, core) => {
+        const wasOpen = found.live.status === 'open';
+        close(core, found, 'Paused while the app is away.');
+        found.recovering = wasOpen;
+      });
       goOffline();
     }, AWAY_MS);
     return;
@@ -381,7 +403,10 @@ AppState.addEventListener('change', (state) => {
   away = false;
   entries.forEach((found, core) => {
     // A connection the phone held while it slept may be dead without having noticed yet.
-    if (found.live.status === 'open' && (wasAway || !found.live.connection.isOpen())) close(core, found, 'Reconnecting.');
+    if (found.live.status === 'open' && (wasAway || !found.live.connection.isOpen())) {
+      close(core, found, 'Reconnecting.');
+      found.recovering = true;
+    }
     if (found.watchers === 0 || found.live.status === 'open') return;
     if (found.live.status === 'closed' && found.live.unpaired) return;
     found.attempt = 0;

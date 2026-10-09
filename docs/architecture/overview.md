@@ -261,16 +261,19 @@ An agent runs on one of two transports.
 - **Terminal.** The agent's own CLI runs in a PTY like any shell (`sikemux-pty`'s `launch.rs`).
   Sikemux tells its state from the screen (`sikemux-pty`'s `agent_detection/`) and finds its saved
   sessions on disk (`agents/sessions/<agent>.rs`). Every agent type supports this.
-- **Chat (ACP).** [ACP](https://agentclientprotocol.com), the Agent Client Protocol, is
-  JSON-RPC over stdio between an editor and an agent. Chat agents run in the background
-  core, so a turn keeps going through a reload or a quit. `src-tauri/src/acp/mod.rs`
-  prepares the launch (the adapter, the agent binary, the browser tools, the environment)
-  and forwards prompts and permission answers to the core; `sikemux-core`'s
-  `server/chat/` runs the session and keeps what it said, so a page that attaches later
-  replays it. Claude and Codex are reached through adapter packages Sikemux installs.
-  OpenCode, OMP, Grok and Hermes speak ACP themselves (`sikemux-core`'s `acp/native.rs`).
-  `acp/air.rs` adds the Claude adapter's background task and subagent updates. On the UI
-  side, `src/chat/useAcpSession.ts` and `reducer.ts` turn events into a transcript.
+- **Chat.** Chat agents run in the background core, so a turn keeps going through a
+  reload or a quit. `src-tauri/src/acp/mod.rs` prepares the launch (the agent binary, the
+  browser tools, the environment) and forwards prompts, edits and permission answers to the
+  core; `sikemux-core`'s `server/chat/` runs the session and keeps what it said, so a page
+  that attaches later replays it. Claude and Codex are driven in their own protocols:
+  `server/chat/native/claude` speaks Claude Code's stream-json control protocol, the one
+  Anthropic's Agent SDK speaks, and `server/chat/native/codex` speaks `codex app-server`.
+  OpenCode, OMP, Grok and Hermes speak [ACP](https://agentclientprotocol.com), the Agent
+  Client Protocol (`server/chat/connection.rs`, `acp/native.rs`). Every driver tells the
+  chat the same ACP-shaped session updates, with `acp/air.rs`'s background task and
+  subagent updates on top, so the UI reads one shape: `src/chat/useAcpSession.ts` and
+  `reducer.ts` turn events into a transcript. Claude and Codex chats can take a sent
+  message back and ask again (`ChatCommand::Edit`); Claude can put the files back too.
   `CHAT_AGENT_TYPES` in `src/agents/agentLaunch.ts` lists the chat-capable agents, and
   `src/chat/AgentSurface.tsx` switches one agent between chat and terminal views.
 
@@ -278,7 +281,7 @@ An agent runs on one of two transports.
 sign-in (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`). `src-tauri/src/agents/accounts.rs` makes extra
 ones as `~/.claude-<name>` or `~/.codex-<name>`, links the default directory's chats and
 settings into them, and signs in and out through the CLI's own login. A chat agent holds its
-sign-in from when it started, so `server/chat/connection.rs` starts it again on the same
+sign-in from when it started, so the chat's driver starts it again on the same
 session when `acp/account.rs` reads a different account in its files, or when a turn fails
 asking for a sign-in. At a usage limit it moves the chat to the next signed-in account the
 launch names, when the person turned that on, and says so in the transcript.

@@ -1,6 +1,7 @@
 import FBControlCore
 import Foundation
 import Network
+import os
 
 /// A device's screen as length-prefixed frames on a socket on 127.0.0.1, which the app reads and
 /// passes on to the page. A reader proves it is the app by sending the stream's token as its first line.
@@ -38,19 +39,22 @@ final class FrameStream: NSObject, DataConsumer, DataConsumerAsync, @unchecked S
     /// Starts listening and returns once the port is known.
     func listen() async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            var resumed = false
+            let settled = OSAllocatedUnfairLock(initialState: false)
             listener.stateUpdateHandler = { state in
-                guard !resumed else { return }
+                let outcome: Result<Void, Error>
                 switch state {
                 case .ready:
-                    resumed = true
-                    continuation.resume()
+                    outcome = .success(())
                 case let .failed(error):
-                    resumed = true
-                    continuation.resume(throwing: Failure(reason: "stream", message: "Could not open the screen stream: \(error)"))
+                    outcome = .failure(Failure(reason: "stream", message: "Could not open the screen stream: \(error)"))
                 default:
-                    break
+                    return
                 }
+                let first = settled.withLock { done in
+                    defer { done = true }
+                    return !done
+                }
+                if first { continuation.resume(with: outcome) }
             }
             listener.start(queue: queue)
         }
@@ -138,7 +142,7 @@ final class FrameStream: NSObject, DataConsumer, DataConsumerAsync, @unchecked S
     }
 
     func consumeData(_ data: Data) {
-        queue.async {
+        queue.async { [self] in
             let key = !self.framesDependOnEachOther || Self.isKeyFrame(data)
             if key { self.keyFrameAsked = false }
             var length = UInt32(data.count).bigEndian

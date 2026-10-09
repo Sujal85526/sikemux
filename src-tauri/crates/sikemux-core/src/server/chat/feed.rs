@@ -22,6 +22,8 @@ use super::history::{History, Page, MAX_HISTORY_BYTES};
 /// notification on its own costs a script eval in the webview, and an adapter
 /// sends one per token.
 const FLUSH: Duration = Duration::from_millis(16);
+/// Streamed updates go out early once a batch holds this much.
+const BATCH_BYTES: usize = 1024 * 1024;
 pub(crate) const MAX_REPLAY_BYTES: usize = 8 * 1024 * 1024;
 pub(crate) const MAX_REPLAY_EVENTS: usize = 20_000;
 /// Roughly what an event costs beyond its payload once it is on the wire.
@@ -288,13 +290,14 @@ impl Replay {
         true
     }
 
-    pub(crate) fn push(&mut self, kind: ChatEventKind, payload: &Value) {
+    /// Keeps `payload`, answering with about how many bytes it took.
+    pub(crate) fn push(&mut self, kind: ChatEventKind, payload: &Value) -> usize {
         if !is_kept(kind) {
-            return;
+            return 0;
         }
         if kind == ChatEventKind::SessionUpdate && self.join_text(payload) {
             self.trim();
-            return;
+            return chunk(payload).map_or(0, |chunk| chunk.text.len());
         }
         let starts_turn = self.starts_turn(kind, payload);
         if let Some(previous) = self.entries.back_mut() {
@@ -331,6 +334,7 @@ impl Replay {
         });
         self.bytes += bytes;
         self.trim();
+        bytes
     }
 
     fn hold(&mut self, holds: Holds, index: u64, event: &ChatEvent) {
@@ -487,6 +491,48 @@ impl Replay {
         }
     }
 
+    /// Forgets the person's message `message_id` and everything after it.
+    /// A message too old to still be kept here takes the whole replay with it.
+    pub(crate) fn rewind(&mut self, message_id: &str) {
+        let names = |entry: &Entry| {
+            match entry.event.kind {
+                ChatEventKind::Prompt => entry.event.payload.get("messageId"),
+                ChatEventKind::SessionUpdate
+                    if session_update_kind(&entry.event.payload) == Some("user_message_chunk") =>
+                {
+                    entry.event.payload.pointer("/update/messageId")
+                }
+                _ => None,
+            }
+            .and_then(Value::as_str)
+                == Some(message_id)
+        };
+        let found = self.entries.iter().position(names);
+        let position = found.unwrap_or(0);
+        let index = match found {
+            Some(position) => self.entries[position].index,
+            None => self
+                .history
+                .as_ref()
+                .and_then(History::first)
+                .or_else(|| self.entries.front().map(|entry| entry.index))
+                .unwrap_or(self.next_index),
+        };
+        let dropped: usize = self
+            .entries
+            .drain(position..)
+            .map(|entry| entry.bytes)
+            .sum();
+        self.bytes -= dropped;
+        if let Some(history) = self.history.as_mut() {
+            history.truncate(index);
+        }
+        self.standing.retain(|(_, held, _)| *held < index);
+        self.in_turn = false;
+        self.last_from_user = false;
+        self.since_point = 0;
+    }
+
     pub(crate) fn page(&self, before: u64, turns: usize) -> Result<Page, String> {
         let Some(history) = self.history.as_ref() else {
             return Ok(Page::default());
@@ -592,6 +638,7 @@ struct Inner {
     recent: Recent,
     replay: Replay,
     pending: Vec<Value>,
+    pending_bytes: usize,
     flush_scheduled: bool,
     start: Option<ChatStart>,
     permission_mode: String,
@@ -630,6 +677,7 @@ impl Feed {
                 recent: Recent::default(),
                 replay: Replay::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS, history),
                 pending: Vec::new(),
+                pending_bytes: 0,
                 flush_scheduled: false,
                 start: None,
                 permission_mode,
@@ -697,6 +745,7 @@ impl Feed {
             return;
         }
         let updates = std::mem::take(&mut inner.pending);
+        inner.pending_bytes = 0;
         self.broadcast(
             inner,
             ChatEventKind::SessionUpdate,
@@ -718,13 +767,20 @@ impl Feed {
         let Ok(mut inner) = self.inner.lock() else {
             return;
         };
-        inner.replay.push(kind, &payload);
+        let bytes = inner.replay.push(kind, &payload);
         if kind == ChatEventKind::SessionUpdate {
             if let Some(title) = session_title(&payload) {
                 inner.title = Some(title.to_owned());
             }
             track_subagent(&mut inner.subagents, &payload);
             inner.pending.push(payload);
+            inner.pending_bytes += bytes;
+            // A loaded chat replays its history all at once, and in one batch
+            // it would outgrow what a client can be sent.
+            if inner.pending_bytes >= BATCH_BYTES {
+                self.flush_locked(&mut inner);
+                return;
+            }
             if !inner.flush_scheduled {
                 inner.flush_scheduled = true;
                 let feed = self.clone();
@@ -748,14 +804,43 @@ impl Feed {
 
     /// The client that sent a prompt already shows it; everyone else, and every
     /// later replay, learns it here.
-    pub(crate) fn prompted(&self, from: ClientId, text: &str, paths: &[String]) {
+    pub(crate) fn prompted(
+        &self,
+        from: ClientId,
+        message_id: Option<&str>,
+        text: &str,
+        paths: &[String],
+    ) {
         let Ok(mut inner) = self.inner.lock() else {
             return;
         };
-        let payload = json!({ "text": text, "paths": paths });
+        let mut payload = json!({ "text": text, "paths": paths });
+        if let Some(message_id) = message_id {
+            payload["messageId"] = json!(message_id);
+        }
         inner.replay.push(ChatEventKind::Prompt, &payload);
         self.flush_locked(&mut inner);
         self.broadcast_except(&mut inner, ChatEventKind::Prompt, payload, Some(from));
+    }
+
+    /// The person took the chat back to before their message `message_id`.
+    /// It goes from the replay, and every client but the one that asked is
+    /// told to drop it and everything after it.
+    pub(crate) fn rewound(&self, from: ClientId, session_id: &str, message_id: &str) {
+        let Ok(mut inner) = self.inner.lock() else {
+            return;
+        };
+        self.flush_locked(&mut inner);
+        inner.replay.rewind(message_id);
+        self.broadcast_except(
+            &mut inner,
+            ChatEventKind::SessionUpdate,
+            json!({
+                "sessionId": session_id,
+                "update": { "sessionUpdate": "message_rewound", "messageId": message_id },
+            }),
+            Some(from),
+        );
     }
 
     pub(crate) fn subscribe(&self, client: &Arc<ClientConn>) {
@@ -928,6 +1013,53 @@ mod tests {
 
     fn kinds(replay: &Replay) -> Vec<ChatEventKind> {
         replay.events().iter().map(|event| event.kind).collect()
+    }
+
+    #[test]
+    fn a_rewind_forgets_the_message_and_everything_after_it() {
+        let mut replay = Replay::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS, None);
+        let prompt = |id: &str| json!({ "text": id, "paths": [], "messageId": id });
+        for id in ["first", "second"] {
+            replay.push(ChatEventKind::Prompt, &prompt(id));
+            replay.push(ChatEventKind::TurnStarted, &json!({}));
+            replay.push(
+                ChatEventKind::SessionUpdate,
+                &text("agent_message_chunk", Some(id), "answer"),
+            );
+            replay.push(ChatEventKind::TurnCompleted, &json!({}));
+        }
+        replay.rewind("second");
+        assert_eq!(
+            kinds(&replay),
+            [
+                ChatEventKind::Prompt,
+                ChatEventKind::TurnStarted,
+                ChatEventKind::SessionUpdate,
+                ChatEventKind::TurnCompleted,
+            ]
+        );
+        assert_eq!(replay.events()[0].payload["messageId"], "first");
+    }
+
+    #[test]
+    fn a_rewind_finds_a_message_a_loaded_session_replayed() {
+        let mut replay = Replay::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS, None);
+        replay.push(
+            ChatEventKind::SessionUpdate,
+            &text("user_message_chunk", Some("u1"), "hello"),
+        );
+        replay.push(
+            ChatEventKind::SessionUpdate,
+            &text("agent_message_chunk", Some("a1"), "hi"),
+        );
+        replay.push(
+            ChatEventKind::SessionUpdate,
+            &text("user_message_chunk", Some("u2"), "again"),
+        );
+        replay.rewind("u2");
+        assert_eq!(replay.events().len(), 2);
+        replay.rewind("missing");
+        assert!(replay.events().is_empty());
     }
 
     #[test]

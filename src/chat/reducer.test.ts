@@ -935,4 +935,41 @@ describe("chat reducer", () => {
         expect(restarting.failure).toBeNull();
         expect(restarting.error).toBeNull();
     });
+
+    describe("rewinding to a message the person edits", () => {
+        const answered = (state: ChatState, text: string): ChatState =>
+            chatReducer(chatReducer(state, { type: "turn_started" }), {
+                type: "session_update",
+                sessionId: "s",
+                update: { sessionUpdate: "agent_message_chunk", messageId: `a-${text}`, content: { type: "text", text } },
+            });
+
+        it("drops the edited message and everything after it", () => {
+            let state = chatReducer(initialChatState, { type: "local_prompt", text: "first", paths: [], messageId: "m1" });
+            state = answered(state, "one");
+            state = chatReducer(state, { type: "local_prompt", text: "second", paths: [], messageId: "m2" });
+            state = answered(state, "two");
+            expect(state.messages.map((message) => message.promptId ?? null)).toEqual(["m1", null, "m2", null]);
+
+            const rewound = chatReducer(state, { type: "rewind", messageId: "m2" });
+            expect(rewound.messages.map((message) => message.parts[0]?.kind === "text" && message.parts[0].text)).toEqual(["first", "one"]);
+        });
+
+        it("drops a replayed message another device edited", () => {
+            let state = chatReducer(initialChatState, {
+                type: "session_update",
+                sessionId: "s",
+                update: { sessionUpdate: "user_message_chunk", messageId: "u1", content: { type: "text", text: "hello" } },
+            });
+            state = answered(state, "hi");
+            expect(state.messages[0].promptId).toBe("u1");
+            state = chatReducer(state, { type: "session_update", sessionId: "s", update: { sessionUpdate: "message_rewound", messageId: "u1" } });
+            expect(state.messages).toEqual([]);
+        });
+
+        it("leaves the transcript alone for a message it does not have", () => {
+            const state = chatReducer(initialChatState, { type: "local_prompt", text: "first", paths: [], messageId: "m1" });
+            expect(chatReducer(state, { type: "rewind", messageId: "gone" })).toBe(state);
+        });
+    });
 });

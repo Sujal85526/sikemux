@@ -653,12 +653,38 @@ async fn run_requests(
             }
             Request::AcpPrompt {
                 agent_id,
+                message_id,
                 text,
                 paths,
                 context,
             } => {
-                let result = chat::prompt(&core, client.id, &agent_id, text, paths, context);
+                let result = chat::prompt(
+                    &core, client.id, &agent_id, message_id, text, paths, context,
+                );
                 client.respond(request_id, result.map(|()| Response::Done));
+            }
+            Request::AcpEdit {
+                agent_id,
+                message_id,
+                text,
+                paths,
+                context,
+                restore_files,
+            } => {
+                tokio::spawn(async move {
+                    let result = chat::edit(
+                        &core,
+                        client.id,
+                        &agent_id,
+                        message_id,
+                        text,
+                        paths,
+                        context,
+                        restore_files,
+                    )
+                    .await;
+                    client.respond(request_id, result.map(|()| Response::Done));
+                });
             }
             Request::AcpSteer {
                 agent_id,
@@ -888,6 +914,15 @@ async fn run_requests(
                     .remote
                     .answer(&id, allow.then_some(access))
                     .map(|()| remote::announce(&core));
+                client.respond(
+                    request_id,
+                    result.map(|status| Response::Remote {
+                        status: Box::new(status),
+                    }),
+                );
+            }
+            Request::AllowDevices { devices } => {
+                let result = core.remote.allow(devices).map(|()| remote::announce(&core));
                 client.respond(
                     request_id,
                     result.map(|status| Response::Remote {
