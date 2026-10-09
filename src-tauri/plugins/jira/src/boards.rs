@@ -202,15 +202,13 @@ async fn issues_from(
 pub async fn board(data_dir: &Path, request: BoardRequest) -> JiraResult<BoardView> {
     let (site, credentials) = auth::credentials(data_dir, request.site.as_deref()).await?;
     let base = format!("/rest/agile/1.0/board/{}", request.id);
-    let about = client::send(&credentials, Method::GET, &base, &[], None).await?;
-    let configuration = client::send(
-        &credentials,
-        Method::GET,
-        &format!("{base}/configuration"),
-        &[],
-        None,
-    )
-    .await?;
+    let configuration_path = format!("{base}/configuration");
+    let (about, configuration, sprint_field) = tokio::join!(
+        client::send(&credentials, Method::GET, &base, &[], None),
+        client::send(&credentials, Method::GET, &configuration_path, &[], None),
+        sprint_field(&site, &credentials),
+    );
+    let (about, configuration) = (about?, configuration?);
     let kind = text(about.get("type")).unwrap_or_else(|| "kanban".into());
     let sprint = if kind == "scrum" {
         let sprints = client::send(
@@ -225,7 +223,6 @@ pub async fn board(data_dir: &Path, request: BoardRequest) -> JiraResult<BoardVi
     } else {
         None
     };
-    let sprint_field = sprint_field(&site, &credentials).await;
     let fields = match &sprint_field {
         Some(field) => format!("{SUMMARY_FIELDS},{field}"),
         None => SUMMARY_FIELDS.into(),
