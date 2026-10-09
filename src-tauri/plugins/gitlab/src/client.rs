@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use futures::StreamExt;
 use reqwest::header::HeaderMap;
-use reqwest::{Client, Method, RequestBuilder, Response, StatusCode};
+use reqwest::{Client, Method, RequestBuilder, Response, StatusCode, Url};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use tokio::sync::Semaphore;
@@ -38,13 +38,32 @@ pub async fn limited<T>(work: impl Future<Output = T>) -> T {
     work.await
 }
 
+/// A redirect keeps the token, so only one over https on the same server is followed.
+fn same_host(next: &Url, first: &Url) -> bool {
+    next.scheme() == "https"
+        && next.host_str() == first.host_str()
+        && next.port_or_known_default() == first.port_or_known_default()
+}
+
 pub fn http() -> GitlabResult<&'static Client> {
     static CLIENT: OnceLock<Option<Client>> = OnceLock::new();
     CLIENT
         .get_or_init(|| {
+            let redirects = reqwest::redirect::Policy::custom(|attempt| {
+                let follow = attempt.previous().len() <= MAX_REDIRECTS
+                    && attempt
+                        .previous()
+                        .first()
+                        .is_some_and(|first| same_host(attempt.url(), first));
+                if follow {
+                    attempt.follow()
+                } else {
+                    attempt.stop()
+                }
+            });
             Client::builder()
                 .pool_idle_timeout(Duration::from_secs(25))
-                .redirect(reqwest::redirect::Policy::limited(MAX_REDIRECTS))
+                .redirect(redirects)
                 .user_agent("sikemux-gitlab/0.1")
                 .connect_timeout(CONNECT_TIMEOUT)
                 .timeout(Duration::from_secs(30))
@@ -62,7 +81,7 @@ pub fn api_base(host: &str) -> String {
 
 /// A token sent the way GitLab reads personal, group and project access tokens alike.
 pub fn authorize(request: RequestBuilder, token: &str) -> RequestBuilder {
-    request.header("PRIVATE-TOKEN", token)
+    request.bearer_auth(token)
 }
 
 struct HeldToken {
@@ -464,6 +483,37 @@ mod tests {
             classify(StatusCode::TOO_MANY_REQUESTS, b""),
             GitlabError::RateLimited { .. }
         ));
+    }
+
+    #[test]
+    fn only_a_redirect_over_https_on_the_same_server_is_followed() {
+        let url = |raw: &str| Url::parse(raw).expect("parses");
+        let api = url("https://gitlab.acme.dev/api/v4/projects/a%2Fb");
+        assert!(same_host(
+            &url("https://gitlab.acme.dev/api/v4/projects/9"),
+            &api
+        ));
+        assert!(same_host(&url("https://gitlab.acme.dev:443/x"), &api));
+        assert!(!same_host(&url("http://gitlab.acme.dev/x"), &api));
+        assert!(!same_host(&url("https://gitlab.acme.dev:8443/x"), &api));
+        assert!(!same_host(&url("https://storage.acme.dev/x"), &api));
+    }
+
+    #[test]
+    fn the_token_goes_in_the_authorization_header() -> GitlabResult<()> {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let request = authorize(http()?.get("https://gitlab.com/api/v4/user"), "glpat-x")
+            .build()
+            .map_err(|error| GitlabError::Transport(error.to_string()))?;
+        assert_eq!(
+            request
+                .headers()
+                .get("authorization")
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer glpat-x")
+        );
+        assert!(request.headers().get("private-token").is_none());
+        Ok(())
     }
 
     #[test]
