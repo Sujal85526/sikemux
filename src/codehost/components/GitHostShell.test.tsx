@@ -130,7 +130,7 @@ describe("GitHostShell", () => {
     it("opens a host section on the project's repository, branch and first account that can see it", async () => {
         shell("pulls");
         expect((await screen.findByTestId("host-area")).textContent).toBe(`pulls nodelike/sikemux as ada-id on feat/x in ${CWD}`);
-        expect(api.accountFor).toHaveBeenCalledWith({ provider: TEST_HOST, owner: "nodelike", name: "sikemux" });
+        expect(api.accountFor).toHaveBeenCalledWith({ provider: TEST_HOST, owner: "nodelike", name: "sikemux", host: "example.test" });
     });
 
     it("uses the account picked for the project without asking which can see it", async () => {
