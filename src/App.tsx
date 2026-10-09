@@ -708,9 +708,9 @@ export default function App() {
     const agentRailVisible = useStore((s) => s.agentRailOpen);
     const activeSessionIsProject = useStore((s) => s.sessions[s.activeSessionId]?.kind === "project");
     const fileTreeOpen = useStore((s) => s.fileTreeOpen);
-    useRailDock(sideRailVisible, true, ".side-rail");
-    useRailDock(agentRailVisible, activeSessionIsProject, ".agent-rail");
-    useRailDock(fileTreeOpen, activeSessionIsProject, ".files-rail");
+    useRailDock(sideRailVisible, true, ".side-rail", bootReady);
+    useRailDock(agentRailVisible, activeSessionIsProject, ".agent-rail", bootReady);
+    useRailDock(fileTreeOpen, activeSessionIsProject, ".files-rail", bootReady);
     const pickerOpen = useStore((s) => s.pickerOpen);
     const agentPaletteOpen = useStore((s) => s.agentPaletteOpen);
     const filePaletteOpen = useStore((s) => s.filePaletteOpen);
