@@ -8,6 +8,8 @@
 //   repo      — a git remote turned into group and project
 //   pulls     — merge requests, their changes, commits and approvals, and merging one
 //   notes     — the comments and events on a merge request or issue
+//   issues    — issues, releases, and the To-Do list as the inbox
+//   images    — avatars, handed to the window as data: addresses
 //   pipelines — pipelines as runs, their jobs by stage, logs, and starting one
 //   watch     — following a pipeline while it is going
 //   ratelimit — holding requests back once GitLab refuses for too many
@@ -16,6 +18,8 @@ mod auth;
 mod client;
 mod config;
 mod error;
+mod images;
+mod issues;
 mod notes;
 mod pipelines;
 mod pulls;
@@ -188,6 +192,7 @@ fn dispatch<'a>(ctx: &'a PluginContext, method: &'a str, input: Value) -> Plugin
             repo::mine(data_dir, query.limit)
         }),
         "branches" => answer(input, move |q| repo::branches(data_dir, q)),
+        "image" => answer(input, move |q| images::image(data_dir, q)),
 
         "workflows" => answer(input, move |q| pipelines::workflows(data_dir, q)),
         "workflowFile" => answer(input, move |q| pipelines::workflow_file(data_dir, q)),
@@ -214,6 +219,15 @@ fn dispatch<'a>(ctx: &'a PluginContext, method: &'a str, input: Value) -> Plugin
         "timeline" => answer(input, move |q| notes::timeline(data_dir, q)),
         "comments" => answer(input, move |q| notes::comments(data_dir, q)),
         "addComment" => answer(input, move |q| notes::add_comment(data_dir, q)),
+
+        "issues" => answer(input, move |q| issues::list(data_dir, q)),
+        "issue" => answer(input, move |q| issues::get(data_dir, q)),
+        "createIssue" => answer(input, move |q| issues::create(data_dir, q)),
+        "setIssueState" => answer(input, move |q| issues::set_state(data_dir, q)),
+        "releases" => answer(input, move |q| issues::releases(data_dir, q)),
+        "inbox" => answer(input, move |q| issues::inbox(data_dir, q)),
+        "markRead" => answer(input, move |q| issues::mark_read(data_dir, q)),
+        "markAllRead" => Box::pin(async move { reply(issues::mark_all_read(data_dir).await?) }),
 
         _ => Box::pin(async move { Err(PluginError::unknown_method(method)) }),
     }
