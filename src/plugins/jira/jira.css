@@ -323,8 +323,9 @@
 
 .jira-column {
     display: flex;
-    flex: 0 0 260px;
+    flex: 1 0 210px;
     flex-direction: column;
+    max-width: 340px;
     gap: 6px;
     min-height: 0;
     padding: 8px;
