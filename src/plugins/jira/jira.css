@@ -228,3 +228,11 @@
     align-items: baseline;
     font-size: var(--text-sm);
 }
+
+.jira-description input.jira-task {
+    cursor: pointer;
+}
+
+.jira-description input.jira-task:disabled {
+    cursor: progress;
+}
