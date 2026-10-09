@@ -6,14 +6,18 @@
 //   client    — the HTTP client, the token, GitLab's paging and error shapes
 //   auth      — signing in and out, and who the app is talking to GitLab as
 //   repo      — a git remote turned into group and project
+//   pipelines — pipelines as runs, their jobs by stage, logs, and starting one
+//   watch     — following a pipeline while it is going
 //   ratelimit — holding requests back once GitLab refuses for too many
 
 mod auth;
 mod client;
 mod config;
 mod error;
+mod pipelines;
 mod ratelimit;
 mod repo;
+mod watch;
 
 use std::sync::Arc;
 
@@ -181,17 +185,34 @@ fn dispatch<'a>(ctx: &'a PluginContext, method: &'a str, input: Value) -> Plugin
         }),
         "branches" => answer(input, move |q| repo::branches(data_dir, q)),
 
+        "workflows" => answer(input, move |q| pipelines::workflows(data_dir, q)),
+        "workflowFile" => answer(input, move |q| pipelines::workflow_file(data_dir, q)),
+        "dispatch" => answer(input, move |q| pipelines::dispatch(data_dir, q)),
+        "runs" => answer(input, move |q| pipelines::list(data_dir, q)),
+        "run" => answer(input, move |q| pipelines::detail(data_dir, q)),
+        "runTiming" => answer(input, move |q| pipelines::timing(data_dir, q)),
+        "rerun" => answer(input, move |q| pipelines::rerun(data_dir, q)),
+        "rerunJob" => answer(input, move |q| pipelines::rerun_job(data_dir, q)),
+        "cancel" => answer(input, move |q| pipelines::cancel(data_dir, q)),
+        "deleteRun" => answer(input, move |q| pipelines::delete(data_dir, q)),
+        "jobLog" => answer(input, move |q| pipelines::log(data_dir, q)),
+        "jobLogExcerpt" => answer(input, move |q| pipelines::excerpt(data_dir, q)),
+
         _ => Box::pin(async move { Err(PluginError::unknown_method(method)) }),
     }
 }
 
 fn dispatch_stream<'a>(
-    _ctx: &'a PluginContext,
+    ctx: &'a PluginContext,
     method: &'a str,
-    _input: Value,
-    _sink: StreamSink,
+    input: Value,
+    sink: StreamSink,
 ) -> PluginFuture<'a, ()> {
-    Box::pin(async move { Err(PluginError::unknown_method(method)) })
+    let data_dir = ctx.data_dir();
+    match method {
+        "watchRun" => Box::pin(async move { watch::run(data_dir, params(input)?, sink).await }),
+        _ => Box::pin(async move { Err(PluginError::unknown_method(method)) }),
+    }
 }
 
 #[cfg(test)]
