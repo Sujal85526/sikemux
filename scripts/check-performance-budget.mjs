@@ -174,15 +174,14 @@ const budgets = [
     // terminals and tasks back from the core at launch added a little more.
     // The account picture in the top bar and renaming tabs added a little more.
     // So did the agent accounts in the rail's footer and the desk's tab kinds.
-    // Jira boards and the GitLab code host added a little more.
-    // The database pane is a lazy chunk that counts here too.
+    // Jira boards, the GitLab code host and the database pane added a little more.
     label:
       "default-path JavaScript except the highlighter and its grammar chunks",
     pattern: new RegExp(
       `^(?!(?:highlighter|paper-shaders|xterm-webgl|${diffLanguageChunkNames.join("|")})-).*\\.js$`,
     ),
-    raw: 3_650_000,
-    gzip: 1_185_000,
+    raw: 3_700_000,
+    gzip: 1_200_000,
   },
   {
     label: "opt-in shader renderer",
