@@ -336,11 +336,24 @@ pub struct InboxQuery {
     pub all: bool,
 }
 
+/// GitLab lists To-Do items by one state at a time, and has no word for both.
+fn todo_states(all: bool) -> &'static [&'static str] {
+    if all {
+        &["pending", "done"]
+    } else {
+        &["pending"]
+    }
+}
+
 pub async fn inbox(data_dir: &Path, input: InboxQuery) -> GitlabResult<Vec<Notification>> {
-    let state = if input.all { "all" } else { "pending" };
-    let rows: Vec<TodoRow> =
-        client::get_all(data_dir, "/todos", &[("state", state.into())], 2).await?;
-    Ok(rows.into_iter().map(notification).collect())
+    let lists =
+        futures::future::try_join_all(todo_states(input.all).iter().map(|state| async move {
+            client::get_all::<TodoRow>(data_dir, "/todos", &[("state", state.to_string())], 2).await
+        }))
+        .await?;
+    let mut notes: Vec<Notification> = lists.into_iter().flatten().map(notification).collect();
+    notes.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    Ok(notes)
 }
 
 #[derive(Deserialize)]
@@ -395,6 +408,12 @@ mod tests {
                 color: "d9534f".into()
             }]
         );
+    }
+
+    #[test]
+    fn the_whole_inbox_asks_for_each_state_gitlab_knows() {
+        assert_eq!(todo_states(false), ["pending"]);
+        assert_eq!(todo_states(true), ["pending", "done"]);
     }
 
     #[test]
