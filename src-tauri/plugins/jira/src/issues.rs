@@ -19,7 +19,7 @@ use crate::error::{JiraError, JiraResult};
 const DEFAULT_LIMIT: u64 = 20;
 const MAX_LIMIT: u64 = 100;
 const MAX_COMMENTS: usize = 50;
-const SUMMARY_FIELDS: &str = "summary,status,priority,assignee,issuetype,updated";
+pub(crate) const SUMMARY_FIELDS: &str = "summary,status,priority,assignee,issuetype,updated";
 
 #[derive(Serialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -79,7 +79,7 @@ pub struct IssueDetail {
     pub transitions: Vec<Transition>,
 }
 
-fn text(value: Option<&Value>) -> Option<String> {
+pub(crate) fn text(value: Option<&Value>) -> Option<String> {
     value.and_then(Value::as_str).map(str::to_string)
 }
 
@@ -207,7 +207,7 @@ pub fn keys_in(text: &str) -> Vec<String> {
 }
 
 /// The custom field that holds sprints, which differs from site to site. Asked once per site.
-async fn sprint_field(site: &Site, credentials: &Credentials) -> Option<String> {
+pub(crate) async fn sprint_field(site: &Site, credentials: &Credentials) -> Option<String> {
     static FIELDS: Mutex<Option<HashMap<String, Option<String>>>> = Mutex::new(None);
     if let Some(known) = FIELDS.lock().ok().and_then(|fields| {
         fields
@@ -238,7 +238,7 @@ async fn sprint_field(site: &Site, credentials: &Credentials) -> Option<String> 
     found
 }
 
-fn issue_path(key: &str) -> JiraResult<String> {
+pub(crate) fn issue_path(key: &str) -> JiraResult<String> {
     let key = key.trim();
     let valid = !key.is_empty()
         && key.chars().all(|character| {
