@@ -6,6 +6,8 @@
 //   client    — the HTTP client, the token, GitLab's paging and error shapes
 //   auth      — signing in and out, and who the app is talking to GitLab as
 //   repo      — a git remote turned into group and project
+//   pulls     — merge requests, their changes, commits and approvals, and merging one
+//   notes     — the comments and events on a merge request or issue
 //   pipelines — pipelines as runs, their jobs by stage, logs, and starting one
 //   watch     — following a pipeline while it is going
 //   ratelimit — holding requests back once GitLab refuses for too many
@@ -14,7 +16,9 @@ mod auth;
 mod client;
 mod config;
 mod error;
+mod notes;
 mod pipelines;
+mod pulls;
 mod ratelimit;
 mod repo;
 mod watch;
@@ -197,6 +201,19 @@ fn dispatch<'a>(ctx: &'a PluginContext, method: &'a str, input: Value) -> Plugin
         "deleteRun" => answer(input, move |q| pipelines::delete(data_dir, q)),
         "jobLog" => answer(input, move |q| pipelines::log(data_dir, q)),
         "jobLogExcerpt" => answer(input, move |q| pipelines::excerpt(data_dir, q)),
+
+        "pulls" => answer(input, move |q| pulls::list(data_dir, q)),
+        "pull" => answer(input, move |q| pulls::get(data_dir, q)),
+        "pullFiles" => answer(input, move |q| pulls::files(data_dir, q)),
+        "pullCommits" => answer(input, move |q| pulls::commits(data_dir, q)),
+        "pullReviews" => answer(input, move |q| pulls::reviews(data_dir, q)),
+        "mergePull" => answer(input, move |q| pulls::merge(data_dir, q)),
+        "createPull" => answer(input, move |q| pulls::create(data_dir, q)),
+        "setPullState" => answer(input, move |q| pulls::set_state(data_dir, q)),
+        "reviewPull" => answer(input, move |q| pulls::review(data_dir, q)),
+        "timeline" => answer(input, move |q| notes::timeline(data_dir, q)),
+        "comments" => answer(input, move |q| notes::comments(data_dir, q)),
+        "addComment" => answer(input, move |q| notes::add_comment(data_dir, q)),
 
         _ => Box::pin(async move { Err(PluginError::unknown_method(method)) }),
     }
