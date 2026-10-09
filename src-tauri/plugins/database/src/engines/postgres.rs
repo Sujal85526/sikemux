@@ -1,14 +1,16 @@
 // PostgreSQL over the network, with the client kept open between calls.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::StreamExt;
 use tokio_postgres::config::SslMode;
+use tokio_postgres::error::SqlState;
 use tokio_postgres::types::Type;
 use tokio_postgres::{Client, Config, SimpleQueryMessage};
 
-use super::tls;
+use super::{tls, Unfinished};
 use crate::error::{DatabaseError, DatabaseResult};
 use crate::profiles::{Server, Tls, POSTGRES_PORT};
 use crate::schema::{ColumnInfo, ForeignKey, Index, Table, TableInfo, TableKind};
@@ -23,6 +25,7 @@ pub struct Session {
     guard: Arc<tokio::sync::Mutex<()>>,
     /// Asking the server to stop a query goes over a new connection, encrypted the same way.
     tls: Tls,
+    alive: Arc<AtomicBool>,
 }
 
 /// PostgreSQL's own words for a failure, with its detail and hint, rather than the bare "db error".
@@ -144,7 +147,8 @@ struct Collector {
 }
 
 impl Collector {
-    fn take(&mut self, message: SimpleQueryMessage, limit: usize) {
+    /// Takes the next message, and says whether it was a row past the limit.
+    fn take(&mut self, message: SimpleQueryMessage, limit: usize) -> bool {
         match message {
             SimpleQueryMessage::RowDescription(described) => {
                 let types = self.types.take();
@@ -168,11 +172,11 @@ impl Collector {
             }
             SimpleQueryMessage::Row(row) => {
                 let Some(open) = self.open.as_mut() else {
-                    return;
+                    return false;
                 };
                 if open.rows.len() == limit {
                     open.truncated = true;
-                    return;
+                    return true;
                 }
                 let types = self.types.as_ref();
                 open.rows.push(
@@ -181,21 +185,35 @@ impl Collector {
                         .collect(),
                 );
             }
-            SimpleQueryMessage::CommandComplete(count) => match self.open.take() {
-                Some(mut finished) => {
-                    if self.types.is_none() {
-                        mark_numbers_by_text(&mut finished);
-                    }
-                    self.types = None;
-                    self.results.push(finished);
+            SimpleQueryMessage::CommandComplete(count) => {
+                if !self.close() {
+                    self.results.push(ResultSet {
+                        affected: Some(count),
+                        ..ResultSet::default()
+                    });
                 }
-                None => self.results.push(ResultSet {
-                    affected: Some(count),
-                    ..ResultSet::default()
-                }),
-            },
+            }
             _ => {}
         }
+        false
+    }
+
+    /// Ends the result being filled, if there is one.
+    fn close(&mut self) -> bool {
+        let Some(mut finished) = self.open.take() else {
+            return false;
+        };
+        if self.types.is_none() {
+            mark_numbers_by_text(&mut finished);
+        }
+        self.types = None;
+        self.results.push(finished);
+        true
+    }
+
+    fn finish(mut self) -> Vec<ResultSet> {
+        self.close();
+        self.results
     }
 }
 
@@ -271,11 +289,16 @@ impl Session {
             client: Arc::new(client),
             guard: Arc::new(tokio::sync::Mutex::new(())),
             tls: address.tls,
+            alive: Arc::new(AtomicBool::new(true)),
         })
     }
 
     pub fn is_alive(&self) -> bool {
-        !self.client.is_closed()
+        !self.client.is_closed() && self.alive.load(Ordering::Relaxed)
+    }
+
+    pub fn retire(&self) {
+        self.alive.store(false, Ordering::Relaxed);
     }
 
     /// Runs every statement in the text, keeping at most `limit` rows from each. A single statement is
@@ -285,12 +308,13 @@ impl Session {
             Ok(statement) => Some(column_types(&statement)),
             Err(_) => None,
         };
-        self.collect(sql, types, limit).await
+        self.collect(sql, types, limit, false).await
     }
 
     /// For an agent on a read-only connection. A session setting could otherwise switch read-only off for the
     /// statements after it, so the SQL must be one statement, and it runs in a read-only transaction that is
-    /// always rolled back, taking anything it set with it.
+    /// always rolled back, taking anything it set with it. Since nothing it does is kept, it is stopped as soon
+    /// as it has given `limit` rows. A connection the rollback did not reach is not used again.
     pub async fn query_guarded(&self, sql: &str, limit: usize) -> DatabaseResult<Vec<ResultSet>> {
         let _one_at_a_time = self.guard.lock().await;
         let statement = self.client.prepare(sql).await.map_err(|error| {
@@ -304,26 +328,33 @@ impl Session {
             }
         })?;
         let types = column_types(&statement);
+        let unfinished = Unfinished::new(&self.alive);
         self.client
             .batch_execute("begin read only")
             .await
             .map_err(query_error)?;
-        let outcome = self.collect(sql, Some(types), limit).await;
+        let outcome = self.collect(sql, Some(types), limit, true).await;
         let rolled_back = self
             .client
             .batch_execute("rollback")
             .await
             .map_err(query_error);
+        if rolled_back.is_ok() {
+            unfinished.finish();
+        }
         let results = outcome?;
         rolled_back?;
         Ok(results)
     }
 
+    /// With `stop_at_limit`, a statement that gives more than `limit` rows is stopped on the server rather
+    /// than read to its end.
     async fn collect(
         &self,
         sql: &str,
         types: Option<Vec<Type>>,
         limit: usize,
+        stop_at_limit: bool,
     ) -> DatabaseResult<Vec<ResultSet>> {
         let mut collector = Collector {
             types,
@@ -335,10 +366,20 @@ impl Session {
             .await
             .map_err(query_error)?;
         let mut stream = std::pin::pin!(stream);
+        let mut stopped = false;
         while let Some(message) = stream.next().await {
-            collector.take(message.map_err(query_error)?, limit);
+            match message {
+                Ok(message) => {
+                    if collector.take(message, limit) && stop_at_limit && !stopped {
+                        stopped = true;
+                        self.cancel().await?;
+                    }
+                }
+                Err(error) if stopped && error.code() == Some(&SqlState::QUERY_CANCELED) => break,
+                Err(error) => return Err(query_error(error)),
+            }
         }
-        Ok(collector.results)
+        Ok(collector.finish())
     }
 
     /// Asks the server to stop whatever this connection is running; the query ends with an error saying so.
@@ -738,6 +779,39 @@ pub mod tests {
             .is_err());
         assert!(reader.query_guarded("select 1", 1).await.is_ok());
         scratch.drop().await;
+    }
+
+    #[tokio::test]
+    async fn a_guarded_query_stops_on_the_server_at_its_limit() {
+        let Some(reader) = open_test_server(true).await else {
+            return;
+        };
+        let started = std::time::Instant::now();
+        let results = reader
+            .query_guarded("select n from generate_series(1, 100000000) n", 3)
+            .await
+            .unwrap();
+        assert!(started.elapsed() < Duration::from_secs(10));
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].rows.len(), 3);
+        assert!(results[0].truncated);
+        assert!(reader.is_alive());
+        let next = reader.query_guarded("select 1", 1).await.unwrap();
+        assert_eq!(next[0].rows, vec![vec![serde_json::json!(1)]]);
+    }
+
+    #[tokio::test]
+    async fn a_guarded_query_dropped_halfway_retires_its_connection() {
+        let Some(reader) = open_test_server(true).await else {
+            return;
+        };
+        let dropped = tokio::time::timeout(
+            Duration::from_millis(300),
+            reader.query_guarded("select pg_sleep(30)", 1),
+        )
+        .await;
+        assert!(dropped.is_err());
+        assert!(!reader.is_alive());
     }
 
     #[tokio::test]

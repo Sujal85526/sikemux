@@ -12,6 +12,7 @@ use mysql_async::{
     Column as MysqlColumn, Conn, Opts, OptsBuilder, Row, SslOpts, Value as MysqlValue,
 };
 
+use super::Unfinished;
 use crate::error::{DatabaseError, DatabaseResult};
 use crate::profiles::{Server, Tls};
 use crate::schema::{ColumnInfo, ForeignKey, Index, Table, TableInfo, TableKind};
@@ -100,6 +101,11 @@ fn lacks_tls(error: &mysql_async::Error) -> bool {
         error,
         mysql_async::Error::Driver(mysql_async::DriverError::NoClientSslFlagFromServer)
     )
+}
+
+/// One row past the limit, so a result that was cut still says so.
+fn select_limit(limit: usize) -> String {
+    format!("set sql_select_limit = {}", limit.saturating_add(1))
 }
 
 fn is_numeric(ty: ColumnType) -> bool {
@@ -227,6 +233,10 @@ impl Session {
         self.alive.load(Ordering::Relaxed)
     }
 
+    pub fn retire(&self) {
+        self.alive.store(false, Ordering::Relaxed);
+    }
+
     /// The database named in the profile; empty when it names none.
     pub fn default_schema(&self) -> String {
         self.database.clone()
@@ -260,15 +270,33 @@ impl Session {
         ))
     }
 
-    /// Runs every statement in the text, keeping at most `limit` rows from each.
+    /// Runs every statement in the text, keeping at most `limit` rows from each. The server is told to send
+    /// no more than one row past the limit, so a huge select is not read to its end; a select with a `limit`
+    /// of its own keeps that one.
     pub async fn query(&self, sql: &str, limit: usize) -> DatabaseResult<Vec<ResultSet>> {
         let mut connection = self.connection.lock().await;
-        self.run(&mut connection, sql, limit).await
+        let unfinished = Unfinished::new(&self.alive);
+        connection
+            .query_drop(select_limit(limit))
+            .await
+            .map_err(|error| self.failed(&error))?;
+        let outcome = self.run(&mut connection, sql, limit).await;
+        let reset = connection
+            .query_drop("set sql_select_limit = default")
+            .await
+            .map_err(|error| self.failed(&error));
+        if reset.is_ok() {
+            unfinished.finish();
+        }
+        let results = outcome?;
+        reset?;
+        Ok(results)
     }
 
     /// For an agent on a read-only connection. A session setting could otherwise switch read-only off for the
     /// statements after it, so the SQL must be one statement, and it runs in a read-only transaction that is
-    /// always rolled back.
+    /// always rolled back. A connection the rollback did not reach is not used again, since the session's own
+    /// read-only setting could be left switched off.
     pub async fn query_guarded(&self, sql: &str, limit: usize) -> DatabaseResult<Vec<ResultSet>> {
         let mut connection = self.connection.lock().await;
         let statement = connection.prep(sql).await.map_err(|error| {
@@ -281,15 +309,24 @@ impl Session {
             .close(statement)
             .await
             .map_err(|error| self.failed(&error))?;
+        let unfinished = Unfinished::new(&self.alive);
         connection
-            .query_drop("start transaction read only")
+            .query_drop(format!(
+                "{}; start transaction read only",
+                select_limit(limit)
+            ))
             .await
             .map_err(|error| self.failed(&error))?;
         let outcome = self.run(&mut connection, sql, limit).await;
         let rolled_back = connection
-            .query_drop("rollback; set session transaction read only")
+            .query_drop(
+                "rollback; set session transaction read only; set sql_select_limit = default",
+            )
             .await
             .map_err(|error| self.failed(&error));
+        if rolled_back.is_ok() {
+            unfinished.finish();
+        }
         let results = outcome?;
         rolled_back?;
         Ok(results)
@@ -634,6 +671,16 @@ pub mod tests {
             .await
             .unwrap();
         assert!(limited[0].truncated);
+        assert_eq!(limited[0].rows.len(), 1);
+        let setting: Option<u64> = scratch
+            .session
+            .connection
+            .lock()
+            .await
+            .query_first("select @@session.sql_select_limit")
+            .await
+            .unwrap();
+        assert_eq!(setting, Some(u64::MAX));
         let failed = scratch.session.query("select * from nowhere", 1).await;
         let Err(DatabaseError::Query(message)) = failed else {
             panic!("expected a query error")
@@ -723,6 +770,14 @@ pub mod tests {
             .await
             .unwrap();
         assert_eq!(read[0].rows, vec![vec![serde_json::json!(2)]]);
+        let limited = reader
+            .query_guarded("select * from customers", 1)
+            .await
+            .unwrap();
+        assert!(limited[0].truncated);
+        let names = reader.schemas().await.unwrap();
+        assert!(names.len() > 1, "{names:?}");
+        assert!(reader.is_alive());
         let (mut server, password) = server().unwrap();
         server.database = scratch.schema.clone();
         let cleanup = Scratch {

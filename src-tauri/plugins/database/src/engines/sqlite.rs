@@ -2,6 +2,7 @@
 // meant for blocking, since SQLite does its work on the calling thread.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use rusqlite::fallible_iterator::FallibleIterator;
@@ -17,6 +18,7 @@ pub struct Session {
     connection: Arc<Mutex<Connection>>,
     /// Reaches a running statement from another thread, since the connection itself stays locked while it runs.
     interrupt: Arc<InterruptHandle>,
+    alive: Arc<AtomicBool>,
 }
 
 /// `~/data/app.db` is the person's own home folder, as it would be in a terminal.
@@ -52,10 +54,19 @@ impl Session {
             Ok(Self {
                 interrupt: Arc::new(connection.get_interrupt_handle()),
                 connection: Arc::new(Mutex::new(connection)),
+                alive: Arc::new(AtomicBool::new(true)),
             })
         })
         .await
         .map_err(|error| DatabaseError::Connect(error.to_string()))?
+    }
+
+    pub fn is_alive(&self) -> bool {
+        self.alive.load(Ordering::Relaxed)
+    }
+
+    pub fn retire(&self) {
+        self.alive.store(false, Ordering::Relaxed);
     }
 
     /// Runs work against the connection on a thread meant for blocking.

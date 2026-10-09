@@ -5,6 +5,8 @@ pub mod postgres;
 pub mod sqlite;
 mod tls;
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use crate::error::DatabaseResult;
 use crate::profiles::Target;
 use crate::schema::{Table, TableInfo};
@@ -36,12 +38,22 @@ impl Session {
         }
     }
 
-    /// Whether the connection is still up. A PostgreSQL server can drop it; a SQLite file stays open.
+    /// Whether the connection is still up and fit to use. A server can drop it, and one left halfway through
+    /// a guarded query, or retired, is not used again.
     pub fn is_alive(&self) -> bool {
         match self {
             Self::Mysql(session) => session.is_alive(),
             Self::Postgres(session) => session.is_alive(),
-            Self::Sqlite(_) => true,
+            Self::Sqlite(session) => session.is_alive(),
+        }
+    }
+
+    /// Marks the connection as not to be used again, so the next call opens a new one.
+    pub fn retire(&self) {
+        match self {
+            Self::Mysql(session) => session.retire(),
+            Self::Postgres(session) => session.retire(),
+            Self::Sqlite(session) => session.retire(),
         }
     }
 
@@ -135,5 +147,47 @@ impl Session {
             Self::Postgres(session) => session.query_guarded(sql, limit).await,
             Self::Sqlite(session) => session.query(sql.to_string(), limit).await,
         }
+    }
+}
+
+/// Retires a connection unless the work it watches reaches `finish`, as when a query is dropped halfway with
+/// its transaction or settings still in place.
+struct Unfinished<'a> {
+    alive: &'a AtomicBool,
+    finished: bool,
+}
+
+impl<'a> Unfinished<'a> {
+    fn new(alive: &'a AtomicBool) -> Self {
+        Self {
+            alive,
+            finished: false,
+        }
+    }
+
+    fn finish(mut self) {
+        self.finished = true;
+    }
+}
+
+impl Drop for Unfinished<'_> {
+    fn drop(&mut self) {
+        if !self.finished {
+            self.alive.store(false, Ordering::Relaxed);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_connection_is_retired_unless_its_work_finishes() {
+        let alive = AtomicBool::new(true);
+        Unfinished::new(&alive).finish();
+        assert!(alive.load(Ordering::Relaxed));
+        drop(Unfinished::new(&alive));
+        assert!(!alive.load(Ordering::Relaxed));
     }
 }
