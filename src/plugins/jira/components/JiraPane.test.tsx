@@ -11,6 +11,10 @@ const api = vi.hoisted(() => ({
     transition: vi.fn(),
     assign: vi.fn(),
     setTask: vi.fn(),
+    projects: vi.fn(),
+    boards: vi.fn(),
+    board: vi.fn(),
+    moveIssue: vi.fn(),
     signIn: vi.fn(),
 }));
 vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>()), jiraApi: api }));
@@ -67,6 +71,24 @@ beforeEach(() => {
     api.issue.mockResolvedValue(detail);
     api.comment.mockResolvedValue({ id: "2", author: "Me", created: "", body: "Fixed" });
     api.transition.mockResolvedValue({ status: "In Review", transitions: [] });
+    api.projects.mockResolvedValue([
+        { key: "ABC", name: "Alphabet" },
+        { key: "OPS", name: "Operations" },
+    ]);
+    api.boards.mockResolvedValue([{ id: 7, name: "ABC board", kind: "scrum", project: "ABC" }]);
+    api.board.mockResolvedValue({
+        id: 7,
+        name: "ABC board",
+        kind: "scrum",
+        sprint: { id: 42, name: "Sprint 5", end: null, goal: "Ship the login fix" },
+        columns: [
+            { name: "To Do", statusIds: ["1"], issues: [] },
+            { name: "In Progress", statusIds: ["3"], issues: [summary] },
+            { name: "Done", statusIds: ["4"], issues: [] },
+        ],
+        truncated: false,
+    });
+    api.moveIssue.mockResolvedValue(undefined);
 });
 
 describe("JiraPane", () => {
@@ -127,6 +149,45 @@ describe("JiraPane", () => {
         await act(async () => fireEvent.click(second));
         expect(api.setTask).toHaveBeenLastCalledWith("ABC-12", 1, "Keeps the 400", false, "acme.atlassian.net");
         expect(second).toBeChecked();
+    });
+
+    it("lists what I reported, watch and viewed, and a project's open and unassigned issues", async () => {
+        render(<JiraPane paneId="jira-more-lists" active />);
+        fireEvent.click(await screen.findByRole("button", { name: "Reported by me" }));
+        await waitFor(() => expect(api.search).toHaveBeenLastCalledWith(expect.stringContaining("reporter = currentUser()"), "acme.atlassian.net"));
+        fireEvent.click(screen.getByRole("button", { name: "Watching" }));
+        await waitFor(() => expect(api.search).toHaveBeenLastCalledWith(expect.stringContaining("watcher = currentUser()"), "acme.atlassian.net"));
+        fireEvent.click(screen.getByRole("button", { name: "Recently viewed" }));
+        await waitFor(() => expect(api.search).toHaveBeenLastCalledWith(expect.stringContaining("issueHistory()"), "acme.atlassian.net"));
+        fireEvent.click(await screen.findByRole("button", { name: "Unassigned" }));
+        await waitFor(() =>
+            expect(api.search).toHaveBeenLastCalledWith(expect.stringContaining('project = "ABC" AND assignee is EMPTY'), "acme.atlassian.net"),
+        );
+    });
+
+    it("opens a board with its sprint and columns, and moves a card to another column", async () => {
+        render(<JiraPane paneId="jira-board" active />);
+        fireEvent.click(await screen.findByRole("button", { name: "ABC board" }));
+        expect(await screen.findByRole("region", { name: "ABC board" })).toHaveTextContent("Sprint 5");
+        expect(screen.getByText("Ship the login fix")).toBeInTheDocument();
+        const progress = screen.getByRole("list", { name: "In Progress" });
+        expect(progress).toHaveTextContent("Fix the login race");
+
+        fireEvent.contextMenu(screen.getByRole("listitem"));
+        await act(async () => fireEvent.click(screen.getByText("Move to Done")));
+        expect(api.moveIssue).toHaveBeenCalledWith("ABC-12", expect.objectContaining({ name: "Done", statusIds: ["4"] }), "acme.atlassian.net");
+
+        fireEvent.click(screen.getByRole("listitem"));
+        expect(await screen.findByRole("heading", { name: "Fix the login race" })).toBeInTheDocument();
+    });
+
+    it("puts a card back and says why when Jira will not move it", async () => {
+        api.moveIssue.mockRejectedValue({ category: "bad-params", message: "ABC-12's workflow has no way into Done from where it is now" });
+        render(<JiraPane paneId="jira-board-refused" active />);
+        fireEvent.click(await screen.findByRole("button", { name: "ABC board" }));
+        fireEvent.contextMenu(await screen.findByRole("listitem"));
+        await act(async () => fireEvent.click(screen.getByText("Move to Done")));
+        expect(screen.getByRole("list", { name: "In Progress" })).toHaveTextContent("Fix the login race");
     });
 
     it("comments in markdown and shows the sprint list on request", async () => {

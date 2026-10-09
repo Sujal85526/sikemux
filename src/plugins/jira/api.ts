@@ -136,6 +136,40 @@ function signInWithBrowser(openPage: (url: string) => void): BrowserSignIn {
     return { done, cancel: () => cancel() };
 }
 
+export interface JiraProject {
+    key: string;
+    name: string;
+}
+
+export interface JiraBoard {
+    id: number;
+    name: string;
+    kind: "scrum" | "kanban" | string;
+    project: string | null;
+}
+
+export interface JiraSprint {
+    id: number;
+    name: string;
+    end: string | null;
+    goal: string | null;
+}
+
+export interface JiraColumn {
+    name: string;
+    statusIds: string[];
+    issues: JiraIssueSummary[];
+}
+
+export interface JiraBoardView {
+    id: number;
+    name: string;
+    kind: string;
+    sprint: JiraSprint | null;
+    columns: JiraColumn[];
+    truncated: boolean;
+}
+
 export const jiraApi = {
     status: () => backend.call<JiraStatus>("status"),
     signIn: (site: string, email: string, token: string) => backend.call<JiraStatus>("signIn", { site, email, token }),
@@ -151,5 +185,11 @@ export const jiraApi = {
     setTask: (key: string, index: number, text: string, done: boolean, site?: string) => read<void>("setTask", { key, index, text, done, site }),
     assignable: (key: string, query: string, site?: string) => read<JiraPerson[]>("assignable", { key, query, site }),
     filters: (site?: string) => read<JiraFilter[]>("filters", { site }),
+    projects: (site?: string) => read<JiraProject[]>("projects", { site }),
+    boards: (site?: string) => read<JiraBoard[]>("boards", { site }),
+    board: (id: number, site?: string) => read<JiraBoardView>("board", { id, site }),
+    /** Moves an issue into a board column through whichever transition leads to one of its statuses. */
+    moveIssue: (key: string, column: JiraColumn, site?: string) =>
+        read<void>("moveIssue", { key, statusIds: column.statusIds, column: column.name, site }),
     keys: (text: string) => backend.call<string[]>("keys", { text }),
 };
