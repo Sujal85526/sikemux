@@ -65,6 +65,24 @@ describe("ResultsView", () => {
         expect(host.copyText).toHaveBeenLastCalledWith("ada@example.com");
     });
 
+    it("marks only the picked cell as selected", () => {
+        render(<ResultsView outcome={{ results: [customers], millis: 1 }} />);
+        const email = screen.getByRole("cell", { name: "ada@example.com" });
+        const missing = screen.getByRole("cell", { name: "NULL" });
+        fireEvent.click(email);
+        expect(email).toHaveAttribute("aria-selected", "true");
+        fireEvent.click(missing);
+        expect(email).toHaveAttribute("aria-selected", "false");
+        expect(missing).toHaveClass("selected");
+        expect(screen.getByLabelText("Selected cell")).toHaveTextContent("email");
+        const [rowNumber, id] = screen.getAllByRole("cell", { name: "2" });
+        fireEvent.click(rowNumber);
+        expect(missing).toHaveClass("selected");
+        fireEvent.click(id);
+        expect(missing).not.toHaveClass("selected");
+        expect(id).toHaveClass("selected");
+    });
+
     it("copies the result as CSV", () => {
         render(<ResultsView outcome={{ results: [customers], millis: 1 }} />);
         fireEvent.click(screen.getByRole("button", { name: "Copy CSV" }));
