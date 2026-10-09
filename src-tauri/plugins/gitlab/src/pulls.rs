@@ -136,7 +136,7 @@ pub fn merge_state_of(
     (Some(state == "clean"), Some(state.into()))
 }
 
-fn label_of(row: LabelRow) -> Label {
+pub fn label_of(row: LabelRow) -> Label {
     match row {
         LabelRow::Named(name) => Label {
             name,
