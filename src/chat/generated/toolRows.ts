@@ -119,6 +119,10 @@ export const TOOL_ROWS = {
         detail: ["“{grep}”"],
         plugin: "sikemux.bitbucket",
     },
+    db_databases: { verb: "list", kind: "read", icon: "folder", target: ["saved databases"], plugin: "sikemux.database" },
+    db_tables: { verb: "tables", kind: "read", icon: "eye", target: ["{database}"], detail: ["{schema}"], plugin: "sikemux.database" },
+    db_describe: { verb: "describe", kind: "read", icon: "book", target: ["{table}"], detail: ["{database}"], plugin: "sikemux.database" },
+    db_query: { verb: "query", kind: "execute", icon: "run", target: ["{sql}"], detail: ["{database}"], plugin: "sikemux.database" },
     gitlab_merge_requests: {
         verb: "list",
         kind: "read",

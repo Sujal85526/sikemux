@@ -175,6 +175,7 @@ const budgets = [
     // The account picture in the top bar and renaming tabs added a little more.
     // So did the agent accounts in the rail's footer and the desk's tab kinds.
     // Jira boards and the GitLab code host added a little more.
+    // The database pane is a lazy chunk that counts here too.
     label:
       "default-path JavaScript except the highlighter and its grammar chunks",
     pattern: new RegExp(

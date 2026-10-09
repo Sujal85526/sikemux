@@ -69,6 +69,7 @@ Pass one of these as `topic`:
 - `browser-evidence` — `browser_screenshot`, `browser_annotate`, `browser_record`
 - `browser-debugging` — `browser_network`, loads, `browser_console`, `app_console`, `browser_evaluate`
 - `simulator` — driving an iOS simulator with `sim_*`
+- `databases` — the `db_*` tools and SQL
 - `shell` — the `sikemux tool` CLI for scripts and tasks
 
 ## config: Writing sikemux.json
@@ -695,6 +696,33 @@ If a call fails: "call sim_attach" means you hold no device or it is not
 running; "in use by" means another agent holds it; "not on the screen now"
 means read the screen again; "still booting" or `launching` mean call again in
 a moment.
+
+## databases: Saved databases
+
+`db_databases` lists the databases the person saved in the Database pane:
+PostgreSQL, MySQL or MariaDB servers, and SQLite files. Name one by its name in
+`db_tables`, `db_describe` and `db_query`.
+
+- `db_tables` lists the schemas and the tables and views in one. Without a
+  `schema` it uses `public` for PostgreSQL, `main` for SQLite, and the database
+  the connection names for MySQL.
+- `db_describe` gives a table's columns, primary key, indexes and foreign keys.
+  Read it before writing a join rather than guessing column names.
+- `db_query` runs SQL. Each result keeps 100 rows unless you pass `limit`, up
+  to 1000; `truncated` says some were left out, so add a `where` or an
+  aggregate rather than raising the limit to read everything.
+
+Your queries run on a connection of your own. It is read-only unless the
+person ticked "Let agents change data" for that database, and `writable` in
+`db_databases` says which. On a read-only connection send one statement per
+call; it runs in a read-only transaction that is rolled back afterwards. Where
+you may change data, several statements separated by semicolons each come back
+as their own result: rows, or how many rows a change touched. A refused write
+is not a fault to work around: ask the person. A query stops after 60 seconds. Every query you run shows up in
+that database's history in Sikemux, marked as an agent's.
+
+Large integers and decimals arrive as text so no digit is lost; binary values
+arrive as the start of their hex.
 
 ## shell: The same operations from a shell
 

@@ -64,6 +64,12 @@ export async function pickFolder(title: string): Promise<string | null> {
     return typeof picked === "string" ? picked : null;
 }
 
+/** Asks the person for a file, offering only these extensions when any are given; null when they cancel. */
+export async function pickFile(title: string, filter?: { name: string; extensions: string[] }): Promise<string | null> {
+    const picked = await openDialog({ directory: false, multiple: false, title, filters: filter ? [filter] : undefined });
+    return typeof picked === "string" ? picked : null;
+}
+
 /** Brings this surface's session forward, opening it if needed, and returns the pane it shows in. */
 export function openSurface(kind: PluginKind): string | null {
     cmd.openPluginSession(kind);
