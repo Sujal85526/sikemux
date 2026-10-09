@@ -147,6 +147,8 @@ export const jiraApi = {
     transition: (key: string, to: string, site?: string) =>
         read<{ status: string | null; transitions: JiraTransition[] }>("transition", { key, to, site }),
     assign: (key: string, who: { accountId?: string | null; me?: boolean }, site?: string) => read<void>("assign", { key, ...who, site }),
+    /** Ticks or clears the `index`th task of the description; `text` must still be its words. */
+    setTask: (key: string, index: number, text: string, done: boolean, site?: string) => read<void>("setTask", { key, index, text, done, site }),
     assignable: (key: string, query: string, site?: string) => read<JiraPerson[]>("assignable", { key, query, site }),
     filters: (site?: string) => read<JiraFilter[]>("filters", { site }),
     keys: (text: string) => backend.call<string[]>("keys", { text }),
