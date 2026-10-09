@@ -15,7 +15,7 @@ import { dispatchPaths, pathDropTargetAt, registerFolderDrop, resolvePathDropTar
 import { IconChevron, IconCollapseAll, IconFilePlus, IconFolder, IconFolderPlus, IconSearch } from "../ui/Icons";
 import { FileIcon } from "../ui/FileIcon";
 import { Tooltip } from "../ui/Tooltip";
-import { gitFileDecoration } from "../git/gitFileStatus";
+import { gitFileDecoration, gitFolderDecorations, type GitStatusDecoration } from "../git/gitFileStatus";
 import { openFilePalette } from "../state/commands/ui";
 import { basename, dirname, isPathWithin, joinPath, normalizePath, relativePath as pathRelative } from "../lib/paths";
 import { FILE_MANAGER_NAME } from "../lib/platform";
@@ -109,6 +109,11 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
         if (cwd && statusFiles) {
             statusFiles.forEach((f) => m.set(joinPath(cwd, f.path), f));
         }
+        return m;
+    }, [cwd, statusFiles]);
+    const gitFolders = useMemo(() => {
+        const m = new Map<string, GitStatusDecoration>();
+        if (cwd && statusFiles) gitFolderDecorations(statusFiles).forEach((decoration, folder) => m.set(joinPath(cwd, folder), decoration));
         return m;
     }, [cwd, statusFiles]);
 
@@ -628,13 +633,14 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
         }
         if (e.is_dir) {
             const open = expanded.has(e.path);
+            const folderGit = gitFolders.get(normalizePath(e.path));
             return (
                 <button
                     ref={(el) => {
                         attachFolderDrop(el, e.path);
                         attachRowButton(e.path, el);
                     }}
-                    className={`tree-row is-folder${e.ignored ? " ignored" : ""}${selectedDir === e.path ? " selected" : ""}${dragOver === e.path ? " drag-over" : ""}${draggingPath === e.path ? " dragging" : ""}`}
+                    className={`tree-row is-folder${e.ignored ? " ignored" : ""}${folderGit ? ` git-${folderGit.cls}` : ""}${selectedDir === e.path ? " selected" : ""}${dragOver === e.path ? " drag-over" : ""}${draggingPath === e.path ? " dragging" : ""}`}
                     style={{ paddingLeft: pad }}
                     onPointerDown={(ev) => onRowPointerDown(ev, e.path)}
                     onDragStart={(ev) => ev.preventDefault()}
@@ -661,6 +667,11 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
                         <IconFolder size={17} />
                     </span>
                     <span className="tree-name">{e.name}</span>
+                    {folderGit && (
+                        <span className="tree-git tree-git-dot" title={`Holds ${folderGit.label} files`}>
+                            ●
+                        </span>
+                    )}
                 </button>
             );
         }
