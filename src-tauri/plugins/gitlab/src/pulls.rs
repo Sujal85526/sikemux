@@ -662,28 +662,32 @@ pub struct ReviewInput {
     pub body: String,
 }
 
-/// Approving is GitLab's approval; a written verdict goes on as a comment beside it.
+/// Approving is GitLab's approval; a written verdict goes on as a comment
+/// beside it, once the verdict itself has gone through.
 pub async fn review(data_dir: &Path, input: ReviewInput) -> GitlabResult<()> {
     let body = input.body.trim();
-    if !body.is_empty() {
-        client::write(
-            data_dir,
-            Method::POST,
-            &input.pull.path("/notes")?,
-            Some(&json!({ "body": body })),
-        )
-        .await?;
-    }
     match input.event.as_str() {
         "APPROVE" => {
-            client::write(data_dir, Method::POST, &input.pull.path("/approve")?, None).await
+            client::write(data_dir, Method::POST, &input.pull.path("/approve")?, None).await?
         }
-        "COMMENT" if !body.is_empty() => Ok(()),
-        "COMMENT" => Err(GitlabError::BadArg("a comment needs some text".into())),
-        _ => Err(GitlabError::Unsupported(
-            "ask for changes on a merge request; leave a comment instead",
-        )),
+        "COMMENT" if !body.is_empty() => {}
+        "COMMENT" => return Err(GitlabError::BadArg("a comment needs some text".into())),
+        _ => {
+            return Err(GitlabError::Unsupported(
+                "ask for changes on a merge request; leave a comment instead",
+            ))
+        }
     }
+    if body.is_empty() {
+        return Ok(());
+    }
+    client::write(
+        data_dir,
+        Method::POST,
+        &input.pull.path("/notes")?,
+        Some(&json!({ "body": body })),
+    )
+    .await
 }
 
 #[cfg(test)]
