@@ -53,7 +53,7 @@ const row = (page: SettingsPageId, sectionTitle: string, label: string, keywords
 });
 
 export const SETTINGS_INDEX: SettingsEntry[] = [
-    section("plugins", "Built-in plugins", "aws bruno github actions jira rundeck signoz enable disable switch off turn on extensions integrations"),
+    section("plugins", "Built-in plugins", "aws bitbucket bruno github actions gitlab jira rundeck signoz enable disable switch off turn on extensions integrations"),
     section("general", "Project folders", "repos repositories directories roots scan depth index picker"),
     section("general", "Session transfer", "export import clipboard move machine bundle copy"),
 
