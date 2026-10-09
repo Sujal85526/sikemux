@@ -61,7 +61,6 @@ pub struct MergeRequestRow {
     squash_commit_sha: Option<String>,
     source_project_id: Option<u64>,
     target_project_id: Option<u64>,
-    references: Option<Value>,
     web_url: String,
 }
 
@@ -169,14 +168,10 @@ impl Pull {
         };
         let reviewers = people(&row.reviewers);
         let assignees = people(&row.assignees);
-        let forked = matches!((row.source_project_id, row.target_project_id), (Some(source), Some(target)) if source != target);
-        let fork_owner = row
-            .references
-            .as_ref()
-            .and_then(|references| references.get("full"))
-            .and_then(Value::as_str)
-            .and_then(|full| full.split_once('!'))
-            .map(|(path, _)| path.to_string());
+        let fork = match (row.source_project_id, row.target_project_id) {
+            (Some(source), Some(target)) if source != target => Some(source),
+            _ => None,
+        };
         let (mergeable, merge_state) =
             merge_state_of(row.detailed_merge_status.as_deref(), row.has_conflicts);
         let merger = row.merge_user.as_ref().or(row.merged_by.as_ref());
@@ -189,11 +184,8 @@ impl Pull {
             author: login_of(row.author.as_ref()),
             avatar_url: avatar_of(row.author.as_ref()),
             author_association: None,
-            head_label: match (forked, &row.source_branch) {
-                (true, Some(branch)) => Some(format!(
-                    "{}:{branch}",
-                    fork_owner.unwrap_or_else(|| "fork".into())
-                )),
+            head_label: match (fork, &row.source_branch) {
+                (Some(source), Some(branch)) => Some(format!("project {source}:{branch}")),
                 _ => None,
             },
             head: row.source_branch,
@@ -750,14 +742,14 @@ mod tests {
     fn a_merged_one_from_a_fork_says_who_merged_it_and_where_its_branch_lives() {
         let pull = Pull::from_row(row(json!({
             "iid": 7, "title": "x", "state": "merged", "created_at": "t1", "source_branch": "patch-1",
-            "source_project_id": 8, "target_project_id": 7, "references": { "full": "someone/api!7" },
+            "source_project_id": 8, "target_project_id": 7, "references": { "full": "acme/api!7" },
             "merge_user": { "username": "irwan" }, "squash_commit_sha": "abc", "changes_count": "1000+",
             "labels": ["plain"], "web_url": "u"
         })));
         assert_eq!(pull.state, "merged");
         assert_eq!(pull.merged_by.as_deref(), Some("irwan"));
         assert_eq!(pull.merge_commit_sha.as_deref(), Some("abc"));
-        assert_eq!(pull.head_label.as_deref(), Some("someone/api:patch-1"));
+        assert_eq!(pull.head_label.as_deref(), Some("project 8:patch-1"));
         assert_eq!(pull.changed_files, Some(1000));
         assert_eq!(pull.labels[0].color, "");
     }
