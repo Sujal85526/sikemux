@@ -22,9 +22,9 @@ Download the latest `.dmg` from [sikemux.com](https://sikemux.com) or [Releases]
 
 - **Projects** with a code editor, terminals, Git, and search, all in one working directory
 - **Coding agents**: Claude, Codex, Hermes, Pi and OpenCode, several at once, each with its own browser tabs, and one list of every agent and recent chat across your open projects
-- **Chats that know your work**: `@` attaches project files, `#` hands over GitHub or Bitbucket issues and pull requests, and an optional worktree gives a chat its own branch. Terminal selections, problems, logs and pull request lines can be sent to any agent
+- **Chats that know your work**: `@` attaches project files, `#` hands over GitHub, GitLab or Bitbucket issues and pull requests, and an optional worktree gives a chat its own branch. Terminal selections, problems, logs and pull request lines can be sent to any agent
 - **Nothing stops when you quit**: terminals, agents and tasks keep running in the background and come back where they were. Quit and Stop Everything (`⌥⌘Q`) ends them
-- **Panels** for AWS, GitHub, Bitbucket, Jira, Rundeck, SigNoz and Bruno
+- **Panels** for AWS, GitHub, GitLab, Bitbucket, Jira, Rundeck, SigNoz and Bruno
 - **SSH** sessions, nine themes and a custom theme editor
 
 The [website](https://sikemux.com) has the full tour.

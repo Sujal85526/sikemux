@@ -27,7 +27,7 @@ import {
     type RateLimit,
     type Workflow,
 } from "./types";
-import { hostApi, type HostAccount, type HostAccountEntry } from "./registry";
+import { hostApi, type HostAccount, type HostAccountEntry, type ThreadOf } from "./registry";
 
 export const hostStatusR = resource({
     kind: "host.status",
@@ -151,7 +151,7 @@ export const pullFilesR = resource({
 
 export const timelineR = resource({
     kind: "host.timeline",
-    fetch: (repo: RepoRef, number: number): Promise<TimelineItem[]> => hostApi(repo.provider).timeline(repo, number),
+    fetch: (repo: RepoRef, number: number, of: ThreadOf): Promise<TimelineItem[]> => hostApi(repo.provider).timeline(repo, number, of),
     staleAfterMs: 30_000,
 });
 
@@ -188,7 +188,7 @@ export const issueR = resource({
 
 export const commentsR = resource({
     kind: "host.comments",
-    fetch: (repo: RepoRef, number: number): Promise<Comment[]> => hostApi(repo.provider).comments(repo, number),
+    fetch: (repo: RepoRef, number: number, of: ThreadOf): Promise<Comment[]> => hostApi(repo.provider).comments(repo, number, of),
     staleAfterMs: 30_000,
 });
 

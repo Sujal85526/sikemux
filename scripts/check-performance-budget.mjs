@@ -143,9 +143,10 @@ const budgets = [
     // agent built and shows sits in its reply too. The transcript lays itself
     // out from the bottom, and tool rows draw an icon for what each call does.
     // A sent message can be opened again, edited and sent in its place.
+    // GitLab's agent tools add their rows.
     label: "ACP chat lazy chunk",
     pattern: /^AgentSurface-.*\.js$/,
-    raw: 134_000,
+    raw: 136_000,
     gzip: 42_000,
   },
   {
@@ -173,7 +174,7 @@ const budgets = [
     // terminals and tasks back from the core at launch added a little more.
     // The account picture in the top bar and renaming tabs added a little more.
     // So did the agent accounts in the rail's footer and the desk's tab kinds.
-    // Jira boards added a little more.
+    // Jira boards and the GitLab code host added a little more.
     label:
       "default-path JavaScript except the highlighter and its grammar chunks",
     pattern: new RegExp(

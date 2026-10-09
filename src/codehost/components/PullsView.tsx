@@ -508,7 +508,7 @@ export function PullRight({
 }) {
     const host = useHost();
     const pull = useResourceEnabled(active, pullR, repo, number);
-    const timeline = useResourceEnabled(active, timelineR, repo, number);
+    const timeline = useResourceEnabled(active, timelineR, repo, number, "pull");
     const now = useNow(false);
     if (!pull.data) return <SkeletonRows rows={6} label="Loading pull request" />;
     const found = pull.data;
