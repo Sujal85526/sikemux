@@ -92,10 +92,10 @@ export interface HostCapabilities {
     inbox: boolean;
 }
 
-/** Every read and write a host answers. Each takes the repository it is about, whose `provider` names the host. */
 /** Whether a thread belongs to a pull request or an issue. GitHub numbers both in one sequence; GitLab does not. */
 export type ThreadOf = "pull" | "issue";
 
+/** Every read and write a host answers. Each takes the repository it is about, whose `provider` names the host. */
 export interface CodeHostApi {
     /** Every call below that takes no repository is about `account`, or the default account when it is null. */
     status(account: string | null): Promise<HostAccount>;
