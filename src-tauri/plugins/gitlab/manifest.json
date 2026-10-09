@@ -1,0 +1,8 @@
+{
+  "id": "sikemux.gitlab",
+  "name": "GitLab",
+  "version": "0.1.0",
+  "sikemux": ">=0.4",
+  "callTimeoutSecs": 120,
+  "tools": []
+}
