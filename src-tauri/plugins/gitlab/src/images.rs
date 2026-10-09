@@ -1,6 +1,6 @@
 // Avatars and pictures GitLab shows beside its text. The window only draws
 // images the app holds itself, so each is fetched here and handed over as a
-// `data:` address. The token only ever goes to the account's own server.
+// `data:` address. A token only ever goes to its own account's server.
 
 use std::path::Path;
 
@@ -9,6 +9,7 @@ use reqwest::Url;
 use serde::Deserialize;
 
 use crate::client::{self, Session};
+use crate::config::{self, Account};
 use crate::error::{GitlabError, GitlabResult};
 
 const MAX_IMAGE_BYTES: usize = 5 * 1024 * 1024;
@@ -19,9 +20,10 @@ pub struct ImageRef {
     pub url: String,
 }
 
-/// Whether an image may be fetched, and if so whether it gets the token: only
-/// the account's own server does. Gravatar and GitLab's own image hosts need none.
-fn access(url: &Url, own_host: Option<&str>) -> Option<bool> {
+/// Whether an image may be fetched, and if so with which account's token: only
+/// an account on the image's own server sends one. Gravatar and GitLab's own
+/// image hosts need none.
+fn access<'a>(url: &Url, accounts: &'a [Account]) -> Option<Option<&'a Account>> {
     if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
         return None;
     }
@@ -30,14 +32,14 @@ fn access(url: &Url, own_host: Option<&str>) -> Option<bool> {
         Some(port) => format!("{host}:{port}"),
         None => host.to_string(),
     };
-    if own_host == Some(with_port.as_str()) {
-        return Some(true);
+    if let Some(account) = accounts.iter().find(|account| account.host == with_port) {
+        return Some(Some(account));
     }
     let public = host == "gitlab.com"
         || host.ends_with(".gitlab-static.net")
         || host == "secure.gravatar.com"
         || host == "www.gravatar.com";
-    public.then_some(false)
+    public.then_some(None)
 }
 
 /// `image/png` and the like, and nothing that could break out of a `data:` address.
@@ -52,14 +54,15 @@ fn image_kind(content_type: &str) -> Option<String> {
 pub async fn image(data_dir: &Path, input: ImageRef) -> GitlabResult<String> {
     let refused = || GitlabError::BadArg("that is not an image GitLab serves".into());
     let mut url = Url::parse(&input.url).map_err(|_| refused())?;
-    let session = Session::current(data_dir).await.ok();
-    let own_host = session
-        .as_ref()
-        .map(|session| session.account.host.as_str());
+    let chosen = client::chosen();
+    let mut accounts = config::load(data_dir).in_order();
+    accounts.sort_by_key(|account| Some(&account.id) != chosen.as_ref());
     for _ in 0..MAX_HOPS {
         let mut request = client::http()?.get(url.clone());
-        if access(&url, own_host).ok_or_else(refused)? {
-            if let Some(session) = &session {
+        if let Some(owner) = access(&url, &accounts).ok_or_else(refused)? {
+            let session =
+                client::as_account(Some(owner.id.clone()), Session::current(data_dir)).await;
+            if let Ok(session) = session {
                 request = client::authorize(request, &session.token);
             }
         }
@@ -98,46 +101,66 @@ pub async fn image(data_dir: &Path, input: ImageRef) -> GitlabResult<String> {
 mod tests {
     use super::*;
 
-    fn allowed(raw: &str, own: Option<&str>) -> Option<bool> {
-        access(&Url::parse(raw).expect("parses"), own)
+    fn on(host: &str) -> Account {
+        Account {
+            id: Account::id_for(host, 1),
+            host: host.into(),
+            login: "someone".into(),
+            display_name: None,
+            avatar_url: None,
+        }
+    }
+
+    fn token_for(raw: &str, accounts: &[Account]) -> Option<Option<String>> {
+        access(&Url::parse(raw).expect("parses"), accounts)
+            .map(|owner| owner.map(|account| account.id.clone()))
     }
 
     #[test]
-    fn the_token_only_goes_to_the_accounts_own_server() {
-        let own = Some("gitlab.acme.dev");
+    fn a_token_only_goes_to_its_own_accounts_server() {
+        let accounts = [on("gitlab.com"), on("gitlab.acme.dev")];
         assert_eq!(
-            allowed(
+            token_for(
                 "https://gitlab.acme.dev/uploads/-/system/user/avatar/3/a.png",
-                own
+                &accounts
             ),
-            Some(true)
+            Some(Some("gitlab.acme.dev#1".into()))
         );
         assert_eq!(
-            allowed(
+            token_for("https://gitlab.com/uploads/a.png", &accounts),
+            Some(Some("gitlab.com#1".into()))
+        );
+        assert_eq!(
+            token_for(
                 "https://gitlab.com/uploads/-/system/user/avatar/3/a.png",
-                own
+                &accounts[1..]
             ),
-            Some(false)
+            Some(None)
         );
         assert_eq!(
-            allowed("https://secure.gravatar.com/avatar/abc", own),
-            Some(false)
+            token_for("https://secure.gravatar.com/avatar/abc", &accounts),
+            Some(None)
         );
         assert_eq!(
-            allowed("https://gitlab.com/uploads/a.png", Some("gitlab.com")),
-            Some(true)
+            token_for(
+                "https://git.acme.dev:8443/a.png",
+                &[on("git.acme.dev:8443")]
+            ),
+            Some(Some("git.acme.dev:8443#1".into()))
         );
     }
 
     #[test]
     fn anywhere_else_is_refused() {
+        let accounts = [on("gitlab.acme.dev")];
         for raw in [
             "http://gitlab.com/a.png",
             "https://evil.example/a.png",
             "https://gitlab.acme.dev.evil.example/a.png",
+            "https://gitlab.acme.dev:8443/a.png",
             "https://user:pw@gitlab.com/a.png",
         ] {
-            assert_eq!(allowed(raw, Some("gitlab.acme.dev")), None, "{raw}");
+            assert_eq!(token_for(raw, &accounts), None, "{raw}");
         }
     }
 }
