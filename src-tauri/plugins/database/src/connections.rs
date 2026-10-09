@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, PoisonError};
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
@@ -68,6 +69,8 @@ type Key = (String, Access);
 #[derive(Default)]
 pub struct Pool {
     open: tokio::sync::Mutex<HashMap<Key, Open>>,
+    /// One lock per connection, so calls that arrive together sign in once rather than each on their own.
+    opening: std::sync::Mutex<HashMap<Key, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 impl Pool {
@@ -86,6 +89,17 @@ impl Pool {
     /// The open connection to a saved database, signing in first when there is none or it has dropped.
     async fn open(&self, data_dir: &Path, id: &str, access: Access) -> DatabaseResult<Open> {
         let key = (id.to_string(), access);
+        if let Some(kept) = self.kept(&key).await {
+            return Ok(kept);
+        }
+        let opening = Arc::clone(
+            self.opening
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .entry(key.clone())
+                .or_default(),
+        );
+        let _one_at_a_time = opening.lock().await;
         if let Some(kept) = self.kept(&key).await {
             return Ok(kept);
         }
