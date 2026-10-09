@@ -279,17 +279,22 @@ pub struct ProjectOnHost {
 }
 
 /// The first account, default first, on the project's server that can see it,
-/// so a project on a work server opens as the work account by itself.
+/// so a project on a work server opens as the work account by itself. When none
+/// can, the first on that server still answers, so the project is never looked
+/// for on another server.
 pub async fn account_for(data_dir: &Path, input: ProjectOnHost) -> GitlabResult<Option<String>> {
     let path = input.repo.path("")?;
-    for account in config::load(data_dir).in_order() {
-        if input
-            .host
-            .as_deref()
-            .is_some_and(|host| host != account.host)
-        {
-            continue;
-        }
+    let on_server: Vec<Account> = config::load(data_dir)
+        .in_order()
+        .into_iter()
+        .filter(|account| {
+            input
+                .host
+                .as_deref()
+                .is_none_or(|host| config::same_server(host, &account.host))
+        })
+        .collect();
+    for account in &on_server {
         let id = account.id.clone();
         let seen: GitlabResult<serde_json::Value> =
             client::as_account(Some(id.clone()), client::get(data_dir, &path, &[])).await;
@@ -299,7 +304,10 @@ pub async fn account_for(data_dir: &Path, input: ProjectOnHost) -> GitlabResult<
             Err(_) => continue,
         }
     }
-    Ok(None)
+    Ok(input
+        .host
+        .and(on_server.into_iter().next())
+        .map(|account| account.id))
 }
 
 #[cfg(test)]

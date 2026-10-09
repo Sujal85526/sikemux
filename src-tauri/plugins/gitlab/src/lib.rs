@@ -77,9 +77,11 @@ fn resolve(data_dir: &std::path::Path, query: RemoteQuery) -> Resolved {
     let found = repo::from_remote(&query.url);
     let hosts = config::load(data_dir).hosts();
     Resolved {
-        same_host: found
-            .as_ref()
-            .is_some_and(|repo| hosts.contains(&repo.host)),
+        same_host: found.as_ref().is_some_and(|repo| {
+            hosts
+                .iter()
+                .any(|host| config::same_server(host, &repo.host))
+        }),
         slug: found.as_ref().map(repo::Repo::slug),
         repo: found,
     }
@@ -110,21 +112,24 @@ fn works_in(data_dir: &std::path::Path, remotes: &[String]) -> bool {
     remotes
         .iter()
         .filter_map(|remote| repo::from_remote(remote))
-        .any(|repo| {
-            config
-                .accounts
-                .iter()
-                .any(|account| account.host == repo.host)
-        })
+        .any(|repo| config.account_on(&repo.host).is_some())
 }
 
-/// Which account a call is for; with none named, the default one.
-fn account_of(input: &Value) -> Option<String> {
-    input
-        .get("account")
-        .and_then(Value::as_str)
-        .filter(|account| !account.is_empty())
-        .map(str::to_string)
+/// Which account a call is for: the one it names, or else the first on the
+/// server it names, or with neither, the default one.
+fn account_of(data_dir: &std::path::Path, input: &Value) -> Option<String> {
+    let text = |field: &str| {
+        input
+            .get(field)
+            .and_then(Value::as_str)
+            .filter(|text| !text.is_empty())
+    };
+    if let Some(account) = text("account") {
+        return Some(account.to_string());
+    }
+    config::load(data_dir)
+        .account_on(text("host")?)
+        .map(|account| account.id)
 }
 
 impl Plugin for Gitlab {
@@ -138,7 +143,7 @@ impl Plugin for Gitlab {
         method: &'a str,
         input: Value,
     ) -> PluginFuture<'a, Value> {
-        let account = account_of(&input);
+        let account = account_of(ctx.data_dir(), &input);
         Box::pin(client::as_account(account, dispatch(ctx, method, input)))
     }
 
@@ -149,7 +154,7 @@ impl Plugin for Gitlab {
         input: Value,
         sink: StreamSink,
     ) -> PluginFuture<'a, ()> {
-        let account = account_of(&input);
+        let account = account_of(ctx.data_dir(), &input);
         Box::pin(client::as_account(
             account,
             dispatch_stream(ctx, method, input, sink),
@@ -329,6 +334,56 @@ mod tests {
         signed_in_to(&dir, "gitlab.acme.dev");
         assert!(works_in(&dir, &remote));
         assert!(!works_in(&dir, &["git@gitlab.com:x/y.git".to_string()]));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_server_on_its_own_port_matches_its_remote() {
+        let dir = temp("port");
+        signed_in_to(&dir, "git.acme.dev:8443");
+        let remote = ["ssh://git@git.acme.dev:2222/platform/api.git".to_string()];
+        assert!(works_in(&dir, &remote));
+        let resolved = resolve(
+            &dir,
+            RemoteQuery {
+                url: remote[0].clone(),
+            },
+        );
+        assert!(resolved.same_host);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_call_naming_no_account_goes_to_the_first_on_its_server() {
+        let dir = temp("account-of");
+        let mut config = config::GitlabConfig::default();
+        for (host, id) in [("gitlab.com", 1), ("git.acme.dev:8443", 2)] {
+            config.upsert(config::Account {
+                id: config::Account::id_for(host, id),
+                host: host.into(),
+                login: "someone".into(),
+                display_name: None,
+                avatar_url: None,
+            });
+        }
+        config::save(&dir, &config).expect("saves");
+        assert_eq!(
+            account_of(&dir, &json!({ "host": "git.acme.dev" })).as_deref(),
+            Some("git.acme.dev:8443#2")
+        );
+        assert_eq!(
+            account_of(
+                &dir,
+                &json!({ "host": "git.acme.dev", "account": "gitlab.com#1" })
+            )
+            .as_deref(),
+            Some("gitlab.com#1")
+        );
+        assert_eq!(
+            account_of(&dir, &json!({ "host": "gitlab.other.dev" })),
+            None
+        );
+        assert_eq!(account_of(&dir, &json!({})), None);
         std::fs::remove_dir_all(dir).ok();
     }
 

@@ -47,6 +47,8 @@ export interface RepoRef {
     name: string;
     /** The signed-in account to ask as; with none, the host's default account. */
     account?: string | null;
+    /** The server the folder's remote names, so a host with accounts on several servers asks the right one. */
+    host?: string;
 }
 
 export interface Workflow {

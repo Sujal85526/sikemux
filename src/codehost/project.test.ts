@@ -81,7 +81,12 @@ describe("claimRemote", () => {
 
     it("goes to the host whose server the remote is on", async () => {
         const hosts = [host("github", "github.com"), host("bitbucket", "bitbucket.org")];
-        expect(await claimRemote("https://bitbucket.org/team/thing.git", hosts)).toEqual({ provider: "bitbucket", owner: "team", name: "thing" });
+        expect(await claimRemote("https://bitbucket.org/team/thing.git", hosts)).toEqual({
+            provider: "bitbucket",
+            owner: "team",
+            name: "thing",
+            host: "bitbucket.org",
+        });
     });
 
     it("leaves a remote no host serves to the local workbench, even when a host can read its address", async () => {

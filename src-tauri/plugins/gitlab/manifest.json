@@ -9,10 +9,11 @@
       "name": "gitlab_merge_requests",
       "row": {"verb": "list", "kind": "read", "icon": "pull-request", "target": ["{name} merge requests"], "detail": ["{state}"]},
       "method": "pulls",
-      "description": "Merge requests, most recently updated first, with state, branches, reviewers and whether each can merge. owner and name come from the git remote.",
+      "description": "Merge requests, most recently updated first, with state, branches, reviewers and whether each can merge. owner, name and host come from the git remote.",
       "properties": {
         "owner": { "type": "string", "description": "The group path, e.g. platform/payments." },
         "name": { "type": "string", "description": "The project path." },
+        "host": { "type": "string", "description": "The server in the git remote, e.g. gitlab.acme.dev." },
         "state": { "type": "string", "enum": ["open", "closed", "merged", "all"], "description": "Default open." }
       },
       "required": ["owner", "name"]
@@ -25,6 +26,7 @@
       "properties": {
         "owner": { "type": "string", "description": "The group path." },
         "name": { "type": "string", "description": "The project path." },
+        "host": { "type": "string", "description": "The server in the git remote, e.g. gitlab.acme.dev." },
         "number": { "type": "integer", "description": "The merge request's !number." },
         "paths": { "type": "array", "items": { "type": "string" }, "description": "Only these files, each with its patch." },
         "offset": { "type": "integer", "description": "Patch line to start from, from 0. The note gives the next one." },
@@ -40,6 +42,7 @@
       "properties": {
         "owner": { "type": "string", "description": "The group path." },
         "name": { "type": "string", "description": "The project path." },
+        "host": { "type": "string", "description": "The server in the git remote, e.g. gitlab.acme.dev." },
         "number": { "type": "integer", "description": "The merge request's !number or the issue's #number." },
         "of": { "type": "string", "enum": ["pull", "issue"], "description": "Default pull, a merge request." }
       },
@@ -53,6 +56,7 @@
       "properties": {
         "owner": { "type": "string", "description": "The group path." },
         "name": { "type": "string", "description": "The project path." },
+        "host": { "type": "string", "description": "The server in the git remote, e.g. gitlab.acme.dev." },
         "state": { "type": "string", "enum": ["open", "closed", "all"], "description": "Default open." },
         "page": { "type": "integer", "description": "From 1." }
       },
@@ -66,6 +70,7 @@
       "properties": {
         "owner": { "type": "string", "description": "The group path." },
         "name": { "type": "string", "description": "The project path." },
+        "host": { "type": "string", "description": "The server in the git remote, e.g. gitlab.acme.dev." },
         "branch": { "type": "string" },
         "status": { "type": "string", "enum": ["queued", "in_progress", "waiting", "success", "failure", "cancelled", "skipped"], "description": "A state or a conclusion." },
         "headSha": { "type": "string", "description": "A commit." },
@@ -82,6 +87,7 @@
       "properties": {
         "owner": { "type": "string", "description": "The group path." },
         "name": { "type": "string", "description": "The project path." },
+        "host": { "type": "string", "description": "The server in the git remote, e.g. gitlab.acme.dev." },
         "runId": { "type": "string", "description": "The pipeline id from gitlab_pipelines." }
       },
       "required": ["owner", "name", "runId"]
@@ -94,6 +100,7 @@
       "properties": {
         "owner": { "type": "string", "description": "The group path." },
         "name": { "type": "string", "description": "The project path." },
+        "host": { "type": "string", "description": "The server in the git remote, e.g. gitlab.acme.dev." },
         "jobId": { "type": "string", "description": "A job's id from gitlab_pipeline." },
         "tail": { "type": "integer", "description": "Lines from the end, after grep. Default 200, at most 2000." },
         "grep": { "type": "string", "description": "Only lines containing this, ignoring case." }

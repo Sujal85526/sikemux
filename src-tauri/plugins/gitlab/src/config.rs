@@ -31,6 +31,18 @@ pub struct Account {
     pub avatar_url: Option<String>,
 }
 
+/// Whether two hosts are the same server. A remote may name its ssh port and an
+/// account its https port, so the port is left out.
+pub fn same_server(one: &str, other: &str) -> bool {
+    let name = |host: &str| {
+        host.split(':')
+            .next()
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+    };
+    name(one) == name(other)
+}
+
 impl Account {
     pub fn id_for(host: &str, user_id: u64) -> String {
         format!("{host}#{user_id}")
@@ -87,6 +99,13 @@ impl GitlabConfig {
         let mut ordered = self.accounts.clone();
         ordered.sort_by_key(|account| Some(&account.id) != self.default.as_ref());
         ordered
+    }
+
+    /// The first account on the server, the default first.
+    pub fn account_on(&self, host: &str) -> Option<Account> {
+        self.in_order()
+            .into_iter()
+            .find(|account| same_server(&account.host, host))
     }
 
     /// The servers a remote may point at to count as GitLab: gitlab.com, and every server signed in to.
@@ -219,6 +238,21 @@ mod tests {
         assert_eq!(order, ["gitlab.com#2", "gitlab.com#1"]);
         config.remove("gitlab.com#2");
         assert_eq!(config.default.as_deref(), Some("gitlab.com#1"));
+    }
+
+    #[test]
+    fn a_server_is_the_same_whichever_port_is_named() {
+        assert!(same_server("git.acme.dev:8443", "git.acme.dev"));
+        assert!(same_server("GitLab.com", "gitlab.com"));
+        assert!(!same_server("gitlab.acme.dev", "gitlab.com"));
+        let mut config = GitlabConfig::default();
+        config.upsert(account("gitlab.com", 1));
+        config.upsert(account("git.acme.dev:8443", 2));
+        assert_eq!(
+            config.account_on("git.acme.dev").map(|a| a.id),
+            Some("git.acme.dev:8443#2".to_string())
+        );
+        assert!(config.account_on("gitlab.acme.dev").is_none());
     }
 
     #[test]
