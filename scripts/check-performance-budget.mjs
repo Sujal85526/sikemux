@@ -173,13 +173,14 @@ const budgets = [
     // terminals and tasks back from the core at launch added a little more.
     // The account picture in the top bar and renaming tabs added a little more.
     // So did the agent accounts in the rail's footer and the desk's tab kinds.
+    // Jira boards added a little more.
     label:
       "default-path JavaScript except the highlighter and its grammar chunks",
     pattern: new RegExp(
       `^(?!(?:highlighter|paper-shaders|xterm-webgl|${diffLanguageChunkNames.join("|")})-).*\\.js$`,
     ),
-    raw: 3_600_000,
-    gzip: 1_170_000,
+    raw: 3_650_000,
+    gzip: 1_185_000,
   },
   {
     label: "opt-in shader renderer",
