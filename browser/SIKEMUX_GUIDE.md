@@ -710,7 +710,9 @@ PostgreSQL, MySQL or MariaDB servers, and SQLite files. Name one by its name in
   Read it before writing a join rather than guessing column names.
 - `db_query` runs SQL. Each result keeps 100 rows unless you pass `limit`, up
   to 1000; `truncated` says some were left out, so add a `where` or an
-  aggregate rather than raising the limit to read everything.
+  aggregate rather than raising the limit to read everything. A whole reply
+  stays under 48 KB and each value under 400 characters; when either cut
+  something, `note` says so, and the answer is to select fewer columns or rows.
 
 Your queries run on a connection of your own. It is read-only unless the
 person ticked "Let agents change data" for that database, and `writable` in
