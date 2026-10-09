@@ -14,8 +14,8 @@ tabs in one strip.
 
 When the person asks you to open, show or preview a page, open it on your desk
 with `browser_navigate`, not in their own browser. Desk tabs run WebKit, the
-same engine as Sikemux and Safari, so check a web page there rather
-than in a headless Chromium you install.
+same engine as Sikemux and Safari, so check pages there, not in a headless
+Chromium.
 
 To show a chart, table, diagram or mockup in your reply, read the `pages` topic.
 
@@ -51,7 +51,7 @@ This page is what to know before your first call. Call `guide` again with a
   them a hidden page is on their screen.
 - Plugin tools (`github_*`, `bitbucket_*`, `gitlab_*`, `jira_*`, `signoz_*`)
   are listed only when they can work here: signed in, and for a code host a
-  remote of this project on it. If one you need is missing, ask the person to sign in
+  remote of this project on it. If one is missing, ask the person to sign in
   from its pane in Sikemux and restart you.
 
 ## Topics
