@@ -8,6 +8,7 @@
 //! `WebviewWindow` fail. The app reaches the main window with `get_window`.
 
 pub mod address;
+mod agent_skills;
 pub mod agents;
 mod burst;
 mod discard;
