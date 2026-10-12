@@ -7,6 +7,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 const LIBRARY: &str = "skills";
+/// Names the library in a chat's launch, for the chat drivers that must ask the agent to load it.
+pub const LIBRARY_ENV: &str = "SIKEMUX_SKILLS_DIR";
 const CLAUDE_PLUGIN: &str = "skills-plugin";
 const SKILL_FILE: &str = "SKILL.md";
 const NAME_MAX: usize = 64;

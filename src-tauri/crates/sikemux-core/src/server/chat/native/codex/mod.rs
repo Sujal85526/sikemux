@@ -516,6 +516,14 @@ impl Backend for Codex {
         .await
         .map_err(failed)?;
         rpc.notify("initialized", Value::Null).map_err(failed)?;
+        if let Some(library) = launch.env.get(crate::skills::LIBRARY_ENV) {
+            let added = rpc
+                .request("skills/extraRoots/set", json!({ "extraRoots": [library] }))
+                .await;
+            if let Err(error) = added {
+                eprintln!("Sikemux skills are unavailable to this Codex chat: {error}");
+            }
+        }
         let account = rpc
             .request("account/read", json!({ "refreshToken": false }))
             .await

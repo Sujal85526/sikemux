@@ -375,6 +375,41 @@ async fn a_claude_account_out_of_usage_fails_the_turn_as_a_limit() {
     assert!(!chat.text().contains("hit your limit"));
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn a_codex_chat_loads_the_sikemux_skills_library() {
+    let home = tempfile::tempdir().expect("home");
+    let library = tempfile::tempdir().expect("library");
+    std::fs::create_dir_all(library.path().join("deploy")).expect("skill folder");
+    std::fs::write(
+        library.path().join("deploy/SKILL.md"),
+        "---\nname: deploy\ndescription: Deploys\n---\n",
+    )
+    .expect("skill");
+    let mut launch = codex_launch("codex-skills", home.path());
+    launch.env.insert(
+        sikemux_core::skills::LIBRARY_ENV.to_owned(),
+        library.path().to_string_lossy().into_owned(),
+    );
+    let core = TestCore::start();
+    let (client, mut chat) = core.connect().await;
+    client.acp_start(launch).await.expect("start");
+    chat.until_kind(ChatEventKind::Ready).await;
+    prompt(&client, "codex-skills", &message_id(), "hello").await;
+    chat.until_kind(ChatEventKind::TurnCompleted).await;
+
+    let offered: Vec<Value> = updates(&chat.heard)
+        .into_iter()
+        .filter(|update| update["update"]["sessionUpdate"] == "available_commands_update")
+        .flat_map(|update| {
+            update["update"]["availableCommands"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
+        })
+        .collect();
+    assert!(offered.iter().any(|command| command["name"] == "$deploy"));
+}
+
 fn codex_launch(agent_id: &str, home: &Path) -> ChatLaunch {
     ChatLaunch {
         provider: "codex".into(),
