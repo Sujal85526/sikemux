@@ -224,3 +224,28 @@
     padding: 0;
     justify-content: center;
 }
+
+.skills-form {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+.skills-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
+}
+.skills-actions .settings-input {
+    flex: 1 1 auto;
+}
+.skills-body {
+    height: 120px;
+    padding: var(--space-2);
+    resize: vertical;
+    font-family: var(--mono);
+}
+.skills-clash,
+.skills-failure {
+    color: var(--danger);
+}

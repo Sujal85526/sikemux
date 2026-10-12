@@ -110,6 +110,8 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
         "Model providers",
         "openrouter baseten together fireworks groq cerebras deepseek moonshot kimi mistral vercel api key hosted open models opencode pi omp",
     ),
+    section("agents", "Skills", "skill SKILL.md library claude codex opencode pi omp hermes grok global own move"),
+    row("agents", "Skills", "Add a skill", "new create install git folder"),
     section("agents", "Sessions"),
     row("agents", "Sessions", "Restore agent tabs", "resume reopen startup"),
     row("agents", "Sessions", "Notify when an agent needs you", "notification alert badge dock permission finished"),

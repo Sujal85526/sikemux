@@ -70,6 +70,7 @@ import { useBuiltPlugins } from "../plugins/enabled";
 import { frontendPlugin, pluginSurface } from "../plugins/registry";
 import { ActivityPage } from "../shell/ActivityPage";
 import { DevicesPage } from "./DevicesPage";
+import { SkillsSection } from "./SkillsSection";
 import { ModelProvidersSection } from "./ModelProvidersSection";
 import { AccountsSections } from "./AccountsSection";
 import { SettingsPage, SettingsRow, SettingsRows, SettingsSection } from "./SettingsLayout";
@@ -667,6 +668,8 @@ function AgentsPage() {
             </SettingsSection>
 
             <ModelProvidersSection />
+
+            <SkillsSection />
 
             <SettingsSection title="Sessions">
                 <SettingsRows>
