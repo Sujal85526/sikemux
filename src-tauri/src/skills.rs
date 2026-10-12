@@ -2,11 +2,14 @@
 //! person's own global skills beside it, which Sikemux never changes unless
 //! asked to move one in.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
+use notify::{RecursiveMode, Watcher};
 use serde::Serialize;
 use sikemux_core::skills::{self, Skill};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::error::{AppError, AppResult};
 
@@ -85,6 +88,74 @@ fn adopt(
         )
     })?;
     Ok(skill)
+}
+
+pub const GLOBAL_SKILL_ADDED_EVENT: &str = "global_skill_added";
+
+/// A skill that appeared in an agent's own global folder while Sikemux ran,
+/// most likely written there by that agent's own skill maker.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GlobalSkillAdded {
+    agent: &'static str,
+    name: String,
+    path: PathBuf,
+}
+
+fn added_skills(
+    folders: &[(&'static str, PathBuf)],
+    known: &mut HashSet<PathBuf>,
+) -> Vec<GlobalSkillAdded> {
+    let mut added = Vec::new();
+    for (agent, folder) in folders {
+        for skill in skills::list_in(folder) {
+            if known.insert(skill.path.clone()) {
+                added.push(GlobalSkillAdded {
+                    agent,
+                    name: skill.name,
+                    path: skill.path,
+                });
+            }
+        }
+    }
+    added
+}
+
+/// Watches each agent's global skills folder while the app runs, and tells
+/// the window about a skill that shows up there, so it can offer to move it in.
+pub fn watch_global(app: AppHandle) {
+    std::thread::spawn(move || {
+        let folders = crate::agents::global_skill_folders();
+        let mut known = HashSet::new();
+        added_skills(&folders, &mut known);
+        let (changed, changes) = std::sync::mpsc::channel::<()>();
+        let watchers: Vec<_> = folders
+            .iter()
+            .filter_map(|(_, folder)| {
+                let changed = changed.clone();
+                let mut watcher =
+                    notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+                        if event.is_ok() {
+                            let _ = changed.send(());
+                        }
+                    })
+                    .ok()?;
+                watcher.watch(folder, RecursiveMode::Recursive).ok()?;
+                Some(watcher)
+            })
+            .collect();
+        drop(changed);
+        if watchers.is_empty() {
+            return;
+        }
+        while changes.recv().is_ok() {
+            std::thread::sleep(Duration::from_millis(500));
+            while changes.try_recv().is_ok() {}
+            for added in added_skills(&folders, &mut known) {
+                let _ = app.emit_to("main", GLOBAL_SKILL_ADDED_EVENT, added);
+            }
+        }
+    });
 }
 
 #[tauri::command]
@@ -180,6 +251,29 @@ mod tests {
         assert_eq!(seen.own[0].agent, "Claude");
         assert_eq!(seen.own[0].skills.len(), 2);
         assert_eq!(seen.clashes, vec!["deploy".to_string()]);
+    }
+
+    #[test]
+    fn only_skills_that_were_not_there_before_count_as_added() {
+        let root = tempfile::tempdir().unwrap();
+        let claude = root.path().join("claude-skills");
+        write_skill(&claude, "notes");
+        let folders = vec![("Claude", claude.clone())];
+        let mut known = HashSet::new();
+        assert_eq!(added_skills(&folders, &mut known).len(), 1);
+        assert!(added_skills(&folders, &mut known).is_empty());
+
+        write_skill(&claude, "deploy");
+        std::fs::create_dir_all(claude.join("half-written")).unwrap();
+        let added = added_skills(&folders, &mut known);
+        assert_eq!(
+            added,
+            vec![GlobalSkillAdded {
+                agent: "Claude",
+                name: "deploy".into(),
+                path: claude.join("deploy"),
+            }]
+        );
     }
 
     #[test]

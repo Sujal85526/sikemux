@@ -28,6 +28,7 @@ import { ImageViewer } from "./editor/ImageViewer";
 import { useOccludeNativeViews } from "./state/nativeViews";
 import { TerminalPane } from "./terminal/TerminalPane";
 import { HarnessBridge } from "./shell/HarnessBridge";
+import { GlobalSkillsBridge } from "./shell/GlobalSkillsBridge";
 import { RemoteChatBridge } from "./shell/RemoteChatBridge";
 import { RemoteWorkspaceBridge } from "./shell/RemoteWorkspaceBridge";
 import { UpdateRequiredPrompt } from "./shell/UpdateRequiredPrompt";
@@ -985,6 +986,7 @@ export default function App() {
             <RemoteWorkspaceBridge />
             <NotchBridge />
             <RemoteChatBridge />
+            <GlobalSkillsBridge />
             <ProjectBridge />
             <AgentSessionSync />
             <AgentLifecycleManager />

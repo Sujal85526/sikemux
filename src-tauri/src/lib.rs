@@ -221,6 +221,7 @@ pub fn run() {
         .setup(|_app| {
             _app.manage(UiWatchdogState::start()?);
             model_providers::init(_app.path().app_data_dir()?.join("model-providers.json"));
+            skills::watch_global(_app.handle().clone());
             _app.manage(PluginHost::with_builtins(
                 &_app.path().app_data_dir()?.join("plugins"),
                 &_app.package_info().version,
