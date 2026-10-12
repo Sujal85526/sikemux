@@ -43,6 +43,7 @@ mod settings;
 mod share;
 mod sim;
 mod simulator;
+mod skills;
 mod ssh;
 mod state;
 mod system;
@@ -480,6 +481,11 @@ pub fn run() {
             model_providers::model_providers,
             model_providers::model_provider_connect,
             model_providers::model_provider_disconnect,
+            skills::skills_overview,
+            skills::skills_create,
+            skills::skills_install,
+            skills::skills_remove,
+            skills::skills_adopt,
             settings::expand_path,
             settings::is_directory,
             wallpaper::wallpaper_image,

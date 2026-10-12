@@ -9,6 +9,7 @@ pub(crate) mod watch;
 
 use serde::{Deserialize, Serialize};
 
+pub(crate) use config::global_skill_folders;
 pub(crate) use executable::resolve_agent_executable;
 pub(crate) use sessions::context::session_transcript_path;
 pub use sikemux_core::agent_catalog::AgentKind;
