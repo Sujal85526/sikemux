@@ -26,6 +26,7 @@ use crate::protocol::{RunSelector, SessionId, TaskSessionInfo, WindowCall};
 use super::connection::blocking;
 use super::window::{self, Call};
 use super::{session, Core};
+use crate::skills;
 
 /// MCP hosts give up on a tool call after about a minute, so a start answers
 /// well before that with whatever state it reached.
@@ -130,6 +131,8 @@ pub(crate) struct Harness {
     state: Mutex<State>,
     changes: watch::Sender<u64>,
     tool_calls: Option<PathBuf>,
+    /// The app data folder, which holds the skills library.
+    pub(crate) data_dir: Option<PathBuf>,
     waits: AtomicUsize,
     plugins: watch::Sender<u64>,
     plugin_waits: AtomicUsize,
@@ -147,6 +150,7 @@ impl Harness {
             }),
             changes: watch::channel(0).0,
             tool_calls: data_dir.map(|dir| dir.join(TOOL_CALLS_FILE)),
+            data_dir: data_dir.map(Path::to_path_buf),
             waits: AtomicUsize::new(0),
             plugins: watch::channel(0).0,
             plugin_waits: AtomicUsize::new(0),
@@ -401,6 +405,7 @@ async fn dispatch(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value
         }
         "events.wait" => events_wait(core, &request).await,
         PLUGINS_CHANGED_METHOD => plugins_wait(&core.harness, &request.params).await,
+        "skills.manage" => skills_call(core, &request).await,
         "task.start" => task_start(core, &request, false).await,
         "task.restart" => task_start(core, &request, true).await,
         "workspace.inspect" => {
@@ -454,6 +459,61 @@ async fn dispatch(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value
             Ok(value)
         }
         _ => forward(core, request).await,
+    }
+}
+
+const SKILL_LOADS: &str =
+    "Start a new agent session to load it. Claude lists it as /sikemux:<name>.";
+
+async fn skills_call(core: &Core, request: &HarnessRequest) -> Result<Value, String> {
+    let data_dir = core
+        .harness
+        .data_dir
+        .clone()
+        .ok_or("Skills need Sikemux's data folder, and this core was started without one")?;
+    let params = request.params.clone();
+    blocking(move || Ok(skills_answer(&data_dir, &params)))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+fn skills_answer(data_dir: &Path, params: &Value) -> Result<Value, String> {
+    match required_text(params, "action")? {
+        "list" => Ok(json!({
+            "library": skills::library(data_dir),
+            "skills": skills::list(data_dir),
+        })),
+        "create" => {
+            let body = match params.get("body") {
+                None | Some(Value::Null) => "",
+                Some(Value::String(body)) => body.as_str(),
+                Some(_) => return Err("body must be text".into()),
+            };
+            let skill = skills::create(
+                data_dir,
+                required_text(params, "name")?,
+                required_text(params, "description")?,
+                body,
+            )?;
+            Ok(json!({ "skill": skill, "note": SKILL_LOADS }))
+        }
+        "install" => {
+            let source = required_text(params, "source")?;
+            let skill = if source.starts_with('/') {
+                skills::install_folder(data_dir, Path::new(source))?
+            } else {
+                skills::install_git(data_dir, source, text(params, "subfolder")?)?
+            };
+            Ok(json!({ "skill": skill, "note": SKILL_LOADS }))
+        }
+        "remove" => {
+            let name = required_text(params, "name")?;
+            skills::remove(data_dir, name)?;
+            Ok(json!({ "removed": name }))
+        }
+        other => Err(format!(
+            "action must be list, create, install or remove, not {other}"
+        )),
     }
 }
 
@@ -1021,6 +1081,37 @@ fn add_tool_call(path: &Path, tool: &str, succeeded: bool) -> std::io::Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_skills_tool_creates_lists_and_removes_in_the_library() {
+        let data =
+            std::env::temp_dir().join(format!("sikemux-harness-skills-{}", uuid::Uuid::new_v4()));
+        let answer = |params: Value| skills_answer(&data, &params);
+        let created = answer(json!({
+            "action": "create",
+            "name": "deploy-preview",
+            "description": "Deploys a preview",
+            "body": "Run make preview.",
+        }))
+        .unwrap();
+        assert_eq!(created["skill"]["name"], "deploy-preview");
+        assert!(created["note"].as_str().unwrap().contains("/sikemux:"));
+
+        let listed = answer(json!({ "action": "list" })).unwrap();
+        assert_eq!(listed["skills"][0]["description"], "Deploys a preview");
+
+        let refused = answer(json!({ "action": "create", "name": "Bad Name", "description": "x" }));
+        assert!(refused.unwrap_err().contains("not a skill name"));
+        assert!(answer(json!({ "action": "install", "source": "relative/path" })).is_err());
+        assert!(answer(json!({ "action": "rename" })).is_err());
+
+        answer(json!({ "action": "remove", "name": "deploy-preview" })).unwrap();
+        assert_eq!(
+            answer(json!({ "action": "list" })).unwrap()["skills"],
+            json!([])
+        );
+        std::fs::remove_dir_all(&data).unwrap();
+    }
 
     fn request(method: &str, params: Value) -> HarnessRequest {
         HarnessRequest {

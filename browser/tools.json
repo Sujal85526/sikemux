@@ -1377,6 +1377,42 @@
       ]
     },
     {
+      "name": "skills",
+      "row": {"verb": "skills", "kind": "edit", "icon": "book", "target": ["{action} {name}", "{action} from {source}", "{action}"]},
+      "method": "skills.manage",
+      "description": "List, create, install or remove skills every agent in Sikemux gets.",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["list", "create", "install", "remove"]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "body": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "subfolder": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "required": ["action"]
+    },
+    {
       "name": "app_console",
       "row": {"verb": "read", "kind": "read", "icon": "terminal", "target": ["the app console"]},
       "method": "app.console",

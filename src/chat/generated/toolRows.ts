@@ -77,6 +77,7 @@ export const TOOL_ROWS = {
     page_preview: { verb: "preview", kind: "read", icon: "eye", target: ["{path}"] },
     page_show: { verb: "show", kind: "read", icon: "panel", target: ["{title}"] },
     events_wait: { verb: "wait", kind: "think", icon: "clock", target: ["for {executionId}", "for events"] },
+    skills: { verb: "skills", kind: "edit", icon: "book", target: ["{action} {name}", "{action} from {source}", "{action}"] },
     app_console: { verb: "read", kind: "read", icon: "terminal", target: ["the app console"] },
     bitbucket_pulls: {
         verb: "list",

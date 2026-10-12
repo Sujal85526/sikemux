@@ -8,9 +8,8 @@ description: How to drive a Sikemux project and its browser — task launches, o
 You are running in a pane of a Sikemux workspace. `workspace_inspect`, the
 `task_*` tools, `ui_open` and `events_wait` act on the project the person has
 open. The tools named `browser_*` act on the browser tabs on your desk, the
-pane beside yours that the person can see. Your desk holds everything you open
-for the person: browser pages, files and the terminals of tasks you start, as
-tabs in one strip.
+pane beside yours that the person can see. Your desk holds the pages, files and
+task terminals you open for the person, as tabs in one strip.
 
 When the person asks you to open, show or preview a page, open it on your desk
 with `browser_navigate`, not in their own browser. Desk tabs run WebKit, the
@@ -19,8 +18,8 @@ Chromium.
 
 To show a chart, table, diagram or mockup in your reply, read the `pages` topic.
 
-This page is what to know before your first call. Call `guide` again with a
-`topic` from the list at the end when you need the details of one area.
+This page is what to know first. Call `guide` again with a `topic` from the
+list at the end when you need the details of one area.
 
 ## Essentials
 
@@ -70,6 +69,7 @@ Pass one of these as `topic`:
 - `browser-debugging` — `browser_network`, loads, `browser_console`, `app_console`, `browser_evaluate`
 - `simulator` — driving an iOS simulator with `sim_*`
 - `databases` — the `db_*` tools and SQL
+- `skills` — skills every agent in Sikemux gets
 - `shell` — the `sikemux tool` CLI for scripts and tasks
 
 ## config: Writing sikemux.json
@@ -733,6 +733,29 @@ that database's history in Sikemux, marked as an agent's.
 
 Large integers and decimals arrive as text so no digit is lost; binary values
 arrive as the start of their hex.
+
+## skills: Skills every agent in Sikemux gets
+
+A skill is a folder with a `SKILL.md`: frontmatter with a `name` and a
+`description`, then markdown instructions. Skills made here are kept by
+Sikemux and handed to every agent it starts, whichever agent made them. The
+same agents run outside Sikemux never see them.
+
+The `skills` tool takes an `action`:
+
+- `create` takes a `name` (lowercase letters, digits and single hyphens, like
+  `deploy-preview`), a `description` saying what the skill does and when to
+  use it, and a `body` of instructions. It refuses a name already taken.
+- `install` copies a skill from a `source`: an absolute folder path holding a
+  `SKILL.md`, or an `https://`, `ssh://` or `git@` repository URL. Pass
+  `subfolder` when the skill is not at the repository's root. The skill keeps
+  the name its `SKILL.md` declares.
+- `list` gives the skills Sikemux keeps; `remove` deletes one by `name`.
+
+Never write a skill into your own skills folder, such as `~/.claude/skills`:
+that is global, and other agents in Sikemux do not read it. A new skill loads
+in the next agent session, not the running one. Claude names these skills
+`sikemux:<name>`, so `/sikemux:deploy-preview` runs the one above.
 
 ## shell: The same operations from a shell
 
