@@ -374,7 +374,7 @@ pub(crate) struct LauncherSpec {
 
 /// What [`acp_start`] would run for `spec`, for the core to start without
 /// the window.
-pub(crate) async fn launcher(spec: LauncherSpec) -> Result<ChatLauncher, String> {
+pub(crate) async fn launcher(app: &AppHandle, spec: LauncherSpec) -> Result<ChatLauncher, String> {
     let executable =
         crate::agents::resolve_agent_executable(&spec.provider, spec.executable_path.as_deref())
             .await?;
@@ -391,6 +391,15 @@ pub(crate) async fn launcher(spec: LauncherSpec) -> Result<ChatLauncher, String>
         .env
         .extend(crate::model_providers::environment(&spec.provider).await);
     with_user_path(&mut program.env);
+    crate::browser::agents::chat_skills(
+        app,
+        None,
+        &spec.provider,
+        &program.program,
+        &mut program.args,
+        &mut program.env,
+    )
+    .await;
     Ok(ChatLauncher {
         id: spec.id,
         provider: spec.provider,
@@ -437,7 +446,7 @@ pub async fn acp_start(
         &environment_keys,
     )
     .await;
-    let program = match prepared {
+    let mut program = match prepared {
         Ok(program) => program,
         Err(error) => {
             manager
@@ -446,6 +455,15 @@ pub async fn acp_start(
             return Err(error);
         }
     };
+    crate::browser::agents::chat_skills(
+        &app,
+        Some(&agent_id),
+        &provider,
+        &program.program,
+        &mut program.args,
+        &mut program.env,
+    )
+    .await;
     // The tools this agent can drive its own browser tabs with. A session
     // that cannot be told about them still runs.
     let mcp_servers = match crate::browser::agents::acp_browser_server(&app, &agent_id) {

@@ -6,6 +6,7 @@
 //! adds to what the user already configured or works on a private copy of the
 //! host's home, so an agent launched outside Sikemux is unaffected.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
@@ -129,6 +130,107 @@ pub fn acp_browser_server(app: &AppHandle, agent_id: &str) -> AppResult<McpServe
         .map(|(name, value)| EnvVariable::new(name, value))
         .collect();
     Ok(McpServer::Stdio(server))
+}
+
+/// Hands a chat launch the Sikemux skills library. Chats take a separate
+/// path from terminals, and for Hermes and Grok a separate private home,
+/// since the tools reach them over the protocol rather than their config.
+pub async fn chat_skills(
+    app: &AppHandle,
+    agent_id: Option<&str>,
+    provider: &str,
+    program: &Path,
+    args: &mut Vec<String>,
+    env: &mut BTreeMap<String, String>,
+) {
+    let Ok(data_dir) = app.path().app_data_dir() else {
+        return;
+    };
+    let library = agent_skills::library(&data_dir);
+    env.insert(
+        sikemux_core::skills::LIBRARY_ENV.into(),
+        library.to_string_lossy().into_owned(),
+    );
+    let program = program.to_string_lossy();
+    match (provider, agent_id) {
+        ("claude", _) => {
+            let front = skill_args(Some(&data_dir), agent_skills::claude_args);
+            args.splice(0..0, front);
+        }
+        ("omp", _) => args.extend(skill_args(Some(&data_dir), agent_skills::omp_args)),
+        ("opencode", _) => {
+            let existing = env
+                .get("OPENCODE_CONFIG_CONTENT")
+                .cloned()
+                .or_else(inherited_opencode_config);
+            let mut config = existing
+                .as_deref()
+                .and_then(|text| serde_json::from_str::<Value>(text).ok())
+                .filter(Value::is_object)
+                .unwrap_or_else(|| json!({}));
+            agent_skills::add_opencode_paths(&mut config, &opencode_own_skill_paths(), &library);
+            env.insert("OPENCODE_CONFIG_CONTENT".into(), config.to_string());
+        }
+        ("hermes", Some(agent_id)) => {
+            match chat_hermes_home(app, agent_id, &program, &library).await {
+                Ok(home) => {
+                    env.insert("HERMES_HOME".into(), home.to_string_lossy().into_owned());
+                }
+                Err(error) => {
+                    eprintln!("Sikemux skills are unavailable to this Hermes chat: {error}")
+                }
+            }
+        }
+        ("grok", Some(agent_id)) => match chat_grok_home(app, agent_id, &library) {
+            Ok(home) => {
+                env.insert("GROK_HOME".into(), home.to_string_lossy().into_owned());
+            }
+            Err(error) => eprintln!("Sikemux skills are unavailable to this Grok chat: {error}"),
+        },
+        _ => {}
+    }
+}
+
+async fn chat_hermes_home(
+    app: &AppHandle,
+    agent_id: &str,
+    program: &str,
+    library: &Path,
+) -> AppResult<PathBuf> {
+    let home = private_home(
+        app,
+        "hermes-chat",
+        agent_id,
+        &agent_home("HERMES_HOME", ".hermes"),
+        "config.yaml",
+        "{}\n",
+    )?;
+    let config = std::fs::read_to_string(home.join("config.yaml")).unwrap_or_default();
+    let dirs = agent_skills::hermes_external_dirs(&config, library);
+    run_config_command(
+        program,
+        &["config", "set", "skills.external_dirs", &dirs, "--force"],
+        ("HERMES_HOME", &home),
+        "Hermes",
+    )
+    .await?;
+    Ok(home)
+}
+
+fn chat_grok_home(app: &AppHandle, agent_id: &str, library: &Path) -> AppResult<PathBuf> {
+    let home = private_home(
+        app,
+        "grok-chat",
+        agent_id,
+        &agent_home("GROK_HOME", ".grok"),
+        "config.toml",
+        "",
+    )?;
+    let path = home.join("config.toml");
+    let config = std::fs::read_to_string(&path).unwrap_or_default();
+    let merged = agent_skills::grok_config(&config, library).map_err(AppError::Other)?;
+    std::fs::write(&path, merged)?;
+    Ok(home)
 }
 
 /// The protocol asks for an absolute path, and a development launch runs

@@ -63,6 +63,7 @@ pub struct LauncherRequest {
 
 #[tauri::command]
 pub async fn remote_publish_workspace(
+    app: tauri::AppHandle,
     manager: State<'_, PtyManager>,
     published: State<'_, PublishedWorkspace>,
     projects: Vec<ProjectInfo>,
@@ -80,7 +81,7 @@ pub async fn remote_publish_workspace(
             permission_mode: request.permission_mode,
             status: request.status,
         };
-        if let Ok(launcher) = crate::acp::launcher(spec).await {
+        if let Ok(launcher) = crate::acp::launcher(&app, spec).await {
             ready.push(launcher);
         }
     }
