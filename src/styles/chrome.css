@@ -368,21 +368,9 @@
 .sess-icon.project {
     color: var(--live);
 }
-.sess-icon.aws,
-.icon-aws {
-    color: var(--brand-aws);
-}
 .icon-github {
     color: var(--text-primary);
 }
-.icon-bitbucket {
-    color: var(--brand-bitbucket);
-}
-
-.icon-gitlab {
-    color: var(--brand-gitlab);
-}
-
 .sess-name {
     flex: 1;
     text-align: left;

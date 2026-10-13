@@ -12,12 +12,12 @@ registerFrontendPlugin({
         {
             kind: AWS_CONSOLE,
             title: "AWS",
-            icon: (size) => <IconAws size={size} className="icon-aws" />,
+            icon: (size) => <IconAws size={size} />,
             render: ({ visible }) => <AwsPane active={visible} />,
         },
     ],
     open: openAwsSession,
     openTitle: "Open AWS",
-    mark: (size) => <IconAws size={size} className="icon-aws" />,
+    mark: (size) => <IconAws size={size} />,
     openShortcut: IS_MACOS ? "Meta+Alt+KeyA" : "Ctrl+Alt+KeyA",
 });

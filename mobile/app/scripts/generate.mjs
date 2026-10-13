@@ -18,7 +18,7 @@ const shaderOut = resolve(app, 'src/ui/vertexShader.generated.ts');
 const shaderSource = resolve(app, 'node_modules/@paper-design/shaders/dist/vertex-shader.js');
 
 const mtime = (path) => (existsSync(path) ? statSync(path).mtimeMs : null);
-const LOGO_FILES = { IconCodex: 'codex.svg', IconOmp: 'omp.svg' };
+const LOGO_FILES = { IconCodex: 'codex.svg', IconOmp: 'omp.svg', IconMuse: 'muse.svg' };
 
 function iconsUpToDate() {
   if (!existsSync(iconsOut) || !existsSync(iconsStamp)) return false;

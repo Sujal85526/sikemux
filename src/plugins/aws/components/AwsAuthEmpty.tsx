@@ -6,14 +6,14 @@ import { deriveAuthState } from "../auth";
 import { awsIdentityR, awsProfilesR } from "../resources";
 import { setAwsProfile } from "../state";
 
-const mark = <IconAws size={28} className="icon-aws" />;
+const mark = <IconAws size={28} />;
 
 function ProfileList({ profiles }: { profiles: AwsProfile[] }) {
     return (
         <div className="signin-choices">
             {profiles.map((p) => (
                 <button key={p.name} type="button" className="signin-choice" onClick={() => setAwsProfile(p.name)}>
-                    <IconAws size={14} className="icon-aws" />
+                    <IconAws size={14} />
                     <span className="signin-choice-name">{p.name}</span>
                     <span className="signin-choice-meta">{[p.kind === "sso" ? "SSO" : p.kind, p.region].filter(Boolean).join(" · ")}</span>
                 </button>
@@ -109,7 +109,7 @@ function SignedOut({ profile, profiles }: { profile: string; profiles: AwsProfil
                 <SignInWaiting onCancel={attempt.cancel}>Approve the request in your browser</SignInWaiting>
             ) : (
                 <button type="button" className="signin-btn primary" disabled={auth.kind === "cli-missing"} onClick={() => void signIn()}>
-                    <IconAws size={14} />
+                    <IconAws size={14} mono />
                     Continue with AWS SSO
                 </button>
             )}
