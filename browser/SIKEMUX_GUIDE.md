@@ -48,6 +48,8 @@ list at the end when you need the details of one area.
   rather than with sleeps or screenshots.
 - Every state says whether the tab is `visible` to the person; never tell
   them a hidden page is on their screen.
+- `@Name` in a message means another agent in this project, called Name;
+  the message carries a note saying which. The `agents` topic has more.
 - Plugin tools (`github_*`, `bitbucket_*`, `gitlab_*`, `jira_*`, `signoz_*`,
   `slack_*`) are listed only when they can work here: signed in, and for a code
   host a remote of this project on it. If one is missing, ask the person to
@@ -70,6 +72,7 @@ Pass one of these as `topic`:
 - `simulator` — driving an iOS simulator with `sim_*`
 - `databases` — the `db_*` tools and SQL
 - `skills` — skills every agent in Sikemux gets
+- `agents` — the other agents in the project, their names and `@` mentions
 - `shell` — the `sikemux tool` CLI for scripts and tasks
 
 ## config: Writing sikemux.json
@@ -756,6 +759,17 @@ Never write a skill into your own skills folder, such as `~/.claude/skills`:
 that is global, and other agents in Sikemux do not read it. A new skill loads
 in the next agent session, not the running one. Claude names these skills
 `sikemux:<name>`, so `/sikemux:deploy-preview` runs the one above.
+
+## agents: Other agents in the project
+
+Sikemux gives every agent it runs a name, a short word such as Otter or Maple,
+and no two open agents in a project share one. Tabs and the rail show agents
+by name, and the person can rename one.
+
+When a message names `@Otter`, it means the agent called Otter, not the person
+or a file. The message carries a note about each agent it names: its agent
+id, its CLI, whether it is working, idle or waiting on the person, and what it
+is working on.
 
 ## shell: The same operations from a shell
 
