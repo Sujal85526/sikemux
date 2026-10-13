@@ -292,11 +292,17 @@ launch names, when the person turned that on, and says so in the transcript.
 `sikemux-editor --tools-mcp`. `src-tauri/src/browser/agents.rs` knows how to register it with
 each agent host. Tools are declared once in `browser/tools.json`, one-line descriptions
 only. The protocol details live in `browser/SIKEMUX_GUIDE.md`, which agents fetch with
-the `guide` tool. The MCP binary compiles both files in. A tool call travels:
+the `guide` tool. An agent keeps its MCP process across a Sikemux update, so the process
+takes both files from the core (`tools.manifest`) and uses its own compiled-in copy only
+when the core cannot be reached. It asks again, and tells the agent its tools changed,
+when plugins change or another core takes over the endpoint. A call that cannot reach the
+core retries for 15 seconds before failing, but one the core may have received is never
+sent twice. A tool call travels:
 
 ```
 agent → sikemux-editor --tools-mcp → the core's tool endpoint
   task.read / task.stop / events.wait     → answered by the core (server/harness.rs)
+  tools.manifest                          → the core's own browser/tools.json and guide
   task.start / task.restart               → the core keeps the run, the window launches it
   everything else                         → the window: harness.rs in the app
     browser.*                             → browser/tools.rs (Rust)

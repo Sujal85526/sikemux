@@ -1,11 +1,9 @@
-//! The tool surface, compiled in from browser/tools.json so the sidecar and the
-//! app's handlers can never disagree about what exists.
+//! The tool surface: browser/tools.json and the guide, as the running core
+//! serves them, or as this binary was built when the core cannot be asked.
 
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
-
-const MANIFEST: &str = include_str!("../../../../../browser/tools.json");
-const GUIDE: &str = include_str!("../../../../../browser/SIKEMUX_GUIDE.md");
+use sikemux_core::cli::manifest::{GUIDE, TOOLS};
 
 /// A tool from browser/tools.json, or one a plugin offers, which the app
 /// describes in the same shape.
@@ -20,30 +18,49 @@ pub struct Tool {
     /// the iOS Simulator tools on a Mac with Xcode.
     #[serde(default)]
     pub offered: Option<String>,
+    /// How the agent is shown the app's answer when it is not plain JSON:
+    /// `screenshot` or `image`.
+    #[serde(default)]
+    pub answer: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct Guide {
-    file: String,
     name: String,
     description: String,
 }
 
-#[derive(Deserialize)]
 pub struct Manifest {
     guide: Guide,
+    guide_text: String,
     tools: Vec<Tool>,
 }
 
 impl Manifest {
+    /// The copy this binary was built with.
     pub fn load() -> Self {
-        let manifest: Manifest =
-            serde_json::from_str(MANIFEST).expect("browser/tools.json is a valid tool manifest");
-        assert_eq!(
-            manifest.guide.file, "SIKEMUX_GUIDE.md",
-            "browser/tools.json names a guide this binary did not compile in"
-        );
-        manifest
+        let manifest: Value =
+            serde_json::from_str(TOOLS).expect("browser/tools.json is valid JSON");
+        Self::read(&manifest, GUIDE).expect("browser/tools.json is a valid tool manifest")
+    }
+
+    /// What the core answers `tools.manifest` with. A tool this binary cannot
+    /// read is left out rather than losing the rest.
+    pub fn served(answer: &Value) -> Option<Self> {
+        Self::read(answer.get("manifest")?, answer.get("guide")?.as_str()?)
+    }
+
+    fn read(manifest: &Value, guide_text: &str) -> Option<Self> {
+        Some(Self {
+            guide: Guide::deserialize(manifest.get("guide")?).ok()?,
+            guide_text: guide_text.to_owned(),
+            tools: manifest
+                .get("tools")?
+                .as_array()?
+                .iter()
+                .filter_map(|tool| Tool::deserialize(tool).ok())
+                .collect(),
+        })
     }
 
     /// Leaves out the simulator tools unless the app said this Mac can run them.
@@ -66,13 +83,14 @@ impl Manifest {
 
     /// The guide's opening, which every agent reads, or one topic of it, or
     /// all of it for `"all"`.
-    pub fn guide_text(&self, topic: Option<&str>) -> Result<&'static str, String> {
-        let sections = guide_topics();
+    pub fn guide_text(&self, topic: Option<&str>) -> Result<&str, String> {
+        let guide = self.guide_text.as_str();
+        let sections = guide_topics(guide);
         match topic {
             None => Ok(sections
                 .first()
-                .map_or(GUIDE, |(_, start)| &GUIDE[..*start])),
-            Some(ALL_TOPICS) => Ok(GUIDE),
+                .map_or(guide, |(_, start)| &guide[..*start])),
+            Some(ALL_TOPICS) => Ok(guide),
             Some(wanted) => sections
                 .iter()
                 .enumerate()
@@ -80,8 +98,8 @@ impl Manifest {
                 .map(|(index, (_, start))| {
                     let end = sections
                         .get(index + 1)
-                        .map_or(GUIDE.len(), |(_, next)| *next);
-                    GUIDE[*start..end].trim_end()
+                        .map_or(guide.len(), |(_, next)| *next);
+                    guide[*start..end].trim_end()
                 })
                 .ok_or_else(|| {
                     let names: Vec<&str> = sections.iter().map(|(name, _)| *name).collect();
@@ -130,7 +148,7 @@ impl Manifest {
         declared.push(declaration(
             &self.guide.name,
             &self.guide.description,
-            &guide_properties(),
+            &guide_properties(&self.guide_text),
             &[],
         ));
         declared
@@ -141,10 +159,10 @@ const ALL_TOPICS: &str = "all";
 
 /// Each `## name: Title` heading of the guide, with where its section starts.
 /// Headings without a name belong to the opening every agent reads.
-fn guide_topics() -> Vec<(&'static str, usize)> {
+fn guide_topics(guide: &str) -> Vec<(&str, usize)> {
     let mut start = 0;
     let mut topics = Vec::new();
-    for line in GUIDE.split_inclusive('\n') {
+    for line in guide.split_inclusive('\n') {
         if let Some((name, _)) = line
             .strip_prefix("## ")
             .and_then(|heading| heading.split_once(": "))
@@ -156,8 +174,11 @@ fn guide_topics() -> Vec<(&'static str, usize)> {
     topics
 }
 
-fn guide_properties() -> Map<String, Value> {
-    let mut topics: Vec<&str> = guide_topics().into_iter().map(|(name, _)| name).collect();
+fn guide_properties(guide: &str) -> Map<String, Value> {
+    let mut topics: Vec<&str> = guide_topics(guide)
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
     topics.push(ALL_TOPICS);
     let mut properties = Map::new();
     properties.insert("topic".into(), json!({ "enum": topics }));

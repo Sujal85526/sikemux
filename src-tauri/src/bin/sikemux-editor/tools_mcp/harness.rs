@@ -3,8 +3,8 @@
 use std::env;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Ipv4Addr, SocketAddrV4, TcpStream};
-use std::path::Path;
-use std::time::Duration;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -13,23 +13,33 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// The app answers a browser call only once the page settles, which it gives
 /// itself a minute to do.
 pub const REPLY_TIMEOUT: Duration = Duration::from_secs(70);
+/// How long a call waits for Sikemux to come back while it restarts, such as
+/// after an update.
+pub const RESTART_WAIT: Duration = Duration::from_secs(15);
+const RETRY_GAP: Duration = Duration::from_millis(250);
 const MAX_REQUEST_BYTES: usize = 64 * 1024;
 const MAX_RESPONSE_BYTES: u64 = 4 * 1024 * 1024;
 
-pub fn call(agent_id: &str, method: &str, params: &Value) -> Result<Value, String> {
-    call_within(agent_id, method, params, REPLY_TIMEOUT)
+/// Why a call failed: whether Sikemux could have started on the request.
+enum Failure {
+    NotSent(String),
+    Sent(String),
 }
 
-/// As [`call`], giving up after `timeout`.
+pub fn call(agent_id: &str, method: &str, params: &Value) -> Result<Value, String> {
+    call_within(agent_id, method, params, REPLY_TIMEOUT, RESTART_WAIT)
+}
+
+/// As [`call`], giving up on an answer after `timeout`, and on reaching
+/// Sikemux after `patience`.
 pub fn call_within(
     agent_id: &str,
     method: &str,
     params: &Value,
     timeout: Duration,
+    patience: Duration,
 ) -> Result<Value, String> {
-    let endpoint = env::var_os("SIKEMUX_CLI_ENDPOINT")
-        .filter(|value| !value.is_empty())
-        .ok_or("Missing SIKEMUX_CLI_ENDPOINT; launch this MCP from Sikemux")?;
+    let endpoint = endpoint_path()?;
     let project = env::var("SIKEMUX_PROJECT")
         .ok()
         .filter(|value| !value.is_empty())
@@ -40,15 +50,25 @@ pub fn call_within(
         })
         .ok_or("the current directory is unavailable")?;
     relay(
-        Path::new(&endpoint),
-        &project,
-        agent_id,
-        method,
-        params,
-        timeout,
+        &endpoint, &project, agent_id, method, params, timeout, patience,
     )
 }
 
+fn endpoint_path() -> Result<PathBuf, String> {
+    env::var_os("SIKEMUX_CLI_ENDPOINT")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .ok_or_else(|| "Missing SIKEMUX_CLI_ENDPOINT; launch this MCP from Sikemux".into())
+}
+
+/// What the endpoint file says now. It changes when another Sikemux, or a
+/// newer one, takes over the endpoint.
+pub fn instance() -> Option<Vec<u8>> {
+    std::fs::read(endpoint_path().ok()?).ok()
+}
+
+/// Tries again, re-reading the endpoint file, while Sikemux cannot be reached
+/// for up to `patience`. A request Sikemux may have received is never sent twice.
 pub fn relay(
     endpoint: &Path,
     project: &str,
@@ -56,21 +76,43 @@ pub fn relay(
     method: &str,
     params: &Value,
     timeout: Duration,
+    patience: Duration,
 ) -> Result<Value, String> {
+    let give_up = Instant::now() + patience;
+    loop {
+        match attempt(endpoint, project, agent_id, method, params, timeout) {
+            Ok(value) => return Ok(value),
+            Err(Failure::NotSent(_)) if Instant::now() + RETRY_GAP < give_up => {
+                std::thread::sleep(RETRY_GAP);
+            }
+            Err(Failure::NotSent(message) | Failure::Sent(message)) => return Err(message),
+        }
+    }
+}
+
+fn attempt(
+    endpoint: &Path,
+    project: &str,
+    agent_id: &str,
+    method: &str,
+    params: &Value,
+    timeout: Duration,
+) -> Result<Value, Failure> {
+    let unreachable = |message: &str| Failure::NotSent(message.to_owned());
     let descriptor: Value = serde_json::from_slice(
-        &std::fs::read(endpoint).map_err(|_| "Sikemux is not running".to_string())?,
+        &std::fs::read(endpoint).map_err(|_| unreachable("Sikemux is not running"))?,
     )
-    .map_err(|_| "Sikemux CLI endpoint is invalid")?;
+    .map_err(|_| unreachable("Sikemux CLI endpoint is invalid"))?;
     let port = descriptor
         .get("port")
         .and_then(Value::as_u64)
         .and_then(|port| u16::try_from(port).ok())
-        .ok_or("Sikemux CLI endpoint is invalid")?;
+        .ok_or_else(|| unreachable("Sikemux CLI endpoint is invalid"))?;
     let (Some(protocol), Some(token)) = (
         descriptor.get("protocol"),
         descriptor.get("token").and_then(Value::as_str),
     ) else {
-        return Err("Sikemux CLI endpoint is invalid".into());
+        return Err(unreachable("Sikemux CLI endpoint is invalid"));
     };
 
     let mut frame = serde_json::to_vec(&json!({
@@ -85,51 +127,61 @@ pub fn relay(
             "params": params,
         },
     }))
-    .map_err(|error| error.to_string())?;
+    .map_err(|error| Failure::Sent(error.to_string()))?;
     frame.push(b'\n');
     if frame.len() > MAX_REQUEST_BYTES {
-        return Err("Harness request exceeds 64 KiB".into());
+        return Err(Failure::Sent("Harness request exceeds 64 KiB".into()));
     }
 
     let stream = TcpStream::connect_timeout(
         &SocketAddrV4::new(Ipv4Addr::LOCALHOST, port).into(),
         CONNECT_TIMEOUT,
     )
-    .map_err(|_| "Sikemux is not running".to_string())?;
+    .map_err(|_| unreachable("Sikemux is not running"))?;
     stream
         .set_write_timeout(Some(CONNECT_TIMEOUT))
         .and_then(|()| stream.set_read_timeout(Some(timeout)))
-        .map_err(|error| format!("cannot configure the Sikemux connection: {error}"))?;
+        .map_err(|error| {
+            Failure::NotSent(format!("cannot configure the Sikemux connection: {error}"))
+        })?;
     let mut reader = BufReader::new(&stream);
     let nonce = sikemux_core::cli::auth::new_nonce();
     let mut hello = json!({ "command": "hello", "protocol": protocol, "nonce": nonce }).to_string();
     hello.push('\n');
-    send(&stream, hello.as_bytes())?;
+    send(&stream, hello.as_bytes()).map_err(Failure::NotSent)?;
     let expected = sikemux_core::cli::auth::server_proof(token, port, &nonce);
-    let proven = receive(&mut reader).ok().is_some_and(|reply| {
-        reply.get("status").and_then(Value::as_str) == Some("hello")
-            && reply
-                .get("proof")
-                .and_then(Value::as_str)
-                .is_some_and(|proof| sikemux_core::cli::auth::same_secret(proof, &expected))
-    });
+    let answer = receive(&mut reader).map_err(Failure::NotSent)?;
+    let proven = answer.get("status").and_then(Value::as_str) == Some("hello")
+        && answer
+            .get("proof")
+            .and_then(Value::as_str)
+            .is_some_and(|proof| sikemux_core::cli::auth::same_secret(proof, &expected));
     if !proven {
-        return Err("The program on Sikemux's CLI port is not Sikemux; restart Sikemux".into());
+        return Err(Failure::NotSent(
+            match answer.get("message").and_then(Value::as_str) {
+                Some(message) if answer.get("status").and_then(Value::as_str) == Some("error") => {
+                    message.to_owned()
+                }
+                _ => "The program on Sikemux's CLI port is not Sikemux; restart Sikemux".into(),
+            },
+        ));
     }
 
-    send(&stream, &frame)?;
-    let response = receive(&mut reader)?;
+    send(&stream, &frame).map_err(Failure::Sent)?;
+    let response = receive(&mut reader).map_err(Failure::Sent)?;
     match response.get("status").and_then(Value::as_str) {
         Some("result") => response
             .get("value")
             .cloned()
-            .ok_or_else(|| "Unexpected harness response".into()),
-        Some("error") => Err(response
-            .get("message")
-            .and_then(Value::as_str)
-            .unwrap_or("Harness request failed")
-            .to_owned()),
-        _ => Err("Unexpected harness response".into()),
+            .ok_or_else(|| Failure::Sent("Unexpected harness response".into())),
+        Some("error") => Err(Failure::Sent(
+            response
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or("Harness request failed")
+                .to_owned(),
+        )),
+        _ => Err(Failure::Sent("Unexpected harness response".into())),
     }
 }
 

@@ -1,7 +1,12 @@
 //! The agent's browser, workspace and plugin tools, served over MCP on stdio.
 //! Sikemux itself answers them over the CLI broker socket and they act on the
 //! tabs the person sees in the agent's pane. The one exception is the guide,
-//! which this binary carries and serves on its own.
+//! which this binary serves from what Sikemux handed it.
+//!
+//! An agent keeps this process across a Sikemux update, so everything a tool
+//! is comes from the running Sikemux: its name, schema, method and how its
+//! answer is shown. This binary's own copy is used only when Sikemux cannot be
+//! reached.
 
 mod harness;
 mod manifest;
@@ -15,7 +20,9 @@ use std::time::Duration;
 use serde_json::{json, Value};
 
 use manifest::{Manifest, Tool};
-use sikemux_core::cli::protocol::{PLUGINS_CHANGED_METHOD, SIM_CANCEL_METHOD, SIM_OFFERED_METHOD};
+use sikemux_core::cli::protocol::{
+    PLUGINS_CHANGED_METHOD, SIM_CANCEL_METHOD, SIM_OFFERED_METHOD, TOOLS_MANIFEST_METHOD,
+};
 
 const LATEST_PROTOCOL_VERSION: &str = "2025-11-25";
 const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &[
@@ -40,15 +47,21 @@ pub fn run() -> i32 {
     };
     watch_parent();
     let simulator = simulator_offered(&agent_id);
-    serve(Arc::new(Manifest::load().offering(simulator)), agent_id);
+    serve(Arc::new(Offer::new(simulator)), agent_id);
     0
 }
 
 /// The app decides whether this agent gets the simulator tools, for chats it
 /// started and chats a phone started alike, and remembers what it said.
 fn simulator_offered(agent_id: &str) -> bool {
-    harness::call_within(agent_id, SIM_OFFERED_METHOD, &json!({}), OFFER_TIMEOUT)
-        .is_ok_and(|answer| answer["offered"] == true)
+    harness::call_within(
+        agent_id,
+        SIM_OFFERED_METHOD,
+        &json!({}),
+        OFFER_TIMEOUT,
+        Duration::ZERO,
+    )
+    .is_ok_and(|answer| answer["offered"] == true)
 }
 
 fn agent_id() -> Result<String, String> {
@@ -85,68 +98,133 @@ fn watch_parent() {
 #[cfg(not(unix))]
 fn watch_parent() {}
 
-/// Only the app knows which plugins this build carries, so their tools are
-/// asked for when an agent first lists tools, and again whenever the person
-/// changes a plugin. A failed ask is not remembered, and the next listing
-/// tries again.
-#[derive(Default)]
-struct PluginTools(Mutex<Option<Arc<Vec<Tool>>>>);
+/// The tools this agent is offered: the built-in ones as the running Sikemux
+/// describes them, and the ones its plugins offer. Only the app knows which
+/// plugins this build carries, so their tools are asked for when an agent
+/// first lists tools, and again whenever they may have changed. A failed ask
+/// is not remembered, and the next listing tries again.
+struct Offer {
+    simulator: bool,
+    built: Arc<Manifest>,
+    served: Mutex<Option<Arc<Manifest>>>,
+    plugins: Mutex<Option<Arc<Vec<Tool>>>>,
+    /// What the agent was last given by `tools/list`.
+    given: Mutex<Option<Vec<Value>>>,
+}
 
-impl PluginTools {
-    fn get(&self, manifest: &Manifest, relay: &Relay<'_>) -> Arc<Vec<Tool>> {
-        if let Some(tools) = self.cached() {
-            return tools;
+impl Offer {
+    fn new(simulator: bool) -> Self {
+        Self {
+            simulator,
+            built: Arc::new(Manifest::load().offering(simulator)),
+            served: Mutex::default(),
+            plugins: Mutex::default(),
+            given: Mutex::default(),
         }
-        let Ok(answer) = relay("plugins.tools", &json!({})) else {
-            return Arc::default();
-        };
-        let tools = Arc::new(plugin_tools(manifest, answer));
-        *self
-            .0
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(Arc::clone(&tools));
-        tools
-    }
-
-    /// Keeps what the app offers now, and whether that differs from what an
-    /// agent was already given.
-    fn replace(&self, tools: Vec<Tool>) -> bool {
-        let mut held = self
-            .0
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let declared = |tools: &[Tool]| tools.iter().map(Tool::declaration).collect::<Vec<_>>();
-        let changed = held
-            .as_ref()
-            .is_some_and(|before| declared(before) != declared(&tools));
-        *held = Some(Arc::new(tools));
-        changed
-    }
-
-    fn cached(&self) -> Option<Arc<Vec<Tool>>> {
-        self.0
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
     }
 
     #[cfg(test)]
-    fn with(tools: Vec<Tool>) -> Self {
-        Self(Mutex::new(Some(Arc::new(tools))))
+    fn with(manifest: Manifest, plugins: Option<Vec<Tool>>) -> Self {
+        Self {
+            simulator: true,
+            built: Arc::new(Manifest::load()),
+            served: Mutex::new(Some(Arc::new(manifest))),
+            plugins: Mutex::new(plugins.map(Arc::new)),
+            given: Mutex::default(),
+        }
+    }
+
+    /// The built-in tools and the plugins' own, asking the app for whichever
+    /// it has not answered yet. When the app cannot be reached, the built-in
+    /// tools are this binary's own and the plugins offer none.
+    fn current(&self, relay: &Relay<'_>) -> (Arc<Manifest>, Arc<Vec<Tool>>) {
+        let manifest = match held(&self.served) {
+            Some(manifest) => manifest,
+            None => match self.ask_manifest(relay) {
+                Some(manifest) => keep(&self.served, manifest),
+                None => return (Arc::clone(&self.built), Arc::default()),
+            },
+        };
+        let plugins = held(&self.plugins).or_else(|| {
+            let tools = relay("plugins.tools", &json!({})).ok()?;
+            Some(keep(&self.plugins, plugin_tools(tools)))
+        });
+        (manifest, plugins.unwrap_or_default())
+    }
+
+    fn ask_manifest(&self, relay: &Relay<'_>) -> Option<Manifest> {
+        let answer = relay(TOOLS_MANIFEST_METHOD, &json!({})).ok()?;
+        Some(Manifest::served(&answer)?.offering(self.simulator))
+    }
+
+    /// Asks the app again for everything, keeping what it could not answer.
+    /// Answers whether the agent should list its tools again.
+    fn refresh(&self, relay: &Relay<'_>) -> bool {
+        let Some(manifest) = self.ask_manifest(relay) else {
+            return false;
+        };
+        keep(&self.served, manifest);
+        if let Ok(tools) = relay("plugins.tools", &json!({})) {
+            keep(&self.plugins, plugin_tools(tools));
+        }
+        let mut given = lock(&self.given);
+        let Some(before) = given.as_ref() else {
+            return false;
+        };
+        let now = self.declarations();
+        let changed = *before != now;
+        *given = Some(now);
+        changed
+    }
+
+    /// What `tools/list` answers with what is held now.
+    fn declarations(&self) -> Vec<Value> {
+        let manifest = held(&self.served).unwrap_or_else(|| Arc::clone(&self.built));
+        declarations(&manifest, &held(&self.plugins).unwrap_or_default())
+    }
+
+    fn manifest(&self) -> Arc<Manifest> {
+        held(&self.served).unwrap_or_else(|| Arc::clone(&self.built))
     }
 }
 
-/// A plugin tool that reuses a built-in name, or that this server cannot read,
-/// is left out; the rest are still offered.
-fn plugin_tools(manifest: &Manifest, answer: Value) -> Vec<Tool> {
+fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn held<T>(slot: &Mutex<Option<Arc<T>>>) -> Option<Arc<T>> {
+    lock(slot).clone()
+}
+
+fn keep<T>(slot: &Mutex<Option<Arc<T>>>, value: T) -> Arc<T> {
+    let value = Arc::new(value);
+    *lock(slot) = Some(Arc::clone(&value));
+    value
+}
+
+/// A plugin tool this server cannot read is left out; the rest are still
+/// offered.
+fn plugin_tools(answer: Value) -> Vec<Tool> {
     let Value::Array(offered) = answer else {
         return Vec::new();
     };
     offered
         .into_iter()
         .filter_map(|tool| serde_json::from_value::<Tool>(tool).ok())
-        .filter(|tool| !manifest.declares(&tool.name))
         .collect()
+}
+
+fn declarations(manifest: &Manifest, plugins: &[Tool]) -> Vec<Value> {
+    let mut tools = manifest.declarations();
+    tools.extend(
+        plugins
+            .iter()
+            .filter(|tool| !manifest.declares(&tool.name))
+            .map(Tool::declaration),
+    );
+    tools
 }
 
 /// One request to the app: a harness method and its params.
@@ -154,9 +232,8 @@ type Relay<'a> = dyn Fn(&str, &Value) -> Result<Value, String> + Send + Sync + '
 
 /// Newline-delimited JSON-RPC, the framing every MCP stdio client speaks. The
 /// loop ends when the host closes the pipe.
-fn serve(manifest: Arc<Manifest>, agent_id: String) {
+fn serve(offer: Arc<Offer>, agent_id: String) {
     let initialized = Arc::new(AtomicBool::new(false));
-    let plugins = Arc::new(PluginTools::default());
     let relay: Arc<Relay<'static>> =
         Arc::new(move |method: &str, params: &Value| harness::call(&agent_id, method, params));
     let calls = Arc::new(Calls::default());
@@ -177,12 +254,8 @@ fn serve(manifest: Arc<Manifest>, agent_id: String) {
             match method {
                 "notifications/initialized" => {
                     if !initialized.swap(true, Ordering::AcqRel) {
-                        let (manifest, plugins, relay) = (
-                            Arc::clone(&manifest),
-                            Arc::clone(&plugins),
-                            Arc::clone(&relay),
-                        );
-                        std::thread::spawn(move || watch_plugins(&manifest, &plugins, &*relay));
+                        let (offer, relay) = (Arc::clone(&offer), Arc::clone(&relay));
+                        std::thread::spawn(move || watch(&offer, &*relay));
                     }
                 }
                 "notifications/cancelled" => {
@@ -198,7 +271,7 @@ fn serve(manifest: Arc<Manifest>, agent_id: String) {
             continue;
         };
         match route(
-            &manifest,
+            &offer.manifest(),
             initialized.load(Ordering::Acquire),
             id,
             method,
@@ -206,16 +279,9 @@ fn serve(manifest: Arc<Manifest>, agent_id: String) {
         ) {
             Route::Answer(answer) => emit(&answer),
             Route::List { id } => {
-                let (manifest, plugins, relay) = (
-                    Arc::clone(&manifest),
-                    Arc::clone(&plugins),
-                    Arc::clone(&relay),
-                );
+                let (offer, relay) = (Arc::clone(&offer), Arc::clone(&relay));
                 std::thread::spawn(move || {
-                    emit(&reply(
-                        id,
-                        json!({ "tools": list(&manifest, &plugins, &*relay) }),
-                    ));
+                    emit(&reply(id, json!({ "tools": list(&offer, &*relay) })));
                 });
             }
             Route::Call {
@@ -223,17 +289,13 @@ fn serve(manifest: Arc<Manifest>, agent_id: String) {
                 name,
                 arguments,
             } => {
-                let (manifest, plugins, relay, calls) = (
-                    Arc::clone(&manifest),
-                    Arc::clone(&plugins),
-                    Arc::clone(&relay),
-                    Arc::clone(&calls),
-                );
+                let (offer, relay, calls) =
+                    (Arc::clone(&offer), Arc::clone(&relay), Arc::clone(&calls));
                 calls.start(&id, &name);
                 // A call waits on the app, so it runs off the read loop; a host
                 // that pipelines a ping behind a navigation still gets answered.
                 std::thread::spawn(move || {
-                    let answer = call(&manifest, &plugins, &*relay, &name, &arguments);
+                    let answer = call(&offer, &*relay, &name, &arguments);
                     if calls.finish(&id) {
                         emit(&reply(id, answer));
                     }
@@ -244,16 +306,23 @@ fn serve(manifest: Arc<Manifest>, agent_id: String) {
 }
 
 /// Tells the agent its tools changed when the person signs in to a plugin, or
-/// switches one on or off, while it runs.
-fn watch_plugins(manifest: &Manifest, plugins: &PluginTools, relay: &Relay<'_>) {
+/// switches one on or off, while it runs, and when a different Sikemux, such
+/// as an updated one, takes over the endpoint.
+fn watch(offer: &Offer, relay: &Relay<'_>) {
     let mut seen: Option<u64> = None;
+    let mut instance = harness::instance();
     loop {
-        match next_plugin_change(manifest, plugins, relay, seen) {
+        let now = harness::instance();
+        if now != instance {
+            instance = now;
+            if offer.refresh(relay) {
+                tell_tools_changed();
+            }
+        }
+        match next_plugin_change(offer, relay, seen) {
             Ok((version, changed)) => {
                 if changed {
-                    emit(
-                        &json!({ "jsonrpc": "2.0", "method": "notifications/tools/list_changed" }),
-                    );
+                    tell_tools_changed();
                 }
                 seen = Some(version);
             }
@@ -262,11 +331,14 @@ fn watch_plugins(manifest: &Manifest, plugins: &PluginTools, relay: &Relay<'_>) 
     }
 }
 
-/// Waits for plugins to change after the `seen`th change, then lists their
+fn tell_tools_changed() {
+    emit(&json!({ "jsonrpc": "2.0", "method": "notifications/tools/list_changed" }));
+}
+
+/// Waits for plugins to change after the `seen`th change, then asks for the
 /// tools again. Answers with the change it got to, and whether the tools differ.
 fn next_plugin_change(
-    manifest: &Manifest,
-    plugins: &PluginTools,
+    offer: &Offer,
     relay: &Relay<'_>,
     seen: Option<u64>,
 ) -> Result<(u64, bool), String> {
@@ -276,8 +348,7 @@ fn next_plugin_change(
     if seen == Some(version) {
         return Ok((version, false));
     }
-    let answer = relay("plugins.tools", &json!({}))?;
-    Ok((version, plugins.replace(plugin_tools(manifest, answer))))
+    Ok((version, offer.refresh(relay)))
 }
 
 /// Tool calls still running, by request id. A call the host cancelled is
@@ -372,19 +443,15 @@ fn initialize(manifest: &Manifest, params: &Value) -> Value {
     })
 }
 
-fn list(manifest: &Manifest, plugins: &PluginTools, relay: &Relay<'_>) -> Vec<Value> {
-    let mut tools = manifest.declarations();
-    tools.extend(plugins.get(manifest, relay).iter().map(Tool::declaration));
+fn list(offer: &Offer, relay: &Relay<'_>) -> Vec<Value> {
+    let (manifest, plugins) = offer.current(relay);
+    let tools = declarations(&manifest, &plugins);
+    *lock(&offer.given) = Some(tools.clone());
     tools
 }
 
-fn call(
-    manifest: &Manifest,
-    plugins: &PluginTools,
-    relay: &Relay<'_>,
-    name: &str,
-    arguments: &Value,
-) -> Value {
+fn call(offer: &Offer, relay: &Relay<'_>, name: &str, arguments: &Value) -> Value {
+    let (manifest, plugins) = offer.current(relay);
     if name == manifest.guide_name() {
         let topic = arguments.get("topic").and_then(Value::as_str);
         return match manifest.guide_text(topic) {
@@ -396,17 +463,16 @@ fn call(
         if let Err(message) = tool.validate(arguments) {
             return invalid(&message);
         }
-        return answer(name, relay(&tool.method, arguments));
+        return answer(tool, relay(&tool.method, arguments));
     }
-    let offered = plugins.get(manifest, relay);
-    let Some(tool) = offered.iter().find(|tool| tool.name == name) else {
+    let Some(tool) = plugins.iter().find(|tool| tool.name == name) else {
         return content(vec![text(&format!("Unknown tool: {name}"))], true);
     };
     if let Err(message) = tool.validate(arguments) {
         return invalid(&message);
     }
     answer(
-        name,
+        tool,
         relay(
             "plugins.call",
             &json!({ "tool": name, "arguments": arguments }),
@@ -421,18 +487,18 @@ fn invalid(message: &str) -> Value {
     )
 }
 
-fn answer(name: &str, result: Result<Value, String>) -> Value {
+fn answer(tool: &Tool, result: Result<Value, String>) -> Value {
     match result {
-        Ok(value) => content(content_for(name, &value), false),
+        Ok(value) => content(content_for(tool.answer.as_deref(), &value), false),
         Err(message) => content(vec![text(&message)], true),
     }
 }
 
-/// A screenshot is the one answer an agent reads as a picture rather than as
-/// JSON, so it travels as an image block with the page's name beside it. A
-/// page preview's picture travels the same way, with the rest of its answer.
-fn content_for(name: &str, value: &Value) -> Vec<Value> {
-    if name == "page_preview" {
+/// A tool whose answer is a picture says so in the manifest. A `screenshot`
+/// travels as an image block with the page's name beside it, and an `image`
+/// with the rest of its answer.
+fn content_for(kind: Option<&str>, value: &Value) -> Vec<Value> {
+    if kind == Some("image") {
         if let Some(data) = value.get("data").and_then(Value::as_str) {
             let mut rest = value.clone();
             if let Some(fields) = rest.as_object_mut() {
@@ -445,7 +511,7 @@ fn content_for(name: &str, value: &Value) -> Vec<Value> {
             ];
         }
     }
-    if name == "browser_screenshot" || name == "sim_screenshot" {
+    if kind == Some("screenshot") {
         if let Some(data) = value.get("data").and_then(Value::as_str) {
             let field = |key: &str| value.get(key).and_then(Value::as_str).unwrap_or_default();
             let mime_type = value

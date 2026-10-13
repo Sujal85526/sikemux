@@ -69,6 +69,7 @@ impl FakeSikemux {
             method,
             &params,
             harness::REPLY_TIMEOUT,
+            Duration::ZERO,
         )
     }
 
@@ -317,6 +318,7 @@ fn a_missing_app_fails_without_a_connection() {
             "workspace.inspect",
             &json!({}),
             harness::REPLY_TIMEOUT,
+            Duration::ZERO,
         ),
         Err("Sikemux is not running".into())
     );
@@ -335,8 +337,7 @@ fn a_missing_endpoint_variable_fails_without_connecting() {
 fn the_guide_is_served_without_asking_the_app() {
     let manifest = Manifest::load();
     let answer = call(
-        &manifest,
-        &PluginTools::with(Vec::new()),
+        &Offer::with(Manifest::load(), Some(Vec::new())),
         &unreachable_app,
         manifest.guide_name(),
         &json!({}),
@@ -387,8 +388,7 @@ fn a_guide_topic_is_served_alone_and_an_unknown_one_lists_the_rest() {
     let manifest = Manifest::load();
     let ask = |topic: &str| {
         call(
-            &manifest,
-            &PluginTools::with(Vec::new()),
+            &Offer::with(Manifest::load(), Some(Vec::new())),
             &unreachable_app,
             manifest.guide_name(),
             &json!({ "topic": topic }),
@@ -424,10 +424,8 @@ fn unknown_tools_and_bad_agent_ids_are_refused() {
         validate_agent_id("agent:one-2_3"),
         Ok("agent:one-2_3".into())
     );
-    let manifest = Manifest::load();
     let answer = call(
-        &manifest,
-        &PluginTools::with(Vec::new()),
+        &Offer::with(Manifest::load(), Some(Vec::new())),
         &unreachable_app,
         "browser_evil",
         &json!({}),
@@ -493,7 +491,7 @@ fn a_misnamed_argument_is_pointed_at_the_one_meant() {
 #[test]
 fn a_screenshot_comes_back_as_an_image() {
     let blocks = content_for(
-        "browser_screenshot",
+        Some("screenshot"),
         &json!({
             "data": "aGk=",
             "mimeType": "image/jpeg",
@@ -507,16 +505,13 @@ fn a_screenshot_comes_back_as_an_image() {
     assert_eq!(field(&blocks[1], "text"), "Example https://example.com");
     assert_eq!(
         field(
-            &content_for("browser_screenshot", &json!({ "data": "aGk=" }))[1],
+            &content_for(Some("screenshot"), &json!({ "data": "aGk=" }))[1],
             "text"
         ),
         "screenshot"
     );
     assert_eq!(
-        field(
-            &content_for("browser_state", &json!({ "tabs": [] }))[0],
-            "text"
-        ),
+        field(&content_for(None, &json!({ "tabs": [] }))[0], "text"),
         "{\"tabs\":[]}"
     );
 }
@@ -524,7 +519,7 @@ fn a_screenshot_comes_back_as_an_image() {
 #[test]
 fn a_page_preview_comes_back_as_an_image_and_its_measurements() {
     let blocks = content_for(
-        "page_preview",
+        Some("image"),
         &json!({
             "data": "aGk=",
             "mimeType": "image/jpeg",
@@ -545,7 +540,7 @@ fn a_page_preview_comes_back_as_an_image_and_its_measurements() {
 #[test]
 fn an_annotated_screenshot_carries_its_numbered_elements() {
     let blocks = content_for(
-        "browser_screenshot",
+        Some("screenshot"),
         &json!({
             "data": "aGk=",
             "title": "Example",
@@ -622,7 +617,6 @@ fn a_host_is_answered_before_and_after_it_says_it_is_ready() {
 
 #[test]
 fn plugin_tools_are_listed_after_the_built_in_ones() {
-    let manifest = Manifest::load();
     let app = fake_sikemux(json!({ "status": "result", "value": [
         {
             "plugin": "sikemux.signoz",
@@ -642,8 +636,7 @@ fn plugin_tools_are_listed_after_the_built_in_ones() {
         },
     ] }));
     let listed = list(
-        &manifest,
-        &PluginTools::default(),
+        &Offer::with(Manifest::load(), None),
         &|method: &str, params: &Value| app.relay(method, params.clone()),
     );
     let names: Vec<&str> = listed.iter().map(|tool| field(tool, "name")).collect();
@@ -661,16 +654,9 @@ fn plugin_tools_are_listed_after_the_built_in_ones() {
 
 #[test]
 fn a_plugin_tool_is_checked_then_handed_to_the_app_by_name() {
-    let manifest = Manifest::load();
-    let plugins = PluginTools::with(vec![signoz_tool()]);
+    let offer = Offer::with(Manifest::load(), Some(vec![signoz_tool()]));
 
-    let refused = call(
-        &manifest,
-        &plugins,
-        &unreachable_app,
-        "signoz_trace",
-        &json!({}),
-    );
+    let refused = call(&offer, &unreachable_app, "signoz_trace", &json!({}));
     assert_eq!(refused["isError"], json!(true));
     assert_eq!(
         field(&refused["content"][0], "text"),
@@ -679,8 +665,7 @@ fn a_plugin_tool_is_checked_then_handed_to_the_app_by_name() {
 
     let app = fake_sikemux(json!({ "status": "result", "value": { "spans": [] } }));
     let answered = call(
-        &manifest,
-        &plugins,
+        &offer,
         &|method: &str, params: &Value| app.relay(method, params.clone()),
         "signoz_trace",
         &json!({ "traceId": "abc" }),
@@ -697,14 +682,10 @@ fn a_plugin_tool_is_checked_then_handed_to_the_app_by_name() {
 
 #[test]
 fn an_app_that_cannot_list_plugin_tools_is_asked_again_next_time() {
-    let manifest = Manifest::load();
-    let plugins = PluginTools::default();
-    assert_eq!(
-        list(&manifest, &plugins, &unreachable_app).len(),
-        declarations().len()
-    );
+    let offer = Offer::with(Manifest::load(), None);
+    assert_eq!(list(&offer, &unreachable_app).len(), declarations().len());
     let app = fake_sikemux(json!({ "status": "result", "value": [] }));
-    list(&manifest, &plugins, &|method: &str, params: &Value| {
+    list(&offer, &|method: &str, params: &Value| {
         app.relay(method, params.clone())
     });
     assert_eq!(app.received()["request"]["method"], json!("plugins.tools"));
@@ -712,8 +693,7 @@ fn an_app_that_cannot_list_plugin_tools_is_asked_again_next_time() {
 
 #[test]
 fn signing_in_to_a_plugin_mid_chat_changes_the_tools() {
-    let manifest = Manifest::load();
-    let plugins = PluginTools::default();
+    let offer = Offer::with(Manifest::load(), None);
     let signed_in = Mutex::new(false);
     let asked = Mutex::new(Vec::new());
     let app = |method: &str, params: &Value| {
@@ -721,6 +701,7 @@ fn signing_in_to_a_plugin_mid_chat_changes_the_tools() {
         let signed_in = *signed_in.lock().unwrap();
         match method {
             "plugins.changed" => Ok(json!({ "version": u64::from(signed_in) })),
+            TOOLS_MANIFEST_METHOD => sikemux_core::cli::manifest::served(),
             "plugins.tools" if signed_in => Ok(json!([{
                 "plugin": "sikemux.signoz",
                 "name": "signoz_trace",
@@ -734,24 +715,15 @@ fn signing_in_to_a_plugin_mid_chat_changes_the_tools() {
         }
     };
 
-    list(&manifest, &plugins, &app);
-    assert_eq!(
-        next_plugin_change(&manifest, &plugins, &app, None),
-        Ok((0, false))
-    );
+    list(&offer, &app);
+    assert_eq!(next_plugin_change(&offer, &app, None), Ok((0, false)));
     asked.lock().unwrap().clear();
-    assert_eq!(
-        next_plugin_change(&manifest, &plugins, &app, Some(0)),
-        Ok((0, false))
-    );
+    assert_eq!(next_plugin_change(&offer, &app, Some(0)), Ok((0, false)));
     assert_eq!(*asked.lock().unwrap(), ["plugins.changed"]);
 
     *signed_in.lock().unwrap() = true;
-    assert_eq!(
-        next_plugin_change(&manifest, &plugins, &app, Some(0)),
-        Ok((1, true))
-    );
-    let names: Vec<String> = list(&manifest, &plugins, &unreachable_app)
+    assert_eq!(next_plugin_change(&offer, &app, Some(0)), Ok((1, true)));
+    let names: Vec<String> = list(&offer, &unreachable_app)
         .iter()
         .map(|tool| field(tool, "name").to_owned())
         .collect();
@@ -760,11 +732,27 @@ fn signing_in_to_a_plugin_mid_chat_changes_the_tools() {
 
 #[test]
 fn only_a_different_offer_after_the_first_counts_as_a_change() {
-    let plugins = PluginTools::default();
-    assert!(!plugins.replace(Vec::new()));
-    assert!(plugins.replace(vec![signoz_tool()]));
-    assert!(!plugins.replace(vec![signoz_tool()]));
-    assert!(plugins.replace(Vec::new()));
+    let offer = Offer::with(Manifest::load(), None);
+    let offered = Mutex::new(json!([]));
+    let app = |method: &str, params: &Value| match method {
+        TOOLS_MANIFEST_METHOD => sikemux_core::cli::manifest::served(),
+        "plugins.tools" => Ok(offered.lock().unwrap().clone()),
+        _ => unreachable_app(method, params),
+    };
+    assert!(!offer.refresh(&app));
+    list(&offer, &app);
+    assert!(!offer.refresh(&app));
+    *offered.lock().unwrap() = json!([{
+        "name": "signoz_trace",
+        "method": "trace",
+        "description": "One trace, span by span.",
+        "properties": {},
+        "required": [],
+    }]);
+    assert!(offer.refresh(&app));
+    assert!(!offer.refresh(&app));
+    *offered.lock().unwrap() = json!([]);
+    assert!(offer.refresh(&app));
 }
 
 fn filtered_tool() -> Tool {
@@ -827,7 +815,6 @@ fn nested_arguments_are_checked_and_named_by_where_they_went_wrong() {
 
 #[test]
 fn a_tool_this_server_cannot_read_does_not_hide_the_others() {
-    let manifest = Manifest::load();
     let answer = json!([
         { "name": "broken" },
         {
@@ -838,7 +825,7 @@ fn a_tool_this_server_cannot_read_does_not_hide_the_others() {
             "required": [],
         },
     ]);
-    let names: Vec<String> = plugin_tools(&manifest, answer)
+    let names: Vec<String> = plugin_tools(answer)
         .into_iter()
         .map(|tool| tool.name)
         .collect();
@@ -847,8 +834,7 @@ fn a_tool_this_server_cannot_read_does_not_hide_the_others() {
 
 #[test]
 fn the_plugin_tools_listed_are_kept_and_no_others_are_reachable() {
-    let manifest = Manifest::load();
-    let plugins = PluginTools::default();
+    let offer = Offer::with(Manifest::load(), None);
     let app = fake_sikemux(json!({ "status": "result", "value": [{
         "plugin": "sikemux.signoz",
         "name": "signoz_trace",
@@ -857,19 +843,13 @@ fn the_plugin_tools_listed_are_kept_and_no_others_are_reachable() {
         "properties": { "traceId": { "type": "string" } },
         "required": ["traceId"],
     }] }));
-    let first = list(&manifest, &plugins, &|method: &str, params: &Value| {
+    let first = list(&offer, &|method: &str, params: &Value| {
         app.relay(method, params.clone())
     });
     assert_eq!(app.received()["request"]["project"], json!("/project"));
 
-    assert_eq!(list(&manifest, &plugins, &unreachable_app), first);
-    let refused = call(
-        &manifest,
-        &plugins,
-        &unreachable_app,
-        "github_runs",
-        &json!({}),
-    );
+    assert_eq!(list(&offer, &unreachable_app), first);
+    let refused = call(&offer, &unreachable_app, "github_runs", &json!({}));
     assert_eq!(refused["isError"], json!(true));
     assert_eq!(
         field(&refused["content"][0], "text"),
