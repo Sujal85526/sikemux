@@ -258,7 +258,7 @@ describe("agent rail", () => {
         expect(screen.getByRole("menuitem", { name: /Close Others/ })).toBeInTheDocument();
         expect(screen.getByRole("menuitem", { name: /Copy Link/ })).toBeInTheDocument();
 
-        await user.click(screen.getByRole("menuitem", { name: "Rename…" }));
+        await user.click(screen.getByRole("menuitem", { name: "Edit Title…" }));
         expect(screen.getByRole("textbox", { name: "Chat name" })).toHaveValue("Fix terminal focus");
     });
 

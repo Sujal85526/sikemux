@@ -44,6 +44,26 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+.agent-name {
+    color: var(--text-primary);
+    font-weight: var(--weight-semibold);
+}
+.agent-row .agent-name,
+.tab-wrap.agent-named .tab-label {
+    color: var(--text-primary);
+    font-weight: var(--weight-medium);
+}
+.agent-name-sep {
+    margin: 0 5px;
+    color: var(--text-tertiary);
+}
+.agent-name-title {
+    color: var(--text-tertiary);
+    font-weight: var(--weight-normal);
+}
+.agent-surface-title .agent-name-title {
+    margin-left: 2px;
+}
 .agent-rename {
     min-width: 0;
     margin-left: -5px;

@@ -33,7 +33,7 @@ import {
   SIKEMUX,
 } from "./world/projects";
 import { terminalReplay } from "./world/terminals";
-import { demoSnapshot } from "./world/workspace";
+import { AGENTS, demoSnapshot } from "./world/workspace";
 
 type Args = Record<string, unknown>;
 type Handler = (args: Args) => unknown;
@@ -442,6 +442,25 @@ export class ShowcaseBackend implements IpcTransport {
     this.on("acp_list", () => []);
     this.on("pty_sessions", () => []);
     this.on("listening_ports", () => []);
+    const demoNames = new Map<string, string>(
+      Object.values(AGENTS).map((agent) => [agent.id, agent.name]),
+    );
+    const spareNames = ["Lark", "Fern", "Quartz", "Dune", "Pika", "Aster"];
+    this.on("agent_name_call", ({ method, params }) => {
+      const { agentId, name } = params as { agentId: string; name?: string };
+      if (method === "renameAgent" && name) demoNames.set(agentId, name);
+      if (!demoNames.has(agentId))
+        demoNames.set(
+          agentId,
+          spareNames[demoNames.size % spareNames.length] ?? "Lark",
+        );
+      return {
+        agentId,
+        name: demoNames.get(agentId),
+        project: SIKEMUX,
+        parent: null,
+      };
+    });
     this.on("acp_start", ({ agentId, provider }) =>
       this.startAgent(agentId as string, provider as string),
     );

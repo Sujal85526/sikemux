@@ -12,6 +12,7 @@ import { AgentIcon, IconAgent, IconCommand, IconMoreVertical, IconPanelRight, Ic
 import { useStore } from "../state/store";
 import { shownDeskPaneId } from "../state/selectors";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
+import { AgentLabel } from "../agents/AgentLabel";
 import { AgentContextMenu } from "../workspace/AgentContextMenu";
 import * as cmd from "../state/commands";
 import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
@@ -44,7 +45,7 @@ function DeskButton({ agent }: { agent: Agent }) {
     );
 }
 
-function AgentMenuButton({ agent, session, onRename }: { agent: Agent; session: Session; onRename: () => void }) {
+function AgentMenuButton({ agent, session, onRetitle }: { agent: Agent; session: Session; onRetitle: () => void }) {
     const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
     return (
         <>
@@ -62,7 +63,7 @@ function AgentMenuButton({ agent, session, onRename }: { agent: Agent; session: 
                 <IconMoreVertical size={14} />
             </button>
             {anchor && (
-                <AgentContextMenu agent={agent} session={session} x={anchor.x} y={anchor.y} onClose={() => setAnchor(null)} onRename={onRename} />
+                <AgentContextMenu agent={agent} session={session} x={anchor.x} y={anchor.y} onClose={() => setAnchor(null)} onRetitle={onRetitle} />
             )}
         </>
     );
@@ -158,11 +159,11 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                         />
                     ) : (
                         <span className="agent-surface-title" title={agent.title} onDoubleClick={() => setRenaming(true)}>
-                            {agent.title}
+                            <AgentLabel agent={agent} />
                         </span>
                     )}
                     {supportsGui && <ShareButton agent={agent} />}
-                    <AgentMenuButton agent={agent} session={session} onRename={() => setRenaming(true)} />
+                    <AgentMenuButton agent={agent} session={session} onRetitle={() => setRenaming(true)} />
                 </div>
                 <div className="agent-surface-controls">
                     {view === "tui" && recovery?.phase === "resuming" && (

@@ -259,7 +259,7 @@ describe("naming a terminal tab", () => {
 
         fireEvent.doubleClick(screen.getByRole("tab", { name: /only agent/ }));
 
-        expect(useDialogs.getState().dialog).toMatchObject({ kind: "prompt", title: "Rename chat", initial: "only agent" });
+        expect(useDialogs.getState().dialog).toMatchObject({ kind: "prompt", title: "Edit title", initial: "only agent" });
     });
 
     it("keeps the name a duplicated tab was given", () => {

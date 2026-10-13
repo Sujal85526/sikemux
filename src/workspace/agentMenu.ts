@@ -9,18 +9,19 @@ import { openShareDialog } from "../share/macShares";
 
 /**
  * The menu an agent's tab, its header and its rail row open. `others` are the agents "Close Others" closes.
- * `rename` edits the name in place where the name is on screen; without it, Rename asks in a dialog.
+ * `retitle` edits the title in place where the title is on screen; without it, Edit Title asks in a dialog.
  */
 export function agentMenu(
     agent: Agent,
     others: Agent[],
     session: Session,
     hints: { close: string; permissions: string },
-    rename: () => void = () => void renameAgentPrompt(agent),
+    retitle: () => void = () => void renameAgentPrompt(agent),
 ): CtxItem[] {
     const link = cmd.agentLink(agent, session);
     const items: CtxItem[] = [
-        { label: "Rename…", run: rename },
+        { label: "Rename…", run: () => void renameAgentNamePrompt(agent) },
+        { label: "Edit Title…", run: retitle },
         ...(agent.launchState === "dormant"
             ? [{ label: "Resume", run: () => cmd.selectAgent(agent.id) }]
             : agent.resumeId
@@ -66,6 +67,11 @@ export function agentMenu(
 }
 
 export async function renameAgentPrompt(agent: Agent): Promise<void> {
-    const title = await promptDialog({ title: "Rename chat", label: "Name", initial: agent.title, confirmLabel: "Rename" });
+    const title = await promptDialog({ title: "Edit title", label: "Title", initial: agent.title, confirmLabel: "Save" });
     if (title) cmd.renameAgent(agent.id, title);
+}
+
+export async function renameAgentNamePrompt(agent: Agent): Promise<void> {
+    const name = await promptDialog({ title: "Rename agent", label: "Name", initial: agent.name ?? "", confirmLabel: "Rename" });
+    if (name?.trim() && name.trim() !== agent.name) await cmd.changeAgentName(agent.id, name).catch(reportError("rename agent"));
 }

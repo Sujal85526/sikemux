@@ -14,6 +14,7 @@ import { type Agent, type AgentType } from "../state/types";
 import { AgentIcon, IconClose, IconGlobe, IconInbox, IconPlus, IconSearch, IconTerminal } from "../ui/Icons";
 import { AgentStateIndicator, BackgroundCounts, showsAgentState } from "../agents/AgentStateIndicator";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
+import { AgentLabel } from "../agents/AgentLabel";
 import { AgentContextMenu } from "../workspace/AgentContextMenu";
 import { AGENT_LABELS, agentDisplay, sortByAttention } from "../state/agentStatus";
 import { Tooltip } from "../ui/Tooltip";
@@ -433,7 +434,9 @@ export function AgentRailBody() {
                                                 setMenu({ agentId: a.id, x: event.clientX, y: event.clientY });
                                             }}>
                                             {glyph}
-                                            <span className="agent-title">{a.title}</span>
+                                            <span className="agent-title">
+                                                <AgentLabel agent={a} />
+                                            </span>
                                             <BackgroundCounts display={display} />
                                         </button>
                                     )}
@@ -461,7 +464,7 @@ export function AgentRailBody() {
                         x={menu.x}
                         y={menu.y}
                         onClose={() => setMenu(null)}
-                        onRename={() => setRenamingId(menuAgent.id)}
+                        onRetitle={() => setRenamingId(menuAgent.id)}
                     />
                 )}
 
@@ -508,7 +511,9 @@ function AgentAttentionGroup() {
                     <span className={`agent-glyph ${agent.type}`}>
                         <AgentIcon type={agent.type} size={20} />
                     </span>
-                    <span className="agent-title">{agent.title}</span>
+                    <span className="agent-title">
+                        <AgentLabel agent={agent} />
+                    </span>
                     {session.id !== activeSessionId && <span className="agent-attention-project">{session.name}</span>}
                     <AgentStateIndicator display={agentDisplay("blocked")} />
                 </button>

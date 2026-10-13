@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { AgentStateIndicator, BackgroundCounts, showsAgentState } from "../agents/AgentStateIndicator";
+import { AgentLabel } from "../agents/AgentLabel";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { AGENT_GROUPS, AGENT_LABELS, lastWorkedAt, type AgentDisplay } from "../state/agentStatus";
@@ -62,7 +63,9 @@ export function AllProjectsAgents() {
                                     <span className={`agent-glyph ${agent.type}`}>
                                         <AgentIcon type={agent.type} size={20} />
                                     </span>
-                                    <span className="agent-title">{agent.title}</span>
+                                    <span className="agent-title">
+                                        <AgentLabel agent={agent} />
+                                    </span>
                                     <BackgroundCounts display={display} />
                                 </button>
                                 {showsAgentState(display) && (

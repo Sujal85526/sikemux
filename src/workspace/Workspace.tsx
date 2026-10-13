@@ -29,7 +29,7 @@ import { type CtxItem } from "../rail/FileTree";
 import { promptDialog } from "../state/dialog";
 import { ErrorBoundary } from "../ui/ErrorBoundary";
 import { PaneField, PanePaintedContext } from "../ui/ShaderField";
-import { agentMenu, renameAgentPrompt } from "./agentMenu";
+import { agentMenu, renameAgentNamePrompt, renameAgentPrompt } from "./agentMenu";
 import { TabBar, type TabDescriptor } from "./TabBar";
 import type { TabDragOut, TabPoint } from "./useTabReorder";
 import { AgentIcon, IconArrowUp, IconPlus, WindowIcon } from "../ui/Icons";
@@ -392,7 +392,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
 
     const { tabs, paneOfTab } = useMemo(() => {
         const paneOfTab = new Map<string, { windowId: string; paneId: string }>();
-        const look = (pane: PaneNode, win: WindowT): Pick<TabDescriptor, "label" | "title" | "icon"> => {
+        const look = (pane: PaneNode, win: WindowT): Pick<TabDescriptor, "label" | "title" | "icon" | "className"> => {
             if (pane.kind === "terminal") {
                 const label = terminalLabel(win, pane, termTitles);
                 return {
@@ -407,10 +407,11 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
             }
             if (pane.kind === "agent") {
                 const agent = agentsById[pane.id];
-                const label = agent?.title ?? pane.title;
+                const title = agent?.title ?? pane.title;
                 return {
-                    label,
-                    title: label,
+                    label: agent?.name ?? title,
+                    title,
+                    className: agent?.name ? "agent-named" : undefined,
                     icon: agent ? (
                         <span className={`agent-glyph ${agent.type}`}>
                             <AgentIcon type={agent.type} size={19} />
@@ -461,9 +462,10 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                 return [
                     {
                         id: key,
-                        label: agent.title,
+                        label: agent.name ?? agent.title,
                         title: agent.title,
                         active: key === activeKey,
+                        className: agent.name ? "agent-named" : undefined,
                         icon: (
                             <span className={`agent-glyph ${agent.type}`}>
                                 <AgentIcon type={agent.type} size={19} />
@@ -607,7 +609,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                     const win = windowsById[refByKey.get(key)?.id ?? paneOfTab.get(key)?.windowId ?? ""];
                     if (win?.role === "term") void renameTerminalTab(win, termTitles);
                     const agent = agentInWindow(agentsById, win);
-                    if (agent) void renameAgentPrompt(agent);
+                    if (agent) void (agent.name ? renameAgentNamePrompt(agent) : renameAgentPrompt(agent));
                 }}
                 onClose={(key) => {
                     const ref = refByKey.get(key);
