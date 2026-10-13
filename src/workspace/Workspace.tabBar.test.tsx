@@ -73,6 +73,9 @@ function projectWithAgent(resumable = true): string {
     return sessionId;
 }
 
+/* The agent's pane loads lazily, which takes longer than a second while the whole suite runs at once. */
+const LAZY_PANE_MS = 5_000;
+
 describe("workspace tab bars", () => {
     it.each([
         ["one terminal", () => {}],
@@ -102,7 +105,7 @@ describe("workspace tab bars", () => {
         projectWithAgent(false);
         render(<Stage />);
 
-        const toggle = await screen.findByRole("button", { name: /safe/i });
+        const toggle = await screen.findByRole("button", { name: /safe/i }, { timeout: LAZY_PANE_MS });
         await waitFor(() => expect(toggle).not.toBeDisabled());
         fireEvent.click(toggle);
 
@@ -111,7 +114,7 @@ describe("workspace tab bars", () => {
             skipPermissions: true,
             directCommand: { program: "codex", args: ["--dangerously-bypass-approvals-and-sandbox"] },
         });
-        expect(await screen.findByRole("button", { name: /yolo/i })).toHaveAttribute("aria-pressed", "true");
+        expect(await screen.findByRole("button", { name: /yolo/i }, { timeout: LAZY_PANE_MS })).toHaveAttribute("aria-pressed", "true");
         expect(screen.queryByTestId("terminal-agent-only")).not.toBeInTheDocument();
     });
 
@@ -120,10 +123,10 @@ describe("workspace tab bars", () => {
         render(<Stage />);
 
         await act(async () => {
-            fireEvent.click(await screen.findByRole("button", { name: "TUI" }));
+            fireEvent.click(await screen.findByRole("button", { name: "TUI" }, { timeout: LAZY_PANE_MS }));
         });
 
-        const original = await screen.findByTestId("terminal-agent-only");
+        const original = await screen.findByTestId("terminal-agent-only", {}, { timeout: LAZY_PANE_MS });
         const header = document.querySelector(".agent-surface-header") as HTMLElement;
         const toggle = within(header).getByRole("button", { name: /safe/i });
         expect(toggle).toHaveAttribute("aria-pressed", "false");
