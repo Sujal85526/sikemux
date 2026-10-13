@@ -3,7 +3,7 @@
 //! moved without loading anything, and app shortcuts pressed while the page
 //! owns the keyboard. Everything here runs on the main thread.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::ptr::NonNull;
@@ -1387,7 +1387,11 @@ define_class!(
                 handler.call((Retained::as_ptr(&chosen),));
                 return;
             }
-            match &self.ivars().inner {
+            match self.ivars().inner.as_ref().filter(|inner| {
+                inner.respondsToSelector(sel!(
+                    webView:runOpenPanelWithParameters:initiatedByFrame:completionHandler:
+                ))
+            }) {
                 Some(inner) => {
                     let _: () = msg_send![
                         &**inner,
@@ -1409,7 +1413,11 @@ define_class!(
             action: &WKNavigationAction,
             features: &WKWindowFeatures,
         ) -> Option<Retained<WKWebView>> {
-            match self.ivars().inner.as_ref() {
+            match self.ivars().inner.as_ref().filter(|inner| {
+                inner.respondsToSelector(sel!(
+                    webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:
+                ))
+            }) {
                 Some(inner) => msg_send![
                     &**inner,
                     webView: webview,
@@ -1461,12 +1469,13 @@ fn present_sheet(
     sheet: Sheet,
     answer: impl Fn(bool, String) + 'static,
 ) {
+    let answer = AnswerOnce::new(answer);
     let (Some(window), Some(mtm)) = (webview.window(), MainThreadMarker::new()) else {
-        answer(false, String::new());
+        answer.give(false, String::new());
         return;
     };
     if !tab.dialogs.borrow_mut().admit(Instant::now()) {
-        answer(false, String::new());
+        answer.give(false, String::new());
         return;
     }
     // SAFETY: main thread, and WebKit keeps `frame` alive while its dialog callback runs.
@@ -1527,9 +1536,37 @@ fn present_sheet(
             .as_ref()
             .map(|field| field.stringValue().to_string())
             .unwrap_or_default();
-        answer(accepted, text);
+        answer.give(accepted, text);
     });
     alert.beginSheetModalForWindow_completionHandler(&window, Some(&block));
+}
+
+/// WebKit throws when a dialog's answer is dropped unanswered, which aborts the
+/// app, so a sheet AppKit discards without running its block answers Cancel.
+struct AnswerOnce<F: Fn(bool, String)> {
+    answer: F,
+    given: Cell<bool>,
+}
+
+impl<F: Fn(bool, String)> AnswerOnce<F> {
+    fn new(answer: F) -> Self {
+        Self {
+            answer,
+            given: Cell::new(false),
+        }
+    }
+
+    fn give(&self, accepted: bool, text: String) {
+        if !self.given.replace(true) {
+            (self.answer)(accepted, text);
+        }
+    }
+}
+
+impl<F: Fn(bool, String)> Drop for AnswerOnce<F> {
+    fn drop(&mut self) {
+        self.give(false, String::new());
+    }
 }
 
 /// Ends the tab's open dialog as if the person pressed OK or Cancel, typing
