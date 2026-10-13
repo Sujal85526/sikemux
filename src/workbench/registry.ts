@@ -45,6 +45,8 @@ export interface BuiltinWorkbenchItemState {
     /* The agent it belongs to is held in `deskPanes`, keyed by pane id,
        the same way an editor keeps its view. */
     desk: DeskView;
+    /* The chat it shows is the share link in the pane's `startup`. */
+    shared: null;
 }
 
 /**
@@ -301,6 +303,7 @@ export const BUILTIN_WORKBENCH_ITEM_MANIFEST = Object.freeze({
     search: builtinDefinition("search", "search", NULL_CODEC),
     agent: builtinDefinition("agent", "agent", NULL_CODEC),
     desk: builtinDefinition("desk", "desk", DESK_CODEC),
+    shared: builtinDefinition("shared", "shared chat", NULL_CODEC),
 }) satisfies BuiltinDefinitionMap;
 
 export function defaultWorkbenchItemTitle(kind: PaneKind, startup?: string): string {

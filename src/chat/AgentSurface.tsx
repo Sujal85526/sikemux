@@ -18,6 +18,7 @@ import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
 import { AgentChatPane } from "./AgentChatPane";
 import { showingChat } from "./chatViews";
 import { YoloToggle } from "./YoloToggle";
+import { ShareButton } from "../share/ShareControls";
 import { agentCwd, agentPtyContext } from "../agents/agentPtyContext";
 import { clearTuiRecovery, relaunchTuiAgent, useTuiResume } from "../agents/tuiResume";
 import "../styles/chat.css";
@@ -195,6 +196,7 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                             <span>TUI</span>
                         </button>
                     </div>
+                    {view === "gui" && supportsGui && <ShareButton agent={agent} />}
                     <DeskButton agent={agent} />
                 </div>
             </header>

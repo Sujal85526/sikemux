@@ -20,7 +20,8 @@ export function BackgroundTasks({
 }: {
     tasks: AcpAsyncTask[];
     stopping: string[];
-    onStop: (taskId: string) => void;
+    /** Without it, as in a shared chat, a task cannot be stopped from here. */
+    onStop?: (taskId: string) => void;
     folds: GroupFolds;
 }) {
     if (tasks.length === 0) return null;
@@ -42,7 +43,7 @@ export function BackgroundTasks({
                             <TaskIcon kind={kind} />
                             <span className="chat-task-name">{task.name}</span>
                             <span className="chat-task-detail">{taskDetail(task)}</span>
-                            {task.canStop && (
+                            {task.canStop && onStop && (
                                 <button
                                     type="button"
                                     aria-label={`Stop ${task.name}`}

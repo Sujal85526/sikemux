@@ -9,6 +9,7 @@ import { FILE_MANAGER_NAME } from "../lib/platform";
 import * as cmd from "../state/commands";
 import { notify, reportError } from "../state/toast";
 import { parsePathRef, type PathRef, type PathRoots } from "./filePath";
+import { useRemoteOrigin } from "./origin";
 import { usePathState, type PathState } from "./pathExistence";
 
 const PathRootsContext = createContext<PathRoots>({ cwd: "" });
@@ -59,7 +60,7 @@ export function openFileRef(ref: PathRef, state: PathState, deskAgentId: string 
     else cmd.requestOpenFile(ref.path, line, column);
 }
 
-function menuItems(ref: PathRef, state: PathState, cwd: string, deskAgentId: string | null): CtxItem[] {
+function menuItems(ref: PathRef, state: PathState, cwd: string, deskAgentId: string | null, remote: boolean): CtxItem[] {
     const relative = relativePath(ref.path, cwd) ?? basename(ref.path);
     const reveal: CtxItem = {
         label: `Reveal in ${FILE_MANAGER_NAME}`,
@@ -70,6 +71,7 @@ function menuItems(ref: PathRef, state: PathState, cwd: string, deskAgentId: str
         { label: "Copy Relative Path", run: () => copy(relative, "relative path") },
         { label: "Copy Name", run: () => copy(basename(ref.path), "name") },
     ];
+    if (remote) return copies;
     if (state === "dir") return [reveal, { sep: true }, ...copies];
     return [
         ...(deskAgentId ? [{ label: "Open on Desk", run: () => openFileRef(ref, state, deskAgentId) }] : []),
@@ -105,6 +107,7 @@ export function ChatFileRef({
 }) {
     const { cwd } = usePathRoots();
     const deskAgentId = useContext(DeskOwnerContext);
+    const remote = useRemoteOrigin() !== null;
     const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
     const openMenu = (event: MouseEvent) => {
         event.preventDefault();
@@ -122,12 +125,12 @@ export function ChatFileRef({
                 onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    if (event.detail < 2) openFileRef(refers, state, deskAgentId);
+                    if (event.detail < 2 && !remote) openFileRef(refers, state, deskAgentId);
                 }}
                 onDoubleClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    if (state !== "dir") openFileRef(refers, state);
+                    if (state !== "dir" && !remote) openFileRef(refers, state);
                 }}
                 onContextMenu={openMenu}>
                 {state === "dir" ? (
@@ -141,7 +144,9 @@ export function ChatFileRef({
                 )}
                 {!tile && <span className="chat-file-ref-name">{label}</span>}
             </button>
-            {menu && <TreeContextMenu x={menu.x} y={menu.y} items={menuItems(refers, state, cwd, deskAgentId)} onClose={() => setMenu(null)} />}
+            {menu && (
+                <TreeContextMenu x={menu.x} y={menu.y} items={menuItems(refers, state, cwd, deskAgentId, remote)} onClose={() => setMenu(null)} />
+            )}
         </>
     );
 }

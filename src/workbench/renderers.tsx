@@ -22,6 +22,7 @@ const EditorPane = lazy(() => import("../editor/EditorPane").then((module) => ({
 const GitPane = lazy(() => import("../git/GitPane").then((module) => ({ default: module.GitPane })));
 const DiffPane = lazy(() => import("../git/DiffPane").then((module) => ({ default: module.DiffPane })));
 const SearchPane = lazy(() => import("../workspace/SearchPane").then((module) => ({ default: module.SearchPane })));
+const SharedChatPane = lazy(() => import("../share/SharedChatPane").then((module) => ({ default: module.SharedChatPane })));
 
 const paneCwd = (pane: PaneNode, session: Session) => pane.cwd || session.cwd;
 
@@ -59,6 +60,11 @@ export const BUILTIN_ITEM_RENDERERS: Readonly<Record<CorePaneKind, (props: Workb
         </Suspense>
     ),
     agent: ({ pane, session, visible }) => <AgentPane paneId={pane.id} session={session} visible={visible} />,
+    shared: ({ pane, visible }) => (
+        <Suspense fallback={<ItemFallback />}>
+            <SharedChatPane paneId={pane.id} link={pane.startup ?? ""} visible={visible} />
+        </Suspense>
+    ),
     desk: ({ pane, session, win, active, visible, painted }) => (
         <DeskHost
             paneId={pane.id}

@@ -291,6 +291,44 @@ pub async fn account_refresh_profile(app: AppHandle) -> AppResult<AccountStatus>
     Ok(status_of(&dir, saved).await)
 }
 
+/// The last access token handed out and when it expires, in seconds since
+/// the epoch, so pages that watch shared chats do not each renew the sign-in.
+static ISSUED: OnceLock<tokio::sync::Mutex<Option<(String, u64)>>> = OnceLock::new();
+
+/// An access token for the signed-in account, kept until shortly before it
+/// expires. None when signed out.
+pub(crate) async fn access_token() -> AppResult<Option<String>> {
+    let Some(saved) = read_saved().await? else {
+        return Ok(None);
+    };
+    let mut issued = ISSUED
+        .get_or_init(|| tokio::sync::Mutex::new(None))
+        .lock()
+        .await;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or(0);
+    if let Some((token, expires)) = issued.as_ref() {
+        if *expires > now + 120 && subject(token).ok().as_deref() == Some(saved.user_id.as_str()) {
+            return Ok(Some(token.clone()));
+        }
+    }
+    let token = refreshed_access_token(&saved).await?;
+    *issued = Some((token.clone(), expiry(&token).unwrap_or(now)));
+    Ok(Some(token))
+}
+
+fn expiry(access_token: &str) -> Option<u64> {
+    #[derive(Deserialize)]
+    struct Claims {
+        exp: u64,
+    }
+    let payload = access_token.split('.').nth(1)?;
+    let bytes = URL_SAFE_NO_PAD.decode(payload).ok()?;
+    Some(serde_json::from_slice::<Claims>(&bytes).ok()?.exp)
+}
+
 /// A new access token for the saved account. When the account service hands
 /// back a new refresh token too, it replaces the saved one.
 async fn refreshed_access_token(saved: &Saved) -> AppResult<String> {

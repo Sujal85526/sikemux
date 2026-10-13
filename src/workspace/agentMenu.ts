@@ -4,6 +4,8 @@ import * as cmd from "../state/commands";
 import { promptDialog } from "../state/dialog";
 import { notify, reportError } from "../state/toast";
 import type { Agent, Session } from "../state/types";
+import { agentSupportsChat } from "../agents/agentLaunch";
+import { openShareDialog } from "../share/macShares";
 
 /**
  * The menu an agent's tab, its header and its rail row open. `others` are the agents "Close Others" closes.
@@ -51,16 +53,15 @@ export function agentMenu(
             },
         );
     }
-    items.push(
-        { sep: true },
-        {
-            label: "Copy Link",
-            disabled: !link,
-            run: () => {
-                if (link) void copyText(link).then(() => notify("success", "copied link"), reportError("copy"));
-            },
+    items.push({ sep: true });
+    if (agentSupportsChat(agent.type)) items.push({ label: "Share Read-Only…", run: () => openShareDialog(agent.id) });
+    items.push({
+        label: "Copy Link",
+        disabled: !link,
+        run: () => {
+            if (link) void copyText(link).then(() => notify("success", "copied link"), reportError("copy"));
         },
-    );
+    });
     return items;
 }
 

@@ -53,6 +53,8 @@
     "allow-account-cancel-sign-in",
     "allow-account-phones",
     "allow-account-sign-out",
+    "allow-share-access",
+    "allow-share-call",
     "allow-remote-answer-pairing",
     "allow-remote-allow-devices",
     "allow-remote-publish-workspace",

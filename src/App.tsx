@@ -23,6 +23,7 @@ import { Workspace } from "./workspace/Workspace";
 import { Toaster } from "./shell/Toaster";
 import { CommandPalette } from "./palettes/CommandPalette";
 import { DialogHost } from "./shell/DialogHost";
+import { ShareHost } from "./share/ShareControls";
 import { ImageViewer } from "./editor/ImageViewer";
 import { useOccludeNativeViews } from "./state/nativeViews";
 import { TerminalPane } from "./terminal/TerminalPane";
@@ -1048,6 +1049,7 @@ export default function App() {
                 {whatsNewOpen && <WhatsNewOverlay />}
             </Suspense>
             <DialogHost />
+            <ShareHost />
             <ImageViewer />
             <VoiceCaption />
             <PairingPrompt />

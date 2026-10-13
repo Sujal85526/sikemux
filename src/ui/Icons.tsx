@@ -574,6 +574,7 @@ export function WindowIcon({ role, size }: { role: WindowRole; size?: number }) 
     if (role === "diff") return <IconCommit size={size} />;
     if (role === "search") return <IconSearch size={size} />;
     if (role === "agent") return <IconAgent size={size} />;
+    if (role === "shared") return <IconEye size={size} />;
     const surface = pluginSurface(role);
     if (surface) return surface.icon(size ?? 14);
     return <IconWindow size={size} />;
