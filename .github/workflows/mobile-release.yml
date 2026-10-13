@@ -295,6 +295,13 @@ jobs:
 
       # Xcode signs with the App Store Connect API key: it makes or fetches the certificate and the
       # profiles for the app and its notification extension, and sends the build to TestFlight.
+      - name: Revoke the development certificates earlier runs made
+        working-directory: mobile/app
+        env:
+          APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: node scripts/testflight-release.mjs prune-certificates
       - name: Archive, sign and send to TestFlight
         id: upload
         working-directory: mobile/app/ios

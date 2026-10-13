@@ -4,6 +4,9 @@
 //
 //   node scripts/testflight-release.mjs submit 0.1.0-nightly.10 10010
 //
+// `prune-certificates` revokes the development certificates earlier CI archives made. Each runner
+// starts with an empty keychain, so Xcode makes a new one every run until Apple's limit refuses.
+//
 // Signs in with the App Store Connect API key in APP_STORE_CONNECT_KEY, _KEY_ID and _ISSUER_ID.
 import { Buffer } from 'node:buffer';
 import { createSign } from 'node:crypto';
@@ -103,6 +106,23 @@ async function setWhatToTest(buildId, notes) {
   });
 }
 
+const DEVELOPMENT_TYPES = ['DEVELOPMENT', 'IOS_DEVELOPMENT', 'APPLE_DEVELOPMENT'];
+
+/** A certificate Xcode made through the API key, whose private key went with its runner. */
+export function madeByCi(certificate) {
+  const { certificateType, name = '', displayName = '' } = certificate.attributes;
+  return DEVELOPMENT_TYPES.includes(certificateType) && `${name} ${displayName}`.includes('Created via API');
+}
+
+async function pruneCertificates() {
+  const found = await call(`/v1/certificates?filter[certificateType]=${DEVELOPMENT_TYPES.join(',')}&limit=200`);
+  const stale = found.data.filter(madeByCi);
+  for (const certificate of stale) {
+    await call(`/v1/certificates/${certificate.id}`, { method: 'DELETE' });
+  }
+  console.log(`TestFlight: revoked ${stale.length} development certificates earlier CI runs made`);
+}
+
 async function submit(version, build) {
   const notes = releaseNotes(version);
   const base = version.replace(/-.*$/, '');
@@ -138,8 +158,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const [command, version, build] = process.argv.slice(2);
   try {
     if (command === 'submit' && version && build) await submit(version, build);
+    else if (command === 'prune-certificates') await pruneCertificates();
     else {
-      console.error('usage: testflight-release.mjs submit <version> <build number>');
+      console.error('usage: testflight-release.mjs submit <version> <build number> | prune-certificates');
       process.exit(2);
     }
   } catch (error) {
