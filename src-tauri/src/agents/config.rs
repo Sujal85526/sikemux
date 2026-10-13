@@ -72,6 +72,20 @@ pub(super) fn omp_session_dirs() -> Vec<PathBuf> {
     dirs
 }
 
+/// Where Muse keeps its settings and sign-in.
+pub(crate) fn muse_config_root() -> Option<PathBuf> {
+    environment_path("XDG_CONFIG_HOME")
+        .or_else(|| Some(home()?.join(".config")))
+        .map(|root| root.join("muse"))
+}
+
+/// Where Muse keeps its sessions and their index.
+pub(crate) fn muse_data_root() -> Option<PathBuf> {
+    environment_path("XDG_DATA_HOME")
+        .or_else(|| Some(home()?.join(".local/share")))
+        .map(|root| root.join("muse"))
+}
+
 pub(crate) fn grok_root() -> Option<PathBuf> {
     environment_path("GROK_HOME").or_else(|| Some(home()?.join(".grok")))
 }
@@ -88,6 +102,7 @@ pub(super) fn agent_config_root(kind: &str, configured: Option<&str>) -> Option<
         "codex" => Some(environment_path("CODEX_HOME").unwrap_or_else(|| home.join(".codex"))),
         "omp" => omp_agent_root(),
         "grok" => grok_root(),
+        "muse" => muse_config_root(),
         _ => Some(home),
     }
 }
@@ -147,6 +162,9 @@ pub(super) fn configured_default_model(kind: &str, config_path: Option<&str>) ->
             .and_then(|text| toml_section_string(&text, "models", "default"))
             .and_then(|value| clean_model(&value))
             .or_else(|| Some("grok-build".to_string())),
+        "muse" => user_variable("MUSE_MODEL")
+            .and_then(|value| clean_model(&value))
+            .or_else(|| json_model(&muse_config_root()?.join("settings.json"), "model")),
         _ => None,
     }
 }
@@ -188,6 +206,11 @@ pub(super) fn configured_default_effort(kind: &str, config_path: Option<&str>) -
             .ok()
             .and_then(|text| toml_section_string(&text, "models", "default_reasoning_effort"))
             .and_then(|value| clean_effort(kind, &value)),
+        "muse" => json_effort(
+            &muse_config_root()?.join("settings.json"),
+            "reasoning_effort",
+            kind,
+        ),
         _ => None,
     }
 }
@@ -207,6 +230,7 @@ fn clean_effort(kind: &str, value: &str) -> Option<String> {
         ],
         "pi" | "omp" => &["off", "minimal", "low", "medium", "high", "xhigh", "max"],
         "grok" => &["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+        "muse" => &["minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
         _ => &[],
     };
     allowed.contains(&value.as_str()).then_some(value)

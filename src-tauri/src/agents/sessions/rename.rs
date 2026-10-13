@@ -39,6 +39,10 @@ pub async fn agent_session_rename(
             let executable = agent_executable(agent, executable_path.as_deref())?;
             super::hermes::rename_hermes_session(&executable, &session_id, &name).await
         }
+        AgentKind::Muse => {
+            let executable = agent_executable(agent, executable_path.as_deref())?;
+            super::muse::rename_muse_session(&executable, &session_id, &name).await
+        }
         _ => spawn_blocking(move || {
             rename_session(agent, &cwd, &session_id, &name, config_path.as_deref())
         })
@@ -98,7 +102,7 @@ fn rename_session(
             &name,
         ),
         AgentKind::Opencode => super::opencode::rename_opencode_session(session_id, &name),
-        AgentKind::Codex | AgentKind::Hermes => Err(format!(
+        AgentKind::Codex | AgentKind::Hermes | AgentKind::Muse => Err(format!(
             "{} renames through its own command",
             agent.as_str()
         )),

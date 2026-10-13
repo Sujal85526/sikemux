@@ -38,6 +38,7 @@ const MARK_FUNCTIONS = {
   opencode: "IconOpenCode",
   grok: "IconGrok",
   hermes: "IconHermes",
+  muse: "IconMuse",
 };
 
 const MARK_FILES = { codex: "codex.svg", omp: "omp.svg" };

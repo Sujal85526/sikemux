@@ -4,6 +4,7 @@ pub(crate) mod context;
 pub(crate) mod delete;
 mod grok;
 mod hermes;
+mod muse;
 mod omp;
 pub(super) mod opencode;
 pub(super) mod pi;
@@ -29,6 +30,7 @@ use claude::claude_sessions;
 use codex::codex_sessions;
 use grok::grok_sessions;
 use hermes::hermes_sessions;
+use muse::muse_sessions;
 use omp::omp_sessions;
 use opencode::opencode_sessions;
 use pi::pi_sessions;
@@ -47,6 +49,7 @@ fn read_agent_sessions(
         AgentKind::Opencode => opencode_sessions(cwd),
         AgentKind::Omp => omp_sessions(cwd),
         AgentKind::Grok => grok_sessions(cwd),
+        AgentKind::Muse => muse_sessions(cwd),
     }
 }
 

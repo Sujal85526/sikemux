@@ -69,6 +69,16 @@
             "usage": false,
             "deletableChats": false,
             "bypass": true
+        },
+        {
+            "type": "muse",
+            "label": "Muse",
+            "command": "muse",
+            "brand": "#0081fb",
+            "accounts": false,
+            "usage": false,
+            "deletableChats": false,
+            "bypass": true
         }
     ]
 }

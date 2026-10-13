@@ -203,6 +203,7 @@ pub fn resumed_session_in_args<'a>(agent: &str, args: &'a [String]) -> Option<&'
     let flag = match agent {
         "claude" | "hermes" | "omp" | "grok" => "--resume",
         "pi" | "opencode" => "--session",
+        "muse" => "resume",
         _ => return None,
     };
     args.windows(2)

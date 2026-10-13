@@ -9,6 +9,7 @@ use super::claude::claude_recent;
 use super::codex::codex_recent;
 use super::grok::grok_recent;
 use super::hermes::hermes_recent;
+use super::muse::muse_recent;
 use super::omp::omp_recent;
 use super::opencode::opencode_recent;
 use super::pi::pi_recent;
@@ -197,6 +198,7 @@ fn provider_hits(provider: &RecentProvider, scan: &PageScan<'_>) -> Vec<Hit> {
         AgentKind::Opencode => opencode_recent(scan),
         AgentKind::Omp => omp_recent(scan),
         AgentKind::Grok => grok_recent(scan),
+        AgentKind::Muse => muse_recent(scan),
     }
 }
 

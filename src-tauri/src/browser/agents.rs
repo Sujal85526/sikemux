@@ -79,6 +79,7 @@ impl BrowserManager {
                 environment.push(("GROK_HOME".into(), home.to_string_lossy().into_owned()));
                 Vec::new()
             }
+            "muse" => muse_browser_args(&launch, &environment)?,
             "opencode" => {
                 environment.push((
                     "OPENCODE_CONFIG_CONTENT".into(),
@@ -166,6 +167,32 @@ fn codex_browser_args(launch: &BrowserMcpLaunch) -> AppResult<Vec<String>> {
         format!("mcp_servers.sikemux_tools.command={command}"),
         "-c".into(),
         format!("mcp_servers.sikemux_tools.args={args}"),
+    ])
+}
+
+/// Muse adds one named server from a `-c` override to the ones it already
+/// has. It starts tool servers with only the environment it is given, so the
+/// sidecar's is named in the server itself.
+fn muse_browser_args(
+    launch: &BrowserMcpLaunch,
+    environment: &[(String, String)],
+) -> AppResult<Vec<String>> {
+    let server = json!({
+        "transport": "stdio",
+        "command": launch.command,
+        "args": launch.args,
+        "env": environment
+            .iter()
+            .map(|(name, value)| (name.clone(), Value::from(value.as_str())))
+            .collect::<serde_json::Map<String, Value>>(),
+        "mode": "optional",
+    });
+    Ok(vec![
+        "-c".into(),
+        format!(
+            "mcpServers.sikemux-tools={}",
+            serde_json::to_string(&server)?
+        ),
     ])
 }
 

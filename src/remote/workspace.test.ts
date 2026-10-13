@@ -29,7 +29,7 @@ describe("remoteWorkspace", () => {
         const profiles = [profile("work", "Work", "claude"), profile("home", "Home", "claude"), profile("cx", "Default", "codex")];
         const { launchers } = remoteWorkspace(sessions, [], profiles, "bypass");
         const byId = Object.fromEntries(launchers.map((launcher) => [launcher.id, launcher]));
-        expect(Object.keys(byId).sort()).toEqual(["claude:home", "claude:work", "codex:cx", "grok", "hermes", "omp", "opencode"]);
+        expect(Object.keys(byId).sort()).toEqual(["claude:home", "claude:work", "codex:cx", "grok", "hermes", "muse", "omp", "opencode"]);
         expect(byId["claude:work"]).toMatchObject({
             provider: "claude",
             label: "Claude · Work",

@@ -249,9 +249,11 @@ pub(super) async fn check_sign_in(
                 .map(|(name, value)| (name.as_str(), value.as_str()));
             opencode_status(&listing, environment)
         }
-        // Hermes answers in free text that changes with the provider, and Grok and OMP have no
-        // check; a chat that is refused for sign-in marks them signed out instead.
-        AgentKind::Hermes | AgentKind::Grok | AgentKind::Omp => AgentStatus::Unknown,
+        // Hermes answers in free text that changes with the provider, and Grok, OMP and Muse
+        // have no check; a chat that is refused for sign-in marks them signed out instead.
+        AgentKind::Hermes | AgentKind::Grok | AgentKind::Omp | AgentKind::Muse => {
+            AgentStatus::Unknown
+        }
     }
 }
 

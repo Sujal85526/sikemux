@@ -16,4 +16,5 @@ export const AGENT_CATALOG = [
     },
     { type: "omp", label: "OMP", command: "omp", brand: "#f97316", accounts: false, usage: false, deletableChats: false, bypass: true },
     { type: "grok", label: "Grok", command: "grok", brand: "#fcfcfc", accounts: false, usage: false, deletableChats: false, bypass: true },
+    { type: "muse", label: "Muse", command: "muse", brand: "#0081fb", accounts: false, usage: false, deletableChats: false, bypass: true },
 ] as const;
