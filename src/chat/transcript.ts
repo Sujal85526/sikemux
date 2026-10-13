@@ -243,12 +243,16 @@ export function taskDetail(task: AcpAsyncTask): string | undefined {
     return [task.owner && `from ${task.owner}`, detail].filter(Boolean).join(" · ") || undefined;
 }
 
-/* A running agent says what it is doing; one that ended says what it cost. */
+/* A running agent says what it is doing; one that ended says which phase it was in. */
 export function workflowAgentDetail(agent: AcpWorkflowAgent): string | undefined {
     if (agent.state === "failed") return agent.error ?? agent.phase;
     if (agent.state === "running" && agent.activity) return agent.activity;
+    return agent.phase;
+}
+
+export function workflowAgentCost(agent: AcpWorkflowAgent): string | undefined {
     const cost = [agent.tokens && `${tokenCount(agent.tokens)} tokens`, agent.toolCalls && `${agent.toolCalls} tools`];
-    return [agent.phase, ...cost].filter(Boolean).join(" · ") || undefined;
+    return cost.filter(Boolean).join(" · ") || undefined;
 }
 
 /* An agent names its own task types — "shell", "monitor" — and they are the

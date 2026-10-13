@@ -126,6 +126,21 @@
     margin-left: auto;
 }
 
+.chat-workflow-cost {
+    flex: none;
+    margin-left: auto;
+    color: var(--ink-faint);
+    font-family: var(--mono);
+    font-size: calc(10px * var(--chat-text-em, 1));
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.chat-workflow-cost + svg:last-child,
+.chat-workflow-cost + .chat-task-spinner {
+    margin-left: 2px;
+}
+
 .chat-workflow-agent.state-queued > .agent-glyph,
 .chat-workflow-agent.state-completed > .agent-glyph,
 .chat-workflow-agent.state-completed > .chat-task-name,

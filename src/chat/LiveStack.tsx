@@ -4,7 +4,7 @@ import { AgentIcon, IconCheck, IconChevron, IconClock, IconClose, IconCommand, I
 import { ChatAgentContext } from "./chatAgent";
 import { queuedLabel, type QueuedMessage } from "./queuedMessages";
 import { Shimmer } from "./Shimmer";
-import { groupTasks, subagentActivity, taskDetail, workflowAgentDetail } from "./transcript";
+import { groupTasks, subagentActivity, taskDetail, workflowAgentCost, workflowAgentDetail } from "./transcript";
 import type { AcpAsyncTask, AcpSubagent, AcpWorkflowAgent } from "./types";
 
 export type GroupFolds = {
@@ -65,11 +65,13 @@ function WorkflowAgentRow({ agent }: { agent: AcpWorkflowAgent }) {
     const agentType = useContext(ChatAgentContext).type;
     const running = agent.state === "running";
     const detail = workflowAgentDetail(agent);
+    const cost = workflowAgentCost(agent);
     return (
         <div className={`chat-task chat-task-agent chat-workflow-agent state-${agent.state}`}>
             <AgentIcon type={agentType} size={16} className={`agent-glyph ${agentType}`} />
             <span className="chat-task-name">{agent.label}</span>
             <span className={`chat-task-detail${running ? " chat-shimmer" : ""}`}>{running && detail ? <Shimmer>{detail}</Shimmer> : detail}</span>
+            {cost && <span className="chat-workflow-cost">{cost}</span>}
             {running && <span className="chat-task-spinner" aria-hidden="true" />}
             {agent.state === "completed" && <IconCheck size={10} aria-label="done" />}
             {agent.state === "failed" && <IconClose size={10} aria-label="failed" />}
