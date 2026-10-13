@@ -333,7 +333,6 @@ export function AgentRailBody() {
                 allAgents={allAgents}
             />
             <ScopeTrack scope={scope} waitingElsewhere={waitingElsewhere} onChange={cmd.setAgentRailScope} />
-            <AgentRailStats scope={scope} provider={allAgents ? null : selectedType} />
             {searchOpen && (
                 <div className="rail-search">
                     <IconSearch size={12} />
@@ -384,6 +383,7 @@ export function AgentRailBody() {
                         <span className="agent-title">New browser</span>
                     </button>
                 </div>
+                <AgentRailStats scope={scope} provider={allAgents ? null : selectedType} />
                 {scope === "all" && <AllProjectsAgents />}
                 {scope === "project" && noContent && (
                     <div className="agent-empty">

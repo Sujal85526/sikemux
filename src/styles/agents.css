@@ -901,7 +901,8 @@
 .agent-rail > .rail-scroll {
     padding-top: var(--space-1);
 }
-.workspace-rail.agent-rail .agent-actions + * {
+.workspace-rail.agent-rail .agent-actions + *,
+.workspace-rail.agent-rail .agent-stats + * {
     margin-top: var(--space-1h);
 }
 
@@ -961,15 +962,16 @@
     font-size: var(--text-2xs);
 }
 
-/* What is running in the rail's scope, one line under the scope switch. Each
-   stat keeps the mark its rows use, so the line reads as their sum. */
+/* What is running in the rail's scope, one line under the new chat, terminal
+   and browser rows. Each stat keeps the mark its rows use, so the line reads
+   as their sum. */
 .agent-stats {
     flex: 0 0 auto;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--space-2);
-    padding: 7px calc(var(--space-1h) + var(--space-2)) 3px calc(var(--gutter-rail) + var(--space-1h));
+    padding: var(--space-1) var(--space-2) var(--space-1) var(--space-1h);
     font-size: var(--text-2xs);
     color: var(--text-tertiary);
 }
