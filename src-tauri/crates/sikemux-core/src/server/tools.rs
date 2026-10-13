@@ -33,6 +33,7 @@ const MAX_CONNECTIONS: usize = 128;
 const REQUEST_READ_DEADLINE: Duration = Duration::from_secs(10);
 const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 const OPEN_ACCEPT_TIMEOUT: Duration = Duration::from_secs(60);
+const CUT_SHORT: &str = "Sikemux started updating its background process while answering this call, so it may already have happened; check before trying it again";
 
 pub(crate) struct ToolEndpoint {
     path: PathBuf,
@@ -290,7 +291,7 @@ async fn serve(core: Arc<Core>, stream: TcpStream, secret: &str, port: u16) {
             Ok(()) => {
                 let answer = tokio::select! {
                     answer = harness::call(&core, request) => answer,
-                    () = core.until_frozen() => Err(super::upgrade::UPDATING.into()),
+                    () = core.until_frozen() => Err(CUT_SHORT.into()),
                 };
                 Ok(match answer {
                     Ok(value) => CliServerResponse::Result { value },
