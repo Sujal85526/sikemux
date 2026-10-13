@@ -14,6 +14,7 @@ const SKILL_FILE: &str = "SKILL.md";
 const NAME_MAX: usize = 64;
 const DESCRIPTION_MAX: usize = 1024;
 const BODY_MAX: usize = 200_000;
+const CLONE_LIMIT: std::time::Duration = std::time::Duration::from_secs(120);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -28,6 +29,40 @@ pub fn library(data_dir: &Path) -> PathBuf {
     data_dir.join(LIBRARY)
 }
 
+/// The library, made if it is missing, so an agent is never pointed at a folder that is not there.
+pub fn ready_library(data_dir: &Path) -> std::io::Result<PathBuf> {
+    let library = library(data_dir);
+    fs::create_dir_all(&library)?;
+    Ok(library)
+}
+
+/// Builds a skill's folder beside the library's others under a hidden name,
+/// and moves it into place only once `fill` has finished, so a failure never
+/// leaves a half-made skill behind to block its name.
+fn place(
+    data_dir: &Path,
+    name: &str,
+    fill: impl FnOnce(&Path) -> Result<(), String>,
+) -> Result<Skill, String> {
+    let library = ready_library(data_dir).map_err(|error| error.to_string())?;
+    let folder = library.join(name);
+    if folder.exists() {
+        return Err(format!(
+            "A skill named {name} already exists; remove it first or pick another name"
+        ));
+    }
+    let staging = library.join(format!(".{name}-{}", uuid::Uuid::new_v4()));
+    let placed = fs::create_dir_all(&staging)
+        .map_err(|error| error.to_string())
+        .and_then(|()| fill(&staging))
+        .and_then(|()| fs::rename(&staging, &folder).map_err(|error| error.to_string()));
+    if let Err(error) = placed {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(error);
+    }
+    read_skill(&folder).ok_or_else(|| format!("{name} was made but could not be read back"))
+}
+
 /// The skills in the library, by name. A folder without a readable `SKILL.md` is left out.
 pub fn list(data_dir: &Path) -> Vec<Skill> {
     list_in(&library(data_dir))
@@ -40,6 +75,7 @@ pub fn list_in(folder: &Path) -> Vec<Skill> {
     };
     let mut skills: Vec<Skill> = entries
         .filter_map(Result::ok)
+        .filter(|entry| !entry.file_name().to_string_lossy().starts_with('.'))
         .filter_map(|entry| read_skill(&entry.path()))
         .collect();
     skills.sort_by(|a, b| a.name.cmp(&b.name));
@@ -136,20 +172,14 @@ pub fn create(data_dir: &Path, name: &str, description: &str, body: &str) -> Res
     if body.len() > BODY_MAX {
         return Err(format!("body must be at most {BODY_MAX} bytes"));
     }
-    let folder = library(data_dir).join(name);
-    if folder.exists() {
-        return Err(format!(
-            "A skill named {name} already exists; remove it first or pick another name"
-        ));
-    }
-    fs::create_dir_all(&folder).map_err(|error| error.to_string())?;
     let quoted = description.replace('\\', "\\\\").replace('"', "\\\"");
     let text = format!(
         "---\nname: {name}\ndescription: \"{quoted}\"\n---\n\n{}\n",
         body.trim()
     );
-    fs::write(folder.join(SKILL_FILE), text).map_err(|error| error.to_string())?;
-    read_skill(&folder).ok_or_else(|| format!("{name} was written but could not be read back"))
+    place(data_dir, name, |folder| {
+        fs::write(folder.join(SKILL_FILE), text).map_err(|error| error.to_string())
+    })
 }
 
 /// Copies a skill folder into the library under the name its `SKILL.md` declares.
@@ -165,31 +195,43 @@ pub fn install_folder(data_dir: &Path, source: &Path) -> Result<Skill, String> {
             .to_string(),
     };
     check_name(&name)?;
-    let folder = library(data_dir).join(&name);
-    if folder.exists() {
-        return Err(format!(
-            "A skill named {name} already exists; remove it first"
-        ));
-    }
-    copy_folder(source, &folder).map_err(|error| error.to_string())?;
-    read_skill(&folder).ok_or_else(|| format!("{name} was copied but could not be read back"))
+    place(data_dir, &name, |folder| {
+        copy_folder(source, folder, &mut Vec::new()).map_err(|error| {
+            format!(
+                "{} could not be copied, so it was left where it is: {error}",
+                source.display()
+            )
+        })
+    })
 }
 
-fn copy_folder(from: &Path, to: &Path) -> std::io::Result<()> {
+/// Copies a folder, following links so a skill that links a script or a
+/// folder from elsewhere arrives whole. A link that is broken, or that leads
+/// back into a folder being copied, fails the copy.
+fn copy_folder(from: &Path, to: &Path, copying: &mut Vec<PathBuf>) -> std::io::Result<()> {
+    let real = fs::canonicalize(from)?;
+    if copying.contains(&real) {
+        return Err(std::io::Error::other(format!(
+            "{} links back into itself",
+            from.display()
+        )));
+    }
+    copying.push(real);
     fs::create_dir_all(to)?;
     for entry in fs::read_dir(from)? {
         let entry = entry?;
         if entry.file_name() == ".git" {
             continue;
         }
-        let kind = entry.file_type()?;
+        let path = entry.path();
         let target = to.join(entry.file_name());
-        if kind.is_dir() {
-            copy_folder(&entry.path(), &target)?;
-        } else if kind.is_file() {
-            fs::copy(entry.path(), &target)?;
+        if fs::metadata(&path)?.is_dir() {
+            copy_folder(&path, &target, copying)?;
+        } else {
+            fs::copy(&path, &target)?;
         }
     }
+    copying.pop();
     Ok(())
 }
 
@@ -206,18 +248,7 @@ pub fn install_git(data_dir: &Path, url: &str, subfolder: Option<&str>) -> Resul
         return Err("subfolder must be a plain path inside the repository".into());
     }
     let scratch = data_dir.join(format!(".skill-download-{}", uuid::Uuid::new_v4()));
-    let cloned = sikemux_process::user_environment::command("git")
-        .args(["clone", "--depth", "1", "--quiet", url])
-        .arg(&scratch)
-        .output()
-        .map_err(|error| format!("git could not run: {error}"));
-    let result = cloned.and_then(|output| {
-        if !output.status.success() {
-            return Err(format!(
-                "git clone failed: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            ));
-        }
+    let result = clone(url, &scratch).and_then(|()| {
         let source = subfolder.map_or_else(|| scratch.clone(), |path| scratch.join(path));
         install_folder(data_dir, &source)
     });
@@ -225,11 +256,55 @@ pub fn install_git(data_dir: &Path, url: &str, subfolder: Option<&str>) -> Resul
     result
 }
 
+/// Clones without ever waiting on the person: Git and SSH may not ask for a
+/// password or a new host key, and a clone that runs too long is stopped.
+fn clone(url: &str, into: &Path) -> Result<(), String> {
+    let mut command = sikemux_process::user_environment::command("git");
+    command
+        .args(["clone", "--depth", "1", "--quiet", url])
+        .arg(into)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped());
+    if sikemux_process::user_environment::var("GIT_SSH_COMMAND").is_none() {
+        command.env(
+            "GIT_SSH_COMMAND",
+            "ssh -o BatchMode=yes -o ConnectTimeout=20",
+        );
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("git could not run: {error}"))?;
+    let deadline = std::time::Instant::now() + CLONE_LIMIT;
+    loop {
+        match child.try_wait().map_err(|error| error.to_string())? {
+            Some(status) if status.success() => return Ok(()),
+            Some(_) => {
+                let mut stderr = String::new();
+                if let Some(mut pipe) = child.stderr.take() {
+                    let _ = std::io::Read::read_to_string(&mut pipe, &mut stderr);
+                }
+                return Err(format!("git clone failed: {}", stderr.trim()));
+            }
+            None if std::time::Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "git clone took longer than {} seconds and was stopped",
+                    CLONE_LIMIT.as_secs()
+                ));
+            }
+            None => std::thread::sleep(std::time::Duration::from_millis(200)),
+        }
+    }
+}
+
 /// Deletes a skill from the library.
 pub fn remove(data_dir: &Path, name: &str) -> Result<(), String> {
     check_name(name)?;
     let folder = library(data_dir).join(name);
-    if !folder.join(SKILL_FILE).exists() {
+    if !folder.is_dir() {
         return Err(format!("No Sikemux skill is named {name}"));
     }
     fs::remove_dir_all(&folder).map_err(|error| error.to_string())
@@ -238,8 +313,7 @@ pub fn remove(data_dir: &Path, name: &str) -> Result<(), String> {
 /// A Claude Code plugin named `sikemux` whose skills are the library, made
 /// ready for `--plugin-dir`. Its skills show in Claude as `sikemux:<name>`.
 pub fn claude_plugin(data_dir: &Path) -> std::io::Result<PathBuf> {
-    let skills = library(data_dir);
-    fs::create_dir_all(&skills)?;
+    let skills = ready_library(data_dir)?;
     let plugin = data_dir.join(CLAUDE_PLUGIN);
     let manifest = plugin.join(".claude-plugin");
     fs::create_dir_all(&manifest)?;
@@ -353,6 +427,89 @@ mod tests {
         assert!(!library(&data).join("pdf-tools/.git").exists());
         assert!(install_folder(&data, &source).is_err());
         assert!(install_folder(&data, &data.join("download")).is_err());
+        fs::remove_dir_all(data).unwrap();
+    }
+
+    #[test]
+    fn install_follows_links_so_a_linked_script_or_folder_arrives_whole() {
+        let data = scratch();
+        let elsewhere = data.join("elsewhere");
+        fs::create_dir_all(elsewhere.join("lib")).unwrap();
+        fs::write(elsewhere.join("run.sh"), "echo hi").unwrap();
+        fs::write(elsewhere.join("lib/util.sh"), "echo util").unwrap();
+        let source = data.join("source/notes");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(
+            source.join("SKILL.md"),
+            "---\nname: notes\ndescription: Notes\n---\n",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(elsewhere.join("run.sh"), source.join("run.sh")).unwrap();
+        std::os::unix::fs::symlink(elsewhere.join("lib"), source.join("lib")).unwrap();
+
+        install_folder(&data, &source).unwrap();
+        let copied = library(&data).join("notes");
+        assert_eq!(
+            fs::read_to_string(copied.join("run.sh")).unwrap(),
+            "echo hi"
+        );
+        assert_eq!(
+            fs::read_to_string(copied.join("lib/util.sh")).unwrap(),
+            "echo util"
+        );
+        assert!(!fs::symlink_metadata(copied.join("lib"))
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        fs::remove_dir_all(data).unwrap();
+    }
+
+    #[test]
+    fn a_copy_that_fails_leaves_nothing_behind_and_the_name_free() {
+        let data = scratch();
+        let source = data.join("source/notes");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(
+            source.join("SKILL.md"),
+            "---\nname: notes\ndescription: Notes\n---\n",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(data.join("missing"), source.join("broken")).unwrap();
+        assert!(install_folder(&data, &source).is_err());
+
+        let looping = data.join("source/looping");
+        fs::create_dir_all(&looping).unwrap();
+        fs::write(
+            looping.join("SKILL.md"),
+            "---\nname: looping\ndescription: Loops\n---\n",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(&looping, looping.join("again")).unwrap();
+        assert!(install_folder(&data, &looping)
+            .unwrap_err()
+            .contains("links back into itself"));
+
+        assert_eq!(fs::read_dir(library(&data)).unwrap().count(), 0);
+        fs::remove_file(source.join("broken")).unwrap();
+        assert_eq!(install_folder(&data, &source).unwrap().name, "notes");
+        fs::remove_dir_all(data).unwrap();
+    }
+
+    #[test]
+    fn remove_clears_a_folder_even_without_its_skill_file() {
+        let data = scratch();
+        fs::create_dir_all(library(&data).join("broken")).unwrap();
+        remove(&data, "broken").unwrap();
+        assert!(!library(&data).join("broken").exists());
+        fs::remove_dir_all(data).unwrap();
+    }
+
+    #[test]
+    fn a_clone_that_cannot_connect_fails_rather_than_waiting() {
+        let data = scratch();
+        let started = std::time::Instant::now();
+        assert!(install_git(&data, "https://127.0.0.1:9/skill.git", None).is_err());
+        assert!(started.elapsed() < std::time::Duration::from_secs(30));
         fs::remove_dir_all(data).unwrap();
     }
 
