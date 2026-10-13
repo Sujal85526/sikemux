@@ -8,12 +8,13 @@ import type { Agent } from "../state/types";
 import { AgentIcon, IconClose } from "../ui/Icons";
 import { Panel, PanelHeader } from "../ui/Panel";
 import { Tooltip } from "../ui/Tooltip";
-import { AgentRowText } from "./AgentRowText";
+import { AgentRowTree } from "./AgentRowTree";
 
 interface OpenAgentRow {
     agent: Agent;
     display: AgentDisplay;
     sessionName: string;
+    sessionId: string;
 }
 
 /** Every agent open in any project, grouped by what it needs from you. */
@@ -31,7 +32,12 @@ export function AllProjectsAgents() {
     const open = useMemo(() => {
         const rows: OpenAgentRow[] = [];
         for (const { agentId, agent, session } of openAgents({ sessionOrder, sessions, windows, windowsBySession, agents }))
-            rows.push({ agent, display: agentDisplayOf({ agentActivity, agentTasks, agentSubagents }, agentId), sessionName: session.name });
+            rows.push({
+                agent,
+                display: agentDisplayOf({ agentActivity, agentTasks, agentSubagents }, agentId),
+                sessionName: session.name,
+                sessionId: session.id,
+            });
         return rows;
     }, [sessionOrder, sessions, windows, windowsBySession, agents, agentActivity, agentTasks, agentSubagents]);
 
@@ -47,7 +53,7 @@ export function AllProjectsAgents() {
                 return (
                     <Panel key={id} variant="group" className={`agent-group${id === "blocked" ? " agent-attention" : ""}`}>
                         <PanelHeader label={`${AGENT_LABELS[id]} ${rows.length}`} rule />
-                        {rows.map(({ agent, display, sessionName }) => (
+                        {rows.map(({ agent, display, sessionName, sessionId }) => (
                             <div key={agent.id} className="agent-row-wrap">
                                 <button
                                     className={`agent-row${agent.id === shownAgentId ? " active" : ""}`}
@@ -56,12 +62,8 @@ export function AllProjectsAgents() {
                                     <span className={`agent-glyph ${agent.type}`}>
                                         <AgentIcon type={agent.type} size={20} />
                                     </span>
-                                    <AgentRowText
-                                        title={agent.title}
-                                        trailing={<BackgroundCounts display={display} />}
-                                        project={sessionName}
-                                        worktree={agent.worktree}
-                                    />
+                                    <span className="agent-title">{agent.title}</span>
+                                    <BackgroundCounts display={display} />
                                 </button>
                                 {showsAgentState(display) && (
                                     <span className="row-status">
@@ -77,6 +79,7 @@ export function AllProjectsAgents() {
                                         <IconClose size={11} />
                                     </button>
                                 </Tooltip>
+                                <AgentRowTree agentId={agent.id} project={{ name: sessionName, sessionId }} worktree={agent.worktree} />
                             </div>
                         ))}
                     </Panel>

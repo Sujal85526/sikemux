@@ -23,7 +23,7 @@ import { leavingRail } from "./railMotion";
 import { RailToggle } from "./RailToggle";
 import { AgentAccountsPanel } from "./AgentAccounts";
 import { planLabel, usagePeak } from "./usageFormat";
-import { AgentRowText } from "./AgentRowText";
+import { AgentRowTree } from "./AgentRowTree";
 import { AllProjectsAgents } from "./AllProjectsAgents";
 import { RecentChatList } from "./RecentChatList";
 import { ScopeTrack } from "./ScopeTrack";
@@ -431,7 +431,8 @@ export function AgentRailBody() {
                                                 setMenu({ agentId: a.id, x: event.clientX, y: event.clientY });
                                             }}>
                                             {glyph}
-                                            <AgentRowText title={a.title} trailing={<BackgroundCounts display={display} />} worktree={a.worktree} />
+                                            <span className="agent-title">{a.title}</span>
+                                            <BackgroundCounts display={display} />
                                         </button>
                                     )}
                                     {showsAgentState(display) && (
@@ -444,6 +445,7 @@ export function AgentRailBody() {
                                             <IconClose size={11} />
                                         </button>
                                     </Tooltip>
+                                    <AgentRowTree agentId={a.id} worktree={a.worktree} />
                                 </div>
                             );
                         })}

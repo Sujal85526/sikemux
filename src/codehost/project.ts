@@ -106,6 +106,18 @@ export function pullState(pull: Pick<Pull, "state" | "draft" | "mergedAt">): str
 
 export const PULL_STATE_LABEL: Readonly<Record<string, string>> = { open: "Open", closed: "Closed", merged: "Merged", draft: "Draft" };
 
+const NO_PULL_LIST: readonly Pull[] = [];
+
+/** Every pull request a branch has had, in any state, once someone is signed in to its host. */
+export function useBranchPullList(repo: RepoRef | null, branch: string, enabled: boolean): readonly Pull[] {
+    const status = useResourceEnabled(enabled && !!repo, hostStatusR, repo?.provider ?? "", repo?.account ?? null);
+    const pulls = useResourceEnabled(enabled && !!repo && !!status.data?.ok, pullsR, repo ?? NO_REPO, "all");
+    return useMemo(
+        () => (repo && pulls.data ? pulls.data.filter((pull) => pull.head === branch && isOwnBranch(pull, repo)) : NO_PULL_LIST),
+        [repo, pulls.data, branch],
+    );
+}
+
 /** One branch's pull request in any state, once someone is signed in to its host. */
 export function useBranchPull(repo: RepoRef | null, branch: string, enabled: boolean): Pull | null {
     const status = useResourceEnabled(enabled && !!repo, hostStatusR, repo?.provider ?? "", repo?.account ?? null);

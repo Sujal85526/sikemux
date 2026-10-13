@@ -905,93 +905,58 @@
     margin-top: var(--space-1h);
 }
 
-/* A row naming its project or worktree grows a second line for them. Each line
-   keeps its own trailing marks, and the status sits level with the title. */
-.workspace-rail .agent-row:has(> .agent-text) {
-    height: auto;
-    min-height: 40px;
-    padding-block: 5px;
+/* What an agent is tied to hangs off its row on the side rail's tree. The
+   tree's spine runs down from the agent's mark. */
+.agent-rail .agent-tree {
+    margin-left: 14px;
+    padding: 0 6px 2px 0;
 }
-.agent-text {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-}
-.agent-line {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    min-width: 0;
-    height: 18px;
-}
-.agent-line > .agent-title {
-    line-height: 18px;
-}
-.agent-row-wrap:has(.agent-text) > .row-status,
-.agent-row-wrap:has(.agent-text) > .row-x {
+.agent-row-wrap:has(> .agent-tree) > .row-status,
+.agent-row-wrap:has(> .agent-tree) > .row-x {
     top: 14px;
 }
-/* The project line runs under the status slot too, so its last mark lines up with the status. */
-.agent-row-wrap:has(> .row-status) .agent-meta {
-    margin-right: calc(-1 * (var(--row-slot) + var(--space-1)));
+.agent-tree .proj-child {
+    cursor: default;
 }
-.agent-meta {
+.agent-tree .agent-tree-items {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
     min-width: 0;
-    font-size: var(--text-2xs);
-    line-height: 14px;
-    color: var(--text-tertiary);
-}
-.agent-meta > span {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    min-width: 0;
+    overflow: hidden;
+    font-size: var(--text-xs);
     white-space: nowrap;
 }
-.agent-meta > span > span {
+.agent-tree-items > * + *::before {
+    content: "·";
+    display: inline-block;
+    margin: 0 6px;
+    color: var(--text-tertiary);
+}
+.agent-tree-items > :last-child {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.agent-meta svg {
-    flex: none;
-}
-/* The project keeps its name whole up to a cap; the branch takes whatever room is left. */
-.agent-meta-project {
-    flex: none;
-}
-.agent-meta-project > span {
-    max-width: 16ch;
-}
-/* Figtree's letters sit a pixel above the centre of their line box, so the folder rises to meet them. */
-.agent-meta-project svg {
-    position: relative;
-    top: -1px;
+.agent-tree-project .proj-child-ic {
     color: var(--live);
 }
-.agent-meta-branch {
-    flex: 0 1 auto;
-    font-family: var(--mono);
-}
-.agent-meta-pr {
+.agent-tree-link {
     flex: none;
-    margin-left: auto;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+.agent-tree-link:hover,
+.agent-tree-link:focus-visible {
+    color: var(--ink);
+    text-decoration: underline;
+    text-decoration-color: color-mix(in oklab, var(--ink) 40%, transparent);
+    text-underline-offset: 2px;
+}
+.agent-tree .agent-tree-mono {
     font-family: var(--mono);
-    font-variant-numeric: tabular-nums;
-}
-.agent-meta-pr[data-state="open"] svg {
-    color: var(--live);
-}
-.agent-meta-pr[data-state="merged"] svg {
-    color: var(--acc);
-}
-.agent-meta-pr[data-state="closed"] svg {
-    color: var(--danger);
-}
-.agent-row.active .agent-meta {
-    color: var(--ink-dim);
+    font-size: var(--text-2xs);
 }

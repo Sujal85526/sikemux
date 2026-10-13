@@ -15,7 +15,8 @@
  * the icon. The tick and the indent are what say "child of", and a filled pill
  * at this depth reads as a peer of the project rather than a part of it.
  */
-.side-rail .proj-children {
+.side-rail .proj-children,
+.agent-tree {
     padding: 2px 6px 2px 0;
     margin-left: 20px;
     border-left: 0;
@@ -24,7 +25,8 @@
    stops halfway down, at its own tick — that is the elbow. One border on the
    container instead would run the line past the last child, with nothing to
    say the tree had ended. */
-.side-rail .proj-child::before {
+.side-rail .proj-child::before,
+.agent-tree .proj-child::before {
     content: "";
     position: absolute;
     top: 0;
@@ -33,7 +35,8 @@
     width: 1px;
     background: var(--tree-spine);
 }
-.side-rail .proj-child:last-child::before {
+.side-rail .proj-child:last-child::before,
+.agent-tree .proj-child:last-child::before {
     bottom: auto;
     box-sizing: border-box;
     width: 9px;
@@ -43,10 +46,12 @@
     border-bottom: 1px solid var(--tree-tick);
     border-bottom-left-radius: 4px;
 }
-.side-rail .proj-child:last-child .proj-child-tick {
+.side-rail .proj-child:last-child .proj-child-tick,
+.agent-tree .proj-child:last-child .proj-child-tick {
     background: none;
 }
-.side-rail .proj-child {
+.side-rail .proj-child,
+.agent-tree .proj-child {
     position: relative;
     width: 100%;
     min-height: 25px;
@@ -60,7 +65,8 @@
     text-align: left;
     cursor: pointer;
 }
-.side-rail .proj-child:hover {
+.side-rail .proj-child:hover,
+.agent-tree .proj-child:hover {
     background: transparent;
     color: var(--ink);
 }
@@ -78,7 +84,8 @@
     flex-shrink: 0;
     background: var(--tree-tick);
 }
-.side-rail .proj-child .proj-child-ic {
+.side-rail .proj-child .proj-child-ic,
+.agent-tree .proj-child .proj-child-ic {
     display: inline-flex;
     align-items: center;
     justify-content: center;

@@ -12,7 +12,7 @@ import { TreeContextMenu } from "./FileTree";
 import { chatKey, type RecentChats } from "./useRecentChats";
 import { formatAge } from "../lib/format";
 import { basename } from "../lib/paths";
-import { AgentRowText } from "./AgentRowText";
+import { AgentRowTree } from "./AgentRowTree";
 
 /** Saved chats, each resumed in the project it ran in. */
 export function RecentChatList({ recent, providers }: { recent: RecentChats; providers: AgentInfo[] }) {
@@ -96,22 +96,21 @@ export function RecentChatList({ recent, providers }: { recent: RecentChats; pro
                         <span className="agent-ago">{formatAge(chat.mtime * 1000)}</span>
                     </div>
                 ) : (
-                    <button
-                        key={key}
-                        className="agent-row recent"
-                        title={elsewhere}
-                        onClick={() => open(chat)}
-                        onContextMenu={(event) => {
-                            event.preventDefault();
-                            setMenu({ chat, x: event.clientX, y: event.clientY });
-                        }}>
-                        {glyph}
-                        <AgentRowText
-                            title={chat.title}
-                            trailing={<span className="agent-ago">{formatAge(chat.mtime * 1000)}</span>}
-                            project={allProjects ? (project?.name ?? basename(chat.project)) : undefined}
-                        />
-                    </button>
+                    <div key={key} className="agent-recent">
+                        <button
+                            className="agent-row recent"
+                            title={elsewhere}
+                            onClick={() => open(chat)}
+                            onContextMenu={(event) => {
+                                event.preventDefault();
+                                setMenu({ chat, x: event.clientX, y: event.clientY });
+                            }}>
+                            {glyph}
+                            <span className="agent-title">{chat.title}</span>
+                            <span className="agent-ago">{formatAge(chat.mtime * 1000)}</span>
+                        </button>
+                        {allProjects && <AgentRowTree project={{ name: project?.name ?? basename(chat.project), sessionId: project?.id }} />}
+                    </div>
                 );
             })}
             {menu && (
