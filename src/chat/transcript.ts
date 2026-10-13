@@ -1,5 +1,5 @@
 import { tokenCount } from "./contextUsage";
-import { splitSentContext, type SentContext } from "./promptContext";
+import { isMention, splitSentContext, type SentContext } from "./promptContext";
 import { toolKind, toolTarget } from "./toolLabels";
 import type { AcpAsyncTask, AcpSubagent, AcpWorkflowAgent, ChatMessage, ChatPart } from "./types";
 
@@ -63,7 +63,8 @@ export function sentParts(message: ChatMessage): { parts: ChatPart[]; context: S
         context.push(...split.context);
         if (split.text) parts.push(split.context.length ? { ...part, text: split.text } : part);
     }
-    return { parts, context: context.filter((item, index) => context.findIndex((other) => other.uri === item.uri) === index) };
+    const shown = context.filter((item) => !isMention(item.uri));
+    return { parts, context: shown.filter((item, index) => shown.findIndex((other) => other.uri === item.uri) === index) };
 }
 
 export type PartGroup = { id: string; tools: Extract<ChatPart, { kind: "tool" }>[] } | { id: string; part: ChatPart };

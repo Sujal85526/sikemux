@@ -9,7 +9,7 @@ import { registerPathDrop } from "../state/dropRegistry";
 import { registerTextInsert } from "../state/textInsertRegistry";
 import type { Agent, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
-import { IconArrowUp, IconClose, IconFolder, IconPlus } from "../ui/Icons";
+import { AgentIcon, IconArrowUp, IconClose, IconFolder, IconPlus } from "../ui/Icons";
 import { FileIcon, FileTypeIcon } from "../ui/FileIcon";
 import { useResourceEnabled } from "../state/resources";
 import { filesListR } from "../state/resources.defs";
@@ -33,6 +33,7 @@ import type { TrackedItem, TrackedKind } from "../codehost/tracked";
 import type { TrackedMatches } from "./TrackedSource";
 import { ContextMark } from "./ContextChip";
 import { contextChip } from "./promptContext";
+import { matchMates, mentionContext, useMates, type Mate } from "./agentMentions";
 
 /** Draws the box's text with the words still being spoken dimmed at the caret, where they will be typed. */
 function DictationPreview({
@@ -350,6 +351,11 @@ export function ChatComposer({
         () => (token?.trigger === "@" ? rankEntries(token.needle, entries, MAX_ENTRIES) : []),
         [entries, token?.trigger, token?.needle],
     );
+    const mates = useMates(agent.id);
+    const mateMatches = useMemo(
+        () => (token?.trigger === "@" ? matchMates(mates, token.needle, MAX_ENTRIES) : []),
+        [mates, token?.trigger, token?.needle],
+    );
 
     const [trackedList, setTrackedList] = useState<TrackedMatches>({ state: "loading" });
     const trackedMatches = token?.trigger === "#" && trackedList.state === "ready" ? trackedList.matches : [];
@@ -359,6 +365,13 @@ export function ChatComposer({
         const spaced = Boolean(command.input?.hint) && !/^\s/.test(draft.slice(caret));
         const written = `/${command.name}${spaced ? " " : ""}`;
         setDraft(`${draft.slice(0, token.start)}${written}${draft.slice(caret)}`);
+        placeCaret(token.start + written.length);
+    };
+
+    const selectMate = (mate: Mate) => {
+        if (!token) return;
+        const written = `@${mate.name} `;
+        setDraft(`${draft.slice(0, token.start)}${written}${draft.slice(caret).replace(/^ /, "")}`);
         placeCaret(token.start + written.length);
     };
 
@@ -401,26 +414,43 @@ export function ChatComposer({
                       ),
                   })),
               }
-            : token?.trigger === "@" && cwd
+            : token?.trigger === "@" && (cwd || mateMatches.length > 0)
               ? {
-                    label: "Project files",
-                    heading: "Files and folders",
-                    aside: "attach",
+                    label: mateMatches.length > 0 ? "Agents and project files" : "Project files",
+                    heading: mateMatches.length > 0 ? "Agents, files and folders" : "Files and folders",
+                    aside: mateMatches.length > 0 ? "mention · attach" : "attach",
                     variant: "entries",
                     empty: files.data === undefined ? "Reading the project…" : "Nothing in the project matches",
-                    rows: entryMatches.map((entry) => ({
-                        key: entry.path,
-                        choose: () => selectEntry(entry),
-                        content: (
-                            <>
-                                <span className="chat-menu-mark">
-                                    {entry.folder ? <IconFolder size={13} /> : <FileIcon name={entryName(entry)} size={13} />}
-                                </span>
-                                <code>{entryName(entry)}</code>
-                                <span>{dirname(entry.path.replace(/\/$/, "")) || "."}</span>
-                            </>
-                        ),
-                    })),
+                    rows: [
+                        ...mateMatches.map((mate) => ({
+                            key: `agent:${mate.id}`,
+                            choose: () => selectMate(mate),
+                            content: (
+                                <>
+                                    <span className="chat-menu-mark">
+                                        <span className={`agent-glyph ${mate.type}`}>
+                                            <AgentIcon type={mate.type} size={13} />
+                                        </span>
+                                    </span>
+                                    <code>@{mate.name}</code>
+                                    <span>{mate.status}</span>
+                                </>
+                            ),
+                        })),
+                        ...(cwd ? entryMatches : []).map((entry) => ({
+                            key: entry.path,
+                            choose: () => selectEntry(entry),
+                            content: (
+                                <>
+                                    <span className="chat-menu-mark">
+                                        {entry.folder ? <IconFolder size={13} /> : <FileIcon name={entryName(entry)} size={13} />}
+                                    </span>
+                                    <code>{entryName(entry)}</code>
+                                    <span>{dirname(entry.path.replace(/\/$/, "")) || "."}</span>
+                                </>
+                            ),
+                        })),
+                    ],
                 }
               : token?.trigger === "#"
                 ? {
@@ -512,15 +542,16 @@ export function ChatComposer({
         const text = draft.trim();
         if (!drafted || blocked || reading) return;
         const paths = attachments;
+        const mentioned = mentionContext(text, mates);
         if (contexts.every((item) => item.text !== null)) {
-            if (onSend({ text, paths, context: contexts.map((item) => ({ uri: item.uri, title: item.title, text: item.text ?? "" })) }, steerNow))
-                clear();
+            const context = [...contexts.map((item) => ({ uri: item.uri, title: item.title, text: item.text ?? "" })), ...mentioned];
+            if (onSend({ text, paths, context }, steerNow)) clear();
             return;
         }
         setReading(true);
         void Promise.all(contexts.map(readContext))
             .then((context) => {
-                if (onSend({ text, paths, context }, steerNow)) clear();
+                if (onSend({ text, paths, context: [...context, ...mentioned] }, steerNow)) clear();
             })
             .catch((failure: unknown) => onError(failure instanceof Error ? failure.message : String(failure)))
             .finally(() => setReading(false));
