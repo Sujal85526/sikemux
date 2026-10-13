@@ -87,8 +87,10 @@
 - Migrations in `server/api/migrations` are never edited once merged. A change that
   removes something comes in two steps: stop using it in one release, drop it in a later
   one, so a rollback always finds the schema it expects.
-- Merging to `main` deploys anything under `server/` to production. Do not run
-  `server/deploy` scripts against citadel yourself; ask first.
+- Merging to `main` deploys anything under `server/` to production. You may push it,
+  run `server/deploy` scripts against citadel, and set up its config without asking,
+  after `agentctl guard` passes. Never print secrets, and ask first before anything
+  destructive or irreversible, such as dropping data or deleting accounts.
 
 ## Brand assets
 
