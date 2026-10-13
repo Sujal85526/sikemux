@@ -8,7 +8,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::io::{self, Read};
 use std::path::PathBuf;
 
-use crate::cli::{CliOpenRequest, HarnessRequest};
 use crate::pty::agent_detection::{DetectionExplain, ManifestReloadReport};
 use crate::pty::launch::{PtyContext, PtyDirectCommand};
 use crate::pty::output_log::{OutputPage, OutputQuery};
@@ -666,7 +665,8 @@ pub struct RunSelector {
     pub agent_id: Option<String>,
 }
 
-/// Something only the app's window can do, asked of it by the core.
+/// Something only the app's window can do, asked of it by the core. Requests
+/// are the core's CLI requests as JSON, so changing those leaves this crate alone.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(
     tag = "kind",
@@ -675,12 +675,12 @@ pub struct RunSelector {
 )]
 pub enum WindowCall {
     Harness {
-        request: HarnessRequest,
+        request: Value,
     },
     /// The CLI's `open`. The answer lists what opened; a waiting call is
     /// later followed by [`ClientMessage::WindowOpenClosed`].
     Open {
-        request: CliOpenRequest,
+        request: Value,
     },
 }
 

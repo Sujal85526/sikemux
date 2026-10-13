@@ -340,10 +340,12 @@ async fn open(
 ) {
     let request_id = request.id.clone();
     let wait = request.wait;
-    let call = match core
-        .window
-        .call(WindowCall::Open { request }, "open files", wait)
-    {
+    let call = match serde_json::to_value(&request)
+        .map_err(|error| error.to_string())
+        .and_then(|request| {
+            core.window
+                .call(WindowCall::Open { request }, "open files", wait)
+        }) {
         Ok(call) => call,
         Err(message) => {
             write(writer, &CliServerResponse::Error { message }).await;

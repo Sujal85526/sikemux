@@ -361,11 +361,14 @@ async fn answer_of(
 }
 
 async fn forward(core: &Core, request: HarnessRequest) -> Result<Value, String> {
-    let method = request.method.clone();
-    let call = core
-        .window
-        .call(WindowCall::Harness { request }, purpose(&method), false)?;
-    answer_of(core, call, WINDOW_REPLY_TIMEOUT, no_answer(&method)).await
+    let call = core.window.call(
+        WindowCall::Harness {
+            request: serde_json::to_value(&request).map_err(|error| error.to_string())?,
+        },
+        purpose(&request.method),
+        false,
+    )?;
+    answer_of(core, call, WINDOW_REPLY_TIMEOUT, no_answer(&request.method)).await
 }
 
 /// Answers one tool call. The call is counted whether or not it succeeds.
@@ -918,11 +921,13 @@ async fn task_start(
             execution_id,
             forwarded,
         } => {
-            match core.window.call(
-                WindowCall::Harness { request: forwarded },
-                "start tasks",
-                false,
-            ) {
+            let call = serde_json::to_value(&forwarded)
+                .map_err(|error| error.to_string())
+                .and_then(|request| {
+                    core.window
+                        .call(WindowCall::Harness { request }, "start tasks", false)
+                });
+            match call {
                 Ok(call) => {
                     let following = core.clone();
                     let id = execution_id.clone();

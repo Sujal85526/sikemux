@@ -225,40 +225,46 @@ async fn play_window(
             continue;
         };
         let answer = match call {
-            WindowCall::Harness { request } => match request.method.as_str() {
-                "workspace.inspect" => Ok(json!({ "project": request.project, "windows": [] })),
-                "ui.open" => Ok(json!({ "kind": request.params["kind"] })),
-                "task.start" => {
-                    let params = &request.params;
-                    let text = |key: &str| params[key].as_str().unwrap_or_default().to_owned();
-                    let spawned = client
-                        .spawn(
-                            LaunchIdentity::default(),
-                            SpawnTarget::Task {
-                                request: TaskSpawnRequest {
-                                    execution_id: text("executionId"),
-                                    terminal_key: "terminal".into(),
-                                    task_id: text("taskId"),
-                                    label: text("label"),
-                                    project: request.project.clone(),
-                                    source: TaskSource::Project,
-                                    command: text("command"),
-                                    cwd: text("cwd"),
-                                    env: HashMap::new(),
-                                    cols: 80,
-                                    rows: 24,
-                                    agent_id: request.agent_id.clone(),
+            WindowCall::Harness { request } => {
+                let request: HarnessRequest =
+                    serde_json::from_value(request).expect("harness request");
+                match request.method.as_str() {
+                    "workspace.inspect" => Ok(json!({ "project": request.project, "windows": [] })),
+                    "ui.open" => Ok(json!({ "kind": request.params["kind"] })),
+                    "task.start" => {
+                        let params = &request.params;
+                        let text = |key: &str| params[key].as_str().unwrap_or_default().to_owned();
+                        let spawned = client
+                            .spawn(
+                                LaunchIdentity::default(),
+                                SpawnTarget::Task {
+                                    request: TaskSpawnRequest {
+                                        execution_id: text("executionId"),
+                                        terminal_key: "terminal".into(),
+                                        task_id: text("taskId"),
+                                        label: text("label"),
+                                        project: request.project.clone(),
+                                        source: TaskSource::Project,
+                                        command: text("command"),
+                                        cwd: text("cwd"),
+                                        env: HashMap::new(),
+                                        cols: 80,
+                                        rows: 24,
+                                        agent_id: request.agent_id.clone(),
+                                    },
                                 },
-                            },
-                        )
-                        .await;
-                    spawned
-                        .map(|_| json!({ "previewUrl": "http://localhost:1" }))
-                        .map_err(|error| error.to_string())
+                            )
+                            .await;
+                        spawned
+                            .map(|_| json!({ "previewUrl": "http://localhost:1" }))
+                            .map_err(|error| error.to_string())
+                    }
+                    method => Err(format!("{method} is not played here")),
                 }
-                method => Err(format!("{method} is not played here")),
-            },
+            }
             WindowCall::Open { request } => {
+                let request: CliOpenRequest =
+                    serde_json::from_value(request).expect("open request");
                 let opened: Vec<String> = request
                     .targets
                     .iter()

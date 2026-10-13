@@ -312,6 +312,7 @@ async fn play_window(client: Arc<CoreClient>, mut events: UnboundedReceiver<Clie
         let WindowCall::Harness { request } = call else {
             continue;
         };
+        let request: HarnessRequest = serde_json::from_value(request).expect("harness request");
         let answer = match request.method.as_str() {
             "workspace.inspect" => Ok(json!({ "project": request.project })),
             "task.start" => {

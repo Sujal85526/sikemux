@@ -109,10 +109,19 @@ pub(crate) fn answer_window_call(app: &AppHandle, call_id: CallId, call: WindowC
         .name("sikemux-window-call".into())
         .spawn(move || match call {
             WindowCall::Harness { request } => {
-                let result = run(&app, request);
+                let result = serde_json::from_value(request)
+                    .map_err(|error| format!("Sikemux could not read the tool call: {error}"))
+                    .and_then(|request| run(&app, request));
                 answer_core(&app, call_id, result);
             }
-            WindowCall::Open { request } => crate::cli_open::answer(&app, call_id, request),
+            WindowCall::Open { request } => match serde_json::from_value(request) {
+                Ok(request) => crate::cli_open::answer(&app, call_id, request),
+                Err(error) => answer_core(
+                    &app,
+                    call_id,
+                    Err(format!("Sikemux could not read the open request: {error}")),
+                ),
+            },
         });
     if let Err(error) = spawned {
         eprintln!("Sikemux could not answer a tool call: {error}");

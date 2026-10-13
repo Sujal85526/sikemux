@@ -60,6 +60,7 @@ pub struct CoreHello {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum ClientEvent {
     Output { id: SessionId, bytes: Vec<u8> },
     Event(Event),
