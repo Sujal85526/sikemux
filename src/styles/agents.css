@@ -951,7 +951,10 @@
 .agent-meta-project > span {
     max-width: 16ch;
 }
+/* Figtree's letters sit a pixel above the centre of their line box, so the folder rises to meet them. */
 .agent-meta-project svg {
+    position: relative;
+    top: -1px;
     color: var(--live);
 }
 .agent-meta-branch {
