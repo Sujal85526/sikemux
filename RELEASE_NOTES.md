@@ -6,6 +6,7 @@ The first nightly on the 0.5.3 line. Nightlies are signed and delivered exactly 
 
 - **Updates keep your agents running.** Updating Sikemux carries running chat agents over to the new version, keeps agents' desk tabs and simulators, and tells agents their tabs survive. An agent that cannot be carried over is waited on before the restart, or you can force the update.
 - **Share a chat.** Share a chat read-only from the Mac. Anyone with the link watches it live, in Sikemux, on their phone or in the browser at app.sikemux.com. It is encrypted end to end, so the server only relays it.
+- **Skills.** Sikemux keeps a skills library that every agent loads beside its own skills, whether it runs in a chat, a terminal or from a paired phone. Make, install, remove and move skills in Settings → Skills, and agents can do the same with a skills tool. A skill an agent saves in its own global folder can be moved into Sikemux.
 - **Muse Code** joins the agents, driven natively over its own session protocol.
 - **Linux.** Every release now ships a deb, an rpm and an AppImage. Linux installs are sent to the releases page for updates, WebKit keeps drawing on the GPU with NVIDIA on Wayland, and the close button closes the window.
 - **Dictation** shows the words being dictated, dimmed, inside the message box, Enter ends dictation and leaves the words there, and a dictation you started by clicking keeps going when you press another key.
