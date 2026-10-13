@@ -34,7 +34,7 @@ function endsIn(expiresAt: number, now: number): string {
     return `${Math.round(hours / 24)} days`;
 }
 
-/** The chat header's way into its share: a link button, or how many watch once it is shared. */
+/** Beside the chat's name: a share button, or once shared, a live chip saying how many watch. */
 export function ShareButton({ agent }: { agent: Agent }) {
     const share = useChatShare(agent.id);
     const shared = share !== null;
@@ -43,16 +43,20 @@ export function ShareButton({ agent }: { agent: Agent }) {
     }, [shared, agent.id, agent.title]);
     if (!share)
         return (
-            <button type="button" className="agent-share" title="Share this chat read-only" onClick={() => openShareDialog(agent.id)}>
+            <button
+                type="button"
+                className="agent-share"
+                aria-label="Share this chat read-only"
+                title="Share this chat read-only"
+                onClick={() => openShareDialog(agent.id)}>
                 <IconShare size={13} />
-                <span>Share</span>
             </button>
         );
     return (
-        <button type="button" className="agent-share shared" title={watching(share)} onClick={() => openShareDialog(agent.id)}>
+        <button type="button" className="agent-share-live" title={watching(share)} onClick={() => openShareDialog(agent.id)}>
             <span className="agent-share-dot" aria-hidden="true" />
-            <span>Shared</span>
-            {share.viewers > 0 && <span className="agent-share-count">{share.viewers}</span>}
+            LIVE
+            {share.viewers > 0 && <span>· {share.viewers}</span>}
         </button>
     );
 }

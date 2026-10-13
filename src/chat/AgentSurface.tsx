@@ -161,6 +161,7 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                             {agent.title}
                         </span>
                     )}
+                    {supportsGui && <ShareButton agent={agent} />}
                     <AgentMenuButton agent={agent} session={session} onRename={() => setRenaming(true)} />
                 </div>
                 <div className="agent-surface-controls">
@@ -196,7 +197,6 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                             <span>TUI</span>
                         </button>
                     </div>
-                    {view === "gui" && supportsGui && <ShareButton agent={agent} />}
                     <DeskButton agent={agent} />
                 </div>
             </header>
