@@ -169,11 +169,26 @@ pub async fn git_remotes(repo: String) -> Result<Vec<GitRemote>, String> {
     .await
 }
 
-/// The URL of every remote of the repository `path` is in; none outside one.
+/// The URL of every remote of the repository `path` is in. A folder that is
+/// not in one but holds repositories gets the remotes of those.
 pub fn remote_urls(path: &str) -> Vec<String> {
-    let Ok(repo) = open_repo(path) else {
+    if let Ok(repo) = open_repo(path) {
+        return urls_of(&repo);
+    }
+    let Ok(entries) = std::fs::read_dir(path) else {
         return Vec::new();
     };
+    let mut urls: Vec<String> = entries
+        .flatten()
+        .filter_map(|entry| git2::Repository::open(entry.path()).ok())
+        .flat_map(|repo| urls_of(&repo))
+        .collect();
+    urls.sort();
+    urls.dedup();
+    urls
+}
+
+fn urls_of(repo: &git2::Repository) -> Vec<String> {
     let Ok(names) = repo.remotes() else {
         return Vec::new();
     };
@@ -573,6 +588,27 @@ mod tests {
         );
         let outside = tempfile::tempdir().expect("tempdir");
         assert!(remote_urls(&outside.path().to_string_lossy()).is_empty());
+    }
+
+    #[test]
+    fn a_folder_of_repositories_has_the_remotes_of_the_repositories_in_it() {
+        let folder = tempfile::tempdir().expect("tempdir");
+        for (name, url) in [
+            ("api", "git@bitbucket.org:team/api.git"),
+            ("web", "git@bitbucket.org:team/web.git"),
+        ] {
+            let git = git2::Repository::init(folder.path().join(name)).expect("init");
+            git.remote("origin", url).expect("origin");
+        }
+        std::fs::create_dir(folder.path().join("notes")).expect("plain folder");
+
+        assert_eq!(
+            remote_urls(&folder.path().to_string_lossy()),
+            [
+                "git@bitbucket.org:team/api.git",
+                "git@bitbucket.org:team/web.git"
+            ]
+        );
     }
 
     #[test]
