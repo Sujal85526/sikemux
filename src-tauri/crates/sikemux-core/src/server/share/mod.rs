@@ -8,6 +8,7 @@
 mod link;
 mod seal;
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -335,16 +336,23 @@ fn snapshot_text(core: &Core, agent_id: &str, attachment: &Value, waiting: &[Str
     })
 }
 
-/// What a share publishes for a frame its client heard, if anything: the
-/// answer to its attach becomes a snapshot, each chat event an event.
-fn published(core: &Core, id: &str, frame: &[u8]) -> Option<(Value, bool)> {
+/// How every chat event the core sends its clients begins. Such a frame is
+/// sealed as it came, with nothing read or written again.
+const CHAT_EVENT: &[u8] = br#"{"type":"event","event":{"kind":"chat","#;
+
+/// What a share publishes for a frame its client heard, if anything, and
+/// whether it is a snapshot. A chat event goes out as the core wrote it; the
+/// answer to the share's attach becomes a snapshot.
+fn published<'a>(core: &Core, id: &str, frame: &'a [u8]) -> Option<(Cow<'a, [u8]>, bool)> {
     use crate::protocol::{Event, FrameKind, Response, ServerMessage};
     let (kind, payload) = frame.get(4..)?.split_first()?;
     if *kind != FrameKind::Control as u8 {
         return None;
     }
-    let message: ServerMessage = serde_json::from_slice(payload).ok()?;
-    match message {
+    if payload.starts_with(CHAT_EVENT) {
+        return Some((Cow::Borrowed(payload), false));
+    }
+    match serde_json::from_slice::<ServerMessage>(payload).ok()? {
         ServerMessage::Response {
             response: Response::ChatAttached { attachment },
             ..
@@ -360,11 +368,12 @@ fn published(core: &Core, id: &str, frame: &[u8]) -> Option<(Value, bool)> {
             running.waiting = waiting_on(core, &agent_id);
             let waiting = running.waiting.clone();
             drop(inner);
-            Some((snapshot_text(core, &agent_id, &attachment, &waiting), true))
+            let text = snapshot_text(core, &agent_id, &attachment, &waiting);
+            Some((Cow::Owned(serde_json::to_vec(&text).ok()?), true))
         }
         ServerMessage::Event {
-            event: Event::Chat { event, .. },
-        } => Some((json!({ "type": "event", "event": event }), false)),
+            event: Event::Chat { .. },
+        } => Some((Cow::Borrowed(payload), false)),
         _ => None,
     }
 }

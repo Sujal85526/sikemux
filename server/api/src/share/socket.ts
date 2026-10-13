@@ -136,12 +136,16 @@ export class ShareSocket implements HostLink, ViewerLink {
   }
 
   send(message: ShareServerMessage) {
+    this.sendText(JSON.stringify(message));
+  }
+
+  sendText(text: string) {
     if (this.ws.readyState !== this.ws.OPEN) return;
     if (this.ws.bufferedAmount > this.context.options.dropBytes) {
       this.close(ShareCloseCode.overloaded, "not reading");
       return;
     }
-    this.ws.send(JSON.stringify(message));
+    this.ws.send(text);
   }
 
   end(reason: ShareEndReason) {

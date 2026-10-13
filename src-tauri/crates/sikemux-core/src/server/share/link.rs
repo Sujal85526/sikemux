@@ -12,7 +12,7 @@ use tokio_websockets::Message;
 
 use super::super::remote::unix_ms;
 use super::super::Core;
-use serde_json::{json, Value};
+use serde_json::json;
 
 use super::{answer, published, save, take_snapshot, waiting_on, Running, ShareState, ToLink};
 use crate::accounts::live::{backoff, connect, rfc3339, socket_url, Socket};
@@ -134,19 +134,18 @@ fn close_message(id: &str) -> ShareClientMessage {
 /// Seals what a share's client heard and numbers it, if it is something to
 /// publish and the share is open.
 fn publish(core: &Core, id: &str, frame: &[u8]) -> Option<ShareClientMessage> {
-    let (text, snapshot) = published(core, id, frame)?;
+    let (plain, snapshot) = published(core, id, frame)?;
     let mut inner = core.shares.lock();
-    numbered(inner.running.get_mut(id)?, &text, snapshot)
+    numbered(inner.running.get_mut(id)?, &plain, snapshot)
 }
 
-/// `text` sealed as the share's next frame.
-fn numbered(running: &mut Running, text: &Value, snapshot: bool) -> Option<ShareClientMessage> {
+/// `plain` sealed as the share's next frame.
+fn numbered(running: &mut Running, plain: &[u8], snapshot: bool) -> Option<ShareClientMessage> {
     if running.state != ShareState::Open {
         return None;
     }
     let id = running.stored.id.clone();
-    let plain = serde_json::to_vec(text).ok()?;
-    let sealed = running.seal.seal(&plain)?;
+    let sealed = running.seal.seal(plain)?;
     running.seq += 1;
     Some(ShareClientMessage::Publish(SharePublish {
         share: id,
@@ -199,7 +198,9 @@ fn tick(core: &Arc<Core>) -> Vec<ShareClientMessage> {
             if waiting != running.waiting {
                 running.waiting = waiting;
                 let text = json!({ "type": "waiting", "requests": running.waiting });
-                told.extend(numbered(running, &text, false));
+                if let Ok(plain) = serde_json::to_vec(&text) {
+                    told.extend(numbered(running, &plain, false));
+                }
             }
         }
     }

@@ -16,6 +16,8 @@ export interface HostLink {
 export interface ViewerLink {
   readonly id: string;
   send(message: ShareServerMessage): void;
+  /** A message already written out, sent as it is to every viewer it is for. */
+  sendText(text: string): void;
   /** The share ended: say so and close. */
   end(reason: ShareEndReason): void;
 }
@@ -71,8 +73,14 @@ export class Room {
         this.bytes += size;
       }
     }
-    for (const viewer of this.viewers.values())
-      viewer.send({ type: "frames", frames: [frame] });
+    this.toViewers({ type: "frames", frames: [frame] });
+  }
+
+  /** Writes `message` out once, however many watch: a snapshot can run to megabytes. */
+  private toViewers(message: ShareServerMessage) {
+    if (this.viewers.size === 0) return;
+    const text = JSON.stringify(message);
+    for (const viewer of this.viewers.values()) viewer.sendText(text);
   }
 
   /** The frames a viewer holding everything through `since` still needs: the rest, or all from the snapshot. */
@@ -89,15 +97,13 @@ export class Room {
     host.send({ type: "viewers", share: this.id, count: this.viewers.size });
     if (this.waitingForSnapshot)
       host.send({ type: "snapshot", share: this.id });
-    for (const viewer of this.viewers.values())
-      viewer.send({ type: "host", online: true });
+    this.toViewers({ type: "host", online: true });
   }
 
   detachHost(host: HostLink) {
     if (this.host !== host) return;
     this.host = null;
-    for (const viewer of this.viewers.values())
-      viewer.send({ type: "host", online: false });
+    this.toViewers({ type: "host", online: false });
   }
 
   countViewers() {

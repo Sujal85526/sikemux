@@ -21,8 +21,24 @@ interface SharesState {
 
 export const useShares = create<SharesState>(() => ({ shares: [], dialog: null }));
 
+function same(a: ShareView, b: ShareView): boolean {
+    return (
+        a.id === b.id &&
+        a.agentId === b.agentId &&
+        a.url === b.url &&
+        a.expiresAt === b.expiresAt &&
+        a.viewers === b.viewers &&
+        a.state === b.state &&
+        a.problem === b.problem
+    );
+}
+
+/** Reads the shares again. What did not change keeps its object, so a header showing it is not drawn again. */
 export async function refreshShares(): Promise<void> {
-    const shares = await shareApi.list();
+    const read = await shareApi.list();
+    const held = useShares.getState().shares;
+    const shares = read.map((share) => held.find((old) => same(old, share)) ?? share);
+    if (shares.length === held.length && shares.every((share, index) => share === held[index])) return;
     useShares.setState({ shares });
 }
 

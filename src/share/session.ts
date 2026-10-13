@@ -387,7 +387,8 @@ export class ShareSession {
             case "snapshot":
                 return this.replace(frame);
             case "event": {
-                const event = recordOf(frame.event);
+                // The core's own message, as its clients hear it: the chat's event is inside.
+                const event = recordOf(recordOf(frame.event)?.event);
                 const kind = text(event?.kind);
                 const payload = recordOf(event?.payload);
                 if (!kind || !payload) return;

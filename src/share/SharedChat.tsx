@@ -68,7 +68,7 @@ export function SharedChat({ session, visible, actions }: { session: ShareSessio
     const type = isAgentType(provider) ? provider : "claude";
     const chatAgent = useMemo(() => ({ id: "", type }), [type]);
     const origin = useMemo(() => ({ readImage: session.readImage }), [session]);
-    const shown = { ...state, permissions: [...snapshot.permissions] };
+    const shown = useMemo(() => ({ ...state, permissions: [...snapshot.permissions] }), [state, snapshot.permissions]);
     const activeTool = useMemo(() => activeToolLabel(state.messages), [state.messages]);
     const activity = snapshot.status === "live" ? activityText(shown, activeTool) : null;
     const subagents = useMemo(() => runningSubagents(state.messages), [state.messages]);
