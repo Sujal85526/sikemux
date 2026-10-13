@@ -202,6 +202,24 @@ impl Claude {
                 self.send(assistant);
                 self.finish(uuid, None);
             }
+            "retry" => {
+                let count: u64 = words.next().and_then(|n| n.parse().ok()).unwrap_or(1);
+                for attempt in 1..=count {
+                    self.send(json!({
+                        "type": "system", "subtype": "api_retry", "attempt": attempt, "max_retries": 10,
+                        "retry_delay_ms": 500, "error_status": null, "error": "unknown",
+                    }));
+                }
+                let assistant = json!({
+                    "type": "assistant",
+                    "uuid": uuid::Uuid::new_v4().to_string(),
+                    "parent_tool_use_id": null,
+                    "message": { "id": message_id, "model": "fake", "role": "assistant", "content": [{ "type": "text", "text": "back" }] },
+                });
+                self.record(assistant.clone());
+                self.send(assistant);
+                self.finish(uuid, None);
+            }
             "ask" => {
                 let tool_id = format!("toolu-{uuid}");
                 let input = json!({ "command": "echo hi", "description": "Say hi" });

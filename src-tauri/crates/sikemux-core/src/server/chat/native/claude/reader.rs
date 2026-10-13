@@ -999,6 +999,7 @@ impl Reader {
             // Claude Code opens every turn with this, including the ones background work starts.
             Some("init") if !self.turn_running() => self.sink.work_started(),
             Some("status") => self.status(message),
+            Some("api_retry") => self.retrying(message),
             Some("compact_boundary") => {
                 if let Some(used) = message
                     .pointer("/compact_metadata/post_tokens")
@@ -1199,6 +1200,23 @@ impl Reader {
             }
             _ => {}
         }
+    }
+
+    /// Claude Code retries a failed request on its own, for up to minutes.
+    fn retrying(&mut self, message: &Value) {
+        let attempt = message.get("attempt").and_then(Value::as_u64).unwrap_or(1);
+        let status = message.get("error_status").and_then(Value::as_u64);
+        let category = if status.is_none() {
+            "connection"
+        } else {
+            "service"
+        };
+        let detail = match status {
+            Some(status) => format!("Anthropic answered {status}"),
+            None => "No answer from Anthropic".to_owned(),
+        };
+        let update = crate::acp::account::retrying("api_retry", category, attempt, &detail);
+        self.sink.update(&self.session_id, update);
     }
 
     fn compacted(&mut self, status: &str, error: Option<String>) {

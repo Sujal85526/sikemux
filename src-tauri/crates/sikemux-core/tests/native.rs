@@ -225,6 +225,32 @@ async fn a_claude_chat_streams_a_turn_with_its_options_and_commands() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_claude_chat_says_when_claude_retries_its_request() {
+    let config = tempfile::tempdir().expect("config");
+    let core = TestCore::start();
+    let (client, mut chat) = core.connect().await;
+    client
+        .acp_start(claude_launch("claude-retry", config.path()))
+        .await
+        .expect("start");
+    chat.until_kind(ChatEventKind::Ready).await;
+    prompt(&client, "claude-retry", &message_id(), "retry 2").await;
+    chat.until_kind(ChatEventKind::TurnCompleted).await;
+
+    let heard = updates(&chat.heard);
+    let attempts: Vec<Value> = heard
+        .iter()
+        .filter_map(|update| update.pointer("/update/_meta/jetbrains/air/sessionFailure"))
+        .map(|notice| {
+            assert_eq!(notice["severity"], "warning");
+            notice["attempt"].clone()
+        })
+        .collect();
+    assert_eq!(attempts, [Value::from(1), Value::from(2)]);
+    assert_eq!(chat.text(), "back");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_claude_tool_waits_for_the_persons_answer() {
     let config = tempfile::tempdir().expect("config");
     let core = TestCore::start();

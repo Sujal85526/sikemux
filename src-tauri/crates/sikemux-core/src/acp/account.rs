@@ -148,6 +148,24 @@ impl Failure {
     }
 }
 
+/// The update that says the agent is retrying a request the network or the
+/// service failed, as a warning in the same AIR shape ACP agents send. It
+/// holds until the agent streams again or the turn ends.
+pub fn retrying(id: &str, category: &str, attempt: u64, detail: &str) -> Value {
+    json!({
+        "sessionUpdate": "session_info_update",
+        "_meta": { "jetbrains": { "air": { "version": 1, "sessionFailure": {
+            "id": id,
+            "revision": attempt,
+            "category": category,
+            "severity": "warning",
+            "title": detail,
+            "attempt": attempt,
+            "actions": [],
+        } } } },
+    })
+}
+
 /// The failure an ACP agent attached to a prompt's answer or a session update.
 ///
 /// It comes as the `sessionFailure` part of the AIR extension, once the client
@@ -192,6 +210,16 @@ pub fn failure(meta: &Value) -> Option<Failure> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_retry_is_a_warning_that_no_failure_is_read_from() {
+        let update = retrying("turn-1:retry", "connection", 3, "Connection error");
+        assert_eq!(update["sessionUpdate"], "session_info_update");
+        let notice = &update["_meta"]["jetbrains"]["air"]["sessionFailure"];
+        assert_eq!(notice["severity"], "warning");
+        assert_eq!(notice["attempt"], 3);
+        assert!(failure(&update["_meta"]).is_none());
+    }
 
     fn air(failure: Value) -> Value {
         json!({ "jetbrains": { "air": { "version": 1, "sessionFailure": failure } } })
