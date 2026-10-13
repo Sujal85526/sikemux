@@ -29,6 +29,8 @@ const BLOCKER_POLL_MS = 2_000;
 
 let activeInstall: Promise<void> | null = null;
 let blockerPoll: ReturnType<typeof setTimeout> | null = null;
+// The update is on disk and only the restart into it waits on agents.
+let installedAwaitingRestart = false;
 
 export function isUpdateBusy(state: UpdateOperationState | undefined): boolean {
     return state !== undefined && BUSY_UPDATE_STATES.has(state);
@@ -202,11 +204,56 @@ function pollBlockers(): void {
     }, BLOCKER_POLL_MS);
 }
 
+function setRestarting(): void {
+    setState((state) => ({
+        updateBlockers: [],
+        pendingUpdate: state.pendingUpdate
+            ? {
+                  ...state.pendingUpdate,
+                  state: "restarting",
+                  error: null,
+                  downloadedBytes: state.pendingUpdate.totalBytes ?? state.pendingUpdate.downloadedBytes,
+              }
+            : null,
+    }));
+}
+
+/** Restarts into the installed update. Agents that became busy and can't be
+ *  carried over since the download hold the restart, unless forced; forcing
+ *  tells the core to stop them rather than wait. */
+async function restartIntoUpdate(force: boolean): Promise<void> {
+    if (force) {
+        await invoke("update_force_core");
+    } else {
+        const blockers = await updateBlockers();
+        if (blockers.length > 0) {
+            installedAwaitingRestart = true;
+            setWaiting(blockers);
+            pollBlockers();
+            return;
+        }
+    }
+    installedAwaitingRestart = false;
+    setRestarting();
+    await relaunch();
+}
+
 async function installPendingUpdateOnce(force: boolean): Promise<void> {
     if (!getState().pendingUpdate) await checkForUpdate();
     const pending = getState().pendingUpdate;
     if (!pending || isUpdateBusy(pending.state)) return;
     const channel = getState().updateChannel;
+
+    if (installedAwaitingRestart) {
+        try {
+            await restartIntoUpdate(force);
+        } catch (error) {
+            setState((state) => ({
+                pendingUpdate: state.pendingUpdate ? { ...state.pendingUpdate, state: "error", error: String(error) } : null,
+            }));
+        }
+        return;
+    }
 
     // Agents at work are carried over the update still running. One that is
     // still starting cannot be, so the install waits for it unless forced.
@@ -243,18 +290,11 @@ async function installPendingUpdateOnce(force: boolean): Promise<void> {
         // Commit release bookkeeping only after the signed artifact was
         // installed successfully. Keep the restart state visible if relaunch
         // itself fails instead of making the update silently disappear.
-        setState((state) => ({
-            pendingUpdate: state.pendingUpdate
-                ? {
-                      ...state.pendingUpdate,
-                      state: "restarting",
-                      error: null,
-                      downloadedBytes: state.pendingUpdate.totalBytes ?? state.pendingUpdate.downloadedBytes,
-                  }
-                : null,
+        setState({
             lastReleaseNotes: { version: installed.version, notes: installed.notes, date: installed.date, credits: installed.credits },
-        }));
-        await relaunch();
+        });
+        setRestarting();
+        await restartIntoUpdate(force);
     } catch (error) {
         setState((state) => ({
             pendingUpdate: state.pendingUpdate ? { ...state.pendingUpdate, state: "error", error: String(error) } : null,
