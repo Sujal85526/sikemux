@@ -180,6 +180,7 @@ const budgets = [
     // Jira boards, the GitLab code host and the database pane added a little more.
     // Main reached the edge of this budget; Escape keeping a draft tipped it over.
     // Sharing a chat and Muse Code added a little more.
+    // The Skills section in Settings and its toast added a little more.
     label:
       "default-path JavaScript except the highlighter and its grammar chunks",
     pattern: new RegExp(
