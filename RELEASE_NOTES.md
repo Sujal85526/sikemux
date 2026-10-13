@@ -1,18 +1,22 @@
-# Sikemux v0.5.2-nightly.2
+# Sikemux v0.5.2-nightly.3
 
-The second nightly on the 0.5.2 line. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
+The third nightly on the 0.5.2 line. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
 
-## New since nightly.1
+## New since nightly.2
 
-- **Faster shells.** Sikemux's background core now runs at normal priority, so shells and prompts no longer start at background priority, where rc files took about twice as long to load. Sign out of macOS and back in once for it to take effect. A new terminal tab opens at its prompt straight away, from a shell kept ready.
-- **Chats start sooner.** A new chat is usable while its agent starts, and a message you send during a Claude turn joins it after the next tool call.
-- **Claude chats follow Claude Code's own records.** Turns, tasks and subagents follow what Claude Code reports, and a reloaded chat reads its subagents from Claude Code's own files, including ones you stopped, which now show as cancelled. Editing a message rewinds in place and keeps its background work. A reloaded Codex chat shows its subagents as they ran.
-- An agent process that ends takes its subagents and tasks with it, and an agent with only a shell left running is no longer listed as working. Background shells are counted beside the >_ mark.
-- Closing anything that would stop a busy agent asks first.
-- Claude transcripts are found for projects whose path has dots, underscores or spaces.
-- Git no longer shows conflicted files in green, and the address bar opens files and local network hosts the way agent tools do.
-- Language servers start for every language the app can serve, and the PDF preview loads again.
-- Keyboard shortcuts show each platform's own modifier names, the battery shows charging when it is low, and the SigNoz live tail pauses while the app is hidden.
-- The notch takes each agent's look, its asks and model choices from the core.
+- **Updates keep your agents running.** Updating Sikemux carries running chat agents over to the new version, keeps agents' desk tabs and simulators, and tells agents their tabs survive. An agent that cannot be carried over is waited on before the restart, or you can force the update.
+- **Share a chat.** Share a chat read-only from the Mac. Anyone with the link watches it live, in Sikemux, on their phone or in the browser at app.sikemux.com. It is encrypted end to end, so the server only relays it.
+- **Muse Code** joins the agents, driven natively over its own session protocol.
+- **Linux.** Every release now ships a deb, an rpm and an AppImage. Linux installs are sent to the releases page for updates, WebKit keeps drawing on the GPU with NVIDIA on Wayland, and the close button closes the window.
+- **Dictation** shows the words being dictated, dimmed, inside the message box, Enter ends dictation and leaves the words there, and a dictation you started by clicking keeps going when you press another key.
+- **Bitbucket for agents.** Agents can comment on, review, open, merge and decline pull requests, create, close and reopen issues, and rerun or stop pipelines. A folder of repositories offers the tools for the remotes inside it.
+- **Jira boards** can be narrowed to picked people, your issues, unassigned cards or words on a card, and an opened issue closes from its header. Agents' Jira search can return each issue's latest comments and page through results.
+- **PDFs** open in macOS's own PDF view, so they pinch, scroll and sit on the app's ground.
+- The Git pane's navigation moves into a labelled header.
+- The live stack folds subagents, shells and monitors one group at a time, and an agent waiting on its subagents shows as working.
+- Escape clears a selection, and stops a running turn only from an empty box.
+- Jira, Bitbucket, GitLab and AWS show their official marks.
 
-For the complete patch history, compare [`v0.5.2-nightly.1...v0.5.2-nightly.2`](https://github.com/nodelike/sikemux/compare/v0.5.2-nightly.1...v0.5.2-nightly.2).
+Thanks to Krisna Satria for the Linux packages and fixes, Sujal Rajput for the dictation preview and fixes, and Ankit Patidar for the Jira board filters and the Escape fix.
+
+For the complete patch history, compare [`v0.5.2-nightly.2...v0.5.2-nightly.3`](https://github.com/nodelike/sikemux/compare/v0.5.2-nightly.2...v0.5.2-nightly.3).
