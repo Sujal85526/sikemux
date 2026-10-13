@@ -349,14 +349,13 @@ export function AgentRailBody() {
                 </div>
             )}
             <div className="rail-scroll" ref={scrollRef} onScroll={onRailScroll}>
-                {scope === "all" && <AllProjectsAgents />}
-                {scope === "project" && selectedType && (
+                {selectedType && (
                     <button
                         type="button"
                         className="agent-row agent-new"
                         onClick={() =>
-                            allAgents
-                                ? cmd.openAgentPalette()
+                            allAgents || scope === "all"
+                                ? void cmd.startAgent()
                                 : cmd.addAgent(selectedType, undefined, undefined, {
                                       profileId: selectedProviderProfile(selectedType, profiles, profileSelections)?.id,
                                       detectedExecutablePath: selectedProvider?.command,
@@ -368,6 +367,7 @@ export function AgentRailBody() {
                         <span className="agent-title">New chat</span>
                     </button>
                 )}
+                {scope === "all" && <AllProjectsAgents />}
                 {scope === "project" && noContent && (
                     <div className="agent-empty">
                         {catalog.status === "loading"

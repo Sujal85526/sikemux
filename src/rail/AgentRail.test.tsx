@@ -406,7 +406,7 @@ describe("agent rail", () => {
         await user.click(screen.getByRole("tab", { name: "All projects, 1 waiting" }));
         expect(await screen.findByRole("button", { name: /Hero image/ })).toBeInTheDocument();
         expect(screen.getByText("Needs input 1")).toBeInTheDocument();
-        expect(screen.queryByRole("button", { name: "New chat" })).not.toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "New chat" })).toBeInTheDocument();
 
         await user.click(screen.getByRole("button", { name: /Hero image/ }));
         await waitFor(() => expect(getState().activeSessionId).toBe("sess-other"));
