@@ -736,7 +736,7 @@ async fn run_requests(
             }
             Request::Call { method, params } => {
                 tokio::spawn(async move {
-                    let result = calls::call(core, &method, params).await;
+                    let result = calls::call(core, &client.peer, &method, params).await;
                     client.respond(request_id, result.map(|result| Response::Called { result }));
                 });
             }

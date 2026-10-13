@@ -8,7 +8,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::access::Needs;
+use super::access::{Needs, Peer};
 use super::attachments;
 use super::connection::blocking;
 use super::{Core, CoreError, CoreResult};
@@ -20,9 +20,14 @@ pub(crate) fn needs(method: &str) -> Needs {
     }
 }
 
-pub(crate) async fn call(core: Arc<Core>, method: &str, params: Value) -> CoreResult<Value> {
+pub(crate) async fn call(
+    core: Arc<Core>,
+    peer: &Peer,
+    method: &str,
+    params: Value,
+) -> CoreResult<Value> {
     match method {
-        "chatFile" => answer(chat_file(&core, parse(params)?).await?),
+        "chatFile" => answer(chat_file(&core, peer, parse(params)?).await?),
         _ => Err(format!("this host does not know {method}").into()),
     }
 }
@@ -46,14 +51,27 @@ struct ChatFile {
     data: String,
 }
 
-/// A file kept beside the pictures pasted into the app's chats, such as one
-/// a message carried, in base64.
-async fn chat_file(core: &Core, params: ChatFileParams) -> CoreResult<ChatFile> {
-    let dir = core
+/// A file a chat's message carried, in base64. Any device may read the
+/// pictures pasted into chats; one that can drive sessions can already read
+/// anything through a terminal, so it may read files dropped from elsewhere.
+async fn chat_file(core: &Core, peer: &Peer, params: ChatFileParams) -> CoreResult<ChatFile> {
+    let pasted = core
         .listening
         .get()
-        .and_then(|listening| listening.config.attachment_dir.clone())
-        .ok_or_else(|| CoreError::from("this host keeps no files for chats"))?;
-    let data = blocking(move || attachments::read(&dir, &params.path)).await?;
+        .and_then(|listening| listening.config.attachment_dir.clone());
+    let path = params.path;
+    let kept = match pasted {
+        Some(dir) => {
+            let path = path.clone();
+            blocking(move || Ok(attachments::is_kept(&dir, &path))).await?
+        }
+        None => false,
+    };
+    if !kept {
+        core.permit(peer, Needs::Full).map_err(|_| {
+            CoreError::from("this device can open only the pictures pasted into chats")
+        })?;
+    }
+    let data = blocking(move || attachments::read(&path)).await?;
     Ok(ChatFile { data })
 }
