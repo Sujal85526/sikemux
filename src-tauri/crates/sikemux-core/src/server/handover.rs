@@ -30,7 +30,7 @@ use sikemux_pty::shell::ShellLaunchIntegration;
 use sikemux_pty::shell_protocol::ShellMetadataSnapshot;
 use tokio::io::unix::AsyncFd;
 
-use crate::protocol::frozen::RESUME_FORMAT;
+use crate::frozen::RESUME_FORMAT;
 use crate::protocol::{BuildIdentity, SessionExit, SessionId, SessionKind};
 
 use super::agent::{self, AgentActivity, AgentRecord};
@@ -197,8 +197,10 @@ fn set_close_on_exec(fd: RawFd, close: bool) {
 }
 
 /// Writes everything down and replaces the process with `binary`. Returns
-/// only if that failed, with every descriptor as it was.
-pub(crate) fn replace_process(core: &Core, binary: &Path, handed: &[HandOver]) -> CoreError {
+/// only if that failed, with every descriptor as it was. A chat whose state
+/// could not be written down has its agent stopped, and is left in `handed`
+/// as one to start again.
+pub(crate) fn replace_process(core: &Core, binary: &Path, handed: &mut [HandOver]) -> CoreError {
     let Some(listening) = core.listening.get() else {
         return "the core is not listening yet".into();
     };
@@ -235,24 +237,30 @@ pub(crate) fn replace_process(core: &Core, binary: &Path, handed: &[HandOver]) -
     let mut chats = Vec::new();
     let mut live_chats = Vec::new();
     let mut chat_fds = Vec::new();
-    for chat in handed {
-        match chat {
-            HandOver::Resume(record) => chats.push(record.as_ref().clone()),
-            HandOver::Live(chat) => match serde_json::to_value(&chat.live) {
-                Ok(live) => {
-                    live_chats.push(live);
-                    chat_fds.extend(chat.released.fds());
+    for chat in handed.iter_mut() {
+        let unwritable = match chat {
+            HandOver::Resume(record) => {
+                chats.push(record.as_ref().clone());
+                continue;
+            }
+            HandOver::Live(live) => match serde_json::to_value(&live.live) {
+                Ok(written) => {
+                    live_chats.push(written);
+                    chat_fds.extend(live.released.fds());
+                    continue;
                 }
                 Err(error) => {
                     eprintln!("sikemux core: a chat's agent is started again after the update, as its state could not be written: {error}");
-                    chat::kill_released(&chat.released);
-                    chats.extend(chat.live.record.clone().map(|record| ChatRecord {
+                    chat::kill_agent(live.released.pid);
+                    ChatRecord {
                         notice: Some("its state could not be written down".into()),
-                        ..record
-                    }));
+                        ..live.live.record.clone()
+                    }
                 }
             },
-        }
+        };
+        chats.push(unwritable.clone());
+        *chat = HandOver::Resume(Box::new(unwritable));
     }
     let config = &listening.config;
     let state = HandoverState {
@@ -579,7 +587,7 @@ fn adopt_chat(core: &Arc<Core>, live: Value, inherited: &mut Inherited) {
     let pid = live.agent.pid;
     let record = live.record.clone();
     let why = match agent_pipes(&live, inherited) {
-        Some(pipes) => match chat::adopt(core, live, pipes) {
+        Some(pipes) => match chat::adopt(core, live, pipes, &[]) {
             Ok(()) => return,
             Err(error) => error,
         },
@@ -587,15 +595,13 @@ fn adopt_chat(core: &Arc<Core>, live: Value, inherited: &mut Inherited) {
     };
     eprintln!("sikemux core: a chat's agent is started again after the update: {why}");
     chat::kill_agent(pid);
-    if let Some(record) = record {
-        chat::resume(
-            core,
-            ChatRecord {
-                notice: Some(why),
-                ..record
-            },
-        );
-    }
+    chat::resume(
+        core,
+        ChatRecord {
+            notice: Some(why),
+            ..record
+        },
+    );
 }
 
 fn terminal_io(fd: RawFd, inherited: &mut Inherited) -> Result<AsyncFd<File>, String> {

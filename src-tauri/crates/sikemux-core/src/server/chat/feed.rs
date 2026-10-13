@@ -849,17 +849,23 @@ impl Feed {
     }
 
     /// Lets go of the feed for a core that takes the chat over, once what is
-    /// waiting to go out has gone. Nothing said here after that is kept.
-    pub(crate) fn release(&self) -> Option<FeedState> {
+    /// waiting to go out has gone, with the clients that were hearing it.
+    /// Nothing said here after that is kept.
+    pub(crate) fn release(&self) -> Option<(FeedState, Vec<Arc<ClientConn>>)> {
         let mut inner = self.inner.lock().ok()?;
         self.flush_locked(&mut inner);
         inner.closed = true;
+        let subscribers = inner
+            .subscribers
+            .drain()
+            .map(|(_, client)| client)
+            .collect();
         let history = inner.replay.history.take().map(History::release);
         let replay = std::mem::replace(
             &mut inner.replay,
             Replay::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS, None),
         );
-        Some(FeedState {
+        let state = FeedState {
             id: self.id.clone(),
             seq: inner.seq,
             recent: std::mem::take(&mut inner.recent),
@@ -868,7 +874,8 @@ impl Feed {
             start: inner.start.clone(),
             permission_mode: inner.permission_mode.clone(),
             title: inner.title.clone(),
-        })
+        };
+        Some((state, subscribers))
     }
 
     /// The name of the file the feed keeps its history in.

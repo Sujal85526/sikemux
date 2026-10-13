@@ -3,7 +3,7 @@ use std::os::fd::RawFd;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::protocol::frozen::{UpgradeInfo, UPGRADE_INFO_ARG};
+use crate::frozen::{UpgradeInfo, UPGRADE_INFO_ARG};
 use crate::protocol::{BuildIdentity, SessionId};
 
 use super::handover::{self, Recovery};

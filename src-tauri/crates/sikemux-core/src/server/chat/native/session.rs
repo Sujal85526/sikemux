@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::acp::account::{self, Failure, FailureKind, SignIn};
@@ -18,7 +18,7 @@ use crate::protocol::{ChatContext, ChatEventKind, ChatLaunch, ChatStart};
 use super::super::rebind::{
     error_message, next_account, on_account, switch_notice, Carried, Outcome, Rebind, Replay,
 };
-use super::super::{Asked, Chat, ChatCommand};
+use super::super::{stall_later, Asked, Chat, ChatCommand, Respond};
 use super::process::{AgentRecord, Lines, Process, Released, Writer};
 
 /// What the person sent, for the agent to read in its own form.
@@ -90,6 +90,15 @@ pub(crate) enum TurnEnd {
     /// The agent can take no more turns in this session, for this reason, and
     /// is started again.
     Broken(String),
+}
+
+/// What woke the chat's loop.
+enum Woke {
+    Command(Option<ChatCommand>),
+    Closed(String),
+    Broken(String),
+    Failed(Failed),
+    Stalled(u64),
 }
 
 /// A turn that failed in a way a new agent process or another account may fix.
@@ -212,11 +221,13 @@ impl Sink {
     /// permission request: the session, the tool call and its `options`.
     /// `reply` is what the backend needs to answer the agent, kept with the
     /// question so a core that takes the chat over can answer it too.
-    /// Answers with the chosen option's id, or none when it was cancelled.
-    pub async fn ask(&self, mut request: Value, reply: Value) -> Option<String> {
+    /// `respond` is told the chosen option's id, or none when it was
+    /// cancelled.
+    pub fn ask(&self, mut request: Value, reply: Value, respond: Respond) {
         if self.chat.approves() {
             if let Some(option_id) = permission::approval(&request) {
-                return Some(option_id);
+                respond(Some(option_id));
+                return;
             }
         }
         let option_ids = request
@@ -230,14 +241,12 @@ impl Sink {
         if let Some(object) = request.as_object_mut() {
             object.insert("requestId".into(), Value::String(request_id.clone()));
         }
-        let (answer, answered) = oneshot::channel();
         if self
             .chat
-            .hold_permission(request_id, option_ids, answer, request.clone(), reply)
+            .hold_permission(request_id, option_ids, respond, request.clone(), reply)
         {
             self.chat.emit(ChatEventKind::PermissionRequest, request);
         }
-        answered.await.ok().flatten()
     }
 }
 
@@ -321,15 +330,17 @@ pub(crate) trait Backend: Sized + Send {
         -> impl std::future::Future<Output = Result<(Value, Released), String>> + Send;
 
     /// Takes up an agent an earlier core released, from the state `release`
-    /// answered. `asked` are the questions still put to the person, each with
-    /// its reply and the person's answer to come.
+    /// answered.
     fn adopt(
         launch: &ChatLaunch,
         sink: Sink,
         state: Value,
         agent: (Process, Writer, Lines),
-        asked: Vec<(Value, oneshot::Receiver<Option<String>>)>,
     ) -> Result<Self, String>;
+
+    /// What answers the agent with the person's choice for a question whose
+    /// backend data is `reply`.
+    fn responder(&self, reply: Value) -> Respond;
 }
 
 /// Where the chat's loop stands, as plain data, for a core that takes the
@@ -347,6 +358,9 @@ pub(crate) struct SessionState {
     signed_in_again: bool,
     signed_in_at_start: Option<SignIn>,
     reloadable: bool,
+    /// The turn asked to stop, which is given a while before the agent is
+    /// taken to be stuck.
+    stopping: Option<u64>,
 }
 
 /// A chat let go of by its loop.
@@ -382,6 +396,7 @@ pub(crate) async fn run<B: Backend>(
     commands: &mut mpsc::UnboundedReceiver<ChatCommand>,
     opening: Begin,
 ) -> Result<Outcome, String> {
+    chat.at_rest.store(false, Ordering::Release);
     let provider = launch.provider.clone();
     let (failed_tx, mut failed_rx) = mpsc::unbounded_channel::<Failed>();
     let (broken_tx, mut broken_rx) = mpsc::unbounded_channel::<String>();
@@ -418,6 +433,7 @@ pub(crate) async fn run<B: Backend>(
                 signed_in_again,
                 signed_in_at_start,
                 reloadable: backend.reloadable(),
+                stopping: None,
             };
             let start = state.start();
             chat.mark_ready(start.clone());
@@ -438,17 +454,18 @@ pub(crate) async fn run<B: Backend>(
                 pipes,
                 asked,
             } = *adopted;
-            let asked = asked
-                .into_iter()
-                .map(|asked| (asked.reply.clone(), chat.hold_again(asked)))
-                .collect();
             let [stdin, stdout, stderr] = pipes;
             let adopted = Process::adopt(&agent, stdin, stdout, stderr)
-                .inspect_err(|_| super::process::kill_group(agent.pid))
-                .and_then(|process| B::adopt(&launch, sink(false), kept, process, asked));
+                .inspect_err(|_| super::process::kill_and_reap(agent.pid))
+                .and_then(|process| B::adopt(&launch, sink(false), kept, process));
             match adopted {
                 Ok(backend) => {
+                    for asked in asked {
+                        let respond = backend.responder(asked.reply.clone());
+                        chat.hold_again(asked, respond);
+                    }
                     chat.mark_ready(session.start());
+                    chat.finish_held();
                     (backend, session, None)
                 }
                 Err(error) => return Ok(not_taken_over(&chat, &launch, &error)),
@@ -457,6 +474,11 @@ pub(crate) async fn run<B: Backend>(
     };
 
     let (stalled_tx, mut stalled_rx) = mpsc::unbounded_channel::<u64>();
+    if let Some(turn) = state.stopping.filter(|turn| *turn == state.turn) {
+        if chat.running.load(Ordering::Acquire) {
+            stall_later(turn, &stalled_tx);
+        }
+    }
     if let Some(replay) = replay {
         if let Some(from) = replay.announce {
             chat.feed.prompted(
@@ -477,36 +499,46 @@ pub(crate) async fn run<B: Backend>(
 
     let end = loop {
         chat.at_rest.store(true, Ordering::Release);
-        let command = tokio::select! {
-            command = commands.recv() => match command {
-                Some(command) => command,
-                None => break Outcome::Ended(SessionEnd::Requested),
-            },
-            reason = backend.closed() => {
+        // What the agent already said is taken in before the next command,
+        // so a turn's failure or end is never cut off by letting go of the
+        // agent.
+        let woke = tokio::select! {
+            biased;
+            Some(reason) = broken_rx.recv() => Woke::Broken(reason),
+            Some(failed) = failed_rx.recv() => Woke::Failed(failed),
+            Some(stalled) = stalled_rx.recv() => Woke::Stalled(stalled),
+            reason = backend.closed() => Woke::Closed(reason),
+            command = commands.recv() => Woke::Command(command),
+        };
+        chat.at_rest.store(false, Ordering::Release);
+        let command = match woke {
+            Woke::Command(Some(command)) => command,
+            Woke::Command(None) => break Outcome::Ended(SessionEnd::Requested),
+            Woke::Closed(reason) => {
                 if chat.running.load(Ordering::Acquire) {
                     chat.emit(ChatEventKind::Error, error_message(&reason));
                 }
                 break Outcome::Ended(SessionEnd::Exited);
             }
-            Some(reason) = broken_rx.recv() => {
+            Woke::Broken(reason) => {
                 chat.emit(ChatEventKind::Error, error_message(reason));
                 break Outcome::Ended(SessionEnd::Exited);
             }
-            Some(failed) = failed_rx.recv() => {
+            Woke::Failed(failed) => {
                 if failed.turn != state.turn {
                     continue;
                 }
                 let current = launch.account.as_ref().map(|account| account.id.clone());
                 let retry = match failed.failure.kind {
-                    FailureKind::SignIn if state.reloadable && !state.signed_in_again => chat
-                        .relaunch(&launch)
-                        .map(|launch| Rebind {
+                    FailureKind::SignIn if state.reloadable && !state.signed_in_again => {
+                        chat.relaunch(&launch).map(|launch| Rebind {
                             launch,
                             replay: state.last_prompt.clone(),
                             exhausted: state.exhausted.clone(),
                             signed_in_again: true,
                             notice: None,
-                        }),
+                        })
+                    }
                     FailureKind::Limit if state.reloadable => {
                         let mut tried = state.exhausted.clone();
                         tried.extend(current.clone());
@@ -531,11 +563,14 @@ pub(crate) async fn run<B: Backend>(
                 if let Some(response) = failed.response {
                     chat.emit(ChatEventKind::TurnCompleted, response);
                 }
-                chat.emit(ChatEventKind::Error, failed.failure.payload(current.as_deref()));
+                chat.emit(
+                    ChatEventKind::Error,
+                    failed.failure.payload(current.as_deref()),
+                );
                 state.failed_prompt = state.last_prompt.take();
                 continue;
             }
-            Some(stalled) = stalled_rx.recv() => {
+            Woke::Stalled(stalled) => {
                 if chat.running.load(Ordering::Acquire) && state.turn == stalled {
                     chat.emit(
                         ChatEventKind::Error,
@@ -546,7 +581,6 @@ pub(crate) async fn run<B: Backend>(
                 continue;
             }
         };
-        chat.at_rest.store(false, Ordering::Release);
         match command {
             ChatCommand::Prompt {
                 from,
@@ -750,6 +784,9 @@ pub(crate) async fn run<B: Backend>(
                 }
             }
             ChatCommand::Cancel => {
+                if chat.running.load(Ordering::Acquire) {
+                    state.stopping = Some(state.turn);
+                }
                 let sent = backend.cancel().await;
                 chat.cancel_sent(sent, state.turn, &stalled_tx);
             }
@@ -763,7 +800,7 @@ pub(crate) async fn run<B: Backend>(
                 // Nobody waits for it any more, so the agent is stopped
                 // rather than left running unread.
                 if let Err(Ok(handed)) = reply.send(handed) {
-                    super::process::kill_group(handed.released.pid);
+                    super::process::kill_and_reap(handed.released.pid);
                 }
                 break Outcome::Released;
             }

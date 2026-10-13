@@ -480,11 +480,20 @@ mod tests {
     }
 }
 
+/// Has the core update after the coming relaunch stop the chats it cannot
+/// carry over, rather than wait on them.
+#[tauri::command]
+pub fn update_force_core(manager: State<'_, PtyManager>) -> AppResult<()> {
+    manager
+        .force_next_core_update()
+        .map_err(crate::error::AppError::Other)
+}
+
 /// The chats at work that an update now would stop and start again rather
 /// than carry over, which the app waits on before it installs one.
 #[tauri::command]
 pub async fn update_blockers(
     manager: State<'_, PtyManager>,
-) -> AppResult<Vec<sikemux_core::protocol::frozen::UpdateBlocker>> {
+) -> AppResult<Vec<sikemux_core::frozen::UpdateBlocker>> {
     Ok(manager.update_blockers().await)
 }

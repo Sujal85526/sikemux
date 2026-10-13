@@ -103,10 +103,14 @@ enum Readiness {
     Ended(Option<String>),
 }
 
+/// Tells the agent the option the person chose, or none when the question
+/// was cancelled. It writes to the agent before it returns, so an answer
+/// given before the chat lets go of its agent is never lost.
+pub(crate) type Respond = Box<dyn FnOnce(Option<String>) + Send>;
+
 struct PendingPermission {
     option_ids: Vec<String>,
-    /// Takes the option chosen, or none when the request was cancelled.
-    answer: oneshot::Sender<Option<String>>,
+    answer: Respond,
     request: Value,
     at: u64,
     /// What the agent's backend needs to answer the agent with the choice.
@@ -159,6 +163,9 @@ pub(crate) struct Chat {
     /// The chat's loop waits for its next command, so it can let go of its
     /// agent at once.
     pub at_rest: AtomicBool,
+    /// The chat is letting go of its agent, so the person's answers wait for
+    /// the core that takes it over.
+    releasing: AtomicBool,
 }
 
 impl Chat {
@@ -223,7 +230,7 @@ impl Chat {
 
     /// Finishes a held turn once its last subagent has ended, unless the agent
     /// starts a turn of its own to answer it first.
-    fn finish_held(&self) {
+    pub(crate) fn finish_held(&self) {
         if !self.held.load(Ordering::Acquire)
             || self.feed.running_subagents() > 0
             || self.turn_running()
@@ -281,11 +288,7 @@ impl Chat {
             self.emit(ChatEventKind::Error, rebind::error_message(error));
         }
         if self.running.load(Ordering::Acquire) {
-            let stalled = stalled.clone();
-            tokio::spawn(async move {
-                tokio::time::sleep(CANCEL_GRACE).await;
-                let _ = stalled.send(turn);
-            });
+            stall_later(turn, stalled);
         } else {
             self.work_ended("cancelled");
         }
@@ -349,12 +352,12 @@ impl Chat {
         &self,
         request_id: String,
         option_ids: Vec<String>,
-        answer: oneshot::Sender<Option<String>>,
+        answer: Respond,
         request: Value,
         reply: Value,
     ) -> bool {
         let Ok(mut permissions) = self.permissions.lock() else {
-            let _ = answer.send(None);
+            answer(None);
             return false;
         };
         let pending = PendingPermission {
@@ -375,9 +378,8 @@ impl Chat {
     }
 
     /// Keeps asking a question an earlier core put to the person, who has
-    /// been shown it already. Answers with where their choice will come.
-    pub(crate) fn hold_again(&self, asked: Asked) -> oneshot::Receiver<Option<String>> {
-        let (answer, answered) = oneshot::channel();
+    /// been shown it already.
+    pub(crate) fn hold_again(&self, asked: Asked, answer: Respond) {
         if let Ok(mut permissions) = self.permissions.lock() {
             permissions.insert(
                 asked.request_id,
@@ -390,7 +392,6 @@ impl Chat {
                 },
             );
         }
-        answered
     }
 
     /// The questions still put to the person, as plain data.
@@ -458,7 +459,7 @@ impl Chat {
         for (request_id, request) in pending {
             self.feed.forget_permission(&request_id);
             self.cleared(&request_id);
-            let _ = request.answer.send(None);
+            (request.answer)(None);
         }
     }
 
@@ -473,11 +474,16 @@ impl Chat {
     }
 
     fn reply_permission(&self, request_id: &str, option_id: Option<String>) -> CoreResult<()> {
+        // Answered with the list held, so the answer is written to the agent
+        // before the chat can let go of it.
+        let mut permissions = self
+            .permissions
+            .lock()
+            .map_err(|_| "ACP permission state is unavailable")?;
+        if self.releasing.load(Ordering::Acquire) {
+            return Err(super::upgrade::UPDATING.into());
+        }
         let request = {
-            let mut permissions = self
-                .permissions
-                .lock()
-                .map_err(|_| "ACP permission state is unavailable")?;
             let Some(request) = permissions.get(request_id) else {
                 return Err("ACP permission request is no longer pending".into());
             };
@@ -490,12 +496,11 @@ impl Chat {
                 .remove(request_id)
                 .ok_or("ACP permission request is no longer pending")?
         };
+        (request.answer)(option_id);
+        drop(permissions);
         self.feed.forget_permission(request_id);
         self.cleared(request_id);
-        request
-            .answer
-            .send(option_id)
-            .map_err(|_| CoreError::from(STOPPED))
+        Ok(())
     }
 
     fn send(&self, command: ChatCommand) -> CoreResult<()> {
@@ -572,17 +577,20 @@ impl Chat {
         })
     }
 
-    fn handable(&self) -> bool {
-        self.is_ready() && self.at_rest.load(Ordering::Acquire)
+    /// How to start this chat again: on its provider session once it has
+    /// one, else afresh as it was launched.
+    fn restart_record(&self) -> ChatRecord {
+        self.resumable().unwrap_or_else(|| ChatRecord {
+            launch: self.current_launch(),
+            origin: self.origin.clone(),
+            notice: None,
+        })
     }
 
-    /// Whether the agent is at work: on a turn, or with subagents or
-    /// background tasks going.
-    pub(crate) fn busy(&self) -> bool {
-        self.turn_running()
-            || self.held.load(Ordering::Acquire)
-            || self.feed.running_subagents() > 0
-            || self.feed.running_tasks() > 0
+    /// Whether the chat can let go of its agent now. One that cannot, still
+    /// starting or in the middle of a request, holds an update up.
+    fn handable(&self) -> bool {
+        self.is_ready() && self.at_rest.load(Ordering::Acquire)
     }
 
     fn flags(&self) -> Flags {
@@ -599,11 +607,11 @@ impl Chat {
     /// Lets go of the agent, still running, for a core that replaces this
     /// one. Answers with how to start the chat again instead, and why, when
     /// it cannot.
-    async fn hand_over(self: Arc<Self>) -> Option<HandOver> {
-        let record = self.resumable();
+    async fn hand_over(self: Arc<Self>) -> HandOver {
+        let record = self.restart_record();
         let why = if self.handable() {
             match self.release().await {
-                Ok(handed) => return Some(HandOver::Live(Box::new(handed))),
+                Ok(handed) => return HandOver::Live(Box::new(handed)),
                 Err(why) => why,
             }
         } else if self.is_ready() {
@@ -614,14 +622,16 @@ impl Chat {
         if let Some(task) = Chats::halt(&self) {
             let _ = tokio::time::timeout(STOP_SETTLE, task).await;
         }
-        let record = record?;
-        Some(HandOver::Resume(Box::new(ChatRecord {
+        HandOver::Resume(Box::new(ChatRecord {
             notice: Some(why),
             ..record
-        })))
+        }))
     }
 
     async fn release(&self) -> Result<HandedChat, String> {
+        if let Ok(_permissions) = self.permissions.lock() {
+            self.releasing.store(true, Ordering::Release);
+        }
         let (reply, answer) = oneshot::channel();
         self.send(ChatCommand::HandOver { reply })
             .map_err(|_| "it had stopped".to_owned())?;
@@ -634,13 +644,13 @@ impl Chat {
         if let Some(task) = task {
             let _ = tokio::time::timeout(STOP_SETTLE, task).await;
         }
-        let Some(feed) = self.feed.release() else {
-            native::kill_released(&handed.released);
+        let Some((feed, subscribers)) = self.feed.release() else {
+            native::kill_agent(handed.released.pid);
             return Err("its transcript could not be kept".into());
         };
         Ok(HandedChat {
             live: LiveChat {
-                record: self.resumable(),
+                record: self.restart_record(),
                 launch: self.launch.clone(),
                 current: self.current_launch(),
                 origin: self.origin.clone(),
@@ -652,6 +662,7 @@ impl Chat {
                 agent: handed.released.record(),
             },
             released: handed.released,
+            subscribers,
         })
     }
 }
@@ -674,9 +685,8 @@ struct Flags {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LiveChat {
-    /// How to start the chat again on its session should taking its agent
-    /// up fail, once a turn has made the provider keep it.
-    pub record: Option<ChatRecord>,
+    /// How to start the chat again should taking its agent up fail.
+    pub record: ChatRecord,
     launch: ChatLaunch,
     current: ChatLaunch,
     origin: Origin,
@@ -692,6 +702,9 @@ pub(crate) struct LiveChat {
 pub(crate) struct HandedChat {
     pub live: LiveChat,
     pub released: native::Released,
+    /// The clients that were hearing the chat, which hear it again if this
+    /// core takes the chat back up after a failed update.
+    pub subscribers: Vec<Arc<ClientConn>>,
 }
 
 /// What becomes of a chat when the core replaces itself.
@@ -700,8 +713,6 @@ pub(crate) enum HandOver {
     /// Started again on its session, saying why.
     Resume(Box<ChatRecord>),
 }
-
-pub(crate) use native::kill_released;
 
 /// Stops a chat agent no core will take up.
 pub(crate) fn kill_agent(pid: u32) {
@@ -719,7 +730,16 @@ pub(crate) fn update_notice(why: &str) -> Value {
     })
 }
 
-/// A chat the core cannot hand over to its replacement while it is at work.
+/// Tells `stalled` of turn `turn` once it has had a while to stop.
+pub(crate) fn stall_later(turn: u64, stalled: &mpsc::UnboundedSender<u64>) {
+    let stalled = stalled.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(CANCEL_GRACE).await;
+        let _ = stalled.send(turn);
+    });
+}
+
+/// A chat the core cannot hand over to its replacement now.
 #[derive(Clone, Debug)]
 pub(crate) struct Blocker {
     pub agent_id: String,
@@ -810,7 +830,7 @@ impl Chats {
         let mut blockers: Vec<Blocker> = self
             .all()
             .iter()
-            .filter(|chat| chat.busy() && !chat.handable())
+            .filter(|chat| !chat.handable())
             .map(|chat| Blocker {
                 agent_id: chat.agent_id().to_owned(),
                 provider: chat.provider().to_owned(),
@@ -902,7 +922,7 @@ impl Chats {
         }
         let mut handed = Vec::new();
         while let Some(done) = releasing.join_next().await {
-            handed.extend(done.ok().flatten());
+            handed.extend(done.ok());
         }
         handed
     }
@@ -949,6 +969,7 @@ impl Chats {
             answered: AtomicBool::new(flags.answered),
             approving: AtomicBool::new(flags.approving),
             at_rest: AtomicBool::new(false),
+            releasing: AtomicBool::new(false),
             current: Mutex::new(launch.clone()),
             launch,
             origin,
@@ -1144,6 +1165,7 @@ pub(crate) fn adopt(
     core: &Arc<Core>,
     live: LiveChat,
     pipes: [std::os::fd::OwnedFd; 3],
+    subscribers: &[Arc<ClientConn>],
 ) -> Result<(), String> {
     validate(&live.current).map_err(|error| error.to_string())?;
     let feed = Feed::restored(live.launch.agent_id.clone(), live.feed);
@@ -1152,6 +1174,9 @@ pub(crate) fn adopt(
         .insert(core, live.launch, live.origin, Some((feed, live.flags)))
         .map_err(|error| error.to_string())?;
     chat.set_current(live.current);
+    for client in subscribers {
+        chat.feed.subscribe(client);
+    }
     if chat.turn_running() {
         core.seen.started(chat.agent_id());
     }

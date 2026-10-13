@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 pub use sikemux_client::client::*;
 
-use crate::protocol::frozen::{FrozenReply, FrozenRequest};
+use crate::frozen::{FrozenReply, FrozenRequest};
 use crate::protocol::{
     encode_frozen, read_frame_sync, BuildIdentity, FrameKind, ServerMessage, PROTOCOL_VERSION,
 };
@@ -92,7 +92,7 @@ pub fn await_upgrade(
 }
 
 /// Like [`await_upgrade`] for an upgrade the core deferred: it goes on
-/// answering as the old build until its chat turns end.
+/// answering as the old build until its chats can be carried over.
 pub fn await_deferred_upgrade(
     socket: &Path,
     pid: u32,

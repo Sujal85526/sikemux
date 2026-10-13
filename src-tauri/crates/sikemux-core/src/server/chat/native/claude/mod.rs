@@ -14,15 +14,16 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::protocol::ChatLaunch;
 
+use super::super::Respond;
 use super::process::{Lines, Process, Reading, Released, Writer};
 use super::session::{Backend, Opened, Prompt, Sink};
 use control::Control;
-use reader::{Reader, ReaderState, Shared, Turn};
+use reader::{Asking, Reader, ReaderState, Shared, Turn};
 
 /// Where a session starts: a new one under a chosen id, or a saved one.
 enum Start<'a> {
@@ -34,6 +35,7 @@ enum Start<'a> {
 struct Running {
     process: Process,
     control: Control,
+    asking: Asking,
     reading: Reading<Reader>,
     task_stops: mpsc::UnboundedSender<String>,
 }
@@ -223,10 +225,12 @@ impl Claude {
         if let Some(model) = model {
             reader.note_model(model);
         }
+        let asking = reader.asking();
         let (reading, task_stops) = Reading::start(reader, lines);
         let running = Running {
             process,
             control: control.clone(),
+            asking,
             reading,
             task_stops,
         };
@@ -629,6 +633,7 @@ impl Backend for Claude {
         let Running {
             process,
             control,
+            asking: _,
             reading,
             task_stops: _,
         } = running;
@@ -657,20 +662,20 @@ impl Backend for Claude {
         sink: Sink,
         state: Value,
         (process, writer, lines): (Process, Writer, Lines),
-        asked: Vec<(Value, oneshot::Receiver<Option<String>>)>,
     ) -> Result<Self, String> {
         let state: ClaudeState =
             serde_json::from_value(state).map_err(|error| error.to_string())?;
         let control = Control::restored(writer, state.control);
         let shared = Arc::new(Mutex::new(state.shared));
         let reader = Reader::restored(sink, control.clone(), shared.clone(), state.reader);
-        reader.answer_again(asked);
+        let asking = reader.asking();
         let (reading, task_stops) = Reading::start(reader, lines);
         Ok(Self {
             launch: state.launch,
             running: Running {
                 process,
                 control,
+                asking,
                 reading,
                 task_stops,
             },
@@ -681,6 +686,10 @@ impl Backend for Claude {
             effort: state.effort,
             aliases: state.aliases,
         })
+    }
+
+    fn responder(&self, reply: Value) -> Respond {
+        self.running.asking.responder(reply)
     }
 }
 

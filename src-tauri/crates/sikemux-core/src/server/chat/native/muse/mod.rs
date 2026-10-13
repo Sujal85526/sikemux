@@ -16,13 +16,13 @@ use std::time::Duration;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tokio::sync::oneshot;
 use url::Url;
 use uuid::Uuid;
 
 use crate::acp::prompt_blocks;
 use crate::protocol::ChatLaunch;
 
+use super::super::Respond;
 use super::file_link;
 use super::json::text;
 use super::process::{Lines, Process, Reading, Reads, Released, Writer};
@@ -205,24 +205,36 @@ impl Driver {
             return;
         };
         let reply = json!({ "session": wire_session, "question": question });
+        self.sink.ask(request, reply.clone(), self.responder(reply));
+    }
+
+    fn responder(&self, reply: Value) -> Respond {
         let driver = self.clone();
-        tokio::spawn(async move {
-            let chosen = driver.sink.ask(request, reply.clone()).await;
-            driver.decide(&reply, chosen).await;
-        });
+        Box::new(move |chosen| driver.decide(&reply, chosen))
     }
 
     /// Tells Muse what the person chose for the approval `reply` holds.
-    async fn decide(&self, reply: &Value, chosen: Option<String>) {
+    fn decide(&self, reply: &Value, chosen: Option<String>) {
         let Ok(question) = serde_json::from_value::<Question>(reply["question"].clone()) else {
             return;
         };
         let session = reply["session"].as_str().unwrap_or_default();
-        if let Some(decision) = question.decision(session, command_id(), chosen.as_deref()) {
-            if let Err(error) = self.rpc.request("approval/decide", decision).await {
-                eprintln!("sikemux core: Muse did not take an approval: {error}");
+        let Some(decision) = question.decision(session, command_id(), chosen.as_deref()) else {
+            return;
+        };
+        let sent = self.rpc.start("approval/decide", decision);
+        tokio::spawn(async move {
+            let answered = match sent {
+                Ok(sent) => sent.answer(Some(ANSWER_WAIT)).await,
+                Err(error) => Err(error),
+            };
+            if let Err(error) = answered {
+                eprintln!(
+                    "sikemux core: Muse did not take an approval: {}",
+                    error_text(&error)
+                );
             }
-        }
+        });
     }
 
     fn notification(&self, method: &str, params: &Value) {
@@ -1051,7 +1063,6 @@ impl Backend for Muse {
         sink: Sink,
         state: Value,
         (process, writer, lines): (Process, Writer, Lines),
-        asked: Vec<(Value, oneshot::Receiver<Option<String>>)>,
     ) -> Result<Self, String> {
         let state: MuseState = serde_json::from_value(state).map_err(|error| error.to_string())?;
         let driver = Driver {
@@ -1059,13 +1070,6 @@ impl Backend for Muse {
             sink,
             session: Arc::new(Mutex::new(state.session)),
         };
-        for (reply, answered) in asked {
-            let driver = driver.clone();
-            tokio::spawn(async move {
-                let chosen = answered.await.ok().flatten();
-                driver.decide(&reply, chosen).await;
-            });
-        }
         let (reading, _) = Reading::start(driver.clone(), lines);
         Ok(Self {
             host: Host {
@@ -1082,5 +1086,9 @@ impl Backend for Muse {
             mode: state.mode,
             skills: state.skills,
         })
+    }
+
+    fn responder(&self, reply: Value) -> Respond {
+        self.host.driver.responder(reply)
     }
 }

@@ -17,7 +17,8 @@
 //! reports that. When `FAKE_ACP_SIGN_IN` names a file, the process reads who
 //! is signed in from it once, as it starts, and refuses every prompt while
 //! nobody was. With `FAKE_ACP_STRICT_LOAD` set, loading a session that never
-//! saved a turn fails the way Claude's adapter does.
+//! saved a turn fails the way Claude's adapter does. While the file
+//! `FAKE_ACP_START_GATE` names exists, the agent does not finish starting.
 
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
@@ -265,16 +266,23 @@ fn handle(agent: &Arc<Agent>, message: Value, sessions: &AtomicU64) {
     };
     let params = message.get("params").cloned().unwrap_or(Value::Null);
     match (method, id) {
-        ("initialize", Some(id)) => agent.reply(
-            &id,
-            json!({
-                "protocolVersion": 1,
-                "agentCapabilities": {
-                    "loadSession": true,
-                    "promptCapabilities": { "embeddedContext": true },
-                },
-            }),
-        ),
+        ("initialize", Some(id)) => {
+            if let Some(gate) = std::env::var_os("FAKE_ACP_START_GATE") {
+                while std::path::Path::new(&gate).exists() {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+            }
+            agent.reply(
+                &id,
+                json!({
+                    "protocolVersion": 1,
+                    "agentCapabilities": {
+                        "loadSession": true,
+                        "promptCapabilities": { "embeddedContext": true },
+                    },
+                }),
+            );
+        }
         ("session/new", Some(id)) => {
             let session_id = format!(
                 "fake-{}-{}",

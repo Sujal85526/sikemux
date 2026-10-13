@@ -8,6 +8,7 @@ pub mod agent_catalog;
 pub mod cli;
 #[cfg(unix)]
 pub mod client;
+pub mod frozen;
 pub mod harness;
 #[cfg(unix)]
 pub mod join;

@@ -1,4 +1,4 @@
-//! Answers the requests in [`crate::protocol::frozen`]: replacing this core
+//! Answers the requests in [`crate::frozen`]: replacing this core
 //! with a newer binary in the same process, and stopping everything.
 
 use std::io::Read;
@@ -11,10 +11,10 @@ use std::time::{Duration, Instant};
 
 use tokio::io::AsyncWriteExt;
 
-use crate::protocol::encode_frozen;
-use crate::protocol::frozen::{
+use crate::frozen::{
     FrozenReply, FrozenRequest, UpdateBlocker, UpgradeInfo, RESUME_FORMAT, UPGRADE_INFO_ARG,
 };
+use crate::protocol::encode_frozen;
 
 use super::chat::{self, HandOver};
 use super::connection::{blocking, FrameWriter};
@@ -29,9 +29,10 @@ const LAUNCH_SETTLE: Duration = Duration::from_secs(5);
 const READER_SETTLE: Duration = Duration::from_secs(3);
 const CLIENT_FLUSH: Duration = Duration::from_secs(1);
 const TOOL_SETTLE: Duration = Duration::from_secs(1);
-/// How long an update waits for chats still starting, or in the middle of a
-/// request, to be able to hand their agents over. One that still cannot
-/// after that is stopped and starts again on its session.
+/// How long a forced update waits for chats still starting, or in the middle
+/// of a request, to be able to hand their agents over. One that still cannot
+/// after that is stopped and starts again on its session. An update that is
+/// not forced waits for them however long they take.
 const HANDOVER_SETTLE: Duration = Duration::from_secs(10);
 const HANDOVER_POLL: Duration = Duration::from_millis(100);
 
@@ -51,7 +52,7 @@ fn refused(message: impl Into<String>) -> FrozenReply {
 /// Answers one frozen request on a connection that sent it instead of a hello.
 pub(crate) async fn answer(core: &Arc<Core>, payload: &[u8], writer: &mut FrameWriter) {
     match serde_json::from_slice::<FrozenRequest>(payload) {
-        Ok(FrozenRequest::Upgrade { binary }) => upgrade(core, binary, writer).await,
+        Ok(FrozenRequest::Upgrade { binary, force }) => upgrade(core, binary, force, writer).await,
         Ok(FrozenRequest::UpdateBlockers) => {
             let chats = core
                 .chats
@@ -80,7 +81,7 @@ pub(crate) async fn answer(core: &Arc<Core>, payload: &[u8], writer: &mut FrameW
     }
 }
 
-async fn upgrade(core: &Arc<Core>, binary: PathBuf, writer: &mut FrameWriter) {
+async fn upgrade(core: &Arc<Core>, binary: PathBuf, force: bool, writer: &mut FrameWriter) {
     if core
         .upgrading
         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -107,7 +108,7 @@ async fn upgrade(core: &Arc<Core>, binary: PathBuf, writer: &mut FrameWriter) {
         .await;
         drop_writer(writer).await;
         let deadline = tokio::time::Instant::now() + HANDOVER_SETTLE;
-        while !core.chats.all_handable() && tokio::time::Instant::now() < deadline {
+        while !core.chats.all_handable() && (!force || tokio::time::Instant::now() < deadline) {
             tokio::time::sleep(HANDOVER_POLL).await;
         }
         core.frozen.send_replace(true);
@@ -228,7 +229,8 @@ async fn hand_over(core: &Arc<Core>, binary: PathBuf) -> String {
     let chats = core.chats.hand_over().await;
     let replacing = core.clone();
     let replaced = blocking(move || {
-        let error = handover::replace_process(&replacing, &binary, &chats);
+        let mut chats = chats;
+        let error = handover::replace_process(&replacing, &binary, &mut chats);
         Ok((error, chats))
     })
     .await;
@@ -247,22 +249,24 @@ fn restart_chats(core: &Arc<Core>, chats: Vec<HandOver>) {
     for handed in chats {
         match handed {
             HandOver::Live(handed) => {
-                let chat::HandedChat { live, released } = *handed;
+                let chat::HandedChat {
+                    live,
+                    released,
+                    subscribers,
+                } = *handed;
                 let record = live.record.clone();
                 let pid = released.pid;
                 let pipes = [released.stdin, released.stdout, released.stderr];
-                if let Err(error) = chat::adopt(core, live, pipes) {
+                if let Err(error) = chat::adopt(core, live, pipes, &subscribers) {
                     eprintln!("sikemux core: a chat's agent is started again after the failed update: {error}");
                     chat::kill_agent(pid);
-                    if let Some(record) = record {
-                        chat::resume(
-                            core,
-                            chat::ChatRecord {
-                                notice: Some(error),
-                                ..record
-                            },
-                        );
-                    }
+                    chat::resume(
+                        core,
+                        chat::ChatRecord {
+                            notice: Some(error),
+                            ..record
+                        },
+                    );
                 }
             }
             HandOver::Resume(record) => chat::resume(core, *record),

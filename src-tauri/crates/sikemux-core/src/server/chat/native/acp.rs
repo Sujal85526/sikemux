@@ -15,12 +15,12 @@ use agent_client_protocol::schema::v1::{
 use agent_client_protocol::schema::ProtocolVersion;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tokio::sync::oneshot;
 
 use crate::acp::account::{self, Failure};
 use crate::acp::{air, native, permission_mode_id, prompt_blocks};
 use crate::protocol::ChatLaunch;
 
+use super::super::Respond;
 use super::process::{Lines, Process, Reading, Reads, Released, Writer};
 use super::rpc::{error_text, Incoming, Rpc, RpcState, Sent, ANSWER_WAIT};
 use super::session::{Backend, Opened, Prompt, Sink, TurnEnd};
@@ -112,12 +112,13 @@ impl Driver {
     }
 
     fn ask(&self, id: Value, request: Value) {
+        let reply = json!({ "id": id });
+        self.sink.ask(request, reply.clone(), self.responder(reply));
+    }
+
+    fn responder(&self, reply: Value) -> Respond {
         let driver = self.clone();
-        tokio::spawn(async move {
-            let reply = json!({ "id": id });
-            let chosen = driver.sink.ask(request, reply.clone()).await;
-            driver.answer_permission(&reply, chosen);
-        });
+        Box::new(move |chosen| driver.answer_permission(&reply, chosen))
     }
 
     /// Tells the agent the option the person chose for the permission
@@ -567,7 +568,6 @@ impl Backend for Acp {
         sink: Sink,
         state: Value,
         (process, writer, lines): (Process, Writer, Lines),
-        asked: Vec<(Value, oneshot::Receiver<Option<String>>)>,
     ) -> Result<Self, String> {
         let state: AcpState = serde_json::from_value(state).map_err(|error| error.to_string())?;
         let driver = Driver {
@@ -575,13 +575,6 @@ impl Backend for Acp {
             sink,
             turns: Arc::new(Mutex::new(state.turns)),
         };
-        for (reply, answered) in asked {
-            let driver = driver.clone();
-            tokio::spawn(async move {
-                let chosen = answered.await.ok().flatten();
-                driver.answer_permission(&reply, chosen);
-            });
-        }
         let (reading, _) = Reading::start(driver.clone(), lines);
         Ok(Self {
             process,
@@ -595,5 +588,9 @@ impl Backend for Acp {
             can_load: state.can_load,
             model_outside_config: state.model_outside_config,
         })
+    }
+
+    fn responder(&self, reply: Value) -> Respond {
+        self.driver.responder(reply)
     }
 }

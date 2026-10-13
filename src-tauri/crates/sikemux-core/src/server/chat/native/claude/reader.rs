@@ -7,13 +7,12 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
-use tokio::sync::oneshot;
-use tokio::task::AbortHandle;
 
 use crate::acp::account::{Failure, FailureKind};
 
 use super::super::super::feed;
 use super::super::super::states::{self, Held, Subagent, Task as TaskState};
+use super::super::super::Respond;
 use super::super::json::{self, text};
 use super::super::process::Reads;
 use super::super::session::{Sink, TurnEnd};
@@ -105,7 +104,7 @@ pub(crate) struct Reader {
     sink: Sink,
     control: Control,
     shared: Arc<Mutex<Shared>>,
-    permissions: Arc<Mutex<HashMap<String, AbortHandle>>>,
+    asking: Asking,
     data: ReaderState,
 }
 
@@ -316,9 +315,12 @@ impl Reader {
     ) -> Self {
         Self {
             sink,
+            asking: Asking {
+                control: control.clone(),
+                open: Arc::default(),
+            },
             control,
             shared,
-            permissions: Arc::new(Mutex::new(HashMap::new())),
             data,
         }
     }
@@ -382,14 +384,7 @@ impl Reader {
             Some("control_request") => self.request(&message),
             Some("control_cancel_request") => {
                 if let Some(id) = text(&message, "request_id") {
-                    let handle = self
-                        .permissions
-                        .lock()
-                        .ok()
-                        .and_then(|mut permissions| permissions.remove(id));
-                    if let Some(handle) = handle {
-                        handle.abort();
-                    }
+                    self.asking.take_back(id);
                 }
             }
             Some("stream_event") => self.stream_event(&message),
@@ -478,46 +473,13 @@ impl Reader {
             "input": input,
             "request": request,
         });
-        let sink = self.sink.clone();
-        self.answer_later(reply.clone(), async move { sink.ask(asked, reply).await });
+        self.sink
+            .ask(asked, reply.clone(), self.asking.responder(reply));
     }
 
-    /// Answers Claude's permission request `reply` holds once the person has
-    /// chosen, unless Claude takes the request back first.
-    pub fn answer_later(
-        &self,
-        reply: Value,
-        chosen: impl std::future::Future<Output = Option<String>> + Send + 'static,
-    ) {
-        let Some(id) = reply["requestId"].as_str().map(str::to_owned) else {
-            return;
-        };
-        let control = self.control.clone();
-        let permissions = self.permissions.clone();
-        let removing = id.clone();
-        let task = tokio::spawn(async move {
-            let chosen = chosen.await;
-            if let Ok(mut permissions) = permissions.lock() {
-                permissions.remove(&removing);
-            }
-            let answer = permission::answer(
-                reply["toolId"].as_str().unwrap_or_default(),
-                &reply["input"],
-                &reply["request"],
-                chosen.as_deref(),
-            );
-            control.respond(&removing, answer);
-        });
-        if let Ok(mut permissions) = self.permissions.lock() {
-            permissions.insert(id, task.abort_handle());
-        }
-    }
-
-    /// Answers the person's questions an earlier core put, as they choose.
-    pub fn answer_again(&self, asked: Vec<(Value, oneshot::Receiver<Option<String>>)>) {
-        for (reply, answered) in asked {
-            self.answer_later(reply, async move { answered.await.ok().flatten() });
-        }
+    /// What answers Claude's permission requests.
+    pub fn asking(&self) -> Asking {
+        self.asking.clone()
     }
 
     /// The answer to a control request sent with `purpose`.
@@ -1472,10 +1434,53 @@ impl Reads for Reader {
     /// Claude Code is gone: nothing it asked can be answered any more.
     fn closed(&mut self) {
         self.control.close();
-        if let Ok(permissions) = self.permissions.lock() {
-            for handle in permissions.values() {
-                handle.abort();
+        self.asking.close();
+    }
+}
+
+/// Claude's permission requests still waiting on the person, by Claude's
+/// own request id, and how the answer goes back.
+#[derive(Clone)]
+pub(crate) struct Asking {
+    control: Control,
+    open: Arc<Mutex<HashSet<String>>>,
+}
+
+impl Asking {
+    /// Answers the request `reply` holds with the person's choice, unless
+    /// Claude has taken the request back by then.
+    pub fn responder(&self, reply: Value) -> Respond {
+        let Some(id) = reply["requestId"].as_str().map(str::to_owned) else {
+            return Box::new(|_| {});
+        };
+        if let Ok(mut open) = self.open.lock() {
+            open.insert(id.clone());
+        }
+        let asking = self.clone();
+        Box::new(move |chosen| {
+            let still_open = asking.open.lock().is_ok_and(|mut open| open.remove(&id));
+            if !still_open {
+                return;
             }
+            let answer = permission::answer(
+                reply["toolId"].as_str().unwrap_or_default(),
+                &reply["input"],
+                &reply["request"],
+                chosen.as_deref(),
+            );
+            asking.control.respond(&id, answer);
+        })
+    }
+
+    fn take_back(&self, id: &str) {
+        if let Ok(mut open) = self.open.lock() {
+            open.remove(id);
+        }
+    }
+
+    fn close(&self) {
+        if let Ok(mut open) = self.open.lock() {
+            open.clear();
         }
     }
 }

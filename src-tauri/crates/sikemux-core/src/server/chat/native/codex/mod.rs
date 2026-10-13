@@ -16,12 +16,12 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tokio::sync::oneshot;
 use url::Url;
 
 use crate::acp::prompt_blocks;
 use crate::protocol::ChatLaunch;
 
+use super::super::Respond;
 use super::file_link;
 use super::process::{Lines, Process, Reading, Reads, Released, Writer};
 use super::rpc::{error_text, Incoming, Rpc, RpcState, Sent, ANSWER_WAIT};
@@ -103,6 +103,11 @@ impl Driver {
         }
     }
 
+    fn responder(&self, reply: Value) -> Respond {
+        let driver = self.clone();
+        Box::new(move |chosen| driver.answer_question(&reply, chosen))
+    }
+
     /// Tells Codex what the person chose for the question `reply` holds.
     fn answer_question(&self, reply: &Value, chosen: Option<String>) {
         let Ok(question) = serde_json::from_value::<Question>(reply["question"].clone()) else {
@@ -146,11 +151,7 @@ impl Driver {
                         return;
                     }
                 };
-                let driver = self.clone();
-                tokio::spawn(async move {
-                    let chosen = driver.sink.ask(request, reply.clone()).await;
-                    driver.answer_question(&reply, chosen);
-                });
+                self.sink.ask(request, reply.clone(), self.responder(reply));
             }
         }
     }
@@ -760,7 +761,6 @@ impl Backend for Codex {
         sink: Sink,
         state: Value,
         (process, writer, lines): (Process, Writer, Lines),
-        asked: Vec<(Value, oneshot::Receiver<Option<String>>)>,
     ) -> Result<Self, String> {
         let state: CodexState = serde_json::from_value(state).map_err(|error| error.to_string())?;
         let waiting = state.session.waiting_turn();
@@ -769,13 +769,6 @@ impl Backend for Codex {
             sink,
             session: Arc::new(Mutex::new(state.session)),
         };
-        for (reply, answered) in asked {
-            let driver = driver.clone();
-            tokio::spawn(async move {
-                let chosen = answered.await.ok().flatten();
-                driver.answer_question(&reply, chosen);
-            });
-        }
         if let Some(turn) = waiting {
             driver.await_subagents(turn);
         }
@@ -793,6 +786,10 @@ impl Backend for Codex {
             account: state.account,
             servers: state.servers,
         })
+    }
+
+    fn responder(&self, reply: Value) -> Respond {
+        self.driver.responder(reply)
     }
 }
 

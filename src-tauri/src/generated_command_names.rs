@@ -72,6 +72,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "update_check",
     "update_install",
     "update_blockers",
+    "update_force_core",
     "usage_report_active",
     "release_avatars",
     "release_notes",

@@ -140,12 +140,11 @@ impl Process {
             Some((stdin, stdout, stderr))
         })();
         let Some((stdin, stdout, stderr)) = pipes else {
-            kill_group(pid);
+            kill_and_reap(pid);
             return Err("The agent has no input or output".into());
         };
-        Self::take_up(pid, stdin, stdout, stderr, Vec::new(), Vec::new()).inspect_err(|_| {
-            kill_group(pid);
-        })
+        Self::take_up(pid, stdin, stdout, stderr, Vec::new(), Vec::new())
+            .inspect_err(|_| kill_and_reap(pid))
     }
 
     /// Takes up an agent an earlier core released, reading on where it
@@ -314,9 +313,26 @@ impl Drop for Process {
     }
 }
 
+/// Kills an agent nothing here collects the exit of any more, and collects
+/// it, so it does not linger as a zombie.
+pub(crate) fn kill_and_reap(pid: u32) {
+    kill_group(pid);
+    let Ok(pid) = libc::pid_t::try_from(pid) else {
+        return;
+    };
+    std::thread::spawn(move || {
+        let mut raw = 0;
+        // SAFETY: waitpid writes one int status into `raw`; a pid that is not
+        // this process's child makes it fail at once.
+        while unsafe { libc::waitpid(pid, &mut raw, 0) } < 0
+            && std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted
+        {}
+    });
+}
+
 /// The agent leads its own process group, so this reaches the tools and
 /// helpers it started as well as the agent itself.
-pub(crate) fn kill_group(pid: u32) {
+fn kill_group(pid: u32) {
     if let Ok(pid) = i32::try_from(pid) {
         // SAFETY: killpg only sends a signal; a group that is already gone
         // makes it fail harmlessly.

@@ -27,12 +27,8 @@ pub(crate) use process::{AgentRecord, Released};
 pub(crate) use session::{Adopted, Begin, Handed, SessionState};
 
 /// Stops an agent that was let go of but that no core will take up.
-pub(crate) fn kill_released(released: &Released) {
-    process::kill_group(released.pid);
-}
-
 pub(crate) fn kill_agent(pid: u32) {
-    process::kill_group(pid);
+    process::kill_and_reap(pid);
 }
 
 /// What a client rebuilding a chat needs to tell its turns apart: when a

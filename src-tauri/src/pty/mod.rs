@@ -17,7 +17,7 @@ use sikemux_core::client::{
     await_deferred_upgrade, await_upgrade, ensure_running, frozen_request, Attached, ClientError,
     CoreClient, Reply,
 };
-use sikemux_core::protocol::frozen::{FrozenReply, FrozenRequest, UpdateBlocker};
+use sikemux_core::frozen::{FrozenReply, FrozenRequest, UpdateBlocker};
 use sikemux_core::protocol::{BuildIdentity, Request, SessionId, SessionInfo, SessionKind};
 use tauri::{AppHandle, Manager};
 
@@ -215,7 +215,7 @@ impl PtyManager {
                 match upgrade_core(settings, binary, hello.pid, Some(hello.build), false).await {
                     Ok(Upgrade::Done) => {}
                     Ok(Upgrade::Deferred) => eprintln!(
-                        "Sikemux's terminal core updates once its chat turns end; using it as it is until then"
+                        "Sikemux's terminal core updates once its chats can be carried over; using it as it is until then"
                     ),
                     Err(message) => {
                         eprintln!("Sikemux keeps its terminal core as it is: {message}")
@@ -374,7 +374,7 @@ impl PtyManager {
             match upgrade_core(settings, binary, client.core_pid(), Some(build), false).await {
                 Ok(Upgrade::Done) => {}
                 Ok(Upgrade::Deferred) => {
-                    eprintln!("Sikemux's terminal core updates once its chat turns end")
+                    eprintln!("Sikemux's terminal core updates once its chats can be carried over")
                 }
                 Err(message) => eprintln!("Sikemux keeps its terminal core as it is: {message}"),
             }
@@ -515,8 +515,8 @@ impl PtyManager {
 
 enum Upgrade {
     Done,
-    /// The core goes on as it is until its chat turns end, then updates and
-    /// drops its connections, which come back to the updated core.
+    /// The core goes on as it is until its chats can be carried over, then
+    /// updates and drops its connections, which come back to the updated core.
     Deferred,
 }
 
@@ -532,8 +532,9 @@ async fn upgrade_core(
     wait_if_deferred: bool,
 ) -> Result<Upgrade, String> {
     let socket = settings.socket.clone();
+    let force = take_forced_update(settings);
     let upgraded = tauri::async_runtime::spawn_blocking(move || {
-        let request = FrozenRequest::Upgrade { binary };
+        let request = FrozenRequest::Upgrade { binary, force };
         match frozen_request(&socket, &request, UPGRADE_ANSWER_TIMEOUT) {
             Ok(FrozenReply::Accepted) => {
                 await_upgrade(&socket, pid, old.as_ref(), UPGRADE_RETURN_TIMEOUT)
@@ -565,7 +566,29 @@ async fn upgrade_core(
     Ok(Upgrade::Done)
 }
 
+/// Where the person's choice to force the next core update is kept, so the
+/// relaunched app can tell the core.
+fn forced_update_marker(settings: &CoreSettings) -> PathBuf {
+    settings.log.with_file_name("core-update-forced")
+}
+
+/// Whether the person forced the update this core is being moved to, which
+/// stops chats that cannot be carried over rather than waiting on them.
+fn take_forced_update(settings: &CoreSettings) -> bool {
+    std::fs::remove_file(forced_update_marker(settings)).is_ok()
+}
+
 impl PtyManager {
+    /// Has the next core update stop chats that cannot be carried over over
+    /// rather than wait on them.
+    pub(crate) fn force_next_core_update(&self) -> Result<(), String> {
+        let settings = self
+            .settings
+            .get()
+            .ok_or("the terminal core is not configured yet")?;
+        std::fs::write(forced_update_marker(settings), b"").map_err(|error| error.to_string())
+    }
+
     /// The chats at work that an update now would stop and start again
     /// rather than carry over. A core that cannot say is taken to have none.
     pub(crate) async fn update_blockers(&self) -> Vec<UpdateBlocker> {

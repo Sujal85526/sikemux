@@ -18,8 +18,10 @@ use sikemux_core::cli::protocol::{
     CliClientCommand, CliClientHello, CliEndpointDescriptor, CliServerResponse, HarnessRequest,
     CLI_PROTOCOL_VERSION,
 };
-use sikemux_core::client::{await_upgrade, frozen_request, probe, ClientEvent, CoreClient};
-use sikemux_core::protocol::frozen::{FrozenReply, FrozenRequest};
+use sikemux_core::client::{
+    await_deferred_upgrade, await_upgrade, frozen_request, probe, ClientEvent, CoreClient,
+};
+use sikemux_core::frozen::{FrozenReply, FrozenRequest};
 use sikemux_core::protocol::{
     BuildIdentity, ChatAttachment, ChatEvent, ChatEventKind, ChatLaunch, Event, LaunchIdentity,
     SessionId, SpawnTarget, TerminalSpawn, WindowCall, BUILD_ID_OVERRIDE_ENV,
@@ -119,6 +121,7 @@ impl CoreProcess {
         let reply = self
             .frozen(FrozenRequest::Upgrade {
                 binary: binary.to_path_buf(),
+                force: false,
             })
             .await;
         assert_eq!(reply, FrozenReply::Accepted, "{}", self.log());
@@ -559,7 +562,13 @@ async fn an_upgrade_is_refused_for_a_binary_that_cannot_take_over() {
         ),
     ];
     for (binary, expected) in cases {
-        let message = refusal(core.frozen(FrozenRequest::Upgrade { binary }).await);
+        let message = refusal(
+            core.frozen(FrozenRequest::Upgrade {
+                binary,
+                force: false,
+            })
+            .await,
+        );
         assert!(message.contains(expected), "{message}");
     }
     let hello = probe(&core.socket, Duration::from_secs(1)).expect("still serving");
@@ -880,6 +889,133 @@ async fn an_upgrade_carries_running_chats_over_with_their_agents() {
         );
     }
     assert_eq!(children(core.pid()), agents);
+}
+
+/// A chat whose agent does not finish starting while `gate` exists, started
+/// in the background since starting waits for it.
+async fn start_held_chat(core: &CoreProcess, client: &Arc<CoreClient>, gate: &Path) {
+    std::fs::write(gate, b"").expect("gate");
+    let mut launch = chat_launch(core, "slow");
+    launch.env.insert(
+        "FAKE_ACP_START_GATE".into(),
+        gate.to_string_lossy().into_owned(),
+    );
+    let starting = client.clone();
+    tokio::spawn(async move {
+        let _ = starting.acp_start(launch).await;
+    });
+    let deadline = Instant::now() + WAIT;
+    loop {
+        let reply = core.frozen(FrozenRequest::UpdateBlockers).await;
+        let FrozenReply::UpdateBlockers { chats } = reply else {
+            panic!("{reply:?}");
+        };
+        if chats
+            .iter()
+            .any(|chat| chat.agent_id == "slow" && chat.reason == "starting")
+        {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the starting chat was never named"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+/// Waits for a deferred update to finish, and answers with the build the
+/// core runs after it.
+async fn after_deferred_update(core: &CoreProcess) -> BuildIdentity {
+    let socket = core.socket.clone();
+    let pid = core.pid();
+    let old = BuildIdentity {
+        version: env!("CARGO_PKG_VERSION").into(),
+        commit: "first".into(),
+        built_at: 0,
+        source: "first".into(),
+    };
+    let hello =
+        tokio::task::spawn_blocking(move || await_deferred_upgrade(&socket, pid, Some(&old), WAIT))
+            .await
+            .expect("join")
+            .unwrap_or_else(|error| panic!("{error}\n{}", core.log()));
+    assert_eq!(hello.pid, core.pid());
+    hello.build
+}
+
+/// The update notice a chat shows when it was started again rather than
+/// carried over.
+fn restarted(replay: &[ChatEvent]) -> bool {
+    serde_json::to_string(replay)
+        .unwrap_or_default()
+        .contains("Sikemux restarted this agent")
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_update_waits_for_a_starting_chat_and_then_carries_it_over() {
+    let core = CoreProcess::start("first");
+    let (client, _events) = CoreClient::connect(&core.socket).await.expect("connect");
+    let client = Arc::new(client);
+    let gate = core.dir.path().join("gate");
+    start_held_chat(&core, &client, &gate).await;
+
+    let binary = core.binary("second-build", "second", "");
+    let reply = core
+        .frozen(FrozenRequest::Upgrade {
+            binary,
+            force: false,
+        })
+        .await;
+    assert!(matches!(reply, FrozenReply::Deferred { .. }), "{reply:?}");
+    // Longer than a forced update waits before it stops a chat.
+    tokio::time::sleep(Duration::from_secs(12)).await;
+    let (still, _) = CoreClient::connect(&core.socket).await.expect("connect");
+    assert_eq!(still.hello().build.commit, "first", "{}", core.log());
+    drop(still);
+    std::fs::remove_file(&gate).expect("open the gate");
+    assert_eq!(after_deferred_update(&core).await.commit, "second");
+
+    let (client, _events) = CoreClient::connect(&core.socket).await.expect("connect");
+    let ChatAttachment::Live { replay, .. } =
+        client.acp_attach("slow".into()).await.expect("attach")
+    else {
+        panic!("the chat was lost\n{}", core.log());
+    };
+    assert!(!restarted(&replay), "{}", core.log());
+    assert!(
+        core.log().contains("1 of them still running"),
+        "{}",
+        core.log()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_forced_update_restarts_a_starting_chat_and_says_so() {
+    let core = CoreProcess::start("first");
+    let (client, _events) = CoreClient::connect(&core.socket).await.expect("connect");
+    let client = Arc::new(client);
+    let gate = core.dir.path().join("gate");
+    start_held_chat(&core, &client, &gate).await;
+
+    let binary = core.binary("second-build", "second", "");
+    let reply = core
+        .frozen(FrozenRequest::Upgrade {
+            binary,
+            force: true,
+        })
+        .await;
+    assert!(matches!(reply, FrozenReply::Deferred { .. }), "{reply:?}");
+    assert_eq!(after_deferred_update(&core).await.commit, "second");
+    std::fs::remove_file(&gate).expect("open the gate");
+
+    let (client, _events) = CoreClient::connect(&core.socket).await.expect("connect");
+    let ChatAttachment::Live { replay, .. } =
+        client.acp_attach("slow".into()).await.expect("attach")
+    else {
+        panic!("the chat was not started again\n{}", core.log());
+    };
+    assert!(restarted(&replay), "{}", core.log());
 }
 
 #[tokio::test(flavor = "multi_thread")]
