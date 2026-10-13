@@ -493,6 +493,21 @@ textarea:focus,
     opacity: 0;
 }
 
+/* With no status to show, a row's subagent and shell counts take the trailing
+   slot themselves and give it to the close on hover, as the spinner does. */
+.agent-row-wrap:not(:has(> .row-status)) > .agent-row {
+    padding-right: calc(var(--row-inset) + var(--space-1));
+}
+
+.agent-row-wrap:not(:has(> .row-status)) .work-counts {
+    transition: opacity var(--dur-1) linear;
+}
+
+.agent-row-wrap:not(:has(> .row-status)):hover .work-counts,
+.agent-row-wrap:not(:has(> .row-status)):has(> .row-x:focus-visible) .work-counts {
+    opacity: 0;
+}
+
 .session-row-shell:hover > .sess-row:not(.active),
 .session-row-shell:hover > .proj-row:not(.expanded),
 .agent-row-wrap:hover > .agent-row:not(.active) {
