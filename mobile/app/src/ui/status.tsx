@@ -3,7 +3,7 @@ import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 
 import { Icon } from './Icon';
 import { useAnimating } from './motion';
-import { fonts, type Palette, translucent, useColors, useStyles } from './theme';
+import { fonts, type Palette, useColors, useStyles } from './theme';
 
 function useLoop(still: boolean, duration: number, delay = 0) {
   const [value] = useState(() => new Animated.Value(0));
@@ -67,7 +67,7 @@ export function SubagentCount({ count }: { count: number }) {
   const styles = useStyles(makeStyles);
   return (
     <View style={styles.count} accessible accessibilityLabel={`${count} ${count === 1 ? 'subagent' : 'subagents'} running`}>
-      <Icon name="IconAgent" size={11} color={translucent(colors.live, 0.75)} filled />
+      <Icon name="IconAgent" size={11} color={colors.live} filled />
       <Text style={styles.countText}>{count}</Text>
     </View>
   );
@@ -82,7 +82,7 @@ export function ShellCount({ count }: { count: number }) {
       style={styles.count}
       accessible
       accessibilityLabel={`${count} ${count === 1 ? 'shell or monitor' : 'shells or monitors'} running`}>
-      <Icon name="IconCommand" size={11} color={translucent(colors.warn, 0.75)} />
+      <Icon name="IconCommand" size={11} color={colors.warn} />
       <Text style={styles.countText}>{count}</Text>
     </View>
   );
@@ -107,6 +107,6 @@ const makeStyles = (colors: Palette) => {
     ring: { position: 'absolute', width: 16, height: 16, borderRadius: 8, borderWidth: 1.5, borderColor: colors.ink },
     dot: { width: 8, height: 8, borderRadius: 4 },
     count: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-    countText: { fontFamily: fonts.uiMedium, fontSize: 12, color: colors.tertiary, fontVariant: ['tabular-nums'] },
+    countText: { fontFamily: fonts.uiMedium, fontSize: 12, color: colors.secondary, fontVariant: ['tabular-nums'] },
   });
 };
