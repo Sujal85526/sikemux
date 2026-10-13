@@ -52,6 +52,11 @@ describe("activityText", () => {
         expect(activityText(state({ running: true }), null)).toBe("Thinking…");
     });
 
+    it("says the agent is reconnecting, with its attempt when known, ahead of the running tool", () => {
+        expect(activityText(state({ running: true, reconnecting: { attempt: 3 } }), "Reading…")).toBe("Reconnecting… (attempt 3)");
+        expect(activityText(state({ running: true, reconnecting: { attempt: null } }), null)).toBe("Reconnecting…");
+    });
+
     it("shows the connection step under an existing transcript", () => {
         expect(activityText(state({ messages: [message], connection: "starting" }), null)).toBe("Starting agent…");
         expect(activityText(state({ messages: [message] }), null)).toBeNull();

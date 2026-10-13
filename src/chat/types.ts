@@ -189,6 +189,8 @@ export interface ChatState {
     awaitingReplay: boolean;
     /* A turn has begun and its first message has not arrived yet. */
     turnOpening: { at: number | null } | null;
+    /* The agent is retrying a request the network or its service failed. */
+    reconnecting: { attempt: number | null } | null;
 }
 
 export type ChatAction =
