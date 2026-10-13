@@ -121,41 +121,83 @@ fn added_skills(
     added
 }
 
-/// Watches each agent's global skills folder while the app runs, and tells
-/// the window about a skill that shows up there, so it can offer to move it in.
+/// A folder's real path, also for one not made yet: macOS reports changes
+/// under real paths, and a home or config folder may be reached through a link.
+fn resolved(folder: &Path) -> PathBuf {
+    let Some(existing) = folder.ancestors().find(|above| above.exists()) else {
+        return folder.to_path_buf();
+    };
+    let rest = folder.strip_prefix(existing).unwrap_or(Path::new(""));
+    std::fs::canonicalize(existing)
+        .unwrap_or_else(|_| existing.to_path_buf())
+        .join(rest)
+}
+
+/// Where to watch for a skills folder: the folder itself once it exists, or
+/// else the nearest folder above it, which shows it being made. Both are
+/// watched to any depth: on macOS a shallow watch hears nothing from below.
+fn watch_target(folder: &Path) -> PathBuf {
+    let folder = resolved(folder);
+    folder
+        .ancestors()
+        .find(|above| above.is_dir())
+        .unwrap_or(&folder)
+        .to_path_buf()
+}
+
+/// Whether a change at `path` can add a skill: it is inside a skills folder,
+/// or on the way to one that is not made yet.
+fn concerns(path: &Path, folders: &[PathBuf]) -> bool {
+    folders
+        .iter()
+        .any(|folder| path.starts_with(folder) || folder.starts_with(path))
+}
+
+/// Watches each agent's global skills folder while the app runs, including
+/// one that does not exist yet, and tells the window about a skill that shows
+/// up in one, so it can offer to move it in.
 pub fn watch_global(app: AppHandle) {
     std::thread::spawn(move || {
-        let folders = crate::agents::global_skill_folders();
-        let mut known = HashSet::new();
-        added_skills(&folders, &mut known);
-        let (changed, changes) = std::sync::mpsc::channel::<()>();
-        let watchers: Vec<_> = folders
-            .iter()
-            .filter_map(|(_, folder)| {
-                let changed = changed.clone();
-                let mut watcher =
-                    notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
-                        if event.is_ok() {
-                            let _ = changed.send(());
-                        }
-                    })
-                    .ok()?;
-                watcher.watch(folder, RecursiveMode::Recursive).ok()?;
-                Some(watcher)
-            })
-            .collect();
-        drop(changed);
-        if watchers.is_empty() {
-            return;
-        }
-        while changes.recv().is_ok() {
-            std::thread::sleep(Duration::from_millis(500));
-            while changes.try_recv().is_ok() {}
-            for added in added_skills(&folders, &mut known) {
-                let _ = app.emit_to("main", GLOBAL_SKILL_ADDED_EVENT, added);
+        watch_folders(crate::agents::global_skill_folders(), |added| {
+            let _ = app.emit_to("main", GLOBAL_SKILL_ADDED_EVENT, added);
+        });
+    });
+}
+
+fn watch_folders(folders: Vec<(&'static str, PathBuf)>, mut tell: impl FnMut(GlobalSkillAdded)) {
+    let mut known = HashSet::new();
+    added_skills(&folders, &mut known);
+    let real: Vec<PathBuf> = folders.iter().map(|(_, folder)| resolved(folder)).collect();
+    let (changed, changes) = std::sync::mpsc::channel::<()>();
+    let Ok(mut watcher) =
+        notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+            if event.is_ok_and(|event| event.paths.iter().any(|path| concerns(path, &real))) {
+                let _ = changed.send(());
+            }
+        })
+    else {
+        return;
+    };
+    let mut watching: HashSet<PathBuf> = HashSet::new();
+    let mut follow = |watcher: &mut notify::RecommendedWatcher| {
+        for (_, folder) in &folders {
+            let target = watch_target(folder);
+            if !watching.contains(&target)
+                && watcher.watch(&target, RecursiveMode::Recursive).is_ok()
+            {
+                watching.insert(target);
             }
         }
-    });
+    };
+    follow(&mut watcher);
+    while changes.recv().is_ok() {
+        std::thread::sleep(Duration::from_millis(500));
+        while changes.try_recv().is_ok() {}
+        follow(&mut watcher);
+        for added in added_skills(&folders, &mut known) {
+            tell(added);
+        }
+    }
 }
 
 #[tauri::command]
@@ -274,6 +316,58 @@ mod tests {
                 path: claude.join("deploy"),
             }]
         );
+    }
+
+    #[test]
+    fn a_skills_folder_not_made_yet_is_watched_from_the_folder_above() {
+        let root = tempfile::tempdir().unwrap();
+        let real = std::fs::canonicalize(root.path()).unwrap();
+        let skills = root.path().join(".claude/skills");
+        assert_eq!(resolved(&skills), real.join(".claude/skills"));
+        assert_eq!(watch_target(&skills), real);
+        std::fs::create_dir_all(&skills).unwrap();
+        assert_eq!(watch_target(&skills), real.join(".claude/skills"));
+    }
+
+    #[test]
+    fn only_changes_inside_or_on_the_way_to_a_skills_folder_count() {
+        let folders = [PathBuf::from("/home/me/.claude/skills")];
+        assert!(concerns(Path::new("/home/me/.claude"), &folders));
+        assert!(concerns(
+            Path::new("/home/me/.claude/skills/notes/SKILL.md"),
+            &folders
+        ));
+        assert!(!concerns(
+            Path::new("/home/me/projects/app/main.rs"),
+            &folders
+        ));
+        assert!(!concerns(
+            Path::new("/home/me/.claude/projects/log.jsonl"),
+            &folders
+        ));
+    }
+
+    #[test]
+    fn a_skill_written_into_a_folder_made_after_watching_began_is_reported() {
+        let root = tempfile::tempdir().unwrap();
+        let skills = root.path().join(".claude/skills");
+        let (told, heard) = std::sync::mpsc::channel();
+        let folders = vec![("Claude", skills.clone())];
+        std::thread::spawn(move || {
+            watch_folders(folders, move |added| {
+                let _ = told.send(added);
+            })
+        });
+        std::thread::sleep(Duration::from_millis(300));
+
+        std::fs::create_dir_all(&skills).unwrap();
+        std::thread::sleep(Duration::from_millis(900));
+        write_skill(&skills, "notes");
+        let added = heard
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the new skill is reported");
+        assert_eq!(added.name, "notes");
+        assert_eq!(added.agent, "Claude");
     }
 
     #[test]
