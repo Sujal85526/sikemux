@@ -28,5 +28,6 @@ export function chatState(chat: ChatInfo): string {
   if (chat.asleep) return 'Sleeping';
   if (chat.state === 'stopped') return 'Stopped';
   if (chat.state === 'starting') return 'Starting…';
+  if (display.group === 'working' && chat.reconnecting != null) return 'Reconnecting…';
   return display.label;
 }
