@@ -377,6 +377,9 @@ pub(crate) async fn call(core: &Arc<Core>, request: HarnessRequest) -> Result<Va
 }
 
 async fn dispatch(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value, String> {
+    if request.method == TOOLS_MANIFEST_METHOD {
+        return crate::cli::manifest::served();
+    }
     let project = request.project.clone();
     request.project = tokio::task::spawn_blocking(move || std::fs::canonicalize(project))
         .await
@@ -398,7 +401,6 @@ async fn dispatch(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value
         }
         "events.wait" => events_wait(core, &request).await,
         PLUGINS_CHANGED_METHOD => plugins_wait(&core.harness, &request.params).await,
-        TOOLS_MANIFEST_METHOD => crate::cli::manifest::served(),
         "task.start" => task_start(core, &request, false).await,
         "task.restart" => task_start(core, &request, true).await,
         "workspace.inspect" => {
