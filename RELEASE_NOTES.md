@@ -1,8 +1,8 @@
-# Sikemux v0.5.2-nightly.4
+# Sikemux v0.5.3-nightly.1
 
-The fourth nightly on the 0.5.2 line, carrying what nightly.3 was to ship; nightly.3 never published. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
+The first nightly on the 0.5.3 line. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
 
-## New since nightly.2
+## New since 0.5.2
 
 - **Updates keep your agents running.** Updating Sikemux carries running chat agents over to the new version, keeps agents' desk tabs and simulators, and tells agents their tabs survive. An agent that cannot be carried over is waited on before the restart, or you can force the update.
 - **Share a chat.** Share a chat read-only from the Mac. Anyone with the link watches it live, in Sikemux, on their phone or in the browser at app.sikemux.com. It is encrypted end to end, so the server only relays it.
@@ -15,8 +15,9 @@ The fourth nightly on the 0.5.2 line, carrying what nightly.3 was to ship; night
 - The Git pane's navigation moves into a labelled header.
 - The live stack folds subagents, shells and monitors one group at a time, and an agent waiting on its subagents shows as working.
 - Escape clears a selection, and stops a running turn only from an empty box.
+- A Claude workflow's agents show under its task row, and subagent and shell counts read in plain text, not muted.
 - Jira, Bitbucket, GitLab and AWS show their official marks.
 
 Thanks to Krisna Satria for the Linux packages and fixes, Sujal Rajput for the dictation preview and fixes, and Ankit Patidar for the Jira board filters and the Escape fix.
 
-For the complete patch history, compare [`v0.5.2-nightly.2...v0.5.2-nightly.4`](https://github.com/nodelike/sikemux/compare/v0.5.2-nightly.2...v0.5.2-nightly.4).
+For the complete patch history, compare [`v0.5.2...v0.5.3-nightly.1`](https://github.com/nodelike/sikemux/compare/v0.5.2...v0.5.3-nightly.1).
