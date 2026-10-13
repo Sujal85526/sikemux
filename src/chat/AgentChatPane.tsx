@@ -1,7 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { acpApi } from "../api/acp";
 import { effortConfig, sessionConfigs, type SessionConfig } from "./sessionConfig";
-import { rowMeta } from "./messageMeta";
 import type { Agent, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
@@ -11,17 +10,15 @@ import { chatReducer, initialChatState } from "./reducer";
 import type { ChatMessage, ChatState } from "./types";
 import { PathRootsProvider } from "./FileRef";
 import { ChatWelcome } from "./ChatWelcome";
-import { FoldMemoryContext, newFoldMemory } from "./longText";
+import { newFoldMemory } from "./longText";
 import { sentPrompts } from "./promptHistory";
 import { activeToolLabel } from "./toolLabels";
-import { formatDetail, outlivesFold, runningSubagents, workFolds } from "./transcript";
-import { WorkSummary } from "./WorkSummary";
+import { runningSubagents } from "./transcript";
 import { activityText, backendState, composerPlaceholder as placeholderFor, connectingLabel, knownEffort } from "./chatStatus";
 import { ChatAgentContext, ReaderScrollContext } from "./chatAgent";
-import { ChatMessageRow, warmTranscript } from "./ChatMessageRow";
-import { ChatActivity } from "./ChatActivity";
+import { warmTranscript } from "./ChatMessageRow";
+import { ChatTranscript } from "./ChatTranscript";
 import { ChatFailureActions } from "./ChatFailureActions";
-import { PermissionRequest } from "./PermissionRequest";
 import { BackgroundTasks, QueuedMessages, RunningSubagents } from "./LiveStack";
 import { ChatComposer } from "./ChatComposer";
 import { useMessageArrival } from "./useMessageArrival";
@@ -63,30 +60,6 @@ function useReadAfterReplay(replaying: boolean, messages: readonly ChatMessage[]
 
 function heldTranscript(shown: ChatState, next: ChatState): ChatState {
     return { ...next, messages: shown.messages, revision: shown.revision };
-}
-
-/* A long transcript mounts its newest rows first and the older ones above
-   them a slice at a time. Laid out from the bottom, rows added above the view
-   never move it. */
-const FIRST_ROWS = 40;
-const ROWS_PER_SLICE = 60;
-
-function useOlderRows(count: number): number {
-    const [start, setStart] = useState(0);
-    const [opened, setOpened] = useState(false);
-    if (!opened && count > 0) {
-        setOpened(true);
-        setStart(Math.max(0, count - FIRST_ROWS));
-    } else if (opened && count === 0) {
-        setOpened(false);
-        setStart(0);
-    }
-    useEffect(() => {
-        if (start === 0) return;
-        const timer = window.setTimeout(() => setStart((current) => Math.max(0, current - ROWS_PER_SLICE)), 16);
-        return () => window.clearTimeout(timer);
-    }, [start]);
-    return Math.min(start, count);
 }
 
 const ChatFind = lazy(() => import("./ChatFind"));
@@ -158,15 +131,6 @@ export function AgentChatPane({
     useEffect(() => void warmTranscript(state.messages), [state.messages]);
 
     const { atBottom, onScroll, jumpToBottom } = useStickToBottom({ scrollRef, contentRef: scrollContentRef, visible });
-    const firstRow = useOlderRows(displayState.messages.length);
-    const folds = useMemo(() => workFolds(displayState.messages, displayState.running), [displayState.messages, displayState.running]);
-    const [openWork, setOpenWork] = useState<ReadonlySet<string>>(() => new Set());
-    const toggleWork = (id: string) =>
-        setOpenWork((open) => {
-            const next = new Set(open);
-            if (!next.delete(id)) next.add(id);
-            return next;
-        });
 
     /* A turn ends long before the work it started does. Shells, monitors and
        subagents keep going after the answer, and they die with the agent, so
@@ -329,7 +293,6 @@ export function AgentChatPane({
     };
     const activeTool = useMemo(() => activeToolLabel(displayState.messages), [displayState.messages]);
     const subagents = useMemo(() => runningSubagents(displayState.messages), [displayState.messages]);
-    const plan = useMemo(() => (displayState.plan === null ? null : formatDetail(displayState.plan)), [displayState.plan]);
     const connecting = connectingLabel(displayState.connection);
     const activity = recovery === null ? activityText(displayState, activeTool) : null;
     const disconnected = displayState.connection === "error" || displayState.connection === "stopped";
@@ -382,104 +345,70 @@ export function AgentChatPane({
                                 />
                             </Suspense>
                         )}
-                        <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
-                            <div className="chat-scroll-content" ref={scrollContentRef}>
-                                {(worktree.step !== null || agent.worktree) && (
-                                    <Suspense fallback={null}>
-                                        <WorktreeNote step={worktree.step} worktree={agent.worktree} home={home} />
-                                    </Suspense>
-                                )}
-                                {welcoming && <ChatWelcome cwd={cwd} agentType={agent.type} />}
-                                {displayState.messages.length === 0 && !welcoming && (
-                                    <div className={`chat-connection-state ${displayState.connection}`} role="status">
-                                        {(connecting || resuming) && <span className="chat-activity-loader" aria-hidden="true" />}
-                                        <span>
-                                            {resuming
-                                                ? "Resuming…"
-                                                : failure
-                                                  ? "Couldn't resume this chat"
-                                                  : (connecting ??
-                                                    (displayState.connection === "error"
-                                                        ? "Structured session unavailable."
-                                                        : "Agent session stopped."))}
-                                        </span>
-                                        {failureDetail}
-                                        {disconnected && !resuming && sessionActions}
-                                    </div>
-                                )}
-                                <FoldMemoryContext value={foldMemory}>
-                                    {displayState.messages.slice(firstRow).map((message, offset) => {
-                                        const index = firstRow + offset;
-                                        const meta = rowMeta(displayState.messages, index);
-                                        const fold = folds.get(index);
-                                        const workId = fold ? fold.id : "";
-                                        const folded = fold !== undefined && findRequest === 0 && !openWork.has(workId);
-                                        const summary = fold && index === Math.max(fold.start, firstRow) && (
-                                            <WorkSummary
-                                                took={fold.took}
-                                                calls={fold.calls}
-                                                thought={fold.thought}
-                                                open={!folded}
-                                                onToggle={() => toggleWork(workId)}
-                                            />
-                                        );
-                                        if (fold && folded && index < fold.end && !message.parts.some(outlivesFold))
-                                            return (
-                                                <div key={message.id} data-index={index} className="chat-row">
-                                                    {summary}
-                                                </div>
-                                            );
-                                        return (
-                                            <div key={message.id} data-index={index} className="chat-row">
-                                                {summary}
-                                                <ChatMessageRow
-                                                    from={fold && folded ? (index < fold.end ? message.parts.length : fold.from) : 0}
-                                                    message={message}
-                                                    live={displayState.running && index === displayState.messages.length - 1}
-                                                    copyable={meta.text}
-                                                    rate={meta.rate}
-                                                    at={meta.at}
-                                                    took={meta.took}
-                                                    onEdit={editable && message.role === "user" && message.promptId ? editMessage : undefined}
-                                                />
-                                            </div>
-                                        );
-                                    })}
-                                </FoldMemoryContext>
-                                {activity && <ChatActivity key={displayState.running ? "turn" : "connect"} label={activity} agentType={agent.type} />}
-                                {plan !== null && (
-                                    <details className="chat-plan">
-                                        <summary>Plan</summary>
-                                        <pre>{plan}</pre>
-                                    </details>
-                                )}
-                                {displayState.permissions.map((request) => (
-                                    <PermissionRequest
-                                        key={request.requestId}
-                                        request={request}
-                                        busy={replyingPermission === request.requestId}
-                                        onReply={(optionId) => void replyPermission(request.requestId, optionId)}
-                                    />
-                                ))}
-                                {displayState.error && recovery === null && (
-                                    <div className="chat-error" role="alert">
-                                        <IconWarning size={14} />
-                                        <span>{displayState.error}</span>
-                                        {displayState.failure && profile && (
-                                            <ChatFailureActions agent={agent} profile={profile} failure={displayState.failure} />
-                                        )}
-                                    </div>
-                                )}
-                                {displayState.messages.length > 0 && (resuming || disconnected) && (
-                                    <div className="chat-reconnect" role="status">
-                                        {resuming ? <span className="chat-activity-loader" aria-hidden="true" /> : <IconPlug size={13} />}
-                                        <span>{resuming ? "Resuming…" : failure ? "Couldn't resume this chat" : "This session dropped."}</span>
-                                        {failureDetail}
-                                        {!resuming && sessionActions}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
+                        <ChatTranscript
+                            state={displayState}
+                            agentType={agent.type}
+                            foldMemory={foldMemory}
+                            unfolded={findRequest > 0}
+                            scrollRef={scrollRef}
+                            contentRef={scrollContentRef}
+                            onScroll={onScroll}
+                            activity={activity}
+                            permissions={{
+                                requests: displayState.permissions,
+                                busy: replyingPermission,
+                                onReply: (requestId, optionId) => void replyPermission(requestId, optionId),
+                            }}
+                            onEdit={editable ? editMessage : undefined}
+                            before={
+                                <>
+                                    {(worktree.step !== null || agent.worktree) && (
+                                        <Suspense fallback={null}>
+                                            <WorktreeNote step={worktree.step} worktree={agent.worktree} home={home} />
+                                        </Suspense>
+                                    )}
+                                    {welcoming && <ChatWelcome cwd={cwd} agentType={agent.type} />}
+                                    {displayState.messages.length === 0 && !welcoming && (
+                                        <div className={`chat-connection-state ${displayState.connection}`} role="status">
+                                            {(connecting || resuming) && <span className="chat-activity-loader" aria-hidden="true" />}
+                                            <span>
+                                                {resuming
+                                                    ? "Resuming…"
+                                                    : failure
+                                                      ? "Couldn't resume this chat"
+                                                      : (connecting ??
+                                                        (displayState.connection === "error"
+                                                            ? "Structured session unavailable."
+                                                            : "Agent session stopped."))}
+                                            </span>
+                                            {failureDetail}
+                                            {disconnected && !resuming && sessionActions}
+                                        </div>
+                                    )}
+                                </>
+                            }
+                            after={
+                                <>
+                                    {displayState.error && recovery === null && (
+                                        <div className="chat-error" role="alert">
+                                            <IconWarning size={14} />
+                                            <span>{displayState.error}</span>
+                                            {displayState.failure && profile && (
+                                                <ChatFailureActions agent={agent} profile={profile} failure={displayState.failure} />
+                                            )}
+                                        </div>
+                                    )}
+                                    {displayState.messages.length > 0 && (resuming || disconnected) && (
+                                        <div className="chat-reconnect" role="status">
+                                            {resuming ? <span className="chat-activity-loader" aria-hidden="true" /> : <IconPlug size={13} />}
+                                            <span>{resuming ? "Resuming…" : failure ? "Couldn't resume this chat" : "This session dropped."}</span>
+                                            {failureDetail}
+                                            {!resuming && sessionActions}
+                                        </div>
+                                    )}
+                                </>
+                            }
+                        />
 
                         <div className="chat-composer-wrap">
                             {!atBottom && displayState.messages.length > 0 && (
