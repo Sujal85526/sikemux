@@ -41,6 +41,9 @@ const STOP_SETTLE: Duration = Duration::from_secs(2);
 /// How long a stopped turn may keep running before the agent is killed. The
 /// agent only reads a stop between steps, and a wedged tool never gets there.
 const CANCEL_GRACE: Duration = Duration::from_secs(10);
+/// How long after its last subagent ends a chat waits for the agent to take
+/// up the subagent's report before it counts as finished.
+const SUBAGENT_WAKE_GRACE: Duration = Duration::from_secs(3);
 
 pub(crate) enum ChatCommand {
     Prompt {
@@ -127,6 +130,8 @@ pub(crate) struct Chat {
     /// The agent is working on a turn nobody here prompted.
     pub unprompted: AtomicBool,
     turned: AtomicBool,
+    /// A turn ended with subagents still at work, so it is not finished yet.
+    held: AtomicBool,
     /// A turn of this chat was answered, so its provider has it saved.
     pub answered: AtomicBool,
     approving: AtomicBool,
@@ -159,14 +164,21 @@ impl Chat {
     pub(crate) fn emit(&self, kind: ChatEventKind, payload: Value) {
         if kind == ChatEventKind::TurnStarted {
             self.turned.store(true, Ordering::Release);
+            self.held.store(false, Ordering::Release);
         }
         if let Some(core) = self.core.upgrade() {
             let activity = match kind {
                 ChatEventKind::TurnStarted => Some(Activity::Started),
-                ChatEventKind::TurnCompleted => Some(Activity::Finished {
-                    cancelled: payload.get("stopReason").and_then(Value::as_str)
-                        == Some("cancelled"),
-                }),
+                ChatEventKind::TurnCompleted => {
+                    let cancelled =
+                        payload.get("stopReason").and_then(Value::as_str) == Some("cancelled");
+                    if !cancelled && self.feed.running_subagents() > 0 {
+                        self.held.store(true, Ordering::Release);
+                        None
+                    } else {
+                        Some(Activity::Finished { cancelled })
+                    }
+                }
                 ChatEventKind::Error => Some(Activity::Problem(
                     payload
                         .get("message")
@@ -180,6 +192,38 @@ impl Chat {
             }
         }
         self.feed.emit(kind, payload);
+        if kind == ChatEventKind::SessionUpdate {
+            self.finish_held();
+        }
+    }
+
+    /// Finishes a held turn once its last subagent has ended, unless the agent
+    /// starts a turn of its own to answer it first.
+    fn finish_held(&self) {
+        if !self.held.load(Ordering::Acquire)
+            || self.feed.running_subagents() > 0
+            || self.turn_running()
+        {
+            return;
+        }
+        let core = self.core.clone();
+        let agent_id = self.agent_id().to_owned();
+        let generation = self.generation;
+        tokio::spawn(async move {
+            tokio::time::sleep(SUBAGENT_WAKE_GRACE).await;
+            let Some(core) = core.upgrade() else { return };
+            let Some(chat) = core.chats.get(&agent_id) else {
+                return;
+            };
+            if chat.generation != generation
+                || chat.turn_running()
+                || chat.feed.running_subagents() > 0
+                || !chat.held.swap(false, Ordering::AcqRel)
+            {
+                return;
+            }
+            core.note_activity(&agent_id, Activity::Finished { cancelled: false });
+        });
     }
 
     /// The agent began work nobody here asked for, such as answering a
@@ -632,6 +676,7 @@ impl Chats {
             running: AtomicBool::new(false),
             unprompted: AtomicBool::new(false),
             turned: AtomicBool::new(false),
+            held: AtomicBool::new(false),
             answered: AtomicBool::new(false),
             approving: AtomicBool::new(crate::acp::approves_for_user(&launch.permission_mode)),
             current: Mutex::new(launch.clone()),

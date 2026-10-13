@@ -34,6 +34,8 @@ import { useStickToBottom } from "./useStickToBottom";
 /* Reading a whole transcript is one round trip to the parser, so this waits
    at most this long before showing it anyway. */
 const READ_WAIT_MS = 1000;
+/** How long after its last subagent ends the agent has to take up their reports before it counts as finished. */
+const SUBAGENT_WAKE_GRACE_MS = 3000;
 
 function useReadAfterReplay(replaying: boolean, messages: readonly ChatMessage[]): boolean {
     const [reading, setReading] = useState(false);
@@ -153,19 +155,31 @@ export function AgentChatPane({
             return next;
         });
 
-    useEffect(() => {
-        if (!active) return;
-        cmd.noteAcpAgentState(
-            agent.id,
-            backendState({ connection: state.connection, awaitingPermission: state.permissions.length > 0, running: state.running }),
-        );
-    }, [active, agent.id, state.connection, state.running, state.permissions.length]);
-
     /* A turn ends long before the work it started does. Shells, monitors and
        subagents keep going after the answer, and they die with the agent, so
        what is still running is what says the agent is still in use. */
     const liveTasks = useMemo(() => state.tasks.filter((task) => task.state === "running").length, [state.tasks]);
     const liveSubagents = useMemo(() => runningSubagents(state.messages).length, [state.messages]);
+
+    /* The agent is not finished while its subagents work: it takes up their reports in a turn of its own. */
+    const waitedOnSubagents = useRef(false);
+    useEffect(() => {
+        if (!active) return;
+        const working = state.running || liveSubagents > 0;
+        const note = () =>
+            cmd.noteAcpAgentState(
+                agent.id,
+                backendState({ connection: state.connection, awaitingPermission: state.permissions.length > 0, running: working }),
+            );
+        if (working || !waitedOnSubagents.current) {
+            waitedOnSubagents.current = !state.running && liveSubagents > 0;
+            note();
+            return;
+        }
+        waitedOnSubagents.current = false;
+        const timer = setTimeout(note, SUBAGENT_WAKE_GRACE_MS);
+        return () => clearTimeout(timer);
+    }, [active, agent.id, state.connection, state.running, state.permissions.length, liveSubagents]);
     useEffect(() => cmd.noteAgentBackgroundWork(agent.id, liveTasks, liveSubagents), [agent.id, liveTasks, liveSubagents]);
     useEffect(() => () => cmd.noteAgentBackgroundWork(agent.id, 0, 0), [agent.id]);
 

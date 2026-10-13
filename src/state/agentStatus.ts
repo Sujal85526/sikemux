@@ -74,8 +74,8 @@ export interface AgentDisplay {
 }
 
 /**
- * How an agent is shown everywhere. Only a running turn is Working: subagents
- * and shells left running keep the agent in its own group and show as counts.
+ * How an agent is shown everywhere. Its state counts subagents still at work
+ * as Working; shells left running only show as counts.
  */
 export function agentDisplay(state: AgentPresentationState | undefined, background: AgentBackground = {}): AgentDisplay {
     const shown = state ?? "idle";

@@ -30,7 +30,7 @@ fn status(group: AgentGroup) -> AgentStatus {
 pub(crate) fn show_chat(chat: &mut ChatInfo) {
     chat.group = group(
         !chat.pending_permissions.is_empty(),
-        chat.running,
+        chat.running || chat.subagents > 0,
         chat.unread,
     );
     chat.status = match chat.group {
