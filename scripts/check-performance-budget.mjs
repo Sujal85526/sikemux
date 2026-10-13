@@ -145,11 +145,12 @@ const budgets = [
     // A sent message can be opened again, edited and sent in its place.
     // GitLab's agent tools add their rows, and so do Slack's. A finished
     // answer folds its work under how long it took. Subagents nest in their
-    // cards, and a table copies as markdown.
+    // cards, and a table copies as markdown. The transcript itself is a chunk
+    // of its own, chat, which a shared chat's pane loads too.
     label: "ACP chat lazy chunk",
-    pattern: /^AgentSurface-.*\.js$/,
-    raw: 146_000,
-    gzip: 45_000,
+    pattern: /^(?:AgentSurface|chat)-.*\.js$/,
+    raw: 152_000,
+    gzip: 48_000,
   },
   {
     // Shiki, its JavaScript regex engine and vscode-textmate, with no
@@ -178,12 +179,13 @@ const budgets = [
     // So did the agent accounts in the rail's footer and the desk's tab kinds.
     // Jira boards, the GitLab code host and the database pane added a little more.
     // Main reached the edge of this budget; Escape keeping a draft tipped it over.
+    // Sharing a chat and Muse Code added a little more.
     label:
       "default-path JavaScript except the highlighter and its grammar chunks",
     pattern: new RegExp(
       `^(?!(?:highlighter|paper-shaders|xterm-webgl|${diffLanguageChunkNames.join("|")})-).*\\.js$`,
     ),
-    raw: 3_700_000,
+    raw: 3_750_000,
     gzip: 1_220_000,
   },
   {
@@ -210,9 +212,9 @@ const budgets = [
     // room without touching what the app loads at startup.
     // Lightning CSS, Vite's minifier, keeps the spaces inside color-mix().
     label: "ACP chat CSS",
-    pattern: /^AgentSurface-.*\.css$/,
-    raw: 51_500,
-    gzip: 9_400,
+    pattern: /^(?:AgentSurface|chat)-.*\.css$/,
+    raw: 52_500,
+    gzip: 9_600,
   },
   {
     // Includes the JetBrainsMono Nerd Font @font-face rules: a base face per
