@@ -125,7 +125,7 @@
     height: 24px;
     padding: 0;
     border: 1px solid transparent;
-    border-radius: var(--radius-full) !important;
+    border-radius: var(--radius-full);
     background: none;
     color: var(--text-tertiary);
     cursor: pointer;

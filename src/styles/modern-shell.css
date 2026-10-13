@@ -1296,7 +1296,8 @@ textarea,
         .agent-surface-header button,
         .tb-account,
         .tb-account-face,
-        .jira-avatar-pick
+        .jira-avatar-pick,
+        .git-nav-avatar
     ) {
     border-radius: var(--radius-full) !important;
 }
