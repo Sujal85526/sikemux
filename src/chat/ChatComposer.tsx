@@ -614,11 +614,19 @@ export function ChatComposer({
                             }
                         }
                         const plainKey = !event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey && !event.nativeEvent.isComposing;
-                        // As in an agent's terminal, Escape stops the turn it is running; whatever is typed stays.
-                        if (event.key === "Escape" && running && plainKey) {
-                            event.preventDefault();
-                            onStop();
-                            return;
+                        // Escape first lets go of a selection. It stops a running turn only from an empty box, so a half-written message never stops the agent.
+                        if (event.key === "Escape" && plainKey) {
+                            const box = event.currentTarget;
+                            if (box.selectionStart !== box.selectionEnd) {
+                                event.preventDefault();
+                                box.setSelectionRange(box.selectionEnd, box.selectionEnd);
+                                return;
+                            }
+                            if (running && !drafted) {
+                                event.preventDefault();
+                                onStop();
+                                return;
+                            }
                         }
                         const direction = event.key === "ArrowUp" ? "older" : event.key === "ArrowDown" ? "newer" : null;
                         if (direction && plainKey) {
