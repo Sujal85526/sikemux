@@ -896,3 +896,11 @@
     font-size: 10px;
     color: var(--text-tertiary);
 }
+
+/* New chat, terminal and browser sit right under the scope track, a short step above the first group. */
+.agent-rail > .rail-scroll {
+    padding-top: var(--space-1);
+}
+.workspace-rail.agent-rail .agent-actions + * {
+    margin-top: var(--space-2);
+}

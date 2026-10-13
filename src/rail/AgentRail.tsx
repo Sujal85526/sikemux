@@ -349,36 +349,38 @@ export function AgentRailBody() {
                 </div>
             )}
             <div className="rail-scroll" ref={scrollRef} onScroll={onRailScroll}>
-                {selectedType && (
-                    <button
-                        type="button"
-                        className="agent-row agent-new"
-                        onClick={() =>
-                            allAgents || scope === "all"
-                                ? void cmd.startAgent()
-                                : cmd.addAgent(selectedType, undefined, undefined, {
-                                      profileId: selectedProviderProfile(selectedType, profiles, profileSelections)?.id,
-                                      detectedExecutablePath: selectedProvider?.command,
-                                  })
-                        }>
+                <div className="agent-actions">
+                    {selectedType && (
+                        <button
+                            type="button"
+                            className="agent-row agent-new"
+                            onClick={() =>
+                                allAgents || scope === "all"
+                                    ? void cmd.startAgent()
+                                    : cmd.addAgent(selectedType, undefined, undefined, {
+                                          profileId: selectedProviderProfile(selectedType, profiles, profileSelections)?.id,
+                                          detectedExecutablePath: selectedProvider?.command,
+                                      })
+                            }>
+                            <span className="agent-glyph">
+                                <IconPlus size={15} />
+                            </span>
+                            <span className="agent-title">New chat</span>
+                        </button>
+                    )}
+                    <button type="button" className="agent-row agent-new" onClick={cmd.newTerminal}>
                         <span className="agent-glyph">
-                            <IconPlus size={15} />
+                            <IconTerminal size={15} />
                         </span>
-                        <span className="agent-title">New chat</span>
+                        <span className="agent-title">New terminal</span>
                     </button>
-                )}
-                <button type="button" className="agent-row agent-new" onClick={cmd.newTerminal}>
-                    <span className="agent-glyph">
-                        <IconTerminal size={15} />
-                    </span>
-                    <span className="agent-title">New terminal</span>
-                </button>
-                <button type="button" className="agent-row agent-new" onClick={cmd.newDeskBrowserTab}>
-                    <span className="agent-glyph">
-                        <IconGlobe size={15} />
-                    </span>
-                    <span className="agent-title">New browser tab</span>
-                </button>
+                    <button type="button" className="agent-row agent-new" onClick={cmd.newDeskBrowserTab}>
+                        <span className="agent-glyph">
+                            <IconGlobe size={15} />
+                        </span>
+                        <span className="agent-title">New browser tab</span>
+                    </button>
+                </div>
                 {scope === "all" && <AllProjectsAgents />}
                 {scope === "project" && noContent && (
                     <div className="agent-empty">
