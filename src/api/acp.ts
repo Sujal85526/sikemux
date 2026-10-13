@@ -57,6 +57,8 @@ export interface AcpAttachOptions {
 /** A chat agent the background core runs. */
 export interface AcpChat {
     agentId: string;
+    /** What the core calls the agent, such as Otter. */
+    name?: string | null;
     provider: string;
     cwd: string;
     sessionId: string | null;

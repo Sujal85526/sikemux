@@ -1,6 +1,7 @@
 mod account;
 mod acp;
 mod activity;
+mod agent_names;
 mod agent_notification;
 mod agents;
 #[cfg(target_os = "macos")]
@@ -317,6 +318,7 @@ pub fn run() {
             account::account_sign_out,
             share::share_access,
             share::share_call,
+            agent_names::agent_name_call,
             remote::remote_answer_pairing,
             remote::remote_allow_devices,
             remote::remote_publish_workspace,

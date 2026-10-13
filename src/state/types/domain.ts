@@ -99,6 +99,8 @@ export const DEFAULT_PROVIDER_PROFILE_SELECTION: Readonly<ProviderProfileSelecti
 export interface Agent {
     id: string;
     type: AgentType;
+    /** What the core calls this agent, such as Otter: the word the person and other agents address it by. */
+    name?: string;
     title: string;
     startup: string;
     /** Runtime-only structured launch; avoids shell parsing and argv prompt exposure. */

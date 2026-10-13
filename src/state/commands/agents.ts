@@ -1,5 +1,6 @@
 import { agentApi, type AgentSession } from "../../api/agents";
 import type { AcpChat } from "../../api/acp";
+import { agentNamesApi } from "../../api/agentNames";
 import { profileOfLauncher } from "../../remote/workspace";
 import { isAgentType } from "../../agents/catalog";
 import { agentSupportsChat, effectiveMode, MAX_AGENT_MODEL_LENGTH, normalizePermissionMode, type ChatAgentType } from "../../agents/agentLaunch";
@@ -211,6 +212,7 @@ export function adoptChat(chat: AcpChat): boolean {
         const agent: Agent = {
             id: chat.agentId,
             type,
+            ...(chat.name ? { name: chat.name } : {}),
             title: type,
             ...relaunchSpec(d, { type, resumeId, permissionMode, profileId, executablePath: profile?.executablePath, model, effort }),
             resumeId,
@@ -349,6 +351,20 @@ export function moveAgentToProject(id: string, cwd: string): void {
         if (known) agent.baselineSessionIds = [...new Set(known)];
         else delete agent.baselineSessionIds;
     });
+}
+
+/** Takes up the name the core gave the agent. */
+export function setAgentName(id: string, name: string): void {
+    mutate((d) => {
+        const agent = d.agents[id];
+        if (agent && agent.name !== name) agent.name = name;
+    });
+}
+
+/** The person's own name for the agent. The core refuses one another open agent of the project already has. */
+export async function changeAgentName(id: string, name: string): Promise<void> {
+    const named = await agentNamesApi.rename(id, name.trim());
+    setAgentName(id, named.name);
 }
 
 export function setAgentTitle(id: string, title: string): void {

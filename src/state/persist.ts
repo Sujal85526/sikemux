@@ -415,6 +415,8 @@ function toPersistedAgent(value: unknown): PersistedAgent | null {
     const agent: PersistedAgent = { id: value.id, type: value.type as AgentType, title: value.title.slice(0, 200) };
     if (resumeId) agent.resumeId = resumeId;
     if (ptyId !== undefined) agent.ptyId = ptyId;
+    const name = boundedOptionalString(value.name, 64);
+    if (name) agent.name = name;
     const requestedPermissionMode = isAgentPermissionMode(value.permissionMode)
         ? value.permissionMode
         : value.skipPermissions === true
@@ -451,6 +453,7 @@ function persistedAgent(agent: Agent): PersistedAgent {
     return {
         id: agent.id,
         type: agent.type,
+        ...(agent.name ? { name: agent.name } : {}),
         title: agent.title,
         resumeId: agent.resumeId,
         permissionMode,

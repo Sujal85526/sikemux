@@ -37,6 +37,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "account_sign_out",
     "share_access",
     "share_call",
+    "agent_name_call",
     "remote_answer_pairing",
     "remote_allow_devices",
     "remote_publish_workspace",
