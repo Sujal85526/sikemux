@@ -615,6 +615,9 @@ pub enum AgentStatus {
 #[serde(rename_all = "camelCase")]
 pub struct ChatInfo {
     pub agent_id: String,
+    /// What the core calls the agent, such as Otter.
+    #[serde(default)]
+    pub name: Option<String>,
     pub provider: String,
     /// What the agent named the session, once it has.
     pub title: Option<String>,
@@ -1241,6 +1244,9 @@ pub struct SessionInfo {
     pub project: Option<String>,
     pub pane_id: Option<String>,
     pub agent_id: Option<String>,
+    /// What the core calls an agent terminal's agent, such as Otter.
+    #[serde(default)]
+    pub agent_name: Option<String>,
     pub agent_type: Option<String>,
     pub task_execution_id: Option<String>,
     /// The last state published for an agent terminal.

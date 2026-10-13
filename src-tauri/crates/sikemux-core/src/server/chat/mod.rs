@@ -312,6 +312,7 @@ impl Chat {
         if let Some(core) = self.core.upgrade() {
             core.workspaces
                 .note_config_options(self.provider(), &start.setup);
+            core.names.note_session(self.agent_id(), &start.session_id);
         }
         self.feed.set_start(start.clone());
         self.readiness.send_replace(Readiness::Ready(start));
@@ -511,6 +512,10 @@ impl Chat {
         let start = self.feed.start();
         ChatInfo {
             agent_id: self.launch.agent_id.clone(),
+            name: self
+                .core
+                .upgrade()
+                .and_then(|core| core.names.name(self.agent_id())),
             provider: self.launch.provider.clone(),
             title: self.feed.title(),
             cwd: self.launch.cwd.clone(),
@@ -802,6 +807,13 @@ impl Chats {
             .filter(|chat| chat.feed.has_subscriber(client))
             .map(|chat| chat.agent_id().to_owned())
             .collect()
+    }
+
+    pub(crate) fn ids(&self) -> Vec<String> {
+        self.chats
+            .lock()
+            .map(|chats| chats.keys().cloned().collect())
+            .unwrap_or_default()
     }
 
     fn all(&self) -> Vec<Arc<Chat>> {
@@ -1105,7 +1117,14 @@ pub(crate) fn begin(
         started_by: subscriber.and_then(|client| client.peer.device_id()),
         launcher,
     };
+    let resume_id = launch_spec.resume_id.clone();
     let (chat, queue) = core.chats.insert(core, launch_spec, origin, None)?;
+    core.name_agent(
+        chat.agent_id(),
+        &chat.launch.cwd,
+        Some(chat.provider()),
+        resume_id.as_deref(),
+    );
     core.seen.active(chat.agent_id());
     if let Some(client) = subscriber {
         chat.feed.subscribe(client);

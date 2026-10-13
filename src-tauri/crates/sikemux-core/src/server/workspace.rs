@@ -238,6 +238,25 @@ impl Workspaces {
         })
     }
 
+    /// The agents the app has open, as far as it has said.
+    pub(crate) fn open_agents(&self) -> Vec<String> {
+        let published = self.lock();
+        published
+            .chats
+            .iter()
+            .map(|chat| chat.agent_id.clone())
+            .chain(published.titles.keys().cloned())
+            .collect()
+    }
+
+    pub(crate) fn project_paths(&self) -> Vec<PathBuf> {
+        self.lock()
+            .projects
+            .iter()
+            .map(|project| project.path.clone())
+            .collect()
+    }
+
     /// What the app calls an agent terminal.
     pub(crate) fn title(&self, agent_id: &str) -> Option<String> {
         self.lock().titles.get(agent_id).cloned()
@@ -276,6 +295,7 @@ impl Workspaces {
             .filter(|chat| !running.iter().any(|live| live.agent_id == chat.agent_id))
             .map(|chat| ChatInfo {
                 agent_id: chat.agent_id.clone(),
+                name: None,
                 provider: chat.provider.clone(),
                 title: chat.title.clone(),
                 cwd: chat.cwd.clone(),
@@ -660,6 +680,7 @@ mod tests {
 
         let mut live = ChatInfo {
             agent_id: "agent-1".into(),
+            name: None,
             provider: "claude".into(),
             title: None,
             cwd: "/Users/me/sikemux".into(),

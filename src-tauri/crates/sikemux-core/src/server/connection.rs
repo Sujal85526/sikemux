@@ -1061,7 +1061,19 @@ async fn spawn(
 ) -> CoreResult<PendingStart> {
     blocking(move || {
         let mut prepared = match *target {
-            SpawnTarget::Terminal(spawn) => prepare_terminal(&launch, spawn)?,
+            SpawnTarget::Terminal(spawn) => {
+                let prepared = prepare_terminal(&launch, spawn)?;
+                let owner = &prepared.owner;
+                if let (Some(agent_id), Some(project)) = (&owner.agent_id, &owner.project) {
+                    core.name_agent(
+                        agent_id,
+                        std::path::Path::new(project),
+                        owner.agent_type.as_deref(),
+                        None,
+                    );
+                }
+                prepared
+            }
             SpawnTarget::Task { request } => prepare_task(&launch, request)?,
         };
         prepared.owner.started_by = started_by;

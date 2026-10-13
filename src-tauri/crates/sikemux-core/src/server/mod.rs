@@ -12,6 +12,7 @@ mod handover;
 mod harness;
 mod host;
 mod join;
+mod names;
 mod notify;
 mod prepare;
 mod remote;
@@ -283,6 +284,7 @@ pub(crate) struct Core {
     pub(crate) shares: share::Shares,
     pub(crate) workspaces: workspace::Workspaces,
     pub(crate) seen: seen::Seen,
+    pub(crate) names: names::Names,
     pub(crate) notify: notify::Notifier,
     /// The view paired devices were last sent, as sent.
     device_view: Mutex<Vec<u8>>,
@@ -329,6 +331,7 @@ impl Core {
             shares: share::Shares::default(),
             workspaces: workspace::Workspaces::default(),
             seen: seen::Seen::default(),
+            names: names::Names::new(data_dir),
             notify: notify::Notifier::default(),
             device_view: Mutex::new(Vec::new()),
         }))
@@ -424,6 +427,40 @@ impl Core {
             }
         }
         shown
+    }
+
+    /// Every agent running here or open in the app.
+    pub(crate) fn open_agents(&self) -> HashSet<String> {
+        let mut open: HashSet<String> = self.chats.ids().into_iter().collect();
+        open.extend(self.all_sessions().iter().filter_map(|session| {
+            session
+                .agent
+                .as_ref()
+                .map(|agent| agent.agent_id().to_owned())
+        }));
+        open.extend(self.workspaces.open_agents());
+        open
+    }
+
+    /// The agent's name, given now when it has none. Reads the disk to find
+    /// the project `cwd` belongs to.
+    pub(crate) fn name_agent(
+        &self,
+        agent_id: &str,
+        cwd: &Path,
+        provider: Option<&str>,
+        resume_id: Option<&str>,
+    ) -> names::AgentName {
+        let project = names::project_of(cwd, &self.workspaces.project_paths());
+        self.names.give(
+            names::Starting {
+                agent_id,
+                project,
+                provider,
+                resume_id,
+            },
+            &self.open_agents(),
+        )
     }
 
     pub(crate) fn agent_session(&self, agent_id: &str) -> Option<Arc<Session>> {
@@ -546,6 +583,7 @@ impl Core {
         sessions.sort_by_key(|info| info.id);
         for info in &mut sessions {
             if let Some(agent_id) = &info.agent_id {
+                info.agent_name = self.names.name(agent_id);
                 info.title = self.workspaces.title(agent_id);
                 info.unread = self.seen.unread(agent_id);
                 info.active_at = self.seen.active_at(agent_id);
@@ -560,6 +598,7 @@ impl Core {
     pub(crate) fn chat_infos(&self) -> Vec<crate::protocol::ChatInfo> {
         let mut chats = self.workspaces.listed(self.chats.list());
         for chat in &mut chats {
+            chat.name = self.names.name(&chat.agent_id);
             chat.pending_permissions.sort();
             chat.unread = self.seen.unread(&chat.agent_id);
             chat.active_at = self.seen.active_at(&chat.agent_id);

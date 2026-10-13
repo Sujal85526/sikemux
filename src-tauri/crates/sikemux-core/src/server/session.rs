@@ -246,6 +246,7 @@ impl Session {
             project: self.owner.project.clone(),
             pane_id: self.owner.pane_id.clone(),
             agent_id: self.owner.agent_id.clone(),
+            agent_name: None,
             agent_type: self.owner.agent_type.clone(),
             task_execution_id: self.owner.task_execution_id.clone(),
             agent_state: self

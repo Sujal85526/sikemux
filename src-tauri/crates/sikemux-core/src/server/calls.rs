@@ -11,6 +11,7 @@ use serde_json::Value;
 use super::access::{Needs, Peer};
 use super::attachments;
 use super::connection::blocking;
+use super::names::AgentName;
 use super::{share, Core, CoreError, CoreResult};
 
 pub(crate) fn needs(method: &str) -> Needs {
@@ -29,6 +30,8 @@ pub(crate) async fn call(
     match method {
         "chatFile" => answer(chat_file(&core, peer, parse(params)?).await?),
         "agentSecret" => answer(agent_secret(&core, parse(params)?)?),
+        "nameAgent" => answer(name_agent(&core, parse(params)?).await?),
+        "renameAgent" => answer(rename_agent(&core, parse(params)?)?),
         "shareChat" => {
             let params: ShareChatParams = parse(params)?;
             answer(share::share_chat(
@@ -125,4 +128,52 @@ fn agent_secret(core: &Core, params: AgentSecretParams) -> CoreResult<AgentSecre
     Ok(AgentSecret {
         secret: core.agent_key.secret(&params.agent_id),
     })
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NameAgentParams {
+    agent_id: String,
+    cwd: PathBuf,
+    #[serde(default)]
+    provider: Option<String>,
+    #[serde(default)]
+    resume_id: Option<String>,
+}
+
+/// The name the core gave an agent the app starts or opens again, given now
+/// when it has none.
+async fn name_agent(core: &Arc<Core>, params: NameAgentParams) -> CoreResult<AgentName> {
+    if !crate::cli::protocol::is_tool_agent_id(&params.agent_id) {
+        return Err("that is not an agent id".into());
+    }
+    if !params.cwd.is_absolute() {
+        return Err("an agent's folder must be an absolute path".into());
+    }
+    let core = core.clone();
+    let named = blocking(move || {
+        Ok(core.name_agent(
+            &params.agent_id,
+            &params.cwd,
+            params.provider.as_deref(),
+            params.resume_id.as_deref(),
+        ))
+    })
+    .await?;
+    Ok(named)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RenameAgentParams {
+    agent_id: String,
+    name: String,
+}
+
+fn rename_agent(core: &Core, params: RenameAgentParams) -> CoreResult<AgentName> {
+    let named = core
+        .names
+        .rename(&params.agent_id, &params.name, &core.open_agents())?;
+    core.publish_device_view();
+    Ok(named)
 }
