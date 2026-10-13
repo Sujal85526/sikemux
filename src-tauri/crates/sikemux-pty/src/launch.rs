@@ -162,6 +162,7 @@ pub const OPTIONAL_PTY_ENV: &[&str] = &[
     "SIKEMUX_TOOLS_MCP_COMMAND",
     "SIKEMUX_TOOLS_MCP_ARGS",
     "SIKEMUX_TOOLS_AGENT_ID",
+    "SIKEMUX_AGENT_SECRET",
 ];
 
 fn non_empty(value: &Option<String>) -> Option<&str> {

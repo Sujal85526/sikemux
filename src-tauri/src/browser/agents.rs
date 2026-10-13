@@ -13,6 +13,8 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 use sikemux_core::acp::schema::v1::{EnvVariable, McpServer, McpServerStdio};
+use sikemux_core::client::Reply;
+use sikemux_core::protocol::{Request, Response};
 use sikemux_pty::user_shell::user_variable;
 use tauri::{AppHandle, Manager};
 
@@ -56,7 +58,11 @@ impl BrowserManager {
     ) -> AppResult<BrowserAgentIntegration> {
         validate_agent_id(agent_id)?;
         let launch = self.mcp_launch()?;
-        let mut environment = base_environment(agent_id)?;
+        let secret = agent_secret(app, agent_id).await.unwrap_or_else(|error| {
+            eprintln!("Sikemux could not give this agent its secret: {error}");
+            String::new()
+        });
+        let mut environment = base_environment(agent_id, &secret)?;
         let data_dir = skills_data_dir(app);
         let data_dir = data_dir.as_deref();
         let args_prefix = match agent_type {
@@ -120,12 +126,12 @@ impl BrowserManager {
 /// An ACP agent is handed its servers over the protocol itself, so this path
 /// has no config file and no flag. It is a separate transport from the
 /// terminal one above and needs telling too.
-pub fn acp_browser_server(app: &AppHandle, agent_id: &str) -> AppResult<McpServer> {
+pub fn acp_browser_server(app: &AppHandle, agent_id: &str, secret: &str) -> AppResult<McpServer> {
     validate_agent_id(agent_id)?;
     let launch = app.state::<BrowserManager>().mcp_launch()?;
     let mut server = McpServerStdio::new("sikemux-tools", absolute_command(&launch.command)?);
     server.args = launch.args;
-    server.env = base_environment(agent_id)?
+    server.env = base_environment(agent_id, secret)?
         .into_iter()
         .map(|(name, value)| EnvVariable::new(name, value))
         .collect();
@@ -284,11 +290,40 @@ fn absolute_command(command: &str) -> AppResult<PathBuf> {
         .ok_or_else(|| AppError::Other(format!("{command} is not on PATH")))
 }
 
+pub const AGENT_SECRET_ENV: &str = "SIKEMUX_AGENT_SECRET";
+
+/// What the agent's tool calls carry to show the core which agent made them.
+pub async fn agent_secret(app: &AppHandle, agent_id: &str) -> AppResult<String> {
+    let client = app.state::<crate::pty::PtyManager>().client().await?;
+    let reply = client
+        .submit(
+            Request::Call {
+                method: "agentSecret".into(),
+                params: json!({ "agentId": agent_id }),
+            },
+            |reply| reply,
+        )
+        .map_err(crate::pty::core_error)?
+        .await
+        .map_err(crate::pty::core_error)?
+        .map_err(crate::pty::core_error)?;
+    match reply {
+        Reply::Response(Response::Called { result }) => result["secret"]
+            .as_str()
+            .map(str::to_owned)
+            .ok_or_else(|| AppError::Other("the core gave no secret for this agent".into())),
+        _ => Err(AppError::Other(
+            "the core answered with something else".into(),
+        )),
+    }
+}
+
 /// What the MCP sidecar reads once the host spawns it. The sidecar inherits
 /// this through the agent process, so it never appears in a config file.
-fn base_environment(agent_id: &str) -> AppResult<Vec<(String, String)>> {
+fn base_environment(agent_id: &str, secret: &str) -> AppResult<Vec<(String, String)>> {
     let environment = vec![
         ("SIKEMUX_TOOLS_AGENT_ID".into(), agent_id.to_owned()),
+        (AGENT_SECRET_ENV.into(), secret.to_owned()),
         (
             "SIKEMUX_CLI_ENDPOINT".into(),
             crate::cli_paths::cli_endpoint_path()

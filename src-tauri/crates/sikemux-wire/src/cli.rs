@@ -85,6 +85,8 @@ pub struct HarnessRequest {
     pub id: String,
     pub project: String,
     pub agent_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_secret: Option<String>,
     pub method: String,
     pub params: Value,
 }

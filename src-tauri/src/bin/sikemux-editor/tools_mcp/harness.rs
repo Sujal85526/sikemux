@@ -123,6 +123,7 @@ fn attempt(
             "id": Uuid::new_v4().to_string(),
             "project": project,
             "agentId": agent_id,
+            "agentSecret": std::env::var("SIKEMUX_AGENT_SECRET").ok().filter(|secret| !secret.is_empty()),
             "method": method,
             "params": params,
         },

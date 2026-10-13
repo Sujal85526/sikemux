@@ -388,12 +388,13 @@ impl Workspaces {
 
 /// The agents' own tools, served by this binary run as an MCP server, the
 /// same way the app wires them into a chat it starts.
-fn tools_server(agent_id: &str, endpoint: &Path) -> Option<Value> {
+fn tools_server(agent_id: &str, secret: &str, endpoint: &Path) -> Option<Value> {
     let executable = std::env::current_exe().ok()?;
     let mut server = McpServerStdio::new("sikemux-tools", executable);
     server.args = vec!["--tools-mcp".into()];
     server.env = vec![
         EnvVariable::new("SIKEMUX_TOOLS_AGENT_ID", agent_id),
+        EnvVariable::new("SIKEMUX_AGENT_SECRET", secret),
         EnvVariable::new("SIKEMUX_CLI_ENDPOINT", endpoint.to_string_lossy()),
     ];
     serde_json::to_value(McpServer::Stdio(server)).ok()
@@ -459,10 +460,14 @@ pub(crate) fn start_chat(
     choice: ChatChoice,
 ) {
     let agent_id = format!("agent-{}", uuid::Uuid::new_v4().simple());
-    let tools = cli_endpoint(core).and_then(|endpoint| tools_server(&agent_id, &endpoint));
+    let secret = core.agent_key.secret(&agent_id);
+    let tools = cli_endpoint(core).and_then(|endpoint| tools_server(&agent_id, &secret, &endpoint));
     let launcher = choice.launcher.clone();
     let launch = match core.workspaces.launch(choice, &agent_id, tools) {
-        Ok(launch) => launch,
+        Ok(mut launch) => {
+            launch.env.insert("SIKEMUX_AGENT_SECRET".into(), secret);
+            launch
+        }
         Err(error) => {
             client.respond(request_id, Err(error));
             return;

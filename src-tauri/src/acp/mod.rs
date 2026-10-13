@@ -464,9 +464,22 @@ pub async fn acp_start(
         &mut program.env,
     )
     .await;
+    let secret = match crate::browser::agents::agent_secret(&app, &agent_id).await {
+        Ok(secret) => secret,
+        Err(error) => {
+            eprintln!("Sikemux could not give this agent its secret: {error}");
+            String::new()
+        }
+    };
+    if !secret.is_empty() {
+        program.env.insert(
+            crate::browser::agents::AGENT_SECRET_ENV.into(),
+            secret.clone(),
+        );
+    }
     // The tools this agent can drive its own browser tabs with. A session
     // that cannot be told about them still runs.
-    let mcp_servers = match crate::browser::agents::acp_browser_server(&app, &agent_id) {
+    let mcp_servers = match crate::browser::agents::acp_browser_server(&app, &agent_id, &secret) {
         Ok(server) => serde_json::to_value(server).into_iter().collect(),
         Err(error) => {
             eprintln!("Sikemux browser tools are unavailable to this agent: {error}");

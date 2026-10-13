@@ -369,8 +369,17 @@ async fn forward(core: &Core, request: HarnessRequest) -> Result<Value, String> 
 }
 
 /// Answers one tool call. The call is counted whether or not it succeeds.
-pub(crate) async fn call(core: &Arc<Core>, request: HarnessRequest) -> Result<Value, String> {
+pub(crate) async fn call(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value, String> {
     validate_harness(&request)?;
+    if let Some(secret) = request.agent_secret.take() {
+        let agent_id = request.agent_id.as_deref().unwrap_or_default();
+        if !core.agent_key.proves(agent_id, &secret) {
+            return Err(
+                "this tool call's secret is not its agent's; start the agent from Sikemux again"
+                    .into(),
+            );
+        }
+    }
     let tool = tool_name(&request);
     let result = dispatch(core, request).await;
     if let (Some(tool), Some(path)) = (tool, core.harness.tool_calls.clone()) {
@@ -847,6 +856,7 @@ fn begin_start(
                 id: request.id.clone(),
                 project: project.to_owned(),
                 agent_id: request.agent_id.clone(),
+                agent_secret: None,
                 method: "task.start".into(),
                 params,
             },
@@ -1118,6 +1128,7 @@ mod tests {
             id: "1".into(),
             project: "/project".into(),
             agent_id: Some("agent".into()),
+            agent_secret: None,
             method: method.into(),
             params,
         }

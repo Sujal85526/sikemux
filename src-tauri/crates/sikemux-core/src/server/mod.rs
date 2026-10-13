@@ -1,6 +1,7 @@
 mod access;
 mod activity;
 mod agent;
+mod agent_key;
 mod attachments;
 mod calls;
 mod chat;
@@ -265,6 +266,7 @@ pub(crate) struct Core {
     pub(crate) detection: RwLock<ManifestRegistry>,
     manifest_dir: Mutex<Option<PathBuf>>,
     pub(crate) harness: harness::Harness,
+    pub(crate) agent_key: agent_key::AgentKey,
     pub(crate) window: window::Window,
     /// True while the core hands itself over to a newer binary: it takes no
     /// new work and its readers stop at the next whole chunk.
@@ -314,6 +316,7 @@ impl Core {
             detection: RwLock::new(detection),
             manifest_dir: Mutex::new(None),
             harness: harness::Harness::new(data_dir),
+            agent_key: agent_key::AgentKey::default(),
             window: window::Window::new(first_session_id()),
             frozen: watch::channel(false).0,
             upgrading: std::sync::atomic::AtomicBool::new(false),
@@ -879,6 +882,9 @@ pub(crate) async fn run_core(
         listener_fd: listener.as_raw_fd(),
         lock_fd: lock.as_raw_fd(),
     });
+    if let Err(error) = core.agent_key.load(&agent_key::file_path(&config.socket)) {
+        eprintln!("sikemux core: agents' secrets last only until the core stops: {error}");
+    }
     listener.set_nonblocking(true)?;
     let listener = tokio::net::UnixListener::from_std(listener)?;
     remote::start(&core, &config).await;
