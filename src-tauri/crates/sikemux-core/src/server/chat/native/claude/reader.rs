@@ -98,6 +98,8 @@ struct Child {
 struct Task {
     name: String,
     ended: bool,
+    /// The agents a workflow runs, which Claude Code leaves off most progress.
+    agents: Option<Value>,
 }
 
 pub(crate) struct Reader {
@@ -261,6 +263,53 @@ fn local_output(content: &str) -> Option<String> {
         .replace("</local-command-stdout>", "");
     let output = output.trim();
     (!output.is_empty()).then(|| output.to_owned())
+}
+
+/// A workflow's agents, in the order it started them, as the chat shows them.
+fn workflow_agents(progress: &[Value]) -> Value {
+    let mut agents: Vec<&Value> = progress
+        .iter()
+        .filter(|entry| text(entry, "type") == Some("workflow_agent"))
+        .collect();
+    agents.sort_by_key(|agent| agent.get("index").and_then(Value::as_u64));
+    let agents = agents
+        .into_iter()
+        .map(|agent| {
+            let state = match text(agent, "state") {
+                Some("done") => "completed",
+                Some("error") => "failed",
+                _ if agent.get("startedAt").is_some_and(|at| !at.is_null()) => "running",
+                Some("progress") => "running",
+                _ => "queued",
+            };
+            let mut shown = json!({
+                "index": agent.get("index"),
+                "label": text(agent, "label").unwrap_or("agent"),
+                "state": state,
+            });
+            for (from, to) in [
+                ("phaseTitle", "phase"),
+                ("lastToolSummary", "activity"),
+                ("error", "error"),
+            ] {
+                if let Some(value) = text(agent, from) {
+                    shown[to] = json!(value);
+                }
+            }
+            if shown.get("activity").is_none() {
+                if let Some(tool) = text(agent, "lastToolName") {
+                    shown["activity"] = json!(tool);
+                }
+            }
+            for key in ["tokens", "toolCalls"] {
+                if let Some(count) = agent.get(key).and_then(Value::as_u64) {
+                    shown[key] = json!(count);
+                }
+            }
+            shown
+        })
+        .collect();
+    Value::Array(agents)
 }
 
 fn task_type(kind: Option<&str>) -> String {
@@ -1186,6 +1235,7 @@ impl Reader {
             Task {
                 name: name.clone(),
                 ended: false,
+                agents: None,
             },
         );
         let mut update = json!({
@@ -1302,10 +1352,16 @@ impl Reader {
         let Some(id) = text(message, "task_id") else {
             return;
         };
-        if self.data.tasks.get(id).is_none_or(|task| task.ended) {
+        let Some(task) = self.data.tasks.get_mut(id).filter(|task| !task.ended) else {
             return;
-        }
+        };
         let mut update = json!({ "sessionUpdate": "async_task_progress", "asyncTaskId": id });
+        if let Some(progress) = message.get("workflow_progress").and_then(Value::as_array) {
+            task.agents = Some(workflow_agents(progress));
+        }
+        if let Some(agents) = &task.agents {
+            update["agents"] = agents.clone();
+        }
         for (from, to) in [
             ("description", "description"),
             ("summary", "summary"),

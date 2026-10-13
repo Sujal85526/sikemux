@@ -64,6 +64,19 @@ export interface AcpAsyncTask {
     usage?: { totalTokens: number; toolUses: number; durationMs: number };
     /** The subagent that started it, when the chat itself did not. */
     owner?: string;
+    /** The agents a workflow has started so far. */
+    agents?: AcpWorkflowAgent[];
+}
+
+export interface AcpWorkflowAgent {
+    index: number;
+    label: string;
+    state: "queued" | "running" | "completed" | "failed";
+    phase?: string;
+    activity?: string;
+    error?: string;
+    tokens?: number;
+    toolCalls?: number;
 }
 
 /* A subagent runs as its own ACP session, so its transcript is kept whole
@@ -83,6 +96,7 @@ export interface AcpTaskNotice {
     name: string;
     state: "completed" | "failed" | "stopped";
     summary?: string;
+    taskType?: string;
 }
 
 /** Something the agent tells the person outside its reply, like a model fallback. */

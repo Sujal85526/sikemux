@@ -11,6 +11,7 @@ import type {
     AcpContentChunk,
     AcpSubagent,
     AcpTaskNotice,
+    AcpWorkflowAgent,
     AgentNotice,
     AcpToolCall,
     ChatAction,
@@ -488,7 +489,12 @@ function patchTask(state: ChatState, update: Record<string, unknown>): ChatState
     if (taskState === "completed" || taskState === "failed" || taskState === "stopped") {
         const ended = state.tasks[index];
         const summary = textOf(update.summary) ?? ended.summary;
-        const notice: AcpTaskNotice = { name: ended.name, state: taskState, ...(summary ? { summary } : {}) };
+        const notice: AcpTaskNotice = {
+            name: ended.name,
+            state: taskState,
+            ...(ended.taskType ? { taskType: ended.taskType } : {}),
+            ...(summary ? { summary } : {}),
+        };
         const noted = addNotice(state, ended.asyncTaskId, notice, stampedAt(update));
         return { ...noted, tasks: state.tasks.filter((_, position) => position !== index), revision: state.revision + 1 };
     }
@@ -503,6 +509,7 @@ function patchTask(state: ChatState, update: Record<string, unknown>): ChatState
         lastToolName: textOf(update.lastToolName) ?? current.lastToolName,
         outputFilePath: textOf(update.outputFilePath) ?? current.outputFilePath,
         usage: (recordOf(update.usage) as AcpAsyncTask["usage"]) ?? current.usage,
+        agents: Array.isArray(update.agents) ? (update.agents as AcpWorkflowAgent[]) : current.agents,
     };
     return { ...state, tasks, revision: state.revision + 1 };
 }

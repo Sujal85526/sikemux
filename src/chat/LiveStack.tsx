@@ -1,11 +1,11 @@
 import { useContext, type ReactNode } from "react";
 import { PRIMARY_SHORTCUT } from "../lib/platform";
-import { AgentIcon, IconChevron, IconClock, IconClose, IconCommand, IconTimer } from "../ui/Icons";
+import { AgentIcon, IconCheck, IconChevron, IconClock, IconClose, IconCommand, IconTimer, IconWorkflow } from "../ui/Icons";
 import { ChatAgentContext } from "./chatAgent";
 import { queuedLabel, type QueuedMessage } from "./queuedMessages";
 import { Shimmer } from "./Shimmer";
-import { groupTasks, subagentActivity, taskDetail } from "./transcript";
-import type { AcpAsyncTask, AcpSubagent } from "./types";
+import { groupTasks, subagentActivity, taskDetail, workflowAgentDetail } from "./transcript";
+import type { AcpAsyncTask, AcpSubagent, AcpWorkflowAgent } from "./types";
 
 export type GroupFolds = {
     folded: ReadonlySet<string>;
@@ -38,7 +38,7 @@ export function BackgroundTasks({
                         icon: <TaskIcon kind={kind} />,
                         peek: group.map((task) => task.name),
                     }}>
-                    {group.map((task) => (
+                    {group.map((task) => [
                         <div className={`chat-task state-${task.state}`} key={task.asyncTaskId}>
                             <TaskIcon kind={kind} />
                             <span className="chat-task-name">{task.name}</span>
@@ -52,11 +52,28 @@ export function BackgroundTasks({
                                     <IconClose size={10} />
                                 </button>
                             )}
-                        </div>
-                    ))}
+                        </div>,
+                        ...(task.agents ?? []).map((agent) => <WorkflowAgentRow agent={agent} key={`${task.asyncTaskId}-${agent.index}`} />),
+                    ])}
                 </Group>
             ))}
         </>
+    );
+}
+
+function WorkflowAgentRow({ agent }: { agent: AcpWorkflowAgent }) {
+    const agentType = useContext(ChatAgentContext).type;
+    const running = agent.state === "running";
+    const detail = workflowAgentDetail(agent);
+    return (
+        <div className={`chat-task chat-task-agent chat-workflow-agent state-${agent.state}`}>
+            <AgentIcon type={agentType} size={16} className={`agent-glyph ${agentType}`} />
+            <span className="chat-task-name">{agent.label}</span>
+            <span className={`chat-task-detail${running ? " chat-shimmer" : ""}`}>{running && detail ? <Shimmer>{detail}</Shimmer> : detail}</span>
+            {running && <span className="chat-task-spinner" aria-hidden="true" />}
+            {agent.state === "completed" && <IconCheck size={10} aria-label="done" />}
+            {agent.state === "failed" && <IconClose size={10} aria-label="failed" />}
+        </div>
     );
 }
 
@@ -95,7 +112,9 @@ export function RunningSubagents({ subagents, folds }: { subagents: AcpSubagent[
 }
 
 function TaskIcon({ kind }: { kind: string }) {
-    return kind === "shell" ? <IconCommand size={12} /> : <IconTimer size={12} />;
+    if (kind === "shell") return <IconCommand size={12} />;
+    if (kind === "workflow") return <IconWorkflow size={12} />;
+    return <IconTimer size={12} />;
 }
 
 type Fold = {

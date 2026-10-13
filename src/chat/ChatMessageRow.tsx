@@ -13,6 +13,7 @@ import {
     IconTimer,
     IconUser,
     IconWarning,
+    IconWorkflow,
 } from "../ui/Icons";
 import { Tooltip } from "../ui/Tooltip";
 import { MessageEditor } from "./MessageEditor";
@@ -152,7 +153,7 @@ function PartGroups({ parts, live, typed = false }: { parts: ChatPart[]; live: b
 function NoticePart({ notice }: { notice: AcpTaskNotice }) {
     return (
         <div className={`chat-notice state-${notice.state}`} role="status">
-            <IconTimer size={12} />
+            {notice.taskType === "workflow" ? <IconWorkflow size={12} /> : <IconTimer size={12} />}
             <span className="chat-notice-name" title={notice.name}>
                 {notice.name}
             </span>

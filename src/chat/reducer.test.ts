@@ -405,7 +405,7 @@ describe("chat reducer", () => {
         expect(finished.messages.at(-1)?.parts.at(-1)).toEqual({
             id: "notice-task-1",
             kind: "notice",
-            notice: { name: "pnpm test", state: "completed", summary: "12 files passed" },
+            notice: { name: "pnpm test", state: "completed", summary: "12 files passed", taskType: "shell" },
         });
     });
 

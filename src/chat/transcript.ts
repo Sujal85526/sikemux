@@ -1,6 +1,7 @@
+import { tokenCount } from "./contextUsage";
 import { splitSentContext, type SentContext } from "./promptContext";
 import { toolKind, toolTarget } from "./toolLabels";
-import type { AcpAsyncTask, AcpSubagent, ChatMessage, ChatPart } from "./types";
+import type { AcpAsyncTask, AcpSubagent, AcpWorkflowAgent, ChatMessage, ChatPart } from "./types";
 
 const MAX_DETAIL_CHARS = 120_000;
 
@@ -240,6 +241,14 @@ export function runningSubagents(messages: ChatMessage[]): AcpSubagent[] {
 export function taskDetail(task: AcpAsyncTask): string | undefined {
     const detail = [task.summary, task.description, task.lastToolName, task.taskType].find((text) => text && text !== task.name);
     return [task.owner && `from ${task.owner}`, detail].filter(Boolean).join(" · ") || undefined;
+}
+
+/* A running agent says what it is doing; one that ended says what it cost. */
+export function workflowAgentDetail(agent: AcpWorkflowAgent): string | undefined {
+    if (agent.state === "failed") return agent.error ?? agent.phase;
+    if (agent.state === "running" && agent.activity) return agent.activity;
+    const cost = [agent.tokens && `${tokenCount(agent.tokens)} tokens`, agent.toolCalls && `${agent.toolCalls} tools`];
+    return [agent.phase, ...cost].filter(Boolean).join(" · ") || undefined;
 }
 
 /* An agent names its own task types — "shell", "monitor" — and they are the

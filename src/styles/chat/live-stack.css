@@ -115,6 +115,32 @@
     padding-bottom: 7px;
 }
 
+/* A workflow's agents are its subagents, so they take the subagent row, set
+   in under the workflow's name. */
+.chat-workflow-agent {
+    padding-left: 26px;
+}
+
+.chat-workflow-agent > svg:last-child {
+    flex: none;
+    margin-left: auto;
+}
+
+.chat-workflow-agent.state-queued > .agent-glyph,
+.chat-workflow-agent.state-completed > .agent-glyph,
+.chat-workflow-agent.state-completed > .chat-task-name,
+.chat-workflow-agent.state-queued > .chat-task-name {
+    opacity: 0.6;
+}
+
+.chat-workflow-agent.state-completed > svg:last-child {
+    color: color-mix(in srgb, var(--live) 58%, var(--ink-faint));
+}
+
+.chat-workflow-agent.state-failed > svg:last-child {
+    color: var(--danger);
+}
+
 .chat-task.state-paused {
     color: var(--ink-faint);
 }
