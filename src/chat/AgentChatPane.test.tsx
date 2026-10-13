@@ -437,7 +437,7 @@ describe("AgentChatPane", () => {
         expect(mocks.start).toHaveBeenCalledTimes(1);
     });
 
-    it("stops the running turn on Escape and keeps what was being typed", async () => {
+    it("stops the running turn on Escape only once the box is empty", async () => {
         render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
         const editor = screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
         await waitFor(() => expect(editor).toBeEnabled());
@@ -445,12 +445,31 @@ describe("AgentChatPane", () => {
         fireEvent.keyDown(editor, { key: "Enter" });
         fireEvent.change(editor, { target: { value: "and then the tests" } });
 
+        fireEvent.keyDown(editor, { key: "Escape" });
+        expect(acpApi.cancel).not.toHaveBeenCalled();
+        expect(editor.value).toBe("and then the tests");
+
+        fireEvent.change(editor, { target: { value: "" } });
         fireEvent.keyDown(editor, { key: "Escape", shiftKey: true });
         expect(acpApi.cancel).not.toHaveBeenCalled();
         fireEvent.keyDown(editor, { key: "Escape" });
-
         expect(acpApi.cancel).toHaveBeenCalledWith(agent.id);
-        expect(editor.value).toBe("and then the tests");
+    });
+
+    it("lets go of selected text on Escape and leaves the running turn alone", async () => {
+        render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
+        const editor = screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
+        await waitFor(() => expect(editor).toBeEnabled());
+        fireEvent.change(editor, { target: { value: "First" } });
+        fireEvent.keyDown(editor, { key: "Enter" });
+        fireEvent.change(editor, { target: { value: "check the login page" } });
+        editor.setSelectionRange(10, 15);
+
+        fireEvent.keyDown(editor, { key: "Escape" });
+
+        expect(acpApi.cancel).not.toHaveBeenCalled();
+        expect([editor.selectionStart, editor.selectionEnd]).toEqual([15, 15]);
+        expect(editor.value).toBe("check the login page");
     });
 
     it("leaves Escape alone while the agent is idle", async () => {
