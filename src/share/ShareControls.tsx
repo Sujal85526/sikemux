@@ -6,7 +6,7 @@ import { useStore } from "../state/store";
 import { useOccludeNativeViews } from "../state/nativeViews";
 import { notify, reportError } from "../state/toast";
 import type { Agent } from "../state/types";
-import { IconCopy, IconShare } from "../ui/Icons";
+import { IconCopy, IconEye, IconShare } from "../ui/Icons";
 import { Kbd } from "../ui/Kbd";
 import {
     closeShareDialog,
@@ -34,7 +34,7 @@ function endsIn(expiresAt: number, now: number): string {
     return `${Math.round(hours / 24)} days`;
 }
 
-/** Beside the chat's name: a share button, or once shared, a live chip saying how many watch. */
+/** Beside the chat's name: a share button, or once shared, a green eye and how many watch. */
 export function ShareButton({ agent }: { agent: Agent }) {
     const share = useChatShare(agent.id);
     const shared = share !== null;
@@ -53,10 +53,14 @@ export function ShareButton({ agent }: { agent: Agent }) {
             </button>
         );
     return (
-        <button type="button" className="agent-share-live" title={watching(share)} onClick={() => openShareDialog(agent.id)}>
-            <span className="agent-share-dot" aria-hidden="true" />
-            LIVE
-            {share.viewers > 0 && <span>· {share.viewers}</span>}
+        <button
+            type="button"
+            className="agent-share live"
+            aria-label={watching(share)}
+            title={watching(share)}
+            onClick={() => openShareDialog(agent.id)}>
+            <IconEye size={13} />
+            {share.viewers > 0 && <span>{share.viewers}</span>}
         </button>
     );
 }
