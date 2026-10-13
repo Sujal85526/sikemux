@@ -349,21 +349,23 @@ impl SimulatorManager {
     /// Stops following a device's log, and shuts it down a while later if
     /// Sikemux booted it and nobody has taken it up again.
     fn let_go(&self, device: Device) {
+        self.shut_down_when_idle(device.udid, true);
+    }
+
+    fn shut_down_when_idle(&self, udid: String, stop_logs: bool) {
         let Helper::App(app) = &self.helper else {
             return;
         };
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
             let manager = app.state::<SimulatorManager>();
-            let _ = manager
-                .request("stopLogs", json!({ "udid": device.udid }))
-                .await;
+            if stop_logs {
+                let _ = manager.request("stopLogs", json!({ "udid": udid })).await;
+            }
             tokio::time::sleep(SHUTDOWN_GRACE).await;
-            if manager.unheld_boot(&device.udid) {
-                let _ = manager
-                    .request("shutdown", json!({ "udid": device.udid }))
-                    .await;
-                manager.shared().booted.remove(&device.udid);
+            if manager.unheld_boot(&udid) {
+                let _ = manager.request("shutdown", json!({ "udid": udid })).await;
+                manager.shared().booted.remove(&udid);
             }
         });
     }
@@ -432,10 +434,12 @@ impl SimulatorManager {
         }
     }
 
-    /// Gives each agent back the device it held before an update's restart.
-    /// Devices Sikemux booted that nobody holds now shut down after the usual wait.
-    pub fn restore(&self, saved: SavedSimulators) {
+    /// Gives each agent back the device it held before an update's restart,
+    /// and names those agents. Devices Sikemux booted that nobody holds now
+    /// shut down after the usual wait.
+    pub fn restore(&self, saved: SavedSimulators) -> Vec<String> {
         let mut taken = Vec::new();
+        let mut agents = Vec::new();
         for held in saved.attachments {
             if self
                 .claims
@@ -452,6 +456,7 @@ impl SimulatorManager {
                 screen: held.screen,
             };
             taken.push(device.udid.clone());
+            agents.push(held.agent_id.clone());
             self.shared().attachments.insert(
                 held.agent_id,
                 Attachment {
@@ -464,29 +469,29 @@ impl SimulatorManager {
                 },
             );
         }
-        let idle: Vec<String> = {
+        {
             let mut shared = self.shared();
             shared.desk = saved.desk;
             shared.projects = saved.projects;
             shared.offered = saved.offered;
-            shared.booted = saved.booted.into_iter().collect();
-            shared
-                .booted
-                .iter()
-                .filter(|udid| !taken.contains(udid))
-                .cloned()
-                .collect()
-        };
-        for udid in idle {
-            self.let_go(Device {
-                udid,
-                name: String::new(),
-                os: String::new(),
-                booted: true,
-                screen: None,
-            });
         }
+        let idle = saved
+            .booted
+            .into_iter()
+            .filter(|udid| !taken.contains(udid))
+            .collect();
+        self.adopt_booted(idle);
+        self.shared().booted.extend(taken.iter().cloned());
         self.follow_logs(taken);
+        agents
+    }
+
+    /// Takes over devices an earlier run booted and nobody holds, so they shut down after the usual wait.
+    pub fn adopt_booted(&self, udids: Vec<String>) {
+        for udid in udids {
+            self.shared().booted.insert(udid.clone());
+            self.shut_down_when_idle(udid, false);
+        }
     }
 
     /// Starts reading the devices' logs again, as attaching does.

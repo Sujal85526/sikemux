@@ -2,6 +2,7 @@
 //! agent's tab strip is saved as the old app quits and comes back unloaded in
 //! the new one, so a tab loads its address again once it is shown or used.
 
+use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 
 use serde::{Deserialize, Serialize};
@@ -25,6 +26,8 @@ struct SavedTab {
     title: String,
     favicon: Option<String>,
     viewport: Option<SavedViewport>,
+    /// A file shown over a loopback address that dies with the app, shared again under a new one.
+    local_file: Option<PathBuf>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -79,6 +82,7 @@ impl BrowserManager {
                                 height: fixed.height,
                                 preset: fixed.preset.map(str::to_owned),
                             }),
+                            local_file: self.local_files.path_of(&page.url),
                         })
                     })
                     .collect(),
@@ -87,9 +91,10 @@ impl BrowserManager {
             .collect()
     }
 
-    /// Puts the saved strips back with every tab unloaded.
-    pub fn reopen(&self, app: &AppHandle, strips: Vec<SavedStrip>) {
+    /// Puts the saved strips back with every tab unloaded, and names the agents they went to.
+    pub fn reopen(&self, app: &AppHandle, strips: Vec<SavedStrip>) -> Vec<String> {
         self.adopt_app(app);
+        let mut reopened = Vec::new();
         let mut agents = self.lock();
         for saved in strips {
             if validate_agent_id(&saved.agent_id).is_err() || agents.contains_key(&saved.agent_id) {
@@ -100,6 +105,13 @@ impl BrowserManager {
                 if !plain_tab_id(&tab.id) || agent.strip.pages.contains_key(&tab.id) {
                     continue;
                 }
+                let url = match &tab.local_file {
+                    Some(path) => match self.local_files.url_for(path) {
+                        Ok(url) => url,
+                        Err(_) => continue,
+                    },
+                    None => tab.url,
+                };
                 if let Some(number) = tab_number(&tab.id) {
                     self.next_tab.fetch_max(number + 1, Ordering::AcqRel);
                 }
@@ -110,7 +122,7 @@ impl BrowserManager {
                     tab.id.clone(),
                     TabPage {
                         title: tab.title,
-                        url: tab.url,
+                        url,
                         favicon: tab.favicon,
                         ..TabPage::default()
                     },
@@ -123,7 +135,9 @@ impl BrowserManager {
             if let Some(active) = saved.active {
                 agent.strip.activate(&active);
             }
+            reopened.push(saved.agent_id.clone());
             agents.insert(saved.agent_id, agent);
         }
+        reopened
     }
 }
