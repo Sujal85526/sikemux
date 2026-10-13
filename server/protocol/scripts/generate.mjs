@@ -27,6 +27,13 @@ async function format(text, path) {
   return prettier.format(text, { ...options, filepath: path });
 }
 
+/**
+ * Schemas only the core speaks, generated into sikemux-core rather than sikemux-wire, so a
+ * change to them leaves the phone's native code, and its over-the-air updates, alone. Their
+ * fixtures go in fixtures-core, which the core's own contract test reads.
+ */
+const CORE_ONLY = new Set(["share.json"]);
+
 const schemaDir = join(protocol, "schema");
 const documents = {};
 for (const file of (await readdir(schemaDir))
@@ -50,7 +57,16 @@ try {
       openapi(definitions, routes),
     ),
     [join(repo, "src-tauri/crates/sikemux-wire/src/accounts/protocol.rs")]:
-      rust(definitions),
+      rust(definitions, {
+        include: (definition) => !CORE_ONLY.has(definition.file),
+      }),
+    [join(repo, "src-tauri/crates/sikemux-core/src/accounts/share.rs")]: rust(
+      definitions,
+      {
+        include: (definition) => CORE_ONLY.has(definition.file),
+        imports: "\nuse super::protocol::*;\n",
+      },
+    ),
   };
 } catch (error) {
   if (!(error instanceof SchemaError)) throw error;

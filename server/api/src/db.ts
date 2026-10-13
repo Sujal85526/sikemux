@@ -108,6 +108,15 @@ export interface Tables {
     commit_time: Date;
     assigned_at: CreatedAt;
   };
+  shares: {
+    id: string;
+    user_id: string;
+    host_key: string;
+    created_at: CreatedAt;
+    expires_at: Date;
+    ended_at: ColumnType<Date | null, never, Date | null>;
+    ended_reason: ColumnType<string | null, never, string | null>;
+  };
   audit: {
     id: Generated<string>;
     user_id: string | null;

@@ -431,6 +431,242 @@ export const revokeReasonValues: readonly RevokeReason[] = [
   "account_deleted",
 ];
 
+/** What the host sealed for the share's viewers: a 12-byte nonce, then AES-256-GCM ciphertext and tag, in unpadded base64url. The key lives only in the share's link, so the server cannot read it. */
+export type Sealed = string;
+
+/** Host only: the sealed answer to one viewer's question. */
+export interface ShareAnswer {
+  type: "answer";
+  share: ShareId;
+  viewer: ShareViewerId;
+  sealed: Sealed;
+}
+
+/** To a viewer: the host's sealed answer to one of its questions. */
+export interface ShareAnswered {
+  type: "answer";
+  sealed: Sealed;
+}
+
+/** Viewer only: a sealed question for the host, such as the chat's turns before some event or a picture pasted into it. The host answers with answer. */
+export interface ShareAsk {
+  type: "ask";
+  sealed: Sealed;
+}
+
+/** To the host: a viewer's sealed question. Answer it with answer, naming the viewer. */
+export interface ShareAsked {
+  type: "ask";
+  share: ShareId;
+  viewer: ShareViewerId;
+  sealed: Sealed;
+}
+
+/** Viewer only: a fresh Clerk token for the same user, sent before ready.authExpiresAt. */
+export interface ShareAuth {
+  type: "auth";
+  token: string;
+}
+
+/** The server is restarting and closes with ShareCloseCode restarting after it. Reconnect no sooner than reconnectAfterMs. */
+export interface ShareBye {
+  type: "bye";
+  reconnectAfterMs: number;
+}
+
+/** The server's first message on every share connection: a one-time value a host's hello signs. */
+export interface ShareChallenge {
+  type: "challenge";
+  nonce: string;
+  expiresAt: string;
+}
+
+/** What a host or a viewer sends on a share connection. */
+export type ShareClientMessage =
+  | ShareHello
+  | ShareOpen
+  | SharePublish
+  | ShareAnswer
+  | ShareClose
+  | ShareAsk
+  | ShareAuth
+  | SharePong;
+
+/** Host only: end a share for good. Its viewers are told it was stopped. */
+export interface ShareClose {
+  type: "close";
+  share: ShareId;
+}
+
+/** Why the server closed a share connection, as the WebSocket close code. */
+export const ShareCloseCode = {
+  /** Something the protocol does not allow was sent. Reconnect with backoff. */
+  badMessage: 4400,
+  /** The hello did not prove who is connecting, or the viewer's sign-in expired. */
+  unauthenticated: 4401,
+  /** No share has this id. Do not reconnect. */
+  notFound: 4404,
+  /** No hello came within 10 seconds of the challenge. Reconnect with backoff. */
+  helloTimeout: 4408,
+  /** A newer connection for the same host took over. */
+  replaced: 4409,
+  /** The share ended, after an ended message. Do not reconnect. */
+  ended: 4410,
+  /** Over a limit: too many messages, viewers or failed hellos. Wait at least 30 seconds. */
+  overLimit: 4429,
+  /** Something failed on the server. Reconnect with backoff. */
+  serverError: 1011,
+  /** The server is restarting, after a bye message. Reconnect no sooner than its reconnectAfterMs. */
+  restarting: 1012,
+  /** The server has too many connections, or the connection stopped reading. Reconnect with backoff. */
+  overloaded: 1013,
+} as const;
+export type ShareCloseCode =
+  (typeof ShareCloseCode)[keyof typeof ShareCloseCode];
+
+/** The share ended. The server closes a viewer's connection with ShareCloseCode ended after it. */
+export interface ShareEnded {
+  type: "ended";
+  share: ShareId;
+  reason: ShareEndReason;
+}
+
+/** Why a share ended: the host stopped it or its chat ended, or it ran past its expiry. */
+export type ShareEndReason = "stopped" | "expired";
+export const shareEndReasonValues: readonly ShareEndReason[] = [
+  "stopped",
+  "expired",
+];
+
+/** One sealed frame of a share. A snapshot holds the whole chat as it stands, so a viewer starts over from it and the frames before it are no longer needed. */
+export interface ShareFrame {
+  seq: ShareSeq;
+  snapshot: boolean;
+  sealed: Sealed;
+}
+
+/** To a viewer: frames in order. One with snapshot set replaces everything before it. */
+export interface ShareFrames {
+  type: "frames";
+  frames: ShareFrame[];
+}
+
+/** The first message on a share connection. A host sends its key and its Ed25519 signature over the UTF-8 text `sikemux-share|<nonce>|<key>`. A viewer sends a Clerk token from the web app, the phone or the Mac, the share it wants, and the last frame it holds, if any. */
+export interface ShareHello {
+  type: "hello";
+  role: ShareRole;
+  key?: DeviceKey;
+  signature?: string;
+  token?: string;
+  share?: ShareId;
+  since?: ShareSeq;
+}
+
+/** To a viewer: the sharing host connected or went away. Questions wait for it. */
+export interface ShareHost {
+  type: "host";
+  online: boolean;
+}
+
+/** A shared chat's id: 16 random bytes the host picks, in unpadded base64url. */
+export type ShareId = string;
+
+/** Host only: start a share. The server answers opened or refused. */
+export interface ShareOpen {
+  type: "open";
+  share: ShareId;
+  expiresAt: string;
+}
+
+/** To the host: the share is open and viewers may join. */
+export interface ShareOpened {
+  type: "opened";
+  share: ShareId;
+}
+
+/** Answer with pong. */
+export interface SharePing {
+  type: "ping";
+}
+
+/** The answer to ping. */
+export interface SharePong {
+  type: "pong";
+}
+
+/** Host only: the share's next frame, for every viewer now and later. */
+export interface SharePublish {
+  type: "publish";
+  share: ShareId;
+  frame: ShareFrame;
+}
+
+/** The hello was accepted. A viewer is sent the frames it does not hold next, from the latest snapshot on. */
+export interface ShareReady {
+  type: "ready";
+  heartbeatMs: number;
+  /** Viewer only: when the share ends. */
+  expiresAt?: string;
+  /** Viewer only: whether the sharing host is connected. */
+  hostOnline?: boolean;
+  /** Viewer only: send a fresh token in an auth message before this. */
+  authExpiresAt?: string;
+}
+
+/** Why the server would not open a share: the account has as many open as it may, the id is taken, or the expiry is not between now and seven days from now. */
+export type ShareRefusal = "limit" | "exists" | "expiry";
+export const shareRefusalValues: readonly ShareRefusal[] = [
+  "limit",
+  "exists",
+  "expiry",
+];
+
+/** To the host: the share was not opened. */
+export interface ShareRefused {
+  type: "refused";
+  share: ShareId;
+  reason: ShareRefusal;
+}
+
+/** A host publishes its shared chats; a viewer watches one. */
+export type ShareRole = "host" | "viewer";
+export const shareRoleValues: readonly ShareRole[] = ["host", "viewer"];
+
+/** A frame's place in its share. The host numbers frames from 1, one higher each time. */
+export type ShareSeq = number;
+
+/** What the server sends on a share connection. */
+export type ShareServerMessage =
+  | ShareChallenge
+  | ShareReady
+  | ShareOpened
+  | ShareRefused
+  | ShareViewers
+  | ShareAsked
+  | ShareWantsSnapshot
+  | ShareFrames
+  | ShareAnswered
+  | ShareHost
+  | ShareEnded
+  | SharePing
+  | ShareBye;
+
+/** One viewer's connection, as the server names it to the host. */
+export type ShareViewerId = string;
+
+/** To the host: how many viewers a share has now. */
+export interface ShareViewers {
+  type: "viewers";
+  share: ShareId;
+  count: number;
+}
+
+/** To the host: the server let go of the share's frames, so the next frame it publishes must be a snapshot. */
+export interface ShareWantsSnapshot {
+  type: "snapshot";
+  share: ShareId;
+}
+
 /** Every definition by name, so code can look a type up from the name it validates against. */
 export interface Definitions {
   Account: Account;
@@ -489,4 +725,36 @@ export interface Definitions {
   PushTokenState: PushTokenState;
   Relay: Relay;
   RevokeReason: RevokeReason;
+  Sealed: Sealed;
+  ShareAnswer: ShareAnswer;
+  ShareAnswered: ShareAnswered;
+  ShareAsk: ShareAsk;
+  ShareAsked: ShareAsked;
+  ShareAuth: ShareAuth;
+  ShareBye: ShareBye;
+  ShareChallenge: ShareChallenge;
+  ShareClientMessage: ShareClientMessage;
+  ShareClose: ShareClose;
+  ShareCloseCode: ShareCloseCode;
+  ShareEnded: ShareEnded;
+  ShareEndReason: ShareEndReason;
+  ShareFrame: ShareFrame;
+  ShareFrames: ShareFrames;
+  ShareHello: ShareHello;
+  ShareHost: ShareHost;
+  ShareId: ShareId;
+  ShareOpen: ShareOpen;
+  ShareOpened: ShareOpened;
+  SharePing: SharePing;
+  SharePong: SharePong;
+  SharePublish: SharePublish;
+  ShareReady: ShareReady;
+  ShareRefusal: ShareRefusal;
+  ShareRefused: ShareRefused;
+  ShareRole: ShareRole;
+  ShareSeq: ShareSeq;
+  ShareServerMessage: ShareServerMessage;
+  ShareViewerId: ShareViewerId;
+  ShareViewers: ShareViewers;
+  ShareWantsSnapshot: ShareWantsSnapshot;
 }
