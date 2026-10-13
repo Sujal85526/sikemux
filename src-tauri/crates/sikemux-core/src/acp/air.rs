@@ -8,8 +8,7 @@
 use agent_client_protocol::schema::v1::{
     ClientCapabilities, ClientSessionCapabilities, ContentBlock, Meta, NoticeCapabilities,
 };
-use agent_client_protocol::{JsonRpcNotification, JsonRpcRequest, JsonRpcResponse};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{json, Value};
 
 const EXTENSION_VERSION: u8 = 1;
@@ -35,16 +34,6 @@ pub fn client_capabilities() -> ClientCapabilities {
         .meta(meta)
 }
 
-/// A `session/update` kept as raw JSON.
-///
-/// The extension adds update kinds the schema crate has never heard of, and a
-/// typed notification rejects the whole message when it meets one. Parsing is
-/// left to the frontend, which ignores what it does not recognise.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcNotification)]
-#[notification(method = "session/update")]
-#[serde(transparent)]
-pub struct SessionUpdate(pub Value);
-
 /// Whether the agent takes a message aimed at the turn already running.
 ///
 /// Steering is its own extension rather than part of AIR, advertised at the top
@@ -60,9 +49,10 @@ pub fn steering_supported(initialize_meta: &Value) -> bool {
 ///
 /// `idleBehavior` asks for the message back when the turn settled first, rather
 /// than letting the agent open a turn of its own that this side never started
-/// and so would never see finish.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcRequest)]
-#[request(method = "_session/steering", response = SteerResponse)]
+/// and so would never see finish. The agent answers with its `outcome`:
+/// `injected` when the message reached the running turn, `promptRequired` when
+/// there was no turn left to reach and the message is the client's again.
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Steer {
     pub session_id: String,
@@ -72,6 +62,8 @@ pub struct Steer {
 }
 
 impl Steer {
+    pub const METHOD: &str = "_session/steering";
+
     pub fn new(session_id: String, prompt: Vec<ContentBlock>) -> Self {
         Self {
             session_id,
@@ -81,28 +73,15 @@ impl Steer {
     }
 }
 
-/// `injected` when the message reached the running turn, `promptRequired` when
-/// there was no turn left to reach and the message is the client's again.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcResponse)]
-#[serde(rename_all = "camelCase")]
-pub struct SteerResponse {
-    #[serde(default)]
-    pub outcome: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcRequest)]
-#[request(method = "_session/async_task/stop", response = StopAsyncTaskResponse)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StopAsyncTask {
     pub session_id: String,
     pub async_task_id: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcResponse)]
-#[serde(rename_all = "camelCase")]
-pub struct StopAsyncTaskResponse {
-    #[serde(default)]
-    pub stopped: bool,
+impl StopAsyncTask {
+    pub const METHOD: &str = "_session/async_task/stop";
 }
 
 #[cfg(test)]
@@ -143,15 +122,5 @@ mod tests {
             payload.pointer("/_meta/steering/idleBehavior"),
             Some(&json!("promptRequired"))
         );
-    }
-
-    #[test]
-    fn session_updates_survive_kinds_the_schema_does_not_know() {
-        let payload = json!({
-            "sessionId": "session-1",
-            "update": { "sessionUpdate": "async_task_spawned", "asyncTaskId": "task-1" },
-        });
-        let parsed: SessionUpdate = serde_json::from_value(payload.clone()).unwrap();
-        assert_eq!(parsed.0, payload);
     }
 }

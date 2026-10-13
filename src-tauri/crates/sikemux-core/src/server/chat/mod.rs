@@ -2,7 +2,6 @@
 //! Protocol with, so a turn keeps going while the window is closed and a
 //! permission request waits for the person to come back.
 
-mod connection;
 pub(crate) mod feed;
 mod history;
 mod native;
@@ -756,12 +755,8 @@ fn launch(core: &Arc<Core>, chat: &Arc<Chat>, mut queue: mpsc::UnboundedReceiver
         let mut rebind = None;
         let result = loop {
             let launch = ending.current_launch();
-            let ran = match native::Kind::of(ending.provider()) {
-                Some(kind) => {
-                    native::run(kind, ending.clone(), launch, &mut queue, rebind.take()).await
-                }
-                None => connection::run(ending.clone(), launch, &mut queue, rebind.take()).await,
-            };
+            let kind = native::Kind::of(ending.provider());
+            let ran = native::run(kind, ending.clone(), launch, &mut queue, rebind.take()).await;
             ending.feed.agent_gone();
             match ran {
                 Ok(rebind::Outcome::Rebind(next)) => {

@@ -22,7 +22,7 @@ use crate::protocol::ChatLaunch;
 
 use super::file_link;
 use super::process::{Lines, Process};
-use super::rpc::{Incoming, Rpc};
+use super::rpc::{error_text, Incoming, Rpc, Sent, ANSWER_WAIT};
 use super::session::{Backend, Opened, Prompt, Sink, TurnEnd};
 use commands::Command;
 use config::{Mode, Models};
@@ -265,6 +265,23 @@ fn input(blocks: &[Value], images: bool) -> Vec<Value> {
 }
 
 impl Codex {
+    /// Writes a steer to Codex now, so a stop sent after it reaches Codex
+    /// after it too. None when no turn is running.
+    fn send_steer(&self, prompt: &Prompt) -> Result<Option<Sent>, String> {
+        let Some(turn_id) = self.driver.lock().active_turn() else {
+            return Ok(None);
+        };
+        let input = self.prompt_input(prompt)?;
+        self.driver
+            .rpc
+            .start(
+                "turn/steer",
+                json!({ "threadId": self.thread_id, "expectedTurnId": turn_id, "input": input }),
+            )
+            .map(Some)
+            .map_err(|error| error_text(&error))
+    }
+
     fn prompt_input(&self, prompt: &Prompt) -> Result<Vec<Value>, String> {
         let blocks = prompt_blocks(
             prompt.text.clone(),
@@ -570,27 +587,29 @@ impl Backend for Codex {
         self.send_turn(turn, &prompt, "turn/start", params).await
     }
 
-    async fn steer(&mut self, prompt: Prompt) -> Result<String, String> {
-        let Some(turn_id) = self.driver.lock().active_turn() else {
-            return Ok("promptRequired".to_owned());
-        };
-        let input = self.prompt_input(&prompt)?;
-        let steered = self
-            .driver
-            .rpc
-            .request(
-                "turn/steer",
-                json!({ "threadId": self.thread_id, "expectedTurnId": turn_id, "input": input }),
-            )
-            .await;
-        match steered {
-            Ok(_) => Ok("injected".to_owned()),
-            Err(error)
-                if error.contains("no active turn") || error.contains("expected active turn") =>
+    fn steer(
+        &mut self,
+        prompt: Prompt,
+    ) -> impl std::future::Future<Output = Result<String, String>> + Send + 'static {
+        let sent = self.send_steer(&prompt);
+        async move {
+            let Some(sent) = sent? else {
+                return Ok("promptRequired".to_owned());
+            };
+            match sent
+                .answer(Some(ANSWER_WAIT))
+                .await
+                .map_err(|error| error_text(&error))
             {
-                Ok("promptRequired".to_owned())
+                Ok(_) => Ok("injected".to_owned()),
+                Err(error)
+                    if error.contains("no active turn")
+                        || error.contains("expected active turn") =>
+                {
+                    Ok("promptRequired".to_owned())
+                }
+                Err(error) => Err(error),
             }
-            Err(error) => Err(error),
         }
     }
 

@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use serde_json::{json, Value};
@@ -13,9 +13,13 @@ use super::process::Writer;
 
 /// How long a request may wait for its answer before the agent is taken to
 /// be stuck.
-const ANSWER_WAIT: Duration = Duration::from_secs(120);
+pub(crate) const ANSWER_WAIT: Duration = Duration::from_secs(120);
 
-type Answer = oneshot::Sender<Result<Value, String>>;
+/// The code JSON-RPC gives an error inside the side that reports it.
+const INTERNAL_ERROR: i64 = -32603;
+
+/// An answer, or the error object the agent turned the request down with.
+type Answer = oneshot::Sender<Result<Value, Value>>;
 
 /// One message the agent sent that is not an answer to this side.
 pub(crate) enum Incoming {
@@ -30,6 +34,19 @@ pub(crate) enum Incoming {
     },
 }
 
+/// An error object for a request that got no answer from the agent.
+fn unanswered(message: impl Into<String>) -> Value {
+    json!({ "code": INTERNAL_ERROR, "message": message.into() })
+}
+
+/// What an error object says, in words.
+pub(crate) fn error_text(error: &Value) -> String {
+    error
+        .get("message")
+        .and_then(Value::as_str)
+        .map_or_else(|| error.to_string(), str::to_owned)
+}
+
 #[derive(Clone)]
 pub(crate) struct Rpc {
     writer: Writer,
@@ -38,6 +55,35 @@ pub(crate) struct Rpc {
     /// Whether every message names its JSON-RPC version. Codex leaves it out;
     /// Muse refuses a message without it.
     versioned: bool,
+}
+
+/// A request that has been sent, and the answer still to come.
+pub(crate) struct Sent {
+    rpc: Rpc,
+    id: i64,
+    method: String,
+    answered: oneshot::Receiver<Result<Value, Value>>,
+}
+
+impl Sent {
+    /// The agent's answer, or its error object. With a `wait`, a request left
+    /// unanswered that long fails.
+    pub async fn answer(self, wait: Option<Duration>) -> Result<Value, Value> {
+        let answered = match wait {
+            Some(wait) => match tokio::time::timeout(wait, self.answered).await {
+                Ok(answered) => answered,
+                Err(_) => {
+                    self.rpc.forget(self.id);
+                    return Err(unanswered(format!(
+                        "The agent did not answer {}",
+                        self.method
+                    )));
+                }
+            },
+            None => self.answered.await,
+        };
+        answered.unwrap_or_else(|_| Err(unanswered("The agent stopped before it answered")))
+    }
 }
 
 impl Rpc {
@@ -65,23 +111,28 @@ impl Rpc {
     }
 
     pub async fn request(&self, method: &str, params: Value) -> Result<Value, String> {
+        self.start(method, params)
+            .map_err(|error| error_text(&error))?
+            .answer(Some(ANSWER_WAIT))
+            .await
+            .map_err(|error| error_text(&error))
+    }
+
+    /// Sends a request without waiting on its answer.
+    pub fn start(&self, method: &str, params: Value) -> Result<Sent, Value> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (answer, answered) = oneshot::channel();
-        if let Ok(mut waiting) = self.waiting.lock() {
-            waiting.insert(id, answer);
-        }
+        self.waiting().insert(id, answer);
         if let Err(error) = self.send(json!({ "id": id, "method": method, "params": params })) {
             self.forget(id);
-            return Err(error);
+            return Err(unanswered(error));
         }
-        match tokio::time::timeout(ANSWER_WAIT, answered).await {
-            Ok(Ok(result)) => result,
-            Ok(Err(_)) => Err("The agent stopped before it answered".into()),
-            Err(_) => {
-                self.forget(id);
-                Err(format!("The agent did not answer {method}"))
-            }
-        }
+        Ok(Sent {
+            rpc: self.clone(),
+            id,
+            method: method.to_owned(),
+            answered,
+        })
     }
 
     pub fn notify(&self, method: &str, params: Value) -> Result<(), String> {
@@ -103,10 +154,12 @@ impl Rpc {
         }));
     }
 
+    fn waiting(&self) -> std::sync::MutexGuard<'_, HashMap<i64, Answer>> {
+        self.waiting.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
     fn forget(&self, id: i64) {
-        if let Ok(mut waiting) = self.waiting.lock() {
-            waiting.remove(&id);
-        }
+        self.waiting().remove(&id);
     }
 
     /// Hands an answer to the request waiting on it, or reads the message as
@@ -124,15 +177,10 @@ impl Rpc {
             (Some(id), Some(method)) => Some(Incoming::Request { id, method, params }),
             (None, Some(method)) => Some(Incoming::Notification { method, params }),
             (Some(id), None) => {
-                let answer = id
-                    .as_i64()
-                    .and_then(|id| self.waiting.lock().ok()?.remove(&id));
+                let answer = id.as_i64().and_then(|id| self.waiting().remove(&id));
                 if let Some(answer) = answer {
                     let result = match message.remove("error") {
-                        Some(error) => Err(error
-                            .get("message")
-                            .and_then(Value::as_str)
-                            .map_or_else(|| error.to_string(), str::to_owned)),
+                        Some(error) => Err(error),
                         None => Ok(message.remove("result").unwrap_or(Value::Null)),
                     };
                     let _ = answer.send(result);
@@ -145,10 +193,8 @@ impl Rpc {
 
     /// Fails every request still waiting, once the agent is gone.
     pub fn close(&self) {
-        if let Ok(mut waiting) = self.waiting.lock() {
-            for (_, answer) in waiting.drain() {
-                let _ = answer.send(Err("The agent stopped before it answered".into()));
-            }
+        for (_, answer) in self.waiting().drain() {
+            let _ = answer.send(Err(unanswered("The agent stopped before it answered")));
         }
     }
 }

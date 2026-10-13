@@ -1,0 +1,497 @@
+//! Agents that speak the Agent Client Protocol themselves, such as OpenCode,
+//! OMP, Grok and Hermes: JSON-RPC, one message per line, on the agent's
+//! standard input and output. Their session updates already have the shape
+//! the chat reads, so they pass through as they come.
+
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
+
+use agent_client_protocol::schema::v1::{
+    CancelNotification, Error as AcpError, Implementation, InitializeRequest, InitializeResponse,
+    LoadSessionRequest, McpServer, NewSessionRequest, PromptRequest, RequestPermissionOutcome,
+    RequestPermissionResponse, SelectedPermissionOutcome, SetSessionConfigOptionRequest,
+    SetSessionModeRequest, AGENT_METHOD_NAMES, CLIENT_METHOD_NAMES,
+};
+use agent_client_protocol::schema::ProtocolVersion;
+use serde::Serialize;
+use serde_json::{json, Value};
+
+use crate::acp::account::{self, Failure};
+use crate::acp::{air, native, permission_mode_id, prompt_blocks};
+use crate::protocol::ChatLaunch;
+
+use super::process::{Lines, Process};
+use super::rpc::{error_text, Incoming, Rpc, Sent, ANSWER_WAIT};
+use super::session::{Backend, Opened, Prompt, Sink, TurnEnd};
+
+/// The error code an agent turns a prompt down with when it needs a sign-in.
+const AUTH_REQUIRED: i64 = -32000;
+
+/// An agent's error in words, its details included.
+fn describe(error: &Value) -> String {
+    serde_json::from_value::<AcpError>(error.clone())
+        .map_or_else(|_| error_text(error), |error| error.to_string())
+}
+
+fn params(message: impl Serialize) -> Result<Value, String> {
+    serde_json::to_value(message).map_err(|error| error.to_string())
+}
+
+/// Why starting failed, with the last thing the agent printed when it stopped.
+fn start_error(process: &Process, error: String) -> String {
+    let stderr = process.stderr();
+    match stderr.lines().rev().find(|line| !line.trim().is_empty()) {
+        Some(line) => format!("{error}: {}", line.trim()),
+        None => error,
+    }
+}
+
+/// The turn last prompted, the last one asked to stop while it ran, and
+/// whether the agent's output has closed.
+#[derive(Default)]
+struct Turns {
+    prompted: u64,
+    cancelled: u64,
+    gone: bool,
+}
+
+/// What the reader, the turns waiting on answers and the chat's loop share.
+#[derive(Clone)]
+struct Driver {
+    rpc: Rpc,
+    sink: Sink,
+    turns: Arc<Mutex<Turns>>,
+}
+
+impl Driver {
+    fn lock(&self) -> MutexGuard<'_, Turns> {
+        self.turns.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Sends a request and waits on its answer, for at most `wait`.
+    async fn call(
+        &self,
+        method: &str,
+        message: impl Serialize,
+        wait: Option<Duration>,
+    ) -> Result<Value, String> {
+        self.rpc
+            .start(method, params(message)?)
+            .map_err(|error| describe(&error))?
+            .answer(wait)
+            .await
+            .map_err(|error| describe(&error))
+    }
+
+    /// Settles turn `turn` with the agent's answer to its prompt.
+    fn answered(&self, turn: u64, answer: Result<Value, Value>) {
+        let end = match answer {
+            Ok(response) => match response.get("_meta").and_then(account::failure) {
+                Some(failure) => TurnEnd::Failed {
+                    failure,
+                    response: Some(response),
+                },
+                None => TurnEnd::Completed(response),
+            },
+            // Hermes can crash out of a stopped turn and leave its session
+            // refusing every prompt after.
+            Err(_) if self.lock().cancelled == turn => TurnEnd::Broken(
+                "The agent failed while stopping, so its session was restarted".into(),
+            ),
+            // The agent is gone, and the chat says why once its process has
+            // exited.
+            Err(_) if self.lock().gone => return,
+            Err(error) if error["code"] == AUTH_REQUIRED => TurnEnd::Failed {
+                failure: Failure::sign_in(error_text(&error)),
+                response: None,
+            },
+            Err(error) => TurnEnd::Refused(describe(&error)),
+        };
+        self.sink.end_turn(turn, end);
+    }
+
+    fn ask(&self, id: Value, request: Value) {
+        let driver = self.clone();
+        tokio::spawn(async move {
+            let outcome = match driver.sink.ask(request).await {
+                Some(option_id) => {
+                    RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id))
+                }
+                None => RequestPermissionOutcome::Cancelled,
+            };
+            let response = serde_json::to_value(RequestPermissionResponse::new(outcome))
+                .unwrap_or_else(|_| json!({}));
+            driver.rpc.respond(id, response);
+        });
+    }
+
+    /// Reads the agent's output until it closes.
+    fn read(self, mut lines: Lines) {
+        tokio::spawn(async move {
+            while let Some(message) = lines.next().await {
+                match self.rpc.read(message) {
+                    Some(Incoming::Notification { method, mut params })
+                        if method == CLIENT_METHOD_NAMES.session_update =>
+                    {
+                        let update = params
+                            .get_mut("update")
+                            .map(Value::take)
+                            .unwrap_or_default();
+                        let session_id = params["sessionId"].as_str().unwrap_or_default();
+                        self.sink.update(session_id, update);
+                    }
+                    Some(Incoming::Request { id, method, params })
+                        if method == CLIENT_METHOD_NAMES.session_request_permission =>
+                    {
+                        self.ask(id, params);
+                    }
+                    Some(Incoming::Request { id, method, .. }) => self
+                        .rpc
+                        .refuse(id, &format!("Sikemux does not handle {method}")),
+                    Some(Incoming::Notification { .. }) | None => {}
+                }
+            }
+            self.lock().gone = true;
+            self.rpc.close();
+        });
+    }
+}
+
+/// The tool servers the chat hands its agent, skipping any it cannot read.
+fn tool_servers(launch: &ChatLaunch) -> Vec<McpServer> {
+    launch
+        .mcp_servers
+        .iter()
+        .filter_map(|server| match serde_json::from_value(server.clone()) {
+            Ok(server) => Some(server),
+            Err(error) => {
+                eprintln!(
+                    "sikemux core: chat {} skips a tool server it cannot read: {error}",
+                    launch.agent_id
+                );
+                None
+            }
+        })
+        .collect()
+}
+
+pub(crate) struct Acp {
+    process: Process,
+    driver: Driver,
+    provider: String,
+    session_id: String,
+    setup: Value,
+    steering: bool,
+    embedded_context: bool,
+    can_load: bool,
+    /// Whether the session's models are picked through `session/set_model`
+    /// rather than as a config option.
+    model_outside_config: bool,
+}
+
+impl Acp {
+    async fn open_new(
+        driver: &Driver,
+        launch: &ChatLaunch,
+        servers: Vec<McpServer>,
+    ) -> Result<(String, Value), String> {
+        let setup = driver
+            .call(
+                AGENT_METHOD_NAMES.session_new,
+                NewSessionRequest::new(&launch.cwd).mcp_servers(servers),
+                None,
+            )
+            .await?;
+        let session_id = setup
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .ok_or("The agent opened a session without an id")?
+            .to_owned();
+        Ok((session_id, setup))
+    }
+
+    /// Opens the chat's session: the one it resumes, or a new one. A loaded
+    /// session replays its history before it answers.
+    async fn open(
+        driver: &Driver,
+        launch: &ChatLaunch,
+        can_load: bool,
+    ) -> Result<(String, Value), String> {
+        let servers = tool_servers(launch);
+        let Some(existing) = launch.resume_id.clone() else {
+            return Self::open_new(driver, launch, servers).await;
+        };
+        if !can_load {
+            return Err("This agent cannot load existing sessions".into());
+        }
+        let load =
+            LoadSessionRequest::new(existing.clone(), &launch.cwd).mcp_servers(servers.clone());
+        let loaded = driver
+            .rpc
+            .start(AGENT_METHOD_NAMES.session_load, params(load)?)
+            .map_err(|error| describe(&error))?
+            .answer(None)
+            .await;
+        match loaded {
+            Ok(setup) => Ok((existing, setup)),
+            // A chat whose turns all failed may have nothing saved to load,
+            // and starting again is all there is to do.
+            Err(_) if driver.sink.reloading() && !driver.sink.has_answered() => {
+                Self::open_new(driver, launch, servers).await
+            }
+            Err(error) => Err(describe(&error)),
+        }
+    }
+
+    async fn set_model(&mut self, model: &str) -> Result<(), String> {
+        self.driver
+            .call(
+                native::SetSessionModel::METHOD,
+                native::SetSessionModel {
+                    session_id: self.session_id.clone(),
+                    model_id: model.to_owned(),
+                },
+                Some(ANSWER_WAIT),
+            )
+            .await?;
+        native::select_model(&mut self.setup, model);
+        Ok(())
+    }
+
+    async fn set_option(&mut self, config_id: &str, value: &str) -> Result<(), String> {
+        let answer = self
+            .driver
+            .call(
+                AGENT_METHOD_NAMES.session_set_config_option,
+                SetSessionConfigOptionRequest::new(
+                    self.session_id.clone(),
+                    config_id.to_owned(),
+                    value,
+                ),
+                Some(ANSWER_WAIT),
+            )
+            .await?;
+        if let Some(options) = answer.get("configOptions") {
+            self.setup["configOptions"] = options.clone();
+        }
+        Ok(())
+    }
+
+    /// Carries the chat's saved model and effort into the session. A choice
+    /// the agent no longer offers is skipped, since model lists change between
+    /// launches and a stale one should not stop the chat from starting.
+    async fn apply_saved_choices(&mut self, model: Option<&str>, effort: Option<&str>) {
+        if let Some(model) = model.filter(|model| native::offers(&self.setup, "model", model)) {
+            let applied = if self.model_outside_config {
+                self.set_model(model).await
+            } else {
+                self.set_option("model", model).await
+            };
+            if let Err(error) = applied {
+                eprintln!("The agent did not take the saved model {model}: {error}");
+            }
+        }
+        let Some(effort) = effort else {
+            return;
+        };
+        let Some(config_id) = native::effort_config_id(&self.setup)
+            .filter(|id| native::offers(&self.setup, id, effort))
+            .map(str::to_owned)
+        else {
+            return;
+        };
+        if let Err(error) = self.set_option(&config_id, effort).await {
+            eprintln!("The agent did not take the saved effort {effort}: {error}");
+        }
+    }
+
+    /// Writes a steer to the agent now, so a stop sent after it reaches the
+    /// agent after it too.
+    fn send_steer(&self, prompt: Prompt) -> Result<Sent, String> {
+        if !self.steering {
+            return Err("this agent cannot take a message mid-turn".to_owned());
+        }
+        let blocks = prompt_blocks(
+            prompt.text,
+            prompt.paths,
+            prompt.context,
+            self.embedded_context,
+        )?;
+        let steer = air::Steer::new(self.session_id.clone(), blocks);
+        self.driver
+            .rpc
+            .start(air::Steer::METHOD, params(steer)?)
+            .map_err(|error| describe(&error))
+    }
+
+    async fn set_mode(&self, mode_id: &str) -> Result<(), String> {
+        self.driver
+            .call(
+                AGENT_METHOD_NAMES.session_set_mode,
+                SetSessionModeRequest::new(self.session_id.clone(), mode_id.to_owned()),
+                Some(ANSWER_WAIT),
+            )
+            .await
+            .map(drop)
+    }
+}
+
+impl Backend for Acp {
+    async fn start(launch: &ChatLaunch, sink: Sink) -> Result<(Self, Opened), String> {
+        let (process, writer, lines) =
+            Process::spawn(launch, Vec::<String>::new(), Vec::<(String, String)>::new())?;
+        let driver = Driver {
+            rpc: Rpc::versioned(writer),
+            sink,
+            turns: Arc::default(),
+        };
+        driver.clone().read(lines);
+        let failed = |error: String| start_error(&process, error);
+
+        let initialize = InitializeRequest::new(ProtocolVersion::V1)
+            .client_capabilities(air::client_capabilities())
+            .client_info(Implementation::new("sikemux", env!("CARGO_PKG_VERSION")));
+        let initialized = driver
+            .call(AGENT_METHOD_NAMES.initialize, initialize, None)
+            .await
+            .map_err(failed)?;
+        let initialized: InitializeResponse =
+            serde_json::from_value(initialized).map_err(|error| failed(error.to_string()))?;
+        let mut capabilities = params(&initialized.agent_capabilities)?;
+        let steering = air::steering_supported(&params(&initialized.meta)?);
+        capabilities["steering"] = json!(steering);
+        let can_load = initialized.agent_capabilities.load_session;
+
+        let (session_id, setup) = Self::open(&driver, launch, can_load)
+            .await
+            .map_err(failed)?;
+        driver.sink.loaded();
+
+        let mut acp = Self {
+            process,
+            driver,
+            provider: launch.provider.clone(),
+            session_id,
+            model_outside_config: native::models_outside_config(&setup),
+            setup: native::with_model_config(setup),
+            steering,
+            embedded_context: initialized
+                .agent_capabilities
+                .prompt_capabilities
+                .embedded_context,
+            can_load,
+        };
+
+        if let Some(mode_id) =
+            permission_mode_id(&acp.provider, &launch.permission_mode, &acp.setup)?
+        {
+            acp.set_mode(mode_id).await?;
+            if let Some(modes) = acp.setup.get_mut("modes").and_then(Value::as_object_mut) {
+                modes.insert("currentModeId".into(), json!(mode_id));
+            }
+        }
+        acp.apply_saved_choices(launch.model.as_deref(), launch.effort.as_deref())
+            .await;
+
+        let opened = Opened {
+            session_id: acp.session_id.clone(),
+            capabilities,
+            setup: acp.setup.clone(),
+        };
+        Ok((acp, opened))
+    }
+
+    async fn prompt(&mut self, turn: u64, prompt: Prompt) -> Result<(), String> {
+        let blocks = prompt_blocks(
+            prompt.text,
+            prompt.paths,
+            prompt.context,
+            self.embedded_context,
+        )?;
+        let request = PromptRequest::new(self.session_id.clone(), blocks);
+        self.driver.lock().prompted = turn;
+        let sent = self
+            .driver
+            .rpc
+            .start(AGENT_METHOD_NAMES.session_prompt, params(request)?)
+            .map_err(|error| describe(&error))?;
+        let driver = self.driver.clone();
+        tokio::spawn(async move {
+            let answer = sent.answer(None).await;
+            driver.answered(turn, answer);
+        });
+        Ok(())
+    }
+
+    fn steer(
+        &mut self,
+        prompt: Prompt,
+    ) -> impl std::future::Future<Output = Result<String, String>> + Send + 'static {
+        let sent = self.send_steer(prompt);
+        async move {
+            let answer = sent?.answer(None).await.map_err(|error| describe(&error))?;
+            Ok(answer["outcome"].as_str().unwrap_or_default().to_owned())
+        }
+    }
+
+    async fn cancel(&mut self) -> Result<(), String> {
+        let sent = self.driver.rpc.notify(
+            AGENT_METHOD_NAMES.session_cancel,
+            params(CancelNotification::new(self.session_id.clone()))?,
+        );
+        if self.driver.sink.running() {
+            let mut turns = self.driver.lock();
+            turns.cancelled = turns.prompted;
+        }
+        sent
+    }
+
+    async fn set_permission_mode(&mut self, mode: &str) -> Result<(), String> {
+        match permission_mode_id(&self.provider, mode, &self.setup)? {
+            Some(mode_id) => self.set_mode(mode_id).await,
+            None => Ok(()),
+        }
+    }
+
+    async fn set_config(&mut self, config_id: &str, value: &str) -> Result<Value, String> {
+        if config_id == "model" && self.model_outside_config {
+            self.set_model(value).await?;
+        } else {
+            self.set_option(config_id, value).await?;
+        }
+        Ok(self.setup["configOptions"].clone())
+    }
+
+    /// A background task outlives the turn that started it, so stopping one
+    /// does not wait on the agent's answer.
+    async fn stop_task(&mut self, task_id: &str) -> Result<(), String> {
+        let stop = air::StopAsyncTask {
+            session_id: self.session_id.clone(),
+            async_task_id: task_id.to_owned(),
+        };
+        let sent = self
+            .driver
+            .rpc
+            .start(air::StopAsyncTask::METHOD, params(stop)?)
+            .map_err(|error| describe(&error))?;
+        let sink = self.driver.sink.clone();
+        tokio::spawn(async move {
+            if let Err(error) = sent.answer(None).await {
+                sink.error(describe(&error));
+            }
+        });
+        Ok(())
+    }
+
+    async fn rewind(&mut self, _message_id: &str) -> Result<Option<String>, String> {
+        Err("This agent cannot edit a sent message".into())
+    }
+
+    async fn closed(&self) -> String {
+        self.process.ended().await
+    }
+
+    fn reloadable(&self) -> bool {
+        self.can_load
+    }
+}

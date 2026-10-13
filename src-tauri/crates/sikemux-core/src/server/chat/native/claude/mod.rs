@@ -297,6 +297,29 @@ impl Claude {
         self.aliases.insert(message_id.to_owned(), uuid.clone());
         uuid
     }
+
+    fn inject(&self, prompt: Prompt) -> Result<String, String> {
+        let content = content(&prompt)?;
+
+        let uuid = Uuid::new_v4().to_string();
+        {
+            let Ok(mut shared) = self.shared.lock() else {
+                return Err("The chat's state is unavailable".into());
+            };
+            if shared.turn.is_none() {
+                return Ok("promptRequired".into());
+            }
+            shared.sent.insert(uuid.clone());
+            if let Some(turn) = shared.turn.as_mut() {
+                turn.messages.insert(uuid.clone());
+                turn.waiting.insert(uuid.clone());
+            }
+        }
+        // Claude Code takes it in after the turn's next tool call, or once the turn ends.
+        self.writer()
+            .send(&user_message(&uuid, content, Some("next")))?;
+        Ok("injected".into())
+    }
 }
 
 impl Backend for Claude {
@@ -468,26 +491,11 @@ impl Backend for Claude {
         sent
     }
 
-    async fn steer(&mut self, prompt: Prompt) -> Result<String, String> {
-        let content = content(&prompt)?;
-        let uuid = Uuid::new_v4().to_string();
-        {
-            let Ok(mut shared) = self.shared.lock() else {
-                return Err("The chat's state is unavailable".into());
-            };
-            if shared.turn.is_none() {
-                return Ok("promptRequired".into());
-            }
-            shared.sent.insert(uuid.clone());
-            if let Some(turn) = shared.turn.as_mut() {
-                turn.messages.insert(uuid.clone());
-                turn.waiting.insert(uuid.clone());
-            }
-        }
-        // Claude Code takes it in after the turn's next tool call, or once the turn ends.
-        self.writer()
-            .send(&user_message(&uuid, content, Some("next")))?;
-        Ok("injected".into())
+    fn steer(
+        &mut self,
+        prompt: Prompt,
+    ) -> impl std::future::Future<Output = Result<String, String>> + Send + 'static {
+        std::future::ready(self.inject(prompt))
     }
 
     async fn cancel(&mut self) -> Result<(), String> {
