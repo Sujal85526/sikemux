@@ -194,6 +194,14 @@ export const IconTimer = makeSvgIcon(
     </>,
 );
 export const IconAgent = makeSvgIcon(<path d="M8 1.8c.5 3.3 2.9 5.7 6.2 6.2-3.3.5-5.7 2.9-6.2 6.2-.5-3.3-2.9-5.7-6.2-6.2C5.1 7.5 7.5 5.1 8 1.8Z" />);
+/** An agent with a subagent beside it: everything running, counted together. */
+export const IconAgents = makeSvgIcon(
+    <>
+        <path stroke="none" d="M6.2 2.2c.4 2.6 2.2 4.4 4.8 4.8-2.6.4-4.4 2.2-4.8 4.8-.4-2.6-2.2-4.4-4.8-4.8 2.6-.4 4.4-2.2 4.8-4.8Z" />
+        <path stroke="none" d="M12.3 9.2c.2 1.4 1.1 2.3 2.5 2.5-1.4.2-2.3 1.1-2.5 2.5-.2-1.4-1.1-2.3-2.5-2.5 1.4-.2 2.3-1.1 2.5-2.5Z" />
+    </>,
+    { fill: "currentColor" },
+);
 export const IconWindow = makeSvgIcon(<rect x="2.2" y="2.8" width="11.6" height="10.4" rx="0" />);
 export const IconContrast = makeSvgIcon(
     <>

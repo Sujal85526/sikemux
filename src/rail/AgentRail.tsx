@@ -23,6 +23,7 @@ import { leavingRail } from "./railMotion";
 import { RailToggle } from "./RailToggle";
 import { AgentAccountsPanel } from "./AgentAccounts";
 import { planLabel, usagePeak } from "./usageFormat";
+import { AgentRailStats } from "./AgentRailStats";
 import { AgentRowTree } from "./AgentRowTree";
 import { AllProjectsAgents } from "./AllProjectsAgents";
 import { RecentChatList } from "./RecentChatList";
@@ -332,6 +333,7 @@ export function AgentRailBody() {
                 allAgents={allAgents}
             />
             <ScopeTrack scope={scope} waitingElsewhere={waitingElsewhere} onChange={cmd.setAgentRailScope} />
+            <AgentRailStats scope={scope} provider={allAgents ? null : selectedType} />
             {searchOpen && (
                 <div className="rail-search">
                     <IconSearch size={12} />

@@ -960,3 +960,50 @@
     font-family: var(--mono);
     font-size: var(--text-2xs);
 }
+
+/* What is running in the rail's scope, one line under the scope switch. Each
+   stat keeps the mark its rows use, so the line reads as their sum. */
+.agent-stats {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: 7px calc(var(--space-1h) + var(--space-2)) 3px calc(var(--gutter-rail) + var(--space-1h));
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+}
+.agent-stat {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+.agent-stat svg,
+.agent-stat img {
+    flex: none;
+}
+.agent-stat b {
+    color: var(--ink);
+    font-weight: var(--weight-medium);
+}
+.agent-stat-all svg {
+    color: var(--acc);
+}
+.agent-stat-subagents svg {
+    color: var(--live);
+    fill: currentColor;
+    stroke: none;
+}
+.agent-stat-shells svg {
+    color: var(--warn);
+}
+/* The side rail's stack of agent marks, at the line's size. */
+.agent-stat .proj-pip {
+    width: 14px;
+    height: 14px;
+}
+.agent-stat .proj-pip + .proj-pip {
+    margin-left: -4px;
+}
