@@ -37,23 +37,29 @@ pub struct Manifest {
 }
 
 impl Manifest {
-    /// The copy this binary was built with.
+    /// The copy this binary was built with, which must read in full.
     pub fn load() -> Self {
-        let manifest: Value =
-            serde_json::from_str(TOOLS).expect("browser/tools.json is valid JSON");
-        Self::read(&manifest, GUIDE).expect("browser/tools.json is a valid tool manifest")
+        #[derive(Deserialize)]
+        struct Built {
+            guide: Guide,
+            tools: Vec<Tool>,
+        }
+        let built: Built =
+            serde_json::from_str(TOOLS).expect("browser/tools.json is a valid tool manifest");
+        Self {
+            guide: built.guide,
+            guide_text: GUIDE.to_owned(),
+            tools: built.tools,
+        }
     }
 
     /// What the core answers `tools.manifest` with. A tool this binary cannot
     /// read is left out rather than losing the rest.
     pub fn served(answer: &Value) -> Option<Self> {
-        Self::read(answer.get("manifest")?, answer.get("guide")?.as_str()?)
-    }
-
-    fn read(manifest: &Value, guide_text: &str) -> Option<Self> {
+        let manifest = answer.get("manifest")?;
         Some(Self {
             guide: Guide::deserialize(manifest.get("guide")?).ok()?,
-            guide_text: guide_text.to_owned(),
+            guide_text: answer.get("guide")?.as_str()?.to_owned(),
             tools: manifest
                 .get("tools")?
                 .as_array()?
@@ -63,11 +69,14 @@ impl Manifest {
         })
     }
 
-    /// Leaves out the simulator tools unless the app said this Mac can run them.
+    /// Leaves out the simulator tools unless the app said this Mac can run
+    /// them, and tools offered on a condition this binary does not know.
     pub fn offering(mut self, simulator: bool) -> Self {
-        if !simulator {
-            self.tools.retain(|tool| tool.offered.is_none());
-        }
+        self.tools.retain(|tool| match tool.offered.as_deref() {
+            None => true,
+            Some("simulator") => simulator,
+            Some(_) => false,
+        });
         self
     }
 

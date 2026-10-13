@@ -339,6 +339,7 @@ fn the_guide_is_served_without_asking_the_app() {
     let answer = call(
         &Offer::with(Manifest::load(), Some(Vec::new())),
         &unreachable_app,
+        &unreachable_app,
         manifest.guide_name(),
         &json!({}),
     );
@@ -390,6 +391,7 @@ fn a_guide_topic_is_served_alone_and_an_unknown_one_lists_the_rest() {
         call(
             &Offer::with(Manifest::load(), Some(Vec::new())),
             &unreachable_app,
+            &unreachable_app,
             manifest.guide_name(),
             &json!({ "topic": topic }),
         )
@@ -426,6 +428,7 @@ fn unknown_tools_and_bad_agent_ids_are_refused() {
     );
     let answer = call(
         &Offer::with(Manifest::load(), Some(Vec::new())),
+        &unreachable_app,
         &unreachable_app,
         "browser_evil",
         &json!({}),
@@ -656,7 +659,13 @@ fn plugin_tools_are_listed_after_the_built_in_ones() {
 fn a_plugin_tool_is_checked_then_handed_to_the_app_by_name() {
     let offer = Offer::with(Manifest::load(), Some(vec![signoz_tool()]));
 
-    let refused = call(&offer, &unreachable_app, "signoz_trace", &json!({}));
+    let refused = call(
+        &offer,
+        &unreachable_app,
+        &unreachable_app,
+        "signoz_trace",
+        &json!({}),
+    );
     assert_eq!(refused["isError"], json!(true));
     assert_eq!(
         field(&refused["content"][0], "text"),
@@ -666,6 +675,7 @@ fn a_plugin_tool_is_checked_then_handed_to_the_app_by_name() {
     let app = fake_sikemux(json!({ "status": "result", "value": { "spans": [] } }));
     let answered = call(
         &offer,
+        &unreachable_app,
         &|method: &str, params: &Value| app.relay(method, params.clone()),
         "signoz_trace",
         &json!({ "traceId": "abc" }),
@@ -739,9 +749,9 @@ fn only_a_different_offer_after_the_first_counts_as_a_change() {
         "plugins.tools" => Ok(offered.lock().unwrap().clone()),
         _ => unreachable_app(method, params),
     };
-    assert!(!offer.refresh(&app));
+    assert!(!offer.refresh(&app).0);
     list(&offer, &app);
-    assert!(!offer.refresh(&app));
+    assert!(!offer.refresh(&app).0);
     *offered.lock().unwrap() = json!([{
         "name": "signoz_trace",
         "method": "trace",
@@ -749,10 +759,10 @@ fn only_a_different_offer_after_the_first_counts_as_a_change() {
         "properties": {},
         "required": [],
     }]);
-    assert!(offer.refresh(&app));
-    assert!(!offer.refresh(&app));
+    assert!(offer.refresh(&app).0);
+    assert!(!offer.refresh(&app).0);
     *offered.lock().unwrap() = json!([]);
-    assert!(offer.refresh(&app));
+    assert!(offer.refresh(&app).0);
 }
 
 fn filtered_tool() -> Tool {
@@ -849,7 +859,13 @@ fn the_plugin_tools_listed_are_kept_and_no_others_are_reachable() {
     assert_eq!(app.received()["request"]["project"], json!("/project"));
 
     assert_eq!(list(&offer, &unreachable_app), first);
-    let refused = call(&offer, &unreachable_app, "github_runs", &json!({}));
+    let refused = call(
+        &offer,
+        &unreachable_app,
+        &unreachable_app,
+        "github_runs",
+        &json!({}),
+    );
     assert_eq!(refused["isError"], json!(true));
     assert_eq!(
         field(&refused["content"][0], "text"),
