@@ -21,7 +21,9 @@ export interface ShareAccess {
 }
 
 export const shareApi = {
-    share: (agentId: string, lifetimeMs: number) => invoke<ShareView>("share_call", { method: "shareChat", params: { agentId, lifetimeMs } }),
+    /** Shares the chat, or with a share already open, tells its viewers its name. */
+    share: (agentId: string, lifetimeMs: number, title: string) =>
+        invoke<ShareView>("share_call", { method: "shareChat", params: { agentId, lifetimeMs, title } }),
     stop: (id: string) => invoke<null>("share_call", { method: "stopShare", params: { id } }),
     list: () => invoke<ShareView[]>("share_call", { method: "shares", params: {} }),
     access: () => invoke<ShareAccess>("share_access"),

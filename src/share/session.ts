@@ -45,6 +45,16 @@ export interface ShareSnapshot {
     readonly earlier: "idle" | "loading" | "failed";
 }
 
+/** What a shared chat is called: the app's name for it, else its first message. */
+export function sharedChatTitle(snapshot: ShareSnapshot): string | null {
+    if (snapshot.chat?.title) return snapshot.chat.title;
+    if (snapshot.agent.title) return snapshot.agent.title;
+    const first = snapshot.agent.messages.find((message) => message.role === "user");
+    const part = first?.parts.find((candidate) => candidate.kind === "text");
+    const words = part?.kind === "text" ? part.text.split(/\s+/).filter(Boolean).join(" ") : "";
+    return words ? (words.length > 80 ? `${words.slice(0, 79)}…` : words) : null;
+}
+
 /** The one thing a socket must do for a share session; the browser's WebSocket does it. */
 export interface ShareSocket {
     onopen: (() => void) | null;

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { isAgentType } from "../agents/catalog";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react";
+import { agentLabel, isAgentType } from "../agents/catalog";
 import { ChatAgentContext, ReaderScrollContext } from "../chat/chatAgent";
 import { warmTranscript } from "../chat/ChatMessageRow";
 import { ChatTranscript } from "../chat/ChatTranscript";
@@ -13,7 +13,7 @@ import { runningSubagents } from "../chat/transcript";
 import { useMessageArrival } from "../chat/useMessageArrival";
 import { useStickToBottom } from "../chat/useStickToBottom";
 import { AgentIcon, IconArrowDown, IconEye, IconPlug } from "../ui/Icons";
-import type { ShareSession, ShareSnapshot } from "./session";
+import { sharedChatTitle, type ShareSession, type ShareSnapshot } from "./session";
 import "../styles/chat.css";
 import "../styles/share.css";
 
@@ -73,21 +73,11 @@ export function SharedChat({ session, visible, actions }: { session: ShareSessio
     const activity = snapshot.status === "live" ? activityText(shown, activeTool) : null;
     const subagents = useMemo(() => runningSubagents(state.messages), [state.messages]);
     const problem = snapshot.status === "ended" ? endedText(snapshot) : PROBLEMS[snapshot.status];
-    const title = chat?.title ?? state.title ?? "Shared chat";
+    const title = sharedChatTitle(snapshot) ?? `${agentLabel(type)} chat`;
 
     const before = (
         <>
-            {snapshot.hasEarlier && (
-                <div className="shared-chat-earlier">
-                    <button type="button" disabled={snapshot.earlier === "loading"} onClick={session.loadEarlier}>
-                        {snapshot.earlier === "loading"
-                            ? "Loading earlier messages…"
-                            : snapshot.earlier === "failed"
-                              ? "Could not load earlier messages. Try again"
-                              : "Load earlier messages"}
-                    </button>
-                </div>
-            )}
+            {snapshot.hasEarlier && <EarlierTurns session={session} snapshot={snapshot} scrollRef={scrollRef} />}
             {state.messages.length === 0 && (
                 <div className={`chat-connection-state ${problem ? "stopped" : "connecting"}`} role="status">
                     {!problem && <span className="chat-activity-loader" aria-hidden="true" />}
@@ -121,7 +111,7 @@ export function SharedChat({ session, visible, actions }: { session: ShareSessio
                                 <div className="agent-surface-controls">
                                     <span className="shared-chat-badge">
                                         <IconEye size={13} />
-                                        Read-only
+                                        <span>Read-only</span>
                                     </span>
                                     {actions}
                                 </div>
@@ -189,6 +179,49 @@ function SharedChatFoot({ snapshot }: { snapshot: ShareSnapshot }) {
         <div className="shared-chat-foot" role="status">
             <span className={`shared-chat-state${snapshot.hostOnline && live ? " live" : ""}`}>{state ?? "Read-only"}</span>
             {live && snapshot.expiresAt !== null && <span>Link ends in {endsIn(snapshot.expiresAt, now)}</span>}
+        </div>
+    );
+}
+
+/** Loads the turns before the first one shown as the reader scrolls up to it, a page at a time. */
+function EarlierTurns({
+    session,
+    snapshot,
+    scrollRef,
+}: {
+    session: ShareSession;
+    snapshot: ShareSnapshot;
+    scrollRef: RefObject<HTMLDivElement | null>;
+}) {
+    const edge = useRef<HTMLDivElement>(null);
+    const idle = snapshot.earlier === "idle";
+    useEffect(() => {
+        const root = scrollRef.current;
+        const target = edge.current;
+        if (!idle || !root || !target) return;
+        const observer = new IntersectionObserver((entries) => entries.some((entry) => entry.isIntersecting) && session.loadEarlier(), {
+            root,
+            rootMargin: "600px 0px 0px 0px",
+        });
+        observer.observe(target);
+        return () => observer.disconnect();
+    }, [idle, session, scrollRef]);
+    return (
+        <div ref={edge} className="shared-chat-earlier" role="status">
+            {snapshot.earlier === "loading" && (
+                <>
+                    <span className="chat-activity-loader" aria-hidden="true" />
+                    <span>Loading earlier messages…</span>
+                </>
+            )}
+            {snapshot.earlier === "failed" && (
+                <>
+                    <span>Couldn't load earlier messages.</span>
+                    <button type="button" onClick={session.loadEarlier}>
+                        Try again
+                    </button>
+                </>
+            )}
         </div>
     );
 }

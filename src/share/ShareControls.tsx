@@ -6,7 +6,7 @@ import { useStore } from "../state/store";
 import { useOccludeNativeViews } from "../state/nativeViews";
 import { notify, reportError } from "../state/toast";
 import type { Agent } from "../state/types";
-import { IconCopy, IconLink } from "../ui/Icons";
+import { IconCopy, IconShare } from "../ui/Icons";
 import { Kbd } from "../ui/Kbd";
 import {
     closeShareDialog,
@@ -37,10 +37,14 @@ function endsIn(expiresAt: number, now: number): string {
 /** The chat header's way into its share: a link button, or how many watch once it is shared. */
 export function ShareButton({ agent }: { agent: Agent }) {
     const share = useChatShare(agent.id);
+    const shared = share !== null;
+    useEffect(() => {
+        if (shared) void shareApi.share(agent.id, DEFAULT_SHARE_LIFETIME_MS, agent.title).catch(() => undefined);
+    }, [shared, agent.id, agent.title]);
     if (!share)
         return (
             <button type="button" className="agent-share" title="Share this chat read-only" onClick={() => openShareDialog(agent.id)}>
-                <IconLink size={13} />
+                <IconShare size={13} />
                 <span>Share</span>
             </button>
         );
@@ -88,7 +92,7 @@ function ShareDialog({ agentId }: { agentId: string }) {
         setWorking(true);
         setProblem(null);
         try {
-            const started = await shareApi.share(agentId, lifetime);
+            const started = await shareApi.share(agentId, lifetime, title);
             await refreshShares();
             await copyText(started.url).then(() => notify("success", "copied share link"), reportError("copy"));
         } catch (error) {
@@ -124,7 +128,7 @@ function ShareDialog({ agentId }: { agentId: string }) {
                 onMouseDown={(event) => event.stopPropagation()}>
                 <div className="dlg-head">
                     <span className="dlg-glyph" aria-hidden="true">
-                        <IconLink size={15} />
+                        <IconShare size={15} />
                     </span>
                     <h2 className="dlg-title">{share ? "Shared read-only" : "Share this chat read-only"}</h2>
                 </div>

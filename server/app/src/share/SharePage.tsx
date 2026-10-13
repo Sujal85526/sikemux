@@ -72,9 +72,15 @@ function Watching({ link }: { link: ShareLink }) {
         session={session}
         visible
         actions={
-          <a className="share-open-app" href={appShareLink(link)}>
-            Open in Sikemux
-          </a>
+          <div className="agent-view-switch">
+            <button
+              type="button"
+              aria-pressed="false"
+              onClick={() => location.assign(appShareLink(link))}
+            >
+              Open in Sikemux
+            </button>
+          </div>
         }
       />
     </div>

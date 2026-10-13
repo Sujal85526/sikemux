@@ -150,6 +150,14 @@ export const IconImage = makeSvgIcon(
         <path d="m2.4 11.6 3.4-3.2 2.6 2.4 1.9-1.7 3.3 2.9" />
     </>,
 );
+export const IconShare = makeSvgIcon(
+    <>
+        <circle cx="12" cy="3.6" r="1.7" />
+        <circle cx="4" cy="8" r="1.7" />
+        <circle cx="12" cy="12.4" r="1.7" />
+        <path d="m5.5 7.2 5-2.8M5.5 8.8l5 2.8" />
+    </>,
+);
 export const IconEye = makeSvgIcon(
     <>
         <path d="M1.6 8s2.3-4 6.4-4 6.4 4 6.4 4-2.3 4-6.4 4S1.6 8 1.6 8Z" />

@@ -12,7 +12,7 @@ import { activeToolLabel } from '@mac/chat/toolLabels';
 import { outlivesFold, workFolds, type WorkFold } from '@mac/chat/transcript';
 import type { ChatMessage } from '@mac/chat/types';
 import { parseShareLink, type ShareLink } from '@mac/share/link';
-import { ShareSession, type ShareSnapshot } from '@mac/share/session';
+import { sharedChatTitle, ShareSession, type ShareSnapshot } from '@mac/share/session';
 import { apiUrl } from '@/account/config';
 import { Folds, FoldsContext } from '@/chat/folds';
 import { SharedFilesContext } from '@/chat/hostFiles';
@@ -108,7 +108,7 @@ function SharedChat({ session }: { session: ShareSession }) {
   const snapshot = useSyncExternalStore(session.subscribe, session.snapshot);
   const state = snapshot.agent;
   const provider = snapshot.chat?.provider ?? 'agent';
-  const title = snapshot.chat?.title ?? state.title ?? agentLabel(provider);
+  const title = sharedChatTitle(snapshot) ?? `${agentLabel(provider)} chat`;
   const [folds] = useState(() => new Folds());
   const [foldsBefore, setFoldsBefore] = useState<Map<number, WorkFold>>();
   const workFold = useMemo(() => workFolds(state.messages, state.running, foldsBefore), [state.messages, state.running, foldsBefore]);
