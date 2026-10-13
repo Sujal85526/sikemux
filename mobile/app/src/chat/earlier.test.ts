@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
+import { earlierMessages, withEarlier } from '@mac/chat/earlier';
 import { chatReducer, initialChatState } from '@mac/chat/reducer';
 
 import { parsed } from './chatEvents';
-import { earlierMessages, withEarlier } from './earlier';
 
 const update = (update: Record<string, unknown>) => ({ kind: 'session_update', payload: { sessionId: 's', update } });
 const said = (messageId: string, text: string) =>

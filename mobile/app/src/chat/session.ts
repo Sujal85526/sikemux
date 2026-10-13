@@ -2,6 +2,7 @@ import { ChatAttachment, MobileError, type ChatMark, type ConnectionLike } from 
 import { File } from 'expo-file-system';
 
 import { chatActions, recordOf } from '@mac/chat/acpEvents';
+import { earlierMessages, PAGE_TURNS, withEarlier } from '@mac/chat/earlier';
 import { combine, nextBatch } from '@mac/chat/queuedMessages';
 import { chatReducer, initialChatState } from '@mac/chat/reducer';
 import type { AcpPermissionRequest, ChatAction, ChatMessage, ChatState } from '@mac/chat/types';
@@ -9,7 +10,6 @@ import type { AcpPermissionRequest, ChatAction, ChatMessage, ChatState } from '@
 import type { ChatInfo, CoreChatEvent } from '@/core/protocol';
 import type { ChatDelivery } from '@/devices/hub';
 import { parsed } from './chatEvents';
-import { earlierMessages, PAGE_TURNS, withEarlier } from './earlier';
 import { Folds } from './folds';
 
 export type Attached = 'attaching' | 'live' | 'missing';
