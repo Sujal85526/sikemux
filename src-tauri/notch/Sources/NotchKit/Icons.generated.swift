@@ -73,7 +73,7 @@ enum Icons {
         case "omp": return IconDef(viewBox: ViewBox(x: 0, y: 0, width: 64, height: 64), shapes: [
         IconShape(d: "M10 14h44v9H43v33h-9V23h-9v22h-9V23H10z", style: .fill(.gradient([.init(offset: 0, hex: "#f84fcc"), .init(offset: 0.5, hex: "#9362f4"), .init(offset: 1, hex: "#00dbe4")], start: (0, 0), end: (1, 1))), opacity: 1, evenOdd: false, translate: (0, 0)),
         ])
-        case "muse": return IconDef(viewBox: ViewBox(x: 0, y: 0, width: 24, height: 24), shapes: [
+        case "muse": return IconDef(viewBox: ViewBox(x: -4, y: -4, width: 32, height: 32), shapes: [
         IconShape(d: "M6.897 4h-.024l-.031 2.615h.022c1.715 0 3.046 1.357 5.94 6.246l.175.297.012.02 1.62-2.438-.012-.019a48.763 48.763 0 00-1.098-1.716 28.01 28.01 0 00-1.175-1.629C10.413 4.932 8.812 4 6.896 4z", style: .fill(.gradient([.init(offset: 0.0006, hex: "#0867DF"), .init(offset: 0.4539, hex: "#0668E1"), .init(offset: 0.8591, hex: "#0064E0")], start: (0.759, 0.892), end: (0.2631, 0.1219))), opacity: 1, evenOdd: false, translate: (0, 0)),
         IconShape(d: "M6.873 4C4.95 4.01 3.247 5.258 2.02 7.17a4.352 4.352 0 00-.01.017l2.254 1.231.011-.017c.718-1.083 1.61-1.774 2.568-1.785h.021L6.896 4h-.023z", style: .fill(.gradient([.init(offset: 0.1323, hex: "#0064DF"), .init(offset: 0.9988, hex: "#0064E0")], start: (0.2167, 0.7587), end: (0.9707, 0.2399))), opacity: 1, evenOdd: false, translate: (0, 0)),
         IconShape(d: "M2.019 7.17l-.011.017C1.2 8.447.598 9.995.274 11.664l-.005.022 2.534.6.004-.022c.27-1.467.786-2.828 1.456-3.845l.011-.017L2.02 7.17z", style: .fill(.gradient([.init(offset: 0.0147, hex: "#0072EC"), .init(offset: 0.6881, hex: "#0064DF")], start: (0.3826, 0.8913), end: (0.6089, 0.1613))), opacity: 1, evenOdd: false, translate: (0, 0)),
