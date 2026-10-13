@@ -11,12 +11,15 @@ import { Panel, PanelHeader } from "../ui/Panel";
 import { TreeContextMenu } from "./FileTree";
 import { chatKey, type RecentChats } from "./useRecentChats";
 import { formatAge } from "../lib/format";
+import { basename } from "../lib/paths";
+import { AgentRowText } from "./AgentRowText";
 
 /** Saved chats, each resumed in the project it ran in. */
 export function RecentChatList({ recent, providers }: { recent: RecentChats; providers: AgentInfo[] }) {
     const sessions = useStore((s) => s.sessions);
     const sessionOrder = useStore((s) => s.sessionOrder);
     const activeSessionId = useStore((s) => s.activeSessionId);
+    const allProjects = useStore((s) => s.agentRailScope === "all");
     const profiles = useStore((s) => s.providerProfiles);
     const profileSelections = useStore((s) => s.selectedProviderProfileIds);
     const [renaming, setRenaming] = useState<string | null>(null);
@@ -103,7 +106,7 @@ export function RecentChatList({ recent, providers }: { recent: RecentChats; pro
                             setMenu({ chat, x: event.clientX, y: event.clientY });
                         }}>
                         {glyph}
-                        <span className="agent-title">{chat.title}</span>
+                        <AgentRowText title={chat.title} project={allProjects ? (project?.name ?? basename(chat.project)) : undefined} />
                         <span className="agent-ago">{formatAge(chat.mtime * 1000)}</span>
                     </button>
                 );
