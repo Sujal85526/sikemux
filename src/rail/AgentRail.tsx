@@ -379,7 +379,7 @@ export function AgentRailBody() {
                         <span className="agent-glyph">
                             <IconGlobe size={15} />
                         </span>
-                        <span className="agent-title">New browser tab</span>
+                        <span className="agent-title">New browser</span>
                     </button>
                 </div>
                 {scope === "all" && <AllProjectsAgents />}
