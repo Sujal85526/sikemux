@@ -902,5 +902,5 @@
     padding-top: var(--space-1);
 }
 .workspace-rail.agent-rail .agent-actions + * {
-    margin-top: var(--space-2);
+    margin-top: var(--space-1h);
 }
