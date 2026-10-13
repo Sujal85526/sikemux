@@ -61,6 +61,7 @@
 .chat-message.user .chat-markdown {
     width: max-content;
     max-width: 80%;
+    margin-left: auto;
     padding: 8px 12px;
     border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
     border-radius: var(--radius-3);
@@ -96,23 +97,8 @@
     opacity: 1;
 }
 
-/* Beside the bubble rather than under it: an invisible strip under every
-   message left a gap there as tall as the reply's first line. */
-.chat-message.user .chat-message-content {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    justify-content: flex-end;
-}
-
-.chat-message.user .chat-message-attachments {
-    flex-basis: 100%;
-    order: -2;
-}
-
 .chat-message.user .chat-message-meta {
-    order: -1;
-    margin: 0 8px 0 0;
+    justify-content: flex-end;
 }
 
 /* Bigger than the shared 18px affordance: the transcript is a reading column,
