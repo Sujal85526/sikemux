@@ -1,21 +1,45 @@
 import { useContext, type ReactNode } from "react";
 import { PRIMARY_SHORTCUT } from "../lib/platform";
-import { AgentIcon, IconClock, IconClose, IconCommand, IconTimer } from "../ui/Icons";
+import { AgentIcon, IconChevron, IconClock, IconClose, IconCommand, IconTimer } from "../ui/Icons";
 import { ChatAgentContext } from "./chatAgent";
 import { queuedLabel, type QueuedMessage } from "./queuedMessages";
 import { Shimmer } from "./Shimmer";
 import { groupTasks, subagentActivity, taskDetail } from "./transcript";
 import type { AcpAsyncTask, AcpSubagent } from "./types";
 
-export function BackgroundTasks({ tasks, stopping, onStop }: { tasks: AcpAsyncTask[]; stopping: string[]; onStop: (taskId: string) => void }) {
+export type GroupFolds = {
+    folded: ReadonlySet<string>;
+    toggle: (kind: string) => void;
+};
+
+export function BackgroundTasks({
+    tasks,
+    stopping,
+    onStop,
+    folds,
+}: {
+    tasks: AcpAsyncTask[];
+    stopping: string[];
+    onStop: (taskId: string) => void;
+    folds: GroupFolds;
+}) {
     if (tasks.length === 0) return null;
     return (
         <>
             {groupTasks(tasks).map(([kind, group]) => (
-                <Group label={kind} count={group.length} key={kind}>
+                <Group
+                    label={kind}
+                    count={group.length}
+                    key={kind}
+                    fold={{
+                        folded: folds.folded.has(kind),
+                        onToggle: () => folds.toggle(kind),
+                        icon: <TaskIcon kind={kind} />,
+                        peek: group.map((task) => task.name),
+                    }}>
                     {group.map((task) => (
                         <div className={`chat-task state-${task.state}`} key={task.asyncTaskId}>
-                            {kind === "shell" ? <IconCommand size={12} /> : <IconTimer size={12} />}
+                            <TaskIcon kind={kind} />
                             <span className="chat-task-name">{task.name}</span>
                             <span className="chat-task-detail">{taskDetail(task)}</span>
                             {task.canStop && (
@@ -39,14 +63,25 @@ export function BackgroundTasks({ tasks, stopping, onStop }: { tasks: AcpAsyncTa
    — the strip over the composer that the background tasks use. Its card in the
    transcript is where its output went, which is not where you look to find out
    whether it is still going. */
-export function RunningSubagents({ subagents }: { subagents: AcpSubagent[] }) {
+export function RunningSubagents({ subagents, folds }: { subagents: AcpSubagent[]; folds: GroupFolds }) {
     const agentType = useContext(ChatAgentContext).type;
     if (subagents.length === 0) return null;
+    const icon = <AgentIcon type={agentType} size={16} className={`agent-glyph ${agentType}`} />;
     return (
-        <Group label="subagent" count={subagents.length}>
+        <Group
+            label="subagent"
+            count={subagents.length}
+            agent
+            fold={{
+                folded: folds.folded.has("subagent"),
+                onToggle: () => folds.toggle("subagent"),
+                icon,
+                peek: subagents.map((subagent) => subagent.name),
+                working: true,
+            }}>
             {subagents.map((subagent) => (
                 <div className="chat-task chat-task-agent" key={subagent.sessionId}>
-                    <AgentIcon type={agentType} size={16} className={`agent-glyph ${agentType}`} />
+                    {icon}
                     <span className="chat-task-name">{subagent.name}</span>
                     <span className="chat-task-detail chat-shimmer">
                         <Shimmer>{subagentActivity(subagent)}</Shimmer>
@@ -58,6 +93,18 @@ export function RunningSubagents({ subagents }: { subagents: AcpSubagent[] }) {
     );
 }
 
+function TaskIcon({ kind }: { kind: string }) {
+    return kind === "shell" ? <IconCommand size={12} /> : <IconTimer size={12} />;
+}
+
+type Fold = {
+    folded: boolean;
+    onToggle: () => void;
+    icon: ReactNode;
+    peek: string[];
+    working?: boolean;
+};
+
 /* One kind of running work, under a label that counts it. The label is what
    makes a stack of eight rows readable, so it stays even for a group of one.
    `plural` is for the kinds that are not a noun with an s on the end. */
@@ -66,23 +113,44 @@ function Group({
     plural,
     count,
     action,
+    agent,
+    fold,
     children,
 }: {
     label: string;
     plural?: string;
     count: number;
     action?: ReactNode;
+    agent?: boolean;
+    fold?: Fold;
     children: ReactNode;
 }) {
     const word = count === 1 ? label : (plural ?? `${label}s`);
+    if (!fold) {
+        return (
+            <div className="chat-group" aria-label={`${count} ${word}`}>
+                <div className="chat-group-label">
+                    <span>{word}</span>
+                    <span className="chat-group-count">{count}</span>
+                    {action}
+                </div>
+                {children}
+            </div>
+        );
+    }
     return (
-        <div className="chat-group" aria-label={`${count} ${word}`}>
-            <div className="chat-group-label">
+        <div className={`chat-group${fold.folded ? " is-folded" : ""}${agent ? " chat-group-agent" : ""}`} aria-label={`${count} ${word}`}>
+            <button type="button" className="chat-group-label chat-group-toggle" aria-expanded={!fold.folded} onClick={fold.onToggle}>
+                {fold.folded && <span className="chat-group-icon">{fold.icon}</span>}
                 <span>{word}</span>
                 <span className="chat-group-count">{count}</span>
-                {action}
-            </div>
-            {children}
+                {fold.folded && <span className="chat-group-peek">{fold.peek.join(" · ")}</span>}
+                {fold.folded && fold.working && <span className="chat-task-spinner" aria-hidden="true" />}
+                <span className="chat-group-chevron">
+                    <IconChevron size={10} />
+                </span>
+            </button>
+            {!fold.folded && children}
         </div>
     );
 }

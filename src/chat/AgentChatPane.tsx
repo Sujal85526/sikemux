@@ -133,6 +133,19 @@ export function AgentChatPane({
     const displayState = displayStateRef.current;
     const [replyingPermission, setReplyingPermission] = useState<string | null>(null);
     const [stoppingTasks, setStoppingTasks] = useState<string[]>([]);
+    const [foldedLive, setFoldedLive] = useState<ReadonlySet<string>>(() => new Set());
+    const liveFolds = useMemo(
+        () => ({
+            folded: foldedLive,
+            toggle: (kind: string) =>
+                setFoldedLive((folded) => {
+                    const next = new Set(folded);
+                    if (!next.delete(kind)) next.add(kind);
+                    return next;
+                }),
+        }),
+        [foldedLive],
+    );
     const paneRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const scrollContentRef = useRef<HTMLDivElement>(null);
@@ -476,8 +489,13 @@ export function AgentChatPane({
                             )}
                             {(subagents.length > 0 || displayState.tasks.length > 0 || queued.length > 0) && (
                                 <div className="chat-live-stack">
-                                    <RunningSubagents subagents={subagents} />
-                                    <BackgroundTasks tasks={displayState.tasks} stopping={stoppingTasks} onStop={(taskId) => void stopTask(taskId)} />
+                                    <RunningSubagents subagents={subagents} folds={liveFolds} />
+                                    <BackgroundTasks
+                                        tasks={displayState.tasks}
+                                        stopping={stoppingTasks}
+                                        onStop={(taskId) => void stopTask(taskId)}
+                                        folds={liveFolds}
+                                    />
                                     <QueuedMessages
                                         messages={queued}
                                         steerable={steerable && state.running}
