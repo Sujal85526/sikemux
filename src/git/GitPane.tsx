@@ -1576,6 +1576,64 @@ function GitWorkbench({
         );
     }
 
+    const toolbar = (
+        <div className="git-toolbar">
+            {onLeaveRepo && (
+                <Tooltip label="Back to the repositories in this folder">
+                    <button type="button" className="git-btn git-back" onClick={onLeaveRepo}>
+                        <IconChevron size={11} className="git-back-icon" />
+                        {basenameOf(repo)}
+                    </button>
+                </Tooltip>
+            )}
+            <span className="git-tb-grow" />
+            <Tooltip label="Switch branch">
+                <button type="button" className="git-btn git-switch" onClick={(event) => openBranchPicker(event.currentTarget)}>
+                    <IconGit size={13} />
+                    <span className="git-switch-name">{overviewLoading ? "…" : currentBranch || "detached"}</span>
+                    <IconChevron size={9} className="git-switch-chev" />
+                </button>
+            </Tooltip>
+            {overviewError && <span className="git-tb-chip error">git error</span>}
+            {busy && (
+                <span className={`git-tb-busy${busy.startsWith("✗") ? " error" : ""}`}>
+                    {!busy.startsWith("✗") && <span className="git-panel-spinner" />}
+                    <span>{busy}</span>
+                </span>
+            )}
+            <Tooltip label="Fetch all remotes (F)">
+                <button type="button" className="git-btn" onClick={() => doFetch(null)}>
+                    <IconFetch size={13} />
+                    Fetch
+                </button>
+            </Tooltip>
+            <Tooltip label={behind > 0 ? `Pull ${behind} commit${behind > 1 ? "s" : ""} (p)` : "Pull (p)"}>
+                <button type="button" className="git-btn" onClick={pullRepo}>
+                    <IconPull size={13} />
+                    Pull
+                    {behind > 0 && <span className="git-btn-count">{behind}</span>}
+                </button>
+            </Tooltip>
+            <Tooltip
+                label={
+                    !upstream ? "Publish branch and set upstream (P)" : ahead > 0 ? `Push ${ahead} commit${ahead > 1 ? "s" : ""} (P)` : "Push (P)"
+                }>
+                <button type="button" className={`git-btn${ahead > 0 || !upstream ? " primary" : ""}`} onClick={pushRepo}>
+                    <IconPush size={13} />
+                    {upstream ? "Push" : "Publish"}
+                    {ahead > 0 && <span className="git-btn-count">{ahead}</span>}
+                </button>
+            </Tooltip>
+            <Tooltip label="Open pull request (⌃P)">
+                <button type="button" className="git-btn" onClick={openPullRequest}>
+                    <IconPullRequest size={13} />
+                    Pull request
+                </button>
+            </Tooltip>
+            <MoreButton label="Remotes, stashes and more" onOpen={openMoreMenu} className="git-btn icon" />
+        </div>
+    );
+
     return (
         <div ref={paneRootRef} className="git-pane" tabIndex={-1}>
             <GitHostShell
@@ -1587,79 +1645,23 @@ function GitWorkbench({
                 local={[
                     {
                         id: "changes",
-                        label: "Changes (1)",
-                        icon: <IconFile size={16} />,
+                        label: "Changes",
+                        shortcut: "1",
+                        icon: <IconFile size={14} />,
                         count: files.length,
                         on: view.area === "local" && panel !== "branches",
                         onSelect: () => cmd.setGitView(paneId, { area: "local", panel: panel === "branches" ? "files" : panel }),
                     },
                     {
                         id: "branches",
-                        label: "Branches (2)",
-                        icon: <IconGit size={16} />,
+                        label: "Branches",
+                        shortcut: "2",
+                        icon: <IconGit size={14} />,
                         on: view.area === "local" && panel === "branches",
                         onSelect: () => cmd.setGitView(paneId, { area: "local", panel: "branches" }),
                     },
-                ]}>
-                <div className="git-toolbar">
-                    {onLeaveRepo && (
-                        <Tooltip label="Back to the repositories in this folder">
-                            <button type="button" className="git-btn git-back" onClick={onLeaveRepo}>
-                                <IconChevron size={11} className="git-back-icon" />
-                                {basenameOf(repo)}
-                            </button>
-                        </Tooltip>
-                    )}
-                    <Tooltip label="Switch branch">
-                        <button type="button" className="git-btn git-switch" onClick={(event) => openBranchPicker(event.currentTarget)}>
-                            <IconGit size={13} />
-                            <span className="git-switch-name">{overviewLoading ? "…" : currentBranch || "detached"}</span>
-                            <IconChevron size={9} className="git-switch-chev" />
-                        </button>
-                    </Tooltip>
-                    {overviewError && <span className="git-tb-chip error">git error</span>}
-                    {busy && (
-                        <span className={`git-tb-busy${busy.startsWith("✗") ? " error" : ""}`}>
-                            {!busy.startsWith("✗") && <span className="git-panel-spinner" />}
-                            <span>{busy}</span>
-                        </span>
-                    )}
-                    <span className="git-tb-grow" />
-                    <Tooltip label="Fetch all remotes (F)">
-                        <button type="button" className="git-btn" onClick={() => doFetch(null)}>
-                            <IconFetch size={13} />
-                            Fetch
-                        </button>
-                    </Tooltip>
-                    <Tooltip label={behind > 0 ? `Pull ${behind} commit${behind > 1 ? "s" : ""} (p)` : "Pull (p)"}>
-                        <button type="button" className="git-btn" onClick={pullRepo}>
-                            <IconPull size={13} />
-                            Pull
-                            {behind > 0 && <span className="git-btn-count">{behind}</span>}
-                        </button>
-                    </Tooltip>
-                    <Tooltip
-                        label={
-                            !upstream
-                                ? "Publish branch and set upstream (P)"
-                                : ahead > 0
-                                  ? `Push ${ahead} commit${ahead > 1 ? "s" : ""} (P)`
-                                  : "Push (P)"
-                        }>
-                        <button type="button" className={`git-btn${ahead > 0 || !upstream ? " primary" : ""}`} onClick={pushRepo}>
-                            <IconPush size={13} />
-                            {upstream ? "Push" : "Publish"}
-                            {ahead > 0 && <span className="git-btn-count">{ahead}</span>}
-                        </button>
-                    </Tooltip>
-                    <Tooltip label="Open pull request (⌃P)">
-                        <button type="button" className="git-btn" onClick={openPullRequest}>
-                            <IconPullRequest size={13} />
-                            Pull request
-                        </button>
-                    </Tooltip>
-                    <MoreButton label="Remotes, stashes and more" onOpen={openMoreMenu} className="git-btn icon" />
-                </div>
+                ]}
+                tools={toolbar}>
                 <GitColumns
                     paneId={paneId}
                     left={

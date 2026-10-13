@@ -1,9 +1,11 @@
-/* The git pane's one navigation: a slim column of icons down the pane's left edge. */
+/* The git pane's one navigation: a header across the top that names every screen. */
 .git-shell {
     display: flex;
+    flex-direction: column;
     flex: 1 1 auto;
     min-height: 0;
     width: 100%;
+    container: git-shell / inline-size;
 }
 .git-shell-main {
     display: flex;
@@ -17,87 +19,152 @@
     height: auto;
     min-height: 0;
 }
-.git-rail {
+.git-nav-bar {
     display: flex;
-    flex-direction: column;
     align-items: center;
-    gap: var(--space-1);
+    gap: var(--space-1h);
     flex: 0 0 auto;
-    width: 44px;
-    padding: var(--space-2) 0;
-    border-right: 1px solid var(--border);
+    height: 36px;
+    padding: 0 var(--space-1h);
+    border-bottom: 1px solid var(--border);
     background: var(--s-sunken);
 }
-.git-rail-btn {
-    position: relative;
-    display: grid;
-    place-items: center;
-    width: 32px;
-    height: 32px;
+.git-nav {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: none;
+}
+.git-nav-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 24px;
+    padding: 0 var(--space-2);
     border: 1px solid transparent;
     background: none;
     color: var(--text-tertiary);
+    font-family: var(--ui);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
+    white-space: nowrap;
     cursor: pointer;
     transition:
         color var(--dur-1),
+        border-color var(--dur-1),
         background var(--dur-1);
 }
-.git-rail-btn:hover {
+.git-nav-tab svg {
+    flex: none;
+    width: 13px;
+    height: 13px;
+}
+.git-nav-tab:hover {
     background: var(--surface-hover);
     color: var(--text-secondary);
 }
-.git-rail-btn[data-on="1"] {
-    border-color: var(--border-selected);
-    background: var(--surface-selected);
+.git-nav-tab {
+    position: relative;
+}
+.git-nav-tab[data-on="1"] {
+    color: var(--text-primary);
+}
+.git-nav-tab[data-on="1"] svg {
     color: var(--acc);
 }
-.git-rail-btn:focus-visible {
+.git-nav-tab[data-on="1"]::after {
+    content: "";
+    position: absolute;
+    left: var(--space-2);
+    right: var(--space-2);
+    bottom: -7px;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--acc);
+}
+.git-nav-tab:focus-visible {
     box-shadow: var(--focus-ring);
     outline: none;
 }
-.git-rail-count {
-    position: absolute;
-    top: -3px;
-    right: -4px;
-    min-width: 15px;
-    height: 15px;
-    padding: 0 4px;
-    border-radius: var(--radius-full);
-    display: grid;
-    place-items: center;
-    background: var(--gray-400);
-    color: var(--text-primary);
+.git-nav-count {
     font-family: var(--mono);
-    font-size: 9px;
-    line-height: 1;
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-tertiary);
 }
-.git-rail-sep {
-    width: 20px;
-    height: 1px;
-    margin: var(--space-1) 0;
+.git-nav-tab[data-on="1"] .git-nav-count {
+    color: var(--acc);
+}
+.git-nav-sep {
+    flex: none;
+    width: 1px;
+    height: 14px;
+    margin: 0 var(--space-1);
     background: var(--border);
 }
-.git-rail-foot {
-    position: relative;
-    margin-top: auto;
+.git-nav-tools {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
 }
-.git-rail-account .gha-avatar {
-    width: 22px;
-    height: 22px;
+.git-nav-tools > .git-toolbar {
+    height: auto;
+    padding: 0;
+    border: 0;
+    background: none;
+}
+.git-nav-account {
+    position: relative;
+    display: flex;
+    flex: none;
+}
+.git-nav-avatar {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--radius-full) !important;
+    background: none;
+    color: var(--text-tertiary);
+    cursor: pointer;
+}
+.git-nav-avatar:hover {
+    border-color: var(--border-strong);
+    color: var(--text-secondary);
+}
+.git-nav-avatar:focus-visible {
+    box-shadow: var(--focus-ring);
+    outline: none;
+}
+.git-nav-avatar .gha-avatar {
+    width: 20px;
+    height: 20px;
     border-radius: var(--radius-full);
     background: var(--gray-400);
 }
-.git-rail-menu {
+.git-nav-menu {
     position: absolute;
-    left: calc(100% + 6px);
-    bottom: 0;
-    top: auto;
+    top: calc(100% + 6px);
+    right: 0;
+    bottom: auto;
+    left: auto;
     min-width: 230px;
 }
-.git-rail-repo {
+.git-nav-repo {
     margin-top: 2px;
     font-family: var(--mono);
     color: var(--text-secondary);
+}
+/* A narrow pane keeps every screen's icon and only the open one's name. */
+@container git-shell (max-width: 1100px) {
+    .git-nav-tab[data-on="0"] .git-nav-label {
+        display: none;
+    }
+    .git-nav-tab[data-on="0"] {
+        padding: 0 6px;
+    }
 }
 .host-account-who {
     padding: var(--space-1h) var(--space-2);

@@ -16,7 +16,7 @@ import { useToasts } from "../../state/toast";
 import { AccountProvider, type CodeHost } from "../registry";
 import { hostSettings, setProjectAccount } from "../state";
 import { InHost, registerTestHost, TEST_HOST } from "../testHost";
-import { GitRail, HostRailItems, sectionLabel, sectionsOf } from "./HostRail";
+import { GitNav, HostAccountButton, HostNavItems, sectionLabel, sectionsOf } from "./HostRail";
 
 const host = registerTestHost(api);
 const CWD = "/work/sikemux";
@@ -46,7 +46,11 @@ function renderRail(props: ReturnType<typeof handlers>, { account = null as stri
     return render(
         <InHost host={host}>
             <AccountProvider value={account}>
-                <GitRail local={[]} host={<HostRailItems area="pulls" slug={slug} cwd={CWD} active {...props} />} />
+                <GitNav
+                    local={[]}
+                    host={<HostNavItems area="pulls" onArea={props.onArea} />}
+                    account={<HostAccountButton slug={slug} cwd={CWD} active onSignIn={() => props.onArea("pulls")} {...props} />}
+                />
             </AccountProvider>
         </InHost>,
     );

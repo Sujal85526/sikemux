@@ -9,7 +9,7 @@ import { useHostRepo } from "../project";
 import { commitAuthorsR, hostStatusR } from "../resources";
 import { AccountProvider, codeHost, HostProvider, type CodeHost } from "../registry";
 import { sameRepo, setProjectAccount, setProjectRepo, slugOf } from "../state";
-import { GitRail, HostRailItems, type RailItem } from "./HostRail";
+import { GitNav, HostAccountButton, HostNavItems, type NavItem } from "./HostRail";
 
 const HostArea = lazy(() => import("./HostArea").then((module) => ({ default: module.HostArea })));
 const RepoPicker = lazy(() => import("./RepoPicker").then((module) => ({ default: module.RepoPicker })));
@@ -21,17 +21,19 @@ interface Props {
     area: GitArea;
     active: boolean;
     onArea: (area: GitArea) => void;
-    /** The local workbench's screens, which head the rail. */
-    local: readonly RailItem[];
+    /** The local workbench's screens, which head the navigation. */
+    local: readonly NavItem[];
+    /** The local workbench's own controls, shown in the header beside the navigation while it is open. */
+    tools?: ReactNode;
     /** The local workbench, shown while the area is `local` or the folder is on no known host. */
     children: ReactNode;
 }
 
 /**
- * The git pane's rail and whatever it has open. The code host the folder's remote lives on adds its sections to the
- * rail; a folder on no known host, or on one whose plugin is switched off, gets the local screens alone.
+ * The git pane's header and whatever it has open. The code host the folder's remote lives on adds its sections to the
+ * header; a folder on no known host, or on one whose plugin is switched off, gets the local screens alone.
  */
-export function GitHostShell({ paneId, cwd, area, active, onArea, local, children }: Props) {
+export function GitHostShell({ paneId, cwd, area, active, onArea, local, tools, children }: Props) {
     const found = useHostRepo(cwd, active);
     const host = found.repo ? codeHost(found.repo.provider) : undefined;
     const [picking, setPicking] = useState(false);
@@ -59,7 +61,7 @@ export function GitHostShell({ paneId, cwd, area, active, onArea, local, childre
     if (!host || !found.repo) {
         return (
             <div className="git-shell">
-                <GitRail local={local} host={null} />
+                <GitNav local={local} tools={tools} />
                 <div className="git-shell-main">{children}</div>
             </div>
         );
@@ -75,15 +77,16 @@ export function GitHostShell({ paneId, cwd, area, active, onArea, local, childre
         <HostProvider value={host}>
             <AccountProvider value={repo.account ?? null}>
                 <div className="git-shell">
-                    <GitRail
+                    <GitNav
                         local={local}
-                        host={
-                            <HostRailItems
-                                area={area}
+                        host={<HostNavItems area={area} onArea={onArea} />}
+                        tools={area === "local" && !adding ? tools : null}
+                        account={
+                            <HostAccountButton
                                 slug={slugOf(repo)}
                                 cwd={cwd}
                                 active={active}
-                                onArea={onArea}
+                                onSignIn={() => onArea("pulls")}
                                 onPickRepo={() => setPicking(true)}
                                 onAddAccount={() => setAdding(true)}
                             />
