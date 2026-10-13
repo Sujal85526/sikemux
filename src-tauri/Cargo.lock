@@ -5892,6 +5892,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sikemux-markdown-wasm"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sikemux-markdown",
+ "workspace-hack",
+]
+
+[[package]]
 name = "sikemux-mobile"
 version = "0.1.0"
 dependencies = [

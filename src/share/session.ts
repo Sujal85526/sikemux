@@ -60,8 +60,8 @@ export interface ShareSessionOptions {
     /** The share socket, such as `wss://api.sikemux.com/v1/share`. */
     url: string;
     cipher: ShareCipher;
-    /** A fresh sign-in token, or null when signed out. */
-    token(): Promise<string | null>;
+    /** A sign-in token, or null when signed out. `fresh` asks past any cache for a newer one. */
+    token(fresh: boolean): Promise<string | null>;
     connect?: (url: string) => ShareSocket;
     /** Runs once before the next frame is drawn; returns how to call that off. */
     frame?: (run: () => void) => () => void;
@@ -77,7 +77,7 @@ const BACKOFF_CAP_MS = 60_000;
 /** A question the host has not answered in this long gets no answer. */
 const ANSWER_WAIT_MS = 30_000;
 /** A fresh token goes out this long before the last one expires. */
-const AUTH_EARLY_MS = 60_000;
+const AUTH_AHEAD_MS = 15_000;
 const IMAGE_TYPES: Record<string, string> = {
     png: "image/png",
     jpg: "image/jpeg",
@@ -95,6 +95,17 @@ function animationFrame(run: () => void): () => void {
     }
     const frame = requestAnimationFrame(run);
     return () => cancelAnimationFrame(frame);
+}
+
+/** When a sign-in token expires, in milliseconds since the epoch, or 0 when it cannot be read. */
+function expiresAt(token: string): number {
+    try {
+        const payload = (token.split(".")[1] ?? "").replace(/-/g, "+").replace(/_/g, "/");
+        const exp = (JSON.parse(atob(payload)) as { exp?: unknown }).exp;
+        return typeof exp === "number" ? exp * 1000 : 0;
+    } catch {
+        return 0;
+    }
 }
 
 function text(value: unknown): string | null {
@@ -297,7 +308,7 @@ export class ShareSession {
     private async handle(socket: ShareSocket, message: ShareServerMessage) {
         switch (message.type) {
             case "challenge": {
-                const token = await this.options.token();
+                const token = await this.options.token(false);
                 if (this.socket !== socket) return;
                 if (!token) return this.finished("signedOut");
                 this.send(socket, {
@@ -349,19 +360,24 @@ export class ShareSession {
         }
     }
 
-    private refreshAuth(socket: ShareSocket, expiresAt: number) {
+    private refreshAuth(socket: ShareSocket, expiry: number) {
         if (this.authTimer) clearTimeout(this.authTimer);
         this.authTimer = setTimeout(
             () => {
                 this.authTimer = null;
-                void this.options.token().then((token) => {
-                    if (!token || this.socket !== socket) return;
-                    this.send(socket, { type: "auth", token });
-                    this.refreshAuth(socket, this.now() + 5 * 60_000);
-                });
+                void this.refresh(socket, expiry);
             },
-            Math.max(0, expiresAt - this.now() - AUTH_EARLY_MS),
+            Math.max(1_000, expiry - this.now() - AUTH_AHEAD_MS),
         );
+    }
+
+    /** The sign-in may still hand out the token the server already has; it is asked past its cache then. */
+    private async refresh(socket: ShareSocket, expiry: number) {
+        let token = await this.options.token(false);
+        if (token && expiresAt(token) <= expiry) token = await this.options.token(true);
+        if (!token || this.socket !== socket) return;
+        this.send(socket, { type: "auth", token });
+        this.refreshAuth(socket, expiresAt(token));
     }
 
     /** One unsealed frame: a snapshot starts the chat over, the rest add to it. */

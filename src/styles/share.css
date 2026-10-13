@@ -172,3 +172,27 @@
     border-radius: var(--radius-full);
     background: var(--live);
 }
+
+/* On the web page: hands the chat to the Sikemux app, when it is installed. */
+.share-open-app {
+    display: inline-flex;
+    align-items: center;
+    height: var(--control-h);
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: var(--surface-raised);
+    color: var(--text-secondary);
+    font-family: var(--ui);
+    font-size: calc(10.5px * var(--chat-text-em, 1));
+    text-decoration: none;
+}
+
+.share-open-app:hover {
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+}
+
+.share-page {
+    height: 100dvh;
+}

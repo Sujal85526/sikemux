@@ -16,10 +16,12 @@ import { RestoreAccount, useAccountState } from "./RestoreAccount.tsx";
 import {
   appReturn,
   DELETE_ACCOUNT,
+  isSharePath,
   takeReturn,
   usePath,
 } from "./navigation.ts";
 import { SignIn } from "./SignIn.tsx";
+import "./app.css";
 
 /** The deleted page's address, carrying when the account is deleted for good so it survives signing out. */
 function deletedPage(deletesAt?: string): string {
@@ -63,7 +65,11 @@ export function App() {
               : "Sign in · Sikemux";
   }, [path, signedIn, showDeleted]);
 
-  const afterSignIn = () => go(takeReturn(), { replace: true });
+  const afterSignIn = () => {
+    const to = takeReturn();
+    if (isSharePath(to)) location.replace(to);
+    else go(to, { replace: true });
+  };
   const returning = isLoaded && isSignedIn ? appReturn() : null;
 
   useEffect(() => {
