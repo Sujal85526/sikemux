@@ -283,7 +283,7 @@ pub fn handle<R: Runtime>(
             .then(|| pages_dir(&app).ok())
             .flatten()
             .and_then(|dir| std::fs::read_to_string(dir.join(format!("{id}.html"))).ok());
-        responder.respond(match page {
+        let response = match page {
             Some(page) => Response::builder()
                 .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
                 .header(header::CONTENT_SECURITY_POLICY, SANDBOX)
@@ -291,7 +291,8 @@ pub fn handle<R: Runtime>(
                 .body(app.state::<Pages>().themed(&page).into_bytes())
                 .expect("static page headers"),
             None => status(StatusCode::NOT_FOUND),
-        });
+        };
+        crate::preview::respond_on_main_thread(&app, responder, response);
     });
 }
 
