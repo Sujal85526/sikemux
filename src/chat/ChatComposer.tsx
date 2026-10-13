@@ -34,6 +34,41 @@ import type { TrackedMatches } from "./TrackedSource";
 import { ContextMark } from "./ContextChip";
 import { contextChip } from "./promptContext";
 
+/** Draws the box's text with the words still being spoken dimmed at the caret, where they will be typed. */
+function DictationPreview({
+    draft,
+    caret,
+    heard,
+    editor,
+}: {
+    draft: string;
+    caret: number;
+    heard: string;
+    editor: RefObject<HTMLTextAreaElement | null>;
+}) {
+    const preview = useRef<HTMLDivElement>(null);
+    const spoken = useRef<HTMLSpanElement>(null);
+    useLayoutEffect(() => {
+        const box = preview.current;
+        const words = spoken.current;
+        if (!box || !words) return;
+        const bottom = box.getBoundingClientRect().bottom - parseFloat(getComputedStyle(box).paddingBottom);
+        box.scrollTop += words.getBoundingClientRect().bottom - bottom;
+        if (editor.current) editor.current.scrollTop = box.scrollTop;
+    }, [draft, caret, heard, editor]);
+    const before = draft.slice(0, caret);
+    return (
+        <div className="chat-dictation-preview" ref={preview}>
+            {before}
+            <span ref={spoken} aria-live="polite">
+                {before && !/\s$/.test(before) ? " " : ""}
+                {heard}
+            </span>
+            {draft.slice(caret)}
+        </div>
+    );
+}
+
 function ComposerAttachment({ path, onRemove }: { path: string; onRemove: () => void }) {
     const preview = useImagePreview(path);
     return (
@@ -424,7 +459,13 @@ export function ChatComposer({
     const dictating = useVoice(
         (state) => (state.phase === "listening" || state.phase === "transcribing") && writesInto(state.target, paneRef.current),
     );
+    const heard = useVoice((state) =>
+        (state.phase === "listening" || state.phase === "transcribing") && writesInto(state.target, paneRef.current) ? state.partial : "",
+    );
     const stopping = running && !drafted && !dictating;
+    useEffect(() => {
+        if (dictating) editorRef.current?.focus();
+    }, [dictating]);
     const sendButton = useRef<HTMLButtonElement>(null);
     const wasStopping = useRef(stopping);
     useLayoutEffect(() => {
@@ -527,7 +568,7 @@ export function ChatComposer({
                     ref={editorRef}
                     value={draft}
                     aria-label="Message agent"
-                    placeholder={placeholder}
+                    placeholder={heard ? "" : placeholder}
                     rows={2}
                     onChange={(event) => {
                         setDraft(event.target.value);
@@ -600,10 +641,12 @@ export function ChatComposer({
                                 onSteerQueued();
                                 return;
                             }
+                            if (finishDictationInto(paneRef.current)) return;
                             send(hasPrimaryModifier(event.nativeEvent));
                         }
                     }}
                 />
+                {heard && <DictationPreview draft={draft} caret={caret} heard={heard} editor={editorRef} />}
             </div>
             {error && <div className="chat-composer-error">{error}</div>}
             <div className="chat-composer-bar">

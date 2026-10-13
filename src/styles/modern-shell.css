@@ -1290,7 +1290,8 @@ textarea,
         .chat-project-strip .worktree-toggle,
         .agent-surface-header button,
         .tb-account,
-        .tb-account-face
+        .tb-account-face,
+        .jira-avatar-pick
     ) {
     border-radius: var(--radius-full) !important;
 }

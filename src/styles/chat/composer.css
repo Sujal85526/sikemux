@@ -30,7 +30,8 @@
     border-color: var(--border-selected);
 }
 
-.chat-composer textarea {
+.chat-composer textarea,
+.chat-dictation-preview {
     display: block;
     width: 100%;
     max-height: min(320px, 40vh);
@@ -45,6 +46,32 @@
     font-size: calc(14.5px * var(--chat-text-em, 1));
     line-height: 1.5;
     user-select: text;
+}
+
+/* While dictating, the preview over the text box draws its text, so the two never show different scroll positions. */
+.chat-field {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.chat-field > textarea,
+.chat-dictation-preview {
+    grid-area: 2 / 1;
+}
+
+.chat-field > textarea:has(+ .chat-dictation-preview) {
+    color: transparent;
+}
+
+.chat-dictation-preview {
+    overflow: hidden;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    pointer-events: none;
+}
+
+.chat-dictation-preview span {
+    color: var(--ink-faint);
 }
 
 .chat-composer textarea::placeholder {
