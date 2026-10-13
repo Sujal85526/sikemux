@@ -19,6 +19,7 @@ use crate::error::{JiraError, JiraResult};
 const DEFAULT_LIMIT: u64 = 20;
 const MAX_LIMIT: u64 = 100;
 const MAX_COMMENTS: usize = 50;
+const COMMENTS_PER_HIT: usize = 5;
 pub(crate) const SUMMARY_FIELDS: &str = "summary,status,priority,assignee,issuetype,updated";
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -135,6 +136,13 @@ pub fn comments(body: &Value) -> Vec<Comment> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// The newest comments the search returned with an issue, oldest first.
+fn latest_comments(issue: &Value) -> Vec<Comment> {
+    let mut all = comments(issue.pointer("/fields/comment").unwrap_or(&Value::Null));
+    let older = all.len().saturating_sub(COMMENTS_PER_HIT);
+    all.split_off(older)
 }
 
 pub fn transitions(body: &Value) -> Vec<Transition> {
@@ -267,12 +275,24 @@ pub struct Search {
     /// Where the previous page ended, as `next` gave it.
     #[serde(default)]
     pub next: Option<String>,
+    #[serde(default)]
+    pub comments: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Hit {
+    #[serde(flatten)]
+    pub summary: IssueSummary,
+    /// The latest few, oldest first; only when the search asked for comments.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comments: Option<Vec<Comment>>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Found {
-    pub issues: Vec<IssueSummary>,
+    pub issues: Vec<Hit>,
     /// Pass back as `next` for the following page; absent on the last.
     pub next: Option<String>,
 }
@@ -280,10 +300,14 @@ pub struct Found {
 pub async fn search(data_dir: &Path, request: Search) -> JiraResult<Found> {
     let (site, credentials) = auth::credentials(data_dir, request.site.as_deref()).await?;
     let sprint_field = sprint_field(&site, &credentials).await;
-    let fields = match &sprint_field {
-        Some(field) => format!("{SUMMARY_FIELDS},{field}"),
-        None => SUMMARY_FIELDS.into(),
-    };
+    let mut fields = SUMMARY_FIELDS.to_string();
+    if let Some(field) = &sprint_field {
+        fields.push(',');
+        fields.push_str(field);
+    }
+    if request.comments {
+        fields.push_str(",comment");
+    }
     let mut body = json!({
         "jql": request.jql,
         "maxResults": request.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT),
@@ -306,7 +330,10 @@ pub async fn search(data_dir: &Path, request: Search) -> JiraResult<Found> {
         .map(|issues| {
             issues
                 .iter()
-                .map(|issue| summarise(issue, &site.host, sprint_field.as_deref()))
+                .map(|issue| Hit {
+                    summary: summarise(issue, &site.host, sprint_field.as_deref()),
+                    comments: request.comments.then(|| latest_comments(issue)),
+                })
                 .collect()
         })
         .unwrap_or_default();
