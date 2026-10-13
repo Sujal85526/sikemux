@@ -57,7 +57,7 @@ impl BrowserManager {
         validate_agent_id(agent_id)?;
         let launch = self.mcp_launch()?;
         let mut environment = base_environment(agent_id)?;
-        let data_dir = app.path().app_data_dir().ok();
+        let data_dir = skills_data_dir(app);
         let data_dir = data_dir.as_deref();
         let args_prefix = match agent_type {
             "claude" => {
@@ -143,7 +143,7 @@ pub async fn chat_skills(
     args: &mut Vec<String>,
     env: &mut BTreeMap<String, String>,
 ) {
-    let Ok(data_dir) = app.path().app_data_dir() else {
+    let Some(data_dir) = skills_data_dir(app) else {
         return;
     };
     let library = agent_skills::library(&data_dir);
@@ -163,13 +163,11 @@ pub async fn chat_skills(
                 .get("OPENCODE_CONFIG_CONTENT")
                 .cloned()
                 .or_else(inherited_opencode_config);
-            let mut config = existing
-                .as_deref()
-                .and_then(|text| serde_json::from_str::<Value>(text).ok())
-                .filter(Value::is_object)
-                .unwrap_or_else(|| json!({}));
-            agent_skills::add_opencode_paths(&mut config, &opencode_own_skill_paths(), &library);
-            env.insert("OPENCODE_CONFIG_CONTENT".into(), config.to_string());
+            if let Some(config) =
+                chat_opencode_config(existing.as_deref(), &opencode_own_skill_paths(), &library)
+            {
+                env.insert("OPENCODE_CONFIG_CONTENT".into(), config);
+            }
         }
         ("hermes", Some(agent_id)) => {
             match chat_hermes_home(app, agent_id, &program, &library).await {
@@ -197,15 +195,10 @@ async fn chat_hermes_home(
     program: &str,
     library: &Path,
 ) -> AppResult<PathBuf> {
-    let home = private_home(
-        app,
-        "hermes-chat",
-        agent_id,
-        &crate::agents::config::hermes_root()
-            .ok_or_else(|| AppError::Other("the home folder is unavailable".into()))?,
-        "config.yaml",
-        "{}\n",
-    )?;
+    let real = crate::agents::config::hermes_root()
+        .ok_or_else(|| AppError::Other("the home folder is unavailable".into()))?;
+    share_session_store(&real, "state.db", false)?;
+    let home = private_home(app, "hermes-chat", agent_id, &real, "config.yaml", "{}\n")?;
     let config = std::fs::read_to_string(home.join("config.yaml")).unwrap_or_default();
     let dirs = agent_skills::hermes_external_dirs(&config, library);
     run_config_command(
@@ -219,20 +212,65 @@ async fn chat_hermes_home(
 }
 
 fn chat_grok_home(app: &AppHandle, agent_id: &str, library: &Path) -> AppResult<PathBuf> {
-    let home = private_home(
-        app,
-        "grok-chat",
-        agent_id,
-        &crate::agents::config::grok_root()
-            .ok_or_else(|| AppError::Other("the home folder is unavailable".into()))?,
-        "config.toml",
-        "",
-    )?;
+    let real = crate::agents::config::grok_root()
+        .ok_or_else(|| AppError::Other("the home folder is unavailable".into()))?;
+    share_session_store(&real, "sessions", true)?;
+    let home = private_home(app, "grok-chat", agent_id, &real, "config.toml", "")?;
     let path = home.join("config.toml");
     let config = std::fs::read_to_string(&path).unwrap_or_default();
     let merged = agent_skills::grok_config(&config, library).map_err(AppError::Other)?;
     std::fs::write(&path, merged)?;
     Ok(home)
+}
+
+/// An OpenCode chat's inline config with the skills library added. A config
+/// that is not plain JSON is left as the person wrote it, without the skills.
+fn chat_opencode_config(
+    existing: Option<&str>,
+    own_paths: &[String],
+    library: &Path,
+) -> Option<String> {
+    let mut config = match existing.map(str::trim).filter(|text| !text.is_empty()) {
+        None => json!({}),
+        Some(text) => serde_json::from_str::<Value>(text)
+            .ok()
+            .filter(Value::is_object)?,
+    };
+    agent_skills::add_opencode_paths(&mut config, own_paths, library);
+    Some(config.to_string())
+}
+
+/// Makes the store an agent keeps its sessions in inside its real home, if it
+/// has none yet, so a private home links to it rather than starting its own.
+/// Sikemux lists and resumes sessions from the real home.
+fn share_session_store(real_home: &Path, name: &str, folder: bool) -> std::io::Result<()> {
+    let store = real_home.join(name);
+    if std::fs::symlink_metadata(&store).is_ok() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(real_home)?;
+    if folder {
+        std::fs::create_dir_all(&store)
+    } else {
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&store)
+            .map(|_| ())
+    }
+}
+
+/// The app data folder with the skills library ready in it. Without one,
+/// agents launch without Sikemux skills rather than pointed at a missing folder.
+fn skills_data_dir(app: &AppHandle) -> Option<PathBuf> {
+    let data_dir = app.path().app_data_dir().ok()?;
+    match sikemux_core::skills::ready_library(&data_dir) {
+        Ok(_) => Some(data_dir),
+        Err(error) => {
+            eprintln!("Sikemux skills are unavailable: {error}");
+            None
+        }
+    }
 }
 
 /// The protocol asks for an absolute path, and a development launch runs
@@ -582,6 +620,41 @@ mod tests {
             command: "/Apps/Sikemux.app/sikemux-editor".into(),
             args: vec!["--tools-mcp".into()],
         }
+    }
+
+    #[test]
+    fn an_opencode_chat_keeps_an_inline_config_it_cannot_read_untouched() {
+        let library = Path::new("/data/skills");
+        let added = chat_opencode_config(Some(r#"{"provider":{"x":{}}}"#), &[], library).unwrap();
+        assert!(added.contains("/data/skills") && added.contains("provider"));
+        assert!(chat_opencode_config(None, &[], library)
+            .unwrap()
+            .contains("/data/skills"));
+        assert_eq!(
+            chat_opencode_config(Some("{ // mine\n \"provider\": {}, }"), &[], library),
+            None
+        );
+    }
+
+    #[test]
+    fn a_session_store_is_made_in_the_real_home_only_when_missing() {
+        let home = tempfile::tempdir().unwrap();
+        share_session_store(home.path(), "sessions", true).unwrap();
+        share_session_store(home.path(), "state.db", false).unwrap();
+        assert!(home.path().join("sessions").is_dir());
+        assert_eq!(
+            std::fs::metadata(home.path().join("state.db"))
+                .unwrap()
+                .len(),
+            0
+        );
+
+        std::fs::write(home.path().join("state.db"), "kept").unwrap();
+        share_session_store(home.path(), "state.db", false).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(home.path().join("state.db")).unwrap(),
+            "kept"
+        );
     }
 
     #[test]

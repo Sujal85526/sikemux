@@ -64,12 +64,12 @@ pub fn add_opencode_paths(config: &mut Value, own_paths: &[String], library: &Pa
     skills.insert("paths".into(), json!(paths));
 }
 
-/// The `skills.paths` in the user's global OpenCode config, if it is plain JSON.
+/// The `skills.paths` in the user's global OpenCode config.
 pub fn opencode_own_paths(config_dir: &Path) -> Vec<String> {
     ["opencode.json", "opencode.jsonc"]
         .iter()
         .filter_map(|name| std::fs::read_to_string(config_dir.join(name)).ok())
-        .filter_map(|text| serde_json::from_str::<Value>(&text).ok())
+        .filter_map(|text| serde_json::from_str::<Value>(&plain_json(&text)).ok())
         .flat_map(|config| {
             config
                 .pointer("/skills/paths")
@@ -84,6 +84,56 @@ pub fn opencode_own_paths(config_dir: &Path) -> Vec<String> {
                 .unwrap_or_default()
         })
         .collect()
+}
+
+/// JSON with comments and trailing commas, as OpenCode allows, made plain.
+fn plain_json(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    let mut in_string = false;
+    while let Some(char) = chars.next() {
+        if in_string {
+            out.push(char);
+            match char {
+                '\\' => out.extend(chars.next()),
+                '"' => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+        match (char, chars.peek()) {
+            ('"', _) => {
+                in_string = true;
+                out.push(char);
+            }
+            ('/', Some('/')) => {
+                for skipped in chars.by_ref() {
+                    if skipped == '\n' {
+                        out.push('\n');
+                        break;
+                    }
+                }
+            }
+            ('/', Some('*')) => {
+                chars.next();
+                let mut last = ' ';
+                for skipped in chars.by_ref() {
+                    if last == '*' && skipped == '/' {
+                        break;
+                    }
+                    last = skipped;
+                }
+            }
+            (',', _) => {
+                let rest: String = chars.clone().collect();
+                if !matches!(rest.trim_start().chars().next(), Some('}' | ']')) {
+                    out.push(char);
+                }
+            }
+            _ => out.push(char),
+        }
+    }
+    out
 }
 
 /// The `skills.external_dirs` a Hermes `config.yaml` already lists, with the
@@ -179,6 +229,22 @@ mod tests {
             json!(["/inherited", "/own", LIBRARY])
         );
         assert_eq!(config["mcp"], json!({}));
+    }
+
+    #[test]
+    fn opencode_jsonc_keeps_its_paths_through_comments_and_trailing_commas() {
+        let dir = std::env::temp_dir().join(format!("sikemux-opencode-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("opencode.jsonc"),
+            "{\n  // my skills\n  \"skills\": { /* team */ \"paths\": [\"~/team//skills\", \"/a,b\",], },\n}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            opencode_own_paths(&dir),
+            vec!["~/team//skills".to_string(), "/a,b".to_string()]
+        );
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
