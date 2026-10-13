@@ -1,6 +1,6 @@
-# Sikemux v0.5.2-nightly.3
+# Sikemux v0.5.2-nightly.4
 
-The third nightly on the 0.5.2 line. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
+The fourth nightly on the 0.5.2 line, carrying what nightly.3 was to ship; nightly.3 never published. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
 
 ## New since nightly.2
 
@@ -19,4 +19,4 @@ The third nightly on the 0.5.2 line. Nightlies are signed and delivered exactly 
 
 Thanks to Krisna Satria for the Linux packages and fixes, Sujal Rajput for the dictation preview and fixes, and Ankit Patidar for the Jira board filters and the Escape fix.
 
-For the complete patch history, compare [`v0.5.2-nightly.2...v0.5.2-nightly.3`](https://github.com/nodelike/sikemux/compare/v0.5.2-nightly.2...v0.5.2-nightly.3).
+For the complete patch history, compare [`v0.5.2-nightly.2...v0.5.2-nightly.4`](https://github.com/nodelike/sikemux/compare/v0.5.2-nightly.2...v0.5.2-nightly.4).
