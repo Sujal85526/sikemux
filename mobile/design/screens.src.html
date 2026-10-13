@@ -2524,6 +2524,55 @@ expected 1 write, got 2</div>
 
 <!-- ================================================================ -->
 <section class="flow">
+  <h2>A shared chat</h2>
+  <p>Someone shared a chat with a link, and it opened here. It is the agent screen with nothing to press: no composer, no menu, no answers to give. The transcript arrives from the accounts server, sealed by the sharer's computer, and pages back through the turns before the link was made. Where the composer would be, one line says it is read-only and how long the link lasts.</p>
+  <div class="phones">
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Fix the share dialog flicker</span></span><span class="icon-btn" style="opacity:0"></span></div>
+        <div class="chat">
+          <div class="msg-user">Why does the share dialog flicker when I open it?</div>
+          <div class="work"><span class="work-sum">Worked for 1m 0s <span class="calls">· 2 tool calls</span>{{IconChevron:11}}</span></div>
+          <div class="prose">Found it. The dialog re-mounts on every poll, because the store hands it a new list each time.</div>
+          <div class="msg-user">Great, fix it and run the tests.</div>
+          <div class="tools">
+            <span class="tools-sum open">1 tool call <span class="time">2s</span>{{IconChevron:11}}</span>
+            <div class="tools-body">
+              <div class="tool running"><span class="tick"></span><span class="k-run">{{IconCommand:12}}</span><span class="kind k-run">run</span><span class="target">pnpm test src/share</span><span class="end">2s</span></div>
+            </div>
+          </div>
+          <div class="activity"><span class="glyph claude">{{IconClaude:20}}</span><span class="lbl">Running a command…</span><span class="el">2s</span></div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer" style="display:flex;align-items:center;gap:10px;padding:14px;color:var(--ink-dim);font-size:13.5px;line-height:1.45">
+            {{IconEye:17}}<span>Read-only. Shared from someone's computer; the link works for 23 more hours.</span>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Watching a shared chat</b><div class="note">Opened from a sikemux://share link, or from the web page's Open in Sikemux. The phone signs in to the accounts server to watch; the key in the link reads what the sharer's computer sealed. Permission requests show as waiting, with no buttons. Pictures pasted into the chat come from the sharer's computer when it is online.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Fix the share dialog flicker</span></span><span class="icon-btn" style="opacity:0"></span></div>
+        <div class="chat" style="padding-bottom:34px">
+          <div class="prose">Tests pass. Committed as fix(share): keep the dialog mounted while it polls.</div>
+          <p style="text-align:center;font-size:13px;color:var(--text-tertiary);margin-top:20px">Sharing this chat has stopped.</p>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Stopped or expired</b><div class="note">What was shared stays on screen with one line under it saying why the share ended: stopped by the sharer, or past its time. While the sharer's computer is offline, the line reads "The sharer's computer is offline, so this is the chat as it last was."</div></figcaption>
+    </figure>
+
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<section class="flow">
   <h2>Away from the app</h2>
   <p>An agent stops to ask while the phone is in a pocket. The host seals what happened with a key only this phone has, and Sikemux passes it on without being able to read it. By default a host notifies only while nobody is at it.</p>
   <div class="phones">
