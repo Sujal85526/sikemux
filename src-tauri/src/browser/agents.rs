@@ -201,7 +201,8 @@ async fn chat_hermes_home(
         app,
         "hermes-chat",
         agent_id,
-        &agent_home("HERMES_HOME", ".hermes"),
+        &crate::agents::config::hermes_root()
+            .ok_or_else(|| AppError::Other("the home folder is unavailable".into()))?,
         "config.yaml",
         "{}\n",
     )?;
@@ -222,7 +223,8 @@ fn chat_grok_home(app: &AppHandle, agent_id: &str, library: &Path) -> AppResult<
         app,
         "grok-chat",
         agent_id,
-        &agent_home("GROK_HOME", ".grok"),
+        &crate::agents::config::grok_root()
+            .ok_or_else(|| AppError::Other("the home folder is unavailable".into()))?,
         "config.toml",
         "",
     )?;
@@ -334,8 +336,7 @@ fn skill_args(
 }
 
 fn opencode_own_skill_paths() -> Vec<String> {
-    let config_home = login_shell_environment()
-        .get("XDG_CONFIG_HOME")
+    let config_home = user_variable("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| crate::system::user_home().join(".config"));
     agent_skills::opencode_own_paths(&config_home.join("opencode"))

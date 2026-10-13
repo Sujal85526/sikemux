@@ -131,7 +131,6 @@ impl Manifest {
              An HTML page you wrote yourself, including charts and mockups the person asks to see, goes in your reply with page_show; never serve it or open it in a tab with browser_navigate. \
              Plugin tools such as jira_*, github_*, slack_* and signoz_* act as the person through the sign-in they made in Sikemux; \
              for those services use them, not another MCP server's tools for the same service. \
-
              To create or install a skill, use the skills tool, which gives it to every agent in Sikemux; never write into your own skills folder.",
             self.guide.name, self.guide.name
         );

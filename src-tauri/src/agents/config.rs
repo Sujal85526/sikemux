@@ -107,41 +107,23 @@ pub(super) fn agent_config_root(kind: &str, configured: Option<&str>) -> Option<
     }
 }
 
-/// Each agent's own global skills folder, with the agents that read it. These
-/// belong to the person; Sikemux only reads them.
+/// Each agent's own global skills folder, with the agents that read it,
+/// whether or not it exists yet. These belong to the person; Sikemux only reads them.
 pub(crate) fn global_skill_folders() -> Vec<(&'static str, PathBuf)> {
-    let Some(home) = home_path() else {
+    let Some(home) = home() else {
         return Vec::new();
     };
     let config_home = environment_path("XDG_CONFIG_HOME").unwrap_or_else(|| home.join(".config"));
+    let skills = |root: Option<PathBuf>| root.map(|root| root.join("skills"));
     let mut folders = vec![
-        (
-            "Claude",
-            agent_config_root("claude", None).map(|root| root.join("skills")),
-        ),
-        (
-            "Codex",
-            agent_config_root("codex", None).map(|root| root.join("skills")),
-        ),
+        ("Claude", skills(agent_config_root("claude", None))),
+        ("Codex", skills(agent_config_root("codex", None))),
         ("Codex and other agents", Some(home.join(".agents/skills"))),
         ("OpenCode", Some(config_home.join("opencode/skills"))),
-        (
-            "OMP",
-            agent_config_root("omp", None).map(|root| root.join("skills")),
-        ),
-        (
-            "Grok",
-            agent_config_root("grok", None).map(|root| root.join("skills")),
-        ),
-        (
-            "Hermes",
-            Some(
-                environment_path("HERMES_HOME")
-                    .unwrap_or_else(|| home.join(".hermes"))
-                    .join("skills"),
-            ),
-        ),
-        ("Pi", Some(home.join(".pi/agent/skills"))),
+        ("OMP", skills(agent_config_root("omp", None))),
+        ("Grok", skills(grok_root())),
+        ("Hermes", skills(hermes_root())),
+        ("Pi", skills(pi_agent_root())),
     ]
     .into_iter()
     .filter_map(|(label, folder)| Some((label, folder?)))
@@ -149,7 +131,7 @@ pub(crate) fn global_skill_folders() -> Vec<(&'static str, PathBuf)> {
     let mut seen = Vec::new();
     folders.retain(|(_, folder)| {
         let real = std::fs::canonicalize(folder).unwrap_or_else(|_| folder.clone());
-        let fresh = folder.is_dir() && !seen.contains(&real);
+        let fresh = !seen.contains(&real);
         seen.push(real);
         fresh
     });
