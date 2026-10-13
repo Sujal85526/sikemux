@@ -34,6 +34,7 @@ pub(crate) async fn call(
                 &core,
                 &params.agent_id,
                 params.lifetime_ms,
+                params.title,
             )?)
         }
         "stopShare" => {
@@ -59,6 +60,8 @@ fn answer(result: impl Serialize) -> CoreResult<Value> {
 struct ShareChatParams {
     agent_id: String,
     lifetime_ms: u64,
+    #[serde(default)]
+    title: Option<String>,
 }
 
 #[derive(Deserialize)]

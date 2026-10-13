@@ -222,12 +222,14 @@ fn begin(core: &Arc<Core>, inner: &mut Inner, stored: StoredShare) -> CoreResult
 }
 
 /// Shares the chat of `agent_id` for `lifetime_ms`, or answers with the share
-/// it already has.
+/// it already has. A share whose chat the app renamed tells its viewers.
 pub(crate) fn share_chat(
     core: &Arc<Core>,
     agent_id: &str,
     lifetime_ms: u64,
+    title: Option<String>,
 ) -> CoreResult<ShareView> {
+    let title = title.as_deref().and_then(chat::feed::title);
     if core.remote.signed_in_api().is_none() {
         return Err("Sign in to Sikemux to share chats.".into());
     }
@@ -237,10 +239,19 @@ pub(crate) fn share_chat(
     let mut inner = core.shares.lock();
     if let Some(running) = inner
         .running
-        .values()
+        .values_mut()
         .find(|running| running.stored.agent_id == agent_id && running.state != ShareState::Refused)
     {
-        return Ok(view_of(running));
+        let view = view_of(running);
+        if title.is_none() || running.stored.title == title {
+            return Ok(view);
+        }
+        running.stored.title = title;
+        let id = running.stored.id.clone();
+        save(core, &inner);
+        drop(inner);
+        take_snapshot(core, &id);
+        return Ok(view);
     }
     let random = || seal::random_text(16).ok_or_else(|| CoreError::from("no randomness"));
     let stored = StoredShare {
@@ -248,6 +259,7 @@ pub(crate) fn share_chat(
         key: seal::random_text(seal::KEY_LEN).ok_or("no randomness")?,
         agent_id: agent_id.to_owned(),
         expires_at: unix_ms() + lifetime_ms.clamp(MIN_LIFETIME_MS, MAX_LIFETIME_MS),
+        title,
     };
     let id = stored.id.clone();
     inner
@@ -319,14 +331,20 @@ fn waiting_on(core: &Core, agent_id: &str) -> Vec<String> {
 }
 
 /// The plain text of a snapshot: the chat as it stands, from its last turns.
-fn snapshot_text(core: &Core, agent_id: &str, attachment: &Value, waiting: &[String]) -> Value {
+fn snapshot_text(
+    core: &Core,
+    agent_id: &str,
+    title: Option<String>,
+    attachment: &Value,
+    waiting: &[String],
+) -> Value {
     let info = core.chats.get(agent_id).map(|chat| chat.info());
     json!({
         "type": "snapshot",
         "chat": {
             "agentId": agent_id,
             "provider": info.as_ref().map(|info| info.provider.clone()),
-            "title": info.as_ref().and_then(|info| info.title.clone()),
+            "title": title.or_else(|| info.as_ref().and_then(|info| info.title.clone())),
             "model": info.as_ref().and_then(|info| info.model.clone()),
             "cwd": info.as_ref().map(|info| info.cwd.clone()),
             "home": std::env::var_os("HOME").map(PathBuf::from),
@@ -365,10 +383,11 @@ fn published<'a>(core: &Core, id: &str, frame: &'a [u8]) -> Option<(Cow<'a, [u8]
                 .and_then(Value::as_str)
                 .map(str::to_owned);
             let agent_id = running.stored.agent_id.clone();
+            let title = running.stored.title.clone();
             running.waiting = waiting_on(core, &agent_id);
             let waiting = running.waiting.clone();
             drop(inner);
-            let text = snapshot_text(core, &agent_id, &attachment, &waiting);
+            let text = snapshot_text(core, &agent_id, title, &attachment, &waiting);
             Some((Cow::Owned(serde_json::to_vec(&text).ok()?), true))
         }
         ServerMessage::Event {

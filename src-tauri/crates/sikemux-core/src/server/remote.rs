@@ -86,6 +86,9 @@ pub(crate) struct StoredShare {
     pub agent_id: String,
     /// Milliseconds since the Unix epoch.
     pub expires_at: u64,
+    /// What the app calls the chat, which its viewers see too.
+    #[serde(default)]
+    pub title: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
