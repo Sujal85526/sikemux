@@ -21,7 +21,7 @@ import { rateLabel, sentLabel, sentTitle } from "./messageMeta";
 import { durationLabel } from "./durationLabel";
 import { localImagePath, useImagePreview } from "./imagePreview";
 import { ChatFileRef, useFileRef } from "./FileRef";
-import { ChatAgentContext } from "./chatAgent";
+import { ChatAgentContext, ChatSubagentsContext } from "./chatAgent";
 import { ChatImage } from "./ChatImage";
 import { FoldedMarkdown, warmChatMarkdown } from "./ChatMarkdown";
 import { ChatPage } from "./ChatPage";
@@ -151,6 +151,8 @@ function PartGroups({ parts, live, typed = false }: { parts: ChatPart[]; live: b
 }
 
 function NoticePart({ notice }: { notice: AcpTaskNotice }) {
+    const subagent = useContext(ChatSubagentsContext).get(notice.subagent ?? "");
+    if (subagent) return <SubagentPart subagent={subagent} />;
     return (
         <div className={`chat-notice state-${notice.state}`} role="status">
             {notice.taskType === "workflow" ? <IconWorkflow size={12} /> : <IconTimer size={12} />}

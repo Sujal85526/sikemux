@@ -230,6 +230,16 @@ export function subagentActivity(subagent: AcpSubagent): string {
     return subagentTask(subagent.task);
 }
 
+export function subagentsById(messages: ChatMessage[], found = new Map<string, AcpSubagent>()): Map<string, AcpSubagent> {
+    for (const message of messages)
+        for (const part of message.parts)
+            if (part.kind === "subagent") {
+                found.set(part.subagent.sessionId, part.subagent);
+                subagentsById(part.subagent.messages, found);
+            }
+    return found;
+}
+
 export function runningSubagents(messages: ChatMessage[]): AcpSubagent[] {
     const running: AcpSubagent[] = [];
     for (const message of messages)

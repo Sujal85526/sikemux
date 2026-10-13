@@ -97,6 +97,8 @@ export interface AcpTaskNotice {
     state: "completed" | "failed" | "stopped";
     summary?: string;
     taskType?: string;
+    /* A subagent's notice shows that subagent's own card. */
+    subagent?: string;
 }
 
 /** Something the agent tells the person outside its reply, like a model fallback. */

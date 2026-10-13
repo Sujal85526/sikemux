@@ -1439,10 +1439,11 @@ impl Reader {
         let Some(state) = TaskState::from_status(status).filter(|state| state.ended()) else {
             return;
         };
-        self.sink.update(
-            &self.data.session_id,
-            json!({ "sessionUpdate": "task_notice", "taskId": task_id, "name": name, "state": state.as_str() }),
-        );
+        let mut update = json!({ "sessionUpdate": "task_notice", "taskId": task_id, "name": name, "state": state.as_str() });
+        if self.data.subagents.contains_key(task_id) {
+            update["subagentSessionId"] = json!(task_id);
+        }
+        self.sink.update(&self.data.session_id, update);
     }
 
     /// A task the person stopped from the app, said at once rather than when

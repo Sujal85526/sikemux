@@ -475,7 +475,8 @@ function harnessNotice(state: ChatState, update: Record<string, unknown>): ChatS
     const name = /"([^"]+)"/.exec(summary ?? "")?.[1] ?? summary ?? "Background task";
     // History marks the notice that woke the agent; one that came mid-turn belongs to that turn.
     const woke = !state.running && replayedTurnStart(update) !== null;
-    return addNotice(state, taskId, { name, state: noticeState }, stampedAt(update), woke);
+    const subagent = textOf(update.subagentSessionId);
+    return addNotice(state, taskId, { name, state: noticeState, ...(subagent ? { subagent } : {}) }, stampedAt(update), woke);
 }
 
 function patchTask(state: ChatState, update: Record<string, unknown>): ChatState {
@@ -610,7 +611,13 @@ function sessionUpdate(state: ChatState, sessionId: string, update: Record<strin
             const noticeState = NOTICE_STATES[textOf(update.state) ?? ""];
             if (!taskId || !noticeState) return state;
             const summary = textOf(update.summary);
-            const notice: AcpTaskNotice = { name: textOf(update.name) ?? "Background task", state: noticeState, ...(summary ? { summary } : {}) };
+            const subagent = textOf(update.subagentSessionId);
+            const notice: AcpTaskNotice = {
+                name: textOf(update.name) ?? "Background task",
+                state: noticeState,
+                ...(summary ? { summary } : {}),
+                ...(subagent ? { subagent } : {}),
+            };
             return addNotice(state, taskId, notice, stampedAt(update));
         }
         case "notice":

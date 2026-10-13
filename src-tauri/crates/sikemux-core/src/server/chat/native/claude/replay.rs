@@ -774,6 +774,16 @@ pub fn replay(records: &[Value], session_id: &str, cwd: &Path) -> Vec<(String, V
         let updates = replay.convert(&content, role, message_id.as_deref());
         let main_thread = parent.is_none();
         let wakes = main_thread && wakes_agent(record);
+        let woken_by = wakes
+            .then(|| task_notification(record))
+            .flatten()
+            .and_then(|(agent_id, _)| {
+                replay
+                    .children
+                    .iter()
+                    .find(|child| child.agent_id.as_deref() == Some(agent_id.as_str()))
+            })
+            .map(|child| child.session_id.clone());
         let mut opens_turn =
             (is_assistant || wakes) && main_thread && turn_over && !updates.is_empty();
         for mut update in updates {
@@ -784,6 +794,9 @@ pub fn replay(records: &[Value], session_id: &str, cwd: &Path) -> Vec<(String, V
                 && !wakes
             {
                 turn_over = false;
+            }
+            if let Some(session_id) = &woken_by {
+                update["subagentSessionId"] = json!(session_id);
             }
             super::super::stamp_replayed(&mut update, at, opens_turn);
             opens_turn = false;
@@ -810,6 +823,7 @@ fn message_id_for_grouping(record: &Value) -> Option<String> {
 struct Child {
     tool_use_id: String,
     session_id: String,
+    agent_id: Option<String>,
     parent_tool_use_id: Option<String>,
     name: String,
     task: String,
@@ -873,6 +887,7 @@ fn collect_children(records: &[Value], session_id: &str) -> Vec<Child> {
             let child = Child {
                 tool_use_id: id.to_string(),
                 session_id: format!("{session_id}:replay-subagent:{id}"),
+                agent_id: None,
                 parent_tool_use_id: owner.clone(),
                 name: states::first_text(&[
                     field("name"),
@@ -911,12 +926,14 @@ fn collect_children(records: &[Value], session_id: &str) -> Vec<Child> {
             child.terminal_state = Some(state);
         }
     }
-    for child in children.iter_mut().filter(|child| child.name.is_empty()) {
-        let agent_id = agent_ids
+    for child in children.iter_mut() {
+        child.agent_id = agent_ids
             .iter()
             .find(|(_, spawner)| **spawner == child.tool_use_id)
-            .map(|(agent_id, _)| agent_id.as_str());
-        child.name = states::unnamed(agent_id.unwrap_or(&child.tool_use_id));
+            .map(|(agent_id, _)| agent_id.clone());
+        if child.name.is_empty() {
+            child.name = states::unnamed(child.agent_id.as_deref().unwrap_or(&child.tool_use_id));
+        }
     }
     children
 }
@@ -998,6 +1015,7 @@ impl Replay<'_> {
                 self.children.push(Child {
                     tool_use_id: tool_use_id.to_string(),
                     session_id: format!("{}:replay-subagent:{tool_use_id}", self.root),
+                    agent_id: None,
                     parent_tool_use_id: None,
                     name: states::unnamed(tool_use_id),
                     task: states::UNNAMED_TASK.to_owned(),
