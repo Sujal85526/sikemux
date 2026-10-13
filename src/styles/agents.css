@@ -166,7 +166,7 @@
     display: inline-flex;
     align-items: center;
     gap: 3px;
-    color: var(--text-tertiary);
+    color: var(--text-secondary);
     font-size: 11px;
     font-weight: var(--weight-medium);
     line-height: 1;
@@ -175,14 +175,14 @@
 .subagent-count svg {
     fill: currentColor;
     stroke: none;
-    color: color-mix(in srgb, var(--live) 70%, var(--text-tertiary));
+    color: var(--live);
 }
 .shell-count svg {
-    color: color-mix(in srgb, var(--warn) 70%, var(--text-tertiary));
+    color: var(--warn);
 }
 .tab-wrap.active .work-count,
 .agent-row.active .work-count {
-    color: var(--text-secondary);
+    color: var(--text-primary);
 }
 @keyframes agent-activity-spin {
     to {
